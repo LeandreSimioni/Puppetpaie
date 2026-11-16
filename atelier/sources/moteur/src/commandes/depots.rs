@@ -8,7 +8,6 @@
 
 use super::analyse::{Args, Opt, Spec};
 use socle::echec::Classe;
-use socle::date::Jour;
 use socle::paris::Moment;
 use super::Cadre;
 use envois::releve_retours::{Client, EnvironnementNetEntreprises, Panne};
@@ -100,19 +99,19 @@ fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
     cadre.plantage(e)
 }
 
-/// `j` a l'heure `h` et `s` secondes, heure de Paris.
-fn a(j: Jour, h: socle::paris::HeureDuJour, s: i64) -> Result<Moment, Echec> {
-    Moment::a_paris_a_la_seconde(j, h, s).ok_or_else(|| socle::echec::erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
+/// L'instant d'une borne de la plage, s'il est du calendrier.
+fn borne(m: Option<Moment>) -> Result<Moment, Echec> {
+    m.ok_or_else(|| socle::echec::erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
 }
 
-/// La plage de recherche. Par defaut, les 30 derniers jours.
+/// La plage de recherche, du debut du jour `depuis` a la fin du jour `jusqu-a`. Par defaut, les 30 derniers jours.
 fn fenetre(args: &Args) -> Result<(Moment, Moment), Echec> {
     let fin = match args.tape("jusqu-a") {
-        Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, const { socle::paris::HeureDuJour::a(23, 59) }, 59)?,
+        Some(j) => borne(Moment::derniere_seconde_a_paris(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?))?,
         None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
-        Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, socle::paris::HeureDuJour::MINUIT, 0)?,
+        Some(j) => borne(Moment::a_paris(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, socle::paris::HeureDuJour::MINUIT))?,
         None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))

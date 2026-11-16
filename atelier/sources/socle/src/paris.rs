@@ -60,6 +60,12 @@ impl Moment {
         Moment::a_paris_hms(jour, m / 60, m % 60, seconde)
     }
 
+    /// LA DERNIERE SECONDE DE `jour` a Paris (23:59:59) : la fin comprise d'une plage de jours ; `None` hors du
+    /// calendrier.
+    pub fn derniere_seconde_a_paris(jour: Jour) -> Option<Moment> {
+        Moment::a_paris_hms(jour, 23, 59, 59)
+    }
+
     /// L'instant de `jour` a `heure:minute:seconde`, heure de Paris ; `None` hors du calendrier.
     fn a_paris_hms(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Moment> {
         let local = (jour.ordinal() - 719_163) * 86_400 + heure * 3_600;
@@ -294,7 +300,7 @@ impl DelaiEnHeures {
     /// expire ; a la fin d'un jour, minuit du lendemain. Un depart un jour qui ne compte pas court des minuit du premier
     /// jour qui compte.
     pub fn heures_apres(self, depart: Jour, a: HeureDuJour, feries: impl Fn(crate::mois::Annee) -> crate::echec::R<crate::feries::Jours>) -> crate::echec::R<(Jour, HeureDuJour)> {
-        let compte = |j: Jour| -> crate::echec::R<bool> { Ok(crate::date::hors_de_la_semaine(j, 6, &feries)?.is_none()) };
+        let compte = |j: Jour| -> crate::echec::R<bool> { Ok(crate::date::hors_de_la_semaine(j, crate::date::Semaine::DuLundiAuSamedi, &feries)?.is_none()) };
         let (mut j, mut m) = (depart, a.0);
         while !compte(j)? {
             j = j.plus_jours(1)?;
@@ -586,6 +592,18 @@ pub mod ecrit {
             match q {
                 InstantOuJour::Jour(_) => None,
                 InstantOuJour::Instant(m) => Some(m.heure_de_paris()),
+            }
+        }
+
+        /// LE JOUR LIMITE D'UN INSTANT OU D'UN JOUR, celui que dit une echeance ou un butoir : son jour, ou, pour un instant
+        /// a minuit, le jour d'avant (« jusqu'à minuit » finit ce jour-la). Ce jour existe toujours : le premier jour du
+        /// calendrier commence a Paris avant le premier instant (`PREMIER`), aucun instant n'est donc a son minuit.
+        pub fn jour_limite(q: InstantOuJour) -> Jour {
+            match q {
+                InstantOuJour::Instant(m) if m.heure_de_paris() == HeureDuJour::MINUIT => {
+                    super::super::dans_le_calendrier(m.jour_de_paris().ordinal() - 719_163 - 1)
+                }
+                q => q.jour(),
             }
         }
 

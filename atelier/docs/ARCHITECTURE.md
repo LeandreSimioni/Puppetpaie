@@ -201,10 +201,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | période | `Periode` | `socle/src/date.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
 | durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| jour de la semaine | `JourDeLaSemaine` | `socle/src/date.rs` |
+| semaine d'un calendrier (du lundi au vendredi, du lundi au samedi) | `Semaine` | `socle/src/date.rs` |
 | jours ouvrés, jours ouvrables (un compte de jours que le calendrier change en jour : pas une `Duree`) | `JoursOuvres`, `JoursOuvrables` | `socle/src/date.rs` |
 | heure du jour | `HeureDuJour` | `socle/src/paris.rs` |
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
-| délai d'une obligation | `declarations::obligations::Delai` | `declarations/src/obligations.rs` |
+| délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
@@ -218,9 +220,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
   la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent, l'instant limite de l'échéance d'une DSN,
   `declarations::echeance_dsn::EcheanceDite`) ; l'heure qu'une charge saisit (`H:M`, un ou deux chiffres) se lit à sa
-  porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
-  s'écrit aussi en deux champs, `butoir` et `butoir_heure`, où un instant à minuit est la fin du jour d'avant, écrite
-  `24:00` (« jusqu'à minuit »).
+  porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Un instant à minuit est la fin du jour
+  d'avant (« jusqu'à minuit ») : le jour qu'il dit se lit, à un seul endroit, par `jour_et_heure::jour_limite`, pour le
+  butoir d'une obligation (`routes::obligations::Obligation.butoir`, écrit aussi en deux champs, `butoir` et
+  `butoir_heure`, minuit écrit `24:00`) comme pour une échéance du mois (`droit::echeances::Echeance.quand` : la DPAE et
+  la remise du contrat, un jour seul ; le dépôt d'une DSN, midi ; son annule-et-remplace, le minuit qui finit la veille,
+  « avant le 14/12/2026 à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone. Le numéro d'un jour dans
   son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture ; tapé dans une charge (le jour d'effet d'un
   changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
@@ -257,6 +262,13 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   ce que le compilateur tient ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de
   maintien de salaire (`droit::maintien::DureeDUneTranche`) est une durée de droit en jours ou en mois, ou « tant que la
   caisse verse ses indemnités ».
+- **jour de la semaine** : du lundi au dimanche, dans cet ordre ; celui d'un jour (`Jour::jour_de_la_semaine`), ou une
+  case d'une fiche (les jours travaillés d'un permanent, `droit::conges::JoursTravailles`). Il s'écrit et se dit par son
+  nom, la seule liste des noms (`JourDeLaSemaine::NOMS`) ; son numéro ISO (1 le lundi) ne sert qu'à lire une date de
+  semaine ISO 8601.
+- **semaine d'un calendrier** : les jours de la semaine qu'un calendrier compte, du lundi au vendredi (les jours ouvrés,
+  le premier jour de semaine après un CDD) ou du lundi au samedi (les jours ouvrables, les heures de R. 441-3) ;
+  `Semaine::contient`.
 - **jours ouvrés, jours ouvrables** : un compte de jours, jamais négatif, qui n'est pas une durée de droit : il ne
   devient un jour que par **un seul calendrier par règle**, écrit une fois (`socle/src/date.rs`) : du lundi au vendredi
   pour les jours ouvrés (`JoursOuvres::apres`, `avant`, et le premier jour ouvré à partir d'un jour,
@@ -274,9 +286,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   fériés non compris : CSS R. 441-3, quarante-huit heures) ; ni une quantité d'heures de travail, ni une durée mesurée.
   Lu en nombre à sa porte, il ne devient un instant que par `DelaiEnHeures::heures_apres`.
 - **délai d'une obligation** : ce qui fixe, d'un fait, la date ou le moment limite d'une obligation (un signalement, une
-  déclaration d'accident, une attestation) : en jours ouvrés, en jours, en heures hors dimanches et fériés, ou avec la
-  DSN mensuelle du mois de l'événement ; une `enum`, avec la phrase qui le dit, écrite par son cas dans
-  `obligations-base.json`. La fin d'un délai se compte à un seul endroit (`routes::obligations`, `fin_du_delai`).
+  déclaration d'accident, une attestation) : en jours ouvrés, en jours, en heures hors dimanches et fériés (`Delai`, une
+  `enum` qui court d'un fait, avec la phrase qui le dit, écrite par son cas dans `obligations-base.json`), ou, pour le
+  signalement d'un employeur subrogé, avec la DSN mensuelle du mois de l'événement (`AvecLaMensuelle`, sa phrase seule :
+  sa fin est l'échéance de cette DSN). Chaque champ du fichier n'admet que ce qui a un sens pour lui : `delai` et
+  `delai_sans_subrogation` un `Delai`, `delai_avec_subrogation` un `AvecLaMensuelle`. La fin d'un délai se compte à un
+  seul endroit (`routes::obligations`, `fin_du_delai`).
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
   (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de

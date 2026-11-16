@@ -350,9 +350,10 @@ struct NonActif {
 /// Les quatre etapes du mois, dans l'ordre de l'habitude (aucun texte n'impose d'ordre).
 const ORDRE: [QuelleEtape; 4] = [QuelleEtape::Dpae, QuelleEtape::Signature, QuelleEtape::Dsn, QuelleEtape::Documents];
 
-/// L'echeance d'un depot de DSN : `mots` le `jour` a `heure`, d'apres `source`.
-fn echeance_dsn(jour: Jour, heure: &'static str, source: &str) -> Echeance {
-    Echeance { jour, mots: droit::echeances::Tournure::AvantLe, heure, source: source.into() }
+/// L'echeance d'un depot de DSN : avant l'instant `limite` (midi du jour de l'echeance ; minuit qui finit sa veille pour
+/// un annule-et-remplace), d'apres `source`.
+fn echeance_dsn(limite: Moment, source: &str) -> Echeance {
+    Echeance { quand: InstantOuJour::Instant(limite), mots: droit::echeances::Tournure::AvantLe, source: source.into() }
 }
 
 /// Faire signer les contrats du mois : l'apercu, puis la demande.
@@ -2136,7 +2137,7 @@ impl<'a> Moteur<'a> {
         }
         let paies = self.etat_par_engagement(le_mois)?;
         let echeance_de = |ps: &[&Vue], dpae: bool| -> Option<Echeance> {
-            ps.iter().filter_map(|p| p.echeances.as_ref()).map(|e| if dpae { &e.dpae } else { &e.contrat }).min_by_key(|e| e.jour).cloned()
+            ps.iter().filter_map(|p| p.echeances.as_ref()).map(|e| if dpae { &e.dpae } else { &e.contrat }).min_by_key(|e| e.jour()).cloned()
         };
 
         // --- Les colonnes : chaque engagement a son point, la DSN celui de son etablissement.
@@ -2172,7 +2173,7 @@ impl<'a> Moteur<'a> {
                     // Le jour de l'embauche passe, la DPAE qui devait le preceder (L. 1221-10) est en retard ; elle se depose
                     // toujours.
                     let echeance = echeance_de(&siens, true);
-                    let en_retard = siens.iter().filter(|p| p.echeances.as_ref().is_some_and(|e| e.dpae.jour < self.ctx.aujourdhui)).count();
+                    let en_retard = siens.iter().filter(|p| p.echeances.as_ref().is_some_and(|e| e.dpae.jour() < self.ctx.aujourdhui)).count();
                     let etat = match en_retard {
                         0 => "à déposer".to_string(),
                         r if r == n => "à déposer, en retard".to_string(),
@@ -2302,7 +2303,7 @@ impl<'a> Moteur<'a> {
             // Une fiche qui ne dit pas encore son NIC n'a que son siege : sa classe ne le nomme pas.
             return Ok(vec![(ent.nic_principal().cloned().into_iter().collect(), g)]);
         }
-        let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(|e| e.jour));
+        let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(Echeance::jour));
         let mut classes: Vec<(Vec<Nic>, Groupe)> = Vec::new();
         for nic in ent.nics()? {
             let g = self.groupes_dsn_de(mois, Some(&nic))?;
@@ -2331,7 +2332,7 @@ impl<'a> Moteur<'a> {
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<Groupe> {
         let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
-        let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
+        let au_depot = echeance_dsn(echeance.limite()?, "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
         if !partie {
@@ -2354,7 +2355,7 @@ impl<'a> Moteur<'a> {
         // Partie : faite, tant qu'aucun retour ne revient KO. Ce qui la rouvre : une paie modifiee depuis.
         let r = self.etat_remplacement(le_mois, nic)?;
         let libelle = format!("Refaire la DSN (annule-et-remplace, ordre {})…", r.prochain_ordre);
-        let veille = echeance_dsn(r.limite, "à minuit", "Cahier technique DSN 2026.1, § 1.4.2 (atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt)");
+        let veille = echeance_dsn(echeance.limite_de_l_annule_et_remplace()?, "Cahier technique DSN 2026.1, § 1.4.2 (atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt)");
         let modifiee = r.saisie_modifiee == Some(true);
         if modifiee && r.a_envoyer {
             // Un annule-et-remplace deja ecrit montre son chemin ; sinon, le refaire.
@@ -2374,7 +2375,7 @@ impl<'a> Moteur<'a> {
                 None,
                 String::new(),
                 format!("à corriger dans la DSN de {}", suivant.libelle(Graphie::Accentuee)),
-                Some(echeance_dsn(e2.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 (declarations::echeance_dsn)")),
+                Some(echeance_dsn(e2.limite()?, "Cahier technique DSN 2026.1, § 1.4.2 (declarations::echeance_dsn)")),
                 Some(a),
             ));
         }

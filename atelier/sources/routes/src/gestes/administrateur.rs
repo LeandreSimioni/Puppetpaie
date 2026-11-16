@@ -701,8 +701,8 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         }
         GenreDEcheance::Obligation => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
-            let butoir = ob.jour_butoir()?;
-            let quand_dit = ob.quand_dit()?;
+            let butoir = ob.jour_butoir();
+            let quand_dit = ob.quand_dit();
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.est_un_signalement() {
                 fichier = fichier_du_signalement(ctx, &r.cle)?;

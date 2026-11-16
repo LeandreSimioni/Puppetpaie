@@ -25,7 +25,7 @@ use droit::fiche::{
     Lue as _, MotEcrit, NomDeCase, NomDeFiche, Piece,
 };
 use droit::natures::RubriqueDeLaNorme;
-use socle::date::Jour;
+use socle::date::{Jour, JourDeLaSemaine};
 use socle::echec::Echec;
 use socle::fichiers::dossier_du_code;
 use socle::texte::sans_accent;
@@ -1065,11 +1065,11 @@ fn date_iso(s: &str) -> Option<Jour> {
         }
         // Le lundi de la semaine 1 est celui de la semaine du 4 janvier.
         let quatre = Jour::nouveau(an, 1, 4)?;
-        let lundi1 = quatre.ordinal() - i64::from(quatre.jour_de_la_semaine());
+        let lundi1 = quatre.ordinal() - (quatre.jour_de_la_semaine().numero_iso() - 1);
         // Une annee compte 53 semaines si elle commence un jeudi, ou un
         // mercredi quand elle est bissextile ; 52 sinon.
         let premier = Jour::nouveau(an, 1, 1)?.jour_de_la_semaine();
-        let semaines = if premier == 3 || (premier == 2 && socle::date::bissextile(an)) { 53 } else { 52 };
+        let semaines = if premier == JourDeLaSemaine::Jeudi || (premier == JourDeLaSemaine::Mercredi && socle::date::bissextile(an)) { 53 } else { 52 };
         if semaine > semaines {
             return None;
         }

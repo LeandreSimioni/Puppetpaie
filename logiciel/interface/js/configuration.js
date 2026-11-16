@@ -866,7 +866,7 @@ const SECTIONS_FICHE = {
   ],
 };
 
-/* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`droit::conges::JOURS_DE_LA_SEMAINE`). */
+/* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`socle::date::JourDeLaSemaine::NOMS`). */
 const JOURS_DE_LA_SEMAINE = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
 /* Les champs que la machine deduit d'un autre, ou qu'elle connait sans

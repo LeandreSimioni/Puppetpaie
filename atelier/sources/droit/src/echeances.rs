@@ -16,15 +16,17 @@ use serde::Serialize;
 
 use socle::date::{Jour, JoursOuvrables};
 use socle::echec::R;
+use socle::paris::ecrit::jour_et_heure;
+use socle::paris::InstantOuJour;
 
-/// Une echeance : le jour, ce qui le precede (`Tournure`), l'heure s'il y en a une (« à midi »), et le texte depose qui
-/// la donne. Elle se rend dans sa forme (`EcheanceRendue`).
+/// Une echeance : son moment (`quand` : un jour seul, ou l'instant limite, dont l'heure se dit « à midi », « à
+/// minuit »), ce qui le precede (`Tournure`), et le texte depose qui la donne. Elle se rend dans sa forme
+/// (`EcheanceRendue`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(into = "EcheanceRendue")]
 pub struct Echeance {
-    pub jour: Jour,
+    pub quand: InstantOuJour,
     pub mots: Tournure,
-    pub heure: &'static str,
     pub source: String,
 }
 
@@ -56,22 +58,32 @@ impl Tournure {
 }
 
 impl Echeance {
+    /// Une echeance d'un jour seul, sans heure.
+    fn du_jour(jour: Jour, mots: Tournure, source: String) -> Echeance {
+        Echeance { quand: InstantOuJour::Jour(jour), mots, source }
+    }
+
+    /// Le jour qu'elle dit : celui de son moment ; un instant a minuit est la fin du jour d'avant
+    /// (`jour_et_heure::jour_limite` : « avant le 14/12/2026 à minuit »).
+    pub fn jour(&self) -> Jour {
+        jour_et_heure::jour_limite(self.quand)
+    }
+
     /// « avant le 14/11/2026 », « avant le 15/12/2026 à midi ».
     pub fn texte(&self) -> String {
-        Self::dire(self.mots.longue(), &self.jour.jj_mm_aaaa(), self.heure)
+        self.dire(self.mots.longue(), &self.jour().jj_mm_aaaa())
     }
 
     /// Sans l'annee, dans sa tournure courte : « avant le 14/11 », « avant le 15/12 à midi », « jusqu'au 24/11 ». C'est
     /// ce qu'ecrit une case du panneau.
     pub fn court(&self) -> String {
-        Self::dire(self.mots.courte(), &self.jour.jj_mm(), self.heure)
+        self.dire(self.mots.courte(), &self.jour().jj_mm())
     }
 
-    fn dire(mots: &str, jour_dit: &str, heure: &str) -> String {
-        if heure.is_empty() {
-            format!("{mots} {jour_dit}")
-        } else {
-            format!("{mots} {jour_dit} {heure}")
+    fn dire(&self, mots: &str, jour_dit: &str) -> String {
+        match jour_et_heure::heure(self.quand) {
+            None => format!("{mots} {jour_dit}"),
+            Some(h) => format!("{mots} {jour_dit} {}", h.dite()),
         }
     }
 }
@@ -87,7 +99,7 @@ struct EcheanceRendue {
 
 impl From<Echeance> for EcheanceRendue {
     fn from(e: Echeance) -> EcheanceRendue {
-        EcheanceRendue { jour: e.jour, texte: e.texte(), court: e.court(), source: e.source }
+        EcheanceRendue { jour: e.jour(), texte: e.texte(), court: e.court(), source: e.source }
     }
 }
 
@@ -96,12 +108,7 @@ const REMISE_SELON_LA_LOI: JoursOuvrables = JoursOuvrables::de(2);
 
 /// La DPAE d'un engagement qui commence le `debut` : avant ce jour (L. 1221-10).
 pub fn dpae(debut: &Jour) -> Echeance {
-    Echeance {
-        jour: *debut,
-        mots: Tournure::AvantLe,
-        heure: "",
-        source: "Code du travail, art. L. 1221-10 (atelier/reference/sources/code-du-travail/xml/L1221-10.xml)".into(),
-    }
+    Echeance::du_jour(*debut, Tournure::AvantLe, "Code du travail, art. L. 1221-10 (atelier/reference/sources/code-du-travail/xml/L1221-10.xml)".into())
 }
 
 /// La remise du contrat a duree determinee d'un engagement qui commence le `debut` : deux jours ouvrables apres
@@ -111,18 +118,13 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
     // Les feries de la compagnie (sa fiche) : ceux qu'elle chome ne sont pas ouvrables (L. 3141-3).
     let feries = |a: socle::mois::Annee| socle::feries::chomes(a, chomes);
     let loi = REMISE_SELON_LA_LOI.apres(*debut, feries)?;
-    let mut e = Echeance {
-        jour: loi,
-        mots: Tournure::AuPlusTardLe,
-        heure: "",
-        source: "Code du travail, art. L. 1242-13 (atelier/reference/sources/code-du-travail/xml/L1242-13.xml)".into(),
-    };
-    let Some(r) = crate::clauses::releve(idcc)?.and_then(|c| c.remise_du_contrat) else { return Ok(e) };
+    let selon_la_loi = || Echeance::du_jour(loi, Tournure::AuPlusTardLe, "Code du travail, art. L. 1242-13 (atelier/reference/sources/code-du-travail/xml/L1242-13.xml)".into());
+    let Some(r) = crate::clauses::releve(idcc)?.and_then(|c| c.remise_du_contrat) else { return Ok(selon_la_loi()) };
     if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| crate::fiche::CodeEmploiFt::from(m) == *c)) {
         let jour = r.jours_ouvrables_avant.avant(*debut, feries)?;
-        if jour < e.jour {
-            e = Echeance { jour, mots: Tournure::AuPlusTardLe, heure: "", source: format!("{}, art. {}", crate::clauses::nom(idcc), r.article) };
+        if jour < loi {
+            return Ok(Echeance::du_jour(jour, Tournure::AuPlusTardLe, format!("{}, art. {}", crate::clauses::nom(idcc), r.article)));
         }
     }
-    Ok(e)
+    Ok(selon_la_loi())
 }

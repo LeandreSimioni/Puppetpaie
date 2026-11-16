@@ -266,9 +266,9 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
 fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option<socle::date::Jour>> {
     let salarie = salarie_de(e)?;
     let debut = debut_de(e)?;
-    // Le premier jour de semaine apres le terme (0 = lundi ... 6 = dimanche).
+    // Le premier jour de semaine (du lundi au vendredi) apres le terme.
     let mut reprise = fin.plus_jours(1)?;
-    while reprise.jour_de_la_semaine() >= 5 {
+    while !socle::date::Semaine::DuLundiAuVendredi.contient(reprise.jour_de_la_semaine()) {
         reprise = reprise.plus_jours(1)?;
     }
     let mut mois = vec![fin.mois_civil()];

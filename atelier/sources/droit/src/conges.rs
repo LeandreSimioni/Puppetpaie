@@ -4,7 +4,7 @@
 
 
 use crate::fiche::Lue;
-use socle::date::{Jour, Periode};
+use socle::date::{Jour, JourDeLaSemaine, Periode, Semaine};
 use socle::feries;
 use socle::echec::R;
 use socle::grandeurs::{Heures, HeuresParUnite, Jours, Montant};
@@ -13,11 +13,9 @@ use socle::num::Decimal;
 /// Le nombre de jours ouvrables entre deux dates, bornes incluses : du lundi
 /// au samedi, moins les feries que l'entreprise chome (`chomes` : ce que sa fiche en dit, `ChampsEntreprise::feries_chomes`).
 pub fn jours_ouvrables(periode: &Periode, chomes: Option<&str>) -> R<Jours> {
-    jours_de_semaine(periode, chomes, 6)
+    let chomes = feries::chomes_entre(periode, chomes)?;
+    Ok(Jours::de_dates(periode.jours().filter(|jour| Semaine::DuLundiAuSamedi.contient(jour.jour_de_la_semaine()) && !chomes.iter().any(|(j, _)| j == jour)).count()))
 }
-
-/// Les jours de la semaine, dans l'ordre (lundi = 0), tels que la fiche les ecrit.
-pub const JOURS_DE_LA_SEMAINE: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
 /// LES JOURS TRAVAILLES D'UN PERMANENT : les jours de la semaine que son horaire programme, lus sur sa fiche
 /// (`jours_travailles`, datee comme toute la fiche). Aucun texte ne les fixe : seule la compagnie les connait, et une
@@ -45,7 +43,7 @@ impl JoursTravailles {
 
     /// Les jours que dit la case `jours_travailles` d'une fiche (`qui` : la cle du salarie). Refus : une case que la fiche
     /// ne dit pas, une liste vide.
-    pub fn de_la_case(case: &Option<Vec<crate::fiche::JourDeLaSemaine>>, qui: &str) -> R<Self> {
+    pub fn de_la_case(case: &Option<Vec<JourDeLaSemaine>>, qui: &str) -> R<Self> {
         let Some(liste) = case.dite() else {
             return Err(socle::echec::cle(
                 format!(
@@ -93,13 +91,14 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
     pub fn en_mots(&self) -> String {
         let rangs: Vec<usize> = (0..7).filter(|i| self.jours[*i]).collect();
         let suite = rangs.windows(2).all(|w| w[1] == w[0] + 1);
+        let nom = |i: usize| JourDeLaSemaine::TOUS[i].nom();
         match rangs.as_slice() {
-            [seul] => format!("le {}", JOURS_DE_LA_SEMAINE[*seul]),
+            [seul] => format!("le {}", nom(*seul)),
             [premier, .., dernier] if suite => {
-                format!("du {} au {}", JOURS_DE_LA_SEMAINE[*premier], JOURS_DE_LA_SEMAINE[*dernier])
+                format!("du {} au {}", nom(*premier), nom(*dernier))
             }
             _ => {
-                let noms: Vec<String> = rangs.iter().map(|i| format!("le {}", JOURS_DE_LA_SEMAINE[*i])).collect();
+                let noms: Vec<String> = rangs.iter().map(|i| format!("le {}", nom(*i))).collect();
                 let (dernier, tete) = noms.split_last().expect("au moins un jour");
                 format!("{} et {}", tete.join(", "), dernier)
             }
@@ -130,12 +129,6 @@ pub fn feries_non_payes(
         }
     }
     Ok(out)
-}
-
-/// Les jours de `periode` dont le rang dans la semaine (lundi = 0) est sous `jusqu_a`, moins les feries chomes.
-fn jours_de_semaine(periode: &Periode, dits: Option<&str>, jusqu_a: u32) -> R<Jours> {
-    let chomes = feries::chomes_entre(periode, dits)?;
-    Ok(Jours::de_dates(periode.jours().filter(|jour| jour.jour_de_la_semaine() < jusqu_a && !chomes.iter().any(|(j, _)| j == jour)).count()))
 }
 
 /// LES HEURES D'UN JOUR TRAVAILLE d'un contrat paye au mois de quotite `quotite` (heures par mois) : la duree

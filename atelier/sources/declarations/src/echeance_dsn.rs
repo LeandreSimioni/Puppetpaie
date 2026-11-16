@@ -43,8 +43,6 @@ use socle::paris::{ecrit::jour_et_heure, HeureDuJour, InstantOuJour, Moment};
 /// L'heure limite du depot le jour de l'echeance, midi (cahier technique DSN 2026.1, § 1.4.2).
 pub const HEURE_LIMITE: HeureDuJour = HeureDuJour::MIDI;
 
-const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
-
 /// Ce que la reponse d'une route porte de ses textes et de ses inferences.
 const TEXTES: [&str; 4] = [
     "Code de la sécurité sociale, art. R. 243-6, II : le 5 du mois suivant à partir de cinquante salariés quand la paie est faite dans le mois, le 15 sinon (atelier/reference/sources/echeances-dsn/legi-securite-sociale-R243-6-LEGIARTI000034668597.xml).",
@@ -90,7 +88,7 @@ pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: Mois) -> R<Echeanc
 }
 
 fn lisible(j: &Jour) -> String {
-    format!("{} {}", JOURS[j.jour_de_la_semaine() as usize], j.jj_mm_aaaa())
+    format!("{} {}", j.jour_de_la_semaine(), j.jj_mm_aaaa())
 }
 
 impl Echeance {
@@ -146,6 +144,15 @@ impl Echeance {
         match jour_et_heure::a_la_minute(self.jour, HEURE_LIMITE) {
             Some(InstantOuJour::Instant(m)) => Ok(m),
             _ => Err(refus(format!("L'échéance du {} {} n'est pas une heure de Paris.", self.jour.jj_mm_aaaa(), HEURE_LIMITE.dite()))),
+        }
+    }
+
+    /// L'instant limite d'un annule-et-remplace integral : « la veille a minuit » (cahier technique § 1.4.2), le minuit
+    /// qui finit la `veille`, soit le debut du jour de l'echeance (`jour_et_heure::jour_limite` en redonne la veille).
+    pub fn limite_de_l_annule_et_remplace(&self) -> R<Moment> {
+        match jour_et_heure::a_la_minute(self.jour, HeureDuJour::MINUIT) {
+            Some(InstantOuJour::Instant(m)) => Ok(m),
+            _ => Err(refus(format!("Le {} à minuit n'est pas une heure de Paris.", self.jour.jj_mm_aaaa()))),
         }
     }
 

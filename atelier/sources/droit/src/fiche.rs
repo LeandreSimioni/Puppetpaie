@@ -2627,10 +2627,16 @@ impl ModeleBulletin {
     }
 }
 
-choix! {
-    pub enum JourDeLaSemaine {
-        Lundi = "lundi", Mardi = "mardi", Mercredi = "mercredi", Jeudi = "jeudi", Vendredi = "vendredi", Samedi = "samedi",
-        Dimanche = "dimanche",
+use socle::date::JourDeLaSemaine;
+
+/// Un jour de la semaine est un choix d'une case (les jours travailles) : ses valeurs sont ses noms.
+impl FormeDeCase for JourDeLaSemaine {
+    const VALEURS: &'static [&'static str] = &JourDeLaSemaine::NOMS;
+}
+
+impl Choix for JourDeLaSemaine {
+    fn code(&self) -> &'static str {
+        self.nom()
     }
 }
 

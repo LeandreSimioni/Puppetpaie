@@ -210,26 +210,118 @@ impl<U: Unite> std::fmt::Display for Duree<U> {
 // (`feries::feries`), ou ceux que la compagnie chome (`|a| feries::chomes(a, dits)`, sa fiche) ; chaque regle garde les
 // siens.
 
-/// Les noms des jours de la semaine, du lundi (0) au dimanche (6).
-const NOMS_DES_JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+/// UN JOUR DE LA SEMAINE (« Le glossaire »), du lundi au dimanche, dans cet ordre : celui d'un jour
+/// (`Jour::jour_de_la_semaine`), ou une case d'une fiche (les jours travailles d'un permanent). Il s'ecrit et se dit par
+/// son nom (« lundi »), la seule liste des noms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum JourDeLaSemaine {
+    Lundi,
+    Mardi,
+    Mercredi,
+    Jeudi,
+    Vendredi,
+    Samedi,
+    Dimanche,
+}
 
-/// LE CALENDRIER D'UNE SEMAINE DE `jours` JOURS (5 : du lundi au vendredi, les jours ouvres ; 6 : au samedi, les jours
-/// ouvrables), moins les feries qu'on lui donne : pourquoi `jour` n'en est pas (« samedi », « dimanche », « Assomption,
-/// fête légale »), ou `None` s'il en est.
-pub(crate) fn hors_de_la_semaine(jour: Jour, jours: u32, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Option<String>> {
-    let rang = jour.jour_de_la_semaine();
-    if rang >= jours {
-        return Ok(Some(NOMS_DES_JOURS[rang as usize].to_string()));
+impl JourDeLaSemaine {
+    /// Tous, du lundi au dimanche.
+    pub const TOUS: [JourDeLaSemaine; 7] = [
+        JourDeLaSemaine::Lundi,
+        JourDeLaSemaine::Mardi,
+        JourDeLaSemaine::Mercredi,
+        JourDeLaSemaine::Jeudi,
+        JourDeLaSemaine::Vendredi,
+        JourDeLaSemaine::Samedi,
+        JourDeLaSemaine::Dimanche,
+    ];
+
+    /// Leurs noms, du lundi au dimanche, tels qu'ils s'ecrivent et se disent.
+    pub const NOMS: [&'static str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+
+    /// Son nom (« lundi »).
+    pub fn nom(self) -> &'static str {
+        JourDeLaSemaine::NOMS[self as usize]
+    }
+
+    /// Son numero dans une date de semaine ISO 8601 (`AAAA-Www-j`) : 1 le lundi, 7 le dimanche ; il ne sert qu'a la
+    /// lecture de cette ecriture.
+    pub fn numero_iso(self) -> i64 {
+        self as i64 + 1
+    }
+
+    /// Le jour de rang `rang` depuis le lundi (0), modulo la semaine.
+    fn de_rang(rang: i64) -> JourDeLaSemaine {
+        JourDeLaSemaine::TOUS[rang.rem_euclid(7) as usize]
+    }
+}
+
+impl std::fmt::Display for JourDeLaSemaine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+impl serde::Serialize for JourDeLaSemaine {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JourDeLaSemaine {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JourDeLaSemaine, D::Error> {
+        /// Son nom, et rien d'autre ; un autre mot se refuse en disant les noms.
+        struct ParSonNom;
+        impl serde::de::Visitor<'_> for ParSonNom {
+            type Value = JourDeLaSemaine;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("variant identifier")
+            }
+            fn visit_str<E: serde::de::Error>(self, mot: &str) -> Result<JourDeLaSemaine, E> {
+                match JourDeLaSemaine::TOUS.into_iter().find(|j| j.nom() == mot) {
+                    Some(j) => Ok(j),
+                    None => Err(E::unknown_variant(mot, &JourDeLaSemaine::NOMS)),
+                }
+            }
+        }
+        d.deserialize_str(ParSonNom)
+    }
+}
+
+/// LA SEMAINE D'UN CALENDRIER (« Le glossaire ») : du lundi au vendredi (les jours ouvres), ou du lundi au samedi (les
+/// jours ouvrables).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Semaine {
+    DuLundiAuVendredi,
+    DuLundiAuSamedi,
+}
+
+impl Semaine {
+    /// Le jour `j` de la semaine en est-il ?
+    pub fn contient(self, j: JourDeLaSemaine) -> bool {
+        match self {
+            Semaine::DuLundiAuVendredi => j <= JourDeLaSemaine::Vendredi,
+            Semaine::DuLundiAuSamedi => j <= JourDeLaSemaine::Samedi,
+        }
+    }
+}
+
+/// LE CALENDRIER D'UNE SEMAINE (`semaine`), moins les feries qu'on lui donne : pourquoi `jour` n'en est pas (« samedi »,
+/// « dimanche », « Assomption, fête légale »), ou `None` s'il en est.
+pub(crate) fn hors_de_la_semaine(jour: Jour, semaine: Semaine, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Option<String>> {
+    let jds = jour.jour_de_la_semaine();
+    if !semaine.contient(jds) {
+        return Ok(Some(jds.nom().to_string()));
     }
     Ok(feries(jour.annee())?.into_iter().find(|(j, _)| *j == jour).map(|(_, nom)| format!("{}, fête légale", nom)))
 }
 
-/// Le `n`-ieme jour de la semaine de `jours` jours apres `depuis` (`plus_tard`) ou avant lui, `depuis` exclu.
-fn compter(depuis: Jour, n: u32, plus_tard: bool, jours: u32, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+/// Le `n`-ieme jour de `semaine` apres `depuis` (`plus_tard`) ou avant lui, `depuis` exclu.
+fn compter(depuis: Jour, n: u32, plus_tard: bool, semaine: Semaine, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
     let (mut jour, mut reste) = (depuis, n);
     while reste > 0 {
         jour = jour.plus_jours(if plus_tard { 1 } else { -1 })?;
-        if hors_de_la_semaine(jour, jours, feries)?.is_none() {
+        if hors_de_la_semaine(jour, semaine, feries)?.is_none() {
             reste -= 1;
         }
     }
@@ -250,19 +342,19 @@ impl JoursOuvres {
 
     /// Le jour ouvre qui tombe ce nombre de jours ouvres apres `depuis`, `depuis` exclu.
     pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
-        compter(depuis, self.0, true, 5, &feries)
+        compter(depuis, self.0, true, Semaine::DuLundiAuVendredi, &feries)
     }
 
     /// Le jour ouvre qui tombe ce nombre de jours ouvres avant `depuis`, `depuis` exclu.
     pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
-        compter(depuis, self.0, false, 5, &feries)
+        compter(depuis, self.0, false, Semaine::DuLundiAuVendredi, &feries)
     }
 
     /// LE PREMIER JOUR OUVRE A PARTIR DE `jour`, lui compris, et chaque jour saute avec ce qu'il est (« samedi »,
     /// « Assomption, fête légale »).
     pub fn premier_a_partir_de(jour: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<(Jour, Vec<(Jour, String)>)> {
         let (mut jour, mut sautes) = (jour, Vec::new());
-        while let Some(pourquoi) = hors_de_la_semaine(jour, 5, &feries)? {
+        while let Some(pourquoi) = hors_de_la_semaine(jour, Semaine::DuLundiAuVendredi, &feries)? {
             sautes.push((jour, pourquoi));
             jour = jour.plus_jours(1)?;
         }
@@ -290,13 +382,13 @@ impl JoursOuvrables {
 
     /// Le jour ouvrable qui tombe ce nombre de jours ouvrables apres `depuis`, `depuis` exclu.
     pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
-        compter(depuis, self.0, true, 6, &feries)
+        compter(depuis, self.0, true, Semaine::DuLundiAuSamedi, &feries)
     }
 
     /// Le jour ouvrable qui tombe ce nombre de jours ouvrables avant `depuis`, `depuis` exclu (« les quinze jours
     /// ouvrables précédant »).
     pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
-        compter(depuis, self.0, false, 6, &feries)
+        compter(depuis, self.0, false, Semaine::DuLundiAuSamedi, &feries)
     }
 }
 
@@ -891,9 +983,9 @@ impl Jour {
         jours_du_mois(self.an, self.mois)
     }
 
-    /// 0 = lundi ... 6 = dimanche.
-    pub fn jour_de_la_semaine(&self) -> u32 {
-        ((self.ordinal() + 6) % 7) as u32
+    /// Son jour de la semaine.
+    pub fn jour_de_la_semaine(&self) -> JourDeLaSemaine {
+        JourDeLaSemaine::de_rang(self.ordinal() + 6)
     }
 
     /// Le mois civil du jour.

@@ -188,8 +188,6 @@ const HEURE_DE_CONNAISSANCE_PRESUMEE: HeureDuJour = HeureDuJour::MINUIT;
 /// `HEURE_DE_CONNAISSANCE_PRESUMEE`).
 const HEURE_A_VERIFIER: &str = "Minuit par défaut : si vous connaissez l'heure, la corriger donne plus de temps.";
 
-const JOURS: [&str; 7] =["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
-
 // ------------------------------------------------------------------ les donnees
 
 /// `obligations-base.json`, lu par sa forme (`declarations::obligations::base`, son seul lecteur).
@@ -223,19 +221,31 @@ fn lendemain(j: Jour) -> R<Jour> {
     j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 
-fn veille(j: Jour) -> R<Jour> {
-    j.plus_jours(-1).map_err(|m| m.reclasser(Classe::CalculImpossible))
+
+/// Les feries de l'annee `a`, tels que le calendrier les saute (`f` : les chomes de la compagnie, ou les fetes legales) ;
+/// un fichier des feries qui ne se lit pas est `Illisible`.
+fn feries_lus(f: impl Fn(socle::mois::Annee) -> R<socle::feries::Jours>) -> impl Fn(socle::mois::Annee) -> R<socle::feries::Jours> {
+    move |a| f(a).map_err(|m| m.reclasser(Classe::Illisible))
+}
+
+/// Ce qui fait echouer un compte du calendrier : ses feries illisibles (`feries_lus`) le restent ; sinon le compte sort
+/// du calendrier.
+fn compte_impossible(m: socle::echec::Echec) -> socle::echec::Echec {
+    match m.classe {
+        Some(Classe::Illisible) => m,
+        _ => m.reclasser(Classe::CalculImpossible),
+    }
 }
 
 /// LA FIN D'UN DELAI qui court de `depart` (`quoi` : sa cle dans la base) : en jours ouvres, sur les feries que la
 /// compagnie chome (sa fiche, `feries::chomes`) ; en jours ; en heures, dimanches et onze fetes legales non compris
 /// (R. 441-3), depuis l'heure du depart -- sans heure dite, minuit (`HEURE_DE_CONNAISSANCE_PRESUMEE`, l'echeance la plus
-/// tot). Un delai « avec la mensuelle » ne court pas d'un depart : la base qui le donne ici refuse.
-fn fin_du_delai(ctx: &Contexte, delai: &Delai, depart: InstantOuJour, quoi: &str) -> R<InstantOuJour> {
+/// tot).
+fn fin_du_delai(ctx: &Contexte, delai: &Delai, depart: InstantOuJour) -> R<InstantOuJour> {
     match delai {
         Delai::JoursOuvres { jours, .. } => {
             let dits = ctx.entreprise.feries_chomes();
-            let jour = jours.apres(depart.jour(), |a: socle::mois::Annee| socle::feries::chomes(a, dits)).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
+            let jour = jours.apres(depart.jour(), feries_lus(|a| socle::feries::chomes(a, dits))).map_err(compte_impossible)?;
             Ok(InstantOuJour::Jour(jour))
         }
         Delai::Jours { jours, .. } => Ok(InstantOuJour::Jour(plus(depart.jour(), *jours)?)),
@@ -244,37 +254,27 @@ fn fin_du_delai(ctx: &Contexte, delai: &Delai, depart: InstantOuJour, quoi: &str
                 Some(h) => h,
                 None => HEURE_DE_CONNAISSANCE_PRESUMEE,
             };
-            let (jour, heure) = heures.heures_apres(depart.jour(), a, socle::feries::feries).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
+            let (jour, heure) = heures.heures_apres(depart.jour(), a, feries_lus(socle::feries::feries)).map_err(compte_impossible)?;
             jour_et_heure::a_la_minute(jour, heure)
                 .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : {} n'est pas une heure de Paris le {}.", heure, jour.jj_mm_aaaa())))
         }
-        Delai::AvecLaMensuelle { .. } => Err(declarations::obligations::livree(quoi).reclasser(Classe::Manque)),
     }
 }
 
 // ---------------------------------------------------------------- les phrases
 
 fn lisible(j: &Jour) -> String {
-    format!("{} {}", JOURS[j.jour_de_la_semaine() as usize], j.jj_mm_aaaa())
+    format!("{} {}", j.jour_de_la_semaine(), j.jj_mm_aaaa())
 }
 
-/// LE JOUR BUTOIR, tel que l'obligation le dit et l'ecrit : celui de la fin du delai ; un instant a minuit est la fin du
-/// jour d'avant (« jusqu'à minuit », ecrit `24:00`). Son heure se lit de la fin elle-meme (`jour_et_heure::heure` : aucune
-/// pour un jour seul ; `HeureDuJour::MINUIT`, la fin du jour butoir).
-fn jour_du_butoir(fin: InstantOuJour) -> R<Jour> {
-    match jour_et_heure::heure(fin) {
-        Some(HeureDuJour::MINUIT) => veille(fin.jour()),
-        _ => Ok(fin.jour()),
-    }
-}
-
-/// LE BUTOIR ECRIT EN DEUX CHAMPS : `butoir`, le jour butoir (`AAAA-MM-JJ`), et `butoir_heure`, son heure `HH:MM`
-/// (`24:00` : jusqu'a minuit) ; `null` l'un et l'autre quand ils manquent.
+/// LE BUTOIR ECRIT EN DEUX CHAMPS : `butoir`, le jour butoir (`AAAA-MM-JJ`, `jour_et_heure::jour_limite` : un instant a
+/// minuit est la fin du jour d'avant), et `butoir_heure`, son heure `HH:MM` (`24:00` : jusqu'a minuit) ; `null` l'un et
+/// l'autre quand ils manquent.
 fn butoir_ecrit<S: serde::Serializer>(fin: &Option<InstantOuJour>, s: S) -> Result<S::Ok, S::Error> {
-    use serde::ser::{Error as _, SerializeMap as _};
+    use serde::ser::SerializeMap as _;
     let (jour, heure) = match fin {
         Some(f) => {
-            let j = jour_du_butoir(*f).map_err(|e| S::Error::custom(e.phrase))?;
+            let j = jour_et_heure::jour_limite(*f);
             let heure = match jour_et_heure::heure(*f) {
                 None => None,
                 Some(HeureDuJour::MINUIT) => Some("24:00".to_string()),
@@ -720,7 +720,7 @@ impl Obligation {
 
     /// Pose l'etat, la date butoir et la phrase d'une obligation dont on connait le depart et la butoir.
     fn conclure(&mut self, aujourdhui: Jour, depart: Option<&Depart>, fin: InstantOuJour, delai: &str, fait: Option<Fait>) -> R<()> {
-        let butoir = jour_du_butoir(fin)?;
+        let butoir = jour_et_heure::jour_limite(fin);
         let quand_butoir = match jour_et_heure::heure(fin) {
             Some(HeureDuJour::MINUIT) => format!("le {}, jusqu'à minuit", lisible(&butoir)),
             Some(h) => format!("le {} {}", lisible(&butoir), h.dite()),
@@ -769,7 +769,7 @@ impl Obligation {
     /// La date butoir telle que l'ecran la lit (`butoir_dit`, `butoir_en_clair`) ; absente sans butoir. Et le delai et
     /// son point de depart, en une phrase (`delai_dit`).
     fn dire_le_butoir(mut self) -> R<Obligation> {
-        self.butoir_dit = self.butoir_en_clair()?;
+        self.butoir_dit = self.butoir_en_clair();
         self.delai_dit = self.delai_en_clair();
         // LE JOUR OU LA COMPAGNIE L'A SU se dit la ou le delai en court (`arret-connaissance`) : l'accident, et le
         // signalement d'un arret sans subrogation -- subroge, il court du mois de l'arret.
@@ -800,32 +800,32 @@ impl Obligation {
 
     /// « au plus tard le 16/10/2026 à 10:00 » : la date butoir (`butoir`, `butoir_heure`), telle que l'ecran la dit ;
     /// `None` sans butoir.
-    pub(crate) fn butoir_en_clair(&self) -> R<Option<String>> {
-        let Some(fin) = self.butoir else { return Ok(None) };
-        let jour = jour_du_butoir(fin)?;
+    pub(crate) fn butoir_en_clair(&self) -> Option<String> {
+        let fin = self.butoir?;
+        let jour = jour_et_heure::jour_limite(fin);
         // Jusqu'a minuit, le jour se dit seul ; une heure s'ecrit `HH:MM`.
         let heure = match jour_et_heure::heure(fin) {
             Some(HeureDuJour::MINUIT) | None => String::new(),
             Some(h) => format!(" à {}", h),
         };
-        Ok(Some(format!("au plus tard le {}{}", jour.jj_mm_aaaa(), heure)))
+        Some(format!("au plus tard le {}{}", jour.jj_mm_aaaa(), heure))
     }
 
     /// « le 16/10/2026 à 10:00 », « le 16/10/2026, jusqu'à minuit » : la date butoir dans le tableau de l'administrateur ;
     /// `None` sans butoir.
-    pub(crate) fn quand_dit(&self) -> R<Option<String>> {
-        let Some(fin) = self.butoir else { return Ok(None) };
-        let jour = jour_du_butoir(fin)?;
-        Ok(Some(match jour_et_heure::heure(fin) {
+    pub(crate) fn quand_dit(&self) -> Option<String> {
+        let fin = self.butoir?;
+        let jour = jour_et_heure::jour_limite(fin);
+        Some(match jour_et_heure::heure(fin) {
             Some(HeureDuJour::MINUIT) => format!("le {}, jusqu'à minuit", jour.jj_mm_aaaa()),
             Some(h) => format!("le {} à {}", jour.jj_mm_aaaa(), h),
             None => format!("le {}", jour.jj_mm_aaaa()),
-        }))
+        })
     }
 
-    /// Le jour butoir : le dernier jour ou elle se fait (`jour_du_butoir`) ; aucun sans butoir.
-    pub(crate) fn jour_butoir(&self) -> R<Option<Jour>> {
-        self.butoir.map(jour_du_butoir).transpose()
+    /// Le jour butoir : le dernier jour ou elle se fait (`jour_et_heure::jour_limite`) ; aucun sans butoir.
+    pub(crate) fn jour_butoir(&self) -> Option<Jour> {
+        self.butoir.map(jour_et_heure::jour_limite)
     }
 
     /// « Dans les 48 heures — à compter de la connaissance de l'arrêt, le 02/11/2026. » : le delai et son point de
@@ -946,15 +946,10 @@ fn signalement_dsn(
             "La subrogation de cet arrêt n'est pas dite : c'est elle qui fixe le délai (cinq jours ouvrés sans subrogation, avec la DSN du mois avec ; CSS R. 133-14, II).",
         ));
     };
-    let subroge = subrogation == droit::arrets::SubrogationDeLArret::Oui;
-    m.subrogation = Some(subroge);
-    let (d, quoi) = if subroge {
-        (o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?, "delai_avec_subrogation")
-    } else {
-        (o.delai_de(&o.delai_sans_subrogation, "delai_sans_subrogation")?, "delai_sans_subrogation")
-    };
-    match d {
-        Delai::AvecLaMensuelle { dit } => {
+    m.subrogation = Some(subrogation == droit::arrets::SubrogationDeLArret::Oui);
+    match subrogation {
+        droit::arrets::SubrogationDeLArret::Oui => {
+            let dit = &o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?.dit;
             // AVEC LA MENSUELLE, la date butoir est l'echeance de la DSN mensuelle du mois de l'evenement (R. 133-14, II,
             // premier alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou
             // un ferie (R. 133-14, I), a midi (cahier technique § 1.4.2). INFERENCE : le report de la mensuelle vaut pour le
@@ -966,8 +961,9 @@ fn signalement_dsn(
             let ev = Depart::du_jour(evenement, "le jour de l'événement (sa DSN mensuelle est celle de son mois)", None);
             m.conclure(aujourdhui, Some(&ev), InstantOuJour::Instant(echeance.limite()?), dit, fait)?;
         }
-        d => {
-            let fin = fin_du_delai(ctx, d, depart.quand, quoi)?;
+        droit::arrets::SubrogationDeLArret::Non => {
+            let d = o.delai_de(&o.delai_sans_subrogation, "delai_sans_subrogation")?;
+            let fin = fin_du_delai(ctx, d, depart.quand)?;
             m.conclure(aujourdhui, Some(&depart), fin, d.dit(), fait)?;
         }
     }
@@ -1118,7 +1114,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     if let Some((depart, fait)) = rectificatif_du(a.prolongations, envois) {
         let mut m = Obligation::squelette(CleDObligation::SignalementArretRectificatif, o);
         let d = o.delai_de(&o.delai, "delai")?;
-        let fin = fin_du_delai(ctx, d, depart.quand, "delai")?;
+        let fin = fin_du_delai(ctx, d, depart.quand)?;
         m.conclure(aujourdhui, Some(&depart), fin, d.dit(), fait)?;
         out.push(m);
     }
@@ -1131,7 +1127,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         match (debut, connu_de_l_arret(o)?) {
             (Some(_), Some(depart)) => {
                 let d = o.delai_de(&o.delai, "delai")?;
-                let fin = fin_du_delai(ctx, d, depart.quand, "delai")?;
+                let fin = fin_du_delai(ctx, d, depart.quand)?;
                 let fait = dit_fait(fiche.attestation_salaire, o);
                 m.conclure(aujourdhui, Some(&depart), fin, d.dit(), fait)?;
                 out.push(m);
@@ -1154,7 +1150,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
         match depart {
             None => out.push(m.indeterminee("La date de l'accident n'est pas saisie : les quarante-huit heures ne se comptent pas.")),
             Some(depart) => {
-                let fin = fin_du_delai(ctx, d, depart.quand, "delai")?;
+                let fin = fin_du_delai(ctx, d, depart.quand)?;
                 let fait = dit_fait(fiche.accident_declare, o);
                 // LES SUITES : une fois declaree, les reserves motivees (R. 441-6) ; la feuille d'accident (L. 441-5).
                 let mut suites = Vec::new();
@@ -1187,8 +1183,8 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
             None => out.push(m.indeterminee("Le dernier jour travaillé de cet arrêt est illisible.")),
             Some(debut) => {
                 let d = o.delai_de(&o.delai, "delai")?;
-                let fin = fin_du_delai(ctx, d, InstantOuJour::Jour(debut), "delai")?;
-                let butoir = jour_du_butoir(fin)?;
+                let fin = fin_du_delai(ctx, d, InstantOuJour::Jour(debut))?;
+                let butoir = jour_et_heure::jour_limite(fin);
                 let mut m = m;
                 m.delai = Some(d.dit().to_string());
                 m.depart = Some(Depart::du_jour(debut, "la cessation du travail", None).dit());
@@ -1224,7 +1220,7 @@ pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[
     let o = &n.signalement_fin_contrat;
     let mut m = Obligation::squelette(CleDObligation::SignalementFinContrat, o);
     let d = o.delai_de(&o.delai, "delai")?;
-    let butoir = fin_du_delai(ctx, d, InstantOuJour::Jour(fin), "delai")?;
+    let butoir = fin_du_delai(ctx, d, InstantOuJour::Jour(fin))?;
     let fait = match cle {
         Some(c) => fctu_depose(journal, c, &fin)?,
         None => None,
@@ -1686,7 +1682,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
         .iter()
         .map(|o| {
             let libelle: String = o.libelle.chars().take(1).flat_map(char::to_lowercase).chain(o.libelle.chars().skip(1)).collect();
-            let quand = match (o.etat == EtatDObligation::ALaChargeDuSalarie, o.butoir_en_clair()?) {
+            let quand = match (o.etat == EtatDObligation::ALaChargeDuSalarie, o.butoir_en_clair()) {
                 (true, _) => " (par le salarié)".to_string(),
                 (false, Some(b)) => format!(" ({})", b),
                 (false, None) => String::new(),

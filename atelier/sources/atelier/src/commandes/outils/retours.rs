@@ -31,18 +31,18 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     super::code(faire(cadre, args))
 }
 
-/// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
+/// La plage : `--depuis` et `--jusqu-a` (inclus : du debut de l'un a la fin de l'autre), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
-    let a = |t: &socle::ligne::Argument, h: socle::paris::HeureDuJour, s: i64| {
+    let a = |t: &socle::ligne::Argument, instant: fn(socle::date::Jour) -> Option<Moment>| {
         let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
-        Moment::a_paris_a_la_seconde(j, h, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
+        instant(j).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
     };
     let fin = match args.tape("jusqu-a") {
-        Some(j) => a(j, const { socle::paris::HeureDuJour::a(23, 59) }, 59)?,
+        Some(j) => a(j, Moment::derniere_seconde_a_paris)?,
         None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
-        Some(j) => a(j, socle::paris::HeureDuJour::MINUIT, 0)?,
+        Some(j) => a(j, |j| Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT))?,
         None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))

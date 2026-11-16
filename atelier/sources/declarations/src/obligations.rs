@@ -48,7 +48,7 @@ pub struct DeBase {
     pub sauf_motifs: Option<SaufMotifs>,
     pub delai: Option<Delai>,
     pub delai_sans_subrogation: Option<Delai>,
-    pub delai_avec_subrogation: Option<Delai>,
+    pub delai_avec_subrogation: Option<AvecLaMensuelle>,
     pub connaissance_presumee: Option<String>,
     pub exceptions: Vec<String>,
     pub inferences: Vec<String>,
@@ -153,10 +153,11 @@ pub struct SaufMotifs {
     _texte: TexteDepose,
 }
 
-/// LE DELAI D'UNE OBLIGATION (« Le glossaire »), l'un de ses quatre cas, et la phrase qui le dit (`dit`) : en jours
-/// ouvres (CSS R. 133-14, II : cinq), en jours (R. 461-5 : quinze ; « dès réception » : zero), en heures, dimanches et
-/// jours feries non compris (R. 441-3 : quarante-huit), ou avec la DSN mensuelle du mois de l'evenement (R. 133-14, II,
-/// l'employeur subroge). Le fichier l'ecrit par son cas : `{"jours_ouvres": {"jours": 5, "dit": "…"}}`.
+/// LE DELAI D'UNE OBLIGATION QUI COURT D'UN FAIT (« Le glossaire »), l'un de ses trois cas, et la phrase qui le dit
+/// (`dit`) : en jours ouvres (CSS R. 133-14, II : cinq), en jours (R. 461-5 : quinze ; « dès réception » : zero), en
+/// heures, dimanches et jours feries non compris (R. 441-3 : quarante-huit). Le fichier l'ecrit par son cas :
+/// `{"jours_ouvres": {"jours": 5, "dit": "…"}}`. Le signalement d'un employeur subroge ne court pas d'un fait : il part
+/// avec la DSN mensuelle (`AvecLaMensuelle`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub enum Delai {
@@ -173,18 +174,24 @@ pub enum Delai {
         heures: socle::paris::DelaiEnHeures,
         dit: String,
     },
-    AvecLaMensuelle {
-        dit: String,
-    },
 }
 
 impl Delai {
     /// La phrase qui le dit.
     pub fn dit(&self) -> &str {
         match self {
-            Delai::JoursOuvres { dit, .. } | Delai::Jours { dit, .. } | Delai::HeuresHorsDimanchesEtFeries { dit, .. } | Delai::AvecLaMensuelle { dit } => dit,
+            Delai::JoursOuvres { dit, .. } | Delai::Jours { dit, .. } | Delai::HeuresHorsDimanchesEtFeries { dit, .. } => dit,
         }
     }
+}
+
+/// LE DELAI D'UN SIGNALEMENT QUAND L'EMPLOYEUR EST SUBROGE (« Le glossaire ») : avec la DSN mensuelle du mois de
+/// l'evenement (CSS R. 133-14, II), et la phrase qui le dit. Il ne court d'aucun fait : sa fin est l'echeance de cette
+/// DSN (`echeance_dsn`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AvecLaMensuelle {
+    pub dit: String,
 }
 
 /// Ce qui suit une declaration d'accident.
@@ -308,7 +315,7 @@ impl DeBase {
     }
 
     /// Le delai `quoi` (`delai`, `delai_sans_subrogation`, `delai_avec_subrogation`), que l'obligation doit porter.
-    pub fn delai_de<'a>(&self, d: &'a Option<Delai>, quoi: &str) -> R<&'a Delai> {
+    pub fn delai_de<'a, D>(&self, d: &'a Option<D>, quoi: &str) -> R<&'a D> {
         d.as_ref().ok_or_else(|| livree(&format!("{}.{}", self.libelle, quoi)))
     }
 

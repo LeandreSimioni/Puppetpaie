@@ -1203,9 +1203,8 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
 
 /// « mercredi 23 septembre 2026 ».
 fn date_en_clair(j: &Jour) -> String {
-    const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
     let mois = j.mois_civil().nom(socle::mois::Graphie::Accentuee);
-    format!("{} {} {} {}", JOURS[j.jour_de_la_semaine() as usize], j.jour, mois, j.an)
+    format!("{} {} {} {}", j.jour_de_la_semaine(), j.jour, mois, j.an)
 }
 
 // -------------------------------------------------------------- l'exercice
@@ -1515,7 +1514,7 @@ fn du(o: &crate::obligations::Obligation) -> bool {
 /// retard, la phrase -- ; `objet` : ce sur quoi elle porte, que la page repasse au geste qui la fait.
 fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: CleDEcheance, titre: String, question: String, objet: Objet) -> R<Echeance> {
     // La date butoir, quand le delai se compte ; une obligation sans date butoir ne tombe dans aucun mois.
-    let butoir = o.jour_butoir()?;
+    let butoir = o.jour_butoir();
     let mut r = Echeance::nouveau(GenreDEcheance::Obligation, cle, titre, question, butoir.map(|j| j.mois_civil()));
     r.etat = if o.etat == crate::obligations::EtatDObligation::EnRetard { EnRetard } else { AFaire };
     r.etape = Some(EtapeDEcheance::DUneObligation(o.etat));
