@@ -1258,6 +1258,9 @@ pub(crate) struct RubriqueDeLaPage {
     /// LES CLES QU'UNE LIGNE DE CETTE RUBRIQUE DIT, toutes et seules (`engagement::ligne::FormeSaisie`) : la page les
     /// ecrit, `null` pour une case vide.
     cles: Vec<&'static str>,
+    /// LA CLE DE SA QUANTITE, dans l'unite de la rubrique (`engagement::ligne::QuantiteDeLigne::cle` : `{"cachets": 2}`),
+    /// quand une ligne en dit une (`cles`).
+    quantite: Option<&'static str>,
 }
 
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
@@ -1297,6 +1300,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         vec![]
     };
     Ok(RubriqueDeLaPage {
+        quantite: cles.contains(&engagement::ligne::Cle::Quantite.nom()).then(|| engagement::ligne::QuantiteDeLigne::cle(r.unite)),
         cles,
         lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
         lieux,

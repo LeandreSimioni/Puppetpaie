@@ -100,7 +100,7 @@ fn le_complement_au_dela_du_seuil_du_bareme_2025() {
     let heures = |mois: &str, jour: &str, taux: &str| -> Value {
         let taux: serde_json::Number = taux.parse().unwrap();
         let carte = json!({"salarie": "FORTUNY", "nature": "cddu_spectacle", "spectacle": "le-banc-des-menteurs",
-            "lignes": [{"rubrique": "heure", "quantite": 10, "taux": taux, "lieu": null, "dates": [jour], "planning": []}]});
+            "lignes": [{"rubrique": "heure", "quantite": {"heures": 10}, "taux": taux, "lieu": null, "dates": [jour], "planning": []}]});
         reussi(&valider(&c, mois, None, &carte, JOUR));
         paie_ecrite(&c, mois, "FORTUNY", None)
     };

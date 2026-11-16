@@ -1885,7 +1885,7 @@ mod tests_rupture {
     #[test]
     fn un_contrat_rompu_n_a_pas_d_avenant() {
         let jours = |n: usize| ["2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08"][..n].iter().map(|j| format!(r#""{}""#, j)).collect::<Vec<_>>().join(", ");
-        let ligne = |n: usize, taux: i64| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
+        let ligne = |n: usize, taux: i64| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {{"cachets": {}}}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
         let carte = |texte: String| crate::saisie::Carte {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),

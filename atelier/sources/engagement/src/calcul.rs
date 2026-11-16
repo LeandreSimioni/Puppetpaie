@@ -20,7 +20,7 @@ use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{div, mul, sub, Decimal};
-use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{courte, Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use crate::ligne::{PaiementDeLigne, QuantiteDeLigne};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
@@ -70,24 +70,23 @@ impl LigneBrut {
     /// elle se dit apres lui, dans son unite. Un forfait et un pourcentage se disent par leur seul libelle : leur
     /// quantite n'est pas un nombre de choses.
     pub fn designation(&self) -> String {
-        let quantite = self.paiement.quantite().decimal();
-        let q = quantite.round_dp(2).normalize();
-        let nb = socle::texte::nombre_dit(q);
         if matches!(self.unite, Unite::Forfait | Unite::Pourcentage) {
             return self.libelle.clone();
         }
         // UN SALAIRE MENSUEL se paie au mois : sa quantite est la fraction du mois payee (`rubriques-base.json`, `mois`).
         // Un mois entier se dit seul ; une fraction se dit en part du mois, pas en decimales.
-        if self.unite == Unite::Mois {
-            if quantite == Decimal::ONE {
+        if let PaiementDeLigne::PartDuMois(part, _) = self.paiement {
+            if part == Coefficient::UN {
                 return self.libelle.clone();
             }
             if let Some(p) = &self.precision {
                 return format!("{} ({})", self.libelle, p);
             }
-            let part = socle::texte::nombre_dit((quantite * Decimal::from(100)).round_dp(2));
+            let part = socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(part.en_taux()));
             return format!("{} ({} % du mois)", self.libelle, part);
         }
+        let q = self.paiement.quantite().au_centieme();
+        let nb = q.dit();
         let (tete, reste) = match self.libelle.split_once(' ') {
             Some((t, r)) => (t, Some(r)),
             None => (self.libelle.as_str(), None),
@@ -109,7 +108,7 @@ impl LigneBrut {
             };
         }
         // Au singulier jusqu'a deux exclus (« 1,5 journée »).
-        let pluriel = q >= Decimal::TWO;
+        let pluriel = q.au_pluriel();
         if !compte.contains(&tete.to_lowercase().as_str()) {
             if self.unite == Unite::Heure {
                 let mut l = self.libelle.chars();
@@ -683,17 +682,17 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
 /// Une ligne (deja additionnee) dite en bref : un forfait qui se compte dit son nombre (« 8 repas »), des heures de
 /// travail se disent en heures (« 28 h de travail ») ; le reste comme au bulletin.
 fn bref(l: &LigneBrut) -> String {
-    let q = l.paiement.quantite().decimal().round_dp(2).normalize();
+    let q = l.paiement.quantite().au_centieme();
     let (tete, reste) = match l.libelle.split_once(' ') {
         Some((t, r)) => (t, r),
         None => (l.libelle.as_str(), ""),
     };
     let reste = if reste.is_empty() { String::new() } else { format!(" {}", reste) };
-    let dit = if l.unite == Unite::Forfait && q.fract().is_zero() && q >= Decimal::TWO {
+    let dit = if l.unite == Unite::Forfait && q.entiere() && q.au_pluriel() {
         let tete = if tete.ends_with('s') || tete.ends_with('x') { tete.to_string() } else { format!("{}s", tete) };
-        format!("{} {}{}", q, tete, reste)
+        format!("{} {}{}", q.dit(), tete, reste)
     } else if l.unite == Unite::Heure && tete.to_lowercase() == "heure" {
-        format!("{} h{}", socle::texte::nombre_dit(q), reste)
+        format!("{} h{}", q.dit(), reste)
     } else {
         l.designation()
     };
@@ -2024,7 +2023,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
     // Le plafond d'un salarie au mois ne depend pas de son statut.
     if nat.mensuelle() {
         let tp = match plafond_temps_partiel(&ctx.entreprise, e, sal)? {
-            PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
+            PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(ctx, e)?),
             _ => None,
         };
         return plafond_permanent(&e.periode_payee()?, tp, &pss_du_contexte(ctx));
@@ -2126,7 +2125,7 @@ pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal:
 /// elle est plus courte, la duree collective de l'entreprise (S21.G00.40.012). Le texte ajoute a la duree du contrat
 /// « le nombre d'heures complementaires » du mois : celles que le moteur compose du fait de la carte (`heures_en_plus`) ;
 /// une ligne d'heures tapee a la main ne dit pas si elle en est, et refuse plutot que de le deviner.
-pub(crate) fn duree_du_temps_partiel(e: &Engagement) -> R<(socle::grandeurs::Heures, socle::grandeurs::Heures)> {
+pub(crate) fn duree_du_temps_partiel(ctx: &Contexte, e: &Engagement) -> R<(socle::grandeurs::Heures, socle::grandeurs::Heures)> {
     let nat = e.nat()?;
     if let Some(l) = e.lignes.iter().find(|l| *l.rubrique() == droit::catalogue::HEURE) {
         return Err(socle::refus!(
@@ -2135,7 +2134,7 @@ contrat << majoree du nombre d'heures complementaires >> du mois (CSS R. 242-2, 
 heures en plus du salaire mensuel ({} h) : heures complementaires ou non, le logiciel ne le sait pas. Refus : il ne les \
 devine pas.",
             e.qui(),
-            heures_de(l).iter().map(|h| socle::grandeurs::ecrit::texte::dit(*h)).collect::<String>()
+            heures_de(ctx, l)?.iter().map(|h| socle::grandeurs::ecrit::texte::dit(*h)).collect::<String>()
         ));
     }
     let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree(&droit::natures::BASE, &format!("{}.quotite_reference_defaut", nat.libelle)))?;
@@ -2148,18 +2147,20 @@ devine pas.",
         .lignes
         .iter()
         .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
-        .map(|l| heures_de(l).ok_or_else(|| refus("nombre attendu, lu null")))
+        .map(|l| heures_de(ctx, l)?.ok_or_else(|| refus("nombre attendu, lu null")))
         .sum::<R<socle::grandeurs::Heures>>()?;
     Ok((e.quotite()?.heures("La durée d'un temps partiel")? + complementaires, reference))
 }
 
-/// Les heures d'une ligne d'heures, normales ou complementaires : leur rubrique compte des heures (`rubriques-base.json`,
-/// `heure`, `heure_complementaire`) ; `None` : la case n'est pas remplie.
-fn heures_de(l: &crate::LignePaie) -> Option<socle::grandeurs::Heures> {
-    match l.quantite(Unite::Heure) {
+/// Les heures d'une ligne d'heures, normales ou complementaires, dans l'unite de sa rubrique (`rubriques-base.json`,
+/// `heure`, `heure_complementaire` : des heures) ; `None` : la case n'est pas remplie, ou sa rubrique ne compte pas des
+/// heures.
+fn heures_de(ctx: &Contexte, l: &crate::LignePaie) -> R<Option<socle::grandeurs::Heures>> {
+    let unite = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite;
+    Ok(match l.quantite(unite) {
         Some(QuantiteDeLigne::Heures(h)) => Some(h),
         _ => None,
-    }
+    })
 }
 
 impl Paie {

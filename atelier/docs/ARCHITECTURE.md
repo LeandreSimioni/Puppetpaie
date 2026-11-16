@@ -299,13 +299,16 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
   `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
   (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait, la base en
-  euros d'une ligne en pourcentage ; une ligne au montant compte 1) : la ligne écrite ne garde que son nombre, et prend
-  son unité quand sa rubrique est lue ; quantité × montant unitaire = montant. Sa quantité et son taux se lisent
-  ensemble (`PaiementDeLigne::de_l_unite`) : une rubrique en pourcentage donne une base et la part qu'elle en paie,
-  toute autre une quantité et un montant unitaire ; une ligne composée d'une rubrique en pourcentage a la forme d'une
-  ligne en pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si,
-  et seulement si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son
-  bulletin dit (`LignePaie::montant_lu`), qui ne se recompose pas.
+  euros d'une ligne en pourcentage ; une ligne au montant compte 1, et paie son montant quelle que soit l'unité,
+  `PaiementDeLigne::une_fois`) : elle s'écrit dans son unité, par sa forme (`{"cachets": "2"}`), la charge comme le
+  fichier, et la porte d'une ligne saisie la range dans l'unité de sa rubrique (`LigneDonnee::ranger`) ; quantité ×
+  montant unitaire = montant. Une ligne que le moteur compose porte ce qu'elle paie (`PaiementDeLigne`, sa quantité et
+  son taux) : une rubrique en pourcentage donne une base et la part qu'elle en paie, toute autre une quantité et un
+  montant unitaire (`PaiementDeLigne::de`) ; une ligne composée d'une rubrique en pourcentage a la forme d'une ligne en
+  pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si, et seulement
+  si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son bulletin dit
+  (`LignePaie::montant_lu`), qui ne se recompose pas ; sa quantité et son taux imprimés se lisent dans l'unité de sa
+  rubrique (`PaiementDeLigne::imprime`).
 - **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.

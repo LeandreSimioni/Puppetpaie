@@ -36,7 +36,7 @@ use crate::conges::info;
 use droit::fiche::Lue;
 use crate::Chiffre;
 use crate::imprevus::{ArretSaisi, Imprevu};
-use crate::ligne::{IndemniteJournaliere, LignePaie, Maintien};
+use crate::ligne::{IndemniteJournaliere, LignePaie, Maintien, PaiementDeLigne};
 use crate::Avis;
 use droit::contexte::Contexte;
 use droit::maintien::{self as dm, Base, Droit, DureeDUneTranche, Origine, Regime};
@@ -50,7 +50,6 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
-use socle::forme::Nombre;
 use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::{div, mul, Decimal};
 use droit::catalogue::CodeDeRubrique;
@@ -694,7 +693,7 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
     let montant = direct + plancher;
     if montant > Decimal::ZERO || dmois.au_net.is_some() {
         // La quantite de la ligne : sa porte.
-        let q = if dmois.heures > Heures::ZERO { dmois.heures.au_centieme().decimal() } else { Decimal::ONE };
+        let q = if dmois.heures > Heures::ZERO { dmois.heures.au_centieme() } else { Heures::UNE };
         // Une somme, pas des heures de travail : les heures de l'absence restent celles de sa retenue (S21.G00.53).
         let reconstitution = dmois.au_net.as_ref().map(|a| {
             Box::new(Reconstitution {
@@ -709,8 +708,8 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
                 plancher,
             })
         });
-        let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
-        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: Nombre(q), taux, reconstitution }));
+        let taux = MontantUnitaire::du_decimal(div(montant, q.decimal()).normalize());
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, paiement: PaiementDeLigne::Heures(q, taux), reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
@@ -870,11 +869,11 @@ pub fn avec_le_montant(lignes: &[LignePaie], montant: Decimal) -> Vec<LignePaie>
     lignes
         .iter()
         .map(|l| match l {
-            LignePaie::Maintien(m) if m.reconstitution.is_some() => {
-                // La ligne du maintien porte toujours sa quantite (`lignes`) : ses heures d'absence, ou 1.
-                let q = if m.quantite.0 > Decimal::ZERO { m.quantite.0 } else { Decimal::ONE };
-                let taux = MontantUnitaire::du_decimal(div(montant, q).normalize());
-                LignePaie::Maintien(Maintien { rubrique: m.rubrique.clone(), quantite: Nombre(q), taux, reconstitution: None })
+            // La ligne du maintien se paie en heures (`lignes`) : ses heures d'absence, ou 1.
+            LignePaie::Maintien(Maintien { rubrique, paiement: PaiementDeLigne::Heures(q, _), reconstitution: Some(_) }) => {
+                let q = if *q > Heures::ZERO { *q } else { Heures::UNE };
+                let taux = MontantUnitaire::du_decimal(div(montant, q.decimal()).normalize());
+                LignePaie::Maintien(Maintien { rubrique: rubrique.clone(), paiement: PaiementDeLigne::Heures(q, taux), reconstitution: None })
             }
             autre => autre.clone(),
         })

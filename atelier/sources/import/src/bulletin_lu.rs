@@ -2573,7 +2573,7 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
         use engagement::ligne::QuantiteDeLigne as Q;
-        let h = match (Q::de_l_unite(r.unite, q.0), par_unite) {
+        let h = match (Q::imprimee(r.unite, q), par_unite) {
             (Q::Cachets(c), _) => {
                 cachets = cachets.map(|x| x + c);
                 continue;

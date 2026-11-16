@@ -11,7 +11,7 @@ use crate::conges::{
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
-use crate::ligne::QuantiteDeLigne;
+use crate::ligne::PaiementDeLigne;
 use crate::{Chiffre, LignePaie};
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{AuMois, MotifDeRupture, Nature};
@@ -33,14 +33,15 @@ struct Solde {
     conges_payes: Option<(usize, Jours, Montant)>,
 }
 
-/// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit, dans leur forme la plus courte.
-fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: QuantiteDeLigne, taux: MontantUnitaire) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), quantite.courte(), courte(taux))
+/// La ligne de `rubrique` qui paie `paiement`, telle que le solde l'ecrit, sa quantite et son taux dans leur forme la plus
+/// courte.
+fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, paiement: PaiementDeLigne) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), paiement.courte())
 }
 
-/// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
+/// La ligne d'une indemnite de `rubrique` (au forfait) qui verse `montant` en une fois.
 fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Montant) -> LignePaie {
-    LignePaie::composee(rubrique.clone(), QuantiteDeLigne::UNE_FOIS, courte(montant.pour_une_unite()))
+    LignePaie::composee(rubrique.clone(), PaiementDeLigne::Unites(socle::grandeurs::Unites::UNE, courte(montant.pour_une_unite())))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite (son ecriture gardee).
@@ -351,7 +352,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             cpt2.reports = cpt.reports - entame;
             let ind = cpt2.indemnite_des_jours(solde, maintien)?;
             stc.conges_payes = Some((stc.lignes.len(), solde, ind.retenu));
-            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, QuantiteDeLigne::Jours(solde), taux_au_montant(ind.retenu, solde)?));
+            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, PaiementDeLigne::Jours(solde, taux_au_montant(ind.retenu, solde)?)));
             stc.avertissements.push(info(format!(
                 "{} : {} jour(s) de conges acquis et non pris, payes {} ({}) -- \
                  art. L3141-28, due quelle que soit la cause de la rupture.",
@@ -496,7 +497,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
                 // Les mois du preavis, une duree que son calcul dit encore en decimal : la part du mois que la ligne paie
                 // (sa rubrique compte des mois) s'y ouvre.
-                stc.lignes.push(LignePaie::composee(rubrique, QuantiteDeLigne::PartDuMois(Coefficient::du_decimal(court(m))), courte(salaire)));
+                stc.lignes.push(LignePaie::composee(rubrique, PaiementDeLigne::PartDuMois(Coefficient::du_decimal(court(m)), courte(salaire))));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(
@@ -662,7 +663,7 @@ fn delai_de_prevenance(
         fraction += part.fraction;
         jours += part.jours;
     }
-    stc.lignes.push(ligne(&regle.rubrique, QuantiteDeLigne::PartDuMois(fraction), salaire));
+    stc.lignes.push(ligne(&regle.rubrique, PaiementDeLigne::PartDuMois(fraction, salaire)));
     let montant = (fraction * salaire).au_centime();
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&non_effectue)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
@@ -723,7 +724,7 @@ fn conges_non_effectues(
         Some((rang, j, m)) => (rang, j + jours, m + ind.retenu),
         None => (stc.lignes.len(), jours, ind.retenu),
     };
-    let l = ligne(&rubrique, QuantiteDeLigne::Jours(total_jours), taux_au_montant(total, total_jours)?);
+    let l = ligne(&rubrique, PaiementDeLigne::Jours(total_jours, taux_au_montant(total, total_jours)?));
     match stc.lignes.get_mut(rang) {
         Some(x) => *x = l,
         None => stc.lignes.push(l),

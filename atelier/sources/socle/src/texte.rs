@@ -282,6 +282,11 @@ pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
     nombre_dit(g.en_decimal())
 }
 
+/// UNE QUANTITE SE DIT AU PLURIEL dès deux (« 1,5 journée », « 2 cachets »).
+pub fn au_pluriel<G: crate::grandeurs::Grandeur>(g: G) -> bool {
+    g.en_decimal() >= rust_decimal::Decimal::TWO
+}
+
 /// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
 /// inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn nombre_dit(x: rust_decimal::Decimal) -> String {

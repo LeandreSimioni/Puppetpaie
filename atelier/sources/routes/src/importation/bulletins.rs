@@ -2075,7 +2075,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         .iter()
         .map(|l| {
             let paiement = match (&l.rubrique, l.quantite, l.taux) {
-                (Some(code), Some(q), Some(t)) => Some(PaiementDeLigne::imprime(droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, q, t)?),
+                (Some(code), Some(q), Some(t)) => Some(PaiementDeLigne::imprime(droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, q, t)),
                 _ => None,
             };
             Ok(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures })

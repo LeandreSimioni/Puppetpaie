@@ -41,9 +41,9 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
     };
     // `frais` : les lignes de frais de la carte (« repas », « nuitee »), chacune avec ses cases cochées.
     let paie = |frais: &[(&str, &[&str])]| -> Value {
-        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
+        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, cases) in frais {
-            lignes.push(json!({"rubrique": rubrique, "quantite": 2, "taux": null, "territoire": null, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": 2}, "taux": null, "territoire": null, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };
@@ -83,10 +83,10 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
 
     // HORS DE LA MÉTROPOLE, le lieu de la ligne (`territoire`) dit la limite. `frais` : (rubrique, taux, lieu, cases).
     let ailleurs = |frais: &[(&str, &str, &str, &[&str])]| -> Value {
-        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
+        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, taux, lieu, cases) in frais {
             let q = if *rubrique == "repas" { 4 } else { 2 };
-            lignes.push(json!({"rubrique": rubrique, "quantite": q, "taux": taux, "territoire": lieu, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": q}, "taux": taux, "territoire": lieu, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };

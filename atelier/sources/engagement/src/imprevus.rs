@@ -881,9 +881,7 @@ nomme cette absence. Rien n'est calcule.",
             lignes.extend(retenue()?.map(|(quantite, taux)| {
                 crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
                     rubrique,
-                    // La ligne ecrite ne garde que le nombre de ses heures : sa porte.
-                    quantite: socle::forme::Nombre(quantite.decimal()),
-                    taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
+                    paiement: crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux)),
                 })
             }));
             absents += jours;
@@ -912,7 +910,7 @@ nomme cette absence. Rien n'est calcule.",
                 )));
             } else {
                 lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, crate::ligne::QuantiteDeLigne::Heures(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
+                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux)))
                 }));
                 absents += jours;
                 avert.push(info(format!(
@@ -939,11 +937,6 @@ fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60<MotifDArret>>) ->
         Some(m) => &m.libelle,
         None => "inconnu de la norme",
     }
-}
-
-/// Le libelle d'une rubrique, que le catalogue connait.
-fn libelle_rubrique(racine: &Path, code: &droit::catalogue::CodeDeRubrique, jour: &Jour) -> R<String> {
-    Ok(droit::catalogue::rubrique(racine, code, jour)?.libelle)
 }
 
 /// LES CACHETS ET SERVICES DE LA SAISIE QUI TOMBENT DANS UN IMPREVU : pour chaque mois saisi qu'il croise, les lignes des
@@ -975,7 +968,7 @@ pub struct CachetPaye {
     pub rubrique: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub dates: Vec<Jour>,
-    pub quantite: Option<Decimal>,
+    pub quantite: Option<crate::ligne::QuantiteDeLigne>,
     pub taux: Option<Decimal>,
 }
 
@@ -998,17 +991,17 @@ fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDan
         if dedans.is_empty() {
             continue;
         }
-        let rubrique = l.rubrique().clone();
+        let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         out.push(CachetPaye {
             mois,
             engagement: i,
             numero: e.numero.clone(),
             spectacle: e.spectacle.clone(),
             ligne: j,
-            libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
-            rubrique,
+            libelle: r.libelle,
+            rubrique: l.rubrique().clone(),
             dates: dedans,
-            quantite: l.quantite_ecrite(),
+            quantite: l.quantite(r.unite),
             taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
         });
     }

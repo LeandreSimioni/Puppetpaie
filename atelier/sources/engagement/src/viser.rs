@@ -54,9 +54,10 @@ fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubriqu
     droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
 }
 
-/// Une ligne dont le taux est une case : en unites (un salaire, une absence, une indemnite), ou de frais.
+/// Une ligne dont le taux est une case : en unites (un salaire, une absence, une indemnite), ou de frais
+/// (`LignePaie::taux_saisi_mut`).
 fn taux_saisi(l: &LignePaie) -> bool {
-    matches!(l, LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_))
+    l.taux_saisi().is_some()
 }
 
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
@@ -145,11 +146,10 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Coefficient) -> R<bool> {
         if !ligne_ajustable(ctx, l)? {
             continue;
         }
-        match l.taux() {
-            // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
-            Some(TauxDeLigne::ParUnite(t)) => l.poser_taux(socle::grandeurs::courte(t.fois_coefficient(facteur).au_centime())).map_err(RefusVisee::Refus)?,
-            Some(TauxDeLigne::PartDeLaBase(_)) => return Err(refus(format!("La ligne {} se paie en pourcentage : son taux ne s'ajuste pas.", l.rubrique()))),
-            None => {}
+        // Une ligne ajustable dit son taux dans sa case (`taux_saisi`) : au centime, dans sa forme la plus courte
+        // (`mis_a_l_echelle`).
+        if let Some(Some(t)) = l.taux_saisi_mut() {
+            *t = socle::grandeurs::courte(t.fois_coefficient(facteur).au_centime());
         }
         touche = true;
     }

@@ -454,9 +454,9 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
     let Some(brut) = p.brut.map(Montant::au_centime) else { return Ok(None) };
     let dates: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
     let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
-    // Les cachets que la ligne paie, a leur taux ; la ligne saisie n'ecrit que le nombre de sa quantite.
+    // Les cachets que la ligne paie, a leur taux.
     let Some(engagement::ligne::PaiementDeLigne::Cachets(q, t)) = cachets.paiement else { return Ok(None) };
-    let (quantite, taux) = (Some(socle::forme::Nombre(q.decimal())), Some(t));
+    let (quantite, taux) = (Some(engagement::ligne::QuantiteDeLigne::Cachets(q)), Some(t));
     if dates.is_empty() {
         return Ok(None);
     }

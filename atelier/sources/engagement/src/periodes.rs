@@ -53,8 +53,9 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<Periode>> {
 /// d'anciennete ou un solde de tout compte se rattachent a une periode, ou a l'autre, ou aux deux, et rien ne le dit
 /// encore ; le logiciel ne choisit pas.
 pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[Periode]) -> R<Vec<Engagement>> {
-    let ligne = match eng.lignes.as_slice() {
-        [l] if *l.rubrique() == crate::conges::MOIS_PAYE => l,
+    // Le salaire mensuel, seule ligne de la paie : la part du mois, a son salaire (`conges::lignes_du_mois`).
+    let salaire_apres = match eng.lignes.as_slice() {
+        [LignePaie::Composee(crate::ligne::Composee { rubrique, paiement: crate::ligne::PaiementDeLigne::PartDuMois(_, salaire), .. })] if *rubrique == crate::conges::MOIS_PAYE => *salaire,
         _ => {
             let autres: Vec<String> = eng.lignes.iter().filter(|l| *l.rubrique() != crate::conges::MOIS_PAYE).map(|l| l.rubrique().to_string()).collect();
             return Err(socle::refus!(
@@ -67,9 +68,6 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
                 if autres.is_empty() { "des lignes saisies a la main".to_string() } else { format!("les lignes {}", autres.join(", ")) }
             ));
         }
-    };
-    let crate::ligne::PaiementDeLigne::PartDuMois(_, salaire_apres) = ligne.paiement(droit::catalogue::Unite::Mois)? else {
-        return Err(socle::refus!("{} : son salaire mensuel ne se paie pas au mois : le signaler au développeur.", eng.qui()));
     };
     let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?;
     let avenant = jour_de_l_avenant(eng)?;
@@ -96,8 +94,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let h = quotite.par_mois();
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
-            quantite: socle::forme::Nombre(q.decimal()),
-            taux: socle::grandeurs::courte(salaire),
+            paiement: crate::ligne::PaiementDeLigne::PartDuMois(q, socle::grandeurs::courte(salaire)),
             heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),

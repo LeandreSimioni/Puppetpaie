@@ -459,16 +459,16 @@ fn comparer_une(
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
         let montant = Some(paiement.montant());
         let heures = l.heures;
-        // Une ligne saisie ecrit le nombre de sa quantite (sa rubrique en dit l'unite, `LignePaie::composee`) ; son taux,
-        // un montant unitaire : une rubrique qui n'est pas en pourcentage.
-        let quantite = socle::forme::Nombre(paiement.quantite().decimal());
+        // Une ligne saisie dit sa quantite dans l'unite de sa rubrique, comme l'import l'a rattachee ; son taux, un montant
+        // unitaire : une rubrique qui n'est pas en pourcentage.
+        let quantite = paiement.quantite();
         let par_unite = || match paiement.taux() {
             TauxDeLigne::ParUnite(u) => Ok(u),
             TauxDeLigne::PartDeLaBase(_) => Err(socle::refus!("la ligne « {} » paie une part de sa base, et sa rubrique ne la saisit pas ainsi : le signaler au développeur", libelle)),
         };
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux: par_unite()?, heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures, precision: None, dates: jours.clone() }));
             continue;
         };
         let (rubrique, quantite, dates) = (lue.code, Some(quantite), jours.clone());

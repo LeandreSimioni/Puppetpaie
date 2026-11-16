@@ -27,11 +27,11 @@ use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::AuMois;
 use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::mois::Mois;
+use crate::ligne::PaiementDeLigne;
 use crate::{Avis, LignePaie};
 use socle::feries;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::forme::Nombre;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{courte, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use socle::num::{add, court, div, mul, Decimal};
@@ -1009,8 +1009,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // et la fraction, en `quantite`, en fait la part ; `precision` la dit sur le bulletin.
     let mois_paye = LignePaie::Composee(crate::ligne::Composee {
         rubrique: MOIS_PAYE,
-        quantite: Nombre(court(fraction.decimal())),
-        taux: courte(salaire),
+        paiement: PaiementDeLigne::PartDuMois(courte(fraction), courte(salaire)),
         heures: Some(quotite.par_mois()),
         precision: part.sur_le_bulletin(heures_par_jour),
         dates: Vec::new(),
@@ -1043,14 +1042,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let maintien = (pris * taux_jour_ouvrable).au_centime();
         let ind = cpt.indemnite_des_jours(pris, maintien)?;
         // Les jours pris, quantite des deux lignes.
-        let quantite = crate::ligne::QuantiteDeLigne::Jours(courte(pris));
-        lignes.push(LignePaie::composee(ABSENCE_CONGES_PAYES, quantite, courte(taux_jour_ouvrable)));
-        lignes.push(LignePaie::du_mois(
-            au,
-            droit::catalogue::RubriqueDuMois::IndemniteCongesPayes,
-            quantite,
-            courte(taux_au_montant(ind.retenu, pris)?),
-        ));
+        let quantite = courte(pris);
+        lignes.push(LignePaie::composee(ABSENCE_CONGES_PAYES, PaiementDeLigne::Jours(quantite, courte(taux_jour_ouvrable))));
+        lignes.push(LignePaie::du_mois(au, droit::catalogue::RubriqueDuMois::IndemniteCongesPayes, PaiementDeLigne::Jours(quantite, courte(taux_au_montant(ind.retenu, pris)?))));
         avert.push(info(format!(
             "{} : {} jour(s) ouvrable(s) de conges. Indemnite retenue : {} \
              ({}) -- le dixieme donnait {}, le maintien {} (L3141-24). \
@@ -1100,11 +1094,13 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les primes
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
-        let montant = socle::grandeurs::courte(socle::grandeurs::lu::ecrite::<MontantUnitaire>(&pr.montant)?);
+        let montant = socle::grandeurs::courte(socle::grandeurs::lu::ecrite::<Montant>(&pr.montant)?);
         let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
-        lignes.push(LignePaie::composee(rubrique, crate::ligne::QuantiteDeLigne::UNE_FOIS, montant));
+        // Une prime se paie en une fois, dans l'unite de la rubrique que la compagnie dit.
+        let unite = droit::catalogue::rubrique(&ctx.racine, &rubrique, &fin_mois)?.unite;
+        lignes.push(LignePaie::composee(rubrique, PaiementDeLigne::une_fois(unite, montant)));
     }
 
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
@@ -1155,7 +1151,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = Heures::du_decimal(Decimal::from_str("151.67").unwrap());
         let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
         let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime().decimal();
-        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, crate::ligne::QuantiteDeLigne::UNE_FOIS, MontantUnitaire::du_decimal(court(montant))));
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::Unites(socle::grandeurs::Unites::UNE, MontantUnitaire::du_decimal(court(montant)))));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \

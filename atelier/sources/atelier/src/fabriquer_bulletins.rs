@@ -613,7 +613,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         // une heure compte ses heures).
         use engagement::ligne::QuantiteDeLigne as Q;
         let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);
-        match (Q::de_l_unite(r.unite, q), r.heures_forfait.or(connu.heures)) {
+        match (Q::imprimee(r.unite, l.quantite), r.heures_forfait.or(connu.heures)) {
             (Q::Cachets(c), _) => cachets = c,
             (q, Some(u)) => heures = q.fois(u).ok_or_else(|| refus!("{} : « {} » est une ligne en pourcentage, sans heures par unité", ou, connu.libelle))?,
             (Q::Heures(h), None) => heures = h,

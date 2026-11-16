@@ -9,6 +9,12 @@ function rubriqueDe(code) {
   return ETAT.rubriques.find((r) => r.code === code);
 }
 
+/** Le nombre d'une quantité de ligne, telle que le moteur l'écrit dans l'unité de sa rubrique (`{"cachets": "2"}`) ;
+ *  rien quand la case est vide. */
+function nombreDeLaQuantite(q) {
+  return q == null ? q : Object.values(q)[0];
+}
+
 /** Le déroulant des rubriques, dans l'ordre où le moteur les rend. CE QUE LA CARTE PROPOSE, LE MOTEUR LE DIT
  *  (`propose.rubriques` : de l'aperçu pour un engagement, de `nouvelle_carte` pour une carte qui ne nomme pas encore
  *  son salarié) ; la page ne connaît aucune rubrique. La rubrique DÉJÀ choisie reste toujours offerte : une saisie ne
@@ -117,6 +123,9 @@ function ligneRubrique(l = {}, propose) {
   // UNE LIGNE EN POURCENTAGE (majoration, précarité) : le
   // fichier dit `base` et `taux_majoration` ; les deux mêmes champs les
   // montrent, « 120 € à 25 % ».
+  // UNE LIGNE EN UNITÉS : le moteur écrit sa quantité dans l'unité de sa rubrique (`{"cachets": "2"}`) ; le champ en
+  // montre le nombre.
+  l = { ...l, quantite: nombreDeLaQuantite(l.quantite) };
   if (l.base !== undefined || l.taux_majoration !== undefined) {
     l = { ...l, quantite: l.base, taux: l.taux_majoration };
   }
@@ -1711,9 +1720,11 @@ function lignesDuBloc(div, mois) {
     // Ce que chaque case de la ligne dit ; la ligne n'en écrit que celles que le moteur demande de sa rubrique
     // (`cles`), toutes : une ligne en pourcentage écrit sa base et son pourcentage, une ligne au montant sa somme (le
     // champ du taux), une ligne de frais son lieu hors de la métropole et ses cases cochées.
+    // La quantité s'écrit dans l'unité de sa rubrique, sous la clé que le moteur en dit (`quantite` de la rubrique).
+    const quantite = (x) => (x === "" || !rr || !rr.quantite ? null : { [rr.quantite]: +x });
     const valeurs = {
       rubrique: code,
-      quantite: nombre(q),
+      quantite: quantite(q),
       taux: nombre(t),
       heures: nombre(h),
       base: nombre(q),

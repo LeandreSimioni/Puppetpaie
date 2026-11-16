@@ -138,6 +138,22 @@ pub fn sans_zero<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().normalize())
 }
 
+/// LA GRANDEUR NULLE, son echelle nulle (`0`) : la quantite d'une ligne qu'aucune date ne compte.
+pub fn nulle<G: Grandeur>() -> G {
+    G::du(Decimal::ZERO)
+}
+
+/// UNE, son echelle nulle (`1`) : la quantite d'une ligne qui se paie en une fois.
+pub fn une<G: Grandeur>() -> G {
+    G::du(Decimal::ONE)
+}
+
+/// LA GRANDEUR AU CENTIEME, la moitie au pair, sans zero inutile (`2.125` : `2.12`, `4.50` : `4.5`) : ce qu'une phrase
+/// dit d'une quantite (la designation d'une ligne de paie), dite par `texte::virgule`.
+pub fn au_centieme_au_pair<G: Grandeur>(g: G) -> G {
+    G::du(g.en_decimal().round_dp(2).normalize())
+}
+
 /// LA GRANDEUR ENTIERE QU'ELLE EST, son echelle ramenee a zero (`4.0` jours : `4`) ; `None` : elle n'est pas entiere
 /// (`4.5` jours). Des jours ou des cachets dits « en nombre entier » se tiennent ainsi.
 pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
@@ -764,6 +780,14 @@ impl crate::forme::NombreEcrit {
     /// forme la plus courte (`courte`) ; la porte de la case.
     pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreEcrit {
         crate::forme::NombreEcrit::Flottant(courte(g).en_decimal())
+    }
+}
+
+impl crate::forme::Nombre {
+    /// LA GRANDEUR QU'IL DIT (la quantite et le taux qu'une ligne d'un bulletin imprime, dans l'unite de sa rubrique),
+    /// son echelle gardee : la porte de sa lecture.
+    pub fn grandeur<G: Grandeur>(self) -> G {
+        G::du(self.0)
     }
 }
 
