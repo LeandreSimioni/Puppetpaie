@@ -22,7 +22,7 @@ use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, MontantUnitaire, Services, Taux};
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, MontantUnitaire, Services, Taux};
 use socle::echec::{refus, Echec, R};
 use crate::ligne::QuantiteDeLigne;
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -59,16 +59,13 @@ fn par_heure(montant: MontantUnitaire, heures: HeuresParUnite, cle: &str) -> R<M
     montant.par_heure_de_l_unite(heures).ok_or_else(|| manque(cle))
 }
 
-/// Un mensuel `mensuel` pour chacune des heures du mois `heures`, exact ; des heures nulles, lues de la table `cle`, se
-/// refusent.
-fn sur_le_mois(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
-    mensuel.par_heure(heures).ok_or_else(|| manque(cle))
-}
-
-/// Un salaire mensuel ramene a l'heure : au centime, au pair sur le demi, dans sa forme la plus courte. Aucun texte ne
-/// fixe cet arrondi.
+/// UN MENSUEL RAMENE A L'HEURE, dans toute convention (le salaire de base d'un mois, la base mensuelle d'un CDDU de la
+/// 2642, la valeur d'une grille au mois) : `mensuel` sur les heures du mois `heures`, au centime le plus proche, au pair
+/// sur le demi, dans sa forme la plus courte. Aucun texte ne fixe cet arrondi. Des heures nulles, lues de la table `cle`,
+/// se refusent.
 fn horaire_du_mensuel(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
-    Ok(socle::grandeurs::courte(socle::grandeurs::au_centieme_au_pair(sur_le_mois(mensuel, heures, cle)?)))
+    let horaire = mensuel.par_heure(heures).ok_or_else(|| manque(cle))?;
+    Ok(socle::grandeurs::courte(socle::grandeurs::au_centieme_au_pair(horaire)))
 }
 
 /// Ce que la ligne paie a l'heure, au centime, au pair sur le demi ; `None` : elle ne compte aucune heure.
@@ -76,11 +73,9 @@ fn paye_a_l_heure(l: &LigneBrut) -> Option<MontantUnitaire> {
     l.montant.par_heure(l.heures_annexes).map(socle::grandeurs::au_centieme_au_pair)
 }
 
-/// Une semaine `semaine` sur les jours `jours` qu'elle paie (la semaine de 5 ou de 6 jours de la 3097, titre III),
-/// exacte.
-fn sur_ses_jours(semaine: MontantUnitaire, jours: Jours) -> R<MontantUnitaire> {
-    semaine.par_jour(jours).ok_or_else(|| refus("Défaut du logiciel : une semaine de la 3097 se rapporte à aucun jour."))
-}
+/// Les jours de la semaine de 5 et de 6 jours d'un artiste de la 3097, titre III.
+const CINQ_JOURS: std::num::NonZeroU32 = std::num::NonZeroU32::new(5).expect("cinq n'est pas nul");
+const SIX_JOURS: std::num::NonZeroU32 = std::num::NonZeroU32::new(6).expect("six n'est pas nul");
 
 /// Les heures du mois telles qu'une phrase les dit (« 151,67 h »).
 fn heures_dites(h: Heures) -> String {
@@ -129,12 +124,6 @@ fn manque(cle: &str) -> Echec {
 /// (`heures_mensuelles` de la table livree).
 fn heures_mensuelles(c: &Convention, idcc: &str) -> R<Heures> {
     c.heures_mensuelles.ok_or_else(|| manque(&format!("{}.heures_mensuelles", idcc)))
-}
-
-/// Le mensuel `mensuel` ramene a l'heure sur les heures du mois `heures`, au centime vers zero (la 2642 en CDI, la 3097
-/// titre IV).
-fn horaire_du_mensuel_vers_zero(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
-    Ok(sur_le_mois(mensuel, heures, cle)?.au_centime_vers_zero())
 }
 
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.
@@ -327,11 +316,12 @@ impl<'a> Cx<'a> {
         Ok(plancher(
             horaire_du_mensuel(mensuel, grille.heures_mensuelles, "1285.emplois_autres_qu_artistiques.heures_mensuelles")?,
             format!(
-                "CCNEAC (1285), groupe {} ({}), {} : {} pour 151 h 40, ramenés à l'heure",
+                "CCNEAC (1285), groupe {} ({}), {} : {} pour {}, ramenés à l'heure",
                 groupe,
                 c1285.emploi_xi3.as_str(),
                 d_ou,
-                euros(mensuel)
+                euros(mensuel),
+                socle::texte::heures_et_minutes(grille.heures_mensuelles)
             ),
         ))
     }
@@ -365,7 +355,7 @@ impl<'a> Cx<'a> {
         if permanent(self.paie)? {
             let Some(&m) = permanents.and_then(|m| m.get(&fonction)) else { return Ok(None) };
             return Ok(plancher(
-                horaire_du_mensuel_vers_zero(m, heures_du_mois, cle)?,
+                horaire_du_mensuel(m, heures_du_mois, cle)?,
                 format!(
                     "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur {}",
                     fonction,
@@ -392,14 +382,14 @@ impl<'a> Cx<'a> {
             Some(j) if j <= Duree::jours(4) => (par_heure(semaine, semaine_de_4_jours_et_demi, cle)?, "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h".to_string()),
             Some(j) if j >= Duree::jours(89) => {
                 // Pas moins de 130 % du SMIC horaire : le mensuel ramene a l'heure, ou 130 % du SMIC, le plus haut.
-                let horaire = sur_le_mois(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?;
+                let horaire = horaire_du_mensuel(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?;
                 let smic = self.paie.smic.fois_coefficient(Coefficient::dixiemes(13));
                 (
                     if smic > horaire { smic } else { horaire },
                     format!("contrat de 3 mois ou plus : la semaine x 3,8 par mois de {}, pas moins de 130 % du SMIC", heures_dites(heures_du_mois)),
                 )
             }
-            None => (sur_le_mois(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
+            None => (horaire_du_mensuel(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
             Some(_) => (par_heure(semaine, semaine_de_35_h, cle)?, "la semaine de 35 h".to_string()),
         };
         Ok(plancher(
@@ -431,7 +421,7 @@ impl<'a> Cx<'a> {
                 let mensuel = *pm.niveaux.get(niveau).ok_or_else(|| manque(&format!("3097.permanents_mensuel.niveaux.{}", niveau)))?;
                 let heures_du_mois = heures_mensuelles(c, "3097")?;
                 return Ok(plancher(
-                    horaire_du_mensuel_vers_zero(mensuel, heures_du_mois, "3097.heures_mensuelles")?,
+                    horaire_du_mensuel(mensuel, heures_du_mois, "3097.heures_mensuelles")?,
                     format!(
                         "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur {}",
                         emploi,
@@ -487,8 +477,8 @@ impl<'a> Cx<'a> {
                 (role, format!("acteur de complément ({}), long-métrage", reference.as_str().replace('_', " ")))
             };
             let (montant, regle) = if self.nb_cachets >= Cachets::fixes(5) {
-                let s5 = sur_ses_jours(grille.semaine_5j, Jours::fixes(5))?;
-                let s6 = sur_ses_jours(grille.semaine_6j, Jours::fixes(6))?;
+                let s5 = grille.semaine_5j.sur_jours_fixes(CINQ_JOURS);
+                let s6 = grille.semaine_6j.sur_jours_fixes(SIX_JOURS);
                 ((if s6 < s5 { s6 } else { s5 }).au_centime_vers_zero(), "engagement à la semaine, rapporté au cachet")
             } else {
                 (grille.journee, "engagement à la journée")
@@ -703,7 +693,11 @@ impl<'a> Cx<'a> {
                 });
             } else {
                 let heures = gr.heures.ok_or_else(|| manque("heures"))?;
-                let mut h = par_heure(montant, heures, "heures")?.au_centime_vers_zero();
+                // Une grille au mois se ramene a l'heure comme tout mensuel ; une autre unite, sur ses heures.
+                let mut h = match unite {
+                    Unite::Mois => horaire_du_mensuel(montant, heures, "heures")?,
+                    _ => par_heure(montant, heures.pour_une_unite(), "heures")?.au_centime_vers_zero(),
+                };
                 if let Some(facteur) = gr.facteur.filter(|f| !f.est_nul()) {
                     // Un taux horaire qui ne vaut pas pour toutes les heures : le plus bas taux effectif.
                     h = h.fois_coefficient(facteur).au_centime_vers_zero();

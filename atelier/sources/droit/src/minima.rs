@@ -300,8 +300,10 @@ forme_notee! {
         /// la meme notion (`catalogue::Unite`). Une unite hors de sa liste refuse le fichier a la lecture, au chemin de la
         /// grille.
         pub unite: crate::catalogue::Unite,
-        /// Les heures que sa valeur paie (une semaine de 35 h, un mois de 151,67 h).
-        pub heures: Option<HeuresParUnite>,
+        /// Les heures que sa valeur paie (une semaine de 35 h, un mois de 151,67 h) : d'une grille au mois, les heures du
+        /// mois, comme `Convention.heures_mensuelles` ; d'une autre unite, les heures de cette unite
+        /// (`Heures::pour_une_unite`).
+        pub heures: Option<Heures>,
         /// Les lignes de minima des metiers qu'elle vise (`emplois-base.json`, `minima.<idcc>`).
         pub categories: Option<Vec<CleDeGrille>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,

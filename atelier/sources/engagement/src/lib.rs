@@ -58,7 +58,7 @@ use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
 use socle::{echec::{refus, Echec, R}, num::Decimal};
-use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{courte, sans_zero, Cachets, Heures, Jours, Montant, MontantUnitaire, Unites};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -1558,6 +1558,10 @@ fn marquer_les_cases(l: &mut ligne::Frais, cases: &[CaseDeFrais], rubrique: &Cod
     l.marques.aides = cases.iter().filter_map(|k| aide_de_case(*k, rubrique, metropole).map(|a| (*k, a))).collect();
 }
 
+/// Un ecart d'une ligne a l'etranger sur des unites nulles : une ligne qui ne compte aucune unite ne paie rien, et
+/// n'en porte aucun.
+const SANS_UNITES: &str = "un écart de frais à l'étranger sur une ligne sans quantité : le signaler au développeur";
+
 /// LES LIGNES A L'ETRANGER (`etrangeres`, leurs rangs dans `lignes` et leurs lieux), jour par jour : le montant du jour de chaque ligne
 /// (son taux par sa quantite d'un jour), leur somme, et l'indemnite de mission du lieu du jour (celui de sa nuitee, sinon
 /// du premier repas), reduite de 65 % un jour sans nuitee dont un repas dit que la compagnie a paye l'hotel (`LOGE`).
@@ -1578,33 +1582,39 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         rang: usize,
         lieu: droit::missions::LieuDeMission,
         jours: Vec<(Jour, DateDeLigne)>,
-        par_jour: Decimal,
-        unites: Decimal,
-        taux: Decimal,
+        par_jour: Montant,
+        unites: Unites,
+        taux: MontantUnitaire,
         nuitee: bool,
     }
     let mut es: Vec<Etrangere> = Vec::new();
     for (i, lieu) in etrangeres {
-        let (i, l) = (*i, &lignes[*i]);
-        let Some(taux) = l.taux().map(ligne::TauxDeLigne::decimal) else { continue };
-        // La quantite d'une ligne saisie est dite (`lignes_dites`) ; les frais se comptent encore en decimal.
-        let quantite = l.frais().and_then(|f| f.quantite).ok_or_else(|| socle::fichiers::absent("quantite"))?.decimal();
-        if l.dates().is_empty() {
+        let i = *i;
+        let f = lignes[i].frais().ok_or_else(|| refus("une ligne à l'étranger qui n'est pas une ligne de frais : le signaler au développeur"))?;
+        let Some(taux) = f.taux else { continue };
+        // La quantite d'une ligne saisie est dite (`lignes_dites`), dans l'unite de sa rubrique : un repas, une nuitee
+        // se comptent au forfait (`rubriques-base.json`).
+        let unites = match f.quantite {
+            Some(ligne::QuantiteDeLigne::Unites(u)) => u,
+            Some(_) => return Err(refus("une ligne de repas ou de nuitée à l'étranger qui ne se compte pas au forfait : le signaler au développeur")),
+            None => return Err(socle::fichiers::absent("quantite")),
+        };
+        if f.dates.is_empty() {
             return Err(socle::refus!("{} : une ligne de frais à l'étranger dit ses jours : l'indemnité de mission est celle d'un jour. Rien n'est calculé.", qui));
         }
         let mut jours = Vec::new();
-        for x in l.dates() {
+        for x in &f.dates {
             jours.push((x.jour(), x.clone()));
         }
-        let unites = quantite / Decimal::from(jours.len() as u64);
-        es.push(Etrangere { rang: i, lieu: lieu.clone(), jours, par_jour: taux * unites, unites, taux, nuitee: *l.rubrique() == NUITEE });
+        let unites = unites.reparties_sur(jours.len());
+        es.push(Etrangere { rang: i, lieu: lieu.clone(), jours, par_jour: unites * taux, unites, taux, nuitee: f.rubrique == NUITEE });
     }
     // Les cases d'une ligne a l'etranger : le justificatif quand elle depasse, l'hotel paye d'un repas un jour sans nuitee.
     let mut tous_les_jours: Vec<Jour> = es.iter().flat_map(|e| e.jours.iter().map(|(j, _)| *j)).collect();
     tous_les_jours.sort();
     tous_les_jours.dedup();
     // L'ecart de chaque ligne, jour par jour.
-    let mut ecarts: Vec<Vec<Decimal>> = es.iter().map(|e| vec![Decimal::ZERO; e.jours.len()]).collect();
+    let mut ecarts: Vec<Vec<Montant>> = es.iter().map(|e| vec![Montant::ZERO; e.jours.len()]).collect();
     let mut limites_du_jour: Vec<(Jour, Montant, String)> = Vec::new();
     for j in &tous_les_jours {
         let du_jour: Vec<(usize, usize)> = es.iter().enumerate().filter_map(|(k, e)| e.jours.iter().position(|(x, _)| x == j).map(|p| (k, p))).collect();
@@ -1616,14 +1626,12 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
         let limite = if loge { (indemnite.euros * (socle::grandeurs::Coefficient::UN - REDUCTION_LOGE)).au_centime() } else { indemnite.euros };
-        let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
-        // Le calcul jour par jour reste en decimal : ses divisions (la quantite d'un jour, le taux qui reste exonere)
-        // se font a l'arithmetique de `rust_decimal`, que celle des grandeurs (`d28`) arrondirait autrement.
-        let mut reste = (total - limite.decimal()).max(Decimal::ZERO);
+        let total: Montant = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
+        let mut reste = (total - limite).max(Montant::ZERO);
         let mut ordre = du_jour.clone();
         ordre.sort_by_key(|(k, _)| !es[*k].nuitee);
         for (k, p) in ordre {
-            if reste <= Decimal::ZERO || cochee(&lignes[es[k].rang], JUSTIFICATIF) {
+            if reste <= Montant::ZERO || cochee(&lignes[es[k].rang], JUSTIFICATIF) {
                 continue;
             }
             let pris = reste.min(es[k].par_jour);
@@ -1643,7 +1651,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         let au_dela = if e.nuitee { NUITEE_AU_DELA } else { REPAS_AU_DELA };
         let mut cases: Vec<CaseDeFrais> = Vec::new();
         // Le justificatif, sur la ligne qui porte un ecart (ou qui l'a deja coche).
-        let depasse_un_jour = ecarts[k].iter().any(|x| *x > Decimal::ZERO);
+        let depasse_un_jour = ecarts[k].iter().any(|x| *x > Montant::ZERO);
         if !e.nuitee && e.jours.iter().any(|(j, _)| !nuits.contains(j)) || cochee(&lignes[e.rang], LOGE) {
             cases.push(LOGE);
         }
@@ -1653,27 +1661,27 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         marquer_les_cases(frais(&mut lignes[e.rang])?, &cases, &rubrique, None);
         // Les jours groupes par ecart : une part soumise par groupe ; la ligne garde ce qui reste exonere, sur toute sa
         // quantite.
-        let mut groupes: Vec<(Decimal, Vec<DateDeLigne>)> = Vec::new();
+        let mut groupes: Vec<(Montant, Vec<DateDeLigne>)> = Vec::new();
         for ((_, x), ecart) in e.jours.iter().zip(&ecarts[k]) {
             match groupes.iter_mut().find(|(g, _)| g == ecart) {
                 Some((_, v)) => v.push(x.clone()),
                 None => groupes.push((*ecart, vec![x.clone()])),
             }
         }
-        let soumis: Decimal = ecarts[k].iter().sum();
-        if soumis > Decimal::ZERO {
-            let quantite_ligne = e.unites * Decimal::from(e.jours.len() as u64);
+        let soumis: Montant = ecarts[k].iter().copied().sum();
+        if soumis > Montant::ZERO {
+            let soumis_par_unite = soumis.par_unite(e.unites.fois(e.jours.len())).ok_or_else(|| refus(SANS_UNITES))?;
             let l = frais(&mut lignes[e.rang])?;
-            l.marques.taux_saisi = Some(MontantUnitaire::du_decimal(e.taux.normalize()));
-            l.taux = Some(MontantUnitaire::du_decimal((e.taux - soumis / quantite_ligne).normalize()));
+            l.marques.taux_saisi = Some(sans_zero(e.taux));
+            l.taux = Some(sans_zero(e.taux - soumis_par_unite));
         }
-        for (ecart, dates) in groupes.into_iter().filter(|(g, _)| *g > Decimal::ZERO) {
-            let quantite = e.unites * Decimal::from(dates.len() as u64);
+        for (ecart, dates) in groupes.into_iter().filter(|(g, _)| *g > Montant::ZERO) {
+            let quantite = e.unites.fois(dates.len());
             let premier = dates.first().map(DateDeLigne::jour);
+            let ecart_par_unite = ecart.par_unite(e.unites).ok_or_else(|| refus(SANS_UNITES))?;
             parts.push(LignePaie::Composee(ligne::Composee {
                 rubrique: au_dela.clone(),
-                // Les frais se comptent encore en decimal : leurs unites se disent a la ligne.
-                paiement: ligne::PaiementDeLigne::Unites(socle::grandeurs::Unites::du_decimal(quantite.normalize()), MontantUnitaire::du_decimal((ecart / e.unites).normalize())),
+                paiement: ligne::PaiementDeLigne::Unites(sans_zero(quantite), sans_zero(ecart_par_unite)),
                 heures: None,
                 precision: None,
                 dates,
@@ -1687,7 +1695,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
                         lieu,
                         j0.jj_mm_aaaa(),
                         socle::texte::euros(*lim),
-                        socle::texte::euros(Montant::du_decimal(ecart))
+                        socle::texte::euros(ecart)
                     ),
                 });
             }

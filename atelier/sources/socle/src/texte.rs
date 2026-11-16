@@ -282,6 +282,20 @@ pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
     nombre_dit(g.en_decimal())
 }
 
+/// DES HEURES DITES EN HEURES ET MINUTES dans une phrase (151,67 h : « 151 h 40 »), a la minute la plus proche, la
+/// moitie vers le haut ; des heures entieres, sans minutes (« 35 h »).
+pub fn heures_et_minutes(h: crate::grandeurs::Heures) -> String {
+    use rust_decimal::{Decimal, RoundingStrategy};
+    let soixante = Decimal::from(60);
+    let minutes = (h.decimal() * soixante).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+    let heures = (minutes / soixante).trunc();
+    let reste = minutes - heures * soixante;
+    match reste.is_zero() {
+        true => format!("{} h", heures.normalize()),
+        false => format!("{} h {:0>2}", heures.normalize(), reste.normalize().to_string()),
+    }
+}
+
 /// UNE QUANTITE SE DIT AU PLURIEL dès deux (« 1,5 journée », « 2 cachets »).
 pub fn au_pluriel<G: crate::grandeurs::Grandeur>(g: G) -> bool {
     g.en_decimal() >= rust_decimal::Decimal::TWO

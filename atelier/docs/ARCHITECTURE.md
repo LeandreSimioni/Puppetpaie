@@ -317,8 +317,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
-| heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures qu'une unité d'une grille des minima paie, `droit::minima::Grille.heures`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
-| heures du mois (la durée légale d'un mois à temps plein, 151,67 h : la quotité de référence d'une nature, `quotite_reference_defaut` ; celle sur laquelle une convention ramène ses mensuels à l'heure, `droit::minima::Convention.heures_mensuelles`) | `Heures` (un mensuel sur les heures du mois : `MontantUnitaire::par_heure`) | `socle/src/grandeurs.rs` |
+| heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures` sur son unité, `Heures::pour_une_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
+| heures du mois (la durée légale d'un mois à temps plein, 151,67 h : la quotité de référence d'une nature, `quotite_reference_defaut` ; celle sur laquelle une convention ramène ses mensuels à l'heure, `droit::minima::Convention.heures_mensuelles`, et une grille au mois sa valeur, `droit::minima::Grille.heures`) | `Heures` (un mensuel sur les heures du mois : `MontantUnitaire::par_heure`, au centime le plus proche dans toute convention, `engagement::minima` ; dites dans une phrase en heures et minutes, « 151 h 40 », par `socle::texte::heures_et_minutes`) | `socle/src/grandeurs.rs` |
 | jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
@@ -380,7 +380,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire, un minimum
   conventionnel et chaque valeur des grilles des minima (`droit::minima::Minimum`, par heure, par cachet, par service,
   par journée, par semaine, par mois), la limite d'exonération d'une nuitée ou d'un repas au barème
-  (`forme_bareme::FraisParZone`, `FraisDeRepas`, `LogementEtRepas`) ; quantité × montant unitaire = montant.
+  (`forme_bareme::FraisParZone`, `FraisDeRepas`, `LogementEtRepas`) ; quantité × montant unitaire = montant. Les frais
+  à l'étranger se comptent jour par jour en grandeurs : les unités d'un jour (`Unites::reparties_sur`), ce que la ligne
+  paie un jour (unités × montant unitaire), l'écart au-dessus de la limite (un montant) et son prix par unité
+  (`Montant::par_unite` : montant / unités = montant unitaire).
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
   `Taux::points`, `Taux::centiemes_de_point`, `Coefficient::entier_fixe`, `Coefficient::dixiemes`,
   `Coefficient::centiemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,

@@ -651,9 +651,28 @@ impl Jours {
 impl Unites {
     /// Une unite : la quantite d'une ligne qui se paie en une fois (une prime, une indemnite).
     pub const UNE: Unites = Unites(Decimal::ONE);
+
+    /// Ces unites reparties egalement sur `n` jours (la quantite d'une ligne de frais a l'etranger : celle d'un jour) :
+    /// unites / compte = unites. Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`, jamais nul
+    /// (l'appelant le refuse).
+    pub fn reparties_sur(self, n: usize) -> Unites {
+        Unites(num::div(self.0, Decimal::from(n)))
+    }
+
+    /// Ces unites `n` fois (la quantite d'un jour fois les jours d'une ligne) : unites x compte = unites. Un compte n'est
+    /// pas une grandeur (« Le glossaire »).
+    pub fn fois(self, n: usize) -> Unites {
+        Unites(num::mul(self.0, Decimal::from(n)))
+    }
 }
 
 impl Montant {
+    /// Ce montant pour chacune des unites `u` d'un forfait (ce qu'une ligne de frais paie au-dela de sa limite, sur ses
+    /// repas ou ses nuitees) : montant / unites = montant unitaire ; `None` quand `u` est nul.
+    pub fn par_unite(self, u: Unites) -> Option<MontantUnitaire> {
+        (!u.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, u.0)))
+    }
+
     /// Les heures que ce montant paie a `par_heure` l'heure : montant / montant unitaire = heures ; `None` quand
     /// `par_heure` est nul.
     pub fn en_heures(self, par_heure: MontantUnitaire) -> Option<Heures> {
@@ -774,6 +793,12 @@ impl Heures {
         HeuresParUnite(num::court(self.au_centieme().0))
     }
 
+    /// CES HEURES, CELLES D'UNE SEULE UNITE (la valeur d'une grille des minima qui paie une semaine de 35 h : 35 h par
+    /// semaine) : heures / une unite = heures par unite, comme `Montant::pour_une_unite`.
+    pub fn pour_une_unite(self) -> HeuresParUnite {
+        HeuresParUnite(self.0)
+    }
+
     /// Les cachets qu'il faut pour faire ces heures, a `par_cachet` heures chacun, le dernier entame compte (13 h a 12 h le
     /// cachet : 2 cachets) ; `None` : un cachet de zero heure n'en fait aucune.
     pub fn cachets_pour(self, par_cachet: HeuresParUnite) -> Option<Cachets> {
@@ -891,6 +916,12 @@ impl MontantUnitaire {
     /// le salaire d'un jour) : montant unitaire / jours = montant unitaire ; `None` quand `j` est nul.
     pub fn par_jour(self, j: Jours) -> Option<MontantUnitaire> {
         (!j.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, j.0)))
+    }
+
+    /// Le montant d'une unite reparti sur les `jours` qu'un texte fixe (la semaine de 5 ou de 6 jours d'un artiste de la
+    /// 3097, titre III : le prix d'un jour) : montant unitaire / jours = montant unitaire, exact ; jamais nuls.
+    pub fn sur_jours_fixes(self, jours: std::num::NonZeroU32) -> MontantUnitaire {
+        MontantUnitaire(num::div(self.0, Decimal::from(jours.get())))
     }
 
     /// Le prix d'une unite pour chacune des heures `h` par unite qu'elle paie (une semaine de 35 h, la valeur d'une
