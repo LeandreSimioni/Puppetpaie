@@ -19,7 +19,7 @@ use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::{div, mul, Decimal};
+use socle::num::Decimal;
 use socle::grandeurs::{courte, Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use crate::ligne::{PaiementDeLigne, QuantiteDeLigne};
 pub use droit::reduction::ReductionGenerale;
@@ -258,6 +258,16 @@ impl BaseDeCotisation {
             BaseDeCotisation::Heures(Heures::du_decimal(d))
         } else {
             BaseDeCotisation::Montant(Montant::du_decimal(d))
+        }
+    }
+
+    /// La base nulle de l'assiette `a`, dans la grandeur qu'elle compte (`de_l_assiette`), ses deux decimales ecrites :
+    /// celle d'une paie annulee (`Paie::annulee`).
+    pub fn nulle(a: Assiette) -> BaseDeCotisation {
+        if a.en_heures() {
+            BaseDeCotisation::Heures(Heures::ZERO.au_centieme())
+        } else {
+            BaseDeCotisation::Montant(Montant::ZERO)
         }
     }
 
@@ -535,9 +545,8 @@ impl Paie {
         let mut engagement = self.engagement.clone();
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (socle::grandeurs::Jours::ZERO, socle::grandeurs::Cachets::ZERO, None);
-        let zero = socle::grandeurs::Montant::ZERO.decimal();
         let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.plafond_urssaf, self.smic, Heures::ZERO, self.plafond_temps_partiel);
-        p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::de_l_assiette(*k, zero))).collect();
+        p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::nulle(*k))).collect();
         p
     }
 
@@ -1440,7 +1449,7 @@ pub(crate) struct SmicDUneAbsence {
 /// rapport, comme la fiche l'ecrit ; les autres heures payees (en plus du mois) restent entieres. `heures` est ce SMIC
 /// rapporte au SMIC horaire : la reduction le retrouve (`droit::reduction`). Sans ligne `retabli` non nulle : aucun rapport.
 pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantUnitaire>) -> Option<SmicDUneAbsence> {
-    let rien = Montant::du_decimal(Decimal::ZERO);
+    let rien: Montant = socle::grandeurs::nulle();
     let montants = |f: &dyn Fn(&LigneBrut) -> bool| lb.iter().filter(|l| f(l)).fold(rien, |a, l| a + l.montant);
     let heures = |f: &dyn Fn(&LigneBrut) -> bool| lb.iter().filter(|l| f(l)).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     if !lb.iter().any(|l| l.retabli && !l.montant.est_nul()) {
@@ -1451,10 +1460,12 @@ pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantU
         return None;
     }
     let percue = rien.max(habituelle + montants(&|l| l.retabli && l.soumis));
-    let heures = smic_horaire.filter(|s| *s > MontantUnitaire::du_decimal(Decimal::ZERO)).map(|s| {
+    // Le SMIC du salaire au rapport de la remuneration percue a l'habituelle (non nulle, vu plus haut), en heures au SMIC
+    // horaire (positif, `filter`) : jamais `None`.
+    let heures = smic_horaire.filter(|s| *s > MontantUnitaire::ZERO).and_then(|s| {
         let smic_du_salaire = (heures(&|l| l.salaire_de_base) * s).au_centime();
         let autres = heures(&|l| !l.salaire_de_base && !l.retabli);
-        Heures::ZERO.max(Heures::du_decimal(div(div(mul(smic_du_salaire.decimal(), percue.decimal()), habituelle.decimal()), s.decimal())) + autres)
+        smic_du_salaire.prorata(percue, habituelle).en_heures(s).map(|h| Heures::ZERO.max(h + autres))
     });
     Some(SmicDUneAbsence { percue, habituelle, heures })
 }
@@ -2184,15 +2195,16 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, MontantUnitaire::du_decimal(dec_de(montant))),
-            montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, lue(montant)),
+            montant: lue(montant), heures_annexes: lue(heures), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,
         }
     }
 
-    fn dec_de(t: &str) -> Decimal {
-        t.parse().unwrap()
+    /// La grandeur que l'exemple de la fiche ecrit.
+    fn lue<G: socle::grandeurs::Grandeur>(t: &str) -> G {
+        socle::grandeurs::lu::en_texte(t).unwrap()
     }
 
     /// CSS D. 241-7, IV, dernier alinea, et la fiche net-entreprises 2681 (`atelier/reference/sources/
@@ -2202,19 +2214,19 @@ mod tests {
     /// 11,65). Une IJSS subrogee, non soumise, n'entre pas au rapport ; un maintien integral garde le SMIC entier.
     #[test]
     fn le_smic_d_un_mois_d_absence_suit_le_rapport_des_remunerations() {
-        let smic = Some(MontantUnitaire::du_decimal(dec_de("11.65")));
+        let smic = Some(lue::<MontantUnitaire>("11.65"));
         // 35 x 52 / 12 heures, comme la fiche compte le SMIC du mois (1 766,92).
         let mois = ligne("mois", "2000", "151.6667", true, false, true);
         let prime = ligne("prime", "3833.33", "0", false, false, true);
         let absence = ligne("absence_maladie", "-1000", "-75.83", false, true, true);
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
-        assert_eq!((a.percue.decimal(), a.habituelle.decimal()), (dec_de("1000"), dec_de("2000")));
-        assert_eq!((a.heures.unwrap() * smic.unwrap()).au_centime().decimal(), dec_de("883.46"));
+        assert_eq!((a.percue, a.habituelle), (lue("1000"), lue("2000")));
+        assert_eq!((a.heures.unwrap() * smic.unwrap()).au_centime(), lue("883.46"));
         let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code().as_str(),"300", "0", false, false, false);
-        assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue.decimal(), dec_de("1000"));
+        assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, lue("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();
-        assert_eq!((entier.heures.unwrap() * smic.unwrap()).au_centime().decimal(), dec_de("1766.92"));
+        assert_eq!((entier.heures.unwrap() * smic.unwrap()).au_centime(), lue("1766.92"));
         assert!(smic_d_une_absence(&[mois], smic).is_none());
     }
 }

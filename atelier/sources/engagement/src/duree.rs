@@ -20,21 +20,17 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::R;
 use socle::grandeurs::Heures;
-use socle::num::Decimal;
 use socle::texte::virgule;
 
 /// La duree quotidienne maximale de travail effectif (L. 3121-18) : 10 heures.
-const MAXIMUM_QUOTIDIEN: Heures = Heures::du_decimal(Decimal::from_parts(10, 0, 0, false, 0));
+const MAXIMUM_QUOTIDIEN: Heures = Heures::fixes(10);
 
 /// Une journee : 24 heures.
-const JOURNEE: Heures = Heures::du_decimal(Decimal::from_parts(24, 0, 0, false, 0));
+const JOURNEE: Heures = Heures::fixes(24);
 
-/// Un milliardieme d'heure : ce qu'une moyenne sur plusieurs jours laisse.
-const UN_MILLIARDIEME: Heures = Heures::du_decimal(Decimal::from_parts(1, 0, 0, false, 9));
-
-/// Des heures au-dela de `seuil`, a un milliardieme d'heure pres.
+/// Des heures au-dela de `seuil`, a un milliardieme d'heure pres (ce qu'une moyenne sur plusieurs jours laisse).
 fn au_dela(h: Heures, seuil: Heures) -> bool {
-    h > seuil + UN_MILLIARDIEME
+    h > seuil + Heures::UN_MILLIARDIEME
 }
 
 /// Des heures d'un jour, pour un message : au centieme (la porte de la phrase).

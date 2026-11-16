@@ -74,7 +74,7 @@ fn montants(p: &Paie) -> [Montant; 6] {
 
 /// Les heures d'une paie au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.
 fn heures(p: &Paie) -> Option<Heures> {
-    p.engagement.heures.map(|h| Heures::du_decimal(h.decimal().round_dp(2)))
+    p.engagement.heures.map(Heures::a_deux_decimales)
 }
 
 fn resume(p: &Paie) -> Resume {

@@ -166,7 +166,6 @@ un manque du logiciel.",
 /// La pile d'une declaration qui ne declare aucun taux (le taux AT/MP est interdit en nature 08) : l'annee, et aucune
 /// valeur ni aucune cotisation. Aucun calcul ne la lit.
 fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
-    use socle::num::Decimal;
     use std::collections::BTreeMap;
     droit::forme_bareme::Pile {
         annee,
@@ -181,9 +180,9 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         pas_taux_par_defaut: None,
         plafond_securite_sociale: None,
         sante_obligatoire: None,
-        abattement_csg: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
-        majoration_conges_115: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
-        majoration_conges_110: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
+        abattement_csg: socle::grandeurs::Coefficient::ZERO,
+        majoration_conges_115: socle::grandeurs::Coefficient::ZERO,
+        majoration_conges_110: socle::grandeurs::Coefficient::ZERO,
         plafond_journalier: None,
         t2_multiple: None,
         apec_multiple: None,

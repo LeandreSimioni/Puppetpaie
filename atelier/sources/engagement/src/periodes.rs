@@ -17,7 +17,6 @@ use socle::date::{Jour, Periode};
 use crate::{Avis, Engagement, LignePaie};
 use socle::echec::{refus, R};
 use socle::grandeurs::{Heures, Montant};
-use socle::num::{court, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
@@ -190,7 +189,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     // La reduction generale du mois, puis sa part dans chaque periode.
     let brut_mois = parts.iter().fold(Montant::ZERO, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_travaillees);
-    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
+    let brut_cs = parts.iter().filter_map(|p| p.bases.get(&Assiette::BrutCs)).map(|b| b.en_euros(Assiette::BrutCs)).collect::<R<Vec<Montant>>>()?;
+    let caisse = brut_cs.iter().any(|b| *b > Montant::ZERO);
     let pile = pile_de_la_paie(ctx, derniere)?;
     let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
@@ -206,8 +206,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).map(Heures::decimal).sum();
-    e.heures = if !heures.is_zero() { Some(Heures::du_decimal(court(heures))) } else { None };
+    let heures: Heures = parts.iter().filter_map(|p| p.engagement.heures).sum();
+    e.heures = if !heures.est_nul() { Some(socle::grandeurs::courte(heures)) } else { None };
     let mut paie = Paie::nouveau(
         e,
         derniere.salarie.clone(),
@@ -302,7 +302,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 b.fin().jj_mm_aaaa(),
                 cadre,
                 socle::grandeurs::ecrit::sans_zero::dit(p.engagement.quotite()?.heures("La durée d'une période élémentaire")?),
-                p.brut.decimal()
+                socle::grandeurs::ecrit::texte::dit(p.brut)
             ))
         })
         .collect::<R<_>>()?;

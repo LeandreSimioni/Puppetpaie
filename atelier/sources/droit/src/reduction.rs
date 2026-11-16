@@ -9,7 +9,6 @@ use crate::fiche::Statut;
 use crate::forme_bareme::ReductionGenerale as Parametres;
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Heures, Montant, Taux};
-use socle::num::Decimal;
 
 /// Un parametre exige de la section.
 fn requis<T>(v: Option<T>, cle: &str) -> R<T> {
@@ -48,13 +47,13 @@ pub struct ReductionGenerale {
 
 /// 130 % : la limite de la reduction sous deduction forfaitaire specifique, au regard de celle du brut entier (arrete du
 /// 4 decembre 2019, art. 1er ; `reduction_generale_sous_dfs`).
-const LIMITE_SOUS_DFS: Coefficient = Coefficient::du_decimal(Decimal::from_parts(130, 0, 0, false, 2));
+const LIMITE_SOUS_DFS: Coefficient = Coefficient::centiemes(130);
 
 /// 0,6 : le diviseur du parametre T de la formule de la reduction (`FormuleDeReduction::Fillon`).
-const SIX_DIXIEMES: Coefficient = Coefficient::du_decimal(Decimal::from_parts(6, 0, 0, false, 1));
+const SIX_DIXIEMES: Coefficient = Coefficient::dixiemes(6);
 
 /// 2 : le diviseur du crochet de la formule de la reduction.
-const DEUX: Coefficient = Coefficient::du_decimal(Decimal::TWO);
+const DEUX: Coefficient = Coefficient::entier_fixe(2);
 
 /// La reduction generale degressive unique d'un contrat, ou `None` (art. D. 241-7 CSS ; `rg` : la section
 /// `reduction_generale` de la pile).
@@ -87,7 +86,9 @@ pub fn reduction_generale(
             // La phrase du refus cite les deux nombres : sa porte.
             let terme = crochet
                 .puissance(puissance)
-                .ok_or_else(|| socle::refus!("la réduction générale ne se calcule pas : {} puissance {}", crochet.decimal(), puissance.decimal()))?;
+                .ok_or_else(|| {
+                    socle::refus!("la réduction générale ne se calcule pas : {} puissance {}", socle::grandeurs::ecrit::texte::dit(crochet), socle::grandeurs::ecrit::texte::dit(puissance))
+                })?;
             coefficient = requis(rg.tmin, "tmin")? + requis(rg.tdelta, "tdelta")? * terme;
         }
     }

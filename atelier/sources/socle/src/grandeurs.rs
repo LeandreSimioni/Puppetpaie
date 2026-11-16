@@ -347,6 +347,17 @@ impl Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 0))
     }
 
+    /// Un coefficient qu'un texte fixe, en dixiemes (`6` : 0,6, le diviseur du parametre T de la reduction generale).
+    pub const fn dixiemes(n: u32) -> Coefficient {
+        Coefficient(Decimal::from_parts(n, 0, 0, false, 1))
+    }
+
+    /// Un coefficient qu'un texte fixe, en centiemes (`130` : 130 %, la limite de la reduction generale sous deduction
+    /// forfaitaire specifique).
+    pub const fn centiemes(n: u32) -> Coefficient {
+        Coefficient(Decimal::from_parts(n, 0, 0, false, 2))
+    }
+
     /// Une fraction qu'un texte fixe (`2` sur `3` : les deux tiers de D1226-1, 2°), exacte a vingt-huit chiffres
     /// (`num::div`).
     pub fn fraction(numerateur: u32, denominateur: std::num::NonZeroU32) -> Coefficient {
@@ -490,6 +501,11 @@ impl Jours {
     /// Un demi-jour.
     pub const DEMI: Jours = Jours(Decimal::from_parts(5, 0, 0, false, 1));
 
+    /// Des jours qu'un texte fixe, entiers (`21` : les jours d'un mois incomplet d'un artiste, CCN 1285, art. X.3).
+    pub const fn fixes(n: u32) -> Jours {
+        Jours(Decimal::from_parts(n, 0, 0, false, 0))
+    }
+
     /// Au demi-jour le plus proche, la moitie loin de zero (1,04 jour : 1 ; 1,3 : 1,5) : des jours qu'une phrase dit
     /// « environ ». Aucun texte deposé ne dit cet arrondi.
     pub fn au_demi(self) -> Jours {
@@ -593,6 +609,14 @@ impl Heures {
 
     /// Une heure (le singulier d'une phrase).
     pub const UNE: Heures = Heures(Decimal::ONE);
+
+    /// Un milliardieme d'heure (`0.000000001`) : l'ecart qu'une moyenne d'heures sur plusieurs jours laisse.
+    pub const UN_MILLIARDIEME: Heures = Heures(Decimal::from_parts(1, 0, 0, false, 9));
+
+    /// Des heures qu'un texte fixe, entieres (`10` : la duree quotidienne maximale de travail effectif, L. 3121-18).
+    pub const fn fixes(n: u32) -> Heures {
+        Heures(Decimal::from_parts(n, 0, 0, false, 0))
+    }
 
     /// Au centieme d'heure, la moitie vers le haut, ses deux decimales ecrites (`7.5` s'ecrit `7.50`) : des heures
     /// ramenees au jour, au mois ou a la semaine. Aucun texte deposé ne dit cet arrondi.

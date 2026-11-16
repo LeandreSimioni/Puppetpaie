@@ -51,7 +51,7 @@ pub struct Pss {
 pub const JOURS_ENGAGEMENT_CONTINU: Duree<EnJours> = Duree::jours(5);
 
 /// Arrete du 24/01/1975, art. 3, al. 2 : « douze fois le plafond horaire » par journee de travail.
-pub const HEURES_PAR_JOURNEE: Heures = Heures::du_decimal(Decimal::from_parts(12, 0, 0, false, 0));
+pub const HEURES_PAR_JOURNEE: Heures = Heures::fixes(12);
 
 // ---------------------------------------------------------------- les dates
 
