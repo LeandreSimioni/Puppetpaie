@@ -35,7 +35,6 @@ use socle::fichiers::repr;
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero::dit;
 use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
-use socle::num::Decimal;
 
 /// Le dossier du magasin, sous les donnees de la compagnie.
 pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
@@ -961,7 +960,8 @@ pub struct CachetPaye {
     pub libelle: String,
     pub dates: Vec<Jour>,
     pub quantite: Option<crate::ligne::QuantiteDeLigne>,
-    pub taux: Option<Decimal>,
+    #[serde(serialize_with = "crate::ligne::en_texte::option::taux")]
+    pub taux: Option<crate::ligne::TauxDeLigne>,
 }
 
 fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &IdSalarie, absence: &Periode) -> R<Vec<CachetPaye>> {
@@ -994,7 +994,7 @@ fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDan
             rubrique: l.rubrique().clone(),
             dates: dedans,
             quantite: l.quantite(r.unite),
-            taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
+            taux: l.taux(),
         });
     }
     Ok(out)

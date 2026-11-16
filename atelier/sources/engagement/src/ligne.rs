@@ -404,6 +404,18 @@ pub mod en_texte {
             TauxDeLigne::PartDeLaBase(g) => ecrit(g, s),
         }
     }
+
+    /// Un `Option` dans ces ecritures : `None` s'ecrit `null`.
+    pub mod option {
+        use super::TauxDeLigne;
+
+        pub fn taux<S: serde::Serializer>(t: &Option<TauxDeLigne>, s: S) -> Result<S::Ok, S::Error> {
+            match t {
+                Some(t) => super::taux(t, s),
+                None => s.serialize_none(),
+            }
+        }
+    }
 }
 
 /// Chaque variante de `QuantiteDeLigne`, sa grandeur nommee `$g` : `$e`, du meme type pour toutes.
