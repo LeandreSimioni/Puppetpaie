@@ -2,7 +2,7 @@
 //! une grille (par empreinte, en entier pour quelques groupes). Les refus sont des attendus.
 //! `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit l'oracle.
 
-use crate::outils::{dec, dossier_de_test, lire_oracle, oracle, sceller};
+use crate::outils::{dossier_de_test, grandeur, lire_oracle, oracle, sceller};
 use droit::catalogue::{code_54, rubrique};
 use droit::reduction::{au_dela_du_seuil, reduction_generale};
 use serde_json::{json, Value};
@@ -101,7 +101,7 @@ fn la_reduction_generale() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), caisse));
+            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, grandeur::<Montant>(b.as_str().unwrap()), grandeur::<Heures>(h), caisse));
             appliquees += matches!(r, Ok(Some(_))) as usize;
             vus.push(essai(r.map(|o| o.map_or(Value::Null, |x| socle::ecriture::en_valeur(&x)))));
         }
@@ -124,9 +124,9 @@ fn le_seuil_de_smic() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(decimal).transpose();
+            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(|s| socle::forme::lire::<Coefficient>(s, "seuil illisible")).transpose();
             vus.push(essai(section(bar).and_then(|rg| match seuil? {
-                Some(s) => au_dela_du_seuil(rg.as_ref(), Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), Coefficient::du_decimal(s)),
+                Some(s) => au_dela_du_seuil(rg.as_ref(), grandeur::<Montant>(b.as_str().unwrap()), grandeur::<Heures>(h), s),
                 None => Ok(true),
             }).map(Value::Bool)));
         }

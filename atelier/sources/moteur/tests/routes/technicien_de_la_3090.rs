@@ -24,7 +24,9 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dec, dossier_de_test, nombre, paie_ecrite, reussi, route, valider};
+use socle::grandeurs::{Montant, Taux};
+
+use crate::outils::{dossier_de_test, grandeur, nombre, paie_ecrite, reussi, route, valider};
 
 /// Le jour de chaque geste : celui ou les Treteaux commencent.
 const JOUR: &str = "2026-11-02";
@@ -60,8 +62,12 @@ fn ligne<'p>(paie: &'p Value, liste: &str, cle: &str, id: &str) -> &'p Value {
     paie["paie"][liste].as_array().and_then(|l| l.iter().find(|x| x[cle] == id)).unwrap_or_else(|| panic!("pas de ligne {} : {}", id, paie))
 }
 
-fn montant(v: &Value) -> rust_decimal::Decimal {
-    dec(v.as_str().unwrap_or_else(|| panic!("un montant : {}", v)))
+fn montant(v: &Value) -> Montant {
+    grandeur(v.as_str().unwrap_or_else(|| panic!("un montant : {}", v)))
+}
+
+fn taux(v: &Value) -> Taux {
+    grandeur(v.as_str().unwrap_or_else(|| panic!("un taux : {}", v)))
 }
 
 /// En CDI depuis le 02/11/2026 a 2 400 € par mois pour 151,67 h, FORTUNY a, au 30/11/2026, 11 annees pleines de
@@ -81,8 +87,8 @@ fn la_prime_d_anciennete_d_un_technicien_au_mois_de_l_annexe_1() {
     reussi(&valider(&c, "2026-11", None, &cdi, JOUR));
 
     let paie = paie_ecrite(&c, "2026-11", "FORTUNY", None);
-    assert_eq!(montant(&ligne(&paie, "remuneration", "code", "prime_anciennete")["montant"]), dec("196.70"), "{}", paie);
-    assert_eq!(montant(&paie["paie"]["brut"]), dec("2596.70"), "{}", paie);
+    assert_eq!(montant(&ligne(&paie, "remuneration", "code", "prime_anciennete")["montant"]), grandeur("196.70"), "{}", paie);
+    assert_eq!(montant(&paie["paie"]["brut"]), grandeur("2596.70"), "{}", paie);
 }
 
 /// Deux contrats d'usage de 10 heures, en 2025. Le seuil se compare au SMIC de reference des heures payees
@@ -104,15 +110,15 @@ fn le_complement_au_dela_du_seuil_du_bareme_2025() {
         reussi(&valider(&c, mois, None, &carte, JOUR));
         paie_ecrite(&c, mois, "FORTUNY", None)
     };
-    let patronale = |paie: &Value, id: &str| (montant(&ligne(paie, "lignes", "id", id)["taux_pat"]), montant(&ligne(paie, "lignes", "id", id)["montant_pat"]));
+    let patronale = |paie: &Value, id: &str| (taux(&ligne(paie, "lignes", "id", id)["taux_pat"]), montant(&ligne(paie, "lignes", "id", id)["montant_pat"]));
 
     let mars = heures("2025-03", "2025-03-14", "51.73");
-    assert_eq!(montant(&mars["paie"]["brut"]), dec("517.30"), "{}", mars);
-    assert_eq!(patronale(&mars, "maladie"), (dec("13"), dec("67.25")), "{}", mars);
-    assert_eq!(patronale(&mars, "famille"), (dec("5.25"), dec("27.16")), "{}", mars);
+    assert_eq!(montant(&mars["paie"]["brut"]), grandeur("517.30"), "{}", mars);
+    assert_eq!(patronale(&mars, "maladie"), (grandeur("13"), grandeur("67.25")), "{}", mars);
+    assert_eq!(patronale(&mars, "famille"), (grandeur("5.25"), grandeur("27.16")), "{}", mars);
 
     let avril = heures("2025-04", "2025-04-11", "30.0");
-    assert_eq!(montant(&avril["paie"]["brut"]), dec("300"), "{}", avril);
-    assert_eq!(patronale(&avril, "maladie"), (dec("13"), dec("39.00")), "{}", avril);
-    assert_eq!(patronale(&avril, "famille"), (dec("3.45"), dec("10.35")), "{}", avril);
+    assert_eq!(montant(&avril["paie"]["brut"]), grandeur("300"), "{}", avril);
+    assert_eq!(patronale(&avril, "maladie"), (grandeur("13"), grandeur("39.00")), "{}", avril);
+    assert_eq!(patronale(&avril, "famille"), (grandeur("3.45"), grandeur("10.35")), "{}", avril);
 }

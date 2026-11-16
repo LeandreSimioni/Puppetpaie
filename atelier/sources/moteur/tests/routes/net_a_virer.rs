@@ -6,7 +6,9 @@
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dec, dossier_de_test, ecrire, lire, reussi, route};
+use socle::grandeurs::{Montant, Taux};
+
+use crate::outils::{dossier_de_test, ecrire, grandeur, lire, reussi, route};
 
 #[test]
 fn le_net_a_virer_est_le_net_apres_impot() {
@@ -28,14 +30,14 @@ fn le_net_a_virer_est_le_net_apres_impot() {
     let a = reussi(&r);
     let paies = a["paies"].as_array().unwrap();
     let fuller: &Value = paies.iter().find(|p| p["salarie"]["cle"] == "FULLER").expect("FULLER n'est pas dans l'apercu");
-    let avant = dec(fuller["net_a_payer"].as_str().unwrap());
-    let impot = (dec(fuller["net_imposable"].as_str().unwrap()) * dec("0.10")).round_dp(2);
-    assert!(impot > dec("0"), "aucun impot a prelever : {}", fuller);
+    let avant = grandeur::<Montant>(fuller["net_a_payer"].as_str().unwrap());
+    let impot = grandeur::<Montant>(fuller["net_imposable"].as_str().unwrap()).fois_taux(Taux::points(10)).au_centime();
+    assert!(impot > Montant::ZERO, "aucun impot a prelever : {}", fuller);
     let paye = avant - impot;
-    assert_eq!(dec(fuller["net_paye"].as_str().unwrap()), paye, "{}", fuller);
+    assert_eq!(grandeur::<Montant>(fuller["net_paye"].as_str().unwrap()), paye, "{}", fuller);
     let ligne = a["par_salarie"].as_array().unwrap().iter().find(|g| g["salarie"]["cle"] == "FULLER").unwrap();
-    assert_eq!(dec(ligne["net_paye"].as_str().unwrap()), paye, "{}", ligne);
+    assert_eq!(grandeur::<Montant>(ligne["net_paye"].as_str().unwrap()), paye, "{}", ligne);
     // Le net du mois est connu quand celui de chaque paie l'est (une paie pas encore validee n'a pas son prelevement).
-    let total: Option<rust_decimal::Decimal> = paies.iter().map(|p| p["net_paye"].as_str().map(dec)).sum();
-    assert_eq!(a["total_net"].as_str().map(dec), total);
+    let total: Option<Montant> = paies.iter().map(|p| p["net_paye"].as_str().map(grandeur)).sum();
+    assert_eq!(a["total_net"].as_str().map(grandeur), total);
 }

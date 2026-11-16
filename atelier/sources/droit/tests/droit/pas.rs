@@ -9,9 +9,7 @@ use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, Triplet, V
 use droit::type_taux_pas::TypeDeTauxPas;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
-use socle::forme::Nombre;
-use socle::num::Decimal;
-use std::str::FromStr;
+use socle::grandeurs::Montant;
 
 /// Les montants de la grille, de part et d'autre de chaque seuil des baremes de 2025 et 2026.
 const MONTANTS: [&str; 40] = [
@@ -21,8 +19,8 @@ const MONTANTS: [&str; 40] = [
     "-50",
 ];
 
-fn montants() -> Vec<Decimal> {
-    MONTANTS.iter().map(|m| Decimal::from_str(m).unwrap()).collect()
+fn montants() -> Vec<Montant> {
+    MONTANTS.iter().map(|m| socle::grandeurs::lu::en_texte(m).unwrap()).collect()
 }
 
 /// Le bareme d'un cas : un socle livre (`brut-2025`, `brut-2026`), sans section du PAS (`vide`), ou sans grille.
@@ -53,7 +51,7 @@ struct SectionDuPas {
 #[derive(Deserialize)]
 struct AbattementDate {
     depuis: Jour,
-    valeur: Nombre,
+    valeur: Montant,
 }
 
 /// La pile d'un bareme au jour `le`, pour ce que le PAS en lit : l'abattement resolu a ce jour (la derniere valeur dont
@@ -67,7 +65,7 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
             let s = socle(socle::mois::Annee::constante(if b == Bareme::Brut2025 { 2025 } else { 2026 })).pas_taux_par_defaut;
             let mut vues: Vec<&AbattementDate> = s.abattement_contrats_courts.iter().filter(|e| le.is_none_or(|l| e.depuis <= l)).collect();
             vues.sort_by_key(|e| e.depuis);
-            Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| GrandeurDatee(socle::grandeurs::Montant::du_decimal(e.valeur.0))), grilles: s.grilles, ..PasParDefaut::default() })
+            Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| GrandeurDatee(e.valeur)), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
     // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
@@ -138,12 +136,12 @@ struct CasDuVersement {
 }
 
 fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
-    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), socle::grandeurs::Montant::du_decimal(m), c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
+    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
     let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux, type_taux: r.type_taux, identifiant: r.identifiant.clone() });
-    suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), socle::grandeurs::Montant::du_decimal(m), c.le, c.contrat_court, &c.zone).into()).collect())
+    suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
 }
 
 #[test]
