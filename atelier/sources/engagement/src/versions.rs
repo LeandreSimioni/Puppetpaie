@@ -6,8 +6,7 @@
 use serde::Serialize;
 use socle::forme::NombreLu;
 use crate::LignePaie;
-use socle::num::Decimal;
-use crate::ligne::TauxDeLigne;
+use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
 
 use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
@@ -112,12 +111,28 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
     }
 }
 
-/// Un nombre d'une ligne de paie, en mots : en euros, ou a la virgule ; « — » quand il n'est pas dit.
-fn nombre_en_mots(x: Option<Decimal>, en_euros: bool) -> String {
-    match x {
+/// La quantite d'une ligne de paie, en mots, a la virgule et sans son unite (« 151,67 ») ; « — » quand elle n'est pas
+/// dite.
+fn quantite_en_mots(q: Option<QuantiteDeLigne>) -> String {
+    use socle::texte::virgule;
+    match q {
         None => "—".into(),
-        Some(x) if en_euros => euros(Montant::du_decimal(x)),
-        Some(x) => socle::texte::nombre_dit(x),
+        Some(QuantiteDeLigne::Heures(g)) => virgule(g),
+        Some(QuantiteDeLigne::Cachets(g)) => virgule(g),
+        Some(QuantiteDeLigne::Jours(g)) => virgule(g),
+        Some(QuantiteDeLigne::Services(g)) => virgule(g),
+        Some(QuantiteDeLigne::Semaines(g)) => virgule(g),
+        Some(QuantiteDeLigne::PartDuMois(g)) => virgule(g),
+        Some(QuantiteDeLigne::Unites(g)) => virgule(g),
+        Some(QuantiteDeLigne::Base(g)) => virgule(g),
+    }
+}
+
+/// Le taux d'une ligne de paie, en mots (`TauxDeLigne::dit` : « 120,00 € », « 10,00 % ») ; « — » quand il n'est pas dit.
+fn taux_en_mots(t: Option<TauxDeLigne>) -> String {
+    match t {
+        None => "—".into(),
+        Some(t) => t.dit(),
     }
 }
 
@@ -272,13 +287,13 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite_ecrite(), false))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, quantite_en_mots(y.quantite(unite)))),
                 (Some(x), Some(y)) => {
-                    let (qx, qy) = (x.quantite_ecrite(), y.quantite_ecrite());
+                    let (qx, qy) = (x.quantite(unite), y.quantite(unite));
                     if qx != qy {
-                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
+                        out.push(format!("{} : {} → {}", au_pluriel(&lib), quantite_en_mots(qx), quantite_en_mots(qy)));
                     }
-                    let (tx, ty) = (nombre_en_mots(x.taux().map(TauxDeLigne::decimal), true), nombre_en_mots(y.taux().map(TauxDeLigne::decimal), true));
+                    let (tx, ty) = (taux_en_mots(x.taux()), taux_en_mots(y.taux()));
                     if tx != ty {
                         out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }

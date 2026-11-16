@@ -718,11 +718,12 @@ impl PaiementDeLigne {
     /// nombres lus, `import::bulletin_lu`), dans l'unite `unite` de la rubrique a laquelle l'import la rattache : la porte
     /// de leur lecture. Le taux d'une rubrique en pourcentage s'imprime en pourcent (un « 10 » : 10 %) : la part de la
     /// base qu'il paie se prend comme le calcul la prend d'une ligne en pourcentage (`sur_cent`).
-    pub fn imprime(unite: Unite, q: Nombre, t: Nombre) -> PaiementDeLigne {
-        match unite {
-            Unite::Pourcentage => PaiementDeLigne::Base(Montant::du_decimal(q.0), sur_cent(Taux::du_decimal(t.0))),
-            _ => PaiementDeLigne::de_l_unite(unite, q.0, t.0),
-        }
+    pub fn imprime(unite: Unite, q: Nombre, t: Nombre) -> R<PaiementDeLigne> {
+        let taux = match unite {
+            Unite::Pourcentage => TauxDeLigne::PartDeLaBase(Taux::du_decimal(t.0).en_coefficient()),
+            _ => TauxDeLigne::ParUnite(MontantUnitaire::du_decimal(t.0)),
+        };
+        PaiementDeLigne::de(QuantiteDeLigne::de_l_unite(unite, q.0), taux).ok_or_else(|| socle::refus!("une ligne imprimée en {} n'a pas la forme de son unité : le signaler au développeur", unite))
     }
 
     /// Sans zero inutile (`socle::grandeurs::sans_zero`), sa quantite et son taux : la forme canonique d'une ligne, et
@@ -741,19 +742,24 @@ impl PaiementDeLigne {
         }
     }
 
-    /// La quantite `q` et le taux `t` d'une ligne, dans l'unite `unite` de sa rubrique.
-    pub fn de_l_unite(unite: Unite, q: Decimal, t: Decimal) -> PaiementDeLigne {
-        let u = MontantUnitaire::du_decimal(t);
-        match unite {
-            Unite::Heure => PaiementDeLigne::Heures(Heures::du_decimal(q), u),
-            Unite::Cachet => PaiementDeLigne::Cachets(socle::grandeurs::Cachets::du_decimal(q), u),
-            Unite::Jour => PaiementDeLigne::Jours(Jours::du_decimal(q), u),
-            Unite::Service => PaiementDeLigne::Services(socle::grandeurs::Services::du_decimal(q), u),
-            Unite::Semaine => PaiementDeLigne::Semaines(socle::grandeurs::Semaines::du_decimal(q), u),
-            Unite::Mois => PaiementDeLigne::PartDuMois(Coefficient::du_decimal(q), u),
-            Unite::Forfait => PaiementDeLigne::Unites(socle::grandeurs::Unites::du_decimal(q), u),
-            Unite::Pourcentage => PaiementDeLigne::Base(Montant::du_decimal(q), Coefficient::du_decimal(t)),
-        }
+    /// LA QUANTITE `q` A SON TAUX `t`, qui vont ensemble : une base a la part qu'une ligne en pourcentage en paie, toute
+    /// autre quantite a un montant unitaire ; `None` : ils ne vont pas ensemble (une ligne qui n'a pas la forme de sa
+    /// rubrique).
+    pub fn de(q: QuantiteDeLigne, t: TauxDeLigne) -> Option<PaiementDeLigne> {
+        use PaiementDeLigne as P;
+        use QuantiteDeLigne as Q;
+        use TauxDeLigne::{ParUnite, PartDeLaBase};
+        Some(match (q, t) {
+            (Q::Heures(q), ParUnite(u)) => P::Heures(q, u),
+            (Q::Cachets(q), ParUnite(u)) => P::Cachets(q, u),
+            (Q::Jours(q), ParUnite(u)) => P::Jours(q, u),
+            (Q::Services(q), ParUnite(u)) => P::Services(q, u),
+            (Q::Semaines(q), ParUnite(u)) => P::Semaines(q, u),
+            (Q::PartDuMois(q), ParUnite(u)) => P::PartDuMois(q, u),
+            (Q::Unites(q), ParUnite(u)) => P::Unites(q, u),
+            (Q::Base(b), PartDeLaBase(c)) => P::Base(b, c),
+            _ => return None,
+        })
     }
 
     /// Sa quantite.
@@ -898,9 +904,9 @@ impl LignePaie {
             LignePaie::Unites(l) => l.taux.map(ParUnite),
             LignePaie::UnitesEtHeures(l) => l.taux.map(ParUnite),
             LignePaie::Frais(l) => l.taux.map(ParUnite),
-            LignePaie::Pourcentage(l) => l.taux_majoration.map(|t| PartDeLaBase(sur_cent(t))),
-            LignePaie::Montant(l) => l.montant.map(|m| ParUnite(MontantUnitaire::du_decimal(m.decimal()))),
-            LignePaie::AvantageEnNature(l) => l.montant.map(|m| ParUnite(MontantUnitaire::du_decimal(m.decimal()))),
+            LignePaie::Pourcentage(l) => l.taux_majoration.map(|t| PartDeLaBase(t.en_coefficient())),
+            LignePaie::Montant(l) => l.montant.map(|m| ParUnite(m.pour_une_unite())),
+            LignePaie::AvantageEnNature(l) => l.montant.map(|m| ParUnite(m.pour_une_unite())),
             LignePaie::Composee(l) => Some(ParUnite(l.taux)),
             LignePaie::RetenueArret(l) => Some(ParUnite(l.taux)),
             LignePaie::IndemniteJournaliere(l) => Some(ParUnite(l.taux)),
@@ -909,15 +915,16 @@ impl LignePaie {
         }
     }
 
-    /// CE QU'ELLE PAIE, sa quantite et son taux dans l'unite `unite` de sa rubrique (`PaiementDeLigne::de_l_unite`) ; une
-    /// ligne importee, ce que l'import a pose en la rattachant ; une case qui n'est pas remplie se refuse en se nommant.
+    /// CE QU'ELLE PAIE, sa quantite dans l'unite `unite` de sa rubrique (`quantite`) a son taux (`PaiementDeLigne::de`) ;
+    /// une ligne importee, ce que l'import a pose en la rattachant ; une case qui n'est pas remplie se refuse en se
+    /// nommant, une ligne qui n'a pas la forme de sa rubrique (une base sans pourcentage, un pourcentage sans base) aussi.
     pub fn paiement(&self, unite: Unite) -> R<PaiementDeLigne> {
         if let LignePaie::Importee(l) = self {
             return l.paiement.ok_or_else(|| socle::fichiers::absent("paiement"));
         }
-        let quantite = self.quantite_ecrite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
+        let quantite = self.quantite(unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         let taux = self.taux().ok_or_else(|| socle::fichiers::absent("taux"))?;
-        Ok(PaiementDeLigne::de_l_unite(unite, quantite, taux.decimal()))
+        PaiementDeLigne::de(quantite, taux).ok_or_else(|| socle::refus!("la ligne {} n'a pas la forme de sa rubrique ({}) : le signaler au développeur", self.rubrique(), unite))
     }
 
     /// LE MONTANT QU'UN BULLETIN IMPORTE LUI DONNE (une ligne importee), qui ne se recompose pas ; `None` pour toute
@@ -1101,7 +1108,7 @@ impl LignePaie {
     /// Une ligne en pourcentage, sa base et son pourcentage positifs ; une autre passe.
     pub fn verifier_pourcentage(&self) -> R<()> {
         let LignePaie::Pourcentage(l) = self else { return Ok(()) };
-        if l.base.is_some_and(|b| b.decimal() < Decimal::ZERO) || l.taux_majoration.is_some_and(|p| p.decimal() < Decimal::ZERO) {
+        if l.base.is_some_and(|b| b < Montant::ZERO) || l.taux_majoration.is_some_and(|p| p < Taux::ZERO) {
             return Err(socle::refus!("Ligne << {} >> : base et pourcentage sont positifs.", l.rubrique));
         }
         Ok(())
@@ -1136,17 +1143,6 @@ impl LignePaie {
             LignePaie::Importee(l) => LignePaie::Importee(Importee { paiement: l.paiement.map(PaiementDeLigne::sans_zero), heures: o(l.heures), montant: sans_zero(l.montant), ..l }),
         }
     }
-}
-
-/// UN POURCENTAGE SUR CENT, la part de la base : le quotient exact, a l'exposant ideal, qui garde au moins l'echelle du
-/// pourcentage (`12.5` -> `0.125`, `30.0` -> `0.30`).
-fn sur_cent(pct: Taux) -> Coefficient {
-    let pct = pct.decimal();
-    let mut taux = socle::num::div(pct, Decimal::ONE_HUNDRED).normalize();
-    if taux.scale() < pct.scale() {
-        taux.rescale(pct.scale());
-    }
-    Coefficient::du_decimal(taux)
 }
 
 // ------------------------------------------------------------------ la porte

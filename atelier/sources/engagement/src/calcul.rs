@@ -2219,7 +2219,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::de_l_unite(Unite::Mois, Decimal::ONE, dec_de(montant)),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, MontantUnitaire::du_decimal(dec_de(montant))),
             montant: Montant::du_decimal(dec_de(montant)), heures_annexes: Heures::du_decimal(dec_de(heures)), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,
