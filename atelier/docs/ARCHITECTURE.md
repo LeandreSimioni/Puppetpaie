@@ -1042,6 +1042,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
 | numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
+| rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
@@ -1483,7 +1484,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **identifiant d'une affiliation** : l'« Identifiant technique Affiliation » de la norme, une seule rubrique sous deux
   blocs : le bloc 70 le déclare (S21.G00.70.012), la base 31 le cite (S21.G00.78.005) (`bloc-S21.G00.70.txt` l. 75-80,
   `bloc-S21.G00.78.txt` l. 409-417). Il se compose à un seul endroit (`202` et suivants,
-  `declarations::dsn::identifiant_d_affiliation`), du rang du contrat sous l'individu et de la **place d'une
+  `declarations::dsn::identifiant_d_affiliation`), du **rang du contrat** sous l'individu (`RangDuContrat` : l'ordre
+  de ses blocs 40, les contrats payés ce mois puis ceux qu'une régularisation ajoute ; le premier, puis le suivant ; son
+  nombre ne sert qu'ici, il ne s'écrit dans aucune rubrique) et de la **place d'une
   affiliation** (`PlaceDAffiliation` : la place de l'adhésion parmi celles de la nature du contrat ; pour un permanent,
   la première est la prévoyance, la seconde la santé), chaque contrat se réservant un nombre de places
   (`places_par_contrat`, un compte) ; sa relecture (`place_de`) rend une `PlaceDAffiliation`. Le **numéro d'un

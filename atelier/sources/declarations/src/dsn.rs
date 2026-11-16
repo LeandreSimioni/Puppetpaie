@@ -610,14 +610,31 @@ impl PlaceDAffiliation {
     }
 }
 
+/// LE RANG D'UN CONTRAT sous l'individu dans une DSN : l'ordre de ses blocs 40, les contrats payes ce mois, puis ceux
+/// qu'une regularisation ajoute (`generer`), d'ou se numerotent ses affiliations (70.012, 78.005 :
+/// `identifiant_d_affiliation`). Ce n'est pas le numero de versement (`NumeroDeVersement`) : une regularisation d'un
+/// contrat paye ce mois garde le rang de ce contrat. Il ne se fait que par le premier et le suivant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RangDuContrat(usize);
+
+impl RangDuContrat {
+    /// Le premier contrat sous l'individu ; le seul, dans un fichier qui n'en porte qu'un.
+    pub const PREMIER: RangDuContrat = RangDuContrat(0);
+
+    /// Le contrat qui suit.
+    fn suivant(self) -> RangDuContrat {
+        RangDuContrat(self.0 + 1)
+    }
+}
+
 /// Le premier identifiant technique d'une affiliation que le moteur ecrit (« 202 »).
 const PREMIER_IDENTIFIANT: usize = 202;
 
 /// L'IDENTIFIANT DE L'AFFILIATION a la place `place` du contrat de rang `rang` sous l'individu (S21.G00.70.012, que cite
 /// 78.005) : « 202 » et suivants, chaque contrat se reservant `places` identifiants (`places_par_contrat`), dans l'ordre
 /// de ses rangs. Le seul endroit ou il se compose.
-fn identifiant_d_affiliation(rang: i64, place: PlaceDAffiliation, places: usize) -> R<IdentifiantDAffiliation> {
-    IdentifiantDAffiliation::lire(&(PREMIER_IDENTIFIANT + places * (rang as usize - 1) + place.0).to_string())
+fn identifiant_d_affiliation(rang: RangDuContrat, place: PlaceDAffiliation, places: usize) -> R<IdentifiantDAffiliation> {
+    IdentifiantDAffiliation::lire(&(PREMIER_IDENTIFIANT + places * rang.0 + place.0).to_string())
 }
 
 /// Pourquoi un identifiant d'affiliation ne dit pas de place (`place_de`).
@@ -1452,7 +1469,7 @@ d'affiliation par contrat). Rien n'est ecrit.",
                 refs.len()
             ));
         }
-        natures.insert(n, identifiant_d_affiliation(1, PlaceDAffiliation::apres(refs.len()), places)?);
+        natures.insert(n, identifiant_d_affiliation(RangDuContrat::PREMIER, PlaceDAffiliation::apres(refs.len()), places)?);
     }
     Ok(Some(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone(), natures }))
 }
@@ -1509,7 +1526,7 @@ contrat). Rien n'est ecrit.",
                     places
                 ));
             }
-            natures.insert(n, identifiant_d_affiliation(1, PlaceDAffiliation::apres(occupees), places)?);
+            natures.insert(n, identifiant_d_affiliation(RangDuContrat::PREMIER, PlaceDAffiliation::apres(occupees), places)?);
             *deja.entry(n).or_insert(0) += 1;
         }
         out.push(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: spec.lignes.clone(), natures });
@@ -1755,7 +1772,7 @@ profession intermediaire, 06 employe, 07 ouvrier), et {}. Il ne se devine pas : 
 /// Les blocs 40 a 71 d'un contrat. `emplois` : le code emplois multiples (`40.036`) du contrat,
 /// que `emplois_multiples` tire des autres contrats de la periode.
 pub fn bloc_contrat(
-    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
+    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, emplois: &str,
 ) -> R<()> {
     bloc_contrat_fctu(f, p, ent, orgs, rang, bar, fin_de_contrat, arrets, nature_dsn, None, emplois)
@@ -1765,7 +1782,7 @@ pub fn bloc_contrat(
 /// fin de contrat (blocs 62 et 63, `fctu::bloc_62_63`) a la place de celle
 /// d'une mensuelle.
 pub fn bloc_contrat_fctu(
-    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
+    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, fin_fctu: Option<&crate::fctu::FinDeContrat>, emplois: &str,
 ) -> R<()> {
     let e = &p.engagement;
@@ -2402,7 +2419,7 @@ pub fn net_social(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe) ->
 
 /// Les blocs 78, 79 et 81 d'une paie.
 pub fn bases_et_cotisations(
-    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, periode: &Periode, signe: Signe, nature_dsn: NatureDeLaDeclaration,
+    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuContrat, periode: &Periode, signe: Signe, nature_dsn: NatureDeLaDeclaration,
     bases_exclues: &[BaseAssujettie],
 ) -> R<()> {
     // La norme ecrit la periode en deux zones, son debut et sa fin.
@@ -2515,7 +2532,7 @@ impl Display for NumeroDeVersement {
 }
 
 /// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003).
-fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, numero: NumeroDeVersement, taux_pas: Option<&Triplet>) -> R<()> {
+fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuContrat, numero: NumeroDeVersement, taux_pas: Option<&Triplet>) -> R<()> {
     let e = &p.engagement;
     let periode = e.periode_payee()?;
     // La norme ecrit la periode en deux zones, son debut et sa fin.
@@ -2621,10 +2638,10 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
     let mut affiliations = Vec::new();
     let places = places_par_contrat(&bar);
     for a in rattachements(p, &orgs, &bar.entreprise.fiche, refs)? {
-        affiliations.push((identifiant_d_affiliation(1, a.place, places)?, a.reference));
+        affiliations.push((identifiant_d_affiliation(RangDuContrat::PREMIER, a.place, places)?, a.reference));
     }
     let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(mois)?);
-    bloc_versement(&mut f, p, &bar, 1, NumeroDeVersement::PREMIER, None)?;
+    bloc_versement(&mut f, p, &bar, RangDuContrat::PREMIER, NumeroDeVersement::PREMIER, None)?;
     Ok(VersementEcrit { affiliations, rubriques: f.lignes })
 }
 
@@ -2812,7 +2829,7 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: Periode) -> R<()
 /// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003), qui
 /// n'est jamais celui d'un autre versement de l'individu (`NumeroDeVersement`).
 fn bloc_regularisation(
-    f: &mut Fichier, r: &Regularisation, bar_o: &BaremeDuMois, rang: i64, numero: NumeroDeVersement, pas_c: &PrelevementDeLaCorrection,
+    f: &mut Fichier, r: &Regularisation, bar_o: &BaremeDuMois, rang: RangDuContrat, numero: NumeroDeVersement, pas_c: &PrelevementDeLaCorrection,
     fin_mois: Jour,
 ) -> R<()> {
     // `avant` ne donne ici que l'engagement declare (ses bornes, s'il est sans paie) : les montants annules sont ceux
@@ -4404,7 +4421,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let ent_e = bareme::fiche_de_l_etablissement(&ent, &nic)?;
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
-            bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
+            bloc_contrat(&mut f, &declaree, &ent_e, orgs, RangDuContrat::PREMIER, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
             let bloc: Vec<(RubriqueDeLaNorme, String)> =
                 f.lignes.into_iter().filter(|(k, _)| k.du_meme_bloc(crate::changements_contrat::DEBUT_CONTRAT)).collect();
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));
@@ -5129,28 +5146,37 @@ certificat de conformite du depot precedent.",
         crate::changements_individu::ecrire(&mut f, &ident, brute, declaree.as_ref(), mois, &fin_m)?;
         let taux_pas = pas_par_salarie.get(cle).cloned().flatten();
 
-        for (i, p) in lot.iter().enumerate() {
+        // Les rangs des contrats sous l'individu : le premier, puis chacun le suivant du precedent ; les contrats payes ce
+        // mois d'abord, puis ceux qu'une regularisation ajoute.
+        let mut prochain_rang = RangDuContrat::PREMIER;
+        let mut rangs_du_lot: Vec<RangDuContrat> = Vec::new();
+        for _ in &lot {
+            rangs_du_lot.push(prochain_rang);
+            prochain_rang = prochain_rang.suivant();
+        }
+        for (p, rang) in lot.iter().zip(&rangs_du_lot) {
             let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, p)?;
             let debut_bloc = f.lignes.len();
-            bloc_contrat(&mut f, p, &ent_e, &orgs, i as i64 + 1, &bar, true, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(p, &periode))?;
+            bloc_contrat(&mut f, p, &ent_e, &orgs, *rang, &bar, true, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(p, &periode))?;
             // Ce qui a change depuis la derniere DSN deposee du contrat : le bloc S21.G00.41, sous son bloc 40.
             let declare = bloc_40_declare(ctx, p, mois, &etats_du_mois, departs, &orgs)?;
             crate::changements_contrat::poser(&mut f, debut_bloc, ctx, p, mois, &nics_courant_d_abord, declare.as_ref())?;
         }
         let mut rangs_regs = Vec::new();
-        let mut ajoutes: Vec<&Regularisation> = Vec::new();
+        let mut ajoutes: Vec<(&Regularisation, RangDuContrat)> = Vec::new();
         for r in &corrections {
-            let deja = lot.iter().position(|p| p.engagement.numero == r.apres.engagement.numero).map(|i| i as i64 + 1);
+            let deja = lot.iter().position(|p| p.engagement.numero == r.apres.engagement.numero).map(|i| rangs_du_lot[i]);
             // UN CONTRAT SUR PLUSIEURS MOIS corrige pour plusieurs mois : un seul bloc 40 sous l'individu,
             // pose par la premiere de ses corrections ; chaque mois garde son versement, rattache a ce mois (cahier
             // technique DSN 2026.1, §2.2.2.5 : « valorisees mois civil par mois civil »).
-            let meme_contrat = ajoutes.iter().position(|a| a.apres.engagement.numero == r.apres.engagement.numero);
+            let meme_contrat = ajoutes.iter().find(|(a, _)| a.apres.engagement.numero == r.apres.engagement.numero).map(|(_, rg)| *rg);
             let rang = match (deja, meme_contrat) {
                 (Some(rg), _) => rg,
-                (None, Some(k)) => (lot.len() + k + 1) as i64,
+                (None, Some(rg)) => rg,
                 (None, None) => {
-                    let rg = (lot.len() + ajoutes.len() + 1) as i64;
-                    ajoutes.push(r);
+                    let rg = prochain_rang;
+                    prochain_rang = prochain_rang.suivant();
+                    ajoutes.push((r, rg));
                     // Le bloc 40 est celui du contrat tel qu'il est corrige, lu dans la correction de son dernier mois :
                     // c'est elle qui sait s'il finit (bloc 62).
                     let groupe: Vec<&Regularisation> =
@@ -5198,9 +5224,9 @@ certificat de conformite du depot precedent.",
             dernier = Some(n);
             Ok(n)
         };
-        for (i, p) in lot.iter().enumerate() {
-            // Le versement du mois a le numero du rang de son contrat : un contrat paye ce mois, un versement.
-            bloc_versement(&mut f, p, &bar, i as i64 + 1, numero_suivant()?, taux_pas.as_ref())?;
+        for (p, rang) in lot.iter().zip(&rangs_du_lot) {
+            // Un contrat paye ce mois, un versement.
+            bloc_versement(&mut f, p, &bar, *rang, numero_suivant()?, taux_pas.as_ref())?;
         }
         // POINT 18 : une regularisation d'un contrat aussi paye ce mois garde le rang de ce contrat (ses
         // affiliations), mais pas son numero de versement -- deux blocs 50 au meme numero sous un individu, la CCH-11 du
@@ -5216,7 +5242,7 @@ certificat de conformite du depot precedent.",
         for p in &lot {
             bloc_anciennete(&mut f, p, anciennete)?;
         }
-        for r in &ajoutes {
+        for (r, _) in &ajoutes {
             bloc_anciennete(&mut f, &r.apres, anciennete)?;
         }
     }
