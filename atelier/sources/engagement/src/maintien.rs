@@ -119,7 +119,7 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits
 
 /// La capacite de chaque tranche en jours, la tranche commencant au jour `debut` (une tranche en mois dure de date a date ;
 /// `None` : tant que la caisse indemnise).
-fn capacites(r: &MaintienDeSalaire,debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
+fn capacites(r: &MaintienDeSalaire, debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
     let mut out = Vec::new();
     let mut d0 = debut.clone();
     for t in &r.tranches {
@@ -139,7 +139,7 @@ fn capacites(r: &MaintienDeSalaire,debut: &Jour) -> R<Vec<Option<Duree<EnJours>>
 /// LE POURCENTAGE DE CHAQUE JOUR D'UN ARRET, du premier au dernier jour d'absence, en fraction (zero : pas indemnise) :
 /// la carence, puis les tranches, diminuees d'abord de `deja` jours deja indemnises dans les douze mois. Un jour
 /// indemnise compte comme s'il suivait les `deja` jours : il tombe dans la tranche qui court encore a ce rang.
-pub fn taux_des_jours(r: &MaintienDeSalaire,arret: &Periode, deja: Duree<EnJours>) -> R<Vec<Coefficient>> {
+pub fn taux_des_jours(r: &MaintienDeSalaire, arret: &Periode, deja: Duree<EnJours>) -> R<Vec<Coefficient>> {
     let apres_carence = arret.debut().apres(r.carence)?;
     // Le premier jour qui suit chaque tranche, comptee de la fin de la carence ; `None` : elle ne finit pas.
     let mut fins = Vec::new();
@@ -172,7 +172,7 @@ pub fn taux_des_jours(r: &MaintienDeSalaire,arret: &Periode, deja: Duree<EnJours
 /// Le dernier jour que le texte peut indemniser pour cet arret, d'un seul tenant depuis son premier jour : la duree
 /// maximale du maintien, que la subrogation declare (ameli, fiche 3028) ; la fin de l'arret pour une tranche qui dure
 /// tant que la caisse indemnise.
-pub fn fin_possible(r: &MaintienDeSalaire,arret: &Periode) -> R<Jour> {
+pub fn fin_possible(r: &MaintienDeSalaire, arret: &Periode) -> R<Jour> {
     let debut = arret.debut().apres(r.carence)?;
     let mut total = Duree::jours(0);
     for c in capacites(r, &debut)? {
