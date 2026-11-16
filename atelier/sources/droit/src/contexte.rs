@@ -859,7 +859,7 @@ caracteres) de la commune de l'etablissement : les deux se \
 lisent sur la deliberation de l'autorite ou sur le bordereau \
 Urssaf.",
                 match t.taux {
-                    Some(x) => x.decimal().to_string(),
+                    Some(x) => socle::grandeurs::ecrit::texte::dit(x),
                     None => "absent".to_string(),
                 },
                 match t.code_insee.as_deref() {

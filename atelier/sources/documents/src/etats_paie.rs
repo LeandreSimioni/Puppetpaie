@@ -1331,13 +1331,13 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         for paie in lecture.paies(m)?.iter() {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).ot(C::Contrat, paie.engagement().numero.clone());
-            l.od(C::Plafond, paie.plafond().map(|x| x.au_centime().decimal()));
+            l.om(C::Plafond, paie.plafond().map(Montant::au_centime));
             for (k, v) in paie.bases() {
-                l.d(C::DeLAssiette(*k), v.au_centime().decimal());
+                l.base(C::DeLAssiette(*k), Some(v.au_centime()));
                 vues.insert(*k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.od(C::DeLAssiette(Assiette::Csg), paie.base_csg()?.map(|x| x.au_centime().decimal()));
+                l.om(C::DeLAssiette(Assiette::Csg), paie.base_csg()?.map(Montant::au_centime));
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);

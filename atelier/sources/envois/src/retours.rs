@@ -3005,11 +3005,11 @@ fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
 /// `rubrique_de`, un montant signe (RO.B005.R004, CSL 00 : `0\.00|[+-](0|[1-9]\d*)\.\d{2}`, cahier technique NEOReS
 /// 2027.1.0, `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`) : « + » un
 /// credit, « - » un debit ; une autre forme se refuse.
-fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::num::Decimal>> {
+fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::grandeurs::Montant>> {
     rubrique_de(a, e, nom)
         .map(|t| {
             let forme = t == "0.00" || (t.starts_with(['+', '-']) && t.len() >= 5 && t.as_bytes()[t.len() - 3] == b'.');
-            forme.then(|| socle::num::decimal_lu(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
+            forme.then(|| socle::grandeurs::lu::norme(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
         })
         .transpose()
 }
@@ -3061,7 +3061,8 @@ pub struct DetailNeores {
     pub atypie: Option<String>,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub montant: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<socle::grandeurs::Montant>,
     pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,

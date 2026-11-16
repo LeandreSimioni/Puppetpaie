@@ -19,7 +19,7 @@ use socle::date::{Duree, EnMois, Jour};
 use socle::mois::Annee;
 use socle::echec::{Lieu, Echec, R};
 use socle::grandeurs::{courte, Coefficient, Taux};
-use socle::num::{court, div, mul, Decimal};
+use socle::num::Decimal;
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
 
@@ -1527,10 +1527,8 @@ du socle.",
 /// 50/50 donne 3,94 a l'employeur et 3,93 au salarie), relevee dans la note de `retraite_t1_repartition` du bareme
 /// livre : un constat, pas un fondement.
 pub fn parts_t1(total: Taux, sal: PartDeLaTrancheUne) -> (Taux, Taux) {
-    let total = total.decimal();
-    let part_sal = div(mul(total, Decimal::from_i128_with_scale(sal.num, 0)), Decimal::from_i128_with_scale(sal.den, 0))
-        .round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero);
-    (Taux::du_decimal(total - part_sal), Taux::du_decimal(part_sal))
+    let part_sal = total.part(sal.num, sal.den).au_centieme_la_moitie_vers_zero();
+    (total - part_sal, part_sal)
 }
 
 /// Remplace la retraite de la ligne `retraite_t1` (CEG inchangee) et, dans la
@@ -1597,7 +1595,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
 retraite ({} %) qu'aux adherents d'avant le {}. Renseigner \
 « Adhérente depuis le » -- le logiciel ne le devine pas.",
                 couche.libelle,
-                court(taux.decimal()),
+                socle::grandeurs::ecrit::texte::dit(courte(taux)),
                 avant.jj_mm_aaaa()
             ));
         };
@@ -1619,7 +1617,7 @@ demander a Audiens, puis a ecrire dans la couche de \
                 sal.nom.remplie().iter().map(|n| format!("{}, ", n)).collect::<String>(),
                 couche.libelle,
                 statut,
-                court(taux.decimal())
+                socle::grandeurs::ecrit::texte::dit(courte(taux))
             ),
         ));
     }

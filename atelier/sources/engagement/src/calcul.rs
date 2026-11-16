@@ -19,7 +19,6 @@ use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::Decimal;
 use socle::grandeurs::{courte, Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use crate::ligne::{PaiementDeLigne, QuantiteDeLigne};
 pub use droit::reduction::ReductionGenerale;
@@ -247,17 +246,18 @@ impl BaseDeCotisation {
     /// pas) somme des cotisations du bareme : des euros.
     pub fn imprimee(id: Option<&IdDeCotisation>, n: socle::forme::Nombre) -> BaseDeCotisation {
         match id {
-            Some(id) => BaseDeCotisation::relue(id, n.0),
-            None => BaseDeCotisation::Montant(Montant::du_decimal(n.0)),
+            Some(id) => BaseDeCotisation::relue(id, n),
+            None => BaseDeCotisation::Montant(n.grandeur()),
         }
     }
 
-    /// La valeur `d` de l'assiette `a` : des heures quand l'assiette en compte (`Assiette::en_heures`), des euros sinon.
-    pub fn de_l_assiette(a: Assiette, d: Decimal) -> BaseDeCotisation {
+    /// La valeur `n` qu'une paie ecrite donne a l'assiette `a`, lue dans la grandeur que l'assiette compte : des heures
+    /// quand elle en compte (`Assiette::en_heures`), des euros sinon. La porte de sa lecture.
+    pub fn de_l_assiette(a: Assiette, n: socle::forme::Nombre) -> BaseDeCotisation {
         if a.en_heures() {
-            BaseDeCotisation::Heures(Heures::du_decimal(d))
+            BaseDeCotisation::Heures(n.grandeur())
         } else {
-            BaseDeCotisation::Montant(Montant::du_decimal(d))
+            BaseDeCotisation::Montant(n.grandeur())
         }
     }
 
@@ -282,23 +282,24 @@ impl BaseDeCotisation {
         }
     }
 
-    /// LA BASE `d` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sans bareme (une paie validee se relit telle qu'elle
+    /// LA BASE `n` ECRITE DE LA LIGNE DE LA COTISATION `id`, relue sans bareme (une paie validee se relit telle qu'elle
     /// est partie) : des heures pour les lignes que le calcul compose hors du bareme sur des heures
     /// (`BASES_EN_HEURES`), des euros pour toute autre : le calcul refuse une cotisation du bareme dont l'assiette compte
-    /// des heures (la boucle des cotisations de `calculer`).
-    pub(crate) fn relue(id: &IdDeCotisation, d: Decimal) -> BaseDeCotisation {
+    /// des heures (la boucle des cotisations de `calculer`). La porte de sa lecture.
+    pub(crate) fn relue(id: &IdDeCotisation, n: socle::forme::Nombre) -> BaseDeCotisation {
         if BASES_EN_HEURES.contains(id) {
-            BaseDeCotisation::Heures(Heures::du_decimal(d))
+            BaseDeCotisation::Heures(n.grandeur())
         } else {
-            BaseDeCotisation::Montant(Montant::du_decimal(d))
+            BaseDeCotisation::Montant(n.grandeur())
         }
     }
 
-    /// Son nombre, a la porte qui l'exige.
-    pub fn decimal(self) -> Decimal {
+    /// Ecrite dans une paie ecrite, sans son unite (sa ligne ou son assiette la dit a la relecture, `relue`,
+    /// `de_l_assiette`) : son nombre dans sa forme la plus courte (`socle::grandeurs::ecrit::nombre`).
+    pub fn en_nombre(self) -> String {
         match self {
-            BaseDeCotisation::Montant(m) => m.decimal(),
-            BaseDeCotisation::Heures(h) => h.decimal(),
+            BaseDeCotisation::Montant(m) => socle::grandeurs::ecrit::nombre::texte(m),
+            BaseDeCotisation::Heures(h) => socle::grandeurs::ecrit::nombre::texte(h),
         }
     }
 
@@ -348,7 +349,7 @@ impl BaseDeCotisation {
             BaseDeCotisation::Heures(h) => Err(refus(format!(
                 "L'assiette « {} » compte des euros, et la paie en dit des heures ({}) : elle ne se lit pas. Le signaler au développeur.",
                 assiette.nom(),
-                h.decimal()
+                socle::grandeurs::ecrit::texte::dit(h)
             ))),
         }
     }
@@ -389,7 +390,7 @@ impl LigneCotisation {
             id: self.id.clone(),
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
-            base: socle::forme::Nombre(self.base.decimal()),
+            base: self.base,
             taux_pat: self.taux_pat.map(courte),
             montant_pat: self.montant_pat,
             taux_sal: self.taux_sal.map(courte),
@@ -398,13 +399,13 @@ impl LigneCotisation {
         }
     }
 
-    /// Relue de sa forme ecrite (`BaseDeCotisation::relue`).
+    /// Relue de sa forme ecrite (sa base relue par `BaseDeCotisation::relue`).
     pub(crate) fn de_la_forme(f: &FormeDeCotisation) -> LigneCotisation {
         LigneCotisation {
             id: f.id.clone(),
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
-            base: BaseDeCotisation::relue(&f.id, f.base.0),
+            base: f.base,
             taux_pat: f.taux_pat.map(courte),
             montant_pat: f.montant_pat,
             taux_sal: f.taux_sal.map(courte),

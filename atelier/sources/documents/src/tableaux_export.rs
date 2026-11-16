@@ -365,10 +365,18 @@ impl Ligne {
         }))
     }
 
-    /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures
-    /// (`BaseDeCotisation::decimal`), sa porte.
+    /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures.
     pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
-        self.od(k, v.map(engagement::calcul::BaseDeCotisation::decimal))
+        match v {
+            Some(engagement::calcul::BaseDeCotisation::Montant(m)) => self.montant(k, m),
+            Some(engagement::calcul::BaseDeCotisation::Heures(h)) => self.heures(k, h),
+            None => self.rien(k),
+        }
+    }
+
+    /// Des heures, dans la case d'un etat : leur porte.
+    pub fn heures(&mut self, k: ColonneDEtat, v: socle::grandeurs::Heures) -> &mut Ligne {
+        self.d(k, v.decimal())
     }
 
     /// Un taux de PAS, ou rien, dans la case d'un etat (deux decimales, comme la norme l'ecrit) : sa porte.

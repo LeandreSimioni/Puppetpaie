@@ -448,6 +448,26 @@ impl Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 2))
     }
 
+    /// La part `numerateur / denominateur` de ce taux (la part salariale d'un taux partage, une fraction de deux
+    /// entiers), exacte : le produit, puis le quotient. `denominateur` n'est pas nul : l'appelant le tient.
+    pub fn part(self, numerateur: i128, denominateur: i128) -> Taux {
+        Taux(num::div(num::mul(self.0, Decimal::from_i128_with_scale(numerateur, 0)), Decimal::from_i128_with_scale(denominateur, 0)))
+    }
+
+    /// Au centieme de point, la moitie vers zero (sans zero ajoute : `3.9` reste `3.9`) : la part salariale de la
+    /// retraite complementaire en tranche 1 (`droit::bareme::parts_t1`).
+    pub fn au_centieme_la_moitie_vers_zero(self) -> Taux {
+        Taux(self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointTowardZero))
+    }
+
+    /// A deux decimales, la moitie au pair, ses deux decimales ecrites (`1.6` s'ecrit `1.60`) : le taux qu'annonce le
+    /// simulateur des organismes, comme une notification l'ecrit.
+    pub fn a_deux_decimales_ecrites(self) -> Taux {
+        let mut t = self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        t.rescale(2);
+        Taux(t)
+    }
+
     /// Ce taux `n` fois (le taux d'un enfant couvert, pour chacun) : taux x compte = taux. Un compte n'est pas une
     /// grandeur (« Le glossaire »).
     pub fn fois(self, n: usize) -> Taux {
@@ -1279,7 +1299,12 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
-            s.serialize_str(&crate::num::nombre(g.en_decimal()))
+            s.serialize_str(&texte(*g))
+        }
+
+        /// Le meme texte, la ou une forme l'ecrit sans son attribut (une valeur d'un dictionnaire).
+        pub fn texte<G: Grandeur>(g: G) -> String {
+            crate::num::nombre(g.en_decimal())
         }
 
         pub use crate::grandeurs::lu::nombre_ou_texte::deserialize;

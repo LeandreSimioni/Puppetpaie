@@ -137,17 +137,18 @@ pub struct Cle<I> {
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
-/// heures : relue, elle prend la grandeur que sa cotisation dit (`BaseDeCotisation::relue`).
+/// heures (`BaseDeCotisation::en_nombre`) : relue, elle prend la grandeur que sa cotisation dit
+/// (`CotisationLue`, `BaseDeCotisation::relue`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, from = "CotisationLue")]
 pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub base: socle::forme::Nombre,
+    #[serde(serialize_with = "base_en_nombre")]
+    pub base: BaseDeCotisation,
     #[serde(with = "nombre::option")]
     pub taux_pat: Option<Taux>,
     #[serde(with = "nombre")]
@@ -159,10 +160,45 @@ pub struct FormeDeCotisation {
     pub masquer_base_et_taux: bool,
 }
 
-/// Un nombre ecrit sans son unite (sa ligne la dit a la relecture), en texte normalise (`socle::num::nombre`) ; il se
-/// relit d'un nombre ou d'un texte (`socle::forme::Nombre`).
-fn nombre_ecrit<S: serde::Serializer>(n: &socle::forme::Nombre, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(&socle::num::nombre(n.0))
+/// Une ligne de cotisation telle qu'une paie ecrite la porte, avant que sa base prenne la grandeur que sa cotisation
+/// compte : sa base n'y est qu'un nombre (`socle::forme::Nombre`), lu d'un nombre ou d'un texte.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CotisationLue {
+    id: droit::forme_bareme::IdDeCotisation,
+    famille: droit::forme_bareme::FamilleDeCotisation,
+    libelle: String,
+    base: socle::forme::Nombre,
+    #[serde(with = "nombre::option")]
+    taux_pat: Option<Taux>,
+    #[serde(with = "nombre")]
+    montant_pat: Montant,
+    #[serde(with = "nombre::option")]
+    taux_sal: Option<Taux>,
+    #[serde(with = "nombre")]
+    montant_sal: Montant,
+    masquer_base_et_taux: bool,
+}
+
+impl From<CotisationLue> for FormeDeCotisation {
+    fn from(l: CotisationLue) -> FormeDeCotisation {
+        FormeDeCotisation {
+            base: BaseDeCotisation::relue(&l.id, l.base),
+            id: l.id,
+            famille: l.famille,
+            libelle: l.libelle,
+            taux_pat: l.taux_pat,
+            montant_pat: l.montant_pat,
+            taux_sal: l.taux_sal,
+            montant_sal: l.montant_sal,
+            masquer_base_et_taux: l.masquer_base_et_taux,
+        }
+    }
+}
+
+/// La base d'une ligne, ecrite sans son unite (`BaseDeCotisation::en_nombre`).
+fn base_en_nombre<S: serde::Serializer>(b: &BaseDeCotisation, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&b.en_nombre())
 }
 
 /// Une ligne de remuneration (`calcul::LigneBrut`) sous sa forme ecrite, avec sa designation au bulletin.
@@ -260,11 +296,11 @@ mod bases {
     use std::collections::BTreeMap;
 
     pub fn serialize<S: serde::Serializer>(t: &BTreeMap<Assiette, BaseDeCotisation>, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(t.iter().map(|(a, b)| (a, socle::num::nombre(b.decimal()))))
+        s.collect_map(t.iter().map(|(a, b)| (a, b.en_nombre())))
     }
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<Assiette, BaseDeCotisation>, D::Error> {
-        <BTreeMap<Assiette, socle::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(a, n)| (a, BaseDeCotisation::de_l_assiette(a, n.0))).collect())
+        <BTreeMap<Assiette, socle::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(a, n)| (a, BaseDeCotisation::de_l_assiette(a, n))).collect())
     }
 }
 
