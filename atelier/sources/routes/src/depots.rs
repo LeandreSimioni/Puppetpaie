@@ -1006,7 +1006,7 @@ pub(crate) struct ApercuDpae {
     pub(crate) fichier: PathBuf,
     pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
-    pub(crate) octets: usize,
+    pub(crate) octets: socle::grandeurs::Octets,
     /// Le mode que l'indicateur dit (`120` reel, `TST` test), aucun pour un autre.
     pub(crate) mode: Option<Mode>,
     pub(crate) indicateur: String,
@@ -1109,12 +1109,13 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     poser_les_pastilles(&mut deja_depose);
     let mut repetition = etats::repetition(&lignes_journal, Quoi::Dpae.acte(), &empreinte, &nom_fichier);
     pastilles_du_test(&mut repetition);
+    let octets = socle::grandeurs::Octets::de(&contenu);
     Ok(ApercuDpae {
-        description: format!("{} — {} enregistrement{}, {} octets, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, contenu.len(), envois::depot::indicateur(&contenu)),
+        description: format!("{} — {} enregistrement{}, {}, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, octets, envois::depot::indicateur(&contenu)),
         fichier: PathBuf::from(chemin),
         nom: nom_fichier,
         enregistrements: enrs.len(),
-        octets: contenu.len(),
+        octets,
         mode: envois::depot::mode_dpae(&contenu),
         indicateur: envois::depot::indicateur(&contenu),
         mois,

@@ -769,13 +769,21 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
     }
 }
 
-/// UNE TAILLE DE FICHIER, EN OCTETS (« Le glossaire », taille d'un fichier) : le poids vise d'une image posee
-/// (`routes::identite`). Elle se compte en Ko (1 Ko = 1 024 octets) : elle se lit d'un nombre de Ko (`ko`), tape dans une
-/// saisie (« 20,5 »), s'ecrit en Ko (`ecrite_en_ko_opt`) et se dit en Ko (`Display` : « 20,5 Ko »).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// UNE TAILLE DE FICHIER, EN OCTETS (« Le glossaire », taille d'un fichier) : une image posee et son poids vise
+/// (`routes::identite`), ce que la sauvegarde envoie et ce que la restauration redescend, une archive, une capture, ce
+/// qu'une mise a jour recoit. Un fichier l'ecrit en octets (sa serde : un nombre) ; une saisie la tape en Ko (`ko`,
+/// « 20,5 ») ; elle se dit d'une seule facon (`Display`). 1 Ko = 1 024 octets, 1 Mo = 1 024 Ko.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct Octets(u64);
 
+/// Au-dela de mille Ko, une taille se dit en Mo.
+const MILLE_KO: Octets = Octets::en_ko(1000);
+
 impl Octets {
+    /// Rien.
+    pub const ZERO: Octets = Octets(0);
+
     /// `ko` Ko.
     pub const fn en_ko(ko: u64) -> Octets {
         Octets(ko * 1024)
@@ -786,6 +794,22 @@ impl Octets {
         Octets(octets.len() as u64)
     }
 
+    /// LA TAILLE D'UN FICHIER DU DISQUE, que le systeme dit (`std::fs::metadata`).
+    pub fn du_disque(m: &std::fs::Metadata) -> Octets {
+        Octets(m.len())
+    }
+
+    /// LA TAILLE QU'UN TIERS DIT EN OCTETS (la taille d'un fichier que Google rend, la longueur d'une reponse HTTP), a la
+    /// porte qui la lit.
+    pub const fn lue(octets: u64) -> Octets {
+        Octets(octets)
+    }
+
+    /// LA TAILLE QUE `fabrique_pdf` COMPTE (une longueur en memoire : l'image recue avant d'etre allegee), a sa porte.
+    pub fn de_longueur(n: usize) -> Octets {
+        Octets(n as u64)
+    }
+
     /// SON NOMBRE D'OCTETS, a la porte qui le prend (l'allegement d'une image : `fabrique_pdf::alleger`).
     pub fn en_usize(self) -> usize {
         match usize::try_from(self.0) {
@@ -794,9 +818,19 @@ impl Octets {
         }
     }
 
+    /// La part de `tout` qu'elle est (ce qu'une mise a jour a recu de son archive) ; `None` quand `tout` est nul.
+    pub fn rapport(self, tout: Octets) -> Option<Coefficient> {
+        (tout.0 > 0).then(|| Coefficient(Decimal::from(self.0) / Decimal::from(tout.0)))
+    }
+
     /// Son nombre de Ko, au centieme.
     fn ko_dits(self) -> Decimal {
         (Decimal::from(self.0) / Decimal::from(1024)).round_dp(2)
+    }
+
+    /// Son nombre de Mo, au dixieme.
+    fn mo_dits(self) -> Decimal {
+        (Decimal::from(self.0) / Decimal::from(1024 * 1024)).round_dp(1)
     }
 
     /// LUE D'UN NOMBRE DE KO, jamais negatif (`#[serde(deserialize_with = "socle::grandeurs::Octets::ko")]`) : un nombre ;
@@ -817,10 +851,34 @@ impl Octets {
     }
 }
 
-/// Dite en Ko (« 20 Ko », « 20,5 Ko »).
+impl std::ops::Add for Octets {
+    type Output = Octets;
+    fn add(self, o: Octets) -> Octets {
+        Octets(self.0 + o.0)
+    }
+}
+
+impl std::ops::AddAssign for Octets {
+    fn add_assign(&mut self, o: Octets) {
+        self.0 += o.0;
+    }
+}
+
+impl std::iter::Sum for Octets {
+    fn sum<I: Iterator<Item = Octets>>(i: I) -> Octets {
+        i.fold(Octets::ZERO, |a, b| a + b)
+    }
+}
+
+/// LA SEULE FACON DE DIRE UNE TAILLE : en Ko au centieme (« 20 Ko », « 20,5 Ko »), en Mo au dixieme au-dela de mille Ko
+/// (« 1,5 Mo »).
 impl std::fmt::Display for Octets {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} Ko", crate::texte::nombre_dit(self.ko_dits()))
+        if *self < MILLE_KO {
+            write!(f, "{} Ko", crate::texte::nombre_dit(self.ko_dits()))
+        } else {
+            write!(f, "{} Mo", crate::texte::nombre_dit(self.mo_dits()))
+        }
     }
 }
 

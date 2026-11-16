@@ -40,7 +40,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         compte: client.compte(),
         deposes: Vec::new(),
         identiques: 0,
-        octets_deposes: 0,
+        octets_deposes: socle::grandeurs::Octets::ZERO,
         exclus: ecartes,
         disparus: 0,
         secondes: socle::num::Decimal::ZERO,

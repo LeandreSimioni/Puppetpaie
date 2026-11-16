@@ -281,7 +281,7 @@ pub struct Distant {
     /// `md5Checksum`, calcule par Google ; absent pour un fichier Google Docs.
     pub md5: Option<EmpreinteMd5>,
     /// Sa taille ; absente pour un fichier Google Docs.
-    pub octets: Option<u64>,
+    pub octets: Option<socle::grandeurs::Octets>,
 }
 
 /// Ce que Drive rend d'un depot (`{id, name, webViewLink}`), plus `remplace`.
@@ -475,8 +475,8 @@ fn echapper(nom: &str) -> String {
 }
 
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
-fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
-    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::Lieu { detail: Some(format!("{} : {}", t, e)), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))
+fn octets_de(t: &str) -> Result<socle::grandeurs::Octets, ErreurGoogle> {
+    t.trim().parse::<u64>().map(socle::grandeurs::Octets::lue).map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::Lieu { detail: Some(format!("{} : {}", t, e)), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))
 }
 
 /// Des aleas du systeme ; un systeme qui n'en donne pas refuse.

@@ -23,12 +23,13 @@ use crate::editeur::{NumeroDeRetour, Retour};
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
+use socle::grandeurs::Octets;
 use socle::paris::Moment;
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
 /// 1,5 Mo decodes.
-const CAPTURE_MAX: usize = 1536 * 1024;
+const CAPTURE_MAX: Octets = Octets::en_ko(1536);
 pub const CAPTURES_MAX: usize = 5;
 const INCIDENTS_JOINTS: usize = 10;
 /// « Un probleme, une idee ? », sous la racine de la compagnie.
@@ -141,7 +142,7 @@ pub struct CaptureQuiPart {
 /// Une capture lue : ce qui part, et sa taille decodee.
 struct Capture {
     part: CaptureQuiPart,
-    octets: usize,
+    octets: Octets,
 }
 
 fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
@@ -156,10 +157,11 @@ fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
     if brut.is_empty() {
         return Err(refus("Une capture est vide."));
     }
-    if brut.len() > CAPTURE_MAX {
-        return Err(refus("Une capture dépasse 1,5 Mo."));
+    let octets = Octets::de(&brut);
+    if octets > CAPTURE_MAX {
+        return Err(refus(&format!("Une capture dépasse {}.", CAPTURE_MAX)));
     }
-    Ok(Capture { part: CaptureQuiPart { genre: c.genre, donnees }, octets: brut.len() })
+    Ok(Capture { part: CaptureQuiPart { genre: c.genre, donnees }, octets })
 }
 
 fn captures_valides(captures: &[CaptureDeLaPage]) -> R<Vec<Capture>> {
@@ -210,7 +212,7 @@ pub struct CaptureMontree {
 }
 
 /// Le corps exact qui part, si le caviardage a retire quelque chose, et les captures lues.
-fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<(Corps<CaptureQuiPart>, bool, Vec<usize>)> {
+fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<(Corps<CaptureQuiPart>, bool, Vec<Octets>)> {
     let texte = texte.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)).to_string();
     if texte.is_empty() {
         return Err(refus("Écrivez votre message avant d'envoyer."));
@@ -269,7 +271,7 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
         .captures
         .iter()
         .zip(&tailles)
-        .map(|(c, n)| CaptureMontree { genre: c.genre, donnees: format!("({} Ko, non affichés)", n.div_ceil(1024)) })
+        .map(|(c, n)| CaptureMontree { genre: c.genre, donnees: format!("({}, non affichés)", n) })
         .collect();
     let corps = Corps {
         texte: corps.texte,

@@ -20,6 +20,7 @@
 use std::collections::BTreeMap;
 use socle::echec::Classe;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::grandeurs::Octets;
 use socle::paris::Moment;
 use std::path::{Path, PathBuf};
 
@@ -83,7 +84,7 @@ impl EtatFichier {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fichier {
     pub relatif: CheminRelatif,
-    pub octets: u64,
+    pub octets: Octets,
     pub etat: EtatFichier,
 }
 
@@ -94,7 +95,7 @@ pub struct Sauvegarde {
     pub compte: Option<String>,
     pub deposes: Vec<Fichier>,
     pub identiques: usize,
-    pub octets_deposes: u64,
+    pub octets_deposes: Octets,
     pub exclus: usize,
     /// Purges entre l'inventaire et l'envoi : pas un incident.
     pub disparus: usize,
@@ -167,7 +168,7 @@ impl Sauvegarde {
             }
             return format!("Sauvegarde : {} fichier(s) inchange(s){}.", self.identiques, reporte);
         }
-        format!("Sauvegarde : {} fichier(s) envoye(s), {}, {} inchange(s){}.", self.deposes.len(), lisible(self.octets_deposes), self.identiques, reporte)
+        format!("Sauvegarde : {} fichier(s) envoye(s), {}, {} inchange(s){}.", self.deposes.len(), self.octets_deposes, self.identiques, reporte)
     }
 }
 
@@ -271,32 +272,13 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     }
 }
 
-/// UNE TAILLE EN MEGA-OCTETS (2^20) TELLE QU'UNE PHRASE LA DIT, au dixieme, la seule ecriture d'une taille en Mo :
-/// « 3.5 Mo », la decimale ecrite `decimale` (« 3,5 Mo »).
-pub fn en_mo(octets: u64, decimale: char) -> String {
-    match socle::num::quotient(u128::from(octets), 1_048_576, 1) {
-        Some(t) => format!("{} Mo", t.replace('.', decimale.encode_utf8(&mut [0; 4]))),
-        None => unreachable!("un mega-octet n'est pas nul"),
-    }
-}
-
-pub(crate) fn lisible(octets: u64) -> String {
-    if octets >= 1024 * 1024 {
-        en_mo(octets, '.')
-    } else if octets >= 1024 {
-        format!("{} Ko", octets / 1024)
-    } else {
-        format!("{} o", octets)
-    }
-}
-
 // ---------------------------------------------------------------- l'inventaire
 
 /// La taille et la date de modification (secondes entieres) d'un fichier (`inventaire`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Etat {
-    pub octets: u64,
+    pub octets: Octets,
     pub mtime: i64,
 }
 
@@ -364,7 +346,7 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
                 format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
             ));
         };
-        trouves.push((relatif, Etat { octets: m.len(), mtime: date.entieres() }));
+        trouves.push((relatif, Etat { octets: Octets::du_disque(&m), mtime: date.entieres() }));
     }
     Ok((trouves, ecartes))
 }

@@ -19,7 +19,7 @@ use envois::drive::{Client, Drive, ErreurGoogle, IdDrive};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FichierArchive {
     pub nom: socle::fichiers::NomDeFichier,
-    pub octets: u64,
+    pub octets: socle::grandeurs::Octets,
     pub remplace: bool,
 }
 
@@ -75,7 +75,7 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     for f in &fichiers {
         let nom_local = socle::fichiers::NomDeFichier::du(f)?;
         let r = client.televerser(f, &cible, None, deja.get(nom_local.texte()))?;
-        let octets = std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?.len();
+        let octets = socle::grandeurs::Octets::du_disque(&std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?);
         // Le fichier porte dans Drive le nom sous lequel il y est depose (`televerser`, sans nom : celui du fichier).
         deposes.push(FichierArchive { nom: nom_local, octets, remplace: r.remplace });
     }

@@ -166,8 +166,9 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     if octets.is_empty() {
         return Err(refus("Le fichier est vide."));
     }
-    if Octets::de(&octets) > OCTETS_MAX {
-        return Err(refus(format!("Le fichier fait {} ; la limite est de 2 Mo.", compagnie::sauvegarde::en_mo(octets.len() as u64, '.'))));
+    let recu = Octets::de(&octets);
+    if recu > OCTETS_MAX {
+        return Err(refus(format!("Le fichier fait {} ; la limite est de {}.", recu, OCTETS_MAX)));
     }
     FormatDImage::des_octets(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
@@ -203,16 +204,6 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     Ok((identite(ctx)?, poids))
 }
 
-/// Des octets en Ko, arrondis au-dessus (« 1 Ko » au moins), en Mo à une décimale au-delà de 1 000 Ko.
-fn ko(octets: usize) -> String {
-    let k = octets.div_ceil(1024).max(1);
-    if k < 1000 {
-        format!("{} Ko", k)
-    } else {
-        compagnie::sauvegarde::en_mo(octets as u64, ',')
-    }
-}
-
 /// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.
 fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif: Octets) -> String {
     let nom = match quoi {
@@ -221,16 +212,17 @@ fn dire_le_poids(quoi: SorteDImage, a: &fabrique_pdf::alleger::Allegee, objectif
         SorteDImage::Logo => "Le logo",
     };
     let pourquoi = "Chaque document part par courriel et se garde : une image lourde l'alourdit chaque fois.";
-    let poids = if a.format == FormatDImage::Svg { format!("environ {}", ko(a.octets.len())) } else { ko(a.octets.len()) };
+    let allegee = Octets::de(&a.octets);
+    let poids = if a.format == FormatDImage::Svg { format!("environ {}", allegee) } else { allegee.to_string() };
     let mut dit = format!("{} pèsera {} dans chaque document qui le porte", nom, poids);
     if quoi == SorteDImage::Signature {
         dit = dit.replace("qui le porte", "qui la porte");
     }
     if !a.telle_quelle {
-        dit.push_str(&format!(" (l'image reçue : {} ; ramenée à {} pixels de large, ce que les documents impriment)", ko(a.avant), a.largeur));
+        dit.push_str(&format!(" (l'image reçue : {} ; ramenée à {} pixels de large, ce que les documents impriment)", Octets::de_longueur(a.avant), a.largeur));
     }
     dit.push('.');
-    if Octets::de(&a.octets) > objectif {
+    if allegee > objectif {
         dit.push_str(&format!(" C'est plus que les {} visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif));
     }
     format!("{} {}", dit, pourquoi)
@@ -300,7 +292,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), ko(octets as usize), quand.dit())),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.nom().to_uppercase(), octets, quand.dit())),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

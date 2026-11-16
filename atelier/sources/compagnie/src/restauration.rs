@@ -36,12 +36,13 @@ use crate::coffre::{Coffre, SERVICES};
 use envois::drive::{Drive, EmpreinteMd5, ErreurGoogle, IdDrive};
 use crate::sauvegarde::{ecarte, ecrire_index, hors_ligne, inventaire, DossierDuDrive, Index, DOSSIER_DRIVE};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::grandeurs::Octets;
 
 /// Un fichier redescendu.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Redescendu {
     pub relatif: CheminRelatif,
-    pub octets: u64,
+    pub octets: Octets,
 }
 
 /// Le compte rendu d'une restauration.
@@ -53,7 +54,7 @@ pub struct Restauration {
     pub redescendus: Vec<Redescendu>,
     /// Deja la, identiques a la copie du Drive : rien a faire.
     pub deja_la: usize,
-    pub octets: u64,
+    pub octets: Octets,
     /// Dans le Drive, mais de ce que la sauvegarde n'envoie jamais : pas redescendus.
     pub ecartes: usize,
     pub incidents: Vec<String>,
@@ -63,7 +64,7 @@ pub struct Restauration {
 
 impl Restauration {
     pub fn resume(&self) -> String {
-        let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), lisible(self.octets), self.deja_la);
+        let mut t = format!("Restauration : {} fichier(s) redescendu(s), {}, {} deja la.", self.redescendus.len(), self.octets, self.deja_la);
         if self.hors_ligne {
             t.push_str(" Hors connexion en route : relancer `moteur restaurer` reprend ou elle en est.");
         } else if !self.incidents.is_empty() {
@@ -98,14 +99,12 @@ pub struct RestaurationDite {
     pub racine_drive: String,
     pub redescendus: Vec<CheminRelatif>,
     pub deja_la: usize,
-    pub octets: u64,
+    pub octets: Octets,
     pub ecartes: usize,
     pub incidents: Vec<String>,
     pub hors_ligne: bool,
     pub a_faire: Vec<String>,
 }
-
-use crate::sauvegarde::lisible;
 
 /// LE NOM VENU DU DRIVE, s'il peut etre un nom de fichier ici sans sortir du dossier : un `NomDeFichier`, et sous
 /// Windows, ni deux-points (`C:x` changerait de lecteur) ni ce que Windows refuse ; `None` sinon, que la restauration
@@ -158,7 +157,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         compte: compte.clone(),
         redescendus: Vec::new(),
         deja_la: 0,
-        octets: 0,
+        octets: Octets::ZERO,
         ecartes: 0,
         incidents: Vec::new(),
         hors_ligne: false,
@@ -293,8 +292,9 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
         }
         match ecrire_sans_remplacer(&chemin, &contenu) {
             Ok(true) => {
-                resultat.octets += contenu.len() as u64;
-                resultat.redescendus.push(Redescendu { relatif: relatif.clone(), octets: contenu.len() as u64 });
+                let octets = Octets::de(&contenu);
+                resultat.octets += octets;
+                resultat.redescendus.push(Redescendu { relatif: relatif.clone(), octets });
                 verifies.insert(relatif.clone());
             }
             Ok(false) => resultat.incidents.push(format!("{} : il est apparu ici pendant la restauration, il est garde tel quel.", relatif)),

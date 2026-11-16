@@ -374,7 +374,7 @@ pub struct SauvegardeDite {
     pub resume: String,
     pub deposes: Vec<socle::fichiers::CheminRelatif>,
     pub identiques: usize,
-    pub octets: u64,
+    pub octets: socle::grandeurs::Octets,
     pub deposes_detail: Vec<FichierDepose>,
     pub exclus: usize,
     pub hors_ligne: bool,
@@ -386,7 +386,7 @@ pub struct SauvegardeDite {
 pub struct FichierDepose {
     pub relatif: socle::fichiers::CheminRelatif,
     pub etat: &'static str,
-    pub octets: u64,
+    pub octets: socle::grandeurs::Octets,
 }
 
 /// Les retours DSN d'un passage : sa ligne, combien, ce qui s'est archive et rattache.

@@ -423,7 +423,7 @@ struct Archive {
 #[derive(Debug, Serialize)]
 struct FichierDepose {
     nom: String,
-    octets: u64,
+    octets: socle::grandeurs::Octets,
     remplace: bool,
 }
 

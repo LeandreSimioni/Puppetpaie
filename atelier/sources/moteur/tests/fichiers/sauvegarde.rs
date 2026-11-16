@@ -104,7 +104,7 @@ fn premiere_passe_tout_part_dans_l_ordre_et_l_index_est_ecrit() {
     assert!(s.incidents.is_empty());
     assert_eq!(s.compte.as_deref(), Some("compte@exemple.invalid"));
     assert_eq!(s.racine_drive, RD);
-    assert_eq!(s.octets_deposes, [5u64, 8, 2, 3, 1, 1, 4, 21].iter().sum::<u64>());
+    assert_eq!(s.octets_deposes, [5u64, 8, 2, 3, 1, 1, 4, 21].into_iter().map(socle::grandeurs::Octets::lue).sum());
     // L'arbre du Drive : le contenu de chaque fichier, et rien des secrets.
     let arbre = d.arbre();
     assert_eq!(arbre.len(), 8);

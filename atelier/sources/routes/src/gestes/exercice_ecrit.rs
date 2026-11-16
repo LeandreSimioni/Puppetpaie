@@ -23,7 +23,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Octets};
 use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
@@ -309,7 +309,7 @@ pub(crate) struct ExerciceNote {
     pub(crate) le: Moment,
     qui: String,
     archive: CheminRelatif,
-    octets: u64,
+    octets: Octets,
     empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
@@ -324,7 +324,7 @@ struct ExerciceRouvertNote {
     le: Moment,
     qui: String,
     archive: CheminRelatif,
-    octets: u64,
+    octets: Octets,
     empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
@@ -514,7 +514,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             le,
             qui: qui.to_string(),
             archive: relatif,
-            octets: octets.len() as u64,
+            octets: Octets::de(&octets),
             empreinte: empreinte.clone(),
             fichiers: n as u64,
             forcee: forcer && !sans_dsn.is_empty(),
@@ -522,7 +522,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         },
     );
     ecrire_exercices(ctx, &tous)?;
-    Ok(ExerciceClos { annee, le, archive, octets: octets.len(), empreinte, fichiers: n, manques })
+    Ok(ExerciceClos { annee, le, archive, octets: Octets::de(&octets), empreinte, fichiers: n, manques })
 }
 
 /// Un exercice clos : l'annee, quand, l'archive (son chemin, sa taille, son empreinte, le nombre de fichiers qu'elle
@@ -534,7 +534,7 @@ pub(crate) struct ExerciceClos {
     le: Moment,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     archive: PathBuf,
-    octets: usize,
+    octets: Octets,
     empreinte: Empreinte,
     pub(crate) fichiers: usize,
     pub(crate) manques: Vec<String>,

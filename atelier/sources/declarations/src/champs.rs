@@ -1936,15 +1936,15 @@ fn verifier<F: FicheSaisie>(donnees: &F, croises: Vec<Constat>, inactive: bool) 
 
 /// La signature des courriels de la fiche Entreprise (`courriel_signature`) : du HTML colle, dont la seule regle est le
 /// poids : 150 Ko, tout le HTML compris.
-pub const LIMITE_OCTETS: usize = 150 * 1024;
+pub const LIMITE_OCTETS: socle::grandeurs::Octets = socle::grandeurs::Octets::en_ko(150);
 
 /// La phrase d'une signature trop lourde, ou rien.
 pub fn trop_lourde(html: &str) -> Option<String> {
-    let n = html.len();
+    let n = socle::grandeurs::Octets::de(html.as_bytes());
     if n > LIMITE_OCTETS {
         Some(format!(
-            "la signature pese {} Ko, 150 Ko au plus, images comprises. Une image collee dans la signature pese tout son poids ; un lien vers une image en ligne presque rien",
-            n.div_ceil(1024)
+            "la signature pese {}, {} au plus, images comprises. Une image collee dans la signature pese tout son poids ; un lien vers une image en ligne presque rien",
+            n, LIMITE_OCTETS
         ))
     } else {
         None
