@@ -153,11 +153,11 @@ function ligneRubrique(l = {}, propose) {
     <!-- LES JOURS D'ABORD : ce sont eux qui situent l'engagement et
          qui comptent les cachets. -->
     <button type="button" class="r-jours-btn" title="cocher les jours">—</button>
-    <input class="r-quantite" type="number" min="0" step="0.5" placeholder="qté"
+    <input class="r-quantite" type="text" inputmode="decimal" placeholder="qté"
           ${valeurDeDepart(l.quantite)}>
     <select class="r-code"></select>
     <span class="r-mot discret">à</span>
-    <input class="r-taux" type="number" min="0" step="0.01" placeholder="taux"
+    <input class="r-taux" type="text" inputmode="decimal" placeholder="taux"
           ${valeurDeDepart(l.taux)}>
     <span class="r-mot discret">€</span>
     <input class="r-lieu" placeholder="lieu — figure au contrat"
@@ -184,7 +184,7 @@ function ligneRubrique(l = {}, propose) {
          mois SUIVANT sont le planning de la ligne (data-planning). -->
     <input class="r-jours" type="hidden"
           ${valeurDeDepart(l.dates ? l.dates.map((x) => +jourDe(x).slice(8)).join(" ") : undefined)}>
-    <input class="r-heures" type="number" min="0" step="0.5" placeholder="heures"
+    <input class="r-heures" type="text" inputmode="decimal" placeholder="heures"
           ${valeurDeDepart(l.heures)}>
     <button class="supprimer" title="retirer cette ligne">&times;</button>
     <!-- LE LIEU PROPRE À UN JOUR : une date du fichier peut dire le sien,
@@ -280,8 +280,9 @@ function ligneRubrique(l = {}, propose) {
   div.querySelector(".r-taux").oninput = () => {
     const v = div.querySelector(".r-taux").value;
     const r = div.querySelector(".r-code").value;
-    if (v !== "" && +v > 0) {
-      TAUX_PAR_RUBRIQUE[r] = +v;
+    // Tel qu'il est tapé : la ligne suivante le reprend, et la route le convertit.
+    if (v.trim() !== "") {
+      TAUX_PAR_RUBRIQUE[r] = v.trim();
       if (r === "cachet") afficherRappelsMois();
     }
     rafraichirApercu();
@@ -667,8 +668,8 @@ function poserRares(div, e) {
     ? `<label class="coche" title="${aideDe(c.cle)}"><input type="checkbox" class="e-rare"
          data-cle="${c.cle}" data-type="checkbox" checked> ${echapper(c.libelle)}</label>`
     : `<label title="${aideDe(c.cle)}">${echapper(c.libelle)}
-         <input class="e-rare" data-cle="${c.cle}" data-type="${c.type}" type="${c.type}"
-           ${c.type === "number" ? `step="any"` : ""} value="${echapper(String(e[c.cle]))}"></label>`).join("");
+         <input class="e-rare" data-cle="${c.cle}" data-type="${c.type}" type="text"
+           ${c.type === "number" ? `inputmode="decimal"` : ""} value="${echapper(String(e[c.cle]))}"></label>`).join("");
   cible.hidden = !cible.children.length;
   cible.querySelectorAll(".e-rare").forEach((c) => { c.onchange = rafraichirApercu; c.oninput = rafraichirApercu; });
 }
@@ -677,8 +678,9 @@ function poserRares(div, e) {
 function raresDuBloc(div, e) {
   div.querySelectorAll(".e-rare").forEach((c) => {
     if (c.dataset.type === "checkbox") { if (c.checked) e[c.dataset.cle] = true; return; }
+    // Un nombre part tel qu'il est tapé : la route le convertit (`enregistrer-saisie`).
     const v = c.value.trim();
-    if (v !== "") e[c.dataset.cle] = c.dataset.type === "number" ? +v : v;
+    if (v !== "") e[c.dataset.cle] = v;
   });
 }
 
@@ -735,7 +737,7 @@ function nommerLesCases(div) {
 function ecritDuBloc(div, e) {
   div.querySelectorAll(".e-ecrit-champ").forEach((c) => {
     const v = c.value.trim();
-    if (v !== "") e[c.dataset.cle] = c.dataset.type === "number" ? +v : v;
+    if (v !== "") e[c.dataset.cle] = v;
   });
   // LE NUMÉRO DÉJÀ DÉCLARÉ EN DSN, quand le moteur demande sa case : il est celui du contrat ; vide, le moteur en donne un.
   const n = div.querySelector(".e-numero-dit");
@@ -940,10 +942,10 @@ function construireCarte(div, e) {
     <div class="e-permanent" hidden>
       <div class="e-mois-paye">
         <label>Salaire mensuel brut
-          <input type="number" step="0.01" min="0" class="e-salaire"
+          <input type="text" inputmode="decimal" class="e-salaire"
                  placeholder="celui du contrat signé"></label>
         <label title="${aideDe("heures_par_mois")}">Heures par mois
-          <input type="number" step="0.01" min="0" class="e-quotite">
+          <input type="text" inputmode="decimal" class="e-quotite">
           <button type="button" class="lien e-temps-plein" hidden></button></label>
       </div>
       <div class="e-faits">
@@ -1010,11 +1012,11 @@ function construireCarte(div, e) {
     </div>
     <div class="e-chiffres" hidden>
       <label title="${aideDe("net")}">Net salarié
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="net"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="net"></label>
       <label title="le brut du bulletin">Brut
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="brut"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="brut"></label>
       <label title="${aideDe("cout")}">Coût entreprise
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="cout"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="cout"></label>
       <span class="e-chiffres-note discret">${aideDe("viser")}</span>
     </div>
     <div class="e-options" hidden>
@@ -1063,7 +1065,7 @@ function construireCarte(div, e) {
         <label data-ecrit="numero" hidden title="${aideDe("numero")}">Numéro en DSN
           <input type="text" class="e-numero-dit"></label>
         <label data-ecrit="periode_essai_jours" hidden title="${aideDe("periode_essai_jours")}">Période d'essai (jours)
-          <input type="number" min="0" step="1" class="e-ecrit-champ" data-cle="periode_essai_jours" data-type="number"></label>
+          <input type="text" inputmode="numeric" class="e-ecrit-champ" data-cle="periode_essai_jours"></label>
         <label data-ecrit="personne_remplacee" hidden title="${aideDe("personne_remplacee")}">Personne remplacée
           <input type="text" class="e-ecrit-champ" data-cle="personne_remplacee" placeholder="nom, qualification"></label>
         <label data-ecrit="repartition_horaire" hidden title="${aideDe("repartition_horaire")}">Répartition des horaires
@@ -1504,7 +1506,7 @@ function ligneFait(quoi, v = {}) {
     div.innerHTML = `
       <label>rubrique <input type="text" class="f-rubrique" placeholder="prime"
        ${valeurDeDepart(v.rubrique)}></label>
-      <label>montant <input type="number" step="0.01" class="f-montant"
+      <label>montant <input type="text" inputmode="decimal" class="f-montant"
        ${valeurDeDepart(v.montant)}></label>
       ${v.libelle ? `<label>libellé <input class="f-libelle" value="${echapper(v.libelle)}"></label>` : ""}
       <button class="retirer-fait lien" title="retirer">&#x2715;</button>`;
@@ -1539,7 +1541,7 @@ function poserFaitsAvances(div, e) {
   if (!cible) return;
   cible.innerHTML = casesAvancees().map((c) => `
     <label data-fait="${echapper(c.nom)}" hidden>${echapper(c.libelle)}
-      <input type="number" step="0.01" min="0" class="e-fait-nombre" data-cle="${echapper(c.nom)}"
+      <input type="text" inputmode="decimal" class="e-fait-nombre" data-cle="${echapper(c.nom)}"
             ${valeurDeDepart(e[c.nom])}></label>`).join("");
   cible.querySelectorAll("input").forEach((c) => { c.onchange = rafraichirApercu; });
   montrerFaitsAvances(div, div._faitsAvances);
@@ -1565,7 +1567,7 @@ function montrerFaitsAvances(div, appeles) {
 function faitsAvancesDuBloc(div, e) {
   div.querySelectorAll(".e-faits-avances [data-fait]").forEach((l) => {
     const v = l.querySelector("input").value.trim();
-    if (v !== "" && !l.hidden) e[l.dataset.fait] = +v;
+    if (v !== "" && !l.hidden) e[l.dataset.fait] = v;
   });
 }
 
@@ -1587,7 +1589,7 @@ function faitsDuBloc(div) {
     .map((f) => ({ debut: val(f, ".f-debut"), fin: val(f, ".f-fin") }))
     .filter((c) => c.debut || c.fin);
   const primes = [...div.querySelectorAll(".fait-primes")]
-    .map((f) => ({ montant: +val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") }))
+    .map((f) => ({ montant: val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") }))
     .filter((p) => p.montant);
   return { conges, primes };
 }
@@ -1710,8 +1712,8 @@ function lignesDuBloc(div, mois) {
     if (!ligneEnvoyee(r)) return null;
     const code = r.querySelector(".r-code").value;
     const rr = rubriqueDe(code);
-    // Un nombre tapé, ou `null` : une case vide.
-    const nombre = (x) => (x === "" ? null : +x);
+    // Un nombre tel qu'il est tapé (la route le convertit), ou `null` : une case vide.
+    const nombre = (x) => (x.trim() === "" ? null : x.trim());
     const texte = (x) => (x.trim() === "" ? null : x.trim());
     // Un jour qui dit son propre lieu s'écrit {"jour", "lieu"}, les autres nus.
     const propres = new Map([...r.querySelectorAll(".r-lieu-jour")]
@@ -1721,7 +1723,7 @@ function lignesDuBloc(div, mois) {
     // (`cles`), toutes : une ligne en pourcentage écrit sa base et son pourcentage, une ligne au montant sa somme (le
     // champ du taux), une ligne de frais son lieu hors de la métropole et ses cases cochées.
     // La quantité s'écrit dans l'unité de sa rubrique, sous la clé que le moteur en dit (`quantite` de la rubrique).
-    const quantite = (x) => (x === "" || !rr || !rr.quantite ? null : { [rr.quantite]: +x });
+    const quantite = (x) => (x.trim() === "" || !rr || !rr.quantite ? null : { [rr.quantite]: x.trim() });
     const valeurs = {
       rubrique: code,
       quantite: quantite(q),

@@ -7,7 +7,8 @@
 //!
 //! Une facon d'ecrire n'est pas un type : chaque forme dit la sienne par l'attribut serde du champ
 //! (`#[serde(serialize_with = "socle::grandeurs::ecrit::centimes::serialize")]`), dans `ecrit`. Une grandeur se lit
-//! d'un nombre JSON, jamais d'un texte, comme `forme::decimal` (un entier garde son echelle nulle) ; un champ lu comme
+//! d'un nombre JSON, jamais d'un texte, comme `forme::decimal` (un entier garde son echelle nulle) ; dans la charge d'une
+//! route (`forme::lire_saisie`), un texte est ce qu'une personne a tape, converti une fois (`lu::tapee`) ; un champ lu comme
 //! `forme::court` le dit
 //! (`#[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]`).
 
@@ -94,7 +95,7 @@ macro_rules! grandeurs {
 
         impl<'de> serde::Deserialize<'de> for $nom {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$nom, D::Error> {
-                crate::forme::decimal_en_nombre(d).map($nom)
+                crate::forme::decimal_en_nombre(d, lu::tapee_en_decimal::<$nom>).map($nom)
             }
         }
 
@@ -871,6 +872,11 @@ pub mod lu {
         Decimal::from_str_exact(&ecrit).map(<G as crate::grandeurs::Scelle>::du).map_err(|_| format!("{} est trop long : on attend {}", cite, attendu))
     }
 
+    /// `tapee`, son decimal : la conversion que la lecture d'une saisie passe a `forme` (`forme::decimal_en_nombre`).
+    pub(crate) fn tapee_en_decimal<G: Grandeur>(t: &str) -> Result<Decimal, String> {
+        tapee::<G>(t).map(<G as crate::grandeurs::Scelle>::en_decimal)
+    }
+
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
     /// francaise ou non (`num::decimal_a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;
     /// `None` : le texte n'est pas un nombre.
@@ -909,12 +915,22 @@ pub mod lu {
     }
 
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur
-    /// les ecrit en texte, la page envoie un nombre ou un texte).
+    /// les ecrit en texte) ; dans une saisie (la charge d'une route), un texte est ce qu'une personne a tape, converti par
+    /// `tapee`.
     pub mod nombre_ou_texte {
         use crate::grandeurs::Grandeur;
 
         pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
-            crate::forme::decimal(d).map(<G as crate::grandeurs::Scelle>::du)
+            crate::forme::decimal_ou_tape(d, super::tapee_en_decimal::<G>).map(<G as crate::grandeurs::Scelle>::du)
+        }
+
+        /// Une grandeur lue ainsi, la ou un champ ne se pose pas (un `Option`).
+        struct Lue<G>(G);
+
+        impl<'de, G: Grandeur> serde::Deserialize<'de> for Lue<G> {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lue<G>, D::Error> {
+                deserialize(d).map(Lue)
+            }
         }
 
         /// Un `Option` lu ainsi : absent (avec `#[serde(default)]`) ou nul, il est vide.
@@ -922,7 +938,7 @@ pub mod lu {
             use crate::grandeurs::Grandeur;
 
             pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
-                crate::forme::decimal_opt(d).map(|o| o.map(<G as crate::grandeurs::Scelle>::du))
+                <Option<super::Lue<G>> as serde::Deserialize>::deserialize(d).map(|o| o.map(|l| l.0))
             }
         }
     }

@@ -825,7 +825,7 @@ details.mois-hist[open] > summary { border-bottom-left-radius: 0; border-bottom-
 .fait { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 4px; }
 .fait label { font-size: 12px; color: var(--discret); }
 .fait input, .fait select { display: block; padding: .3rem .4rem; }
-.fait input[type="number"] { width: 7rem; }
+.fait input[type="number"], .fait input[inputmode="decimal"] { width: 7rem; }
 input.jour-du-mois { width: 4rem; }
 /* Une valeur courte se lit entière : la case prend la largeur que sa zone permet (son attribut size). */
 input.x-court { width: auto; }

@@ -116,8 +116,9 @@ function engagementDuBloc(div, mois) {
     if (lignes.length) e.lignes = JSON.parse(JSON.stringify(lignes));
     const recours = div.querySelector(".e-recours").value;
     if (recours) e.motif_recours = recours;
-    if (salaire !== "") e.salaire_mensuel = +salaire;
-    if (quotite !== "") e.quotite_contrat = +quotite;
+    // Tels qu'ils sont tapés : la route les convertit (`enregistrer-saisie`).
+    if (salaire.trim() !== "") e.salaire_mensuel = salaire.trim();
+    if (quotite.trim() !== "") e.quotite_contrat = quotite.trim();
     if (faits.conges.length) e.conges_pris = faits.conges;
     if (faits.primes.length) e.primes = faits.primes;
     faitsAvancesDuBloc(div, e);
@@ -523,7 +524,7 @@ function afficherRappelsMois() {
   const t = TAUX_PAR_RUBRIQUE.cachet;
   // Le taux du cachet d'une ligne neuve (le dernier tapé, ou celui que le moteur dit) : une case et sa valeur.
   document.getElementById("rappels-mois").innerHTML =
-    `<span>Cachet par défaut</span> <b>${echapper(t == null ? "—" : euros(t))}</b> · ${aideDe("lieu_jours")}`;
+    `<span>Cachet par défaut</span> <b>${echapper(t == null ? "—" : typeof t === "number" ? euros(t) : t)}</b> · ${aideDe("lieu_jours")}`;
 }
 
 let DEMANDE_MOIS = null;
@@ -1056,8 +1057,44 @@ async function ecrireLaCarte(div, carte, mois, appel = api) {
   if (!changements.length) { div._ecrite = JSON.stringify(carte); return null; }
   const r = await appel("enregistrer-saisie", { mois, carte: carteVisee(div, carte), changements });
   div.dataset.engagement = JSON.stringify(r.engagement);
+  montrerLeConverti(div, carte, r.brouillon, mois);
   div._ecrite = JSON.stringify(carte);
   return r;
+}
+
+/* CE QUE LA ROUTE A COMPRIS D'UN NOMBRE TAPÉ s'affiche dans sa case quand on l'a quittée : la valeur que le brouillon
+ * écrit (`brouillon` d'`enregistrer-saisie`), jamais une conversion de la page. Une case où le curseur est encore, ou qui
+ * a changé depuis l'envoi, garde ce qu'on y tape ; `carte` (ce qui est parti) prend ce que la case montre désormais. */
+const CASES_NOMBRE = { salaire_mensuel: ".e-salaire", quotite_contrat: ".e-quotite" };
+function montrerLeConverti(div, carte, b, mois) {
+  if (!b) return;
+  const avant = carteAEcrire(div, mois);
+  if (!avant) return;
+  const poser = (c, v) => { if (c && c !== document.activeElement && v != null) c.value = v; };
+  const inchangee = (k) => JSON.stringify(avant[k]) === JSON.stringify(carte[k]);
+  Object.keys(carte).filter((k) => typeof b[k] === "number" && inchangee(k)).forEach((k) => {
+    if (k in CASES_NOMBRE) poser(div.querySelector(CASES_NOMBRE[k]), b[k]);
+    div.querySelectorAll(`.e-rare[data-cle="${k}"], .e-ecrit-champ[data-cle="${k}"], .e-fait-nombre[data-cle="${k}"]`)
+      .forEach((c) => poser(c, b[k]));
+  });
+  if (carte.lignes && b.lignes && inchangee("lignes")) {
+    // Les lignes parties (`lignesDuBloc`), dans le même ordre que celles du brouillon.
+    const rangs = [...div.querySelectorAll(".rubrique")].filter(ligneEnvoyee);
+    b.lignes.forEach((l, i) => {
+      const r = rangs[i];
+      if (!r) return;
+      const q = l.quantite && typeof l.quantite === "object" ? Object.values(l.quantite)[0] : l.base;
+      poser(r.querySelector(".r-quantite"), q);
+      poser(r.querySelector(".r-taux"), l.taux ?? l.montant ?? l.taux_majoration);
+      poser(r.querySelector(".r-heures"), l.heures);
+    });
+  }
+  if (carte.primes && b.primes && inchangee("primes")) {
+    const lignes = [...div.querySelectorAll(".fait-primes")].filter((f) => f.querySelector(".f-montant").value);
+    b.primes.forEach((p, i) => { if (lignes[i]) poser(lignes[i].querySelector(".f-montant"), p.montant); });
+  }
+  const apres = carteAEcrire(div, mois);
+  Object.keys(carte).filter(inchangee).forEach((k) => { carte[k] = apres[k]; });
 }
 
 /** UN APPEL AU MOTEUR À LA FOIS pour les cartes du mois : les écritures, l'aperçu et le montant visé se suivent.

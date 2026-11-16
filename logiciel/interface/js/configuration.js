@@ -470,10 +470,10 @@ function vueNaturesADire(liste) {
     fin: (x) => `<label>Fin prévue <input type="date" data-nature-champ="fin"></label>`,
     numero: (x) => `<label title="${aideDe("import_numero")}">Numéro du contrat
         <input type="text" data-nature-champ="numero" placeholder="${echapper(x.numero_placeholder)}"></label>`,
-    salaire: (x) => `<label>Salaire mensuel brut <input type="number" step="0.01" min="0" data-nature-champ="salaire"
+    salaire: (x) => `<label>Salaire mensuel brut <input type="text" inputmode="decimal" data-nature-champ="salaire"
         placeholder="celui du contrat signé"></label>`,
     quotite: (x) => `<label title="${aideDe("import_quotite")}">Heures par mois
-        <input type="number" step="0.01" min="0" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
+        <input type="text" inputmode="decimal" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
   };
   const lignes = liste.map((x) => `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
@@ -522,8 +522,8 @@ document.addEventListener("click", async (ev) => {
   try {
     const charge = { salarie: b.dataset.natureSalarie, nature };
     rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      // Une case de nombre part en nombre (la durée du travail : des heures, lues en nombre par le moteur).
-      charge[c.dataset.natureChamp] = c.value === "" ? null : (c.type === "number" ? Number(c.value) : c.value);
+      // Chaque case part telle qu'elle est tapée : la route convertit un nombre (le salaire, les heures par mois).
+      charge[c.dataset.natureChamp] = c.value.trim() === "" ? null : c.value.trim();
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
@@ -989,7 +989,8 @@ function caseSousChamp(parent, k, val, genre) {
       `<option value="${echapper(v)}" ${(val == null ? v === "" : String(val) === v) ? "selected" : ""}>${echapper(lib)}</option>`).join("")}</select>`;
   }
   if (genre.nombre) {
-    return `<input type="number" step="0.01" min="0" ${attrs} data-sous-type="nombre"${valeurDeDepart(val)}>`;
+    // Un nombre se tape tel quel (« 1,5 % ») : la route le convertit.
+    return `<input type="text" inputmode="decimal" ${attrs} data-sous-type="nombre"${valeurDeDepart(val)}>`;
   }  // Une date se choisit dans un calendrier, comme partout ; la valeur
   // reste AAAA-MM-JJ. Une valeur ancienne d'une autre forme reste un texte.
   if (genre.date && (val == null || /^(\d{4}-\d{2}-\d{2})?$/.test(String(val)))) {

@@ -49,6 +49,11 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
     lire(v, phrase)
 }
 
+/// Lit-on une saisie (`lire_saisie`) ?
+pub(crate) fn en_saisie() -> bool {
+    EN_SAISIE.get()
+}
+
 /// LE TEXTE `texte` D'UNE NOTION QUI RANGE SA SAISIE, a sa lecture : range par `ranger` (son `FormeDeCase::RANGER`) dans
 /// une saisie (`lire_saisie`), tel quel ailleurs.
 pub fn range_si_saisi(texte: String, ranger: fn(&str) -> String) -> String {
@@ -427,17 +432,33 @@ pub fn nombre_du_texte(t: &str) -> serde_json::Number {
 /// (`1.0` reste `1.0`, `decimal_ecrit`), un nombre ecrit en texte se lit (`num::dec_texte`).
 /// `#[serde(deserialize_with = "socle::forme::decimal")]`.
 pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
-    d.deserialize_any(EnDecimal { texte: true })
+    d.deserialize_any(EnDecimal { texte: TexteLu::Ecrit })
 }
 
-/// `decimal`, strict : un nombre JSON, jamais un texte (la lecture d'une grandeur, `grandeurs`).
-pub(crate) fn decimal_en_nombre<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
-    d.deserialize_any(EnDecimal { texte: false })
+/// LA LECTURE D'UNE GRANDEUR (`grandeurs`) : un nombre JSON ; dans une saisie (`lire_saisie`, la charge d'une route), ce
+/// qu'une personne a tape, converti par `tapee` (`grandeurs::lu::tapee`, la seule conversion d'une saisie) ; dans un
+/// fichier, jamais un texte.
+pub(crate) fn decimal_en_nombre<'de, D: serde::Deserializer<'de>>(d: D, tapee: fn(&str) -> Result<crate::num::Decimal, String>) -> Result<crate::num::Decimal, D::Error> {
+    d.deserialize_any(EnDecimal { texte: if EN_SAISIE.get() { TexteLu::Tape(tapee) } else { TexteLu::Refuse } })
 }
 
-/// Le visiteur de `decimal` ; `texte` : un nombre ecrit en texte se lit aussi.
+/// `decimal` d'une grandeur qu'un fichier ecrit en texte (une ligne de paie) : dans une saisie, ce qu'une personne a tape,
+/// converti par `tapee`, comme `decimal_en_nombre`.
+pub(crate) fn decimal_ou_tape<'de, D: serde::Deserializer<'de>>(d: D, tapee: fn(&str) -> Result<crate::num::Decimal, String>) -> Result<crate::num::Decimal, D::Error> {
+    d.deserialize_any(EnDecimal { texte: if EN_SAISIE.get() { TexteLu::Tape(tapee) } else { TexteLu::Ecrit } })
+}
+
+/// Ce qu'un nombre ecrit en texte devient : refuse, lu tel qu'un fichier l'ecrit (`num::dec_texte`), ou converti comme
+/// une personne l'a tape.
+enum TexteLu {
+    Refuse,
+    Ecrit,
+    Tape(fn(&str) -> Result<crate::num::Decimal, String>),
+}
+
+/// Le visiteur de `decimal` ; `texte` : ce qu'un nombre ecrit en texte devient.
 struct EnDecimal {
-    texte: bool,
+    texte: TexteLu,
 }
 
 impl<'de> serde::de::Visitor<'de> for EnDecimal {
@@ -455,10 +476,11 @@ impl<'de> serde::de::Visitor<'de> for EnDecimal {
         decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
     }
     fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-        if !self.texte {
-            return Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s)));
+        match self.texte {
+            TexteLu::Refuse => Err(E::custom(format!("« {} » est écrit en texte : écrire le nombre sans guillemets", s))),
+            TexteLu::Ecrit => crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase)),
+            TexteLu::Tape(tapee) => tapee(s).map_err(E::custom),
         }
-        crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
     }
 }
 
@@ -771,11 +793,9 @@ impl<'de> serde::Deserialize<'de> for NombreEcrit {
             fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<NombreEcrit, A::Error> {
                 decimal_ecrit(&texte_a_virgule(m)?).map(|d| NombreEcrit::Flottant(crate::num::court(d))).map_err(|e| serde::de::Error::custom(e.phrase))
             }
+            // Ce qu'une personne a tape, tel quel : il se convertit a sa porte, qui nomme sa case (`NombreEcrit::en`).
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<NombreEcrit, E> {
-                match crate::num::decimal_lu(s) {
-                    Some(_) => Ok(NombreEcrit::Texte(s.to_string())),
-                    None => Err(E::custom(format!("{} n'est pas un nombre", crate::ecriture::json_en_ligne(s)))),
-                }
+                Ok(NombreEcrit::Texte(s.to_string()))
             }
             fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<NombreEcrit, E> {
                 Err(E::custom(format!("{} n'est pas un nombre", b)))
