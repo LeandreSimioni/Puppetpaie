@@ -337,7 +337,8 @@ pub(crate) struct RetraiteLue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PrimeLue {
-    pourcentage: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pourcentage: socle::grandeurs::Taux,
     base: Option<String>,
     article: String,
     pourquoi: Option<String>,
@@ -397,7 +398,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
 }
 
 pub(crate) fn prime_ecrite(p: Option<Prime>) -> Option<PrimeLue> {
-    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: nombre(p.base), article: p.article, pourquoi: p.pourquoi, annees: p.annees.nombre_d_ans_revolus().unwrap() })
+    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: p.base.map(socle::grandeurs::ecrit::texte::dit), article: p.article, pourquoi: p.pourquoi, annees: p.annees.nombre_d_ans_revolus().unwrap() })
 }
 
 pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {

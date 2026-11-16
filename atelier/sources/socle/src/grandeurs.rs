@@ -651,6 +651,11 @@ impl Heures {
         Heures(Decimal::from_parts(n, 0, 0, false, 0))
     }
 
+    /// Des heures qu'un texte fixe, en centiemes d'heure (`15167` : 151,67 h, la duree legale d'un mois, L. 3121-27).
+    pub const fn centiemes(n: u32) -> Heures {
+        Heures(Decimal::from_parts(n, 0, 0, false, 2))
+    }
+
     /// Au centieme d'heure, la moitie vers le haut, ses deux decimales ecrites (`7.5` s'ecrit `7.50`) : des heures
     /// ramenees au jour, au mois ou a la semaine. Aucun texte deposé ne dit cet arrondi.
     pub fn au_centieme(self) -> Heures {

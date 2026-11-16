@@ -424,8 +424,8 @@ forme! {
         pub annexe: AnnexeConvention,
         #[serde(deserialize_with = "Anciennete::en_annees_entieres")]
         pub apres_annees: Anciennete,
-        pub pourcentage_par_annee: i64,
-        pub plafond_pourcentage: i64,
+        pub pourcentage_par_annee: Taux,
+        pub plafond_pourcentage: Taux,
         /// Les familles de metiers payees a la grille du costume.
         pub familles_costume: Option<Vec<crate::emplois::FamilleDeMetier>>,
         /// La ligne de la grille de chaque niveau 3090.
@@ -440,10 +440,10 @@ forme! {
     /// de la salle (dans l'ordre du texte).
     pub struct GrilleDeSalaires {
         pub depuis: Jour,
-        pub costume: BTreeMap<CleDeGrille, Nombre>,
+        pub costume: BTreeMap<CleDeGrille, Montant>,
         /// Par jauge de la salle, la case de la fiche Entreprise (`jauge_annexe_1`).
         #[serde(deserialize_with = "en_ordre")]
-        pub technique: Vec<(JaugeAnnexe1, BTreeMap<CleDeGrille, Nombre>)>,
+        pub technique: Vec<(JaugeAnnexe1, BTreeMap<CleDeGrille, Montant>)>,
     }
 }
 
@@ -1133,8 +1133,10 @@ pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, re
 /// manque (la jauge de la salle, une grille non relevee pour cette date, le niveau du metier).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prime {
-    pub pourcentage: i64,
-    pub base: Option<P>,
+    /// Le pourcentage du salaire conventionnel qu'elle paie.
+    pub pourcentage: Taux,
+    /// Le salaire conventionnel mensuel de la grille, a la duree legale (151,67 h).
+    pub base: Option<Montant>,
     pub article: String,
     pub pourquoi: Option<String>,
     /// Les ans de presence, revolus.
@@ -1216,12 +1218,12 @@ pub fn prime_anciennete(
     })?;
     let annees = Anciennete::revolue(&debut, jour).ans_revolus();
     // Un pourcentage par annee de presence a partir de la `apres_annees`-ieme, comprise.
-    let presence_comptee = if annees >= sec.apres_annees { i64::from(annees.au_dela_de(sec.apres_annees).fois_entieres(Anciennete::ans(1))? + 1) } else { 0 };
-    let pourcentage = sec.plafond_pourcentage.min(presence_comptee * sec.pourcentage_par_annee);
-    if pourcentage <= 0 {
+    let presence_comptee = if annees >= sec.apres_annees { annees.au_dela_de(sec.apres_annees).fois_entieres(Anciennete::ans(1))? + 1 } else { 0 };
+    let pourcentage = sec.plafond_pourcentage.min(sec.pourcentage_par_annee.fois(presence_comptee as usize));
+    if pourcentage <= Taux::ZERO {
         return Ok(None);
     }
-    let prime = |base: Option<P>, pourquoi: Option<String>| Prime { pourcentage, base, article: article.clone(), pourquoi, annees };
+    let prime = |base: Option<Montant>, pourquoi: Option<String>| Prime { pourcentage, base, article: article.clone(), pourquoi, annees };
     let Some(g) = sec.salaires_conventionnels.iter().filter(|g| g.depuis <= *jour).last() else {
         let premiere = sec.salaires_conventionnels.first().map(|g| g.depuis.iso()).ok_or_else(|| manque("prime_anciennete.salaires_conventionnels"))?;
         return Ok(Some(prime(None, Some(format!(
@@ -1246,5 +1248,5 @@ pub fn prime_anciennete(
         };
         salaires.get(niveau).ok_or_else(|| manque(&format!("prime_anciennete.salaires_conventionnels.technique.{}", niveau)))?
     };
-    Ok(Some(prime(Some(p(base)), None)))
+    Ok(Some(prime(Some(*base), None)))
 }

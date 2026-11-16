@@ -15,7 +15,6 @@ use std::cell::RefCell;
 use droit::fiche::Lue;
 use std::collections::HashMap;
 use std::path::Path;
-use std::str::FromStr;
 
 
 use crate::calcul::Paie;
@@ -33,7 +32,6 @@ use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{courte, Coefficient, Heures, Jours, Montant, MontantUnitaire};
-use socle::num::{div, mul, Decimal};
 use droit::conges::{jours_ouvrables, IndemniteDesJours};
 use droit::permanents::{duree_du_conge, jours_acquis, periode_de_reference, plafonner, Acquisition};
 use droit::catalogue::CodeDeRubrique;
@@ -1129,13 +1127,13 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let jauge = |cle: &droit::minima::ParLaGrille| ent.metier.ouvrir(&(*cle, *au)).jauge_annexe_1.dite().copied();
     let pa = clauses::prime_anciennete(ent.idcc.dite(), ent.annexe_convention.dite().copied(), &fiche, &crate::solde::dit_par_l_engagement(e)?, &fin_mois, jauge)?;
     if let Some(pa) = pa {
-        let Some(base_conv) = pa.base.map(|b| socle::num::dec_texte(&b.to_string())).transpose()? else {
+        let Some(base_conv) = pa.base else {
             return Err(socle::refus!("{} : prime d'anciennete ({}) -- {}.", qui(ctx, e), pa.article, pa.pourquoi.into_iter().collect::<String>()));
         };
-        let pourcentage = Decimal::from(pa.pourcentage);
-        let reference = Heures::du_decimal(Decimal::from_str("151.67").unwrap());
-        let base = Montant::du_decimal(base_conv).prorata(quotite, reference).au_centime().decimal();
-        let montant = Montant::du_decimal(div(mul(base, pourcentage), Decimal::ONE_HUNDRED)).au_centime();
+        let pourcentage = pa.pourcentage;
+        let reference = Heures::centiemes(15167);
+        let base = base_conv.prorata(quotite, reference).au_centime();
+        let montant = base.fois_taux(pourcentage).au_centime();
         // Une prime se paie en une fois, dans l'unite de sa rubrique.
         let unite = droit::catalogue::rubrique(&ctx.racine, &clauses::RUBRIQUE_PRIME_ANCIENNETE, &fin_mois)?.unite;
         lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::une_fois(unite, socle::grandeurs::courte(montant))));
@@ -1144,9 +1142,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \
              conventionnel de {}{} = {} -- {}.",
             qui(ctx, e),
-            socle::texte::nombre_dit(pourcentage),
+            virgule(pourcentage),
             pa.annees.nombre_d_ans_revolus()?,
-            euros(Montant::du_decimal(base_conv)),
+            euros(base_conv),
             proratise,
             euros(montant),
             pa.article
