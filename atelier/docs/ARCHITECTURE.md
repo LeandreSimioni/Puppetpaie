@@ -244,7 +244,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   pas d'autre) ; une année d'un texte est douze mois. Une durée qu'un texte fixe s'écrit `Duree::jours`, `Duree::mois`,
   `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa porte (`en_jours`, `en_mois`, et leurs facultatives ;
   écrite par `ecrite_en_jours`, `ecrite_en_jours_opt`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire` ; dans la
-  charge d'une route, `en_jours` lit aussi des jours tapés en chiffres : la période d'essai d'une carte). Elle se compte depuis un jour,
+  charge d'une route, `en_jours` lit aussi des jours tapés, par la lecture du nombre tapé : la période d'essai d'une
+  carte, les jours déjà indemnisés d'un arrêt). Elle se compte depuis un jour,
   dans l'une ou l'autre unité (`Jour::apres`, `Jour::avant`), en mois depuis un mois (`Mois::apres`, `Mois::avant`) ou
   une année (`Annee::les_precedentes`) ; des mois se disent en jours depuis un jour (`en_jours_depuis`) ; elle se
   mesure d'une suite de jours (`Duree::du_au`) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,

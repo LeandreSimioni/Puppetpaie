@@ -76,8 +76,8 @@ pub struct ArretSaisi {
     pub reprise: Option<Jour>,
     pub reprise_motif: Option<MotifDeReprise>,
     pub date_accident: Option<Jour>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    pub jours_deja_indemnises: Option<Jours>,
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+    pub jours_deja_indemnises: Option<socle::date::Duree<socle::date::EnJours>>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub ij_brute: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]

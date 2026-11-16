@@ -988,38 +988,6 @@ pub mod lu {
         }
     }
 
-    /// UNE GRANDEUR DITE EN NOMBRE ENTIER, POSITIF (des jours deja indemnises) : lue comme la grandeur (un nombre ; dans
-    /// une saisie, ce qui a ete tape), son echelle ramenee a zero (`entiere`) ; une autre se refuse a sa lecture.
-    pub mod entiere {
-        use crate::grandeurs::Grandeur;
-
-        pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
-            let d = crate::forme::decimal_en_nombre(d, super::tapee_en_decimal::<G>)?;
-            match crate::grandeurs::entiere(G::du(d)).filter(|g| !g.en_decimal().is_sign_negative()) {
-                Some(g) => Ok(g),
-                None => Err(serde::de::Error::custom(crate::forme::refus_du_tape(format!("{} n'est pas un nombre entier positif : on attend {}", crate::texte::nombre_dit(d), G::ATTENDU)))),
-            }
-        }
-
-        /// Une grandeur lue ainsi, la ou un champ ne se pose pas (un `Option`).
-        struct Lue<G>(G);
-
-        impl<'de, G: Grandeur> serde::Deserialize<'de> for Lue<G> {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lue<G>, D::Error> {
-                deserialize(d).map(Lue)
-            }
-        }
-
-        /// Un `Option` lu ainsi : absent (avec `#[serde(default)]`) ou nul, il est vide.
-        pub mod option {
-            use crate::grandeurs::Grandeur;
-
-            pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
-                <Option<super::Lue<G>> as serde::Deserialize>::deserialize(d).map(|o| o.map(|l| l.0))
-            }
-        }
-    }
-
     /// Comme `forme::court` : un nombre (jamais un texte), dans sa forme la plus courte, une decimale au moins (`24` se
     /// lit `24.0`).
     pub mod court {

@@ -57,7 +57,7 @@ pub(crate) struct ArretDit<'a> {
     pub debut: Jour,
     pub fin: Jour,
     pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<socle::grandeurs::Jours>,
+    pub jours_deja_indemnises: Option<socle::date::Duree<socle::date::EnJours>>,
     pub note: Option<String>,
 }
 

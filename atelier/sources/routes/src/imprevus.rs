@@ -40,11 +40,11 @@ use droit::permanents::MotifDeSuspension;
 use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, RangDansLeMois, VueDuMois};
-use socle::date::{Jour, Periode};
+use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
-use socle::grandeurs::{Jours, MontantUnitaire};
+use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -183,8 +183,8 @@ struct ChargeArretEnregistrer {
     date_accident: Option<Jour>,
     connu: Option<crate::obligations::ConnaissanceDite>,
     contrat: Option<NumeroContrat>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::entiere::option::deserialize")]
-    jours_deja_indemnises: Option<Jours>,
+    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
+    jours_deja_indemnises: Option<Duree<EnJours>>,
     note: Option<String>,
 }
 
@@ -218,8 +218,8 @@ struct ChargeArretIndemnites {
     ij_nette: Option<socle::forme::NombreEcrit>,
     ij_brute_majoree: Option<socle::forme::NombreEcrit>,
     ij_nette_majoree: Option<socle::forme::NombreEcrit>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::entiere::option::deserialize")]
-    jours_deja_indemnises: Option<Jours>,
+    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
+    jours_deja_indemnises: Option<Duree<EnJours>>,
 }
 
 pub(crate) use declarations::signalement::NatureSignalement;
@@ -853,8 +853,8 @@ pub(crate) struct ResumeDArret {
     genre: GenreDImprevu,
     premier_jour: Jour,
     dernier_jour: Jour,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    jours_deja_indemnises: Option<Jours>,
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours_opt")]
+    jours_deja_indemnises: Option<Duree<EnJours>>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     ij_brute: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
@@ -963,8 +963,8 @@ struct ValeursDeDepart {
     ij_brute_majoree: Option<MontantUnitaire>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     ij_nette_majoree: Option<MontantUnitaire>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    jours_deja_indemnises: Option<Jours>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::date::Duree::ecrite_en_jours_opt")]
+    jours_deja_indemnises: Option<Duree<EnJours>>,
 }
 
 /// Les choix d'une case d'un geste qui se choisit dans une liste : le motif d'une reprise (nomenclature du bloc 60).

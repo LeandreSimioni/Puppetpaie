@@ -47,7 +47,7 @@ use droit::natures::Nature;
 const DOUZE_MOIS: Duree<EnMois> = Duree::mois(12);
 use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::{Jour, Periode};
-use socle::echec::{refus, R};
+use socle::echec::R;
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::{div, mul, Decimal};
@@ -60,12 +60,6 @@ pub const IJ_BRUTES: CodeDeRubrique = CodeDeRubrique::du_moteur("ijss_brutes");
 pub(crate) const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("maintien_salaire");
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
-
-/// L'entier de jours saisis (tronques) : le maintien, une chaine encore en entiers, s'y ouvre ; refus hors limites.
-fn entier(j: Jours) -> R<i64> {
-    let d = j.decimal().trunc();
-    rust_decimal::prelude::ToPrimitive::to_i64(&d).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&d.to_string())))
-}
 
 
 /// Les deux textes qu'un arret met en jeu.
@@ -146,7 +140,7 @@ fn capacites(r: &Regime, debut: &Jour) -> R<Vec<Option<Duree<EnJours>>>> {
 /// LE POURCENTAGE DE CHAQUE JOUR D'UN ARRET, du premier au dernier jour d'absence, en fraction (zero : pas indemnise) :
 /// la carence, puis les tranches, diminuees d'abord de `deja` jours deja indemnises dans les douze mois. Un jour
 /// indemnise compte comme s'il suivait les `deja` jours : il tombe dans la tranche qui court encore a ce rang.
-pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: i64) -> R<Vec<Coefficient>> {
+pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: Duree<EnJours>) -> R<Vec<Coefficient>> {
     let apres_carence = arret.debut().apres(r.carence)?;
     // Le premier jour qui suit chaque tranche, comptee de la fin de la carence ; `None` : elle ne finit pas.
     let mut fins = Vec::new();
@@ -165,7 +159,7 @@ pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: i64) -> R<Vec<Coefficie
         let tranche = if j < apres_carence {
             None
         } else {
-            let rang = j.plus_jours(deja.max(0))?;
+            let rang = j.apres(deja)?;
             fins.iter().position(|f| f.as_ref().is_none_or(|f| rang < *f))
         };
         out.push(match tranche {
@@ -194,12 +188,14 @@ pub fn fin_possible(r: &Regime, arret: &Periode) -> R<Jour> {
 /// Les jours deja indemnises, pour le texte `t`, dans les douze mois qui precedent le premier jour de `imp` : ceux des
 /// arrets anterieurs du meme salarie (comptes par le meme texte, a leur propre anciennete), plus ceux que l'arret dit
 /// (`jours_deja_indemnises` : ce qu'aucun arret du magasin ne porte).
-pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> R<i64> {
+pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> R<Duree<EnJours>> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     // Les douze mois qui precedent son premier jour.
     let fenetre = Periode::du_au(premier.avant(DOUZE_MOIS)?, premier.plus_jours(-1)?)?;
-    let saisis = imp.jours_deja_indemnises.filter(|x| !x.est_nul()).into_iter().map(entier).sum::<R<i64>>()?;
-    let mut total = saisis;
+    let mut total = Duree::jours(0);
+    if let Some(saisis) = imp.jours_deja_indemnises {
+        total = total.plus(saisis);
+    }
     let cle = &imp.salarie;
     for autre in crate::imprevus::du_salarie(&ctx.racine, cle)? {
         let Imprevu::Arret(autre) = autre else { continue };
@@ -216,7 +212,7 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
         let taux = taux_des_jours(r, &arret, deja_indemnises(ctx, &autre, nat, t)?)?;
         for (j, x) in arret.jours().zip(&taux) {
             if *x > Coefficient::du_decimal(Decimal::ZERO) && fenetre.contient(&j) {
-                total += 1;
+                total = total.plus(Duree::jours(1));
             }
         }
     }
@@ -429,7 +425,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         }
         let complement = Montant::du_decimal(complement).au_centime().decimal();
         heures_max = heures_max.max(heures);
-        let deja_dit = if deja > 0 { format!(" ({} jours déjà indemnisés dans les douze mois)", deja) } else { String::new() };
+        let deja_dit = if deja.nulle() { String::new() } else { format!(" ({} déjà indemnisés dans les douze mois)", deja) };
         dit.push(if r.base == Base::Net {
             format!("{}{} — le net garanti se reconstitue à la paie", dm::phrase(r), deja_dit)
         } else {
