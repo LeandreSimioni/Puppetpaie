@@ -1032,7 +1032,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
 | liste lue élément par élément | `socle::forme::Liste` | `socle/src/forme.rs` |
-| liste qu'un fichier ne peut pas laisser vide (une liste vide se refuse à sa lecture : les paliers des heures complémentaires, les paliers annuels des heures supplémentaires d'une convention, les changements d'une carte ; une forme qui le dit en ses mots la fait de sa liste, `AuMoinsUn::de`) | `socle::forme::AuMoinsUn` | `socle/src/forme.rs` |
+| liste qu'un fichier ne peut pas laisser vide (une liste vide se refuse à sa lecture : les paliers des heures complémentaires, les paliers annuels des heures supplémentaires d'une convention, ses tranches de préavis communes à toutes les catégories, ses suppléments et majorations selon l'âge, les paliers et tranches de ses indemnités de retraite, les changements d'une carte ; une forme qui le dit en ses mots la fait de sa liste, `AuMoinsUn::de`) | `socle::forme::AuMoinsUn` | `socle/src/forme.rs` |
 | clé d'échéance | `CleDEcheance` | `routes/src/rappels.rs` |
 | échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |

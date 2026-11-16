@@ -701,7 +701,7 @@ impl<T> AuMoinsUn<T> {
     }
 
     /// Ses elements, dans l'ordre.
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> + Clone {
         self.avant.iter().chain(std::iter::once(&self.dernier))
     }
 

@@ -116,11 +116,12 @@ forme! {
         pub article: String,
         /// Les motifs de rupture (S21.G00.62.002) qui n'ouvrent pas ce preavis, chacun avec la phrase qui le dit.
         pub motifs_hors_preavis: Option<BTreeMap<MotifDeRupture, String>>,
-        pub toutes_categories: Option<Vec<TranchePreavis>>,
+        /// Au moins une tranche, quand le preavis est le meme pour toutes les categories.
+        pub toutes_categories: Option<socle::forme::AuMoinsUn<TranchePreavis>>,
         #[serde(default, deserialize_with = "preavis_par_categorie")]
         pub par_categorie: Option<BTreeMap<CategorieConventionnelle, PreavisDeLaCategorie>>,
-        /// Ajoute a l'age du salarie, au licenciement (et a la demission si `supplement_age_demission`).
-        pub supplement_age: Option<Vec<SupplementAge>>,
+        /// Ajoute a l'age du salarie, au licenciement (et a la demission si `supplement_age_demission`) ; au moins un.
+        pub supplement_age: Option<socle::forme::AuMoinsUn<SupplementAge>>,
         pub supplement_age_demission: Option<bool>,
     }
 }
@@ -173,8 +174,8 @@ forme! {
         pub taux_avant: Option<TauxAvant>,
         /// Une majoration a partir d'un age (la 3097).
         pub majoration_age: Option<MajorationAge>,
-        /// Plusieurs ages, chacun son pourcentage et son plancher (la 2121), sous `plafond_majore_mois`.
-        pub majorations_age: Option<Vec<MajorationParAge>>,
+        /// Plusieurs ages, chacun son pourcentage et son plancher (la 2121), sous `plafond_majore_mois` ; au moins un.
+        pub majorations_age: Option<socle::forme::AuMoinsUn<MajorationParAge>>,
         pub plafond_majore_mois: Option<Nombre>,
         /// Les clauses de chaque annexe (« 1 », « 3 »).
         pub par_annexe: Option<BTreeMap<AnnexeConvention, ClausesDAnnexe>>,
@@ -279,9 +280,11 @@ forme! {
     /// annee et une autre au-dela de `au_dela_de_annees`.
     pub struct MiseALaRetraite {
         pub article: String,
-        pub paliers: Option<Vec<Palier>>,
+        /// Au moins un palier, quand il y en a.
+        pub paliers: Option<socle::forme::AuMoinsUn<Palier>>,
         pub prorata: Option<Prorata>,
-        pub taux: Option<Vec<Tranche>>,
+        /// Au moins une tranche, quand il y en a.
+        pub taux: Option<socle::forme::AuMoinsUn<Tranche>>,
         pub plafond_mois: Option<Nombre>,
         pub par_annee: Option<Nombre>,
         pub au_dela_de_annees: Option<Nombre>,
@@ -306,9 +309,11 @@ forme! {
     /// anciennete minimale.
     pub struct DepartALaRetraite {
         pub article: String,
-        pub paliers: Option<Vec<Palier>>,
+        /// Au moins un palier, quand il y en a.
+        pub paliers: Option<socle::forme::AuMoinsUn<Palier>>,
         pub prorata: Option<Prorata>,
-        pub taux: Option<Vec<Tranche>>,
+        /// Au moins une tranche, quand il y en a.
+        pub taux: Option<socle::forme::AuMoinsUn<Tranche>>,
         pub anciennete_minimale_mois: Option<Nombre>,
         #[serde(default, deserialize_with = "Duree::en_mois_opt")]
         pub prevenance_mois: Option<Duree<EnMois>>,
@@ -718,19 +723,19 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
         return Ok(PreavisDit { mois: Some(Coefficient::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
     let demission = motif == Some(MotifDeRupture::Demission);
-    let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
-        Some(t) if !t.is_empty() => t,
-        _ => {
+    let tranches: Vec<&TranchePreavis> = match &sec.toutes_categories {
+        Some(t) => t.iter().collect(),
+        None => {
             let Some(c) = categorie else {
                 return Ok(rien(Some(article), "la catégorie du salarié dans la convention n'est pas connue".into()));
             };
             match sec.par_categorie.as_ref().and_then(|m| m.get(c)) {
-                Some(pc) if demission => match pc.demission.as_deref() {
-                    Some(d) => d,
-                    None => &pc.licenciement,
+                Some(pc) if demission => match &pc.demission {
+                    Some(d) => d.iter().collect(),
+                    None => pc.licenciement.iter().collect(),
                 },
-                Some(pc) => &pc.licenciement,
-                None => &[],
+                Some(pc) => pc.licenciement.iter().collect(),
+                None => Vec::new(),
             }
         }
     };
@@ -752,13 +757,13 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
                 return Ok(PreavisDit { mois: Some(mois), article: Some(article), jours: Some(jours), pourquoi: None });
             }
             let mut mois = t.mois.ok_or_else(|| manque("mois"))?;
-            if let Some(supplements) = sec.supplement_age.as_ref().filter(|s| !s.is_empty() && (!demission || sec.supplement_age_demission == Some(true))) {
+            if let Some(supplements) = sec.supplement_age.as_ref().filter(|_| !demission || sec.supplement_age_demission == Some(true)) {
                 let Some(age) = age else {
                     let pourquoi = format!("le préavis de {} dépend de l'âge du salarié, et sa \
                             date de naissance manque", article);
                     return Ok(rien(Some(article), pourquoi));
                 };
-                for sup in supplements {
+                for sup in supplements.iter() {
                     if sup.age_min <= age && age < sup.age_max {
                         mois = mois + sup.mois;
                     }
@@ -773,7 +778,7 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
 
 // ------------------------------------------------------------- les baremes
 /// En mois de salaire : chaque tranche d'annees a sa fraction (R1234-2).
-pub fn par_tranches(taux: &[Tranche], annees: P, entieres: bool) -> P {
+pub fn par_tranches<'t>(taux: impl IntoIterator<Item = &'t Tranche>, annees: P, entieres: bool) -> P {
     let annees = if entieres { annees.plancher() } else { annees };
     let (mut total, mut bas) = (P::ZERO, P::ZERO);
     for t in taux {
@@ -794,8 +799,9 @@ pub fn par_tranches(taux: &[Tranche], annees: P, entieres: bool) -> P {
 }
 
 /// Par tranches, en annees revolues quand une tranche le dit.
-fn tranches(taux: &[Tranche], annees: P) -> P {
-    par_tranches(taux, annees, taux.iter().any(|t| t.annees_entieres == Some(true)))
+fn tranches<'t>(taux: impl IntoIterator<Item = &'t Tranche> + Clone, annees: P) -> P {
+    let entieres = taux.clone().into_iter().any(|t| t.annees_entieres == Some(true));
+    par_tranches(taux, annees, entieres)
 }
 
 /// En mois de salaire : la bande atteinte donne sa fraction a TOUTES les annees.
@@ -917,7 +923,7 @@ pub fn indemnite_licenciement(
             // Avant le bareme, une fraction a part.
             commun = annees.mul(p(&avant.fraction_de_mois)).mul(ref_).au_centime()?;
         }
-        if let Some(majorations) = sec.majorations_age.as_ref().filter(|m| !m.is_empty()) {
+        if let Some(majorations) = &sec.majorations_age {
             // Plusieurs ages, chacun son pourcentage et son plancher, puis le plafond. L'age en annees revolues ; sans
             // lui, les deux lectures.
             let mut vises: Vec<&MajorationParAge> = majorations.iter().filter(|m| anciennete >= m.anciennete_mois_min).collect();
@@ -999,7 +1005,7 @@ fn set(l: &mut Vec<(String, P)>, k: &str, v: P) {
 // ------------------------------------------------------------ la retraite
 /// `(mois de salaire, palier atteint)` d'un bareme par paliers, avec la part au prorata qui le precede quand la
 /// convention en a une.
-pub fn paliers(paliers: &[Palier], prorata: Option<&Prorata>, anciennete: Anciennete) -> (P, Option<Anciennete>) {
+pub fn paliers(paliers: &socle::forme::AuMoinsUn<Palier>, prorata: Option<&Prorata>, anciennete: Anciennete) -> (P, Option<Anciennete>) {
     let mut triees: Vec<&Palier> = paliers.iter().collect();
     triees.sort_by_key(|p| p.anciennete_annees);
     let atteint = triees.into_iter().filter(|x| anciennete >= x.anciennete_annees).last();
@@ -1062,12 +1068,12 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&Idcc>, anciennete: Anciennete,
         return Ok(Retraite::sans_montant(false, non_relevees(idcc)));
     };
     let annees = anciennete.annees_d28();
-    let (a_des_paliers, a_des_taux) = (sec.paliers.as_ref().is_some_and(|p| !p.is_empty()), sec.taux.as_ref().is_some_and(|t| !t.is_empty()));
-    let mois = if let Some(pal) = sec.paliers.as_ref().filter(|p| !p.is_empty()) {
+    let (a_des_paliers, a_des_taux) = (sec.paliers.is_some(), sec.taux.is_some());
+    let mois = if let Some(pal) = &sec.paliers {
         paliers(pal, sec.prorata.as_ref(), anciennete).0
-    } else if let Some(taux) = sec.taux.as_ref().filter(|t| !t.is_empty()) {
+    } else if let Some(taux) = &sec.taux {
         // Le bareme du licenciement, par tranches, avec son plafond.
-        let mois = tranches(taux, annees);
+        let mois = tranches(taux.iter(), annees);
         match &sec.plafond_mois {
             Some(plafond) => mois.min(p(plafond)),
             None => mois,
@@ -1107,11 +1113,11 @@ pub fn indemnite_depart_retraite(idcc: Option<&Idcc>, anciennete: Anciennete, re
         return Ok(Retraite::sans_montant(false, non_relevees(idcc)));
     };
     let annees = anciennete.annees_d28();
-    let (mois, palier) = if let Some(taux) = sec.taux.as_ref().filter(|t| !t.is_empty()) {
+    let (mois, palier) = if let Some(taux) = &sec.taux {
         // Le bareme d'un licenciement, par tranches.
         let minimale = p(sec.anciennete_minimale_mois.as_ref().ok_or_else(|| manque("depart_a_la_retraite.anciennete_minimale_mois"))?);
-        (if annees.mul(P::entier(12)) >= minimale { tranches(taux, annees) } else { P::ZERO }, None)
-    } else if let Some(pal) = sec.paliers.as_ref().filter(|p| !p.is_empty()) {
+        (if annees.mul(P::entier(12)) >= minimale { tranches(taux.iter(), annees) } else { P::ZERO }, None)
+    } else if let Some(pal) = &sec.paliers {
         paliers(pal, sec.prorata.as_ref(), anciennete)
     } else {
         return Err(manque("depart_a_la_retraite.paliers"));
