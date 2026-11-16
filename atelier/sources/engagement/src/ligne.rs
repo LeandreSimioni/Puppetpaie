@@ -882,16 +882,6 @@ impl PaiementDeLigne {
         }
     }
 
-    /// DES HEURES `h` A `u` L'HEURE, dans l'unite `unite` de leur rubrique (une ligne que le moteur compose d'heures : la
-    /// retenue d'une absence, le maintien, les heures en plus) ; refus nomme : sa rubrique (`rubrique`) ne compte pas en
-    /// heures.
-    pub fn en_heures(rubrique: &CodeDeRubrique, unite: Unite, h: Heures, u: MontantUnitaire) -> R<PaiementDeLigne> {
-        match unite {
-            Unite::Heure => Ok(PaiementDeLigne::Heures(h, u)),
-            _ => Err(socle::refus!("la rubrique {} compte en {}, pas en heures : le signaler au développeur", rubrique, unite)),
-        }
-    }
-
     /// L'unite de sa rubrique, que sa quantite dit.
     pub fn unite(self) -> Unite {
         self.quantite().unite()

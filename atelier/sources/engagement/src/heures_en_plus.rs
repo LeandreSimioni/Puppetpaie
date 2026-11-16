@@ -99,13 +99,12 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
         (HEURE_SUPPLEMENTAIRE, droit::heures_en_plus::supplementaires(idcc, sup, a_50, deja)?)
     };
     let horaire = salaire / quotite;
-    let unite = droit::catalogue::rubrique(&ctx.racine, &rubrique, &mois.dernier_jour())?.unite;
     let mut out = Vec::new();
     for p in &reparties.paliers {
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
             rubrique: rubrique.clone(),
-            paiement: crate::ligne::PaiementDeLigne::en_heures(&rubrique, unite, Heures::du_decimal(court(p.heures)), socle::grandeurs::MontantUnitaire::du_decimal(court(taux)))?,
+            paiement: crate::ligne::PaiementDeLigne::Heures(Heures::du_decimal(court(p.heures)), socle::grandeurs::MontantUnitaire::du_decimal(court(taux))),
             heures: None,
             precision: Some(format!("majorées de {} %", socle::texte::nombre_dit(p.majoration))),
             dates: Vec::new(),

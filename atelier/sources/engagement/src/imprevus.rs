@@ -879,8 +879,7 @@ nomme cette absence. Rien n'est calcule.",
                 ), "arrets-base.json"));
             };
             if let Some((quantite, taux)) = retenue()? {
-                let unite = droit::catalogue::rubrique(&ctx.racine, &rubrique, &mois.dernier_jour())?.unite;
-                let paiement = crate::ligne::PaiementDeLigne::en_heures(&rubrique, unite, quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux))?;
+                let paiement = crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux));
                 lignes.push(crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, paiement }));
             }
             absents += jours;
@@ -909,8 +908,7 @@ nomme cette absence. Rien n'est calcule.",
                 )));
             } else {
                 if let Some((quantite, taux)) = retenue()? {
-                    let unite = droit::catalogue::rubrique(&ctx.racine, &ABSENCE_NON_REMUNEREE, &mois.dernier_jour())?.unite;
-                    let paiement = crate::ligne::PaiementDeLigne::en_heures(&ABSENCE_NON_REMUNEREE, unite, quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux))?;
+                    let paiement = crate::ligne::PaiementDeLigne::Heures(quantite, socle::grandeurs::MontantUnitaire::du_decimal(taux));
                     lignes.push(crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, paiement));
                 }
                 absents += jours;
@@ -925,8 +923,7 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    let unite_du_maintien = droit::catalogue::rubrique(&ctx.racine, &crate::maintien::MAINTIEN_SALAIRE, &mois.dernier_jour())?.unite;
-    lignes.extend(crate::maintien::lignes(&maintien, mois, au, unite_du_maintien)?);
+    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents))
 }

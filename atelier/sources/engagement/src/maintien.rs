@@ -679,8 +679,8 @@ fn net_de_csg_crds(brute: MontantUnitaire, csg: Taux, crds: Taux) -> MontantUnit
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
 /// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose. La
-/// ligne du maintien se paie en heures, dans `unite`, l'unite de sa rubrique (`MAINTIEN_SALAIRE`) au catalogue.
-pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois, unite: droit::catalogue::Unite) -> R<Vec<LignePaie>> {
+/// ligne du maintien se paie en heures.
+pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
     let plancher = Montant::du_decimal(dmois.ij_subrogees_brutes).au_centime().decimal();
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -709,7 +709,7 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois, unite: dr
                 plancher,
             })
         });
-        let paiement = PaiementDeLigne::en_heures(&MAINTIEN_SALAIRE, unite, q, taux)?;
+        let paiement = PaiementDeLigne::Heures(q, taux);
         out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, paiement, reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
@@ -719,7 +719,7 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois, unite: dr
         let nettes = Montant::du_decimal(dmois.ij_subrogees_nettes).au_centime().decimal();
         out.push(LignePaie::ij_nettes(au, Jours::du_decimal(j), taux(nettes), Montant::du_decimal(dmois.assiette_pas).au_centime()));
     }
-    Ok(out)
+    out
 }
 
 /// `montant` PAYE SUR `heures` heures d'absence, ou sur une seule quand il n'y en a pas : la quantite et le taux de la
@@ -938,7 +938,7 @@ mod tests {
                 avis: Vec::new(),
             };
             let au =droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au, droit::catalogue::Unite::Heure).unwrap();
+            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
             l[0].taux().unwrap().decimal()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));
