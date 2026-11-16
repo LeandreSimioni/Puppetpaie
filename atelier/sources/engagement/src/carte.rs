@@ -759,20 +759,13 @@ changements! {
     PrecaritePourquoi(String) = "precarite_pourquoi" => precarite_pourquoi,
 }
 
-/// LES CHANGEMENTS D'UN APPEL (`changements` des routes `enregistrer-saisie` et `modifier-engagement`) : au moins un,
-/// appliques dans l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus
-/// souvent) ; un appelant en ligne de commande, toutes les cases d'une carte d'un coup.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Changements(socle::forme::AuMoinsUn<Changement<LigneDonnee, String, String, String>>);
-
-impl<'de> Deserialize<'de> for Changements {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Changements, D::Error> {
-        let v = Vec::<Changement<LigneDonnee, String, String, String>>::deserialize(d)?;
-        socle::forme::AuMoinsUn::de(v)
-            .map(Changements)
-            .ok_or_else(|| serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"))
-    }
-}
+/// LES CHANGEMENTS D'UN APPEL (`changements` des routes `enregistrer-saisie` et `modifier-engagement`), appliques dans
+/// l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus souvent) ; un
+/// appelant en ligne de commande, toutes les cases d'une carte d'un coup. Aucun : la carte s'enregistre telle qu'elle est
+/// (Leandre, 16/11 : « on peut appuyer sur enregistrer comme on veut »).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(transparent)]
+pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
 impl Changements {
     /// CHAQUE CHANGEMENT APPLIQUE AU BROUILLON `b` d'une carte de `mois`, dans l'ordre (`Brouillon::changer`), tout ou
