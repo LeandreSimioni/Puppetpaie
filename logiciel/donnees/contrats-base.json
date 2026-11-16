@@ -220,9 +220,9 @@
       "activites": {
         "quoi": "Les blocs S21.G00.53 sous la rémunération de type 002. Cahier technique : « pour les congés spectacles, il est nécessaire pour calculer les droits de renseigner à la fois une unité de mesure jours et cachets ».",
         "unites": [
-          {"code": "12", "quoi": "12 - journée : les jours distincts travaillés", "mesure": "jours", "type": "01"},
-          {"code": "37", "quoi": "37 - cachets isolés : le nombre de cachets (la distinction cachet isolé / groupé est supprimée depuis le décret du 13/07/2016, tous valent 12 h)", "mesure": "cachets", "type": "01", "si_non_nul": true},
-          {"code": "35", "quoi": "35 - heures intermittents du spectacle : les heures hors cachets", "mesure": "heures", "type": "01", "si_non_nul": true}
+          {"code": "12", "quoi": "12 - journée : les jours distincts travaillés. « Un bloc \"Activité - S21.G00.53\" portant la valeur \"12- journée\" doit systématiquement être déclaré pour chaque contrat d'un intermittent du spectacle » (net-entreprises, fiche des intermittents du spectacle en DSN, atelier/reference/norme-dsn/netentreprises-fiche-intermittents-contrat-remunerations-20251113.txt, « Point d'attention »).", "mesure": "jours", "type": "01"},
+          {"code": "37", "quoi": "37 - cachets isolés : le nombre de cachets. « Le nombre de cachets sous un bloc \"Activité - S21.G00.53\" avec les valeurs \"36 - cachets groupés\", \"37- cachets isolés\" ou \"39 - cachet\" », « dans le cas où ces données ne sont pas nulles » (même fiche, « Point d'attention »).", "mesure": "cachets", "type": "01", "si_non_nul": true},
+          {"code": "35", "quoi": "35 - heures intermittents du spectacle : les heures hors cachets. « Le nombre d'heure (et non pas la conversion en heures des cachets) sous un bloc \"Activité - S21.G00.53\" avec la valeur \"35 - heures intermittents du spectacle\" », « dans le cas où ces données ne sont pas nulles » (même fiche, « Point d'attention »).", "mesure": "heures", "type": "01", "si_non_nul": true}
         ]
       }
     },
