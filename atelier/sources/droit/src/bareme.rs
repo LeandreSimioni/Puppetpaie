@@ -1783,7 +1783,26 @@ pub struct RisqueAtmp {
     /// « TC » : le taux reste collectif quel que soit l'effectif (D. 242-6-14, I ; art. 5 de l'arrete).
     pub tc: bool,
     /// Le groupe et le taux de l'annexe 3, en Alsace-Moselle (art. 4 de l'arrete ; D. 242-35, non releve).
-    pub alsace_moselle: Option<(i64, Taux)>,
+    pub alsace_moselle: Option<(GroupeAlsaceMoselle, Taux)>,
+}
+
+/// LE GROUPE D'UN RISQUE EN ALSACE-MOSELLE : le numero du groupe de l'annexe 3 de l'arrete de tarification de l'annee
+/// (`atelier/reference/sources/tarification-atmp/`), auquel l'annexe donne son taux collectif. Un numero, pas une
+/// quantite : il ne se compte pas, il se lit tel que le bareme livre l'ecrit (`risques_atmp.codes`, `alsace_moselle`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GroupeAlsaceMoselle(u32);
+
+impl GroupeAlsaceMoselle {
+    /// Le groupe que le moteur nomme, ecrit en Rust (un exemple d'un test).
+    pub const fn du_moteur(numero: u32) -> GroupeAlsaceMoselle {
+        GroupeAlsaceMoselle(numero)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for GroupeAlsaceMoselle {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(GroupeAlsaceMoselle)
+    }
 }
 
 /// LE CODE RISQUE AT/MP (S21.G00.40.040, `X [5,6]`, « Table RAT - Codes risque ATMP ») : trois chiffres et deux
@@ -1958,7 +1977,7 @@ mod tests_risques_atmp {
         let taux = |t: &str| socle::grandeurs::lu::tapee::<Taux>(t).unwrap();
         assert_eq!(taux_de_l_arrete(&r, false, false), Some(taux("1,50")));
         assert_eq!(taux_de_l_arrete(&r, true, true), None);
-        assert_eq!(r.alsace_moselle, Some((3, taux("3,34"))));
+        assert_eq!(r.alsace_moselle, Some((GroupeAlsaceMoselle::du_moteur(3), taux("3,34"))));
         let gestion = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "921CC").unwrap();
         assert_eq!(taux_de_l_arrete(&gestion, true, false), Some(taux("1,07")));
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);

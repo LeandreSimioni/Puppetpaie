@@ -486,6 +486,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'ordre | `NumeroDOrdre` | `droit/src/natures.rs` |
 | identifiant de déclaration | `IdentifiantDeDeclaration` | `droit/src/natures.rs` |
 | code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
+| groupe d'un risque AT/MP en Alsace-Moselle (le numéro de groupe de l'annexe 3 de l'arrêté de tarification, auquel l'annexe donne un taux) | `GroupeAlsaceMoselle` | `droit/src/bareme.rs` |
 | code Urssaf de la DPAE | `CodeUrssafDpae` | `declarations/src/urssaf.rs` |
 | identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |

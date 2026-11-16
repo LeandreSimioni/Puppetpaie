@@ -1028,7 +1028,7 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AtmpAlsaceMoselle {
-    pub groupe: i64,
+    pub groupe: crate::bareme::GroupeAlsaceMoselle,
     pub taux: Taux,
     pub source: Option<Fondement>,
     pub note: Option<String>,

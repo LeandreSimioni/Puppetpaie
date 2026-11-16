@@ -68,7 +68,9 @@ fn code_risque_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<droit::
 pub struct TauxAtmpAnnonce {
     #[serde(deserialize_with = "code_risque_annonce")]
     pub code_risque: droit::bareme::CodeRisqueAt,
-    pub taux: Decimal,
+    /// En pourcentage (`1.60`), ecrit en texte comme une notification l'ecrit.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    pub taux: socle::grandeurs::Taux,
     pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bureau: Option<String>,
@@ -177,12 +179,12 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         Annonce::TauxAtmp(t) => {
             let code = t.code_risque;
             let n = t.taux;
-            if code.as_str().len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
+            if code.as_str().len() != 5 || n <= socle::grandeurs::Taux::ZERO || n >= socle::grandeurs::Taux::points(20) {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
                 code_risque: code,
-                taux: deux_decimales(n),
+                taux: n.a_deux_decimales_ecrites(),
                 date_effet: t.date_effet,
                 bureau: dit(t.bureau),
                 code_ctn: dit(t.code_ctn),
@@ -471,7 +473,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
             facultatif(&t.section, "section"),
             echappe(t.code_risque.as_str()),
             facultatif(&t.bureau, "temoin_bureau"),
-            t.taux,
+            socle::grandeurs::ecrit::texte::dit(t.taux),
             t.date_effet.aaaammjj(),
             calcul
         ));
