@@ -133,7 +133,8 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     // LE FIL : la route de la page, sa charge mise en forme, sa duree, son issue. Une erreur de la page (`incident-navigateur`)
     // s'y dit comme telle.
     if nom == Route::IncidentNavigateur {
-        let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>().map_err(|e| routes::case_nommee(nom, e)) {
+        // Relue pour le fil seulement : la route l'a deja servie (et son refus est deja note).
+        let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>() {
             Ok(r) => {
                 let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
                 let ou = match (&r.fichier, r.ligne) {

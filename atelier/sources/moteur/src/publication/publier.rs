@@ -404,7 +404,7 @@ pub struct Publication {
 impl Publication {
     /// Ce que `moteur maj --publier-github` dit des archives publiees : leur nom et leur taille.
     pub(crate) fn dire_les_archives(&self) -> String {
-        self.tailles.iter().map(|(nom, n)| format!("{} ({} Ko)", nom, n / 1024)).collect::<Vec<_>>().join(", ")
+        self.tailles.iter().map(|(nom, n)| format!("{} ({})", nom, socle::grandeurs::Octets::de_longueur(*n))).collect::<Vec<_>>().join(", ")
     }
 }
 

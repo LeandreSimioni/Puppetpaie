@@ -391,7 +391,7 @@ impl Trieur {
             let ecrit = lu.map_err(|x| x.to_string()).and_then(|n| {
                 total += n as u64;
                 if total > DECOMPRESSE_MAX {
-                    return Err(format!("l'archive rend plus de {} Mo decompresses", DECOMPRESSE_MAX / (1024 * 1024)));
+                    return Err(format!("l'archive rend plus de {} decompresses", socle::grandeurs::Octets::lue(DECOMPRESSE_MAX)));
                 }
                 if let Some(p) = chemin.parent() {
                     std::fs::create_dir_all(p).map_err(|x| x.to_string())?;

@@ -228,9 +228,12 @@ impl Objet {
     pub fn jour_du_mois(&self, cle: &str, mois: crate::mois::Mois, phrase: &str) -> R<Option<crate::date::Jour>> {
         let Some(v) = self.0.get(cle).filter(|v| !v.is_null()) else { return Ok(None) };
         let refusee = |detail: String| case_refusee_a(phrase, crate::echec::CaseDeLaSaisie::Cle(cle.to_string()), cle.to_string(), detail);
+        // Relu de son texte, comme `lire_saisie` : un nombre JSON (`3.0`) se lit comme le meme nombre tape (« 3,0 »).
         let n = {
             let _remise = EnSaisie::ouverte();
-            crate::grandeurs::lu::entier(v, "un jour du mois, de 1 à 31").map_err(|e| refusee(e.to_string()))?
+            let texte = v.to_string();
+            let mut d = serde_json::Deserializer::from_str(&texte);
+            crate::grandeurs::lu::entier(&mut d, "un jour du mois, de 1 à 31").map_err(|e| refusee(en_clair(&e.to_string())))?
         };
         match u32::try_from(n).ok().and_then(|n| mois.jour(n)) {
             Some(j) => Ok(Some(j)),
@@ -552,7 +555,12 @@ impl<'de> serde::de::Visitor<'de> for EnDecimal {
         Ok(u.into())
     }
     fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
-        decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
+        let texte = texte_a_virgule(m)?;
+        match self.texte {
+            // Dans une saisie, un nombre se lit comme le meme nombre tape (`1e3` se refuse comme « 1e3 »).
+            TexteLu::Tape(tapee) => tapee(&texte).map_err(serde::de::Error::custom),
+            TexteLu::Refuse | TexteLu::Ecrit => decimal_ecrit(&texte).map_err(|e| serde::de::Error::custom(e.phrase)),
+        }
     }
     fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
         match self.texte {

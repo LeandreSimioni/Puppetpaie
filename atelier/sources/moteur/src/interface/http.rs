@@ -164,8 +164,8 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Resul
 fn refus_de_lecture(code: u16) -> Reponse {
     let message = match code {
         413 => format!(
-            "La demande est trop grosse pour PuppetPaie (plus de {} Mo) : rien n'a été lu ni enregistré.",
-            CORPS_MAX / (1024 * 1024)
+            "La demande est trop grosse pour PuppetPaie (plus de {}) : rien n'a été lu ni enregistré.",
+            socle::grandeurs::Octets::de_longueur(CORPS_MAX)
         ),
         _ => format!("La demande n'a pas pu être lue (code {}).", code),
     };
