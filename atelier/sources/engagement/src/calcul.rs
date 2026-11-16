@@ -2110,17 +2110,14 @@ devine pas.",
         None => legale,
     };
     // « majoree du nombre d'heures complementaires » : celles que le moteur compose du fait du mois (`heures_en_plus`).
-    let complementaires = e
-        .lignes
-        .iter()
-        .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
-        .map(|l| heures_de(ctx, l)?.ok_or_else(|| refus("nombre attendu, lu null")))
-        .sum::<R<socle::grandeurs::Heures>>()?;
+    let hc = crate::heures_en_plus::HEURE_COMPLEMENTAIRE;
+    let unite = droit::catalogue::rubrique(&ctx.racine, &hc, &ctx.lue_au)?.unite;
+    let complementaires = crate::heures_en_plus::payees(&hc, e.lignes.iter().map(|l| (l.rubrique(), l.quantite(unite))))?;
     Ok((e.quotite()?.heures("La durée d'un temps partiel")? + complementaires, reference))
 }
 
-/// Les heures d'une ligne d'heures, normales ou complementaires, dans l'unite de sa rubrique (`rubriques-base.json`,
-/// `heure`, `heure_complementaire` : des heures) ; `None` : la case n'est pas remplie, ou sa rubrique ne compte pas des
+/// Les heures d'une ligne d'heures normales, dans l'unite de sa rubrique (`rubriques-base.json`, `heure` : des heures),
+/// que dit le refus du plafond d'un temps partiel ; `None` : la case n'est pas remplie, ou sa rubrique ne compte pas des
 /// heures.
 fn heures_de(ctx: &Contexte, l: &crate::LignePaie) -> R<Option<socle::grandeurs::Heures>> {
     let unite = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite;

@@ -344,7 +344,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
-  taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
+  taux de PAS est sa notion à lui, `droit::pas::TauxDePas`. La majoration d'une heure en plus est un taux (« une
+  majoration de salaire de 25 % », L3121-36) : le taux horaire majoré est le taux horaire × (100 % + majoration) ; ce
+  n'est ni le multiplicateur d'une assiette (un coefficient) ni la majoration de la caisse des congés.
 - **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui aussi `Decimal`,
   `i64`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
   (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait ; une ligne
@@ -359,7 +361,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son bulletin dit
   (`LignePaie::montant_lu`), qui ne se recompose pas ; sa quantité et son taux imprimés se lisent dans l'unité de sa
   rubrique (`PaiementDeLigne::imprime`).
-- **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
+- **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, le multiplicateur de
+  l'assiette d'un employeur affilié à une caisse de congés, `majoration_conges_115` et `_110` du barème, 1,115, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie, la
   part reçue d'une mise à jour) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.

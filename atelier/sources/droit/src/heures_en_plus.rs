@@ -118,10 +118,8 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, contra
     let hc = loi()?.heures_complementaires;
     let mut debut = Heures::ZERO;
     let mut reste = heures;
-    let mut derniere = None;
-    for p in &hc.paliers {
+    for p in hc.paliers.iter() {
         let fin = p.jusqu_au.de(contrat);
-        derniere = Some(p.majoration);
         let ici = (fin - debut).max(Heures::ZERO).min(reste);
         if ici > Heures::ZERO {
             ajouter(&mut r.paliers, ici, p.majoration);
@@ -130,9 +128,8 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, contra
         debut = fin;
     }
     if reste > Heures::ZERO {
-        // Au-dela du dernier palier, sa majoration ; la loi en livre (`permanents-base.json`).
-        let derniere = derniere.ok_or_else(|| socle::echec::livree(&crate::permanents::BASE, "heures_en_plus.heures_complementaires.paliers"))?;
-        ajouter(&mut r.paliers, reste, derniere);
+        // Au-dela du dernier palier, sa majoration.
+        ajouter(&mut r.paliers, reste, hc.paliers.dernier().majoration);
     }
     // Le plafond de la convention quand elle en fixe un, celui de la loi (L. 3123-28) sinon.
     let plafond = match crate::clauses::releve(idcc)?.and_then(|c| c.heures_complementaires) {

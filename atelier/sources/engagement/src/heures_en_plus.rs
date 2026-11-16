@@ -126,19 +126,25 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
     Ok((out, avis))
 }
 
-/// Les heures d'une ligne des heures en plus : leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre
-/// grandeur se refuse.
-fn heures_de(l: &LigneBrut) -> R<Heures> {
-    match l.paiement.quantite() {
-        Some(QuantiteDeLigne::Heures(h)) => Ok(h),
-        _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", l.code)),
-    }
+/// LES HEURES QUE PAIENT, parmi `lignes` d'une paie (chacune sa rubrique et sa quantite), celles de la rubrique des
+/// heures en plus `rubrique` : leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre grandeur se
+/// refuse. Le seul chemin : la deduction patronale, la base des heures, le cumul de l'annee
+/// (`conges::heures_supplementaires_des_mois_anterieurs`) et la duree d'un temps partiel (`calcul::duree_du_temps_partiel`).
+pub(crate) fn payees<'a>(rubrique: &CodeDeRubrique, lignes: impl IntoIterator<Item = (&'a CodeDeRubrique, Option<QuantiteDeLigne>)>) -> R<Heures> {
+    lignes.into_iter().filter(|(code, _)| *code == rubrique).try_fold(Heures::ZERO, |a, (code, q)| match q {
+        Some(QuantiteDeLigne::Heures(h)) => Ok(a + h),
+        _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", code)),
+    })
 }
 
-/// LES HEURES SUPPLEMENTAIRES QUE PAIENT les lignes de remuneration `lb` d'une paie (`HEURE_SUPPLEMENTAIRE`) : la
-/// deduction patronale de la paie les compte, et le cumul de l'annee (`conges::heures_supplementaires_des_mois_anterieurs`).
+/// LES HEURES SUPPLEMENTAIRES QUE PAIENT les lignes de remuneration `lb` d'une paie (`HEURE_SUPPLEMENTAIRE`).
 pub(crate) fn supplementaires_payees(lb: &[LigneBrut]) -> R<Heures> {
-    lb.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))
+    payees(&HEURE_SUPPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.quantite())))
+}
+
+/// Les heures complementaires que paient les lignes de remuneration `lb` d'une paie (`HEURE_COMPLEMENTAIRE`).
+fn complementaires_payees(lb: &[LigneBrut]) -> R<Heures> {
+    payees(&HEURE_COMPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.quantite())))
 }
 
 /// Ce que les heures en plus d'une paie font apres ses cotisations.
@@ -174,8 +180,8 @@ pub(crate) fn apres_les_cotisations(
     if remuneration <= Montant::ZERO || brut <= Montant::ZERO {
         return Ok(None);
     }
-    let heures = siennes.iter().try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))?;
     let supplementaires = supplementaires_payees(lb)?;
+    let heures = supplementaires + complementaires_payees(lb)?;
     let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + l.montant_sal);
     let mut avis = Vec::new();
 

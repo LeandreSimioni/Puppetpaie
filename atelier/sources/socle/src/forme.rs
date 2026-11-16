@@ -685,6 +685,36 @@ impl<'de> serde::Deserialize<'de> for Nombre {
     }
 }
 
+/// UNE LISTE QU'UNE FORME EXIGE NON VIDE (les paliers d'une regle, dont le dernier vaut au-dela) : lue d'un tableau,
+/// un tableau vide se refuse a la lecture ; son dernier element se lit sans refus.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AuMoinsUn<T> {
+    avant: Vec<T>,
+    dernier: T,
+}
+
+impl<T> AuMoinsUn<T> {
+    /// Ses elements, dans l'ordre.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.avant.iter().chain(std::iter::once(&self.dernier))
+    }
+
+    /// Son dernier element.
+    pub fn dernier(&self) -> &T {
+        &self.dernier
+    }
+}
+
+impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for AuMoinsUn<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mut avant = Vec::<T>::deserialize(d)?;
+        match avant.pop() {
+            Some(dernier) => Ok(AuMoinsUn { avant, dernier }),
+            None => Err(serde::de::Error::invalid_length(0, &"au moins un élément")),
+        }
+    }
+}
+
 /// UNE VALEUR QUI PEUT NE RIEN DIRE : nulle (`null`), vide (`""`), ou dite, lue en `T` sans passer par une valeur
 /// intermediaire (le chemin d'un refus va jusqu'a la cle fautive de `T`). C'est la lecture d'un changement de case de
 /// fiche (`droit::fiche::nulle_ou_dite`), qui refuse `""`, quand son type ne range pas sa saisie (`rangee_puis_lue`).

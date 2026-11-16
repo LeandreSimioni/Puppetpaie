@@ -380,7 +380,8 @@ impl PartDuContrat {
 forme! {
     pub struct HeuresComplementaires {
         pub plafond_sans_accord: PartDuContrat,
-        pub paliers: Vec<PalierComplementaire>,
+        /// Au moins un : le dernier vaut au-dela de sa part du contrat.
+        pub paliers: socle::forme::AuMoinsUn<PalierComplementaire>,
     }
 }
 
