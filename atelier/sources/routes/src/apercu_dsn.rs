@@ -28,7 +28,6 @@ use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::mode::Mode;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
-use socle::num::Decimal;
 
 use crate::depots::{lire_octets, resoudre};
 use socle::fichiers::NomDeFichier;
@@ -123,14 +122,20 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
             MesureDActivite::Heures(h) => heures += h,
             MesureDActivite::Jours(j) => jours += j,
             MesureDActivite::Cachets(c) => cachets += c,
+            // Une paie ne declare pas d'unites (`droit::natures::Mesure`), et `dsn_lue::Mesures` n'en compte pas.
+            MesureDActivite::Unites(_) => {}
         }
     }
-    // Les mesures d'une DSN lue sont des nombres (`dsn_lue::Mesures`) : la paie s'y compare ouverte.
-    for (quoi, paie, fichier) in [("jours", jours.decimal(), m.jours), ("cachets", cachets.decimal(), m.cachets), ("heures", heures.decimal(), m.heures)] {
+    // Chaque mesure de la paie face a celle du fichier, dans sa grandeur.
+    fn ecart<G: socle::grandeurs::Grandeur + PartialEq>(ecarts: &mut Vec<String>, quoi: &str, paie: G, fichier: G) {
         if paie != fichier {
-            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, paie.normalize(), fichier.normalize()));
+            let dit = socle::grandeurs::ecrit::sans_zero::dit::<G>;
+            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, dit(paie), dit(fichier)));
         }
     }
+    ecart(&mut ecarts, "jours", jours, m.jours);
+    ecart(&mut ecarts, "cachets", cachets, m.cachets);
+    ecart(&mut ecarts, "heures", heures, m.heures);
     let emploi = p.salarie.emploi.en_texte();
     if emploi != c.emploi {
         ecarts.push(format!("emploi : la paie dit {}, le fichier {}", en_mots(emploi.as_deref()), en_mots(c.emploi.as_deref())));
@@ -220,9 +225,9 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
                 brut: m.brut.map(Montant::au_centime),
-                jours: Jours::du_decimal(m.jours),
-                cachets: Cachets::du_decimal(m.cachets),
-                heures: Heures::du_decimal(m.heures),
+                jours: m.jours,
+                cachets: m.cachets,
+                heures: m.heures,
                 fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin,
                 remunere: m.remunere,
@@ -524,21 +529,21 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &std::path::Path) -> R<A
 
 /// Un nombre du fichier, a la francaise ; une correction le signe d'un vrai moins (« −184 » : ce qui s'ajoute a ce qui a
 /// deja ete declare).
-fn nombre_dit(x: Decimal) -> String {
-    socle::texte::nombre_dit(x).replacen('-', "−", 1)
+fn nombre_dit<G: socle::grandeurs::Grandeur>(g: G) -> String {
+    socle::texte::virgule(g).replacen('-', "−", 1)
 }
 
 /// L'ACTIVITE D'UN CONTRAT EN UNE COLONNE : « 4 cachets · 4 j », « 151,67 h » ; « correction : » devant celle d'un mois
 /// deja declare ; « — » sans rien.
 fn activite_dite(m: &Mesures, correction: bool) -> String {
     let mut l = Vec::new();
-    if !m.cachets.is_zero() {
-        l.push(format!("{} {}", nombre_dit(m.cachets), if m.cachets.abs() > Decimal::ONE { "cachets" } else { "cachet" }));
+    if !m.cachets.est_nul() {
+        l.push(format!("{} {}", nombre_dit(m.cachets), if m.cachets.abs() > Cachets::UN { "cachets" } else { "cachet" }));
     }
-    if !m.heures.is_zero() {
+    if !m.heures.est_nul() {
         l.push(format!("{} h", nombre_dit(m.heures)));
     }
-    if !m.jours.is_zero() {
+    if !m.jours.est_nul() {
         l.push(format!("{} j", nombre_dit(m.jours)));
     }
     let a = if l.is_empty() { "—".to_string() } else { l.join(" · ") };

@@ -40,7 +40,7 @@ use droit::contexte::Contexte;
 use droit::fiche::Nir;
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::num::Decimal;
+use socle::grandeurs::{Cachets, Heures, Jours};
 
 /// Le « code » du nom d'archive (`AER_<siret>__<MMAAAA>_<code>_<JJMMAAAA>_<NOM>_<rang>_<id>.pdf`) : celui d'une fictive.
 const CODE: &str = "FICTIVE";
@@ -79,9 +79,9 @@ struct ColonneDuCadre4 {
     contrat: Option<(engagement::numeros::NumeroContrat, String, String, Option<String>)>,
     /// La periode d'emploi : le contrat, borne au mois.
     periode: Periode,
-    heures: Decimal,
-    cachets: Decimal,
-    jours: Decimal,
+    heures: Heures,
+    cachets: Cachets,
+    jours: Jours,
     /// Le brut declare ; sans remuneration declaree ce mois-ci, la case reste a blanc.
     brut: Option<socle::grandeurs::Montant>,
     paiement: Option<String>,
@@ -236,12 +236,13 @@ impl Champs {
     }
 }
 
-/// Une quantite telle que la DSN la declare (bloc 53), ecrite en francais : « 151, 67 », « 12 » ; zero, a blanc.
-fn quantite(d: Decimal) -> String {
-    if d.is_zero() {
+/// Une quantite telle que la DSN la declare (bloc 53), ecrite en francais : « 151, 67 », « 12 » ; zero (`zero`), a
+/// blanc.
+fn quantite<G: socle::grandeurs::Grandeur + PartialEq>(g: G, zero: G) -> String {
+    if g == zero {
         String::new()
     } else {
-        socle::texte::nombre_dit(d)
+        socle::texte::virgule(g)
     }
 }
 
@@ -406,9 +407,9 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         }
         f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218, 233), &p.periode.debut().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
         f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236, 252), &p.periode.fin().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258, 273), &quantite(p.heures), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282, 298), &quantite(p.cachets), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306, 322), &quantite(p.jours), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258, 273), &quantite(p.heures, Heures::ZERO), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282, 298), &quantite(p.cachets, Cachets::ZERO), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306, 322), &quantite(p.jours, Jours::ZERO), m("8.5"), Alignement::Centre);
         let montant = p.brut.map(socle::grandeurs::ecrit::norme::montant);
         f.imprime_dite(2, &format!("SAL_MONTANT_{}", n), r(339, 360), montant.as_deref(), m("8.5"), Alignement::Centre);
         f.imprime_dite(2, &format!("SAL_DT_PAI_{}", n), r(379, 400), p.paiement.as_deref(), m("8.5"), Alignement::Centre);

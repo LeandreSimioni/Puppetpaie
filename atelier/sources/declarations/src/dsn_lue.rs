@@ -16,7 +16,7 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::type_taux_pas::TypeDeTauxPas;
 use droit::pas::TauxDePas;
-use socle::grandeurs::{Montant, Taux};
+use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -26,7 +26,6 @@ use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
 use socle::mois::{Mois, MoisOuJour};
-use socle::num::Decimal;
 use socle::pays::CodePays;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
@@ -365,11 +364,12 @@ pub struct ContratDeclare {
     pub motif_fin: Option<droit::natures::MotifDeRupture>,
 }
 
-/// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002), son unite (.003).
+/// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002, lue dans la
+/// grandeur que son unite dit : `MesureDActivite::lue`), son unite (.003).
 #[derive(Clone, Debug, Default)]
 pub struct Activite {
     pub genre: Option<TypeDActivite>,
-    pub mesure: Option<Decimal>,
+    pub mesure: Option<crate::dsn::MesureDActivite>,
     pub unite: Option<UniteDeMesure>,
 }
 
@@ -582,9 +582,9 @@ pub struct Adhesion {
 pub struct Mesures {
     pub brut: Option<Montant>,
     pub salaire_habituel: Option<Montant>,
-    pub jours: Decimal,
-    pub cachets: Decimal,
-    pub heures: Decimal,
+    pub jours: Jours,
+    pub cachets: Cachets,
+    pub heures: Heures,
     pub remunere: bool,
 }
 
@@ -710,7 +710,7 @@ impl DsnLue {
     /// en cachets, 37).
     pub fn mesures(&self, nir: Option<&Nir>, numero: &NumeroContrat, rappel: bool) -> Mesures {
         // Les sommes du contrat, a zero avant sa premiere remuneration.
-        let mut m = Mesures { brut: None, salaire_habituel: None, jours: Decimal::ZERO, cachets: Decimal::ZERO, heures: Decimal::ZERO, remunere: false };
+        let mut m = Mesures { brut: None, salaire_habituel: None, jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
         for r in self.versements_de(nir).flat_map(|v| v.remunerations.iter()) {
             if r.contrat.as_ref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
                 continue;
@@ -725,10 +725,11 @@ impl DsnLue {
             }
             // Une activite sans mesure (53.002) ne compte rien.
             for (a, mesure) in r.activites.iter().filter(|a| a.genre == Some(TypeDActivite::TravailRemunere)).filter_map(|a| a.mesure.map(|m| (a, m))) {
-                match a.unite {
-                    Some(UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents) => m.heures += mesure,
-                    Some(UniteDeMesure::Journee) => m.jours += mesure,
-                    Some(UniteDeMesure::CachetsIsoles) => m.cachets += mesure,
+                use crate::dsn::MesureDActivite as M;
+                match (a.unite, mesure) {
+                    (Some(UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents), M::Heures(h)) => m.heures += h,
+                    (Some(UniteDeMesure::Journee), M::Jours(j)) => m.jours += j,
+                    (Some(UniteDeMesure::CachetsIsoles), M::Cachets(c)) => m.cachets += c,
                     _ => {}
                 }
             }
@@ -923,7 +924,7 @@ impl NaissanceDeclaree {
     /// Le motif de CSL 00 (`(0[0-9]|[1-2][0-9]|3[0-1]|99)(0[0-9]|1[0-2]|99)(18|19|20)[0-9]{2}`), et un jour du
     /// calendrier quand le jour et le mois sont connus (CSL-11) ; `None` sinon.
     pub fn lire(v: &str) -> Option<NaissanceDeclaree> {
-        use socle::mois::{Annee, MoisDeLAnnee};
+        use socle::mois::Annee;
         if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
@@ -932,7 +933,7 @@ impl NaissanceDeclaree {
         let an = Annee::nouvelle(i64::from(n(4, 8))).ok()?;
         let inconnu = |x: u32| x == 0 || x == 99;
         let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (Annee::constante(1800)..=Annee::constante(2099)).contains(&an);
-        let calendrier = inconnu(jour) || inconnu(mois) || MoisDeLAnnee::TOUS.get((mois - 1) as usize).and_then(|m| an.mois(*m).jour(jour)).is_some();
+        let calendrier = inconnu(jour) || inconnu(mois) || Jour::nouveau(n(4, 8).try_into().ok()?, mois, jour).is_some();
         (forme && calendrier).then_some(NaissanceDeclaree { jour, mois, an })
     }
 
@@ -1081,6 +1082,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let mut rattachements: Vec<String> = Vec::new();
     let mut rubriques: BTreeSet<(RubriqueDeLaNorme, String)> = BTreeSet::new();
     let mut spst = String::new();
+    // La mesure (53.002) de l'activite en cours, telle qu'ecrite, jusqu'a son unite (53.003).
+    let mut mesure_ecrite: Option<String> = None;
     for ligne in &lignes {
         if ligne.trim_matches(blanc).is_empty() {
             continue;
@@ -1398,15 +1401,19 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 }
             }
             TypeDActivite::RUBRIQUE => {
+                mesure_ecrite = None;
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 r.activites.push(Activite { genre: TypeDActivite::du_code(&v), ..Activite::default() });
             }
-            S21_53_002 | UniteDeMesure::RUBRIQUE => {
-                let mesure = if rub == S21_53_002 { fautes.valeur(rub, &v, "un nombre", socle::num::decimal_lu(&v)) } else { None };
+            // La mesure (53.002) vient avant son unite (53.003) : elle se lit a la fin du bloc, dans la grandeur que son
+            // unite dit (`MesureDActivite::lue`).
+            S21_53_002 => mesure_ecrite = Some(v.clone()),
+            UniteDeMesure::RUBRIQUE => {
+                let ecrite = mesure_ecrite.take();
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
-                match rub {
-                    S21_53_002 => a.mesure = mesure,
-                    _ => a.unite = UniteDeMesure::du_code(&v),
+                a.unite = UniteDeMesure::du_code(&v);
+                if let (Some(unite), Some(t)) = (a.unite, ecrite) {
+                    a.mesure = fautes.valeur(S21_53_002, &t, "un nombre", crate::dsn::MesureDActivite::lue(unite, &t));
                 }
             }
             S21_70_013 => rattachements.push(v),
@@ -1521,8 +1528,9 @@ mod tests {
         let numero = NumeroContrat::lire("FA1.26.13").unwrap();
         let nir = Nir::lire("1850575123456").unwrap();
         let (mois, rappel) = (d.mesures(Some(&nir), &numero, false), d.mesures(Some(&nir), &numero, true));
-        assert_eq!((socle::grandeurs::ecrit::norme::montant(mois.brut.unwrap()), mois.cachets.normalize().to_string(), mois.remunere), ("200.00".to_string(), "2".to_string(), true));
-        assert_eq!((socle::grandeurs::ecrit::norme::montant(rappel.brut.unwrap()), rappel.cachets.normalize().to_string()), ("30.00".to_string(), "1".to_string()));
+        let dit = socle::grandeurs::ecrit::sans_zero::dit::<socle::grandeurs::Cachets>;
+        assert_eq!((socle::grandeurs::ecrit::norme::montant(mois.brut.unwrap()), dit(mois.cachets), mois.remunere), ("200.00".to_string(), "2".to_string(), true));
+        assert_eq!((socle::grandeurs::ecrit::norme::montant(rappel.brut.unwrap()), dit(rappel.cachets)), ("30.00".to_string(), "1".to_string()));
         assert_eq!(d.contrats[0].fin_declaree.map(|j| j.iso()).as_deref(), Some("2026-08-31"));
         let faux = "S20.G00.05.005,'01082026'\nS21.G00.30.001,'1850575123456'\nS21.G00.50.001,'31082026'\nS21.G00.51.001,'01082026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.013,'12,5'\n";
         assert!(lire(faux.as_bytes(), None).unwrap_err().phrase.contains("« 12,5 », qui n'est pas un montant"));

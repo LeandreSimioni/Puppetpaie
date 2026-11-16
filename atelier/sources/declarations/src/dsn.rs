@@ -30,7 +30,7 @@ use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
 use socle::echec::{refus, refus_avec, Lieu, R};
-use socle::grandeurs::{ecrit::norme, Cachets, Heures, Jours, Montant, Signe, Taux};
+use socle::grandeurs::{ecrit::norme, Cachets, Heures, Jours, Montant, Signe, Taux, Unites};
 use socle::refus;
 use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
 use engagement::numeros::NumeroContrat;
@@ -2122,22 +2122,42 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe)
     Ok(())
 }
 
-/// LA MESURE D'UNE ACTIVITE (S21.G00.53.002, dans l'unite que dit 53.003) : des jours, des cachets ou des heures, chacun
-/// sa grandeur (`droit::natures::Mesure` dit laquelle).
+/// LA MESURE D'UNE ACTIVITE (S21.G00.53.002, dans l'unite que dit 53.003) : des jours, des cachets, des heures, ou des
+/// unites (la pige, la vacation, la tache), chacun sa grandeur (`droit::natures::Mesure` dit laquelle une paie declare ;
+/// `lue`, celle de chaque unite de la norme).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MesureDActivite {
     Jours(Jours),
     Cachets(Cachets),
     Heures(Heures),
+    Unites(Unites),
 }
 
 impl MesureDActivite {
+    /// LA MESURE QU'UNE DSN LUE ECRIT EN 53.002 (`t`), dans la grandeur que son unite (53.003) dit : la porte de sa
+    /// lecture, et le seul endroit qui range chaque unite. Le bloc 53 de la norme
+    /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt`) borne ensemble « 10 - heure » et « 21 - forfait heure »
+    /// (CCH-13), « 12 - journee » et « 20 - forfait jour » (CCH-14) : des heures (l'heure des intermittents, l'heure du
+    /// dimanche en ESAT comprises), des jours (le jour CRPNPAC et les jours calendaires du plafond compris), des cachets
+    /// (isoles ou groupes), et des unites pour la pige, la vacation et la tache. `None` : `t` n'est pas un nombre.
+    pub fn lue(unite: UniteDeMesure, t: &str) -> Option<MesureDActivite> {
+        use socle::grandeurs::lu::norme as lu;
+        use UniteDeMesure as U;
+        match unite {
+            U::Heure | U::ForfaitHeure | U::HeuresIntermittents | U::HeureDimancheEsat => lu(t).map(MesureDActivite::Heures),
+            U::Journee | U::ForfaitJour | U::JourCrpnpac | U::JoursCalendairesDuPlafond => lu(t).map(MesureDActivite::Jours),
+            U::CachetsGroupes | U::CachetsIsoles | U::Cachet => lu(t).map(MesureDActivite::Cachets),
+            U::ALaPige | U::ALaVacation | U::ALaTache => lu(t).map(MesureDActivite::Unites),
+        }
+    }
+
     /// Est-elle nulle ?
     pub fn est_nul(self) -> bool {
         match self {
             MesureDActivite::Jours(j) => j.est_nul(),
             MesureDActivite::Cachets(c) => c.est_nul(),
             MesureDActivite::Heures(h) => h.est_nul(),
+            MesureDActivite::Unites(u) => u.est_nul(),
         }
     }
 
@@ -2147,6 +2167,7 @@ impl MesureDActivite {
             MesureDActivite::Jours(j) => norme::quantite(signe.de(j)),
             MesureDActivite::Cachets(c) => norme::quantite(signe.de(c)),
             MesureDActivite::Heures(h) => norme::quantite(signe.de(h)),
+            MesureDActivite::Unites(u) => norme::quantite(signe.de(u)),
         }
     }
 }
