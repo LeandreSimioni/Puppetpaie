@@ -297,7 +297,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   ce qui a été converti ; un chiffre solide, pas du texte ». Une seule conversion, celle de la route
   (`socle::grandeurs::lu::tapee`), jamais une copie ailleurs : la virgule ou le point séparent les décimales, seule
   l'espace sépare les milliers (« 1.500 » vaut 1,5 ; « 1 500 », mille cinq cents), le signe de l'unité se tolère à la
-  fin ; tout le reste se refuse en nommant la case. Ce qu'on garde et ce qu'on affiche est la grandeur convertie ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
+  fin ; tout le reste se refuse en nommant la case, dans la phrase de la route (`socle::forme::case_refusee`, la seule
+  phrase : « Taux AT/MP : « 1 5 » ne se lit pas : … », la case nommée comme l'écran la montre). Ce qu'on garde et ce qu'on affiche est la grandeur convertie ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le

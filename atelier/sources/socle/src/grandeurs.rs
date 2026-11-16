@@ -779,7 +779,7 @@ impl crate::forme::NombreEcrit {
             crate::forme::NombreEcrit::Entier(i) => Decimal::from(*i),
             crate::forme::NombreEcrit::Naturel(u) => Decimal::from(*u),
             crate::forme::NombreEcrit::Flottant(x) => *x,
-            crate::forme::NombreEcrit::Texte(t) => return lu::tapee(t).map_err(|p| crate::echec::refus(format!("{} : {}", case, p))),
+            crate::forme::NombreEcrit::Texte(t) => return lu::tapee(t).map_err(|p| crate::echec::refus(crate::forme::case_refusee(case, &p))),
         };
         Ok(G::du(d))
     }
@@ -938,7 +938,7 @@ pub mod lu {
             let d = crate::forme::decimal_en_nombre(d, super::tapee_en_decimal::<G>)?;
             match crate::grandeurs::entiere(G::du(d)).filter(|g| !g.en_decimal().is_sign_negative()) {
                 Some(g) => Ok(g),
-                None => Err(serde::de::Error::custom(format!("{} n'est pas un nombre entier positif : on attend {}", crate::texte::nombre_dit(d), G::ATTENDU))),
+                None => Err(serde::de::Error::custom(crate::forme::refus_du_tape(format!("{} n'est pas un nombre entier positif : on attend {}", crate::texte::nombre_dit(d), G::ATTENDU)))),
             }
         }
 

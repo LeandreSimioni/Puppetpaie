@@ -394,8 +394,8 @@ impl<'de> serde::Deserialize<'de> for Annee {
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Annee, E> {
                 match crate::num::entier_de_chiffres(s.trim()) {
-                    Some(i) => Annee::nouvelle(i).map_err(E::custom),
-                    None => Err(E::custom(format!("{} ne se lit pas : on attend une année, en chiffres (« 2026 »)", crate::fichiers::repr(s)))),
+                    Some(i) => Annee::nouvelle(i).map_err(|e| E::custom(crate::forme::refus_du_tape(e.phrase))),
+                    None => Err(E::custom(crate::forme::refus_du_tape(format!("{} ne se lit pas : on attend une année, en chiffres (« 2026 »)", crate::fichiers::repr(s))))),
                 }
             }
         }

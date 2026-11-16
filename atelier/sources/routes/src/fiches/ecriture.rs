@@ -1069,7 +1069,7 @@ fn fiche_refusee(nom: NomDeFiche, anomalies: &[Anomalie]) -> R<Echec> {
     let mut phrases = Vec::new();
     for a in anomalies.iter().filter(|a| a.gravite == Gravite::Erreur) {
         phrases.push(match champs::champ(nom, a.champ)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
-            Some(l) => format!("« {} » : {}", l, a.message),
+            Some(l) => socle::forme::case_refusee(&l, &a.message),
             None => a.message.clone(),
         });
     }

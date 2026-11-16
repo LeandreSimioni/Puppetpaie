@@ -823,6 +823,11 @@ fn guillemets(noms: &[&str]) -> String {
     }
 }
 
+/// Le libelle de la case de la carte dont la cle est `cle` (`Champ::nom`) ; aucun pour une cle qui n'en est pas une.
+pub fn libelle_de_la_case(cle: &str) -> Option<&'static str> {
+    Champ::TOUS.iter().find(|c| c.nom() == cle).map(|c| libelle(*c))
+}
+
 /// LE LIBELLE D'UNE CASE DE LA CARTE, tel que l'ecran l'ecrit.
 pub fn libelle(c: Champ) -> &'static str {
     match c {

@@ -138,7 +138,7 @@ impl Duree<EnJours> {
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u32, E> {
                 crate::num::entier_de_chiffres(s.trim()).and_then(|n| u32::try_from(n).ok()).ok_or_else(|| {
-                    E::custom(format!("{} ne se lit pas : on attend un nombre entier de jours, en chiffres (« 30 »)", crate::fichiers::repr(s)))
+                    E::custom(crate::forme::refus_du_tape(format!("{} ne se lit pas : on attend un nombre entier de jours, en chiffres (« 30 »)", crate::fichiers::repr(s))))
                 })
             }
         }

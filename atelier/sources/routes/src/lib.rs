@@ -176,6 +176,8 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     let _code = socle::fichiers::code_fige();
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
     let _geste = socle::forme::geste();
+    // Une case tapee qui ne se convertit pas se refuse en se nommant comme l'ecran la montre (`socle::forme::case_refusee`).
+    let _cases = socle::forme::cases_nommees(move |cle| libelle_de_la_cle(route, cle));
     compagnie::incidents::brancher_l_engagement();
     let rendu = servir(o, route, charge);
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
@@ -190,6 +192,16 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
         refus_a_sa_place(r, route.nom(), &refus.phrase);
     }
     reponse
+}
+
+/// LE LIBELLE D'UNE CLE DE LA CHARGE DE `route`, tel que l'ecran le montre : un champ de sa fiche (`catalogue::Champ`),
+/// ou une case de la carte, que nomme un changement (`{"case": "salaire_mensuel", …}`, `engagement::carte::libelle`).
+fn libelle_de_la_cle(route: Route, cle: &str) -> Option<&'static str> {
+    let champ = catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.iter().find(|c| c.nom == cle));
+    match champ {
+        Some(c) => Some(c.libelle.texte()),
+        None => ::engagement::carte::libelle_de_la_case(cle),
+    }
 }
 
 /// LA ROUTE `route` SERVIE : ce qu'elle rend, ou son refus. L'aiguillage, rien d'autre.
