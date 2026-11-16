@@ -645,6 +645,21 @@ enum PlaceIllisible {
     AvantLaPremiere,
 }
 
+impl PlaceIllisible {
+    /// La faute, dite pour l'affectation `a` (`qui` : le contrat ; `de` : ce qu'elle affecte, « d'une base 31 ») : un
+    /// nombre avant 202 est une faute du logiciel (le moteur fait les identifiants a partir de 202,
+    /// `identifiant_d_affiliation`) ; un texte qui n'est pas un nombre ne se lit pas.
+    fn faute(self, a: &IdentifiantDAffiliation, qui: &str, de: &str) -> socle::echec::Echec {
+        match self {
+            PlaceIllisible::AvantLaPremiere => socle::echec::erreur(
+                socle::echec::Classe::DefautDuLogiciel,
+                format!("{} : l'affectation {}{} est avant la premiere place (202) : le signaler au developpeur.", qui, a, de),
+            ),
+            PlaceIllisible::PasUnNombre => refus!("{} : l'affectation {}{} ne se lit pas.", qui, socle::fichiers::repr(a.as_str().trim()), de),
+        }
+    }
+}
+
 /// La place qu'ecrit un identifiant d'affiliation du contrat de rang 1 (celui que le bareme nomme, `202`, `203` :
 /// `CleDeCotisationDsn::affectation`) ; l'appelant refuse ce qui ne se lit pas.
 fn place_de(a: &IdentifiantDAffiliation) -> Result<PlaceDAffiliation, PlaceIllisible> {
@@ -994,18 +1009,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     for c in out {
         // L'affectation d'une base 31 (78.005) : « 202 » et suivants, la place de l'adhesion.
         let place = match &c.affectation {
-            Some(a) => match place_de(a) {
-                Ok(x) => Some(x),
-                // Le moteur fait les identifiants d'affiliation a partir de 202 (`identifiant_d_affiliation`) : un
-                // plus petit est une faute du logiciel.
-                Err(PlaceIllisible::AvantLaPremiere) => {
-                    return Err(socle::echec::erreur(
-                        socle::echec::Classe::DefautDuLogiciel,
-                        format!("{} : l'affectation {} d'une base {} est avant la premiere place (202) : le signaler au developpeur.", qui_contrat(p), a, c.bloc78),
-                    ))
-                }
-                Err(PlaceIllisible::PasUnNombre) => return Err(refus!("{} : l'affectation {} d'une base {} ne se lit pas.", qui_contrat(p), socle::fichiers::repr(a.as_str().trim()), c.bloc78)),
-            },
+            Some(a) => Some(place_de(a).map_err(|e| e.faute(a, &qui_contrat(p), &format!(" d'une base {}", c.bloc78)))?),
             None => None,
         };
         if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite && place.is_some_and(|x| exclues.contains(&x)) {
@@ -2433,7 +2437,7 @@ pub fn bases_et_cotisations(
             continue;
         }
         if let Some(a) = &c.affectation {
-            let place = place_de(a).map_err(|_| refus!("affectation illisible : {}", a))?;
+            let place = place_de(a).map_err(|e| e.faute(a, &qui_contrat(p), &format!(" d'une base {}", c.bloc78)))?;
             c.affectation = Some(identifiant_d_affiliation(rang, place, places)?);
         }
         let cle = (c.bloc78, c.affectation.clone(), c.base78);
@@ -2589,7 +2593,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuCon
             f.add(droit::rubrique!("S21.G00.78.003"), fin.jjmmaaaa());
             f.add(droit::rubrique!("S21.G00.78.004"), "0.00");
             if let Some(a) = &c.affectation {
-                let place = place_de(a).map_err(|_| refus!("affectation illisible : {}", a))?;
+                let place = place_de(a).map_err(|e| e.faute(a, &qui_contrat(p), &format!(" d'une base {}", c.bloc78)))?;
                 f.add(droit::rubrique!("S21.G00.78.005"), identifiant_d_affiliation(rang, place, places)?);
             }
             if !f.contrat_unique {
