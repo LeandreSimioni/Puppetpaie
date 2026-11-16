@@ -67,9 +67,9 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
-/// `lire_dsn_casc` : la DSN deposee, et si elle porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a
-/// l'adhesion que la DSN nomme `contrat` en bloc 15). `None` : illisible.
-pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
+/// `lire_dsn_casc` : si la DSN deposee porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a l'adhesion que la
+/// DSN nomme `contrat` en bloc 15). `None` : illisible.
+pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<bool>> {
     let Some(d) = declarations::dsn_lue::lire_une_dsn(chemin)? else { return Ok(None) };
     let porte = d
         .adhesions
@@ -77,7 +77,7 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::Referenc
         .filter(|a| a.libelle == contrat.as_str())
         .filter_map(|a| a.reference.as_ref())
         .any(|r| d.rattachements.contains(r));
-    Ok(Some((d, porte)))
+    Ok(Some(porte))
 }
 
 /// L'alerte apres l'import, lue avec ce que l'import a ecrit (`ctx`) : une compagnie de la 3090 qui arrive d'un autre
@@ -685,10 +685,6 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // Ce que les DSN reprises disent de la configuration hors de la fiche (le taux AT/MP, les organismes), lu avec les
     // fiches telles que l'import les a ecrites.
     let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
-    // L'alerte CASC-SVP lit les engagements et les fiches que l'import vient d'ecrire, comme la regularisation.
-    if let Some(alerte) = alerte_apres_import(&frais)? {
-        reponse.avertissements.push(alerte);
-    }
     let mut faits = crate::importation::parametrage::parametrer(&frais);
     // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
@@ -741,5 +737,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;
+    // L'alerte CASC-SVP lit les engagements et les fiches que l'import vient d'ecrire, comme la regularisation ; en
+    // dernier, pour que son erreur ne saute aucune etape de l'import.
+    if let Some(alerte) = alerte_apres_import(&frais)? {
+        reponse.avertissements.push(alerte);
+    }
     Ok(reponse)
 }
