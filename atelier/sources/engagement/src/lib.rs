@@ -1325,23 +1325,23 @@ struct Limites {
     au_dela: CodeDeRubrique,
     cle: &'static str,
     case: CaseDeFrais,
-    /// Les limites de la metropole au bareme (la haute, la basse).
-    metropole: fn(&droit::forme_bareme::Pile) -> Option<(Decimal, Decimal)>,
+    /// Les limites de la metropole au bareme (la haute, la basse), par nuit ou par repas.
+    metropole: fn(&droit::forme_bareme::Pile) -> Option<(MontantUnitaire, MontantUnitaire)>,
     /// Sa limite hors de la metropole (`frais_hors_metropole`), et son nom.
-    hors_metropole: fn(&droit::forme_bareme::LogementEtRepas) -> Decimal,
+    hors_metropole: fn(&droit::forme_bareme::LogementEtRepas) -> MontantUnitaire,
     nom_hors_metropole: &'static str,
 }
 
 static FRAIS_LIMITES: [Limites; 2] = [
     Limites {
         rubrique: NUITEE, au_dela: NUITEE_AU_DELA, cle: "logement_grand_deplacement", case: PARIS,
-        metropole: |b| b.logement_grand_deplacement.as_ref().map(|f| (f.paris.decimal(), f.autres.decimal())),
-        hors_metropole: |z| z.logement.decimal(), nom_hors_metropole: "logement",
+        metropole: |b| b.logement_grand_deplacement.as_ref().map(|f| (f.paris, f.autres)),
+        hors_metropole: |z| z.logement, nom_hors_metropole: "logement",
     },
     Limites {
         rubrique: REPAS, au_dela: REPAS_AU_DELA, cle: "repas_deplacement", case: RESTAURANT,
-        metropole: |b| b.repas_deplacement.as_ref().map(|f| (f.restaurant.decimal(), f.hors_restaurant.decimal())),
-        hors_metropole: |z| z.repas.decimal(), nom_hors_metropole: "repas",
+        metropole: |b| b.repas_deplacement.as_ref().map(|f| (f.restaurant, f.hors_restaurant)),
+        hors_metropole: |z| z.repas, nom_hors_metropole: "repas",
     },
 ];
 
@@ -1357,18 +1357,18 @@ pub fn a_une_limite(code: &CodeDeRubrique) -> bool {
 const REDUCTION_LOGE: socle::grandeurs::Coefficient = socle::grandeurs::Coefficient::centiemes(65);
 
 /// L'aide d'une case, avec les limites de l'annee (`haute`, `basse`).
-fn aide_de_case(case: CaseDeFrais, rubrique: &CodeDeRubrique, limites: Option<(Decimal, Decimal)>) -> Option<String> {
+fn aide_de_case(case: CaseDeFrais, rubrique: &CodeDeRubrique, limites: Option<(MontantUnitaire, MontantUnitaire)>) -> Option<String> {
     let eur = socle::texte::euros;
     match (case, limites) {
         (PARIS, Some((h, b))) if *rubrique == NUITEE => Some(format!(
             "Paris ou petite couronne : la nuitée est exonérée jusqu'à {} au lieu de {}.",
-            eur(Montant::du_decimal(h)),
-            eur(Montant::du_decimal(b))
+            eur(h),
+            eur(b)
         )),
         (RESTAURANT, Some((h, b))) => Some(format!(
             "Le salarié ne pouvait pas rentrer et a dû manger au restaurant : le repas est exonéré jusqu'à {} au lieu de {}.",
-            eur(Montant::du_decimal(h)),
-            eur(Montant::du_decimal(b))
+            eur(h),
+            eur(b)
         )),
         (JUSTIFICATIF, _) => Some("La compagnie garde la facture : tout le montant est exonéré.".to_string()),
         (LOGE, _) => Some("La compagnie a payé l'hôtel : la limite du jour est réduite de 65 %.".to_string()),
@@ -1434,7 +1434,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         };
         l.marques.rang = Some(rang);
         let mut cases: Vec<CaseDeFrais> = Vec::new();
-        let taux = l.taux.map(MontantUnitaire::decimal);
+        let taux = l.taux;
         let dates: Vec<DateDeLigne> = l.dates.clone();
         let jour = match dates.first() {
             Some(x) => x.jour(),
@@ -1447,13 +1447,13 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         // Les deux limites de la metropole, quand le bareme les porte : les cases et leurs aides les disent.
         let metropole = (lim.metropole)(&bar);
         let mut part = None;
-        let erreur_bareme = |cle: &str, taux: Decimal| {
+        let erreur_bareme = |cle: &str, taux: MontantUnitaire| {
             socle::echec::cle(
                 format!(
                     "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {}. Rien n'est calculé.",
                     qui,
                     jour.annee(),
-                    socle::texte::euros(Montant::du_decimal(taux))
+                    socle::texte::euros(taux)
                 ),
                 cle,
             )
@@ -1485,7 +1485,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                 let zones = bar.frais_hors_metropole.as_ref();
                 let par_zone = |zone: Option<&droit::forme_bareme::LogementEtRepas>| zone.map(lim.hors_metropole).ok_or_else(|| erreur_bareme(&cle, taux));
                 Some(match t {
-                    TerritoireHorsMetropole::Taaf => Decimal::ZERO,
+                    TerritoireHorsMetropole::Taaf => MontantUnitaire::ZERO,
                     TerritoireHorsMetropole::Dom => par_zone(zones.map(|z| &z.dom))?,
                     TerritoireHorsMetropole::Pacifique => par_zone(zones.map(|z| &z.pacifique))?,
                     TerritoireHorsMetropole::Monaco => par_zone(zones.map(|z| &z.monaco))?,
@@ -1508,7 +1508,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         marquer_les_cases(&mut l, &cases, &lim.rubrique, metropole);
         if let Some((taux, limite)) = part {
             let quantite = l.quantite.ok_or_else(|| socle::fichiers::absent("quantite"))?;
-            let paiement = ligne::PaiementDeLigne::de(quantite, MontantUnitaire::du_decimal((taux - limite).normalize()));
+            let paiement = ligne::PaiementDeLigne::de(quantite, socle::grandeurs::sans_zero(taux - limite));
             au_dela.push(LignePaie::Composee(ligne::Composee {
                 rubrique: lim.au_dela.clone(),
                 paiement,
@@ -1529,15 +1529,15 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                     "{} : {} de {} au-dessus de la limite de {} : {} par {} entrent dans le brut. Cocher {}« justificatif conservé » si la compagnie garde la facture.",
                     qui,
                     quoi,
-                    socle::texte::euros(Montant::du_decimal(taux)),
-                    socle::texte::euros(Montant::du_decimal(limite)),
-                    socle::texte::euros(Montant::du_decimal(taux - limite)),
+                    socle::texte::euros(taux),
+                    socle::texte::euros(limite),
+                    socle::texte::euros(taux - limite),
                     unite,
                     case
                 ),
             });
-            l.marques.taux_saisi = Some(MontantUnitaire::du_decimal(taux.normalize()));
-            l.taux = Some(MontantUnitaire::du_decimal(limite.normalize()));
+            l.marques.taux_saisi = Some(socle::grandeurs::sans_zero(taux));
+            l.taux = Some(socle::grandeurs::sans_zero(limite));
         }
         out.push(LignePaie::Frais(l));
     }
@@ -1550,7 +1550,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
 }
 
 /// Pose sur la ligne `l` les cases qui ont lieu d'etre et leurs aides (`ligne::Marques`).
-fn marquer_les_cases(l: &mut ligne::Frais, cases: &[CaseDeFrais], rubrique: &CodeDeRubrique, metropole: Option<(Decimal, Decimal)>) {
+fn marquer_les_cases(l: &mut ligne::Frais, cases: &[CaseDeFrais], rubrique: &CodeDeRubrique, metropole: Option<(MontantUnitaire, MontantUnitaire)>) {
     if cases.is_empty() {
         return;
     }
@@ -1615,7 +1615,10 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         let indemnite = droit::missions::du_jour(lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
-        let limite = if loge { (socle::grandeurs::Montant::du_decimal(indemnite.euros) * (socle::grandeurs::Coefficient::UN - REDUCTION_LOGE)).au_centime().decimal() } else { indemnite.euros };
+        let limite = if loge { (indemnite.euros * (socle::grandeurs::Coefficient::UN - REDUCTION_LOGE)).au_centime() } else { indemnite.euros };
+        // Le calcul jour par jour reste en decimal : ses divisions (la quantite d'un jour, le taux qui reste exonere)
+        // se font a l'arithmetique de `rust_decimal`, que celle des grandeurs (`d28`) arrondirait autrement.
+        let limite = limite.decimal();
         let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
         let mut reste = (total - limite).max(Decimal::ZERO);
         let mut ordre = du_jour.clone();

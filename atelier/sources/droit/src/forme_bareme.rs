@@ -321,23 +321,26 @@ forme! {
 }
 
 forme! {
+    /// La limite d'exoneration d'une nuitee, par nuit.
     pub struct FraisParZone {
-        pub paris: Montant,
-        pub autres: Montant,
+        pub paris: MontantUnitaire,
+        pub autres: MontantUnitaire,
     }
 }
 
 forme! {
+    /// La limite d'exoneration d'un repas, par repas.
     pub struct FraisDeRepas {
-        pub restaurant: Montant,
-        pub hors_restaurant: Montant,
+        pub restaurant: MontantUnitaire,
+        pub hors_restaurant: MontantUnitaire,
     }
 }
 
 forme! {
+    /// Les limites d'exoneration hors de la metropole, par nuit et par repas.
     pub struct LogementEtRepas {
-        pub logement: Montant,
-        pub repas: Montant,
+        pub logement: MontantUnitaire,
+        pub repas: MontantUnitaire,
     }
 }
 

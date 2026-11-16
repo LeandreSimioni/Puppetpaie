@@ -148,6 +148,22 @@ grandeurs! {
     HeuresParUnite, ["h"], "un nombre d'heures", "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
     JoursParSemaine, [], "un nombre de jours par semaine", "DES JOURS PAR SEMAINE : un rythme, les jours que chaque semaine donne (`1` : « 1 jour par semaine calendaire » d'anciennete, un preavis d'une convention) ; semaines x jours par semaine = jours.";
     Effectif, [], "un nombre de personnes", "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
+    MontantEnDevise, [], "un montant dans sa monnaie", "UN MONTANT EN DEVISE : une somme dans la monnaie de son lieu, qui n'est pas forcement l'euro (`120` dollars : l'indemnite journaliere de mission d'un lieu a l'etranger) ; sa monnaie se dit a cote (`droit::missions::CodeMonnaie`).";
+    TauxDeChange, [], "un taux de change", "UN TAUX DE CHANGE : des euros pour une unite d'une monnaie (`0.92` : le taux de chancellerie d'une monnaie pour un lieu) ; montant en devise x taux de change = montant.";
+}
+
+impl TauxDeChange {
+    /// L'euro pour l'euro : un montant en euros se prend tel quel.
+    pub const UN: TauxDeChange = TauxDeChange(Decimal::ONE);
+}
+
+/// Un montant dans sa monnaie fois le taux de change de cette monnaie : des euros, exacts (`Montant::au_centime` les
+/// fixe).
+impl std::ops::Mul<TauxDeChange> for MontantEnDevise {
+    type Output = Montant;
+    fn mul(self, t: TauxDeChange) -> Montant {
+        Montant(num::mul(self.0, t.0))
+    }
 }
 
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit

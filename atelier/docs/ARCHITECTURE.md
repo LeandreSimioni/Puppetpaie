@@ -329,6 +329,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
 | coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
+| taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
 | heures en plus d'un mois, réparties par majoration (les heures supplémentaires d'un temps plein, complémentaires d'un temps partiel ; un palier : des heures à une majoration, un taux que le taux horaire du contrat prend en plus de lui-même) | `droit::heures_en_plus::Reparties`, ses `Palier` (`Heures`, `Taux`) ; la loi et la convention les lisent en grandeurs (`permanents::HeuresEnPlus`, `clauses::HeuresSupplementaires`) | `droit/src/heures_en_plus.rs`, `socle/src/grandeurs.rs` |
 | base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures` ; une paie écrite l'écrit sans son unité, `en_nombre`, et la relit dans la grandeur que sa cotisation ou son assiette compte, `relue`, `de_l_assiette` ; un état l'écrit par `Ligne::base`) | `engagement/src/calcul.rs` |
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
@@ -376,7 +378,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
   paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire, un minimum
   conventionnel et chaque valeur des grilles des minima (`droit::minima::Minimum`, par heure, par cachet, par service,
-  par journée, par semaine, par mois) ; quantité × montant unitaire = montant.
+  par journée, par semaine, par mois), la limite d'exonération d'une nuitée ou d'un repas au barème
+  (`forme_bareme::FraisParZone`, `FraisDeRepas`, `LogementEtRepas`) ; quantité × montant unitaire = montant.
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
   `Taux::points`, `Taux::centiemes_de_point`, `Coefficient::entier_fixe`, `Coefficient::dixiemes`,
   `Coefficient::centiemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
