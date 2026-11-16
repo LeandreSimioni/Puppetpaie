@@ -420,7 +420,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'un avenant au contrat | `NumeroDAvenant` | `engagement/src/numeros.rs` |
 | rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | rang d'un engagement dans l'écran de son mois (dit à partir de un) | `RangDansLeMois` | `engagement/src/saisie.rs` |
-| rang d'une ligne dans son état (dit à partir de un : le numéro d'ordre du registre du personnel, le numéro d'une écriture comptable, un par mois de la période) | `RangDansLEtat` | `documents/src/tableaux_export.rs` |
+| rang d'une ligne dans son état (dit à partir de un : le numéro d'ordre du registre du personnel) | `RangDansLEtat` | `documents/src/tableaux_export.rs` |
+| numéro d'une écriture comptable (le rang de son mois, sa pièce, parmi les mois de la période exportée, partagé par les lignes du mois ; seuls l'écrivent le FEC, `EcritureNum`, et XIMPORT) | `NumeroDEcriture` | `documents/src/etats_compta.rs` |
 | version d'un engagement (la première à sa validation, la suivante quand ce qui est parti change) | `VersionDeLEngagement` | `engagement/src/stock.rs` |
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
@@ -1014,6 +1015,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne d'un état | `ColonneDEtat` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
+| total d'un compte sur les écritures d'une période (son libellé, son débit, son crédit, son solde : le sous-total du grand livre et la ligne de la balance, un seul calcul, `totaux_par_compte`) | `TotalDuCompte` | `documents/src/etats_compta.rs` |
 | poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
 | code analytique d'un spectacle | `CodeAnalytique` | `droit/src/fiche.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |

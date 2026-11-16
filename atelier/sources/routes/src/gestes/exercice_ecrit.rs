@@ -188,13 +188,13 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
     }
     let mut avert: Vec<String> = Vec::new();
     let mut ecritures: Vec<Ecriture> = Vec::new();
-    for (n, &m) in mois.iter().enumerate() {
+    for &m in &mois {
         if !documents::DossierDuMois::Sorties.dans(&ctx.racine, m).is_dir() {
             avert.push(format!("{} : saisi mais jamais écrit (pas de bulletin) -- pris quand même, depuis la saisie.", m));
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
         }
-        ecritures.extend(ecritures_du_mois(ctx, m, &plan, &departs, documents::tableaux_export::RangDansLEtat::de_l_indice(n))?);
+        ecritures.extend(ecritures_du_mois(ctx, m, &plan, &departs)?);
     }
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());

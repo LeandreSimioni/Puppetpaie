@@ -44,9 +44,8 @@ pub const FORMATS_TABLEAU: [FormatDExport; 6] = [FormatDExport::Csv, FormatDExpo
 
 // ------------------------------------------------------------------ valeurs
 
-/// LE RANG D'UNE LIGNE DANS SON ETAT, dit a partir de un : le numero d'ordre d'une embauche au registre du personnel, le
-/// numero d'une ecriture comptable (une par mois de la periode, `ecritures_comptables::Ecriture::numero`). Il s'ecrit en
-/// nombre entier, a la largeur que son format lui donne (`{:05}`).
+/// LE RANG D'UNE LIGNE DANS SON ETAT, dit a partir de un : le numero d'ordre d'une embauche au registre du personnel. Il
+/// s'ecrit en nombre entier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RangDansLEtat(usize);
 
@@ -541,14 +540,6 @@ impl Ligne {
         self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
-    /// Le montant de la case `k`, quand elle en porte un.
-    pub fn montant_de(&self, k: ColonneDEtat) -> Option<Montant> {
-        match self.val(k) {
-            Some(Val::Montant(m)) => Some(*m),
-            _ => None,
-        }
-    }
-
     /// Le mois de la case `k`, quand elle en porte un (`m`).
     pub fn mois(&self, k: ColonneDEtat) -> Option<Mois> {
         match self.val(k) {
@@ -715,39 +706,42 @@ fn somme(lignes: &[&Ligne], cle: ColonneDEtat) -> R<Option<Val>> {
     Ok(total)
 }
 
-/// Pose le sous-total de chaque section et le total general. La premiere colonne de
-/// texte porte le libelle (« Total ... »), les colonnes totalisees leur somme, les autres restent vides.
+/// La ligne d'un total des `lignes` : la premiere colonne de texte porte le libelle, les colonnes totalisees leur somme,
+/// les autres restent vides.
+fn ligne_du_total(colonnes: &[Colonne], lignes: &[&Ligne], libelle: &str) -> R<Ligne> {
+    let porte = colonnes.iter().find(|c| c.genre == Genre::Texte).map(|c| c.cle);
+    let mut d = Ligne::nouvelle();
+    for c in colonnes.iter().filter(|c| c.totalisee()) {
+        d.poser(c.cle, somme(lignes, c.cle)?);
+    }
+    if let Some(p) = porte {
+        d.t(p, libelle);
+    }
+    Ok(d)
+}
+
+/// Pose le sous-total de chaque section (« Total ... ») et le total general (`totaliser_general`).
 pub fn totaliser(t: &mut Tableau, libelle_total: &str) -> R<()> {
-    let porte = t.colonnes.iter().find(|c| c.genre == Genre::Texte).map(|c| c.cle);
-    let ligne = |colonnes: &[Colonne], lignes: &[&Ligne], libelle: &str| -> R<Ligne> {
-        let mut d = Ligne::nouvelle();
-        for c in colonnes.iter().filter(|c| c.totalisee()) {
-            d.poser(c.cle, somme(lignes, c.cle)?);
-        }
-        if let Some(p) = porte {
-            d.t(p, libelle);
-        }
-        Ok(d)
-    };
     for s in t.sections.iter_mut() {
-        s.total = if s.libelle.is_empty() {
+        s.total = if s.libelle.is_empty() || !t.avec_total {
             None
         } else {
             let l: Vec<&Ligne> = s.lignes.iter().collect();
-            Some(ligne(&t.colonnes, &l, &format!("Total {}", s.libelle))?)
+            Some(ligne_du_total(&t.colonnes, &l, &format!("Total {}", s.libelle))?)
         };
     }
+    totaliser_general(t, libelle_total)
+}
+
+/// Pose le total general de toutes les lignes, quand le tableau en a un ; le sous-total d'une section reste celui que
+/// l'etat lui a donne (le grand livre : le total de son compte).
+pub fn totaliser_general(t: &mut Tableau, libelle_total: &str) -> R<()> {
     t.total = if t.avec_total {
         let toutes: Vec<&Ligne> = t.sections.iter().flat_map(|s| s.lignes.iter()).collect();
-        Some(ligne(&t.colonnes, &toutes, libelle_total)?)
+        Some(ligne_du_total(&t.colonnes, &toutes, libelle_total)?)
     } else {
         None
     };
-    if !t.avec_total {
-        for s in t.sections.iter_mut() {
-            s.total = None;
-        }
-    }
     Ok(())
 }
 
