@@ -522,9 +522,10 @@ let MOIS_AFFICHE = null;        // le mois REELLEMENT charge dans l'ecran
 
 function afficherRappelsMois() {
   const t = TAUX_PAR_RUBRIQUE.cachet;
-  // Le taux du cachet d'une ligne neuve (le dernier tapé, ou celui que le moteur dit) : une case et sa valeur.
+  // Le taux du cachet d'une ligne neuve (le dernier tapé, tel que la route l'a converti, ou celui que le moteur dit) : une
+  // case et sa valeur.
   document.getElementById("rappels-mois").innerHTML =
-    `<span>Cachet par défaut</span> <b>${echapper(t == null ? "—" : typeof t === "number" ? euros(t) : t)}</b> · ${aideDe("lieu_jours")}`;
+    `<span>Cachet par défaut</span> <b>${echapper(t == null ? "—" : euros(t))}</b> · ${aideDe("lieu_jours")}`;
 }
 
 let DEMANDE_MOIS = null;
@@ -1084,9 +1085,17 @@ function montrerLeConverti(div, carte, b, mois) {
       const r = rangs[i];
       if (!r) return;
       const q = l.quantite && typeof l.quantite === "object" ? Object.values(l.quantite)[0] : l.base;
+      const taux = l.taux ?? l.montant ?? l.taux_majoration;
       poser(r.querySelector(".r-quantite"), q);
-      poser(r.querySelector(".r-taux"), l.taux ?? l.montant ?? l.taux_majoration);
+      poser(r.querySelector(".r-taux"), taux);
       poser(r.querySelector(".r-heures"), l.heures);
+      // Le taux tapé, converti par la route : celui de la prochaine ligne de la même rubrique.
+      if (r.dataset.tauxTape && taux != null) {
+        delete r.dataset.tauxTape;
+        const code = r.querySelector(".r-code").value;
+        TAUX_PAR_RUBRIQUE[code] = taux;
+        if (code === "cachet") afficherRappelsMois();
+      }
     });
   }
   if (carte.primes && b.primes && inchangee("primes")) {

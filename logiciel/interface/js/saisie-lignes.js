@@ -276,15 +276,10 @@ function ligneRubrique(l = {}, propose) {
   };
   div.querySelector(".supprimer").onclick = () => { div.remove(); rafraichirApercu(); };
   div.querySelectorAll("input").forEach((c) => { c.oninput = rafraichirApercu; });
-  // Taper un taux ici, c'est donner celui de la prochaine ligne DE LA MÊME RUBRIQUE.
+  // Taper un taux ici, c'est donner celui de la prochaine ligne DE LA MÊME RUBRIQUE : celui que la route a converti, une
+  // fois la carte écrite (`montrerLeConverti`).
   div.querySelector(".r-taux").oninput = () => {
-    const v = div.querySelector(".r-taux").value;
-    const r = div.querySelector(".r-code").value;
-    // Tel qu'il est tapé : la ligne suivante le reprend, et la route le convertit.
-    if (v.trim() !== "") {
-      TAUX_PAR_RUBRIQUE[r] = v.trim();
-      if (r === "cachet") afficherRappelsMois();
-    }
+    div.dataset.tauxTape = "1";
     rafraichirApercu();
   };
   /* LES JOURS COMPTENT LES CACHETS. Taper « 14 15 17 18 » sur une ligne de
