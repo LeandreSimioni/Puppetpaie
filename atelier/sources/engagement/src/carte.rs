@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
-use socle::date::Jour;
+use socle::date::{Duree, EnJours, Jour};
 use socle::forme::NombreLu;
 use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
 use socle::echec::{refus, R};
@@ -150,17 +150,17 @@ macro_rules! nature {
         $(#[$a:meta])*
         $nom:ident / $brouillon:ident {
             obligatoire { $( $o:ident : $to:ty = $co:ident $( ecrite($eo:literal, $eoo:literal) )? ),* $(,)? }
-            facultatif { $( $f:ident : $tf:ty = $cf:ident $( ecrite($ef:literal) )? ),* $(,)? }
+            facultatif { $( $f:ident : $tf:ty = $cf:ident $( ecrite($ef:literal) )? $( lue($lf:literal) )? ),* $(,)? }
             du_motif { $( $m:ident : $tm:ty = $cm:ident ),* $(,)? }
         }
     ) => {
         /// LE BROUILLON de cette nature : chacune de ses cases, remplie ou non. Une case qui dit son ecriture
-        /// (`ecrite(..)` : une grandeur) s'ecrit par elle.
+        /// (`ecrite(..)` : une grandeur, une duree) s'ecrit par elle, et se lit par sa lecture quand elle la dit (`lue(..)`).
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $brouillon {
             $( $( #[serde(serialize_with = $eoo)] )? pub $o: Option<$to>, )*
-            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $ef)] )? $( #[serde(default, deserialize_with = $lf)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
@@ -191,7 +191,7 @@ macro_rules! nature {
         #[serde(deny_unknown_fields)]
         pub struct $nom {
             $( $( #[serde(serialize_with = $eo)] )? pub $o: $to, )*
-            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $ef)] )? $( #[serde(default, deserialize_with = $lf)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
@@ -237,7 +237,7 @@ nature! {
             statut: droit::fiche::Statut = Statut,
             statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
             statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: Jours = PeriodeEssaiJours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
             primes: Vec<Prime> = Primes,
@@ -287,7 +287,7 @@ nature! {
             statut: droit::fiche::Statut = Statut,
             statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
             statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: Jours = PeriodeEssaiJours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -344,7 +344,7 @@ nature! {
             statut: droit::fiche::Statut = Statut,
             statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
             statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: Jours = PeriodeEssaiJours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -731,7 +731,8 @@ changements! {
     Statut(droit::fiche::Statut) = "statut" => statut,
     StatutConventionnel(droit::fiche::StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
     StatutCategorielRc(droit::fiche::StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
-    PeriodeEssaiJours(Jours) ="periode_essai_jours" => periode_essai_jours,
+    #[serde(deserialize_with = "socle::date::Duree::en_jours_opt")]
+    PeriodeEssaiJours(Duree<EnJours>) ="periode_essai_jours" => periode_essai_jours,
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,

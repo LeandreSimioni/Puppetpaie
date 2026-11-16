@@ -105,6 +105,7 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
         Some(Valeur::MontantUnitaire(m)) if en_euros => euros(*m),
         Some(Valeur::MontantUnitaire(m)) => socle::texte::virgule(*m),
         Some(Valeur::Jours(j)) => socle::texte::virgule(*j),
+        Some(Valeur::Duree(d)) => d.jours_a_ecrire().to_string(),
         Some(Valeur::Texte(t)) => t.clone(),
         Some(Valeur::Nature(n)) => n.to_string(),
     }

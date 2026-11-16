@@ -143,8 +143,8 @@ pub struct Engagement {
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratEcrit {
-    #[serde(default, serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    pub periode_essai_jours: Option<Jours>,
+    #[serde(default, serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+    pub periode_essai_jours: Option<socle::date::Duree<socle::date::EnJours>>,
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
@@ -204,8 +204,8 @@ pub struct Assemble {
     pub date_modification: Option<Jour>,
     pub transaction: Option<droit::preavis::TransactionEnCours>,
     pub avant: Option<saisie::Avant>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    pub periode_essai_jours: Option<Jours>,
+    #[serde(default, serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+    pub periode_essai_jours: Option<socle::date::Duree<socle::date::EnJours>>,
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
@@ -614,7 +614,7 @@ impl Engagement {
             avant: v.avant.clone(),
             periode: None,
             ecrit: ContratEcrit {
-                periode_essai_jours: v.periode_essai_jours.filter(|j| !j.est_nul()),
+                periode_essai_jours: v.periode_essai_jours.filter(|j| !j.nulle()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
                 repartition_horaire: v.repartition_horaire.clone().filter(|t| !t.is_empty()),
                 clauses_particulieres: v.clauses_particulieres.clone().filter(|t| !t.is_empty()),

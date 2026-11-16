@@ -155,8 +155,8 @@ carte! {
         #[champ(Terme, StatutCategorielRc)]
         pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
         #[champ(Terme, PeriodeEssaiJours)]
-        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-        pub periode_essai_jours: Option<Jours>,
+        #[serde(default, serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+        pub periode_essai_jours: Option<socle::date::Duree<socle::date::EnJours>>,
         #[champ(Terme, PersonneRemplacee)]
         pub personne_remplacee: Option<String>,
         #[champ(Terme, RepartitionHoraire)]
@@ -258,9 +258,12 @@ pub enum Valeur {
     /// Un montant unitaire (le salaire mensuel, le taux du cachet).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     MontantUnitaire(MontantUnitaire),
-    /// Des jours (la periode d'essai, les jours du mois).
+    /// Des jours (les jours du mois).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Jours(Jours),
+    /// Une duree de droit en jours (la periode d'essai).
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours")]
+    Duree(socle::date::Duree<socle::date::EnJours>),
     Oui(bool),
 }
 
@@ -360,6 +363,12 @@ impl Simple for MontantUnitaire {
 impl Simple for Jours {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Jours(*self))
+    }
+}
+
+impl Simple for socle::date::Duree<socle::date::EnJours> {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Duree(*self))
     }
 }
 

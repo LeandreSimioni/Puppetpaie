@@ -39,8 +39,8 @@ fn ecrit(eng: &FormeDEngagement, quoi: fn(&engagement::ContratEcrit) -> Option<&
 
 /// La duree de la periode d'essai que la saisie dit, non nulle.
 fn periode_essai(eng: &FormeDEngagement) -> Option<String> {
-    let jours = eng.contrat_ecrit.as_ref().and_then(|c| c.periode_essai_jours).filter(|j| !j.est_nul())?;
-    Some(socle::grandeurs::ecrit::sans_zero::dit(jours))
+    let jours = eng.contrat_ecrit.as_ref().and_then(|c| c.periode_essai_jours).filter(|j| !j.nulle())?;
+    Some(jours.jours_a_ecrire().to_string())
 }
 
 /// Qui le contrat nomme, pour un refus : les parties le posent toujours (`avenant::parties`).

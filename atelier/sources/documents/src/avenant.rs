@@ -500,6 +500,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         Valeur::Montant(m) => socle::texte::euros(*m),
         Valeur::MontantUnitaire(m) => socle::grandeurs::ecrit::sans_zero::dit(*m),
         Valeur::Jours(j) => socle::grandeurs::ecrit::sans_zero::dit(*j),
+        Valeur::Duree(d) => d.jours_a_ecrire().to_string(),
         Valeur::Oui(true) => "True".into(),
         Valeur::Oui(false) => "False".into(),
     };
@@ -520,6 +521,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
                 Valeur::Montant(m) => !m.est_nul(),
                 Valeur::MontantUnitaire(m) => !m.est_nul(),
                 Valeur::Jours(j) => !j.est_nul(),
+                Valeur::Duree(d) => !d.nulle(),
                 Valeur::Texte(s) => !s.is_empty(),
                 Valeur::Nature(_) => true,
             };

@@ -603,10 +603,10 @@ fn delai_de_prevenance(
         };
         if essai < minimum {
             stc.avertissements.push(info(format!(
-                "{} : periode d'essai stipulee de {} jour(s), moins d'une semaine : pas de delai de prevenance (L1221-25), \
+                "{} : periode d'essai stipulee de {}, moins d'une semaine : pas de delai de prevenance (L1221-25), \
                  rien a payer.",
                 qui,
-                socle::grandeurs::ecrit::texte::dit(essai)
+                essai
             )));
             return Ok(());
         }

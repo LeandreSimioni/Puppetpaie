@@ -176,8 +176,8 @@ forme! {
         pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
         pub tranches: Vec<TrancheDeDelai>,
-        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
-        pub cdd_essai_minimum_jours: socle::grandeurs::Jours,
+        #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+        pub cdd_essai_minimum_jours: socle::date::Duree<socle::date::EnJours>,
     }
 }
 

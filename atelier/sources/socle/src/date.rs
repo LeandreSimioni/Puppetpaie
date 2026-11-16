@@ -121,20 +121,58 @@ impl Duree<EnJours> {
         self.0
     }
 
-    /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]`.
+    /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]` ; dans la charge
+    /// d'une route (`forme::lire_saisie`), aussi le nombre qu'une personne a tape, en chiffres seuls (« 30 »).
     pub fn en_jours<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree<EnJours>, D::Error> {
-        <u32 as serde::Deserialize>::deserialize(d).map(Duree::jours)
+        struct Tapee;
+        impl<'de> serde::de::Visitor<'de> for Tapee {
+            type Value = u32;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("un nombre entier de jours")
+            }
+            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<u32, E> {
+                u32::try_from(u).map_err(E::custom)
+            }
+            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<u32, E> {
+                u32::try_from(i).map_err(E::custom)
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u32, E> {
+                crate::num::entier_de_chiffres(s.trim()).and_then(|n| u32::try_from(n).ok()).ok_or_else(|| {
+                    E::custom(format!("{} ne se lit pas : on attend un nombre entier de jours, en chiffres (« 30 »)", crate::fichiers::repr(s)))
+                })
+            }
+        }
+        match crate::forme::en_saisie() {
+            true => d.deserialize_any(Tapee).map(Duree::jours),
+            false => <u32 as serde::Deserialize>::deserialize(d).map(Duree::jours),
+        }
     }
 
     /// `en_jours`, facultatif : `#[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]`.
     pub fn en_jours_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duree<EnJours>>, D::Error> {
-        <Option<u32> as serde::Deserialize>::deserialize(d).map(|n| n.map(Duree::jours))
+        /// Une duree lue par `en_jours`, la ou un champ ne se pose pas (un `Option`).
+        struct Lue(Duree<EnJours>);
+        impl<'de> serde::Deserialize<'de> for Lue {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lue, D::Error> {
+                Duree::en_jours(d).map(Lue)
+            }
+        }
+        <Option<Lue> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
     }
 
     /// Ecrite en son nombre de jours (un champ `…jours` d'un fichier) : `#[serde(serialize_with =
     /// "socle::date::Duree::ecrite_en_jours")]`.
     pub fn ecrite_en_jours<S: serde::Serializer>(d: &Duree<EnJours>, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_u32(d.0)
+    }
+
+    /// `ecrite_en_jours`, facultative (`null` quand elle n'est pas dite) : `#[serde(serialize_with =
+    /// "socle::date::Duree::ecrite_en_jours_opt")]`.
+    pub fn ecrite_en_jours_opt<S: serde::Serializer>(d: &Option<Duree<EnJours>>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            None => s.serialize_none(),
+            Some(d) => s.serialize_some(&d.0),
+        }
     }
 }
 
