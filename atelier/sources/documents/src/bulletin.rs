@@ -931,7 +931,6 @@ pub struct Jeu<'a> {
     /// reserve : il se donne a cote de la paie, qui ne se copie pas sous un autre numero.
     pub numero: Option<&'a NumeroDeBulletin>,
     pub colonnes: Option<&'a [Colonne]>,
-    pub plafond: Decimal,
     pub conges: Option<&'a CompteurConges>,
     pub pas: &'a Versement,
     pub rectificatif: Option<&'a Rectificatif>,
@@ -1229,7 +1228,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             "Plafond Urssaf de la période : {}{}SMIC retenu pour la réduction générale : {}{}Règlement le {} \
              par virement.\n{}, convention collective IDCC {}. Conservez ce bulletin sans limitation \
              de durée.",
-            euros(Montant::du_decimal(j.plafond)),
+            euros(p.plafond_urssaf),
             barre,
             smic_de_la_reduction(p)?,
             barre,
@@ -1375,7 +1374,6 @@ pub fn jeux_et_description(
             paie: p,
             numero: numeros[i].as_ref(),
             colonnes: colonnes_par_salarie.get(cle).map(Vec::as_slice),
-            plafond: p.plafond_urssaf.decimal(),
             conges: p.conges.as_ref(),
             pas,
             rectificatif: rectificatifs.get(&i),

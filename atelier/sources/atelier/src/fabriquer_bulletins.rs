@@ -135,9 +135,11 @@ fn table_boss() -> std::path::PathBuf {
 /// source), sinon la table des parametres du BOSS deposee (`table_boss`), sinon refus -- l'annee manque, on ne
 /// l'invente pas.
 fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
-    let lu = |m: Decimal, h: Decimal| droit::plafond::Pss { mensuel: Montant::du_decimal(m), horaire: socle::grandeurs::MontantUnitaire::du_decimal(h) };
+    // Ses deux valeurs en euros entiers, comme le moteur les lit (`Contexte::plafond_securite_sociale`).
+    let entier = |mensuel: Montant, horaire: socle::grandeurs::MontantUnitaire| droit::plafond::Pss { mensuel: mensuel.partie_entiere(), horaire: horaire.partie_entiere() };
+    let lu = |m: Decimal, h: Decimal| entier(Montant::du_decimal(m), socle::grandeurs::MontantUnitaire::du_decimal(h));
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
-        return Ok(droit::plafond::Pss { mensuel: p.mensuel, horaire: p.horaire });
+        return Ok(entier(p.mensuel, p.horaire));
     }
     let chemin = table_boss();
     let octets = std::fs::read(&chemin).map_err(|e| refus!("{} : {}", chemin.display(), e))?;
