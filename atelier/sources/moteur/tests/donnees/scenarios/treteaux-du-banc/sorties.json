@@ -272,8 +272,12 @@
               "code": "cachet",
               "libelle": "Cachet",
               "unite": "cachet",
-              "quantite": "2",
-              "taux": "150",
+              "paiement": {
+                "cachets": [
+                  "2",
+                  "150"
+                ]
+              },
               "montant": "300",
               "heures_annexes": "24",
               "soumis": true,
@@ -1842,7 +1846,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "41035291e015afd6",
+        "empreinte_saisie": "f8966d1209d11937",
         "versions_portees": []
       }
     },
@@ -2123,8 +2127,12 @@
                   "code": "cachet",
                   "libelle": "Cachet",
                   "unite": "cachet",
-                  "quantite": "2",
-                  "taux": "150",
+                  "paiement": {
+                    "cachets": [
+                      "2",
+                      "150"
+                    ]
+                  },
                   "montant": "300",
                   "heures_annexes": "24",
                   "soumis": true,
