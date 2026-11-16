@@ -43,7 +43,7 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
         let en_clair = mois.libelle(socle::mois::Graphie::Accentuee);
         let t = droit::fiche::TauxAtmp {
             code_risque: Some(code.clone()),
-            valeur: taux.map(droit::fiche::NombreDeFiche::du_taux),
+            valeur: taux.map(socle::forme::NombreEcrit::de_grandeur),
             depuis: Some(janvier),
             provenance: Some(droit::fiche::ProvenanceAtmp::Import),
             notification: None,

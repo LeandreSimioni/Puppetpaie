@@ -619,14 +619,6 @@ pub fn sante_hors_fiche(ent: &ChampsEntreprise) -> R<Option<String>> {
     )))
 }
 
-/// Le compte qu'une case de la fiche dit (le nombre d'enfants), sa partie entiere ; un nombre negatif ne compte rien et
-/// se refuse.
-fn compte_de(m: &crate::fiche::NombreDeFiche) -> R<usize> {
-    use rust_decimal::prelude::ToPrimitive;
-    let d = m.decimal()?;
-    d.trunc().to_usize().ok_or_else(|| socle::echec::refus(socle::num::illisible(&d.to_string())))
-}
-
 /// La complementaire sante d'un permanent, selon SON contrat a lui.
 pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, nat: Option<&Nature>, fin: Option<&Jour>) -> R<Pile> {
     let Some(au_mois) = nat.and_then(|n| n.au_mois()) else {
@@ -721,7 +713,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
         )
     };
     let conjoint = *choix.conjoint.dite().ok_or_else(|| a_dire("conjoint", "si son conjoint est couvert"))?;
-    let enfants = compte_de(choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?)?;
+    let enfants = choix.enfants.dite().ok_or_else(|| a_dire("enfants", "combien d'enfants sont couverts"))?.compte()?;
     let mut total = taux.assure;
     if conjoint {
         total = total + taux.conjoint;
@@ -1255,7 +1247,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // « aucun », ou un taux de zero : la commune de l'etablissement n'en a pas, ou il y emploie moins de onze salaries
     // (CGCT, L. 2333-64, I, l'effectif « employe dans chacune des zones »).
     let vm = e.versement_mobilite.dite();
-    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(crate::fiche::NombreDeFiche::grandeur).transpose()?;
+    let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).map(socle::forme::NombreEcrit::grandeur).transpose()?;
     let aucun = taux_vm.is_some_and(Taux::est_nul);
     if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
         bar.versement_mobilite = None;
@@ -1988,7 +1980,7 @@ mod tests_risques_atmp {
         let s26 = crate::contexte::socle_livre_lu(a26).unwrap().unwrap();
         let ligne = |code: &str, t: Decimal| crate::fiche::TauxAtmp {
             code_risque: Some(CodeRisqueAt::lire(code).unwrap()),
-            valeur: Some(crate::fiche::NombreDeFiche::Flottant(t)),
+            valeur: Some(socle::forme::NombreEcrit::Flottant(t)),
             depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
             ..Default::default()
         };
@@ -1998,7 +1990,7 @@ mod tests_risques_atmp {
         assert!(taux_atmp_de_l_annee(&ligne("921CC", t210), a26, Some(&s26), false).unwrap().is_err());
         assert_eq!(taux_atmp_de_l_annee(&ligne("923AD", t165), a26, Some(&s26), false).unwrap().unwrap().valeur.map(socle::texte::pourcent).as_deref(), Some("1,65 %"));
         assert!(taux_atmp_de_l_annee(&ligne("923AD", t165), a26, Some(&s26), true).unwrap().is_err());
-        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(crate::fiche::NombreDeFiche::Flottant(t165)), ..Default::default() }, a26, Some(&s26), false).is_none());
+        assert!(taux_atmp_de_l_annee(&crate::fiche::TauxAtmp { valeur: Some(socle::forme::NombreEcrit::Flottant(t165)), ..Default::default() }, a26, Some(&s26), false).is_none());
     }
 }
 
@@ -2025,7 +2017,7 @@ pub fn taux_atmp_de_l_annee(dit: &crate::fiche::TauxAtmp, an: Annee, socle_an: O
             an, nom, pourquoi),
         )))
     };
-    let valeur = match dit.valeur.as_ref().map(crate::fiche::NombreDeFiche::grandeur::<Taux>).transpose() {
+    let valeur = match dit.valeur.as_ref().map(socle::forme::NombreEcrit::grandeur::<Taux>).transpose() {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
     };
@@ -2059,7 +2051,7 @@ fn code_risque_valide(code: &str) -> bool {
 /// un taux sans la date a partir de laquelle il vaut (celle de la notification). `None` : rien a redire.
 pub fn taux_atmp_refuse(t: &crate::fiche::TauxAtmp) -> R<Option<String>> {
     let code = t.code_risque.as_ref();
-    let valeur = t.valeur.as_ref().map(crate::fiche::NombreDeFiche::grandeur::<Taux>).transpose()?;
+    let valeur = t.valeur.as_ref().map(socle::forme::NombreEcrit::grandeur::<Taux>).transpose()?;
     Ok(match (code, valeur) {
         (None, Some(_)) => Some("Le taux AT/MP se dit avec son code risque, tel que la notification de la CARSAT les écrit.".to_string()),
         (Some(c), Some(_)) if *c == SANS_NOTIFICATION => Some("Avec 999ZZ (pas encore de notification), la DSN ne déclare aucun taux (norme DSN, S21.G00.40.043) : laissez le taux vide.".to_string()),

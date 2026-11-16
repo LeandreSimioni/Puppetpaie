@@ -30,7 +30,8 @@ use serde::Serialize;
 use crate::enveloppe::Dite;
 use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
-use droit::fiche::{Etablissement, FicheEntrepriseDatee, NombreDeFiche, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
+use droit::fiche::{Etablissement, FicheEntrepriseDatee, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
+use socle::forme::NombreEcrit;
 use socle::date::Jour;
 use socle::mois::Annee;
 use socle::echec::{Classe, R};
@@ -43,9 +44,9 @@ fn socle_de(an: Annee) -> R<Option<droit::forme_bareme::Pile>> {
     droit::contexte::socle_livre_lu(an).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreDeFiche::grandeur`).
+/// Le taux que la ligne `t` de la case dit, lu de son ecriture (`NombreEcrit::grandeur`).
 fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
-    t.valeur.as_ref().map(NombreDeFiche::grandeur::<Taux>).transpose().map_err(|m| m.reclasser(Classe::Illisible))
+    t.valeur.as_ref().map(NombreEcrit::grandeur::<Taux>).transpose().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 // ------------------------------------------------------------------ les sources
@@ -58,7 +59,7 @@ fn taux(t: &TauxAtmp) -> R<Option<Taux>> {
 pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Option<Jour>, source: &str) -> R<Option<String>> {
     let t = TauxAtmp {
         code_risque: Some(n.code_risque.clone()),
-        valeur: Some(NombreDeFiche::Flottant(socle::num::court(n.taux))),
+        valeur: Some(NombreEcrit::Flottant(socle::num::court(n.taux))),
         depuis: Some(n.date_effet),
         provenance: Some(ProvenanceAtmp::Notification),
         notification: Some(NotificationAtmp { le, calcul: n.date_calcul, effet: Some(n.date_effet) }),
@@ -117,7 +118,7 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
         let t = bareme::taux_de_l_arrete(r, neuf, alsace)?;
         Some(TauxAtmp {
             code_risque: Some(code),
-            valeur: Some(NombreDeFiche::Flottant(socle::num::court(t))),
+            valeur: Some(NombreEcrit::Flottant(socle::num::court(t))),
             depuis: Some(match de_l_annee {
                 Some(d) => d.max(depuis),
                 None => depuis,

@@ -15,7 +15,7 @@ use crate::calcul::{ligne_de_reduction, pile_de_la_paie, BaseDeCotisation, Ligne
 use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
 use socle::date::{Jour, Periode};
-use crate::{Avis, Chiffre, Engagement, LignePaie};
+use crate::{Avis, Engagement, LignePaie};
 use socle::echec::{refus, R};
 use socle::grandeurs::{Heures, Montant};
 use socle::num::{court, Decimal};
@@ -68,10 +68,12 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
             ));
         }
     };
-    let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
+    let crate::ligne::PaiementDeLigne::PartDuMois(_, salaire_apres) = ligne.paiement(droit::catalogue::Unite::Mois)? else {
+        return Err(socle::refus!("{} : son salaire mensuel ne se paie pas au mois : le signaler au développeur.", eng.qui()));
+    };
     let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?;
     let avenant = jour_de_l_avenant(eng)?;
-    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
+    let terme = |x: &Option<NombreLu>, cle: &str| x.as_ref().ok_or_else(|| socle::fichiers::absent(cle)).and_then(socle::grandeurs::lu::ecrite::<socle::grandeurs::MontantUnitaire>);
     let (salaire_avant, quotite_avant) = match &eng.avant {
         // Les termes d'avant l'avenant : le salaire, un nombre de la saisie (sa porte) ; la duree, en heures.
         Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, a.quotite_contrat.ok_or_else(|| socle::fichiers::absent("quotite_contrat"))?),
@@ -95,7 +97,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
             quantite: socle::forme::Nombre(q.decimal()),
-            taux: socle::grandeurs::MontantUnitaire::du_decimal(court(salaire)),
+            taux: socle::grandeurs::courte(salaire),
             heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),

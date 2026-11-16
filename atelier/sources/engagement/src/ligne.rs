@@ -34,11 +34,6 @@ pub enum Chiffre {
 }
 
 impl Chiffre {
-    /// Un decimal, en nombre a virgule (`NombreLu::de_decimal`).
-    pub fn de_decimal(x: Decimal) -> Chiffre {
-        Chiffre::Nombre(NombreLu::de_decimal(x))
-    }
-
     /// Un entier, en nombre.
     pub fn entier(n: i64) -> Chiffre {
         Chiffre::Nombre(n.into())
@@ -80,15 +75,6 @@ impl Chiffre {
         match self {
             Chiffre::Nombre(n) => socle::grandeurs::lu::ecrite(n),
             Chiffre::Texte(s) => socle::grandeurs::lu::en_texte(s),
-        }
-    }
-
-    /// Le taux, la quantite ou la quotite qu'il dit, dans sa forme la plus courte (`socle::num::court`) : un nombre, ou
-    /// un nombre ecrit en texte (sans virgule).
-    pub fn court(&self) -> R<Decimal> {
-        match self {
-            Chiffre::Nombre(n) => n.decimal().map(socle::num::court),
-            Chiffre::Texte(s) => socle::num::dec_texte(s).map(socle::num::court).map_err(|_| refus(socle::num::illisible(s))),
         }
     }
 

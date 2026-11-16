@@ -58,7 +58,7 @@ use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
-use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
+use socle::{echec::{refus, Echec, R}, num::Decimal};
 use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant, MontantUnitaire};
 
 #[derive(Debug, Clone)]
@@ -215,7 +215,7 @@ pub struct Assemble {
 fn jours_dits(v: &Option<NombreLu>, nom: &str) -> R<Option<Jours>> {
     match v {
         None => Ok(None),
-        Some(n) => match socle::grandeurs::entiere(Jours::du_decimal(n.decimal()?)) {
+        Some(n) => match socle::grandeurs::entiere(socle::grandeurs::lu::ecrite::<Jours>(n)?) {
             Some(j) => Ok(Some(j)),
             None => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
         },
@@ -433,9 +433,12 @@ impl Engagement {
         let heures = if !autres.est_nul() { Some(courte(autres)) } else { None };
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
-        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?.map(MontantUnitaire::du_decimal);
+        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::grandeur::<MontantUnitaire>).transpose()?.map(courte);
         if let Some(l) = premier_cachet {
-            taux_cachet = Some(MontantUnitaire::du_decimal(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal())));
+            let ligne::PaiementDeLigne::Cachets(_, t) = l.paiement(droit::catalogue::Unite::Cachet)? else {
+                return Err(socle::refus!("la ligne {} compte des cachets sans les payer au cachet : le signaler au développeur", l.rubrique()));
+            };
+            taux_cachet = Some(courte(t));
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
@@ -817,7 +820,7 @@ impl Engagement {
 
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
-        let nombre_f = |x: Option<Heures>| x.map(|x| Heures::du_decimal(court(x.decimal())));
+        let nombre_f = |x: Option<Heures>| x.map(courte);
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -831,7 +834,7 @@ impl Engagement {
             jours: self.jours,
             jours_contrat: self.jours_contrat,
             date_paiement: self.date_paiement.clone(),
-            taux_cachet: self.taux_cachet.map(|t| MontantUnitaire::du_decimal(court(t.decimal()))),
+            taux_cachet: self.taux_cachet.map(courte),
             cachets: self.cachets,
             heures: nombre_f(self.heures),
             lieu: self.lieu.clone(),

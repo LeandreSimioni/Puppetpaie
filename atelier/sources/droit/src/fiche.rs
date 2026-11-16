@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::forme::NombreEcrit;
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -252,101 +252,6 @@ pub fn dit(m: &MotEcrit) -> bool {
         MotEcrit::Mot(t) | MotEcrit::Nombre(t) => !t.is_empty(),
         MotEcrit::OuiNon(b) => *b,
         MotEcrit::Structure => true,
-    }
-}
-
-/// UN NOMBRE D'UNE FICHE (un montant, un taux, une quantite), une ecriture et non une grandeur : un nombre JSON, ou un texte qui se lit en decimal (`12,5` compris), garde tel
-/// qu'il est ecrit (`socle::forme::NombreEcrit`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(from = "socle::forme::NombreEcrit")]
-pub enum NombreDeFiche {
-    Entier(i64),
-    Naturel(u64),
-    /// Un nombre ecrit avec sa virgule, dans sa forme la plus courte (`socle::forme::NombreEcrit::Flottant`).
-    Flottant(Decimal),
-    /// Un texte qui se lit en decimal (`socle::num::decimal_lu`).
-    Texte(String),
-}
-
-impl NombreDeFiche {
-    /// LE TAUX `t` ECRIT DANS UNE CASE DE LA FICHE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans
-    /// sa forme la plus courte (`socle::grandeurs::courte`) ; la porte de la fiche.
-    pub fn du_taux(t: socle::grandeurs::Taux) -> NombreDeFiche {
-        NombreDeFiche::Flottant(socle::grandeurs::courte(t).decimal())
-    }
-
-    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
-    pub fn decimal(&self) -> R<Decimal> {
-        match self {
-            NombreDeFiche::Entier(i) => Ok(Decimal::from(*i)),
-            NombreDeFiche::Naturel(u) => Ok(Decimal::from(*u)),
-            NombreDeFiche::Flottant(x) => Ok(*x),
-            NombreDeFiche::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
-        }
-    }
-
-    /// LA GRANDEUR QU'IL DIT (les jours et les montants de la reprise des conges), lue de son ecriture comme `decimal` :
-    /// la porte de sa lecture. Un texte illisible se refuse.
-    pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
-        let t = self.ecrit();
-        socle::grandeurs::lu::norme(&t).ok_or_else(|| socle::echec::refus(socle::num::illisible(&t)))
-    }
-
-    /// Le decimal, un nombre a virgule dans sa forme la plus courte, son echelle telle qu'elle s'ecrit (`130.0`) ; un texte
-    /// se lit sans virgule.
-    pub fn dec(&self) -> R<Decimal> {
-        match self {
-            NombreDeFiche::Texte(s) => socle::num::dec_texte(s),
-            autre => autre.decimal(),
-        }
-    }
-
-    /// Le taux, la quotite ou le coefficient qu'il dit, dans sa forme la plus courte (`socle::num::court`) ; un texte se
-    /// lit sans virgule.
-    pub fn court(&self) -> R<Decimal> {
-        self.dec().map(socle::num::court)
-    }
-
-    /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
-    /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
-    pub fn entier(&self) -> R<Option<i64>> {
-        match self {
-            NombreDeFiche::Entier(i) => Ok(Some(*i)),
-            NombreDeFiche::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
-            NombreDeFiche::Naturel(_) | NombreDeFiche::Flottant(_) => Ok(None),
-        }
-    }
-
-    /// Tel qu'il est ecrit, pour un message : un texte tel quel, un nombre sous sa forme ecrite.
-    pub fn ecrit(&self) -> String {
-        match self {
-            NombreDeFiche::Entier(i) => i.to_string(),
-            NombreDeFiche::Naturel(u) => u.to_string(),
-            NombreDeFiche::Flottant(x) => x.to_string(),
-            NombreDeFiche::Texte(s) => s.clone(),
-        }
-    }
-}
-
-impl Serialize for NombreDeFiche {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            NombreDeFiche::Entier(i) => s.serialize_i64(*i),
-            NombreDeFiche::Naturel(u) => s.serialize_u64(*u),
-            NombreDeFiche::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
-            NombreDeFiche::Texte(t) => s.serialize_str(t),
-        }
-    }
-}
-
-impl From<socle::forme::NombreEcrit> for NombreDeFiche {
-    fn from(n: socle::forme::NombreEcrit) -> NombreDeFiche {
-        match n {
-            socle::forme::NombreEcrit::Entier(i) => NombreDeFiche::Entier(i),
-            socle::forme::NombreEcrit::Naturel(u) => NombreDeFiche::Naturel(u),
-            socle::forme::NombreEcrit::Flottant(x) => NombreDeFiche::Flottant(x),
-            socle::forme::NombreEcrit::Texte(s) => NombreDeFiche::Texte(s),
-        }
     }
 }
 
@@ -1274,12 +1179,7 @@ impl std::fmt::Display for EchelonCcneac {
 
 impl<'de> Deserialize<'de> for EchelonCcneac {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let ecrit = match socle::forme::NombreEcrit::deserialize(d)? {
-            socle::forme::NombreEcrit::Entier(i) => i.to_string(),
-            socle::forme::NombreEcrit::Naturel(u) => u.to_string(),
-            socle::forme::NombreEcrit::Flottant(x) => x.to_string(),
-            socle::forme::NombreEcrit::Texte(t) => t,
-        };
+        let ecrit = socle::forme::NombreEcrit::deserialize(d)?.ecrit();
         EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
@@ -1699,7 +1599,7 @@ impl FormeDeCase for bool {}
 impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
-impl FormeDeCase for NombreDeFiche {}
+impl FormeDeCase for NombreEcrit {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
 impl FormeDeCase for crate::bareme::CodeRisqueAt {
@@ -2794,19 +2694,19 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: NombreDeFiche }
+    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: NombreEcrit }
 }
 
 cases! {
     /// Les conges a la reprise, lus sur le dernier bulletin de l'ancien logiciel.
     pub struct CongesReprise {
         date: Jour,
-        report: NombreDeFiche,
-        acquis_report: NombreDeFiche,
-        remuneration_report: NombreDeFiche,
-        acquis: NombreDeFiche,
-        pris: NombreDeFiche,
-        remuneration_periode: NombreDeFiche,
+        report: NombreEcrit,
+        acquis_report: NombreEcrit,
+        remuneration_report: NombreEcrit,
+        acquis: NombreEcrit,
+        pris: NombreEcrit,
+        remuneration_periode: NombreEcrit,
     }
 }
 
@@ -2851,7 +2751,7 @@ cases! {
 }
 
 cases! {
-    pub struct TauxPrevoyance { t1_non_cadre: NombreDeFiche, t1_cadre: NombreDeFiche, part_patronale: NombreDeFiche }
+    pub struct TauxPrevoyance { t1_non_cadre: NombreEcrit, t1_cadre: NombreEcrit, part_patronale: NombreEcrit }
 }
 
 cases! {
@@ -2860,12 +2760,12 @@ cases! {
 }
 
 cases! {
-    pub struct SantePermanents { taux_contrat: NombreDeFiche, part_patronale: NombreDeFiche }
+    pub struct SantePermanents { taux_contrat: NombreEcrit, part_patronale: NombreEcrit }
 }
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct AssujettissementALaTaxe { tva: Tva, part_tva: NombreDeFiche, sous_franchise: bool, association_1679a: bool }
+    pub struct AssujettissementALaTaxe { tva: Tva, part_tva: NombreEcrit, sous_franchise: bool, association_1679a: bool }
 }
 
 cases! {
@@ -2887,7 +2787,7 @@ cases! {
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
         CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
-        Valeur(NombreDeFiche) = "valeur" => valeur,
+        Valeur(NombreEcrit) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
         Notification(NotificationAtmp) = "notification" => notification,
@@ -2895,7 +2795,7 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(NombreDeFiche) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(NombreEcrit) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
 }
 
 cases! {
@@ -3180,7 +3080,7 @@ fiche! {
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
         Sens(socle::grandeurs::Signe) = "sens" => sens,
-        HeuresForfait(NombreDeFiche) = "heures_forfait" => heures_forfait,
+        HeuresForfait(NombreEcrit) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(crate::catalogue::DsnTypeDeRubrique) = "dsn_type" => dsn_type,

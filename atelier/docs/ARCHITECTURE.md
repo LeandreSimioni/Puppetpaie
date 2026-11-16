@@ -183,7 +183,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `NombreDeFiche`, `ligne::Chiffre` |
+| nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `ligne::Chiffre` |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
@@ -291,7 +291,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 **Le détail**
 
 - **montant** : une somme en euros, au centime ; aujourd'hui aussi `Decimal` ; le
-  nombre d'une fiche, `droit::fiche::NombreDeFiche`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
+  nombre d'une fiche, `socle::forme::NombreEcrit`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
 - **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le

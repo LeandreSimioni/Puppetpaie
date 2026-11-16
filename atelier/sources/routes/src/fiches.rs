@@ -414,7 +414,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 struct ChargeEffectif {
     #[serde(default)]
     annee: Option<Annee>,
-    valeur: Option<droit::fiche::NombreDeFiche>,
+    valeur: Option<socle::forme::NombreEcrit>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les

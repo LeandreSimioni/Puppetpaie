@@ -550,7 +550,7 @@ minimum de la branche.",
                 pour
             ));
         };
-        let propose = Taux::du_decimal(t1_contrat.court()?);
+        let propose = socle::grandeurs::courte(t1_contrat.grandeur::<Taux>()?);
         if let Some((mini, origine)) = minimum.as_ref().filter(|(mini, _)| propose < *mini) {
             return Err(socle::refus!(
                 "Fiche Entreprise, « Prévoyance des permanents », taux {} : \
@@ -565,7 +565,7 @@ Corriger le contrat, ou revenir au regime conventionnel.",
             ));
         }
         if let Some(p) = part_du_contrat {
-            part_pat = Taux::du_decimal(p.court()?);
+            part_pat = socle::grandeurs::courte(p.grandeur::<Taux>()?);
         }
         propose
     } else {
@@ -616,7 +616,7 @@ convention {}.",
             ));
         };
         let part = match part_du_contrat {
-            Some(p) => Taux::du_decimal(p.court()?),
+            Some(p) => socle::grandeurs::courte(p.grandeur::<Taux>()?),
             None => opt.part_patronale,
         };
         t2 = Some(repartir(propre, part, opt.base.clone(), false));

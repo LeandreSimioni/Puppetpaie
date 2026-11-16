@@ -589,9 +589,9 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
         conges_spectacles: dite(f.conges_spectacles, "conges_spectacles", &faute)?,
         source: dite(f.source, "source", &faute)?,
         sens: dite(f.sens, "sens", &faute)?,
-        // Une case de fiche garde le nombre tel qu'on l'a ecrit (`NombreDeFiche`) : sa grandeur se lit ici, a la porte de
+        // Une case de fiche garde le nombre tel qu'on l'a ecrit (`NombreEcrit`) : sa grandeur se lit ici, a la porte de
         // la fiche.
-        heures_forfait: f.heures_forfait.map(|m| m.court().map(socle::grandeurs::HeuresParUnite::du_decimal)).transpose()?,
+        heures_forfait: f.heures_forfait.map(|m| m.grandeur().map(socle::grandeurs::courte::<socle::grandeurs::HeuresParUnite>)).transpose()?,
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,

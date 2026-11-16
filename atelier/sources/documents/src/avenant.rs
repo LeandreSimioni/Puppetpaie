@@ -495,22 +495,22 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
     let texte = match v {
         Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
-        Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).en_texte(),
+        Valeur::Nombre(n) => n.ecrit(),
         Valeur::Heures(h) => socle::grandeurs::ecrit::sans_zero::dit(*h),
         Valeur::Montant(m) => socle::texte::euros(*m),
         Valeur::Oui(true) => "True".into(),
         Valeur::Oui(false) => "False".into(),
     };
-    // Un montant ou une duree : un nombre, ou un nombre ecrit en texte (la virgule decimale admise).
-    let nombre = || -> R<socle::num::Decimal> {
+    // Un montant : un nombre, ou un nombre ecrit en texte (la virgule decimale admise), lu a sa porte.
+    let montant = || -> R<Montant> {
         match v {
-            Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
-            Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
+            Valeur::Nombre(n) => socle::grandeurs::lu::ecrite(n),
+            Valeur::Texte(s) => socle::grandeurs::lu::texte(s).ok_or_else(|| refus(socle::num::illisible(s))),
             Valeur::Heures(_) | Valeur::Montant(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }
     };
     Ok(match terme {
-        Champ::SalaireMensuel => socle::texte::euros(Montant::du_decimal(nombre()?)),
+        Champ::SalaireMensuel => socle::texte::euros(montant()?),
         Champ::QuotiteContrat | Champ::QuotiteReference => match v {
             Valeur::Heures(h) => format!("{} heures par mois", socle::texte::virgule(*h)),
             _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),

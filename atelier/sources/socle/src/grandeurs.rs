@@ -350,6 +350,12 @@ impl Coefficient {
         Coefficient(self.0.round_dp(4))
     }
 
+    /// A `n` decimales au plus, la moitie au pair : un facteur que la visee d'un montant cherche (`engagement::viser`, a
+    /// vingt decimales ; dit a six). Aucun texte ne fixe cet arrondi : ce n'est pas un calcul de paie.
+    pub fn a_decimales(self, n: u32) -> Coefficient {
+        Coefficient(self.0.round_dp(n))
+    }
+
     /// Ce coefficient ecrit en taux, en pourcent (`0.10` donne `10.00`) : coefficient x 100 = taux.
     pub fn en_taux(self) -> Taux {
         Taux(num::mul(self.0, Decimal::from(100)))
@@ -733,6 +739,39 @@ impl std::ops::Mul<MontantUnitaire> for Coefficient {
     type Output = Montant;
     fn mul(self, u: MontantUnitaire) -> Montant {
         Montant(num::mul(self.0, u.0))
+    }
+}
+
+/// LE NOMBRE ECRIT D'UNE CASE (`forme::NombreEcrit`) : sa grandeur, et la grandeur qu'on y ecrit, a sa porte.
+impl crate::forme::NombreEcrit {
+    /// LA GRANDEUR QU'IL DIT (une case d'une fiche : un taux, des jours, un montant), lue de son ecriture comme une
+    /// rubrique de la norme (`lu::norme`), son echelle gardee : la porte de sa lecture. Un texte illisible se refuse.
+    pub fn grandeur<G: Grandeur>(&self) -> crate::echec::R<G> {
+        let t = self.ecrit();
+        lu::norme(&t).ok_or_else(|| crate::echec::refus(num::illisible(&t)))
+    }
+
+    /// LE COMPTE QU'IL DIT (le nombre d'enfants couverts), sa partie entiere : la porte de sa lecture. Un texte
+    /// illisible ou un nombre negatif ne compte rien et se refuse.
+    pub fn compte(&self) -> crate::echec::R<usize> {
+        use rust_decimal::prelude::ToPrimitive;
+        let t = self.ecrit();
+        let d = num::decimal_lu(&t).ok_or_else(|| crate::echec::refus(num::illisible(&t)))?;
+        d.trunc().to_usize().ok_or_else(|| crate::echec::refus(num::illisible(&t)))
+    }
+
+    /// LA GRANDEUR `g` ECRITE DANS UNE CASE (le taux AT/MP qu'une DSN reprise declare) : un nombre a virgule, dans sa
+    /// forme la plus courte (`courte`) ; la porte de la case.
+    pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreEcrit {
+        crate::forme::NombreEcrit::Flottant(courte(g).en_decimal())
+    }
+}
+
+impl crate::forme::NombreLu {
+    /// LA GRANDEUR `g` ECRITE DANS UNE CASE D'UNE CARTE (un taux de cachet, un salaire mensuel) : un nombre a virgule,
+    /// dans sa forme la plus courte (`courte` : `130` s'ecrit `130.0`) ; la porte de la case.
+    pub fn de_grandeur<G: Grandeur>(g: G) -> crate::forme::NombreLu {
+        crate::forme::NombreLu::de_decimal(g.en_decimal())
     }
 }
 

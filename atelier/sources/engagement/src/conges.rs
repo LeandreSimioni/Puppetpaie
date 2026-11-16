@@ -27,7 +27,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::AuMois;
 use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::mois::Mois;
-use crate::{Avis, Chiffre, LignePaie};
+use crate::{Avis, LignePaie};
 use socle::feries;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
@@ -766,11 +766,11 @@ pub struct Reprise {
 }
 
 /// Le solde repris de l'ancien logiciel, ou `None` (la fiche n'en dit pas, ou ne dit pas sa date). Datee, la reprise dit
-/// chacun de ses nombres (0 s'il n'y en a pas) ; un nombre illisible se refuse (`fiche::NombreDeFiche::grandeur`).
+/// chacun de ses nombres (0 s'il n'y en a pas) ; un nombre illisible se refuse (`socle::forme::NombreEcrit::grandeur`).
 pub(crate) fn reprise_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie) -> R<Option<Reprise>> {
     let Some(r) = reprise_ecrite(ctx, au, cle_salarie)? else { return Ok(None) };
     let Some(date) = r.date.dite().copied() else { return Ok(None) };
-    fn nombre<G: socle::grandeurs::Grandeur>(c: &Option<droit::fiche::NombreDeFiche>, cle: &str, date: &Jour) -> R<G> {
+    fn nombre<G: socle::grandeurs::Grandeur>(c: &Option<socle::forme::NombreEcrit>, cle: &str, date: &Jour) -> R<G> {
         c.dite()
             .ok_or_else(|| {
                 socle::echec::cle(
@@ -1100,11 +1100,11 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les primes
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
-        let montant = Chiffre::Nombre(pr.montant.clone()).court()?;
+        let montant = socle::grandeurs::courte(socle::grandeurs::lu::ecrite::<MontantUnitaire>(&pr.montant)?);
         let Some(rubrique) = pr.rubrique.clone() else {
-            return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(Montant::du_decimal(montant)))));
+            return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
-        lignes.push(LignePaie::composee(rubrique, crate::ligne::QuantiteDeLigne::UNE_FOIS,MontantUnitaire::du_decimal(montant)));
+        lignes.push(LignePaie::composee(rubrique, crate::ligne::QuantiteDeLigne::UNE_FOIS, montant));
     }
 
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
