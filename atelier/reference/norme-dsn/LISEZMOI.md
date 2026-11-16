@@ -208,3 +208,15 @@ retrouve. Seule la mise en forme est ajoutée : les en-têtes de colonnes et la 
 tableau. Où le moteur s'en sert : `logiciel/donnees/permanents-base.json`, les citations des indemnités de fin de contrat
 (code 017, « rupture de période d'essai (on parle délai de prévenance) » ; codes 004 et 006, « vient s'ajouter
 éventuellement à l'indemnité légale »).
+
+## La fiche consigne des intermittents du spectacle (16/11/2026)
+
+**`netentreprises-fiche-intermittents-contrat-remunerations-20251113.pdf`** : la fiche de la base de connaissances
+net-entreprises « Quelles sont les spécificités du contrat et des rémunérations à déclarer en DSN pour les intermittents
+du spectacle ? » (date de modification 13/11/2025), imprimée en PDF et déposée par Léandre le 16/11/2026 ; SHA-256
+`5803efda…59596f3f5d`. Son texte : `netentreprises-fiche-intermittents-contrat-remunerations-20251113.txt`
+(`pdftotext -layout`, sans retouche). Ce qu'elle tranche : les unités du bloc 53 d'un intermittent (« un bloc
+"Activité - S21.G00.53" portant la valeur "12- journée" doit systématiquement être déclaré pour chaque contrat » ; les
+heures en « 35 - heures intermittents du spectacle », « et non pas la conversion en heures des cachets » ; les cachets
+en « 36 », « 37 » ou « 39 »). Où le moteur s'en sert : `logiciel/donnees/contrats-base.json`, les unités d'activité du
+CDDU (12, 37, 35), écrites par `declarations::dsn::mesures_d_activite`.
