@@ -40,12 +40,11 @@ use droit::permanents::MotifDeSuspension;
 use engagement::imprevus::{self, ArretSaisi, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, GenreDImprevu};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, RangDansLeMois, VueDuMois};
-use engagement::Chiffre;
 use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
-use socle::grandeurs::MontantUnitaire;
+use socle::grandeurs::{Jours, MontantUnitaire};
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -79,7 +78,7 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 const FIN_PRESCRITE: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false };
 const REPRISE: Champ = Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false };
 const MOTIF_REPRISE: Champ = Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true };
-const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), un montant (40.89, en nombre ou en texte « 40.89 ») ; absente, elle ne change pas", avance: false };
+const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), un montant (40.89, en nombre ou tel qu'il est tapé « 40,89 ») ; absente, elle ne change pas", avance: false };
 const IJ_NETTE: Champ = Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false };
 const IJ_BRUTE_MAJOREE: Champ = Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true };
 const IJ_NETTE_MAJOREE: Champ = Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true };
@@ -184,7 +183,7 @@ struct ChargeArretEnregistrer {
     date_accident: Option<Jour>,
     connu: Option<crate::obligations::ConnaissanceDite>,
     contrat: Option<NumeroContrat>,
-    jours_deja_indemnises: Option<u32>,
+    jours_deja_indemnises: Option<Jours>,
     note: Option<String>,
 }
 
@@ -207,18 +206,18 @@ struct ChargeArretReprise {
     motif_reprise: Option<MotifDeReprise>,
 }
 
-/// La charge de `arret-indemnites` : chaque montant, un chiffre saisi (40.89 en nombre, ou « 40.89 » en texte, tel que le
-/// releve l'ecrit ; l'arret le garde au centime, en texte), et les jours deja indemnises ; absent, rien ne change.
+/// La charge de `arret-indemnites` : chaque montant tel qu'il est tape (40.89 en nombre, ou « 40,89 » en texte, tel que
+/// le releve l'ecrit ; l'arret le garde au centime), et les jours deja indemnises ; absent, rien ne change.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {
     salarie: SalarieDesigne,
     dernier_jour: Jour,
-    ij_brute: Option<Chiffre>,
-    ij_nette: Option<Chiffre>,
-    ij_brute_majoree: Option<Chiffre>,
-    ij_nette_majoree: Option<Chiffre>,
-    jours_deja_indemnises: Option<u32>,
+    ij_brute: Option<socle::forme::NombreEcrit>,
+    ij_nette: Option<socle::forme::NombreEcrit>,
+    ij_brute_majoree: Option<socle::forme::NombreEcrit>,
+    ij_nette_majoree: Option<socle::forme::NombreEcrit>,
+    jours_deja_indemnises: Option<Jours>,
 }
 
 pub(crate) use declarations::signalement::NatureSignalement;
@@ -852,11 +851,16 @@ pub(crate) struct ResumeDArret {
     genre: GenreDImprevu,
     premier_jour: Jour,
     dernier_jour: Jour,
-    jours_deja_indemnises: Option<Chiffre>,
-    ij_brute: Option<Chiffre>,
-    ij_nette: Option<Chiffre>,
-    ij_brute_majoree: Option<Chiffre>,
-    ij_nette_majoree: Option<Chiffre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    jours_deja_indemnises: Option<Jours>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_brute: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_nette: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_brute_majoree: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_nette_majoree: Option<MontantUnitaire>,
     origine: Option<droit::maintien::Origine>,
     cachets: Vec<Cachet>,
     prolongations: Vec<Prolongation>,
@@ -949,16 +953,16 @@ struct ValeursDeDepart {
     reprise: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     motif_reprise: Option<MotifDeReprise>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ij_brute: Option<Chiffre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ij_nette: Option<Chiffre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ij_brute_majoree: Option<Chiffre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ij_nette_majoree: Option<Chiffre>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    jours_deja_indemnises: Option<Chiffre>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_brute: Option<MontantUnitaire>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_nette: Option<MontantUnitaire>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_brute_majoree: Option<MontantUnitaire>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    ij_nette_majoree: Option<MontantUnitaire>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    jours_deja_indemnises: Option<Jours>,
 }
 
 /// Les choix d'une case d'un geste qui se choisit dans une liste : le motif d'une reprise (nomenclature du bloc 60).
@@ -1025,16 +1029,14 @@ fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -
 fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bool) -> R<GesteDImprevu> {
     let mut propose = ValeursDeDepart::default();
     let mut dit = None;
-    if !a.ij_brute.as_ref().is_some_and(Chiffre::vrai) {
+    if !a.ij_brute.is_some_and(|x| !x.est_nul()) {
         use engagement::maintien::IjDePrincipe;
         match magasin(engagement::maintien::ij_de_principe(ctx, a))? {
             IjDePrincipe::Calculee(ij) => {
-                // La case proposee : le montant en texte, son echelle gardee.
-                let case = |m: socle::grandeurs::MontantUnitaire| socle::grandeurs::ecrit::texte::texte(m).map(Chiffre::Texte).map_err(socle::echec::refus);
-                propose.ij_brute = Some(case(ij.brute)?);
-                propose.ij_nette = Some(case(ij.nette)?);
-                propose.ij_brute_majoree = ij.majorees.map(|(b, _)| case(b)).transpose()?;
-                propose.ij_nette_majoree = ij.majorees.map(|(_, n)| case(n)).transpose()?;
+                propose.ij_brute = Some(ij.brute);
+                propose.ij_nette = Some(ij.nette);
+                propose.ij_brute_majoree = ij.majorees.map(|(b, _)| b);
+                propose.ij_nette_majoree = ij.majorees.map(|(_, n)| n);
                 dit = Some(ij.phrase);
             }
             IjDePrincipe::AuReleve(phrase) => dit = Some(phrase),
@@ -1048,11 +1050,11 @@ fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bo
     // Des indemnites deja dites se reprennent ; pas encore dites, elles sont a dire.
     let libelle = if a.ij_brute.is_some() { INDEMNITES_DITES } else { INDEMNITES_A_DIRE };
     let valeurs = ValeursDeDepart {
-        ij_brute: a.ij_brute.clone().or(propose.ij_brute),
-        ij_nette: a.ij_nette.clone().or(propose.ij_nette),
-        ij_brute_majoree: a.ij_brute_majoree.clone().or(propose.ij_brute_majoree),
-        ij_nette_majoree: a.ij_nette_majoree.clone().or(propose.ij_nette_majoree),
-        jours_deja_indemnises: a.jours_deja_indemnises.clone(),
+        ij_brute: a.ij_brute.or(propose.ij_brute),
+        ij_nette: a.ij_nette.or(propose.ij_nette),
+        ij_brute_majoree: a.ij_brute_majoree.or(propose.ij_brute_majoree),
+        ij_nette_majoree: a.ij_nette_majoree.or(propose.ij_nette_majoree),
+        jours_deja_indemnises: a.jours_deja_indemnises,
         ..ValeursDeDepart::default()
     };
     let mut phrases = vec![crate::ouverture::aide("indemnites_journalieres")?.to_string()];
@@ -1440,13 +1442,14 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if [&c.ij_brute, &c.ij_nette, &c.ij_brute_majoree, &c.ij_nette_majoree].iter().all(|v| v.is_none()) && c.jours_deja_indemnises.is_none() {
         return Err(refus("Dire les indemnités journalières (brute et nette, par jour) ou les jours déjà indemnisés : rien n'est changé."));
     }
-    let montant = |k: &str, t: &Option<Chiffre>| -> R<Option<Chiffre>> {
+    // Chaque montant tape se convertit une fois (`NombreEcrit::en`), et l'arret le garde au centime.
+    let montant = |k: &str, t: &Option<socle::forme::NombreEcrit>| -> R<Option<MontantUnitaire>> {
         let Some(t) = t else { return Ok(None) };
-        let x: MontantUnitaire = t.grandeur().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
+        let x: MontantUnitaire = t.en(&format!("Indemnité journalière ({})", k)).map_err(|e| e.reclasser(Classe::Refuse))?;
         if x <= MontantUnitaire::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
-        Ok(Some(Chiffre::Texte(x.au_centime().decimal().to_string())))
+        Ok(Some(x.au_centime()))
     };
     if let Some(x) = montant("ij_brute", &c.ij_brute)? {
         a.ij_brute = Some(x);
@@ -1460,14 +1463,25 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if let Some(x) = montant("ij_nette_majoree", &c.ij_nette_majoree)? {
         a.ij_nette_majoree = Some(x);
     }
-    if let Some(j) = c.jours_deja_indemnises {
-        a.jours_deja_indemnises = Some(Chiffre::entier(i64::from(j)));
+    if let Some(j) = jours_entiers(c.jours_deja_indemnises)? {
+        a.jours_deja_indemnises = Some(j);
     }
     let nouveau = Imprevu::Arret(a.clone());
     imprevus::verifier(&nouveau).map_err(|e| e.reclasser(Classe::Refuse))?;
     liste[i] = nouveau;
     ecrire(ctx, &dernier, liste)?;
     reponse_arret(ctx, &a, "Indemnités journalières notées.")
+}
+
+/// Les jours deja indemnises qu'une charge dit : un nombre entier de jours, positif ; un autre se refuse.
+fn jours_entiers(j: Option<Jours>) -> R<Option<Jours>> {
+    match j {
+        None => Ok(None),
+        Some(j) => match socle::grandeurs::entiere(j).filter(|j| *j >= Jours::ZERO) {
+            Some(j) => Ok(Some(j)),
+            None => Err(refus(format!("Les jours déjà indemnisés se comptent en nombre entier, positif ({} lu) : rien n'est écrit.", socle::texte::virgule(j)))),
+        },
+    }
 }
 
 /// Le contrat qu'un imprevu suspend, lu dans la saisie qui le porte ; `None` s'il n'y est plus.
@@ -1775,7 +1789,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
         debut: c.debut,
         fin: c.fin,
         date_accident: c.date_accident,
-        jours_deja_indemnises: c.jours_deja_indemnises,
+        jours_deja_indemnises: jours_entiers(c.jours_deja_indemnises)?,
         note: c.note.clone(),
     });
     // Les jours deja indemnises (D1226-4) ne se disent que pour un arret qui ouvre le maintien de salaire.

@@ -16,89 +16,13 @@ use std::collections::BTreeMap;
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{CodeDeRubrique, Unite};
 use serde::{Deserialize, Serialize};
-use socle::forme::{Nombre, NombreLu};
+use socle::forme::Nombre;
 
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::grandeurs::{courte, sans_zero, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
-
-/// UN NOMBRE TEL QU'IL EST SAISI : un nombre, ou un nombre ecrit en texte. La page envoie `""` pour une case vide ; la
-/// forme canonique ecrit ses nombres en texte (`ContratEcrit`) ; un flottant garde son ecriture (`130.0`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Chiffre {
-    Nombre(NombreLu),
-    Texte(String),
-}
-
-impl Chiffre {
-    /// Un entier, en nombre.
-    pub fn entier(n: i64) -> Chiffre {
-        Chiffre::Nombre(n.into())
-    }
-
-    /// Une case vide : un texte blanc.
-    pub fn vide(&self) -> bool {
-        matches!(self, Chiffre::Texte(s) if s.trim().is_empty())
-    }
-
-    /// Ni zero, ni un texte vide.
-    pub fn vrai(&self) -> bool {
-        match self {
-            Chiffre::Nombre(n) => !n.est_nul(),
-            Chiffre::Texte(s) => !s.is_empty(),
-        }
-    }
-
-    /// Le decimal : un entier tel quel, un nombre a virgule par sa forme la plus courte, un texte lu.
-    pub fn dec(&self) -> R<Decimal> {
-        match self {
-            Chiffre::Nombre(n) => n.decimal(),
-            Chiffre::Texte(s) => socle::num::dec_texte(s),
-        }
-    }
-
-    /// Le decimal dont un nombre a virgule garde son echelle (`130.0`, sa forme ecrite) : la lecture d'un nombre d'une
-    /// chaine encore en decimal (le maintien de salaire) ; une grandeur se lit par `grandeur`.
-    pub fn dec_avec_echelle(&self) -> R<Decimal> {
-        match self {
-            Chiffre::Nombre(n) => n.decimal_avec_echelle(),
-            Chiffre::Texte(s) => socle::num::dec_texte(s),
-        }
-    }
-
-    /// LA GRANDEUR QU'IL DIT, son echelle gardee : un nombre comme une donnee l'ecrit (`socle::grandeurs::lu::ecrite`), un
-    /// texte comme un nombre ecrit en texte (`lu::en_texte`) ; la porte de sa lecture.
-    pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
-        match self {
-            Chiffre::Nombre(n) => socle::grandeurs::lu::ecrite(n),
-            Chiffre::Texte(s) => socle::grandeurs::lu::en_texte(s),
-        }
-    }
-
-    /// Le nombre en texte, tel qu'un message le cite : un texte tel quel, un nombre sous sa forme ecrite.
-    pub fn en_texte(&self) -> String {
-        match self {
-            Chiffre::Texte(s) => s.clone(),
-            Chiffre::Nombre(n) => n.ecrit(),
-        }
-    }
-
-    /// Sa forme canonique : un nombre en texte normalise (`socle::num::nombre`), un texte tel quel.
-    pub fn canon(&self) -> R<Chiffre> {
-        Ok(match self {
-            Chiffre::Nombre(_) => Chiffre::Texte(socle::num::nombre(self.dec()?)),
-            Chiffre::Texte(s) => Chiffre::Texte(s.clone()),
-        })
-    }
-}
-
-/// Une case dite et non vide (`Chiffre::vide`).
-pub fn dite(c: &Option<Chiffre>) -> Option<&Chiffre> {
-    c.as_ref().filter(|x| !x.vide())
-}
 
 /// UNE DATE D'UNE LIGNE : le jour nu (`"2026-10-02"`), ou detaille quand il dit ou il se joue
 /// (`{"jour": "2026-10-02", "lieu": "Berlin"}`).

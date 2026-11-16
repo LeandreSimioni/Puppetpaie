@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use socle::forme::NombreLu;
+use socle::grandeurs::{Jours, MontantUnitaire};
 use socle::fichiers::{EmpreinteDeSaisie, NomDeFichier, ValeurLue};
 
 use droit::contexte::{Contexte, IdSalarie};
@@ -67,7 +67,8 @@ impl Dossier {
 #[serde(deny_unknown_fields)]
 pub struct FichierDuMois {
     pub mois: Mois,
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
     pub engagements: Vec<Ecrit>,
 }
 
@@ -577,7 +578,7 @@ impl Objet {
             if v.debut.is_none() {
                 v.debut = crate::debut_brut(&self.brut);
             }
-            v.jours_contrat = Some(NombreLu::from(premiere.jours_du_contrat() as u64));
+            v.jours_contrat = Some(Jours::de_dates(premiere.jours_du_contrat()));
         }
         Ok(Some(v))
     }
@@ -899,7 +900,8 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> Empr
     #[derive(Serialize)]
     struct Tete<'a> {
         mois: &'a Mois,
-        taux_cachet: &'a Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        taux_cachet: &'a Option<MontantUnitaire>,
     }
     let engagements: Vec<Carte> = vue
         .engagements

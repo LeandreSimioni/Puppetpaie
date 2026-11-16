@@ -498,19 +498,16 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         Valeur::Nombre(n) => n.ecrit(),
         Valeur::Heures(h) => socle::grandeurs::ecrit::sans_zero::dit(*h),
         Valeur::Montant(m) => socle::texte::euros(*m),
+        Valeur::MontantUnitaire(m) => socle::grandeurs::ecrit::sans_zero::dit(*m),
+        Valeur::Jours(j) => socle::grandeurs::ecrit::sans_zero::dit(*j),
         Valeur::Oui(true) => "True".into(),
         Valeur::Oui(false) => "False".into(),
     };
-    // Un montant : un nombre, ou un nombre ecrit en texte (la virgule decimale admise), lu a sa porte.
-    let montant = || -> R<Montant> {
-        match v {
-            Valeur::Nombre(n) => socle::grandeurs::lu::ecrite(n),
-            Valeur::Texte(s) => socle::grandeurs::lu::texte(s).ok_or_else(|| refus(socle::num::illisible(s))),
-            Valeur::Heures(_) | Valeur::Montant(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
-        }
-    };
     Ok(match terme {
-        Champ::SalaireMensuel => socle::texte::euros(montant()?),
+        Champ::SalaireMensuel => match v {
+            Valeur::MontantUnitaire(m) => socle::texte::euros(*m),
+            _ => return Err(socle::refus!("{} : un montant est attendu, lu {}", terme.nom(), texte)),
+        },
         Champ::QuotiteContrat | Champ::QuotiteReference => match v {
             Valeur::Heures(h) => format!("{} heures par mois", socle::texte::virgule(*h)),
             _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),
@@ -521,6 +518,8 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
                 Valeur::Nombre(n) => !n.est_nul(),
                 Valeur::Heures(h) => !h.est_nul(),
                 Valeur::Montant(m) => !m.est_nul(),
+                Valeur::MontantUnitaire(m) => !m.est_nul(),
+                Valeur::Jours(j) => !j.est_nul(),
                 Valeur::Texte(s) => !s.is_empty(),
                 Valeur::Nature(_) => true,
             };

@@ -204,8 +204,8 @@ struct ChargeAjuster {
     modifications: Vec<ModificationEnCours>,
     engagement: Identite,
     cible: Cible,
-    #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
-    montant: Montant,
+    /// Le montant vise, tel qu'il est tape (« 1 850,00 € »), ou un nombre.
+    montant: socle::forme::NombreEcrit,
 }
 
 /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
@@ -403,8 +403,8 @@ struct TauxQuiChange {
 #[derive(Debug, Serialize)]
 struct CeQuiChange {
     index: RangDansLeMois,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    salaire_mensuel: Option<Option<socle::forme::NombreLu>>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "salaire_qui_change")]
+    salaire_mensuel: Option<Option<MontantUnitaire>>,
     lignes: Vec<TauxQuiChange>,
 }
 
@@ -467,7 +467,7 @@ dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajust
 /// dernier taux saisi -- `null` quand le dossier n'a encore aucun cachet (R12 :
 /// aucun texte ne fixe un taux de cachet, la compagnie le saisit).
 pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
-    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.map(socle::forme::NombreLu::de_grandeur), ..VueDuMois::vide(mois) })
+    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.map(socle::grandeurs::courte), ..VueDuMois::vide(mois) })
 }
 
 
@@ -494,7 +494,7 @@ fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<MontantUnitaire>> 
             }
         }
     }
-    Ok(data.taux_cachet.as_ref().map(socle::grandeurs::lu::ecrite::<MontantUnitaire>).transpose()?.filter(|t| !t.est_nul()))
+    Ok(data.taux_cachet.filter(|t| !t.est_nul()))
 }
 
 /// Le taux d'une ligne de cachet ; rien pour une autre ligne, ou un cachet sans taux.
@@ -1209,9 +1209,16 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMo
             lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
         }
     }
-    let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(|n| socle::grandeurs::lu::ecrite::<Montant>(n).ok());
-    let change = salaire(avant) != salaire(apres);
-    CeQuiChange { index, salaire_mensuel: change.then(|| apres.salaire_mensuel.clone()), lignes }
+    let change = avant.salaire_mensuel != apres.salaire_mensuel;
+    CeQuiChange { index, salaire_mensuel: change.then_some(apres.salaire_mensuel), lignes }
+}
+
+/// Le salaire du mois qui change, ecrit en nombre (`null` : il n'en dit plus).
+fn salaire_qui_change<S: serde::Serializer>(s: &Option<Option<MontantUnitaire>>, ser: S) -> Result<S::Ok, S::Error> {
+    match s {
+        Some(x) => socle::grandeurs::ecrit::nombre_json::option::serialize(x, ser),
+        None => ser.serialize_none(),
+    }
 }
 
 /// Ce que la phrase du montant vise dit de la cible.
@@ -1226,7 +1233,7 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = c.montant.au_centime();
+    let vise = socle::grandeurs::courte(c.montant.en::<Montant>("Montant visé")?).au_centime();
     if vise <= Montant::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", socle::grandeurs::ecrit::texte::dit(vise))));
     }
@@ -1264,7 +1271,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         })
         .collect();
     if let Some(Some(s)) = &change.salaire_mensuel {
-        faut.push(format!("salaire du mois à {}", socle::texte::euros(socle::grandeurs::lu::ecrite::<Montant>(s)?)));
+        faut.push(format!("salaire du mois à {}", socle::texte::euros(*s)));
     }
     let avec = if faut.is_empty() { String::new() } else { format!(" ; {}", faut.join(", ")) };
     let ecart = atteint - vise;
@@ -1616,7 +1623,8 @@ pub(crate) struct VuePaie {
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
     cachets: Cachets,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
-    taux_cachet: Option<socle::forme::NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    taux_cachet: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     heures: Option<Decimal>,
     faits_avances: Vec<&'static str>,
@@ -1679,11 +1687,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
     }
     let taux_cachet = match premier_cachet {
-        Some(l) => Some(socle::forme::NombreLu::de_grandeur(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?)),
-        None => match &brut.taux_cachet {
-            Some(t) => Some(t.clone()),
-            None => data.taux_cachet.clone(),
-        },
+        Some(l) => Some(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?),
+        None => brut.taux_cachet.or(data.taux_cachet),
     };
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a

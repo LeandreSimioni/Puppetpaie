@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::conges::{avertir, info};
-use crate::Chiffre;
 use droit::arrets::{MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::{MotifDeSuspension, ProprietesDeSuspension};
 use droit::contexte::{Contexte, IdSalarie};
@@ -77,11 +76,16 @@ pub struct ArretSaisi {
     pub reprise: Option<Jour>,
     pub reprise_motif: Option<MotifDeReprise>,
     pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<Chiffre>,
-    pub ij_brute: Option<Chiffre>,
-    pub ij_nette: Option<Chiffre>,
-    pub ij_brute_majoree: Option<Chiffre>,
-    pub ij_nette_majoree: Option<Chiffre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub jours_deja_indemnises: Option<Jours>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_brute: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_nette: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_brute_majoree: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_nette_majoree: Option<MontantUnitaire>,
     pub prolongations: Vec<Prolongation>,
     pub reprises: Vec<RepriseNotee>,
     #[serde(with = "socle::paris::ecrit::saisie")]
@@ -267,9 +271,9 @@ pub fn est_un_arret(imp: &Imprevu) -> bool {
 pub fn verifier(imp: &Imprevu) -> R<()> {
     let Imprevu::Arret(a) = imp else { return Ok(()) };
     for (k, x) in [("ij_brute", &a.ij_brute), ("ij_nette", &a.ij_nette), ("ij_brute_majoree", &a.ij_brute_majoree), ("ij_nette_majoree", &a.ij_nette_majoree)] {
-        if let Some(x) = x.as_ref().filter(|x| x.vrai()) {
-            if x.grandeur::<MontantUnitaire>()? <= MontantUnitaire::ZERO {
-                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()));
+        if let Some(x) = x.filter(|x| !x.est_nul()) {
+            if x <= MontantUnitaire::ZERO {
+                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, dit(x)));
             }
         }
     }

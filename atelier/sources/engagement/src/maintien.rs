@@ -34,7 +34,6 @@
 
 use crate::conges::info;
 use droit::fiche::Lue;
-use crate::Chiffre;
 use crate::imprevus::{ArretSaisi, Imprevu};
 use crate::ligne::{IndemniteJournaliere, LignePaie, Maintien, PaiementDeLigne};
 use crate::Avis;
@@ -62,16 +61,10 @@ pub(crate) const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("m
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 
-/// L'entier d'un nombre saisi (un nombre a virgule tronque) ; refus sinon.
-fn entier(c: &Chiffre) -> R<i64> {
-    match c {
-        Chiffre::Nombre(n) => match n.as_i64() {
-            Some(i) => Ok(i),
-            None => rust_decimal::prelude::ToPrimitive::to_i64(&n.decimal()?.trunc())
-                .ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&n.to_string()))),
-        },
-        Chiffre::Texte(s) => s.trim().parse::<i64>().map_err(|_| socle::refus!("nombre entier illisible : {}", socle::fichiers::repr(s))),
-    }
+/// L'entier de jours saisis (tronques) : le maintien, une chaine encore en entiers, s'y ouvre ; refus hors limites.
+fn entier(j: Jours) -> R<i64> {
+    let d = j.decimal().trunc();
+    rust_decimal::prelude::ToPrimitive::to_i64(&d).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&d.to_string())))
 }
 
 
@@ -205,7 +198,7 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     // Les douze mois qui precedent son premier jour.
     let fenetre = Periode::du_au(premier.avant(DOUZE_MOIS)?, premier.plus_jours(-1)?)?;
-    let saisis = imp.jours_deja_indemnises.as_ref().filter(|x| x.vrai()).into_iter().map(entier).sum::<R<i64>>()?;
+    let saisis = imp.jours_deja_indemnises.filter(|x| !x.est_nul()).into_iter().map(entier).sum::<R<i64>>()?;
     let mut total = saisis;
     let cle = &imp.salarie;
     for autre in crate::imprevus::du_salarie(&ctx.racine, cle)? {
@@ -295,8 +288,9 @@ pub struct AuNet {
 /// du vingt-huitieme jour, `ij_brute_majoree`, `ij_nette_majoree`).
 fn ij_du_jour(imp: &ArretSaisi, majoree: bool) -> R<Option<(Decimal, Decimal)>> {
     let (b, n) = if majoree { (&imp.ij_brute_majoree, &imp.ij_nette_majoree) } else { (&imp.ij_brute, &imp.ij_nette) };
-    match (b.as_ref().filter(|x| x.vrai()), n.as_ref().filter(|y| y.vrai())) {
-        (Some(x), Some(y)) => Ok(Some((x.dec_avec_echelle()?, y.dec_avec_echelle()?))),
+    // Le maintien, une chaine encore en decimal, s'y ouvre.
+    match (b.filter(|x| !x.est_nul()), n.filter(|y| !y.est_nul())) {
+        (Some(x), Some(y)) => Ok(Some((x.decimal(), y.decimal()))),
         _ => Ok(None),
     }
 }
@@ -955,7 +949,7 @@ mod tests {
         let imp: ArretSaisi = socle::forme::lire_texte(r#"{"salarie": "X", "contrat_debut": "2026-01-01", "contrat_numero": null,
             "motif": "01", "dernier_jour_travaille": "2026-03-06", "debut": "2026-03-09", "fin_previsionnelle": "2026-03-20",
             "subrogation": null, "periode_de_subrogation": null, "reprise": null, "reprise_motif": null,
-            "date_accident": null, "jours_deja_indemnises": null, "ij_brute": "40.89", "ij_nette": "38.15", "ij_brute_majoree": null,
+            "date_accident": null, "jours_deja_indemnises": null, "ij_brute": 40.89, "ij_nette": 38.15, "ij_brute_majoree": null,
             "ij_nette_majoree": null, "prolongations": [], "reprises": [], "saisi_le": "2026-03-09 10:00", "qui": "interface", "note": ""}"#,
             crate::imprevus::ILLISIBLE).unwrap();
         let arret = crate::imprevus::absence_d_arret(&imp).unwrap().unwrap();

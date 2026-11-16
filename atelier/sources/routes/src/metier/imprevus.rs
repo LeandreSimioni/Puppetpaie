@@ -6,7 +6,6 @@ use compagnie::{maintenant, INTERFACE};
 use droit::arrets::Bloc60;
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::imprevus::{self, ArretSaisi, Imprevu};
-use engagement::Chiffre;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{Classe, R};
 
@@ -58,7 +57,7 @@ pub(crate) struct ArretDit<'a> {
     pub debut: Jour,
     pub fin: Jour,
     pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<u32>,
+    pub jours_deja_indemnises: Option<socle::grandeurs::Jours>,
     pub note: Option<String>,
 }
 
@@ -78,7 +77,7 @@ pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
         reprise: None,
         reprise_motif: None,
         date_accident: x.date_accident,
-        jours_deja_indemnises: x.jours_deja_indemnises.map(|j| Chiffre::entier(i64::from(j))),
+        jours_deja_indemnises: x.jours_deja_indemnises,
         ij_brute: None,
         ij_nette: None,
         ij_brute_majoree: None,

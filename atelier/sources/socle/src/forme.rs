@@ -815,7 +815,7 @@ impl NombreLu {
     }
 
     /// Le decimal du nombre, son echelle gardee (`130.0`, sa forme ecrite) : un entier tel quel, un nombre a virgule tel
-    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse. Sa grandeur se lit par `grandeurs::lu::ecrite`.
+    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse.
     pub fn decimal_avec_echelle(&self) -> R<crate::num::Decimal> {
         match (self.0.as_i64(), self.0.as_u64()) {
             (None, None) => {
@@ -840,15 +840,6 @@ impl NombreLu {
     /// Le nombre qu'un texte ecrit en JSON (`12`, `1.50`, `1e-5`), exact ; l'erreur dit pourquoi ce n'en est pas un.
     pub fn du_texte(t: &str) -> Result<NombreLu, serde_json::Error> {
         t.parse::<serde_json::Number>().map(NombreLu)
-    }
-
-    /// Un decimal en nombre a virgule : celui que sa forme la plus courte ecrit (`num::court` : `130` s'ecrit `130.0`).
-    pub fn de_decimal(d: crate::num::Decimal) -> NombreLu {
-        let t = crate::num::court(d).to_string();
-        match t.parse::<serde_json::Number>() {
-            Ok(n) => NombreLu(n),
-            Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", t, e),
-        }
     }
 
     pub fn as_i64(&self) -> Option<i64> {

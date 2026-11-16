@@ -12,7 +12,7 @@ use crate::conges::{
 };
 use crate::saisie::Carte;
 use crate::ligne::PaiementDeLigne;
-use crate::{Chiffre, LignePaie};
+use crate::LignePaie;
 use droit::contexte::{aujourdhui, Contexte};
 use droit::natures::{AuMois, MotifDeRupture, Nature};
 use socle::mois::Mois;
@@ -593,7 +593,7 @@ fn delai_de_prevenance(
     // Un CDD : seulement s'il stipule une periode d'essai d'au moins une semaine (L1221-25, renvoi a L1242-10).
     if !nat.duree_indeterminee {
         let minimum = regle.cdd_essai_minimum_jours;
-        let Some(essai) = e.periode_essai_jours.as_ref().map(|n| Chiffre::Nombre(n.clone())) else {
+        let Some(essai) = e.periode_essai_jours else {
             return Err(socle::echec::cle(format!(
                 "{} : fin de periode d'essai a l'initiative de l'employeur (034) d'un contrat a duree determinee : L1221-25 \
                  ne donne un delai de prevenance que si le contrat stipule une periode d'essai d'au moins une semaine. \
@@ -601,12 +601,12 @@ fn delai_de_prevenance(
                 qui
             ), "periode_essai_jours"));
         };
-        if essai.dec_avec_echelle()? < minimum {
+        if essai < minimum {
             stc.avertissements.push(info(format!(
                 "{} : periode d'essai stipulee de {} jour(s), moins d'une semaine : pas de delai de prevenance (L1221-25), \
                  rien a payer.",
                 qui,
-                essai.en_texte()
+                socle::grandeurs::ecrit::texte::dit(essai)
             )));
             return Ok(());
         }

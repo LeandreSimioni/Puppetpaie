@@ -1426,13 +1426,10 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
 /// L. 1242-10 pour un CDD, L. 1221-19 pour un CDI, la convention 3090 art. 7.4 pour un artiste en CDI). Sa categorie se lit
 /// sur la fiche du salarie telle que l'engagement la voit (`fiche_de_l_engagement`).
 fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &ChampsSalarie) -> R<()> {
-    let Some(v) = crate::ligne::dite(&eng.ecrit.periode_essai_jours) else { return Ok(()) };
-    // Une virgule decimale se lit comme un point ; un texte qui n'est pas un nombre se refuse.
-    let lu = match v {
-        crate::Chiffre::Texte(t) => socle::num::decimal_a_virgule(t).ok_or_else(|| refus(socle::num::illisible(t)))?,
-        nombre => nombre.dec()?,
-    };
-    let jours = socle::date::Duree::jours(rust_decimal::prelude::ToPrimitive::to_u32(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?);
+    let Some(v) = eng.ecrit.periode_essai_jours else { return Ok(()) };
+    // Les jours de la periode d'essai, une duree de droit entamee comptee entiere : ils s'ouvrent ici.
+    let lu = v.decimal();
+    let jours =socle::date::Duree::jours(rust_decimal::prelude::ToPrimitive::to_u32(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?);
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
     let plafond = droit::essai::plafond(nat, &eng.contrat(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))

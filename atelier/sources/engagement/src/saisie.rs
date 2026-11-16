@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
 use socle::forme::NombreLu;
-use socle::grandeurs::{Heures, Montant};
+use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -140,7 +140,8 @@ carte! {
         #[champ(Terme, ModaliteTempsTravail)]
         pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
-        pub salaire_mensuel: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub salaire_mensuel: Option<MontantUnitaire>,
         #[champ(Terme, Emploi)]
         pub emploi: Option<String>,
         #[champ(Terme, PcsEse)]
@@ -154,7 +155,8 @@ carte! {
         #[champ(Terme, StatutCategorielRc)]
         pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
         #[champ(Terme, PeriodeEssaiJours)]
-        pub periode_essai_jours: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub periode_essai_jours: Option<Jours>,
         #[champ(Terme, PersonneRemplacee)]
         pub personne_remplacee: Option<String>,
         #[champ(Terme, RepartitionHoraire)]
@@ -173,15 +175,20 @@ carte! {
         #[champ(Fait, DatePaiement)]
         pub date_paiement: Option<Jour>,
         #[champ(Fait, Jours)]
-        pub jours: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub jours: Option<Jours>,
         #[champ(Fait, TauxCachet)]
-        pub taux_cachet: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub taux_cachet: Option<MontantUnitaire>,
         #[champ(Fait, HeuresSupplementaires)]
-        pub heures_supplementaires: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_supplementaires: Option<Heures>,
         #[champ(Fait, HeuresSupplementairesA50)]
-        pub heures_supplementaires_a_50: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_supplementaires_a_50: Option<Heures>,
         #[champ(Fait, HeuresComplementaires)]
-        pub heures_complementaires: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_complementaires: Option<Heures>,
         #[champ(Fait, IndemniteLicenciement)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub indemnite_licenciement: Option<Montant>,
@@ -212,7 +219,8 @@ carte! {
         #[champ(Fin, PrecaritePourquoi)]
         pub precarite_pourquoi: Option<String>,
         #[champ(Deduit, JoursContrat)]
-        pub jours_contrat: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub jours_contrat: Option<Jours>,
         #[champ(Deduit, DateModification)]
         pub date_modification: Option<Jour>,
         #[champ(Deduit, Avant)]
@@ -247,6 +255,12 @@ pub enum Valeur {
     /// Un montant (l'indemnite de licenciement retenue).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Montant(Montant),
+    /// Un montant unitaire (le salaire mensuel, le taux du cachet).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    MontantUnitaire(MontantUnitaire),
+    /// Des jours (la periode d'essai, les jours du mois).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Jours(Jours),
     Oui(bool),
 }
 
@@ -334,6 +348,18 @@ impl Simple for Heures {
 impl Simple for Montant {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Montant(*self))
+    }
+}
+
+impl Simple for MontantUnitaire {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::MontantUnitaire(*self))
+    }
+}
+
+impl Simple for Jours {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Jours(*self))
     }
 }
 
@@ -476,7 +502,8 @@ impl CongePris {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prime {
-    pub montant: NombreLu,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub montant: Montant,
     /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: Option<String>,
@@ -497,7 +524,8 @@ pub struct Preavis {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Avant {
-    pub salaire_mensuel: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub salaire_mensuel: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub quotite_contrat: Option<Heures>,
 }
@@ -516,7 +544,8 @@ pub struct Validee {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CeQueLeMoisDit {
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
 }
 
 /// LE MOIS DE L'ECRAN (`stock::vue_du_mois`) : le mois, le cachet qu'il dit par defaut, et la vue de chaque engagement qui
@@ -525,7 +554,8 @@ pub struct CeQueLeMoisDit {
 #[serde(deny_unknown_fields)]
 pub struct VueDuMois {
     pub mois: socle::mois::Mois,
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
     pub engagements: Vec<Carte>,
 }
 

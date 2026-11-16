@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 use droit::assiette::Assiette;
 use droit::fiche::Lue;
 
-use socle::forme::NombreLu;
 
 use crate::calcul::{ligne_de_reduction, pile_de_la_paie, BaseDeCotisation, LigneCotisation, Paie, ReductionGenerale};
 use droit::reduction::{reduction_au_coefficient, reduction_generale};
@@ -71,10 +70,12 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     };
     let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?;
     let avenant = jour_de_l_avenant(eng)?;
-    let terme = |x: &Option<NombreLu>, cle: &str| x.as_ref().ok_or_else(|| socle::fichiers::absent(cle)).and_then(socle::grandeurs::lu::ecrite::<socle::grandeurs::MontantUnitaire>);
+    fn terme<G: Copy>(x: &Option<G>, cle: &str) -> R<G> {
+        x.ok_or_else(|| socle::fichiers::absent(cle))
+    }
     let (salaire_avant, quotite_avant) = match &eng.avant {
-        // Les termes d'avant l'avenant : le salaire, un nombre de la saisie (sa porte) ; la duree, en heures.
-        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, a.quotite_contrat.ok_or_else(|| socle::fichiers::absent("quotite_contrat"))?),
+        // Les termes d'avant l'avenant : le salaire ; la duree, en heures.
+        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
         None => (salaire_apres, quotite_apres),
     };
     let mois = eng.mois;

@@ -315,7 +315,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 if salaire <= socle::grandeurs::MontantUnitaire::ZERO {
                     return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v.ecrit())));
                 }
-                contrat.salaire_mensuel = Some(socle::forme::NombreLu::de_grandeur(salaire));
+                contrat.salaire_mensuel = Some(socle::grandeurs::courte(salaire));
             }
             Demande::Quotite => {
                 let h = charge.quotite.ok_or_else(manque)?;

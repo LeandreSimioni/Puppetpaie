@@ -47,13 +47,12 @@ use droit::fiche::Lue;
 use std::path::Path;
 use std::sync::Arc;
 
-use socle::forme::NombreLu;
 
 use droit::catalogue::{rubrique, CodeDeRubrique};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
-pub use ligne::{Chiffre, DateDeLigne, LignePaie};
+pub use ligne::{DateDeLigne, LignePaie};
 use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use droit::emplois;
@@ -144,7 +143,8 @@ pub struct Engagement {
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratEcrit {
-    pub periode_essai_jours: Option<Chiffre>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub periode_essai_jours: Option<Jours>,
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
@@ -175,7 +175,8 @@ pub struct Assemble {
     pub fin: Option<Jour>,
     pub numero: Option<numeros::NumeroContrat>,
     pub nature: Option<NatureDeContrat>,
-    pub taux_cachet: Option<Chiffre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub jours: Option<Jours>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
@@ -203,21 +204,21 @@ pub struct Assemble {
     pub date_modification: Option<Jour>,
     pub transaction: Option<droit::preavis::TransactionEnCours>,
     pub avant: Option<saisie::Avant>,
-    pub periode_essai_jours: Option<Chiffre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub periode_essai_jours: Option<Jours>,
     pub personne_remplacee: Option<String>,
     pub repartition_horaire: Option<String>,
     pub clauses_particulieres: Option<String>,
     pub modele_contrat: Option<carte::IdDeModele>,
 }
 
-/// Des jours que la carte dit, en nombre entier (`4`, `4.0`) : la porte de la saisie, ou ils se lisent en leur grandeur.
-/// Un autre nombre se refuse.
-fn jours_dits(v: &Option<NombreLu>, nom: &str) -> R<Option<Jours>> {
+/// Des jours que la carte dit, en nombre entier (`4`, `4.0`). Un autre nombre se refuse.
+fn jours_dits(v: Option<Jours>, nom: &str) -> R<Option<Jours>> {
     match v {
         None => Ok(None),
-        Some(n) => match socle::grandeurs::entiere(socle::grandeurs::lu::ecrite::<Jours>(n)?) {
+        Some(n) => match socle::grandeurs::entiere(n) {
             Some(j) => Ok(Some(j)),
-            None => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
+            None => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, socle::grandeurs::ecrit::texte::dit(n))),
         },
     }
 }
@@ -433,7 +434,7 @@ impl Engagement {
         let heures = if !autres.est_nul() { Some(courte(autres)) } else { None };
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
-        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::grandeur::<MontantUnitaire>).transpose()?.map(courte);
+        let mut taux_cachet = v.taux_cachet.map(courte);
         if let Some(l) = premier_cachet {
             let t = l.taux().and_then(ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::absent("taux"))?;
             taux_cachet = Some(courte(t));
@@ -613,7 +614,7 @@ impl Engagement {
             avant: v.avant.clone(),
             periode: None,
             ecrit: ContratEcrit {
-                periode_essai_jours: v.periode_essai_jours.clone().filter(Chiffre::vrai),
+                periode_essai_jours: v.periode_essai_jours.filter(|j| !j.est_nul()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
                 repartition_horaire: v.repartition_horaire.clone().filter(|t| !t.is_empty()),
                 clauses_particulieres: v.clauses_particulieres.clone().filter(|t| !t.is_empty()),
@@ -861,7 +862,7 @@ impl Engagement {
             contrat_ecrit: if self.ecrit.est_vide() {
                 None
             } else {
-                Some(ContratEcrit { periode_essai_jours: self.ecrit.periode_essai_jours.as_ref().map(Chiffre::canon).transpose()?, ..self.ecrit.clone() })
+                Some(self.ecrit.clone())
             },
             // Ce qui se deduit de l'engagement : sa periode, sa quotite, ses mois.
             periode: self.periode_payee()?,
@@ -967,7 +968,7 @@ pub(crate) fn salarie_nomme(ctx: &Contexte, salarie: Option<&IdSalarie>) -> Stri
 /// (et un CDD son motif). Ce qu'une nature n'a pas n'est rien.
 struct Termes {
     spectacle: Option<IdSpectacle>,
-    taux_cachet: Option<Chiffre>,
+    taux_cachet: Option<MontantUnitaire>,
     quotite_contrat: Option<Heures>,
     quotite_reference: Option<Heures>,
     modalite_temps_travail: Option<ModaliteDuTempsDeTravail>,
@@ -977,14 +978,13 @@ struct Termes {
 }
 
 impl Termes {
-    fn de(v: &carte::CarteValide, cachet_du_mois: &Option<Chiffre>) -> Termes {
-        let n = |x: &NombreLu| Chiffre::Nombre(x.clone());
+    fn de(v: &carte::CarteValide, cachet_du_mois: Option<MontantUnitaire>) -> Termes {
         match v {
             carte::CarteValide::CdduSpectacle(c) => Termes {
                 spectacle: Some(c.spectacle.clone()),
-                taux_cachet: match &c.taux_cachet {
-                    Some(t) => Some(n(t)),
-                    None => cachet_du_mois.clone(),
+                taux_cachet: match c.taux_cachet {
+                    Some(t) => Some(t),
+                    None => cachet_du_mois,
                 },
                 quotite_contrat: None,
                 quotite_reference: None,
@@ -1034,7 +1034,7 @@ pub(crate) fn engagements(
 ) -> R<(Vec<Engagement>, Vec<Vec<Avis>>)> {
     let mois_dit = data.mois;
     // Le taux du mois, s'il en ecrit un ; sinon rien (regle 1).
-    let defaut_taux = data.taux_cachet.clone().map(Chiffre::Nombre);
+    let defaut_taux = data.taux_cachet;
     let (mut out, mut dits) = (Vec::new(), Vec::new());
     for carte in &data.engagements {
         let qui = salarie_nomme(ctx, carte.salarie.as_ref());
@@ -1042,7 +1042,7 @@ pub(crate) fn engagements(
         // sa nature n'a pas (`carte::CarteValide::depuis`). Ce qui depend de la nature se lit de sa variante.
         let valide = carte::CarteValide::depuis(carte, &qui)?;
         let nat = valide.nature().proprietes().map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
-        let termes = Termes::de(&valide, &defaut_taux);
+        let termes = Termes::de(&valide, defaut_taux);
         let tarifee;
         let carte = match if nat.mensuelle() { None } else { lignes_au_tarif(ctx, carte.lignes(), mois_dit)? } {
             Some(lignes) => {
@@ -1134,8 +1134,8 @@ pub(crate) fn engagements(
             fin: carte.fin,
             numero: carte.numero.clone(),
             mois: Some(mois_dit),
-            jours: jours_dits(&carte.jours, "jours")?.or(jours_du_mois),
-            jours_contrat: jours_dits(&carte.jours_contrat, "jours_contrat")?.or(continue_),
+            jours: jours_dits(carte.jours, "jours")?.or(jours_du_mois),
+            jours_contrat: jours_dits(carte.jours_contrat, "jours_contrat")?.or(continue_),
             planning: carte.planning(),
             lignes,
             date_paiement: carte.date_paiement,
@@ -1162,7 +1162,7 @@ pub(crate) fn engagements(
             dernier_jour_paye: carte.dernier_jour_paye,
             date_modification: carte.date_modification,
             avant: carte.avant.clone(),
-            periode_essai_jours: carte.periode_essai_jours.clone().map(Chiffre::Nombre),
+            periode_essai_jours: carte.periode_essai_jours,
             personne_remplacee: termes.personne_remplacee,
             repartition_horaire: termes.repartition_horaire,
             clauses_particulieres: carte.clauses_particulieres.clone(),

@@ -102,10 +102,9 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
         },
         Some(Valeur::Heures(h)) => socle::texte::virgule(*h),
         Some(Valeur::Montant(m)) => euros(*m),
-        Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
-            Some(x) => euros(Montant::du_decimal(x)),
-            None => t.clone(),
-        },
+        Some(Valeur::MontantUnitaire(m)) if en_euros => euros(*m),
+        Some(Valeur::MontantUnitaire(m)) => socle::texte::virgule(*m),
+        Some(Valeur::Jours(j)) => socle::texte::virgule(*j),
         Some(Valeur::Texte(t)) => t.clone(),
         Some(Valeur::Nature(n)) => n.to_string(),
     }

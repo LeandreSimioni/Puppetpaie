@@ -2,8 +2,6 @@
 //! montant donne. La recherche refait le calcul de la saisie pour l'ecran (`pour_l_ecran`) a chaque essai, les salaires
 //! des engagements vises multiplies par un meme facteur ; rien ne s'ecrit.
 
-use socle::forme::NombreLu;
-
 use crate::LignePaie;
 
 use crate::calcul::Paie;
@@ -130,17 +128,16 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDan
     Ok(())
 }
 
-/// Le salaire mensuel de la carte multiplie par `facteur`, au centime, en nombre a virgule (`NombreLu::de_grandeur`).
-fn mis_a_l_echelle(x: &NombreLu, facteur: Coefficient) -> R<NombreLu> {
-    let salaire: Montant = socle::grandeurs::lu::ecrite(x).map_err(RefusVisee::Refus)?;
-    Ok(NombreLu::de_grandeur((salaire * facteur).au_centime()))
+/// Le salaire mensuel de la carte multiplie par `facteur`, au centime, dans sa forme la plus courte.
+fn mis_a_l_echelle(x: MontantUnitaire, facteur: Coefficient) -> MontantUnitaire {
+    socle::grandeurs::courte(x.fois_coefficient(facteur).au_centime())
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
 fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Coefficient) -> R<bool> {
     let mut touche = false;
-    if let Some(s) = &e.salaire_mensuel {
-        e.salaire_mensuel = Some(mis_a_l_echelle(s, facteur)?);
+    if let Some(s) = e.salaire_mensuel {
+        e.salaire_mensuel = Some(mis_a_l_echelle(s, facteur));
         touche = true;
     }
     for l in e.lignes.iter_mut().flatten() {
