@@ -34,7 +34,7 @@ use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::{courte, Coefficient, Heures, Jours, Montant, MontantUnitaire};
-use socle::num::{add, div, mul, Decimal};
+use socle::num::{div, mul, Decimal};
 use droit::conges::{jours_ouvrables, IndemniteDesJours};
 use droit::permanents::{duree_du_conge, jours_acquis, periode_de_reference, plafonner, Acquisition};
 use droit::catalogue::CodeDeRubrique;
@@ -136,13 +136,12 @@ fn duree_legale(nat: &droit::natures::Nature) -> R<Heures> {
 
 /// LES HEURES DE PLUS DE SON CONTRAT d'un salarie au mois, une case de sa carte (`nom`) : la somme de ce qu'elle dit,
 /// aucune si elle ne dit rien. Un nombre d'heures negatif se refuse en la nommant.
-pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<Heures>, nom: &str) -> R<Decimal> {
+pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<Heures>, nom: &str) -> R<Heures> {
     let h: Heures = x.iter().copied().sum();
     if h < Heures::ZERO {
         return Err(socle::refus!("{} : « {} » est négatif ({}) : une heure de plus se compte en positif.", qui(ctx, e), nom, socle::grandeurs::ecrit::texte::dit(h)));
     }
-    // Les heures en plus, une chaine encore en decimal, s'y ouvrent.
-    Ok(h.decimal())
+    Ok(h)
 }
 
 /// Le decimal d'un nombre de la carte, son echelle gardee (`NombreLu::decimal_avec_echelle`) : celui du preavis en
@@ -232,7 +231,7 @@ struct PaieLue {
     avant: Option<Avant>,
     /// Les heures supplementaires payees (`heures_en_plus::HEURE_SUPPLEMENTAIRE`) et le montant net des heures en plus
     /// exonere d'impot (`Assiette::HeuresEnPlusExonere`), s'il y en a un.
-    heures_supplementaires: Decimal,
+    heures_supplementaires: Heures,
     exonere: Option<Montant>,
 }
 
@@ -268,8 +267,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
         None
     };
     let dfs = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
-    let heures_supplementaires =
-        p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).filter_map(|l| l.paiement.quantite()).fold(Decimal::ZERO, |a, q| a + q.decimal());
+    let heures_supplementaires = crate::heures_en_plus::supplementaires_payees(&p.remuneration)?;
     let exonere = p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere).map(|x| x.en_euros(droit::assiette::Assiette::HeuresEnPlusExonere)).transpose()?;
     Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
@@ -866,10 +864,8 @@ pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalari
 
 /// Les heures supplementaires payees au salarie `cle` dans les mois de la meme annee civile, strictement avant `mois` :
 /// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`).
-pub(crate) fn heures_supplementaires_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Decimal> {
-    // Les heures en plus, une chaine encore en decimal (`droit::heures_en_plus::supplementaires`) : zero a deux decimales,
-    // comme un montant.
-    cumul_de_l_annee(ctx, mois, cle, Decimal::new(0, 2), |a, p| add(a, p.heures_supplementaires), "Heures supplémentaires", "Le contingent annuel et ses paliers")
+pub(crate) fn heures_supplementaires_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Heures> {
+    cumul_de_l_annee(ctx, mois, cle, Heures::ZERO, |a, p| a + p.heures_supplementaires, "Heures supplémentaires", "Le contingent annuel et ses paliers")
 }
 
 /// Le montant net des heures en plus deja exonere d'impot pour le salarie `cle` dans l'annee civile, avant `mois` : la

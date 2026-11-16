@@ -759,6 +759,18 @@ impl MontantUnitaire {
         MontantUnitaire(self.0.trunc())
     }
 
+    /// Ce montant d'une unite pour chacune des heures `h` qu'elle compte (le salaire mensuel sur les heures par mois : le
+    /// taux horaire) : montant unitaire / heures = montant unitaire ; `None` quand `h` est nul.
+    pub fn par_heure(self, h: Heures) -> Option<MontantUnitaire> {
+        (!h.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, h.0)))
+    }
+
+    /// A quatre decimales, la moitie au pair : le taux horaire majore d'une heure en plus (`engagement::heures_en_plus` ;
+    /// aucun texte deposé ne dit cet arrondi).
+    pub fn a_quatre_decimales(self) -> MontantUnitaire {
+        MontantUnitaire(self.0.round_dp(4))
+    }
+
     /// Le montant d'une unite reparti sur les jours `j` qu'elle compte (le salaire d'un mois sur ses jours ouvrables :
     /// le salaire d'un jour) : montant unitaire / jours = montant unitaire ; `None` quand `j` est nul.
     pub fn par_jour(self, j: Jours) -> Option<MontantUnitaire> {

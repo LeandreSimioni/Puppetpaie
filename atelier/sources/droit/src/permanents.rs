@@ -13,7 +13,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 /// Les regles livrees des contrats permanents, sous `donnees/`.
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("permanents-base.json");
 use socle::echec::R;
-use socle::grandeurs::{Coefficient, Heures, Jours, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use socle::num::{add, mul, Decimal};
 use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
@@ -343,14 +343,12 @@ forme! {
     }
 }
 
-/// Des heures de la semaine (`None` : les suivantes) a une majoration (en pourcent).
+/// Des heures de la semaine (`None` : les suivantes) a une majoration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PalierHebdomadaire {
-    #[serde(deserialize_with = "socle::forme::decimal_opt")]
-    pub heures: Option<Decimal>,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub majoration: Decimal,
+    pub heures: Option<Heures>,
+    pub majoration: Taux,
 }
 
 /// Une part des heures prevues au contrat (L3123-28, L3123-29).
@@ -371,10 +369,10 @@ impl PartDuContrat {
     }
 
     /// Les heures de cette part d'un contrat de `contrat` heures.
-    pub fn de(self, contrat: socle::num::Decimal) -> socle::num::Decimal {
+    pub fn de(self, contrat: Heures) -> Heures {
         match self {
-            PartDuContrat::Dixieme => contrat / socle::num::Decimal::from(10),
-            PartDuContrat::Tiers => contrat / socle::num::Decimal::from(3),
+            PartDuContrat::Dixieme => contrat.reparties_sur(10),
+            PartDuContrat::Tiers => contrat.reparties_sur(3),
         }
     }
 }
@@ -386,35 +384,31 @@ forme! {
     }
 }
 
-/// Les heures complementaires jusqu'a une part du contrat, a une majoration (en pourcent).
+/// Les heures complementaires jusqu'a une part du contrat, a une majoration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PalierComplementaire {
     pub jusqu_au: PartDuContrat,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub majoration: Decimal,
+    pub majoration: Taux,
 }
 
 forme! {
     pub struct ReductionSalariale {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux_maximum: Decimal,
+        pub taux_maximum: Taux,
     }
 }
 
 forme! {
+    /// Par heure supplementaire.
     pub struct DeductionPatronale {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub moins_de_20_salaries: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub au_moins_20_salaries: Decimal,
+        pub moins_de_20_salaries: MontantUnitaire,
+        pub au_moins_20_salaries: MontantUnitaire,
     }
 }
 
 forme! {
     pub struct ExonerationImpot {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub limite_annuelle: Decimal,
+        pub limite_annuelle: Montant,
     }
 }
 

@@ -17,7 +17,7 @@ use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
 use socle::echec::R;
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Heures, Montant, Taux};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -450,18 +450,18 @@ forme! {
     /// Les heures supplementaires : le contingent annuel, et les paliers annuels de majoration quand la convention les
     /// fixe (au-dela du dernier, `au_dela_du_contingent`).
     pub struct HeuresSupplementaires {
-        pub contingent_annuel: Option<Nombre>,
+        pub contingent_annuel: Option<Heures>,
         pub paliers_annuels: Option<Vec<PalierDHeures>>,
-        pub au_dela_du_contingent: Option<Nombre>,
+        pub au_dela_du_contingent: Option<Taux>,
     }
 }
 
-/// `heures` de plus a `majoration` %.
+/// `heures` de plus a `majoration`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PalierDHeures {
-    pub heures: Nombre,
-    pub majoration: Nombre,
+    pub heures: Heures,
+    pub majoration: Taux,
 }
 
 forme! {

@@ -20,8 +20,8 @@ use droit::forme_bareme::{IdDeCotisation, CSG_CRDS_ND, CSG_DED, MUTUELLE, VIEIL_
 use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
-use socle::num::{court, Decimal};
+use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire, Taux};
+use socle::texte::virgule;
 
 /// Les faits du mois, sur la carte d'un salarie paye au mois.
 pub const HEURES_SUPPLEMENTAIRES: &str = "heures_supplementaires";
@@ -57,34 +57,33 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
 /// comme telle : le taux horaire est le salaire mensuel du contrat sur ses heures par mois ; le BOSS (§ 310) y ajoute les
 /// primes qui sont la contrepartie du travail, que la carte ne distingue pas des autres.
 pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnitaire, quotite: Heures, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
-    let (salaire, quotite) = (salaire.decimal(), quotite.decimal());
     let heures = |x: &Option<Heures>, nom: &str| crate::conges::heures_dites(ctx, e, x, nom);
     let (sup, a_50, comp) = (
         heures(&e.heures_supplementaires, "Heures supplémentaires")?,
         heures(&e.heures_supplementaires_a_50, "Heures supplémentaires à 50 %")?,
         heures(&e.heures_complementaires, "Heures complémentaires")?,
     );
-    if sup.is_zero() && comp.is_zero() && a_50.is_zero() {
+    if sup.est_nul() && comp.est_nul() && a_50.est_nul() {
         return Ok((Vec::new(), Vec::new()));
     }
-    if partiel && !(sup.is_zero() && a_50.is_zero()) {
+    if partiel && !(sup.est_nul() && a_50.est_nul()) {
         return Err(socle::refus!(
             "{} : son contrat est à temps partiel ({} h par mois) ; les heures au-delà de son contrat sont des heures \
              complémentaires (C. trav. L3123-20). Les dire dans « Heures complémentaires ». Rien n'est calculé.",
             qui(ctx, e),
-            socle::texte::nombre_dit(quotite.round_dp(2))
+            virgule(quotite.a_deux_decimales())
         ));
     }
-    if !partiel && !comp.is_zero() {
+    if !partiel && !comp.est_nul() {
         return Err(socle::refus!(
             "{} : son contrat est à temps plein ; les heures au-delà de la durée légale sont des heures supplémentaires (C. trav. \
              L3121-28). Les dire dans « Heures supplémentaires ». Rien n'est calculé.",
             qui(ctx, e)
         ));
     }
-    if quotite.is_zero() {
+    let Some(horaire) = salaire.par_heure(quotite) else {
         return Err(socle::refus!("{} : ses heures par mois sont nulles ; le taux horaire de ses heures en plus ne se calcule pas.", qui(ctx, e)));
-    }
+    };
     let idcc = ctx.entreprise.idcc.dite();
     let (rubrique, reparties) = if partiel {
         (HEURE_COMPLEMENTAIRE, droit::heures_en_plus::complementaires(idcc, comp, quotite)?)
@@ -93,38 +92,53 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: MontantUnit
         let deja = if droit::heures_en_plus::paliers_conventionnels(idcc)? || droit::clauses::releve(idcc)?.is_some_and(|c| c.heures_supplementaires.is_some()) {
             crate::conges::heures_supplementaires_des_mois_anterieurs(ctx, mois, &salarie)?
         } else {
-            Decimal::ZERO
+            Heures::ZERO
         };
         (HEURE_SUPPLEMENTAIRE, droit::heures_en_plus::supplementaires(idcc, sup, a_50, deja)?)
     };
-    let horaire = salaire / quotite;
     let mut out = Vec::new();
     for p in &reparties.paliers {
-        let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
+        // Le taux horaire majore : le taux horaire fois cent pour cent plus la majoration.
+        let taux = horaire.fois_taux(Taux::CENT_POUR_CENT + p.majoration).a_quatre_decimales();
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
             rubrique: rubrique.clone(),
-            paiement: crate::ligne::PaiementDeLigne::Heures(Heures::du_decimal(court(p.heures)), socle::grandeurs::MontantUnitaire::du_decimal(court(taux))),
+            paiement: crate::ligne::PaiementDeLigne::Heures(courte(p.heures), courte(taux)),
             heures: None,
-            precision: Some(format!("majorées de {} %", socle::texte::nombre_dit(p.majoration))),
+            precision: Some(format!("majorées de {} %", virgule(p.majoration))),
             dates: Vec::new(),
         }));
     }
     let mut avis = vec![info(format!(
         "{} : {} heures {} au taux horaire de son contrat ({}, le salaire mensuel sur ses {} h), {}.",
         qui(ctx, e),
-        socle::texte::nombre_dit(reparties.paliers.iter().fold(Decimal::ZERO, |a, p| a + p.heures)),
+        virgule(reparties.paliers.iter().map(|p| p.heures).sum::<Heures>()),
         if partiel { "complémentaires" } else { "supplémentaires" },
-        euros(Montant::du_decimal(horaire)),
-        socle::texte::nombre_dit(quotite.round_dp(2)),
+        euros(horaire),
+        virgule(quotite.a_deux_decimales()),
         reparties
             .paliers
             .iter()
-            .map(|p| format!("{} h majorées de {} %", socle::texte::nombre_dit(p.heures), socle::texte::nombre_dit(p.majoration)))
+            .map(|p| format!("{} h majorées de {} %", virgule(p.heures), virgule(p.majoration)))
             .collect::<Vec<_>>()
             .join(", ")
     ))];
     avis.extend(reparties.avis.into_iter().map(avertir));
     Ok((out, avis))
+}
+
+/// Les heures d'une ligne des heures en plus : leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre
+/// grandeur se refuse.
+fn heures_de(l: &LigneBrut) -> R<Heures> {
+    match l.paiement.quantite() {
+        Some(QuantiteDeLigne::Heures(h)) => Ok(h),
+        _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", l.code)),
+    }
+}
+
+/// LES HEURES SUPPLEMENTAIRES QUE PAIENT les lignes de remuneration `lb` d'une paie (`HEURE_SUPPLEMENTAIRE`) : la
+/// deduction patronale de la paie les compte, et le cumul de l'annee (`conges::heures_supplementaires_des_mois_anterieurs`).
+pub(crate) fn supplementaires_payees(lb: &[LigneBrut]) -> R<Heures> {
+    lb.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))
 }
 
 /// Ce que les heures en plus d'une paie font apres ses cotisations.
@@ -160,21 +174,16 @@ pub(crate) fn apres_les_cotisations(
     if remuneration <= Montant::ZERO || brut <= Montant::ZERO {
         return Ok(None);
     }
-    // Leurs rubriques comptent des heures (`rubriques-base.json`) ; une autre grandeur se refuse.
-    let heures_de = |l: &LigneBrut| match l.paiement.quantite() {
-        Some(QuantiteDeLigne::Heures(h)) => Ok(h),
-        _ => Err(socle::refus!("La ligne {} des heures en plus ne compte pas des heures : le signaler au développeur.", l.code)),
-    };
     let heures = siennes.iter().try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))?;
-    let supplementaires = siennes.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE).try_fold(Heures::ZERO, |a, l| heures_de(l).map(|h| a + h))?;
+    let supplementaires = supplementaires_payees(lb)?;
     let sal = |f: &dyn Fn(&LigneCotisation) -> bool| lignes.iter().filter(|l| f(l)).fold(Montant::ZERO, |a, l| a + l.montant_sal);
     let mut avis = Vec::new();
 
     // La reduction salariale.
     let vieillesse = sal(&|l| l.famille == droit::forme_bareme::FAMILLE_RETRAITE);
-    let taux = Taux::du_decimal(vieillesse.decimal() / brut.decimal() * Decimal::ONE_HUNDRED)
-        .min(Taux::du_decimal(droit::heures_en_plus::taux_maximum_de_reduction()?))
-        .a_deux_decimales();
+    // Le brut n'est pas nul (plus haut).
+    let moyen = vieillesse.rapport(brut).ok_or_else(|| refus("le brut d'une paie aux heures en plus est nul"))?.en_taux();
+    let taux = moyen.min(droit::heures_en_plus::taux_maximum_de_reduction()?).a_deux_decimales();
     let de_base = sal(&|l| l.est(&VIEIL_PLAF) || l.est(&VIEIL_DEPLAF));
     let reduction = remuneration.fois_taux(taux).au_centime().min(de_base).max(Montant::ZERO);
     let genre = if supplementaires.est_nul() { "complémentaires" } else { "supplémentaires" };
@@ -197,7 +206,7 @@ pub(crate) fn apres_les_cotisations(
         let au_moins_20 = ctx.effectif()?.atteint(socle::grandeurs::Effectif::personnes(20), annee).map_err(|e| {
             e.reformuler(|p| format!("La déduction patronale des heures supplémentaires dépend de l'effectif (CSS L241-18, L241-18-1 : moins de vingt salariés ou au moins vingt). {}", p))
         })?;
-        let par_heure = MontantUnitaire::du_decimal(droit::heures_en_plus::deduction_par_heure(au_moins_20)?);
+        let par_heure = droit::heures_en_plus::deduction_par_heure(au_moins_20)?;
         deduction = (supplementaires * par_heure).au_centime().min(tot_pat.max(Montant::ZERO));
         if !deduction.est_nul() {
             out.push(LigneCotisation {
@@ -226,10 +235,10 @@ pub(crate) fn apres_les_cotisations(
         .sum::<R<Taux>>()?;
     let csg_deductible = (remuneration * abattement).fois_taux(taux_csg).au_centime();
     let autres = sal(&|l| !(l.est(&CSG_DED) || l.est(&CSG_CRDS_ND) || l.est(&MUTUELLE)));
-    let leurs_cotisations = Montant::du_decimal(autres.decimal() * remuneration.decimal() / brut.decimal()).au_centime();
+    let leurs_cotisations = autres.prorata(remuneration, brut).au_centime();
     let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(Montant::ZERO)).max(Montant::ZERO);
     let deja = deja()?;
-    let limite = Montant::du_decimal(droit::heures_en_plus::limite_de_l_exoneration()?);
+    let limite = droit::heures_en_plus::limite_de_l_exoneration()?;
     let reste = (limite - deja).max(Montant::ZERO);
     let exonere = net.min(reste);
     if exonere < net {
