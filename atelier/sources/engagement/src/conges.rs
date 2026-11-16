@@ -1131,7 +1131,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             return Err(socle::refus!("{} : prime d'anciennete ({}) -- {}.", qui(ctx, e), pa.article, pa.pourquoi.into_iter().collect::<String>()));
         };
         let pourcentage = pa.pourcentage;
-        let reference = Heures::centiemes(15167);
+        let reference = legale;
         let base = base_conv.prorata(quotite, reference).au_centime();
         let montant = base.fois_taux(pourcentage).au_centime();
         // Une prime se paie en une fois, dans l'unite de sa rubrique.

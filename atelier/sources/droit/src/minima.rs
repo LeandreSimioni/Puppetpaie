@@ -47,6 +47,10 @@ forme_notee! {
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
         pub etendu_le: Option<Jour>,
+        /// Les heures d'un mois a temps plein sur lesquelles ses grilles mensuelles se ramenent a l'heure (2642, 3090,
+        /// 3097) : la duree legale, 35 h par semaine (C. trav. L. 3121-27), 35 x 52 / 12 = 151,67 h, que la grille
+        /// administrative de la 3090 nomme (« pour 151,67 h », KALIARTI000053721751).
+        pub heures_mensuelles: Option<Nombre>,
         /// Les organisations d'employeurs signataires de l'accord, ecrites par leur cle du bareme
         /// (`par_organisation_patronale`) ; le nom que l'accord leur donne est dans sa source.
         pub signataires: Option<Vec<OrganisationPatronale>>,

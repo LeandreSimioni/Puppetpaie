@@ -9,6 +9,7 @@
   "lien": "https://www.legifrance.gouv.fr/conv_coll/id/KALICONT000028157262",
   "en_vigueur": "2025-09-01",
   "etendu": true,
+  "heures_mensuelles": 151.67,
   "annexes": {
    "1": {
     "libelle": "Exploitants de lieux, producteurs ou diffuseurs de spectacles dramatiques, lyriques, chorégraphiques et de musique classique",
@@ -1341,6 +1342,7 @@
   "lien": "https://www.legifrance.gouv.fr/conv_coll/id/KALICONT000018828041",
   "en_vigueur": "2025-07-01",
   "etendu": true,
+  "heures_mensuelles": 151.67,
   "source": {"sources": [
    {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2642", "emetteur": "convention", "article": "KALIARTI000026562986", "citation": "Salaires minimaux bruts mensuels (base 35 heures hebdomadaires) au 1er juillet 2012"},
    {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2642", "emetteur": "convention", "article": "KALIARTI000026562986", "citation": "Délégué général O I 2 930,16"},
@@ -2896,6 +2898,7 @@
   "lien": "https://www.legifrance.gouv.fr/conv_coll/id/KALICONT000028059838",
   "en_vigueur": "2026-05-01",
   "etendu": true,
+  "heures_mensuelles": 151.67,
   "note": "Les techniciens : titre II, annexe I : un salaire minimum HEBDOMADAIRE par fonction, << garanti sur la base de 39 heures : 35 heures au salaire horaire de base et 4 heures majorees de 25 % >> -- 40 heures payees au taux de base. Le taux horaire minimum est donc la semaine / 40, et c'est lui que le moteur compare au taux d'une ligne (montant / heures) : l'hypothese la plus basse, qui ne compte aucune majoration (heures supplementaires, nuit, dimanche, contrats courts -- chapitre VI) comme due. Les grilles de tournage (annexe II, semaines de 5 et 6 jours avec heures d'equivalence) sortent du meme taux horaire. L'annexe III : titre II, annexe III (films a petit budget, SUR DEROGATION de la commission paritaire, prorogee pour cinq ans par l'avenant du 26/03/2025, au 11/04/2025) : au-dela de 850 EUR, le minimum est 850 EUR plus 37 % de la difference entre le salaire de reference (annexe I) et 850 ; en deca, le salaire de reference. Le reste du salaire de reference est un interessement aux recettes, hors paie. Le moteur ne l'applique que si la fiche du spectacle le dit (`derogation_annexe_iii_3097`). Les artistes : titre III, sous-titre I (artistes-interpretes) : l'engagement a la journee est un cachet (chaque salaire journalier correspond a un cachet, 4.4.1) ; a la semaine, 5 ou 6 cachets. Le minimum d'un cachet est celui de la journee si le contrat en compte moins de cinq, sinon le plus bas de la semaine rapporte au cachet (la semaine de 5 jours / 5). Le format du film se lit sur la fiche du spectacle (`format_cinema`) ; sans lui, le court-metrage, le plus bas. Le complement : titre III, sous-titre II (acteurs de complement), annexe III.2 de l'avenant du 01/08/2023 : longs-metrages seulement. Meme regle journee / semaine. Silhouette et doublure : la variante la plus basse (muette, simple) faute de savoir laquelle. Les permanents : titre IV : un salaire mensuel de base par niveau (annexe IV.A) et par emploi repere (IV.B), plus des complements de 3 % (autonomie, technicite, responsabilite) propres a chaque salarie -- le moteur compare au salaire de base, le plus bas. Seuls les metiers qui disent leur emploi repere (`classification_3097.titre_iv`) sont compares. Les realisateurs sont des artistes cadres de l'annexe X ; ils se comparent a la semaine ou a la journee (grilles sans duree), par categorie : `realisateur` (REA016) ou `realisateur_publicite` (REA120). Annexe III si la fiche du spectacle le dit. Ne sont pas compares non plus : les semaines de tournage a heures d'equivalence (annexe II du titre II), qui sortent du meme taux horaire que l'annexe I ; les artistes des films publicitaires, sans grille dans la 3097 ; les repetitions des artistes hors tournage (54,37 EUR le service, `artistes.long`) ; les acteurs de complement d'un court-metrage, sans grille. Releve dans le texte, pas porte dans la table ni compare : le mensuel des realisateurs (contrat d'au moins 5 mois, 8 563,37 EUR ; hors production, << prorata du salaire mensuel >>) : la duree du contrat de production et la nature du contrat ne se lisent pas surement -- un realisateur paye au mois n'est pas compare.",
   "techniciens_semaine_39h": {
    "1er assistant costume cinéma": 1397.66,

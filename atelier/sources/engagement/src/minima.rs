@@ -109,6 +109,12 @@ fn manque(cle: &str) -> Echec {
     socle::echec::livree(&droit::minima::BASE, cle)
 }
 
+/// Les heures du mois a temps plein sur lesquelles les grilles mensuelles de la convention `idcc` se ramenent a l'heure
+/// (`heures_mensuelles` de la table livree).
+fn heures_mensuelles(c: &Convention, idcc: &str) -> R<Decimal> {
+    c.heures_mensuelles.as_ref().map(|h| h.0).ok_or_else(|| manque(&format!("{}.heures_mensuelles", idcc)))
+}
+
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.
 struct Cx<'a> {
     t: &'a Table,
@@ -334,10 +340,11 @@ impl<'a> Cx<'a> {
         let (cddu, permanents) = (c.cddu_semaine_35h.as_ref(), c.permanents_mensuel_35h.as_ref());
         let Some(fonction) = self.fonction(&IDCC_2642, |f| cddu.is_some_and(|m| m.contains_key(f)) || permanents.is_some_and(|m| m.contains_key(f)))? else { return Ok(None) };
         let d = socle::num::dec_texte;
+        let heures_du_mois = heures_mensuelles(c, "2642")?;
         if permanent(self.paie)? {
             let Some(mensuel) = permanents.and_then(|m| m.get(&fonction)) else { return Ok(None) };
             let m = mensuel.0;
-            let h = bas(div(m, d("151.67")?));
+            let h = bas(div(m, heures_du_mois));
             return Ok(plancher(
                 h,
                 format!(
@@ -362,11 +369,11 @@ impl<'a> Cx<'a> {
             Some(j) if j <= Duree::jours(4) => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
             Some(j) if j >= Duree::jours(89) => {
                 let mensuel = mul(semaine, d("3.8")?);
-                let smic = ((socle::grandeurs::Heures::du_decimal(d("151.67")?) * self.paie.smic) * socle::grandeurs::Coefficient::du_decimal(d("1.3")?)).decimal();
+                let smic = ((socle::grandeurs::Heures::du_decimal(heures_du_mois) * self.paie.smic) * socle::grandeurs::Coefficient::du_decimal(d("1.3")?)).decimal();
                 let mensuel = if smic > mensuel { smic } else { mensuel };
-                (div(mensuel, d("151.67")?), "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
+                (div(mensuel, heures_du_mois), "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
             }
-            None => (div(mul(semaine, d("3.8")?), d("151.67")?), "durée du contrat inconnue : la base mensuelle, la plus basse"),
+            None => (div(mul(semaine, d("3.8")?), heures_du_mois),"durée du contrat inconnue : la base mensuelle, la plus basse"),
             Some(_) => (div(semaine, d("35")?), "la semaine de 35 h"),
         };
         Ok(plancher(
@@ -383,7 +390,6 @@ impl<'a> Cx<'a> {
 
     fn plancher_3097(&self, ligne: &LigneBrut) -> R<Option<Plancher>> {
         let c = self.t.convention(&IDCC_3097).ok_or_else(|| manque("3097"))?;
-        let d = socle::num::dec_texte;
         let spec = self.paie.spectacle.as_ref();
         let statut = self.statut();
         let c3097 = self.m.au_catalogue().and_then(|f| f.classification_3097.as_ref());
@@ -398,7 +404,7 @@ impl<'a> Cx<'a> {
                 };
                 let mensuel = pm.niveaux.get(niveau).ok_or_else(|| manque(&format!("3097.permanents_mensuel.niveaux.{}", niveau)))?.0;
                 return Ok(plancher(
-                    bas(div(mensuel, d("151.67")?)),
+                    bas(div(mensuel, heures_mensuelles(c, "3097")?)),
                     format!(
                         "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur 151,67 h",
                         emploi,
@@ -748,7 +754,7 @@ impl<'a> Cx<'a> {
                 (montant, d_ou)
             };
             return Ok(plancher(
-                horaire_du_mensuel(montant, Decimal::new(15167, 2)),
+                horaire_du_mensuel(montant, heures_mensuelles(t3090, "3090")?),
                 format!(
                     "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur 151,67 h",
                     niveau.as_str().replace('_', " "),
