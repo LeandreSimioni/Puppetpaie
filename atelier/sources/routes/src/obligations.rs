@@ -1732,7 +1732,7 @@ mod essais {
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
         let jour = |j| Jour::nouveau(2026, 11, j).unwrap();
-        let a = |j, heure: i64| Moment::a_paris(jour(j), HeureDuJour::lue(heure, 0).unwrap()).unwrap();
+        let a = |j, heure: u32| Moment::a_paris(jour(j), HeureDuJour::a(heure, 0)).unwrap();
         let signalement = |type_declaration: TypeDeLaDeclaration, j, heure| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration),
