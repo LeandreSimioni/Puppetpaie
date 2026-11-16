@@ -991,11 +991,11 @@ pub mod lu {
         format!("{} n'est pas un nombre entier positif : on attend {}", crate::fichiers::repr(ecrit), attendu)
     }
 
-    /// LA LECTURE D'UN NOMBRE ENTIER, JAMAIS NEGATIF (un compte, des jours de droit, une annee) : un nombre entier ; dans
-    /// une saisie (`forme::lire_saisie`, la charge d'une route), aussi le texte qu'une personne a tape, lu par
-    /// `entier_tape`. Un nombre negatif ou a virgule se refuse comme le meme nombre tape. `attendu` : ce que la case
-    /// attend.
-    pub(crate) fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
+    /// LA LECTURE D'UN NOMBRE ENTIER, JAMAIS NEGATIF (un compte, des jours de droit, une annee, l'echelon d'une fiche) :
+    /// dans une saisie (`forme::lire_saisie`, la charge d'une route), le texte qu'une personne a tape et le nombre JSON
+    /// passent par la meme lecture, `entier_tape` (`3.0` vaut 3 comme « 3,0 » ; `1e3` se refuse comme « 1e3 ») ; dans un
+    /// fichier, sa forme stricte : un nombre entier, jamais un texte. `attendu` : ce que la case attend.
+    pub fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
         struct Entier(&'static str);
         impl<'de> serde::de::Visitor<'de> for Entier {
             type Value = u64;
@@ -1009,7 +1009,11 @@ pub mod lu {
                 u64::try_from(i).map_err(|_| E::custom(pas_entier(&i.to_string(), self.0)))
             }
             fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<u64, A::Error> {
-                Err(serde::de::Error::custom(pas_entier(&crate::forme::texte_a_virgule(m)?, self.0)))
+                let ecrit = crate::forme::texte_a_virgule(m)?;
+                match crate::forme::en_saisie() {
+                    true => entier_tape(&ecrit, self.0).map_err(serde::de::Error::custom),
+                    false => Err(serde::de::Error::custom(pas_entier(&ecrit, self.0))),
+                }
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u64, E> {
                 match crate::forme::en_saisie() {

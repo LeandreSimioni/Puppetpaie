@@ -1140,11 +1140,14 @@ notion_lue!(Matricule rangee par tel_quel);
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
-/// (`lire`) et a la saisie (`FormeDeCase::FAUTE`), en une phrase qui dit quoi faire. Il se lit d'un nombre ou d'un texte
-/// de chiffres (la case de la page envoie son texte) ; il s'ecrit en nombre.
+/// (`lire`) et a la saisie (`FormeDeCase::FAUTE`), en une phrase qui dit quoi faire. Une saisie le tape ou l'envoie en
+/// nombre, lu par la lecture du nombre tape ; la fiche l'ecrit en nombre, et l'y relit strictement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct EchelonCcneac(u8);
+
+/// Ce que la case de l'echelon attend.
+const UN_ECHELON: &str = "un échelon, de 1 à 12";
 
 impl EchelonCcneac {
     /// Son rang dans la grille, de 1 a 12.
@@ -1152,13 +1155,18 @@ impl EchelonCcneac {
         usize::from(self.0)
     }
 
-    /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
+    /// L'echelon tape `texte`, ou la phrase qui le refuse : un texte qui ne se lit pas en nombre entier, par sa raison.
     pub fn lire(texte: &str) -> R<EchelonCcneac> {
-        match socle::grandeurs::lu::entier_tape(texte, "un échelon, de 1 à 12").ok().and_then(|n| u8::try_from(n).ok()).filter(|n| (1..=12).contains(n)) {
+        socle::grandeurs::lu::entier_tape(texte, UN_ECHELON).map_err(socle::echec::refus).and_then(EchelonCcneac::de_rang)
+    }
+
+    /// L'echelon de rang `n`, ou la phrase qui le refuse hors de 1 a 12.
+    fn de_rang(n: u64) -> R<EchelonCcneac> {
+        match u8::try_from(n).ok().filter(|n| (1..=12).contains(n)) {
             Some(n) => Ok(EchelonCcneac(n)),
             None => Err(socle::refus!(
                 "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
-                texte
+                n
             )),
         }
     }
@@ -1178,26 +1186,10 @@ impl std::fmt::Display for EchelonCcneac {
     }
 }
 
-/// Un nombre (la fiche l'ecrit ainsi), ou le texte qu'une personne a tape.
+/// Un nombre entier (dans une saisie, aussi le texte qu'une personne a tape, par la meme lecture), de 1 a 12 : sa porte.
 impl<'de> Deserialize<'de> for EchelonCcneac {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        struct Lu;
-        impl<'de> serde::de::Visitor<'de> for Lu {
-            type Value = EchelonCcneac;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("un échelon, de 1 à 12")
-            }
-            fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<EchelonCcneac, E> {
-                EchelonCcneac::lire(&i.to_string()).map_err(|e| E::custom(e.phrase))
-            }
-            fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<EchelonCcneac, E> {
-                EchelonCcneac::lire(&u.to_string()).map_err(|e| E::custom(e.phrase))
-            }
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<EchelonCcneac, E> {
-                EchelonCcneac::lire(s).map_err(|e| E::custom(e.phrase))
-            }
-        }
-        d.deserialize_any(Lu)
+        EchelonCcneac::de_rang(socle::grandeurs::lu::entier(d, UN_ECHELON)?).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
