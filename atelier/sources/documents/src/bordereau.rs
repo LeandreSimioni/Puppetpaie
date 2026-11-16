@@ -395,12 +395,15 @@ pub fn reprise_urssaf(courant: Montant, credit: Montant) -> (AVerser, Montant) {
     (AVerser { montant: v.montant, credit: credit.max(Montant::ZERO) - deduit + v.credit }, deduit)
 }
 
-/// Le credit d'un ordre, dit a l'ecran : combien, ce que la compagnie fait, et le texte qui le dit.
-#[derive(Clone, Debug, PartialEq)]
+/// LE CREDIT D'UN ORDRE DE PAIEMENT (`declarations::dsn::Ordre.credit`), tel que la page le dit : combien, ce que la
+/// compagnie fait, et le texte qui le dit ; les deux montants au centime.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Credit {
     /// Ce que la compagnie a verse en trop et qui n'est pas repris par ce versement.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     pub reste: Montant,
     /// Ce que ce versement reprend deja (l'Urssaf seulement).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     pub deduit: Montant,
     /// Le titre de l'encart (« Trop versé : 65,72 € »).
     pub titre: String,
@@ -415,7 +418,7 @@ const SOURCE_AUTRE: &str = "Cahier technique DSN 2026.1, S21.G00.20.005 : « mon
 
 /// Ce que devient le credit d'un versement : `reste`, le credit que le versement ne reprend pas ; `deduit`, ce qu'il
 /// reprend (l'Urssaf seulement). `None` quand il n'y a rien a dire.
-pub fn credit(dest: Destinataire, _nom: &str, reste: Montant, deduit: Montant) -> Option<Credit> {
+pub fn credit(dest: Destinataire, reste: Montant, deduit: Montant) -> Option<Credit> {
     if reste <= Montant::ZERO && deduit <= Montant::ZERO {
         return None;
     }
@@ -473,7 +476,7 @@ versement ne peut pas être négatif : il est déclaré à zéro, et le crédit 
     };
     // Les guillemets ne se separent pas de ce qu'ils citent en fin de ligne (« échange avec mon Urssaf »).
     let que_faire = que_faire.replace("« ", "«\u{a0}").replace(" »", "\u{a0}»");
-    Some(Credit { reste: reste.max(Montant::ZERO), deduit, titre, que_faire, source })
+    Some(Credit { reste: reste.max(Montant::ZERO).au_centime(), deduit: deduit.au_centime(), titre, que_faire, source })
 }
 
 #[cfg(test)]
@@ -501,7 +504,7 @@ mod tests {
         assert_eq!((v.montant, v.credit, deduit), (d("1600.00"), Montant::ZERO, d("400.00")));
         let (v, deduit) = reprise_urssaf(d("300.00"), d("400.00"));
         assert_eq!((v.montant, v.credit, deduit), (d("0.00"), d("100.00"), d("300.00")));
-        let c = credit(Destinataire::Urssaf, "Urssaf", v.credit, deduit).unwrap();
+        let c = credit(Destinataire::Urssaf, v.credit, deduit).unwrap();
         assert!(c.titre.contains("300,00") && c.titre.contains("100,00"), "le titre dit le deduit et le reste a reclamer : {}", c.titre);
     }
 }

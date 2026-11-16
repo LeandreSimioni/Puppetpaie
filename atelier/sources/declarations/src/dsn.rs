@@ -4334,8 +4334,8 @@ fn citee_par_la_base(a: &Option<IdentifiantDAffiliation>) -> String {
 // ----------------------------------------------------------- la generation
 
 /// UN ORDRE DE PAIEMENT (bloc S21.G00.20) tel que la DSN l'ecrit : a qui (20.001), combien (20.005), pour quelle periode
-/// (20.006, 20.007), pour quand (20.011), et le credit que la somme due laisse (`bordereau::credit`) : ce que la compagnie
-/// a verse en trop et que l'ordre ne reprend pas (`reste`), ce qu'il reprend deja (`deduit`, l'Urssaf seulement).
+/// (20.006, 20.007), pour quand (20.011), et le credit que la somme due laisse (`bordereau::credit` : ce que la compagnie
+/// a verse en trop et que l'ordre ne reprend pas, ce qu'il reprend deja, l'Urssaf seulement ; `None` sans credit).
 #[derive(Clone, Debug)]
 pub struct Ordre {
     pub organisme: IdentifiantDOrganisme,
@@ -4344,8 +4344,7 @@ pub struct Ordre {
     pub periode: Periode,
     pub date_paiement: Option<Jour>,
     pub destinataire: Destinataire,
-    pub reste: Montant,
-    pub deduit: Montant,
+    pub credit: Option<bordereau::Credit>,
 }
 
 /// UN BORDEREAU URSSAF (blocs S21.G00.22 et 23) tel que la DSN l'ecrit : la periode qu'il couvre (22.003, 22.004), son
@@ -5037,8 +5036,7 @@ certificat de conformite du depot precedent.",
             periode: periode_du_mois,
             date_paiement: echeances.get(&siret).copied(),
             destinataire,
-            reste,
-            deduit,
+            credit: bordereau::credit(destinataire, reste, deduit),
         }));
         f.add(droit::rubrique!("S21.G00.20.001"), &siret);
         if let Some(r) = reference_versement(v, &ent) {
@@ -5067,8 +5065,7 @@ certificat de conformite du depot precedent.",
             periode: Periode::du_mois(*mois_o),
             date_paiement: echeances.get(&siret_urssaf).copied(),
             destinataire: Destinataire::Urssaf,
-            reste: Montant::ZERO,
-            deduit: Montant::ZERO,
+            credit: None,
         }));
         f.add(droit::rubrique!("S21.G00.20.001"), &siret_urssaf);
         f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
@@ -5292,8 +5289,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
                     periode: periode_du_mois,
                     date_paiement: echeances.get(&siret).copied(),
                     destinataire: Destinataire::Complementaire,
-                    reste: a.credit,
-                    deduit: Montant::ZERO,
+                    credit: bordereau::credit(Destinataire::Complementaire, a.credit, Montant::ZERO),
                 });
             }
         }
@@ -5306,7 +5302,8 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
     if !dgfip.is_empty() {
         let montant = a_verser_a_la_dgfip(du);
         let reste = if montant.est_nul() { (-du).max(Montant::ZERO) } else { Montant::ZERO };
-        ordres.insert(0, Some(Ordre { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, periode: periode_du_mois, date_paiement: None, destinataire: Destinataire::Dgfip, reste, deduit: Montant::ZERO }));
+        let credit = bordereau::credit(Destinataire::Dgfip, reste, Montant::ZERO);
+        ordres.insert(0, Some(Ordre { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, periode: periode_du_mois, date_paiement: None, destinataire: Destinataire::Dgfip, credit }));
     }
     f.lignes.splice(place_dgfip..place_dgfip, dgfip);
 

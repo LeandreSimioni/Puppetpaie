@@ -145,8 +145,6 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
         } else {
             (None, "date non dite par la DSN".to_string(), SOURCE_AUCUNE)
         };
-        let credit = bordereau::credit(o.destinataire, &organisme, o.reste, o.deduit)
-            .map(|c| CreditEnClair { reste: c.reste.au_centime(), deduit: c.deduit.au_centime(), titre: c.titre, que_faire: c.que_faire, source: c.source });
         out.push(OrdreEnClair {
             organisme,
             identifiant: o.organisme.clone(),
@@ -156,7 +154,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             date,
             quand_dit,
             source,
-            credit,
+            credit: o.credit.clone(),
         });
     }
     Ok(out)
@@ -176,20 +174,9 @@ pub struct OrdreEnClair {
     #[serde(rename = "quand")]
     pub quand_dit: String,
     pub source: &'static str,
-    pub credit: Option<CreditEnClair>,
-}
-
-/// Le trop-verse d'un ordre (`bordereau::credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie en
-/// fait.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CreditEnClair {
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
-    pub reste: Montant,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
-    pub deduit: Montant,
-    pub titre: String,
-    pub que_faire: String,
-    pub source: &'static str,
+    /// Le trop-verse de l'ordre (`dsn::Ordre.credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie
+    /// en fait.
+    pub credit: Option<bordereau::Credit>,
 }
 
 /// Le jour du mois suivant ou l'organisme `identifiant` (S21.G00.20.001) preleve, quand la base livree le dit
