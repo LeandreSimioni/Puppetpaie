@@ -19,7 +19,6 @@ use crate::clauses;
 use socle::date::{Anciennete, Duree, EnJours, EnMois};
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Taux};
-use socle::num::{div, Decimal};
 
 /// Ce qui a cause l'arret, quand c'est une maladie ou un accident : le champ `origine` d'un motif S21.G00.60.001 de
 /// `arrets-base.json` (`crate::arrets`).
@@ -94,13 +93,19 @@ pub enum Droit {
 /// Le pourcentage en fraction : deux tiers exacts pour 66,66 (D1226-1, 2°, « deux tiers ») et 66,66 de la 3090 et de la
 /// 2642 (« 2/3 », « 66,66 % » : le meme deux tiers ecrit au centieme) ; le taux sur cent sinon.
 pub fn fraction(taux: Taux) -> Coefficient {
-    let taux = taux.decimal();
-    Coefficient::du_decimal(if taux == Decimal::new(6666, 2) {
-        div(Decimal::from(2), Decimal::from(3))
+    if taux == DEUX_TIERS_AU_CENTIEME {
+        Coefficient::fraction(2, TROIS)
     } else {
-        div(taux, Decimal::ONE_HUNDRED)
-    })
+        taux.en_coefficient()
+    }
 }
+
+/// Les deux tiers que D1226-1, 2°, et les conventions ecrivent au centieme (« 66,66 % »).
+const DEUX_TIERS_AU_CENTIEME: Taux = Taux::centiemes_de_point(6666);
+/// Le denominateur des deux tiers.
+const TROIS: std::num::NonZeroU32 = std::num::NonZeroU32::new(3).expect("trois n'est pas nul");
+/// Le premier pourcentage de la loi (D1226-1, 1° : « 90 % »), celui des conventions qui ne disent que leurs jours a 90 %.
+const QUATRE_VINGT_DIX: Taux = Taux::points(90);
 
 // ------------------------------------------------------------------ la loi
 
@@ -113,7 +118,7 @@ pub fn legal(nature: &Nature, anciennete: Anciennete, origine: Origine) -> R<Dro
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
     let tranches = crate::permanents::duree_du_maintien(anciennete)?
         .into_iter()
-        .map(|t| Tranche { duree: DureeDUneTranche::Jours(t.jours),taux: Taux::du_decimal(t.taux) })
+        .map(|t| Tranche { duree: DureeDUneTranche::Jours(t.jours), taux: t.taux })
         .collect();
     Ok(Droit::Du(Regime {
         texte: "la loi (L1226-1)".into(),
@@ -141,7 +146,7 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
                 (_, None, Some(j)) => DureeDUneTranche::Jours(j),
                 (_, None, None) => return Err(manque(ou, "jours")),
             };
-            Ok(Tranche { duree, taux: Taux::du_decimal(t.taux.0) })
+            Ok(Tranche { duree, taux: t.taux })
         })
         .collect()
 }
@@ -180,8 +185,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
                 Some(l) => match l.tranches.as_deref() {
                     Some(t) if !t.is_empty() => Ok(tranches(t, &ou)?),
                     _ => Ok(vec![
-                        Tranche { duree: DureeDUneTranche::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: Taux::du_decimal(Decimal::from(90)) },
-                        Tranche { duree: DureeDUneTranche::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: Taux::du_decimal(Decimal::new(6666, 2)) },
+                        Tranche { duree: DureeDUneTranche::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: QUATRE_VINGT_DIX },
+                        Tranche { duree: DureeDUneTranche::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: DEUX_TIERS_AU_CENTIEME },
                     ]),
                 },
             };

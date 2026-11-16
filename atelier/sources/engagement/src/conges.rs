@@ -1075,7 +1075,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         ctx,
         e,
         mois,
-        &crate::imprevus::MoisDuContrat { presence, mois, salaire_du_mois: salaire_du_mois.decimal(), heures_par_jour, jours_payes: part.jours, horaire: &horaire },
+        &crate::imprevus::MoisDuContrat { presence, mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire },
         au,
     )?;
     lignes.extend(l);

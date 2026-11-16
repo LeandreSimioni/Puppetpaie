@@ -49,8 +49,7 @@ use droit::permanents::{Principe, PrincipeAccident};
 use socle::date::{Jour, Periode};
 use socle::echec::R;
 use socle::mois::{Graphie, Mois};
-use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
-use socle::num::{div, mul, Decimal};
+use socle::grandeurs::{nulle, sans_zero, Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
 use droit::catalogue::CodeDeRubrique;
 
 /// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
@@ -164,7 +163,7 @@ pub fn taux_des_jours(r: &Regime, arret: &Periode, deja: Duree<EnJours>) -> R<Ve
         };
         out.push(match tranche {
             Some(k) => dm::fraction(r.tranches[k].taux),
-            None => Coefficient::du_decimal(Decimal::ZERO),
+            None => Coefficient::ZERO,
         });
     }
     Ok(out)
@@ -211,7 +210,7 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
         let Some(r) = dr.regime(t) else { continue };
         let taux = taux_des_jours(r, &arret, deja_indemnises(ctx, &autre, nat, t)?)?;
         for (j, x) in arret.jours().zip(&taux) {
-            if *x > Coefficient::du_decimal(Decimal::ZERO) && fenetre.contient(&j) {
+            if *x > Coefficient::ZERO && fenetre.contient(&j) {
                 total = total.plus(Duree::jours(1));
             }
         }
@@ -251,19 +250,36 @@ pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<P
 #[derive(Debug, Clone)]
 pub struct DuMois {
     /// Le complement de la loi, brut.
-    pub loi: Decimal,
+    pub loi: Montant,
     /// Le complement de la convention en brut (son pourcentage est du brut, sans plafond net a verifier).
-    pub convention_brut: Option<Decimal>,
+    pub convention_brut: Option<Montant>,
     /// La convention garantit un pourcentage du net, ou plafonne au net : le complement se reconstitue (`au_net`).
     pub au_net: Option<AuNet>,
     /// Les indemnites journalieres de la periode subrogee : brutes, nettes, leurs jours, l'assiette du PAS.
-    pub ij_subrogees_brutes: Decimal,
-    pub ij_subrogees_nettes: Decimal,
-    pub ij_subrogees_jours: i64,
-    pub assiette_pas: Decimal,
+    pub ij_subrogees_brutes: Montant,
+    pub ij_subrogees_nettes: Montant,
+    pub ij_subrogees_jours: Jours,
+    pub assiette_pas: Montant,
     /// Les heures d'absence que le maintien couvre (la quantite de sa ligne).
     pub heures: Heures,
     pub avis: Vec<Avis>,
+}
+
+impl DuMois {
+    /// Les sommes d'un mois, a zero avant son premier arret.
+    pub fn vide() -> DuMois {
+        DuMois {
+            loi: nulle(),
+            convention_brut: None,
+            au_net: None,
+            ij_subrogees_brutes: nulle(),
+            ij_subrogees_nettes: nulle(),
+            ij_subrogees_jours: nulle(),
+            assiette_pas: nulle(),
+            heures: Heures::ZERO,
+            avis: Vec::new(),
+        }
+    }
 }
 
 /// Ce qu'il faut pour reconstituer une garantie nette : la part du salaire retiree et son pourcentage, suite par suite
@@ -274,33 +290,37 @@ pub struct AuNet {
     pub texte: String,
     pub net: bool,
     pub plafond_net: bool,
-    pub parts: Vec<(Decimal, Coefficient)>,
-    pub ij_nettes_hors_bulletin: Decimal,
-    pub ij_nettes_hors_garantie: Decimal,
-    pub complement_brut: Decimal,
+    pub parts: Vec<(Montant, Coefficient)>,
+    pub ij_nettes_hors_bulletin: Montant,
+    pub ij_nettes_hors_garantie: Montant,
+    pub complement_brut: Montant,
 }
 
-/// Les indemnites par jour d'un arret, lues sur l'arret (`ij_brute`, `ij_nette`, et pour un accident du travail au-dela
-/// du vingt-huitieme jour, `ij_brute_majoree`, `ij_nette_majoree`).
-fn ij_du_jour(imp: &ArretSaisi, majoree: bool) -> R<Option<(Decimal, Decimal)>> {
+/// Les indemnites d'un jour d'un arret, lues sur l'arret (`ij_brute`, `ij_nette`, et pour un accident du travail au-dela
+/// du vingt-huitieme jour, `ij_brute_majoree`, `ij_nette_majoree`) : un jour a son montant par jour, brut et net.
+fn ij_du_jour(imp: &ArretSaisi, majoree: bool) -> Option<(Montant, Montant)> {
     let (b, n) = if majoree { (&imp.ij_brute_majoree, &imp.ij_nette_majoree) } else { (&imp.ij_brute, &imp.ij_nette) };
-    // Le maintien, une chaine encore en decimal, s'y ouvre.
     match (b.filter(|x| !x.est_nul()), n.filter(|y| !y.est_nul())) {
-        (Some(x), Some(y)) => Ok(Some((x.decimal(), y.decimal()))),
-        _ => Ok(None),
+        (Some(x), Some(y)) => Some((Jours::UN * x, Jours::UN * y)),
+        _ => None,
     }
 }
 
 /// Le premier jour indemnise par la caisse (R323-1 ; L433-1) et le jour ou l'indemnite d'un accident du travail se
-/// majore (R433-3), en rang depuis le premier jour d'absence.
-fn jours_de_la_caisse(origine: Origine) -> R<(i64, Option<i64>)> {
+/// majore (R433-3), en rang depuis le premier jour d'absence, celui-ci etant le premier.
+fn jours_de_la_caisse(origine: Origine) -> R<(Duree<EnJours>, Option<Duree<EnJours>>)> {
     let rg = droit::permanents::regles()?;
     let ij = &rg.indemnites_journalieres;
     Ok(if origine.professionnelle() || origine == Origine::Trajet {
-        (0, Some(ij.majoree_des_le_jour - 1))
+        (Duree::jours(1), Some(ij.majoree_des_le_jour))
     } else {
-        (ij.debut_maladie - 1, None)
+        (ij.debut_maladie, None)
     })
+}
+
+/// Le rang du jour `j` dans l'`arret`, son premier jour etant le premier.
+fn rang(arret: &Periode, j: &Jour) -> Duree<EnJours> {
+    Duree::du_au(&arret.debut(), j)
 }
 
 /// Une suite de jours d'absence du mois au meme pourcentage : sa periode et son pourcentage.
@@ -319,11 +339,10 @@ fn suites(taux: &[Coefficient], arret: &Periode, absence: &Periode) -> R<Vec<(Pe
 }
 
 /// La part du salaire du mois que les jours `absents` retirent : la retenue au reel (`imprevus::lignes_du_mois`).
-fn retenue(m: &crate::imprevus::MoisDuContrat, taux_horaire: Decimal, absents: &Periode) -> R<(Decimal, Heures)> {
+fn retenue(m: &crate::imprevus::MoisDuContrat, taux_horaire: MontantUnitaire, absents: &Periode) -> R<(Montant, Heures)> {
     let jours = droit::periodes::part_du_mois(absents, m.mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours;
     let heures = jours * m.heures_par_jour;
-    // Le taux horaire est encore un decimal : les heures s'y ouvrent.
-    Ok((mul(taux_horaire, heures.decimal()), heures))
+    Ok((heures * taux_horaire, heures))
 }
 
 /// CE QU'UN ARRET DONNE AU MOIS `mois` D'UN PERMANENT, ajoute a `dm` (les arrets du mois s'additionnent). Refuse quand le
@@ -347,11 +366,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     let Some(arret) = crate::imprevus::absence_d_arret(imp)? else { return Ok(()) };
     let Some(absence) = arret.croise(&m.presence) else { return Ok(()) };
     let heures_du_mois = m.jours_payes * m.heures_par_jour;
-    if heures_du_mois <= Heures::ZERO {
-        return Ok(());
-    }
-    // Le salaire du mois est encore un decimal : les heures s'y ouvrent.
-    let taux_horaire = div(m.salaire_du_mois, heures_du_mois.decimal());
+    let Some(taux_horaire) = m.salaire_du_mois.par_heure(heures_du_mois).filter(|_| heures_du_mois > Heures::ZERO) else { return Ok(()) };
     let subroge = imp.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui);
     let regles = droit::permanents::regles()?;
     let rij = &regles.indemnites_journalieres;
@@ -362,34 +377,34 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         Ok(ij) => ij,
         Err(majoree) => return Err(crate::a_finir(refus_des_indemnites(&qui, mois, &arret, majoree))),
     };
-    let ij_de = |p: &Periode| -> (Decimal, Decimal) {
-        let (mut sb, mut sn) = (Decimal::ZERO, Decimal::ZERO);
+    let ij_de = |p: &Periode| -> (Montant, Montant) {
+        let (mut sb, mut sn) = (nulle::<Montant>(), nulle::<Montant>());
         for (j, v) in arret.jours().zip(&ij) {
             if let (true, Some((x, y))) = (p.contient(&j), v) {
-                sb += x;
-                sn += y;
+                sb += *x;
+                sn += *y;
             }
         }
         (sb, sn)
     };
 
     // La subrogation : les indemnites des jours qu'elle couvre passent par le bulletin.
-    let (mut sb, mut sn) = (Decimal::ZERO, Decimal::ZERO);
+    let (mut sb, mut sn) = (nulle::<Montant>(), nulle::<Montant>());
     if subroge {
         if let Some(sub) = &imp.periode_de_subrogation {
-            for (i, j) in (0..).zip(arret.jours()) {
+            for (j, v) in arret.jours().zip(&ij) {
                 if !sub.contient(&j) {
                     continue;
                 }
-                if let Some((x, y)) = ij[i as usize] {
+                if let Some((x, y)) = *v {
                     sb += x;
                     sn += y;
-                    out.ij_subrogees_jours += 1;
-                    let imposable = mul(x, Decimal::ONE - div(csg_ded, Decimal::ONE_HUNDRED));
+                    out.ij_subrogees_jours += Jours::UN;
+                    let imposable = x * (Coefficient::UN - csg_ded.en_coefficient());
                     out.assiette_pas += match dr.origine {
-                        Origine::Maladie if i < pas_jours => imposable,
-                        Origine::Maladie => Decimal::ZERO,
-                        _ => div(mul(imposable, pas_accident), Decimal::ONE_HUNDRED),
+                        Origine::Maladie if rang(&arret, &j) <= pas_jours => imposable,
+                        Origine::Maladie => nulle(),
+                        _ => imposable.fois_taux(pas_accident),
                     };
                 }
             }
@@ -405,25 +420,25 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         let Some(r) = dr.regime(t) else { continue };
         let deja = deja_indemnises(ctx, imp, nat, t)?;
         let taux = taux_des_jours(r, &arret, deja)?;
-        let (mut complement, mut garantie, mut deduit) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+        let (mut complement, mut garantie, mut deduit) = (nulle::<Montant>(), nulle::<Montant>(), nulle::<Montant>());
         let mut parts = Vec::new();
-        let mut hors_garantie = Decimal::ZERO;
+        let mut hors_garantie = nulle::<Montant>();
         let mut heures = Heures::ZERO;
         for (s, f) in suites(&taux, &arret, &absence)? {
             let (x, h) = retenue(m, taux_horaire, &s)?;
             let (ib, inet) = ij_de(&s);
             parts.push((x, f));
-            if f > Coefficient::du_decimal(Decimal::ZERO) {
-                let gs = (Montant::du_decimal(x) * f).decimal();
+            if f > Coefficient::ZERO {
+                let gs = x * f;
                 garantie += gs;
                 deduit += ib;
-                complement += (gs - ib).max(Decimal::ZERO);
+                complement += (gs - ib).max(nulle());
                 heures += h;
             } else {
                 hors_garantie += inet;
             }
         }
-        let complement = Montant::du_decimal(complement).au_centime().decimal();
+        let complement = complement.au_centime();
         heures_max = heures_max.max(heures);
         let deja_dit = match deja {
             d if d.nulle() => String::new(),
@@ -437,8 +452,8 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                 "{}{} — garantie ce mois {}, moins {} d'indemnités journalières",
                 dm::phrase(r),
                 deja_dit,
-                socle::texte::euros(Montant::du_decimal(garantie)),
-                socle::texte::euros(Montant::du_decimal(deduit))
+                socle::texte::euros(garantie),
+                socle::texte::euros(deduit)
             )
         });
         match t {
@@ -450,18 +465,18 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                     net: false,
                     plafond_net: false,
                     parts: Vec::new(),
-                    ij_nettes_hors_bulletin: Decimal::ZERO,
-                    ij_nettes_hors_garantie: Decimal::ZERO,
-                    complement_brut: Decimal::ZERO,
+                    ij_nettes_hors_bulletin: nulle(),
+                    ij_nettes_hors_garantie: nulle(),
+                    complement_brut: nulle(),
                 });
                 a.texte = r.texte.clone();
                 a.net |= r.base == Base::Net;
                 a.plafond_net |= r.plafond_net;
                 a.parts.extend(parts);
                 a.ij_nettes_hors_garantie += hors_garantie;
-                a.complement_brut += if r.base == Base::Brut { complement } else { Decimal::ZERO };
+                a.complement_brut += if r.base == Base::Brut { complement } else { nulle() };
             }
-            Texte::Convention => *out.convention_brut.get_or_insert(Decimal::ZERO) += complement,
+            Texte::Convention => *out.convention_brut.get_or_insert(nulle()) += complement,
         }
     }
     out.heures += heures_max;
@@ -485,16 +500,17 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
 /// depuis son premier jour (`None` : un jour que la caisse n'indemnise pas, ou hors du mois) ; `Err(majoree)` quand
 /// l'arret ne dit pas celles d'un jour indemnise (`majoree` : seulement celles d'un accident du travail au-dela du
 /// vingt-huitieme jour).
-fn indemnites_des_jours(imp: &ArretSaisi, origine: Origine, arret: &Periode, absence: &Periode) -> R<Result<Vec<Option<(Decimal, Decimal)>>, bool>> {
+fn indemnites_des_jours(imp: &ArretSaisi, origine: Origine, arret: &Periode, absence: &Periode) -> R<Result<Vec<Option<(Montant, Montant)>>, bool>> {
     let (rang_caisse, rang_majore) = jours_de_la_caisse(origine)?;
     let (mut ij, mut manque, mut manque_majoree) = (Vec::new(), false, false);
-    for (i, j) in (0..).zip(arret.jours()) {
+    for j in arret.jours() {
+        let i = rang(arret, &j);
         if !absence.contient(&j) || i < rang_caisse {
             ij.push(None);
             continue;
         }
         let majoree = rang_majore.is_some_and(|r| i >= r);
-        let x = ij_du_jour(imp, majoree)?;
+        let x = ij_du_jour(imp, majoree);
         if x.is_none() {
             if majoree {
                 manque_majoree = true;
@@ -676,27 +692,26 @@ fn net_de_csg_crds(brute: MontantUnitaire, csg: Taux, crds: Taux) -> MontantUnit
 /// ligne du maintien se paie en heures.
 pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
-    let plancher = Montant::du_decimal(dmois.ij_subrogees_brutes).au_centime().decimal();
+    let plancher = dmois.ij_subrogees_brutes.au_centime();
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
     // convention qui ne garantit rien en brut laisse la loi.
-    let direct = Montant::du_decimal(match dmois.convention_brut {
+    let direct = match dmois.convention_brut {
         Some(convention) => dmois.loi.max(convention),
-        None => dmois.loi.max(Decimal::ZERO),
-    })
-    .au_centime()
-    .decimal();
+        None => dmois.loi.max(nulle()),
+    }
+    .au_centime();
     let montant = direct + plancher;
-    if montant > Decimal::ZERO || dmois.au_net.is_some() {
+    if montant > nulle() || dmois.au_net.is_some() {
         // La quantite de la ligne : ses heures d'absence, ou une.
-        let (q, taux) = sur_les_heures(Montant::du_decimal(montant), dmois.heures.au_centieme());
+        let (q, taux) = sur_les_heures(montant, dmois.heures.au_centieme());
         // Une somme, pas des heures de travail : les heures de l'absence restent celles de sa retenue (S21.G00.53).
         let reconstitution = dmois.au_net.as_ref().map(|a| {
             Box::new(Reconstitution {
                 mois,
                 au_net: AuNet {
-                    ij_nettes_hors_bulletin: Montant::du_decimal(a.ij_nettes_hors_bulletin).au_centime().decimal(),
-                    ij_nettes_hors_garantie: Montant::du_decimal(a.ij_nettes_hors_garantie).au_centime().decimal(),
-                    complement_brut: Montant::du_decimal(a.complement_brut).au_centime().decimal(),
+                    ij_nettes_hors_bulletin: a.ij_nettes_hors_bulletin.au_centime(),
+                    ij_nettes_hors_garantie: a.ij_nettes_hors_garantie.au_centime(),
+                    complement_brut: a.complement_brut.au_centime(),
                     ..a.clone()
                 },
                 complement_direct: direct,
@@ -706,12 +721,12 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
         let paiement = PaiementDeLigne::Heures(q, taux);
         out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, paiement, reconstitution }));
     }
-    if dmois.ij_subrogees_jours > 0 {
-        let j = Decimal::from(dmois.ij_subrogees_jours);
-        let taux = |montant: Decimal| MontantUnitaire::du_decimal(div(montant, j).normalize());
-        out.push(LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: IJ_BRUTES, jours: Jours::du_decimal(j), taux: taux(plancher), assiette_pas: None }));
-        let nettes = Montant::du_decimal(dmois.ij_subrogees_nettes).au_centime().decimal();
-        out.push(LignePaie::ij_nettes(au, Jours::du_decimal(j), taux(nettes), Montant::du_decimal(dmois.assiette_pas).au_centime()));
+    // Le montant d'un jour des indemnites subrogees : leur somme sur leurs jours ; aucune ligne sans jour subroge.
+    let jours = dmois.ij_subrogees_jours;
+    let nettes = dmois.ij_subrogees_nettes.au_centime();
+    if let (Some(brute), Some(nette)) = (plancher.par_jour(jours), nettes.par_jour(jours)) {
+        out.push(LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: IJ_BRUTES, jours, taux: sans_zero(brute), assiette_pas: None }));
+        out.push(LignePaie::ij_nettes(au, jours, sans_zero(nette), dmois.assiette_pas.au_centime()));
     }
     out
 }
@@ -731,8 +746,8 @@ fn sur_les_heures(montant: Montant, heures: Heures) -> (Heures, MontantUnitaire)
 pub struct Reconstitution {
     pub mois: Mois,
     pub au_net: AuNet,
-    pub complement_direct: Decimal,
-    pub plancher: Decimal,
+    pub complement_direct: Montant,
+    pub plancher: Montant,
 }
 
 // ------------------------------------------------------------------ le net reconstitue
@@ -752,12 +767,12 @@ const ESSAIS: usize = 40;
 pub fn au_net(
     lignes: &[LignePaie],
     paie: &mut dyn FnMut(Vec<LignePaie>) -> R<crate::calcul::Paie>,
-) -> R<Option<(Decimal, Avis)>> {
+) -> R<Option<(Montant, Avis)>> {
     let Some((i, spec)) = lignes.iter().enumerate().find_map(|(i, l)| l.reconstitution().map(|s| (i, s.clone()))) else { return Ok(None) };
     let (plancher, direct, complement_brut) = (spec.plancher, spec.complement_direct, spec.au_net.complement_brut);
     let (hors_bulletin, hors_garantie) = (spec.au_net.ij_nettes_hors_bulletin, spec.au_net.ij_nettes_hors_garantie);
     let parts = spec.au_net.parts.clone();
-    let avec = |montant: Option<Decimal>| -> R<Vec<LignePaie>> {
+    let avec = |montant: Option<Montant>| -> R<Vec<LignePaie>> {
         let mut out = Vec::new();
         for (k, l) in lignes.iter().enumerate() {
             if k == i {
@@ -774,55 +789,55 @@ pub fn au_net(
         Ok(out)
     };
     let sans_absence: Vec<LignePaie> = avec(None)?.into_iter().filter(|l| !l.est_retenue_arret()).collect();
-    let net0 = paie(sans_absence)?.net_a_payer.decimal();
-    let net_abs = paie(avec(None)?)?.net_a_payer.decimal();
-    let retire: Decimal = parts.iter().map(|p| p.0).sum();
+    let net0 = paie(sans_absence)?.net_a_payer;
+    let net_abs = paie(avec(None)?)?.net_a_payer;
+    let retire: Montant = parts.iter().map(|p| p.0).sum();
     let perdu = net0 - net_abs;
     let cible = if spec.au_net.net {
         let mut c = net_abs + hors_garantie;
-        if retire > Decimal::ZERO {
+        if retire > nulle() {
             for (x, f) in &parts {
-                c += (Montant::du_decimal(div(mul(perdu, *x), retire)) * *f).decimal();
+                c += perdu.prorata(*x, retire) * *f;
             }
         }
-        Some(Montant::du_decimal(c).au_centime().decimal())
+        Some(c.au_centime())
     } else {
         None
     };
     let mut calculs = 2usize;
-    let mut recu = |a: Decimal, calculs: &mut usize| -> R<Decimal> {
+    let mut recu = |a: Montant, calculs: &mut usize| -> R<Montant> {
         *calculs += 1;
-        Ok(paie(avec(Some(a))?)?.net_a_payer.decimal() + hors_bulletin)
+        Ok(paie(avec(Some(a))?)?.net_a_payer + hors_bulletin)
     };
-    let resoudre = |cible: Decimal, recu: &mut dyn FnMut(Decimal, &mut usize) -> R<Decimal>, calculs: &mut usize| -> R<Option<Decimal>> {
+    let resoudre = |cible: Montant, recu: &mut dyn FnMut(Montant, &mut usize) -> R<Montant>, calculs: &mut usize| -> R<Option<Montant>> {
         let (mut lo, mut flo) = (plancher, recu(plancher, calculs)? - cible);
-        if flo >= Decimal::new(-1, 2) {
+        if flo >= -Montant::UN_CENTIME {
             return Ok(Some(plancher));
         }
-        let mut hi = plancher + (cible - (flo + cible)).max(Decimal::ONE) * Decimal::from(2);
+        let mut hi = plancher + (cible - (flo + cible)).max(Montant::euros(1)).fois(2);
         let mut fhi = recu(hi, calculs)? - cible;
-        while fhi < Decimal::ZERO && *calculs < ESSAIS {
+        while fhi < nulle() && *calculs < ESSAIS {
             lo = hi;
             flo = fhi;
-            hi = hi * Decimal::from(2);
+            hi = hi.fois(2);
             fhi = recu(hi, calculs)? - cible;
         }
         while *calculs < ESSAIS {
-            let au_centime = |x: Decimal| Montant::du_decimal(x).au_centime().decimal();
-            let a = if fhi != flo { au_centime(lo - div(mul(flo, hi - lo), fhi - flo)) } else { au_centime(div(lo + hi, Decimal::TWO)) };
-            let a = if a <= lo || a >= hi { au_centime(div(lo + hi, Decimal::TWO)) } else { a };
+            // La secante entre les deux bornes, au centime ; hors d'elles, leur milieu.
+            let a = if fhi != flo { (lo - flo.prorata(hi - lo, fhi - flo)).au_centime() } else { (lo + hi).reparti_sur(2).au_centime() };
+            let a = if a <= lo || a >= hi { (lo + hi).reparti_sur(2).au_centime() } else { a };
             let fa = recu(a, calculs)? - cible;
-            if fa.abs() <= Decimal::new(1, 2) {
+            if fa.abs() <= Montant::UN_CENTIME {
                 return Ok(Some(a));
             }
-            if fa < Decimal::ZERO {
+            if fa < nulle() {
                 lo = a;
                 flo = fa;
             } else {
                 hi = a;
                 fhi = fa;
             }
-            if hi - lo <= Decimal::new(1, 2) {
+            if hi - lo <= Montant::UN_CENTIME {
                 return Ok(Some(if fhi.abs() <= flo.abs() { hi } else { lo }));
             }
         }
@@ -842,16 +857,16 @@ atteinte. Rien n'est calculé ; signaler ce mois au développeur.",
     let (convention, phrase) = match cible {
         Some(c) => {
             let a = resoudre(c, &mut recu, &mut calculs)?.ok_or_else(echec)?;
-            (a, format!("garantit {} net ce mois", socle::texte::euros(Montant::du_decimal(c))))
+            (a, format!("garantit {} net ce mois", socle::texte::euros(c)))
         }
         None => {
             let a = complement_brut + plancher;
             let r = recu(a, &mut calculs)?;
             if r > net0 {
                 let a = resoudre(net0, &mut recu, &mut calculs)?.ok_or_else(echec)?;
-                (a, format!("ne dépasse pas le net qu'il aurait perçu, {}", socle::texte::euros(Montant::du_decimal(net0))))
+                (a, format!("ne dépasse pas le net qu'il aurait perçu, {}", socle::texte::euros(net0)))
             } else {
-                (a, format!("garantit {} brut, sous le net qu'il aurait perçu", socle::texte::euros(Montant::du_decimal(complement_brut))))
+                (a, format!("garantit {} brut, sous le net qu'il aurait perçu", socle::texte::euros(complement_brut)))
             }
         }
     };
@@ -869,13 +884,13 @@ atteinte. Rien n'est calculé ; signaler ce mois au développeur.",
 }
 
 /// Les lignes d'un engagement, la ligne du maintien portee a `montant` (le resultat de `au_net`).
-pub fn avec_le_montant(lignes: &[LignePaie], montant: Decimal) -> Vec<LignePaie> {
+pub fn avec_le_montant(lignes: &[LignePaie], montant: Montant) -> Vec<LignePaie> {
     lignes
         .iter()
         .map(|l| match l {
             // La ligne du maintien se paie en heures (`lignes`) : ses heures d'absence, ou une.
             LignePaie::Maintien(Maintien { rubrique, paiement: PaiementDeLigne::Heures(q, _), reconstitution: Some(_) }) => {
-                let (q, taux) = sur_les_heures(Montant::du_decimal(montant), *q);
+                let (q, taux) = sur_les_heures(montant, *q);
                 LignePaie::Maintien(Maintien { rubrique: rubrique.clone(), paiement: PaiementDeLigne::Heures(q, taux), reconstitution: None })
             }
             autre => autre.clone(),
@@ -899,45 +914,42 @@ mod tests {
     fn l_indemnite_de_principe_est_la_fraction_du_salaire_journalier_plafonne() {
         let regles = droit::permanents::regles().unwrap();
         let p = &regles.indemnites_journalieres.principe;
-        let m = Montant::du_decimal;
-        let j = MontantUnitaire::du_decimal;
-        let smic = j(Decimal::new(1202, 2));
+        let m = |t: &str| socle::grandeurs::lu::en_texte::<Montant>(t).unwrap();
+        let j = |t: &str| socle::grandeurs::lu::en_texte::<MontantUnitaire>(t).unwrap();
+        let smic = j("12.02");
         // 2 487,39 par mois : sous le plafond (1,4 × 12,02 × 151,67 = 2 552,30) ; 7 462,17 / 91,25 / 2.
-        let sous = montant_de_principe(&[m(Decimal::new(248739, 2)); 3], smic, p).unwrap();
-        assert_eq!((sous, net_de_csg_crds(sous, p.csg, p.crds)), (j(Decimal::new(4089, 2)), j(Decimal::new(3815, 2))));
+        let sous = montant_de_principe(&[m("2487.39"); 3], smic, p).unwrap();
+        assert_eq!((sous, net_de_csg_crds(sous, p.csg, p.crds)), (j("40.89"), j("38.15")));
         // 4 000 par mois : chaque paie retenue au plafond.
-        assert_eq!(montant_de_principe(&[m(Decimal::from(4000)); 3], smic, p).unwrap(), j(Decimal::new(4196, 2)));
+        assert_eq!(montant_de_principe(&[Montant::euros(4000); 3], smic, p).unwrap(), j("41.96"));
         let a = &regles.indemnites_journalieres.principe_accident;
-        let pass = m(Decimal::from(48060));
+        let pass = Montant::euros(48060);
         // 2 487,39 : 81,77 par jour ; 60 % = 49,06 ; 80 % = 65,41, ramené au gain net de 79 % = 64,60.
-        assert_eq!(montants_d_accident(m(Decimal::new(248739, 2)), pass, a).unwrap(), (j(Decimal::new(4906, 2)), j(Decimal::new(6460, 2))));
+        assert_eq!(montants_d_accident(m("2487.39"), pass, a).unwrap(), (j("49.06"), j("64.60")));
         // 5 000 : le salaire journalier pris au plafond, 108,62.
-        assert_eq!(montants_d_accident(m(Decimal::from(5000)), pass, a).unwrap(), (j(Decimal::new(6517, 2)), j(Decimal::new(8690, 2))));
+        assert_eq!(montants_d_accident(Montant::euros(5000), pass, a).unwrap(), (j("65.17"), j("86.90")));
     }
 
     /// « le plus favorable » : la loi (L1226-1, D1226-1) et la convention s'appliquent ensemble, le mois paie le plus haut
     /// des deux complements ; subrogee, la compagnie y ajoute les indemnites brutes qu'elle avance et les retire aussitot.
     #[test]
     fn le_mois_paie_le_plus_favorable_de_la_loi_et_de_la_convention() {
-        let montant = |loi: i64, conv: i64, ij: i64| {
+        let montant = |loi: u32, conv: u32, ij: u32| {
             let m = DuMois {
-                loi: Decimal::from(loi),
-                convention_brut: Some(Decimal::from(conv)),
-                ij_subrogees_brutes: Decimal::from(ij),
-                ij_subrogees_jours: if ij > 0 { 10 } else { 0 },
-                au_net: None,
-                ij_subrogees_nettes: Decimal::ZERO,
-                assiette_pas: Decimal::ZERO,
-                heures: Heures::ZERO,
-                avis: Vec::new(),
+                loi: Montant::euros(loi),
+                convention_brut: Some(Montant::euros(conv)),
+                ij_subrogees_brutes: Montant::euros(ij),
+                ij_subrogees_jours: if ij > 0 { Jours::de_dates(10) } else { Jours::ZERO },
+                ..DuMois::vide()
             };
-            let au =droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
+            let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
             let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
-            l[0].taux().unwrap().decimal()
+            l[0].taux().unwrap()
         };
-        assert_eq!(montant(500, 300, 0), Decimal::from(500));
-        assert_eq!(montant(300, 500, 0), Decimal::from(500));
-        assert_eq!(montant(300, 500, 200), Decimal::from(700));
+        let par_unite = |euros: u32| crate::ligne::TauxDeLigne::ParUnite(Montant::euros(euros).pour_une_unite());
+        assert_eq!(montant(500, 300, 0), par_unite(500));
+        assert_eq!(montant(300, 500, 0), par_unite(500));
+        assert_eq!(montant(300, 500, 200), par_unite(700));
     }
 
     /// CSS R323-1, 1° : « le point de depart de l'indemnite journaliere [...] est le quatrieme jour de l'incapacite de

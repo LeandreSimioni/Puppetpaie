@@ -23,7 +23,7 @@ use std::sync::{Arc, OnceLock};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tranche {
     pub jours: Duree<EnJours>,
-    pub taux: Decimal,
+    pub taux: Taux,
 }
 
 // ------------------------------------------------------------ la forme du fichier
@@ -441,8 +441,8 @@ forme! {
     pub struct TrancheDeMaintien {
         #[serde(deserialize_with = "Duree::en_jours")]
         pub jours: Duree<EnJours>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub taux: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub taux: Taux,
     }
 }
 
@@ -461,12 +461,16 @@ forme! {
 forme! {
     /// `indemnites_journalieres` : lu par `engagement::maintien`.
     pub struct IndemnitesJournalieres {
-        /// Le rang du premier jour indemnise d'une maladie (R323-1).
-        pub debut_maladie: i64,
-        /// Le rang du jour ou l'indemnite d'un accident se majore (R433-3).
-        pub majoree_des_le_jour: i64,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub csg_deductible: Decimal,
+        /// Le rang du premier jour indemnise d'une maladie (R323-1 : « le quatrième jour »), compte du premier jour de
+        /// l'arret, celui-ci compris.
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub debut_maladie: Duree<EnJours>,
+        /// Le rang du jour ou l'indemnite d'un accident se majore (R433-3 : « à partir du vingt-neuvième jour »), compte
+        /// de meme.
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub majoree_des_le_jour: Duree<EnJours>,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub csg_deductible: Taux,
         pub pas: PasDesIndemnites,
         pub principe: Principe,
         pub principe_accident: PrincipeAccident,
@@ -476,11 +480,12 @@ forme! {
 forme! {
     /// Ce que le prelevement a la source retient des indemnites subrogees (BOI-IR-PAS-20-10-10).
     pub struct PasDesIndemnites {
-        /// Une maladie : celles des `maladie_jours` premiers jours de l'arret.
-        pub maladie_jours: i64,
+        /// Une maladie : celles des `maladie_jours` premiers jours de l'arret, de date a date.
+        #[serde(deserialize_with = "Duree::en_jours")]
+        pub maladie_jours: Duree<EnJours>,
         /// Un accident du travail ou une maladie professionnelle : ce pourcentage de leur montant.
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub accident: Decimal,
+        #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+        pub accident: Taux,
     }
 }
 

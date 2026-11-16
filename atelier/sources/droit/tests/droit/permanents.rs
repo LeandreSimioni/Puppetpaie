@@ -75,7 +75,8 @@ struct IndemniteDuDepart {
 struct Tranche {
     #[serde(serialize_with = "Duree::ecrite_en_jours", deserialize_with = "Duree::en_jours")]
     jours: Duree<socle::date::EnJours>,
-    taux: Decimal,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    taux: socle::grandeurs::Taux,
 }
 
 /// Une duree en jours, ecrite en son nombre dans la reference.

@@ -406,7 +406,8 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrancheDeMaintien {
-    pub taux: Nombre,
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    pub taux: socle::grandeurs::Taux,
     #[serde(default, deserialize_with = "Duree::en_jours_opt")]
     pub jours: Option<Duree<EnJours>>,
     #[serde(default, deserialize_with = "Duree::en_mois_opt")]

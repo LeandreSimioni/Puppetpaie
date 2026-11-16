@@ -347,6 +347,12 @@ impl Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 0))
     }
 
+    /// Une fraction qu'un texte fixe (`2` sur `3` : les deux tiers de D1226-1, 2°), exacte a vingt-huit chiffres
+    /// (`num::div`).
+    pub fn fraction(numerateur: u32, denominateur: std::num::NonZeroU32) -> Coefficient {
+        Coefficient(num::div(Decimal::from(numerateur), Decimal::from(denominateur.get())))
+    }
+
     /// Ce coefficient divise par `c` : coefficient / coefficient = coefficient ; `None` quand `c` est nul.
     pub fn sur(self, c: Coefficient) -> Option<Coefficient> {
         (!c.0.is_zero()).then(|| Coefficient(num::div(self.0, c.0)))
