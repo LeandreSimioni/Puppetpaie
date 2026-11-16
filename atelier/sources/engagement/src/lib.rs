@@ -47,7 +47,7 @@ use droit::fiche::Lue;
 use std::path::Path;
 use std::sync::Arc;
 
-use socle::forme::NombreEcrit;
+use socle::forme::NombreLu;
 
 use droit::catalogue::{rubrique, CodeDeRubrique};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
@@ -212,10 +212,10 @@ pub struct Assemble {
 
 /// Des jours que la carte dit, en nombre entier (`4`, `4.0`) : la porte de la saisie, ou ils se lisent en leur grandeur.
 /// Un autre nombre se refuse.
-fn jours_dits(v: &Option<NombreEcrit>, nom: &str) -> R<Option<Jours>> {
+fn jours_dits(v: &Option<NombreLu>, nom: &str) -> R<Option<Jours>> {
     match v {
         None => Ok(None),
-        Some(n) => match socle::grandeurs::entiere(n.grandeur::<Jours>()?) {
+        Some(n) => match socle::grandeurs::entiere(socle::grandeurs::lu::ecrite::<Jours>(n)?) {
             Some(j) => Ok(Some(j)),
             None => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
         },
@@ -978,7 +978,7 @@ struct Termes {
 
 impl Termes {
     fn de(v: &carte::CarteValide, cachet_du_mois: &Option<Chiffre>) -> Termes {
-        let n = |x: &NombreEcrit| Chiffre::Nombre(x.clone());
+        let n = |x: &NombreLu| Chiffre::Nombre(x.clone());
         match v {
             carte::CarteValide::CdduSpectacle(c) => Termes {
                 spectacle: Some(c.spectacle.clone()),

@@ -601,7 +601,7 @@ fn delai_de_prevenance(
                 qui
             ), "periode_essai_jours"));
         };
-        if essai.dec()? < minimum {
+        if essai.dec_avec_echelle()? < minimum {
             stc.avertissements.push(info(format!(
                 "{} : periode d'essai stipulee de {} jour(s), moins d'une semaine : pas de delai de prevenance (L1221-25), \
                  rien a payer.",

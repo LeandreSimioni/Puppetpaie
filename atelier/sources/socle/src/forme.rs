@@ -679,10 +679,9 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
 /// UN NOMBRE TEL QU'IL EST ECRIT, une ecriture et non une grandeur (une case d'une fiche : un montant, un taux, une
 /// quantite) : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5` compris), garde tel
 /// quel pour se reecrire de meme. Un nombre ecrit avec sa virgule se garde en decimal, dans sa forme la plus courte
-/// (`num::court` : `130.0` reste `130.0`, `130.00` se relit `130.0`), et se reecrit en nombre a virgule
-/// (`ecrire_a_virgule`). Sa grandeur se lit a sa porte (`grandeur`, `compte`, dans `grandeurs`). Une case de fiche, de
-/// carte ou de saisie, un nombre d'une charge ou d'un fichier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule (`ecrire_a_virgule`). Sa grandeur se lit a
+/// sa porte (`grandeur`, `compte`, dans `grandeurs`).
+#[derive(Debug, Clone, PartialEq)]
 pub enum NombreEcrit {
     Entier(i64),
     Naturel(u64),
@@ -709,86 +708,6 @@ impl NombreEcrit {
             NombreEcrit::Texte(s) => s.trim().parse().map(Some).map_err(|_| crate::echec::refus(crate::num::illisible(s))),
             NombreEcrit::Naturel(_) | NombreEcrit::Flottant(_) => Ok(None),
         }
-    }
-
-    /// Le decimal du nombre, a la porte d'une chaine encore en decimal : un entier tel quel, un nombre a virgule dans sa
-    /// forme la plus courte, un texte lu (`num::decimal_lu`). Un texte illisible se refuse.
-    pub fn decimal(&self) -> R<crate::num::Decimal> {
-        match self {
-            NombreEcrit::Entier(i) => Ok((*i).into()),
-            NombreEcrit::Naturel(u) => Ok((*u).into()),
-            NombreEcrit::Flottant(x) => Ok(*x),
-            NombreEcrit::Texte(s) => crate::num::decimal_lu(s).ok_or_else(|| crate::echec::refus(crate::num::illisible(s))),
-        }
-    }
-
-    /// Le nombre est-il nul (`0`, `0.0`) ?
-    pub fn est_nul(&self) -> bool {
-        matches!(self.decimal(), Ok(d) if d.is_zero())
-    }
-
-    /// L'entier signe qu'il ecrit en nombre ; `None` : un naturel au-dela, un nombre a virgule, un texte.
-    pub fn as_i64(&self) -> Option<i64> {
-        match self {
-            NombreEcrit::Entier(i) => Some(*i),
-            NombreEcrit::Naturel(_) | NombreEcrit::Flottant(_) | NombreEcrit::Texte(_) => None,
-        }
-    }
-
-    /// Le naturel qu'il ecrit en nombre ; `None` : un entier negatif, un nombre a virgule, un texte.
-    pub fn as_u64(&self) -> Option<u64> {
-        match self {
-            NombreEcrit::Entier(i) => u64::try_from(*i).ok(),
-            NombreEcrit::Naturel(u) => Some(*u),
-            NombreEcrit::Flottant(_) | NombreEcrit::Texte(_) => None,
-        }
-    }
-
-    /// LE NOMBRE QU'UN TEXTE ECRIT EN JSON (`12`, `1.50`, `1e-5`, une cellule d'un tableur) : un entier, ou un nombre a
-    /// virgule dans sa forme la plus courte ; ce qui n'est pas un nombre, ou hors de portee, se refuse.
-    pub fn du_texte(t: &str) -> R<NombreEcrit> {
-        match t.parse::<serde_json::Number>() {
-            Ok(n) => NombreEcrit::try_from(n),
-            Err(e) => Err(crate::echec::refus_avec(crate::num::illisible(t), crate::echec::Lieu { detail: Some(e.to_string()), ..Default::default() })),
-        }
-    }
-
-    /// Un decimal en nombre a virgule, dans sa forme la plus courte (`num::court` : `130` s'ecrit `130.0`).
-    pub fn de_decimal(d: crate::num::Decimal) -> NombreEcrit {
-        NombreEcrit::Flottant(crate::num::court(d))
-    }
-}
-
-impl TryFrom<serde_json::Number> for NombreEcrit {
-    type Error = crate::echec::Echec;
-    /// Un nombre JSON : un entier, un naturel au-dela, sinon un nombre a virgule dans sa forme la plus courte.
-    fn try_from(n: serde_json::Number) -> R<NombreEcrit> {
-        Ok(match (n.as_i64(), n.as_u64()) {
-            (Some(i), _) => NombreEcrit::Entier(i),
-            (_, Some(u)) => NombreEcrit::Naturel(u),
-            (None, None) => NombreEcrit::Flottant(crate::num::court(decimal_ecrit(&n.to_string())?)),
-        })
-    }
-}
-
-impl From<i64> for NombreEcrit {
-    fn from(n: i64) -> NombreEcrit {
-        NombreEcrit::Entier(n)
-    }
-}
-
-impl From<u64> for NombreEcrit {
-    fn from(n: u64) -> NombreEcrit {
-        match i64::try_from(n) {
-            Ok(i) => NombreEcrit::Entier(i),
-            Err(_) => NombreEcrit::Naturel(n),
-        }
-    }
-}
-
-impl std::fmt::Display for NombreEcrit {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(&self.ecrit())
     }
 }
 
@@ -863,6 +782,99 @@ impl<'de> serde::Deserialize<'de> for NombreEcrit {
             }
         }
         d.deserialize_any(Lu)
+    }
+}
+
+/// UN NOMBRE D'UNE DONNEE, garde tel qu'il s'ecrit (`130.0` reste `130.0`, `12` reste `12`) : il se relit et se
+/// reecrit a l'identique. Un texte n'en est pas un.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "serde_json::Number", into = "serde_json::Number")]
+pub struct NombreLu(serde_json::Number);
+
+impl TryFrom<serde_json::Number> for NombreLu {
+    type Error = std::convert::Infallible;
+    fn try_from(n: serde_json::Number) -> Result<NombreLu, Self::Error> {
+        Ok(NombreLu(n))
+    }
+}
+
+impl From<NombreLu> for serde_json::Number {
+    fn from(n: NombreLu) -> serde_json::Number {
+        n.0
+    }
+}
+
+impl NombreLu {
+    /// Le decimal du nombre : un entier tel quel, un nombre a virgule par sa forme la plus courte (`decimal_ecrit`).
+    pub fn decimal(&self) -> R<crate::num::Decimal> {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (Some(i), _) => Ok(i.into()),
+            (_, Some(u)) => Ok(u.into()),
+            (None, None) => decimal_ecrit(&self.0.to_string()),
+        }
+    }
+
+    /// Le decimal du nombre, son echelle gardee (`130.0`, sa forme ecrite) : un entier tel quel, un nombre a virgule tel
+    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse. Sa grandeur se lit par `grandeurs::lu::ecrite`.
+    pub fn decimal_avec_echelle(&self) -> R<crate::num::Decimal> {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (None, None) => {
+                let s = self.ecrit();
+                crate::num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))
+            }
+            _ => self.decimal(),
+        }
+    }
+
+    /// Le nombre est-il nul (`0`, `0.0`) ?
+    pub fn est_nul(&self) -> bool {
+        matches!(self.decimal(), Ok(d) if d.is_zero())
+    }
+
+    /// Le nombre tel qu'une donnee l'ecrit : un entier tel quel, un nombre a virgule sous sa forme ecrite (`130.0`,
+    /// `ecriture::a_virgule`).
+    pub fn ecrit(&self) -> String {
+        crate::ecriture::nombre_ecrit(&self.0)
+    }
+
+    /// Le nombre qu'un texte ecrit en JSON (`12`, `1.50`, `1e-5`), exact ; l'erreur dit pourquoi ce n'en est pas un.
+    pub fn du_texte(t: &str) -> Result<NombreLu, serde_json::Error> {
+        t.parse::<serde_json::Number>().map(NombreLu)
+    }
+
+    /// Un decimal en nombre a virgule : celui que sa forme la plus courte ecrit (`num::court` : `130` s'ecrit `130.0`).
+    pub fn de_decimal(d: crate::num::Decimal) -> NombreLu {
+        let t = crate::num::court(d).to_string();
+        match t.parse::<serde_json::Number>() {
+            Ok(n) => NombreLu(n),
+            Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", t, e),
+        }
+    }
+
+    pub fn as_i64(&self) -> Option<i64> {
+        self.0.as_i64()
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        self.0.as_u64()
+    }
+}
+
+impl From<u64> for NombreLu {
+    fn from(n: u64) -> NombreLu {
+        NombreLu(n.into())
+    }
+}
+
+impl From<i64> for NombreLu {
+    fn from(n: i64) -> NombreLu {
+        NombreLu(n.into())
+    }
+}
+
+impl std::fmt::Display for NombreLu {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

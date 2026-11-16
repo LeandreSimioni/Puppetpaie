@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
-use socle::forme::NombreEcrit;
+use socle::forme::NombreLu;
 use socle::grandeurs::{Heures, Montant};
 
 use crate::ligne::{DateDeLigne, LignePaie};
@@ -140,7 +140,7 @@ carte! {
         #[champ(Terme, ModaliteTempsTravail)]
         pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
-        pub salaire_mensuel: Option<NombreEcrit>,
+        pub salaire_mensuel: Option<NombreLu>,
         #[champ(Terme, Emploi)]
         pub emploi: Option<String>,
         #[champ(Terme, PcsEse)]
@@ -154,7 +154,7 @@ carte! {
         #[champ(Terme, StatutCategorielRc)]
         pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
         #[champ(Terme, PeriodeEssaiJours)]
-        pub periode_essai_jours: Option<NombreEcrit>,
+        pub periode_essai_jours: Option<NombreLu>,
         #[champ(Terme, PersonneRemplacee)]
         pub personne_remplacee: Option<String>,
         #[champ(Terme, RepartitionHoraire)]
@@ -173,15 +173,15 @@ carte! {
         #[champ(Fait, DatePaiement)]
         pub date_paiement: Option<Jour>,
         #[champ(Fait, Jours)]
-        pub jours: Option<NombreEcrit>,
+        pub jours: Option<NombreLu>,
         #[champ(Fait, TauxCachet)]
-        pub taux_cachet: Option<NombreEcrit>,
+        pub taux_cachet: Option<NombreLu>,
         #[champ(Fait, HeuresSupplementaires)]
-        pub heures_supplementaires: Option<NombreEcrit>,
+        pub heures_supplementaires: Option<NombreLu>,
         #[champ(Fait, HeuresSupplementairesA50)]
-        pub heures_supplementaires_a_50: Option<NombreEcrit>,
+        pub heures_supplementaires_a_50: Option<NombreLu>,
         #[champ(Fait, HeuresComplementaires)]
-        pub heures_complementaires: Option<NombreEcrit>,
+        pub heures_complementaires: Option<NombreLu>,
         #[champ(Fait, IndemniteLicenciement)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub indemnite_licenciement: Option<Montant>,
@@ -206,13 +206,13 @@ carte! {
         #[champ(Fin, PreavisNonEffectue)]
         pub preavis_non_effectue: Option<bool>,
         #[champ(Fin, PreavisMois)]
-        pub preavis_mois: Option<NombreEcrit>,
+        pub preavis_mois: Option<NombreLu>,
         #[champ(Fin, PrecariteDue)]
         pub precarite_due: Option<bool>,
         #[champ(Fin, PrecaritePourquoi)]
         pub precarite_pourquoi: Option<String>,
         #[champ(Deduit, JoursContrat)]
-        pub jours_contrat: Option<NombreEcrit>,
+        pub jours_contrat: Option<NombreLu>,
         #[champ(Deduit, DateModification)]
         pub date_modification: Option<Jour>,
         #[champ(Deduit, Avant)]
@@ -240,7 +240,7 @@ impl Champ {
 pub enum Valeur {
     Nature(droit::natures::NatureDeContrat),
     Texte(String),
-    Nombre(NombreEcrit),
+    Nombre(NombreLu),
     /// Des heures (la duree du travail, en heures par mois).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Heures(Heures),
@@ -319,7 +319,7 @@ macro_rules! code_simple {
 }
 code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail, droit::preavis::TransactionEnCours);
 
-impl Simple for NombreEcrit {
+impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Nombre(self.clone()))
     }
@@ -476,7 +476,7 @@ impl CongePris {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prime {
-    pub montant: NombreEcrit,
+    pub montant: NombreLu,
     /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: Option<String>,
@@ -497,7 +497,7 @@ pub struct Preavis {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Avant {
-    pub salaire_mensuel: Option<NombreEcrit>,
+    pub salaire_mensuel: Option<NombreLu>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub quotite_contrat: Option<Heures>,
 }
@@ -516,7 +516,7 @@ pub struct Validee {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CeQueLeMoisDit {
-    pub taux_cachet: Option<NombreEcrit>,
+    pub taux_cachet: Option<NombreLu>,
 }
 
 /// LE MOIS DE L'ECRAN (`stock::vue_du_mois`) : le mois, le cachet qu'il dit par defaut, et la vue de chaque engagement qui
@@ -525,7 +525,7 @@ pub struct CeQueLeMoisDit {
 #[serde(deny_unknown_fields)]
 pub struct VueDuMois {
     pub mois: socle::mois::Mois,
-    pub taux_cachet: Option<NombreEcrit>,
+    pub taux_cachet: Option<NombreLu>,
     pub engagements: Vec<Carte>,
 }
 

@@ -369,7 +369,7 @@ fn cle(c: &Cellule) -> R<String> {
 }
 
 /// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None` ; un nombre qui ne tient pas en decimal refuse.
-fn entier_exact(n: &socle::forme::NombreEcrit) -> R<Option<i64>> {
+fn entier_exact(n: &socle::forme::NombreLu) -> R<Option<i64>> {
     use rust_decimal::prelude::ToPrimitive;
     Ok(Some(n.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
 }

@@ -504,7 +504,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
     // Un montant : un nombre, ou un nombre ecrit en texte (la virgule decimale admise), lu a sa porte.
     let montant = || -> R<Montant> {
         match v {
-            Valeur::Nombre(n) => n.grandeur(),
+            Valeur::Nombre(n) => socle::grandeurs::lu::ecrite(n),
             Valeur::Texte(s) => socle::grandeurs::lu::texte(s).ok_or_else(|| refus(socle::num::illisible(s))),
             Valeur::Heures(_) | Valeur::Montant(_) | Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme.nom(), texte)),
         }

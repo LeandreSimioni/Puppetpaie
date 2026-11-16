@@ -235,7 +235,7 @@ pub(crate) struct ChargeNature {
 #[serde(untagged)]
 pub(crate) enum MontantSaisi {
     Texte(String),
-    Nombre(socle::forme::NombreEcrit),
+    Nombre(socle::forme::NombreLu),
 }
 
 impl MontantSaisi {
@@ -327,7 +327,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
             }
             Demande::Salaire => {
                 let v = charge.salaire().ok_or_else(manque)?;
-                match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreEcrit::de_decimal) {
+                match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
                     Some(n) => contrat.salaire_mensuel = Some(n),
                     None => return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v))),
                 };

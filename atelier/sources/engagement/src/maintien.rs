@@ -296,7 +296,7 @@ pub struct AuNet {
 fn ij_du_jour(imp: &ArretSaisi, majoree: bool) -> R<Option<(Decimal, Decimal)>> {
     let (b, n) = if majoree { (&imp.ij_brute_majoree, &imp.ij_nette_majoree) } else { (&imp.ij_brute, &imp.ij_nette) };
     match (b.as_ref().filter(|x| x.vrai()), n.as_ref().filter(|y| y.vrai())) {
-        (Some(x), Some(y)) => Ok(Some((x.dec()?, y.dec()?))),
+        (Some(x), Some(y)) => Ok(Some((x.dec_avec_echelle()?, y.dec_avec_echelle()?))),
         _ => Ok(None),
     }
 }
