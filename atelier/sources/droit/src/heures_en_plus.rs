@@ -42,7 +42,7 @@ fn supplementaires_de_la_convention(idcc: Option<&crate::fiche::Idcc>) -> R<Opti
 /// heures de la semaine, 50 % au-dela (L3121-36), et le mois ne dit pas lesquelles sont au-dela de la huitieme d'une
 /// semaine (elles se decomptent par semaine, L3121-29) : la carte le demande (`heures_supplementaires_a_50`).
 pub fn paliers_conventionnels(idcc: Option<&crate::fiche::Idcc>) -> R<bool> {
-    Ok(supplementaires_de_la_convention(idcc)?.is_some_and(|c| c.paliers_annuels.as_ref().is_some_and(|p| !p.is_empty())))
+    Ok(supplementaires_de_la_convention(idcc)?.is_some_and(|c| c.paliers_annuels.is_some()))
 }
 
 /// LES HEURES SUPPLEMENTAIRES DU MOIS, par majoration. `heures` : celles du mois ; `a_50` : celles d'entre elles qui
@@ -54,14 +54,14 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, a_50: 
         return Ok(r);
     }
     let conv = supplementaires_de_la_convention(idcc)?;
-    match &conv {
-        Some(c) if c.paliers_annuels.as_ref().is_some_and(|p| !p.is_empty()) => {
+    match conv.as_ref().and_then(|c| c.paliers_annuels.as_ref().map(|p| (c, p))) {
+        Some((c, paliers)) => {
             // Les paliers annuels de la convention : la n-ieme heure de l'annee prend la majoration de son palier ; au-dela
             // du dernier palier (le contingent), `au_dela_du_contingent`.
             let mut debut = Heures::ZERO;
             let mut reste = heures;
             let mut rang = deja;
-            for p in c.paliers_annuels.iter().flatten() {
+            for p in paliers.iter() {
                 let fin = debut + p.heures;
                 let ici = (fin - rang).max(Heures::ZERO).min(reste);
                 if ici > Heures::ZERO {
@@ -76,7 +76,7 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, a_50: 
                 ajouter(&mut r.paliers, reste, au_dela);
             }
         }
-        _ => {
+        None => {
             if a_50 > heures {
                 return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
@@ -84,13 +84,9 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, a_50: 
                     virgule(a_50), virgule(heures)
                 ));
             }
-            let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
-            let (premier, second) = match (hebdo.first(), hebdo.get(1)) {
-                (Some(a), Some(b)) => (a.majoration, b.majoration),
-                _ => return Err(socle::echec::livree(&crate::permanents::BASE, "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
-            };
-            ajouter(&mut r.paliers, heures - a_50, premier);
-            ajouter(&mut r.paliers, a_50, second);
+            let (premier, second) = loi()?.heures_supplementaires.paliers_hebdomadaires;
+            ajouter(&mut r.paliers, heures - a_50, premier.majoration);
+            ajouter(&mut r.paliers, a_50, second.majoration);
         }
     }
     if let Some(contingent) = conv.as_ref().and_then(|c| c.contingent_annuel).filter(|c| !c.est_nul()) {

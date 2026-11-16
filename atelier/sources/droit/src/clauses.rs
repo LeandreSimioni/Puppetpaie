@@ -452,7 +452,8 @@ forme! {
     /// fixe (au-dela du dernier, `au_dela_du_contingent`).
     pub struct HeuresSupplementaires {
         pub contingent_annuel: Option<Heures>,
-        pub paliers_annuels: Option<Vec<PalierDHeures>>,
+        /// Au moins un, quand la convention les fixe.
+        pub paliers_annuels: Option<socle::forme::AuMoinsUn<PalierDHeures>>,
         pub au_dela_du_contingent: Option<Taux>,
     }
 }

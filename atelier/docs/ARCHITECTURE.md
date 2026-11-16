@@ -373,7 +373,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   montant unitaire = montant.
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
   `Taux::points`, `Taux::centiemes_de_point`, `Coefficient::entier_fixe`, `Coefficient::dixiemes`,
-  `Coefficient::centiemes`, `Heures::fixes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
+  `Coefficient::centiemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
   `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
@@ -1032,7 +1032,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
 | liste lue élément par élément | `socle::forme::Liste` | `socle/src/forme.rs` |
-| liste qu'un fichier ne peut pas laisser vide (une liste vide se refuse à sa lecture : les paliers des heures complémentaires) | `socle::forme::AuMoinsUn` | `socle/src/forme.rs` |
+| liste qu'un fichier ne peut pas laisser vide (une liste vide se refuse à sa lecture : les paliers des heures complémentaires, les paliers annuels des heures supplémentaires d'une convention, les changements d'une carte ; une forme qui le dit en ses mots la fait de sa liste, `AuMoinsUn::de`) | `socle::forme::AuMoinsUn` | `socle/src/forme.rs` |
 | clé d'échéance | `CleDEcheance` | `routes/src/rappels.rs` |
 | échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |

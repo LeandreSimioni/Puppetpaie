@@ -694,6 +694,12 @@ pub struct AuMoinsUn<T> {
 }
 
 impl<T> AuMoinsUn<T> {
+    /// Les elements de `liste`, dans l'ordre ; `None` : elle est vide (la forme qui la lit le refuse en ses mots).
+    pub fn de(mut liste: Vec<T>) -> Option<AuMoinsUn<T>> {
+        let dernier = liste.pop()?;
+        Some(AuMoinsUn { avant: liste, dernier })
+    }
+
     /// Ses elements, dans l'ordre.
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.avant.iter().chain(std::iter::once(&self.dernier))
@@ -705,13 +711,18 @@ impl<T> AuMoinsUn<T> {
     }
 }
 
+/// Ses elements, dans l'ordre.
+impl<T> IntoIterator for AuMoinsUn<T> {
+    type Item = T;
+    type IntoIter = std::iter::Chain<std::vec::IntoIter<T>, std::iter::Once<T>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.avant.into_iter().chain(std::iter::once(self.dernier))
+    }
+}
+
 impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for AuMoinsUn<T> {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let mut avant = Vec::<T>::deserialize(d)?;
-        match avant.pop() {
-            Some(dernier) => Ok(AuMoinsUn { avant, dernier }),
-            None => Err(serde::de::Error::invalid_length(0, &"au moins un élément")),
-        }
+        AuMoinsUn::de(Vec::<T>::deserialize(d)?).ok_or_else(|| serde::de::Error::invalid_length(0, &"au moins un élément"))
     }
 }
 

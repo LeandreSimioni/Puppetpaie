@@ -335,8 +335,9 @@ forme! {
 }
 
 forme! {
+    /// L3121-36 : deux paliers de la semaine, les huit premieres heures puis les suivantes.
     pub struct HeuresSupplementaires {
-        pub paliers_hebdomadaires: Vec<PalierHebdomadaire>,
+        pub paliers_hebdomadaires: (PalierHebdomadaire, PalierHebdomadaire),
     }
 }
 

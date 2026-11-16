@@ -763,15 +763,14 @@ changements! {
 /// appliques dans l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus
 /// souvent) ; un appelant en ligne de commande, toutes les cases d'une carte d'un coup.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
+pub struct Changements(socle::forme::AuMoinsUn<Changement<LigneDonnee, String, String, String>>);
 
 impl<'de> Deserialize<'de> for Changements {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Changements, D::Error> {
         let v = Vec::<Changement<LigneDonnee, String, String, String>>::deserialize(d)?;
-        if v.is_empty() {
-            return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
-        }
-        Ok(Changements(v))
+        socle::forme::AuMoinsUn::de(v)
+            .map(Changements)
+            .ok_or_else(|| serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"))
     }
 }
 
