@@ -326,7 +326,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
         }
         let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
         // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
-        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().unwrap_or(false);
+        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|porte| porte);
         if porte {
             portees.push(m);
             continue;
