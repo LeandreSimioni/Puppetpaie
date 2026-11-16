@@ -1407,7 +1407,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             // La mesure (53.002) vient avant son unite (53.003) : elle se lit a la fin du bloc, dans la grandeur que son
             // unite dit (`MesureDActivite::lue`).
-            S21_53_002 => mesure_ecrite = Some(v.clone()),
+            // Une mesure qui n'est pas un nombre est une faute, que son unite suive ou non (53.003 est conditionnelle).
+            S21_53_002 => mesure_ecrite = fautes.valeur(rub, &v, "un nombre", socle::num::decimal_lu(&v).map(|_| v.clone())),
             UniteDeMesure::RUBRIQUE => {
                 let ecrite = mesure_ecrite.take();
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
