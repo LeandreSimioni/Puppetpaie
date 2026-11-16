@@ -486,6 +486,15 @@ impl Taux {
         Taux(self.0.round_dp(2))
     }
 
+    /// SES `n` DECIMALES ECRITES (`12.5` s'ecrit `12.50`) : son echelle portee a `n` ; une ecriture, pas un arrondi, le
+    /// taux arrive arrondi a `n` decimales (le taux d'une ligne 23 du bordereau, deux decimales comme la DSN l'ecrit ; le
+    /// taux patronal reel d'une provision de conges, `a_deux_decimales`).
+    pub fn decimales_ecrites(self, n: u32) -> Taux {
+        let mut d = self.0;
+        d.rescale(n);
+        Taux(d)
+    }
+
     /// A `decimales` decimales au plus, la moitie au pair, dans sa forme la plus courte (`courte`) : un taux qu'un
     /// bareme compose (une part d'un total, un taux par un facteur).
     pub fn au_pair(self, decimales: u32) -> Taux {
@@ -1498,6 +1507,16 @@ pub mod ecrit {
             }
             c.rescale(2);
             c.to_string()
+        }
+    }
+
+    /// UN MONTANT EN CENTIMES, sans separateur, sur `chiffres` chiffres completes de zeros a gauche (`000000001234` pour
+    /// 12,34 €, la zone montant de Quadra), au centime (`Montant::au_centime`).
+    pub mod en_centimes {
+        use crate::grandeurs::Montant;
+
+        pub fn chiffres(m: Montant, chiffres: usize) -> String {
+            format!("{:0w$}", m.au_centime().0.mantissa(), w = chiffres)
         }
     }
 

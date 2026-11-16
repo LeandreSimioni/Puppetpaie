@@ -209,8 +209,8 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
                                 libelle_mois(m),
                                 qui(paie.salarie())?,
-                                calculee.au_centime().decimal(),
-                                (-reparti).decimal()
+                                socle::grandeurs::ecrit::texte::dit(calculee.au_centime()),
+                                socle::grandeurs::ecrit::texte::dit(-reparti)
                             ));
                         }
                         continue;
@@ -438,7 +438,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
                     QualifiantDAssiette::AssiettePlafonnee => "921 — assiette plafonnée",
                 });
                 let taux_at = b.taux_at.map(documents::bordereau::TauxDeLaLigne::taux);
-                l.taux_a(C::TauxAt, taux_at, 2).om(C::AssietteDeclaree, if b.montant.is_some() { None } else { b.assiette }).om(C::Montant, b.montant);
+                l.taux(C::TauxAt, taux_at.map(|t| t.decimales_ecrites(2))).om(C::AssietteDeclaree, if b.montant.is_some() { None } else { b.assiette }).om(C::Montant, b.montant);
                 lignes.push(l);
             }
         }
@@ -490,7 +490,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let (taux, plancher, plafond) = (fp.taux, fp.plancher, fp.plafond);
-    let mut par_an: Vec<(Annee, i64, Montant)> = Vec::new();
+    let mut par_an: Vec<(Annee, usize, Montant)> = Vec::new();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
     for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
@@ -557,7 +557,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             regle.to_string()
         };
         let mut l = Ligne::nouvelle();
-        l.t(C::Annee, an.to_string()).n(C::NombreDeMois, mois).montant(C::TrancheA, tranche_a).taux(C::Taux, Some(taux)).montant(C::Calcule, calcule).montant(C::ContributionDue, du).t(C::Regle, regle);
+        l.t(C::Annee, an.to_string()).compte(C::NombreDeMois, mois).montant(C::TrancheA, tranche_a).taux(C::Taux, Some(taux)).montant(C::Calcule, calcule).montant(C::ContributionDue, du).t(C::Regle, regle);
         l.t(C::APayer, format!("début {} (inférence : le texte ne dit pas l'année de masse)", an.suivante()?));
         lignes.push(l);
     }

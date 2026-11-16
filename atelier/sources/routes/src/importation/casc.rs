@@ -736,17 +736,17 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             ws.texte(ligne, col, t, &simple);
         }
         // Les nombres de la liste nominative, ecrits dans ses cases : sa porte. Les salaires, a l'euro le plus proche.
-        ws.nombre(ligne, 24, x.brut.a_l_euro().decimal(), &simple);
-        ws.nombre(ligne, 36, total.a_l_euro().decimal(), &simple);
+        ws.nombre(ligne, 24, x.brut.a_l_euro(), &simple);
+        ws.nombre(ligne, 36, total.a_l_euro(), &simple);
         let a = &x.activite;
-        let colonnes: [(u16, Option<socle::num::Decimal>); 2] = match artiste {
-            true => [(33, a.cachets.map(Cachets::decimal)), (34, a.heures.map(Heures::decimal))],
-            false => [(31, a.jours.map(Jours::decimal)), (32, a.heures.map(Heures::decimal))],
-        };
-        for (col, v) in colonnes {
-            if let Some(v) = v {
-                ws.nombre(ligne, col, v, &simple);
-            }
+        // Un artiste dit ses cachets (colonne 33) et ses heures (34), un technicien ses jours (31) et ses heures (32).
+        match (artiste, a.cachets, a.jours) {
+            (true, Some(c), _) => ws.nombre(ligne, 33, c, &simple),
+            (false, _, Some(j)) => ws.nombre(ligne, 31, j, &simple),
+            (true, None, _) | (false, _, None) => {}
+        }
+        if let Some(h) = a.heures {
+            ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple);
         }
     }
     let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.est_vide()).collect();

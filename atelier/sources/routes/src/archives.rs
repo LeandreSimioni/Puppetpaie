@@ -1076,9 +1076,9 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             lignes.push(("Pour le montant de l'allocation".into(), h(p.heures_montant())));
         }
         lignes.push(("Seuil des annexes 8 et 10".into(), h(c.seuil_heures)));
-        let jours = p.jours_restants(ctx.aujourdhui);
-        if anniv.is_some() && jours > 0 {
-            lignes.push(("Avant le réexamen".into(), format!("{} j", jours)));
+        let jours = p.jours_restants(ctx.aujourdhui)?;
+        if anniv.is_some() && !jours.nulle() {
+            lignes.push(("Avant le réexamen".into(), jours.dite_en_abrege()));
         }
         let phrase = if p.atteint()? {
             format!("Seuil atteint, avec {} h de marge.", dit(p.heures_ouverture()? - c.seuil_heures))

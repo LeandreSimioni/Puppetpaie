@@ -27,7 +27,8 @@ use serde::{Serialize, Serializer};
 
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
-use socle::num::Decimal;
+use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, Taux};
+use engagement::ligne::{QuantiteDeLigne, TauxDeLigne};
 use socle::echec::Echec;
 use socle::mois::{Mois, MoisDeLAnnee};
 pub use socle::echec::R;
@@ -43,54 +44,182 @@ pub const FORMATS_TABLEAU: [FormatDExport; 6] = [FormatDExport::Csv, FormatDExpo
 
 // ------------------------------------------------------------------ valeurs
 
-/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un mois (`AAAA-MM`), un
-/// texte.
+/// LE RANG D'UNE LIGNE DANS SON ETAT, dit a partir de un : le numero d'ordre d'une embauche au registre du personnel, le
+/// numero d'une ecriture comptable (une par mois de la periode, `ecritures_comptables::Ecriture::numero`). Il s'ecrit en
+/// nombre entier, a la largeur que son format lui donne (`{:05}`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RangDansLEtat(usize);
+
+impl RangDansLEtat {
+    /// Celui de l'element d'indice `i` d'une suite, compte a partir de zero.
+    pub fn de_l_indice(i: usize) -> RangDansLEtat {
+        RangDansLEtat(i + 1)
+    }
+}
+
+impl std::fmt::Display for RangDansLEtat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl Serialize for RangDansLEtat {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+/// Une valeur de cellule : une grandeur (elle s'ecrit en texte, son echelle gardee : `ecrit::texte`), un compte, un
+/// rang, un mois (`AAAA-MM`), un texte.
 #[derive(Clone, Debug)]
 pub enum Val {
-    Dec(Decimal),
-    Ent(i64),
+    Montant(Montant),
+    Taux(Taux),
+    Coefficient(Coefficient),
+    Heures(Heures),
+    Cachets(Cachets),
+    Jours(Jours),
+    /// La quantite d'une ligne de paie, dans l'unite de sa rubrique.
+    Quantite(QuantiteDeLigne),
+    /// Le taux d'une ligne de paie : un montant unitaire, ou la part de sa base.
+    TauxDeLigne(TauxDeLigne),
+    /// Un compte (« combien de… » : des bulletins, des salaries, des mois).
+    Compte(usize),
+    Rang(RangDansLEtat),
     Mois(Mois),
     Txt(String),
 }
 
+/// Chaque grandeur que la case `$v` (une `&Val`) porte, nommee `$g`, passee a `$e` ; puis les bras des cases qui n'en
+/// portent pas (un compte, un rang, un mois, un texte).
+macro_rules! chaque_grandeur {
+    ($v:expr, $g:ident => $e:expr; $($p:pat => $f:expr),+ $(,)?) => {
+        match *$v {
+            Val::Montant($g) => $e,
+            Val::Taux($g) => $e,
+            Val::Coefficient($g) => $e,
+            Val::Heures($g) => $e,
+            Val::Cachets($g) => $e,
+            Val::Jours($g) => $e,
+            Val::Quantite(q) => match q {
+                QuantiteDeLigne::Heures($g) => $e,
+                QuantiteDeLigne::Cachets($g) => $e,
+                QuantiteDeLigne::Jours($g) => $e,
+                QuantiteDeLigne::Services($g) => $e,
+                QuantiteDeLigne::Semaines($g) => $e,
+                QuantiteDeLigne::PartDuMois($g) => $e,
+                QuantiteDeLigne::Unites($g) => $e,
+            },
+            Val::TauxDeLigne(t) => match t {
+                TauxDeLigne::ParUnite($g) => $e,
+                TauxDeLigne::PartDeLaBase($g) => $e,
+            },
+            $($p => $f,)+
+        }
+    };
+}
+
 impl Val {
-    pub fn txt(s: impl Into<String>) -> Val {
-        Val::Txt(s.into())
-    }
-
-    pub fn entier(n: i64) -> Val {
-        Val::Ent(n)
-    }
-
-    /// La valeur en texte.
+    /// La valeur en texte : une grandeur son echelle gardee (`12.50`, `ecrit::texte`), un compte ou un rang en chiffres.
     pub fn en_texte_ecrit(&self) -> String {
-        match self {
-            Val::Dec(d) => d.to_string(),
-            Val::Ent(n) => n.to_string(),
+        chaque_grandeur!(self, g => socle::grandeurs::ecrit::texte::dit(g);
+            Val::Compte(n) => n.to_string(),
+            Val::Rang(r) => r.to_string(),
             Val::Mois(m) => m.to_string(),
-            Val::Txt(s) => s.clone(),
+            Val::Txt(ref s) => s.clone(),
+        )
+    }
+
+    /// Porte-t-elle une grandeur ?
+    fn est_une_grandeur(&self) -> bool {
+        chaque_grandeur!(self, _g => true;
+            Val::Compte(_) | Val::Rang(_) | Val::Mois(_) | Val::Txt(_) => false,
+        )
+    }
+
+    /// Cette valeur et `autre`, d'une meme colonne, additionnees : des grandeurs de meme nom qui s'additionnent (des
+    /// montants, des heures, des cachets, des jours), ou des comptes. Le reste ne s'additionne pas.
+    fn plus(&self, autre: &Val) -> R<Val> {
+        Ok(match (self, autre) {
+            (Val::Montant(a), Val::Montant(b)) => Val::Montant(*a + *b),
+            (Val::Heures(a), Val::Heures(b)) => Val::Heures(*a + *b),
+            (Val::Cachets(a), Val::Cachets(b)) => Val::Cachets(*a + *b),
+            (Val::Jours(a), Val::Jours(b)) => Val::Jours(*a + *b),
+            (Val::Compte(a), Val::Compte(b)) => Val::Compte(a + b),
+            (a, b) => return Err(Val::sans_total(&format!("« {} » et « {} »", a.en_texte_ecrit(), b.en_texte_ecrit()))),
+        })
+    }
+
+    /// La premiere valeur du total d'une colonne : elle-meme, quand elle s'additionne (`plus`).
+    fn premiere_du_total(&self) -> R<Val> {
+        match self {
+            Val::Montant(_) | Val::Heures(_) | Val::Cachets(_) | Val::Jours(_) | Val::Compte(_) => Ok(self.clone()),
+            autre => Err(Val::sans_total(&format!("« {} »", autre.en_texte_ecrit()))),
         }
     }
 
-    /// `Decimal(str(v))`.
-    pub fn decimal(&self) -> R<Decimal> {
-        match self {
-            Val::Dec(d) => Ok(*d),
-            Val::Ent(n) => Ok(Decimal::from(*n)),
-            Val::Mois(m) => Err(erreur(Classe::CalculImpossible, socle::num::illisible(&m.to_string()))),
-            Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t))),
-        }
+    /// Le refus d'un total d'une colonne dont les valeurs `quoi` ne s'additionnent pas.
+    fn sans_total(quoi: &str) -> Echec {
+        erreur(Classe::CalculImpossible, format!("{} ne s'additionnent pas dans le total d'une colonne.", quoi))
     }
 }
 
 impl Serialize for Val {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Val::Dec(d) => s.serialize_str(&d.to_string()),
-            Val::Ent(n) => s.serialize_i64(*n),
+        chaque_grandeur!(self, g => socle::grandeurs::ecrit::texte::serialize(&g, s);
+            Val::Compte(n) => n.serialize(s),
+            Val::Rang(r) => r.serialize(s),
             Val::Mois(m) => m.serialize(s),
-            Val::Txt(t) => s.serialize_str(t),
-        }
+            Val::Txt(ref t) => s.serialize_str(t),
+        )
+    }
+}
+
+impl From<Montant> for Val {
+    fn from(g: Montant) -> Val {
+        Val::Montant(g)
+    }
+}
+
+impl From<Taux> for Val {
+    fn from(g: Taux) -> Val {
+        Val::Taux(g)
+    }
+}
+
+impl From<Coefficient> for Val {
+    fn from(g: Coefficient) -> Val {
+        Val::Coefficient(g)
+    }
+}
+
+impl From<Heures> for Val {
+    fn from(g: Heures) -> Val {
+        Val::Heures(g)
+    }
+}
+
+impl From<Cachets> for Val {
+    fn from(g: Cachets) -> Val {
+        Val::Cachets(g)
+    }
+}
+
+impl From<Jours> for Val {
+    fn from(g: Jours) -> Val {
+        Val::Jours(g)
+    }
+}
+
+impl From<QuantiteDeLigne> for Val {
+    fn from(q: QuantiteDeLigne) -> Val {
+        Val::Quantite(q)
+    }
+}
+
+impl From<TauxDeLigne> for Val {
+    fn from(t: TauxDeLigne) -> Val {
+        Val::TauxDeLigne(t)
     }
 }
 
@@ -332,70 +461,64 @@ impl Ligne {
         self.poser(k, Some(Val::Mois(m)))
     }
 
-    pub fn d(&mut self, k: ColonneDEtat, v: Decimal) -> &mut Ligne {
-        self.poser(k, Some(Val::Dec(v)))
+    /// Une grandeur dans la case `k` (un montant, un taux, des heures, la quantite ou le taux d'une ligne de paie…).
+    pub fn grandeur(&mut self, k: ColonneDEtat, v: impl Into<Val>) -> &mut Ligne {
+        self.poser(k, Some(v.into()))
     }
 
-    pub fn od(&mut self, k: ColonneDEtat, v: Option<Decimal>) -> &mut Ligne {
-        self.poser(k, v.map(Val::Dec))
+    /// Une grandeur, ou rien (la source ne la dit pas).
+    pub fn grandeur_ou_rien<G: Into<Val>>(&mut self, k: ColonneDEtat, v: Option<G>) -> &mut Ligne {
+        self.poser(k, v.map(Into::into))
     }
 
-    /// Un montant, dans la case d'un etat : sa porte.
-    pub fn montant(&mut self, k: ColonneDEtat, v: socle::grandeurs::Montant) -> &mut Ligne {
-        self.d(k, v.decimal())
+    /// Un montant.
+    pub fn montant(&mut self, k: ColonneDEtat, v: Montant) -> &mut Ligne {
+        self.grandeur(k, v)
     }
 
     /// Un montant, ou rien.
-    pub fn om(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Montant>) -> &mut Ligne {
-        self.od(k, v.map(|m| m.decimal()))
+    pub fn om(&mut self, k: ColonneDEtat, v: Option<Montant>) -> &mut Ligne {
+        self.grandeur_ou_rien(k, v)
     }
 
-    /// Un taux, ou rien, dans la case d'un etat (le taux d'une ligne de cotisation) : sa porte.
-    pub fn taux(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>) -> &mut Ligne {
-        self.od(k, v.map(|t| t.decimal()))
+    /// Un taux, ou rien (le taux d'une ligne de cotisation).
+    pub fn taux(&mut self, k: ColonneDEtat, v: Option<Taux>) -> &mut Ligne {
+        self.grandeur_ou_rien(k, v)
     }
 
-    /// Un taux, ou rien, dans la case d'un etat, a `decimales` decimales toutes ecrites (le taux d'une ligne 23 du
-    /// bordereau, deux decimales comme la DSN l'ecrit) : sa porte. Le taux arrive arrondi a ces decimales.
-    pub fn taux_a(&mut self, k: ColonneDEtat, v: Option<socle::grandeurs::Taux>, decimales: u32) -> &mut Ligne {
-        self.od(k, v.map(|t| {
-            let mut d = t.decimal();
-            d.rescale(decimales);
-            d
-        }))
-    }
-
-    /// La base d'une ligne de cotisation, ou rien, dans la case d'un etat : ses euros ou ses heures.
+    /// La base d'une ligne de cotisation, ou rien : ses euros ou ses heures.
     pub fn base(&mut self, k: ColonneDEtat, v: Option<engagement::calcul::BaseDeCotisation>) -> &mut Ligne {
         match v {
             Some(engagement::calcul::BaseDeCotisation::Montant(m)) => self.montant(k, m),
-            Some(engagement::calcul::BaseDeCotisation::Heures(h)) => self.heures(k, h),
+            Some(engagement::calcul::BaseDeCotisation::Heures(h)) => self.grandeur(k, h),
             None => self.rien(k),
         }
     }
 
-    /// Des heures, dans la case d'un etat : leur porte.
-    pub fn heures(&mut self, k: ColonneDEtat, v: socle::grandeurs::Heures) -> &mut Ligne {
-        self.d(k, v.decimal())
-    }
-
-    /// Un taux de PAS, ou rien, dans la case d'un etat (deux decimales, comme la norme l'ecrit) : sa porte.
+    /// Un taux de PAS, ou rien (deux decimales, comme la norme l'ecrit).
     pub fn taux_de_pas(&mut self, k: ColonneDEtat, v: Option<droit::pas::TauxDePas>) -> &mut Ligne {
-        self.od(k, v.map(|t| t.taux().decimal()))
+        self.taux(k, v.map(|t| t.taux()))
     }
 
-    /// La quantite d'une ligne de paie, ou rien, dans la case d'un etat (dans l'unite de sa rubrique) : sa porte.
-    pub fn quantite(&mut self, k: ColonneDEtat, v: Option<engagement::ligne::QuantiteDeLigne>) -> &mut Ligne {
-        self.od(k, v.map(|q| q.decimal()))
+    /// Un compte (« combien de… »).
+    pub fn compte(&mut self, k: ColonneDEtat, n: usize) -> &mut Ligne {
+        self.poser(k, Some(Val::Compte(n)))
     }
 
-    /// Des jours, dans la case d'un etat : leur porte.
-    pub fn jours(&mut self, k: ColonneDEtat, v: socle::grandeurs::Jours) -> &mut Ligne {
-        self.d(k, v.decimal())
+    /// Le rang de la ligne dans son etat.
+    pub fn rang(&mut self, k: ColonneDEtat, r: RangDansLEtat) -> &mut Ligne {
+        self.poser(k, Some(Val::Rang(r)))
     }
 
-    pub fn n(&mut self, k: ColonneDEtat, v: i64) -> &mut Ligne {
-        self.poser(k, Some(Val::entier(v)))
+    /// Le montant `v` ajoute a celui de la case `k`, ou pose quand elle est vide : le cumul d'une ligne d'un etat de
+    /// synthese (le recapitulatif annuel, la masse salariale, le cout par spectacle).
+    pub fn ajouter(&mut self, k: ColonneDEtat, v: Montant) -> R<&mut Ligne> {
+        let total = match self.val(k) {
+            None => v,
+            Some(Val::Montant(avant)) => *avant + v,
+            Some(autre) => return Err(erreur(Classe::CalculImpossible, format!("La case « {} » porte « {} », pas un montant.", k.cle(), autre.en_texte_ecrit()))),
+        };
+        Ok(self.montant(k, total))
     }
 
     pub fn rien(&mut self, k: ColonneDEtat) -> &mut Ligne {
@@ -418,9 +541,10 @@ impl Ligne {
         self.val(k).map(Val::en_texte_ecrit).into_iter().collect()
     }
 
-    pub fn decimal(&self, k: ColonneDEtat) -> Option<Decimal> {
+    /// Le montant de la case `k`, quand elle en porte un.
+    pub fn montant_de(&self, k: ColonneDEtat) -> Option<Montant> {
         match self.val(k) {
-            Some(Val::Dec(d)) => Some(*d),
+            Some(Val::Montant(m)) => Some(*m),
             _ => None,
         }
     }
@@ -576,19 +700,19 @@ pub fn sans_mois() -> Echec {
 
 /// La somme de ce qui est DECLARE, ou `None` quand aucune ligne ne l'est.
 fn somme(lignes: &[&Ligne], cle: ColonneDEtat) -> R<Option<Val>> {
-    let mut total: Option<Decimal> = None;
+    let mut total: Option<Val> = None;
     for l in lignes {
         let v = match l.get(cle) {
             Some(Some(Val::Txt(t))) if t.is_empty() => continue,
-            Some(Some(v)) => v.decimal()?,
+            Some(Some(v)) => v,
             _ => continue,
         };
         total = Some(match total {
-            Some(t) => t + v,
-            None => v,
+            Some(t) => t.plus(v)?,
+            None => v.premiere_du_total()?,
         });
     }
-    Ok(total.map(Val::Dec))
+    Ok(total)
 }
 
 /// Pose le sous-total de chaque section et le total general. La premiere colonne de
@@ -634,9 +758,10 @@ pub const TOTAL_GENERAL: &str = "TOTAL GÉNÉRAL";
 
 /// Une cellule en texte francais, virgule decimale ; une case vide ne s'ecrit pas (rien).
 pub fn texte(v: Option<&Val>, c: &Colonne) -> String {
-    v.map(|v| match v {
-        Val::Dec(d) if c.a_droite() => d.to_string().replace('.', ","),
-        autre => autre.en_texte_ecrit(),
+    v.map(|v| match (c.a_droite(), v.est_une_grandeur()) {
+        // Une grandeur a la francaise, sa virgule decimale.
+        (true, true) => v.en_texte_ecrit().replace('.', ","),
+        _ => v.en_texte_ecrit(),
     })
     .into_iter()
     .collect()
@@ -802,35 +927,20 @@ pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
 
 // --------------------------------------------------------------------- xlsx
 
-/// Une cellule du classeur.
-enum Cel {
-    Vide,
-    Nombre(Decimal),
-    Texte(String),
-}
-
-/// Le nombre d'une colonne de chiffres (un texte qui se lit en nombre aussi), le texte sinon.
-fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
-    let Some(v) = v else { return Ok(Cel::Vide) };
-    Ok(match v {
-        Val::Txt(s) if s.is_empty() => Cel::Vide,
-        Val::Dec(d) => Cel::Nombre(*d),
-        Val::Ent(n) => Cel::Nombre(Decimal::from(*n)),
-        Val::Mois(m) => Cel::Texte(m.to_string()),
-        Val::Txt(s) if c.a_droite() => match socle::num::decimal_lu(s) {
-            Some(d) => Cel::Nombre(d),
-            None => Cel::Texte(s.clone()),
+/// La case `v` dans la cellule (`ligne`, `col`) : un nombre (une grandeur, un compte, un rang) dans le style `nombre`,
+/// un mois ou un texte dans le style `texte` ; une case vide, ou un texte vide, n'ecrit rien.
+fn ecrire_cellule(ws: &mut Feuille, ligne: u32, col: u16, v: Option<&Val>, nombre: &Style, texte: &Style) {
+    let Some(v) = v else { return };
+    chaque_grandeur!(v, g => ws.nombre(ligne, col, g, nombre);
+        Val::Compte(n) => ws.entier(ligne, col, n, nombre),
+        Val::Rang(r) => ws.entier(ligne, col, r.0, nombre),
+        Val::Mois(m) => ws.texte(ligne, col, m.to_string(), texte),
+        Val::Txt(ref s) => {
+            if !s.is_empty() {
+                ws.texte(ligne, col, s.clone(), texte)
+            }
         },
-        Val::Txt(s) => Cel::Texte(s.clone()),
-    })
-}
-
-fn ecrire_cellule(ws: &mut Feuille, ligne: u32, col: u16, cel: &Cel, style: &Style) {
-    match cel {
-        Cel::Vide => {}
-        Cel::Nombre(d) => ws.nombre(ligne, col, *d, style),
-        Cel::Texte(t) => ws.texte(ligne, col, t.clone(), style),
-    }
+    )
 }
 
 /// Le nom de la feuille : celui de l'etat (`livre-de-paie`), qui tient dans les 31 caracteres qu'Excel admet et n'en
@@ -876,9 +986,9 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
             Rangee::Ligne => (false, CORPS_DU_CLASSEUR),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
-            let cel = cellule_classeur(d.val(c.cle), c)?;
-            let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::CLASSEUR };
-            ecrire_cellule(&mut ws, ligne, i as u16, &cel, &style);
+            let texte = Style { gras, corps, ..Style::CLASSEUR };
+            let nombre = Style { format: nombre_de(c), ..texte.clone() };
+            ecrire_cellule(&mut ws, ligne, i as u16, d.val(c.cle), &nombre, &texte);
         }
         ligne += 1;
     }

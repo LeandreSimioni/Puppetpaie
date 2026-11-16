@@ -11,9 +11,11 @@ use droit::forme_bareme::{CHOMAGE, MALADIE, REDUCTION_GENERALE, RETRAITE_T1};
 use engagement::ecarts::RegroupementDeComparaison;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
+use socle::grandeurs::ecrit::texte;
 use socle::grandeurs::Montant;
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
+use crate::tableaux_export::RangDansLEtat;
 
 fn refus(m: String) -> Echec {
     erreur(Classe::Refuse, m)
@@ -63,7 +65,7 @@ pub struct Ecriture {
     /// Posee par les etats des ecritures comptables (« PAIE-AAAA-MM »).
     pub piece: String,
     /// Le rang de l'ecriture (une par mois) dans l'etat, a partir de 1.
-    pub numero: i64,
+    pub numero: RangDansLEtat,
 }
 
 /// La date de l'ecriture d'un mois (son dernier jour) et son libelle (« Decembre 2026 »).
@@ -74,8 +76,9 @@ fn date_et_libelle(mois: Mois) -> (socle::date::Jour, String) {
 /// Une ecriture pour le mois, depuis les paies validees.
 /// Le brut par spectacle, la charge patronale et le tiers par ligne de bulletin, le prelevement a la source retenu
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
-/// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
-pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
+/// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte. `numero` : le rang du mois
+/// dans l'etat qui les ecrit.
+pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &engagement::departs::Departs, numero: RangDansLEtat) -> R<Vec<Ecriture>> {
     let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let (date, lib_mois) = date_et_libelle(mois);
     let jrn = plan.journal.clone();
@@ -244,7 +247,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             auxiliaire: auxiliaire.cloned(),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
             piece: String::new(),
-            numero: 0,
+            numero,
         });
     };
     for (titre, m) in &brut_par_spectacle {
@@ -284,7 +287,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         // manque au plan ou a change de nature. On ne livre pas une ecriture desequilibree.
         return Err(refus(format!(
             "L'écriture de {} n'est pas équilibrée (débit {}, crédit {}) : une ligne de bulletin n'est pas portée comme il faut par le plan comptable.",
-            lib_mois, d.decimal(), c.decimal()
+            lib_mois, texte::dit(d), texte::dit(c)
         )));
     }
     Ok(out)
@@ -314,7 +317,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
             Some(a) => a.to_string(),
             None => e.compte.to_string(),
         };
-        let montant = |m: Montant| (!m.est_nul()).then(|| m.decimal().to_string().replace('.', ","));
+        let montant = |m: Montant| (!m.est_nul()).then(|| texte::dit(m).replace('.', ","));
         rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()

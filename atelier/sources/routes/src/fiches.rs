@@ -1404,7 +1404,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
     let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
-    let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
+    let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.
     let dit = |liste: Vec<(String, documents::fiche_recapitulative::Cout)>| -> R<Vec<(String, CoutDit)>> {
         liste

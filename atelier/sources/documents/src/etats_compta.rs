@@ -24,11 +24,10 @@ use crate::ecritures_comptables::{ecritures_du_mois, Ecriture, NumeroDeCompte};
 use crate::libelles_courts::{Courts, Depasse, FormatBorne, Quoi};
 use crate::plan_comptable::{EtatDExport, FormatDExport, Logiciel, LogicielComptable, Plan};
 use socle::texte::euros;
-use socle::grandeurs::ecrit::sans_zero;
+use socle::grandeurs::ecrit::{sans_zero, texte};
 use socle::grandeurs::{Jours, Montant, Taux};
-use socle::num::{add, Decimal};
 use crate::tableaux_export::{
-    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, Section, Tableau,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, ColonneDEtat as C, Ligne, RangDansLEtat, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -138,19 +137,12 @@ fn zone(logiciel: &str, quoi: &str, v: &str, n: usize, cote: char) -> R<String> 
 
 /// `"%.2f" % v` d'un montant a deux decimales.
 fn deux(v: Montant) -> String {
-    v.au_centime().decimal().to_string()
+    texte::dit(v.au_centime())
 }
 
 /// Non vide, que des chiffres.
 fn tout_chiffres(t: &str) -> bool {
     !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
-}
-
-/// `quantize(Decimal(...))` au mode par defaut : arrondi au pair.
-fn quant(x: Decimal, dp: u32) -> Decimal {
-    let mut r = x.round_dp_with_strategy(dp, rust_decimal::RoundingStrategy::MidpointNearestEven);
-    r.rescale(dp);
-    r
 }
 
 /// `"\r\n".join(lignes) + "\r\n"`, en cp1252 : ce que ce jeu ne porte pas devient « ? » (`errors="replace"`).
@@ -244,8 +236,8 @@ fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
     l.t(C::Journal, e.journal.to_string()).t(C::Date, e.date.jj_mm_aaaa()).t(C::Piece, e.piece.clone()).t(C::Compte, compte_de(e).to_string());
     l.ot(C::LibelleCompte, libelle_de(plan, e)).t(C::Libelle, e.libelle.clone());
-    l.od(C::Debit, if e.debit.est_nul() { None } else { Some(e.debit.decimal()) });
-    l.od(C::Credit, if e.credit.est_nul() { None } else { Some(e.credit.decimal()) });
+    l.om(C::Debit, Some(e.debit).filter(|m| !m.est_nul()));
+    l.om(C::Credit, Some(e.credit).filter(|m| !m.est_nul()));
     l.ot(C::Analytique, e.analytique.clone()).m(C::Mois, e.mois);
     l
 }
@@ -256,9 +248,8 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     for (n, &m) in p.mois.iter().enumerate() {
-        for mut e in ecritures_du_mois(ctx, m, &plan, departs)? {
+        for mut e in ecritures_du_mois(ctx, m, &plan, departs, RangDansLEtat::de_l_indice(n))? {
             e.piece = format!("PAIE-{}", m);
-            e.numero = n as i64 + 1;
             out.push(e);
         }
     }
@@ -747,7 +738,6 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
     }
     for e in ecritures {
         let (s, montant) = sens(e);
-        let centimes = montant.au_centime().decimal().mantissa();
         let mut ch: BTreeMap<&str, String> = BTreeMap::new();
         ch.insert("type", "M".to_string());
         ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
@@ -755,7 +745,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         ch.insert("folio", "000".to_string());
         ch.insert("date", jjmmaa(e.date));
         ch.insert("sens", s.to_string());
-        ch.insert("montant", format!("+{:012}", centimes));
+        ch.insert("montant", format!("+{}", socle::grandeurs::ecrit::en_centimes::chiffres(montant, 12)));
         ch.insert("affaire", ou_vide(env.section(e)));
         ch.insert("devise", "EUR".to_string());
         ch.insert("journal3", e.journal.to_string());
@@ -1060,12 +1050,7 @@ pub fn ecritures_comptables(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     }
     t.format = format_possible(Some(format), &FORMATS_ECRITURES)?;
     totaliser(&mut t, TOTAL_GENERAL)?;
-    // Le total de chaque colonne : la somme de ce que les lignes portent (aucune ligne, rien).
-    let somme = |k: C| t.sections.iter().flat_map(|s| s.lignes.iter()).filter_map(|l| l.decimal(k)).fold(Montant::ZERO.decimal(), add);
-    let (debit, credit) = (somme(C::Debit), somme(C::Credit));
-    if debit != credit {
-        return Err(refus(format!("Le journal n'est pas équilibré (débit {}, crédit {}).", debit, credit)));
-    }
+    // L'equilibre du journal : chaque mois s'equilibre a sa fabrication (`ecritures_du_mois`), seul endroit qui le tienne.
     let mut sections = None;
     if analytique {
         let largeur = match ecr_format.as_ref().map(|e| e.section) {
@@ -1149,8 +1134,8 @@ pub fn trop_longs(ctx: &Contexte, format: FormatDExport, departs: &engagement::d
     // Mois par mois : un mois dont les ecritures se refusent (sa paie incomplete) ne s'exporte pas, et son refus est
     // celui de son export : il se dit ici aussi.
     let mut ecr = Vec::new();
-    for m in Periode::nouvelle(ctx, None, None, true, false)?.mois {
-        let mut du_mois = ecritures_du_mois(ctx, m, &plan, departs)?;
+    for (n, m) in Periode::nouvelle(ctx, None, None, true, false)?.mois.into_iter().enumerate() {
+        let mut du_mois = ecritures_du_mois(ctx, m, &plan, departs, RangDansLEtat::de_l_indice(n))?;
         for e in du_mois.iter_mut() {
             e.piece = format!("PAIE-{}", m);
         }
@@ -1173,11 +1158,11 @@ pub fn format_retenu(ctx: &Contexte) -> R<Option<FormatDExport>> {
 /// Le solde d'une ligne, dit « débiteur », « créditeur » ou « nul ».
 fn solde(d: &Ligne) -> String {
     // Ce que le compte porte au debit, moins ce qu'il porte au credit (une colonne vide n'y porte rien).
-    let v = [d.decimal(C::Debit), d.decimal(C::Credit).map(|c| -c)].into_iter().flatten().fold(Montant::ZERO.decimal(), add);
-    let t = if v > Decimal::ZERO {
-        format!("débiteur {}", v)
-    } else if v < Decimal::ZERO {
-        format!("créditeur {}", -v)
+    let v = [d.montant_de(C::Debit), d.montant_de(C::Credit).map(|c| -c)].into_iter().flatten().fold(Montant::ZERO, |a, m| a + m);
+    let t = if v > Montant::ZERO {
+        format!("débiteur {}", texte::dit(v))
+    } else if v < Montant::ZERO {
+        format!("créditeur {}", texte::dit(-v))
     } else {
         "nul".to_string()
     };
@@ -1247,9 +1232,9 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (c, (lib, debit, credit)) in &par {
         let v = *debit - *credit;
         let mut l = Ligne::nouvelle();
-        l.t(C::Compte, c.to_string()).ot(C::Libelle, lib.clone()).d(C::Debit, debit.decimal()).d(C::Credit, credit.decimal());
-        l.od(C::SoldeDebiteur, if v > zero { Some(v.decimal()) } else { None });
-        l.od(C::SoldeCrediteur, if v < zero { Some((-v).decimal()) } else { None });
+        l.t(C::Compte, c.to_string()).ot(C::Libelle, lib.clone()).montant(C::Debit, *debit).montant(C::Credit, *credit);
+        l.om(C::SoldeDebiteur, Some(v).filter(|v| *v > zero));
+        l.om(C::SoldeCrediteur, Some(-v).filter(|_| v < zero));
         lignes.push(l);
     }
     let mut t = Tableau::nouveau(EtatDExport::BalancePaie, "Balance des comptes de paie", p.libelle.clone());
@@ -1277,9 +1262,9 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
-fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Taux>, i64)> {
+fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Taux>, usize)> {
     let depart = jusqu_a.avant(socle::date::Duree::mois(12)).map_err(|x| x.reclasser(Classe::Illisible))?;
-    let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0i64);
+    let (mut brut, mut pat, mut n) = (Montant::ZERO, Montant::ZERO, 0usize);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
         if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
@@ -1473,11 +1458,11 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             None => nom.to_string(),
         });
         l.ot(C::Contrat, contrat).t(C::Nature, nature);
-        l.jours(C::Report, cpt.report_restant.au_demi_superieur()).jours(C::Acquis, cpt.acquis.au_demi_superieur());
-        l.jours(C::Pris, cpt.pris.au_demi_superieur()).jours(C::Solde, cpt.solde.au_demi_superieur());
+        l.grandeur(C::Report, cpt.report_restant.au_demi_superieur()).grandeur(C::Acquis, cpt.acquis.au_demi_superieur());
+        l.grandeur(C::Pris, cpt.pris.au_demi_superieur()).grandeur(C::Solde, cpt.solde.au_demi_superieur());
         l.montant(C::Dixieme, dixieme).montant(C::Maintien, maintien).montant(C::Indemnite, retenu).t(C::Regle, regle);
         // Le taux s'ecrit a deux decimales (`12.50`).
-        l.od(C::TauxPatronal, taux.map(|t| quant(t.decimal(), 2))).n(C::Bulletins, n).om(C::Charges, charges);
+        l.taux(C::TauxPatronal, taux.map(|t| t.decimales_ecrites(2))).compte(C::Bulletins, n).om(C::Charges, charges);
         l.om(C::Total, charges.map(|c| retenu + c));
         lignes.push(l);
     }
@@ -1639,7 +1624,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let m2 = au_dela_2.fois_taux(ts.majoration_2).au_centime();
         let taxe = normal + m1 + m2;
         let mut l = Ligne::nouvelle();
-        l.t(C::Salarie, nom.clone()).n(C::NombreDeMois, mois.len() as i64).montant(C::Brut, *brut).montant(C::BaseDeLaTaxe, b).montant(C::TauxNormal, normal).montant(C::MajorationUn, m1).montant(C::MajorationDeux, m2).montant(C::Taxe, taxe);
+        l.t(C::Salarie, nom.clone()).compte(C::NombreDeMois, mois.len()).montant(C::Brut, *brut).montant(C::BaseDeLaTaxe, b).montant(C::TauxNormal, normal).montant(C::MajorationUn, m1).montant(C::MajorationDeux, m2).montant(C::Taxe, taxe);
         brute += taxe;
         lignes.push(l);
     }

@@ -44,7 +44,7 @@ pub struct CoutsDeLAnnee {
 /// importee taisait son cout employeur.
 #[derive(Debug, Serialize)]
 pub struct Cout {
-    pub bulletins: i64,
+    pub bulletins: usize,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub brut: Montant,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
@@ -94,7 +94,7 @@ impl<'a> Recapitulatifs<'a> {
             return Ok(out);
         }
         struct Cumul {
-            bulletins: i64,
+            bulletins: usize,
             brut: Montant,
             charges: Montant,
             cout: Montant,

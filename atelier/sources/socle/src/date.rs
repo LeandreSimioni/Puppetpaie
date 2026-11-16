@@ -116,6 +116,11 @@ impl Duree<EnJours> {
         Duree::de(self.0.div_ceil(7))
     }
 
+    /// DITE EN ABREGE, « 3 j » : la case d'un tableau qui la montre (les jours avant le reexamen des droits).
+    pub fn dite_en_abrege(self) -> String {
+        format!("{} j", self.0)
+    }
+
     /// SON NOMBRE DE JOURS, A L'ECRITURE D'UNE NORME qui le dit en nombre (la DSN : S21.G00.86.003).
     pub fn jours_a_ecrire(self) -> u32 {
         self.0

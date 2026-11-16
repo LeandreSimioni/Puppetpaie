@@ -252,7 +252,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   dans son type** : `Duree<U>`, où `U` est `EnJours` ou `EnMois` (les marqueurs du socle ; `Unite`, scellé, n'en admet
   pas d'autre) ; une année d'un texte est douze mois. Une durée qu'un texte fixe s'écrit `Duree::jours`, `Duree::mois`,
   `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa porte (`en_jours`, `en_mois`, et leurs facultatives ;
-  écrite par `ecrite_en_jours`, `ecrite_en_jours_opt`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire` ; dans la
+  écrite par `ecrite_en_jours`, `ecrite_en_jours_opt`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire` ; dite en abrégé, « 3 j », par `dite_en_abrege` ; dans la
   charge d'une route, `en_jours` lit aussi des jours tapés, par la lecture du nombre tapé : la période d'essai d'une
   carte, les jours déjà indemnisés d'un arrêt). Elle se compte depuis un jour,
   dans l'une ou l'autre unité (`Jour::apres`, `Jour::avant`), en mois depuis un mois (`Mois::apres`, `Mois::avant`) ou
@@ -391,12 +391,15 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
-  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
-  l'attribut serde du champ ; case d'une fiche (`fiche!`, ses listes datées), elle s'écrit en nombre JSON par
+  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`, et
+  `en_centimes`, la zone d'un format comptable), dits par l'attribut serde du champ ; la case d'un état porte la
+  grandeur elle-même (`documents::tableaux_export::Val`, une forme), écrite à chacune de ses portes (le texte, le JSON,
+  la feuille du classeur, `classeur::Feuille::nombre`, qui prend la grandeur) ; case d'une fiche (`fiche!`, ses listes datées), elle s'écrit en nombre JSON par
   `socle::ecriture::EcritureDeCase` (les heures du forfait d'une rubrique, son plafond de cachets par mois). Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
   écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
   « -0.00 » ; `taux` : ses décimales, la moitié au pair, toutes écrites ; `quantite` : au centième, la moitié vers le
-  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture.
+  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture (`Taux::decimales_ecrites`, la case
+  d'un état).
 - **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
 
 **Les identifiants**
@@ -416,6 +419,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'un avenant au contrat | `NumeroDAvenant` | `engagement/src/numeros.rs` |
 | rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | rang d'un engagement dans l'écran de son mois (dit à partir de un) | `RangDansLeMois` | `engagement/src/saisie.rs` |
+| rang d'une ligne dans son état (dit à partir de un : le numéro d'ordre du registre du personnel, le numéro d'une écriture comptable, un par mois de la période) | `RangDansLEtat` | `documents/src/tableaux_export.rs` |
 | version d'un engagement (la première à sa validation, la suivante quand ce qui est parti change) | `VersionDeLEngagement` | `engagement/src/stock.rs` |
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
