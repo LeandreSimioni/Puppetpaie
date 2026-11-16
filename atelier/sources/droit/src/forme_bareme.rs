@@ -250,7 +250,7 @@ forme! {
         pub majoration_chomage_cddu: Option<MajorationChomage>,
         pub statuts: Vec<Statut>,
         pub par_statut: BTreeMap<Statut, CoucheStatut>,
-        pub deduction_forfaitaire: Option<DeductionForfaitaire>,
+        pub deduction_forfaitaire: Option<DfsDuBareme>,
         pub par_categorie: BTreeMap<CategorieDuBareme, CoucheCategorie>,
         #[serde(deserialize_with = "crate::natures::population::cles::deserialize")]
         pub par_nature: BTreeMap<Paie, CoucheNature>,
@@ -981,7 +981,11 @@ crate::cle_opaque! {
 }
 
 forme! {
-    pub struct DeductionForfaitaire {
+    /// LA SECTION `deduction_forfaitaire` DU BAREME DE L'ANNEE : la regle (les professions, le taux de chaque categorie,
+    /// le plafond annuel, les rubriques abattues, la tolerance du BOSS). Une forme du bareme, pas la DFS d'une paie
+    /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
+    /// salarie (`DfsDuSalarie`).
+    pub struct DfsDuBareme {
         pub verifie: Option<bool>,
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,

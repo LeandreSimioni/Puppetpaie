@@ -177,7 +177,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
 | taux AT/MP | `TauxAtmp` | à unifier (#419) : `fiche::TauxAtmp`, `forme_bareme::TauxAtmp`, `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
-| déduction forfaitaire spécifique d'une paie | `calcul::DeductionForfaitaire` | à unifier (#419) : `forme_bareme::DeductionForfaitaire`, `AbattementDfs` |
 | réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
@@ -1075,6 +1074,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
+| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
 | taux de PAS que la dernière DSN déposée d'un salarié dit (un taux transmis, qui se reçoit, ou un taux illisible, qui ne pose rien) | `compagnie::taux_pas::TauxDUneDsn` | `compagnie/src/taux_pas.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
@@ -1518,6 +1518,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
+- **déduction forfaitaire spécifique d'une paie** : ce que le calcul d'un contrat abat (`calcul::abattement_dfs`, en
+  montants : le taux de l'année par rubrique de salaire, le plafond annuel, l'assiette minimum), et ce que la paie
+  écrite garde telle quelle (sa forme est la sienne, ses grandeurs en texte normalisé) ; le bulletin en imprime le taux
+  et le montant, la DSN le taux (40.023) et le montant (54 de type 10), sans le recomposer. Ce que l'année avait déjà
+  déduit (`deja`) est le cumul de l'année des paies validées (`conges::dfs_des_mois_anterieurs`) et des contrats
+  précédents du mois ; un cumul de l'année est la grandeur de ce qu'il somme, pas une notion. La règle de l'année est
+  la section du barème (`forme_bareme::DfsDuBareme`, une forme), dont `calcul::deduction_forfaitaire` tire la DFS d'un
+  salarié (`DfsDuSalarie`).
 - **formule de la réduction générale** : celle que le barème nomme (`formule`) : `fillon`, au coefficient `t` ; sans
   elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
 - **identifiant d'une affiliation** : l'« Identifiant technique Affiliation » de la norme, une seule rubrique sous deux

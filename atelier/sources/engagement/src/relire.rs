@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
+use crate::calcul::{fiche_de_l_engagement, LigneBrut, LigneCotisation, Paie};
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
@@ -127,7 +127,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
     p.bases = v.bases.clone();
     p.reduction_generale = v.reduction_generale.clone();
-    p.deduction_forfaitaire = v.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::de_la_forme);
+    p.deduction_forfaitaire = v.deduction_forfaitaire.clone();
     p.avertissements = v.avertissements.clone();
     p.periodes = periodes_lues;
     Ok(paie)

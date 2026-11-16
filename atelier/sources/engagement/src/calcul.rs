@@ -16,10 +16,10 @@ use socle::date::{Jour, Periode};
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use crate::{Avis, Engagement};
-use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration};
+use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::{div, mul, sub, Decimal};
+use socle::num::{div, mul, Decimal};
 use socle::grandeurs::{courte, Coefficient, Heures, Montant, MontantUnitaire, Taux};
 use crate::ligne::{PaiementDeLigne, QuantiteDeLigne};
 pub use droit::reduction::ReductionGenerale;
@@ -405,49 +405,28 @@ impl LigneCotisation {
 }
 
 /// La deduction forfaitaire specifique (DFS) appliquee a un contrat : arrete du 4 septembre 2025
-/// relatif aux frais professionnels, art. 9 (`atelier/reference/sources/dfs/LISEZ-MOI.md`).
-#[derive(Debug, Clone, PartialEq)]
+/// relatif aux frais professionnels, art. 9 (`atelier/reference/sources/dfs/LISEZ-MOI.md`). La paie ecrite la garde
+/// telle quelle (`paie_ecrite::FormeDePaie`), ses grandeurs en texte normalise (`socle::grandeurs::ecrit::nombre`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeductionForfaitaire {
     /// « 20 » ou « 25 » : le taux de l'article 5 de l'annexe IV du CGI (redaction du 31/12/2000) que la profession porte.
     pub categorie: droit::forme_bareme::CategorieDfs,
     /// La profession de la fiche (`deduction_forfaitaire.professions` du bareme).
     pub profession: droit::fiche::ProfessionDfs,
     /// Le taux de l'annee (bareme), en pourcent.
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub taux: Taux,
     /// Les lignes du bulletin dont l'assiette est abattue.
     pub rubriques: Vec<IdDeCotisation>,
     /// La deduction retenue sur ce contrat : le brut moins l'assiette abattue, apres le plafond annuel et l'assiette
     /// minimum. C'est ce que la DSN declare en bloc 54 de type 10.
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub montant: Montant,
     /// Ce que l'annee civile a deja deduit pour ce salarie avant ce contrat (les mois anterieurs, les contrats
     /// precedents du mois).
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub deja: Montant,
-}
-
-impl DeductionForfaitaire {
-    /// Sa forme ecrite.
-    pub fn forme(&self) -> FormeDeLaDeduction {
-        FormeDeLaDeduction {
-            categorie: self.categorie.clone(),
-            profession: self.profession,
-            taux: self.taux,
-            rubriques: self.rubriques.clone(),
-            montant: self.montant,
-            deja: self.deja,
-        }
-    }
-
-    /// Relue de sa forme ecrite.
-    pub(crate) fn de_la_forme(f: &FormeDeLaDeduction) -> DeductionForfaitaire {
-        DeductionForfaitaire {
-            categorie: f.categorie.clone(),
-            profession: f.profession,
-            taux: f.taux,
-            rubriques: f.rubriques.clone(),
-            montant: f.montant,
-            deja: f.deja,
-        }
-    }
 }
 
 /// Ce que la remuneration nette fiscale reintegre au net des cotisations : la CSG et la CRDS non deductibles (part
@@ -935,22 +914,16 @@ fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, preced
         let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
         if sienne {
             if let Some(d) = &p.deduction_forfaitaire {
-                deja += d.montant.decimal();
+                deja += d.montant;
             }
         }
     }
-    Ok(Montant::du_decimal(deja))
+    Ok(deja)
 }
 
-/// Ce que la deduction retire d'un contrat, et les assiettes abattues de ses rubriques de salaire.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AbattementDfs {
-    pub deduction: Montant,
-    pub assiettes: Vec<Montant>,
-    pub avis: Vec<String>,
-}
-
-/// La deduction d'un contrat : chaque rubrique de salaire abattue du taux de l'annee (arrondie au centime),
+/// La deduction d'un contrat, et les assiettes abattues de ses rubriques de salaire (dans l'ordre de `montants`) ; ce
+/// qu'elle a a en dire (le plafond annuel, l'assiette minimum) s'ajoute a `avis`. Chaque rubrique de salaire abattue du
+/// taux de l'annee (arrondie au centime),
 /// puis
 /// - le plafond annuel : << dans la limite de 7 600 euros par annee civile >> (arrete du 4 septembre 2025, art. 9, I,
 ///   al. 1) ;
@@ -963,24 +936,24 @@ pub struct AbattementDfs {
 ///   la DSN (`heures_par_cachet`), aucun texte depose ne dit les heures travaillees d'un cachet.
 /// Quand l'une ou l'autre ramene la deduction, l'assiette abattue se repartit entre les rubriques au prorata de leur
 /// montant, le dernier centime sur la derniere.
-pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Montant], brut: Montant, deja: Montant, assiette_minimale: Montant) -> AbattementDfs {
-    let (brut, deja, assiette_minimale) = (brut.decimal(), deja.decimal(), assiette_minimale.decimal());
-    let montants: Vec<Decimal> = montants.iter().map(|m| m.decimal()).collect();
-    let zero = socle::grandeurs::Montant::ZERO.decimal();
-    let facteur = sub(Decimal::ONE, div(o.taux.decimal(), Decimal::ONE_HUNDRED));
-    let theoriques: Vec<Decimal> = montants.iter().map(|m| socle::grandeurs::Montant::du_decimal(mul(*m, facteur)).au_centime().decimal()).collect();
+pub(crate) fn abattement_dfs(
+    o: &DfsDuSalarie, montants: &[Montant], brut: Montant, deja: Montant, assiette_minimale: Montant, avis: &mut Vec<String>,
+) -> (DeductionForfaitaire, Vec<Montant>) {
+    let zero = Montant::ZERO;
+    // Ce que la rubrique garde : un moins le taux de l'annee.
+    let facteur = Coefficient::UN - o.taux.en_coefficient();
+    let theoriques: Vec<Montant> = montants.iter().map(|m| (*m * facteur).au_centime()).collect();
     let pleine = brut - theoriques.iter().fold(zero, |a, b| a + *b);
-    let mut avis = Vec::new();
-    let reste = zero.max(o.plafond_annuel.decimal() - deja);
+    let reste = zero.max(o.plafond_annuel - deja);
     let mut retenue = pleine.min(reste);
     if retenue < pleine {
         avis.push(format!(
             "Déduction forfaitaire spécifique ramenée de {} à {} : le plafond de {} par année civile (arrêté du \
 4 septembre 2025, art. 9) est atteint, {} déjà déduits cette année.",
-            euros(Montant::du_decimal(pleine)),
-            euros(Montant::du_decimal(retenue)),
+            euros(pleine),
+            euros(retenue),
             euros(o.plafond_annuel),
-            euros(Montant::du_decimal(deja))
+            euros(deja)
         ));
     }
     if brut - retenue < assiette_minimale {
@@ -988,27 +961,34 @@ pub(crate) fn abattement_dfs(o: &DfsDuSalarie, montants: &[Montant], brut: Monta
         avis.push(format!(
             "Déduction forfaitaire spécifique ramenée de {} à {} : l'assiette abattue ne descend pas sous le SMIC du \
 contrat, {} (CSS R. 242-1, al. 6 ; arrêté du 4 septembre 2025, art. 9, I, dernier alinéa).",
-            euros(Montant::du_decimal(retenue)),
-            euros(Montant::du_decimal(plancher)),
-            euros(Montant::du_decimal(assiette_minimale))
+            euros(retenue),
+            euros(plancher),
+            euros(assiette_minimale)
         ));
         retenue = plancher;
     }
-    let assiettes = if retenue == pleine || brut <= Decimal::ZERO {
+    let assiettes = if retenue == pleine || brut <= zero {
         theoriques
     } else {
         let cible = brut - retenue;
         let mut out = Vec::with_capacity(montants.len());
         let mut cumul = zero;
         for (i, m) in montants.iter().enumerate() {
-            let a = if i + 1 == montants.len() { cible - cumul } else { socle::grandeurs::Montant::du_decimal(div(mul(*m, cible), brut)).au_centime().decimal() };
+            let a = if i + 1 == montants.len() { cible - cumul } else { cible.prorata(*m, brut).au_centime() };
             cumul += a;
             out.push(a);
         }
         out
     };
-    let deduction = brut - assiettes.iter().fold(zero, |a, b| a + *b);
-    AbattementDfs { deduction: Montant::du_decimal(deduction), assiettes: assiettes.into_iter().map(Montant::du_decimal).collect(), avis }
+    let deduction = DeductionForfaitaire {
+        categorie: o.categorie.clone(),
+        profession: o.profession,
+        taux: o.taux,
+        rubriques: o.rubriques.clone(),
+        montant: brut - assiettes.iter().fold(zero, |a, b| a + *b),
+        deja,
+    };
+    (deduction, assiettes)
 }
 
 // ---------------------------------------------------------------- calculer
@@ -1653,24 +1633,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         dfs_applicable(eng, &nat, &o, &lb, &sal, &ctx.racine, &ctx.lue_au)?;
         let deja = dfs_deja_deduite(ctx, eng, &sal, precedentes)?;
         let montants: Vec<Montant> = soumises.iter().map(|l| l.montant).collect();
-        let a = abattement_dfs(&o, &montants, brut, deja, plafond);
+        let (deduction, assiettes_abattues) = abattement_dfs(&o, &montants, brut, deja, plafond, &mut avis_dfs);
         let mut somme_abattue = Montant::ZERO;
-        for (r, abattu) in par_rubrique.iter_mut().zip(a.assiettes.iter().copied()) {
+        for (r, abattu) in par_rubrique.iter_mut().zip(assiettes_abattues) {
             somme_abattue += abattu;
             r.dfs = Some(abattu);
             r.x115_dfs = Some((abattu * maj115).au_centime());
             r.x110_dfs = Some((abattu * maj110).au_centime());
         }
-        avis_dfs.extend(a.avis);
         brut_abattu = Some(somme_abattue);
-        dfs = Some(DeductionForfaitaire {
-            categorie: o.categorie.clone(),
-            profession: o.profession,
-            taux: o.taux,
-            rubriques: o.rubriques.clone(),
-            montant: a.deduction,
-            deja,
-        });
+        dfs = Some(deduction);
     }
 
     // 7.6 : les bases globales.
@@ -1899,7 +1871,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
     let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || {
-        crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id).map(socle::grandeurs::Montant::du_decimal)
+        crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id)
     })?;
     let mut exonere = Montant::ZERO;
     // Le nombre des heures en plus : sa base se range a la sortie, dans la grandeur que son assiette compte.
@@ -2182,7 +2154,7 @@ impl Paie {
             bases: self.bases.clone(),
             brut: self.brut,
             cout_employeur: self.cout_employeur,
-            deduction_forfaitaire: self.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::forme),
+            deduction_forfaitaire: self.deduction_forfaitaire.clone(),
             engagement,
             heures: self.heures,
             heures_absence: self.heures_absence,

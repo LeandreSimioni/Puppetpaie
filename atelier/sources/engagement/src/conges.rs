@@ -224,16 +224,16 @@ pub(crate) fn jours_dits(j: Jours) -> String {
 #[derive(Debug, Clone)]
 struct PaieLue {
     brut: Montant,
-    /// La deduction forfaitaire specifique retenue (zero sans DFS).
-    dfs: Decimal,
+    /// La deduction forfaitaire specifique retenue, s'il y en a une.
+    dfs: Option<Montant>,
     /// Un contrat paye au mois : sa presence dans le mois, et ce qu'il en decompte.
     mensuel: Option<MoisPaye>,
     /// Le compteur avant le mois que la paie a ecrit (`etats::CONGES_AVANT`).
     avant: Option<Avant>,
     /// Les heures supplementaires payees (`heures_en_plus::HEURE_SUPPLEMENTAIRE`) et le montant net des heures en plus
-    /// exonere d'impot (`Assiette::HeuresEnPlusExonere`).
+    /// exonere d'impot (`Assiette::HeuresEnPlusExonere`), s'il y en a un.
     heures_supplementaires: Decimal,
-    exonere: Decimal,
+    exonere: Option<Montant>,
 }
 
 #[derive(Debug, Clone)]
@@ -267,17 +267,10 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     } else {
         None
     };
-    // Sans deduction forfaitaire, rien n'est deduit ; sans base exoneree, rien n'est exonere.
-    let dfs = match &p.deduction_forfaitaire {
-        Some(d) => d.montant.decimal(),
-        None => Montant::ZERO.decimal(),
-    };
+    let dfs = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
     let heures_supplementaires =
         p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).filter_map(|l| l.paiement.quantite()).fold(Decimal::ZERO, |a, q| a + q.decimal());
-    let exonere = match p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere) {
-        Some(x) => x.decimal(),
-        None => Montant::ZERO.decimal(),
-    };
+    let exonere = p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere).map(|x| x.en_euros(droit::assiette::Assiette::HeuresEnPlusExonere)).transpose()?;
     Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
 
@@ -866,28 +859,32 @@ pub(crate) fn remuneration_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) 
 /// avant `mois` (AAAA-MM), telle que ses paies validees la portent (`calcul::dfs_deja_deduite` ; arrete du 4 septembre
 /// 2025, art. 9 : << dans la limite de 7 600 euros par annee civile >>). Une paie validee qui ne se lit pas refuse : le
 /// cumul de l'annee ne se devine pas.
-pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Decimal> {
-    cumul_de_l_annee(ctx, mois, cle, |p| p.dfs, "Déduction forfaitaire spécifique", "Le plafond de 7 600 € par année civile (arrêté du 4 septembre 2025, art. 9)")
+pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
+    let regle = "Le plafond de 7 600 € par année civile (arrêté du 4 septembre 2025, art. 9)";
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.dfs.into_iter().fold(a, |a, d| a + d), "Déduction forfaitaire spécifique", regle)
 }
 
 /// Les heures supplementaires payees au salarie `cle` dans les mois de la meme annee civile, strictement avant `mois` :
 /// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`).
 pub(crate) fn heures_supplementaires_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Decimal> {
-    cumul_de_l_annee(ctx, mois, cle, |p| p.heures_supplementaires, "Heures supplémentaires", "Le contingent annuel et ses paliers")
+    // Les heures en plus, une chaine encore en decimal (`droit::heures_en_plus::supplementaires`) : zero a deux decimales,
+    // comme un montant.
+    cumul_de_l_annee(ctx, mois, cle, Decimal::new(0, 2), |a, p| add(a, p.heures_supplementaires), "Heures supplémentaires", "Le contingent annuel et ses paliers")
 }
 
 /// Le montant net des heures en plus deja exonere d'impot pour le salarie `cle` dans l'annee civile, avant `mois` : la
 /// limite annuelle de CGI 81 quater le compte (`heures_en_plus`).
-pub(crate) fn exonere_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Decimal> {
-    cumul_de_l_annee(ctx, mois, cle, |p| p.exonere, "Exonération d'impôt des heures en plus", "La limite annuelle de 7 500 € (CGI 81 quater)")
+pub(crate) fn exonere_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
+    let regle = "La limite annuelle de 7 500 € (CGI 81 quater)";
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.exonere.into_iter().fold(a, |a, x| a + x), "Exonération d'impôt des heures en plus", regle)
 }
 
-/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `quoi` lit dans chaque paie validee du salarie `cle`.
-/// Une paie validee qui ne se lit pas refuse : le cumul de l'annee ne se devine pas.
-fn cumul_de_l_annee(ctx: &Contexte, mois: Mois, cle: &IdSalarie, quoi: impl Fn(&PaieLue) -> Decimal, qui: &str, regle: &str) -> R<Decimal> {
+/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `plus` ajoute, depuis `zero`, de chaque paie validee
+/// du salarie `cle`. Une paie validee qui ne se lit pas refuse : le cumul de l'annee ne se devine pas.
+fn cumul_de_l_annee<T: Copy>(ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, plus: impl Fn(T, &PaieLue) -> T, qui: &str, regle: &str) -> R<T> {
     let _derivation = Derivation::ouvrir();
     let cle_fiche = cle_de_fiche(ctx, cle)?;
-    let mut total = Montant::ZERO.decimal();
+    let mut total = zero;
     for m in crate::stock::mois_saisis(&ctx.racine)? {
         if m.annee() != mois.annee() || m >= mois {
             continue;
@@ -899,7 +896,7 @@ ne se connaît pas. Rien n'est calculé.",
                 qui, cle, m, e, regle
             ))
         })?;
-        total = paies.iter().fold(total, |a, p| add(a, quoi(p)));
+        total = paies.iter().fold(total, &plus);
     }
     Ok(total)
 }

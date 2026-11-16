@@ -87,7 +87,7 @@ pub struct FormeDePaie<A> {
     pub brut: Montant,
     #[serde(with = "nombre")]
     pub cout_employeur: Montant,
-    pub deduction_forfaitaire: Option<FormeDeLaDeduction>,
+    pub deduction_forfaitaire: Option<crate::calcul::DeductionForfaitaire>,
     pub engagement: FormeDEngagement,
     #[serde(with = "nombre")]
     pub heures: Heures,
@@ -190,21 +190,6 @@ pub struct FormeDeRemuneration {
     pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub precision: Option<String>,
     pub designation: String,
-}
-
-/// La deduction forfaitaire specifique (`calcul::DeductionForfaitaire`) sous sa forme ecrite.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FormeDeLaDeduction {
-    pub categorie: droit::forme_bareme::CategorieDfs,
-    pub profession: droit::fiche::ProfessionDfs,
-    #[serde(with = "nombre")]
-    pub taux: Taux,
-    pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,
-    #[serde(with = "nombre")]
-    pub montant: Montant,
-    #[serde(with = "nombre")]
-    pub deja: Montant,
 }
 
 /// UN ENGAGEMENT SOUS SA FORME CANONIQUE (`Engagement::canon`) : ses champs dans l'ordre ou ils s'ecrivent, les nombres

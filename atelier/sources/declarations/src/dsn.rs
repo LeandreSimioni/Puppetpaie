@@ -2301,9 +2301,9 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, periode: &Per
     // « 10 - Deduction forfaitaire specifique » (bloc 54, p. 257, `bloc-S21.G00.54.txt` ligne 56) : le bloc 54 « vehicule
     // [...] frais professionnels (y compris le montant de la Deduction Forfaitaire Specifique si applicable) » (chapitre
     // 2, p. 27, lignes 461-463), par contrat (CCH-16 de 50.001, p. 243, `bloc-S21.G00.50.txt` lignes 82-86). Le montant
-    // est ce que la deduction retire du brut soumis : le brut moins le brut abattu du calcul (`brut_dfs`).
-    if p.deduction_forfaitaire.is_some() {
-        let deduction = p.brut - brut_du_51(p)?;
+    // est ce que la deduction retire du brut soumis, que la paie porte (`calcul::DeductionForfaitaire::montant`).
+    if let Some(d) = &p.deduction_forfaitaire {
+        let deduction = d.montant;
         if !deduction.est_nul() {
             f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
             f.add(droit::rubrique!("S21.G00.54.002"), ms(deduction, signe));
