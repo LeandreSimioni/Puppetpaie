@@ -630,7 +630,7 @@ fn chaque_type_du_glossaire_existe() {
                 continue;
             }
             // Une declaration en tete de ligne (un commentaire qui nomme le type ne compte pas).
-            let declaration = regex::Regex::new(&format!(r"(?m)^\s*(pub(\([a-z]+\))?\s+)?(struct|enum|type|trait)\s+{0}\b|^\s*{0}\s*,\s*\x22", nom)).unwrap();
+            let declaration = regex::Regex::new(&format!(r"(?m)^\s*(pub(\([a-z]+\))?\s+)?(struct|enum|type|trait)\s+{0}\b|^\s*{0}\s*,\s*(\x22|\[)", nom)).unwrap();
             if !sources.iter().any(|s| declaration.is_match(s)) {
                 fautes.push(format!("{} : le type {} n'est declare dans aucun de {}", notion, nom, fichiers.join(", ")));
             }
