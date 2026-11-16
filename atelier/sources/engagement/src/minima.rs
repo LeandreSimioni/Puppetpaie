@@ -506,7 +506,7 @@ impl<'a> Cx<'a> {
                     format!(
                         "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
                         crate::qui_de(self.fiche)?,
-                        a.ans.nombre_d_ans_revolus()?
+                        a.ans.ans_revolus_dits()
                     ),
                     a.champ.cle().nom(),
                 ));

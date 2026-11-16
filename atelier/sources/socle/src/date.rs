@@ -630,7 +630,7 @@ impl<'de> serde::Deserialize<'de> for PeriodeOuverte {
 /// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en
 /// mois ou en annees se lit en elle a sa porte (`Deserialize` : des mois ; `en_annees`, `en_mois_entiers`,
 /// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees`,
-/// `nombre_d_ans_revolus`, `semaines_entieres`), et dans une phrase en mois (`Display`, `mois`).
+/// `semaines_entieres`), et dans une phrase en mois (`Display`, `mois`) ou en annees revolues (`ans_revolus_dits`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Anciennete(Decimal);
 
@@ -750,13 +750,29 @@ impl Anciennete {
         Anciennete(num::sub(self.0, self.reste_de_l_annee()))
     }
 
-    /// LE NOMBRE DE SES ANNEES ENTIERES, ce qu'un texte compte (la prime de presence, l'allongement d'un maintien).
-    #[track_caller]
-    pub fn nombre_d_ans_revolus(self) -> R<i64> {
+    /// SES ANNEES REVOLUES DITES DANS UNE PHRASE, en nombre entier (`3` ; `-1` pour une anciennete revolue negative,
+    /// `revolue`) : les annees de presence d'une prime, le palier d'une indemnite, le seuil d'un minimum.
+    pub fn ans_revolus_dits(self) -> String {
+        num::div(self.ans_revolus().0, Decimal::from(12)).trunc().to_string()
+    }
+
+    /// Ecrite en nombre entier d'annees (`3`), comme `en_annees_entieres` la relit :
+    /// `#[serde(serialize_with = "socle::date::Anciennete::ecrite_en_annees_entieres")]`. Une anciennete qui n'est pas
+    /// d'annees entieres (`ans_revolus` la fait telle) ne s'ecrit pas ainsi.
+    pub fn ecrite_en_annees_entieres<S: serde::Serializer>(a: &Anciennete, s: S) -> Result<S::Ok, S::Error> {
         use rust_decimal::prelude::ToPrimitive;
-        match num::div(self.ans_revolus().0, Decimal::from(12)).trunc().to_i64() {
-            Some(n) => Ok(n),
-            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+        let annees = a.annees();
+        match (annees.fract().is_zero(), annees.to_i64()) {
+            (true, Some(n)) => s.serialize_i64(n),
+            (true, None) | (false, _) => Err(serde::ser::Error::custom(format!("une ancienneté de {} mois n'est pas un nombre entier d'années", a.0))),
+        }
+    }
+
+    /// `ecrite_en_annees_entieres`, facultative : `None` s'ecrit `null`.
+    pub fn ecrite_en_annees_entieres_opt<S: serde::Serializer>(a: &Option<Anciennete>, s: S) -> Result<S::Ok, S::Error> {
+        match a {
+            Some(a) => Anciennete::ecrite_en_annees_entieres(a, s),
+            None => s.serialize_none(),
         }
     }
 
@@ -834,6 +850,11 @@ impl Anciennete {
     /// Lue d'un nombre entier d'annees.
     pub fn en_annees_entieres<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
         <i64 as serde::Deserialize>::deserialize(d).map(|a| Anciennete::d_annees(Decimal::from(a)))
+    }
+
+    /// `en_annees_entieres`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_annees_entieres_opt")]`.
+    pub fn en_annees_entieres_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|a| a.map(|a| Anciennete::d_annees(Decimal::from(a))))
     }
 
     /// Lue d'un nombre entier de mois.

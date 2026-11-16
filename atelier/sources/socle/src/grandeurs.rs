@@ -146,6 +146,7 @@ grandeurs! {
     Semaines, [], "un nombre de semaines", "DES SEMAINES : une quantite de semaines (`2`).";
     Unites, [], "un nombre d'unités", "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
     HeuresParUnite, ["h"], "un nombre d'heures", "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
+    JoursParSemaine, [], "un nombre de jours par semaine", "DES JOURS PAR SEMAINE : un rythme, les jours que chaque semaine donne (`1` : « 1 jour par semaine calendaire » d'anciennete, un preavis d'une convention) ; semaines x jours par semaine = jours.";
     Effectif, [], "un nombre de personnes", "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
 }
 
@@ -381,11 +382,19 @@ impl Coefficient {
         self.0.checked_powd(p.0).map(Coefficient)
     }
 
-    /// A quatre decimales, la moitie vers le haut, ses quatre decimales ecrites : le coefficient de la reduction generale
-    /// (`droit::reduction`).
+    /// A quatre decimales au plus, la moitie vers le haut : le coefficient de la reduction generale (`droit::reduction`).
     pub fn au_dix_millieme(self) -> Coefficient {
-        let mut c = self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero);
-        c.rescale(4);
+        Coefficient(self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointAwayFromZero))
+    }
+
+    /// SES QUATRE DECIMALES ECRITES (`0.5` s'ecrit `0.5000`) : son echelle portee a quatre quand elle est moindre, sa
+    /// valeur la meme ; une ecriture, pas un arrondi (un coefficient plus fin reste tel quel). Le coefficient de la
+    /// reduction generale, les mois d'un preavis qu'une convention dit en jours, chacun apres son arrondi.
+    pub fn quatre_decimales_ecrites(self) -> Coefficient {
+        let mut c = self.0;
+        if c.scale() < 4 {
+            c.rescale(4);
+        }
         Coefficient(c)
     }
 
@@ -395,13 +404,10 @@ impl Coefficient {
         Coefficient(self.0.trunc())
     }
 
-    /// A quatre decimales, la moitie au pair (un ecart relatif : aucun texte deposé ne dit cet arrondi).
-    pub fn a_quatre_decimales(self) -> Coefficient {
-        Coefficient(self.0.round_dp(4))
-    }
-
-    /// A `n` decimales au plus, la moitie au pair : un facteur que la visee d'un montant cherche (`engagement::viser`, a
-    /// vingt decimales ; dit a six). Aucun texte ne fixe cet arrondi : ce n'est pas un calcul de paie.
+    /// A `n` DECIMALES AU PLUS, LA MOITIE AU PAIR : un facteur que la visee d'un montant cherche (`engagement::viser`, a
+    /// vingt decimales ; dit a six), un ecart relatif (a quatre), la part recue d'une mise a jour (a six), les mois d'un
+    /// preavis qu'une convention dit en jours (a quatre, comme l'arithmetique des clauses les fixe). Aucun texte deposé
+    /// ne dit cet arrondi.
     pub fn a_decimales(self, n: u32) -> Coefficient {
         Coefficient(self.0.round_dp(n))
     }
@@ -411,23 +417,24 @@ impl Coefficient {
         Taux(num::mul(self.0, Decimal::from(100)))
     }
 
-    /// A quatre decimales, la moitie au pair, ses quatre decimales ecrites (`0.5` s'ecrit `0.5000`) : les mois d'un
-    /// preavis qu'une convention dit en jours (`droit::clauses::preavis_mois`, des mois de trente jours).
-    pub fn au_dix_millieme_au_pair(self) -> Coefficient {
-        let mut c = self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointNearestEven);
-        c.rescale(4);
-        Coefficient(c)
-    }
-
-    /// CE COEFFICIENT EN MOIS DE CALENDRIER ENTIERS (les mois d'un preavis, que son terme compte : `Jour::apres`) ;
-    /// `None` : il n'est pas un nombre entier de mois (une fraction, un negatif, hors du calendrier).
-    pub fn en_mois_entiers(self) -> Option<crate::date::Duree<crate::date::EnMois>> {
+    /// CE COEFFICIENT EN MOIS DE CALENDRIER ENTIERS (les mois d'un preavis, que son terme compte : `Jour::apres`), ou
+    /// pourquoi il ne l'est pas (`MoisNonEntiers`).
+    pub fn en_mois_entiers(self) -> Result<crate::date::Duree<crate::date::EnMois>, MoisNonEntiers> {
         use rust_decimal::prelude::ToPrimitive;
-        match self.0.fract().is_zero() {
-            true => self.0.to_u32().map(crate::date::Duree::mois),
-            false => None,
+        match (self.0.fract().is_zero(), self.0.to_u32()) {
+            (false, _) => Err(MoisNonEntiers::Fraction),
+            (true, Some(n)) => Ok(crate::date::Duree::mois(n)),
+            (true, None) => Err(MoisNonEntiers::HorsDuCalendrier),
         }
     }
+}
+
+/// POURQUOI UN COEFFICIENT N'EST PAS UN NOMBRE ENTIER DE MOIS DE CALENDRIER (`Coefficient::en_mois_entiers`) : une
+/// fraction (`1.5`), ou un entier que le calendrier ne compte pas (un negatif, un nombre trop grand).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoisNonEntiers {
+    Fraction,
+    HorsDuCalendrier,
 }
 
 impl Taux {
@@ -602,11 +609,20 @@ impl Services {
     }
 }
 
-impl Semaines {
-    /// Les jours que ces semaines donnent a `par_semaine` jours chacune (« 1 jour par semaine calendaire » d'anciennete :
-    /// un preavis de la convention) : semaines x jours par semaine = jours.
-    pub fn a_raison_de(self, par_semaine: Jours) -> Jours {
+/// Les jours que des semaines donnent a tant de jours chacune (« 1 jour par semaine calendaire » d'anciennete : un
+/// preavis de la convention) : semaines x jours par semaine = jours.
+impl std::ops::Mul<JoursParSemaine> for Semaines {
+    type Output = Jours;
+    fn mul(self, par_semaine: JoursParSemaine) -> Jours {
         Jours(num::mul(self.0, par_semaine.0))
+    }
+}
+
+impl Jours {
+    /// CES JOURS EN MOIS DE TRENTE JOURS (un preavis qu'une convention dit en jours) : jours / 30 = des mois de salaire,
+    /// un coefficient, exact (`num::div`) ; le diviseur est fixe, la division se fait toujours.
+    pub fn en_mois_de_trente_jours(self) -> Coefficient {
+        Coefficient(num::div(self.0, Decimal::from(30)))
     }
 }
 

@@ -17,7 +17,7 @@ use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
 use socle::echec::R;
-use socle::grandeurs::{Coefficient, Heures, Jours, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Jours, JoursParSemaine, Montant, Taux};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -144,7 +144,7 @@ pub struct TranchePreavis {
     /// `null` : sans borne.
     pub anciennete_mois_max: Option<Anciennete>,
     pub mois: Option<Coefficient>,
-    pub jours_par_semaine: Option<Jours>,
+    pub jours_par_semaine: Option<JoursParSemaine>,
     pub plafond_jours: Option<Jours>,
 }
 
@@ -751,9 +751,9 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
             if let Some(par_semaine) = t.jours_par_semaine {
                 // « 1 jour par semaine calendaire, dans la limite de 15 jours » : des jours, rendus en mois de 30 jours.
                 let plafond = t.plafond_jours.ok_or_else(|| manque("plafond_jours"))?;
-                let produit = anciennete.semaines_entieres().a_raison_de(par_semaine);
+                let produit = anciennete.semaines_entieres() * par_semaine;
                 let jours = if produit < plafond { produit } else { plafond };
-                let mois = jours.rapport(Jours::fixes(30)).ok_or_else(|| socle::refus!("Un mois de trente jours ne compte aucun jour : le signaler au développeur."))?.au_dix_millieme_au_pair();
+                let mois = jours.en_mois_de_trente_jours().a_decimales(4).quatre_decimales_ecrites();
                 return Ok(PreavisDit { mois: Some(mois), article: Some(article), jours: Some(jours), pourquoi: None });
             }
             let mut mois = t.mois.ok_or_else(|| manque("mois"))?;

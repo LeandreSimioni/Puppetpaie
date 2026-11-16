@@ -199,14 +199,14 @@ pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<
     }
 }
 
-pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Option<i64>)> {
+pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Option<Anciennete>)> {
     let t = c::table().unwrap();
     let conv = t.convention(idcc_dit(idcc).as_ref()).unwrap();
     let (paliers, prorata) = match section {
         "mise_a_la_retraite" => conv.mise_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
         _ => conv.depart_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
     };
-    g.annees.iter().map(|a| c::paliers(paliers, prorata, age_lu(a))).map(|(m, p)| (m, p.map(|p| p.nombre_d_ans_revolus().unwrap()))).collect()
+    g.annees.iter().map(|a| c::paliers(paliers, prorata, age_lu(a))).map(|(m, p)| (m, p.map(Anciennete::ans_revolus))).collect()
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
@@ -321,8 +321,8 @@ pub(crate) struct RetraiteLue {
     montant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    palier: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "Anciennete::ecrite_en_annees_entieres_opt", deserialize_with = "Anciennete::en_annees_entieres_opt")]
+    palier: Option<Anciennete>,
     #[serde(skip_serializing_if = "Option::is_none")]
     article: Option<String>,
     hors_primes: bool,
@@ -342,7 +342,8 @@ pub(crate) struct PrimeLue {
     base: Option<String>,
     article: String,
     pourquoi: Option<String>,
-    annees: i64,
+    #[serde(serialize_with = "Anciennete::ecrite_en_annees_entieres", deserialize_with = "Anciennete::en_annees_entieres")]
+    annees: Anciennete,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -388,7 +389,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
         releve: r.releve,
         montant: r.montant.map(montant_ecrit),
         mois: nombre(r.mois),
-        palier: r.palier.map(|p| p.nombre_d_ans_revolus().unwrap()),
+        palier: r.palier.map(Anciennete::ans_revolus),
         article: r.article,
         hors_primes: r.hors_primes,
         prevenance_mois: r.prevenance_mois,
@@ -398,7 +399,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
 }
 
 pub(crate) fn prime_ecrite(p: Option<Prime>) -> Option<PrimeLue> {
-    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: p.base.map(socle::grandeurs::ecrit::texte::dit), article: p.article, pourquoi: p.pourquoi, annees: p.annees.nombre_d_ans_revolus().unwrap() })
+    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: p.base.map(socle::grandeurs::ecrit::texte::dit), article: p.article, pourquoi: p.pourquoi, annees: p.annees.ans_revolus() })
 }
 
 pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
@@ -531,8 +532,12 @@ pub(crate) fn empreinte_lecture(g: &Grilles, x: &CasLecture) -> String {
 }
 
 pub(crate) fn empreinte_paliers(g: &Grilles, (idcc, section): &(String, String)) -> String {
-    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (m.to_string(), p)).collect::<Vec<_>>())
+    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (m.to_string(), p.map(EnAnnees))).collect::<Vec<_>>())
 }
+
+/// Un palier ecrit dans une empreinte en nombre entier d'annees.
+#[derive(Serialize)]
+struct EnAnnees(#[serde(serialize_with = "Anciennete::ecrite_en_annees_entieres")] Anciennete);
 
 pub(crate) fn empreinte_annexe(g: &Grilles, (idcc, annexe): &(String, String)) -> String {
     bloc(bloc_annexe(g, idcc, annexe), annexe_ecrite)

@@ -300,8 +300,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `Anciennete::mois_fixes`),
   et elle se compare à lui, s'en écarte (`au_dela_de`) ou
   le compte (`fois_entieres`) ; elle se dit dans l'unité que le texte
-  demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres` en
-  `Semaines`), en mois dans une phrase, en années au dixième (`annees_au_dixieme`) ; une tranche d'un barème par année
+  demande (`annees`, `annees_d28` pour un barème qui compte par année, `semaines_entieres` en
+  `Semaines`), en mois dans une phrase, en années au dixième (`annees_au_dixieme`), en années révolues
+  (`ans_revolus_dits` : un nombre entier, négatif pour une ancienneté révolue qui l'est ; écrite dans un fichier,
+  `ecrite_en_annees_entieres`, relue par `en_annees_entieres`) ; une tranche d'un barème par année
   lui donne des mois de salaire (`par_annee_dans_la_tranche`, un `Coefficient` : R1234-2) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
@@ -316,6 +318,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures`) | `socle/src/grandeurs.rs` |
+| jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
@@ -367,7 +370,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   l'assiette d'un employeur affilié à une caisse de congés, `majoration_conges_115` et `_110` du barème, 1,115, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie, la
   part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
-  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.
+  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant. Il s'arrondit
+  par une fonction par règle (`au_dix_millieme`, la moitié vers le haut ; `a_decimales`, la moitié au pair) ; ses quatre
+  décimales s'écrivent à part (`quatre_decimales_ecrites`).
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
   paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire ; quantité ×
   montant unitaire = montant.
@@ -1281,8 +1286,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit). Ses mois sont des mois de salaire,
   ce que paie son indemnité compensatrice : un `Coefficient` (la part du mois que sa ligne paie), de la loi
   (`permanents::preavis_mois`, des mois entiers ; zéro : le motif n'en ouvre pas), de la convention
-  (`clauses::PreavisDit.mois`, une fraction quand elle le dit en jours, rendus en mois de trente jours au dix-millième),
-  ou de la carte (`preavis_mois`) ; son terme ne se compte que de mois entiers (`Coefficient::en_mois_entiers`).
+  (`clauses::PreavisDit.mois`, une fraction quand elle le dit en jours, rendus en mois de trente jours,
+  `Jours::en_mois_de_trente_jours`, au dix-millième), ou de la carte (`preavis_mois`) ; son terme ne se compte que de
+  mois entiers (`Coefficient::en_mois_entiers`, qui dit sinon pourquoi : `socle::grandeurs::MoisNonEntiers`, une
+  fraction, qui n'a pas de terme, ou hors du calendrier, qui se refuse).
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table

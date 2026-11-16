@@ -673,7 +673,7 @@ fn comparer_une(
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
 fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
-    (leur - notre).rapport(notre).map(Coefficient::a_quatre_decimales)
+    (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
 /// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.

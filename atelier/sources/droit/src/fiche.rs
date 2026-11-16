@@ -133,12 +133,9 @@ struct CaseSeule {
 
 impl<C: DeserializeOwned> Changements<C> {
     /// LES CHANGEMENTS TAPES `liste`, CHACUN LU SEUL dans le type de sa case : ceux qui se lisent, et la faute de chacun
-    /// des autres, toutes ensemble (`FauteDeCase`). Une liste vide, ou un changement qui ne nomme pas une case d'une
-    /// fiche, refuse la charge.
+    /// des autres, toutes ensemble (`FauteDeCase`). Un changement qui ne nomme pas une case d'une fiche refuse la charge ;
+    /// la liste en a au moins un (`socle::forme::Liste`).
     pub fn lire(liste: &socle::forme::Liste) -> R<(Changements<C>, Vec<FauteDeCase>)> {
-        if liste.est_vide() {
-            return Err(socle::echec::refus("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
-        }
         let mut lus = Vec::new();
         let mut fautes = Vec::new();
         for (case, lu) in liste.chacun::<CaseSeule>("valeur").into_iter().zip(liste.chacun::<C>("valeur")) {

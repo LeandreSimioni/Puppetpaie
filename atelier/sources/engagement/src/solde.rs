@@ -157,11 +157,11 @@ impl DureeDuPreavis {
 /// texte, L1234-3, le fait courir de la presentation de la lettre, que le moteur ne connait pas). `None` : une duree
 /// qui n'est pas en mois entiers.
 fn terme_du_preavis(fin: &socle::date::Jour, mois: Coefficient) -> R<Option<socle::date::Jour>> {
-    if socle::grandeurs::entiere(mois).is_none() {
-        return Ok(None);
+    match mois.en_mois_entiers() {
+        Ok(n) => fin.apres(n).map(Some),
+        Err(socle::grandeurs::MoisNonEntiers::Fraction) => Ok(None),
+        Err(socle::grandeurs::MoisNonEntiers::HorsDuCalendrier) => Err(socle::refus!("préavis hors du calendrier : {} mois", texte::dit(mois))),
     }
-    let n = mois.en_mois_entiers().ok_or_else(|| socle::refus!("préavis hors du calendrier : {} mois", texte::dit(mois)))?;
-    fin.apres(n).map(Some)
 }
 
 /// `age` : celui du salarie au dernier jour ecrit du contrat (`age`).
@@ -1020,7 +1020,7 @@ fn indemnite_de_rupture(
         }
     }
     let detail = match palier {
-        Some((ans, mois)) => format!(" -- palier de {} ans de la loi, {} mois de salaire", ans.nombre_d_ans_revolus()?, socle::grandeurs::ecrit::sans_zero::dit(mois)),
+        Some((ans, mois)) => format!(" -- palier de {} ans de la loi, {} mois de salaire", ans.ans_revolus_dits(), socle::grandeurs::ecrit::sans_zero::dit(mois)),
         None => String::new(),
     };
     stc.avertissements.push(info(format!(
