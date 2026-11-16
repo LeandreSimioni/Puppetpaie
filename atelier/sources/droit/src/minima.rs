@@ -15,7 +15,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 /// Les minima conventionnels livres, sous `donnees/`.
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("minima-conventionnels.json");
 use socle::echec::R;
-use socle::grandeurs::{Cachets, Coefficient, HeuresParUnite, MontantUnitaire, Taux};
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, MontantUnitaire, Taux};
 
 use crate::forme_bareme::OrganisationPatronale;
 
@@ -48,8 +48,9 @@ forme_notee! {
         pub etendu_le: Option<Jour>,
         /// Les heures d'un mois a temps plein sur lesquelles ses grilles mensuelles se ramenent a l'heure (2642, 3090,
         /// 3097) : la duree legale, 35 h par semaine (C. trav. L. 3121-27), 35 x 52 / 12 = 151,67 h, que la grille
-        /// administrative de la 3090 nomme (« pour 151,67 h », KALIARTI000053721751).
-        pub heures_mensuelles: Option<HeuresParUnite>,
+        /// administrative de la 3090 nomme (« pour 151,67 h », KALIARTI000053721751). Les heures d'un mois, comme la
+        /// quotite de reference d'une nature (`natures::Nature::quotite_reference_defaut`).
+        pub heures_mensuelles: Option<Heures>,
         /// Les organisations d'employeurs signataires de l'accord, ecrites par leur cle du bareme
         /// (`par_organisation_patronale`) ; le nom que l'accord leur donne est dans sa source.
         pub signataires: Option<Vec<OrganisationPatronale>>,
@@ -189,7 +190,7 @@ forme_notee! {
     /// Les emplois autres qu'artistiques de la 1285 : le mensuel de chaque echelon, par groupe, pour `heures_mensuelles`.
     pub struct EmploisAutres {
         #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
-        pub heures_mensuelles: HeuresParUnite,
+        pub heures_mensuelles: Heures,
         pub groupes: BTreeMap<CleDeGrille, Vec<MontantUnitaire>>,
     }
 }

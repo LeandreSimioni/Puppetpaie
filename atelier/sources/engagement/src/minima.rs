@@ -22,7 +22,7 @@ use droit::emplois;
 use crate::{Avis, Engagement};
 use droit::minima::{grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
-use socle::grandeurs::{Cachets, Coefficient, HeuresParUnite, MontantUnitaire, Services, Taux};
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, MontantUnitaire, Services, Taux};
 use socle::echec::{refus, Echec, R};
 use crate::ligne::QuantiteDeLigne;
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
@@ -53,21 +53,38 @@ fn mensuel(c: &CodeDeRubrique) -> bool {
 
 // ------------------------------------------------------------- les petits outils
 
-/// Le prix d'une unite `montant` (un mensuel, une semaine) pour chacune de ses heures `heures`, exact ; des heures
-/// nulles, lues de la table `cle`, se refusent.
+/// Le prix d'une unite `montant` (une semaine, la valeur d'une grille) pour chacune de ses heures `heures`, exact ; des
+/// heures nulles, lues de la table `cle`, se refusent.
 fn par_heure(montant: MontantUnitaire, heures: HeuresParUnite, cle: &str) -> R<MontantUnitaire> {
     montant.par_heure_de_l_unite(heures).ok_or_else(|| manque(cle))
 }
 
+/// Un mensuel `mensuel` pour chacune des heures du mois `heures`, exact ; des heures nulles, lues de la table `cle`, se
+/// refusent.
+fn sur_le_mois(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
+    mensuel.par_heure(heures).ok_or_else(|| manque(cle))
+}
+
 /// Un salaire mensuel ramene a l'heure : au centime, au pair sur le demi, dans sa forme la plus courte. Aucun texte ne
 /// fixe cet arrondi.
-fn horaire_du_mensuel(mensuel: MontantUnitaire, heures: HeuresParUnite, cle: &str) -> R<MontantUnitaire> {
-    Ok(socle::grandeurs::courte(par_heure(mensuel, heures, cle)?.au_centime_au_pair()))
+fn horaire_du_mensuel(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
+    Ok(socle::grandeurs::courte(socle::grandeurs::au_centieme_au_pair(sur_le_mois(mensuel, heures, cle)?)))
 }
 
 /// Ce que la ligne paie a l'heure, au centime, au pair sur le demi ; `None` : elle ne compte aucune heure.
 fn paye_a_l_heure(l: &LigneBrut) -> Option<MontantUnitaire> {
-    l.montant.par_heure(l.heures_annexes).map(MontantUnitaire::au_centime_au_pair)
+    l.montant.par_heure(l.heures_annexes).map(socle::grandeurs::au_centieme_au_pair)
+}
+
+/// Une semaine `semaine` sur les jours `jours` qu'elle paie (la semaine de 5 ou de 6 jours de la 3097, titre III),
+/// exacte.
+fn sur_ses_jours(semaine: MontantUnitaire, jours: Jours) -> R<MontantUnitaire> {
+    semaine.par_jour(jours).ok_or_else(|| refus("Défaut du logiciel : une semaine de la 3097 se rapporte à aucun jour."))
+}
+
+/// Les heures du mois telles qu'une phrase les dit (« 151,67 h »).
+fn heures_dites(h: Heures) -> String {
+    format!("{} h", virgule(h))
 }
 
 
@@ -110,14 +127,14 @@ fn manque(cle: &str) -> Echec {
 
 /// Les heures du mois a temps plein sur lesquelles les grilles mensuelles de la convention `idcc` se ramenent a l'heure
 /// (`heures_mensuelles` de la table livree).
-fn heures_mensuelles(c: &Convention, idcc: &str) -> R<HeuresParUnite> {
+fn heures_mensuelles(c: &Convention, idcc: &str) -> R<Heures> {
     c.heures_mensuelles.ok_or_else(|| manque(&format!("{}.heures_mensuelles", idcc)))
 }
 
-/// Le mensuel `mensuel` de la convention `idcc` ramene a l'heure sur ses heures du mois, au centime vers zero (la 2642
-/// en CDI, la 3097 titre IV).
-fn horaire_du_mensuel_vers_zero(c: &Convention, idcc: &str, mensuel: MontantUnitaire) -> R<MontantUnitaire> {
-    Ok(par_heure(mensuel, heures_mensuelles(c, idcc)?, &format!("{}.heures_mensuelles", idcc))?.au_centime_vers_zero())
+/// Le mensuel `mensuel` ramene a l'heure sur les heures du mois `heures`, au centime vers zero (la 2642 en CDI, la 3097
+/// titre IV).
+fn horaire_du_mensuel_vers_zero(mensuel: MontantUnitaire, heures: Heures, cle: &str) -> R<MontantUnitaire> {
+    Ok(sur_le_mois(mensuel, heures, cle)?.au_centime_vers_zero())
 }
 
 /// Les donnees d'une ligne et de la paie qu'un plancher lit.
@@ -344,14 +361,16 @@ impl<'a> Cx<'a> {
         let (cddu, permanents) = (c.cddu_semaine_35h.as_ref(), c.permanents_mensuel_35h.as_ref());
         let Some(fonction) = self.fonction(&IDCC_2642, |f| cddu.is_some_and(|m| m.contains_key(f)) || permanents.is_some_and(|m| m.contains_key(f)))? else { return Ok(None) };
         let heures_du_mois = heures_mensuelles(c, "2642")?;
+        let cle = "2642.heures_mensuelles";
         if permanent(self.paie)? {
             let Some(&m) = permanents.and_then(|m| m.get(&fonction)) else { return Ok(None) };
             return Ok(plancher(
-                horaire_du_mensuel_vers_zero(c, "2642", m)?,
+                horaire_du_mensuel_vers_zero(m, heures_du_mois, cle)?,
                 format!(
-                    "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur 151,67 h",
+                    "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur {}",
                     fonction,
-                    euros(m)
+                    euros(m),
+                    heures_dites(heures_du_mois)
                 ),
             ));
         }
@@ -369,17 +388,19 @@ impl<'a> Cx<'a> {
         // IV.2.1 : la journee de 7 h d'un contrat de 4 jours ou moins vaut la semaine / 4,5 (31,5 h) ; un mois, la
         // semaine x 3,8.
         let (semaine_de_4_jours_et_demi, semaine_de_35_h, semaines_du_mois) = (HeuresParUnite::dixiemes(315), HeuresParUnite::fixes(35), Coefficient::dixiemes(38));
-        let cle = "2642.heures_mensuelles";
         let (h, regle) = match jours {
-            Some(j) if j <= Duree::jours(4) => (par_heure(semaine, semaine_de_4_jours_et_demi, cle)?, "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
+            Some(j) if j <= Duree::jours(4) => (par_heure(semaine, semaine_de_4_jours_et_demi, cle)?, "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h".to_string()),
             Some(j) if j >= Duree::jours(89) => {
-                let mensuel = semaine.fois_coefficient(semaines_du_mois);
-                let smic = (heures_du_mois * self.paie.smic).fois_coefficient(Coefficient::dixiemes(13));
-                let mensuel = if smic > mensuel { smic } else { mensuel };
-                (par_heure(mensuel, heures_du_mois, cle)?, "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
+                // Pas moins de 130 % du SMIC horaire : le mensuel ramene a l'heure, ou 130 % du SMIC, le plus haut.
+                let horaire = sur_le_mois(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?;
+                let smic = self.paie.smic.fois_coefficient(Coefficient::dixiemes(13));
+                (
+                    if smic > horaire { smic } else { horaire },
+                    format!("contrat de 3 mois ou plus : la semaine x 3,8 par mois de {}, pas moins de 130 % du SMIC", heures_dites(heures_du_mois)),
+                )
             }
-            None => (par_heure(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse"),
-            Some(_) => (par_heure(semaine, semaine_de_35_h, cle)?, "la semaine de 35 h"),
+            None => (sur_le_mois(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
+            Some(_) => (par_heure(semaine, semaine_de_35_h, cle)?, "la semaine de 35 h".to_string()),
         };
         Ok(plancher(
             h.au_centime_vers_zero(),
@@ -408,13 +429,15 @@ impl<'a> Cx<'a> {
                     return Ok(None);
                 };
                 let mensuel = *pm.niveaux.get(niveau).ok_or_else(|| manque(&format!("3097.permanents_mensuel.niveaux.{}", niveau)))?;
+                let heures_du_mois = heures_mensuelles(c, "3097")?;
                 return Ok(plancher(
-                    horaire_du_mensuel_vers_zero(c, "3097", mensuel)?,
+                    horaire_du_mensuel_vers_zero(mensuel, heures_du_mois, "3097.heures_mensuelles")?,
                     format!(
-                        "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur 151,67 h",
+                        "CCN 3097, titre IV, {} ({}) : {} par mois, salaire de base sans les compléments, ramené à l'heure sur {}",
                         emploi,
                         niveau.as_str().replace('_', " "),
-                        euros(mensuel)
+                        euros(mensuel),
+                        heures_dites(heures_du_mois)
                     ),
                 ));
             }
@@ -464,8 +487,8 @@ impl<'a> Cx<'a> {
                 (role, format!("acteur de complément ({}), long-métrage", reference.as_str().replace('_', " ")))
             };
             let (montant, regle) = if self.nb_cachets >= Cachets::fixes(5) {
-                let s5 = grille.semaine_5j.reparti_sur(5);
-                let s6 = grille.semaine_6j.reparti_sur(6);
+                let s5 = sur_ses_jours(grille.semaine_5j, Jours::fixes(5))?;
+                let s6 = sur_ses_jours(grille.semaine_6j, Jours::fixes(6))?;
                 ((if s6 < s5 { s6 } else { s5 }).au_centime_vers_zero(), "engagement à la semaine, rapporté au cachet")
             } else {
                 (grille.journee, "engagement à la journée")
@@ -759,13 +782,15 @@ impl<'a> Cx<'a> {
                 let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau))))?;
                 (montant, d_ou)
             };
+            let heures_du_mois = heures_mensuelles(t3090, "3090")?;
             return Ok(plancher(
-                horaire_du_mensuel(montant, heures_mensuelles(t3090, "3090")?, "3090.heures_mensuelles")?,
+                horaire_du_mensuel(montant, heures_du_mois, "3090.heures_mensuelles")?,
                 format!(
-                    "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur 151,67 h",
+                    "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur {}",
                     niveau.as_str().replace('_', " "),
                     d_ou,
-                    euros(montant)
+                    euros(montant),
+                    heures_dites(heures_du_mois)
                 ),
             ));
         }
@@ -786,15 +811,11 @@ impl<'a> Cx<'a> {
             }
         }
         let Some(&montant) = grille.du_niveau(&niveau) else { return Ok(None) };
-        Ok(plancher(
-            montant,
-            format!(
-                "CCN 3090, {}, taux horaire {}{}",
-                ou,
-                niveau.as_str().replace('_', " "),
-                if mensuel { " (le mensuel pour 151,67 h, ramené à l'heure)" } else { "" }
-            ),
-        ))
+        let du_mensuel = match mensuel {
+            true => format!(" (le mensuel pour {}, ramené à l'heure)", heures_dites(heures_mensuelles(t3090, "3090")?)),
+            false => String::new(),
+        };
+        Ok(plancher(montant, format!("CCN 3090, {}, taux horaire {}{}", ou, niveau.as_str().replace('_', " "), du_mensuel)))
     }
 
     /// Le plancher d'une ligne, ou rien.

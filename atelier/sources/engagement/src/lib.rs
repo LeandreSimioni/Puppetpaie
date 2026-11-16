@@ -1605,7 +1605,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
     tous_les_jours.dedup();
     // L'ecart de chaque ligne, jour par jour.
     let mut ecarts: Vec<Vec<Decimal>> = es.iter().map(|e| vec![Decimal::ZERO; e.jours.len()]).collect();
-    let mut limites_du_jour: Vec<(Jour, Decimal, String)> = Vec::new();
+    let mut limites_du_jour: Vec<(Jour, Montant, String)> = Vec::new();
     for j in &tous_les_jours {
         let du_jour: Vec<(usize, usize)> = es.iter().enumerate().filter_map(|(k, e)| e.jours.iter().position(|(x, _)| x == j).map(|p| (k, p))).collect();
         let nuitee = du_jour.iter().find(|(k, _)| es[*k].nuitee);
@@ -1616,11 +1616,10 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
         socle::fichiers::noter_lecture(&droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
         let limite = if loge { (indemnite.euros * (socle::grandeurs::Coefficient::UN - REDUCTION_LOGE)).au_centime() } else { indemnite.euros };
+        let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
         // Le calcul jour par jour reste en decimal : ses divisions (la quantite d'un jour, le taux qui reste exonere)
         // se font a l'arithmetique de `rust_decimal`, que celle des grandeurs (`d28`) arrondirait autrement.
-        let limite = limite.decimal();
-        let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();
-        let mut reste = (total - limite).max(Decimal::ZERO);
+        let mut reste = (total - limite.decimal()).max(Decimal::ZERO);
         let mut ordre = du_jour.clone();
         ordre.sort_by_key(|(k, _)| !es[*k].nuitee);
         for (k, p) in ordre {
@@ -1687,7 +1686,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[(usize, droit::mis
                         qui,
                         lieu,
                         j0.jj_mm_aaaa(),
-                        socle::texte::euros(Montant::du_decimal(*lim)),
+                        socle::texte::euros(*lim),
                         socle::texte::euros(Montant::du_decimal(ecart))
                     ),
                 });

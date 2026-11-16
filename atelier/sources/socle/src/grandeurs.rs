@@ -183,7 +183,8 @@ pub fn une<G: Grandeur>() -> G {
 }
 
 /// LA GRANDEUR AU CENTIEME, la moitie au pair, sans zero inutile (`2.125` : `2.12`, `4.50` : `4.5`) : ce qu'une phrase
-/// dit d'une quantite (la designation d'une ligne de paie), dite par `texte::virgule`.
+/// dit d'une quantite (la designation d'une ligne de paie), dite par `texte::virgule` ; un taux horaire qu'un minimum
+/// ou une ligne ramene a l'heure (`engagement::minima` ; aucun texte depose ne dit cet arrondi).
 pub fn au_centieme_au_pair<G: Grandeur>(g: G) -> G {
     G::du(g.en_decimal().round_dp(2).normalize())
 }
@@ -675,15 +676,6 @@ impl HeuresParUnite {
     }
 }
 
-/// Les heures d'une unite fois le prix d'une heure (151,67 h par mois a 11,88 € l'heure) : le prix de l'unite, un
-/// montant unitaire.
-impl std::ops::Mul<MontantUnitaire> for HeuresParUnite {
-    type Output = MontantUnitaire;
-    fn mul(self, u: MontantUnitaire) -> MontantUnitaire {
-        MontantUnitaire(num::mul(self.0, u.0))
-    }
-}
-
 /// Une quantite fois ses heures par unite : des heures (14 services de 4 h : 56 h).
 macro_rules! aux_heures_par_unite {
     ($($q:ident),*) => {$(
@@ -901,29 +893,17 @@ impl MontantUnitaire {
         (!j.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, j.0)))
     }
 
-    /// Le prix d'une unite pour chacune des heures `h` qu'elle compte (un mensuel pour 151,67 h, une semaine de 35 h :
-    /// le taux horaire) : montant unitaire / heures par unite = montant unitaire ; `None` quand `h` est nul.
+    /// Le prix d'une unite pour chacune des heures `h` par unite qu'elle paie (une semaine de 35 h, la valeur d'une
+    /// grille des minima pour ses heures : le taux horaire) : montant unitaire / heures par unite = montant unitaire ;
+    /// `None` quand `h` est nul. Un mensuel se ramene aux heures du mois, des `Heures`, par `par_heure`.
     pub fn par_heure_de_l_unite(self, h: HeuresParUnite) -> Option<MontantUnitaire> {
         (!h.0.is_zero()).then(|| MontantUnitaire(num::div(self.0, h.0)))
-    }
-
-    /// Ce montant unitaire reparti egalement sur `n` (la semaine sur ses cinq jours) : montant unitaire / compte =
-    /// montant unitaire, exact. Un compte n'est pas une grandeur (« Le glossaire ») ; il n'est jamais nul (l'appelant
-    /// le garde).
-    pub fn reparti_sur(self, n: usize) -> MontantUnitaire {
-        MontantUnitaire(num::div(self.0, Decimal::from(n)))
     }
 
     /// Au centime, vers zero : un minimum conventionnel ramene a l'heure ou au cachet (`engagement::minima` ; aucun
     /// texte depose ne dit cet arrondi).
     pub fn au_centime_vers_zero(self) -> MontantUnitaire {
         MontantUnitaire(self.0.round_dp_with_strategy(2, RoundingStrategy::ToZero))
-    }
-
-    /// Au centime, la moitie au pair : un taux horaire qu'un minimum ou une ligne ramene a l'heure (`engagement::minima` ;
-    /// aucun texte depose ne dit cet arrondi).
-    pub fn au_centime_au_pair(self) -> MontantUnitaire {
-        MontantUnitaire(self.0.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven))
     }
 }
 
