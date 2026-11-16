@@ -810,9 +810,9 @@ pub mod lu {
     /// chiffres ; un signe moins en tete ; un seul separateur decimal, la virgule ou le point ; des blancs (l'espace,
     /// l'insecable, l'insecable fine) entre les groupes de trois chiffres de la partie entiere (« 1 500,50 ») ; le signe de
     /// l'unite de la grandeur (`Scelle::SIGNES` : « % » d'un taux, « € » d'un montant, « h » des heures) a la fin
-    /// seulement, un blanc avant lui permis (« 1,5 % ») ; des blancs autour. Tout le reste se refuse et dit pourquoi (« 1
-    /// 5 », « 1e3 », « 1_000 », « %5 », « 1h30 », le signe d'une autre unite), et ce qui fait douter aussi : un separateur
-    /// suivi de trois chiffres apres un entier qui n'est pas nul (« 1.500 », « 1,500 » : des milliers ou des decimales ?).
+    /// seulement, un blanc avant lui permis (« 1,5 % ») ; des blancs autour. Le separateur est toujours decimal (« 1.500 »
+    /// : `1.500`) : les milliers ne se separent que d'un blanc. Tout le reste se refuse et dit pourquoi (« 1 5 », « 1e3 »,
+    /// « 1_000 », « %5 », « 1h30 », le signe d'une autre unite).
     pub fn tapee<G: Grandeur>(t: &str) -> Result<G, String> {
         let cite = crate::fichiers::repr(t);
         let attendu = <G as crate::grandeurs::Scelle>::ATTENDU;
@@ -851,11 +851,6 @@ pub mod lu {
             return Err(illisible());
         }
         let entier: String = groupes.concat();
-        if let Some(d) = decimales {
-            if d.len() == 3 && !matches!(entier.trim_start_matches('0'), "") {
-                return Err(format!("{} fait douter : des milliers ou des décimales ? Séparer les milliers d'une espace (« 1 500 »)", cite));
-            }
-        }
         let ecrit = match decimales {
             Some(d) => format!("{}{}.{}", moins, if entier.is_empty() { "0" } else { &entier }, d),
             None => format!("{}{}", moins, entier),
