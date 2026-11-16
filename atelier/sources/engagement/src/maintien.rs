@@ -425,7 +425,11 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         }
         let complement = Montant::du_decimal(complement).au_centime().decimal();
         heures_max = heures_max.max(heures);
-        let deja_dit = if deja.nulle() { String::new() } else { format!(" ({} déjà indemnisés dans les douze mois)", deja) };
+        let deja_dit = match deja {
+            d if d.nulle() => String::new(),
+            d if d > Duree::jours(1) => format!(" ({} déjà indemnisés dans les douze mois)", d),
+            d => format!(" ({} déjà indemnisé dans les douze mois)", d),
+        };
         dit.push(if r.base == Base::Net {
             format!("{}{} — le net garanti se reconstitue à la paie", dm::phrase(r), deja_dit)
         } else {
