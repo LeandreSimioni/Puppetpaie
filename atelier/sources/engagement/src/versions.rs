@@ -4,7 +4,6 @@
 //! parti sur elle. Un engagement jamais modifie apres un envoi n'a pas de frise.
 
 use serde::Serialize;
-use socle::forme::NombreLu;
 use crate::LignePaie;
 use crate::ligne::TauxDeLigne;
 
@@ -18,7 +17,6 @@ use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 use socle::texte::euros;
-use socle::grandeurs::Montant;
 
 
 /// Ce qui change dans les jours d'une ligne, et seulement cela : « Jours : + 16/11 », « Jours : − 14/11 »,
@@ -91,15 +89,10 @@ const CLAUSES: [(Champ, &str); 13] = [
 
 /// Une valeur en mots : en euros (`euros`), un nombre a la virgule, un oui-non, un texte ; « — » sans valeur.
 fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
-    let nombre = |n: &NombreLu| socle::num::decimal_lu(&n.to_string());
     match v {
         None => "—".into(),
         Some(Valeur::Oui(b)) => if *b { "oui" } else { "non" }.into(),
-        Some(Valeur::Nombre(n)) => match (nombre(n), en_euros) {
-            (Some(x), true) => euros(Montant::du_decimal(x)),
-            (Some(x), false) => socle::texte::nombre_dit(x),
-            (None, _) => n.to_string(),
-        },
+        Some(Valeur::Coefficient(c)) => socle::texte::virgule(*c),
         Some(Valeur::Heures(h)) => socle::texte::virgule(*h),
         Some(Valeur::Montant(m)) => euros(*m),
         Some(Valeur::MontantUnitaire(m)) if en_euros => euros(*m),

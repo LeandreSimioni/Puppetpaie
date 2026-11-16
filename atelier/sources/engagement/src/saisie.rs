@@ -9,8 +9,7 @@
 use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
-use socle::forme::NombreLu;
-use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire};
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -213,7 +212,8 @@ carte! {
         #[champ(Fin, PreavisNonEffectue)]
         pub preavis_non_effectue: Option<bool>,
         #[champ(Fin, PreavisMois)]
-        pub preavis_mois: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub preavis_mois: Option<Coefficient>,
         #[champ(Fin, PrecariteDue)]
         pub precarite_due: Option<bool>,
         #[champ(Fin, PrecaritePourquoi)]
@@ -248,7 +248,9 @@ impl Champ {
 pub enum Valeur {
     Nature(droit::natures::NatureDeContrat),
     Texte(String),
-    Nombre(NombreLu),
+    /// Un coefficient (les mois de salaire d'un preavis).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Coefficient(Coefficient),
     /// Des heures (la duree du travail, en heures par mois).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Heures(Heures),
@@ -336,9 +338,9 @@ macro_rules! code_simple {
 }
 code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail, droit::preavis::TransactionEnCours);
 
-impl Simple for NombreLu {
+impl Simple for Coefficient {
     fn simple(&self) -> Option<Valeur> {
-        Some(Valeur::Nombre(self.clone()))
+        Some(Valeur::Coefficient(*self))
     }
 }
 

@@ -404,6 +404,24 @@ impl Coefficient {
     pub fn en_taux(self) -> Taux {
         Taux(num::mul(self.0, Decimal::from(100)))
     }
+
+    /// A quatre decimales, la moitie au pair, ses quatre decimales ecrites (`0.5` s'ecrit `0.5000`) : les mois d'un
+    /// preavis qu'une convention dit en jours (`droit::clauses::preavis_mois`, des mois de trente jours).
+    pub fn au_dix_millieme_au_pair(self) -> Coefficient {
+        let mut c = self.0.round_dp_with_strategy(4, RoundingStrategy::MidpointNearestEven);
+        c.rescale(4);
+        Coefficient(c)
+    }
+
+    /// CE COEFFICIENT EN MOIS DE CALENDRIER ENTIERS (les mois d'un preavis, que son terme compte : `Jour::apres`) ;
+    /// `None` : il n'est pas un nombre entier de mois (une fraction, un negatif, hors du calendrier).
+    pub fn en_mois_entiers(self) -> Option<crate::date::Duree<crate::date::EnMois>> {
+        use rust_decimal::prelude::ToPrimitive;
+        match self.0.fract().is_zero() {
+            true => self.0.to_u32().map(crate::date::Duree::mois),
+            false => None,
+        }
+    }
 }
 
 impl Taux {
@@ -575,6 +593,14 @@ impl Services {
     /// Les services que `n` compte, un par un : un compte devient des services.
     pub fn comptes(n: usize) -> Services {
         Services(Decimal::from(n))
+    }
+}
+
+impl Semaines {
+    /// Les jours que ces semaines donnent a `par_semaine` jours chacune (« 1 jour par semaine calendaire » d'anciennete :
+    /// un preavis de la convention) : semaines x jours par semaine = jours.
+    pub fn a_raison_de(self, par_semaine: Jours) -> Jours {
+        Jours(num::mul(self.0, par_semaine.0))
     }
 }
 

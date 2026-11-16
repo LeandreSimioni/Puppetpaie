@@ -777,15 +777,38 @@ impl Anciennete {
         num::div(self.0, Decimal::from(12))
     }
 
+    /// SES ANNEES DITES DANS UNE PHRASE, au dixieme, la moitie au pair, une decimale ecrite (`12.5`, `3.0`).
+    pub fn annees_au_dixieme(self) -> String {
+        let mut a = self.annees().round_dp_with_strategy(1, rust_decimal::RoundingStrategy::MidpointNearestEven);
+        a.rescale(1);
+        a.to_string()
+    }
+
     /// DITE EN ANNEES, a vingt-huit chiffres (`d28`) : l'unite des baremes d'une convention (`droit::clauses`).
     pub fn annees_d28(self) -> crate::d28::P {
         crate::d28::P::depuis(self.0).div(crate::d28::P::entier(12))
     }
 
     /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
-    /// d'anciennete (`droit::clauses`).
-    pub fn semaines_entieres(self) -> crate::d28::P {
-        crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher()
+    /// d'anciennete (`droit::clauses`). Le compte se fait a vingt-huit chiffres (`d28`), sans arrondi entre ses pas ; son
+    /// resultat est entier.
+    pub fn semaines_entieres(self) -> crate::grandeurs::Semaines {
+        let p = crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher();
+        crate::grandeurs::Semaines::du_decimal(num::en_decimal(p))
+    }
+
+    /// LES MOIS DE SALAIRE QU'UNE TRANCHE D'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de
+    /// salaire par année d'ancienneté pour les années jusqu'à dix ans ») : ses annees au-dela de `bas` et jusqu'a `haut`
+    /// (`None` : sans borne), chacune `par_annee` mois de salaire ; rien quand elle n'atteint pas `bas`. Le compte se
+    /// fait en annees (`annees`), l'arithmetique de la paie (`num`).
+    pub fn par_annee_dans_la_tranche(self, bas: Anciennete, haut: Option<Anciennete>, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::Coefficient {
+        let annees = self.annees();
+        let haut = match haut {
+            Some(h) => h.annees(),
+            None => annees,
+        };
+        let part = num::add(annees.min(haut), -bas.annees()).max(Decimal::ZERO);
+        crate::grandeurs::Coefficient::du_decimal(num::mul(part, par_annee.decimal()))
     }
 
     /// Le nombre de ses mois, a la porte d'une phrase ou d'une ecriture.

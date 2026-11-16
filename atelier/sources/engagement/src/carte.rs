@@ -22,8 +22,7 @@ use serde::{Deserialize, Serialize};
 use droit::contexte::{IdSalarie, IdSpectacle};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
 use socle::date::{Duree, EnJours, Jour};
-use socle::forme::NombreLu;
-use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
@@ -255,7 +254,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -310,7 +309,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -367,7 +366,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -755,7 +754,7 @@ changements! {
     DernierJourPaye(Jour) = "dernier_jour_paye" => dernier_jour_paye,
     EnDroitALaRetraite(bool) = "en_droit_a_la_retraite" => en_droit_a_la_retraite,
     PreavisNonEffectue(bool) = "preavis_non_effectue" => preavis_non_effectue,
-    PreavisMois(NombreLu) = "preavis_mois" => preavis_mois,
+    PreavisMois(Coefficient) = "preavis_mois" => preavis_mois,
     PrecariteDue(bool) = "precarite_due" => precarite_due,
     PrecaritePourquoi(String) = "precarite_pourquoi" => precarite_pourquoi,
 }

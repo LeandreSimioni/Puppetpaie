@@ -365,7 +365,8 @@ pub(crate) fn profil_ecrit(p: Profil) -> ProfilLu {
 }
 
 pub(crate) fn preavis_ecrit(p: PreavisDit) -> PreavisLu {
-    PreavisLu { mois: nombre(p.mois), article: p.article, jours: nombre(p.jours), pourquoi: p.pourquoi }
+    use socle::grandeurs::ecrit::texte::dit;
+    PreavisLu { mois: p.mois.map(dit), article: p.article, jours: p.jours.map(dit), pourquoi: p.pourquoi }
 }
 
 pub(crate) fn indemnite_ecrite(i: Indemnite) -> IndemniteLue {

@@ -46,7 +46,6 @@ use socle::fichiers::NomDeFichier;
 use socle::mode::Mode;
 use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
-use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION, SALARIE};
 use crate::catalogue::Route;
@@ -2326,7 +2325,7 @@ fn preavis_dit(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<String> {
     let duree = droit::permanents::preavis_mois(anciennete, motif, cdd)?;
     let regle = droit::permanents::regle_du_preavis(motif, cdd)?;
     let mut dit = match (duree, &regle) {
-        (Some(m), _) if m != Decimal::ZERO => format!("La loi en donne {} mois (L1234-1).", m),
+        (Some(m), _) if !m.est_nul() => format!("La loi en donne {} mois (L1234-1).", socle::grandeurs::ecrit::texte::dit(m)),
         (Some(_), _) => match droit::permanents::raison_sans_preavis(motif, cdd)? {
             Some(r) => format!("La loi ne donne aucun préavis pour ce motif : {}", r),
             None => "La loi ne donne aucun préavis pour ce motif.".to_string(),
@@ -2336,11 +2335,11 @@ fn preavis_dit(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<String> {
     };
     // Ce que dit la convention, a cote, par le moteur (le calcul de `moteur preavis`) ; pas pour un motif sans preavis
     // ni pour la rupture d'un CDD par le salarie (L1243-2), que la convention du licenciement ne regle pas.
-    if duree != Some(Decimal::ZERO) && regle.is_none() {
+    if !duree.is_some_and(|m| m.est_nul()) && regle.is_none() {
         let tout = engagement::preavis(ctx, e, contrat, motif)?;
         let hors_la_loi = tout.duree.as_ref().filter(|d| d.source != engagement::solde::SourceDuPreavis::Loi);
         if let (Some(conv), Some(d)) = (tout.convention, hors_la_loi) {
-            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", d.qui(), conv));
+            dit.push_str(&format!(" {} en donne {} : c'est elle qui s'applique.", d.qui(), socle::grandeurs::ecrit::texte::dit(conv)));
         } else if tout.duree.is_none() {
             if let Some(pourquoi) = &tout.pourquoi {
                 dit.push_str(&format!(" Et {}.", pourquoi.trim_end_matches('.')));

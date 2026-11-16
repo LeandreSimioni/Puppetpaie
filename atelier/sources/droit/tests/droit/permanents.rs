@@ -43,20 +43,21 @@ struct SalaireDeReference {
     regle: String,
 }
 
+/// Une indemnite de la reference ; ses annees d'anciennete ecrites en texte (`8.333333333333333333333333333`).
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct IndemniteLegale {
     montant: M,
     du: bool,
     pourquoi: Option<String>,
-    annees: Option<Decimal>,
+    annees: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PlancherDeLaRupture {
     plancher: Option<M>,
-    annees: Decimal,
+    annees: String,
     pourquoi: Option<String>,
 }
 
@@ -94,7 +95,7 @@ struct Fin {
 }
 
 fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
-    IndemniteLegale { montant: M(i.montant), du: i.du, pourquoi: i.pourquoi, annees: i.annees }
+    IndemniteLegale { montant: M(i.montant), du: i.du, pourquoi: i.pourquoi, annees: i.annees.map(|a| a.annees().to_string()) }
 }
 
 // Les entrees de chaque fonction : ses arguments, dans l'ordre.
@@ -143,8 +144,8 @@ fn indemnite_precarite(a: &(M,)) -> Rendu<M> {
 fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
     Anciennete::entre(&a.0, &a.1).mois()
 }
-fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
-    p::preavis_mois(Anciennete::de_mois(a.0), motif(&a.1), false).into()
+fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<String>> {
+    p::preavis_mois(Anciennete::de_mois(a.0), motif(&a.1), false).map(|m| m.map(socle::grandeurs::ecrit::texte::dit)).into()
 }
 fn salaire_de_reference(a: &(Vec<M>, Vec<M>)) -> SalaireDeReference {
     let montants = |l: &[M]| l.iter().map(|m| m.0).collect::<Vec<Montant>>();
@@ -158,7 +159,7 @@ fn indemnite_mise_a_la_retraite(a: &(Decimal, M)) -> Rendu<IndemniteLegale> {
     p::indemnite_mise_a_la_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(legale).into()
 }
 fn indemnite_rupture_conventionnelle(a: &(Decimal, M)) -> Rendu<PlancherDeLaRupture> {
-    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| PlancherDeLaRupture { plancher: i.plancher.map(M), annees: i.annees, pourquoi: i.pourquoi }).into()
+    p::indemnite_rupture_conventionnelle(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| PlancherDeLaRupture { plancher: i.plancher.map(M), annees: i.annees.annees().to_string(), pourquoi: i.pourquoi }).into()
 }
 fn indemnite_depart_retraite(a: &(Decimal, M)) -> Rendu<IndemniteDuDepart> {
     p::indemnite_depart_retraite(Anciennete::de_mois(a.0), &mut || Ok(a.1 .0)).map(|i| IndemniteDuDepart { montant: M(i.montant), du: i.du, mois: C(i.mois), palier: i.palier.map(|p| p.nombre_d_ans_revolus().unwrap()), pourquoi: i.pourquoi }).into()

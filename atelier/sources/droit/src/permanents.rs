@@ -13,8 +13,6 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("permanents-base.json");
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
-use socle::num::{add, mul, Decimal};
-use rust_decimal::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -145,13 +143,13 @@ forme! {
 }
 
 forme! {
-    /// Une tranche d'anciennete (en mois, `max` exclu ; `None` : sans borne) et son preavis (`None` : la loi n'en donne pas).
+    /// Une tranche d'anciennete (en mois, `max` exclu ; `None` : sans borne) et son preavis, en mois de salaire (`None` :
+    /// la loi n'en donne pas).
     pub struct TrancheDePreavis {
         pub anciennete_mois_min: Anciennete,
         #[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]
         pub anciennete_mois_max: Option<Anciennete>,
-        #[serde(deserialize_with = "socle::forme::decimal_opt")]
-        pub mois: Option<Decimal>,
+        pub mois: Option<Coefficient>,
     }
 }
 
@@ -212,12 +210,11 @@ forme! {
 }
 
 forme! {
-    /// Une fraction de mois par annee d'anciennete, jusqu'a `jusqu_a_annees` (`None` : au-dela).
+    /// Une fraction de mois de salaire par annee d'anciennete, jusqu'a `jusqu_a_annees` (`None` : au-dela).
     pub struct TauxDeLicenciement {
-        #[serde(deserialize_with = "socle::forme::decimal_opt")]
-        pub jusqu_a_annees: Option<Decimal>,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub fraction_de_mois: Decimal,
+        #[serde(deserialize_with = "Anciennete::en_annees_opt")]
+        pub jusqu_a_annees: Option<Anciennete>,
+        pub fraction_de_mois: Coefficient,
     }
 }
 
@@ -808,16 +805,17 @@ fn regle_du_cdd(cdd: bool, motif_rupture: Option<MotifDeRupture>) -> R<Option<(b
     Ok(None)
 }
 
-/// La duree du preavis en mois, ou `None` quand la loi ne la donne pas (ou que le moteur ne sait pas la compter :
-/// `regle_du_preavis`). `cdd` : le contrat est a duree determinee, et ses motifs de rupture anticipee ont leur regle.
-pub fn preavis_mois(anciennete: Anciennete, motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<Decimal>> {
+/// La duree du preavis, en mois de salaire (ce que paie son indemnite compensatrice), ou `None` quand la loi ne la donne
+/// pas (ou que le moteur ne sait pas la compter : `regle_du_preavis`) ; zero : le motif n'en ouvre pas. `cdd` : le
+/// contrat est a duree determinee, et ses motifs de rupture anticipee ont leur regle.
+pub fn preavis_mois(anciennete: Anciennete, motif_rupture: Option<MotifDeRupture>, cdd: bool) -> R<Option<Coefficient>> {
     if let Some((sans, _)) = regle_du_cdd(cdd, motif_rupture)? {
-        return Ok(if sans { Some(Decimal::ZERO) } else { None });
+        return Ok(if sans { Some(Coefficient::ZERO) } else { None });
     }
     let rg = regles()?;
     let r = &rg.preavis;
     if dit(&r.motifs_sans_preavis, motif_rupture).is_some() {
-        return Ok(Some(Decimal::ZERO));
+        return Ok(Some(Coefficient::ZERO));
     }
     for t in &r.tranches {
         if anciennete >= t.anciennete_mois_min && t.anciennete_mois_max.is_none_or(|h| anciennete < h) {
@@ -952,13 +950,13 @@ pub struct SalaireDeReference {
 }
 
 /// Une indemnite legale (licenciement, mise a la retraite) : son montant, si elle est due, et pourquoi elle ne l'est
-/// pas ; les annees d'anciennete qui la comptent, quand elle l'est.
+/// pas ; l'anciennete qui la compte (ses mois complets, R1234-1), quand elle l'est.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IndemniteLegale {
     pub montant: Montant,
     pub du: bool,
     pub pourquoi: Option<String>,
-    pub annees: Option<Decimal>,
+    pub annees: Option<Anciennete>,
 }
 
 impl IndemniteLegale {
@@ -967,12 +965,12 @@ impl IndemniteLegale {
     }
 }
 
-/// Le plancher legal de l'indemnite de rupture conventionnelle (`None` : la loi n'en donne pas), les annees qui le
-/// comptent, et la phrase qui l'explique.
+/// Le plancher legal de l'indemnite de rupture conventionnelle (`None` : la loi n'en donne pas), l'anciennete qui le
+/// compte (ses mois complets quand il y en a un), et la phrase qui l'explique.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlancherDeLaRupture {
     pub plancher: Option<Montant>,
-    pub annees: Decimal,
+    pub annees: Anciennete,
     pub pourquoi: Option<String>,
 }
 
@@ -1044,26 +1042,20 @@ pub fn indemnite_licenciement(
 /// mise a la retraite et a la rupture conventionnelle.
 /// R1234-1 : « En cas d'année incomplète, l'indemnité est calculée proportionnellement au nombre de mois complets » ; le
 /// mois entame ne compte pas.
-fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant, Decimal)> {
+fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant, Anciennete)> {
     let rg = regles()?;
-    let annees = anciennete.mois_complets().annees();
-    let (mut total, mut bas) = (Decimal::ZERO, Decimal::ZERO);
+    let comptee = anciennete.mois_complets();
+    let (mut total, mut bas) = (Coefficient::ZERO, Anciennete::ZERO);
     for t in &rg.indemnite_licenciement.taux {
         // La derniere tranche n'a pas de borne : elle va jusqu'a l'anciennete.
-        let haut = match t.jusqu_a_annees {
-            Some(h) => h,
-            None => annees,
-        };
-        let part = add(annees.min(haut), -bas).max(Decimal::ZERO);
-        total = add(total, mul(part, t.fraction_de_mois));
-        bas = haut;
-        if annees <= haut {
-            break;
+        total = total + comptee.par_annee_dans_la_tranche(bas, t.jusqu_a_annees, t.fraction_de_mois);
+        match t.jusqu_a_annees {
+            Some(haut) if comptee > haut => bas = haut,
+            Some(_) | None => break,
         }
     }
-    // Les mois de salaire que le bareme compte, des annees que le texte dit (`Anciennete::annees`), sont un coefficient
-    // du salaire de reference.
-    Ok(((reference * Coefficient::du_decimal(total)).au_centime(), annees))
+    // Les mois de salaire que le bareme compte sont un coefficient du salaire de reference.
+    Ok(((reference * total).au_centime(), comptee))
 }
 
 /// L'anciennete minimale de l'indemnite de licenciement (L1234-9), en mois.
@@ -1164,7 +1156,7 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut
                  qui homologue la convention, pas la loi.",
                 anciennete.mois_complets(), mini)) });
         }
-        return Ok(PlancherDeLaRupture { plancher: None, annees: anciennete.annees(), pourquoi: Some(format!(
+        return Ok(PlancherDeLaRupture { plancher: None, annees: anciennete, pourquoi: Some(format!(
             "{} mois d'anciennete : L1237-13 renvoie a l'indemnite de L1234-9, qui en demande {}, \
              donc la loi ne donne pas de plancher. Le montant de la convention se saisit.",
             anciennete.mois_complets(), mini)) });
@@ -1177,7 +1169,6 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut
 /// et rien sous le premier.
 pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnMut() -> R<Montant>) -> R<IndemniteDuDepart> {
     let rg = regles()?;
-    let annees = anciennete.annees();
     let mut tries: Vec<&PalierDeDepart> = rg.depart_a_la_retraite.indemnite.taux.iter().collect();
     tries.sort_by(|a, b| a.anciennete_annees.cmp(&b.anciennete_annees));
     let Some(premier) = tries.first() else {
@@ -1188,7 +1179,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",
-            annees_lisibles(annees), premier.anciennete_annees.annees())) });
+            anciennete.annees_au_dixieme(), premier.anciennete_annees.annees())) });
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
@@ -1198,13 +1189,6 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
         palier: Some(palier.anciennete_annees),
         pourquoi: None,
     })
-}
-
-/// Les années à un chiffre après la virgule, au pair sur le demi, en texte.
-fn annees_lisibles(annees: Decimal) -> String {
-    let mut a = annees.round_dp_with_strategy(1, RoundingStrategy::MidpointNearestEven);
-    a.rescale(1);
-    a.to_string()
 }
 
 // -------------------------------------------------- le maintien de salaire

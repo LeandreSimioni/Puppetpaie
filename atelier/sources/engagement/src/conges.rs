@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 
-use socle::forme::NombreLu;
 
 use crate::calcul::Paie;
 use crate::saisie::{Carte, CongePris};
@@ -142,12 +141,6 @@ pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<Heures>, nom: &
         return Err(socle::refus!("{} : « {} » est négatif ({}) : une heure de plus se compte en positif.", qui(ctx, e), nom, socle::grandeurs::ecrit::texte::dit(h)));
     }
     Ok(h)
-}
-
-/// Le decimal d'un nombre de la carte, son echelle gardee (`NombreLu::decimal_avec_echelle`) : celui du preavis en
-/// mois, une chaine encore en decimal.
-pub(crate) fn dec_de(n: &NombreLu) -> R<Decimal> {
-    n.decimal_avec_echelle()
 }
 
 // -------------------------------------------------- les jours ouvrables

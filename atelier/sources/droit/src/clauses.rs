@@ -17,7 +17,7 @@ use socle::date::{Anciennete, Duree, EnJours, EnMois, Jour};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
 use socle::echec::R;
-use socle::grandeurs::{Heures, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, Taux};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -134,16 +134,17 @@ forme! {
     }
 }
 
-/// Une tranche d'anciennete du preavis : des mois, ou des jours par semaine calendaire d'anciennete sous un plafond.
+/// Une tranche d'anciennete du preavis : des mois (de salaire), ou des jours par semaine calendaire d'anciennete sous un
+/// plafond.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TranchePreavis {
     pub anciennete_mois_min: Anciennete,
     /// `null` : sans borne.
     pub anciennete_mois_max: Option<Anciennete>,
-    pub mois: Option<Nombre>,
-    pub jours_par_semaine: Option<Nombre>,
-    pub plafond_jours: Option<Nombre>,
+    pub mois: Option<Coefficient>,
+    pub jours_par_semaine: Option<Jours>,
+    pub plafond_jours: Option<Jours>,
 }
 
 /// Des mois de preavis de plus, de `age_min` inclus a `age_max` exclu.
@@ -154,7 +155,7 @@ pub struct SupplementAge {
     pub age_min: Anciennete,
     #[serde(deserialize_with = "Anciennete::en_annees")]
     pub age_max: Anciennete,
-    pub mois: Nombre,
+    pub mois: Coefficient,
 }
 
 forme! {
@@ -688,13 +689,14 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
 }
 
 // --------------------------------------------------------------- le preavis
-/// Le preavis de la convention. `mois` vaut `None` quand la convention ne dit rien -- pas relevee, ou pas de
-/// categorie -- et `pourquoi` le dit ; 0 quand le motif n'ouvre pas de preavis ; `jours` pour un preavis dit en jours.
+/// Le preavis de la convention, en mois de salaire. `mois` vaut `None` quand la convention ne dit rien -- pas relevee, ou
+/// pas de categorie -- et `pourquoi` le dit ; 0 quand le motif n'ouvre pas de preavis ; `jours` pour un preavis dit en
+/// jours.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreavisDit {
-    pub mois: Option<P>,
+    pub mois: Option<Coefficient>,
     pub article: Option<String>,
-    pub jours: Option<P>,
+    pub jours: Option<Jours>,
     pub pourquoi: Option<String>,
 }
 
@@ -712,7 +714,7 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
     };
     let article = format!("{}, art. {}", nom(idcc), sec.article);
     if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(&m))).filter(|h| !h.is_empty()) {
-        return Ok(PreavisDit { mois: Some(P::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
+        return Ok(PreavisDit { mois: Some(Coefficient::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
     let demission = motif == Some(MotifDeRupture::Demission);
     let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
@@ -740,16 +742,15 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
     }
     for t in tranches {
         if anciennete >= t.anciennete_mois_min && t.anciennete_mois_max.is_none_or(|h| anciennete < h) {
-            if let Some(par_semaine) = &t.jours_par_semaine {
+            if let Some(par_semaine) = t.jours_par_semaine {
                 // « 1 jour par semaine calendaire, dans la limite de 15 jours » : des jours, rendus en mois de 30 jours.
-                let semaines = anciennete.semaines_entieres();
-                let plafond = p(t.plafond_jours.as_ref().ok_or_else(|| manque("plafond_jours"))?);
-                let produit = semaines.mul(p(par_semaine));
+                let plafond = t.plafond_jours.ok_or_else(|| manque("plafond_jours"))?;
+                let produit = anciennete.semaines_entieres().a_raison_de(par_semaine);
                 let jours = if produit < plafond { produit } else { plafond };
-                let mois = jours.div(P::entier(30)).quantifier(4)?;
+                let mois = jours.rapport(Jours::fixes(30)).ok_or_else(|| socle::refus!("Un mois de trente jours ne compte aucun jour : le signaler au développeur."))?.au_dix_millieme_au_pair();
                 return Ok(PreavisDit { mois: Some(mois), article: Some(article), jours: Some(jours), pourquoi: None });
             }
-            let mut mois = p(t.mois.as_ref().ok_or_else(|| manque("mois"))?);
+            let mut mois = t.mois.ok_or_else(|| manque("mois"))?;
             if let Some(supplements) = sec.supplement_age.as_ref().filter(|s| !s.is_empty() && (!demission || sec.supplement_age_demission == Some(true))) {
                 let Some(age) = age else {
                     let pourquoi = format!("le préavis de {} dépend de l'âge du salarié, et sa \
@@ -758,7 +759,7 @@ pub fn preavis_mois(idcc: Option<&Idcc>, categorie: Option<&CategorieConventionn
                 };
                 for sup in supplements {
                     if sup.age_min <= age && age < sup.age_max {
-                        mois = mois.add(p(&sup.mois));
+                        mois = mois + sup.mois;
                     }
                 }
             }

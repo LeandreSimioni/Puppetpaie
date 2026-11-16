@@ -495,7 +495,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
     let texte = match v {
         Valeur::Nature(n) => return Ok(n.proprietes()?.libelle.clone()),
         Valeur::Texte(s) => s.clone(),
-        Valeur::Nombre(n) => n.ecrit(),
+        Valeur::Coefficient(c) => socle::grandeurs::ecrit::sans_zero::dit(*c),
         Valeur::Heures(h) => socle::grandeurs::ecrit::sans_zero::dit(*h),
         Valeur::Montant(m) => socle::texte::euros(*m),
         Valeur::MontantUnitaire(m) => socle::grandeurs::ecrit::sans_zero::dit(*m),
@@ -516,7 +516,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
         Champ::Cadre => {
             let cadre = match v {
                 Valeur::Oui(b) => *b,
-                Valeur::Nombre(n) => !n.est_nul(),
+                Valeur::Coefficient(c) => !c.est_nul(),
                 Valeur::Heures(h) => !h.est_nul(),
                 Valeur::Montant(m) => !m.est_nul(),
                 Valeur::MontantUnitaire(m) => !m.est_nul(),

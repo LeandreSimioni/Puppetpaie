@@ -300,8 +300,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `Anciennete::mois_fixes`),
   et elle se compare à lui, s'en écarte (`au_dela_de`) ou
   le compte (`fois_entieres`) ; elle se dit dans l'unité que le texte
-  demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres`), en
-  mois dans une phrase ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
+  demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres` en
+  `Semaines`), en mois dans une phrase, en années au dixième (`annees_au_dixieme`) ; une tranche d'un barème par année
+  lui donne des mois de salaire (`par_annee_dans_la_tranche`, un `Coefficient` : R1234-2) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
@@ -1276,7 +1277,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **source de la durée d'un préavis** : le motif de la rupture (aucun préavis), la loi (L1234-1), ou l'article de la
   convention ; dite par `DureeDuPreavis::qui`.
 - **durée d'un préavis** : une durée qui se compte, en mois, avec sa source, l'une n'allant pas sans l'autre
-  (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit).
+  (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit). Ses mois sont des mois de salaire,
+  ce que paie son indemnité compensatrice : un `Coefficient` (la part du mois que sa ligne paie), de la loi
+  (`permanents::preavis_mois`, des mois entiers ; zéro : le motif n'en ouvre pas), de la convention
+  (`clauses::PreavisDit.mois`, une fraction quand elle le dit en jours, rendus en mois de trente jours au dix-millième),
+  ou de la carte (`preavis_mois`) ; son terme ne se compte que de mois entiers (`Coefficient::en_mois_entiers`).
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table

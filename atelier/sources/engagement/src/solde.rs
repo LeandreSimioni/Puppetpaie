@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, compteur_conges, debut_de, dec_de, info, jours_dits, jours_ouvrables_de, qui, remuneration_du_mois,
+    avertir, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, qui, remuneration_du_mois,
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -20,7 +20,7 @@ use crate::Avis;
 use socle::texte::euros;
 use socle::echec::R;
 use socle::grandeurs::{courte, Coefficient, Jours, Montant, MontantUnitaire};
-use socle::num::{court, mul, Decimal};
+use socle::grandeurs::ecrit::texte;
 use droit::permanents::{self, jours_acquis, IndemniteDePreavis};
 use socle::date::{Anciennete, Periode};
 
@@ -92,11 +92,6 @@ fn profil(ctx: &Contexte, e: &Carte) -> R<clauses::Profil> {
     clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?)
 }
 
-/// Le decimal d'un nombre des clauses, tel qu'il s'ecrit.
-fn de_p(x: clauses::P) -> R<Decimal> {
-    socle::num::dec_texte(&x.to_string())
-}
-
 /// CE QUE L'ENGAGEMENT `e` DIT DU SALARIE la ou la fiche le dit aussi (`clauses::DitParLEngagement`) : son statut, son
 /// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
@@ -123,15 +118,17 @@ pub(crate) fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
 pub struct Preavis {
     /// Sa duree et d'ou elle vient ; aucune quand elle ne se compte pas (`pourquoi` le dit).
     pub duree: Option<DureeDuPreavis>,
-    pub legal: Option<Decimal>,
-    pub convention: Option<Decimal>,
+    /// Ce que la loi en donne, et la convention, en mois de salaire.
+    pub legal: Option<Coefficient>,
+    pub convention: Option<Coefficient>,
     pub dit: String,
     pub pourquoi: Option<String>,
 }
 
-/// LA DUREE D'UN PREAVIS QUI SE COMPTE, en mois, et d'ou elle vient : l'une ne va pas sans l'autre.
+/// LA DUREE D'UN PREAVIS QUI SE COMPTE, en mois de salaire (ce que paie son indemnite compensatrice : une fraction de mois
+/// quand la convention le dit en jours), et d'ou elle vient : l'une ne va pas sans l'autre.
 pub struct DureeDuPreavis {
-    pub mois: Decimal,
+    pub mois: Coefficient,
     pub source: SourceDuPreavis,
 }
 
@@ -159,13 +156,12 @@ impl DureeDuPreavis {
 /// le dernier jour du mois quand ce quantieme n'existe pas. Lecture : le preavis court du lendemain de la fin saisie (le
 /// texte, L1234-3, le fait courir de la presentation de la lettre, que le moteur ne connait pas). `None` : une duree
 /// qui n'est pas en mois entiers.
-fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::date::Jour>> {
-    if !mois.fract().is_zero() {
+fn terme_du_preavis(fin: &socle::date::Jour, mois: Coefficient) -> R<Option<socle::date::Jour>> {
+    if socle::grandeurs::entiere(mois).is_none() {
         return Ok(None);
     }
-    // Le preavis est encore un decimal (la quantite de sa ligne) : sa duree s'en lit ici.
-    let n = u32::try_from(mois).map_err(|_| socle::refus!("préavis hors du calendrier : {} mois", mois))?;
-    fin.apres(socle::date::Duree::mois(n)).map(Some)
+    let n = mois.en_mois_entiers().ok_or_else(|| socle::refus!("préavis hors du calendrier : {} mois", texte::dit(mois)))?;
+    fin.apres(n).map(Some)
 }
 
 /// `age` : celui du salarie au dernier jour ecrit du contrat (`age`).
@@ -176,7 +172,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
     let prof = profil(ctx, e)?;
     let categorie = prof.categorie.as_ref();
     let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age)?;
-    let conv_mois = conv.mois.map(de_p).transpose()?;
+    let conv_mois = conv.mois;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
     let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
@@ -191,9 +187,10 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
         out.pourquoi = Some(format!("{} Dites sa durée sur la carte (« durée du préavis, en mois »).", regle));
         return Ok(out);
     }
-    if legal == Some(Decimal::ZERO) || conv_mois == Some(Decimal::ZERO) {
-        out.duree = Some(DureeDuPreavis { mois: Decimal::ZERO, source: SourceDuPreavis::MotifDeRupture });
-        out.pourquoi = if conv_mois == Some(Decimal::ZERO) { conv.pourquoi.clone() } else { None };
+    let nul = |m: Option<Coefficient>| m.is_some_and(Coefficient::est_nul);
+    if nul(legal) || nul(conv_mois) {
+        out.duree = Some(DureeDuPreavis { mois: Coefficient::ZERO, source: SourceDuPreavis::MotifDeRupture });
+        out.pourquoi = if nul(conv_mois) { conv.pourquoi.clone() } else { None };
         return Ok(out);
     }
     if releve && conv_mois.is_none() && categorie.is_some() {
@@ -213,7 +210,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
         ));
         return Ok(out);
     }
-    let candidats: Vec<Decimal> = [legal, conv_mois].into_iter().flatten().collect();
+    let candidats: Vec<Coefficient> = [legal, conv_mois].into_iter().flatten().collect();
     if candidats.is_empty() {
         out.pourquoi = Some(format!(
             "la loi ne dit pas sa durée en dessous de six mois d'ancienneté \
@@ -238,7 +235,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
             pour_la_categorie,
             match legal {
                 None => "la loi n'en donne pas sous six mois".to_string(),
-                Some(l) => format!("la loi en donne {}", l),
+                Some(l) => format!("la loi en donne {}", texte::dit(l)),
             }
         );
     } else {
@@ -246,7 +243,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
         out.dit = format!(
             "L1234-1 ; {} en donne {}{}",
             conv_article()?,
-            conv.mois.iter().map(|m| m.to_string()).collect::<String>(),
+            conv.mois.iter().map(|m| texte::dit(*m)).collect::<String>(),
             pour_la_categorie
         );
     }
@@ -458,15 +455,14 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
     } else if let Some(indemnite) = &indemnite {
         let duree = duree_du_preavis(ctx, e, anciennete, motif, age(ctx, e)?)?;
         let mut mois_preavis = duree.duree.as_ref().map(|d| d.mois);
-        if let Some(saisi) = &e.preavis_mois {
-            let saisi = dec_de(saisi)?;
+        if let Some(saisi) = e.preavis_mois {
             if let Some(d) = &duree.duree {
                 if saisi < d.mois {
                     return Err(socle::refus!(
                         "{} : preavis de {} mois saisi, et {} en donne {}. Un \
                          contrat peut accorder plus que la loi et la convention, \
                          jamais moins.",
-                        qui, saisi, d.qui(), d.mois
+                        qui, texte::dit(saisi), d.qui(), texte::dit(d.mois)
                     ));
                 }
             }
@@ -478,7 +474,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             };
             return Err(socle::refus!("{} : preavis non effectue, et {}", qui, pourquoi));
         }
-        match mois_preavis.filter(|m| !m.is_zero()) {
+        match mois_preavis.filter(|m| !m.est_nul()) {
             Some(m) => {
                 // « L'inexécution du préavis de licenciement n'a pas pour conséquence d'avancer la date à laquelle le
                 // contrat prend fin » (C. trav. L1234-4, `code-du-travail/xml/L1234-4.xml`) : l'ancienneté que
@@ -497,9 +493,8 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 }
                 // La rubrique, et avec elle le code du bloc 52, suit le motif : 023, ou 032 pour le 092 (L1226-14).
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
-                // Les mois du preavis, une duree que son calcul dit encore en decimal : la part du mois que la ligne paie
-                // (sa rubrique compte des mois) s'y ouvre.
-                stc.lignes.push(LignePaie::composee(rubrique, PaiementDeLigne::PartDuMois(Coefficient::du_decimal(court(m)), courte(salaire))));
+                // Les mois du preavis sont la part du mois que la ligne paie (sa rubrique compte des mois).
+                stc.lignes.push(LignePaie::composee(rubrique, PaiementDeLigne::PartDuMois(courte(m), courte(salaire))));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(
@@ -510,15 +505,14 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     IndemniteDePreavis::Licenciement | IndemniteDePreavis::Aucune(_) => String::new(),
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
-                // Les mois du preavis sont un decimal (sa chaine) : les jours par mois et le salaire s'y ouvrent.
-                let jours = Jours::du_decimal(mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois.decimal(), m));
-                let paye = Montant::du_decimal(mul(m, salaire.decimal()));
+                let jours = permanents::regles()?.conges_payes.acquisition.jours_par_mois * m;
+                let paye = m * salaire;
                 let conges = conges_non_effectues(ctx, e, mois, &fin, jours, salaire, paye.au_centime(), &mut stc)?;
                 stc.avertissements.push(avertir(format!(
                     "{} : {} mois de préavis non effectué, payés {} \
                      (L1234-5){}. L'article le veut « indemnité de congés payés comprise » : {}{}",
                     qui,
-                    socle::texte::nombre_dit(m),
+                    socle::texte::virgule(m),
                     euros(paye),
                     if duree.dit.is_empty() { String::new() } else { format!(" -- {}", duree.dit) },
                     conges,
