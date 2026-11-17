@@ -27,7 +27,7 @@ use socle::texte::euros;
 use socle::grandeurs::ecrit::{sans_zero, texte};
 use socle::grandeurs::{Jours, Montant, Taux};
 use crate::tableaux_export::{
-    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, totaliser_general, colonne as C, ColonneDEtat, Ligne, Section, Tableau,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, nom_compagnie, refus, totaliser, totaliser_general, colonne as C, Ligne, Section, Tableau,
     FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -1498,7 +1498,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         l.grandeur(C::Pris, cpt.pris.au_demi_superieur()).grandeur(C::Solde, cpt.solde.au_demi_superieur());
         l.montant(C::Dixieme, dixieme).montant(C::Maintien, maintien).montant(C::Indemnite, retenu).t(C::Regle, regle);
         // Le taux s'ecrit a deux decimales (`12.50`).
-        l.taux(C::TauxPatronal, taux.map(|t| socle::grandeurs::decimales_ecrites(t, 2))).compte(C::Bulletins, n).om(C::Charges, charges);
+        l.taux(C::TauxPatronal, taux.map(|t| socle::grandeurs::decimales_ecrites(t, 2))).compte(C::BulletinsDuTaux, n).om(C::Charges, charges);
         l.om(C::Total, charges.map(|c| retenu + c));
         lignes.push(l);
     }
@@ -1546,21 +1546,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         C::Total.titree("Provision"),
     ];
     t.sources = vec!["compteur de congés écrit dans la paie validée du mois, indemnité L3141-24 comme au solde de tout compte, taux patronal = cotisations patronales / brut des bulletins des douze derniers mois".to_string()];
+    // Les jours, le taux et le nombre de bulletins d'un salarie ne s'additionnent pas : leurs colonnes n'ont pas de total.
     finir(ctx, &mut t, Some(&p), "provision-conges", d.format,false)?;
-    // Les jours, le taux et le nombre de bulletins d'un salarie ne s'additionnent pas : leur total reste vide.
-    const SANS_TOTAL: [ColonneDEtat; 6] = [ColonneDEtat::Report, ColonneDEtat::Acquis, ColonneDEtat::Pris, ColonneDEtat::Solde, ColonneDEtat::TauxPatronal, ColonneDEtat::Bulletins];
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            for c in SANS_TOTAL {
-                tot.rien(c);
-            }
-        }
-    }
-    if let Some(tot) = t.total.as_mut() {
-        for c in SANS_TOTAL {
-            tot.rien(c);
-        }
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "provision-conges")?;
     }
@@ -1730,14 +1717,6 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     t.sources = vec!["CGI art. 231 et 1679 A ; notices 2501-SD et 2502-SD de la DGFiP (seuils, franchise, décote, abattement de l'année)".to_string()];
     finir(ctx, &mut t, Some(&p), "taxe-sur-les-salaires", d.format,false)?;
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            tot.rien(C::NombreDeMois);
-        }
-    }
-    if let Some(tot) = t.total.as_mut() {
-        tot.rien(C::NombreDeMois);
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "taxe-sur-les-salaires")?;
     }

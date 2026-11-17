@@ -206,7 +206,6 @@ enum Total {
     Montant,
     Heures,
     Cachets,
-    Jours,
     Compte,
     Assiette(Assiette),
 }
@@ -470,7 +469,6 @@ colonnes_des_etats! {
         Masse = "masse", "Masse salariale";
         MassePermanents = "masse_permanents", "Masse hors intermittents";
         Montant = "montant", "Montant";
-        Net = "net", "Net";
         NetAPayer = "net_a_payer", "Net à payer";
         NetImposable = "net_imposable", "Net imposable";
         PartPat = "part_pat", "Part patronale";
@@ -497,8 +495,9 @@ colonnes_des_etats! {
     ColonneDeCachets, [Cachets], Some(Total::Cachets), Nombre {
         Cachets = "cachets", "Cachets";
     }
-    /// UNE COLONNE DE JOURS, totalisee : ceux d'un compteur de conges.
-    ColonneDeJours, [Jours], Some(Total::Jours), Nombre {
+    /// UNE COLONNE DE JOURS, sans total : ceux du compteur de conges d'un salarie, qui ne s'additionnent pas d'un salarie
+    /// a l'autre.
+    ColonneDeJours, [Jours], None, Nombre {
         Acquis = "acquis", "Acquis N (j)";
         Pris = "pris", "Pris (j)";
         Report = "report", "Report N-1 (j)";
@@ -509,9 +508,21 @@ colonnes_des_etats! {
         Bulletins = "bulletins", "Bulletins";
         /// Les jours travailles d'un contrat, comptes.
         Jours = "jours", "Jours";
-        /// Un nombre de mois : la meme cle que `Mois`, un compte qui se totalise.
+    }
+    /// UNE COLONNE DE COMPTES SANS TOTAL : ce qui ne s'additionne pas d'une ligne a l'autre.
+    ColonneDeCompteSansTotal, [usize], None, Nombre {
+        /// Les bulletins des douze derniers mois d'un salarie, qui font son taux patronal (la provision des conges) : la
+        /// meme cle que `Bulletins`.
+        BulletinsDuTaux = "bulletins", "Bulletins";
+        /// Un nombre de mois : la meme cle que `Mois`.
         NombreDeMois = "mois", "Mois";
+        /// Les salaries d'un mois : des salaries distincts ne s'additionnent pas d'un mois a l'autre.
         Salaries = "salaries", "Salariés";
+    }
+    /// UNE COLONNE DE MONTANTS SANS TOTAL : des montants de sortes differentes, l'une sous l'autre.
+    ColonneDeMontantSansTotal, [Montant], None, Montant {
+        /// Le net imposable et le net a payer d'un bulletin, au livre de paie detaille.
+        NetDuBulletin = "net", "Net";
     }
 }
 
@@ -833,11 +844,6 @@ fn somme(lignes: &[&Ligne], cle: ColonneDEtat, total: Total) -> Option<Val> {
             _ => None,
         })
         .map(Val::Cachets),
-        Total::Jours => somme_de(lignes, cle, |v| match v {
-            Val::Jours(j) => Some(*j),
-            _ => None,
-        })
-        .map(Val::Jours),
         Total::Compte => somme_de(lignes, cle, |v| match v {
             Val::Compte(n) => Some(*n),
             _ => None,

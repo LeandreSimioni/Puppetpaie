@@ -1071,7 +1071,7 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Résultat");
-                l.t(C::Libelle, lib).om(C::Net, v.map(Montant::au_centime));
+                l.t(C::Libelle, lib).om(C::NetDuBulletin, v.map(Montant::au_centime));
                 lignes.push(l);
             }
             let sec = format!("{} — {}{}", nom, libelle_mois(m), titre.filter(|t| !t.is_empty()).map(|t| format!(" — {}", t)).into_iter().collect::<String>());
@@ -1095,19 +1095,11 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         C::PartSal.colonne(),
         C::TauxPat.colonne(),
         C::PartPat.colonne(),
-        C::Net.colonne(),
+        C::NetDuBulletin.colonne(),
     ];
     t.sources = vec!["le bulletin de paie tel que PuppetPaie le calcule et l'imprime (art. R3243-1 du Code du travail pour ses mentions)".to_string()];
-    // Le total general du Net additionnerait net imposable et net a payer : il n'a pas de sens, il est retire apres coup.
+    // Le total du Net additionnerait net imposable et net a payer : sa colonne n'en a pas (`NetDuBulletin`).
     finir(ctx, &mut t, Some(&p), "livre-de-paie-detaille", d.format,false)?;
-    if let Some(tot) = t.total.as_mut() {
-        tot.rien(C::Net);
-    }
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            tot.rien(C::Net);
-        }
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "livre-de-paie-detaille")?;
     }
@@ -1212,15 +1204,6 @@ pub fn masse_salariale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     t.sources = vec!["cumuls des bulletins du mois".to_string()];
     finir(ctx, &mut t, Some(&p), "masse-salariale", d.format,false)?;
-    // Des salaries distincts ne s'additionnent pas d'un mois a l'autre.
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            tot.rien(C::Salaries);
-        }
-    }
-    if let Some(tot) = t.total.as_mut() {
-        tot.rien(C::Salaries);
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "masse-salariale")?;
     }
