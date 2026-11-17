@@ -45,7 +45,7 @@ use crate::catalogue::Route;
 use crate::catalogue::Ecran;
 use crate::SansCharge;
 use socle::ecran::couleur_de_l_etat;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::depots::{Designation, EmbaucheDesignee, Quoi};
 use crate::gestes::signature::ContratSigneDit;
 
@@ -282,7 +282,7 @@ impl Etape {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Bilan {
     mois: Mois,
-    phrase: String,
+    phrase: Phrase,
     colonnes: Vec<String>,
     pub(crate) etapes: Vec<Etape>,
 }
@@ -290,7 +290,7 @@ pub(crate) struct Bilan {
 /// `mois-a-ouvrir` : le mois a ouvrir, celui du jour, et les etapes qui restent au premier.
 #[derive(Debug, Serialize)]
 struct MoisAOuvrir {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     courant: Mois,
     reste: Vec<QuelleEtape>,
@@ -300,28 +300,28 @@ struct MoisAOuvrir {
 /// lit, et les engagements non actifs du mois.
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatParEngagement<'a> {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: Phrase,
+    phrases: Vec<Phrase>,
     mois: Mois,
     engagements: Vec<LigneDePage<'a>>,
     non_actifs: &'a [NonActif],
 }
 
 impl Dite for EtatParEngagement<'_> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Bilan {
     /// La phrase du bilan, celle de l'ecran du mois.
-    pub(crate) fn phrase(&self) -> &str {
+    pub(crate) fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 /// La phrase d'un engagement dans `etat-par-engagement` : qui, son contrat, puis ce que disent ses carres et sa frise.
-fn phrase_de_la_ligne(l: &LigneDePage) -> String {
+fn phrase_de_la_ligne(l: &LigneDePage) -> Phrase {
     let qui = match (l.nom, l.numero) {
         (Some(n), Some(c)) => format!("{} ({})", n, c),
         (Some(n), None) => n.to_string(),
@@ -329,7 +329,7 @@ fn phrase_de_la_ligne(l: &LigneDePage) -> String {
         (None, None) => "engagement à compléter".to_string(),
     };
     let dit: Vec<&str> = l.carres.iter().map(|c| c.phrase.as_str()).chain(l.versions.map(|f| f.phrase.as_str())).collect();
-    format!("{} : {}", qui, dit.join(" ; "))
+    socle::phrase!("{} : {}", qui, dit.join(" ; "))
 }
 
 /// Un engagement non actif du mois (`non_actifs`).
@@ -453,10 +453,10 @@ fn phrase_du_groupe(nom: &str, g: &Groupe) -> Option<String> {
 
 /// LA PHRASE DU MOIS : ce qu'en disent ses cases, l'une apres l'autre (`phrase_du_groupe`) ; un mois sans engagement le
 /// dit une fois en tete (`tete`), sans redire ses etapes qui n'ont rien a faire.
-fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> String {
+fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> Phrase {
     let cases = etapes.iter().flat_map(|e| &e.groupes).filter_map(|g| g.phrase.clone());
     let morceaux: Vec<String> = tete.into_iter().chain(cases).collect();
-    format!("{}.", morceaux.join(". "))
+    socle::phrase!("{}.", morceaux.join(". "))
 }
 
 // ------------------------------------------------------------ les colonnes
@@ -2444,11 +2444,11 @@ impl<'a> Moteur<'a> {
             let reste = self.etapes_restantes(m)?;
             if !reste.is_empty() {
                 let noms: Vec<&str> = ORDRE.iter().filter(|c| reste.contains(c)).map(|c| c.nom()).collect();
-                let phrase = format!("À ouvrir : {}, où il reste {}.", m.libelle(socle::mois::Graphie::Accentuee), noms.join(", "));
+                let phrase = socle::phrase!("À ouvrir : {}, où il reste {}.", m.libelle(socle::mois::Graphie::Accentuee), noms.join(", "));
                 return Ok(MoisAOuvrir { phrase, mois: m, courant, reste });
             }
         }
-        let phrase = format!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", courant.libelle(Graphie::Accentuee));
+        let phrase = socle::phrase!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", courant.libelle(Graphie::Accentuee));
         Ok(MoisAOuvrir { phrase, mois: courant, courant, reste: Vec::new() })
     }
 
@@ -2952,7 +2952,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for MoisAOuvrir {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -2972,8 +2972,8 @@ impl LesDeuxEtats {
     pub(crate) fn par_engagement(&self) -> EtatParEngagement<'_> {
         let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
         let phrase = match engagements.len() {
-            0 => format!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
-            n => format!("Engagements du mois : {}.", n),
+            0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
+            n => socle::phrase!("Engagements du mois : {}.", n),
         };
         let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
         EtatParEngagement { phrase, phrases, mois: self.mois, engagements, non_actifs: &self.non_actifs }

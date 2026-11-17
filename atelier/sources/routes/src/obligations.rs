@@ -49,7 +49,7 @@ use socle::ecran::Pastille;
 use socle::forme::TexteDit;
 use socle::paris::ecrit::jour_et_heure;
 use socle::paris::{HeureDuJour, InstantOuJour, Moment};
-use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
 use declarations::obligations::{BaseDesObligations, DeBase, Delai, LieuHorsDsn};
@@ -1247,7 +1247,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for ObligationsDeLArret {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -1256,7 +1256,7 @@ impl Dite for ObligationsDeLArret {
 /// suite (`phrases`, `en_phrases`) et, pour un arret pas encore ecrit, ce qu'il fera naitre en une ligne (`ensuite`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ObligationsDeLArret {
-    phrase: String,
+    phrase: Phrase,
     obligations: Vec<Obligation>,
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1265,7 +1265,7 @@ pub(crate) struct ObligationsDeLArret {
 
 impl ObligationsDeLArret {
     /// Les obligations, et leur phrase (`phrase(n)`, `n` : combien il y en a).
-    fn de(obligations: Vec<Obligation>, phrase: impl FnOnce(usize) -> String) -> ObligationsDeLArret {
+    fn de(obligations: Vec<Obligation>, phrase: impl FnOnce(usize) -> Phrase) -> ObligationsDeLArret {
         ObligationsDeLArret { phrase: phrase(obligations.len()), phrases: en_phrases(&obligations), obligations, ensuite: None }
     }
 }
@@ -1324,7 +1324,7 @@ fn quand_saisi(jour: Jour, heure: Option<HeureDuJour>) -> R<InstantOuJour> {
 }
 
 /// Les obligations de l'arret `a`, comptees aujourd'hui, et leur phrase.
-fn reponse(ctx: &Contexte, a: &ArretSaisi, phrase: impl FnOnce(usize) -> String) -> R<ObligationsDeLArret> {
+fn reponse(ctx: &Contexte, a: &ArretSaisi, phrase: impl FnOnce(usize) -> Phrase) -> R<ObligationsDeLArret> {
     let suivi = Suivi::lire(ctx)?;
     Ok(ObligationsDeLArret::de(de_l_arret(ctx, a, &suivi, ctx.aujourdhui)?, phrase))
 }
@@ -1358,7 +1358,7 @@ fn arret_connaissance(ctx: &Contexte, c: ChargeConnaissance) -> R<ObligationsDeL
     let (_, a) = l_arret_de(ctx, &c.salarie, &c.dernier_jour)?;
     let saisie = connaissance_saisie(ctx, &a, c.de, &ConnaissanceDite { jour: c.jour, heure: c.heure })?;
     connaissance_ecrire(ctx, &a, c.de, saisie)?;
-    reponse(ctx, &a, |n| format!("Jour de connaissance noté. Obligations de l'arrêt : {}.", n))
+    reponse(ctx, &a, |n| socle::phrase!("Jour de connaissance noté. Obligations de l'arrêt : {}.", n))
 }
 
 /// Ce que la compagnie dit avoir connu de l'arret `a` (`de`), d'apres le jour et l'heure dits : la connaissance a
@@ -1553,8 +1553,8 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     })?;
     let quoi = f.dite;
     reponse(ctx, &a, |n| match charge.le {
-        None => format!("{} : la note « faite » est retirée. Obligations de l'arrêt : {}.", quoi, n),
-        Some(le) => format!("{} notée faite le {}. Obligations de l'arrêt : {}.", quoi, le.jj_mm_aaaa(), n),
+        None => socle::phrase!("{} : la note « faite » est retirée. Obligations de l'arrêt : {}.", quoi, n),
+        Some(le) => socle::phrase!("{} notée faite le {}. Obligations de l'arrêt : {}.", quoi, le.jj_mm_aaaa(), n),
     })
 }
 
@@ -1663,7 +1663,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
             Ok(libelle + &quand)
         })
         .collect::<R<_>>()?;
-    let mut r = ObligationsDeLArret::de(obligations, |n| format!("Obligations de l'arrêt : {}.", n));
+    let mut r = ObligationsDeLArret::de(obligations, |n| socle::phrase!("Obligations de l'arrêt : {}.", n));
     r.ensuite = (!suites.is_empty()).then(|| format!("Il faudra ensuite : {}.", suites.join(" ; ")));
     if let Some(m) = pas_encore {
         r.phrases.push(format!("La subrogation ne se tire pas encore : {}", m));

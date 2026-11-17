@@ -40,7 +40,7 @@ use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{FicheRecue, ReleveFiches};
 use compagnie::sauvegarde::{self, Sauvegarde};
 
@@ -271,8 +271,8 @@ impl Ouverture {
     pub fn dite(self) -> R<OuvertureDite> {
         let retours_resume = self.releve.as_ref().map(Ouverture::resume_retours);
         let phrase = match &retours_resume {
-            Some(r) => format!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
-            None => format!("Ouverture du {}.", ecrit::francaise::texte(self.quand)),
+            Some(r) => socle::phrase!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
+            None => socle::phrase!("Ouverture du {}.", ecrit::francaise::texte(self.quand)),
         };
         let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
@@ -345,7 +345,7 @@ impl Ouverture {
 /// (`phrases`).
 #[derive(Debug, Serialize)]
 pub struct OuvertureDite {
-    pub phrase: String,
+    pub phrase: Phrase,
     #[serde(with = "socle::paris::ecrit::francaise")]
     pub quand: Moment,
     #[serde(with = "socle::temps::ecrit::secondes_au_dixieme")]
@@ -368,7 +368,7 @@ pub struct OuvertureDite {
 }
 
 impl Dite for OuvertureDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }

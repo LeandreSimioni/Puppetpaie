@@ -1093,7 +1093,7 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
     if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
         phrase.push_str(" Le dossier est portable.");
     }
-    Ok(PortableComplete { ajoutes, absents, version, portable: inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file(), phrase })
+    Ok(PortableComplete { ajoutes, absents, version, portable: inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file(), phrase: socle::texte::Phrase::composee(phrase) })
 }
 
 /// CE QUE REND `portable-completer` (`completer_le_portable`) : les systemes ajoutes, ceux que la version ne publie pas, la
@@ -1104,7 +1104,7 @@ pub struct PortableComplete {
     pub absents: Vec<Systeme>,
     pub version: VersionDuLogiciel,
     pub portable: bool,
-    pub phrase: String,
+    pub phrase: socle::texte::Phrase,
 }
 
 

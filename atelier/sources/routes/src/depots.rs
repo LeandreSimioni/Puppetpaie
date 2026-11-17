@@ -26,6 +26,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{dossier_du_code, NomDeFichier};
 use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
+use socle::texte::Phrase;
 use serde::{Deserialize, Serialize};
 use envois::depot_acte::DepotFait;
 use envois::etats::Repetition;
@@ -229,10 +230,10 @@ pub(crate) struct ChargeSuivre {
 /// phrase, son titre, ses encarts, et les phrases pour `moteur route --texte`.
 #[derive(Debug, Serialize)]
 pub(crate) struct Dit<A> {
-    phrase: String,
+    phrase: Phrase,
     titre: &'static str,
     encarts: Vec<Encart>,
-    phrases: Vec<String>,
+    phrases: Vec<Phrase>,
     avertissements: Vec<String>,
     informations: Vec<String>,
     #[serde(flatten)]
@@ -251,7 +252,7 @@ pub(crate) enum DepotApercu {
 /// salaries.
 #[derive(Debug, Serialize)]
 pub(crate) struct Deposee {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     fait: DepotFait,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,7 +267,7 @@ pub(crate) struct Suivi {
     passe: bool,
     refuse: bool,
     incident: String,
-    phrase: String,
+    phrase: Phrase,
     couleur: &'static str,
 }
 
@@ -291,7 +292,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for DepotApercu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         match self {
             DepotApercu::Dsn(d) => &d.phrase,
             DepotApercu::Dpae(d) => &d.phrase,
@@ -300,19 +301,19 @@ impl Dite for DepotApercu {
 }
 
 impl Dite for Deposee {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Suivi {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for BilanDuTest {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.repetition.phrase
     }
 }
@@ -634,7 +635,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let n = retenues.len();
     Ok(Dpae::Ecrite(DpaeEcrite {
         chemin: f,
-        phrase: format!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
+        phrase: socle::phrase!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
 }
 
@@ -650,7 +651,7 @@ pub(crate) enum Dpae {
 /// dit combien d'embauches elle declare.
 pub(crate) struct DpaeEcrite {
     pub(crate) chemin: PathBuf,
-    pub(crate) phrase: String,
+    pub(crate) phrase: Phrase,
 }
 
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
@@ -709,7 +710,7 @@ mod tests_dpae_partielles {
 /// ou la phrase de la DPAE ecrite.
 #[derive(Debug, Default)]
 pub struct DitALEcriture {
-    phrase: Option<String>,
+    phrase: Option<Phrase>,
     avertissements: Vec<String>,
     informations: Vec<String>,
 }
@@ -810,13 +811,13 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     // dans le geste) ; puis ses suites.
     let tranche = if mode == Mode::Test {
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
-        format!("{} {}", b.titre, b.phrase)
+        socle::phrase!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
         suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
-        "Dépôt réel effectué — ses retours sont attendus.".to_string()
+        Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
     };
-    let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
+    let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
     let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
@@ -874,11 +875,11 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.
     let nom = if dpae { "La DPAE" } else { "La DSN" };
     let (phrase, etat) = if passe {
-        (format!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
+        (socle::phrase!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
     } else if refuse {
-        (format!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
+        (socle::phrase!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
     } else {
-        (format!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
+        (socle::phrase!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
     };
     Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
@@ -1138,7 +1139,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             // Une DSN se dit par sa nature, son mois et ses salaries quand rien d'autre n'est a dire.
             let phrase = match ecrite {
                 Some(p) => p,
-                None => format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
+                None => socle::phrase!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
             DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
@@ -1148,34 +1149,34 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             let embauches = socle::ecran::compte(a.embauches.len(), "embauche", "embauches");
             let phrase = match (ecrite, a.mois) {
                 (Some(p), _) => p,
-                (None, Some(m)) => format!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
-                (None, None) => format!("DPAE : {}.", embauches),
+                (None, Some(m)) => socle::phrase!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
+                (None, None) => socle::phrase!("DPAE : {}.", embauches),
             };
             DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
     };
     // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne.
     let encarts = encarts_du_depot(&a);
-    let mut lignes: Vec<String> = match &a {
+    let mut lignes: Vec<Phrase> = match &a {
         DepotApercu::Dsn(Dit { apercu: x, .. }) => {
             let recap = match &x.recapitulatif {
-                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(r.phrase.clone()),
+                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(Phrase::composee(r.phrase.clone())),
                 _ => None,
             };
-            [x.remplacement.as_ref().map(|r| r.etat.phrase.clone()), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
+            [x.remplacement.as_ref().map(|r| Phrase::composee(r.etat.phrase.clone())), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
         }
         DepotApercu::Dpae(Dit { apercu: x, .. }) => vec![x.repetition.phrase.clone()],
     };
-    lignes.retain(|p| !p.is_empty());
-    lignes.extend(encarts.iter().map(Encart::en_ligne));
+    lignes.retain(|p| !p.est_vide());
+    lignes.extend(encarts.iter().map(|e| Phrase::composee(e.en_ligne())));
     match &mut a {
         DepotApercu::Dsn(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned());
+            lignes.extend(dit.avertissements.iter().cloned().map(Phrase::composee));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned());
+            lignes.extend(dit.avertissements.iter().cloned().map(Phrase::composee));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }

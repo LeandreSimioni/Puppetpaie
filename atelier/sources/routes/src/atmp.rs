@@ -27,7 +27,7 @@ use droit::fiche::Lue as _;
 
 use serde::Serialize;
 
-use crate::enveloppe::Dite;
+use crate::enveloppe::{Dite, Phrase};
 use droit::bareme::{self, CodeRisqueAt, RisqueAtmp};
 use droit::contexte::Contexte;
 use droit::fiche::{Etablissement, FicheEntrepriseDatee, NotificationAtmp, ProvenanceAtmp, TauxAtmp};
@@ -280,18 +280,18 @@ fn trois(liste: &[droit::fiche::Datee<TauxAtmp>], aujourdhui: &Jour) -> R<(Optio
 }
 
 /// La phrase et l'explication du taux de l'annee lu par la paie (`lu` : `bareme::taux_atmp_de_l_annee`).
-fn dire(lu: Option<socle::echec::R<TauxAtmp>>, an: Annee, nom: &Option<String>) -> (String, String) {
+fn dire(lu: Option<socle::echec::R<TauxAtmp>>, an: Annee, nom: &Option<String>) -> (Phrase, String) {
     match lu {
         Some(Ok(t)) => match t.valeur {
-            Some(v) => (format!("Taux AT/MP {} : {}{}.", an, pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
+            Some(v) => (socle::phrase!("Taux AT/MP {} : {}{}.", an, pourcent(v), nom.iter().map(|n| format!(", code risque {}", n)).collect::<String>()), String::new()),
             None => (
-                format!("Taux AT/MP {} : pas encore de notification (999ZZ).", an),
+                socle::phrase!("Taux AT/MP {} : pas encore de notification (999ZZ).", an),
                 format!("999ZZ : la compagnie n'a pas encore reçu de notification de la CARSAT. La DSN le déclare ainsi, sans taux. Aucun texte ne dit quel taux le bulletin cotise en attendant : le logiciel ne calcule pas la paie de {} tant que le code et le taux notifiés ne sont pas inscrits.", an),
             ),
         },
-        Some(Err(m)) => (format!("Taux AT/MP {} : à inscrire.", an), m.phrase),
+        Some(Err(m)) => (socle::phrase!("Taux AT/MP {} : à inscrire.", an), m.phrase),
         None => (
-            format!("Taux AT/MP {} : pas encore dit.", an),
+            socle::phrase!("Taux AT/MP {} : pas encore dit.", an),
             format!("Le code risque et le taux AT/MP de {} ne sont pas dits : ils sont sur la notification de la CARSAT, et s'inscrivent ici avec la date à partir de laquelle ils valent.", an),
         ),
     }
@@ -302,7 +302,7 @@ fn dire(lu: Option<socle::echec::R<TauxAtmp>>, an: Annee, nom: &Option<String>) 
 struct EtablissementDit {
     nic: Option<droit::fiche::Nic>,
     libelle: Option<String>,
-    phrase: String,
+    phrase: Phrase,
     explication: String,
     risque: Option<RisqueDit>,
     avant: Option<LigneDite>,
@@ -316,7 +316,7 @@ struct EtablissementDit {
 /// etablissement.
 #[derive(Debug, Serialize)]
 pub(crate) struct TauxAtmpDit {
-    phrase: String,
+    phrase: Phrase,
     explication: String,
     avant: Option<LigneDite>,
     maintenant: Option<LigneDite>,
@@ -331,7 +331,7 @@ pub(crate) struct TauxAtmpDit {
 }
 
 impl Dite for TauxAtmpDit {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }

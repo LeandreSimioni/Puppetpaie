@@ -13,7 +13,7 @@ use socle::mois::Mois;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusDit, FORME, MOIS};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 pub(crate) const IDENTITE: Champ = Champ {
     nom: "engagement", libelle: Affiche::new("Carte"), forme: Forme::Objet,
@@ -95,13 +95,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for Validation {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
 impl Dite for Modification {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         match self {
             Modification::Faite { phrase, .. } => phrase,
             Modification::Avertie { phrase, .. } => phrase,
@@ -110,7 +110,7 @@ impl Dite for Modification {
 }
 
 impl Dite for Retrait {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -140,7 +140,7 @@ struct ChargeRetirer {
 #[derive(Debug, Serialize)]
 pub(crate) struct Validation {
     pub(crate) engagement: Identite,
-    pub(crate) phrase: &'static str,
+    pub(crate) phrase: Phrase,
 }
 
 /// Ce que rend « Modifier l'engagement » : fait (`change` dit si quelque chose s'est ecrit), ou l'avertissement a
@@ -148,8 +148,8 @@ pub(crate) struct Validation {
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum Modification {
-    Faite { change: bool, phrase: String },
-    Avertie { avertissement: Avertissement, phrase: &'static str, phrases: Vec<String> },
+    Faite { change: bool, phrase: Phrase },
+    Avertie { avertissement: Avertissement, phrase: Phrase, phrases: Vec<String> },
 }
 
 /// L'avertissement d'une modification : chaque engagement touche, ce que le changement entraine pour lui, et d'ou vaut
@@ -172,7 +172,7 @@ struct Touche {
 /// Ce que rend « Retirer cet engagement » : la phrase ; un envoi parti, l'avertissement a confirmer.
 #[derive(Debug, Serialize)]
 struct Retrait {
-    phrase: String,
+    phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
     avertissement: Option<String>,
 }
@@ -233,7 +233,7 @@ pub(crate) fn valider_engagement(ctx: &Contexte, carte: ChargeValider) -> R<Vali
             crate::fiches::poser_anciennete_a_l_embauche(ctx, cle, e.debut_lu())?;
         }
     }
-    Ok(Validation { engagement: id, phrase: "Engagement validé." })
+    Ok(Validation { engagement: id, phrase: Phrase::fixe("Engagement validé.") })
 }
 
 // ------------------------------------------------------------------ modifier-engagement
@@ -272,10 +272,10 @@ fn modifier_engagement(ctx: &Contexte, (charge, jour): (ChargeModifier, Option<s
     let brouillon = engagement::stock::Brouillon::ouvrir(&ctx.racine);
     let depuis = match modifier_puis_revalider(ctx, mois, i, &o, changements, confirme, jour)? {
         Issue::Ecrite(depuis) => depuis,
-        Issue::Rien => return Ok(Modification::Faite { change: false, phrase: "Rien n'a changé : rien n'est écrit.".into() }),
+        Issue::Rien => return Ok(Modification::Faite { change: false, phrase: Phrase::fixe("Rien n'a changé : rien n'est écrit.") }),
         Issue::Avertir(a) => {
             let phrases = avertissement_en_phrases(&a);
-            return Ok(Modification::Avertie { avertissement: a, phrase: "Ce qui est parti le demande : rien n'est écrit sans confirme.", phrases });
+            return Ok(Modification::Avertie { avertissement: a, phrase: Phrase::fixe("Ce qui est parti le demande : rien n'est écrit sans confirme."), phrases });
         }
     };
     brouillon.ecrire()?;
@@ -287,8 +287,8 @@ fn modifier_engagement(ctx: &Contexte, (charge, jour): (ChargeModifier, Option<s
     }
     crate::accueil::suppression::sortir_de_la_demo(&ctx.racine, mois).map_err(|m| m.reclasser(Classe::Disque))?;
     let phrase = match depuis {
-        Some(j) => format!("Engagement modifié. {}", vaut_a_partir_du(&j)),
-        None => "Engagement modifié.".to_string(),
+        Some(j) => socle::phrase!("Engagement modifié. {}", vaut_a_partir_du(&j)),
+        None => Phrase::fixe("Engagement modifié."),
     };
     Ok(Modification::Faite { change: true, phrase })
 }
@@ -451,14 +451,14 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
     if !charge.confirme {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
-            Ok(()) => Ok(Retrait { phrase: "Engagement retiré.".into(), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: m.phrase.clone(), avertissement: Some(m.phrase) }),
+            Ok(()) => Ok(Retrait { phrase: Phrase::fixe("Engagement retiré."), avertissement: None }),
+            Err(m) if parti => Ok(Retrait { phrase: Phrase::composee(m.phrase.clone()), avertissement: Some(m.phrase) }),
             Err(m) => Err(m),
         };
     }
     let n = engagement::etats::desactiver(ctx, charge.mois, i, &departs)?;
     let a_faire = a_faire_en_phrases(&n.a_refaire(&departs));
-    let phrase = if a_faire.is_empty() { "Engagement non actif.".to_string() } else { format!("Engagement non actif. À faire : {}.", a_faire.join(", ")) };
+    let phrase = if a_faire.is_empty() { Phrase::fixe("Engagement non actif.") } else { socle::phrase!("Engagement non actif. À faire : {}.", a_faire.join(", ")) };
     Ok(Retrait { phrase, avertissement: None })
 }
 

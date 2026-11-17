@@ -13,7 +13,7 @@ use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::client_courriel;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use declarations::champs::{self, FicheAJuger};
 use droit::fiche::ChampsEntreprise;
@@ -246,9 +246,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let super::SansCharge {} = charge.lire()?;
             let r = relever_fiches(ctx, None, "interface")?;
             let phrase = match (r.recues.is_empty(), r.incidents.first()) {
-                (false, _) => format!("{}.", r.resume()),
-                (true, Some(i)) => i.clone(),
-                (true, None) => format!("Aucune réponse pour l'instant ; fiches attendues : {}.", r.attendues),
+                (false, _) => socle::phrase!("{}.", r.resume()),
+                (true, Some(i)) => Phrase::composee(i.clone()),
+                (true, None) => socle::phrase!("Aucune réponse pour l'instant ; fiches attendues : {}.", r.attendues),
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
@@ -268,14 +268,14 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// Ce que rend `activer-fiche` : la phrase, et ce que la page relit de la compagnie.
 #[derive(Debug, serde::Serialize)]
 struct FicheActivee {
-    phrase: String,
+    phrase: Phrase,
     etat: crate::ouverture::EtatDeLaPage,
 }
 
 /// Ce que rend `sauvegarde-maintenant` : la derniere sauvegarde (`compagnie::sauvegarde`), et ce qui l'a empechee.
 #[derive(Debug, serde::Serialize)]
 struct SauvegardeFaite {
-    phrase: String,
+    phrase: Phrase,
     sauvegarde: Option<compagnie::sauvegarde::Derniere>,
     erreur: Option<String>,
 }
@@ -283,7 +283,7 @@ struct SauvegardeFaite {
 /// Ce que rend `fiches-relever` : les fiches attendues, celles recues (`ReleveFiches`), et ce qui a manque.
 #[derive(Debug, serde::Serialize)]
 struct FichesRelevees {
-    phrase: String,
+    phrase: Phrase,
     attendues: usize,
     recues: Vec<FicheRecue>,
     incidents: Vec<String>,
@@ -302,7 +302,7 @@ pub(crate) enum ChargeActiver {
 macro_rules! dites {
     ($($t:ty),*) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -311,8 +311,8 @@ macro_rules! dites {
 dites!(FicheActivee, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
 
 impl Dite for Permanents {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -324,9 +324,9 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
     let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| e.echec)?;
     let phrase = match (erreurs.is_empty(), &s) {
-        (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
-        (true, None) => "Aucune sauvegarde faite.".to_string(),
-        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", socle::paris::ecrit::saisie::texte(d.quand), d.fichiers),
+        (false, _) => socle::phrase!("Sauvegarde : {}", erreurs.join(" ")),
+        (true, None) => Phrase::fixe("Aucune sauvegarde faite."),
+        (true, Some(d)) => socle::phrase!("Dernière sauvegarde : {}, {} fichiers.", socle::paris::ecrit::saisie::texte(d.quand), d.fichiers),
     };
     Ok(SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) })
 }
@@ -361,9 +361,9 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     let Some(an) = charge.annee else {
         let manquent = a_dire(ctx)?;
         let phrase = if manquent.is_empty() {
-            format!("L'effectif de la paie de {} est connu.", an_paie)
+            socle::phrase!("L'effectif de la paie de {} est connu.", an_paie)
         } else {
-            format!(
+            socle::phrase!(
                 "Pour payer en {}, il manque l'effectif de {}. {}",
                 an_paie,
                 manquent.iter().map(Annee::to_string).collect::<Vec<_>>().join(", "),
@@ -400,9 +400,9 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         },
     };
     let phrase = match (pose, valeur, source) {
-        (Some(p), _, _) => p,
-        (None, Some(v), Some(s)) => format!("Effectif de {} : {}, d'après {}.", an, en_clair(v), s),
-        (None, _, _) => format!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
+        (Some(p), _, _) => Phrase::composee(p),
+        (None, Some(v), Some(s)) => socle::phrase!("Effectif de {} : {}, d'après {}.", an, en_clair(v), s),
+        (None, _, _) => socle::phrase!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
     };
     Ok(EffectifDit { phrase, annee: Some(an), valeur, source, a_dire: a_dire(ctx)? })
 }
@@ -420,7 +420,7 @@ struct ChargeEffectif {
 /// annees qui manquent pour payer cette annee.
 #[derive(Debug, serde::Serialize)]
 struct EffectifDit {
-    phrase: String,
+    phrase: Phrase,
     annee: Option<Annee>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     valeur: Option<Effectif>,
@@ -433,7 +433,7 @@ struct EffectifDit {
 /// Ce que rend `permanents` : la phrase, les cases que la fiche montre et les pieces que ses engagements ouvrent.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
-    phrase: &'static str,
+    phrase: Phrase,
     montres: Vec<CaseDeFiche>,
     pieces_ouvertes: Vec<Piece>,
 }
@@ -451,7 +451,7 @@ fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
         FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &p)?, &ctx.entreprise),
     };
     Ok(Permanents {
-        phrase: if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." },
+        phrase: Phrase::fixe(if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." }),
         montres: cases,
         pieces_ouvertes,
     })
@@ -635,7 +635,7 @@ struct Franchise {
 /// montrer, la consequence, si la reponse est complete, si la taxe est due et sur quelle part.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct RegimeDeLaTaxe {
-    phrase: String,
+    phrase: Phrase,
     franchise: Franchise,
     champs: Vec<&'static str>,
     consequence: String,
@@ -669,7 +669,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     use documents::taxe_sur_les_salaires::Decision;
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
-        phrase: r.consequence.clone(),
+        phrase: Phrase::composee(r.consequence.clone()),
         franchise: Franchise {
             aide: q.aide,
             choix: ChoixDeLaFranchise { sous: q.sous, dessus: q.dessus },
@@ -778,7 +778,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
                 Some(n) => n,
                 None => cle.to_string(),
             };
-            if *actif { format!("{} : fiche réactivée.", qui) } else { format!("{} : fiche archivée.", qui) }
+            if *actif { socle::phrase!("{} : fiche réactivée.", qui) } else { socle::phrase!("{} : fiche archivée.", qui) }
         }
         ChargeActiver::Spectacle { cle, actif } => {
             let fiche = ctx.spectacles.get(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle.as_str()))))?;
@@ -786,7 +786,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
                 Some(t) => t.to_string(),
                 None => cle.to_string(),
             };
-            if *actif { format!("Spectacle « {} » réactivé.", qui) } else { format!("Spectacle « {} » archivé.", qui) }
+            if *actif { socle::phrase!("Spectacle « {} » réactivé.", qui) } else { socle::phrase!("Spectacle « {} » archivé.", qui) }
         }
     };
     Ok(FicheActivee { phrase, etat: etat_relu(ctx)? })
@@ -819,7 +819,7 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
         journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour))?;
     }
     // Ni NIR ni IBAN dans la reponse : la page relit `configuration` (comme apres `fiche-demander`).
-    Ok(DemandeOubliee { phrase: format!("Demande à {} abandonnée.", adresse), adresse })
+    Ok(DemandeOubliee { phrase: socle::phrase!("Demande à {} abandonnée.", adresse), adresse })
 }
 
 /// La charge de `fiche-oublier-demande` : le courriel a qui la fiche a ete demandee.
@@ -832,7 +832,7 @@ struct ChargeOublier {
 /// Ce que rend `fiche-oublier-demande` : l'adresse, en minuscules.
 #[derive(Debug, serde::Serialize)]
 struct DemandeOubliee {
-    phrase: String,
+    phrase: Phrase,
     adresse: String,
 }
 
@@ -989,7 +989,7 @@ struct ChargeFicheDemander {
 /// Ce que rend `fiche-demander`.
 #[derive(Debug, serde::Serialize)]
 struct DemandeDeFiche {
-    phrase: String,
+    phrase: Phrase,
     code: CodeDeDemande,
     adresse: droit::fiche::Courriel,
 }
@@ -998,7 +998,7 @@ struct DemandeDeFiche {
 fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&socle::secret::Secret>) -> R<DemandeDeFiche> {
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
     let d = demander_fiche(ctx, &c.adresse, c.prenom.as_deref(), &preuve, INTERFACE, None)?;
-    Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
+    Ok(DemandeDeFiche { phrase: socle::phrase!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }
 /// compagnie fictive, sinon refus « boite absente ») quand l'appelant n'en donne pas.
 pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, prenom: Option<&str>, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
@@ -1381,13 +1381,13 @@ struct ChargeCouts {
 struct CoutDit {
     #[serde(flatten)]
     cout: documents::fiche_recapitulative::Cout,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Ce que rend `couts` : le cout de l'annee, spectacle par spectacle et salarie par salarie, le total en tete.
 #[derive(Debug, serde::Serialize)]
 struct CoutsDits {
-    phrase: String,
+    phrase: Phrase,
     phrases: Vec<String>,
     annee: socle::mois::Annee,
     jusqu_a: String,
@@ -1412,7 +1412,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
             .map(|(k, x)| {
                 // Rien de saisi pour la suite de l'annee : la phrase n'en dit rien.
                 let prevu: String = (!x.prevu.est_nul()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu))).into_iter().collect();
-                let phrase = format!(
+                let phrase = socle::phrase!(
                     "coût employeur {} — brut {}, charges {}, {}{}{}",
                     euros(x.cout), euros(x.brut), euros(x.charges), bulletins(&x),
                     if x.incomplet { ", coût incomplet avant PuppetPaie" } else { "" },
@@ -1428,7 +1428,7 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         total += x.cout;
         phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout), bulletins(x), euros(x.brut)));
     }
-    let phrase = format!(
+    let phrase = socle::phrase!(
         "Coût de {}, jusqu'à {} : {} pour {}.",
         couts.annee,
         couts.jusqu_a.libelle(socle::mois::Graphie::Accentuee),

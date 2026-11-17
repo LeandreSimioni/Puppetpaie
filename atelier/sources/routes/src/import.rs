@@ -26,7 +26,7 @@ use import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVise
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{self, en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, Nir, NomDeFiche, NumeroObjetSpectacle, ValeurDeCase};
 use socle::date::Jour;
@@ -654,7 +654,7 @@ pub(crate) fn apercu_lu(
         contrats_sans_fiche: sans_fiche,
         avertissements,
         rien_a_faire,
-        phrase: String::new(),
+        phrase: Phrase::fixe(""),
         contrats_nouveaux: 0,
         ecrit: false,
         fichiers: Vec::new(),
@@ -743,10 +743,10 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     };
     let phrase = match (&importe_le, &debut, &fin) {
         (Some(le), Some(du), Some(au)) => {
-            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
+            socle::phrase!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
-        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
-        (None, _, _) => "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string(),
+        (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
+        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent."),
     };
     Ok(EtatImportation {
         phrase,
@@ -771,7 +771,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
 /// `importation-etat` : ce qui a deja ete repris, et ce que la page en dit.
 #[derive(Debug, Serialize)]
 struct EtatImportation {
-    phrase: String,
+    phrase: Phrase,
     importe_le: Option<Jour>,
     contrats: usize,
     salaries: usize,
@@ -794,7 +794,7 @@ struct EtatImportation {
 }
 
 impl Dite for EtatImportation {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }

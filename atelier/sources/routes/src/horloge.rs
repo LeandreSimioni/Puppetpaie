@@ -66,7 +66,7 @@ use socle::paris::{HeureDuJour, Moment};
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use envois::etats;
-use crate::enveloppe::{en_json, Charge, Dite, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Rendu};
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::Echec;
@@ -1025,12 +1025,12 @@ struct ChargeRattraper {
 /// Ce que rend `horloge-rattraper` : ce que l'horloge a joue, une phrase par pas.
 #[derive(Debug, Serialize)]
 struct Rattrape {
-    phrase: String,
+    phrase: Phrase,
     phrases: Vec<String>,
 }
 
 impl Dite for Rattrape {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -1039,7 +1039,7 @@ impl Dite for Rattrape {
 pub fn route(ctx: &Contexte, charge: &Charge) -> R<Rendu> {
     let c: ChargeRattraper = charge.lire()?;
     let phrases = rattraper(&ctx.racine, c.aujourdhui, c.retenir != Some(false))?;
-    en_json(Rattrape { phrase: format!("L'horloge a joué {} pas.", phrases.len()), phrases })
+    en_json(Rattrape { phrase: socle::phrase!("L'horloge a joué {} pas.", phrases.len()), phrases })
 }
 
 // ------------------------------------------------------------------ les tests

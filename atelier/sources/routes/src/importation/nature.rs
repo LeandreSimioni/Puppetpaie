@@ -234,7 +234,7 @@ pub(crate) struct ChargeNature {
 /// Ce qu'`importation-nature` rend : les contrats ecrits, ce qui reste a dire, et ce que l'ecran en dit.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct NatureDite {
-    pub(crate) phrase: String,
+    pub(crate) phrase: socle::texte::Phrase,
     pub(crate) ecrits: usize,
     pub(crate) a_dire: Vec<ADire>,
     /// La fiche Entreprise vient de dire que la compagnie emploie des permanents.
@@ -374,11 +374,11 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         phrase.push(' ');
         phrase.push_str(p);
     }
-    Ok(NatureDite { phrase, ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
+    Ok(NatureDite { phrase: socle::texte::Phrase::composee(phrase), ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
 }
 
 impl crate::enveloppe::Dite for NatureDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }

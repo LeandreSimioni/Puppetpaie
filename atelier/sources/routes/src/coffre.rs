@@ -22,7 +22,7 @@ use compagnie::coffre::Coffre;
 use crate::gestes::administrateur::Poste;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
@@ -289,7 +289,7 @@ pub(crate) struct ServiceDit {
 /// L'ETAT DU COFFRE : ce qui est pose, pour quel usage, depuis quand ; jamais les valeurs.
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatDuCoffre {
-    phrase: String,
+    phrase: Phrase,
     pub(crate) services: Vec<ServiceDit>,
     mot_de_passe_pose: bool,
     bouton_mot_de_passe: &'static str,
@@ -307,7 +307,7 @@ impl EtatDuCoffre {
     /// La phrase de l'etat : `fait` (le geste fait), puis chaque service et ce que l'ecran en dit.
     fn dit(mut self, fait: &str) -> EtatDuCoffre {
         let services: Vec<String> = self.services.iter().map(|s| format!("{} : {}", s.libelle, s.pastille.mots)).collect();
-        self.phrase = format!("{}{}.", fait, services.join(" ; "));
+        self.phrase = socle::phrase!("{}{}.", fait, services.join(" ; "));
         self
     }
 }
@@ -315,7 +315,7 @@ impl EtatDuCoffre {
 /// Ce que rend `google-etat` : le compte lie, s'il repond, ce qu'il a accorde ; jamais le jeton.
 #[derive(Debug, Serialize)]
 struct EtatGoogle {
-    phrase: String,
+    phrase: Phrase,
     application: Option<String>,
     permissions: Vec<String>,
     accordees: Vec<String>,
@@ -331,7 +331,7 @@ struct EtatGoogle {
 /// Ce que rend `coffre-verifier` : ce que `compagnie::coffre_verifier` en dit, et sa phrase.
 #[derive(Debug, Serialize)]
 struct Verifie {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     verdict: compagnie::coffre_verifier::Verdict,
 }
@@ -339,21 +339,21 @@ struct Verifie {
 /// Ce que rend `google-oublier`.
 #[derive(Debug, Serialize)]
 struct GoogleOublie {
-    phrase: &'static str,
+    phrase: Phrase,
     efface: bool,
 }
 
 /// Ce que rend `google-autoriser` : le compte lie.
 #[derive(Debug, Serialize)]
 struct GoogleLie {
-    phrase: String,
+    phrase: Phrase,
     compte: String,
 }
 
 /// Ce que rend `administrateur-etat` : la phrase qui le dit, et l'etat.
 #[derive(Debug, Serialize)]
 struct EtatAdministrateurDit {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     etat: crate::gestes::administrateur::EtatAdministrateur,
 }
@@ -361,7 +361,7 @@ struct EtatAdministrateurDit {
 /// Ce que rendent `administrateur-rattacher` et `administrateur-detacher`.
 #[derive(Debug, Serialize)]
 pub struct Rattachement {
-    phrase: String,
+    phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
     compagnies: Option<Vec<String>>,
     etat: crate::gestes::administrateur::EtatAdministrateur,
@@ -370,7 +370,7 @@ pub struct Rattachement {
 macro_rules! dites {
     ($($t:ty),*) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -379,8 +379,8 @@ macro_rules! dites {
 dites!(EtatDuCoffre, EtatGoogle, Verifie, GoogleLie, EtatAdministrateurDit, Rattachement);
 
 impl Dite for GoogleOublie {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -411,8 +411,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let manque = manque_du_compte(&identifiant_du_compte(&ctx.entreprise, &c.service)?);
             let conseil: String = verdict.conseil.iter().map(|c| format!(" {}", c)).collect();
             let phrase = match manque {
-                Some(m) if !verdict.ok => format!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
-                _ => format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, verdict.message, conseil).trim().to_string(),
+                Some(m) if !verdict.ok => socle::phrase!("{} : {}, {}.", libelle_du_service(&c.service), mots, m),
+                _ => socle::phrase!("{}", format!("{} : {}. {}{}", libelle_du_service(&c.service), mots, verdict.message, conseil).trim()),
             };
             en_json(Verifie { phrase, verdict })
         }
@@ -436,12 +436,12 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::GoogleAutoriser => {
             let SansCharge {} = charge.lire()?;
             let compte = google_autoriser(ctx, mdp)?;
-            en_json(GoogleLie { phrase: format!("Drive lié : {}. La prochaine ouverture sauvegarde.", compte), compte })
+            en_json(GoogleLie { phrase: socle::phrase!("Drive lié : {}. La prochaine ouverture sauvegarde.", compte), compte })
         }
         Route::AdministrateurEtat => {
             let SansCharge {} = charge.lire()?;
             let etat = administrateur_etat(&ctx.racine)?;
-            en_json(EtatAdministrateurDit { phrase: format!("Mot de passe de la compagnie : {}.", etat.pastille.mots), etat })
+            en_json(EtatAdministrateurDit { phrase: socle::phrase!("Mot de passe de la compagnie : {}.", etat.pastille.mots), etat })
         }
         Route::AdministrateurRattacher | Route::AdministrateurDetacher => en_json(administrateur(&ctx.racine, porte.route, charge.lire()?, mdp, &Poste::de_ce_poste())?),
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
@@ -481,7 +481,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
             None => None,
         };
         let noms = adm::rattacher(&inst, racine, &admin, actuel.as_ref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
-        let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
+        let phrase = socle::phrase!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
         return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste)? });
     }
     let lignes = ["Le NOUVEAU mot de passe de cette compagnie, à elle seule.".to_string(), "La frappe ne s'affiche pas.".to_string()];
@@ -492,7 +492,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         None => nouveau.clone(),
     };
     adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(|e| e.reclasser(Classe::Refuse))?;
-    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste)? })
+    Ok(Rattachement { phrase: Phrase::fixe("Compagnie détachée : elle s'ouvre avec son propre mot de passe."), compagnies: None, etat: adm::etat(&inst, racine, poste)? })
 }
 
 /// Des noms en une liste : « A », « A et B », « A, B et C ».
@@ -629,14 +629,14 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secr
     let quoi = format!("{} {} enregistré", if valeur.is_some() { "Mot de passe" } else { "Compte" }, libelle_du_service(service.nom));
     let manque = etat.services.iter().filter(|s| s.service == service.nom).find_map(|s| manque_du_compte(&s.identifiant));
     let (phrase, couleur) = match manque {
-        Some(manque) => (format!("{} ; pas essayé : {}.", quoi, manque), "gris"),
+        Some(manque) => (socle::phrase!("{} ; pas essayé : {}.", quoi, manque), "gris"),
         None => match compagnie::coffre_verifier::route(ctx, service.nom) {
-            Ok(v) if v.ok => (format!("{}, et vérifié : la connexion passe.", quoi), "vert"),
+            Ok(v) if v.ok => (socle::phrase!("{}, et vérifié : la connexion passe.", quoi), "vert"),
             Ok(v) => {
                 let conseil: String = v.conseil.iter().map(|c| format!(" — {}", c)).collect();
-                (format!("{} ; connexion refusée : {}{}", quoi, v.message, conseil), "rouge")
+                (socle::phrase!("{} ; connexion refusée : {}{}", quoi, v.message, conseil), "rouge")
             }
-            Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase), "rouge"),
+            Err(e) => (socle::phrase!("{} ; vérification impossible : {}", quoi, e.phrase), "rouge"),
         },
     };
     Ok(EtatDuCoffre { phrase, couleur: Some(couleur), ..etat })
@@ -751,7 +751,7 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<Goog
     if efface {
         std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     }
-    Ok(GoogleOublie { phrase: "Compte Google délié : la sauvegarde ne va plus au Drive. L'accès accordé côté Google se retire sur myaccount.google.com.", efface })
+    Ok(GoogleOublie { phrase: Phrase::fixe("Compte Google délié : la sauvegarde ne va plus au Drive. L'accès accordé côté Google se retire sur myaccount.google.com."), efface })
 }
 
 /// L'application Google du logiciel, livree avec lui dans `google-application.json` (a cote du code), `client_id` et
@@ -999,7 +999,7 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
             (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
         };
         EtatGoogle {
-            phrase: format!("Google Drive : {}.", pastille.mots),
+            phrase: socle::phrase!("Google Drive : {}.", pastille.mots),
             application: origine.clone(),
             permissions: permissions.clone(),
             accordees,
@@ -1122,7 +1122,7 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
     let mot_de_passe_pose = coffre.ouverture_exigee()?;
     let cle_poste = coffre.cle_posee()?;
     Ok(EtatDuCoffre {
-        phrase: String::new(),
+        phrase: Phrase::fixe(""),
         services,
         mot_de_passe_pose,
         bouton_mot_de_passe: if mot_de_passe_pose { "Enregistrer" } else { "Poser" },

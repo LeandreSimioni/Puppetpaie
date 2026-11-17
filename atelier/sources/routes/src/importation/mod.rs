@@ -16,7 +16,7 @@ pub mod nature;
 pub mod parametrage;
 
 impl crate::enveloppe::Dite for import::reponse::Importation {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }

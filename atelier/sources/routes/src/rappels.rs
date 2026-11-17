@@ -23,7 +23,7 @@ use engagement;
 use compagnie::etat_dsn;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::imprevus::{FinASignaler, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
@@ -208,7 +208,7 @@ impl Ord for CleDEcheance {
 /// Ce que rend `rappels`.
 #[derive(Debug, Serialize)]
 pub(crate) struct Rappels {
-    phrase: String,
+    phrase: Phrase,
     pub(crate) rappels: Vec<EcheanceDite>,
     /// La boite des rappels se ferme « plus tard » quand il y a quelque chose a faire.
     fermer_dit: &'static str,
@@ -218,7 +218,7 @@ pub(crate) struct Rappels {
 /// Ce que rend `echeancier`.
 #[derive(Debug, Serialize)]
 struct Echeancier {
-    phrase: String,
+    phrase: Phrase,
     aujourdhui: Jour,
     /// Aujourd'hui en clair, « lundi 2 novembre 2026 ».
     #[serde(rename = "date")]
@@ -238,7 +238,7 @@ struct Echeancier {
 /// Ce que rend `revue-spectacles`.
 #[derive(Debug, Serialize)]
 struct Revue {
-    phrase: String,
+    phrase: Phrase,
     annee: Annee,
     archives: Vec<droit::contexte::IdSpectacle>,
     continuent: Vec<droit::contexte::IdSpectacle>,
@@ -249,7 +249,7 @@ struct Revue {
 /// Ce que rend `echeance-faite`.
 #[derive(Debug, Serialize)]
 struct Faite {
-    phrase: &'static str,
+    phrase: Phrase,
     cle: CleDEcheance,
     fait: bool,
 }
@@ -258,7 +258,7 @@ struct Faite {
 macro_rules! dites {
     ($($t:ty),*) => {$(
         impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         }
@@ -267,8 +267,8 @@ macro_rules! dites {
 dites!(Rappels, Echeancier, Revue, PourDemarrerVu);
 
 impl Dite for Faite {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -310,7 +310,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            en_json(PourDemarrerVu { phrase: d.phrase, phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
+            en_json(PourDemarrerVu { phrase: Phrase::composee(d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -335,7 +335,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     let continuent: Vec<droit::contexte::IdSpectacle> = garder.into_iter().collect();
     let neuf = Contexte::nouveau(&ctx.racine, None)?;
     let configuration = crate::ouverture::configuration_dite(&neuf)?;
-    let phrase = format!("Spectacles qui continuent : {} ; archivés : {}.", continuent.len(), archives.len());
+    let phrase = socle::phrase!("Spectacles qui continuent : {} ; archivés : {}.", continuent.len(), archives.len());
     Ok(Revue { phrase, annee, archives, continuent, configuration })
 }
 
@@ -344,7 +344,7 @@ fn echeance_faite(ctx: &Contexte, charge: ChargeFaite) -> socle::echec::R<Faite>
     let ChargeFaite { cle, fait } = charge;
     let fait = fait != Some(false);
     marquer_echeance(ctx, &cle, fait, compagnie::INTERFACE)?;
-    Ok(Faite { phrase: if fait { "Échéance cochée : faite." } else { "Échéance décochée." }, cle, fait })
+    Ok(Faite { phrase: Phrase::fixe(if fait { "Échéance cochée : faite." } else { "Échéance décochée." }), cle, fait })
 }
 
 
@@ -821,7 +821,7 @@ pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
         })
         .collect();
     Ok(Rappels {
-        phrase: format!("Rappels : {}.", rappels.len()),
+        phrase: socle::phrase!("Rappels : {}.", rappels.len()),
         fermer_dit: if rappels.is_empty() { "Fermer" } else { "Plus tard" },
         rappels,
         phrases,
@@ -852,8 +852,8 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     let compagnie = ctx.entreprise.nommee().map(str::to_string);
     let combien = format!("{} ce mois-ci, {} à venir.", socle::ecran::compte(ce_mois.len(), "échéance", "échéances"), a_venir.len());
     let phrase = match &compagnie {
-        Some(c) => format!("{} : {}", c, combien),
-        None => combien,
+        Some(c) => socle::phrase!("{} : {}", c, combien),
+        None => Phrase::composee(combien),
     };
     let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;
@@ -1628,7 +1628,7 @@ struct PoseVue {
 /// `pour-demarrer` (`declarations::demarrage::PourDemarrer`), chaque pose avec sa pastille.
 #[derive(Debug, Serialize)]
 struct PourDemarrerVu {
-    phrase: String,
+    phrase: Phrase,
     phrases: Vec<String>,
     titre: String,
     note: String,

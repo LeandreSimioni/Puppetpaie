@@ -728,7 +728,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     };
     reponse.dire();
     let b = &reponse.bulletins;
-    reponse.phrase = format!(
+    reponse.phrase = socle::phrase!(
         "Repris : {}, {} ; fiches écrites : {}.{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),

@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use engagement::calcul::Paie;
 use documents::conges_spectacles::{self, ContratDuCertificat, MoisPaye};
@@ -73,7 +73,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> Result<Rendu, Echec> {
 }
 
 impl Dite for DossierRendu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -83,9 +83,9 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
     let d = construire(ctx, demande)?;
     let qui = d.salaries.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ");
     let p = if d.fichiers.is_empty() {
-        format!("Dossier de {} ({}) : rien n'est écrit.", qui, d.periode)
+        socle::phrase!("Dossier de {} ({}) : rien n'est écrit.", qui, d.periode)
     } else {
-        format!("Dossier de {} ({}) : {}.", qui, d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
+        socle::phrase!("Dossier de {} ({}) : {}.", qui, d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
     };
     Ok(DossierRendu::de(d, p, None))
 }
@@ -148,7 +148,7 @@ pub(crate) struct DossierEnvoye {
 /// sous `envoi` ce que l'envoi a fait.
 #[derive(Debug, Serialize)]
 pub(crate) struct DossierRendu {
-    phrase: String,
+    phrase: Phrase,
     salaries: Vec<IdSalarie>,
     categories: Vec<CategorieDeDocument>,
     periode: String,
@@ -164,7 +164,7 @@ pub(crate) struct DossierRendu {
 }
 
 impl DossierRendu {
-    pub(crate) fn de(d: Dossier, phrase: String, envoi: Option<DossierEnvoye>) -> DossierRendu {
+    pub(crate) fn de(d: Dossier, phrase: Phrase, envoi: Option<DossierEnvoye>) -> DossierRendu {
         let phrases = d.avertissements.iter().chain(&d.refus).cloned().collect();
         DossierRendu {
             phrase,

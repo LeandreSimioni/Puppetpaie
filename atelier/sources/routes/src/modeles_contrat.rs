@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Route;
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
 use droit::contexte::{Contexte, IdSalarie};
@@ -669,7 +669,7 @@ struct EcranDesModeles {
 /// Ce que rendent `modeles-contrat` et chaque geste qui change un modele.
 #[derive(Debug, Serialize)]
 struct Modeles {
-    phrase: String,
+    phrase: Phrase,
     natures: Vec<NatureDite>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ecran: Option<EcranDesModeles>,
@@ -693,7 +693,7 @@ struct EngagementAuChoix {
 /// Ce que rend `modele-contrat`.
 #[derive(Debug, Serialize)]
 struct ModeleRendu {
-    phrase: String,
+    phrase: Phrase,
     nature: NatureDeContrat,
     id: Option<IdDeModele>,
     partie: Partie,
@@ -710,7 +710,7 @@ struct ModeleRendu {
 /// Ce que rend `apercu-modele-contrat`.
 #[derive(Debug, Serialize)]
 struct Apercu {
-    phrase: String,
+    phrase: Phrase,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     chemin: std::path::PathBuf,
 }
@@ -718,7 +718,7 @@ struct Apercu {
 macro_rules! dites {
     ($($t:ty),*) => {$(
         impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         }
@@ -769,7 +769,7 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
         }
         sortie.push(NatureDite { nature: nat.cle.clone(), libelle: nat.libelle.clone(), nom: nat.nom_du_contrat().to_string(), modeles: pieces });
     }
-    Ok(Modeles { phrase: format!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()), natures: sortie, ecran: None })
+    Ok(Modeles { phrase: socle::phrase!("{}Modèles de contrat spéciaux de la compagnie : {}.", devant, m.speciaux.len()), natures: sortie, ecran: None })
 }
 
 /// CE QUI A CHANGE DANS LA BASE depuis la copie d'une partie d'un special (`avant` : la base copiee, `maintenant` :
@@ -849,7 +849,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
         .collect();
     let dits = manques(&nat, c.partie, &texte)?;
     let quoi = if c.partie == Partie::Avenant { format!("{}, son avenant", nom) } else { nom };
-    let phrase = if dits.is_empty() { format!("{} : complet.", quoi) } else { format!("{} : {}", quoi, dits.join(" ")) };
+    let phrase = if dits.is_empty() { socle::phrase!("{} : complet.", quoi) } else { socle::phrase!("{} : {}", quoi, dits.join(" ")) };
     // La base n'est copiee de rien : rien ne se compare, `None`.
     let base_changee = s.map(|s| texte_de_base(&nat, c.partie).map(|b| ce_qui_a_change(&s.partie(c.partie).base, &b))).transpose()?;
     let champs = documents::contrat_ecrit::champs_des_modeles(&nat, c.partie == Partie::Avenant).map_err(|m| m.reclasser(Classe::Illisible))?;
@@ -921,7 +921,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, engagement::numeros::NumeroDAvenant::premier(), p.engagement.contrat().debut(), ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
         }
     }
-    Ok(Apercu { phrase: format!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.contrat().debut().jj_mm_aaaa()), chemin })
+    Ok(Apercu { phrase: socle::phrase!("{}, {} de {} du {} : l'aperçu est fait, rien n'est parti.", nom, quoi, p.engagement.nom, p.engagement.contrat().debut().jj_mm_aaaa()), chemin })
 }
 
 /// Le nom d'un special : dit, et qu'aucun autre special (que `sauf`) ne porte.

@@ -7,7 +7,7 @@ use socle::date::Jour;
 use socle::echec::R;
 use socle::mois::Mois;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::temps::TempsDeLaCase;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
@@ -57,7 +57,7 @@ pub(crate) struct ChargeOrganismes {
 /// regarde, une ligne par contrat (et sa periode en clair), et ce que l'ecran en dit.
 #[derive(Debug, Serialize)]
 pub(crate) struct OrganismesDits {
-    phrase: String,
+    phrase: Phrase,
     idcc: Option<droit::fiche::Idcc>,
     a_saisir: bool,
     mois: Mois,
@@ -113,7 +113,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
 }
 
 impl Dite for OrganismesDits {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -146,7 +146,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     } else {
         format!("Contrats de la DSN : {} ; rien à saisir.", n)
     };
-    let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
+    let phrase = if enregistre { socle::phrase!("Enregistré. {}", p) } else { Phrase::composee(p) };
     let mois = lu.mois;
     let mut encarts = vec![crate::Encart::de(socle::ecran::EtatDEcran::Information, "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
     encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::Information, "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));

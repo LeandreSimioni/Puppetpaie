@@ -1342,12 +1342,12 @@ pub(crate) enum ChargeEnregistrer {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub(crate) enum FicheEnregistree<K> {
-    Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<K>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
+    Avertie { avertissement: Avertissement, phrase: socle::texte::Phrase, phrases: Vec<String> },
+    Ecrite { cle: Option<K>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: socle::texte::Phrase },
 }
 
 impl<K: Serialize> crate::enveloppe::Dite for FicheEnregistree<K> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         match self {
             FicheEnregistree::Avertie { phrase, .. } | FicheEnregistree::Ecrite { phrase, .. } => phrase,
         }
@@ -1389,7 +1389,7 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     if let Some(a) = avertissement(ctx, &p)? {
         if confirme != Some(true) {
             let phrase = if a.depuis.is_some() { "Ce qui change se date : rien n'est écrit." } else { "À confirmer : rien n'est écrit." };
-            return Ok(FicheEnregistree::Avertie { phrases: avertissement_en_phrases(&a), avertissement: a, phrase: phrase.to_string() });
+            return Ok(FicheEnregistree::Avertie { phrases: avertissement_en_phrases(&a), avertissement: a, phrase: socle::texte::Phrase::fixe(phrase) });
         }
         depuis = depuis.or(a.depuis);
     }
@@ -1411,7 +1411,7 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
         format!("enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60)
     });
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };
-    let phrase = std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" ");
+    let phrase = socle::phrase!("{}", std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" "));
     Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase })
 }
 
@@ -1428,7 +1428,7 @@ struct Suggestion {
 /// le moteur proposerait pour les cases vides.
 #[derive(Serialize)]
 pub(crate) struct FicheVerifiee {
-    phrase: String,
+    phrase: socle::texte::Phrase,
     phrases: Vec<String>,
     anomalies: Vec<Anomalie>,
     declare: Apercu,
@@ -1436,7 +1436,7 @@ pub(crate) struct FicheVerifiee {
 }
 
 impl crate::enveloppe::Dite for FicheVerifiee {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -1462,7 +1462,7 @@ fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerif
     let mut anomalies = champs::verifier_fiche(F::a_juger(&derivee))?;
     anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);
     let phrases: Vec<String> = anomalies.iter().map(|a| format!("{} : {}", a.champ, a.message)).collect();
-    let phrase = if phrases.is_empty() { "La fiche est juste.".to_string() } else { format!("Anomalies de la fiche : {}.", phrases.len()) };
+    let phrase = if phrases.is_empty() { socle::texte::Phrase::fixe("La fiche est juste.") } else { socle::phrase!("Anomalies de la fiche : {}.", phrases.len()) };
     Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
 }
 

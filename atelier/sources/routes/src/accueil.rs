@@ -29,7 +29,7 @@ use socle::fichiers::NomDeFichier;
 use crate::gestes::administrateur;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Options, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Options, Phrase, Rendu};
 use socle::echec::{erreur, Classe, Echec, R};
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -258,11 +258,11 @@ pub struct Tuile {
 /// Ce que rend `compagnies`, et ce que l'accueil de la fenetre dessine (`interface::page_accueil`).
 #[derive(Debug, Serialize)]
 pub struct Liste {
-    phrase: String,
+    phrase: Phrase,
     pub compagnies: Vec<Tuile>,
     pub bride: bool,
     pub a_garder: Vec<suppression::Gardee>,
-    phrases: Vec<String>,
+    phrases: Vec<Phrase>,
     pub auteur: compagnie::auteur::Auteur,
 }
 
@@ -270,7 +270,7 @@ pub struct Liste {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ajoutee {
-    phrase: String,
+    phrase: Phrase,
     id: IdDeCompagnie,
     nom: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -280,63 +280,63 @@ pub struct Ajoutee {
 /// Ce que rend `compagnie-couleur`.
 #[derive(Debug, Serialize)]
 struct Couleur {
-    phrase: String,
+    phrase: Phrase,
     couleur: CouleurDeCompagnie,
 }
 
 /// Ce que rend une route qui n'a que sa phrase.
 #[derive(Debug, Serialize)]
 struct Dit {
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Ce que rend `basculer` : l'etat du logiciel sur ce poste, et sa phrase.
 #[derive(Debug, Serialize)]
 struct Bascule {
     bride: bool,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Ce que rend `compagnies-garder`.
 #[derive(Debug, Serialize)]
 struct Gardees {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     reponse: suppression::Reponse,
 }
 
 impl Dite for Liste {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Ajoutee {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Couleur {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Dit {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Bascule {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Gardees {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -370,28 +370,28 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             let a: ChargeAjouter = charge.lire()?;
             let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(|e| e.reclasser(Classe::Refuse))?;
             let phrase = if c.reelle {
-                format!("{} est ajoutée.", c.nom)
+                socle::phrase!("{} est ajoutée.", c.nom)
             } else {
-                format!("{} est ajoutée, en compagnie fictive : rien n'en part.", c.nom)
+                socle::phrase!("{} est ajoutée, en compagnie fictive : rien n'en part.", c.nom)
             };
             en_json(Ajoutee { phrase, id: c.id, nom: c.nom, chemin: c.racine })
         }
         Route::CompagnieCouleur => {
             let c: ChargeCouleur = charge.lire()?;
             let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(|e| e.reclasser(Classe::Refuse))?;
-            en_json(Couleur { phrase: format!("Couleur posée : {}.", couleur), couleur })
+            en_json(Couleur { phrase: socle::phrase!("Couleur posée : {}.", couleur), couleur })
         }
         Route::CompagnieRemettreAZero => {
             let c: ChargeCompagnie = charge.lire()?;
             let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(|e| e.reclasser(Classe::Refuse))?;
-            en_json(Dit { phrase: format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
+            en_json(Dit { phrase: socle::phrase!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
         Route::CompagniesGarder => {
             let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
             let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
             let erreurs: String = reponse.erreurs.iter().map(|e| format!(" {}", e)).collect();
-            let phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
+            let phrase = socle::phrase!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
             en_json(Gardees { phrase, reponse })
         }
         Route::AdministrateurTableau => {
@@ -405,7 +405,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         Route::Basculer => {
             compagnie::bridage::basculer_de(&inst)?;
             let bride = compagnie::bridage::est_bride_de(&inst);
-            let phrase = if bride { "Le logiciel est bridé : c'est la démo." } else { "Le logiciel est débloqué." }.to_string();
+            let phrase = Phrase::fixe(if bride { "Le logiciel est bridé : c'est la démo." } else { "Le logiciel est débloqué." });
             en_json(Bascule { bride, phrase })
         }
         Route::PortableCompleter => {
@@ -445,13 +445,13 @@ pub fn liste(inst: &std::path::Path) -> R<Liste> {
     }
     let a_garder: Vec<suppression::Gardee> = suppression::a_garder(inst)?.into_iter().map(|c| suppression::Gardee { id: c.id, nom: c.nom }).collect();
     let reelles = cies.iter().filter(|c| c.reelle).count();
-    let phrase = format!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
-    let phrases: Vec<String> = cies.iter().map(|c| format!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
+    let phrase = socle::phrase!("{} compagnie(s), dont {} fictive(s).", cies.len(), cies.len() - reelles);
+    let phrases: Vec<Phrase> = cies.iter().map(|c| socle::phrase!("{}{}", c.nom, if c.reelle { "" } else { ", fictive" })).collect();
     Ok(Liste { phrase, compagnies: cies, bride: compagnie::bridage::est_bride_de(inst), a_garder, phrases, auteur: compagnie::auteur::auteur() })
 }
 
 impl Dite for compagnie::maj::PortableComplete {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }

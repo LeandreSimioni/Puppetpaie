@@ -97,7 +97,7 @@ pub(crate) struct EcritureRendue {
 /// fichier ecrit (son nom ; `dossier`, celui ou il est), le plan comptable pris, et ce qu'il faut savoir.
 #[derive(Debug, Serialize)]
 pub(crate) struct ExportComptaRendu {
-    phrase: String,
+    phrase: socle::texte::Phrase,
     annee: Annee,
     du: u32,
     au: u32,
@@ -115,7 +115,7 @@ pub(crate) struct ExportComptaRendu {
 }
 
 impl crate::enveloppe::Dite for ExportComptaRendu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -126,8 +126,8 @@ impl ExportCompta {
         let dossier = self.fichier.as_ref().and_then(|f| f.parent()).map(Path::to_path_buf);
         let fichier = self.fichier.as_deref().map(NomDeFichier::du).transpose()?;
         let phrase = match &fichier {
-            Some(f) => format!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
-            None => format!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
+            Some(f) => socle::phrase!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
+            None => socle::phrase!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
         };
         Ok(ExportComptaRendu {
             phrase,

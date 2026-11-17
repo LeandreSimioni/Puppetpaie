@@ -43,6 +43,7 @@ use droit::minima::Par;
 
 use socle::grandeurs::{Cachets, Coefficient, Grandeur, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, NonNul, Services, Taux};
 use socle::echec::R;
+use socle::texte::Phrase;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, OPERATION, SALARIE};
 use crate::catalogue::Route;
@@ -536,7 +537,7 @@ impl Donnees {
 }
 
 /// Le texte d'un conseil, gabarits resolus ; `None` quand l'un d'eux ne se resout pas (le conseil se tait).
-fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> R<Option<String>> {
+fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> R<Option<Phrase>> {
     let mut out = String::new();
     for m in &g.0 {
         match m {
@@ -565,7 +566,7 @@ fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> R<Option<String>> {
             }
         }
     }
-    Ok(Some(out))
+    Ok(Some(Phrase::composee(out)))
 }
 
 /// LE CONSEIL RENDU POUR L'ECRAN : son identifiant, son texte (la phrase courte d'un conseil de saisie), son detail
@@ -573,10 +574,10 @@ fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> R<Option<String>> {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ConseilVu {
     id: String,
-    texte: String,
-    reference: String,
+    texte: Phrase,
+    reference: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
-    detail: Option<String>,
+    detail: Option<Phrase>,
 }
 
 /// Le conseil rendu ; rien si l'un de ses gabarits ne se resout pas. Une source tiree d'une annexe (`annexe` : « X » ou
@@ -598,7 +599,7 @@ fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[Annexe])
         },
         None => None,
     };
-    Ok(Some(ConseilVu { id: c.id.clone(), texte, reference: references.join(" ; "), detail }))
+    Ok(Some(ConseilVu { id: c.id.clone(), texte, reference: Phrase::composee(references.join(" ; ")), detail }))
 }
 
 /// Le premier conseil de la banque pour cette condition (`quand`), rendu avec ces valeurs : un conseil dont un gabarit
@@ -1243,7 +1244,7 @@ struct ChargeConseilsSalarie {
 /// Ce que rend `conseil-du-jour` : le conseil, ou rien quand l'option est decochee ; sa phrase est son texte.
 #[derive(Serialize)]
 struct ConseilDuJour {
-    phrase: String,
+    phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
     conseil: Option<ConseilVu>,
 }
@@ -1251,26 +1252,26 @@ struct ConseilDuJour {
 /// Ce que rendent `conseils-salarie` et `conseils-resume` : les conseils, et le texte de chacun, une phrase par conseil.
 #[derive(Serialize)]
 struct Conseils {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: Phrase,
+    phrases: Vec<Phrase>,
     conseils: Vec<ConseilVu>,
 }
 
 impl Dite for ConseilDuJour {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Conseils {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Conseils {
     fn de(conseils: Vec<ConseilVu>) -> Conseils {
-        Conseils { phrase: format!("Conseils : {}.", conseils.len()), phrases: conseils.iter().map(|c| c.texte.clone()).collect(), conseils }
+        Conseils { phrase: socle::phrase!("Conseils : {}.", conseils.len()), phrases: conseils.iter().map(|c| c.texte.clone()).collect(), conseils }
     }
 }
 
@@ -1283,7 +1284,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let conseil = du_jour(ctx, decalage)?;
             let phrase = match &conseil {
                 Some(c) => c.texte.clone(),
-                None => "Pas de conseil aujourd'hui.".to_string(),
+                None => Phrase::fixe("Pas de conseil aujourd'hui."),
             };
             en_json(ConseilDuJour { phrase, conseil })
         }

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, DejaParti, Impression, Repris, UnAvenant};
@@ -24,7 +24,7 @@ use socle::ecran::Pastille;
 macro_rules! dites {
     ($($t:ty),*) => {$(
         impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         }
@@ -376,7 +376,7 @@ pub(crate) struct ContratASigner {
 /// Ce que rend `signature-apercu`.
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuSignature {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     pub(crate) contrats: Vec<ContratASigner>,
     boite_liee: bool,
@@ -394,7 +394,7 @@ pub(crate) struct ApercuSignature {
 /// Ce que rend `contrat-recu` : la phrase, la note (quand, ou rien quand elle est retiree) et de quoi la defaire.
 #[derive(Debug, Serialize)]
 pub(crate) struct NoteRecue {
-    phrase: String,
+    phrase: Phrase,
     salarie: droit::contexte::IdSalarie,
     debut: Jour,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
@@ -405,7 +405,7 @@ pub(crate) struct NoteRecue {
 /// Ce que rend `contrats-imprimer` : sa phrase, et ce que l'impression a ecrit.
 #[derive(Debug, Serialize)]
 pub(crate) struct Imprimes {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     impression: Impression,
 }
@@ -414,7 +414,7 @@ pub(crate) struct Imprimes {
 /// pas parti (pas de courriel), et, dans une compagnie fictive, les signatures revenues aussitot.
 #[derive(Debug, Serialize)]
 pub(crate) struct SignaturesDemandees {
-    phrase: String,
+    phrase: Phrase,
     partis: Vec<droit::fiche::Courriel>,
     contrats: Vec<ContratParti>,
     avertissements: Vec<String>,
@@ -437,7 +437,7 @@ pub(crate) struct ModificationDite {
 pub(crate) struct AvenantDit {
     #[serde(flatten)]
     parti: AvenantParti,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Ce que rend `avenant-apercu` : le contrat parti (son salarie, ses bornes, son spectacle, comment il se nomme dans le
@@ -445,7 +445,7 @@ pub(crate) struct AvenantDit {
 /// dossier), l'avenant (son numero, son effet, ce qu'il change), les avenants deja partis, et ce que la boite dit.
 #[derive(Debug, Serialize)]
 pub(crate) struct ApercuAvenant {
-    phrase: String,
+    phrase: Phrase,
     salarie: droit::contexte::IdSalarie,
     /// La periode du contrat que l'avenant modifie.
     bornes: PeriodeOuverte,
@@ -490,7 +490,7 @@ struct PiecePartie {
 /// Ce que rend `pieces-parties`.
 #[derive(Debug, Serialize)]
 struct PiecesParties {
-    phrase: String,
+    phrase: Phrase,
     dpae: Vec<PiecePartie>,
     contrat: Vec<PiecePartie>,
 }
@@ -498,7 +498,7 @@ struct PiecesParties {
 /// Ce que rend `poser-courriel`.
 #[derive(Debug, Serialize)]
 struct CourrielPose {
-    phrase: String,
+    phrase: Phrase,
     salarie: IdSalarie,
     email: droit::fiche::Courriel,
 }
@@ -523,7 +523,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// `poser-courriel` : le courriel du salarie, pose dans sa fiche (`fiches::poser_courriel`).
 fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
     crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?;
-    Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, c.email), salarie: c.salarie, email: c.email })
+    Ok(CourrielPose { phrase: socle::phrase!("Courriel de {} : {}.", c.salarie, c.email), salarie: c.salarie, email: c.email })
 }
 
 // ------------------------------------------------------------------ contrat-recu
@@ -628,7 +628,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     if journal::rattacher(&ctx.racine, porte, journal::Revenu::Contrat(retour))?.is_none() {
         return Err(refus(format!("Le {} de {} n'est jamais parti : rien ne peut en revenir. Rien n'est écrit.", ce, nom)));
     }
-    let phrase = format!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
+    let phrase = socle::phrase!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
     // De quoi revenir sur la note : la meme route, le mot contraire.
     let annuler = ChargeRecu { mois: c.mois, salarie: c.salarie.clone(), debut: c.debut, numero: numero_note, avenant, recu: !recu };
     Ok(NoteRecue { phrase, salarie: c.salarie.clone(), debut: c.debut, recu: recu.then_some(quand_note), annuler: GesteRecu { route: Route::ContratRecu, charge: annuler } })
@@ -675,7 +675,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
         .map(|x| contrat_dit(x.numero.as_ref()))
         .chain(impression.avenants.iter().map(|x| format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_ref()))))
         .collect();
-    Ok(Imprimes { phrase: format!("À faire signer en main propre : {} ; imprimés.", quoi.join(", ")), impression })
+    Ok(Imprimes { phrase: socle::phrase!("À faire signer en main propre : {} ; imprimés.", quoi.join(", ")), impression })
 }
 
 /// « contrat n° 12 », ou « contrat sans numéro ».
@@ -787,7 +787,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         signatures = Some(releve.dite());
     }
     let ContratsEnvoyes { partis, contrats, avertissements } = r;
-    Ok(SignaturesDemandees { phrase, partis, contrats, avertissements, signatures })
+    Ok(SignaturesDemandees { phrase: Phrase::composee(phrase), partis, contrats, avertissements, signatures })
 }
 
 /// Les avenants, regroupes par salarie.
@@ -1048,7 +1048,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         .chain(avertissements.iter().cloned())
         .collect();
     Ok(ApercuSignature {
-        phrase: format!("Contrats à faire signer : {}.", contrats.len()),
+        phrase: socle::phrase!("Contrats à faire signer : {}.", contrats.len()),
         mois,
         signature: boite_liee.then(|| {
             Encart::de(socle::ecran::EtatDEcran::Information, "Signature d'un clic", "Le contrat part par courriel avec un bouton « Je signe » ; la réponse du salarié est relevée toute seule, et il reçoit son contrat contresigné.")
@@ -1146,7 +1146,7 @@ impl AvenantLu {
                     Some(s) => format!("signé le {}", s.dit()),
                     None => "pas encore revenu signé".to_string(),
                 };
-                let phrase = format!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), a.quand.dit(), signe);
+                let phrase = socle::phrase!("{} envoyé le {} — {}", majuscule(&avenant_dit(a.numero)), a.quand.dit(), signe);
                 AvenantDit { parti: a, phrase }
             })
             .collect();
@@ -1179,7 +1179,7 @@ impl AvenantLu {
         // Le contrat comme l'avenant le nomme (`{{avenant.reference}}`) : signe hors du logiciel, le papier ne porte
         // pas le numero que le logiciel lui a donne.
         let reference = if ailleurs { format!("commencé le {}", self.bornes.debut().jj_mm_aaaa()) } else { contrat };
-        let phrase = format!(
+        let phrase = socle::phrase!(
             "Avenant {} au contrat {} de {}, à effet du {} : {}.",
             self.numero,
             reference,
@@ -1487,6 +1487,6 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         .map(|p| format!("{} le {}", p.quoi, p.quand_dit))
         .chain(contrat.iter().map(|p| format!("{} le {}", p.quoi[..1].to_lowercase() + &p.quoi[1..], p.quand_dit)))
         .collect();
-    let phrase = if dites.is_empty() { format!("Contrat {}{} : rien n'est parti.", numero, de) } else { format!("Contrat {}{} : {}.", numero, de, dites.join(" ; ")) };
+    let phrase = if dites.is_empty() { socle::phrase!("Contrat {}{} : rien n'est parti.", numero, de) } else { socle::phrase!("Contrat {}{} : {}.", numero, de, dites.join(" ; ")) };
     Ok(PiecesParties { phrase, dpae, contrat })
 }

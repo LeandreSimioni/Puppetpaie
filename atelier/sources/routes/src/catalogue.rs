@@ -644,13 +644,13 @@ struct ChargeDuCatalogue {
 /// Ce que rend `routes` : la phrase, une ligne par route (« nom : geste »), et la fiche de chacune.
 #[derive(serde::Serialize)]
 struct LeCatalogue {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: socle::texte::Phrase,
+    phrases: Vec<socle::texte::Phrase>,
     routes: Vec<FicheEcrite>,
 }
 
 impl Dite for LeCatalogue {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -668,8 +668,8 @@ pub fn route(route: Route, charge: &Charge) -> R<Rendu> {
 
 fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
     let fiches: Vec<Fiche> = catalogue().into_iter().filter(|f| c.avance == Some(true) || !f.ecran.avance()).collect();
-    let phrases: Vec<String> = fiches.iter().map(|f| format!("{} : {}", f.nom(), f.geste)).collect();
-    Ok(LeCatalogue { phrase: format!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
+    let phrases: Vec<socle::texte::Phrase> = fiches.iter().map(|f| socle::phrase!("{} : {}", f.nom(), f.geste)).collect();
+    Ok(LeCatalogue { phrase: socle::phrase!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.

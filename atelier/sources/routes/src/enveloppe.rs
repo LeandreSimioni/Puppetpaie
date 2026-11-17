@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 
 use socle::echec::{erreur, Classe, Echec, Lieu, R};
 use socle::forme::Objet;
+pub use socle::texte::Phrase;
 
 use super::catalogue::{self, Route};
 
@@ -251,7 +252,7 @@ impl Options {
 /// CE QU'UNE ROUTE BRANCHEE REND : une forme `serde`, qui porte la phrase que l'ecran affiche et que
 /// `moteur route --texte` imprime. Chaque reponse en a une ; la forme la dit (`phrase`), l'enveloppe la verifie.
 pub trait Dite: Serialize {
-    fn phrase(&self) -> &str;
+    fn phrase(&self) -> &Phrase;
 }
 
 /// LE RENDU D'UNE ROUTE, ecrit en JSON une fois, a la porte : un objet dont la `phrase` est en tete, et les phrases
@@ -266,7 +267,7 @@ pub struct Rendu {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PhraseDuRendu {
-    phrase: String,
+    phrase: Phrase,
 }
 
 impl Rendu {
@@ -275,12 +276,12 @@ impl Rendu {
     /// la route le refuse.
     pub fn de<T: Dite>(t: &T) -> R<Rendu> {
         const SANS_PHRASE: &str = "Défaut du logiciel : la route n'a pas rendu de phrase.";
-        if t.phrase().trim().is_empty() {
+        if t.phrase().est_vide() {
             return Err(erreur(Classe::DefautDuLogiciel, SANS_PHRASE));
         }
         let objet = socle::ecriture::en_objet(t).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet."))?;
         let ecrite: PhraseDuRendu = objet.lire_cles(&["phrase"], SANS_PHRASE).map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;
-        if ecrite.phrase.trim().is_empty() {
+        if ecrite.phrase.est_vide() {
             return Err(erreur(Classe::DefautDuLogiciel, SANS_PHRASE));
         }
         let phrases = objet.lire(&[], "Défaut du logiciel : une phrase que la route rend n'est pas un texte.").map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;

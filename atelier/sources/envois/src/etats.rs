@@ -701,7 +701,7 @@ pub struct Repetition {
     pub motif: Option<String>,
     pub etat: EtatDuTest,
     pub titre: String,
-    pub phrase: String,
+    pub phrase: socle::texte::Phrase,
 }
 
 /// OU EN EST LE TEST, dit une fois : teste et conforme (le reel peut partir), en test (son compte rendu est attendu),
@@ -770,17 +770,17 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
         (Some(c), _, _) if compte_rendu == Some(CompteRenduDuTest::Ok) => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
-            format!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
+            socle::phrase!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
         ),
         (Some(c), _, _) => (
             EtatDuTest::EnTest,
             format!("{} est en test — son compte rendu est attendu", cette),
-            format!("Envoyée en test le {}. {}", c.quand().dit(), ENSUITE),
+            socle::phrase!("Envoyée en test le {}. {}", c.quand().dit(), ENSUITE),
         ),
         (None, Some(r), _) => (
             EtatDuTest::TestRefuse,
             "Le test est refusé".into(),
-            format!(
+            socle::phrase!(
                 "Essayé le {} : {}. Le même refus attendrait le dépôt réel : c'est cela qu'il faut corriger.",
                 r.quand().dit(),
                 pourquoi_rate(r).trim_end_matches('.')
@@ -789,9 +789,9 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
         (None, None, Some(p)) => (
             EtatDuTest::Ecrite,
             "Pas de test valable pour ce contenu".into(),
-            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", p.quand().dit(), ENSUITE),
+            socle::phrase!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", p.quand().dit(), ENSUITE),
         ),
-        (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
+        (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), socle::phrase!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
     Repetition {
         empreinte: empreinte.clone(),

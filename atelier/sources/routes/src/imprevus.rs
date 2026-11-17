@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::{maintenant, INTERFACE};
 use crate::SansCharge;
 use socle::ecran::Pastille;
@@ -364,7 +364,7 @@ fn ordre_du_signalement(ctx: &Contexte, ordre: Option<NumeroDOrdre>) -> R<(Numer
 /// `imprevus` : les imprevus resumes, les nomenclatures pour en saisir, et ce que l'ecran lit de chacun.
 #[derive(Debug, Serialize)]
 struct ReponseImprevus {
-    phrase: String,
+    phrase: Phrase,
     imprevus: Vec<Resume>,
     motifs_arret: Vec<CodeDuBloc60<MotifDArret>>,
     motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
@@ -375,7 +375,7 @@ struct ReponseImprevus {
 /// `arrets` : tous les arrets resumes, ceux qui restent a signaler, et les nomenclatures du bloc 60.
 #[derive(Debug, Serialize)]
 struct ReponseArrets {
-    phrase: String,
+    phrase: Phrase,
     phrases: Vec<String>,
     arrets: Vec<Resume>,
     a_signaler: Vec<Resume>,
@@ -387,7 +387,7 @@ struct ReponseArrets {
 /// `fins-de-contrat`.
 #[derive(Debug, Serialize)]
 struct ReponseFins {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     fins: Vec<FinASignaler>,
 }
@@ -395,7 +395,7 @@ struct ReponseFins {
 /// `arret-contrats`.
 #[derive(Debug, Serialize)]
 struct ReponseContrats {
-    phrase: String,
+    phrase: Phrase,
     contrats: Vec<ContratAuJour>,
 }
 
@@ -403,14 +403,14 @@ struct ReponseContrats {
 #[derive(Debug, Serialize)]
 struct ReponseArret {
     arret: Resume,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Ce que rend un geste sur une absence.
 #[derive(Debug, Serialize)]
 struct ReponseSuspension {
     suspension: Resume,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// `arret-signaler` : le fichier ecrit.
@@ -418,7 +418,7 @@ struct ReponseSuspension {
 pub(crate) struct ReponseSignalement {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     fichier: std::path::PathBuf,
-    phrase: String,
+    phrase: Phrase,
     nature: NatureSignalement,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
@@ -432,7 +432,7 @@ pub(crate) struct ReponseSignalement {
 pub(crate) struct ReponseSignalementFin {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     fichier: std::path::PathBuf,
-    phrase: String,
+    phrase: Phrase,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
     #[serde(with = "droit::natures::en_nombre")]
@@ -444,7 +444,7 @@ pub(crate) struct ReponseSignalementFin {
 /// `fin-contrat-documents` : les deux papiers ecrits.
 #[derive(Debug, Serialize)]
 struct ReponsePapiers {
-    phrase: String,
+    phrase: Phrase,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     certificat: std::path::PathBuf,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -458,7 +458,7 @@ struct ReponsePapiers {
 macro_rules! dites {
     ($($t:ty),*) => {$(
         impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         }
@@ -536,7 +536,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// (`engagement::etats::apres_un_imprevu`) ; une paie partie qui change suit le chemin de toute correction d'un mois parti,
 /// et la phrase dit ce qu'il entraine, avec les mots de « Modifier l'engagement »
 /// (`crate::engagement::ce_que_le_changement_entraine`).
-fn regulariser(ctx: &Contexte, salarie: &SalarieDesigne, phrase: &mut String) -> R<()> {
+fn regulariser(ctx: &Contexte, salarie: &SalarieDesigne, phrase: &mut Phrase) -> R<()> {
     use engagement::etats::Revalidation;
     let cle = cle_du_nom(ctx, salarie)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
@@ -553,7 +553,7 @@ fn regulariser(ctx: &Contexte, salarie: &SalarieDesigne, phrase: &mut String) ->
         }
     }
     if !dit.is_empty() {
-        *phrase = format!("{} {}", phrase, dit.join(" "));
+        *phrase = socle::phrase!("{} {}", phrase, dit.join(" "));
     }
     Ok(())
 }
@@ -1420,7 +1420,7 @@ fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
         out.push(r);
     }
     Ok(ReponseImprevus {
-        phrase: format!("Imprévus : {}.", out.len()),
+        phrase: socle::phrase!("Imprévus : {}.", out.len()),
         phrases: out.iter().flat_map(Resume::en_lignes).collect(),
         imprevus: out,
         motifs_arret: n.motifs_arret.saisissables(),
@@ -1471,7 +1471,7 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     imprevus::verifier(&nouveau).map_err(|e| e.reclasser(Classe::Refuse))?;
     liste[i] = nouveau;
     ecrire(ctx, &dernier, liste)?;
-    reponse_arret(ctx, &a, "Indemnités journalières notées.")
+    reponse_arret(ctx, &a, Phrase::fixe("Indemnités journalières notées."))
 }
 
 /// Le contrat qu'un imprevu suspend, lu dans la saisie qui le porte ; `None` s'il n'y est plus.
@@ -1630,7 +1630,7 @@ remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). 
                 .to_string(),
         );
     }
-    reponse_arret(ctx, &a, &avertissements.join("  ·  "))
+    reponse_arret(ctx, &a, Phrase::composee(avertissements.join("  ·  ")))
 }
 
 /// L'arret est-il subroge (S21.G00.60.004 = oui) ?
@@ -1691,7 +1691,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     let mut liste = le_fichier(ctx, &debut)?;
     liste.push(Imprevu::Suspension(s.clone()));
     ecrire(ctx, &debut, liste)?;
-    reponse_suspension(ctx, &s, "Absence enregistrée. Chaque mois qu'elle traverse la déclarera.")
+    reponse_suspension(ctx, &s, Phrase::fixe("Absence enregistrée. Chaque mois qu'elle traverse la déclarera."))
 }
 
 /// `suspension-modifier`. Le debut designe la suspension et ne change pas : une suspension qui commence un autre jour
@@ -1712,7 +1712,7 @@ fn suspension_modifier(ctx: &Contexte, c: &ChargeSuspensionModifier) -> R<Repons
     sans_chevauchement(ctx, &Imprevu::Suspension(s.clone()), Some(&Imprevu::Suspension(avant)))?;
     liste[i] = Imprevu::Suspension(s.clone());
     ecrire(ctx, &debut, liste)?;
-    reponse_suspension(ctx, &s, "Absence changée.")
+    reponse_suspension(ctx, &s, Phrase::fixe("Absence changée."))
 }
 
 /// `suspension-oublier`. Une suspension qu'une DSN reelle a deja declaree ne se retire pas : le magasin garderait moins
@@ -1731,7 +1731,7 @@ reprendre (une fin plus tot), ou corriger les DSN deposees.",
     }
     liste.remove(i);
     ecrire(ctx, &debut, liste)?;
-    reponse_suspension(ctx, &s, "Absence retirée : aucune déclaration ne l'avait portée.")
+    reponse_suspension(ctx, &s, Phrase::fixe("Absence retirée : aucune déclaration ne l'avait portée."))
 }
 
 /// Ce que la norme refuse (`SignalementImpossible`, une valeur `Illisible`) ; les avertissements ne servent pas ici.
@@ -1756,13 +1756,13 @@ pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &IdSalarie, declare: J
 
 /// `{"arret": resume, "phrase"}` : l'arret tel que la page le lit (`resume`, avec les cachets qui tombent dedans), et ce
 /// qui se lit du geste.
-fn reponse_arret(ctx: &Contexte, arret: &ArretSaisi, phrase: &str) -> R<ReponseArret> {
-    Ok(ReponseArret { arret: resume(ctx, &nomenclatures()?, &Imprevu::Arret(arret.clone()))?, phrase: phrase.to_string() })
+fn reponse_arret(ctx: &Contexte, arret: &ArretSaisi, phrase: Phrase) -> R<ReponseArret> {
+    Ok(ReponseArret { arret: resume(ctx, &nomenclatures()?, &Imprevu::Arret(arret.clone()))?, phrase })
 }
 
 /// `{"suspension": resume, "phrase"}`.
-fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: &str) -> R<ReponseSuspension> {
-    Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase: phrase.to_string() })
+fn reponse_suspension(ctx: &Contexte, s: &SuspensionSaisie, phrase: Phrase) -> R<ReponseSuspension> {
+    Ok(ReponseSuspension { suspension: resume(ctx, &nomenclatures()?, &Imprevu::Suspension(s.clone()))?, phrase })
 }
 
 /// `arret-enregistrer`. Les controles de la norme sont ceux du signalement (`signalement::verifier`, nature 04), avant
@@ -1813,7 +1813,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
     if let Some(saisie) = connu {
         crate::obligations::connaissance_ecrire(ctx, &arret, crate::obligations::DeQuoi::Accident, saisie)?;
     }
-    reponse_arret(ctx, &arret, "Arrêt enregistré.")
+    reponse_arret(ctx, &arret, Phrase::fixe("Arrêt enregistré."))
 }
 
 /// `arret-reprise` : une reprise nulle l'efface, et son motif avec elle.
@@ -1840,7 +1840,7 @@ fn arret_reprise(ctx: &Contexte, c: &ChargeArretReprise) -> R<ReponseArret> {
     verifier(&a)?;
     liste[i] = Imprevu::Arret(a.clone());
     ecrire(ctx, &c.dernier_jour, liste)?;
-    reponse_arret(ctx, &a, if c.reprise.is_some() { "Reprise notée." } else { "Reprise effacée." })
+    reponse_arret(ctx, &a, Phrase::fixe(if c.reprise.is_some() { "Reprise notée." } else { "Reprise effacée." }))
 }
 
 /// `arret-oublier`. Un arret deja declare ne se retire pas.
@@ -1856,7 +1856,7 @@ fn arret_oublier(ctx: &Contexte, c: &ChargeArretOublier) -> R<ReponseArret> {
     }
     liste.remove(i);
     ecrire(ctx, &c.dernier_jour, liste)?;
-    reponse_arret(ctx, &a, "Arrêt retiré : aucune déclaration ne l'avait porté.")
+    reponse_arret(ctx, &a, Phrase::fixe("Arrêt retiré : aucune déclaration ne l'avait porté."))
 }
 
 // ------------------------------------------------------------------ la fin d'un contrat
@@ -1914,7 +1914,7 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     // Les sorties du mois : chaque papier s'y range dans le dossier de sa sorte (`fin_de_contrat::ecrire`).
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
-        phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
+        phrase: socle::phrase!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
         certificat,
         recu,
         dossier,
@@ -2020,8 +2020,8 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
 }
 
 /// Ce qui se lit d'un signalement écrit : ce qui est fait, puis ses avis, sur la même ligne.
-fn phrase_du_signalement(fait: &str, avertissements: &[String]) -> String {
-    std::iter::once(fait.to_string()).chain(avertissements.iter().cloned()).collect::<Vec<_>>().join("  ·  ")
+fn phrase_du_signalement(fait: &str, avertissements: &[String]) -> Phrase {
+    socle::phrase!("{}", std::iter::once(fait.to_string()).chain(avertissements.iter().cloned()).collect::<Vec<_>>().join("  ·  "))
 }
 
 /// Une saisie d'un arret qui se defait : un avis de prolongation, ou une reprise notee.
@@ -2245,7 +2245,7 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
     }
     let a_signaler: Vec<Resume> = resumes.iter().filter(|r| matches!(r, Resume::Arret(x) if !x.base.signale && x.base.signalement_du)).cloned().collect();
     Ok(ReponseArrets {
-        phrase: format!("{}, {} à signaler.", socle::ecran::compte(resumes.len(), "arrêt de travail", "arrêts de travail"), a_signaler.len()),
+        phrase: socle::phrase!("{}, {} à signaler.", socle::ecran::compte(resumes.len(), "arrêt de travail", "arrêts de travail"), a_signaler.len()),
         phrases,
         arrets: resumes,
         a_signaler,
@@ -2509,7 +2509,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
         f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(&f.salarie), f.libelle_nature, fin, ailleurs));
         f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
     }
-    Ok(ReponseFins { phrase: format!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
+    Ok(ReponseFins { phrase: socle::phrase!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
 }
 
 /// Combien de mois en arriere un signalement de fin en retard se rappelle : une annee de paies.
@@ -2536,8 +2536,8 @@ fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> 
     let cle = cle_du_nom(ctx, &c.salarie)?;
     let mut contrats = contrats_au(ctx, &cle, c.jour)?;
     let phrase = match contrats.len() {
-        0 => format!("Aucun contrat de {} ne couvre le {} : il n'y a rien à suspendre.", ctx.nomme(&cle), c.jour.jj_mm_aaaa()),
-        n => format!("Contrats qu'un arrêt peut toucher : {}.", n),
+        0 => socle::phrase!("Aucun contrat de {} ne couvre le {} : il n'y a rien à suspendre.", ctx.nomme(&cle), c.jour.jj_mm_aaaa()),
+        n => socle::phrase!("Contrats qu'un arrêt peut toucher : {}.", n),
     };
     // Chaque contrat se dit en une ligne : son numero et sa periode.
     for k in &mut contrats {

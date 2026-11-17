@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::{ChargeMois, Moteur};
 use compagnie::INTERFACE;
 use socle::ecran::Pastille;
@@ -108,26 +108,26 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for ApercuEnvoi {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for DocumentsEnvoyes {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for DocumentsImprimes {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for PiecePartie {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -146,7 +146,7 @@ pub(crate) struct ChargeDocumentsImprimer {
 /// a dit (aussi en `phrases`).
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsImprimes {
-    phrase: String,
+    phrase: Phrase,
     impression: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     chemin: std::path::PathBuf,
@@ -159,7 +159,7 @@ pub(crate) struct DocumentsImprimes {
 /// boite qui envoie.
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsEnvoyes {
-    phrase: String,
+    phrase: Phrase,
     partis: Vec<droit::fiche::Courriel>,
     avertissements: Vec<String>,
 }
@@ -177,7 +177,7 @@ struct ChargePiecePartie {
 /// Ce que rend `piece-partie` : le chemin de la piece, relatif a la compagnie.
 #[derive(Debug, Serialize)]
 struct PiecePartie {
-    phrase: &'static str,
+    phrase: Phrase,
     chemin: CheminRelatif,
 }
 
@@ -206,7 +206,7 @@ struct DejaPartis {
 /// Ce que rend `envoi-apercu`.
 #[derive(Debug, Serialize)]
 struct ApercuEnvoi {
-    phrase: String,
+    phrase: Phrase,
     expediteur: String,
     expediteur_dit: String,
     avertissements: Vec<String>,
@@ -229,7 +229,7 @@ fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
         let lieu = socle::echec::Lieu { detail: Some(e.phrase), ..Default::default() };
         Echec { a_part: Some(lieu.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.") }
     })?;
-    Ok(PiecePartie { phrase: "La pièce partie, telle qu'elle est partie.", chemin })
+    Ok(PiecePartie { phrase: Phrase::fixe("La pièce partie, telle qu'elle est partie."), chemin })
 }
 
 // ------------------------------------------------------------------ les outils
@@ -658,7 +658,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .collect();
     phrases.extend(prets.empechements.iter().chain(&avertissements).chain(&prets.informations).cloned());
     Ok(ApercuEnvoi {
-        phrase: format!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
+        phrase: socle::phrase!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
         expediteur_dit: format!("Courriels depuis {}", expediteur),
         expediteur,
         avertissements,
@@ -820,7 +820,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     noter(ctx, journal::Ligne::Documents(par_courriel(Some(c.mois), qui, true, "", &reponse, detail, Some(versions))))?;
     let qui_les_recoit: Vec<String> = cles.iter().filter_map(|cle| noms.get(cle).map(|nom| nom_a_l_ecran(ctx, cle, nom))).collect();
     Ok(DocumentsImprimes {
-        phrase: format!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
+        phrase: socle::phrase!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
         impression: nom_impression.into(),
         chemin: impression,
         salaries: cles,
@@ -1122,7 +1122,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let reponse = format!("{} message(s) envoye(s)", partis.len());
     noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &en_liste(&partis, ", "), &reponse, detail(&recus), Some(versions))))?;
     Ok(DocumentsEnvoyes {
-        phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
+        phrase: socle::phrase!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
         partis,
         avertissements,
     })

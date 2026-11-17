@@ -41,7 +41,7 @@
 use socle::date::Jour;
 use socle::echec::Classe;
 use socle::fichiers::CheminRelatif;
-use crate::enveloppe::Options;
+use crate::enveloppe::{Options, Phrase};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -847,7 +847,7 @@ pub struct Groupe {
 /// moins presse, ce que le depot groupe propose, et s'il est le garde (sans calcul) ou refait.
 #[derive(Debug, Serialize)]
 pub struct TableauAdministrateur {
-    pub phrase: String,
+    pub phrase: Phrase,
     pub phrases: Vec<String>,
     pub compagnies: Vec<CompagnieDuTableau>,
     pub declarations: Vec<DeclarationDuTableau>,
@@ -856,7 +856,7 @@ pub struct TableauAdministrateur {
 }
 
 impl Dite for TableauAdministrateur {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -901,7 +901,7 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
             format!("{} : {}, {}{}", d.compagnie, d.declaration.titre, if d.declaration.en_retard { "en retard, c'était " } else { "au plus tard " }, quand)
         })
         .collect();
-    let phrase = format!("Déclarations à faire : {} ; compagnies : {}.", phrases.len(), cies.len());
+    let phrase = socle::phrase!("Déclarations à faire : {} ; compagnies : {}.", phrases.len(), cies.len());
     Ok(TableauAdministrateur {
         phrase,
         phrases,
@@ -1020,13 +1020,13 @@ pub struct Suivie {
 /// CE QUE REND LE SUIVI DU DEPOT GROUPE : chaque declaration suivie, et si toutes sont tranchees (`fini`).
 #[derive(Debug, Serialize)]
 pub struct SuivisDuGroupe {
-    pub phrase: String,
+    pub phrase: Phrase,
     pub fini: bool,
     pub suivies: Vec<Suivie>,
 }
 
 impl Dite for SuivisDuGroupe {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -1050,9 +1050,9 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
     let tranches = suivies.iter().filter(|s| s.suivi.fini).count();
     let attendent = suivies.len() - tranches;
     let phrase = if fini {
-        format!("{} : retours reçus.", socle::ecran::compte(tranches, "déclaration tranchée", "déclarations tranchées"))
+        socle::phrase!("{} : retours reçus.", socle::ecran::compte(tranches, "déclaration tranchée", "déclarations tranchées"))
     } else {
-        format!("{} attendent encore le retour de l'organisme.", socle::ecran::compte(attendent, "déclaration", "déclarations"))
+        socle::phrase!("{} attendent encore le retour de l'organisme.", socle::ecran::compte(attendent, "déclaration", "déclarations"))
     };
     Ok(SuivisDuGroupe { phrase, fini, suivies })
 }
@@ -1061,7 +1061,7 @@ pub fn suivre(o: &Options, inst: &Path, a_suivre: Vec<ASuivre>) -> R<SuivisDuGro
 /// tableau refait.
 #[derive(Debug, Serialize)]
 pub struct DepotGroupe {
-    pub phrase: String,
+    pub phrase: Phrase,
     pub mode: Mode,
     pub partis: usize,
     pub refuses: usize,
@@ -1070,7 +1070,7 @@ pub struct DepotGroupe {
 }
 
 impl Dite for DepotGroupe {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -1107,7 +1107,7 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
             Mode::Test => "Aucune déclaration écrite n'attend son dépôt de test.",
         };
         let refuses = resultats.len();
-        return Ok(DepotGroupe { phrase: phrase.into(), mode, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
+        return Ok(DepotGroupe { phrase: Phrase::fixe(phrase), mode, partis: 0, refuses, resultats, tableau: tableau(o, inst, false)? });
     }
     let mut mdp: Option<socle::secret::Secret> = None;
     if mode == Mode::Reel {
@@ -1164,7 +1164,7 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
     let partis = resultats.iter().filter(|r| r.parti).count();
     let refuses = resultats.len() - partis;
     let refuses_dit: String = (refuses > 0).then(|| format!(", {}", socle::ecran::compte(refuses, "refusée", "refusées"))).into_iter().collect();
-    let phrase = format!("{}{}.", socle::ecran::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
+    let phrase = socle::phrase!("{}{}.", socle::ecran::compte(partis, "déclaration partie", "déclarations parties"), refuses_dit);
     Ok(DepotGroupe { phrase, mode, partis, refuses, resultats, tableau: tableau(o, inst, false)? })
 }
 

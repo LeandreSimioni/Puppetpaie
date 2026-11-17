@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{aujourd_hui, creer_dossier, ecrire, refus};
 use crate::ouverture::{EcranDeLImage, Identite, ImageIdentite};
 use droit::contexte::Contexte;
@@ -78,18 +78,18 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         }
         Route::PoserIdentite => {
             let (identite, poids) = poser_identite(ctx, charge.lire()?)?;
-            en_json(IdentiteDite { phrase: format!("Posé. {} {}", poids, dire_l_identite(&identite)), identite, intro: None, poids_vise_ko: None })
+            en_json(IdentiteDite { phrase: socle::phrase!("Posé. {} {}", poids, dire_l_identite(&identite)), identite, intro: None, poids_vise_ko: None })
         }
         Route::RetirerIdentite => {
             let identite = retirer_identite(ctx, charge.lire()?)?;
-            en_json(IdentiteDite { phrase: format!("Retiré. {}", dire_l_identite(&identite)), identite, intro: None, poids_vise_ko: None })
+            en_json(IdentiteDite { phrase: socle::phrase!("Retiré. {}", dire_l_identite(&identite)), identite, intro: None, poids_vise_ko: None })
         }
         autre => Err(super::enveloppe::route_inconnue(autre.nom())),
     }
 }
 
 impl Dite for IdentiteDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -98,7 +98,7 @@ impl Dite for IdentiteDite {
 /// ce qu'il dit en tete et le poids vise.
 #[derive(Debug, Clone, serde::Serialize)]
 struct IdentiteDite {
-    phrase: String,
+    phrase: Phrase,
     identite: Identite,
     #[serde(skip_serializing_if = "Option::is_none")]
     intro: Option<&'static str>,
@@ -258,8 +258,8 @@ fn mots_de(e: &ImageIdentite) -> &'static str {
 }
 
 /// L'identite de la compagnie en une phrase : la signature, le tampon et le logo, chacun avec ce que l'ecran en dit.
-fn dire_l_identite(v: &Identite) -> String {
-    format!("Signature : {} ; tampon : {} ; logo : {}.", mots_de(&v.signature), mots_de(&v.cachet), mots_de(&v.logo))
+fn dire_l_identite(v: &Identite) -> Phrase {
+    socle::phrase!("Signature : {} ; tampon : {} ; logo : {}.", mots_de(&v.signature), mots_de(&v.cachet), mots_de(&v.logo))
 }
 
 /// CE QUE L'ECRAN DE LA SIGNATURE ET DU TAMPON DIT (pour chaque image son `titre` et ce qu'elle `dit` : ou elle va, ce

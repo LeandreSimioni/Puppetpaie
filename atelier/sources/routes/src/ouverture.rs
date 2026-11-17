@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs;
@@ -206,7 +206,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 macro_rules! dites {
     ($($t:ty),*) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -812,7 +812,7 @@ pub(crate) struct ConfigurationDeLaPage {
 /// La route `configuration` : la configuration et sa phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ConfigurationDite {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     configuration: ConfigurationDeLaPage,
 }
@@ -1551,7 +1551,7 @@ struct OrganismeUrssaf {
 /// fictive en dit, l'historique des mois, les listes ou l'on choisit et les referentiels livres avec le logiciel.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct EtatDeLaPage {
-    phrase: String,
+    phrase: Phrase,
     configuration: ConfigurationDeLaPage,
     auteur: compagnie::auteur::Auteur,
     simulation: bool,
@@ -1713,7 +1713,7 @@ pub(crate) struct Version {
     exigee: Option<String>,
     signee: bool,
     avant: Option<compagnie::maj::VersionDuLogiciel>,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// La version du logiciel, ce qui est pret, ce
@@ -1733,7 +1733,7 @@ pub(crate) fn version() -> R<Version> {
         None => (None, None, None),
     };
     Ok(Version {
-        phrase: format!("Version installée : {}.{}", courante_v, dite),
+        phrase: socle::phrase!("Version installée : {}.{}", courante_v, dite),
         courante: courante_v,
         // Le depot d'ou l'on recoit : celui qui est pose, sinon celui du moteur (`maj::DEPOT_PAR_DEFAUT`).
         depot: compagnie::maj::depot(depot),
@@ -1747,13 +1747,13 @@ pub(crate) fn version() -> R<Version> {
 }
 
 /// La configuration en une phrase : la compagnie, ses fiches, et ses erreurs s'il y en a.
-fn dire_la_configuration(c: &ConfigurationDeLaPage) -> String {
+fn dire_la_configuration(c: &ConfigurationDeLaPage) -> Phrase {
     let nom = match c.entreprise.donnees.fiche.nommee() {
         Some(n) => n.to_string(),
         None => "Compagnie sans nom".to_string(),
     };
     let erreurs: String = c.erreurs.iter().map(|p| format!(" ; {}", p.mots)).collect();
-    format!(
+    socle::phrase!(
         "{} : {}, {}{}.",
         nom,
         socle::ecran::compte(c.salaries.len(), "salarié", "salariés"),
@@ -1855,7 +1855,7 @@ pub(crate) struct Coulisses {
 /// l'intro, le circuit de chaque genre et la phrase de chaque courriel.
 #[derive(Debug, Clone, serde::Serialize)]
 struct CourrielsFictifs {
-    phrase: String,
+    phrase: Phrase,
     courriels: Vec<envois::simulation_courriels::CourrielJoue>,
     dernier: Option<String>,
     intro: String,
@@ -1878,7 +1878,7 @@ fn courriels_fictifs(ctx: &Contexte, charge: &crate::simulation_courriels::Charg
     let n = phrases.len();
     let s = if n > 1 { "s" } else { "" };
     Ok(CourrielsFictifs {
-        phrase: format!("Courriels simulés : {}.", n),
+        phrase: socle::phrase!("Courriels simulés : {}.", n),
         courriels: joues.courriels,
         dernier: joues.dernier,
         intro: format!("{} courriel{} joué{} — rien n'a quitté le poste.{}", n, s, s, if n > 1 { " Chacun reçoit les siens :" } else { "" }),

@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::fiches::refus;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
 use droit::natures::NatureDeContrat;
@@ -267,7 +267,7 @@ struct NouvelleCarte {
 #[derive(Debug, Serialize)]
 struct SaisieDuMois {
     mois: Mois,
-    phrase: String,
+    phrase: Phrase,
     /// Les cartes importees (`import::mois::cartes`).
     importes: Vec<import::mois::CarteImportee>,
     importes_titre: &'static str,
@@ -284,7 +284,7 @@ struct SaisieDuMois {
 /// Une carte ecrite (`enregistrer-saisie`).
 #[derive(Debug, Serialize)]
 struct CarteEcrite {
-    phrase: String,
+    phrase: Phrase,
     engagement: Identite,
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
@@ -335,7 +335,7 @@ struct LigneAReprendre {
 
 #[derive(Debug, Serialize)]
 struct ContratsEnCours {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     contrats: Vec<EnCours>,
     reprise: Option<String>,
@@ -373,7 +373,7 @@ enum SourceDuContratPasse {
 
 #[derive(Debug, Serialize)]
 struct ContratsPasses {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     contrats: Vec<Passe>,
     rien_dit: &'static str,
@@ -381,7 +381,7 @@ struct ContratsPasses {
 
 #[derive(Debug, Serialize)]
 struct Emploi {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     champs: emplois::ChampsDuMetier,
 }
@@ -410,7 +410,7 @@ struct CeQuiChange {
 /// LE MONTANT VISE (`ajuster`) : ce qui est atteint, le taux qu'il faudrait ; rien n'est ecrit.
 #[derive(Debug, Serialize)]
 struct Ajuste {
-    phrase: String,
+    phrase: Phrase,
     cible: Cible,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     vise: Montant,
@@ -447,7 +447,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 macro_rules! dites {
     ($($t:ty),* $(,)?) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -589,9 +589,9 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let ferme = ferme_aux_neufs(ctx, mois)?;
     // CE QUE L'ECRAN DIT DE LA SAISIE : pour un mois importe, `ferme_aux_neufs`.
     let phrase = match (&ferme, existe) {
-        (Some(f), _) => f.clone(),
-        (None, true) => "Saisie chargée. L'enregistrement est automatique.".to_string(),
-        (None, false) => "Nouveau mois — l'enregistrement est automatique dès la première saisie.".to_string(),
+        (Some(f), _) => Phrase::composee(f.clone()),
+        (None, true) => Phrase::fixe("Saisie chargée. L'enregistrement est automatique."),
+        (None, false) => Phrase::fixe("Nouveau mois — l'enregistrement est automatique dès la première saisie."),
     };
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
@@ -730,7 +730,7 @@ fn contrats_en_cours_route(ctx: &Contexte, mois: Mois) -> R<ContratsEnCours> {
         1 => Some(format!("Contrat en cours repris : {} — poser ses jours {}.", noms[0], de_mois)),
         n => Some(format!("{} contrats en cours repris ({}) — poser leurs jours {}.", n, noms.join(", "), de_mois)),
     };
-    Ok(ContratsEnCours { phrase: format!("Contrats d'un mois passé qui courent encore ce mois : {}.", contrats.len()), mois, contrats, reprise })
+    Ok(ContratsEnCours { phrase: socle::phrase!("Contrats d'un mois passé qui courent encore ce mois : {}.", contrats.len()), mois, contrats, reprise })
 }
 
 // ------------------------------------------------------------- contrats passes
@@ -947,7 +947,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
 fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsPasses> {
     let contrats = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
     Ok(ContratsPasses {
-        phrase: format!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
+        phrase: socle::phrase!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
         mois: c.mois,
         contrats,
         // Ce que la liste dit quand elle est vide : rien de declare pour ce salarie, ou aucun salarie choisi.
@@ -964,8 +964,8 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
     let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
-        Some(code) => format!("Métier : {} ({}).", champs.emploi_affichage, code),
-        None => format!("Métier : {}.", champs.emploi_affichage),
+        Some(code) => socle::phrase!("Métier : {} ({}).", champs.emploi_affichage, code),
+        None => socle::phrase!("Métier : {}.", champs.emploi_affichage),
     };
     Ok(Emploi { phrase, champs })
 }
@@ -1054,8 +1054,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let s = a.seconde_du_jour_de_paris();
     Ok(CarteEcrite {
         phrase: match &a_completer {
-            Some(m) => format!("Carte enregistrée ; à compléter avant de valider : {}", m),
-            None => "Carte enregistrée.".to_string(),
+            Some(m) => socle::phrase!("Carte enregistrée ; à compléter avant de valider : {}", m),
+            None => Phrase::fixe("Carte enregistrée."),
         },
         engagement: id,
         brouillon,
@@ -1276,7 +1276,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         format!(" ({}{} : un taux se paie au centime)", if ecart > Montant::ZERO { "+" } else { "" }, socle::texte::euros(ecart))
     };
     Ok(Ajuste {
-        phrase: format!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
+        phrase: socle::phrase!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
         cible: c.cible,
         vise,
         atteint,
@@ -1993,7 +1993,7 @@ struct Calcul {
 /// L'APERCU (`apercu`) : le mois tel que l'ecran le montre, rien d'ecrit.
 #[derive(Debug, Serialize)]
 struct Apercu {
-    phrase: String,
+    phrase: Phrase,
     phrase_du_mois: Option<String>,
     mois: Mois,
     libelle: String,
@@ -2031,8 +2031,8 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         paies.push(PaieDeLApercu { paie, engagement });
     }
     let phrase = match &r.phrase_du_mois {
-        Some(p) => p.clone(),
-        None => format!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
+        Some(p) => Phrase::composee(p.clone()),
+        None => socle::phrase!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
     };
     let mut phrases: Vec<String> = Vec::new();
     for t in r.avertissements.iter().chain(r.informations.iter()).chain(paies.iter().flat_map(|p| p.paie.textes())) {

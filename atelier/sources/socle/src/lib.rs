@@ -35,6 +35,14 @@ pub mod temps;
 pub mod texte;
 pub mod verrou;
 
+/// UNE PHRASE DITE AUX GENS QUI SE COMPOSE (`format!`) : `texte::Phrase`.
+#[macro_export]
+macro_rules! phrase {
+    ($($arg:tt)*) => {
+        $crate::texte::Phrase::composee(format!($($arg)*))
+    };
+}
+
 /// UN REFUS ORDINAIRE DONT LA PHRASE SE COMPOSE (`format!`) : `echec::refus`, son endroit note la ou il s'ecrit.
 #[macro_export]
 macro_rules! refus {

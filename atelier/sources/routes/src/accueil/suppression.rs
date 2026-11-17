@@ -45,6 +45,7 @@ use compagnie::installation::{self, Compagnie};
 use crate::gestes::administrateur::Poste;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::mois::Mois;
+use socle::texte::Phrase;
 
 /// La mention de demo d'une compagnie gardee.
 pub(crate) const FICHIER_DEMO: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/demo.json");
@@ -121,7 +122,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
     let nom = installation::nom_de(racine)?;
     let g = match sorte(&inst, racine)? {
         Ok(g) => g,
-        Err(e) => return Ok(Suppression { phrase: e.phrase, ..Suppression::de(nom) }),
+        Err(e) => return Ok(Suppression { phrase: Phrase::composee(e.phrase), ..Suppression::de(nom) }),
     };
     let sauvegarde = match g {
         Genre::Reelle => {
@@ -136,7 +137,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
         Genre::Ajoutee => None,
     };
     Ok(Suppression {
-        phrase: format!("Supprimer {} ?", nom),
+        phrase: socle::phrase!("Supprimer {} ?", nom),
         titre_dit: Some(format!("Supprimer {} ?", nom)),
         genre: Some(if g == Genre::Ajoutee { "ajoutee" } else { "reelle" }),
         mot_de_passe: Some(g == Genre::Reelle),
@@ -169,7 +170,7 @@ pub(crate) struct SauvegardeAProposer {
 /// pas ; avec, la compagnie supprimee.
 #[derive(Debug, serde::Serialize)]
 pub struct Suppression {
-    phrase: String,
+    phrase: Phrase,
     nom: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     titre_dit: Option<String>,
@@ -189,12 +190,12 @@ pub struct Suppression {
 
 impl Suppression {
     fn de(nom: String) -> Suppression {
-        Suppression { phrase: String::new(), nom, titre_dit: None, genre: None, mot_de_passe: None, conservation: None, sauvegarde: None, avertissement: None, supprimee: None }
+        Suppression { phrase: Phrase::fixe(""), nom, titre_dit: None, genre: None, mot_de_passe: None, conservation: None, sauvegarde: None, avertissement: None, supprimee: None }
     }
 }
 
 impl crate::enveloppe::Dite for Suppression {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -209,7 +210,7 @@ pub fn route(racine: &Path, charge: ChargeSupprimer, motdepasse: Option<&socle::
     }
     let inst = installation::IdDeCompagnie::installation_de(racine);
     let nom = supprimer(&inst, racine, motdepasse, &Poste::de_ce_poste(), avant)?;
-    Ok(Suppression { phrase: format!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
+    Ok(Suppression { phrase: socle::phrase!("{} est supprimée de ce poste.", nom), supprimee: Some(nom.clone()), ..Suppression::de(nom) })
 }
 
 /// La preuve d'une suppression reelle : le mot de passe du logiciel, verifie sur le coffre de la compagnie. Vide : le

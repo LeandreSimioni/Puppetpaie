@@ -44,7 +44,7 @@ use socle::mois::Mois;
 use socle::paris::Moment;
 
 use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
-use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::ChargeMois;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -141,14 +141,14 @@ fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &IdSalarie) -> String {
 /// L'Historique d'un mois.
 #[derive(Debug, Serialize)]
 struct Historique {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     documents: Vec<Document>,
     envois: Vec<Envoi>,
 }
 
 impl Dite for Historique {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -1151,6 +1151,6 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
     envois.sort_by(|a, b| (&b.quand, b.mode).cmp(&(&a.quand, a.mode)));
     let documents = documents(ctx, le_mois, &lignes)?;
-    let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
+    let phrase = socle::phrase!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })
 }

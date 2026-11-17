@@ -161,14 +161,17 @@ d'une norme ; le calcul se fait par les opérations des grandeurs (`socle/src/gr
 manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
 pas. Un état ne se code pas en booléens quand il a son type. Les formes d'un fichier, les charges et réponses d'une
 route et les types techniques ne sont pas des notions : ils n'ont pas de ligne ici, mais leurs champs portent les types
-des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`) ; et,
-jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux gens (`String`).
+des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`). Une
+phrase dite aux gens est une `Phrase` (« phrase » ci-dessous) ; celles qui sont encore des `String` sont le dernier
+chantier (#419). Ni un texte tapé dans une charge (`socle::forme::TexteDit`, jamais vide), ni le libellé court de
+l'écran qu'une fiche écrit en constante (`routes::affiche::Affiche`) ne sont une phrase composée : ce sont une saisie et
+un libellé, chacun sa forme.
 
 **Les notions que le typage (#419) unifie ou crée** (la carte du typage ; chacune rejoint sa section quand elle est faite)
 
 | notion | son type | aujourd'hui |
 |---|---|---|
-| phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
+| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe`, mise bout à bout par `Phrase::jointes` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle, elle ne se rouvre pas) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore des `String` | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
 
 **Le temps**
 

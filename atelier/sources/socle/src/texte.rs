@@ -1,5 +1,52 @@
 //! Le texte : le blanc, les accents, la cle de recherche.
 
+/// UNE PHRASE DITE AUX GENS : ce que le moteur compose pour qu'une personne le lise (la phrase que rend une route, un
+/// conseil, un avis). Elle se compose par `socle::phrase!` (comme `format!`), d'un texte fixe (`fixe`) ou de phrases
+/// (`jointes`) ; un nombre y entre par l'ecriture de sa grandeur (`euros`, `virgule`, `par_milliers`…). Elle s'ecrit en
+/// texte, telle quelle (serde, `Display`), et ne se rouvre pas : une phrase en cite une autre par `Display`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Phrase(String);
+
+impl Phrase {
+    /// Une phrase ecrite telle quelle dans le moteur.
+    pub fn fixe(t: &'static str) -> Phrase {
+        Phrase(t.to_string())
+    }
+
+    /// Une phrase composee (`socle::phrase!`).
+    pub fn composee(t: String) -> Phrase {
+        Phrase(t)
+    }
+
+    /// Des phrases mises bout a bout, `entre` chacune (« ; », une fin de ligne).
+    pub fn jointes<'a>(phrases: impl IntoIterator<Item = &'a Phrase>, entre: &str) -> Phrase {
+        Phrase(phrases.into_iter().map(|p| p.0.as_str()).collect::<Vec<_>>().join(entre))
+    }
+
+    /// Ne dit-elle rien (vide, ou des blancs seuls) ?
+    pub fn est_vide(&self) -> bool {
+        self.0.trim().is_empty()
+    }
+}
+
+impl std::fmt::Display for Phrase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl serde::Serialize for Phrase {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Phrase {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Phrase, D::Error> {
+        <String as serde::Deserialize>::deserialize(d).map(Phrase)
+    }
+}
+
 /// Le blanc d'Unicode (`char::is_whitespace`), plus `\x1c` a `\x1f` : ce qu'on retire autour d'une valeur lue et ce qui
 /// separe les mots.
 pub fn blanc(c: char) -> bool {
