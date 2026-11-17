@@ -470,6 +470,9 @@ fn en_echec(p: Panne) -> Echec {
     p.en_echec()
 }
 
+/// Une journee de recherche : vingt-quatre heures.
+const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
+
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
 pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     // La requete ecrit ses bornes a la seconde : une fraction ne fait pas une tranche de plus.
@@ -477,8 +480,8 @@ pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        let suivant = if fin.depuis(t).is_some_and(|d| d > std::time::Duration::from_secs(86_400)) {
-            t.plus(86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
+        let suivant = if fin.depuis(t).is_some_and(|d| d > UNE_JOURNEE) {
+            t.plus_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
         } else {
             fin
         };
@@ -803,7 +806,7 @@ pub fn relever_retours_dpae(
 /// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
 pub fn derniere_journee() -> R<(Moment, Moment)> {
     let fin = socle::temps::secondes();
-    Ok((fin.plus(-86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
+    Ok((fin.moins_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif

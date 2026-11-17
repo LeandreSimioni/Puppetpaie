@@ -21,7 +21,7 @@ pub struct Jour {
 /// `Duree::mois`, `Duree::annees` (douze mois) ; un fichier la dit en nombre, lu en elle a sa porte (`en_jours`,
 /// `en_mois` et leurs facultatives). Elle se compte depuis un jour (`Jour::apres`, `Jour::avant`), un mois (`Mois::apres`,
 /// `Mois::avant`) ou une annee (`Annee::les_precedentes`), en mois ; elle se mesure du premier au dernier jour d'une
-/// suite de jours (`Duree::du_au`) ; deux durees de la meme unite se comparent et s'ajoutent ; elle se dit dans une
+/// suite de jours (`Duree::du_au`), ou des jours ecoules entre deux jours (`Duree::ecoulee`) ; deux durees de la meme unite se comparent et s'ajoutent ; elle se dit dans une
 /// phrase (`Display` : « 3 jours », « 2 mois »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duree<U>(u32, std::marker::PhantomData<U>);
@@ -106,9 +106,23 @@ impl Duree<EnJours> {
 
     /// LES JOURS DU `debut` AU `fin`, l'un et l'autre compris ; aucun quand `fin` precede `debut`.
     pub fn du_au(debut: &Jour, fin: &Jour) -> Duree<EnJours> {
-        // De 0001-01-01 a 9999-12-31, l'ecart tient sur 32 bits ; negatif, la suite est vide.
-        let n = fin.moins(debut) + 1;
+        Duree::de_l_ecart(fin.moins(debut) + 1)
+    }
+
+    /// LES JOURS ECOULES DE `depuis` A `au` : du lendemain de `depuis` a `au`, compris ; aucun quand `au` ne suit pas
+    /// `depuis` (« il reste 3 jours », l'age d'une source).
+    pub fn ecoulee(depuis: &Jour, au: &Jour) -> Duree<EnJours> {
+        Duree::de_l_ecart(au.moins(depuis))
+    }
+
+    /// Un ecart de jours ; negatif, aucun. De 0001-01-01 a 9999-12-31, il tient sur 32 bits.
+    fn de_l_ecart(n: i64) -> Duree<EnJours> {
         Duree::de(if n > 0 { n as u32 } else { 0 })
+    }
+
+    /// Ses jours, comptes depuis un instant (`paris::Moment::jours_plus_tot`).
+    pub(crate) fn nombre_de_jours(self) -> i64 {
+        i64::from(self.0)
     }
 
     /// UN JOUR PAR SEMAINE COMMENCEE (C. trav. L. 1242-10 : « un jour par semaine »).

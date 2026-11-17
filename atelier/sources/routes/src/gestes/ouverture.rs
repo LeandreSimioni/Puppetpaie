@@ -32,6 +32,7 @@ use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
+use socle::date::{Duree, EnJours};
 use socle::echec::R;
 use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
@@ -85,8 +86,8 @@ pub struct Options {
     pub signatures: bool,
     /// Ce qui part chez l'editeur (incidents, reponses aux signalements).
     pub filet: bool,
-    /// Jusqu'ou en arriere on cherche les retours.
-    pub jours: Duration,
+    /// Jusqu'ou en arriere on cherche les retours : des jours de 24 heures avant maintenant (`Moment::jours_plus_tot`).
+    pub jours: Duree<EnJours>,
     /// Le dossier racine dans le Drive.
     pub racine_drive: String,
     /// Ne rien refaire si la derniere ouverture est plus recente (zero : toujours).
@@ -104,7 +105,7 @@ pub struct Options {
 }
 
 /// Les trente jours de retours qu'un passage ordinaire releve.
-pub const TRENTE_JOURS: Duration = Duration::from_secs(30 * 86_400);
+pub const TRENTE_JOURS: Duree<EnJours> = Duree::jours(30);
 
 impl Options {
     /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours.
@@ -145,8 +146,8 @@ pub struct ChargeOuverture {
     pub incidents_editeur: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sauvegarde_seule: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::jours_opt")]
-    pub jours: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "Duree::en_jours_opt", serialize_with = "Duree::ecrite_en_jours_opt")]
+    pub jours: Option<Duree<EnJours>>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::minutes_opt")]
     pub pas_avant: Option<Duration>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -960,7 +961,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
             let fin = socle::temps::secondes();
-            match fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
+            match fin.jours_plus_tot(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -995,7 +996,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             let fin = socle::temps::secondes();
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
+            let rel = fin.jours_plus_tot(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
                 Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });

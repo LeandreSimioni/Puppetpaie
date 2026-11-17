@@ -143,11 +143,6 @@ pub fn quotient(n: u128, d: u128, chiffres: u32) -> Option<String> {
     Some(format!("{}.{:0width$}", q / echelle, q % echelle, width = chiffres as usize))
 }
 
-/// Une duree en secondes, au dixieme, la moitie loin de zero : un nombre a virgule qu'une reponse rend (« 1.2 »).
-pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
-    let ns = Decimal::from_i128_with_scale(d.as_nanos() as i128, 9);
-    ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
-}
 
 /// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs
 /// (l'espace, l'insecable, l'insecable fine) separent les milliers et ne comptent pas ; avec une virgule, elle est la

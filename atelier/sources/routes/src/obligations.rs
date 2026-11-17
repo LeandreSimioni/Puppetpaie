@@ -726,11 +726,11 @@ impl Obligation {
             None if butoir == aujourdhui => (EtatDObligation::AFaire, format!("À faire au plus tard {} : c'est aujourd'hui.", quand_butoir)),
             None if butoir > aujourdhui => (
                 EtatDObligation::AFaire,
-                format!("À faire au plus tard {} : il reste {}.", quand_butoir, socle::date::Duree::du_au(&lendemain(aujourdhui)?, &butoir)),
+                format!("À faire au plus tard {} : il reste {}.", quand_butoir, socle::date::Duree::ecoulee(&aujourdhui, &butoir)),
             ),
             None => (
                 EtatDObligation::EnRetard,
-                format!("En retard de {} : c'était à faire au plus tard {}.", socle::date::Duree::du_au(&lendemain(butoir)?, &aujourdhui), quand_butoir),
+                format!("En retard de {} : c'était à faire au plus tard {}.", socle::date::Duree::ecoulee(&butoir, &aujourdhui), quand_butoir),
             ),
         };
         self.poser_l_etat(etat);

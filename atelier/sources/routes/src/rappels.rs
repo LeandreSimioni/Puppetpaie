@@ -1560,12 +1560,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
         } else if jour == aujourdhui {
             "L'embauche est aujourd'hui : la DPAE doit partir avant la première heure de travail.".to_string()
         } else {
-            let reste = jour.moins(&aujourdhui);
-            format!(
-                "Elle doit partir avant la première heure de travail — il reste {} jour{}.",
-                reste,
-                if reste == 1 { "" } else { "s" }
-            )
+            format!("Elle doit partir avant la première heure de travail — il reste {}.", socle::date::Duree::ecoulee(&aujourdhui, &jour))
         };
         let mut r = Echeance::nouveau(
             GenreDEcheance::Dpae,

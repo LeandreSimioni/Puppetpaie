@@ -208,7 +208,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
             en_ligne: None,
             detail: None,
             page_de_veille: s.page_de_veille.clone(),
-            age_jours: socle::date::Duree::du_au(&s.releve_le.plus_jours(1)?, aujourdhui),
+            age_jours: socle::date::Duree::ecoulee(&s.releve_le, aujourdhui),
             extra: Extra { en_vigueur: s.en_vigueur.clone(), etendu_le: s.etendu_le.clone(), verification_comment: s.verification_comment.clone() },
             kali: s.kali.clone(),
             evenements: Vec::new(),

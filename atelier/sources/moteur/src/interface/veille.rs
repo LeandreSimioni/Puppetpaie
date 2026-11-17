@@ -21,7 +21,7 @@ use routes::enveloppe::{Charge, Refus};
 pub struct Veille {
     racine: PathBuf,
     pub minutes: u64,
-    jours: std::time::Duration,
+    jours: socle::date::Duree<socle::date::EnJours>,
     erreur: Mutex<Option<String>>,
     en_cours: AtomicBool,
     sauvegarde_en_cours: AtomicBool,

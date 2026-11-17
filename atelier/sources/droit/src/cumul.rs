@@ -184,8 +184,8 @@ impl Position {
 
     /// Les jours qui restent avant la fin de la fenetre, du lendemain d'`aujourdhui` a sa fin ; aucun quand elle est
     /// passee ou finit aujourd'hui.
-    pub fn jours_restants(&self, aujourdhui: Jour) -> R<Duree<EnJours>> {
-        Ok(Duree::du_au(&aujourdhui.plus_jours(1)?, &self.periode.fin()))
+    pub fn jours_restants(&self, aujourdhui: Jour) -> Duree<EnJours> {
+        Duree::ecoulee(&aujourdhui, &self.periode.fin())
     }
 
     /// Les cachets qu'il manque pour le seuil, le dernier entame compte ; un cachet de zero heure refuse.

@@ -42,9 +42,10 @@ use crate::suites::Suites;
 use socle::echec::Echec;
 use socle::mois::Mois;
 
-/// Trois mois de releve : la retention des documents de la plate-forme (guide API v6.8, §8.2). 92 jours couvrent trois
-/// mois civils, quels qu'ils soient.
-pub const JOURS_DE_RELEVE: std::time::Duration = std::time::Duration::from_secs(92 * 86_400);
+/// Trois mois de releve : « Les retours disponibles au téléchargement ont une période de rétention de 3 mois par le SI
+/// DSN » (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`
+/// l. 5115-5116). Une inference : 92 jours couvrent trois mois, quels qu'ils soient (31 + 31 + 30).
+pub const JOURS_DE_RELEVE: socle::date::Duree<socle::date::EnJours> = socle::date::Duree::jours(92);
 
 /// Ce que le moteur sait du dernier ordre pris, et ce qu'il doit en dire.
 #[derive(Debug, Clone)]
@@ -147,7 +148,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
         None
     } else {
         let fin = socle::temps::secondes();
-        match fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
+        match fin.jours_plus_tot(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
             Ok(r) if r.incidents.is_empty() => None,
             Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
             Err(e) => Some(e.phrase),

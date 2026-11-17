@@ -66,6 +66,7 @@ pub mod textes;
 pub use textes::{Domaine, Texte, TEXTES};
 
 use socle::echec::{Echec, R};
+use socle::temps::ecrit::secondes_dites;
 
 pub const BASE: &str = "https://echanges.dila.gouv.fr/OPENDATA/LEGI/";
 pub const GLOBAL: &str = "Freemium_legi_global_20250713-140000.tar.gz";
@@ -265,14 +266,6 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
 
 // ------------------------------------------------------------------ moissonner
 
-/// Une duree en secondes entieres, la moitie au pair, pour le dire.
-pub(crate) fn secondes(d: std::time::Duration) -> String {
-    match socle::num::quotient(d.as_nanos(), 1_000_000_000, 0) {
-        Some(t) => t,
-        None => unreachable!("une seconde n'est pas nulle"),
-    }
-}
-
 /// Fait defiler une archive et garde les articles en vigueur ; rend (fichiers d'article des textes suivis, duree).
 ///
 /// `tar` : une archive ouverte (en flux pour la globale, en memoire pour une livraison). `tous` : garder TOUS les articles
@@ -436,7 +429,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         let etat = EtatLegi { changes: Vec::new(), construit_le: jour, global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
         let mut ent: EntrepotLegi = Entrepot::neuf(&dossier, etat);
         let (vus, sec) = passer_le_global(&mut ent, &mut journal, source, None)?;
-        dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes(sec), ent.articles.len()));
+        dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes_dites(sec), ent.articles.len()));
         ent.sauver(jour)?;
         ent
     };
@@ -518,7 +511,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
 fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: Jour) -> R<()> {
     dire(&format!("== textes ajoutes depuis la construction : {} ==", absents.join(", ")));
     let (vus, sec) = passer_le_global(ent, journal, source, Some(absents))?;
-    dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes(sec)));
+    dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes_dites(sec)));
     let mut lues: Vec<LivraisonDila> = ent.lues().into_iter().collect();
     lues.sort();
     let urls: Vec<String> = lues.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
@@ -787,7 +780,7 @@ fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<Ha
     dire(&format!(
         "  {} fichiers parcourus en {}s ; {}/{} versions anterieures retrouvees",
         vus,
-        secondes(t0.elapsed()),
+        secondes_dites(t0.elapsed()),
         trouves.len(),
         vise.len()
     ));

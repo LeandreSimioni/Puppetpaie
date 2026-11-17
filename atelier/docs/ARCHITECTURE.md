@@ -205,7 +205,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
-| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, les trente jours de retours qu'un passage relève, l'âge d'un doublon) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
+| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
 **Le détail**
 
@@ -252,10 +252,13 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa porte (`en_jours`, `en_mois`, et leurs facultatives ;
   écrite par `ecrite_en_jours`, `ecrite_en_jours_opt`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire` ; dite en abrégé, « 3 j », par `dite_en_abrege` ; dans la
   charge d'une route, `en_jours` lit aussi des jours tapés, par la lecture du nombre tapé : la période d'essai d'une
-  carte, les jours déjà indemnisés d'un arrêt). Elle se compte depuis un jour,
+  carte, les jours déjà indemnisés d'un arrêt, les jours de retours d'une ouverture). Elle se compte depuis un jour,
   dans l'une ou l'autre unité (`Jour::apres`, `Jour::avant`), en mois depuis un mois (`Mois::apres`, `Mois::avant`) ou
   une année (`Annee::les_precedentes`) ; des mois se disent en jours depuis un jour (`en_jours_depuis`) ; elle se
-  mesure d'une suite de jours (`Duree::du_au`) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,
+  mesure d'une suite de jours (`Duree::du_au`), ou des jours écoulés entre deux jours, du lendemain du premier au second
+  (`Duree::ecoulee` : « il reste 3 jours », l'âge d'une source) ; des jours de vingt-quatre heures, elle recule ou
+  avance un instant (`Moment::jours_plus_tot`, `jours_plus_tard` : les jours de retours qu'un relevé remonte, trente
+  pour un passage, quatre-vingt-douze pour l'ordre d'un signalement ; la montre portée au jour posé) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,
   ce que le compilateur tient ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de
   maintien de salaire (`droit::maintien::DureeDUneTranche`) est une durée de droit en jours ou en mois, ou « tant que la
   caisse verse ses indemnités ».
@@ -307,9 +310,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
 - **durée mesurée** : un temps écoulé, de la montre ou entre deux instants (`Moment::depuis`, `plus_duree`,
-  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Ses écritures sont les
-  modules de `socle::temps::ecrit` (en secondes au dixième, en jours ou en minutes entiers), dites par l'attribut serde
-  du champ ; dans une phrase, `heures_dites` (« 12 h »). `envois::ligne::Durees`, à unifier, est des millisecondes : une
+  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Ses écritures sont toutes
+  dans `socle::temps::ecrit` : dans un fichier, en secondes au dixième ou en minutes entières, dites par l'attribut
+  serde du champ ; dans une phrase, en secondes au dixième ou entières, à la seconde (« 1 h 12 min 5 s ») ou en heures
+  (`heures_dites`, « 12 h »). `envois::ligne::Durees`, à unifier, est des millisecondes : une
   écriture.
 
 **L'argent et les quantités**

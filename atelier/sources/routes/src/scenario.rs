@@ -376,7 +376,7 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
 
 /// L'instant d'une seconde apres `t`.
 fn seconde_apres(t: Moment) -> R<Moment> {
-    t.plus(1).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))
+    t.plus_duree(std::time::Duration::from_secs(1)).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))
 }
 
 /// Les instants de chaque geste, dans l'ordre du fichier : celui qu'il ecrit, ou une seconde apres le precedent. Un
@@ -932,7 +932,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                         r.routes_rejouees,
                         r.lectures_ecartees,
                         r.autres_compagnies,
-                        socle::num::secondes_au_dixieme(debut.elapsed())
+                        socle::temps::ecrit::secondes_au_dixieme_dites(debut.elapsed())
                     );
                     for e in &r.ecarts {
                         dire!("ECART  {}", e);
@@ -947,7 +947,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         }
         ["verifier", sc, inst, travail] => match verifier(Path::new(sc), Path::new(inst), Path::new(travail)) {
             Ok(e) if e.is_empty() => {
-                dire!("Le rejeu refait la compagnie du banc, fichier pour fichier ({} s).", socle::num::secondes_au_dixieme(debut.elapsed()));
+                dire!("Le rejeu refait la compagnie du banc, fichier pour fichier ({} s).", socle::temps::ecrit::secondes_au_dixieme_dites(debut.elapsed()));
                 0
             }
             Ok(e) => {
@@ -963,7 +963,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         },
         ["livrer", sc, dest] => match livrer(Path::new(sc), Path::new(dest), options.jusqu_au) {
             Ok(r) => {
-                dire!("{} : {} route(s) rejouee(s), {} geste(s) d'apres le jour laisse(s) a l'horloge, en {} s.", dest, r.routes_rejouees, r.laisses, socle::num::secondes_au_dixieme(debut.elapsed()));
+                dire!("{} : {} route(s) rejouee(s), {} geste(s) d'apres le jour laisse(s) a l'horloge, en {} s.", dest, r.routes_rejouees, r.laisses, socle::temps::ecrit::secondes_au_dixieme_dites(debut.elapsed()));
                 0
             }
             Err(m) => {

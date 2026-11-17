@@ -1123,19 +1123,6 @@ fn disque_libre(p: &Path) -> Lu<u64> {
     }
 }
 
-/// « 1 h 12 min 5 s ».
-fn duree_lisible(d: Duration) -> String {
-    let s = d.as_secs();
-    let (h, m, s) = (s / 3600, (s % 3600) / 60, s % 60);
-    if h > 0 {
-        format!("{} h {} min {} s", h, m, s)
-    } else if m > 0 {
-        format!("{} min {} s", m, s)
-    } else {
-        format!("{} s", s)
-    }
-}
-
 /// Un chemin du poste, sans le nom de la session : le dossier qui suit `Users` ou `home` devient « [session] ».
 fn chemin_sans_session(p: &Path) -> String {
     let s = p.to_string_lossy().into_owned();
@@ -1224,7 +1211,7 @@ pub fn machine(racine: &Path) -> Machine {
             Err(e) => e.phrase,
         },
         langue_systeme: langue,
-        duree_lance: duree_lisible(demarrage().elapsed()),
+        duree_lance: socle::temps::ecrit::dite_a_la_seconde(demarrage().elapsed()),
         mises_a_jour,
         page: page(),
     }
