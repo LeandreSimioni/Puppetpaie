@@ -41,6 +41,8 @@ use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
 use socle::grandeurs::{lu, Cachets, Heures, Jours};
 use socle::mois::Mois;
+use socle::piece::format::Chiffres;
+use socle::piece::Zone;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 
@@ -359,7 +361,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     let jour = |nom: &str| v(nom).and_then(|t: String| socle::piece::Zone::lue(&t, socle::piece::format::JourEcrit).valeur());
     let ecrit = |nom: &str| v(nom).map(|t| t.replace([' ', '\u{a0}'], ""));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
-    let chiffres = |nom: &str| v(nom).and_then(|t: String| chiffres_seuls(&t));
+    let chiffres = |nom: &str| v(nom).and_then(|t: String| Zone::lue(&t, Chiffres).valeur());
     let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
         (Some(a), Some(m), Some(j)) => match (a.try_into(), u32::try_from(m), u32::try_from(j)) {
             (Ok(a), Ok(m), Ok(j)) => Jour::nouveau(a, m, j),
@@ -455,8 +457,8 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             fin_contrat: Some(fin),
             en_cours: false,
             periode: periode_attestee(Some(debut.mois_civil()), Some(debut), Some(fin), false),
-            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| chiffres_seuls(&t).and(lu::texte_entier(&t))),
-            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| chiffres_seuls(&t).and(lu::texte_entier(&t))),
+            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| Zone::lue(&t, Chiffres).valeur().and(lu::texte_entier(&t))),
+            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| Zone::lue(&t, Chiffres).valeur().and(lu::texte_entier(&t))),
             cachets_groupes: None,
             jours: None,
             brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::grandeurs::lu::texte(&t)),
@@ -850,12 +852,7 @@ fn entier(t: &str) -> Option<&str> {
         Some(_) => return None,
         None => t,
     };
-    chiffres_seuls(chiffres).is_some().then_some(chiffres)
-}
-
-/// L'entier qu'une case du formulaire ecrit en chiffres seuls, ou `None` : la porte de sa lecture.
-fn chiffres_seuls(t: &str) -> Option<i64> {
-    socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur()
+    Zone::lue(chiffres, Chiffres).valeur().is_some().then_some(chiffres)
 }
 
 /// La grandeur qu'un nombre entier du formulaire ecrit en chiffres seuls (`entier`) : la porte de sa lecture.
