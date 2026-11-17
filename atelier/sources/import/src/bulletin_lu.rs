@@ -1073,9 +1073,11 @@ impl Cumul {
     /// lecture, ou chaque nombre prend sa grandeur. Des cachets a virgule ne sont pas un nombre de cachets : la page ne se
     /// lit pas, et le refus le dit (`socle::forme::Nombre::cachets`).
     fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Result<Cumul, Refus> {
-        let cachets = |d: Option<Decimal>| d.map(|d| socle::forme::Nombre(d).cachets()).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e)));
         Ok(match nom {
-            NomDeCumul::Cachets => Cumul::Cachets(Colonnes { periode: cachets(periode)?, cumul: cachets(cumul)? }),
+            NomDeCumul::Cachets => {
+                let [periode, cumul] = [periode, cumul].map(|d| d.map(|d| socle::forme::Nombre(d).cachets()).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e))));
+                Cumul::Cachets(Colonnes { periode: periode?, cumul: cumul? })
+            }
             NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
             NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
             NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
