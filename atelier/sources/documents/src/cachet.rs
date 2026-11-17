@@ -36,17 +36,11 @@
 
 use droit::fiche::Lue;
 use fabrique_pdf::mesure::{mesure, Mesure};
-use rust_decimal::RoundingStrategy;
-use socle::num::Decimal;
 
 /// Une coordonnee du dessin, ecrite a six chiffres significatifs (au pair a egalite), sans zero inutile : `12.3457`,
 /// `300`, `0`. Le dessin reste entre 1e-4 et 1e6 : la notation positionnelle suffit.
 fn format_g(x: Mesure) -> String {
-    let d = Decimal::new(x.en_millioniemes(), 6);
-    match d.round_sf_with_strategy(6, RoundingStrategy::MidpointNearestEven) {
-        Some(r) => r.normalize().to_string(),
-        None => unreachable!("une mesure tient dans un decimal : {}", x),
-    }
+    x.a_six_chiffres().to_string()
 }
 
 /// L'encre d'un tampon, et la geometrie du dessin. Le rapport 2:1 est celui

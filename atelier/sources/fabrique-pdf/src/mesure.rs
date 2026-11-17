@@ -114,6 +114,21 @@ impl Mesure {
         Mesure((quotient_arrondi(self.0 as i128, pas) * pas) as i64)
     }
 
+    /// A six chiffres significatifs, la moitié au pair (`12.345678` : `12.3457`) : une coordonnée d'un dessin SVG,
+    /// écrite ensuite sans zéro inutile (`Display`).
+    pub fn a_six_chiffres(self) -> Mesure {
+        let a = self.0.unsigned_abs();
+        let chiffres = if a == 0 { 1 } else { a.ilog10() + 1 };
+        if chiffres <= 6 {
+            return self;
+        }
+        let pas = 10u64.pow(chiffres - 6);
+        let (q, r) = (a / pas, a % pas);
+        let q = if 2 * r > pas || (2 * r == pas && q % 2 == 1) { q + 1 } else { q };
+        let v = (q * pas) as i64;
+        Mesure(if self.0 < 0 { -v } else { v })
+    }
+
     pub fn abs(self) -> Mesure {
         Mesure(self.0.saturating_abs())
     }

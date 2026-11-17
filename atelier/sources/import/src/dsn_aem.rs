@@ -406,11 +406,9 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                 continue;
             };
             let brut_texte = champ(&l, 659, 668);
-            // La zone ecrit le brut en centimes, un entier : il se lit en nombre a sa porte, puis en euros (cent centimes
-            // font un euro : le meme entier, a deux decimales).
-            let centimes = socle::num::entier_lu(&brut_texte).and_then(|c| socle::num::Decimal::try_from_i128_with_scale(c, 2).ok());
-            let Some(brut) = centimes.map(socle::grandeurs::Montant::du_decimal) else {
-                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::num::illisible(&brut_texte), a_part: None });
+            // La zone ecrit le brut en centimes, un entier : il se lit en euros a sa porte.
+            let Some(brut) = socle::grandeurs::lu::en_centimes(&brut_texte) else {
+                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::forme::illisible(&brut_texte), a_part: None });
             };
             let cle = vec![
                 nir_ecrit,

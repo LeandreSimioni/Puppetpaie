@@ -19,7 +19,6 @@ use serde::Deserialize;
 use socle::forme::Court;
 use socle::grandeurs::lu::court;
 use socle::grandeurs::{Coefficient, HeuresParUnite, Montant, MontantUnitaire, Taux};
-use socle::num::Decimal;
 use socle::mois::Annee;
 
 /// Les notes d'une valeur, communes a chaque type : elles ne se lisent pas au calcul.
@@ -913,7 +912,7 @@ impl MajorationCaisseConges {
     /// La majoration ecrite `texte`, « numerateur/denominateur » : la porte de sa lecture.
     pub fn lire(texte: &str) -> socle::echec::R<MajorationCaisseConges> {
         let (n, d) = texte.split_once('/').ok_or_else(|| socle::refus!("fraction illisible : {}", socle::fichiers::repr(texte)))?;
-        let lire = |s: &str| <Decimal as std::str::FromStr>::from_str(s).map(Coefficient::du_decimal).map_err(|_| socle::echec::refus(socle::num::illisible(s)));
+        let lire = |s: &str| socle::grandeurs::lu::ecrite::<Coefficient>(s).map_err(|_| socle::echec::refus(socle::forme::illisible(s)));
         Ok(MajorationCaisseConges { numerateur: lire(n)?, denominateur: lire(d)? })
     }
 }
@@ -921,7 +920,8 @@ impl MajorationCaisseConges {
 impl std::fmt::Display for MajorationCaisseConges {
     /// Reecrite comme lue : la porte de son ecriture.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.numerateur.decimal(), self.denominateur.decimal())
+        use socle::grandeurs::ecrit::texte::dit;
+        write!(f, "{}/{}", dit(self.numerateur), dit(self.denominateur))
     }
 }
 
@@ -1197,8 +1197,8 @@ impl Lu {
 impl std::fmt::Display for Lu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Lu::Taux(t) => write!(f, "{}", socle::num::court(t.decimal())),
-            Lu::Parametre(p) => write!(f, "{}", p.decimal()),
+            Lu::Taux(t) => write!(f, "{}", socle::grandeurs::ecrit::court::dit(*t)),
+            Lu::Parametre(p) => write!(f, "{}", socle::grandeurs::ecrit::texte::dit(*p)),
         }
     }
 }

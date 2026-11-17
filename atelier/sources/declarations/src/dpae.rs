@@ -735,7 +735,7 @@ fn horodatage_relu(h: &str) -> Option<Moment> {
     if h.len() != 12 || !h.is_ascii() {
         return None;
     }
-    let heure = HeureDuJour::lue(socle::num::entier_de_chiffres(&h[8..10])?, socle::num::entier_de_chiffres(&h[10..12])?)?;
+    let heure = socle::piece::Zone::lue(&h[8..12], socle::piece::format::Hhmm).valeur()?;
     let j = socle::piece::Zone::lue(&h[..8], socle::piece::format::Jjmmaaaa).valeur()?;
     Moment::a_paris(j, heure).filter(|m| m.jour_de_paris() == j && m.heure_de_paris() == heure)
 }

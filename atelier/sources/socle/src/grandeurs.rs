@@ -1354,6 +1354,13 @@ pub mod lu {
         }
     }
 
+    /// LE MONTANT QU'UNE ZONE D'UNE PIECE ECRIT EN CENTIMES ENTIERS (`num::entier_lu` : le brut de l'AEM, positions
+    /// 659-668, `000123456`) : cent centimes font un euro, le meme entier a deux decimales ; la porte de sa lecture.
+    /// `None` : le texte n'est pas un entier, ou il deborde.
+    pub fn en_centimes(t: &str) -> Option<crate::grandeurs::Montant> {
+        num::entier_lu(t).and_then(|c| Decimal::try_from_i128_with_scale(c, 2).ok()).map(crate::grandeurs::Montant)
+    }
+
     /// LES DEUX GRANDEURS QU'UN MEME TEXTE ENTIER D'UNE PIECE PEUT DIRE (la case « NB JOURS OU CACHETS » d'un
     /// certificat, qui ne dit pas laquelle), lu une fois comme `texte_entier` ; `None` : le texte n'est pas un entier.
     pub fn texte_entier_en_deux<A: Grandeur, B: Grandeur>(t: &str) -> Option<(A, B)> {
@@ -1510,6 +1517,17 @@ pub mod ecrit {
         }
 
         ecriture!();
+    }
+
+    /// En texte, dans sa forme la plus courte, une decimale au moins (`24` et `24.00` s'ecrivent `24.0`, `0.10` s'ecrit
+    /// `0.1`), comme `forme::court` la lit : un taux d'un effet du bareme rendu tel que le bareme le lit.
+    pub mod court {
+        use crate::grandeurs::Grandeur;
+
+        /// La grandeur telle qu'une phrase la cite (`7.0`).
+        pub fn dit<G: Grandeur>(g: G) -> String {
+            crate::num::court(g.en_decimal()).to_string()
+        }
     }
 
     /// En texte, sans zero inutile (`12.5`, `12`).

@@ -10,21 +10,13 @@ use socle::grandeurs::{Coefficient, Heures, Montant};
 
 const ORACLE: &str = "calcul-pieces.json";
 
-/// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
-fn decimal(v: &Value) -> socle::echec::R<rust_decimal::Decimal> {
-    match v {
-        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
-            Ok(l) => l.decimal(),
-            Err(e) => match e {},
-        },
-        autre => Err(socle::refus!("nombre attendu, lu {}", autre)),
-    }
-}
-
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
 fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
     Ok(match v {
-        Value::Number(_) => Value::String(socle::num::nombre(decimal(v)?)),
+        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
+            Ok(l) => Value::String(l.sans_zero()?),
+            Err(e) => match e {},
+        },
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
         Value::Object(o) => Value::Object(
             o.iter()

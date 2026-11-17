@@ -1182,7 +1182,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",
-            anciennete.annees_au_dixieme(), premier.anciennete_annees.annees())) });
+            anciennete.annees_au_dixieme(), premier.anciennete_annees.annees_ecrites())) });
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {

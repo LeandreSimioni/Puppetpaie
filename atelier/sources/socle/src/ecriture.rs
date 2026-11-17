@@ -122,6 +122,12 @@ impl ValeurDeCase {
         }
     }
 
+    /// DISENT-ELLES LE MEME NOMBRE ? `None` quand l'une ou l'autre n'en dit pas (`nombre`) ; `12`, `12.0` et « 12.00 »
+    /// disent le meme.
+    pub fn meme_nombre(&self, autre: &ValeurDeCase) -> Option<bool> {
+        Some(self.nombre()? == autre.nombre()?)
+    }
+
     /// LA VALEUR EN MOTS, pour une phrase : un texte, un nombre ecrit, oui ou non, des mots separes, les cases d'une
     /// structure (« cle valeur »), le nombre de lignes d'une liste de structures.
     pub fn en_mots(&self) -> String {

@@ -865,9 +865,9 @@ fn meme(a: &ValeurDeCase, b: &ValeurDeCase, lisibles: &[CaseDeFiche]) -> bool {
     let simple = |v: &ValeurDeCase| matches!(v.ecrite(), MotEcrit::Mot(_) | MotEcrit::Nombre(_) | MotEcrit::OuiNon(_));
     simple(a)
         && simple(b)
-        && match (a.nombre(), b.nombre()) {
-            (Some(x), Some(y)) => x == y,
-            _ => a.ecrite().mot().is_some() && a.ecrite() == b.ecrite(),
+        && match a.meme_nombre(b) {
+            Some(meme) => meme,
+            None => a.ecrite().mot().is_some() && a.ecrite() == b.ecrite(),
         }
 }
 

@@ -4,17 +4,13 @@
 use rust_decimal::prelude::*;
 use crate::d28::P;
 use crate::echec::{refus_avec, Lieu, R};
+use crate::forme::illisible;
 pub use rust_decimal::Decimal;
 
 /// Le decimal d'un nombre ecrit en texte (`"12.5"`, `" 1e3 "`), blancs autour ignores.
 #[track_caller]
 pub fn dec_texte(s: &str) -> R<Decimal> {
     match Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())) { Ok(d) => Ok(d), Err(e) => Err(refus_avec(illisible(s), Lieu { detail: Some(e.to_string()), ..Default::default() })) }
-}
-
-/// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
-pub fn illisible(t: &str) -> String {
-    format!("nombre illisible : {}", crate::fichiers::repr(t))
 }
 
 /// UN ENTIER ECRIT EN CHIFFRES SEULS, de un a dix-huit : sa valeur, comptee chiffre a chiffre ; tout autre texte (vide, un

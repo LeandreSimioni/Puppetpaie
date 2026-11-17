@@ -725,7 +725,7 @@ impl Anciennete {
         }
         match num::div(self.0, pas.0).floor().to_u32() {
             Some(n) => Ok(n),
-            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+            None => Err(refus(crate::forme::illisible(&self.0.to_string()))),
         }
     }
 
@@ -819,11 +819,6 @@ impl Anciennete {
         a.to_string()
     }
 
-    /// DITE EN ANNEES, a vingt-huit chiffres (`d28`) : l'unite des baremes d'une convention (`droit::clauses`).
-    pub fn annees_d28(self) -> crate::d28::P {
-        crate::d28::P::depuis(self.0).div(crate::d28::P::entier(12))
-    }
-
     /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
     /// d'anciennete (`droit::clauses`). Le compte se fait a vingt-huit chiffres (`d28`), sans arrondi entre ses pas ; son
     /// resultat est entier.
@@ -849,6 +844,31 @@ impl Anciennete {
     /// Le nombre de ses mois, a la porte d'une ecriture.
     pub fn mois(self) -> Decimal {
         self.0
+    }
+
+    /// TOUTES SES ANNEES, chacune a `par_annee` mois de salaire (un bareme par bandes, un prorata, la mise a la retraite
+    /// d'une convention) : annees x coefficient = coefficient, des mois de salaire. Par tranches :
+    /// `par_annee_dans_la_tranche`.
+    pub fn par_annee(self, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::Coefficient {
+        crate::grandeurs::Coefficient::du_decimal(num::mul(self.annees(), par_annee.decimal()))
+    }
+
+    /// SES MOIS ECRITS TELS QU'ILS SONT, le point decimal, son echelle gardee (`23.4838709677419354838709677`, `24`) :
+    /// l'anciennete qu'une phrase d'une convention cite (« aucune tranche … ne couvre 23.48… mois »).
+    pub fn mois_ecrits(self) -> String {
+        self.0.to_string()
+    }
+
+    /// SES ANNEES ECRITES TELLES QU'ELLES SONT, a douze mois l'annee, le point decimal (`2`, `0.5`) : le seuil d'une
+    /// indemnite cite dans une phrase.
+    pub fn annees_ecrites(self) -> String {
+        self.annees().to_string()
+    }
+
+    /// Ecrite en mois, en texte, son echelle gardee (`mois_ecrits`), comme sa lecture la relit (`Deserialize`) :
+    /// `#[serde(serialize_with = "socle::date::Anciennete::ecrite_en_mois")]`.
+    pub fn ecrite_en_mois<S: serde::Serializer>(a: &Anciennete, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&a.mois_ecrits())
     }
 
     /// SES MOIS DITS DANS UNE PHRASE, tels qu'ils sont, la virgule decimale, sans zero inutile (« 6 », « 3,5 »).

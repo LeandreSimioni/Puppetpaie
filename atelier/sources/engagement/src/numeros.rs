@@ -100,11 +100,12 @@ impl NumeroContrat {
             return None;
         }
         // Deux chiffres : de 2000 a 2099, toujours une annee du calendrier.
-        let annee = match Annee::nouvelle(2000 + socle::num::entier_de_chiffres(yy)?) {
+        let chiffres = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur();
+        let annee = match Annee::nouvelle(2000 + chiffres(yy)?) {
             Ok(a) => a,
             Err(_) => return None,
         };
-        Some((annee, u32::try_from(socle::num::entier_de_chiffres(rang)?).ok()?))
+        Some((annee, u32::try_from(chiffres(rang)?).ok()?))
     }
 
     /// Son rang dans l'annee `annee`, s'il est un numero que `former` a donne cette annee-la.
@@ -173,9 +174,10 @@ impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
 impl NumeroDeBulletin {
     /// Le numero ecrit `texte` : des chiffres, `/`, l'annee en quatre chiffres ; toute autre forme se refuse.
     pub fn lire(texte: &str) -> R<NumeroDeBulletin> {
+        let chiffres = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur();
         let lu = texte.split_once('/').and_then(|(n, an)| {
-            let rang = u32::try_from(socle::num::entier_de_chiffres(n)?).ok()?;
-            let annee = if an.len() == 4 { socle::num::entier_de_chiffres(an) } else { None }?;
+            let rang = u32::try_from(chiffres(n)?).ok()?;
+            let annee = if an.len() == 4 { chiffres(an) } else { None }?;
             Some((rang, annee))
         });
         match lu {

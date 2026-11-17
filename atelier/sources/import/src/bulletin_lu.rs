@@ -152,10 +152,10 @@ fn canon(texte: &str) -> String {
 /// decimal s'il n'y a pas de virgule (« 0.000 % »). Le signe moins en tete. La porte d'un nombre de la page : il est un
 /// nombre lu (`socle::forme::Nombre`), que sa place lit dans sa grandeur (`Imprime::grandeur`, `Imprime::cachets`).
 pub fn lire_nombre(texte: &str) -> Option<Imprime> {
-    let t = texte.trim();
-    let (negatif, t) = match t.strip_prefix('-') {
-        Some(r) => (true, r),
-        None => (false, t),
+    let ecrit = texte.trim();
+    let t = match ecrit.strip_prefix('-') {
+        Some(r) => r,
+        None => ecrit,
     };
     if !t.starts_with(|c: char| c.is_ascii_digit()) || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '.' | ' ')) {
         return None;
@@ -163,7 +163,7 @@ pub fn lire_nombre(texte: &str) -> Option<Imprime> {
     if t.ends_with([',', '.']) {
         return None;
     }
-    socle::num::decimal_a_virgule(t).map(|d| Imprime(if negatif { -d } else { d }))
+    Imprime::a_virgule(ecrit)
 }
 
 /// Le texte sans son signe moins de tete.

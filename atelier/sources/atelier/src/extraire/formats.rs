@@ -360,18 +360,12 @@ fn cle(c: &Cellule) -> R<String> {
     Ok(match c {
         Cellule::Texte(s) => format!("t{}", s),
         Cellule::Entier(i) => format!("n{}", i),
-        Cellule::AVirgule(n) => match entier_exact(n)? {
+        Cellule::AVirgule(n) => match n.entier_exact()? {
             Some(i) => format!("n{}", i),
             None => format!("f{}", n.ecrit()),
         },
         Cellule::Booleen(b) => format!("n{}", *b as i64),
     })
-}
-
-/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None` ; un nombre qui ne tient pas en decimal refuse.
-fn entier_exact(n: &socle::forme::NombreLu) -> R<Option<i64>> {
-    use rust_decimal::prelude::ToPrimitive;
-    Ok(Some(n.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
 }
 
 /// La valeur de la derniere colonne titree `nom` (une ligne plus courte que l'en-tete se complete de vides), ou `None`.
@@ -391,10 +385,9 @@ fn champ_exige<'a>(
 
 /// L'entier d'une case : un entier, un nombre a virgule tronque, un booleen (0 ou 1), un texte d'entier.
 fn entier_de(c: &Cellule) -> R<i64> {
-    use rust_decimal::prelude::ToPrimitive;
     match c {
         Cellule::Entier(i) => Ok(*i),
-        Cellule::AVirgule(n) => n.decimal()?.trunc().to_i64().ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
+        Cellule::AVirgule(n) => n.partie_entiere()?.ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
         Cellule::Booleen(b) => Ok(*b as i64),
         Cellule::Texte(s) => {
             strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))

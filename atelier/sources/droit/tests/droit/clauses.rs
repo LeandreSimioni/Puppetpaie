@@ -5,14 +5,13 @@
 //! fiche du releve. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit les references.
 
 use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin, Rendu};
-use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
+use crate::outils::typee::lu;
+use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche};
 use droit::fiche::{ChampsSalarie, Idcc, Statut};
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
 use socle::echec::R;
-use socle::grandeurs::Montant;
-use socle::num::Decimal;
-use std::str::FromStr;
+use socle::grandeurs::{Coefficient, Montant};
 
 // ------------------------------------------------------------- les entrees
 
@@ -67,23 +66,23 @@ pub(crate) fn grilles() -> Grilles {
     lire_chemin(&chemin_donnee("clauses/grilles.json"))
 }
 
-pub(crate) fn dec(s: &str) -> Decimal {
-    Decimal::from_str(s).unwrap()
-}
-
 /// Le salaire de reference d'un oracle, ecrit en texte.
 fn reference_lue(s: &str) -> Montant {
     socle::grandeurs::lu::texte(s).unwrap()
 }
 
-/// L'anciennete d'un oracle, en mois.
+/// L'anciennete d'un oracle, en mois, ecrite en texte : lue par sa porte.
 fn anc(s: &str) -> Anciennete {
-    Anciennete::de_mois(dec(s))
+    lu(&socle::ecriture::json_en_ligne(s))
 }
 
-/// L'age d'un oracle, en annees.
+/// Une anciennete lue d'un nombre d'annees.
+#[derive(Deserialize)]
+struct AnneesLues(#[serde(deserialize_with = "Anciennete::en_annees")] Anciennete);
+
+/// L'age d'un oracle, en annees, ecrit en texte : lu par sa porte.
 fn age_lu(s: &str) -> Anciennete {
-    Anciennete::d_annees(dec(s))
+    lu::<AnneesLues>(&socle::ecriture::json_en_ligne(s)).0
 }
 
 /// La fiche ecrite `texte`, avec la case `cle` posee a `valeur` (un texte).
@@ -180,13 +179,13 @@ pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, mot
     g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie_dite(categorie).as_ref(), anc(a), motif_lu(motif), age.as_deref().map(age_lu)))).collect()
 }
 
-pub(crate) fn annees(g: &Grilles) -> Vec<P> {
-    g.annees.iter().map(|a| P::depuis(dec(a))).collect()
+pub(crate) fn annees(g: &Grilles) -> Vec<Anciennete> {
+    g.annees.iter().map(|a| age_lu(a)).collect()
 }
 
 /// La lecture d'une liste du bareme (`texte`), en tranches ou en bandes (`genre`), a chaque anciennete de la grille ;
 /// `None` : elle ne se lit pas ainsi.
-pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<P>> {
+pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<Coefficient>> {
     match genre {
         "tranches" => {
             let taux: Vec<Tranche> = socle::forme::lire_texte(texte, "").ok()?;
@@ -199,7 +198,7 @@ pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<
     }
 }
 
-pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Option<Anciennete>)> {
+pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(Coefficient, Option<Anciennete>)> {
     let t = c::table().unwrap();
     let conv = t.convention(idcc_dit(idcc).as_ref()).unwrap();
     let (paliers, prorata) = match section {
@@ -266,8 +265,8 @@ pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> V
 
 // ------------------------------------------------------------- les resultats ecrits
 
-fn nombre(p: Option<P>) -> Option<String> {
-    p.map(|p| p.to_string())
+fn nombre(m: Option<Coefficient>) -> Option<String> {
+    m.map(socle::grandeurs::ecrit::texte::dit)
 }
 
 /// Un montant tel que la reference l'ecrit (`1234.50`).
@@ -407,8 +406,8 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
         article: a.article,
         lectures: a.lectures.iter().map(|(n, _)| n.clone()).collect(),
         hors_primes: a.hors_primes,
-        anciennete_minimale_mois: a.anciennete_minimale_mois.mois().to_string(),
-        plafond_mois: a.plafond_mois.map(|m| m.0.to_string()),
+        anciennete_minimale_mois: a.anciennete_minimale_mois.mois_ecrits(),
+        plafond_mois: a.plafond_mois.map(socle::grandeurs::ecrit::texte::dit),
         motifs_legaux_seulement: a.motifs_legaux_seulement.map(|l| l.iter().map(|m| m.code().to_string()).collect()),
     })
 }
@@ -528,11 +527,11 @@ pub(crate) struct CasLecture {
 }
 
 pub(crate) fn empreinte_lecture(g: &Grilles, x: &CasLecture) -> String {
-    empreinte(&bloc_lecture(g, &x.liste, &x.genre).unwrap().iter().map(|p| p.to_string()).collect::<Vec<_>>())
+    empreinte(&bloc_lecture(g, &x.liste, &x.genre).unwrap().into_iter().map(socle::grandeurs::ecrit::texte::dit).collect::<Vec<_>>())
 }
 
 pub(crate) fn empreinte_paliers(g: &Grilles, (idcc, section): &(String, String)) -> String {
-    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (m.to_string(), p.map(EnAnnees))).collect::<Vec<_>>())
+    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (socle::grandeurs::ecrit::texte::dit(m), p.map(EnAnnees))).collect::<Vec<_>>())
 }
 
 /// Un palier ecrit dans une empreinte en nombre entier d'annees.

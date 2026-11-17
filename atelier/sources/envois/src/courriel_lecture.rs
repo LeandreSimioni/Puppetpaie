@@ -146,7 +146,7 @@ const MOIS: [&str; 24] = [
 
 /// Un entier signe en chiffres ASCII (ni autres ecritures de chiffres, ni `_`).
 fn entier(t: &str) -> Option<i64> {
-    socle::num::entier_signe(t)
+    socle::piece::Zone::lue(t, socle::piece::format::EntierSigne).valeur()
 }
 
 /// (an, mois, jour, heure, minute, seconde, decalage en secondes ou `None`).

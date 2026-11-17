@@ -1254,7 +1254,7 @@ pub fn surcouche(an: Annee) -> R<CheminRelatif> {
 pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<Annee> {
     let an = chemin.texte().strip_prefix(BAREMES.texte())?.strip_prefix('/')?.strip_suffix(".json")?;
     // Un nom qui n'est pas une annee ne nomme pas une surcouche.
-    let an = match Annee::nouvelle(socle::num::entier_de_chiffres(an)?) {
+    let an = match Annee::nouvelle(socle::piece::Zone::lue(an, socle::piece::format::Chiffres).valeur()?) {
         Ok(a) => a,
         Err(_) => return None,
     };

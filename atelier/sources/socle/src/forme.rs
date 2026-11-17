@@ -678,9 +678,32 @@ impl<'de> serde::Deserialize<'de> for Court {
     }
 }
 
+/// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
+pub fn illisible(t: &str) -> String {
+    format!("nombre illisible : {}", crate::fichiers::repr(t))
+}
+
 /// Un nombre decimal, lu comme `decimal`, la ou un champ ne se pose pas (une valeur de table).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Nombre(pub crate::num::Decimal);
+
+impl Nombre {
+    /// LE NOMBRE QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`, `-2`), comme `num::decimal_lu` le lit, son
+    /// echelle gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre.
+    pub fn de_la_norme(t: &str) -> Option<Nombre> {
+        crate::num::decimal_lu(t).map(Nombre)
+    }
+
+    /// LE NOMBRE QU'UNE PIECE IMPRIME, a la francaise ou non (`num::decimal_a_virgule` : « 1 512,40 », « 0.000 »), un
+    /// signe moins en tete permis (l'oppose du nombre qui le suit), son echelle gardee : la porte de sa lecture ;
+    /// `None` : le texte n'est pas un nombre.
+    pub fn a_virgule(t: &str) -> Option<Nombre> {
+        match t.strip_prefix('-') {
+            Some(r) => crate::num::decimal_a_virgule(r).map(|d| Nombre(-d)),
+            None => crate::num::decimal_a_virgule(t).map(Nombre),
+        }
+    }
+}
 
 impl<'de> serde::Deserialize<'de> for Nombre {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -906,6 +929,26 @@ impl NombreLu {
             }
             _ => self.decimal(),
         }
+    }
+
+    /// L'ENTIER QU'IL VAUT EXACTEMENT (`12`, `12.0`), ou `None` : il n'est pas entier, ou ne tient pas en `i64` ; un
+    /// nombre hors de portee d'un decimal se refuse.
+    pub fn entier_exact(&self) -> R<Option<i64>> {
+        use rust_decimal::prelude::ToPrimitive;
+        Ok(Some(self.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
+    }
+
+    /// SA PARTIE ENTIERE, vers zero (`12.7` : `12`), ou `None` quand elle ne tient pas en `i64` ; un nombre hors de
+    /// portee d'un decimal se refuse.
+    pub fn partie_entiere(&self) -> R<Option<i64>> {
+        use rust_decimal::prelude::ToPrimitive;
+        Ok(self.decimal()?.trunc().to_i64())
+    }
+
+    /// Le nombre dans sa forme la plus courte (`12.50` : `12.5` ; « -0 » s'ecrit « 0 » : `num::nombre`) : la forme
+    /// canonique d'un nombre d'un oracle ; un nombre hors de portee d'un decimal se refuse.
+    pub fn sans_zero(&self) -> R<String> {
+        self.decimal().map(crate::num::nombre)
     }
 
     /// Le nombre est-il nul (`0`, `0.0`) ?

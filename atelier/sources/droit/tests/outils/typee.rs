@@ -1,6 +1,6 @@
 //! Les aides des tests du droit, sans JSON brut : un fichier (une donnee livree, une reference) se lit PAR LA PORTE DU
 //! SOCLE, en texte, directement dans un type (`socle::forme::lire_texte`) ; un test declare le type de son cas et celui
-//! de son resultat (`Serialize`, `Deserialize`, `PartialEq`, `Debug`, nombres exacts en `Decimal`) ; la reference est une
+//! de son resultat (`Serialize`, `Deserialize`, `PartialEq`, `Debug`, nombres exacts en leurs grandeurs) ; la reference est une
 //! liste de lignes `(cas, attendu)` de ces types ; la comparaison se fait ENTRE TYPES, sans tolerance, et un ecart nomme
 //! le cas et le champ. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit la reference, par l'ecriture du socle
 //! (`socle::ecriture`).

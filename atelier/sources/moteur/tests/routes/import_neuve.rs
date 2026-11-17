@@ -291,7 +291,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     let i = &importes[0];
     assert_eq!((i.objet().carte().numero.as_ref().map(engagement::numeros::NumeroContrat::as_str), i.objet().carte().fin.map(|j| j.iso())), (Some("FU1.26.01"), Some("2026-12-03".to_string())));
     let paie = i.paies()[&socle::mois::Mois::nouveau(2026, 11).unwrap()].clone();
-    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(|n| n.decimal().to_string())), (false, Some("212.30".to_string())), "{:?}", paie);
+    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(socle::grandeurs::ecrit::texte::dit)), (false, Some("212.30".to_string())), "{:?}", paie);
     assert!(paie.bulletin.is_some(), "le bulletin ne complete pas la paie de la DSN : {:?}", paie);
 
     let avant = engagements_ecrits(&racine);

@@ -1,6 +1,7 @@
 //! UNE ZONE D'UNE PIECE LUE : le texte qu'une piece porte a un endroit que sa norme fixe -- une rubrique d'une DSN ou
 //! d'une DPAE, une position d'une AEM, un element d'un retour XML, une cellule d'un CSV livre, une date dans le nom d'un
-//! fichier depose. C'est la seule porte par laquelle le texte d'une piece devient un jour, un mois ou un instant : la zone
+//! fichier depose. C'est la seule porte par laquelle le texte d'une piece devient un jour, un mois, un instant, une heure
+//! ou un entier ecrit en chiffres : la zone
 //! se fabrique avec le format que la norme de la piece donne a cet endroit (`format`, un type par format), que le
 //! lecteur de chaque piece passe ; elle ne se lit que dans ce format. Ce n'est pas une preuve d'origine : c'est la lecture
 //! typee de ce qu'on lit, au format de son texte.
@@ -86,6 +87,20 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct HeureXsd;
 
+    /// Une heure du jour `HHMM` (l'horodatage d'une DPAE relue, H_CREATION) : quatre chiffres, et rien d'autre.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Hhmm;
+
+    /// Un entier ecrit en chiffres seuls, de un a dix-huit (un rang d'un numero, une case d'un formulaire, une
+    /// annee) : tout autre texte (vide, un signe, un autre caractere, plus long) n'en est pas un.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Chiffres;
+
+    /// Un entier signe ecrit en chiffres : un signe `+` ou `-` facultatif, puis des chiffres seuls (`Chiffres`) (un
+    /// element de l'en-tete `Date` d'un courriel).
+    #[derive(Debug, Clone, Copy)]
+    pub struct EntierSigne;
+
     impl Format for Jjmmaaaa {}
     impl Scelle for Jjmmaaaa {
         type Lu = Option<Jour>;
@@ -163,6 +178,33 @@ pub mod format {
         type Lu = Option<paris::HeureXsdLue>;
         fn lire(t: &str) -> Option<paris::HeureXsdLue> {
             paris::heure_xsd(t)
+        }
+    }
+
+    impl Format for Hhmm {}
+    impl Scelle for Hhmm {
+        type Lu = Option<paris::HeureDuJour>;
+        fn lire(t: &str) -> Option<paris::HeureDuJour> {
+            if t.len() != 4 || !t.is_ascii() {
+                return None;
+            }
+            paris::HeureDuJour::lue(crate::num::entier_de_chiffres(&t[..2])?, crate::num::entier_de_chiffres(&t[2..])?)
+        }
+    }
+
+    impl Format for Chiffres {}
+    impl Scelle for Chiffres {
+        type Lu = Option<i64>;
+        fn lire(t: &str) -> Option<i64> {
+            crate::num::entier_de_chiffres(t)
+        }
+    }
+
+    impl Format for EntierSigne {}
+    impl Scelle for EntierSigne {
+        type Lu = Option<i64>;
+        fn lire(t: &str) -> Option<i64> {
+            crate::num::entier_signe(t)
         }
     }
 }

@@ -89,7 +89,7 @@ pub struct JoursOuCachetsLus {
 impl JoursOuCachetsLus {
     /// La case `t`, des chiffres seuls ; `None` : elle n'en est pas.
     fn lus(t: &str) -> Option<JoursOuCachetsLus> {
-        socle::num::entier_de_chiffres(t)?;
+        socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur()?;
         let (cachets, jours) = socle::grandeurs::lu::texte_entier_en_deux(t)?;
         Some(JoursOuCachetsLus { cachets, jours })
     }
