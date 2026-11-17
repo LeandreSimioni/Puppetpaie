@@ -262,7 +262,7 @@ pub struct FormeDEngagement {
     /// Sa periode de paie (`Engagement::periode_payee`).
     pub periode: socle::date::Periode,
     /// Sa quotite (`Engagement::quotite`), dans son unite.
-    pub quotite: crate::QuotiteDuContrat,
+    pub quotite: droit::natures::QuotiteDuContrat,
     pub sans_paie: bool,
     pub place: crate::PlaceDuMois,
     pub mois_du_contrat: Vec<Mois>,

@@ -1619,8 +1619,8 @@ finit pas tout seul, et le motif commande les droits du salarie a l'assurance ch
 
 
 /// La quotite telle que la DSN la compte : au centieme, le demi au pair (40.012, 40.013).
-fn au_centieme_au_pair(q: engagement::QuotiteDuContrat) -> engagement::QuotiteDuContrat {
-    use engagement::QuotiteDuContrat as Q;
+fn au_centieme_au_pair(q: droit::natures::QuotiteDuContrat) -> droit::natures::QuotiteDuContrat {
+    use droit::natures::QuotiteDuContrat as Q;
     match q {
         Q::Heures(h) => Q::Heures(h.a_deux_decimales()),
         Q::Jours(j) => Q::Jours(j.a_deux_decimales()),
@@ -1628,8 +1628,8 @@ fn au_centieme_au_pair(q: engagement::QuotiteDuContrat) -> engagement::QuotiteDu
 }
 
 /// La quotite ecrite dans la DSN (`norme::quantite`), dans son unite.
-fn quotite_ecrite(q: engagement::QuotiteDuContrat) -> String {
-    use engagement::QuotiteDuContrat as Q;
+fn quotite_ecrite(q: droit::natures::QuotiteDuContrat) -> String {
+    use droit::natures::QuotiteDuContrat as Q;
     match q {
         Q::Heures(h) => norme::quantite(h),
         Q::Jours(j) => norme::quantite(j),
@@ -1841,11 +1841,11 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     let quotite = au_centieme_au_pair(e.quotite()?);
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
-    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: engagement::QuotiteDuContrat| -> R<()> {
+    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: droit::natures::QuotiteDuContrat| -> R<()> {
         let plafond = nat.plafond_quotite();
-        // Ce que la DSN ecrit : la quotite a deux decimales, comparee au plafond que la nature lit en nombre.
+        // Ce que la DSN ecrit : la quotite a deux decimales, comparee au plafond de la nature, dans son unite.
         let valeur = quotite_ecrite(q);
-        if q.decimal() <= plafond {
+        if plafond.au_moins(q)? {
             return Ok(());
         }
         let cch = match nat.unite_quotite() {
@@ -1868,7 +1868,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             },
             quoi,
             valeur,
-            format!("{:.2}", plafond),
+            quotite_ecrite(plafond),
             nat.unite_quotite(),
             rubrique,
             cch
@@ -2029,7 +2029,7 @@ Rien n'est ecrit.",
 /// duree legale (35 heures par semaine, C. trav. L. 3121-27 : 151,67 h par mois, `quotite_reference_defaut` de la
 /// nature), une heure est une heure supplementaire (L. 3121-28) : une quotite de reference plus haute en inclut, et
 /// refuse. Une duree collective plus courte (32 h) passe. Un contrat d'usage (en jours) n'est pas concerne.
-fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: engagement::QuotiteDuContrat) -> R<()> {
+fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: droit::natures::QuotiteDuContrat) -> R<()> {
     let Some(texte) = f.norme()?.regle("quotite_reference_sans_heures_supplementaires")? else { return Ok(()) };
     let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()) else { return Ok(()) };
     let reference = reference.heures("La quotité de référence d'un contrat au mois")?;

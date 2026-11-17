@@ -22,7 +22,6 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
 use socle::grandeurs::{courte, sans_zero, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
-use socle::num::Decimal;
 
 /// UNE DATE D'UNE LIGNE : le jour nu (`"2026-10-02"`), ou detaille quand il dit ou il se joue
 /// (`{"jour": "2026-10-02", "lieu": "Berlin"}`).
@@ -616,11 +615,6 @@ impl QuantiteDeLigne {
         QuantiteDeLigne::nulle(unite).map(QuantiteDeLigne::cle_ecrite)
     }
 
-    /// Son nombre, a la porte qui l'exige (une ecriture, une phrase, `droit::catalogue::Rubrique::heures`).
-    pub fn decimal(self) -> Decimal {
-        chaque_quantite!(self, q => q.decimal())
-    }
-
     /// Est-elle negative ?
     pub fn est_negative(self) -> bool {
         chaque_quantite!(self, q => q < socle::grandeurs::nulle())
@@ -649,7 +643,7 @@ impl QuantiteDeLigne {
 
     /// Est-elle nulle ?
     pub fn est_nul(self) -> bool {
-        self.decimal().is_zero()
+        chaque_quantite!(self, q => q.est_nul())
     }
 
     /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 »).
@@ -733,17 +727,12 @@ pub enum TauxDeLigne {
 }
 
 impl TauxDeLigne {
-    /// Son nombre, a la porte qui l'exige (une ecriture, une phrase).
-    pub fn decimal(self) -> Decimal {
-        match self {
-            TauxDeLigne::ParUnite(u) => u.decimal(),
-            TauxDeLigne::PartDeLaBase(c) => c.decimal(),
-        }
-    }
-
     /// Est-il nul ?
     pub fn est_nul(self) -> bool {
-        self.decimal().is_zero()
+        match self {
+            TauxDeLigne::ParUnite(u) => u.est_nul(),
+            TauxDeLigne::PartDeLaBase(c) => c.est_nul(),
+        }
     }
 
     /// LE MONTANT UNITAIRE d'une ligne qui se paie a l'unite (un cachet, une heure, un salaire mensuel) ; `None` : une

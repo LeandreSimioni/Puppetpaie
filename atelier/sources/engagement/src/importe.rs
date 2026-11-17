@@ -180,7 +180,7 @@ pub struct PaieVersee {
     /// Les dates du contrat qu'elle paie (S21.G00.40.001, .010 : un CDI n'a pas de fin), quand une piece les dit.
     pub periode: Option<socle::date::PeriodeOuverte>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013), dans l'unite de 40.011.
-    pub quotite: Option<crate::QuotiteDuContrat>,
+    pub quotite: Option<droit::natures::QuotiteDuContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -749,8 +749,8 @@ impl Importe {
         // La quotite que la DSN declare (40.013) est, pour un salarie au mois, ses heures par mois (`quotite_contrat`) ; pour
         // un contrat d'usage, ses jours, que les jours du contrat disent (`Engagement::quotite`).
         let quotite = match p.quotite.filter(|_| nat.mensuelle()) {
-            Some(crate::QuotiteDuContrat::Heures(h)) => Some(socle::grandeurs::courte(h)),
-            Some(crate::QuotiteDuContrat::Jours(_)) | None => None,
+            Some(droit::natures::QuotiteDuContrat::Heures(h)) => Some(socle::grandeurs::courte(h)),
+            Some(droit::natures::QuotiteDuContrat::Jours(_)) | None => None,
         };
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
@@ -988,8 +988,8 @@ impl Importe {
         // La quotite que la DSN deposee declare (S21.G00.40.013) en journees : des jours entiers.
         let dernier = self.paies().values().last()?;
         match dernier.quotite? {
-            crate::QuotiteDuContrat::Jours(j) => Some(j).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere),
-            crate::QuotiteDuContrat::Heures(_) => None,
+            droit::natures::QuotiteDuContrat::Jours(j) => Some(j).filter(|q| *q > Jours::ZERO).and_then(socle::grandeurs::entiere),
+            droit::natures::QuotiteDuContrat::Heures(_) => None,
         }
     }
 }

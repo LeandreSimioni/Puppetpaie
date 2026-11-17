@@ -418,8 +418,8 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
                 Demande::Fin => c.and_then(|c| c.periode.fin()).map(|j| charge.fin = Some(j)),
                 // La duree d'un contrat au mois : la quotite que la DSN declare en heures.
                 Demande::Quotite => match c.and_then(|c| c.quotite) {
-                    Some(engagement::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(h)),
-                    Some(engagement::QuotiteDuContrat::Jours(_)) | None => None,
+                    Some(droit::natures::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(h)),
+                    Some(droit::natures::QuotiteDuContrat::Jours(_)) | None => None,
                 },
             };
             complet &= pose.is_some();

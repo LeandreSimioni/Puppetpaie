@@ -9,7 +9,6 @@ use socle::fichiers::{forme_en_cache, repr, CheminRelatif, FormeGardee, NomDeFic
 /// Les natures de contrat livrees, sous `donnees/`.
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("contrats-base.json");
 use socle::echec::R;
-use socle::num::Decimal;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -979,13 +978,88 @@ struct Bareme {
     _note: String,
 }
 
+/// LA QUOTITE D'UN CONTRAT (S21.G00.40.012, .013), dans l'unite que dit S21.G00.40.011 (`Nature::unite_quotite`) : des
+/// jours pour un contrat d'usage, des heures par mois pour un salarie au mois ; et son plafond (`Nature::plafond_quotite`).
+/// S'ecrit par son unite et son nombre en texte (`{"heures": "151.67"}`, `{"jours": "5"}`), son echelle gardee.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QuotiteDuContrat {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Heures(socle::grandeurs::Heures),
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    Jours(socle::grandeurs::Jours),
+}
+
+impl QuotiteDuContrat {
+    /// L'unite que 40.011 dit (`unite`) compte-t-elle des jours (12, journee ; 20, forfait jour) ? Des heures sinon,
+    /// 40.011 absent compris.
+    fn en_jours(unite: Option<UniteDeQuotite>) -> bool {
+        matches!(unite, Some(UniteDeQuotite::Journee | UniteDeQuotite::ForfaitJour))
+    }
+
+    /// LE NOMBRE `n`, LU AVANT SON UNITE (le plafond d'une nature), dans l'unite que 40.011 dit (`en_jours`) : la porte
+    /// de sa lecture.
+    fn dans(unite: Option<UniteDeQuotite>, n: socle::forme::Nombre) -> QuotiteDuContrat {
+        match QuotiteDuContrat::en_jours(unite) {
+            true => QuotiteDuContrat::Jours(n.grandeur()),
+            false => QuotiteDuContrat::Heures(n.grandeur()),
+        }
+    }
+
+    /// LA QUOTITE QUE LA DSN DECLARE (S21.G00.40.012, .013), lue de son texte dans l'unite que 40.011 dit (`en_jours`) :
+    /// la porte de sa lecture. La DSN importee est celle d'un logiciel de paie, qui dit le nombre. `None` : le texte
+    /// n'est pas un nombre de la norme.
+    pub fn de_la_dsn(unite: Option<UniteDeQuotite>, texte: &str) -> Option<QuotiteDuContrat> {
+        match QuotiteDuContrat::en_jours(unite) {
+            true => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Jours),
+            false => socle::grandeurs::lu::norme(texte).map(QuotiteDuContrat::Heures),
+        }
+    }
+
+    /// DITE DANS UNE PHRASE (l'en-tete du bulletin d'un salarie au mois) : au centieme, la moitie au pair, sans zero
+    /// inutile, la virgule decimale (« 151,67 », « 35 »).
+    pub fn dite(self) -> String {
+        match self {
+            QuotiteDuContrat::Heures(h) => socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(h)),
+            QuotiteDuContrat::Jours(j) => socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(j)),
+        }
+    }
+
+    /// Ses heures, quand elle en compte ; des jours ne sont pas des heures : refus, qui nomme `quoi`.
+    pub fn heures(self, quoi: &str) -> R<socle::grandeurs::Heures> {
+        match self {
+            QuotiteDuContrat::Heures(h) => Ok(h),
+            QuotiteDuContrat::Jours(_) => Err(socle::refus!("{} compte des heures, et ce contrat compte sa quotité en jours : le signaler au développeur.", quoi)),
+        }
+    }
+
+    /// Est-elle au moins `o` ? Deux quotites de la meme unite se comparent ; des heures et des jours, non : refus.
+    pub fn au_moins(self, o: QuotiteDuContrat) -> R<bool> {
+        match (self, o) {
+            (QuotiteDuContrat::Heures(a), QuotiteDuContrat::Heures(b)) => Ok(a >= b),
+            (QuotiteDuContrat::Jours(a), QuotiteDuContrat::Jours(b)) => Ok(a >= b),
+            _ => Err(socle::echec::refus("une quotité en heures et une quotité en jours ne se comparent pas : le signaler au développeur")),
+        }
+    }
+
+    /// LE RAPPORT de cette quotite a `o` (40.013 sur 40.012), de la meme unite : quotite / quotite = coefficient ;
+    /// `None` quand `o` est nulle ; des heures et des jours : refus.
+    pub fn rapport(self, o: QuotiteDuContrat) -> R<Option<socle::grandeurs::Coefficient>> {
+        match (self, o) {
+            (QuotiteDuContrat::Heures(a), QuotiteDuContrat::Heures(b)) => Ok(a.rapport(b)),
+            (QuotiteDuContrat::Jours(a), QuotiteDuContrat::Jours(b)) => Ok(a.rapport(b)),
+            _ => Err(socle::echec::refus("une quotité en heures et une quotité en jours ne se rapportent pas : le signaler au développeur")),
+        }
+    }
+}
+
 /// S21.G00.40.011, et le plafond de 40.012 et 40.013 (CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuotiteDeLaNature {
     valeur: UniteDeQuotite,
-    #[serde(deserialize_with = "socle::forme::court")]
-    plafond: Decimal,
+    /// Un nombre lu avant son unite : celle de `valeur` (`Nature::plafond_quotite`).
+    plafond: socle::forme::Nombre,
     #[serde(rename = "quoi")]
     _quoi: String,
 }
@@ -1351,9 +1425,10 @@ impl Proprietes {
         self.unite_quotite.valeur
     }
 
-    /// Le plafond de 40.012 et 40.013 : CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure.
-    pub fn plafond_quotite(&self) -> Decimal {
-        self.unite_quotite.plafond
+    /// Le plafond de 40.012 et 40.013, une quotite dans l'unite de la nature (`QuotiteDuContrat::dans`) : CCH-12 du bloc
+    /// 40, 31.00 en journee ; CCH-13, 250.00 en heure.
+    pub fn plafond_quotite(&self) -> QuotiteDuContrat {
+        QuotiteDuContrat::dans(Some(self.unite_quotite.valeur), self.unite_quotite.plafond)
     }
 
     /// La quotite de reference d'un contrat au mois (la duree legale, L. 3121-27), ou `None` : la nature n'en a pas.

@@ -331,8 +331,8 @@ pub struct ContratDeclare {
     /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
     /// l'unite de .011 ; .014, la modalite du temps de travail.
     unite_quotite: Option<droit::natures::UniteDeQuotite>,
-    pub quotite_reference: Option<engagement::QuotiteDuContrat>,
-    pub quotite: Option<engagement::QuotiteDuContrat>,
+    pub quotite_reference: Option<droit::natures::QuotiteDuContrat>,
+    pub quotite: Option<droit::natures::QuotiteDuContrat>,
     pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
     pub idcc: Option<Idcc>,
@@ -917,8 +917,8 @@ impl Fautes {
     }
     /// Une quotite (40.012, 40.013), en jours ou en heures selon l'unite que 40.011 a dite (`unite`,
     /// `QuotiteDuContrat::de_la_dsn`) : un texte qui n'est pas un nombre est une faute.
-    fn quotite(&mut self, k: RubriqueDeLaNorme, v: &str, unite: Option<droit::natures::UniteDeQuotite>) -> Option<engagement::QuotiteDuContrat> {
-        self.valeur(k, v, "un nombre", engagement::QuotiteDuContrat::de_la_dsn(unite, v))
+    fn quotite(&mut self, k: RubriqueDeLaNorme, v: &str, unite: Option<droit::natures::UniteDeQuotite>) -> Option<droit::natures::QuotiteDuContrat> {
+        self.valeur(k, v, "un nombre", droit::natures::QuotiteDuContrat::de_la_dsn(unite, v))
     }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
