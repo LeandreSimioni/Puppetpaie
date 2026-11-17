@@ -171,7 +171,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | paie calculée d'un engagement | `engagement::calcul::Paie` | à unifier (#419) : `PaieEcrite`, `PaieLue`, `PaieRelue`, `PaieDuMois` (ses sommes et ses lignes rendent leurs grandeurs) |
 | paie d'un mois importé | `engagement::importe::PaieImportee` | à unifier (#419) : `PaieVersee` |
 | ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut`, `importe::LigneDeRemuneration`, `importe::LigneImprimee` |
-| ligne de cotisation | `engagement::calcul::LigneCotisation` | à unifier (#419) : `importe::LigneDeCotisation`, `importe::CotisationImprimee`, `droit::organismes::Ligne` |
 | contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
 | contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
 | taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
@@ -1069,6 +1068,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs`, `engagement/src/paie_ecrite.rs`, `engagement/src/importe.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
+| ligne de cotisation (calculée) | `engagement::calcul::LigneCotisation` | `engagement/src/calcul.rs` |
+| ligne de cotisation qu'un bulletin imprime (celui d'une paie importée ; celui d'une paie validée, telle qu'un état lit une paie du mois, `LigneCotisation::imprimee`) | `engagement::importe::CotisationImprimee` | `engagement/src/importe.rs` |
 | salarié | `IdSalarie`, `droit::fiche::FicheSalarie` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
 | compagnie | `compagnie::installation::Compagnie` | `compagnie/src/installation.rs` |
 | spectacle | `IdSpectacle`, `droit::fiche::Spectacle` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
@@ -1471,9 +1472,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   seul (`autres`), celles de la convention (`convention`), les tranches de l'Apec (`apec`), ou un total du bulletin
   (`Total(TotalDuBulletin)` : `cotisations_salariales`, `cotisations_patronales`, `net_social`, `net_imposable`).
   Écrit par son texte, trié comme lui ; la clé de `cotisations` de la table de lecture des bulletins. Que portent un
-  écart, la ligne de cotisation qu'un bulletin importé imprime, l'incident d'un écart d'import, la ligne de cotisation
-  d'une paie du mois (`importe::LigneDeCotisation.id` : la cotisation d'une paie validée, la cotisation ou le
-  regroupement d'une paie importée), et les `regroupements` du plan comptable (`autres`, `convention`, `apec` seuls, à
+  écart, la ligne de cotisation qu'un bulletin imprime (`importe::CotisationImprimee.cotisation` : la cotisation d'une
+  paie validée, la cotisation ou le regroupement d'une paie importée), l'incident d'un écart d'import, et les `regroupements` du plan comptable (`autres`, `convention`, `apec` seuls, à
   part des `lignes`, qui ne prennent que des cotisations).
 - **origine du taux AT/MP comparé** : d'où vient le taux AT/MP du calcul d'une comparaison : la compagnie, ou le
   bulletin importé (l'AT/MP n'est alors pas comparé). Une liste du logiciel, écrite `compagnie`, `bulletin`.

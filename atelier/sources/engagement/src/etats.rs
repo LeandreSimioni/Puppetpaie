@@ -549,10 +549,6 @@ pub enum PaieDuMois {
     Importee(crate::importe::PaieImportee),
 }
 
-/// Une ligne de cotisation d'une paie du mois, telle qu'un etat la lit : celle d'une paie validee, tous ses montants
-/// dits, ou celle qu'un bulletin importe imprime (`importe::LigneDeCotisation`).
-pub type CotisationDuMois = crate::importe::LigneDeCotisation;
-
 /// Une ligne de remuneration d'une paie du mois, telle qu'un etat la lit (`importe::LigneDeRemuneration`).
 pub type RemunerationDuMois = crate::importe::LigneDeRemuneration;
 
@@ -645,23 +641,11 @@ impl PaieDuMois {
         }
     }
 
-    /// Les lignes de cotisation : celles du calcul, ou celles du bulletin importe.
-    pub fn cotisations(&self) -> Vec<CotisationDuMois> {
+    /// Les lignes de cotisation, telles que le bulletin les imprime : celles du calcul (`LigneCotisation::imprimee`), ou
+    /// celles du bulletin importe.
+    pub fn cotisations(&self) -> Vec<crate::importe::CotisationImprimee> {
         match self {
-            PaieDuMois::Validee(p) => p
-                .lignes
-                .iter()
-                .map(|l| CotisationDuMois {
-                    id: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
-                    famille: Some(l.famille.clone()),
-                    libelle: l.libelle.clone(),
-                    base: Some(l.base),
-                    taux_pat: l.taux_pat,
-                    montant_pat: Some(l.montant_pat),
-                    taux_sal: l.taux_sal,
-                    montant_sal: Some(l.montant_sal),
-                })
-                .collect(),
+            PaieDuMois::Validee(p) => p.lignes.iter().map(crate::calcul::LigneCotisation::imprimee).collect(),
             PaieDuMois::Importee(p) => p.lignes.clone(),
         }
     }

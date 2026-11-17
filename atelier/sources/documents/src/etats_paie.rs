@@ -1054,10 +1054,10 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             for c in paie.cotisations() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
-                l.ot(C::Code, c.id.as_ref().map(|i| i.as_str().to_string()));
+                l.ot(C::Code, c.cotisation.as_ref().map(|i| i.as_str().to_string()));
                 l.t(C::Libelle, c.libelle).base(C::Base, c.base.map(|x| x.au_centime()));
-                l.taux(C::TauxSal, c.taux_sal).om(C::PartSal, c.montant_sal.map(Montant::au_centime));
-                l.taux(C::TauxPat, c.taux_pat).om(C::PartPat, c.montant_pat.map(Montant::au_centime));
+                l.taux(C::TauxSal, c.taux_salarie).om(C::PartSal, c.montant_salarie.map(Montant::au_centime));
+                l.taux(C::TauxPat, c.taux_employeur).om(C::PartPat, c.montant_employeur.map(Montant::au_centime));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {

@@ -257,7 +257,10 @@ impl LigneImprimee {
     }
 }
 
-/// Une ligne de cotisation que le bulletin imprime ; `cotisation` : celle du bareme que l'import lui a donnee.
+/// UNE LIGNE DE COTISATION QU'UN BULLETIN IMPRIME ; `cotisation` : celle du bareme que l'import lui a donnee (`None` : il
+/// ne l'a pas qualifiee) ; ce que le bulletin n'imprime pas est vide. C'est aussi la ligne qu'un etat lit d'une paie du
+/// mois (`etats::PaieDuMois::cotisations`) : celle d'une paie validee, telle que son bulletin l'imprime
+/// (`calcul::LigneCotisation::imprimee`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CotisationImprimee {
@@ -658,8 +661,9 @@ pub struct PaieImportee {
     pub spectacle: Option<droit::fiche::Spectacle>,
     /// Les lignes de remuneration que le bulletin imprime ; a defaut, le brut que la DSN declare.
     pub remuneration: Vec<LigneDeRemuneration>,
-    /// Les lignes de cotisation que le bulletin imprime ; vide quand aucun bulletin ne les donne.
-    pub lignes: Vec<LigneDeCotisation>,
+    /// Les lignes de cotisation que le bulletin imprime, sous la cotisation que l'import leur a donnee, chaque taux dans
+    /// sa forme la plus courte ; vide quand aucun bulletin ne les donne.
+    pub lignes: Vec<CotisationImprimee>,
     /// Les bases que les pieces disent, la ou le bareme de la paie les range, chacune dans la grandeur qu'elles disent
     /// (`BaseDeCotisation::imprimee`, une base du bloc 78 en euros).
     pub bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation>,
@@ -692,21 +696,6 @@ pub struct LigneDeRemuneration {
     pub heures_annexes: Option<socle::grandeurs::Heures>,
     /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
     pub soumis: bool,
-}
-
-/// Une ligne de cotisation d'une paie importee, sous la cotisation ou le regroupement que l'import lui a donne (`None` :
-/// il ne l'a pas qualifiee) ; ce que le bulletin n'imprime pas est vide. Celle d'une paie validee porte sa cotisation
-/// (`etats::PaieDuMois::cotisations`).
-#[derive(Debug, Clone, PartialEq)]
-pub struct LigneDeCotisation {
-    pub id: Option<crate::ecarts::RegroupementDeComparaison>,
-    pub famille: Option<droit::forme_bareme::FamilleDeCotisation>,
-    pub libelle: String,
-    pub base: Option<crate::calcul::BaseDeCotisation>,
-    pub taux_pat: Option<Taux>,
-    pub montant_pat: Option<Montant>,
-    pub taux_sal: Option<Taux>,
-    pub montant_sal: Option<Montant>,
 }
 
 /// Le prelevement a la source d'une paie importee : l'impot preleve, et le taux, son type et son identifiant que les
@@ -848,20 +837,11 @@ impl Importe {
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
         let taux = |x: Option<Taux>| x.map(socle::grandeurs::courte);
-        let cotisations: Vec<LigneDeCotisation> = p
+        let cotisations: Vec<CotisationImprimee> = p
             .cotisations
             .iter()
             .flatten()
-            .map(|l| LigneDeCotisation {
-                id: l.cotisation.clone(),
-                famille: l.famille.clone(),
-                libelle: l.libelle.clone(),
-                base: l.base,
-                taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur,
-                taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie,
-            })
+            .map(|l| CotisationImprimee { taux_employeur: taux(l.taux_employeur), taux_salarie: taux(l.taux_salarie), ..l.clone() })
             .collect();
 
         let mut bases: BTreeMap<Assiette, crate::calcul::BaseDeCotisation> = BTreeMap::new();

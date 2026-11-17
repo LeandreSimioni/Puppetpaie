@@ -176,12 +176,12 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 sans_bulletin.insert(m);
             }
             for c in &cotisations {
-                let Some(cle) = c.id.as_ref() else {
+                let Some(cle) = c.cotisation.as_ref() else {
                     if paie.importee().is_some() {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_insert_with(|| (BTreeSet::new(), Montant::ZERO));
                         mois.insert(m);
                         // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(Montant::au_centime).fold(*total, |a, x| a + x);
+                        *total = [c.montant_salarie, c.montant_employeur].into_iter().flatten().map(Montant::au_centime).fold(*total, |a, x| a + x);
                     } else {
                         manque.insert(format!("sans cotisation ({})", c.libelle));
                     }
@@ -192,7 +192,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
-                let (ts, tp) = (c.taux_sal, c.taux_pat);
+                let (ts, tp) = (c.taux_salarie, c.taux_employeur);
                 if *cle == RegroupementDeComparaison::Cotisation(droit::forme_bareme::REDUCTION_GENERALE) {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = Montant::ZERO;
@@ -203,7 +203,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                                 reparti += part;
                             }
                         }
-                        let calculee = c.montant_pat.ok_or_else(|| socle::fichiers::absent("montant_pat").reclasser(Classe::Illisible))?;
+                        let calculee = c.montant_employeur.ok_or_else(|| socle::fichiers::absent("montant_employeur").reclasser(Classe::Illisible))?;
                         if -reparti != calculee {
                             avert.push(format!(
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
@@ -216,7 +216,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         continue;
                     }
                 }
-                ajouter(m, &org, id, &c.libelle, c.base.map(BaseDeCotisation::au_centime), ts, c.montant_sal.map(Montant::au_centime), tp, c.montant_pat.map(Montant::au_centime))?;
+                ajouter(m, &org, id, &c.libelle, c.base.map(BaseDeCotisation::au_centime), ts, c.montant_salarie.map(Montant::au_centime), tp, c.montant_employeur.map(Montant::au_centime))?;
             }
         }
     }

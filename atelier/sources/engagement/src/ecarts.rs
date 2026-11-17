@@ -39,7 +39,7 @@ use crate::calcul::LigneCotisation;
 use droit::forme_bareme::{
     IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
-use crate::importe::{Importe, LogicielDUnBulletin, PaieVersee};
+use crate::importe::{CotisationImprimee, Importe, LogicielDUnBulletin, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -291,17 +291,6 @@ pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> Regro
     RegroupementDeComparaison::Cotisation(l.id.clone())
 }
 
-/// Une ligne de cotisation du bulletin importe.
-#[derive(Clone, Debug)]
-struct Lue {
-    libelle: String,
-    base: Option<Montant>,
-    taux_salarie: Option<Taux>,
-    taux_employeur: Option<Taux>,
-    montant_salarie: Option<Montant>,
-    montant_employeur: Option<Montant>,
-}
-
 /// Un centime : l'ecart de montant qu'un arrondi fait sur une ligne, et qui n'est pas un ecart.
 const UN_CENTIME: Montant = Montant::UN_CENTIME;
 
@@ -541,19 +530,11 @@ fn comparer_une(
     let garanties = crate::calcul::garanties_de_prevoyance(&ctx, paie)?;
 
     // Les deux cotes, par cotisation.
-    let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<Lue>> = BTreeMap::new();
+    let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
     let mut hors_total: Vec<RegroupementDeComparaison> = Vec::new();
     for l in cotisations {
-        let lue = Lue {
-            libelle: l.libelle.clone(),
-            base: l.base.and_then(crate::calcul::BaseDeCotisation::montant),
-            taux_salarie: l.taux_salarie,
-            taux_employeur: l.taux_employeur,
-            montant_salarie: l.montant_salarie,
-            montant_employeur: l.montant_employeur,
-        };
-        if lue.montant_salarie.is_none() && lue.montant_employeur.is_none() {
+        if l.montant_salarie.is_none() && l.montant_employeur.is_none() {
             continue;
         }
         match l.cotisation.clone() {
@@ -561,11 +542,11 @@ fn comparer_une(
                 if l.hors_total && !hors_total.contains(&code) {
                     hors_total.push(code.clone());
                 }
-                leurs.entry(code).or_default().push(lue)
+                leurs.entry(code).or_default().push(l)
             }
             None => {
-                if !c.non_rattachees.contains(&lue.libelle) {
-                    c.non_rattachees.push(lue.libelle);
+                if !c.non_rattachees.contains(&l.libelle) {
+                    c.non_rattachees.push(l.libelle.clone());
                 }
             }
         }
@@ -591,7 +572,7 @@ fn comparer_une(
         if atmp_lu && *code == RegroupementDeComparaison::Cotisation(ATMP) {
             continue;
         }
-        let eux: &[Lue] = match leurs.get(code) {
+        let eux: &[&CotisationImprimee] = match leurs.get(code) {
             Some(v) => v,
             None => &[],
         };
@@ -633,7 +614,7 @@ fn comparer_une(
         }
         let ([l], [n]) = (eux, nous) else { continue };
         // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
-        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.filter(|_| !n.masquer_base_et_taux), n.base) {
+        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.and_then(crate::calcul::BaseDeCotisation::montant).filter(|_| !n.masquer_base_et_taux), n.base) {
             if (b - notre).abs() > UN_CENTIME {
                 ecarts.push(ecart(MesureDeLEcart::Base(relatif(b, notre))));
             }

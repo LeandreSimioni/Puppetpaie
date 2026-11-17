@@ -399,6 +399,22 @@ impl LigneCotisation {
         }
     }
 
+    /// LA LIGNE TELLE QUE SON BULLETIN L'IMPRIME, ce qu'un etat lit d'une paie du mois (`etats::PaieDuMois::cotisations`) :
+    /// tout y est dit, et elle compte dans les totaux de la paie (`total_sal`, `total_pat` somment chaque ligne).
+    pub fn imprimee(&self) -> crate::importe::CotisationImprimee {
+        crate::importe::CotisationImprimee {
+            famille: Some(self.famille.clone()),
+            libelle: self.libelle.clone(),
+            cotisation: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(self.id.clone())),
+            base: Some(self.base),
+            taux_employeur: self.taux_pat,
+            montant_employeur: Some(self.montant_pat),
+            taux_salarie: self.taux_sal,
+            montant_salarie: Some(self.montant_sal),
+            hors_total: false,
+        }
+    }
+
     /// Relue de sa forme ecrite (sa base relue par `BaseDeCotisation::relue`).
     pub(crate) fn de_la_forme(f: &FormeDeCotisation) -> LigneCotisation {
         LigneCotisation {

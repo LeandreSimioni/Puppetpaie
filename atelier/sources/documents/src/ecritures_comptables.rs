@@ -170,7 +170,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         compte_de.insert(qui.clone(), compte);
         let reduction_generale = p.validee().and_then(|v| v.reduction_generale.as_ref());
         for l in p.cotisations() {
-            let Some(id) = l.id.as_ref() else {
+            let Some(id) = l.cotisation.as_ref() else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
             let Some(regle) = plan.regle(id) else {
@@ -192,7 +192,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 None => l.libelle.clone(),
             };
             // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-            let (pat, sal) = (l.montant_pat.map(Montant::au_centime), l.montant_sal.map(Montant::au_centime));
+            let (pat, sal) = (l.montant_employeur.map(Montant::au_centime), l.montant_salarie.map(Montant::au_centime));
             if *id == RegroupementDeComparaison::Cotisation(REDUCTION_GENERALE) {
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
