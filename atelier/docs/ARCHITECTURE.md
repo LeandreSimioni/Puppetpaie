@@ -171,7 +171,7 @@ un libellé, chacun sa forme.
 
 | notion | son type | aujourd'hui |
 |---|---|---|
-| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe`, mise bout à bout par `Phrase::jointes` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle, elle ne se rouvre pas) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore des `String` | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
+| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle, elle ne se rouvre pas) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore des `String` | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
 
 **Le temps**
 

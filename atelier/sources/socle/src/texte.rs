@@ -1,8 +1,7 @@
 //! Le texte : le blanc, les accents, la cle de recherche.
 
 /// UNE PHRASE DITE AUX GENS : ce que le moteur compose pour qu'une personne le lise (la phrase que rend une route, un
-/// conseil, un avis). Elle se compose par `socle::phrase!` (comme `format!`), d'un texte fixe (`fixe`) ou de phrases
-/// (`jointes`) ; un nombre y entre par l'ecriture de sa grandeur (`euros`, `virgule`, `par_milliers`…). Elle s'ecrit en
+/// conseil, un avis). Elle se compose par `socle::phrase!` (comme `format!`), ou d'un texte fixe (`fixe`) ; un nombre y entre par l'ecriture de sa grandeur (`euros`, `virgule`, `par_milliers`…). Elle s'ecrit en
 /// texte, telle quelle (serde, `Display`), et ne se rouvre pas : une phrase en cite une autre par `Display`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Phrase(String);
@@ -16,11 +15,6 @@ impl Phrase {
     /// Une phrase composee (`socle::phrase!`).
     pub fn composee(t: String) -> Phrase {
         Phrase(t)
-    }
-
-    /// Des phrases mises bout a bout, `entre` chacune (« ; », une fin de ligne).
-    pub fn jointes<'a>(phrases: impl IntoIterator<Item = &'a Phrase>, entre: &str) -> Phrase {
-        Phrase(phrases.into_iter().map(|p| p.0.as_str()).collect::<Vec<_>>().join(entre))
     }
 
     /// Ne dit-elle rien (vide, ou des blancs seuls) ?
