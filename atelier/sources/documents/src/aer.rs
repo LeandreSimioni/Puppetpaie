@@ -243,24 +243,12 @@ fn concordent<G: socle::grandeurs::Grandeur + PartialEq>(a: Option<G>, b: Option
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
 /// n'existe pas (31/02) se refuse.
 pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
-    let t = t.trim();
-    let b = t.as_bytes();
-    let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
-    if b.len() != 10 || b[2] != b'/' || b[5] != b'/' || !chiffres(0, 2) || !chiffres(3, 5) || !chiffres(6, 10) {
-        return Ok(None);
+    use socle::piece::{format, DateMalEcrite, Zone};
+    match Zone::lue(t.trim(), format::JjMmAaaa).valeur() {
+        None => Ok(None),
+        Some(Ok(j)) => Ok(Some(j)),
+        Some(Err(DateMalEcrite::Impossible(p) | DateMalEcrite::Illisible(p))) => Err(refus(p)),
     }
-    // Chaque nombre lu par sa zone (`socle::piece`) ; ses chiffres, pour dire celui qui n'existe pas.
-    use socle::piece::{format, Zone};
-    let n = |a: usize, z: usize| t[a..z].parse::<u32>().unwrap();
-    let (j, m, a) = (n(0, 2), n(3, 5), n(6, 10));
-    let annee = match Zone::lue(&t[6..10], format::AnneeEnChiffres).valeur() {
-        Some(Ok(annee)) => annee,
-        Some(Err(_)) | None => return Err(refus(socle::date::annee_impossible(a))),
-    };
-    let Some(mois) = Zone::lue(&t[3..5], format::MoisEnChiffres).valeur() else {
-        return Err(refus(socle::mois::mois_impossible(m)));
-    };
-    Zone::lue(&t[0..2], format::JourDuMois(annee.mois(mois))).valeur().map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
@@ -423,8 +411,8 @@ pub fn verifier(donnees: &[u8], paies: &[Paie]) -> R<Vec<String>> {
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
 /// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::SorteDImage::largeur_imprimee`).
-pub const CASE_SIGNATURE: Mesure = Mesure::entier(121);
-pub const CASE_CACHET: Mesure = Mesure::entier(161);
+pub const CASE_SIGNATURE: Mesure = mesure("121");
+pub const CASE_CACHET: Mesure = mesure("161");
 
 /// La signature occupe le haut de la case, sur 80 % de sa largeur.
 ///
@@ -435,7 +423,7 @@ pub fn cadre_signature(rect: [Mesure; 4]) -> [Mesure; 4] {
     let [x0, y0, x1, y1] = rect;
     let largeur = (x1 - x0) * mesure("0.8");
     let hauteur = (y1 - y0) * mesure("0.55");
-    let quatre = Mesure::entier(4);
+    let quatre = mesure("4");
     [x0 + quatre, y0 + quatre, x0 + quatre + largeur, y0 + quatre + hauteur]
 }
 

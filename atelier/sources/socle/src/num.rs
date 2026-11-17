@@ -15,7 +15,7 @@ pub fn dec_texte(s: &str) -> R<Decimal> {
 
 /// UN ENTIER ECRIT EN CHIFFRES SEULS, de un a dix-huit : sa valeur, comptee chiffre a chiffre ; tout autre texte (vide, un
 /// autre caractere, plus long) n'est pas un entier ainsi ecrit, et rend `None`.
-pub fn entier_de_chiffres(t: &str) -> Option<i64> {
+pub(crate) fn entier_de_chiffres(t: &str) -> Option<i64> {
     let b = t.as_bytes();
     if b.is_empty() || b.len() > 18 || !b.iter().all(u8::is_ascii_digit) {
         return None;
@@ -25,7 +25,7 @@ pub fn entier_de_chiffres(t: &str) -> Option<i64> {
 
 /// UN ENTIER SIGNE ECRIT EN CHIFFRES : un signe `+` ou `-` facultatif, puis un entier de chiffres seuls
 /// (`entier_de_chiffres`) ; tout autre texte rend `None`.
-pub fn entier_signe(t: &str) -> Option<i64> {
+pub(crate) fn entier_signe(t: &str) -> Option<i64> {
     match (t.strip_prefix('-'), t.strip_prefix('+')) {
         (Some(c), _) => entier_de_chiffres(c).map(|n| -n),
         (None, Some(c)) => entier_de_chiffres(c),
@@ -103,7 +103,7 @@ pub fn nombre(x: Decimal) -> String {
 
 /// Un entier ecrit en texte : le signe, les chiffres, un tiret bas entre deux chiffres, les blancs autour.
 /// Un entier trop long pour `i128` se rend au plus grand.
-pub fn entier_lu(t: &str) -> Option<i128> {
+pub(crate) fn entier_lu(t: &str) -> Option<i128> {
     let t = t.trim_matches(crate::texte::blanc);
     let (neg, reste) = match (t.strip_prefix('-'), t.strip_prefix('+')) {
         (Some(r), _) => (true, r),

@@ -1174,6 +1174,63 @@ impl std::fmt::Display for Octets {
     }
 }
 
+/// UN ECART EN OCTETS DANS UN FICHIER LU (« Le glossaire ») : la position d'un octet depuis le debut du fichier, ou
+/// l'ecart entre deux positions (le debut et la taille du repertoire d'une archive zip, le decalage d'un de ses membres,
+/// PKWARE APPNOTE 4.3, que `envois::retours` lit). Signe : une archive abimee place un membre avant le debut du fichier,
+/// ce que la lecture refuse en le disant (« negative seek value -5 »). Il se lit d'un champ de l'archive (`lu`) ou d'une
+/// position dans des octets en memoire (`de_position`), s'ajoute, se retranche, se compare et s'ecrit en nombre
+/// (`Display`) ; il ne redevient une position en memoire que s'il ne precede pas le debut (`au_plus`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EcartEnOctets(i128);
+
+impl EcartEnOctets {
+    /// Aucun ecart.
+    pub const ZERO: EcartEnOctets = EcartEnOctets(0);
+
+    /// L'ECART QU'UN CHAMP D'UN FICHIER ECRIT, sans signe, a la porte qui le lit.
+    pub fn lu(n: u64) -> EcartEnOctets {
+        EcartEnOctets(i128::from(n))
+    }
+
+    /// LA POSITION `n` dans des octets en memoire (ou une longueur en memoire).
+    pub fn de_position(n: usize) -> EcartEnOctets {
+        EcartEnOctets(n as i128)
+    }
+
+    /// LA POSITION QU'IL EST, dans des octets en memoire de longueur `longueur` : lui, ou `longueur` s'il la depasse ;
+    /// `None` s'il precede le debut.
+    pub fn au_plus(self, longueur: usize) -> Option<usize> {
+        (self.0 >= 0).then(|| if self.0 > longueur as i128 { longueur } else { self.0 as usize })
+    }
+}
+
+impl std::ops::Add for EcartEnOctets {
+    type Output = EcartEnOctets;
+    fn add(self, o: EcartEnOctets) -> EcartEnOctets {
+        EcartEnOctets(self.0.saturating_add(o.0))
+    }
+}
+
+impl std::ops::AddAssign for EcartEnOctets {
+    fn add_assign(&mut self, o: EcartEnOctets) {
+        *self = *self + o;
+    }
+}
+
+impl std::ops::Sub for EcartEnOctets {
+    type Output = EcartEnOctets;
+    fn sub(self, o: EcartEnOctets) -> EcartEnOctets {
+        EcartEnOctets(self.0.saturating_sub(o.0))
+    }
+}
+
+/// En nombre d'octets, signe (« 120 », « -5 »).
+impl std::fmt::Display for EcartEnOctets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 impl crate::forme::Nombre {
     /// LA GRANDEUR QU'IL DIT (la quantite et le taux qu'une ligne d'un bulletin imprime, dans l'unite de sa rubrique),
     /// son echelle gardee : la porte de sa lecture.

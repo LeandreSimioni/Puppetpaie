@@ -3,7 +3,7 @@
 //! pointe vers de faux serveurs locaux et refuse tout acte reel.
 #![forbid(unsafe_code)]
 
-fn usage() -> ! {
+fn usage() -> std::process::ExitCode {
     eprintln!(
         "usage : moteur-atelier [--dev] COMMANDE [options]   (la ligne de commande du produit et de l'atelier : moteur-atelier aide)\n\
          \x20       moteur-atelier route [--racine R] [--date D]   (route et charge en JSON sur l entree standard : les routes de l interface)\n\
@@ -19,7 +19,7 @@ fn usage() -> ! {
          \x20       moteur-atelier releve-missions SOURCES DONNEES   (les tables des missions a l'etranger de la DGFiP, avant de publier)\n\
          \x20       moteur-atelier fabriquer-bulletins DESCRIPTION.json DOSSIER [--gabarit coolpaie|spaiectacle]   (des bulletins fictifs)"
     );
-    std::process::exit(2)
+    std::process::ExitCode::from(2)
 }
 
 fn main() -> std::process::ExitCode {

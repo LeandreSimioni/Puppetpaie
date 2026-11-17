@@ -436,7 +436,7 @@ fn rattraper_l_horloge(racine: &Path, d: HorlogeFictive, aujourdhui: Option<Jour
             }
             // Un mois echu dont tout est deja fait (par la personne, avant que l'horloge ne passe) est fait : rien n'est a
             // jouer pour lui.
-            let suivant = le_mois.dernier_jour().plus_jours(1)?;
+            let suivant = le_mois.dernier_jour().apres(socle::date::Duree::jours(1))?;
             if jour >= suivant && mois_fait(&ctx, le_mois, jour)? {
                 clos.insert(le_mois, empreinte_du_mois(racine, le_mois)?);
                 continue;
@@ -552,7 +552,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     }
     calendrier.extend(signalements_dus(ctx, le_mois, jour, false)?);
 
-    let suivant = le_mois.dernier_jour().plus_jours(1)?;
+    let suivant = le_mois.dernier_jour().apres(socle::date::Duree::jours(1))?;
     if jour < suivant {
         return Ok(false);
     }

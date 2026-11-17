@@ -72,8 +72,8 @@ fn l_heure_limite_est_midi_et_la_veille_suit_le_report() {
     assert_eq!(HEURE_LIMITE, socle::paris::HeureDuJour::MIDI);
     let v = e.dite().unwrap();
     assert_eq!(
-        (v.limite.jour_de_paris().iso().as_str(), v.limite.seconde_du_jour_de_paris(), v.nominale.iso().as_str()),
-        ("2026-11-16", 12 * 3_600, "2026-11-15")
+        (v.limite, v.nominale.iso().as_str()),
+        (socle::paris::Moment::a_paris(j("2026-11-16"), socle::paris::HeureDuJour::MIDI).unwrap(), "2026-11-15")
     );
     assert_eq!(v.veille_annule_et_remplace.map(|j| j.iso()).as_deref(), Some("2026-11-15"));
     // Ce que les routes rendent : le jour et l'heure ecrits.

@@ -40,9 +40,9 @@ fn boite(v: &Value) -> [Mesure; 4] {
     [f(&a[0]), f(&a[1]), f(&a[2]), f(&a[3])]
 }
 
-/// `n` points.
-fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
+/// `n` points : `n` fois un point.
+fn pt(n: usize) -> Mesure {
+    n * Mesure::UN
 }
 
 /// `a` vaut `b` à `tolerance` près (une mesure écrite en décimal).

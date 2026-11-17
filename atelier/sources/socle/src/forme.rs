@@ -965,10 +965,6 @@ impl NombreLu {
         t.parse::<serde_json::Number>().map(NombreLu)
     }
 
-    pub fn as_i64(&self) -> Option<i64> {
-        self.0.as_i64()
-    }
-
     pub fn as_u64(&self) -> Option<u64> {
         self.0.as_u64()
     }
@@ -976,12 +972,6 @@ impl NombreLu {
 
 impl From<u64> for NombreLu {
     fn from(n: u64) -> NombreLu {
-        NombreLu(n.into())
-    }
-}
-
-impl From<i64> for NombreLu {
-    fn from(n: i64) -> NombreLu {
         NombreLu(n.into())
     }
 }

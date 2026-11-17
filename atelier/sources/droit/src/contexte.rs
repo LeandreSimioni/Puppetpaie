@@ -108,7 +108,7 @@ pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) 
             if let Some(j) = v.depuis {
                 for (nic, (_, ferme)) in vus.iter_mut() {
                     if !presents.contains(&nic.as_deref()) && ferme.is_none() {
-                        *ferme = Some(j.plus_jours(-1)?);
+                        *ferme = Some(j.avant(Duree::jours(1))?);
                     }
                 }
             }

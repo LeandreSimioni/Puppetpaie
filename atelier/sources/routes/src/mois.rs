@@ -1823,7 +1823,7 @@ pub(crate) fn chevrons_dits(e: &engagement::Engagement) -> R<Chevrons> {
     let avant = match place {
         PlaceDuMois::Seul | PlaceDuMois::Premier => None,
         PlaceDuMois::Dernier | PlaceDuMois::Milieu => {
-            let voisin = premier.plus_jours(-1)?.mois_civil();
+            let voisin = premier.avant(socle::date::Duree::jours(1))?.mois_civil();
             Some(match mois.first() {
                 Some(&m) => format!("{} — commencé en {} · voir {}", bornes, clair(m), clair(voisin)),
                 None => format!("{} — voir {}", bornes, clair(voisin)),

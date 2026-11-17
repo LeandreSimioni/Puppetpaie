@@ -20,11 +20,10 @@ use serde_json::{json, Value};
 // Outils.
 // ---------------------------------------------------------------------------
 
-/// `n` points.
-fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
+/// `n` points : `n` fois un point.
+fn pt(n: usize) -> Mesure {
+    n * Mesure::UN
 }
-
 /// `a` vaut `b` à `tolerance` près (une mesure écrite en décimal).
 fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
     (a - b).abs() < mesure(tolerance)
@@ -281,7 +280,7 @@ fn lignes(pdf: &[u8]) -> Vec<Ligne> {
                 }
                 "Tj" | "TJ" => {
                     let f = &faces.iter().find(|(n, _)| **n == police).unwrap().1;
-                    let upem = f.units_per_em() as i64;
+                    let upem = pt(usize::from(f.units_per_em()));
                     let morceaux: Vec<&Object> = match &op.operands[0] {
                         Object::Array(a) => a.iter().collect(),
                         o => vec![o],
@@ -294,14 +293,14 @@ fn lignes(pdf: &[u8]) -> Vec<Ligne> {
                                     let adv = f
                                         .glyph_index(c)
                                         .and_then(|g| f.glyph_hor_advance(g))
-                                        .unwrap_or(0) as i64;
-                                    largeur += taille.fois_rapport(adv, upem).unwrap();
+                                        .unwrap_or(0);
+                                    largeur += taille.fois_rapport(pt(usize::from(adv)), upem).unwrap();
                                 }
                             }
                             // Un décalage de TJ, en millièmes de la taille : positif = vers la
                             // gauche. Celui qui suit une espace étire l'espace (justification).
                             n => {
-                                let d = -(nombre(n) * taille) / 1000;
+                                let d = (-(nombre(n) * taille)).part_sur(1000).unwrap();
                                 largeur += d;
                                 if !d.est_nulle() {
                                     mot = d;
@@ -907,8 +906,8 @@ fn tableau_etendue_gras_fond_filets_et_couleurs() {
         .filter(|o| o.operator == "rg")
         .map(|o| o.operands.iter().map(nombre).collect())
         .collect();
-    assert!(remplissages.iter().any(|c| proche(c[0], pt(0xB2) / 255, "0.01") && c[1] < mesure("0.2")), "{:?}", remplissages);
-    assert!(remplissages.iter().any(|c| c.iter().all(|x| proche(*x, pt(0x77) / 255, "0.01"))), "{:?}", remplissages);
+    assert!(remplissages.iter().any(|c| proche(c[0], pt(0xB2).part_sur(255).unwrap(), "0.01") && c[1] < mesure("0.2")), "{:?}", remplissages);
+    assert!(remplissages.iter().any(|c| c.iter().all(|x| proche(*x, pt(0x77).part_sur(255).unwrap(), "0.01"))), "{:?}", remplissages);
     // Filets : un par ligne du corps (2) plus le filet haut explicite de « Total » (3 traits).
     assert_eq!(ops.iter().filter(|o| o.operator == "S").count(), 3);
     // Le texte du bloc, dans l'ordre ; l'en-tête et « gras » sont en Liberation Sans Bold.
@@ -1278,10 +1277,10 @@ fn justification_les_lignes_pleines_finissent_au_bord_droit() {
     assert_eq!(recolle, LOREM);
     // Et l'inspection voit les mêmes mots, le dernier mot des lignes pleines au bord droit.
     let ins = inspecter(&pdf, "justifie.pdf");
-    let mut par_ligne: BTreeMap<i64, Vec<Vec<Mesure>>> = BTreeMap::new();
+    let mut par_ligne: BTreeMap<Mesure, Vec<Vec<Mesure>>> = BTreeMap::new();
     for w in ins["pages"][0]["mots"].as_array().unwrap() {
         let r = nombres(&w["rect"]);
-        par_ligne.entry(r[3].arrondi()).or_default().push(r);
+        par_ligne.entry(r[3].arrondie(0)).or_default().push(r);
     }
     let v: Vec<(Mesure, Mesure)> = par_ligne
         .values()
@@ -1316,7 +1315,7 @@ fn alignements_gauche_centre_droite() {
         let l = &lignes(&pdf)[0];
         match al {
             "gauche" => assert!(proche(l.x, pt(50), "0.01")),
-            "centre" => assert!(proche(l.x + l.largeur / 2, pt(200), "0.05"), "{:?}", l),
+            "centre" => assert!(proche(l.x + l.largeur.moitie(), pt(200), "0.05"), "{:?}", l),
             _ => assert!(proche(l.x + l.largeur, pt(350), "0.05"), "{:?}", l),
         }
     }
@@ -1393,7 +1392,7 @@ fn exemple_contrat_deux_pages_texte_logo_et_signatures() {
     let gauche = l.iter().find(|x| x.texte == "L’employeur").unwrap();
     let droite = l.iter().find(|x| x.texte == "Le salarié").unwrap();
     assert!(proche(gauche.x, pt(52), "0.01"));
-    assert!(proche(droite.x, pt(52) + (mesure("595.28") - pt(104)) / 2, "0.1"), "{:?}", droite);
+    assert!(proche(droite.x, pt(52) + (mesure("595.28") - pt(104)).moitie(), "0.1"), "{:?}", droite);
     assert_eq!(gauche.page, droite.page);
 
     let ins = inspecter(&pdf, "contrat.pdf");
@@ -1566,7 +1565,7 @@ fn texte_fixe_s_aligne_a_droite_et_au_centre_de_x() {
     let d = m.iter().find(|w| w.4 == "Droite").unwrap();
     assert!(proche(d.2, pt(300), "0.3"), "bord droit {}", d.2);
     let c = m.iter().find(|w| w.4 == "Centre").unwrap();
-    assert!(proche((c.0 + c.2) / 2, pt(200), "0.3"), "centre {}", (c.0 + c.2) / 2);
+    assert!(proche((c.0 + c.2).moitie(), pt(200), "0.3"), "centre {}", (c.0 + c.2).moitie());
 }
 
 #[test]
@@ -1616,7 +1615,7 @@ fn trait_et_image_fixes_se_posent_aux_coordonnees_donnees() {
     }
     // Calée en haut à gauche, ou centrée dans la boîte.
     assert!(proche(images[0][0], pt(200), "0.2"), "{:?}", images[0]);
-    assert!(proche((images[1][0] + images[1][2]) / 2, pt(240), "0.2"), "{:?}", images[1]);
+    assert!(proche((images[1][0] + images[1][2]).moitie(), pt(240), "0.2"), "{:?}", images[1]);
 }
 
 #[test]
@@ -1715,7 +1714,7 @@ fn pied_et_entete_repetes_avec_numero_et_total() {
         let g = l.iter().find(|x| x.page == p && x.texte == "Période 2026").unwrap();
         assert!(proche(g.x, pt(50), "0.05"));
         let c = l.iter().find(|x| x.page == p && x.texte == "au centre").unwrap();
-        assert!(proche(c.x + c.largeur / 2, pt(200), "0.05"));
+        assert!(proche(c.x + c.largeur.moitie(), pt(200), "0.05"));
     }
     let e = l.iter().find(|x| x.page == 2 && x.texte == "Titre de l'état").unwrap();
     assert!(proche(e.y, pt(480), "0.2"), "ligne de base de l'en-tête : {}", e.y);

@@ -31,16 +31,16 @@ const NBSP: &str = "\u{a0}";
 const BLANC: &str = "#FFFFFF";
 
 /// Emplacement du logo sur la page, en points PDF (A4 = 595 x 842).
-pub const LOGO_LARGEUR: Mesure = Mesure::entier(74);
-pub const LOGO_MARGE_DROITE: Mesure = Mesure::entier(34);
-pub const LOGO_MARGE_HAUT: Mesure = Mesure::entier(28);
+pub const LOGO_LARGEUR: Mesure = mesure("74");
+pub const LOGO_MARGE_DROITE: Mesure = mesure("34");
+pub const LOGO_MARGE_HAUT: Mesure = mesure("28");
 
 /// Le pied de chaque page du bulletin : « Édité avec » et le mot Puppetpaie dessiné (`donnees/puppetpaie-mot.svg`),
 /// en gris clair, en bas a droite. Le mot a 657,2 sur 195,4 de cadre, sa ligne de base a 84,1 du bas : a 33 points de
 /// large, il descend de 4,2 points sous celle du texte.
 const PIED_TEXTE: &str = "Édité avec";
 const PIED_GRIS: &str = "#C5C9CE";
-const PIED_MOT_LARGEUR: Mesure = Mesure::entier(33);
+const PIED_MOT_LARGEUR: Mesure = mesure("33");
 const PIED_MOT_DESCENTE: Mesure = mesure("4.2");
 
 /// Dans l'ordre de preference : le vectoriel d'abord.
@@ -197,7 +197,7 @@ fn filet(couleur: &str, epaisseur: Mesure) -> f::Filet {
 
 /// Les cellules des tableaux : 7 pt, 1,4 pt au-dessus et au-dessous, 3 pt de chaque cote.
 fn marge_cellule() -> f::MargeCellule {
-    f::MargeCellule { haut: mesure("1.4"), droite: Mesure::entier(3), bas: mesure("1.4"), gauche: Mesure::entier(3) }
+    f::MargeCellule { haut: mesure("1.4"), droite: mesure("3"), bas: mesure("1.4"), gauche: mesure("3") }
 }
 
 /// Premiere colonne a gauche, les autres a droite, un filet fin sous chaque ligne.
@@ -214,7 +214,7 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
         colonnes,
         entete: Some(entete),
         lignes: Some(lignes),
-        taille: Some(Mesure::entier(7)),
+        taille: Some(mesure("7")),
         couleur: None,
         interligne: Some(mesure("1.27")),
         marge_cellule: marge_cellule(),
@@ -821,7 +821,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCo
     // Un bulletin sans numero (un apercu) ne le dit pas.
     let bulletin = if let Some(n) = numero { format!("au bulletin n° {}", n) } else { "au bulletin".to_string() };
     let mut blocs = vec![
-        para(vec![m("Détail des cotisations et contributions", true, None)], Mesure::entier(11), Some(ROUGE), Mesure::ZERO, Mesure::UN),
+        para(vec![m("Détail des cotisations et contributions", true, None)], mesure("11"), Some(ROUGE), Mesure::ZERO, Mesure::UN),
         para(
             vec![mt(format!(
                 "Document annexe {} — {} — du {} au {}.\nIl détaille, sous chaque ligne du bulletin \
@@ -833,10 +833,10 @@ fn blocs_annexe(p: &Paie, numero: Option<&NumeroDeBulletin>, garanties: &[IdDeCo
                 p.engagement.periode_payee()?.debut().jj_mm_aaaa(),
                 p.engagement.periode_payee()?.fin().jj_mm_aaaa(),
             ))],
-            Mesure::entier(7),
+            mesure("7"),
             Some(GRIS),
             Mesure::ZERO,
-            Mesure::entier(6),
+            mesure("6"),
         ),
     ];
     let th = vec![Opt::Couleur(BLANC), gras(), Opt::Taille(mesure("6.6")), Opt::Fond(ROUGE)];
@@ -969,7 +969,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     });
     let (siret_siege, naf_siege) = (ent.siret.ecrite("siret")?, ent.naf.ecrite("naf")?);
     let mut blocs = vec![
-        para(vec![m(nom_affichage, true, None)], Mesure::entier(13), Some(ARDOISE), Mesure::ZERO, Mesure::ZERO),
+        para(vec![m(nom_affichage, true, None)], mesure("13"), Some(ARDOISE), Mesure::ZERO, Mesure::ZERO),
         para(
             vec![mt(format!(
                 "{} — {} {}\nSiret {} {}·{} APE {} {}·{} Licence {}",
@@ -990,9 +990,9 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             true,
             None,
         )],
-        Mesure::entier(11),
+        mesure("11"),
         Some(ROUGE),
-        Mesure::entier(8),
+        mesure("8"),
         Mesure::UN,
     ));
     if let Some(r) = j.rectificatif {
@@ -1002,10 +1002,10 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         };
         blocs.push(para(
             vec![m(format!("Rectifie le bulletin n° {} de {}", r.rectifie, r.mois_origine.libelle(Graphie::Accentuee)), true, None), mt(suite)],
-            Mesure::entier(7),
+            mesure("7"),
             Some(GRIS),
             Mesure::ZERO,
-            Mesure::entier(5),
+            mesure("5"),
         ));
     }
     let k = |t: &str| m(t, false, Some(GRIS_CLAIR));
@@ -1034,7 +1034,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         let dates: Vec<String> = e.dates_travail.iter().map(Jour::jj_mm_aaaa).collect();
         travail = vec![m("Dates travaillées :", true, None), mt(format!(" {}", dates.join(", ")))];
     }
-    blocs.push(para(vec![mt(sous_titre)], Mesure::entier(7), Some(GRIS), Mesure::ZERO, Mesure::entier(5)));
+    blocs.push(para(vec![mt(sous_titre)], mesure("7"), Some(GRIS), Mesure::ZERO, mesure("5")));
 
     // Le cadre d'identite : un tableau d'une ligne, deux cellules a filet.
     let nir_affiche = match sal.nir.remplie() {
@@ -1095,7 +1095,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         colonnes: vec![moitie(), moitie()],
         entete: None,
         lignes: Some(vec![ligne(vec![cm(salarie, None), cm(employeur, None)], vec![])]),
-        taille: Some(Mesure::entier(7)),
+        taille: Some(mesure("7")),
         couleur: None,
         interligne: Some(mesure("1.27")),
         marge_cellule: marge_cellule(),
@@ -1129,7 +1129,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         )),
     ];
     periode.extend(travail);
-    blocs.push(para(periode, Mesure::entier(7), Some(GRIS), Mesure::entier(5), Mesure::entier(5)));
+    blocs.push(para(periode, mesure("7"), Some(GRIS), mesure("5"), mesure("5")));
 
     // Le tableau : le modele de l'arrete du 25/02/2016, art. 1, I (redaction du 25/06/2024, seul modele depuis le
     // 01/01/2026 ; atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml),
@@ -1217,7 +1217,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         ))],
         mesure("6.2"),
         Some(GRIS_CLAIR),
-        Mesure::entier(5),
+        mesure("5"),
         Mesure::ZERO,
     ));
     Ok(blocs)
@@ -1248,7 +1248,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero, &j.prevoyance)?));
         }
     }
-    let marge = Mesure::entier(42);
+    let marge = mesure("42");
     Ok(Description {
         format: fabrique_pdf::FORMAT,
         page: Some(f::Page {
@@ -1271,10 +1271,10 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             gauche: None,
             centre: None,
             droite: Some(PIED_TEXTE.to_string()),
-            taille: Some(Mesure::entier(6)),
+            taille: Some(mesure("6")),
             couleur: Some(PIED_GRIS.to_string()),
             gras: false,
-            distance: Mesure::entier(24),
+            distance: mesure("24"),
             premiere_page: true,
             image: Some(f::ImageRepere {
                 chemin: chemin_net(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),

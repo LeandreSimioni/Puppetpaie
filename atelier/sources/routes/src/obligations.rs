@@ -218,7 +218,7 @@ fn plus(j: Jour, d: socle::date::Duree<socle::date::EnJours>) -> R<Jour> {
 }
 
 fn lendemain(j: Jour) -> R<Jour> {
-    j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))
+    j.apres(socle::date::Duree::jours(1)).map_err(|m| m.reclasser(Classe::CalculImpossible))
 }
 
 

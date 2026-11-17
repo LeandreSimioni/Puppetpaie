@@ -926,7 +926,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
-        mode: b.periode.fin().annee() >= const { socle::mois::Annee::constante(2023) },
+        mode: b.periode.fin().annee() >= const { socle::mois::Annee::constante("2023") },
         unite: unite.into(),
         cumuls: [
             [p, a],
@@ -971,11 +971,10 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
     }
     cumuls.push(("Salaire brut".to_string(), fr(c.brut), fr(c.annee.brut)));
     let (d0, d1) = (&b.periode.debut(), &b.periode.fin());
-    let fin_courte = format!("{}/{}/{}", d1.quantieme_ecrit(), d1.mois_civil().mm(), d1.annee().aa());
     let courte = if d0.mois_civil() == d1.mois_civil() {
-        format!("du {} au {}", d0.quantieme_ecrit(), fin_courte)
+        format!("du {} au {}", d0.quantieme_ecrit(), d1.j_mm_aa())
     } else {
-        format!("du {}/{} au {}", d0.quantieme_ecrit(), d0.mois_civil().mm(), fin_courte)
+        format!("du {} au {}", d0.j_mm(), d1.j_mm_aa())
     };
     let mut statut = b.statut.clone();
     if let Some(p) = statut.get(..1) {

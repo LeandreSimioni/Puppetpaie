@@ -341,7 +341,7 @@ impl Inconnu {
 
 /// Un signe du texte : un caractère, ou un caractère que rien ne dit.
 #[derive(Clone, Debug, PartialEq)]
-pub enum Signe {
+pub enum SigneDuTexte {
     Caractere(char),
     Inconnu(Inconnu),
 }
@@ -364,14 +364,14 @@ pub struct TexteDePage {
 
 impl TexteDePage {
     /// Les morceaux d'une page, à partir de ses lignes.
-    fn de_lignes(page: u32, lignes: Vec<Vec<Signe>>) -> TexteDePage {
+    fn de_lignes(page: u32, lignes: Vec<Vec<SigneDuTexte>>) -> TexteDePage {
         let mut morceaux = Vec::new();
         let mut courant = String::new();
         for ligne in lignes {
             for s in ligne {
                 match s {
-                    Signe::Caractere(c) => courant.push(c),
-                    Signe::Inconnu(i) => {
+                    SigneDuTexte::Caractere(c) => courant.push(c),
+                    SigneDuTexte::Inconnu(i) => {
                         if !courant.is_empty() {
                             morceaux.push(Morceau::Texte(std::mem::take(&mut courant)));
                         }
@@ -415,12 +415,12 @@ impl TexteDePage {
 }
 
 /// Le texte d'une ligne, quand chacun de ses signes est un caractère.
-pub(crate) fn caracteres_de(ligne: &[Signe]) -> Option<String> {
+pub(crate) fn caracteres_de(ligne: &[SigneDuTexte]) -> Option<String> {
     ligne
         .iter()
         .map(|s| match s {
-            Signe::Caractere(c) => Some(*c),
-            Signe::Inconnu(_) => None,
+            SigneDuTexte::Caractere(c) => Some(*c),
+            SigneDuTexte::Inconnu(_) => None,
         })
         .collect()
 }
@@ -536,7 +536,7 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
                 match ttf_parser::Face::parse(&octets, 0) {
                     Ok(face) => {
                         let em = face.units_per_em() as i64;
-                        let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
+                        let (a, d) = (Mesure::entier(face.ascender() as i64).divisee_par(em), Mesure::entier(-(face.descender() as i64)).divisee_par(em));
                         if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
                             return Ok(Some(Hauteurs { asc: a, desc: d }));
                         }
@@ -550,7 +550,7 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
             // d'Adobe (`afm.rs`), celles qu'un descripteur dirait (`Ascent`, `Descent`, table 122).
             if let Some(base) = base_font {
                 if let Some((a, d)) = crate::afm::ascendant_descendant(base)? {
-                    return Ok(Some(Hauteurs { asc: a / 1000, desc: d.abs() / 1000 }));
+                    return Ok(Some(Hauteurs { asc: a.divisee_par(1000), desc: d.abs().divisee_par(1000) }));
                 }
             }
         }
@@ -560,7 +560,7 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
         None => (None, None),
     };
     match (ascent, descent, programme_illisible) {
-        (Some(a), Some(d), _) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => Ok(Some(Hauteurs { asc: a / 1000, desc: d.abs() / 1000 })),
+        (Some(a), Some(d), _) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => Ok(Some(Hauteurs { asc: a.divisee_par(1000), desc: d.abs().divisee_par(1000) })),
         (_, _, Some(pourquoi)) => illisible(pourquoi),
         (_, _, None) => Ok(None),
     }
@@ -642,9 +642,9 @@ impl Police {
     /// Les signes d'un code (ISO 32000-1, 9.10.2) : `ToUnicode` d'abord ; puis l'encodage d'une police simple, ou le
     /// programme d'une police composée. Aucun quand le code ne montre aucun glyphe ; un glyphe dont rien ne dit le
     /// caractère est un signe inconnu, qui nomme la police et le code.
-    fn signes(&self, code: u32, octets: &[u8]) -> Vec<Signe> {
+    fn signes(&self, code: u32, octets: &[u8]) -> Vec<SigneDuTexte> {
         if let Some(t) = self.unicode.get(&code) {
-            return t.chars().map(Signe::Caractere).collect();
+            return t.chars().map(SigneDuTexte::Caractere).collect();
         }
         let lu = match &self.sorte {
             Sorte::Simple { encodage } => encodage[code as usize & 0xFF].clone(),
@@ -662,9 +662,9 @@ impl Police {
             }
         };
         match lu {
-            Lu::Texte(t) => t.chars().map(Signe::Caractere).collect(),
+            Lu::Texte(t) => t.chars().map(SigneDuTexte::Caractere).collect(),
             Lu::Rien => Vec::new(),
-            Lu::Inconnu(pourquoi) => vec![Signe::Inconnu(Inconnu { police: self.nom.clone(), code: code_ecrit(octets), pourquoi })],
+            Lu::Inconnu(pourquoi) => vec![SigneDuTexte::Inconnu(Inconnu { police: self.nom.clone(), code: code_ecrit(octets), pourquoi })],
         }
     }
 
@@ -675,8 +675,8 @@ impl Police {
             return Z;
         };
         match self.largeurs.get(&cle) {
-            Some(w) => *w / 1000,
-            None => self.largeur_defaut / 1000,
+            Some(w) => w.divisee_par(1000),
+            None => self.largeur_defaut.divisee_par(1000),
         }
     }
 }
@@ -1336,13 +1336,13 @@ const DECALAGE_MAX: Mesure = mesure("0.8");
 
 struct LigneCourante {
     dir: (Mesure, Mesure),
-    texte: Vec<Signe>,
+    texte: Vec<SigneDuTexte>,
     /// Une place par signe de `texte` (`None` : un espace ajouté), si `Mise::garder`.
     boites: Vec<Option<Place>>,
 }
 
 struct Mise {
-    lignes: Vec<Vec<Signe>>,
+    lignes: Vec<Vec<SigneDuTexte>>,
     /// Garder la boîte de chaque caractère (`--inspecter`) : `boites[k]` est celle de `lignes[k]`.
     garder: bool,
     boites: Vec<Vec<Option<Place>>>,
@@ -1363,7 +1363,7 @@ impl Mise {
 
     /// Pose un signe : origine `p`, vecteur de direction `dir` (déjà à l'échelle du corps),
     /// avance `adv` (fraction d'em).
-    fn caractere(&mut self, c: Signe, p:(Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Place) {
+    fn caractere(&mut self, c: SigneDuTexte, p:(Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Place) {
         let longueur = dir.0.hypot(dir.1);
         let (Some(nx), Some(ny)) = (dir.0.sur(longueur), dir.1.sur(longueur)) else {
             return;
@@ -1399,7 +1399,7 @@ impl Mise {
         }
         let garder = self.garder;
         let l = self.courante.as_mut().unwrap();
-        let blanc = Signe::Caractere(' ');
+        let blanc = SigneDuTexte::Caractere(' ');
         if espace && l.texte.last() != Some(&blanc) && c != blanc {
             l.texte.push(blanc);
             if garder {
@@ -1417,12 +1417,12 @@ impl Mise {
     }
 
     /// Les lignes avec la boîte de chacun de leurs caractères (`Mise::garder`).
-    fn finir_avec_boites(mut self) -> Vec<(Vec<Signe>, Vec<Option<Place>>)> {
+    fn finir_avec_boites(mut self) -> Vec<(Vec<SigneDuTexte>, Vec<Option<Place>>)> {
         self.fermer();
         self.lignes.into_iter().zip(self.boites).collect()
     }
 
-    fn finir(mut self) -> Vec<Vec<Signe>> {
+    fn finir(mut self) -> Vec<Vec<SigneDuTexte>> {
         self.fermer();
         self.lignes
     }
@@ -1614,9 +1614,9 @@ impl<'a> Interprete<'a> {
         };
         let n = a.texte.chars().count().max(1) as i64;
         for (k, c) in a.texte.chars().enumerate() {
-            let decalage = a.adv * k as i64 / n;
-            let place = Place::du_glyphe(&trm, decalage, decalage + a.adv / n, hauteurs);
-            self.mise.caractere(Signe::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), place);
+            let decalage = (k * a.adv).divisee_par(n);
+            let place = Place::du_glyphe(&trm, decalage, decalage + a.adv.divisee_par(n), hauteurs);
+            self.mise.caractere(SigneDuTexte::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv.divisee_par(n)), place);
         }
     }
 
@@ -1711,7 +1711,7 @@ impl<'a> Interprete<'a> {
                 }
                 "Tc" => e.tc = num(0)?,
                 "Tw" => e.tw = num(0)?,
-                "Tz" => e.th = num(0)? / 100,
+                "Tz" => e.th = num(0)?.divisee_par(100),
                 "TL" => e.tl = num(0)?,
                 "Tr" => e.rendu = num(0)?.tronque(),
                 "Ts" => e.rise = num(0)?,
@@ -1763,7 +1763,7 @@ impl<'a> Interprete<'a> {
                             Object::Integer(_) | Object::Real(_) => {
                                 let n = lecture::element(doc, x, "un décalage de TJ", lecture::nombre)?;
                                 let vertical = police_choisie(&e)?.vertical;
-                                let t = -(n * e.taille) / 1000;
+                                let t = (-(n * e.taille)).divisee_par(1000);
                                 let d = if vertical { translation(Z, t) } else { translation(t * e.th, Z) };
                                 tm = mul(&d, &tm);
                             }
@@ -1891,7 +1891,7 @@ impl<'a> Interprete<'a> {
     }
 
     /// Pose les signes d'un code (ou d'une chaîne entière que rien ne découpe) à la position du texte, d'avance `w0`.
-    fn poser(&mut self, police: &Police, e: &Etat, tm: &Mat, signes: Vec<Signe>, w0: Mesure) -> Result<(), Refus> {
+    fn poser(&mut self, police: &Police, e: &Etat, tm: &Mat, signes: Vec<SigneDuTexte>, w0: Mesure) -> Result<(), Refus> {
         let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
         let visible = self.dans_le_cadre(&trm, w0);
         let boite = Place::du_glyphe(&trm, Z, w0, police.hauteurs);
@@ -1924,7 +1924,7 @@ impl<'a> Interprete<'a> {
                     "le CMap prédéfini {} n'est pas déposé et la police n'a pas de /ToUnicode : rien ne dit où ses codes finissent, ni leurs CID (ISO 32000-1, 9.10.2)",
                     cmap
                 );
-                let inconnu = Signe::Inconnu(Inconnu { police: police.nom.clone(), code: code_ecrit(chaine), pourquoi });
+                let inconnu = SigneDuTexte::Inconnu(Inconnu { police: police.nom.clone(), code: code_ecrit(chaine), pourquoi });
                 return self.poser(&police, e, tm, vec![inconnu], Z);
             }
         };
@@ -2066,14 +2066,14 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
 }
 
 /// Le texte d'une page : son contenu, puis l'apparence de ses annotations (champs de formulaire).
-fn texte_de_page(doc: &Document, id: ObjectId) -> Result<Vec<Vec<Signe>>, Refus> {
+fn texte_de_page(doc: &Document, id: ObjectId) -> Result<Vec<Vec<SigneDuTexte>>, Refus> {
     Ok(lire_la_page(doc, id, false)?.mise.finir())
 }
 
 /// Ce que `--inspecter` relève d'une page, dans le repère du PDF (origine en bas à gauche).
 pub(crate) struct PageLue {
     /// Les lignes de texte (celles de `--texte`) avec la boîte de chacun de leurs signes.
-    pub lignes: Vec<(Vec<Signe>, Vec<Option<Place>>)>,
+    pub lignes: Vec<(Vec<SigneDuTexte>, Vec<Option<Place>>)>,
     pub images: Vec<Boite>,
     pub traits: Vec<Boite>,
     pub polices: Vec<String>,

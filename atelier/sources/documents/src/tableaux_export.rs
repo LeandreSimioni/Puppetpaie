@@ -1200,14 +1200,14 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     Ok(page.into_bytes())
 }
 
-const PAGE_LARGEUR: pdf::Mesure = pdf::Mesure::milliemes(841_890);
-const PAGE_HAUTEUR: pdf::Mesure = pdf::Mesure::milliemes(595_280);
+const PAGE_LARGEUR: pdf::Mesure = mesure("841.89");
+const PAGE_HAUTEUR: pdf::Mesure = mesure("595.28");
 const ROUGE: &str = "#B22222";
 const ENCRE: &str = "#2C3E50";
 
 const CHASSE: pdf::Mesure = mesure("3.9");
 const CHASSE_ENTETE: pdf::Mesure = mesure("4.2");
-const MARGE_CELLULE: pdf::Mesure = pdf::Mesure::entier(3);
+const MARGE_CELLULE: pdf::Mesure = mesure("3");
 /// La ligne de texte la plus longue, en caracteres, avant qu'elle raccourcisse.
 const LIGNE_DE_TEXTE: usize = 40;
 
@@ -1223,15 +1223,12 @@ pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Ran
         mot_entete[i] = libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) * Mesure::UN;
     }
     let gonfle = |caracteres: usize, genre: Rangee| {
-        let (n, d) = match genre {
-            Rangee::Total => (11, 10),
-            Rangee::General => (13, 10),
-            Rangee::Ligne => (1, 1),
+        let gonflement = match genre {
+            Rangee::Total => mesure("1.1"),
+            Rangee::General => mesure("1.3"),
+            Rangee::Ligne => Mesure::UN,
         };
-        match (caracteres * Mesure::UN).fois_rapport(n, d) {
-            Some(m) => m,
-            None => unreachable!("un rapport de dix"),
-        }
+        caracteres * gonflement
     };
     for (cellules, genre) in rangees {
         for (i, c) in cellules.iter().take(n).enumerate() {
@@ -1246,7 +1243,7 @@ pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Ran
         (0..n)
             .map(|i| {
                 let lg = if texte[i] { plus_long[i].min(ligne * Mesure::UN).max(plus_long_mot[i]) } else { plus_long[i] };
-                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + MARGE_CELLULE * 2
+                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + 2 * MARGE_CELLULE
             })
             .collect()
     };
@@ -1304,7 +1301,7 @@ pub(crate) fn description_pdf(
     titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, Rangee)], notes: &[String],
     sources: &[String],
 ) -> pdf::Description {
-    let fr = fractions(entetes, rangees, PAGE_LARGEUR - pdf::Mesure::entier(68));
+    let fr = fractions(entetes, rangees, PAGE_LARGEUR - mesure("68"));
     let colonnes = fr
         .iter()
         .zip(entetes)
@@ -1320,7 +1317,7 @@ pub(crate) fn description_pdf(
                 l.filet_bas = filets("#999999", mesure("0.5"));
             } else if *genre == Rangee::General {
                 l.gras = true;
-                l.taille = Some(pdf::Mesure::entier(8));
+                l.taille = Some(mesure("8"));
                 l.couleur = Some(ROUGE.to_string());
                 l.filet_haut = filets("#999999", mesure("0.5"));
                 l.filet_bas = filets("#999999", mesure("0.5"));
@@ -1334,40 +1331,39 @@ pub(crate) fn description_pdf(
     entete.couleur = Some(ROUGE.to_string());
     entete.filet_bas = filets(ROUGE, mesure("0.7"));
     let mut blocs: Vec<pdf::Bloc> = Vec::new();
-    let pt = pdf::Mesure::entier;
     let zero = pdf::Mesure::ZERO;
     if let Some(nom) = nom {
-        blocs.push(paragraphe(nom.to_string(), true, mesure("8.5"), None, false, zero, pt(1)));
+        blocs.push(paragraphe(nom.to_string(), true, mesure("8.5"), None, false, zero, mesure("1")));
     }
-    blocs.push(paragraphe(titre.to_string(), true, pt(11), Some(ROUGE), true, zero, pt(1)));
-    blocs.push(paragraphe(sous_titre.to_string(), false, mesure("6.8"), Some("#555555"), false, zero, pt(6)));
+    blocs.push(paragraphe(titre.to_string(), true, mesure("11"), Some(ROUGE), true, zero, mesure("1")));
+    blocs.push(paragraphe(sous_titre.to_string(), false, mesure("6.8"), Some("#555555"), false, zero, mesure("6")));
     blocs.push(pdf::Bloc::Tableau(pdf::Tableau {
         colonnes,
         entete: Some(vec![entete]),
         lignes: Some(lignes),
-        taille: Some(pt(7)),
+        taille: Some(mesure("7")),
         couleur: Some(ENCRE.to_string()),
         interligne: None,
-        marge_cellule: pdf::MargeCellule { haut: mesure("1.6"), droite: pt(3), bas: mesure("1.6"), gauche: pt(3) },
+        marge_cellule: pdf::MargeCellule { haut: mesure("1.6"), droite: mesure("3"), bas: mesure("1.6"), gauche: mesure("3") },
         filet_lignes: filets("#EEEEEE", mesure("0.3")),
         filets_cellules: None,
         espace_avant: zero,
         espace_apres: zero,
     }));
     for a in notes {
-        blocs.push(paragraphe(format!("! {}", a), false, mesure("6.3"), Some("#777777"), false, pt(6), zero));
+        blocs.push(paragraphe(format!("! {}", a), false, mesure("6.3"), Some("#777777"), false, mesure("6"), zero));
     }
     for src in sources {
-        blocs.push(paragraphe(format!("Source : {}", src), false, pt(6), Some("#999999"), false, pt(2), zero));
+        blocs.push(paragraphe(format!("Source : {}", src), false, mesure("6"), Some("#999999"), false, mesure("2"), zero));
     }
     pdf::Description {
         format: fabrique_pdf::FORMAT,
         page: Some(pdf::Page {
             largeur: PAGE_LARGEUR,
             hauteur: PAGE_HAUTEUR,
-            marges: pdf::Marges { haut: pt(40), droite: pt(34), bas: pt(40), gauche: pt(34) },
+            marges: pdf::Marges { haut: mesure("40"), droite: mesure("34"), bas: mesure("40"), gauche: mesure("34") },
         }),
-        police: Some(pdf::Police { taille: pt(7), interligne: mesure("1.25"), couleur: ENCRE.to_string() }),
+        police: Some(pdf::Police { taille: mesure("7"), interligne: mesure("1.25"), couleur: ENCRE.to_string() }),
         style: None,
         logo: None,
         titre: Some(format!("{} — {}", titre, periode)),
@@ -1379,7 +1375,7 @@ pub(crate) fn description_pdf(
             taille: Some(mesure("8.5")),
             couleur: Some(ENCRE.to_string()),
             gras: true,
-            distance: pt(24),
+            distance: mesure("24"),
             premiere_page: false,
             image: None,
         }),
@@ -1390,7 +1386,7 @@ pub(crate) fn description_pdf(
             taille: Some(mesure("6.5")),
             couleur: Some("#777777".to_string()),
             gras: false,
-            distance: pt(20),
+            distance: mesure("20"),
             premiere_page: true,
             image: None,
         }),

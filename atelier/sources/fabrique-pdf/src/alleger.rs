@@ -121,7 +121,7 @@ fn jpeg(image: &DynamicImage, qualite: u8) -> Result<Vec<u8>, Refus> {
 
 /// La largeur en pixels d'une image imprimée sur `points` à `resolution`.
 fn pixels(points: Mesure, resolution: Mesure) -> u32 {
-    (points * resolution / 72).plafond().clamp(1, u32::MAX as i64) as u32
+    (points * resolution).divisee_par(72).plafond().clamp(1, u32::MAX as i64) as u32
 }
 
 /// L'écriture de `image` (à sa taille) : PNG, sans perte, si l'image est transparente, si le PNG tient dans `objectif`

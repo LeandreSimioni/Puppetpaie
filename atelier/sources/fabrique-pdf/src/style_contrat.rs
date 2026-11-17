@@ -172,11 +172,11 @@ fn signatures(v: &Valeurs, signature: Option<&std::path::Path>) -> Result<Bloc, 
                 largeur: SIGNATURE_LARGEUR,
                 flottante: true,
             });
-            employeur.push(Bloc::Espace(LIGNE_CORPS * 3 - Mesure::entier(3)));
+            employeur.push(Bloc::Espace(LIGNE_CORPS.fois_entier(3) - Mesure::entier(3)));
         }
-        None => employeur.push(Bloc::Espace(LIGNE_CORPS * 3)),
+        None => employeur.push(Bloc::Espace(LIGNE_CORPS.fois_entier(3))),
     }
-    artiste.push(Bloc::Espace(LIGNE_CORPS * 3));
+    artiste.push(Bloc::Espace(LIGNE_CORPS.fois_entier(3)));
     let etiquetter = |blocs: Vec<Bloc>, col: usize| -> Vec<BlocEtiquete> {
         blocs
             .into_iter()

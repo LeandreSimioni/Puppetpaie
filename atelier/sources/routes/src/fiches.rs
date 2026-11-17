@@ -658,7 +658,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants.
     let annee = match charge.annee {
         None => ctx.aujourdhui.annee(),
-        Some(a) if (const { Annee::constante(1900) }..=const { Annee::constante(2999) }).contains(&a) => a,
+        Some(a) if (const { Annee::constante("1900") }..=const { Annee::constante("2999") }).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
     let bar = match droit::contexte::socle_livre_lu(annee)? {

@@ -985,9 +985,8 @@ impl From<IdDeCourriel> for String {
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
 pub fn nouveau_message_id(domaine: &str) -> R<IdDeCourriel> {
-    let maintenant = socle::temps::secondes();
-    let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
-    IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
+    let centiemes = socle::paris::ecrit::centiemes(socle::temps::secondes());
+    IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes,socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
 /// Le nombre de lignes d'un texte, pour le refus d'un en-tête à plusieurs lignes.

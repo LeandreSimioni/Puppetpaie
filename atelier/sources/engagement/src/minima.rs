@@ -740,7 +740,7 @@ impl<'a> Cx<'a> {
                 "poste_depuis",
             ));
         };
-        let veille = jour_de_paie(self.paie)?.plus_jours(-1)?;
+        let veille = jour_de_paie(self.paie)?.avant(Duree::jours(1))?;
         // Un echelon de plus par periode entiere de cinq ans revolus, au plus le cinquieme ; aucun avant la premiere.
         let periodes = socle::date::Anciennete::revolue(depuis, &veille).au_dela_de(socle::date::Anciennete::ZERO).fois_entieres(socle::date::Anciennete::ans(5))?;
         let e = (periodes + 1).min(5) as usize;

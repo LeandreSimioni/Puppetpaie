@@ -88,7 +88,7 @@ pub fn decouper(p: Periode, mut jours: Vec<Jour>) -> R<Vec<Periode>> {
     let mut out = Vec::new();
     let mut d = p.debut();
     for j in jours {
-        out.push(Periode::du_au(d, j.plus_jours(-1)?)?);
+        out.push(Periode::du_au(d, j.avant(socle::date::Duree::jours(1))?)?);
         d = j;
     }
     out.push(Periode::du_au(d, p.fin())?);

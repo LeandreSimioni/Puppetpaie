@@ -74,6 +74,12 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct Aaaammjj;
 
+    /// Un jour `JJ/MM/AAAA` imprime (l'attestation employeur) : deux chiffres, une barre, deux chiffres, une barre, quatre
+    /// chiffres. Il se lit en un jour, ou en ce qui le rend impossible (`super::DateMalEcrite::Impossible` : l'annee
+    /// d'abord, sinon le mois, sinon le jour) ; `None` : le texte n'a pas cette forme.
+    #[derive(Debug, Clone, Copy)]
+    pub struct JjMmAaaa;
+
     /// Un jour `AAAA-MM-JJ`, et cette forme seule (une rubrique de nature date d'un retour NEOReS).
     #[derive(Debug, Clone, Copy)]
     pub struct JourIso;
@@ -174,6 +180,21 @@ pub mod format {
         type Lu = Option<Jour>;
         fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
             crate::date::lire_jjmmaaaa(t)
+        }
+    }
+
+    impl Format for JjMmAaaa {}
+    impl Scelle for JjMmAaaa {
+        type Lu = Option<Result<Jour, super::DateMalEcrite>>;
+        fn lire(self, t: &str, _: Jeton) -> Option<Result<Jour, super::DateMalEcrite>> {
+            let b = t.as_bytes();
+            let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
+            if b.len() != 10 || b[2] != b'/' || b[5] != b'/' || !chiffres(0, 2) || !chiffres(3, 5) || !chiffres(6, 10) {
+                return None;
+            }
+            let n = |a: usize, z: usize| b[a..z].iter().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
+            let (jour, mois, an) = (n(0, 2), n(3, 5), n(6, 10));
+            Some(Jour::nouveau(an as i32, mois, jour).ok_or_else(|| super::DateMalEcrite::Impossible(crate::date::date_impossible(an, mois, jour))))
         }
     }
 

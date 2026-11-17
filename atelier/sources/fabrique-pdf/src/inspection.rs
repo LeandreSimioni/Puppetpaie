@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::description::{illisible, Refus};
 use crate::lecture;
 use crate::mesure::Mesure;
-use crate::texte::{inspecter_page, Boite, Place, Signe};
+use crate::texte::{inspecter_page, Boite, Place, SigneDuTexte};
 
 #[derive(Serialize)]
 struct Chiffrement {
@@ -130,7 +130,7 @@ impl Repere {
 
 /// Les mots d'une ligne : les suites de caractères séparées par des espaces ou par un caractère que rien ne dit, avec
 /// leur boîte ; chaque caractère que rien ne dit, avec la sienne.
-fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Place>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
+fn mots_de(ligne: usize, texte: &[SigneDuTexte], boites: &[Option<Place>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
     let mut mot = String::new();
     let mut boite: Option<Place> = None;
     let mut finir = |mot: &mut String, boite: &mut Option<Place>| {
@@ -142,8 +142,8 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Place>], repere: &Rep
     };
     for (s, b) in texte.iter().zip(boites.iter()) {
         let c = match s {
-            Signe::Caractere(c) => *c,
-            Signe::Inconnu(i) => {
+            SigneDuTexte::Caractere(c) => *c,
+            SigneDuTexte::Inconnu(i) => {
                 finir(&mut mot, &mut boite);
                 if let Some(b) = b {
                     inconnus.push(InconnuVu { police: i.police.clone(), code: i.code.clone(), pourquoi: i.pourquoi.clone(), rect: repere.rect(b), ligne });

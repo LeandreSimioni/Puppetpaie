@@ -25,9 +25,9 @@ fn texte_fixe(texte: &str, taille: Mesure, extra: Value) -> Value {
     b
 }
 
-/// `n` points.
-fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
+/// `n` points : `n` fois un point.
+fn pt(n: usize) -> Mesure {
+    n * Mesure::UN
 }
 
 /// Les corps (opérateur `Tf`) des textes de la première page, dans l'ordre.
@@ -49,8 +49,8 @@ fn corps_poses(pdf: &[u8]) -> Vec<Mesure> {
 fn largeur(fichier: &str, texte: &str, corps: Mesure) -> Mesure {
     let donnees = std::fs::read(format!("{}/polices/{}", env!("CARGO_MANIFEST_DIR"), fichier)).unwrap();
     let face = ttf_parser::Face::parse(&donnees, 0).unwrap();
-    let unites: i64 = texte.chars().map(|c| face.glyph_hor_advance(face.glyph_index(c).unwrap()).unwrap() as i64).sum();
-    corps.fois_rapport(unites, face.units_per_em() as i64).unwrap()
+    let unites: usize = texte.chars().map(|c| usize::from(face.glyph_hor_advance(face.glyph_index(c).unwrap()).unwrap())).sum();
+    corps.fois_rapport(pt(unites), pt(usize::from(face.units_per_em()))).unwrap()
 }
 
 /// Le corps qui tient, recalculé à part du code de la fabrique.
@@ -59,7 +59,7 @@ fn corps_qui_tient(fichier: &str, texte: &str, corps: Mesure, place: Mesure) -> 
     if l <= place {
         corps
     } else {
-        corps.fois_rapport(place.en_millioniemes(), l.en_millioniemes()).unwrap().max(pt(6))
+        corps.fois_rapport(place, l).unwrap().max(pt(6))
     }
 }
 

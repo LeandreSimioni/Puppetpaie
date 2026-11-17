@@ -10,7 +10,7 @@
 //! son texte : `Mesure::de_l_objet`, `Mesure::par_son_texte`.
 
 use std::fmt;
-use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
 /// Un millionième : l'échelle d'une `Mesure`.
 const UN: i64 = 1_000_000;
@@ -73,41 +73,41 @@ impl Mesure {
     pub const MAX: Mesure = Mesure(i64::MAX);
     pub const MIN: Mesure = Mesure(i64::MIN);
 
-    /// `n` points (ou `n`, un rapport).
-    pub const fn entier(n: i64) -> Mesure {
+    /// `n` points (ou `n`, un rapport) : un entier de la norme PDF ou d'une police, dans la fabrique ; hors d'elle, une
+    /// mesure se dit par son texte (`mesure("40")`).
+    pub(crate) const fn entier(n: i64) -> Mesure {
         Mesure(n * UN)
     }
 
     /// `n` millièmes : `Mesure::milliemes(595_280)` vaut 595,28.
-    pub const fn milliemes(n: i64) -> Mesure {
+    pub(crate) const fn milliemes(n: i64) -> Mesure {
         Mesure(n * 1000)
     }
 
     /// `n` millionièmes.
-    pub const fn millioniemes(n: i64) -> Mesure {
+    pub(crate) const fn millioniemes(n: i64) -> Mesure {
         Mesure(n)
     }
 
     /// Le nombre de millionièmes.
-    pub const fn en_millioniemes(self) -> i64 {
+    pub(crate) const fn en_millioniemes(self) -> i64 {
         self.0
     }
 
     /// Le nombre entier le plus proche, la moitié loin de zéro.
-    pub fn arrondi(self) -> i64 {
+    pub(crate) fn arrondi(self) -> i64 {
         quotient_arrondi(self.0 as i128, UN as i128) as i64
     }
 
     /// Le plus petit entier qui n'est pas en dessous.
-    pub fn plafond(self) -> i64 {
+    pub(crate) fn plafond(self) -> i64 {
         self.0.div_euclid(UN) + if self.0.rem_euclid(UN) == 0 { 0 } else { 1 }
     }
 
     /// La partie entière, vers zéro.
-    pub fn tronque(self) -> i64 {
+    pub(crate) fn tronque(self) -> i64 {
         self.0 / UN
     }
-
     /// Arrondie à `chiffres` décimales (au plus six), la moitié loin de zéro.
     pub fn arrondie(self, chiffres: u32) -> Mesure {
         let pas = 10i128.pow(6 - chiffres.min(6));
@@ -148,13 +148,28 @@ impl Mesure {
         (n != 0).then(|| borne(quotient_arrondi(self.0 as i128, n as i128)))
     }
 
-    /// `self` fois `n / d` en un seul arrondi ; `None` si `d` est nul.
-    pub fn fois_rapport(self, n: i64, d: i64) -> Option<Mesure> {
-        (d != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n as i128, d as i128)))
+    /// `self` fois le rapport de deux mesures, `n / d`, en un seul arrondi ; `None` si `d` est nulle.
+    pub fn fois_rapport(self, n: Mesure, d: Mesure) -> Option<Mesure> {
+        (d.0 != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n.0 as i128, d.0 as i128)))
+    }
+
+    /// Sa moitié, arrondie au millionième, la moitié loin de zéro (un centre, un blanc partagé de part et d'autre).
+    pub fn moitie(self) -> Mesure {
+        self.divisee_par(2)
+    }
+
+    /// `self` fois l'entier `n` (de la norme PDF, d'une police), bornée aux mesures possibles.
+    pub(crate) fn fois_entier(self, n: i64) -> Mesure {
+        borne(self.0 as i128 * n as i128)
+    }
+
+    /// Le quotient par l'entier non nul `n` (de la norme PDF, d'une police), arrondi au millionième.
+    pub(crate) fn divisee_par(self, n: i64) -> Mesure {
+        borne(quotient_arrondi(self.0 as i128, n as i128))
     }
 
     /// `self` fois `n / d` en un seul arrondi, `d` non nul par son type.
-    pub fn fois(self, n: i64, d: std::num::NonZeroI64) -> Mesure {
+    pub(crate) fn fois(self, n: i64, d: std::num::NonZeroI64) -> Mesure {
         borne(quotient_arrondi(self.0 as i128 * n as i128, d.get() as i128))
     }
 
@@ -386,21 +401,6 @@ impl Mul for Mesure {
     }
 }
 
-impl Mul<i64> for Mesure {
-    type Output = Mesure;
-    fn mul(self, n: i64) -> Mesure {
-        borne(self.0 as i128 * n as i128)
-    }
-}
-
-/// Le quotient par un entier non nul, arrondi au millionième.
-impl Div<i64> for Mesure {
-    type Output = Mesure;
-    fn div(self, n: i64) -> Mesure {
-        borne(quotient_arrondi(self.0 as i128, n as i128))
-    }
-}
-
 /// Un compte de fois une mesure (des lignes, des colonnes, des caractères : `n * hauteur`) : ce qu'un appelant compte ne
 /// passe pas en entier signé.
 impl Mul<Mesure> for usize {
@@ -419,12 +419,6 @@ impl std::iter::Sum for Mesure {
 impl<'a> std::iter::Sum<&'a Mesure> for Mesure {
     fn sum<I: Iterator<Item = &'a Mesure>>(it: I) -> Mesure {
         it.fold(Mesure::ZERO, |a, b| a + *b)
-    }
-}
-
-impl From<i64> for Mesure {
-    fn from(n: i64) -> Mesure {
-        Mesure::entier(n)
     }
 }
 

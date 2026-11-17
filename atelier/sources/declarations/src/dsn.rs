@@ -406,8 +406,8 @@ impl Arret {
         if self.couvre(&Periode::du_mois(mois))? {
             return Ok(true);
         }
-        let origine = const { socle::mois::Annee::constante(1900) }.premier_jour();
-        if !self.couvre(&Periode::du_au(origine, mois.premier_jour().plus_jours(-1)?)?)? {
+        let origine = const { socle::mois::Annee::constante("1900") }.premier_jour();
+        if !self.couvre(&Periode::du_au(origine, mois.premier_jour().avant(Duree::jours(1))?)?)? {
             return Ok(false);
         }
         // Un contrat sans numero n'a rien declare.
@@ -1360,7 +1360,7 @@ travaillait pas avant, sa date d'embauche chez nous). Rien n'est declare.",
             // (`calcul::dispense_de_la_periode`) : une fin de dispense posee est passee.
             if place == PlaceDAffiliation::SECONDE {
                 if let Some(j) = p.salarie.permanent.ouvrir(&a.au_mois).sante_dispense_jusqu_au.dite() {
-                    let lendemain = j.plus_jours(1)?;
+                    let lendemain = j.apres(Duree::jours(1))?;
                     if lendemain <= fin && debut.is_none_or(|x| lendemain > x) {
                         debut = Some(lendemain);
                     }

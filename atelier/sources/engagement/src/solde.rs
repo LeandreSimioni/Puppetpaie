@@ -266,9 +266,9 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
     let salarie = salarie_de(e)?;
     let debut = debut_de(e)?;
     // Le premier jour de semaine (du lundi au vendredi) apres le terme.
-    let mut reprise = fin.plus_jours(1)?;
+    let mut reprise = fin.apres(socle::date::Duree::jours(1))?;
     while !socle::date::Semaine::DuLundiAuVendredi.contient(reprise.jour_de_la_semaine()) {
-        reprise = reprise.plus_jours(1)?;
+        reprise = reprise.apres(socle::date::Duree::jours(1))?;
     }
     let mut mois = vec![fin.mois_civil()];
     if reprise.mois_civil() != fin.mois_civil() {
@@ -652,7 +652,7 @@ fn delai_de_prevenance(
     }
     // La part non effectuee : du lendemain de la fin au dernier jour du delai, le salaire de chaque mois traverse pour ses
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
-    let non_effectue = Periode::du_au(fin.plus_jours(1)?, delai.expiration)?;
+    let non_effectue = Periode::du_au(fin.apres(socle::date::Duree::jours(1))?, delai.expiration)?;
     let (mut fraction, mut jours) = (Coefficient::ZERO, Jours::ZERO);
     for mois_de_j in non_effectue.mois() {
         let Some(dans_le_mois) = non_effectue.croise(&Periode::du_mois(mois_de_j)) else { continue };

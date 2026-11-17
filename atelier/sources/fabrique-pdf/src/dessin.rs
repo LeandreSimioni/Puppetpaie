@@ -443,7 +443,7 @@ struct Page {
 
 /// Une couleur en composantes PDF (de 0 à 1).
 fn composantes((r, v, b): Rvb) -> String {
-    let c = |x: u8| nb(Mesure::entier(x as i64) / 255);
+    let c = |x: u8| nb(Mesure::entier(x as i64).divisee_par(255));
     format!("{} {} {}", c(r), c(v), c(b))
 }
 

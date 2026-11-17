@@ -13,14 +13,14 @@ const AGL: &str = include_str!("../../../reference/sources/adobe-polices/adobe-g
 const ZAPF: &str = include_str!("../../../reference/sources/adobe-polices/adobe-zapfdingbats-20261111.txt");
 
 /// Une liste lue : (nom, caractères), triée par nom.
-type Liste = Vec<(&'static str, String)>;
+type ListeDeGlyphes = Vec<(&'static str, String)>;
 
-static LISTE_AGL: OnceLock<Result<Liste, Refus>> = OnceLock::new();
-static LISTE_ZAPF: OnceLock<Result<Liste, Refus>> = OnceLock::new();
+static LISTE_AGL: OnceLock<Result<ListeDeGlyphes, Refus>> = OnceLock::new();
+static LISTE_ZAPF: OnceLock<Result<ListeDeGlyphes, Refus>> = OnceLock::new();
 
 /// Une liste de la forme « nom;XXXX[ XXXX…] » (les lignes `#` sont des commentaires). Une ligne d'une autre forme est
 /// un défaut du logiciel : la liste est livrée avec lui.
-fn lire(texte: &'static str, quoi: &str) -> Result<Liste, Refus> {
+fn lire(texte: &'static str, quoi: &str) -> Result<ListeDeGlyphes, Refus> {
     let mut v = Vec::new();
     for ligne in texte.lines() {
         if ligne.starts_with('#') {
@@ -46,14 +46,14 @@ fn lire(texte: &'static str, quoi: &str) -> Result<Liste, Refus> {
     Ok(v)
 }
 
-fn liste(cellule: &'static OnceLock<Result<Liste, Refus>>, texte: &'static str, quoi: &str) -> Result<&'static Liste, Refus> {
+fn liste(cellule: &'static OnceLock<Result<ListeDeGlyphes, Refus>>, texte: &'static str, quoi: &str) -> Result<&'static ListeDeGlyphes, Refus> {
     match cellule.get_or_init(|| lire(texte, quoi)) {
         Ok(l) => Ok(l),
         Err(r) => Err(r.clone()),
     }
 }
 
-fn chercher<'a>(l: &'a Liste, nom: &str) -> Option<&'a str> {
+fn chercher<'a>(l: &'a ListeDeGlyphes, nom: &str) -> Option<&'a str> {
     let i = l.partition_point(|(g, _)| *g < nom);
     match l.get(i) {
         Some((g, c)) if *g == nom => Some(c.as_str()),

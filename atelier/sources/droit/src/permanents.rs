@@ -685,7 +685,7 @@ pub fn periode_de_reference(jour: &Jour) -> R<Periode> {
     let debut_de = |an: socle::mois::Annee| an.mois(r.debut_mois).jour_exige(r.debut_jour);
     let an = if *jour >= debut_de(jour.annee())? { jour.annee() } else { jour.annee().precedente()? };
     let debut = debut_de(an)?;
-    let fin = debut_de(an.suivante()?)?.plus_jours(-1)?;
+    let fin = debut_de(an.suivante()?)?.avant(Duree::jours(1))?;
     Periode::du_au(debut, fin)
 }
 

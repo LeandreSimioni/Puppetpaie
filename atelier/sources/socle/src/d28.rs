@@ -9,8 +9,8 @@ use std::fmt;
 /// `m * 10^-e`.
 #[derive(Clone, Copy, Debug)]
 pub struct P {
-    pub m: i128,
-    pub e: i32,
+    pub(crate) m: i128,
+    pub(crate) e: i32,
 }
 
 fn chiffres(m: i128) -> u32 {

@@ -232,7 +232,7 @@ impl Champs {
     }
     /// A remplir par l'employeur (le cadre 5), a gauche.
     fn vide(&mut self, nom: &str, r: [Mesure; 4]) {
-        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r, valeur: None, lecture_seule: false, taille: Some(Mesure::entier(9)), alignement: Alignement::Gauche });
+        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r, valeur: None, lecture_seule: false, taille: Some(m("9")), alignement: Alignement::Gauche });
     }
 }
 
@@ -385,7 +385,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         ("339", "360", "Salaire brut (non plafonné)"),
     ];
     for (y0, y1, t) in lignes_4 {
-        p2.push(texte_aligne(m("32"), (m(y0) + m(y1)) / 2 + m("2.5"), t, m("7.5"), false, NOIR, Alignement::Gauche));
+        p2.push(texte_aligne(m("32"), (m(y0) + m(y1)).moitie() + m("2.5"), t, m("7.5"), false, NOIR, Alignement::Gauche));
         p2.push(filet(m(y1) + m("1.5"), m("0.3"), GRIS));
     }
     etiquette(&mut p2, m("32"), m("392"), "Date de paiement");

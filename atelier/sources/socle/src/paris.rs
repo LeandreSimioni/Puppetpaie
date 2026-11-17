@@ -35,7 +35,7 @@ impl Moment {
     }
 
     /// L'instant de `t` secondes entieres depuis 1970 ; `None` hors du calendrier.
-    pub fn de_secondes(t: i64) -> Option<Moment> {
+    pub(crate) fn de_secondes(t: i64) -> Option<Moment> {
         Moment::de_nanos(t as i128 * NANOS)
     }
 
@@ -52,7 +52,7 @@ impl Moment {
 
     /// L'instant de `jour` a l'heure `heure` et `seconde` secondes (de 0 a 59, lues d'une piece qui les ecrit), heure de
     /// Paris ; `None` pour une seconde hors de la minute, ou hors du calendrier.
-    pub fn a_paris_a_la_seconde(jour: Jour, heure: HeureDuJour, seconde: i64) -> Option<Moment> {
+    pub(crate) fn a_paris_a_la_seconde(jour: Jour, heure: HeureDuJour, seconde: i64) -> Option<Moment> {
         if !(0..60).contains(&seconde) {
             return None;
         }
@@ -76,7 +76,7 @@ impl Moment {
     }
 
     /// Les secondes entieres depuis 1970 (l'instant arrondi a la seconde d'avant).
-    pub fn entieres(self) -> i64 {
+    pub(crate) fn entieres(self) -> i64 {
         self.0.div_euclid(NANOS) as i64
     }
 
@@ -205,7 +205,7 @@ impl Moment {
 
     /// Les secondes passees depuis minuit de Paris, ce jour-la (l'instant arrondi a la seconde d'avant, comme
     /// `jour_de_paris`).
-    pub fn seconde_du_jour_de_paris(self) -> i64 {
+    pub(crate) fn seconde_du_jour_de_paris(self) -> i64 {
         (self.entieres() + decalage(self).secondes()).rem_euclid(86_400)
     }
 
@@ -238,7 +238,7 @@ impl HeureDuJour {
     }
 
     /// L'heure `heure:minute` lue d'une piece ou d'une saisie, a sa porte ; `None` hors de 00:00 a 23:59.
-    pub fn lue(heure: i64, minute: i64) -> Option<HeureDuJour> {
+    pub(crate) fn lue(heure: i64, minute: i64) -> Option<HeureDuJour> {
         ((0..24).contains(&heure) && (0..60).contains(&minute)).then_some(HeureDuJour((heure * 60 + minute) as u32))
     }
 
@@ -519,6 +519,12 @@ pub mod ecrit {
     /// `Date` d'un courriel (RFC 5322, 3.3), le nom d'un courriel ecrit.
     pub fn heure_minute_seconde(m: Moment, entre: &str) -> String {
         format!("{}{}{:02}", heure_minute(m, entre), entre, m.seconde_du_jour_de_paris() % 60)
+    }
+
+    /// EN CENTIEMES DE SECONDE DEPUIS 1970, l'instant tronque au centieme d'avant, en chiffres : la part de l'instant dans
+    /// un identifiant de courriel neuf (`Message-ID`, `envois::envoi::nouveau_message_id`).
+    pub fn centiemes(m: Moment) -> String {
+        m.0.div_euclid(10_000_000).to_string()
     }
 
     /// LA DATE ET L'HEURE DOS de Paris d'un instant, a la seconde paire d'avant (l'horodatage d'un fichier d'une archive

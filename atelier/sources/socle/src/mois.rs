@@ -36,6 +36,19 @@ const MOIS_TITRE: [&str; 12] = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "J
 const MOIS_MINUSCULE: [&str; 12] = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 const MOIS_ACCENTUE: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
+/// Le nombre que les `n` chiffres de `o` ecrivent a partir de `de`, a la compilation (`Annee::constante`,
+/// `Mois::constante`) : un octet qui n'est pas un chiffre ne compile pas.
+const fn chiffres_constants(o: &[u8], de: usize, n: usize) -> u32 {
+    let mut v = 0;
+    let mut i = de;
+    while i < de + n {
+        assert!(o[i].is_ascii_digit(), "une date constante s'écrit en chiffres");
+        v = v * 10 + (o[i] - b'0') as u32;
+        i += 1;
+    }
+    v
+}
+
 /// Le refus d'un numero de mois hors de 1 a 12 : « 00 » n'est pas decembre, « 13 » n'est pas janvier.
 pub fn mois_impossible(mois: impl std::fmt::Display) -> String {
     format!("mois impossible : {}", mois)
@@ -53,10 +66,14 @@ impl Mois {
         Ok(Mois { an, numero })
     }
 
-    /// Le mois qu'un texte depose fixe, ecrit en constante (`const`) : hors du calendrier, le code ne compile pas.
-    pub const fn constante(an: i32, numero: u32) -> Mois {
+    /// Le mois qu'un texte depose fixe, ecrit `AAAA-MM` dans une constante (`const { Mois::constante("2026-03") }`), lu a
+    /// la compilation : une autre ecriture, ou un mois hors du calendrier, ne compile pas.
+    pub const fn constante(texte: &str) -> Mois {
+        let o = texte.as_bytes();
+        assert!(o.len() == 7 && o[4] == b'-', "un mois constant s'ecrit AAAA-MM");
+        let (an, numero) = (chiffres_constants(o, 0, 4), chiffres_constants(o, 5, 2));
         assert!(1 <= an && an <= 9999 && 1 <= numero && numero <= 12, "mois hors du calendrier");
-        Mois { an, numero }
+        Mois { an: an as i32, numero }
     }
 
     /// Un mois ecrit `AAAA-MM` ; toute autre forme se refuse.
@@ -290,10 +307,14 @@ impl Annee {
         Annee(m.an)
     }
 
-    /// L'annee `an` qu'un texte depose fixe, ecrite en constante (`const`) : hors de 1 a 9999, le code ne compile pas.
-    pub const fn constante(an: i32) -> Annee {
+    /// L'annee qu'un texte depose fixe, ecrite `AAAA` dans une constante (`const { Annee::constante("2026") }`), lue a la
+    /// compilation : une autre ecriture, ou une annee hors de 1 a 9999, ne compile pas.
+    pub const fn constante(texte: &str) -> Annee {
+        let o = texte.as_bytes();
+        assert!(o.len() == 4, "une année constante s'écrit AAAA");
+        let an = chiffres_constants(o, 0, 4);
         assert!(1 <= an && an <= 9999, "année hors du calendrier");
-        Annee(an)
+        Annee(an as i32)
     }
 
     /// Son millesime, au calcul du calendrier (`feries`) et aux ecritures du socle.

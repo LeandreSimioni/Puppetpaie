@@ -198,7 +198,7 @@ pub fn nom_de(cle: &[u8]) -> String {
 }
 
 /// Un entier.
-pub fn entier(o: &Object) -> Result<i64, &'static str> {
+pub(crate) fn entier(o: &Object) -> Result<i64, &'static str> {
     match o {
         Object::Integer(i) => Ok(*i),
         _ => Err("un entier"),
@@ -550,7 +550,7 @@ pub fn cadre_de(doc: &Document, page: ObjectId) -> Result<[Mesure; 4], Refus> {
 
 /// La rotation d'une page, en degrés, entre 0 et 270 : `Rotate`, héritable, « shall be a multiple of 90. Default
 /// value: 0 » (ISO 32000-1, table 30) ; une autre valeur se refuse.
-pub fn rotation_de(doc: &Document, page: ObjectId) -> Result<i64, Refus> {
+pub(crate) fn rotation_de(doc: &Document, page: ObjectId) -> Result<i64, Refus> {
     match herite(doc, page, b"Rotate")? {
         Some(o) => match entier(o) {
             Ok(r) if r % 90 == 0 => Ok(r.rem_euclid(360)),

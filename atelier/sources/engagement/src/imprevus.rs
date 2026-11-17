@@ -389,18 +389,18 @@ pub fn jour_de_rangement(imp: &Imprevu) -> R<Jour> {
 /// net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 1683).
 pub fn dernier_jour_declare(arret: &ArretSaisi) -> R<Jour> {
     let (travaille, debut) = (arret.dernier_jour_travaille, arret.debut);
-    Ok(if debut <= travaille { travaille } else { debut.plus_jours(-1)? })
+    Ok(if debut <= travaille { travaille } else { debut.avant(socle::date::Duree::jours(1))? })
 }
 
 /// Le premier jour d'absence d'un arret (`premier_jour`).
 pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
-    dernier_jour_declare(arret)?.plus_jours(1)
+    dernier_jour_declare(arret)?.apres(socle::date::Duree::jours(1))
 }
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
 pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
     match arret.reprise {
-        Some(r) => r.plus_jours(-1),
+        Some(r) => r.avant(socle::date::Duree::jours(1)),
         None => Ok(arret.fin_previsionnelle),
     }
 }
@@ -613,9 +613,9 @@ pub fn suspendu_sans_remuneration(
         }
     }
     let siennes = par_premier_jour(siennes)?;
-    let mut couvert_jusqu_a = periode.debut().plus_jours(-1)?;
+    let mut couvert_jusqu_a = periode.debut().avant(socle::date::Duree::jours(1))?;
     for imp in &siennes {
-        if premier_jour(imp)? > couvert_jusqu_a.plus_jours(1)? {
+        if premier_jour(imp)? > couvert_jusqu_a.apres(socle::date::Duree::jours(1))? {
             return Ok(Vec::new());
         }
         couvert_jusqu_a = couvert_jusqu_a.max(dernier_jour(imp)?);

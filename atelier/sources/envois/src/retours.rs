@@ -27,6 +27,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
 use socle::garde_reseau::Url;
+use socle::grandeurs::EcartEnOctets;
 use socle::paris::{InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
@@ -2185,9 +2186,9 @@ struct Membre {
     crc: u64,
     taille_comp: u64,
     taille: u64,
-    decalage: i128,
+    decalage: EcartEnOctets,
     /// L'octet ou le membre ne peut pas aller plus loin.
-    fin: i128,
+    fin: EcartEnOctets,
 }
 
 fn description_compression(t: usize) -> &'static str {
@@ -2233,8 +2234,8 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> R<()> {
             if m.taille_comp == 0xFFFF_FFFF {
                 m.taille_comp = lire("Compress size")?;
             }
-            if m.decalage == 0xFFFF_FFFF {
-                m.decalage = lire("Header offset")? as i128;
+            if m.decalage == EcartEnOctets::lu(0xFFFF_FFFF) {
+                m.decalage = EcartEnOctets::lu(lire("Header offset")?);
             }
         }
         e = &e[ln + 4..];
@@ -2257,34 +2258,36 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         }
     };
     let rec = &b[pos..pos + 22];
-    let (mut taille_cd, mut decalage_cd) = (u32_le(rec, 12) as i128, u32_le(rec, 16) as i128);
-    let mut location = pos as i128;
-    // `_EndRecData64`
+    let (mut taille_cd, mut decalage_cd) = (EcartEnOctets::lu(u32_le(rec, 12)), EcartEnOctets::lu(u32_le(rec, 16)));
+    let mut location = EcartEnOctets::de_position(pos);
+    // `_EndRecData64` : son localisateur (20 octets), et sa fin de repertoire (56 octets, extensible).
+    let fin64 = EcartEnOctets::lu(56);
     if pos >= 20 && &b[pos - 20..pos - 16] == b"PK\x06\x07" {
         let loc = pos - 20;
-        let (disque, reloff, disques) = (u32_le(b, loc + 4), u64_le(b, loc + 8) as i128, u32_le(b, loc + 16));
+        let (disque, reloff, disques) = (u32_le(b, loc + 4), EcartEnOctets::lu(u64_le(b, loc + 8)), u32_le(b, loc + 16));
         if disque != 0 || disques > 1 {
             return Err(mauvais("archive zip sur plusieurs disques : non lue"));
         }
-        let offset = loc as i128 - 56;
+        let offset = EcartEnOctets::de_position(loc) - fin64;
         if reloff > offset {
             return Err(mauvais("archive zip64 abimee : le reperage de la fin du repertoire"));
         }
-        let lire56 = |de: i128| -> Option<&[u8]> {
-            let de = de as usize;
+        let lire56 = |de: EcartEnOctets| -> Option<&[u8]> {
+            let de = de.au_plus(b.len())?;
             (de.checked_add(56)? <= b.len()).then(|| &b[de..de + 56])
         };
         let mut extrasz = offset - reloff;
         let mut data = lire56(reloff).ok_or_else(pas_un_zip)?;
         if !data.starts_with(b"PK\x06\x06") && reloff != offset {
-            extrasz = 0;
+            extrasz = EcartEnOctets::ZERO;
             data = lire56(offset).ok_or_else(pas_un_zip)?;
         }
         if !data.starts_with(b"PK\x06\x06") {
             return Err(mauvais("archive zip64 sans fin de repertoire"));
         }
-        let (sz, dirsize, diroffset) = (u64_le(data, 4) as i128, u64_le(data, 40) as i128, u64_le(data, 48) as i128);
-        if diroffset + dirsize != reloff || sz + 12 != 56 + extrasz {
+        let (sz, dirsize, diroffset) = (EcartEnOctets::lu(u64_le(data, 4)), EcartEnOctets::lu(u64_le(data, 40)), EcartEnOctets::lu(u64_le(data, 48)));
+        // `sz` ne compte ni la signature ni lui-meme (12 octets).
+        if diroffset + dirsize != reloff || sz + EcartEnOctets::lu(12) != fin64 + extrasz {
             return Err(mauvais("archive zip64 abimee : la fin du repertoire"));
         }
         taille_cd = dirsize;
@@ -2292,14 +2295,16 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         location = offset - extrasz;
     }
     let concat = location - taille_cd - decalage_cd;
-    let debut_cd = decalage_cd + concat;
-    if debut_cd < 0 {
+    let Some(debut_cd) = (decalage_cd + concat).au_plus(b.len()) else {
         return Err(mauvais("archive zip abimee : la position du repertoire"));
-    }
-    let debut_cd = (debut_cd as usize).min(b.len());
-    let cd = &b[debut_cd..(debut_cd as i128 + taille_cd).min(b.len() as i128) as usize];
+    };
+    let fin_cd = match (EcartEnOctets::de_position(debut_cd) + taille_cd).au_plus(b.len()) {
+        Some(f) => f,
+        None => unreachable!("le debut du repertoire et sa taille ne precedent pas le debut du fichier"),
+    };
+    let cd = &b[debut_cd..fin_cd];
     let mut membres = Vec::new();
-    let (mut total, mut p) = (0i128, 0usize);
+    let (mut total, mut p) = (EcartEnOctets::ZERO, 0usize);
     while total < taille_cd {
         if cd.len() < p + 46 {
             return Err(mauvais("archive zip tronquee : le repertoire"));
@@ -2332,8 +2337,8 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
             crc: u32_le(c, 16),
             taille_comp: u32_le(c, 20),
             taille: u32_le(c, 24),
-            decalage: u32_le(c, 42) as i128,
-            fin: 0,
+            decalage: EcartEnOctets::lu(u32_le(c, 42)),
+            fin: EcartEnOctets::ZERO,
         };
         if c[6] > 63 {
             return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {}.{} : non lue", c[6] / 10, c[6] % 10)));
@@ -2341,12 +2346,12 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         extra_zip64(extra, &mut m)?;
         m.decalage += concat;
         membres.push(m);
-        total += (46 + ln_nom + ln_extra + ln_comm) as i128;
+        total += EcartEnOctets::de_position(46 + ln_nom + ln_extra + ln_comm);
     }
     // Chaque membre finit ou le suivant commence (le repertoire pour le dernier).
     let mut ordre: Vec<usize> = (0..membres.len()).collect();
     ordre.sort_by_key(|&i| std::cmp::Reverse(membres[i].decalage));
-    let mut fin = debut_cd as i128;
+    let mut fin = EcartEnOctets::de_position(debut_cd);
     for i in ordre {
         membres[i].fin = fin;
         fin = membres[i].decalage;
@@ -2362,10 +2367,9 @@ fn crc32(o: &[u8]) -> u64 {
 
 /// `ZipFile.read(nom)`.
 fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
-    if m.decalage < 0 {
+    let Some(dec) = m.decalage.au_plus(b.len()) else {
         return Err(echec(Classe::Illisible, format!("negative seek value {}", m.decalage)));
-    }
-    let dec = m.decalage as usize;
+    };
     if dec.saturating_add(30) > b.len() {
         return Err(mauvais("archive zip tronquee : l'en-tete d'un fichier"));
     }
@@ -2387,7 +2391,7 @@ fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
     if nom_en_tete != m.original {
         return Err(mauvais(format!("archive zip abimee : le repertoire nomme « {} », l'en-tete « {} »", m.original, nom_en_tete)));
     }
-    if (debut_donnees as i128).saturating_add(m.taille_comp as i128) > m.fin {
+    if EcartEnOctets::de_position(debut_donnees) + EcartEnOctets::lu(m.taille_comp) > m.fin {
         return Err(mauvais(format!("archive zip abimee : « {} » chevauche un autre fichier", m.original)));
     }
     if m.drapeaux & 1 != 0 {

@@ -181,7 +181,7 @@ pub fn fin_possible(r: &MaintienDeSalaire, arret: &Periode) -> R<Jour> {
             None => return Ok(arret.fin()),
         }
     }
-    debut.apres(total)?.plus_jours(-1)
+    debut.apres(total)?.avant(Duree::jours(1))
 }
 
 /// Les jours deja indemnises, pour le texte `t`, dans les douze mois qui precedent le premier jour de `imp` : ceux des
@@ -190,7 +190,7 @@ pub fn fin_possible(r: &MaintienDeSalaire, arret: &Periode) -> R<Jour> {
 pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte) -> R<Duree<EnJours>> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     // Les douze mois qui precedent son premier jour.
-    let fenetre = Periode::du_au(premier.avant(DOUZE_MOIS)?, premier.plus_jours(-1)?)?;
+    let fenetre = Periode::du_au(premier.avant(DOUZE_MOIS)?, premier.avant(Duree::jours(1))?)?;
     let mut total = Duree::jours(0);
     if let Some(saisis) = imp.jours_deja_indemnises {
         total = total.plus(saisis);
@@ -332,7 +332,7 @@ fn suites(taux: &[Coefficient], arret: &Periode, absence: &Periode) -> R<Vec<(Pe
             continue;
         }
         match out.last_mut() {
-            Some((s, f)) if *f == *x && s.fin().plus_jours(1)? == j => *s = Periode::du_au(s.debut(), j)?,
+            Some((s, f)) if *f == *x && s.fin().apres(Duree::jours(1))? == j => *s = Periode::du_au(s.debut(), j)?,
             _ => out.push((Periode::du_jour(j), *x)),
         }
     }
@@ -600,7 +600,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
     let rg = droit::permanents::regles()?;
     let regles = &rg.indemnites_journalieres;
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let veille = premier.mois_civil().premier_jour().plus_jours(-1)?;
+    let veille = premier.mois_civil().premier_jour().avant(Duree::jours(1))?;
     let salarie = imp.salarie.clone();
     // La paie validee d'un mois du salarie ; sans elle, rien ne se propose.
     let paie = |mois: Mois| -> R<Option<Montant>> { Ok(Some(crate::conges::remuneration_du_mois(ctx, mois, &salarie)?).filter(|brut| *brut > Montant::ZERO)) };
@@ -621,7 +621,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
                     Some(b) => bruts.push(b),
                     None => return Ok(sans_paie(mois)),
                 }
-                jour = mois.premier_jour().plus_jours(-1)?;
+                jour = mois.premier_jour().avant(Duree::jours(1))?;
             }
             let brute = montant_de_principe(&bruts, smic, p)?;
             Ok(IjDePrincipe::Calculee(IjCalculee {

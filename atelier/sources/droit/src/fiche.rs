@@ -2334,7 +2334,7 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
         }
         if let (Some(e), Some(depuis)) = (debut.checked_sub(1).map(|p| &toutes[p]), toutes[debut].depuis) {
             if let Some(valeur) = e.valeur.clone() {
-                avant = Some(Avant { valeur, jusqu_au: depuis.plus_jours(-1)?, note: e.note.clone() });
+                avant = Some(Avant { valeur, jusqu_au: depuis.avant(socle::date::Duree::jours(1))?, note: e.note.clone() });
             }
         }
     }

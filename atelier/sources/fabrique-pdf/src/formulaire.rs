@@ -276,21 +276,21 @@ fn type_de(ft: &Option<Vec<u8>>) -> &'static str {
 /// La valeur d'un champ (`/V`), telle que le PDF la porte.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
-pub enum ValeurLue {
+pub enum ValeurDUnChamp {
     /// Pas de `/V` (ou un objet qu'on ne lit pas).
     Rien,
     Texte(String),
     Entier(i64),
     Reel(Mesure),
     Booleen(bool),
-    Liste(Vec<ValeurLue>),
+    Liste(Vec<ValeurDUnChamp>),
 }
 
-impl ValeurLue {
+impl ValeurDUnChamp {
     /// Le texte du champ, s'il en porte un.
     pub fn texte(&self) -> Option<&str> {
         match self {
-            ValeurLue::Texte(t) => Some(t),
+            ValeurDUnChamp::Texte(t) => Some(t),
             _ => None,
         }
     }
@@ -302,7 +302,7 @@ pub struct ChampLu {
     /// Le nom complet (`parent.enfant`) : la clé de l'objet que rend `--champs`.
     #[serde(skip)]
     pub nom: String,
-    pub valeur: ValeurLue,
+    pub valeur: ValeurDUnChamp,
     /// texte, bouton, choix, signature ou inconnu.
     #[serde(rename = "type")]
     pub genre: &'static str,
@@ -313,24 +313,24 @@ pub struct ChampLu {
     pub rect: Option<[Mesure; 4]>,
 }
 
-fn valeur_lue(doc: &Document, v: Option<&Object>) -> Result<ValeurLue, Refus> {
+fn valeur_lue(doc: &Document, v: Option<&Object>) -> Result<ValeurDUnChamp, Refus> {
     let v = match v {
         Some(o) => lecture::designe(doc, o)?,
         None => None,
     };
     Ok(match v {
-        None => ValeurLue::Rien,
-        Some(Object::String(s, _)) => ValeurLue::Texte(crate::encodages::chaine_de_texte(s)?),
-        Some(Object::Name(n)) => ValeurLue::Texte(String::from_utf8_lossy(n).into_owned()),
-        Some(Object::Integer(i)) => ValeurLue::Entier(*i),
+        None => ValeurDUnChamp::Rien,
+        Some(Object::String(s, _)) => ValeurDUnChamp::Texte(crate::encodages::chaine_de_texte(s)?),
+        Some(Object::Name(n)) => ValeurDUnChamp::Texte(String::from_utf8_lossy(n).into_owned()),
+        Some(Object::Integer(i)) => ValeurDUnChamp::Entier(*i),
         Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
-            Some(r) => ValeurLue::Reel(r),
+            Some(r) => ValeurDUnChamp::Reel(r),
             None => return illisible("/V d'un champ est un nombre que la fabrique ne lit pas"),
         },
-        Some(Object::Boolean(b)) => ValeurLue::Booleen(*b),
-        Some(Object::Array(a)) => ValeurLue::Liste(a.iter().map(|x| valeur_lue(doc, Some(x))).collect::<Result<_, _>>()?),
+        Some(Object::Boolean(b)) => ValeurDUnChamp::Booleen(*b),
+        Some(Object::Array(a)) => ValeurDUnChamp::Liste(a.iter().map(|x| valeur_lue(doc, Some(x))).collect::<Result<_, _>>()?),
         // Un dictionnaire ou un flux (le texte riche d'un champ, 12.7.3.4) : rien qui se dise en une valeur.
-        Some(Object::Dictionary(_) | Object::Stream(_) | Object::Reference(_) | Object::Null) => ValeurLue::Rien,
+        Some(Object::Dictionary(_) | Object::Stream(_) | Object::Reference(_) | Object::Null) => ValeurDUnChamp::Rien,
     })
 }
 
@@ -463,7 +463,7 @@ impl<'a> Metriques<'a> {
         self.avances[numero]
     }
     fn largeur(&self, c: char, corps: Mesure) -> Mesure {
-        corps * self.unites(c) / self.face.units_per_em() as i64
+        corps.fois_entier(self.unites(c)).divisee_par(self.face.units_per_em() as i64)
     }
     fn largeur_texte(&self, t: &str, corps: Mesure) -> Mesure {
         t.chars().map(|c| self.largeur(c, corps)).sum()
@@ -535,17 +535,17 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
     let mut s = String::new();
     s.push_str("/Tx BMC\nq\n");
     s.push_str(&format!("1 1 {} {} re\nW\nn\nBT\n{}\n/{} {} Tf\n", nb(l - deux), nb(h - deux), couleur, police, nb(corps)));
-    let base_une_ligne = (h - corps) / 2 + corps * mesure("0.2");
+    let base_une_ligne = (h - corps).moitie() + corps * mesure("0.2");
     if let Some(n) = peigne {
-        let case = l / n;
+        let case = l.divisee_par(n);
         for (i, ch) in texte.chars().enumerate() {
-            let x = case * i as i64 + (case - m.largeur(ch, corps)) / 2;
+            let x = i * case + (case - m.largeur(ch, corps)).moitie();
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(base_une_ligne), hex(&ch.to_string())));
         }
     } else if multiligne {
         let lignes = couper(m, texte, corps, l - quatre);
         for (i, ligne) in lignes.iter().enumerate() {
-            let y = h - deux - INTERLIGNE * corps * (i as i64 + 1);
+            let y = h - deux - (i + 1) * (INTERLIGNE * corps);
             let x = aligner(c.q, m.largeur_texte(ligne, corps), l)?;
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(y), hex(ligne)));
         }
@@ -562,7 +562,7 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
 fn aligner(q: i64, largeur: Mesure, l: Mesure) -> Result<Mesure, Refus> {
     match q {
         0 => Ok(Mesure::entier(2)),
-        1 => Ok((l - largeur) / 2),
+        1 => Ok((l - largeur).moitie()),
         2 => Ok(l - Mesure::entier(2) - largeur),
         autre => illisible(format!("/Q vaut {}, la norme ne connaît que 0, 1 et 2", autre)),
     }
@@ -841,13 +841,13 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
         let largeur: Mesure = l.morceaux.iter().map(|m| avance(m)).sum();
         let mut x = match l.ancre {
             usvg::TextAnchor::Start => l.x,
-            usvg::TextAnchor::Middle => l.x - largeur / 2,
+            usvg::TextAnchor::Middle => l.x - largeur.moitie(),
             usvg::TextAnchor::End => l.x - largeur,
         };
         let m = l.matrice;
         s.push_str(&format!("q\n{} {} {} {} {} {} cm\nBT\n", nb(m[0]), nb(m[1]), nb(m[2]), nb(m[3]), nb(m[4]), nb(m[5])));
         for mo in &l.morceaux {
-            let [r, v, b] = mo.couleur.map(|c| nb(Mesure::entier(c as i64) / 255));
+            let [r, v, b] = mo.couleur.map(|c| nb(Mesure::entier(c as i64).divisee_par(255)));
             if srgb {
                 s.push_str(&format!("/srgb cs {} {} {} scn\n", r, v, b));
             } else {
@@ -1194,15 +1194,15 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
         };
         // Le plus grand rectangle aux proportions de l'image qui tient dans la case, centré.
         // La largeur remplit la case si cl / l ≤ ch / h, c'est-à-dire cl × h ≤ ch × l ; sinon la hauteur.
-        let (l, h) = (image.largeur.en_millioniemes(), image.hauteur.en_millioniemes());
-        let largeur_d_abord = cl.en_millioniemes() as i128 * h as i128 <= ch.en_millioniemes() as i128 * l as i128;
+        let (l, h) = (image.largeur, image.hauteur);
+        let largeur_d_abord = cl.en_millioniemes() as i128 * h.en_millioniemes() as i128 <= ch.en_millioniemes() as i128 * l.en_millioniemes() as i128;
         let (dl, dh) = match (largeur_d_abord, ch.fois_rapport(l, h), cl.fois_rapport(h, l)) {
             (true, _, Some(dh)) => (cl, dh),
             (false, Some(dl), _) => (dl, ch),
             _ => return illisible(format!("l'image {} n'a pas de taille", p.nom)),
         };
-        let x = c[0] + dedans[0] + (cl - dl) / 2;
-        let haut = dedans[1] + (ch - dh) / 2;
+        let x = c[0] + dedans[0] + (cl - dl).moitie();
+        let haut = dedans[1] + (ch - dh).moitie();
         let y = c[3] - haut - dh;
         par_page.entry(p.page).or_default().push((image.xobjet, [dl, Z, Z, dh, x, y]));
     }

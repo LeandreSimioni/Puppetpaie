@@ -619,7 +619,7 @@ impl Objet {
         if j.premier_du_mois() {
             return Ok(());
         }
-        let a = self.termes_a(&j.plus_jours(-1)?);
+        let a = self.termes_a(&j.avant(socle::date::Duree::jours(1))?);
         let quotite = |x: &Carte| -> R<Option<socle::grandeurs::Heures>> {
             Ok(match x.quotite_contrat {
                 Some(q) => Some(q),
@@ -1267,7 +1267,7 @@ fn dater(o: &mut Objet, terme: Champ, mois: Mois, depuis: Jour, saisie: &Carte) 
         }
         s.avenants.retain(|a| !a.vide());
     }
-    let veille = o.termes_a(&depuis.plus_jours(-1)?);
+    let veille = o.termes_a(&depuis.avant(socle::date::Duree::jours(1))?);
     if veille.comparable_du(terme) == saisie.comparable_du(terme) {
         return Ok(());
     }

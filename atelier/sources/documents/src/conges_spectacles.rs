@@ -86,7 +86,7 @@ const COURIER: &str = "cour";
 /// Le cadre de la signature : x0, y0, x1, y1.
 const SIGNATURE_CADRE: (Mesure, Mesure, Mesure, Mesure) = (mesure("441.84"), mesure("775.50"), mesure("521.84"), mesure("809.10"));
 /// La largeur de ce cadre (`SorteDImage::largeur_imprimee`) : 80 points.
-pub const SIGNATURE_LARGEUR: Mesure = Mesure::entier(80);
+pub const SIGNATURE_LARGEUR: Mesure = mesure("80");
 
 // Les corps du certificat.
 const C7: Mesure = mesure("7.92");
@@ -213,7 +213,7 @@ const LIMITES: &[(&str, Mesure)] = &[
     ("signataire", mesure("549.00")),
 ];
 
-const RESPIRATION: Mesure = Mesure::entier(3);
+const RESPIRATION: Mesure = mesure("3");
 const NOIR: &str = "#000000";
 
 // ----------------------------------------------------- decoupage au 31 mars
@@ -345,7 +345,7 @@ fn au_31_mars(periode: Periode, dates_travail: &[Jour], cachets: Cachets, jours:
         // Un cachet et un jour par date travaillee (verifie plus haut).
         let nb = NombreDuCertificat::de(Cachets::de_dates(dates.len()), Jours::de_dates(dates.len()));
         periodes.push((p, dates, nb));
-        debut = borne.plus_jours(1)?;
+        debut = borne.apres(socle::date::Duree::jours(1))?;
     }
     Ok(periodes)
 }
@@ -448,7 +448,7 @@ fn periodes_au_mois(periode: Periode, mois_payes: &[MoisPaye]) -> R<Vec<((Period
         let couverts: Vec<&MoisPaye> = mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == fin)).collect();
         let jours = NombreDuCertificat::Jours(couverts.iter().map(|m| m.jours).sum::<Jours>());
         out.push(((Periode::du_au(debut, borne)?, Vec::new(), jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
-        debut = borne.plus_jours(1)?;
+        debut = borne.apres(socle::date::Duree::jours(1))?;
     }
     Ok(out)
 }
@@ -458,10 +458,6 @@ fn cle_absente(k: &str) -> Echec {
 }
 
 // --------------------------------------------------------------------- rendu
-
-fn cases_date(j: &Jour) -> String {
-    j.jj_mm_aaaa_en_cases()
-}
 
 /// 12345678900017 -> '123456789 00017'.
 fn siret_espace(siret: &str) -> String {
@@ -521,8 +517,8 @@ fn valeurs(c: &Certificat, p: &ContratDuCertificat, ent: &ChampsEntreprise) -> R
     if let Some(p) = s.pseudonyme.portee() {
         out.push(("pseudonyme", p.to_string()));
     }
-    out.push(("debut", cases_date(&c.periode.debut())));
-    out.push(("fin", cases_date(&c.periode.fin())));
+    out.push(("debut", c.periode.debut().cases().join(" ")));
+    out.push(("fin", c.periode.fin().cases().join(" ")));
     out.push(("nb_cachets", c.nb_jours_ou_cachets.dit()));
     // Le certificat ecrit ses montants a l'euro le plus proche (`Montant::a_l_euro`).
     out.push(("base_conge", dit(c.base.a_l_euro())));
@@ -610,11 +606,11 @@ pub fn description(certs: &[(Certificat, &ContratDuCertificat)], ent: &Entrepris
         format: FORMAT,
         page: Some(pdf::Page {
             largeur: fabrique_pdf::mesure::mesure("595.22"),
-            hauteur: pdf::Mesure::entier(842),
+            hauteur: mesure("842"),
             marges: pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
         police: Some(pdf::Police {
-            taille: pdf::Mesure::entier(10),
+            taille: mesure("10"),
             interligne: fabrique_pdf::mesure::mesure("1.25"),
             couleur: NOIR.to_string(),
         }),

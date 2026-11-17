@@ -74,7 +74,7 @@ fn periode_lisible(p: &Periode) -> String {
 /// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin` : le premier jour ouvre avant
 /// le lendemain de son dernier jour.
 fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
-    let lendemain = fin.mois_civil().suivant().dernier_jour().plus_jours(1)?;
+    let lendemain = fin.mois_civil().suivant().dernier_jour().apres(socle::date::Duree::jours(1))?;
     socle::date::JoursOuvres::de(1).avant(lendemain, socle::feries::feries)
 }
 

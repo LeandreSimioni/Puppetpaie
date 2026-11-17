@@ -1612,7 +1612,7 @@ l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche n
     // Les jours ajoutes qui tombent dans un mois dont la DSN reelle est deja partie : elle portait l'ancienne fin.
     let declares = reporte_par(&envois_de_l_arret(ctx, &avant)?);
     // Apres la fin d'avant : la prolongation la recule (refus plus haut sinon).
-    let ajoutes = Periode::du_au(fin_avant.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?, f)?;
+    let ajoutes = Periode::du_au(fin_avant.apres(Duree::jours(1)).map_err(|e| e.reclasser(Classe::Illisible))?, f)?;
     for m in ajoutes.mois() {
         if declares.contains(&m) {
             avertissements.push(socle::phrase!(

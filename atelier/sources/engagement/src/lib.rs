@@ -1475,7 +1475,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                     && !dates.is_empty()
                     && dates.iter().try_fold(true, |tout, x| -> R<bool> {
                         let j = x.jour();
-                        Ok(tout && (nuits.contains(&j) || nuits.contains(&j.plus_jours(-1)?)))
+                        Ok(tout && (nuits.contains(&j) || nuits.contains(&j.avant(socle::date::Duree::jours(1))?)))
                     })?;
                 if taux > basse && !en_grand_deplacement {
                     cases.push(lim.case);

@@ -427,7 +427,7 @@ impl Tenue {
             t.acquis += r.acquis;
             t.pris += r.pris;
             t.brut += r.remuneration_periode;
-        } else if p.fin() == periode_de_reference(&r.date)?.debut().plus_jours(-1)? {
+        } else if p.fin() == periode_de_reference(&r.date)?.debut().avant(socle::date::Duree::jours(1))? {
             t.brut += r.remuneration_report;
         }
         Ok(t)
@@ -542,7 +542,7 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
     if !reference.debut().premier_du_mois() {
         return Ok(None);
     }
-    let precedent = mois.premier_jour().plus_jours(-1)?.mois_civil();
+    let precedent = mois.premier_jour().avant(socle::date::Duree::jours(1))?.mois_civil();
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let paies = paies_du_mois(ctx, precedent, &cle)?;
     let Some(a) = paies.iter().find_map(|p| p.avant.clone()) else { return Ok(None) };
@@ -591,7 +591,7 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jou
     if q == reference {
         return fini(tenue, c.reports, c.report, c.acquis_report, c.remuneration_report, c.pris_sur_la_periode, avis_du_report).map(Some);
     }
-    if q.fin().plus_jours(1)? != reference.debut() {
+    if q.fin().apres(socle::date::Duree::jours(1))? != reference.debut() {
         return Ok(None);
     }
     // La periode qui finit fait son report, si `report` la parcourt : depuis la periode de la reprise, ou depuis celle
@@ -691,7 +691,7 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
         // N-1, et la periode N-1 elle-meme.
         p = periode_de_reference(&r.date)?;
         reste = r.report;
-        let avant_fin = p.debut().plus_jours(-1)?;
+        let avant_fin = p.debut().avant(socle::date::Duree::jours(1))?;
         let avant_debut = periode_de_reference(&avant_fin)?.debut();
         out.acquis = r.acquis_report;
         out.periode = Some(Periode::du_au(avant_debut, avant_fin)?);
@@ -728,7 +728,7 @@ fn report(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, debut_courant: &
         reste = apres;
         out.acquis = acquis_total;
         out.periode = Some(p);
-        let suivant = p.fin().plus_jours(1)?;
+        let suivant = p.fin().apres(socle::date::Duree::jours(1))?;
         p = periode_de_reference(&suivant)?;
     }
     out.reports = reste;

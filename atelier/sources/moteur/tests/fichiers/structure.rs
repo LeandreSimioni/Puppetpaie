@@ -583,6 +583,17 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 
+/// La section « Le glossaire » de `atelier/docs/ARCHITECTURE.md`, jusqu'a la section suivante.
+fn glossaire() -> String {
+    let doc = std::fs::read_to_string(espace().parent().unwrap().join("docs").join("ARCHITECTURE.md")).unwrap();
+    let debut = doc.find("\n## Le glossaire").expect("ARCHITECTURE.md : pas de section « Le glossaire »");
+    let section = &doc[debut + 1..];
+    match section[1..].find("\n## ") {
+        Some(i) => section[..i + 1].to_string(),
+        None => section.to_string(),
+    }
+}
+
 /// CHAQUE TYPE QUE LE GLOSSAIRE CITE EXISTE (`atelier/docs/ARCHITECTURE.md`, « Le glossaire ») : une ligne de ses
 /// tableaux dont la colonne « déclaré dans » nomme des fichiers du code (`…/src/….rs`, sous `atelier/sources/`) a chaque
 /// type de sa colonne « son type » (en code ; un chemin `a::b::C` se lit par son dernier segment, ses parametres
@@ -591,20 +602,14 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
 /// bibliotheque standard) n'y est pas declare ; une ligne qui ne nomme aucun fichier du code n'a rien a verifier.
 #[test]
 fn chaque_type_du_glossaire_existe() {
-    let doc = std::fs::read_to_string(espace().parent().unwrap().join("docs").join("ARCHITECTURE.md")).unwrap();
-    let debut = doc.find("\n## Le glossaire").expect("ARCHITECTURE.md : pas de section « Le glossaire »");
-    let section = &doc[debut + 1..];
-    let fin = match section[1..].find("\n## ") {
-        Some(i) => i + 1,
-        None => section.len(),
-    };
+    let section = glossaire();
     let en_code = regex::Regex::new("`([^`]+)`").unwrap();
     let fichier_du_code = regex::Regex::new(r"^[a-z_\-]+/src/[A-Za-z0-9_/\-]+\.rs$").unwrap();
     let camel = regex::Regex::new("^[A-Z][A-Za-z0-9]*$").unwrap();
     let crates: BTreeSet<String> = dossiers_des_crates().iter().filter_map(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
     let mut fautes = Vec::new();
     let mut lignes_vues = 0;
-    for ligne in section[..fin].lines().filter(|l| l.starts_with("| ") && !l.starts_with("| notion |")) {
+    for ligne in section.lines().filter(|l| l.starts_with("| ") && !l.starts_with("| notion |")) {
         let colonnes: Vec<&str> = ligne.split('|').map(str::trim).collect();
         let [_, notion, types, declare, _] = colonnes.as_slice() else {
             fautes.push(format!("« {} » : une ligne du glossaire a trois colonnes", ligne));
@@ -684,30 +689,34 @@ fn aucun_flottant_dans_le_code() {
     assert!(fautes.is_empty(), "aucun flottant : une grandeur, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
 }
 
+/// Un entier signe, ecrit de toutes les facons de Rust : son type de chaque largeur (et celui de la taille d'un pointeur),
+/// le suffixe d'un litteral (`0` suivi du type), un nom qui le porte (`as_…`, `visit_…`), son enveloppe de la
+/// bibliotheque (`NonZero…`, `Atomic…`), et ses noms de C : ceux de `std::ffi` et `std::os::raw` (`c_…`), et les
+/// alias de `libc` et de `std::os` (le descripteur d'un fichier, l'identifiant d'un processus, un instant, une taille
+/// signee, une position). Le motif s'ecrit en morceaux pour ne pas se trouver lui-meme.
+fn entier_signe() -> regex::Regex {
+    regex::Regex::new(concat!(
+        r"(?:^|[^A-Za-z])i(?:size|8|16|32|64|128)\b",
+        r"|\b(?:NonZero|Atomic)I(?:size|8|16|32|64|128)\b",
+        r"|\bc_(?:char|schar|short|int|long|longlong|(?:ssize|ptrdiff)_t)\b",
+        r"|\b(?:pid|time|ssize|off|off64|suseconds|clock|intptr|ptrdiff|int8|int16|int32|int64)_t\b",
+        r"|\bRaw(?:Fd)\b",
+    ))
+    .unwrap()
+}
+
 /// AUCUN ENTIER SIGNE BRUT : aucune source hors du socle (`socle/`, la porte, et seul `socle::systeme` y prend l'entier
 /// que le noyau de Windows impose) et de la fabrique de PDF (`fabrique-pdf/`, une porte entiere, qui a son propre verrou)
-/// n'ecrit un entier signe de 32 ou de 64 bits, ni son nom de C (`std::ffi`, `std::os::raw`), ni son enveloppe de la
-/// bibliotheque (`NonZero…`, `Atomic…`) : ni le logiciel, ni ses essais, ses exemples et ses scripts de construction, ni
-/// l'atelier, ni la fenetre, ni un source inclus (`empreinte.rs`). Chaque nombre porte le type de sa notion (« Le
-/// glossaire ») ; un compte est un `usize`.
+/// n'ecrit un entier signe (`entier_signe` : toutes ses largeurs, ses litteraux, ses enveloppes, ses noms de C) : ni le
+/// logiciel, ni ses essais, ses exemples et ses scripts de construction, ni l'atelier, ni la fenetre, ni un source inclus
+/// (`empreinte.rs`). Seule la cible de Cargo de l'espace (`target/`, a sa racine) n'est pas lue. Chaque nombre porte le
+/// type de sa notion (« Le glossaire ») ; un compte est un `usize`.
 #[test]
 fn aucun_entier_signe_brut() {
-    let motif = regex::Regex::new(r"(?:^|[^A-Za-z])i(?:32|64)\b|\bc_(?:int|long|longlong)\b|\b(?:NonZero|Atomic)I(?:32|64)\b").unwrap();
-    // Tout `.rs` de l'espace, a sa racine comme dans chaque crate (hors de ce que Cargo fabrique, `target/`).
-    fn tous(d: &Path, v: &mut Vec<PathBuf>) {
-        for e in std::fs::read_dir(d).unwrap().flatten() {
-            let p = e.path();
-            if p.is_dir() && p.file_name().is_some_and(|n| n != "target") {
-                tous(&p, v);
-            } else if p.extension().is_some_and(|x| x == "rs") {
-                v.push(p);
-            }
-        }
-    }
-    let mut fichiers = Vec::new();
-    tous(&espace(), &mut fichiers);
+    let motif = entier_signe();
+    let (socle, fabrique, cible) = (espace().join("socle"), espace().join("fabrique-pdf"), espace().join("target"));
     let mut fautes = Vec::new();
-    for p in fichiers.iter().filter(|p| !p.starts_with(espace().join("socle")) && !p.starts_with(espace().join("fabrique-pdf"))) {
+    for p in sources(&espace()).iter().filter(|p| !p.starts_with(&socle) && !p.starts_with(&fabrique) && !p.starts_with(&cible)) {
         for (n, l) in std::fs::read_to_string(p).unwrap().lines().enumerate() {
             if let Some(m) = motif.find(l) {
                 fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str().trim()));
@@ -715,6 +724,128 @@ fn aucun_entier_signe_brut() {
         }
     }
     assert!(fautes.is_empty(), "aucun entier signe brut : le type de la notion, ou un compte (`usize`) :\n{}", fautes.join("\n"));
+}
+
+/// AUCUNE PORTE PUBLIQUE DU SOCLE NI DE LA FABRIQUE N'A D'ENTIER SIGNE : le socle et la fabrique de PDF calculent en
+/// entiers dedans (la date, l'heure de Paris, les nombres ; la norme PDF et les polices), mais ce qu'ils offrent au
+/// reste du logiciel est type. Dans les sources de leur bibliotheque (`src/`), ni une fonction publique (`pub fn`, sa
+/// signature jusqu'a son corps), ni le type d'une constante ou d'une statique publique, ni un champ public (d'une
+/// structure, ou d'une structure en tuple), ni un alias public (`pub type`), ni l'en-tete d'une implementation d'un trait
+/// (`impl … for …`) ne nomment un entier signe (`entier_signe`). Ce qui est interne s'ecrit `pub(crate)` ; `socle::systeme`
+/// est lu dehors (la memoire, le disque, le processus), et ses fonctions publiques rendent des valeurs typees : seules
+/// ses declarations `extern`, privees, nomment l'entier que le noyau de Windows impose.
+#[test]
+fn aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe() {
+    let signe = entier_signe();
+    let fonction = regex::Regex::new(r"^pub\s+(?:const\s+|async\s+|unsafe\s+)*fn\s").unwrap();
+    let champ = regex::Regex::new(r"^pub\s+[a-z_][a-z0-9_]*\s*:(.*)$").unwrap();
+    let champ_en_tuple = regex::Regex::new(r"[(,]\s*pub\s+([^,()]+)").unwrap();
+    let mut fautes = Vec::new();
+    for racine in ["socle", "fabrique-pdf"] {
+        for p in sources(&espace().join(racine).join("src")) {
+            let texte = std::fs::read_to_string(&p).unwrap();
+            let lignes: Vec<&str> = texte.lines().collect();
+            for (i, ligne) in lignes.iter().enumerate() {
+                let l = ligne.trim_start();
+                // La part publique de la ligne, celle qui se lit hors de la crate.
+                let mut parts: Vec<String> = Vec::new();
+                if fonction.is_match(l) {
+                    // Une signature, sur autant de lignes qu'il faut, jusqu'a son corps (`{`) ou sa fin (`;`).
+                    let mut s = String::new();
+                    for x in &lignes[i..] {
+                        match x.find(['{', ';']) {
+                            Some(k) => {
+                                s.push_str(&x[..k]);
+                                break;
+                            }
+                            None => s.push_str(x),
+                        }
+                    }
+                    parts.push(s);
+                } else if let Some(r) = l.strip_prefix("pub const ").or_else(|| l.strip_prefix("pub static ")) {
+                    // Son type, entre `:` et `=` ; pas sa valeur, que le socle ou la fabrique calcule.
+                    if let Some((_, t)) = r.split_once(':') {
+                        parts.push(t.split('=').next().unwrap().to_string());
+                    }
+                } else if let Some(r) = l.strip_prefix("pub type ") {
+                    parts.push(r.to_string());
+                } else if let Some(c) = champ.captures(l) {
+                    parts.push(c[1].to_string());
+                } else if l.starts_with("impl") && l.contains(" for ") {
+                    parts.push(l.split('{').next().unwrap().to_string());
+                }
+                if l.starts_with("pub struct ") {
+                    parts.extend(champ_en_tuple.captures_iter(l).map(|c| c[1].to_string()));
+                }
+                for s in parts {
+                    if let Some(m) = signe.find(&s) {
+                        fautes.push(format!("{}:{} : `{}` (`{}`)", p.strip_prefix(espace()).unwrap().display(), i + 1, m.as_str().trim(), l));
+                    }
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une porte publique du socle ou de la fabrique prend ou rend un entier signe : le type de la notion, ou `pub(crate)` :\n{}", fautes.join("\n"));
+}
+
+/// LA FABRIQUE EST UNE PORTE ENTIERE (« Les garde-fous sont dans la structure ») : ses entiers sont ceux de la norme PDF
+/// et des polices, et rien de la paie n'y entre. Son manifeste (`fabrique-pdf/Cargo.toml`) ne prend aucune crate de
+/// l'espace ni `rust_decimal` ; aucun de ses sources (sa bibliotheque, son binaire, ses essais, son script de
+/// construction) n'ecrit `Decimal` ; aucun type qu'elle declare (`struct`, `enum`, `type`, `trait`) ne porte le nom d'un
+/// type que « Le glossaire » declare hors d'elle (une notion de la paie, du temps, d'un organisme).
+#[test]
+fn la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie() {
+    let fabrique = espace().join("fabrique-pdf");
+    let mut fautes = Vec::new();
+    let crates: BTreeSet<String> = dossiers_des_crates().iter().filter_map(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    let manifeste = std::fs::read_to_string(fabrique.join("Cargo.toml")).unwrap();
+    let mut section = "";
+    for l in manifeste.lines() {
+        if l.starts_with('[') {
+            section = l;
+        } else if section.contains("dependencies") {
+            let dep = l.split([' ', '=', '.']).next().unwrap();
+            if dep == "rust_decimal" || (dep != "fabrique-pdf" && crates.contains(dep)) {
+                fautes.push(format!("fabrique-pdf/Cargo.toml prend `{}` ({})", dep, section));
+            }
+        }
+    }
+    // Les types que le glossaire declare hors de la fabrique, par leur nom.
+    let en_code = regex::Regex::new("`([^`]+)`").unwrap();
+    let camel = regex::Regex::new("^[A-Z][A-Za-z0-9]*$").unwrap();
+    let mut de_la_paie = BTreeSet::new();
+    for ligne in glossaire().lines().filter(|l| l.starts_with("| ")) {
+        let colonnes: Vec<&str> = ligne.split('|').map(str::trim).collect();
+        let [_, _, types, declare, _] = colonnes.as_slice() else { continue };
+        let fichiers: Vec<&str> = en_code.captures_iter(declare).map(|c| c.get(1).unwrap().as_str()).filter(|f| f.ends_with(".rs")).collect();
+        if fichiers.is_empty() || fichiers.iter().any(|f| f.starts_with("fabrique-pdf/")) {
+            continue;
+        }
+        for t in en_code.captures_iter(types).map(|c| c.get(1).unwrap().as_str()) {
+            let chemin = t.split('<').next().unwrap();
+            let nom = chemin.rsplit("::").next().unwrap();
+            if camel.is_match(nom) {
+                de_la_paie.insert(nom.to_string());
+            }
+        }
+    }
+    assert!(!de_la_paie.is_empty(), "le glossaire ne declare aucun type hors de la fabrique");
+    let declaration = regex::Regex::new(r"^\s*(?:pub(?:\([a-z]+\))?\s+)?(?:struct|enum|type|trait)\s+([A-Za-z0-9_]+)").unwrap();
+    let decimal = regex::Regex::new(r"\bDecimal\b").unwrap();
+    for p in sources(&fabrique) {
+        for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
+            let ou = format!("{}:{}", p.strip_prefix(espace()).unwrap().display(), n + 1);
+            if decimal.is_match(l) {
+                fautes.push(format!("{} : `Decimal`", ou));
+            }
+            if let Some(c) = declaration.captures(l) {
+                if de_la_paie.contains(&c[1]) {
+                    fautes.push(format!("{} : `{}`, une notion que le glossaire declare hors de la fabrique", ou, &c[1]));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "la fabrique de PDF ne prend ni decimal ni notion de la paie :\n{}", fautes.join("\n"));
 }
 
 /// AUCUNE VALEUR PAR DEFAUT SI ABSENT (`AGENTS.md`, « Un champ facultatif ne s'écrit que s'il est rempli ») : aucune

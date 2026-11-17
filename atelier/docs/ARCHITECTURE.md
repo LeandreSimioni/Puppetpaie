@@ -103,14 +103,23 @@ que par la structure :
   code propre à une cible se range sous son `cfg`.
 - **Le verrou simple** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce qu'il
   fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux ci-dessus) ;
-  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; quatre tests courts, sans liste, qui lisent les
+  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; des tests courts, sans liste, qui lisent les
   sources des crates ; et la relecture du diff de chaque lot à l'arrivée, qui tient tout le reste.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions ; les tests de structure
   sont les bienvenus, un test qui fige un détail ne s'écrit pas :
   - `aucun_flottant_dans_le_code` : aucune source d'une crate n'écrit `f32` ni `f64` ;
   - `aucun_entier_signe_brut` : aucune source hors du `socle` et de `fabrique-pdf` (une porte entière, qui a son
-    verrou) n'écrit `i32` ni `i64`, ni leur nom de C (`c_int`, `c_long`, `c_longlong`), ni `NonZeroI…`, `AtomicI…` : le
-    logiciel, ses essais, exemples et scripts de construction, l'atelier, la fenêtre, `empreinte.rs` ;
+    verrou) n'écrit un entier signé, de toute largeur (`i8` à `i128`, `isize`), ni un littéral qui en porte le suffixe,
+    ni son nom de C (`c_int`…) ou ses alias de `libc` et de `std::os` (`RawFd`, `pid_t`, `time_t`, `ssize_t`, `off_t`…),
+    ni `NonZeroI…`, `AtomicI…` : le logiciel, ses essais, exemples et scripts de construction, l'atelier, la fenêtre,
+    `empreinte.rs` ; seule la cible de Cargo de l'espace (`target/`) n'est pas lue ;
+  - `aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe` : le socle et la fabrique calculent en
+    entiers dedans, mais aucune fonction publique, aucun type d'une constante publique, aucun champ ni alias public,
+    aucun en-tête d'une implémentation d'un trait (`impl … for …`) de leur bibliothèque ne prend ni ne rend un entier
+    signé : ce qu'ils offrent au reste du logiciel est typé, l'interne s'écrit `pub(crate)` ;
+  - `la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie` : `fabrique-pdf` ne prend ni crate de l'espace ni
+    `rust_decimal`, n'écrit pas `Decimal`, et ne déclare aucun type au nom d'un type que ce glossaire déclare hors
+    d'elle ;
   - `chaque_forme_lue_refuse_une_cle_inconnue` : chaque `derive(Deserialize)` porte `deny_unknown_fields`, sauf une
     réponse d'un tiers, qui se déclare telle par son type (« Le corps et ses portes ») ;
   - `aucune_valeur_par_defaut_si_absent` : ni `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`,
@@ -209,7 +218,7 @@ un libellé, chacun sa forme.
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
-| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
+| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture, le délai et l'âge d'un verrou) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
 | décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre ; celui de Paris à un instant, interne au socle, s'écrit `+HHMM` dans la date d'un courriel, `socle::paris::ecrit::rfc5322`) | `socle/src/paris.rs` |
 | date mal écrite d'une zone (un morceau illisible tel qu'il s'écrit, ou une date qui n'existe pas et la phrase qui le dit : la date de la table des CTP, `format::AaaaJjMm`) | `DateMalEcrite` | `socle/src/piece.rs` |
 
@@ -217,7 +226,8 @@ un libellé, chacun sa forme.
 
 - **instant** : un point du temps, à la nanoseconde ; aussi « à la minute près ». Ses écritures (à la seconde, à la
   minute, la saisie, la française, l'UTC du filet, le bloc de la plate-forme DSN, les secondes locales) sont les modules
-  de `socle::paris::ecrit`, dits par l'attribut serde du champ ; « pas encore » : `Option<Moment>`.
+  de `socle::paris::ecrit`, dits par l'attribut serde du champ (et ses centièmes de seconde depuis 1970, la part de
+  l'instant dans l'identifiant d'un courriel, `ecrit::centiemes`) ; « pas encore » : `Option<Moment>`.
 - **instant ou jour** : l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit
   d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
@@ -231,20 +241,23 @@ un libellé, chacun sa forme.
   « avant le 14/12/2026 à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone. Le numéro d'un jour dans
   son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture (`iso`, `jj_mm_aaaa`, `jj_mm`, `jj_mm_aa`,
-  `jjmmaaaa`, `jjmmaa`, `aaaammjj`, `jj_mm_aaaa_en_cases`, `cases`, `quantieme_ecrit`, `en_clair`) ; ses champs sont
+  `jjmmaaaa`, `jjmmaa`, `aaaammjj`, `j_mm`, `j_mm_aa`, `cases`, `quantieme_ecrit`, `en_clair`) ; ses champs sont
   privés au socle, et un lecteur prend son mois (`mois_civil`), son année (`annee`), une comparaison
-  (`premier_du_mois`, `meme_quantieme`) ; tapé dans une charge (le jour d'effet d'un
+  (`premier_du_mois`, `meme_quantieme`), la veille ou le lendemain (`avant`, `apres` d'un jour : « durée de droit ») ;
+  un `JJ/MM/AAAA` imprimé se lit par sa zone (`socle::piece::format::JjMmAaaa`, la date impossible dite par le socle) ;
+  tapé dans une charge (le jour d'effet d'un
   changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
   jour qui n'est pas de ce mois se refuse à sa case.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom ; son numéro s'écrit `mm`,
-  `mm_aaaa` (« 05/2026 »).
+  `mm_aaaa` (« 05/2026 ») ; un mois qu'un texte fixe s'écrit de son texte, lu à la compilation (`const {
+  Mois::constante("2026-03") }`).
 - **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
   table des noms de mois ; un fichier qui l'écrit par son numéro (`echeancier-base.json`) se lit en lui.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Une seule forme : le nombre (`2025`), par sa serde ; clé d'un objet, son texte comme
   toute clé (`"2025"`, la clé de `paies_annuelles`). Elle se calcule par ses
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
-  année qu'un texte fixe s'écrit `Annee::constante`, dans une constante compilée (`const { … }`) ; un test écrit la
+  année qu'un texte fixe s'écrit de son texte, lu à la compilation (`const { Annee::constante("2026") }`) ; un test écrit la
   sienne en texte (`"2026"`), lue par sa forme. Ses deux derniers chiffres s'écrivent `aa`.
 - **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
   par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes
@@ -329,7 +342,8 @@ un libellé, chacun sa forme.
 - **durée mesurée** : un temps écoulé, de la montre ou entre deux instants (`Moment::depuis`, `plus_duree`,
   `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Des jours de 24 heures
   (la fenêtre des retours qu'un relevé remonte) en sont une (`socle::temps::jours_de_24_heures`), un délai d'attente
-  du réseau aussi, et le temps entre deux passages de la veille. Ses écritures sont toutes dans `socle::temps::ecrit` :
+  du réseau aussi, le temps entre deux passages de la veille, et le délai d'un verrou et son âge (`socle::verrou` : un
+  verrou d'un fichier daté du futur, d'une horloge reculée, dit son avance). Ses écritures sont toutes dans `socle::temps::ecrit` :
   dans un fichier, en secondes au dixième, en millisecondes, en minutes ou en jours entiers, dites par l'attribut serde
   du champ ; dans une phrase, en secondes au dixième ou entières, en millisecondes, en minutes entières ou commencées,
   à la seconde (« 1 h 12 min 5 s ») ou en heures (`heures_dites`, « 12 h »).
@@ -364,6 +378,7 @@ un libellé, chacun sa forme.
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
 | taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
+| écart en octets dans un fichier lu (la position d'un octet depuis son début, ou l'écart entre deux positions : le répertoire et les membres d'une archive zip, `envois::retours` ; signé, car une archive abîmée place un membre avant le début, ce que sa lecture refuse en le disant) | `EcartEnOctets` (lu d'un champ, `lu`, ou d'une position en mémoire, `de_position` ; s'ajoute, se retranche, se compare, s'écrit en nombre ; redevient une position en mémoire s'il ne précède pas le début, `au_plus`) | `socle/src/grandeurs.rs` |
 | nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier` (interne au socle), qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture, en rang dans sa grille (`socle::grandeurs::RangDansUneGrille`) ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
 | nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue` ; un nombre lu avant que sa place dise sa grandeur, une fois : celui qu'une pièce imprime, `Nombre::a_virgule`, ou que la norme écrit, `Nombre::de_la_norme`, les seules lectures dont `grandeurs::lu::texte` et `lu::norme` se servent ; l'entier qu'une zone écrit en chiffres, `socle::piece::EntierDUneZone`, que sa colonne lit en sa grandeur, `en`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu`, `socle::piece::EntierDUneZone` | `socle/src/forme.rs`, `socle/src/piece.rs` |
 | rang dans une grille numérotée de 1 à N (l'échelon de la CCNEAC, une grille de douze, `droit::fiche::EchelonCcneac`) | `RangDansUneGrille<N>` (lu d'un nombre entier ou tapé, hors de 1 à N refusé en la phrase de sa notion ; il prend sa ligne dans la grille, `ligne`, et son rang ne sort pas) | `socle/src/grandeurs.rs` |
@@ -1132,6 +1147,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
+| numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |
 | préavis d'une fin de contrat (son type, S21.G00.63.001, et ses dates, que la carte saisit) | `Preavis` | `engagement/src/saisie.rs` |

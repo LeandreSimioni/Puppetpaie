@@ -80,7 +80,7 @@ pub(crate) fn d_une_case<V: Clone>(champ: CaseDatee, liste: &[droit::fiche::Date
     let en_vigueur = temps.en_vigueur.map(|e| e.depuis);
     let mut valeurs = Vec::new();
     for (i, e) in temps.toutes.iter().enumerate() {
-        let jusqu_au = temps.toutes.get(i + 1).and_then(|s| s.depuis).map(|d| d.plus_jours(-1)).transpose()?;
+        let jusqu_au = temps.toutes.get(i + 1).and_then(|s| s.depuis).map(|d| d.avant(socle::date::Duree::jours(1))).transpose()?;
         valeurs.push(LigneDuTemps { valeur: e.valeur.clone(), depuis: e.depuis, jusqu_au, dit: quand_dit(e.depuis, jusqu_au), en_vigueur: en_vigueur == Some(e.depuis), note: e.note.clone() });
     }
     Ok(Some(TempsDeLaCase { champ, avant, a_venir, valeurs, lignes: Vec::new() }))

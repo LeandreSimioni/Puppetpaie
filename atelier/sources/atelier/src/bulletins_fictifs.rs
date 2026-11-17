@@ -39,12 +39,12 @@ fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Ali
 }
 
 pub fn t(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Gauche));
+    b.push(texte_fixe(x, y, texte, mesure("9"), Alignement::Gauche));
 }
 
 /// Un nombre, aligne a droite sur `x`.
 pub fn r(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Droite));
+    b.push(texte_fixe(x, y, texte, mesure("9"), Alignement::Droite));
 }
 
 pub fn grand(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str, taille: Mesure) {
@@ -55,13 +55,13 @@ pub fn grand(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str, taille: Mesur
 pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
     let nulle = Mesure::ZERO;
     let d = Description {
-        format: 3,
+        format: fabrique_pdf::FORMAT,
         page: Some(Page {
             largeur: mesure("595.22"),
-            hauteur: Mesure::entier(842),
+            hauteur: mesure("842"),
             marges: Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: Some(Police { taille: Mesure::entier(9), interligne: mesure("1.25"), couleur: "#000000".to_string() }),
+        police: Some(Police { taille: mesure("9"), interligne: mesure("1.25"), couleur: "#000000".to_string() }),
         style: None,
         logo: None,
         titre: None,

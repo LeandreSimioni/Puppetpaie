@@ -105,7 +105,7 @@ fn une_valeur_de_prive_dans_ce_qui_part_arrete_le_commit() {
     git(&depot, &["add", "atelier/notes.md"]);
     for args in [&[][..], &["--indexes"][..]] {
         let s = garde(&depot, args);
-        assert_eq!(s.statut.code(), Some(1), "{:?} :\n{}", args, s.out);
+        assert!(!s.statut.success(), "{:?} :\n{}", args, s.out);
         assert!(s.out.contains("atelier/notes.md"), "{}", s.out);
         for (ligne, quoi) in [(2, "salarie.email"), (3, "salarie (identite)"), (4, "siret")] {
             assert!(s.out.lines().any(|l| l.contains(&format!("ligne {} ", ligne)) && l.contains(quoi)), "ligne {} ({}) :\n{}", ligne, quoi, s.out);
@@ -120,7 +120,7 @@ fn le_nir_d_un_salarie_s_arrete_meme_avec_la_marque_d_invention() {
     let depot = monter("nir_lu", true);
     ecrire(&depot, "fictives/x/config/salaries.json", &format!("{{\"nir\": \"{}\"}}\n", NIR_INVENTE));
     let s = garde(&depot, &[]);
-    assert_eq!(s.statut.code(), Some(1), "{}", s.out);
+    assert!(!s.statut.success(), "{}", s.out);
     assert!(s.out.contains("salarie.nir"), "{}", s.out);
     sans_les_valeurs(&s);
 }

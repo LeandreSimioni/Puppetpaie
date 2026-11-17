@@ -1502,7 +1502,7 @@ impl std::fmt::Display for ColonneDeRepartition {
 }
 
 /// Le premier jour ou la repartition d'avant 1999 ne vaut plus.
-const PREMIER_JANVIER_1999: Jour = Annee::constante(1999).premier_jour();
+const PREMIER_JANVIER_1999: Jour = Annee::constante("1999").premier_jour();
 
 /// (part patronale, part salariale) de la tranche 1, pour la convention de l'entreprise et la colonne `colonne` de sa
 /// branche.
@@ -1958,7 +1958,7 @@ pub fn risques_de(bar: &Pile) -> Vec<RisqueAtmp> {
 /// La derniere annee de cotisations a laquelle s'applique D. 242-6-17 dans sa version LEGIARTI000022446511 : la version
 /// issue du decret n° 2026-951 s'applique aux cotisations dues a compter de 2027 (sa note,
 /// `code-de-la-securite-sociale/xml/D242-6-17.xml`).
-const DERNIERE_ANNEE_D242_6_17_DE_2012: Annee = Annee::constante(2026);
+const DERNIERE_ANNEE_D242_6_17_DE_2012: Annee = Annee::constante("2026");
 
 /// « Les deux annees civiles suivantes » l'annee de la creation (D. 242-6-17).
 const ANNEES_D_UN_ETABLISSEMENT_NEUF: Duree<EnMois> =Duree::annees(2);

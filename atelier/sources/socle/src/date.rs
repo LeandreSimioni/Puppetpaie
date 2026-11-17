@@ -986,6 +986,17 @@ impl Jour {
         format!("{:02}/{:02}", self.jour, self.mois)
     }
 
+    /// `J/MM`, le quantieme sans zero devant, sans l'annee (« 5/03 » : la periode courte d'un bulletin fictif).
+    pub fn j_mm(&self) -> String {
+        format!("{}/{:02}", self.jour, self.mois)
+    }
+
+    /// `J/MM/AA`, le quantieme sans zero devant, l'annee en ses deux derniers chiffres (« 5/03/26 » : la periode courte
+    /// d'un bulletin fictif).
+    pub fn j_mm_aa(&self) -> String {
+        format!("{}/{:02}/{}", self.jour, self.mois, self.annee().aa())
+    }
+
     /// `JJMMAAAA`.
     pub fn jjmmaaaa(&self) -> String {
         format!("{:02}{:02}{:04}", self.jour, self.mois, self.an)
@@ -1007,12 +1018,8 @@ impl Jour {
         format!("{:02}{:02}{}", self.jour, self.mois, self.annee().aa())
     }
 
-    /// `JJ MM AAAA`, les trois cases d'une date separees d'un blanc (le certificat Congés Spectacles).
-    pub fn jj_mm_aaaa_en_cases(&self) -> String {
-        format!("{:02} {:02} {:04}", self.jour, self.mois, self.an)
-    }
-
-    /// `JJ`, `MM` et `AAAA`, chacun dans sa case d'un formulaire (l'attestation employeur).
+    /// `JJ`, `MM` et `AAAA`, chacun dans sa case d'un formulaire (l'attestation employeur), ou les trois separees d'un
+    /// blanc (`cases().join(" ")` : le certificat Congés Spectacles).
     pub fn cases(&self) -> [String; 3] {
         [format!("{:02}", self.jour), format!("{:02}", self.mois), format!("{:04}", self.an)]
     }
@@ -1072,9 +1079,10 @@ impl Jour {
         Jour::depuis_ordinal(jours + ORDINAL_EPOQUE_UNIX)
     }
 
-    /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999.
+    /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999 ; hors du socle, un jour se decale d'une duree
+    /// (`apres`, `avant`).
     #[track_caller]
-    pub fn plus_jours(&self, n: i64) -> R<Jour> {
+    pub(crate) fn plus_jours(&self, n: i64) -> R<Jour> {
         match Jour::depuis_ordinal(self.ordinal() + n) { Some(j) => Ok(j), None => Err(refus(HORS_CALENDRIER)) }
     }
 
@@ -1134,18 +1142,18 @@ pub fn annee_impossible(an: impl std::fmt::Display) -> String {
 
 use crate::mois::mois_impossible;
 
-pub fn jour_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn jour_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     format!("date impossible : {}", iso(an, mois, jour))
 }
 
 /// `AAAA-MM-JJ` de trois nombres tels qu'ils sont, la seule ecriture ISO d'une date : celle d'un `Jour`, d'une date
 /// impossible, d'une date de naissance declaree dont le jour ou le mois sont inconnus (`00`, `99`).
-pub fn iso(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn iso(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     format!("{:04}-{:02}-{:02}", an.into(), mois.into(), jour.into())
 }
 
 /// Ce qui rend une date impossible : l'annee d'abord, sinon le mois, sinon le jour.
-pub fn date_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn date_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     let (an, mois, jour) = (an.into(), mois.into(), jour.into());
     if !(1..=9999).contains(&an) {
         annee_impossible(an)
