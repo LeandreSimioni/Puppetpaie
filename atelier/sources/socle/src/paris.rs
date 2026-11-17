@@ -821,9 +821,9 @@ pub(crate) fn date_xsd(texte: &str) -> Option<(Jour, Option<FuseauXsd>)> {
 /// UNE HEURE DE XML SCHEMA (`time`, XML Schema Part 2, § 3.2.8) : `hh:mm:ss`, une fraction de seconde ou non (`.` et des
 /// chiffres), un fuseau ou non (`FuseauXsd`) ; `24:00:00` est la fin du jour (XML Schema 1.1, § 3.3.8). L'heure de
 /// reception d'un bilan (`heure_reception`, schema des bilans harmonises, l. 323-327 ; meme fichier que `date_xsd`).
-/// Rend les secondes depuis minuit (de 0 a 86 400), si la fraction est nulle (absente, ou rien que des zeros : l'heure
-/// tombe sur sa seconde), et le fuseau ecrit ; `None` pour autre chose.
-pub(crate) fn heure_xsd(texte: &str) -> Option<(i64, bool, Option<FuseauXsd>)> {
+/// Rend ses secondes depuis minuit (de 0 a 86 400), si la fraction est nulle (absente, ou rien que des zeros : l'heure
+/// tombe sur sa seconde), et le fuseau ecrit (`HeureXsdLue`) ; `None` pour autre chose.
+pub(crate) fn heure_xsd(texte: &str) -> Option<HeureXsdLue> {
     let b = texte.as_bytes();
     if b.len() < 8 || b[2] != b':' || b[5] != b':' {
         return None;
@@ -846,7 +846,47 @@ pub(crate) fn heure_xsd(texte: &str) -> Option<(i64, bool, Option<FuseauXsd>)> {
     if !(h < 24 && m < 60 && s < 60 || fin_du_jour) {
         return None;
     }
-    Some((i64::from(h) * 3_600 + i64::from(m) * 60 + i64::from(s), a_la_seconde, fuseau))
+    Some(HeureXsdLue { seconde: i64::from(h) * 3_600 + i64::from(m) * 60 + i64::from(s), a_la_seconde, fuseau })
+}
+
+/// UNE HEURE DE XML SCHEMA LUE (`heure_xsd`) : ses secondes depuis minuit (`24:00:00` compris), si elle tombe sur sa
+/// seconde, et son fuseau.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HeureXsdLue {
+    seconde: i64,
+    a_la_seconde: bool,
+    fuseau: Option<FuseauXsd>,
+}
+
+impl HeureXsdLue {
+    /// Telle que l'ecran la dit, sans ses secondes (« 09:36 » ; « 24:00 », la fin du jour).
+    pub fn heure_minute(&self) -> String {
+        format!("{:02}:{:02}", self.seconde / 3_600, (self.seconde % 3_600) / 60)
+    }
+}
+
+/// L'INSTANT OU LE JOUR qu'une date de XML Schema (`date_xsd` : son jour, son fuseau) et son heure (`heure_xsd`) disent :
+/// une date seule, sans fuseau, est son jour ; une heure qui ne tombe pas sur sa seconde, ou d'un autre fuseau que sa
+/// date, ne se ramene a rien (`None`) ; sans fuseau, l'heure est celle de Paris (`24:00:00` est le debut du jour
+/// suivant), avec un fuseau, l'instant qu'il dit.
+pub fn instant_xsd(date: (Jour, Option<FuseauXsd>), heure: Option<HeureXsdLue>) -> Option<InstantOuJour> {
+    let (jour, fuseau_date) = date;
+    let Some(HeureXsdLue { seconde, a_la_seconde, fuseau }) = heure else {
+        return fuseau_date.is_none().then_some(InstantOuJour::Jour(jour));
+    };
+    if !a_la_seconde || fuseau_date.is_some_and(|z| fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
+        return None;
+    }
+    let local = (jour.ordinal() - 719_163) * 86_400 + seconde;
+    let instant = match fuseau {
+        None => {
+            // `24:00:00` est le debut du jour suivant.
+            let (jour, seconde) = (Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
+            Moment::a_paris_a_la_seconde(jour, HeureDuJour::lue(seconde / 3_600, (seconde % 3_600) / 60)?, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
+        }
+        Some(z) => Moment::de_secondes(local - z.secondes())?,
+    };
+    Some(InstantOuJour::Instant(instant))
 }
 
 /// Deux chiffres ASCII, leur valeur ; `None` sinon.

@@ -82,7 +82,7 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct DateXsd;
 
-    /// Une heure de XML Schema (`paris::heure_xsd`) : ses secondes depuis minuit, sa fraction nulle ou non, son fuseau.
+    /// Une heure de XML Schema (`paris::heure_xsd`) : `paris::HeureXsdLue`.
     #[derive(Debug, Clone, Copy)]
     pub struct HeureXsd;
 
@@ -160,8 +160,8 @@ pub mod format {
 
     impl Format for HeureXsd {}
     impl Scelle for HeureXsd {
-        type Lu = Option<(i64, bool, Option<paris::FuseauXsd>)>;
-        fn lire(t: &str) -> Option<(i64, bool, Option<paris::FuseauXsd>)> {
+        type Lu = Option<paris::HeureXsdLue>;
+        fn lire(t: &str) -> Option<paris::HeureXsdLue> {
             paris::heure_xsd(t)
         }
     }
