@@ -184,10 +184,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | mois | `Mois` | `socle/src/mois.rs` |
 | mois de l'année | `MoisDeLAnnee` | `socle/src/mois.rs` |
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
-| année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
+| année | `Annee` | `socle/src/mois.rs` |
 | période | `Periode` | `socle/src/date.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
-| durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| durée de droit | `Duree<EnJours>`, `Duree<EnMois>` | `socle/src/date.rs` |
 | jour de la semaine | `JourDeLaSemaine` | `socle/src/date.rs` |
 | semaine d'un calendrier (du lundi au vendredi, du lundi au samedi) | `Semaine` | `socle/src/date.rs` |
 | jours ouvrés, jours ouvrables (un compte de jours que le calendrier change en jour : pas une `Duree`) | `JoursOuvres`, `JoursOuvrables` | `socle/src/date.rs` |
@@ -310,9 +310,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
+| montant | `Montant` ; à unifier (#419) : les indemnités d'une convention, comptées en décimal à 28 chiffres (`droit::clauses`), et les valeurs des gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
+| taux | `Taux` ; à unifier (#419) : le taux d'une ligne de paie rouvert (`TauxDeLigne::decimal`), les gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : la quantité d'une ligne et la quotité d'un contrat rouvertes (`QuantiteDeLigne::decimal`, `QuotiteDuContrat::decimal`, que le bulletin dit en décimal), le plafond de quotité d'une nature en décimal (`droit::natures`) | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
 | heures du mois (la durée légale d'un mois à temps plein, 151,67 h : la quotité de référence d'une nature, `quotite_reference_defaut` ; celle sur laquelle une convention ramène ses mensuels à l'heure, `droit::minima::Convention.heures_mensuelles`, et une grille au mois sa valeur, `droit::minima::Grille.heures_du_mois` ; une grille ne dit ses heures que dans la grandeur de son unité, `droit::minima::table` refuse l'autre clé) | `Heures` (un mensuel sur les heures du mois : `MontantUnitaire::par_heure`, au centime le plus proche dans toute convention, `engagement::minima` ; dites dans une phrase en heures et minutes, « 151 h 40 », par `socle::texte::heures_et_minutes`) | `socle/src/grandeurs.rs` |
 | grandeur non nulle (un diviseur dont la forme tient qu'il n'est jamais nul : des jours ouvrables lus non nuls, `NonNul::de` ; les jours de la semaine de 5 ou de 6 jours d'un artiste de la 3097, qu'un texte fixe, `Jours::non_nuls`) | `NonNul<G>` (montant unitaire / jours non nuls = montant unitaire, sans refus : `MontantUnitaire::par_jour`, la seule division d'un montant unitaire par des jours) | `socle/src/grandeurs.rs` |
@@ -325,8 +325,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon) | `engagement/src/lib.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` ; à unifier (#419) : les mois de salaire d'une convention, comptés en décimal à 28 chiffres (`droit::clauses`), les gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
+| montant unitaire | `MontantUnitaire` ; à unifier (#419) : les gabarits des conseils (`routes::gestes::conseils` : le cachet, le plafond horaire) | `socle/src/grandeurs.rs` |
 | montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
 | taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
 | heures en plus d'un mois, réparties par majoration (les heures supplémentaires d'un temps plein, complémentaires d'un temps partiel ; un palier : des heures à une majoration, un taux que le taux horaire du contrat prend en plus de lui-même) | `droit::heures_en_plus::Reparties`, ses `Palier` (`Heures`, `Taux`) ; la loi et la convention les lisent en grandeurs (`permanents::HeuresEnPlus`, `clauses::HeuresSupplementaires`) | `droit/src/heures_en_plus.rs`, `socle/src/grandeurs.rs` |
