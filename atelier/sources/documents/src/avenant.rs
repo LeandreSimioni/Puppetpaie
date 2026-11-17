@@ -20,8 +20,9 @@ use crate::bulletin::convention_du_contrat;
 use socle::texte::chiffres_en_euros;
 use droit::contexte::Contexte;
 use droit::fiche::ChampsEntreprise;
-use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie, FormeDeRemuneration};
-use engagement::PlaceDuMois;
+use engagement::calcul::{LigneBrut, Paie};
+use engagement::numeros::NumeroContrat;
+use engagement::{Engagement, PlaceDuMois};
 use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
 use socle::grandeurs::Montant;
@@ -100,60 +101,9 @@ pub(crate) fn et(morceaux: &[String]) -> String {
     }
 }
 
-/// Ce que `contrat.marqueurs` lit de l'engagement : sa forme ecrite (`paie_ecrite::FormeDEngagement`, dans la paie
-/// calculee ou ecrite), et le numero que la paie porte vraiment.
-pub(crate) struct Eng<'a> {
-    f: &'a FormeDEngagement,
-    numero: Option<engagement::numeros::NumeroContrat>,
-}
-
-impl<'a> Eng<'a> {
-    pub(crate) fn de(f: &'a FormeDEngagement) -> Eng<'a> {
-        Eng { f, numero: f.numero.clone() }
-    }
-
-    /// `Engagement.dates_du_contrat` : les jours du mois, puis le planning.
-    fn dates_du_contrat(&self) -> Vec<&Jour> {
-        self.f.dates_travail.iter().chain(self.f.planning.iter()).collect()
-    }
-
-    /// `Engagement.lieu_de` : le lieu que la date dit l'emporte sur celui de l'engagement.
-    fn lieu_de(&self, jour: &Jour) -> &str {
-        match [self.f.lieux.get(jour), self.f.planning_lieux.get(jour)].into_iter().flatten().find(|l| !l.is_empty()) {
-            Some(l) => l.as_str(),
-            None => self.f.lieu.as_str(),
-        }
-    }
-
-    /// `Engagement.lieux_joues` : dans l'ordre des dates, sans repetition.
-    fn lieux_joues(&self) -> Vec<&str> {
-        let mut out: Vec<&str> = Vec::new();
-        for j in self.dates_du_contrat() {
-            let ou = self.lieu_de(j);
-            if !ou.is_empty() && !out.contains(&ou) {
-                out.push(ou);
-            }
-        }
-        out
-    }
-
-    /// `Engagement.dates_par_lieu()` : [(lieu, [dates])] dans l'ordre des dates, sans retrier.
-    fn dates_par_lieu(&self) -> Vec<(&str, Vec<&Jour>)> {
-        let mut out: Vec<(&str, Vec<&Jour>)> = Vec::new();
-        for j in self.dates_du_contrat() {
-            let ou = self.lieu_de(j);
-            match out.last_mut() {
-                Some((dernier, dates)) if *dernier == ou => dates.push(j),
-                _ => out.push((ou, vec![j])),
-            }
-        }
-        out
-    }
-}
-
 /// « 2 cachets à 130,00 € » : une ligne de remuneration telle que le contrat la cite.
-pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
-    let designation = &l.designation;
+pub(crate) fn ligne_citee(l: &LigneBrut) -> String {
+    let designation = l.designation();
     // La designation ouvre une phrase : « 2 Cachets » y devient « 2 cachets ». On ne touche
     // qu'a la premiere majuscule.
     let mut texte = String::new();
@@ -170,21 +120,21 @@ pub(crate) fn ligne_citee(l: &FormeDeRemuneration) -> String {
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)
-pub(crate) fn fait_le_brut(l: &FormeDeRemuneration) -> bool {
+pub(crate) fn fait_le_brut(l: &LigneBrut) -> bool {
     l.soumis
 }
 
 /// « 2 cachets à 130,00 € », ou « 1 journée de travail à
 /// 200,00 € et 6 h de masterclass à 40,00 € ». Le modele la dit « brut » : elle ne cite que les
 /// lignes qui font le brut ; les autres (les defraiements...) sont dans `remuneration_hors_brut`.
-fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<String> {
+fn remuneration_detaillee(remuneration: &[LigneBrut], e: &Engagement) -> R<String> {
     let morceaux: Vec<String> = remuneration.iter().filter(|l| fait_le_brut(l)).map(ligne_citee).collect();
     let mut phrase = et(&morceaux);
     // Le contrat se poursuit apres le mois.
-    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.f.place {
-        let quand = e.f.mois.libelle(socle::mois::Graphie::Accentuee);
-        if !e.f.planning.is_empty() {
-            let n = e.f.planning.len();
+    if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois()? {
+        let quand = e.mois.libelle(socle::mois::Graphie::Accentuee);
+        if !e.planning.is_empty() {
+            let n = e.planning.len();
             phrase += &format!(
                 " pour {} et, pour {} du planning, payée{} dans {} mois, le même montant",
                 quand,
@@ -203,44 +153,44 @@ fn remuneration_detaillee(remuneration: &[FormeDeRemuneration], e: &Eng) -> R<St
 /// indemnites hors assiette), convenues comme le reste : « 3 défraiements au forfait à 20,20 € ». `None` sans elles :
 /// l'alinea du modele qui les dit ne s'ecrit pas (`[si remuneration.hors_brut]`). Une ligne qui retranche (un acompte)
 /// n'est pas une clause du contrat.
-pub(crate) fn remuneration_hors_brut(remuneration: &[FormeDeRemuneration]) -> Option<String> {
+pub(crate) fn remuneration_hors_brut(remuneration: &[LigneBrut]) -> Option<String> {
     let morceaux: Vec<String> =
         remuneration.iter().filter(|l| !fait_le_brut(l) && l.montant > Montant::ZERO).map(ligne_citee).collect();
     (!morceaux.is_empty()).then(|| et(&morceaux))
 }
 
 /// « le mois d'octobre 2026 » quand le contrat se poursuit apres le mois : le total et le net sont ceux de ce mois.
-fn periode_remuneration(e: &Eng) -> R<Option<String>> {
-    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = e.f.place {
+fn periode_remuneration(e: &Engagement) -> R<Option<String>> {
+    if let PlaceDuMois::Seul | PlaceDuMois::Dernier = e.place_du_mois()? {
         return Ok(None);
     }
-    let mois = e.f.mois;
+    let mois = e.mois;
     let nom = mois.nom(socle::mois::Graphie::Accentuee);
     let de = if nom.chars().next().is_some_and(|c| "aeiouyâàéèêîôû".contains(c)) { "d'" } else { "de " };
     Ok(Some(format!("le mois {}{} {}", de, nom, mois.annee())))
 }
 
 /// Les jours joues, et OU chacun se joue quand ils different.
-fn dates_travail(e: &Eng) -> R<String> {
+fn dates_travail(e: &Engagement) -> R<String> {
     let mut texte = if e.lieux_joues().len() < 2 {
-        e.dates_du_contrat().into_iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")
+        e.dates_du_contrat().iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>().join(", ")
     } else {
         let mut groupes = Vec::new();
-        for (ou, jours) in e.dates_par_lieu() {
-            let dates = et(&jours.into_iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>());
+        for (ou, jours) in e.dates_par_lieu(true) {
+            let dates = et(&jours.iter().map(Jour::jj_mm_aaaa).collect::<Vec<_>>());
             groupes.push(if ou.is_empty() { dates } else { format!("{} à {}", dates, ou) });
         }
         groupes.join(", ")
     };
-    if let (PlaceDuMois::Premier | PlaceDuMois::Milieu, true) = (e.f.place, e.f.planning.is_empty()) {
-        let fin = e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?;
+    if let (PlaceDuMois::Premier | PlaceDuMois::Milieu, true) = (e.place_du_mois()?, e.planning.is_empty()) {
+        let fin = e.contrat().fin().ok_or_else(|| refus("contrat sans fin"))?;
         texte += &format!(", puis les dates du planning jusqu'au {}", fin.jj_mm_aaaa());
     }
     Ok(texte)
 }
 
 /// L'article « Lieu de travail », qui suit ce que les dates ont dit.
-fn lieu_du_contrat(e: &Eng) -> String {
+fn lieu_du_contrat(e: &Engagement) -> String {
     let lieux = e.lieux_joues();
     match lieux.len() {
         0 => "au lieu de la représentation".to_string(),
@@ -250,23 +200,24 @@ fn lieu_du_contrat(e: &Eng) -> String {
 }
 
 /// Les valeurs offertes au modele. `remuneration`, `brut` et `net` sont ceux
-/// de la paie calculee ; `fiche` celle du salarie telle qu'elle vaut pour cet engagement.
-fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, e: &Eng, paie: &FormeDePaie<A>) -> R<Valeurs> {
+/// de la paie calculee ; `fiche` celle du salarie telle qu'elle vaut pour cet engagement ; `numero`, celui que la paie
+/// porte vraiment.
+fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &droit::fiche::Spectacle, paie: &Paie, numero: Option<&NumeroContrat>) -> R<Valeurs> {
+    let e = &paie.engagement;
     let remuneration = &paie.remuneration;
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?.to_string();
-    let mut m = parties(ent, fiche, Some(sp), e)?;
+    let mut m = parties(ent, fiche, Some(sp), e, numero)?;
     let mut poser = |k: Marqueur, v: String| {
         m.insert(k, v);
     };
     poser(Marqueur::EmployeurLicence, licence);
     // Le numero sous lequel la compagnie est affiliee a la Caisse : son numero d'adherent (`conges_spectacles::adherent`).
     poser(Marqueur::EmployeurCongesspectacles, crate::conges_spectacles::adherent(ent)?);
-    poser(Marqueur::ContratFin, e.f.contrat.fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
+    poser(Marqueur::ContratFin, e.contrat().fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
-    // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`, que la paie ecrite porte).
-    let paiement = e.f.date_paiement.ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
-    poser(Marqueur::ContratDatePaiement, paiement.jj_mm_aaaa());
+    // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`).
+    poser(Marqueur::ContratDatePaiement, e.date_du_versement()?.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
     if let Some(p) = periode_remuneration(e)? {
         poser(Marqueur::RemunerationPeriode, p);
@@ -274,9 +225,9 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
     if let Some(h) = remuneration_hors_brut(remuneration) {
         poser(Marqueur::RemunerationHorsBrut, h);
     }
-    poser(Marqueur::RemunerationCachets, socle::grandeurs::ecrit::sans_zero::dit(e.f.cachets));
+    poser(Marqueur::RemunerationCachets, socle::grandeurs::ecrit::sans_zero::dit(e.cachets));
     // Sans taux de cachet, pas de marqueur : un modele qui le cite se refuse (`contrat::refuser_ce_que_le_modele_tairait`).
-    if let Some(t) = e.f.taux_cachet {
+    if let Some(t) = e.taux_cachet {
         // Le montant d'un cachet.
         poser(Marqueur::RemunerationTauxCachet, chiffres_en_euros(t));
     }
@@ -298,8 +249,8 @@ fn marqueurs<A>(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp:
 /// nomme comme le bareme du mois de la paie qui ecrit le document la nomme (`bareme::libelle_convention`) : le premier
 /// mois d'un contrat pour le contrat, le mois de l'avenant pour un avenant -- un contrat commence avant le logiciel n'a
 /// pas de bareme de son annee.
-pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: Option<&droit::fiche::Spectacle>, e: &Eng) -> R<Valeurs> {
-    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &e.f.mois.premier_jour())?;
+pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: Option<&droit::fiche::Spectacle>, e: &Engagement, numero: Option<&NumeroContrat>) -> R<Valeurs> {
+    let (idcc, convention) = convention_du_contrat(ent, sp, fiche, &e.mois.premier_jour())?;
     let sig = ent.signataire.exigee("signataire")?;
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -347,15 +298,15 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
     poser(Marqueur::SalarieEmploi, emploi_texte.to_lowercase());
     poser(Marqueur::SalarieQualiteDe, de_devant(&emploi_texte).to_string());
     // Un numero que le moteur ne porte pas (contrat pas encore numerote) n'est pas devine ni pris au compteur (regle 4).
-    let Some(numero) = e.numero.as_ref() else {
+    let Some(numero) = numero.or(e.numero.as_ref()) else {
         return Err(socle::refus!(
             "Le contrat de {} du {} n'a pas de numéro (S21.G00.40.009) : il ne s'écrit pas. Valider l'engagement le lui donne.",
-            e.f.salarie,
-            e.f.contrat.debut().jj_mm_aaaa()
+            e.salarie,
+            e.contrat().debut().jj_mm_aaaa()
         ));
     };
     poser(Marqueur::ContratNumero, numero.to_string());
-    poser(Marqueur::ContratDebut, e.f.contrat.debut().jj_mm_aaaa());
+    poser(Marqueur::ContratDebut, e.contrat().debut().jj_mm_aaaa());
     Ok(m)
 }
 
@@ -427,18 +378,14 @@ pub fn ent_du_mois(ctx: &Contexte, mois: Mois) -> droit::contexte::EntrepriseDuD
     ctx.pour_un_modele(&ent)
 }
 
-/// `contrat.marqueurs(p, ent)` pour une paie (sa forme ecrite ou canonique, `paie_ecrite::FormeDePaie`). `numero` : le
-/// numero de contrat que la paie porte VRAIMENT (lu dans l'archive, ou celui de l'engagement), quand il differe de celui
-/// de la forme. Le contrat d'un spectacle lit ses dates, ses cachets et son spectacle ; celui d'un permanent son salaire
-/// au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ; tous deux les mentions que la loi exige de tout
-/// contrat ecrit (`contrat_ecrit::poser_les_mentions`).
-pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &FormeDePaie<A>, numero: Option<&engagement::numeros::NumeroContrat>) -> R<Valeurs> {
+/// `contrat.marqueurs(p, ent)` pour une paie, celle du mois ou une paie relue d'une version partie
+/// (`engagement::etats::paie_de_la_version`). `numero` : le numero de contrat que la paie porte VRAIMENT (lu dans
+/// l'archive), quand il differe de celui de son engagement. Le contrat d'un spectacle lit ses dates, ses cachets et son
+/// spectacle ; celui d'un permanent son salaire au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ;
+/// tous deux les mentions que la loi exige de tout contrat ecrit (`contrat_ecrit::poser_les_mentions`).
+pub fn valeurs_de_la_paie(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Paie, numero: Option<&NumeroContrat>) -> R<Valeurs> {
     let eng = &paie.engagement;
     let nat = eng.nature.proprietes()?;
-    let mut e = Eng::de(eng);
-    if let Some(n) = numero {
-        e.numero = Some(n.clone());
-    }
     let texte = |c: &Option<String>| c.clone().filter(|s| !s.is_empty());
     let fiche = ctx.fiche_de(&eng.salarie)?;
     let emploi = EmploiEngagement {
@@ -450,14 +397,14 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         statut_conventionnel: eng.statut_conventionnel,
         statut_categoriel_rc: eng.statut_categoriel_rc,
     };
-    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat.debut())?, &emploi)?;
+    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat().debut())?, &emploi)?;
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;
-            marqueurs(ent, &lue, &sp, &e, paie)?
+            marqueurs(ent, &lue, &sp, paie, numero)?
         }
         None => {
-            let mut m = parties(ent, &lue, None, &e)?;
+            let mut m = parties(ent, &lue, None, eng, numero)?;
             crate::contrat_ecrit::marqueurs_au_mois(paie, &nat, &mut m)?;
             m
         }

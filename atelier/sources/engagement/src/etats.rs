@@ -1971,7 +1971,7 @@ pub fn paie_ecrite_de_la_version(o: &Objet, version: stock::Version, mois: Mois)
 /// La paie de `mois` que la version `version` de `o` a ecrite, relue (`relire`) sur la saisie de cette version, la fiche
 /// du salarie et la saisie du mois telles que son calcul les a lues (`fiches`, `MOIS_LU`) ; `None` si cette version n'a
 /// pas de paie pour ce mois. Elle porte le numero de son bulletin quand ses documents sont partis.
-fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
+pub fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
     let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
     let Some(vue) = vue_de_la_version(o, version, mois)? else { return Ok(None) };
     let data = crate::saisie::VueDuMois { mois, taux_cachet: ecrite.saisie_du_mois.taux_cachet.clone(), engagements: vec![vue] };

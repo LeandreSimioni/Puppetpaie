@@ -1279,9 +1279,8 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let ent = documents::avenant::ent_du_mois(ctx, mois_parti);
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
     let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_ref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
-    let paie_ecrite = engagement::relire::ecrire(p)?;
     let numero_porte = p.engagement.numero.as_ref();
-    let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;
+    let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, p, numero_porte)?;
     // L'ancien texte s'ecrit du modele avec les valeurs de la version partie, au mois compare (ou, pour un contrat sans
     // terme dont cette version n'avait pas encore ecrit ce mois, a son dernier mois d'avant : ses termes s'y reconduisent).
     let ancienne = match (siens.as_ref(), passee) {
@@ -1291,8 +1290,8 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
             mois.retain(|m| *m <= mois_compare);
             let mut trouvee = None;
             for m in mois.iter().rev() {
-                if let Some(p) = engagement::etats::paie_ecrite_de_la_version(o, x, *m)? {
-                    trouvee = Some(p.paie.clone());
+                if let Some(p) = engagement::etats::paie_de_la_version(ctx, o, x, *m)? {
+                    trouvee = Some(p);
                     break;
                 }
             }

@@ -23,7 +23,8 @@ use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors
 use socle::texte::chiffres_en_euros;
 use droit::contexte::Contexte;
 use droit::natures::{self, Nature, NatureDeContrat};
-use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
+use engagement::calcul::Paie;
+use engagement::Engagement;
 use socle::echec::{erreur, Classe, R};
 use socle::grandeurs::Montant;
 
@@ -33,13 +34,13 @@ fn texte(t: Option<&str>) -> Option<&str> {
 }
 
 /// Ce que la saisie dit du contrat ecrit (`engagement::ContratEcrit`), non vide.
-fn ecrit(eng: &FormeDEngagement, quoi: fn(&engagement::ContratEcrit) -> Option<&str>) -> Option<String> {
-    texte(eng.contrat_ecrit.as_ref().and_then(quoi)).map(str::to_string)
+fn ecrit(eng: &Engagement, quoi: fn(&engagement::ContratEcrit) -> Option<&str>) -> Option<String> {
+    texte(quoi(&eng.ecrit)).map(str::to_string)
 }
 
 /// La duree de la periode d'essai que la saisie dit, non nulle.
-fn periode_essai(eng: &FormeDEngagement) -> Option<String> {
-    let jours = eng.contrat_ecrit.as_ref().and_then(|c| c.periode_essai_jours).filter(|j| !j.nulle())?;
+fn periode_essai(eng: &Engagement) -> Option<String> {
+    let jours = eng.ecrit.periode_essai_jours.filter(|j| !j.nulle())?;
     Some(jours.jours_a_ecrire().to_string())
 }
 
@@ -56,11 +57,11 @@ fn posee(m: &Valeurs, k: Marqueur) -> R<String> {
 /// Les valeurs du contrat d'un permanent, paye au mois, que les parties (`avenant::parties`) ne portent pas : le motif
 /// et le terme d'un CDD, le lieu, la remuneration, sa periodicite, la duree du travail ; la remuneration, le brut et le
 /// net sont ceux de la paie `paie` du mois.
-pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs) -> R<()> {
+pub fn marqueurs_au_mois(paie: &Paie, nat: &Nature, m: &mut Valeurs) -> R<()> {
     let eng = &paie.engagement;
     let nom = qui(m)?;
     // LE TERME (L1242-12, 2°) : un contrat a duree determinee le dit ; un CDI n'en a pas.
-    match eng.contrat.fin() {
+    match eng.contrat().fin() {
         Some(f) => {
             m.insert(Marqueur::ContratFin, f.jj_mm_aaaa());
         }
@@ -123,7 +124,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());
     m.insert(Marqueur::SalarieCaseSignature, "Le salarié".into());
-    if let Some(p) = eng.date_paiement {
+    if let Some(p) = eng.versement_dit()? {
         m.insert(Marqueur::ContratDatePaiement, p.jj_mm_aaaa());
     }
     // LA DUREE DU TRAVAIL (R1221-34, 12°) : la quotite du contrat, en heures par mois ; sans elle, celle que la DSN
@@ -132,7 +133,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     use socle::grandeurs::Heures;
     let q = match eng.quotite_contrat {
         Some(q) => q,
-        None => eng.quotite.heures("La durée du travail d'un contrat écrit")?,
+        None => eng.quotite()?.heures("La durée du travail d'un contrat écrit")?,
     };
     let dites = socle::texte::virgule::<Heures>;
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
@@ -229,7 +230,7 @@ impl Organismes {
 /// de prevoyance (L1242-12, 8° ; R1221-34, 14°), les mentions de renvoi (R1221-34, 8° a 10° et 14°, que R1221-35 permet
 /// de dire par un renvoi aux textes), et les clauses particulieres de l'engagement, s'il en dit (le modele les imprime
 /// par un alinea `[si contrat.clauses_particulieres]`).
-pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &FormeDEngagement, nat: &Nature, m: &mut Valeurs) -> R<()> {
+pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &Engagement, nat: &Nature, m: &mut Valeurs) -> R<()> {
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
     // retraite complementaire (S21.G00.40.003), sinon le statut du spectacle (artiste, technicien).
