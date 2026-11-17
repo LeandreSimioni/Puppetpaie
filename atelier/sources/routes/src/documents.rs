@@ -672,6 +672,11 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     })
 }
 
+/// Le resume de la paie de `cle` que `choisir` a fait pour chaque salarie servi, a garder au journal avec l'envoi.
+fn resume_choisi(choix: &Choix, cle: &IdSalarie) -> R<envoi::ResumeDePaie> {
+    choix.resumes.get(cle).cloned().ok_or_else(|| socle::refus!("La paie de {} n'a pas de résumé : ses documents ne se servent pas.", cle))
+}
+
 /// Ce que l'ecran dit d'un renvoi : chaque ligne de ce qui a change, ou que le resume de la paie n'a pas bouge.
 fn changements_dits(r: &envoi::Renvoi) -> Vec<String> {
     if r.changements.is_empty() {
@@ -802,7 +807,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
             pieces: siennes.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-            resume: choix.resumes.get(cle).cloned(),
+            resume: resume_choisi(&choix, cle)?,
             renvoi: choix.renvois.contains_key(cle),
         });
         pieces.extend(siennes);
@@ -1075,7 +1080,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
             Ok(journal::Servi {
                 nom: Some(m.nom.clone()),
                 pieces: m.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-                resume: choix.resumes.get(&m.pour).cloned(),
+                resume: resume_choisi(&choix, &m.pour)?,
                 renvoi: choix.renvois.contains_key(&m.pour),
                 cle: m.pour.clone(),
             })

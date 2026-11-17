@@ -639,7 +639,7 @@ const CHAMPS_RARES = [
   { cle: "lieu", libelle: "Lieu du contrat", type: "text" },
   { cle: "taux_cachet", libelle: "Cachet du contrat", type: "number" },
   { cle: "jours", libelle: "Jours travaillés déclarés", type: "number" },
-  // L'emploi est une case de la carte faite de six champs (`emploi`, `droit::emplois::EmploiEngagement`).
+  // L'emploi est une case de la carte faite de six champs (`emploi`, `droit::emplois::EmploiEcrit`).
   { cle: "emploi", dans: "emploi", libelle: "Emploi déclaré", type: "text" },
   { cle: "pcs_ese", dans: "emploi", libelle: "PCS-ESE", type: "text" },
   { cle: "code_emploi_ft", dans: "emploi", libelle: "Code emploi France Travail", type: "text" },

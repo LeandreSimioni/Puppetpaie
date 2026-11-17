@@ -536,7 +536,7 @@ pub struct Servi {
     pub cle: IdSalarie,
     pub nom: Option<String>,
     pub pieces: Vec<NomDeFichier>,
-    pub resume: Option<crate::envoi::ResumeDePaie>,
+    pub resume: crate::envoi::ResumeDePaie,
     pub renvoi: bool,
 }
 

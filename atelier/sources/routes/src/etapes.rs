@@ -2826,7 +2826,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
         }
         let plus_recent = out.get(cle).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned().flatten(), quand });
+            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned(), quand });
         }
     }
     Ok(out)
