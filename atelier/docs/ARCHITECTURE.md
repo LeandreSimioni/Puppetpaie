@@ -182,7 +182,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement (et le crédit que sa somme due laisse, `documents::bordereau::Credit`, qu'il porte : `dsn::Ordre.credit`, rendu tel quel par `OrdreEnClair.credit`) | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser` |
 | nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` |
-| identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
 | employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
@@ -416,6 +415,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | NIR | `droit::fiche::Nir` | `droit/src/fiche.rs` |
 | NTT | `Ntt` | `declarations/src/ntt.rs` |
 | identifiant d'un individu | `IdentifiantDIndividu` | `declarations/src/ntt.rs` |
+| identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
+| date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -534,13 +535,27 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   engagement importé, les retours ; un NIR en cours de saisie reste son texte.
 - **NTT** : le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020). Il se fabrique pour un salarié
   (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule), ou dans un retour de la
-  norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS). Que portent l'identité qu'une DSN partie a déclarée
-  (`changements_individu::Declaree`), l'individu d'une DSN lue et l'identité en écart d'un compte rendu NEOReS
-  (`envois::retours::IdentiteNeores`, à côté du NIR déclaré, R001).
+  norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS). Que porte l'identité déclarée (`IdentiteDeclaree`).
 - **identifiant d'un individu** : ce qui identifie un individu dans une DSN : son NIR, ou, sans NIR, son NTT (« Un
   individu s'identifie par son NIR **ou** par son NTT »). `Nir(Nir)`, `Ntt(Ntt)`, écrit dans aucun fichier, trié NIR
-  d'abord ; celui d'un individu d'une DSN lue, `IndividuDeclare::identifiant` (le NIR, sinon le NTT). Que portent
+  d'abord ; celui d'une identité déclarée, `IdentiteDeclaree::identifiant` (le NIR, sinon le NTT). Que portent
   l'effectif que le simulateur des organismes compte et le contrôle des doublons (CCH-14).
+- **identité déclarée d'une personne** : ce qu'une pièce ou une DSN partie dit de qui elle est : son nom de famille, ses
+  prénoms, sa date de naissance, son NIR, son NTT (le bloc 30 de la DSN : 30.001, .002, .004, .006, .020), chaque case
+  vide quand la pièce ne la porte pas. Le NIR et le NTT vont ensemble sur la première DSN où le NIR arrive. Le nom et les
+  prénoms sont du texte : la norme ne leur donne qu'une longueur (DSN 80, DPAE 32 : celle de la fiche,
+  `droit::fiche::NomDeclare`), et la pièce d'autrui ne se refuse pas pour elle. Chaque lecture d'une pièce la rend une
+  fois : l'individu d'une DSN lue (`dsn_lue::IndividuDeclare.identite`, que la fiche proposée écrit sous ses clés,
+  `import::dsn_aem::SalarieDeclare::fiche`), une DPAE relue et une ligne du certificat de conformité
+  (`dpae::EnregistrementRelu`, `dpae::LigneDuCertificat`), une AEM, un certificat d'emploi, un bulletin d'autrui (dont le
+  NIR imprimé se lit à sa porte, `bulletin_lu::Salarie`, sa clé et sa faute à côté), l'identité déclarée et celle de
+  référence d'un compte rendu NEOReS (`envois::retours::IdentiteNeores`) ; et l'identité qu'une DSN partie a déclarée
+  (`changements_individu::Declaree`), celle d'une fiche telle que la DPAE l'écrit (`routes::depots`), l'individu de la
+  liste nominative de la CASC-SVP. Sa serde : `nom`, `prenoms`, `naissance`, `nir`, `ntt` (une réponse qui l'aplatit).
+- **date de naissance déclarée** : S21.G00.30.006, `JJMMAAAA`, dont le jour ou le mois peuvent être inconnus (`00` ou
+  `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`). Un jour connu (`Connue`, celui d'une fiche ou d'une
+  pièce qui l'imprime, `du_jour`), ou ses chiffres tels que déclarés (`Incomplete`) ; écrite `jjmmaaaa`, `jj_mm_aaaa`,
+  `iso` (sa serde) ; le jour qu'elle dit, `jour`.
 - **case d'identité** : un des quatre identifiants que le bloc « Changements individu » reporte quand il change : NIR,
   nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011). Une liste de la norme : `TOUTES` dans l'ordre du
   bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit

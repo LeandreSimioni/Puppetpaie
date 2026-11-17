@@ -171,21 +171,13 @@ pub(crate) fn compare(t: &str) -> String {
     bulletin_lu::jetons(t).concat()
 }
 
-/// Le NIR imprime : 13 caracteres, ou 15 avec la cle (alors verifiee).
+/// Le NIR imprime et sa cle, tels que la lecture du bulletin les a lus (`bulletin_lu::Salarie`), ou ce qui le refuse.
 fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
-    let Some(brut) = &b.salarie.nir else { return Ok(None) };
-    let n: String = brut.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
-    match Nir::et_sa_cle(&n) {
-        Some((nir, None)) => Ok(Some((Nir::lire(nir)?, None))),
-        Some((nir, Some(cle))) => {
-            let nir = Nir::lire(nir)?;
-            match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == *cle) {
-                Some(c) => Ok(Some((nir, Some(c)))),
-                None => Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro")),
-            }
-        }
-        None => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
+    let s = &b.salarie;
+    if let Some(faute) = &s.faute_nir {
+        return Err(socle::echec::refus(faute.clone()));
     }
+    Ok(s.identite.nir.clone().map(|n| (n, s.cle_nir.clone())))
 }
 
 /// Le Siret imprime, ses chiffres, lu par sa lecture de piece ; aucun s'il n'est pas imprime.
@@ -494,7 +486,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
 
     // 4. Les DSN et AEM par l'import existant ; les NIR des bulletins y comptent comme des fiches a venir.
-    let a_venir: HashSet<Nir> = lus.iter().map(|l| l.nir.clone()).chain(certificats.iter().filter_map(|c| c.c.nir.clone())).collect();
+    let a_venir: HashSet<Nir> = lus.iter().map(|l| l.nir.clone()).chain(certificats.iter().filter_map(|c| c.c.identite.nir.clone())).collect();
     let mut ap = ri::apercu_lu(ctx, &dossier.display().to_string(), dsn_dir.as_deref(), aem_dir.as_deref(), ctx.aujourdhui, &a_venir)?;
 
     let mut par_nir: HashMap<Nir, IdSalarie> = HashMap::new();
@@ -674,7 +666,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let origine_cert = |c: &Attestee| Origine::piece(c.piece(), chemin_cert(c), c.c.page, c.mois());
     let mut par_salarie_cert: BTreeMap<Nir, Vec<usize>> = BTreeMap::new();
     for (k, c) in certificats.iter().enumerate() {
-        if let Some(n) = &c.c.nir {
+        if let Some(n) = &c.c.identite.nir {
             par_salarie_cert.entry(n.clone()).or_default().push(k);
         }
     }
@@ -1190,7 +1182,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     for cl in ordre {
         let c = &cl.c;
         let est_aem = cl.aem.is_some();
-        let (Some(nir), Some(periode), Some(brut)) = (&c.nir, c.periode, c.brut) else { continue };
+        let (Some(nir), Some(periode), Some(brut)) = (&c.identite.nir, c.periode, c.brut) else { continue };
         let (debut, fin) = (periode.debut(), periode.fin());
         let nom = cl.nom();
         let du_au = format!("du {} au {}", debut.jj_mm_aaaa(), fin.jj_mm_aaaa());
@@ -1642,9 +1634,9 @@ fn identite<'a>(ls: &[&'a Lu]) -> Vec<(CaseSalarie, String, &'a Lu)> {
     for l in ls {
         let s = &l.b.salarie;
         for (cle, v) in [
-            (CaseSalarie::Nom, s.nom.clone()),
-            (CaseSalarie::Prenom, s.prenom.clone()),
-            (CaseSalarie::DateNaissance, s.naissance.map(|d| d.iso())),
+            (CaseSalarie::Nom, s.identite.nom.clone()),
+            (CaseSalarie::Prenom, s.identite.prenoms.clone()),
+            (CaseSalarie::DateNaissance, s.identite.naissance.map(|d| d.iso())),
             (CaseSalarie::NumCongesSpectacles, s.conges_spectacles.clone()),
             (CaseSalarie::Emploi, s.emploi.clone()),
             (CaseSalarie::CodeSalarie, s.code.clone()),
@@ -1773,7 +1765,7 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
             *case = Some(v);
         }
     }
-    s.date_naissance = ls.iter().rev().find_map(|l| l.b.salarie.naissance);
+    s.date_naissance = ls.iter().rev().find_map(|l| l.b.salarie.identite.naissance.and_then(|n| n.jour()));
     if let Some((rue, cp, commune)) = ls.iter().rev().find_map(|l| adresse_lue(&l.b.salarie.adresse)) {
         s.adresse = Some(rue).filter(|r| !r.is_empty());
         s.code_postal = de_la_piece(Some(CodePostal::d_une_piece(&cp)), CaseSalarie::CodePostal, &mut fautes);
@@ -2267,10 +2259,10 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
     let mut fautes = Vec::new();
     let s = SalarieLu {
         nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir)),
-        nom: dernier(&|c| c.nom.clone()),
-        prenom: dernier(&|c| c.prenom.clone()),
+        nom: dernier(&|c| c.identite.nom.clone()),
+        prenom: dernier(&|c| c.identite.prenoms.clone()),
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.
-        date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.naissance)),
+        date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.identite.naissance).and_then(|n| n.jour())),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
         code_postal: de_la_piece(adresse.as_ref().map(|a| CodePostal::d_une_piece(&a.1)), CaseSalarie::CodePostal, &mut fautes),
         commune: adresse.as_ref().map(|a| a.2.clone()),

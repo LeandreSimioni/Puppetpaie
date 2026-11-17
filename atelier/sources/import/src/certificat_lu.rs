@@ -26,6 +26,7 @@
 use std::path::Path;
 
 use documents::conges_spectacles::NombreDuCertificat;
+use declarations::identite::IdentiteDeclaree;
 use droit::fiche::Nir;
 use socle::date::{Jour, Periode};
 use socle::grandeurs::Montant;
@@ -119,11 +120,9 @@ pub struct Certificat {
     pub employeur: Option<String>,
     /// Le N° CE.
     pub numero: Option<String>,
-    /// Les treize caracteres du NIR, et sa cle s'il l'imprime.
-    pub nir: Option<Nir>,
+    /// Le nom, les prenoms et les treize caracteres du NIR ; sa cle s'il l'imprime.
+    pub identite: IdentiteDeclaree,
     pub cle_nir: Option<droit::fiche::CleNir>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
     pub nom_usage: Option<String>,
     pub pseudonyme: Option<String>,
     /// Le nom tel que le bloc d'adresse l'ecrit, puis les rangs de l'adresse.
@@ -146,7 +145,7 @@ impl Certificat {
     /// Ce qui manque pour que le certificat atteste un contrat ; `None` : rien.
     pub fn manque(&self) -> Option<String> {
         let mut m: Vec<&str> = Vec::new();
-        if self.nir.is_none() {
+        if self.identite.nir.is_none() {
             m.push("le NIR");
         }
         if self.periode.is_none() {
@@ -331,10 +330,8 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
         compte: None,
         employeur: None,
         numero: None,
-        nir: None,
+        identite: IdentiteDeclaree::default(),
         cle_nir: None,
-        nom: None,
-        prenom: None,
         nom_usage: None,
         pseudonyme: None,
         nom_complet: None,
@@ -391,14 +388,14 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                             },
                             None => None,
                         };
-                        c.nir = Some(nir);
+                        c.identite.nir = Some(nir);
                         c.cle_nir = cle;
                         c.employeur = texte(&v[pris..]);
                     }
                     None => c.employeur = texte(&v),
                 },
-                "nom" => c.nom = texte(&v),
-                "prenom" => c.prenom = texte(&v),
+                "nom" => c.identite.nom = texte(&v),
+                "prenom" => c.identite.prenoms = texte(&v),
                 "usage" => c.nom_usage = texte(&v),
                 "pseudonyme" => c.pseudonyme = texte(&v),
                 "emploi" => c.emploi = texte(&v),

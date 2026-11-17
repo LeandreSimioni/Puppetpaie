@@ -180,7 +180,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
     let mut salaries = Vec::new();
     let (mut n_contrats, mut n_ecarts, mut n_corrections) = (0usize, 0usize, 0usize);
     for sal in &d.individus {
-        let lus = d.contrats_de(sal.nir.as_ref()).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
+        let lus = d.contrats_de(sal.identite.nir.as_ref()).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
         let mut contrats = Vec::new();
         // Un contrat se dit par ce qu'il declare pour le mois, comparé a la paie du mois, et par ses rappels d'un mois deja
         // declare (`dsn_lue::Remuneration::rappel`), qui ne se comparent pas a la paie du mois. Un contrat qui n'a que des rappels
@@ -238,8 +238,8 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                 ecarts,
             });
         }
-        let versements = d.versements_de(sal.nir.as_ref()).map(VersementDuFichier::de).collect();
-        salaries.push(SalarieDuFichier { nir: sal.nir.clone(), nom: sal.nom.clone(), prenoms: sal.prenom.clone(), contrats, versements });
+        let versements = d.versements_de(sal.identite.nir.as_ref()).map(VersementDuFichier::de).collect();
+        salaries.push(SalarieDuFichier { identite: sal.identite.clone(), contrats, versements });
     }
     let mut absents = Vec::new();
     for n in &ordre {
@@ -330,10 +330,8 @@ pub(crate) enum Recapitulatif {
 /// Un salarie du fichier : son identite, ses contrats, ses versements.
 #[derive(Debug, Serialize)]
 struct SalarieDuFichier {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    nir: Option<droit::fiche::Nir>,
-    nom: Option<String>,
-    prenoms: Option<String>,
+    #[serde(flatten)]
+    identite: declarations::identite::IdentiteDeclaree,
     contrats: Vec<ContratDuFichier>,
     versements: Vec<VersementDuFichier>,
 }

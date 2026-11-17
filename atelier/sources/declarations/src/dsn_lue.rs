@@ -21,6 +21,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 
+use crate::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::fichiers::NomDeFichier;
@@ -273,25 +274,17 @@ impl EmploiDeclare {
 /// bloc-S21.G00.30.txt`, l. 154-163). Le nom d'usage (30.003, meme bloc, l. 138-144) n'a pas de case dans la fiche
 /// salarie (`champs-base.json`) : il n'est pas lu. La date de naissance n'est pas un jour : la norme admet un jour ou un
 /// mois inconnu (« 00MMAAAA ou 99MMAAAA », « JJ00AAAA ou JJ99AAAA », p. 172, l. 175-177) ; elle passe a la fiche en
-/// AAAA-MM-JJ, que la fiche controle.
+/// AAAA-MM-JJ, que la fiche controle. Son identite (30.001, .002, .004, .006, .020) passe a la fiche par la porte qui la
+/// propose (`import::dsn_aem::SalarieDeclare::fiche`).
 #[derive(Clone, Debug, Serialize)]
 pub struct IndividuDeclare {
-    /// S21.G00.30.001, absent quand l'individu commence a son nom ou que la DSN l'ecrit hors de sa forme
-    /// (`Nir::d_une_piece`).
+    /// Le NIR (30.001, absent quand l'individu commence a son nom ou que la DSN l'ecrit hors de sa forme :
+    /// `Nir::d_une_piece`), le nom (.002), les prenoms (.004), la date de naissance (.006), le NTT (.020).
     #[serde(skip)]
-    pub nir: Option<Nir>,
-    /// .002.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nom: Option<String>,
-    /// .004.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prenom: Option<String>,
+    pub identite: IdentiteDeclaree,
     /// .005.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sexe: Option<Sexe>,
-    /// .006.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<NaissanceDeclaree>,
     /// .007.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lieu_naissance: Option<String>,
@@ -319,9 +312,6 @@ pub struct IndividuDeclare {
     /// .019.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_salarie: Option<droit::fiche::Matricule>,
-    /// .020, le numero technique temporaire d'un individu declare sans NIR (`ntt`) : la fiche n'en a pas.
-    #[serde(skip)]
-    pub ntt: Option<crate::ntt::Ntt>,
 }
 
 /// Un contrat (bloc S21.G00.40) de l'individu qui le precede, son arret (bloc S21.G00.60) et sa fin (bloc S21.G00.62)
@@ -449,11 +439,8 @@ impl IndividuDeclare {
     /// suivent.
     fn de(nir: Option<Nir>) -> IndividuDeclare {
         IndividuDeclare {
-            nir,
-            nom: None,
-            prenom: None,
+            identite: IdentiteDeclaree { nir, ..IdentiteDeclaree::default() },
             sexe: None,
-            date_naissance: None,
             lieu_naissance: None,
             adresse: None,
             code_postal: None,
@@ -463,16 +450,6 @@ impl IndividuDeclare {
             pays_naissance: None,
             email: None,
             code_salarie: None,
-            ntt: None,
-        }
-    }
-
-    /// Ce qui l'identifie : son NIR, sinon son NTT ; aucun s'il n'a ni l'un ni l'autre.
-    pub fn identifiant(&self) -> Option<crate::ntt::IdentifiantDIndividu> {
-        match (&self.nir, &self.ntt) {
-            (Some(nir), _) => Some(crate::ntt::IdentifiantDIndividu::Nir(nir.clone())),
-            (None, Some(ntt)) => Some(crate::ntt::IdentifiantDIndividu::Ntt(ntt.clone())),
-            (None, None) => None,
         }
     }
 }
@@ -908,52 +885,6 @@ fn dans_sa_forme<T>(v: &str, lire: fn(&str) -> R<T>) -> Option<T> {
     }
 }
 
-/// UNE DATE DE NAISSANCE DECLAREE (S21.G00.30.006) : `JJMMAAAA`, dont le jour ou le mois peuvent etre inconnus, ecrits
-/// `00` ou `99` (cahier technique 2026.1, p. 172, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 175-178 :
-/// « Jour de naissance inconnu : 00MMAAAA ou 99MMAAAA, Mois de naissance inconnu : JJ00AAAA ou JJ99AAAA, Si jour et
-/// mois inconnus : 0000AAAA ou 9999AAAA » ; CSL 00 et CSL-11, l. 185-189). Elle se lit dans cette forme et elle seule,
-/// garde ses chiffres tels qu'ils sont declares (`jjmmaaaa`), et passe a la fiche en `AAAA-MM-JJ` (`iso`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NaissanceDeclaree {
-    jour: u32,
-    mois: u32,
-    an: socle::mois::Annee,
-}
-
-impl NaissanceDeclaree {
-    /// Le motif de CSL 00 (`(0[0-9]|[1-2][0-9]|3[0-1]|99)(0[0-9]|1[0-2]|99)(18|19|20)[0-9]{2}`), et un jour du
-    /// calendrier quand le jour et le mois sont connus (CSL-11) ; `None` sinon.
-    pub fn lire(v: &str) -> Option<NaissanceDeclaree> {
-        use socle::mois::Annee;
-        if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
-        let (jour, mois) = (n(0, 2), n(2, 4));
-        let an = Annee::nouvelle(i64::from(n(4, 8))).ok()?;
-        let inconnu = |x: u32| x == 0 || x == 99;
-        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (Annee::constante(1800)..=Annee::constante(2099)).contains(&an);
-        let calendrier = inconnu(jour) || inconnu(mois) || Jour::nouveau(n(4, 8).try_into().ok()?, mois, jour).is_some();
-        (forme && calendrier).then_some(NaissanceDeclaree { jour, mois, an })
-    }
-
-    /// `JJMMAAAA`, tel que declare.
-    pub fn jjmmaaaa(&self) -> String {
-        format!("{:02}{:02}{}", self.jour, self.mois, self.an)
-    }
-
-    /// `AAAA-MM-JJ`, le jour et le mois tels que declares.
-    pub fn iso(&self) -> String {
-        format!("{}-{:02}-{:02}", self.an, self.mois, self.jour)
-    }
-}
-
-impl Serialize for NaissanceDeclaree {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
-    }
-}
-
 /// Une date de la DSN, JJMMAAAA, qui est un jour.
 pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
     socle::piece::Zone::lue(v, socle::piece::format::Jjmmaaaa).valeur()
@@ -1104,7 +1035,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
         let plein = Some(v.clone()).filter(|x| !x.is_empty());
         // UN INDIVIDU SANS NIR (S21.G00.30.001 absent, « En l'absence de NIR ou de NIA », `bloc-S21.G00.30.txt`
         // l. 338-354) commence a son nom (.002).
-        if rub == S21_30_002 && individus.last().is_none_or(|i| i.nom.is_some()) {
+        if rub == S21_30_002 && individus.last().is_none_or(|i| i.identite.nom.is_some()) {
             individus.push(IndividuDeclare::de(None));
         }
         let individu = individus.len().checked_sub(1);
@@ -1122,7 +1053,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             S21_20_005 => versements_organismes.extend(fautes.euros(rub, &v)),
             crate::ntt::RUBRIQUE => {
                 if let Some(i) = individu {
-                    individus[i].ntt = crate::ntt::Ntt::lu(&v)?;
+                    individus[i].identite.ntt = crate::ntt::Ntt::lu(&v)?;
                 }
             }
             S21_40_012 => {
@@ -1221,7 +1152,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             crate::ntt::RUBRIQUE_NIR => individus.push(IndividuDeclare::de(plein.as_deref().and_then(|n| dans_sa_forme(n, Nir::d_une_piece)))),
             S21_30_006 => {
                 let Some(i) = individu else { continue };
-                individus[i].date_naissance = fautes.valeur(rub, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
+                individus[i].identite.naissance = fautes.valeur(rub, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
             }
             // 30.019 : un matricule hors de sa forme (X [1,30]) laisse la case vide, comme une DSN qui ne le dirait pas
             // (la regle d'une DSN lue : un code hors liste ou hors forme ne refuse pas l'import).
@@ -1236,8 +1167,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match rub {
-                    S21_30_002 => &mut s.nom,
-                    S21_30_004 => &mut s.prenom,
+                    S21_30_002 => &mut s.identite.nom,
+                    S21_30_004 => &mut s.identite.prenoms,
                     S21_30_007 => &mut s.lieu_naissance,
                     S21_30_008 => &mut s.adresse,
                     _ => &mut s.commune,
@@ -1266,7 +1197,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     fautes.noter(Faute::Valeur { rubrique: rub, valeur: v.clone(), quoi: "une date (JJMMAAAA)" });
                     continue;
                 };
-                contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, PeriodeOuverte::du(debut, None)?));
+                contrats.push(ContratDeclare::de(individus[i].identite.nir.clone(), i, PeriodeOuverte::du(debut, None)?));
                 fin_de = Some(contrats.len() - 1);
             }
             // 40.002 et 40.003 : un code que la fiche connait se lit ; un autre code de la norme (01, 02, 08 a 10 ; 98, 99)
@@ -1354,7 +1285,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             S21_50_001 => {
                 let Some(i) = individu else { continue };
                 let verse_le = fautes.jour(rub, &v);
-                versements.push(VersementLu::de(individus[i].nir.clone(), verse_le));
+                versements.push(VersementLu::de(individus[i].identite.nir.clone(), verse_le));
                 base = false;
             }
             S21_50_002 => {

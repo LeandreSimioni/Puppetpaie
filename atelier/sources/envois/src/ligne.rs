@@ -408,8 +408,11 @@ impl DetailDpae {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonneCertifiee {
-    pub nom: String,
-    pub prenom: String,
+    /// Le nom et le prenom que le certificat dit ; aucun : sa zone est a blanc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prenom: Option<String>,
     /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
     pub etat: EtatDeLaDpae,

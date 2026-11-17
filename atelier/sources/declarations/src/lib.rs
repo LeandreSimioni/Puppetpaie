@@ -17,6 +17,7 @@ pub mod echeance_dsn;
 pub mod etats_organismes;
 pub mod fctu;
 pub mod formats;
+pub mod identite;
 pub mod naf;
 pub mod norme;
 pub mod ntt;

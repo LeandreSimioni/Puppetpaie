@@ -90,8 +90,8 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
                 "convention": "IDCC n° 3090 - Spectacle vivant du secteur privé", "licence": "L-R-99-9",
             },
             "salarie": {
-                "nom_complet": "BRIOCHE FANCHON", "nom": "BRIOCHE", "prenom": "FANCHON", "nir": "288117599900146",
-                "naissance": "1988-11-04", "adresse": ["3 IMPASSE DES ESSAIS", "99999 VILLE FICTIVE"], "code": "7",
+                "nom_complet": "BRIOCHE FANCHON", "nom": "BRIOCHE", "prenoms": "FANCHON", "nir": "2881175999001",
+                "cle_nir": "46", "naissance": "1988-11-04", "adresse": ["3 IMPASSE DES ESSAIS", "99999 VILLE FICTIVE"], "code": "7",
                 "emploi": "ARTISTE DRAMATIQUE", "statut": "artiste", "abattement": "0", "conges_spectacles": "Z0000001",
             },
             "numero_objet": "999Z99999901",
@@ -190,8 +190,8 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
                 "convention": "Entreprises du secteur privé du spectacle vivant", "licence": null,
             },
             "salarie": {
-                "nom_complet": "Fanchon BRIOCHE", "nom": "BRIOCHE", "prenom": "Fanchon", "nir": "288117599900146",
-                "naissance": null, "adresse": ["3 impasse des Essais", "99999 FICTIVE", "FRANCE"], "code": null,
+                "nom_complet": "Fanchon BRIOCHE", "nom": "BRIOCHE", "prenoms": "Fanchon", "nir": "2881175999001",
+                "cle_nir": "46", "adresse": ["3 impasse des Essais", "99999 FICTIVE", "FRANCE"], "code": null,
                 "emploi": "Artiste dramatique", "statut": "Artiste", "abattement": null, "conges_spectacles": "Z0000001",
             },
             "numero_objet": "186Z99999901",

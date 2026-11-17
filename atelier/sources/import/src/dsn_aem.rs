@@ -24,8 +24,7 @@ use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 /// Ce qu'une DSN dit d'un salarie.
 pub struct SalarieDeclare {
-    /// Aucun pour un individu que la DSN declare sans NIR.
-    pub nir: Option<Nir>,
+    /// Son identite : aucun NIR pour un individu que la DSN declare sans lui.
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
@@ -40,12 +39,19 @@ impl SalarieDeclare {
     pub fn fiche(&self) -> socle::echec::R<(ChampsSalarie, Vec<FauteDeCase>)> {
         #[derive(Serialize)]
         struct Fiche<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            nom: Option<&'a String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            prenom: Option<&'a String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            date_naissance: Option<&'a declarations::identite::NaissanceDeclaree>,
             #[serde(flatten)]
             individu: &'a IndividuDeclare,
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de(&Fiche { individu: &self.individu, emploi: &self.emploi })
+        let identite = &self.individu.identite;
+        crate::proposee::de(&Fiche { nom: identite.nom.as_ref(), prenom: identite.prenoms.as_ref(), date_naissance: identite.naissance.as_ref(), individu: &self.individu, emploi: &self.emploi })
     }
 }
 
@@ -249,7 +255,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
-            let nir = ind.nir.clone();
+            let nir = ind.identite.nir.clone();
             let c = dernier_contrat.get(&nir.as_ref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
@@ -257,7 +263,6 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
             let premier = info.contrats.iter().filter(|x| x.nir == nir).map(|x| x.periode.debut()).chain(avant).min();
             let decl = SalarieDeclare {
-                nir: nir.clone(),
                 individu: ind.clone(),
                 emploi: c.map(|c| c.emploi.du_salarie()).transpose()?,
                 mois,

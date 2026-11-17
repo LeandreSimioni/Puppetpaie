@@ -24,6 +24,7 @@ use droit::fiche::{ChampsSalarie, Lue, Datee, FicheSalarie, FicheSalarieDatee, M
 use socle::date::Jour;
 use socle::mois::Mois;
 use crate::dsn::Fichier;
+use crate::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use socle::echec::R;
 use crate::usages::strip;
 
@@ -39,12 +40,12 @@ pub enum CaseDIdentite {
 }
 
 /// La valeur d'un identifiant telle que le bloc 30 l'ecrit : le NIR, un texte sans son blanc autour (le nom, les
-/// prenoms), un jour (la date de naissance, ecrite JJMMAAAA comme 30.006).
+/// prenoms), une date de naissance (ecrite JJMMAAAA comme 30.006).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ValeurDIdentite {
     Nir(Nir),
     Texte(String),
-    Jour(Jour),
+    Naissance(NaissanceDeclaree),
 }
 
 impl std::fmt::Display for ValeurDIdentite {
@@ -52,9 +53,14 @@ impl std::fmt::Display for ValeurDIdentite {
         match self {
             ValeurDIdentite::Nir(n) => f.write_str(n),
             ValeurDIdentite::Texte(t) => f.write_str(t),
-            ValeurDIdentite::Jour(j) => f.write_str(&j.jjmmaaaa()),
+            ValeurDIdentite::Naissance(j) => f.write_str(&j.jjmmaaaa()),
         }
     }
+}
+
+/// La date de naissance d'une fiche, telle que le bloc 30 l'ecrit.
+fn naissance_ecrite(c: &Option<Jour>) -> Option<ValeurDIdentite> {
+    c.dite().copied().map(NaissanceDeclaree::du_jour).map(ValeurDIdentite::Naissance)
 }
 
 /// Un texte de la fiche tel que le bloc 30 l'ecrit.
@@ -92,7 +98,7 @@ impl CaseDIdentite {
             CaseDIdentite::Nir => s.nir.dite().cloned().map(ValeurDIdentite::Nir),
             CaseDIdentite::Nom => texte_ecrit(&s.nom).map(ValeurDIdentite::Texte),
             CaseDIdentite::Prenoms => texte_ecrit(&s.prenom).map(ValeurDIdentite::Texte),
-            CaseDIdentite::Naissance => s.date_naissance.dite().copied().map(ValeurDIdentite::Jour),
+            CaseDIdentite::Naissance => naissance_ecrite(&s.date_naissance),
         }
     }
 
@@ -112,22 +118,19 @@ impl CaseDIdentite {
             CaseDIdentite::Nir => datees(&b.nir, |c| c.dite().cloned().map(ValeurDIdentite::Nir)),
             CaseDIdentite::Nom => datees(&b.nom, |c| texte_ecrit(c).map(ValeurDIdentite::Texte)),
             CaseDIdentite::Prenoms => datees(&b.prenom, |c| texte_ecrit(c).map(ValeurDIdentite::Texte)),
-            CaseDIdentite::Naissance => datees(&b.date_naissance, |c| c.dite().copied().map(ValeurDIdentite::Jour)),
+            CaseDIdentite::Naissance => datees(&b.date_naissance, naissance_ecrite),
         }
     }
 }
 
-/// L'identite d'un individu telle qu'une DSN l'a declaree : chaque case vide quand la DSN ne l'a pas portee.
+/// L'identite d'un individu telle qu'une DSN partie l'a declaree, et son matricule : chaque case vide quand la DSN ne
+/// l'a pas portee.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Declaree {
     /// Le mois principal declare, dont la paie declaree l'a portee.
     pub mois: Mois,
-    pub nir: Option<Nir>,
-    pub nom: Option<String>,
-    pub prenoms: Option<String>,
-    pub naissance: Option<Jour>,
-    /// Le numero technique temporaire (30.020), s'il y en avait un.
-    pub ntt: Option<crate::ntt::Ntt>,
+    /// Le NIR, le nom, les prenoms, la naissance, et le numero technique temporaire (30.020) s'il y en avait un.
+    pub identite: IdentiteDeclaree,
     pub matricule: Option<Matricule>,
 }
 
@@ -139,17 +142,13 @@ fn matricule_ecrit(c: &Option<Matricule>) -> R<Option<Matricule>> {
 impl Declaree {
     /// La valeur d'un identifiant telle que le bloc 30 l'ecrit (la date de naissance en JJMMAAAA, comme 30.006).
     fn valeur(&self, case: CaseDIdentite) -> Option<ValeurDIdentite> {
+        let i = &self.identite;
         match case {
-            CaseDIdentite::Nir => self.nir.clone().map(ValeurDIdentite::Nir),
-            CaseDIdentite::Nom => self.nom.clone().map(ValeurDIdentite::Texte),
-            CaseDIdentite::Prenoms => self.prenoms.clone().map(ValeurDIdentite::Texte),
-            CaseDIdentite::Naissance => self.naissance.map(ValeurDIdentite::Jour),
+            CaseDIdentite::Nir => i.nir.clone().map(ValeurDIdentite::Nir),
+            CaseDIdentite::Nom => i.nom.clone().map(ValeurDIdentite::Texte),
+            CaseDIdentite::Prenoms => i.prenoms.clone().map(ValeurDIdentite::Texte),
+            CaseDIdentite::Naissance => i.naissance.map(ValeurDIdentite::Naissance),
         }
-    }
-
-    /// L'identite seule (sans le mois ni le fichier) : deux etablissements d'un meme mois doivent dire la meme.
-    fn identite(&self) -> (&Option<Nir>, &Option<String>, &Option<String>, Option<Jour>, &Option<crate::ntt::Ntt>) {
-        (&self.nir, &self.nom, &self.prenoms, self.naissance, &self.ntt)
     }
 }
 
@@ -214,14 +213,16 @@ impl<'a> Declarations<'a> {
                 let nir = s.nir.dite().cloned();
                 tous.push(Declaree {
                     mois,
-                    ntt: match nir {
-                        None => Some(crate::ntt::numero(self.ctx.entreprise.siren.ecrite("siren")?, s)?),
-                        Some(_) => None,
+                    identite: IdentiteDeclaree {
+                        ntt: match nir {
+                            None => Some(crate::ntt::numero(self.ctx.entreprise.siren.ecrite("siren")?, s)?),
+                            Some(_) => None,
+                        },
+                        nir,
+                        nom: texte_ecrit(&s.nom),
+                        prenoms: texte_ecrit(&s.prenom),
+                        naissance: s.date_naissance.dite().copied().map(NaissanceDeclaree::du_jour),
                     },
-                    nir,
-                    nom: texte_ecrit(&s.nom),
-                    prenoms: texte_ecrit(&s.prenom),
-                    naissance: s.date_naissance.dite().copied(),
                     matricule: matricule_ecrit(&s.code_salarie)?,
                 });
             }
@@ -241,12 +242,13 @@ impl<'a> Declarations<'a> {
         let matricule = matricule_ecrit(&salarie.code_salarie)?;
         for i in 0..self.mois.len() {
             let tous = self.lire(i)?;
-            let mut siens: Vec<&Declaree> = tous.iter().filter(|d| d.nir.as_ref().is_some_and(|n| nirs.contains(n))).collect();
+            let mut siens: Vec<&Declaree> = tous.iter().filter(|d| d.identite.nir.as_ref().is_some_and(|n| nirs.contains(n))).collect();
             if siens.is_empty() && matricule.is_some() {
                 siens = tous.iter().filter(|d| d.matricule == matricule).collect();
             }
             let Some(premier) = siens.first() else { continue };
-            if let Some(autre) = siens.iter().find(|d| d.identite() != premier.identite()) {
+            // L'identite seule (sans le mois ni le matricule) : deux etablissements d'un meme mois doivent dire la meme.
+            if let Some(autre) = siens.iter().find(|d| d.identite != premier.identite) {
                 return Err(socle::refus!(
                     "{} : la DSN de {} le declare deux fois, sous deux identites ({} et {}) : laquelle a ete declaree ne se \
 devine pas. Rien n'est ecrit.",
@@ -281,6 +283,7 @@ fn qui(salarie: &ChampsSalarie) -> String {
 }
 
 fn decrire(d: &Declaree) -> String {
+    let d = &d.identite;
     // Ce que la declaration ne porte pas se dit tel.
     let dite = |c: &Option<String>| match c {
         Some(v) => v.clone(),
@@ -290,7 +293,7 @@ fn decrire(d: &Declaree) -> String {
         "{} {}, ne(e) le {}, {}",
         dite(&d.prenoms),
         dite(&d.nom),
-        dite(&d.naissance.as_ref().map(Jour::jjmmaaaa)),
+        dite(&d.naissance.as_ref().map(NaissanceDeclaree::jjmmaaaa)),
         match &d.nir {
             Some(nir) => format!("NIR {}", nir),
             None => format!("NTT {}", dite(&d.ntt.as_ref().map(|n| n.to_string()))),
@@ -384,11 +387,13 @@ mod tests {
     fn declaree() -> Declaree {
         Declaree {
             mois: Mois::nouveau(2026, 7).unwrap(),
-            nir: Some(Nir::lire("2901075999009").unwrap()),
-            nom: Some("CLAIRON".into()),
-            prenoms: Some("LUCILE".into()),
-            naissance: Some(Jour::nouveau(1990, 10, 2).unwrap()),
-            ntt: None,
+            identite: IdentiteDeclaree {
+                nir: Some(Nir::lire("2901075999009").unwrap()),
+                nom: Some("CLAIRON".into()),
+                prenoms: Some("LUCILE".into()),
+                naissance: Some(NaissanceDeclaree::du_jour(Jour::nouveau(1990, 10, 2).unwrap())),
+                ntt: None,
+            },
             matricule: Some(Matricule::lire("6").unwrap()),
         }
     }

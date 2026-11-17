@@ -46,6 +46,7 @@ use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 
 use crate::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 
 /// Ce qui marque une case cochee, a droite de son libelle (« Ñ » : la coche d'une police sans table).
 const MARQUES: [&str; 5] = ["Ñ", "✔", "✓", "☒", "X"];
@@ -160,13 +161,11 @@ pub struct Aem {
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
-    /// Le NIR imprime, sans sa cle ; aucun hors de sa forme (`droit::fiche::Nir::d_une_piece`).
-    pub nir: Option<droit::fiche::Nir>,
+    /// Le nom, les prenoms, la date de naissance et le NIR imprimes, sans sa cle ; aucun NIR hors de sa forme
+    /// (`droit::fiche::Nir::d_une_piece`).
+    pub identite: IdentiteDeclaree,
     pub cle_nir: Option<droit::fiche::CleNir>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
     pub nom_usage: Option<String>,
-    pub naissance: Option<Jour>,
     pub rue: Option<String>,
     pub code_postal: Option<String>,
     pub commune: Option<String>,
@@ -244,7 +243,7 @@ impl Aem {
             return Some(format!("AEM : {}", f));
         }
         let mut m: Vec<&str> = Vec::new();
-        if self.nir.is_none() {
+        if self.identite.nir.is_none() {
             m.push("le NIR");
         }
         if self.mois.is_none() {
@@ -278,13 +277,11 @@ impl Aem {
             compte: self.adherent.clone(),
             employeur: self.employeur.clone(),
             numero: self.numero.clone(),
-            nir: self.nir.clone(),
+            identite: self.identite.clone(),
             cle_nir: self.cle_nir.clone(),
-            nom: self.nom.clone(),
-            prenom: self.prenom.clone(),
             nom_usage: self.nom_usage.clone(),
             pseudonyme: None,
-            nom_complet: match (&self.prenom, &self.nom) {
+            nom_complet: match (&self.identite.prenoms, &self.identite.nom) {
                 (Some(p), Some(n)) => Some(format!("{} {}", p, n)),
                 _ => None,
             },
@@ -442,11 +439,14 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
             cle_nir: cle_nir.clone(),
-            nir: nir_lu.clone(),
-            nom: v("SALARIE_NOM_FAMILLE"),
-            prenom: v("SALARIE_PRENOMS"),
+            identite: IdentiteDeclaree {
+                nom: v("SALARIE_NOM_FAMILLE"),
+                prenoms: v("SALARIE_PRENOMS"),
+                naissance: naissance.map(NaissanceDeclaree::du_jour),
+                nir: nir_lu.clone(),
+                ntt: None,
+            },
             nom_usage: None,
-            naissance,
             rue: v("SALARIE_ADRESSE"),
             code_postal: v("SALARIE_CP"),
             commune: v("SALARIE_ADR_LOCALITE"),
@@ -643,12 +643,9 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         employeur_code_postal: None,
         employeur_commune: None,
         adherent: None,
-        nir: None,
+        identite: IdentiteDeclaree::default(),
         cle_nir: None,
-        nom: None,
-        prenom: None,
         nom_usage: None,
-        naissance: None,
         rue: None,
         code_postal: None,
         commune: None,
@@ -699,8 +696,8 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         .map(|x| documents::conges_spectacles::forme_adherent(x))
         .find(|x| documents::conges_spectacles::faute_adherent(x).is_none());
 
-    a.nom = texte(lu("nom", Some(2)));
-    a.prenom = texte(lu("prenom", Some(2)));
+    a.identite.nom = texte(lu("nom", Some(2)));
+    a.identite.prenoms = texte(lu("prenom", Some(2)));
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
@@ -708,15 +705,15 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         match &cle {
             Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == **k) {
                 Some(c) => {
-                    a.nir = Some(nir);
+                    a.identite.nir = Some(nir);
                     a.cle_nir = Some(c);
                 }
                 None => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
             },
-            None => a.nir = Some(nir),
+            None => a.identite.nir = Some(nir),
         }
     }
-    a.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| d.0);
+    a.identite.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| NaissanceDeclaree::du_jour(d.0));
     a.rue = texte(lu("adresse", Some(2)));
     a.code_postal = lu("code_postal", Some(2)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.commune = texte(lu("commune", Some(2)));

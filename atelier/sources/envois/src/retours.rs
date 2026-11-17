@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
 use droit::contexte::TypeDeParametreNeores;
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::fiche::{Nic, Nir, Siren, Siret};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::mode::Mode;
@@ -3034,9 +3035,10 @@ fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::M
 /// UN INDIVIDU D'UN COMPTE RENDU NEOReS (`RO.B006`, `RO.B012`) : nom, prenom, matricule, debut et numero du contrat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IndividuNeores {
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    pub matricule: Option<String>,
+    /// Le nom (R003) et le prenom (R004).
+    pub identite: IdentiteDeclaree,
+    /// R005.
+    pub matricule: Option<droit::fiche::Matricule>,
     pub debut_contrat: Option<socle::date::Jour>,
     pub contrat: Option<String>,
 }
@@ -3109,16 +3111,18 @@ pub struct ParametreNeores {
 /// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` l. 2752-2798).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IdentiteNeores {
-    pub nir_declare: Option<Nir>,
-    pub ntt_declare: Option<declarations::ntt::Ntt>,
-    pub nir_reference: Option<Nir>,
-    pub nom_declare: Option<String>,
-    pub nom_reference: Option<String>,
-    pub prenom_declare: Option<String>,
-    pub prenom_reference: Option<String>,
-    pub naissance_declaree: Option<String>,
-    pub naissance_reference: Option<String>,
-    pub matricule: Option<String>,
+    /// Le NIR (R001) ou le NTT (R002), le nom (R004), le prenom (R006) et la naissance (R008) declares.
+    pub declaree: IdentiteDeclaree,
+    /// Le NIR (R003), le nom (R005), le prenom (R007) et la naissance (R009) de reference.
+    pub reference: IdentiteDeclaree,
+    /// R010.
+    pub matricule: Option<droit::fiche::Matricule>,
+}
+
+/// Une date de naissance d'un compte rendu NEOReS (RO.B009.R008, R009), `AAAA-MM-JJ` (`NaissanceDeclaree::lire_iso`) :
+/// un retour de la norme se lit strictement, une autre forme le refuse.
+fn naissance_du_retour(t: &str) -> R<NaissanceDeclaree> {
+    NaissanceDeclaree::lire_iso(t).ok_or_else(|| socle::refus!("« {} » n'est pas une date de naissance AAAA-MM-JJ (RO.B009.R008, R009).", t))
 }
 
 /// Une information (`RO.B011`) et ses individus (`RO.B012`).
@@ -3195,9 +3199,12 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let type_de_retour = forme_du_retour(r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
     let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
         Ok(IndividuNeores {
-            nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
-            prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
-            matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
+            identite: IdentiteDeclaree {
+                nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
+                prenoms: rubrique_texte(&a, b, &format!("{}_R004", p)),
+                ..IdentiteDeclaree::default()
+            },
+            matricule: forme_du_retour(rubrique_de(&a, b, &format!("{}_R005", p)), droit::fiche::Matricule::lire)?,
             debut_contrat: rubrique_jour(&a, b, &format!("{}_R006", p))?,
             contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
         })
@@ -3275,16 +3282,21 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
             Ok(IdentiteNeores {
-                nir_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
-                ntt_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
-                nir_reference: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
-                nom_declare: x("RO_B009_R004"),
-                nom_reference: x("RO_B009_R005"),
-                prenom_declare: x("RO_B009_R006"),
-                prenom_reference: x("RO_B009_R007"),
-                naissance_declaree: x("RO_B009_R008"),
-                naissance_reference: x("RO_B009_R009"),
-                matricule: x("RO_B009_R010"),
+                declaree: IdentiteDeclaree {
+                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
+                    ntt: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
+                    nom: x("RO_B009_R004"),
+                    prenoms: x("RO_B009_R006"),
+                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R008"), naissance_du_retour)?,
+                },
+                reference: IdentiteDeclaree {
+                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
+                    ntt: None,
+                    nom: x("RO_B009_R005"),
+                    prenoms: x("RO_B009_R007"),
+                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R009"), naissance_du_retour)?,
+                },
+                matricule: forme_du_retour(rubrique_de(&a, b, "RO_B009_R010"), droit::fiche::Matricule::lire)?,
             })
         })
         .collect::<R<_>>()?;

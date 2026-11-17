@@ -221,7 +221,7 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Effectif> {
     let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Coefficient>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
-            let Some(qui) = d.individus[k.individu].identifiant() else {
+            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
                 return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
             };
             let jours = par_jour.entry(qui).or_default();
@@ -415,7 +415,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
     }
     let mut salaries = String::new();
     let mut vus: BTreeSet<droit::fiche::Nir> = BTreeSet::new();
-    for (ind, nir) in d.individus.iter().filter_map(|i| i.nir.clone().map(|n| (i, n))) {
+    for (ind, nir) in d.individus.iter().filter_map(|i| i.identite.nir.clone().map(|n| (i, n))) {
         let Some((cle, nir_de_la_fiche)) = ctx.salaries.iter().find_map(|(k, s)| s.nir.dite().filter(|n| **n == nir).map(|n| (k, n))) else { continue };
         if !vus.insert(nir.clone()) {
             continue;

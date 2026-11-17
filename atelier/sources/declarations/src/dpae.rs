@@ -28,6 +28,7 @@ use socle::fichiers::{modele_de, repr};
 use socle::paris::{HeureDuJour, Moment};
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
+use crate::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use crate::urssaf::CodeUrssafDpae;
 use crate::usages::strip;
 
@@ -729,12 +730,9 @@ fn tranche(r: &[char], a: usize, b: usize) -> String {
 pub struct EnregistrementRelu {
     /// Ecrit `JJMMAAAAHHMM`, sans secondes, a Paris (`horodatage_relu`).
     pub horodatage: Option<Moment>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
-    pub nir: Option<droit::fiche::Nir>,
-    /// Ecrite `JJMMAAAA`.
-    pub date_naissance: Option<Jour>,
+    /// Le nom, le prenom, la date de naissance (ecrite `JJMMAAAA`) et le NIR : a blanc, le salarie n'avait pas de NIR
+    /// (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
+    pub identite: IdentiteDeclaree,
     /// Ecrite `JJMMAAAA`.
     pub date_embauche: Option<Jour>,
     pub type_contrat: Option<droit::natures::TypeContratDpae>,
@@ -787,10 +785,13 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                     Some(h) => horodatage_relu(&h),
                     None => None,
                 },
-                nom: zone("nom"),
-                prenom: zone("prenom"),
-                nir,
-                date_naissance: jour("date_naissance")?,
+                identite: IdentiteDeclaree {
+                    nom: zone("nom"),
+                    prenoms: zone("prenom"),
+                    naissance: jour("date_naissance")?.map(NaissanceDeclaree::du_jour),
+                    nir,
+                    ntt: None,
+                },
                 date_embauche: jour("date_embauche")?,
                 type_contrat,
                 date_fin: jour("date_fin")?,
@@ -1029,10 +1030,8 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 /// Une DPAE du certificat de conformite (nature 41) : chaque zone telle que l'enregistrement la porte, sans ses blancs.
 #[derive(Debug, Clone)]
 pub struct LigneDuCertificat {
-    pub nom: String,
-    pub prenom: String,
-    /// Aucun quand la zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
-    pub nir: Option<droit::fiche::Nir>,
+    /// Le nom, le prenom et le NIR : aucun quand sa zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
+    pub identite: IdentiteDeclaree,
     /// Aucun quand la zone est a blanc.
     pub embauche: Option<Jour>,
     /// C_RETOUR_AR.
@@ -1087,10 +1086,9 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             "" => None,
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
+        let rempli = |t: String| Some(t).filter(|t| !t.is_empty());
         out.push(LigneDuCertificat {
-            nom: c("nom"),
-            prenom: c("prenom"),
-            nir,
+            identite: IdentiteDeclaree { nom: rempli(c("nom")), prenoms: rempli(c("prenom")), naissance: None, nir, ntt: None },
             embauche,
             code,
             etat: EtatDeLaDpae::du_certificat(code, DossierDpae::de_la_zone(z("dossier"))),

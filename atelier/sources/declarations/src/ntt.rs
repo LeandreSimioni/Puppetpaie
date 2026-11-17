@@ -181,7 +181,7 @@ pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie:
         f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }
-    if let Some(n) = declaree.filter(|d| d.nir.is_none()).and_then(|d| d.ntt.as_ref()) {
+    if let Some(n) = declaree.filter(|d| d.identite.nir.is_none()).and_then(|d| d.identite.ntt.as_ref()) {
         f.add(RUBRIQUE, n);
     }
     Ok(())
@@ -195,7 +195,7 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
 fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> R<()> {
     // Un NIR et un NTT ne sont jamais egaux : une seule liste.
     let mut vus: Vec<(IdentifiantDIndividu, &str)> = Vec::new();
-    for i in individus {
+    for i in individus.iter().map(|i| &i.identite) {
         let nom = match i.nom.as_deref() {
             Some(n) => n,
             None => "Un individu sans nom (S21.G00.30.002)",

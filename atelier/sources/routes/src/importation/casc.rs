@@ -11,6 +11,7 @@
 //! voir `liste_nominative_xlsx`.
 
 use droit::fiche::Lue as _;
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::fiche::Nir;
 use socle::echec::Classe;
 use std::path::Path;
@@ -132,14 +133,9 @@ pub struct SalarieReg {
 /// Le salarie d'une ligne de la liste nominative, tel que sa fiche le dit.
 #[derive(Serialize)]
 pub struct IndividuReg {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<Nir>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nom: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub prenom: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<Jour>,
+    /// Son NIR, son nom, son prenom, sa date de naissance.
+    #[serde(flatten)]
+    pub identite: IdentiteDeclaree,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -400,10 +396,13 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
             };
             par_salarie[pos].1.masse += brut;
             let individu = IndividuReg {
-                nir: p.salarie.champs.nir.dite().cloned(),
-                nom,
-                prenom,
-                date_naissance: p.salarie.champs.date_naissance.dite().copied(),
+                identite: IdentiteDeclaree {
+                    nir: p.salarie.champs.nir.dite().cloned(),
+                    nom,
+                    prenoms: prenom,
+                    naissance: p.salarie.champs.date_naissance.dite().copied().map(NaissanceDeclaree::du_jour),
+                    ntt: None,
+                },
                 adresse,
                 code_postal,
                 commune,
@@ -698,7 +697,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
         let artiste = c.pcs_ese.as_ref().is_some_and(droit::fiche::CodePcsEse::est_un_artiste_du_spectacle);
-        let nir = i.nir.clone();
+        let nir = i.identite.nir.clone();
         let cle = (x.annee, nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {
             Some((_, t)) => {
@@ -718,9 +717,9 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (1, siret.clone()),
             (4, x.annee.to_string()),
             (5, aujourdhui.clone()),
-            (6, coupe(texte_de(&i.nom), 30)),
-            (8, coupe(texte_de(&i.prenom), 32)),
-            (9, jj(&i.date_naissance)),
+            (6, coupe(texte_de(&i.identite.nom), 30)),
+            (8, coupe(texte_de(&i.identite.prenoms), 32)),
+            (9, i.identite.naissance.iter().map(NaissanceDeclaree::jj_mm_aaaa).collect()),
             (10, format!("{}{}", cellule(&nir), cle_nir)),
             (13, coupe(texte_de(&i.adresse), 32)),
             (15, coupe(texte_de(&i.code_postal), 5)),

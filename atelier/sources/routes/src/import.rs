@@ -215,13 +215,13 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<(ChampsSalarie, Vec<FauteDeCase>)> 
             None => None,
         },
     };
-    let femme = decl.nir.as_ref().and_then(Nir::sexe) == Some(droit::fiche::Sexe::Feminin);
+    let femme = decl.individu.identite.nir.as_ref().and_then(Nir::sexe) == Some(droit::fiche::Sexe::Feminin);
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     // Ce que la fiche neuve recoit d'une DSN, a cote de son identite et de son emploi (`SalarieDeclare::fiche`).
     let (mut f, fautes) = decl.fiche()?;
     let de_la_dsn = ChampsSalarie {
-        nir: decl.nir.clone(),
-        nir_cle: decl.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
+        nir: decl.individu.identite.nir.clone(),
+        nir_cle: decl.individu.identite.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
         initiales_contrat: Some(decl.initiales.clone()).filter(|i| !i.is_empty()),
         date_anciennete: decl.premier_contrat,
         statut,
@@ -334,7 +334,7 @@ impl SansNets {
 
 /// Le salarie qu'une DSN declare, en clair : son nom, son prenom.
 fn libelle_de(i: &declarations::dsn_lue::IndividuDeclare) -> String {
-    [i.nom.clone(), i.prenom.as_deref().map(declarations::champs::titre)].into_iter().flatten().collect::<Vec<_>>().join(" ")
+    [i.identite.nom.clone(), i.identite.prenoms.as_deref().map(declarations::champs::titre)].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
 /// LE NOM QUE LA PERSONNE A DONNE A LA COMPAGNIE (« Ajouter une compagnie ») reste le sien : la fiche que l'import cree
@@ -478,7 +478,7 @@ pub(crate) fn apercu_lu(
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
     for decl in ordre {
         let libelle = libelle_de(&decl.individu);
-        if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
+        if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = &ctx.salaries[cle].champs;
             let ec = ecarts(fiche, &decl.fiche()?.0, decl.mois)?;
             let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &FicheProposee::vide(NomDeFiche::Salarie));
@@ -495,7 +495,7 @@ pub(crate) fn apercu_lu(
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(&donnees, &fautes)?;
         salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         a_creer_liste.push(ACreer { rang: Some(salaries.len() - 1), donnees, fautes });
-        cles_a_venir.insert(decl.nir.clone());
+        cles_a_venir.insert(decl.individu.identite.nir.clone());
         a_creer += 1;
     }
 
@@ -628,7 +628,7 @@ pub(crate) fn apercu_lu(
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
-            let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
+            let qui = match (lecture.salaries.iter().find(|s| s.individu.identite.nir == *nir), nir) {
                 (Some(s), _) => libelle_de(&s.individu),
                 (None, Some(n)) => n.to_string(),
                 (None, None) => format!("Le salarié du contrat {}", contrat),

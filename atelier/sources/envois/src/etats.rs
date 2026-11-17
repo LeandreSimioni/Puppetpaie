@@ -167,7 +167,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.contrat.debut()) && meme_nom(x.salarie.as_str(), &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.contrat.debut()) && c.nom.as_deref().is_some_and(|nom| meme_nom(x.salarie.as_str(), nom)));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
@@ -590,7 +590,7 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         for l in c.personnes().into_iter().flatten() {
             match &l.etat {
                 EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier.texte()),
-                EtatDeLaDpae::DejaExistante { .. } => existantes.push(&l.nom),
+                EtatDeLaDpae::DejaExistante { .. } => existantes.extend(l.nom.as_deref()),
                 EtatDeLaDpae::Refusee { .. } => {}
             }
         }
@@ -1070,8 +1070,8 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
         }
         let p = PersonneCertifiee {
             libelle: l.code.libelle().to_string(),
-            nom: l.nom,
-            prenom: l.prenom,
+            nom: l.identite.nom,
+            prenom: l.identite.prenoms,
             embauche: l.embauche,
             etat: l.etat,
             code: l.code,
@@ -1080,7 +1080,10 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
         };
         // Refusee : la ligne le dit dans ses anomalies.
         if let EtatDeLaDpae::Refusee { .. } = p.etat {
-            anomalies.push(format!("{} -- {}", p.libelle, p.nom));
+            anomalies.push(match &p.nom {
+                Some(nom) => format!("{} -- {}", p.libelle, nom),
+                None => p.libelle.clone(),
+            });
         }
         personnes.push(p);
     }

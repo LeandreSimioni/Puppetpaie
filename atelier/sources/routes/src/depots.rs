@@ -14,6 +14,7 @@ use crate::gestes::depot_acte;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
 use engagement::numeros::NumeroContrat;
@@ -976,10 +977,7 @@ pub(crate) fn lire_octets(chemin: &Path) -> R<Vec<u8>> {
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
 struct IdentiteDeFiche {
     cle: IdSalarie,
-    nir: Option<droit::fiche::Nir>,
-    nom: Option<String>,
-    prenom: Option<String>,
-    naissance: Option<Jour>,
+    identite: IdentiteDeclaree,
 }
 
 /// UNE EMBAUCHE QUE LE FICHIER DPAE DECLARE : le salarie (`?` s'il n'est pas de la configuration), son nom, son contrat
@@ -1032,10 +1030,13 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
         .iter()
         .map(|(k, f)| IdentiteDeFiche {
             cle: k.clone(),
-            nir: f.champs.nir.dite().cloned(),
-            nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
-            prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
-            naissance: f.champs.date_naissance.dite().copied(),
+            identite: IdentiteDeclaree {
+                nir: f.champs.nir.dite().cloned(),
+                nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
+                prenoms: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
+                naissance: f.champs.date_naissance.dite().copied().map(NaissanceDeclaree::du_jour),
+                ntt: None,
+            },
         })
         .collect();
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
@@ -1067,11 +1068,11 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     for e in &enrs {
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let trouve: Option<&IdentiteDeFiche> = match &e.nir {
-            Some(nir) => fiches.iter().find(|f| f.nir.as_ref() == Some(nir)),
+        let e_id = &e.identite;
+        let trouve: Option<&IdentiteDeFiche> = match &e_id.nir {
+            Some(nir) => fiches.iter().find(|f| f.identite.nir.as_ref() == Some(nir)),
             None => {
-                let (nom, prenom) = (e.nom.as_deref(), e.prenom.as_deref());
-                fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance == e.date_naissance)
+                fiches.iter().find(|f| f.identite.nom.is_some() && f.identite.nom == e_id.nom && f.identite.prenoms == e_id.prenoms && f.identite.naissance == e_id.naissance)
             }
         };
         let debut = e

@@ -557,7 +557,7 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
             Ok(lignes) if !lignes.is_empty() => {
                 let mut l = Lecture::nouvelle("Certificat de conformité des DPAE");
                 for x in &lignes {
-                    let qui = joint([dit(&x.nom), dit(&x.prenom)], " ");
+                    let qui = joint([lu(&x.identite.nom), lu(&x.identite.prenoms)], " ");
                     let etat = match &x.etat {
                         EtatDeLaDpae::Enregistree { dossier } => format!("enregistrée, dossier {}", dossier),
                         EtatDeLaDpae::DejaExistante { .. } => "déjà enregistrée auparavant".to_string(),
@@ -750,7 +750,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
                 precisions.push(atypie.trim_end_matches('.').to_string());
             }
             for i in &d.individus {
-                let qui = joint([lu(&i.nom), lu(&i.prenom)], " ");
+                let qui = joint([lu(&i.identite.nom), lu(&i.identite.prenoms)], " ");
                 let q = match (qui, lu(&i.contrat)) {
                     (Some(q), Some(c)) => Some(format!("{} (contrat {})", q, c)),
                     (Some(q), None) => Some(q),
@@ -849,23 +849,24 @@ fn neores_lu(crm: &Neores) -> Lecture {
         l.phrases.push("Ces effectifs sont repris d'eux-mêmes dans config/effectifs.json à chaque relevé des retours : ce sont eux qui décident des seuils de cotisation.".into());
     }
     for i in &crm.identites {
-        let declare = joint([lu(&i.nom_declare), lu(&i.prenom_declare)], " ");
-        let reference = joint([lu(&i.nom_reference), lu(&i.prenom_reference)], " ");
+        let (d, rf) = (&i.declaree, &i.reference);
+        let declare = joint([lu(&d.nom), lu(&d.prenoms)], " ");
+        let reference = joint([lu(&rf.nom), lu(&rf.prenoms)], " ");
         fn differe<'a>(reference: &'a Option<String>, declare: &Option<String>) -> Option<&'a str> {
             lu(reference).filter(|r| Some(*r) != lu(declare))
         }
         let mut ecarts = Vec::new();
-        if let Some(r) = differe(&i.nom_reference, &i.nom_declare) {
+        if let Some(r) = differe(&rf.nom, &d.nom) {
             ecarts.push(format!("nom de référence « {} »", r));
         }
-        if let Some(r) = differe(&i.prenom_reference, &i.prenom_declare) {
+        if let Some(r) = differe(&rf.prenoms, &d.prenoms) {
             ecarts.push(format!("prénom de référence « {} »", r));
         }
-        if let Some(r) = differe(&i.naissance_reference, &i.naissance_declaree) {
-            ecarts.push(format!("née ou né le {} selon le répertoire{}", date_lisible(r), morceau(" (déclaré : ", lu(&i.naissance_declaree).map(date_lisible).as_deref(), ")")));
+        if let Some(r) = rf.naissance.filter(|r| d.naissance != Some(*r)) {
+            ecarts.push(format!("née ou né le {} selon le répertoire{}", date_lisible(&r.iso()), morceau(" (déclaré : ", d.naissance.map(|n| date_lisible(&n.iso())).as_deref(), ")")));
         }
-        if let Some(r) = i.nir_reference.as_ref().filter(|r| i.nir_declare.as_ref() != Some(*r)) {
-            let declare = match (&i.nir_declare, &i.ntt_declare) {
+        if let Some(r) = rf.nir.as_ref().filter(|r| d.nir.as_ref() != Some(*r)) {
+            let declare = match (&d.nir, &d.ntt) {
                 (Some(n), _) => format!(" (déclaré : {})", n),
                 (None, Some(t)) => format!(" (NTT déclaré : {})", t),
                 (None, None) => String::new(),
@@ -877,7 +878,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
         l.phrases.push(format!("Identité en écart avec le répertoire national (SNGI){} — {}. La fiche du salarié est à corriger avec l'identité de référence.", qui, quoi));
     }
     for i in &crm.informations {
-        let qui: Vec<String> = i.individus.iter().filter_map(|x| joint([lu(&x.nom), lu(&x.prenom)], " ")).collect();
+        let qui: Vec<String> = i.individus.iter().filter_map(|x| joint([lu(&x.identite.nom), lu(&x.identite.prenoms)], " ")).collect();
         let qui = (!qui.is_empty()).then(|| qui.join(", "));
         l.phrases.push(format!(
             "Information{}{}{}{}{}.",
@@ -1059,7 +1060,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
                     EtatDeLaDpae::DejaExistante { .. } => "déjà enregistrée auparavant".into(),
                     EtatDeLaDpae::Refusee { .. } => format!("refusée : {}", d.libelle),
                 };
-                phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
+                phrases.push(format!("{} : {}.", joint([lu(&d.nom), lu(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }
             (None, anomalies, false, None, None)
         }

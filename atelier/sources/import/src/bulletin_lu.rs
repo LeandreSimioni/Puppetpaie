@@ -47,6 +47,7 @@
 //! et le bulletin l'emporte sur ce qu'il compte lui-meme.
 
 use std::path::Path;
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, Periode};
 use socle::echec::R;
 use socle::num::Decimal;
@@ -198,6 +199,24 @@ pub fn lire_date(texte: &str) -> Option<Jour> {
         return None;
     }
     Jour::nouveau(an, chiffres(p[1]), chiffres(p[0]))
+}
+
+/// LE NIR IMPRIME (`texte`, ses blancs retires, en capitales) : 13 caracteres, ou 15 avec la cle, alors verifiee ; ou ce
+/// qui le refuse.
+fn nir_imprime(texte: &str) -> R<(droit::fiche::Nir, Option<droit::fiche::CleNir>)> {
+    use droit::fiche::{CleNir, Nir};
+    let n: String = texte.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
+    match Nir::et_sa_cle(&n) {
+        Some((nir, None)) => Ok((Nir::lire(nir)?, None)),
+        Some((nir, Some(cle))) => {
+            let nir = Nir::lire(nir)?;
+            match CleNir::du_nir(&nir).filter(|c| **c == *cle) {
+                Some(c) => Ok((nir, Some(c))),
+                None => Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro")),
+            }
+        }
+        None => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
+    }
 }
 
 /// Un mot qui n'est que ponctuation (« — », « · », « : », « - », « | ») : il borne une valeur, il n'en est pas.
@@ -878,10 +897,15 @@ pub struct Entreprise {
 pub struct Salarie {
     /// Le nom tel qu'il est ecrit (premier rang de son adresse).
     pub nom_complet: Option<String>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    pub nir: Option<String>,
-    pub naissance: Option<Jour>,
+    /// Le nom et les prenoms (`separer_nom`), la date de naissance, le NIR imprime, lu a la porte (`nir_imprime`).
+    #[serde(flatten)]
+    pub identite: IdentiteDeclaree,
+    /// La cle du NIR, quand il l'imprime (alors verifiee).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cle_nir: Option<droit::fiche::CleNir>,
+    /// Ce qui refuse le NIR imprime ; aucun : il ne l'est pas, ou il se lit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faute_nir: Option<String>,
     pub adresse: Vec<String>,
     pub code: Option<String>,
     pub emploi: Option<String>,
@@ -1486,12 +1510,16 @@ impl<'a> Lecteur<'a> {
             None => (None, None),
         };
         let nir = texte(&valeurs, "nir");
+        let (nir_lu, cle_nir, faute_nir) = match nir.as_deref().map(nir_imprime) {
+            Some(Ok((n, cle))) => (Some(n), cle, None),
+            Some(Err(e)) => (None, None, Some(e.phrase)),
+            None => (None, None, None),
+        };
         let salarie = Salarie {
             nom_complet: nom_s.clone(),
-            nom,
-            prenom,
-            nir: nir.clone(),
-            naissance: date(&valeurs, "naissance"),
+            identite: IdentiteDeclaree { nom, prenoms: prenom, naissance: date(&valeurs, "naissance").map(NaissanceDeclaree::du_jour), nir: nir_lu, ntt: None },
+            cle_nir,
+            faute_nir,
             adresse: adresse_s,
             code: texte(&valeurs, "code"),
             emploi: texte(&valeurs, "emploi"),
