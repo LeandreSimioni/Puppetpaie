@@ -1084,43 +1084,66 @@ impl From<QuotiteDeLaNatureEcrite> for QuotiteDeLaNature {
     }
 }
 
-/// UNE QUOTITE ET LE PLAFOND DE SA NATURE, dans la meme unite (`Nature::selon_l_unite`) : ce que la DSN compare avant
-/// d'ecrire 40.012 et 40.013 (CCH-12 et CCH-13 du bloc 40).
+/// UNE QUOTITE ET LE PLAFOND DE SA NATURE, dans la meme unite : ce que la DSN compare avant d'ecrire 40.012 et 40.013
+/// (CCH-12 et CCH-13 du bloc 40). Elle ne se fait que du plafond que la nature donne (`Nature::selon_l_unite`,
+/// `PlafondDeLaQuotite::plafonne`) : son plafond n'est jamais ecrit d'ailleurs.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum QuotitePlafonnee {
+pub struct QuotitePlafonnee(Plafonnee);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Plafonnee {
     Jours { quotite: socle::grandeurs::Jours, plafond: socle::grandeurs::Jours },
     Heures { quotite: socle::grandeurs::Heures, plafond: socle::grandeurs::Heures },
 }
 
+/// LE PLAFOND DE 40.012 ET 40.013 D'UNE NATURE, dans l'unite de sa quotite (`G` : des jours ou des heures) : seule la
+/// nature le donne (`Nature::selon_l_unite`), et il ne sert qu'a plafonner une quotite de cette unite (`plafonne`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlafondDeLaQuotite<G>(G);
+
+impl PlafondDeLaQuotite<socle::grandeurs::Jours> {
+    /// La quotite `quotite`, en jours, sous ce plafond.
+    pub fn plafonne(self, quotite: socle::grandeurs::Jours) -> QuotitePlafonnee {
+        QuotitePlafonnee(Plafonnee::Jours { quotite, plafond: self.0 })
+    }
+}
+
+impl PlafondDeLaQuotite<socle::grandeurs::Heures> {
+    /// La quotite `quotite`, en heures, sous ce plafond.
+    pub fn plafonne(self, quotite: socle::grandeurs::Heures) -> QuotitePlafonnee {
+        QuotitePlafonnee(Plafonnee::Heures { quotite, plafond: self.0 })
+    }
+}
+
 impl QuotitePlafonnee {
     pub fn quotite(self) -> QuotiteDuContrat {
-        match self {
-            QuotitePlafonnee::Jours { quotite, .. } => QuotiteDuContrat::Jours(quotite),
-            QuotitePlafonnee::Heures { quotite, .. } => QuotiteDuContrat::Heures(quotite),
+        match self.0 {
+            Plafonnee::Jours { quotite, .. } => QuotiteDuContrat::Jours(quotite),
+            Plafonnee::Heures { quotite, .. } => QuotiteDuContrat::Heures(quotite),
         }
     }
 
     pub fn plafond(self) -> QuotiteDuContrat {
-        match self {
-            QuotitePlafonnee::Jours { plafond, .. } => QuotiteDuContrat::Jours(plafond),
-            QuotitePlafonnee::Heures { plafond, .. } => QuotiteDuContrat::Heures(plafond),
+        match self.0 {
+            Plafonnee::Jours { plafond, .. } => QuotiteDuContrat::Jours(plafond),
+            Plafonnee::Heures { plafond, .. } => QuotiteDuContrat::Heures(plafond),
         }
     }
 
     /// La quotite depasse-t-elle son plafond ?
     pub fn depasse(self) -> bool {
-        match self {
-            QuotitePlafonnee::Jours { quotite, plafond } => quotite > plafond,
-            QuotitePlafonnee::Heures { quotite, plafond } => quotite > plafond,
+        match self.0 {
+            Plafonnee::Jours { quotite, plafond } => quotite > plafond,
+            Plafonnee::Heures { quotite, plafond } => quotite > plafond,
         }
     }
 
     /// La quotite telle que la DSN la compte : au centieme, le demi au pair (40.012, 40.013).
     pub fn au_centieme_au_pair(self) -> QuotitePlafonnee {
-        match self {
-            QuotitePlafonnee::Jours { quotite, plafond } => QuotitePlafonnee::Jours { quotite: quotite.a_deux_decimales(), plafond },
-            QuotitePlafonnee::Heures { quotite, plafond } => QuotitePlafonnee::Heures { quotite: quotite.a_deux_decimales(), plafond },
-        }
+        QuotitePlafonnee(match self.0 {
+            Plafonnee::Jours { quotite, plafond } => Plafonnee::Jours { quotite: quotite.a_deux_decimales(), plafond },
+            Plafonnee::Heures { quotite, plafond } => Plafonnee::Heures { quotite: quotite.a_deux_decimales(), plafond },
+        })
     }
 }
 
@@ -1488,10 +1511,14 @@ impl Proprietes {
     /// L'UNITE DE LA QUOTITE D'UN CONTRAT DE CETTE NATURE, la seule source de cette unite (40.011, `unite_quotite`) :
     /// `jours` d'une nature qui la compte en journees, `heures` sinon, chacun avec le plafond de 40.012 et 40.013 dans
     /// cette unite (CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure).
-    pub fn selon_l_unite<T>(&self, jours: impl FnOnce(socle::grandeurs::Jours) -> T, heures: impl FnOnce(socle::grandeurs::Heures) -> T) -> T {
+    pub fn selon_l_unite<T>(
+        &self,
+        jours: impl FnOnce(PlafondDeLaQuotite<socle::grandeurs::Jours>) -> T,
+        heures: impl FnOnce(PlafondDeLaQuotite<socle::grandeurs::Heures>) -> T,
+    ) -> T {
         match self.unite_quotite.plafond {
-            QuotiteDuContrat::Jours(plafond) => jours(plafond),
-            QuotiteDuContrat::Heures(plafond) => heures(plafond),
+            QuotiteDuContrat::Jours(plafond) => jours(PlafondDeLaQuotite(plafond)),
+            QuotiteDuContrat::Heures(plafond) => heures(PlafondDeLaQuotite(plafond)),
         }
     }
 

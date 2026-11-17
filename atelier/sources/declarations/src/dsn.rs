@@ -1837,9 +1837,9 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         if !q.depasse() {
             return Ok(());
         }
-        let cch = match q {
-            droit::natures::QuotitePlafonnee::Jours { .. } => " CCH-12",
-            droit::natures::QuotitePlafonnee::Heures { .. } => " CCH-13",
+        let cch = match q.plafond() {
+            droit::natures::QuotiteDuContrat::Jours(_) => " CCH-12",
+            droit::natures::QuotiteDuContrat::Heures(_) => " CCH-13",
         };
         Err(refus!(
             "Contrat {} {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \

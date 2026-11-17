@@ -562,8 +562,8 @@ impl Engagement {
     pub fn quotite_plafonnee(&self) -> R<droit::natures::QuotitePlafonnee> {
         let nat = self.nat()?;
         nat.selon_l_unite(
-            |plafond| Ok(droit::natures::QuotitePlafonnee::Jours { quotite: self.jours_contrat, plafond }),
-            |plafond| Ok(droit::natures::QuotitePlafonnee::Heures { quotite: self.heures_du_contrat(&nat)?, plafond }),
+            |plafond| Ok(plafond.plafonne(self.jours_contrat)),
+            |plafond| Ok(plafond.plafonne(self.heures_du_contrat(&nat)?)),
         )
     }
 
@@ -590,7 +590,7 @@ impl Engagement {
     pub fn reference_plafonnee(&self) -> R<Option<droit::natures::QuotitePlafonnee>> {
         let nat = self.nat()?;
         nat.selon_l_unite(
-            |plafond| Ok(Some(droit::natures::QuotitePlafonnee::Jours { quotite: courte(self.jours_contrat), plafond })),
+            |plafond| Ok(Some(plafond.plafonne(courte(self.jours_contrat)))),
             |plafond| {
                 // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que
                 // la nature porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
@@ -601,7 +601,7 @@ impl Engagement {
                     Some(q) => Some(q),
                     None => nat.quotite_reference_defaut(),
                 };
-                Ok(reference.map(|quotite| droit::natures::QuotitePlafonnee::Heures { quotite, plafond }))
+                Ok(reference.map(|quotite| plafond.plafonne(quotite)))
             },
         )
     }
