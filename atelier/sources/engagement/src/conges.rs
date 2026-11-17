@@ -539,7 +539,7 @@ fn compteur(
 /// reference qui ne commence pas un premier du mois.
 fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jour, mois: Mois) -> R<Option<Avant>> {
     let reference = periode_de_reference(a_la_date)?;
-    if reference.debut().jour != 1 {
+    if !reference.debut().premier_du_mois() {
         return Ok(None);
     }
     let precedent = mois.premier_jour().plus_jours(-1)?.mois_civil();

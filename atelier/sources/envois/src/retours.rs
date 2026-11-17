@@ -909,7 +909,8 @@ fn controle_expat(s: &str) -> R<()> {
             i = apres(&c, fin, "?>", 2);
         } else if commence_par(&c, i, "<!") {
             // DOCTYPE : son nom se verifie, on saute le reste, crochets et guillemets compris.
-            let (mut profondeur, mut guill) = (0i32, None);
+            // Les crochets ouverts et fermes, deux comptes : le `>` qui finit est celui ou aucun ne reste ouvert.
+            let (mut ouverts, mut fermes, mut guill) = (0usize, 0usize, None);
             i += 2;
             if commence_par(&c, i, "DOCTYPE") {
                 let mut k = i + 7;
@@ -929,12 +930,12 @@ fn controle_expat(s: &str) -> R<()> {
                     (q, Some(g)) if q == g => guill = None,
                     (_, Some(_)) => {}
                     ('"' | '\'', None) => guill = Some(c[i]),
-                    ('[', None) => profondeur += 1,
-                    (']', None) => profondeur -= 1,
+                    ('[', None) => ouverts += 1,
+                    (']', None) => fermes += 1,
                     ('<', None) if commence_par(&c, i, "<!--") => {
                         i = apres(&c, i + 4, "-->", 2);
                     }
-                    ('>', None) if profondeur <= 0 => {
+                    ('>', None) if ouverts <= fermes => {
                         i += 1;
                         break;
                     }

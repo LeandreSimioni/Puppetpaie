@@ -863,8 +863,8 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     Ok(Echeancier {
         phrase,
         aujourdhui: st.aujourdhui,
-        date_dite: date_en_clair(&st.aujourdhui),
-        date_dit: format!("Nous sommes le {}", date_en_clair(&st.aujourdhui)),
+        date_dite: st.aujourdhui.en_clair(),
+        date_dit: format!("Nous sommes le {}", st.aujourdhui.en_clair()),
         bienvenue: "Bienvenue sur PuppetPaie",
         compagnie,
         idcc: ctx.entreprise.idcc.dite().cloned(),
@@ -928,7 +928,7 @@ fn dsn_detail(modele: &ModeleDsn, echeance: &declarations::echeance_dsn::Echeanc
     formater(
         &modele.detail,
         &[
-            ("jour", echeance.jour.jour.to_string()),
+            ("jour", echeance.jour.quantieme_ecrit()),
             ("mois_suivant", echeance.jour.mois_civil().libelle(Graphie::Accentuee)),
             // Une echeance qui n'est pas reportee n'a rien a dire de son report.
             ("report", echeance.pourquoi().map(|p| format!(" {}", p)).into_iter().collect()),
@@ -1000,7 +1000,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: Annee, faites: &Cochees, premier: Op
     // `{jour_dsn}` : le jour de janvier ou la DSN de decembre de l'annee d'avant est due, reporte (`echeance_dsn`).
     let decembre = precedente.decembre();
     let dsn_decembre = declarations::echeance_dsn::de_la_compagnie(ctx, decembre)?;
-    let valeurs = [("annee", annee.to_string()), ("annee_precedente", precedente.to_string()), ("jour_dsn", dsn_decembre.jour.jour.to_string())];
+    let valeurs = [("annee", annee.to_string()), ("annee_precedente", precedente.to_string()), ("jour_dsn", dsn_decembre.jour.quantieme_ecrit())];
     let courant = st.aujourdhui.mois_civil();
     let mut x = Echeance::nouveau(GenreDEcheance::DeLAnnee(cle.clone()), CleDEcheance::de_l_annee(cle, annee), formater(&e.titre, &valeurs)?, String::new(), Some(debut));
     x.detail = formater(&e.detail, &valeurs)?;
@@ -1199,12 +1199,6 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
         }
     }
     Ok(out)
-}
-
-/// « mercredi 23 septembre 2026 ».
-fn date_en_clair(j: &Jour) -> String {
-    let mois = j.mois_civil().nom(socle::mois::Graphie::Accentuee);
-    format!("{} {} {} {}", j.jour_de_la_semaine(), j.jour, mois, j.an)
 }
 
 // -------------------------------------------------------------- l'exercice

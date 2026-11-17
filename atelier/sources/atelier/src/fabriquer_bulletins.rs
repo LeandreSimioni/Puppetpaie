@@ -418,7 +418,7 @@ fn dmy(j: &Jour) -> String {
 }
 
 fn dmy_court(j: &Jour) -> String {
-    format!("{:02}/{:02}/{:02}", j.jour, j.mois, j.an % 100)
+    j.jj_mm_aa()
 }
 
 fn pct(base: Montant, taux: Option<Taux>) -> Option<Montant> {
@@ -926,7 +926,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
-        mode: b.periode.fin().an >= 2023,
+        mode: b.periode.fin().annee() >= const { socle::mois::Annee::constante(2023) },
         unite: unite.into(),
         cumuls: [
             [p, a],
@@ -971,10 +971,11 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
     }
     cumuls.push(("Salaire brut".to_string(), fr(c.brut), fr(c.annee.brut)));
     let (d0, d1) = (&b.periode.debut(), &b.periode.fin());
-    let courte = if (d0.an, d0.mois) == (d1.an, d1.mois) {
-        format!("du {} au {}/{:02}/{:02}", d0.jour, d1.jour, d1.mois, d1.an % 100)
+    let fin_courte = format!("{}/{}/{}", d1.quantieme_ecrit(), d1.mois_civil().mm(), d1.annee().aa());
+    let courte = if d0.mois_civil() == d1.mois_civil() {
+        format!("du {} au {}", d0.quantieme_ecrit(), fin_courte)
     } else {
-        format!("du {}/{:02} au {}/{:02}/{:02}", d0.jour, d0.mois, d1.jour, d1.mois, d1.an % 100)
+        format!("du {}/{} au {}", d0.quantieme_ecrit(), d0.mois_civil().mm(), fin_courte)
     };
     let mut statut = b.statut.clone();
     if let Some(p) = statut.get(..1) {
@@ -1039,7 +1040,7 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
         let numero = format!("{}/{}", n, fin.annee());
         let page = if desc.gabarit == Gabarit::Coolpaie { page_coolpaie(&desc, b, &c, numero)? } else { page_spaiectacle(&desc, b, &c)? };
         let s = &desc.salaries[b.salarie];
-        let nom = format!("{}-{:02}-{}-{:03}.pdf", fin.an, fin.mois, s.code, b.rang);
+        let nom = format!("{}-{}-{:03}.pdf", fin.mois_civil(), s.code, b.rang);
         let ligne = format!(
             "{}  {} {}  du {} au {}  brut {}  net à payer {}  ({} cachet(s), {} h, {} jour(s))",
             nom,

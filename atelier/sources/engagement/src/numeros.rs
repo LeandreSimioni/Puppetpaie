@@ -449,7 +449,7 @@ mod tests {
         let fiche = |initiales: &str| -> droit::fiche::ChampsSalarie {
             socle::forme::lire_texte(&format!(r#"{{"initiales_contrat": "{}", "code_salarie": "1"}}"#, initiales), "fiche").unwrap()
         };
-        let an = Annee::constante(2026);
+        let an: Annee = socle::forme::lire_texte("2026", "l'annee du test").unwrap();
         assert_eq!(former(&fiche("FA"), an, None).ok().map(String::from), Some("FA1.26.01".to_string()));
         assert_eq!(former(&fiche("FA"), an, Some(&n)).ok().map(String::from), Some("FA1.26.14".to_string()));
         assert!(former(&fiche("F#"), an, None).is_err());

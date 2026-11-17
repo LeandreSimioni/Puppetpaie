@@ -125,6 +125,16 @@ impl Mois {
         format!("{} {:04}", self.nom(g), self.an)
     }
 
+    /// `MM`, son numero sur deux chiffres (« 05 »).
+    pub fn mm(self) -> String {
+        format!("{:02}", self.numero)
+    }
+
+    /// `MM/AAAA` (« 05/2026 »).
+    pub fn mm_aaaa(self) -> String {
+        format!("{:02}/{:04}", self.numero, self.an)
+    }
+
     /// L'etiquette du mois dans le nom d'un fichier : « Aout2026 » (le nom en titre, sans accent).
     pub fn etiquette(self) -> String {
         format!("{}{:04}", self.nom(Graphie::Titre), self.an)
@@ -348,9 +358,14 @@ impl Annee {
         Mois { an: self.0, numero: 12 }
     }
 
-    /// Le 1er janvier.
-    pub fn premier_jour(self) -> Jour {
-        self.janvier().premier_jour()
+    /// Le 1er janvier ; ecrit en constante, le premier jour d'une annee qu'un texte fixe.
+    pub const fn premier_jour(self) -> Jour {
+        Jour { an: self.0, mois: 1, jour: 1 }
+    }
+
+    /// `AA`, ses deux derniers chiffres (« 26 »).
+    pub fn aa(self) -> String {
+        format!("{:02}", self.0 % 100)
     }
 
     /// Le 31 decembre.

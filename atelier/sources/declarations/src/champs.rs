@@ -1798,7 +1798,7 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
         if let (Some(nee), Some(nir)) = (d.date_naissance.dite(), &nir) {
             if nir.chars().count() == 13 && tous_chiffres(&tranche(nir, 1, 5)) {
                 let (an, mo) = (tranche(nir, 1, 3), tranche(nir, 3, 5));
-                let (n24, n57) = (format!("{:02}", nee.an.rem_euclid(100)), format!("{:02}", nee.mois));
+                let (n24, n57) = (nee.annee().aa(), nee.mois_civil().mm());
                 if n24 != an || (mo != "00" && n57 != mo) {
                     out.push(constat(S::Nir, Gravite::Avertissement, format!("le NIR annonce {}/{}, la date de naissance dit {}/{}", mo, an, n57, n24)));
                 }

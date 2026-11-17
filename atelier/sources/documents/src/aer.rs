@@ -197,14 +197,15 @@ impl Cadre5 {
     }
 
     pub fn valeurs(&self) -> Vec<(&'static str, String)> {
+        let [jj, mm, aaaa] = self.le.cases();
         let v = [
             self.nom.clone(),
             self.prenom.clone(),
             self.qualite.clone(),
             self.lieu.clone(),
-            format!("{:02}", self.le.jour),
-            format!("{:02}", self.le.mois),
-            format!("{:04}", self.le.an),
+            jj,
+            mm,
+            aaaa,
             self.correspondant.clone(),
             self.telephone.to_string(),
             self.courriel.to_string(),

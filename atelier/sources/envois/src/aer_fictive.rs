@@ -514,13 +514,11 @@ fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom:
     let qui: String = format!("{} {}", nom, prenoms).split_whitespace().collect::<Vec<_>>().join("_");
     let siret: String = siret.chars().filter(char::is_ascii_digit).collect();
     format!(
-        "AER_{}__{}_{}_{:02}{:02}{:04}_{}_{}_{}.pdf",
+        "AER_{}__{}_{}_{}_{}_{}_{}.pdf",
         if siret.is_empty() { "0".to_string() } else { siret },
         periode,
         CODE,
-        edite_le.jour,
-        edite_le.mois,
-        edite_le.an,
+        edite_le.jjmmaaaa(),
         qui,
         rang,
         id

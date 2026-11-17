@@ -71,8 +71,8 @@ impl Moment {
         let local = (jour.ordinal() - 719_163) * 86_400 + heure * 3_600;
         // Le decalage de Paris a cet instant : celui de l'instant local lu comme UTC, corrige une fois (un changement
         // d'heure ne tombe jamais a l'heure d'un pas).
-        let approx = local - decalage_brut(local)?;
-        Moment::de_secondes(local - decalage_brut(approx)? + minute * 60 + seconde)
+        let approx = local - decalage_brut(local)?.secondes();
+        Moment::de_secondes(local - decalage_brut(approx)?.secondes() + minute * 60 + seconde)
     }
 
     /// Les secondes entieres depuis 1970 (l'instant arrondi a la seconde d'avant).
@@ -175,7 +175,7 @@ impl Moment {
 
     /// Le jour de Paris de cet instant (l'instant arrondi a la seconde d'avant).
     pub fn jour_de_paris(self) -> Jour {
-        dans_le_calendrier((self.entieres() + decalage(self)).div_euclid(86_400))
+        dans_le_calendrier((self.entieres() + decalage(self).secondes()).div_euclid(86_400))
     }
 
     /// Le jour UTC de cet instant.
@@ -206,7 +206,7 @@ impl Moment {
     /// Les secondes passees depuis minuit de Paris, ce jour-la (l'instant arrondi a la seconde d'avant, comme
     /// `jour_de_paris`).
     pub fn seconde_du_jour_de_paris(self) -> i64 {
-        (self.entieres() + decalage(self)).rem_euclid(86_400)
+        (self.entieres() + decalage(self).secondes()).rem_euclid(86_400)
     }
 
     /// L'heure de Paris de cet instant, a la minute (arrondi a la microseconde, puis tronque).
@@ -533,11 +533,25 @@ pub mod ecrit {
         Some((date, heure))
     }
 
-    /// Le decalage de l'heure de Paris sur l'UTC a cet instant (`super::decalage`), ecrit `+HHMM` ou `-HHMM` (RFC 5322,
-    /// 3.3).
-    pub fn decalage(m: Moment) -> String {
-        let d = super::decalage(m);
-        format!("{}{:02}{:02}", if d < 0 { '-' } else { '+' }, d.abs() / 3_600, d.abs() % 3_600 / 60)
+    /// LA DATE D'UN COURRIEL, heure de Paris (RFC 5322, § 3.3, `date-time` ;
+    /// `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`) : « Tue, 17 Nov 2026
+    /// 14:05:09 +0100 », le jour de la semaine et le mois en anglais, le decalage sur l'UTC en `+HHMM` ou `-HHMM`.
+    pub fn rfc5322(m: Moment) -> String {
+        const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        let j = m.jour_de_paris();
+        let d = super::decalage(m).minutes();
+        format!(
+            "{}, {:02} {} {:04} {} {}{:02}{:02}",
+            JOURS[j.jour_de_la_semaine() as usize],
+            j.jour,
+            MOIS[j.mois as usize - 1],
+            j.an,
+            heure_minute_seconde(m, ":"),
+            if d < 0 { '-' } else { '+' },
+            d.abs() / 60,
+            d.abs() % 60
+        )
     }
 
     /// Le jour et la seconde du jour UTC d'un instant (arrondi a la microseconde, puis tronque).
@@ -938,6 +952,11 @@ impl DecalageSurUtc {
     fn secondes(self) -> i64 {
         i64::from(self.0) * 60
     }
+
+    /// Ses minutes, a son ecriture.
+    fn minutes(self) -> i32 {
+        self.0
+    }
 }
 
 /// LE FUSEAU QU'UNE DATE OU UNE HEURE DE XML SCHEMA PEUT PORTER (XML Schema Part 2, § 3.2.7.3 : `Z`, ou `(+|-)hh:mm`,
@@ -1057,16 +1076,17 @@ fn dernier_dimanche(an: i32, mois: u32) -> i64 {
     n - (n + 4).rem_euclid(7)
 }
 
-/// Le decalage de Paris sur UTC, en secondes, a `t` secondes unix ; `None` si son jour UTC n'est pas du calendrier.
-fn decalage_brut(t: i64) -> Option<i64> {
+/// Le decalage de Paris sur UTC a `t` secondes unix : deux heures l'ete, une l'hiver ; `None` si son jour UTC n'est pas
+/// du calendrier.
+fn decalage_brut(t: i64) -> Option<DecalageSurUtc> {
     let an = Jour::depuis_jours_unix(t.div_euclid(86_400))?.an;
     let debut = dernier_dimanche(an, 3) * 86_400 + 3_600;
     let fin = dernier_dimanche(an, 10) * 86_400 + 3_600;
-    Some(if t >= debut && t < fin { 7_200 } else { 3_600 })
+    Some(DecalageSurUtc(if t >= debut && t < fin { 120 } else { 60 }))
 }
 
-/// Le decalage de Paris sur UTC, en secondes, a cet instant (arrondi a la seconde d'avant).
-pub fn decalage(t: Moment) -> i64 {
+/// Le decalage de Paris sur UTC a cet instant (arrondi a la seconde d'avant).
+fn decalage(t: Moment) -> DecalageSurUtc {
     let s = t.entieres();
     match decalage_brut(s) {
         Some(d) => d,
@@ -1079,7 +1099,7 @@ pub fn decalage(t: Moment) -> i64 {
 fn local_arrondi(t: Moment) -> i64 {
     let utc = t.a_la_microseconde().entieres();
     match decalage_brut(utc) {
-        Some(d) => utc + d,
+        Some(d) => utc + d.secondes(),
         None => unreachable!("un instant est dans le calendrier : {} s", utc),
     }
 }
@@ -1122,8 +1142,8 @@ mod tests {
     fn l_heure_d_ete_commence_le_dernier_dimanche_de_mars_a_1_h_utc() {
         // 2026 : dimanche 29 mars. 00:59:59 UTC encore l'hiver, 01:00:00 l'ete.
         let t = Jour::nouveau(2026, 3, 29).unwrap().ordinal() - 719_163;
-        assert_eq!(decalage(a(t * 86_400 + 3_599)), 3_600);
-        assert_eq!(decalage(a(t * 86_400 + 3_600)), 7_200);
+        assert_eq!(decalage(a(t * 86_400 + 3_599)), DecalageSurUtc(60));
+        assert_eq!(decalage(a(t * 86_400 + 3_600)), DecalageSurUtc(120));
         assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_599)), "2026-03-29T01:59");
         assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_600)), "2026-03-29T03:00");
     }
@@ -1134,8 +1154,8 @@ mod tests {
     fn l_heure_d_ete_finit_le_dernier_dimanche_d_octobre_a_1_h_utc() {
         // 2026 : dimanche 25 octobre.
         let t = Jour::nouveau(2026, 10, 25).unwrap().ordinal() - 719_163;
-        assert_eq!(decalage(a(t * 86_400 + 3_599)), 7_200);
-        assert_eq!(decalage(a(t * 86_400 + 3_600)), 3_600);
+        assert_eq!(decalage(a(t * 86_400 + 3_599)), DecalageSurUtc(120));
+        assert_eq!(decalage(a(t * 86_400 + 3_600)), DecalageSurUtc(60));
         assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_599)), "2026-10-25T02:59");
         assert_eq!(ecrit::minute::texte(a(t * 86_400 + 3_600)), "2026-10-25T02:00");
     }

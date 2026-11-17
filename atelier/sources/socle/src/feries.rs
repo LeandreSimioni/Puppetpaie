@@ -87,7 +87,7 @@ fn fetes() -> R<Arc<Vec<Fete>>> {
 }
 
 /// Le jour `an`-`mois`-`jour`, ou le refus qui dit ce qui ne va pas (l'annee, le mois, le jour).
-pub fn date_ou_refus(an: i64, mois: i64, jour: i64) -> R<Jour> {
+pub(crate) fn date_ou_refus(an: i64, mois: i64, jour: i64) -> R<Jour> {
     if !(1..=9999).contains(&an) {
         return Err(refus(crate::date::annee_impossible(an)));
     }

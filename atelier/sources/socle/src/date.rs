@@ -12,9 +12,9 @@ use crate::num::{self, Decimal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Jour {
-    pub an: i32,
-    pub mois: u32,
-    pub jour: u32,
+    pub(crate) an: i32,
+    pub(crate) mois: u32,
+    pub(crate) jour: u32,
 }
 
 /// UNE DUREE DE DROIT (« Le glossaire ») : des jours (`Duree<EnJours>`) ou des mois de calendrier (`Duree<EnMois>`), de
@@ -268,12 +268,6 @@ impl JourDeLaSemaine {
     /// Son nom (« lundi »).
     pub fn nom(self) -> &'static str {
         JourDeLaSemaine::NOMS[self as usize]
-    }
-
-    /// Son numero dans une date de semaine ISO 8601 (`AAAA-Www-j`) : 1 le lundi, 7 le dimanche ; il ne sert qu'a la
-    /// lecture de cette ecriture.
-    pub fn numero_iso(self) -> i64 {
-        self as i64 + 1
     }
 
     /// Le jour de rang `rang` depuis le lundi (0), modulo la semaine.
@@ -930,12 +924,12 @@ const JOURS_PAR_MOIS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 3
 /// Le rang du 1970-01-01 a compter du 0001-01-01, qui vaut 1.
 const ORDINAL_EPOQUE_UNIX: i64 = 719_163;
 
-pub fn bissextile(an: i32) -> bool {
+pub(crate) fn bissextile(an: i32) -> bool {
     (an % 4 == 0 && an % 100 != 0) || an % 400 == 0
 }
 
 /// `calendar.monthrange(an, mois)[1]`, pour un mois de 1 a 12.
-pub fn jours_du_mois(an: i32, mois: u32) -> u32 {
+pub(crate) fn jours_du_mois(an: i32, mois: u32) -> u32 {
     if mois == 2 && bissextile(an) {
         29
     } else {
@@ -1002,9 +996,51 @@ impl Jour {
         format!("{:04}{:02}{:02}", self.an, self.mois, self.jour)
     }
 
+    /// `JJ/MM/AA`, l'annee en ses deux derniers chiffres (la date d'un certificat Congés Spectacles, d'un bulletin
+    /// fictif).
+    pub fn jj_mm_aa(&self) -> String {
+        format!("{:02}/{:02}/{}", self.jour, self.mois, self.annee().aa())
+    }
+
+    /// `JJMMAA` (la date d'une ecriture d'un export comptable).
+    pub fn jjmmaa(&self) -> String {
+        format!("{:02}{:02}{}", self.jour, self.mois, self.annee().aa())
+    }
+
+    /// `JJ MM AAAA`, les trois cases d'une date separees d'un blanc (le certificat Congés Spectacles).
+    pub fn jj_mm_aaaa_en_cases(&self) -> String {
+        format!("{:02} {:02} {:04}", self.jour, self.mois, self.an)
+    }
+
+    /// `JJ`, `MM` et `AAAA`, chacun dans sa case d'un formulaire (l'attestation employeur).
+    pub fn cases(&self) -> [String; 3] {
+        [format!("{:02}", self.jour), format!("{:02}", self.mois), format!("{:04}", self.an)]
+    }
+
+    /// Son quantieme dans son mois, ecrit sans zero devant (« 5 ») : le seul endroit ou le numero d'un jour dans son
+    /// mois sort d'un jour, a une ecriture.
+    pub fn quantieme_ecrit(&self) -> String {
+        self.jour.to_string()
+    }
+
+    /// « mercredi 23 septembre 2026 ».
+    pub fn en_clair(&self) -> String {
+        format!("{} {} {} {}", self.jour_de_la_semaine(), self.jour, self.mois_civil().nom(crate::mois::Graphie::Accentuee), self.an)
+    }
+
+    /// Le premier jour de son mois ?
+    pub fn premier_du_mois(&self) -> bool {
+        self.jour == 1
+    }
+
+    /// A-t-il le meme quantieme que `autre` (le 31 d'un mois et le 31 d'un autre) ?
+    pub fn meme_quantieme(&self, autre: &Jour) -> bool {
+        self.jour == autre.jour
+    }
+
     /// Le 0001-01-01 vaut 1. Formule des jours depuis
     /// l'epoque (annee commencant en mars, cycles de 400 ans).
-    pub fn ordinal(&self) -> i64 {
+    pub(crate) fn ordinal(&self) -> i64 {
         let a = i64::from(self.an) - i64::from(self.mois <= 2);
         let ere = a.div_euclid(400);
         let annee_d_ere = a - ere * 400;
@@ -1015,7 +1051,7 @@ impl Jour {
     }
 
     /// Le jour de rang `ordinal` (le 0001-01-01 vaut 1). `None` hors de 0001-01-01 .. 9999-12-31.
-    pub fn depuis_ordinal(ordinal: i64) -> Option<Jour> {
+    pub(crate) fn depuis_ordinal(ordinal: i64) -> Option<Jour> {
         let z = ordinal - ORDINAL_EPOQUE_UNIX + 719_468;
         let ere = z.div_euclid(146_097);
         let jour_d_ere = z - ere * 146_097;
@@ -1032,7 +1068,7 @@ impl Jour {
     }
 
     /// Le jour du `n`-ieme jour apres l'epoque Unix (1970-01-01), pour l'horloge.
-    pub fn depuis_jours_unix(jours: i64) -> Option<Jour> {
+    pub(crate) fn depuis_jours_unix(jours: i64) -> Option<Jour> {
         Jour::depuis_ordinal(jours + ORDINAL_EPOQUE_UNIX)
     }
 
@@ -1067,19 +1103,12 @@ impl Jour {
     }
 
     /// `(self - autre).days`.
-    pub fn moins(&self, autre: &Jour) -> i64 {
+    pub(crate) fn moins(&self, autre: &Jour) -> i64 {
         self.ordinal() - autre.ordinal()
     }
 
     pub fn jours_du_mois(&self) -> u32 {
         jours_du_mois(self.an, self.mois)
-    }
-
-    /// SON RANG DANS UNE SUITE DE `n` RANGS QUI AVANCE DE `pas` CHAQUE JOUR (`n` non nul) : `(ordinal x pas) mod n` (le
-    /// conseil du jour, `routes::gestes::conseils`). Un compte tient en 128 bits signes ; le reste, de 0 a `n` exclu,
-    /// est un compte.
-    pub fn rang_dans_une_suite(&self, pas: usize, n: usize) -> usize {
-        (i128::from(self.ordinal()) * pas as i128).rem_euclid(n as i128) as usize
     }
 
     /// Son jour de la semaine.

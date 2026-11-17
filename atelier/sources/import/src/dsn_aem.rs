@@ -563,7 +563,8 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.map(|c| c.as_str())), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&socle::mois::Annee::constante(2025)), Some(&(socle::mois::Annee::constante(2025).decembre(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::grandeurs::lu::norme::<socle::grandeurs::Taux>("1.65"))));
+        let a2025: socle::mois::Annee = socle::forme::lire_texte("2025", "l'annee du test").unwrap();
+        assert_eq!(lu.atmp.get(&a2025), Some(&(a2025.decembre(),droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::grandeurs::lu::norme::<socle::grandeurs::Taux>("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }

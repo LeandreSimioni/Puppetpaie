@@ -29,7 +29,7 @@ fn heure_du_passage(quand: socle::paris::Moment) -> String {
     if socle::temps::secondes().a_la_seconde().jour_de_paris() == jour {
         format!("à {}", heure)
     } else {
-        format!("le {:02}/{:02} à {}", jour.jour, jour.mois, heure)
+        format!("le {} à {}", jour.jj_mm(), heure)
     }
 }
 

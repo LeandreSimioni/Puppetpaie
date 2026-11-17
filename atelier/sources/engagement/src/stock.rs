@@ -616,7 +616,7 @@ impl Objet {
     fn avenant_du_mois(&self, v: &mut Carte, mois: Mois) -> R<()> {
         let Some(j) = self.avenants().iter().map(|a| a.depuis).filter(|j| mois.contient(j)).max() else { return Ok(()) };
         v.date_modification = Some(j);
-        if j.jour == 1 {
+        if j.premier_du_mois() {
             return Ok(());
         }
         let a = self.termes_a(&j.plus_jours(-1)?);

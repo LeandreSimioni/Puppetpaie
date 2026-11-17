@@ -758,7 +758,7 @@ fn en_mime_complet<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<
         },
         Entete::Adresse("To", message.destinataire.clone()),
         Entete::Libre("Subject", message.sujet.clone()),
-        Entete::Date(date_de(date)),
+        Entete::Date(socle::paris::ecrit::rfc5322(date)),
         Entete::MessageId(message_id),
     ];
     let mime_version = || Entete::Simple("MIME-Version", "1.0".to_string());
@@ -988,25 +988,6 @@ pub fn nouveau_message_id(domaine: &str) -> R<IdDeCourriel> {
     let maintenant = socle::temps::secondes();
     let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
     IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
-}
-
-/// La date RFC 5322 d'un instant, heure de Paris (§ 3.3, `date-time` ;
-/// `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`).
-fn date_de(t: socle::paris::Moment) -> String {
-    const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    let j = t.jour_de_paris();
-    // Le 01/01/1970 etait un jeudi.
-    let semaine = (j.ordinal() - 719_163 + 3).rem_euclid(7) as usize;
-    format!(
-        "{}, {:02} {} {:04} {} {}",
-        JOURS[semaine],
-        j.jour,
-        MOIS[j.mois as usize - 1],
-        j.an,
-        socle::paris::ecrit::heure_minute_seconde(t, ":"),
-        socle::paris::ecrit::decalage(t)
-    )
 }
 
 /// Le nombre de lignes d'un texte, pour le refus d'un en-tête à plusieurs lignes.

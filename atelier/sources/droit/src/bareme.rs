@@ -409,9 +409,8 @@ pub fn bareme_taxe_apprentissage(mut bar: Pile, ent: &ChampsEntreprise, fin: Opt
         return Err(refus(
             format!("Le barème {} ne sait pas retirer la taxe d'apprentissage du bulletin : le signaler au développeur.", annee(&bar)),
             format!(
-                "La fiche entreprise dit la compagnie non assujettie a la taxe d'apprentissage pour {:02}/{} (motif MNATA), et le bareme {} n'a aucune ligne marquee \"taxe_apprentissage\": true : le moteur ne sait pas quelle ligne retirer du bulletin. Marquer la ligne de la taxe dans le bareme. Rien n'est calcule.",
-                fin.mois,
-                fin.an,
+                "La fiche entreprise dit la compagnie non assujettie a la taxe d'apprentissage pour {} (motif MNATA), et le bareme {} n'a aucune ligne marquee \"taxe_apprentissage\": true : le moteur ne sait pas quelle ligne retirer du bulletin. Marquer la ligne de la taxe dans le bareme. Rien n'est calcule.",
+                fin.mois_civil().mm_aaaa(),
                 annee(&bar)
             ),
         ));
@@ -1503,7 +1502,7 @@ impl std::fmt::Display for ColonneDeRepartition {
 }
 
 /// Le premier jour ou la repartition d'avant 1999 ne vaut plus.
-const PREMIER_JANVIER_1999: Jour = Jour { an: 1999, mois: 1, jour: 1 };
+const PREMIER_JANVIER_1999: Jour = Annee::constante(1999).premier_jour();
 
 /// (part patronale, part salariale) de la tranche 1, pour la convention de l'entreprise et la colonne `colonne` de sa
 /// branche.
@@ -1986,6 +1985,11 @@ pub fn en_alsace_moselle(code_postal: Option<&str>) -> bool {
 mod tests_risques_atmp {
     use super::*;
 
+    /// L'annee que le test ecrit (`AAAA`), lue par sa forme.
+    fn an(ecrit: &str) -> Annee {
+        socle::forme::lire_texte(ecrit, "l'annee du test").unwrap()
+    }
+
     /// 92.3AD est « TC » a 1,50 % en 2026 (`tarification-atmp/legifrance-arrete-tarification-atmp-2026-complet-20261029.txt`,
     /// annexe 1, l. 496-498) : son taux est celui de l'arrete quel que soit l'effectif
     /// (D. 242-6-14, I) ; 92.1CC, sans TC (l. 489-493), ne l'a que pour un etablissement nouvellement cree, l'annee de son
@@ -1994,7 +1998,7 @@ mod tests_risques_atmp {
     /// (art. 4).
     #[test]
     fn le_taux_d_un_risque_tc_est_celui_de_l_arrete_quel_que_soit_l_effectif() {
-        let socle = crate::contexte::socle_livre_lu(Annee::constante(2026)).unwrap().unwrap();
+        let socle = crate::contexte::socle_livre_lu(an("2026")).unwrap().unwrap();
         let r = risques_de(&socle).into_iter().find(|r| r.code.as_str() == "923AD").unwrap();
         assert_eq!((r.code.as_str(), r.code_arrete.as_ref().map(CodeRisqueAt::a_l_arrete).as_deref(), r.tc), ("923AD", Some("92.3AD"), true));
         let taux = |t: &str| socle::grandeurs::lu::tapee::<Taux>(t).unwrap();
@@ -2007,8 +2011,8 @@ mod tests_risques_atmp {
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
         assert_eq!(taux_de_l_arrete(&sans, true, false), None);
         let ouvert = |le: &str| Etablissement { ouverture: Some(socle::forme::lire_texte(&format!("\"{}\"", le), "le jour du test").unwrap()), ..Etablissement::default() };
-        assert!(etablissement_neuf(&ouvert("2024-06-01"), Annee::constante(2026)));
-        assert!(!etablissement_neuf(&ouvert("2023-12-01"), Annee::constante(2026)));
+        assert!(etablissement_neuf(&ouvert("2024-06-01"), an("2026")));
+        assert!(!etablissement_neuf(&ouvert("2023-12-01"), an("2026")));
     }
 
     /// Un taux vaut a partir de sa date ; celui d'un risque sans TC ne vaut que pour l'annee de cette date (inference : la
@@ -2017,7 +2021,7 @@ mod tests_risques_atmp {
     /// risque « TC » vaut jusqu'a la ligne suivante, celle que l'arrete de l'annee inscrit (D. 242-6-14, I).
     #[test]
     fn un_taux_notifie_sans_tc_ne_vaut_pas_au_dela_de_son_annee() {
-        let (a25, a26) = (Annee::constante(2025), Annee::constante(2026));
+        let (a25, a26) = (an("2025"), an("2026"));
         let s26 = crate::contexte::socle_livre_lu(a26).unwrap().unwrap();
         let ligne = |code: &str, t: Taux| crate::fiche::TauxAtmp {
             code_risque: Some(CodeRisqueAt::lire(code).unwrap()),

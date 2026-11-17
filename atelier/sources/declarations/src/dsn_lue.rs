@@ -1049,7 +1049,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             S20_05_004 => ordre = NumeroDOrdre::lu(&v),
             S20_05_005 => {
                 // 01MMAAAA : le premier jour du mois.
-                let premier_jour = jour_dsn(&v).filter(|j| j.jour == 1);
+                let premier_jour = jour_dsn(&v).filter(Jour::premier_du_mois);
                 mois = fautes.valeur(rub, &v, "un mois (01MMAAAA)", premier_jour.map(|j| Mois::du_jour(&j)));
             }
             S20_05_007 => depot = fautes.jour(rub, &v),

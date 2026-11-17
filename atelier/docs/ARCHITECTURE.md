@@ -103,11 +103,14 @@ que par la structure :
   code propre à une cible se range sous son `cfg`.
 - **Le verrou simple** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce qu'il
   fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux ci-dessus) ;
-  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; trois tests courts, sans liste, qui lisent les
+  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; quatre tests courts, sans liste, qui lisent les
   sources des crates ; et la relecture du diff de chaque lot à l'arrivée, qui tient tout le reste.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions ; les tests de structure
   sont les bienvenus, un test qui fige un détail ne s'écrit pas :
   - `aucun_flottant_dans_le_code` : aucune source d'une crate n'écrit `f32` ni `f64` ;
+  - `aucun_entier_signe_brut` : aucune source hors du `socle` et de `fabrique-pdf` (une porte entière, qui a son
+    verrou) n'écrit `i32` ni `i64`, ni leur nom de C (`c_int`, `c_long`, `c_longlong`), ni `NonZeroI…`, `AtomicI…` : le
+    logiciel, ses essais, exemples et scripts de construction, l'atelier, la fenêtre, `empreinte.rs` ;
   - `chaque_forme_lue_refuse_une_cle_inconnue` : chaque `derive(Deserialize)` porte `deny_unknown_fields`, sauf une
     réponse d'un tiers, qui se déclare telle par son type (« Le corps et ses portes ») ;
   - `aucune_valeur_par_defaut_si_absent` : ni `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`,
@@ -207,7 +210,7 @@ un libellé, chacun sa forme.
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
-| décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre) | `socle/src/paris.rs` |
+| décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre ; celui de Paris à un instant, interne au socle, s'écrit `+HHMM` dans la date d'un courriel, `socle::paris::ecrit::rfc5322`) | `socle/src/paris.rs` |
 | date mal écrite d'une zone (un morceau illisible tel qu'il s'écrit, ou une date qui n'existe pas et la phrase qui le dit : la date de la table des CTP, `format::AaaaJjMm`) | `DateMalEcrite` | `socle/src/piece.rs` |
 
 **Le détail**
@@ -227,17 +230,22 @@ un libellé, chacun sa forme.
   la remise du contrat, un jour seul ; le dépôt d'une DSN, midi ; son annule-et-remplace, le minuit qui finit la veille,
   « avant le 14/12/2026 à minuit »).
 - **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone. Le numéro d'un jour dans
-  son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture ; tapé dans une charge (le jour d'effet d'un
+  son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture (`iso`, `jj_mm_aaaa`, `jj_mm`, `jj_mm_aa`,
+  `jjmmaaaa`, `jjmmaa`, `aaaammjj`, `jj_mm_aaaa_en_cases`, `cases`, `quantieme_ecrit`, `en_clair`) ; ses champs sont
+  privés au socle, et un lecteur prend son mois (`mois_civil`), son année (`annee`), une comparaison
+  (`premier_du_mois`, `meme_quantieme`) ; tapé dans une charge (le jour d'effet d'un
   changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
   jour qui n'est pas de ce mois se refuse à sa case.
-- **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
+- **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom ; son numéro s'écrit `mm`,
+  `mm_aaaa` (« 05/2026 »).
 - **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
   table des noms de mois ; un fichier qui l'écrit par son numéro (`echeancier-base.json`) se lit en lui.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Une seule forme : le nombre (`2025`), par sa serde ; clé d'un objet, son texte comme
   toute clé (`"2025"`, la clé de `paies_annuelles`). Elle se calcule par ses
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
-  année qu'un texte fixe s'écrit `Annee::constante`.
+  année qu'un texte fixe s'écrit `Annee::constante`, dans une constante compilée (`const { … }`) ; un test écrit la
+  sienne en texte (`"2026"`), lue par sa forme. Ses deux derniers chiffres s'écrivent `aa`.
 - **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
   par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes
   (`debut`, `fin`), ses jours (`jours`), sa durée (`duree`, en `Duree<EnJours>`), l'ancienneté qu'elle donne (celle
@@ -359,7 +367,8 @@ un libellé, chacun sa forme.
 | nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier` (interne au socle), qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture, en rang dans sa grille (`socle::grandeurs::RangDansUneGrille`) ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
 | nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue` ; un nombre lu avant que sa place dise sa grandeur, une fois : celui qu'une pièce imprime, `Nombre::a_virgule`, ou que la norme écrit, `Nombre::de_la_norme`, les seules lectures dont `grandeurs::lu::texte` et `lu::norme` se servent ; l'entier qu'une zone écrit en chiffres, `socle::piece::EntierDUneZone`, que sa colonne lit en sa grandeur, `en`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu`, `socle::piece::EntierDUneZone` | `socle/src/forme.rs`, `socle/src/piece.rs` |
 | rang dans une grille numérotée de 1 à N (l'échelon de la CCNEAC, une grille de douze, `droit::fiche::EchelonCcneac`) | `RangDansUneGrille<N>` (lu d'un nombre entier ou tapé, hors de 1 à N refusé en la phrase de sa notion ; il prend sa ligne dans la grille, `ligne`, et son rang ne sort pas) | `socle/src/grandeurs.rs` |
-| décalage dans une suite qui tourne (« un autre » conseil du jour : `1` le suivant, `-1` le précédent, `routes::gestes::conseils`) | `DecalageDansUneSuite` (lu d'un entier signé ; il décale un rang dans une suite de N en tournant, `depuis`, et son nombre ne sort pas ; le rang du jour dans la suite, `Jour::rang_dans_une_suite`) | `socle/src/grandeurs.rs` |
+| suite qui tourne au fil des jours (les conseils « Le saviez-vous ? », dont chaque jour montre un, `routes::gestes::conseils`) | `SuiteQuiTourne<T>` (jamais vide, `de` ; elle rend l'élément du jour, `du_jour`, au pas premier avec N à partir de N × 0,618 : son rang ne sort pas) | `socle/src/grandeurs.rs` |
+| décalage dans une suite qui tourne (« un autre » conseil du jour : `1` le suivant, `-1` le précédent, `routes::gestes::conseils`) | `DecalageDansUneSuite` (lu d'un entier signé ; il décale l'élément du jour d'une `SuiteQuiTourne` en tournant, et son nombre ne sort pas) | `socle/src/grandeurs.rs` |
 | entier d'un petit langage d'un fichier (le modèle `421{code:03}` d'un compte individuel du plan comptable, `documents::plan_comptable`) | `socle::texte::EntierEcrit` (lu de son texte ; son signe, sa valeur absolue écrite en base 10, 16, 8 ou 2, le caractère qu'il code) | `socle/src/texte.rs` |
 | rotation d'une page d'un PDF (`/Rotate`, un multiple de 90 degrés : ce que le relevé d'un PDF écrit en degrés, que l'import et l'atelier lisent) | `fabrique_pdf::inspection::Rotation` (en quarts de tour, ramenée à un tour) | `fabrique-pdf/src/inspection.rs` |
 

@@ -1,7 +1,8 @@
 //! LES OS, GARDES QUOI QU'ON CHANGE DESSUS : chaque route dit en une phrase breve ce qu'elle fait, et l'exemple de sa
 //! fiche est accepte ; une crate ne prend qu'a celles du dessous, et seul le socle prend `serde_json` ; les donnees
-//! livrees et les formes qui les lisent disent la meme chose. Trois tests courts lisent les sources des crates, sans
-//! liste : aucun flottant, toute forme lue refuse une cle inconnue, aucune valeur par defaut si absent.
+//! livrees et les formes qui les lisent disent la meme chose. Quatre tests courts lisent les sources des crates, sans
+//! liste : aucun flottant, aucun entier signe brut, toute forme lue refuse une cle inconnue, aucune valeur par defaut si
+//! absent.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -681,6 +682,39 @@ fn lignes_ou(motif: &str) -> Vec<String> {
 fn aucun_flottant_dans_le_code() {
     let fautes = lignes_ou(r"(?:^|[^A-Za-z])f(?:32|64)\b");
     assert!(fautes.is_empty(), "aucun flottant : une grandeur, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
+}
+
+/// AUCUN ENTIER SIGNE BRUT : aucune source hors du socle (`socle/`, la porte, et seul `socle::systeme` y prend l'entier
+/// que le noyau de Windows impose) et de la fabrique de PDF (`fabrique-pdf/`, une porte entiere, qui a son propre verrou)
+/// n'ecrit un entier signe de 32 ou de 64 bits, ni son nom de C (`std::ffi`, `std::os::raw`), ni son enveloppe de la
+/// bibliotheque (`NonZero…`, `Atomic…`) : ni le logiciel, ni ses essais, ses exemples et ses scripts de construction, ni
+/// l'atelier, ni la fenetre, ni un source inclus (`empreinte.rs`). Chaque nombre porte le type de sa notion (« Le
+/// glossaire ») ; un compte est un `usize`.
+#[test]
+fn aucun_entier_signe_brut() {
+    let motif = regex::Regex::new(r"(?:^|[^A-Za-z])i(?:32|64)\b|\bc_(?:int|long|longlong)\b|\b(?:NonZero|Atomic)I(?:32|64)\b").unwrap();
+    // Tout `.rs` de l'espace, a sa racine comme dans chaque crate (hors de ce que Cargo fabrique, `target/`).
+    fn tous(d: &Path, v: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() && p.file_name().is_some_and(|n| n != "target") {
+                tous(&p, v);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                v.push(p);
+            }
+        }
+    }
+    let mut fichiers = Vec::new();
+    tous(&espace(), &mut fichiers);
+    let mut fautes = Vec::new();
+    for p in fichiers.iter().filter(|p| !p.starts_with(espace().join("socle")) && !p.starts_with(espace().join("fabrique-pdf"))) {
+        for (n, l) in std::fs::read_to_string(p).unwrap().lines().enumerate() {
+            if let Some(m) = motif.find(l) {
+                fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str().trim()));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "aucun entier signe brut : le type de la notion, ou un compte (`usize`) :\n{}", fautes.join("\n"));
 }
 
 /// AUCUNE VALEUR PAR DEFAUT SI ABSENT (`AGENTS.md`, « Un champ facultatif ne s'écrit que s'il est rempli ») : aucune

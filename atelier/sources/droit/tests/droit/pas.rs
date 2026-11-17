@@ -3,6 +3,7 @@
 //! versement, un taux recu et un contrat court) ; il rend un resultat par montant de `MONTANTS`, ecrit une fois quand ils
 //! sont tous le meme. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit les references.
 
+use crate::outils::l_annee;
 use crate::outils::typee::{cas_de, code_livre, jouer, lire};
 use droit::forme_bareme::{GrandeurDatee, GrillePas, PasParDefaut, Pile};
 use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, TauxRecu, Versement};
@@ -62,14 +63,14 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
         Bareme::Vide => None,
         Bareme::SansGrille => Some(PasParDefaut::default()),
         Bareme::Brut2025 | Bareme::Brut2026 => {
-            let s = socle(socle::mois::Annee::constante(if b == Bareme::Brut2025 { 2025 } else { 2026 })).pas_taux_par_defaut;
+            let s = socle(l_annee(if b == Bareme::Brut2025 { "2025" } else { "2026" })).pas_taux_par_defaut;
             let mut vues: Vec<&AbattementDate> = s.abattement_contrats_courts.iter().filter(|e| le.is_none_or(|l| e.depuis <= l)).collect();
             vues.sort_by_key(|e| e.depuis);
             Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| GrandeurDatee(e.valeur)), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
     // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
-    let livre: Pile = droit::contexte::socle_livre_lu(socle::mois::Annee::constante(2026)).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
+    let livre: Pile = droit::contexte::socle_livre_lu(l_annee("2026")).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
     Pile { pas_taux_par_defaut: section, ..livre }
 }
 

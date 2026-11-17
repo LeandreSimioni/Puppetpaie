@@ -214,7 +214,7 @@ fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
     match ecoules {
         Some(d) if d == socle::date::Duree::jours(0) => format!("depuis {}", depuis.heure_de_paris()),
         Some(d) if d == socle::date::Duree::jours(1) => "depuis hier".to_string(),
-        Some(_) | None => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
+        Some(_) | None => format!("depuis le {}", jour.jj_mm()),
     }
 }
 

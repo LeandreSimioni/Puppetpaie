@@ -633,10 +633,11 @@ mod tests {
     #[test]
     fn l_effectif_annuel_se_compte_comme_r_130_1_le_dit() {
         let mut par_mois: BTreeMap<Mois, Vec<DsnLue>> = BTreeMap::new();
+        let mois = |ecrit: &str| -> Mois { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap() };
         // Janvier (31 jours) : un CDI a temps plein tout le mois (1), un mi-temps (75,84 h sur 151,67 : 0,5) du 16 au 31
         // (16 jours : 0,258...), un CDDU de deux jours (2/31), un CDD de remplacement (ecarte).
         par_mois.insert(
-            Mois::constante(2025, 1),
+            mois("2025-01"),
             vec![dsn(&[
                 ("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")]),
                 ("2800101999992", &[("16012025", "", "20", "151.67", "75.84", "")]),
@@ -645,7 +646,7 @@ mod tests {
             ])],
         );
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
-        par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
+        par_mois.insert(mois("2025-02"), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
         // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
         assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(socle::grandeurs::lu::en_texte::<Effectif>("1.16").unwrap()));
         assert_eq!(effectif_annuel(&BTreeMap::new()).unwrap(), None);
@@ -662,7 +663,8 @@ mod tests {
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
         let j = |ecrit: &str| -> socle::date::Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
-        let (a2025, a2026) = (Annee::constante(2025), Annee::constante(2026));
+        let annee = |ecrit: &str| -> Annee { socle::forme::lire_texte(ecrit, "l'annee du test").unwrap() };
+        let (a2025, a2026) = (annee("2025"), annee("2026"));
         let personnes = socle::grandeurs::Effectif::personnes;
         assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j("2027-01-05")).unwrap());
         assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j("2027-01-05")).unwrap());

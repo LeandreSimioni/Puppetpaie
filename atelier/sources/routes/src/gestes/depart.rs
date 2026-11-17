@@ -443,7 +443,7 @@ impl DsnFabriquee {
 fn pas_avant(ctx: &Contexte, mois: Mois) -> R<()> {
     let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?;
     let premier = echeance.premier_depot().map_err(|e| e.reclasser(Classe::Illisible))?;
-    if premier.ordinal() <= ctx.aujourdhui.ordinal() {
+    if premier <= ctx.aujourdhui {
         return Ok(());
     }
     Err(erreur(

@@ -588,7 +588,7 @@ impl IdentifiantDeDeclaration {
             return None;
         }
         let (date, ordre) = texte.split_at(8);
-        let constitue_le = socle::piece::Zone::lue(date, socle::piece::format::Jjmmaaaa).valeur().filter(|j| (1900..=2099).contains(&j.an))?;
+        let constitue_le = socle::piece::Zone::lue(date, socle::piece::format::Jjmmaaaa).valeur().filter(|j| (const { socle::mois::Annee::constante(1900) }..=const { socle::mois::Annee::constante(2099) }).contains(&j.annee()))?;
         Some(IdentifiantDeDeclaration { constitue_le, ordre: NumeroDOrdre::lu(ordre)? })
     }
 

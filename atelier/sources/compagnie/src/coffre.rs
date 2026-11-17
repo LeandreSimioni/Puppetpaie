@@ -492,9 +492,9 @@ struct ParametresDuCoffre(scrypt::Params);
 /// Le plus grand produit `p x r` que la derivation d'OpenSSL accepte (`SCRYPT_PR_MAX`, `(1 << 30) - 1`).
 const PR_MAXIMAL: u128 = (1 << 30) - 1;
 
-/// Le plus grand bloc (128 x p x r octets) que la derivation d'OpenSSL accepte : son `Blen` est un `int` C
-/// (`EVP_PBE_scrypt` refuse `Blen > INT_MAX`).
-const BLOC_MAXIMAL: std::ffi::c_int = std::ffi::c_int::MAX;
+/// Le plus grand bloc (128 x p x r octets) que la derivation d'OpenSSL accepte : son `Blen` est un `int` C de 32 bits
+/// (`EVP_PBE_scrypt` refuse `Blen > INT_MAX`, `(1 << 31) - 1`), ecrit dans le compte d'octets qu'il borne.
+const BLOC_MAXIMAL: u128 = (1 << 31) - 1;
 
 /// Le refus de parametres que la derivation n'accepte pas.
 fn parametres_incompatibles() -> Echec {
@@ -522,7 +522,7 @@ impl ParametresDuCoffre {
             return Err(memoire_max());
         }
         let memoire = 128 * p * r + 128 * r * (n + 2);
-        if memoire > u128::from(SCRYPT_MAXMEM) || 128 * p * r > u128::from(BLOC_MAXIMAL.unsigned_abs()) {
+        if memoire > u128::from(SCRYPT_MAXMEM) || 128 * p * r > BLOC_MAXIMAL {
             return Err(memoire_max());
         }
         // `n` est une puissance de 2 sous 2^64 : son logarithme, sous 64, tient dans un octet.

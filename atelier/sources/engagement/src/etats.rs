@@ -964,7 +964,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     let cle = &p.salarie.id;
     let fin = e.periode_payee()?.fin();
     let taux = droit::pas::taux_dgfip(ctx, cle, Some(e.date_du_versement()?), Some(e.mois))?;
-    let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
+    let bareme = ctx.bareme(&fin.mois_civil().premier_jour())?;
     let court = droit::natures::contrat_court(&*e.nat()?, &e.contrat(), fin)?;
     // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;

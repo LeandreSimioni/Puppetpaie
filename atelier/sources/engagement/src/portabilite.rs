@@ -105,7 +105,7 @@ fn mois_arrondis(periode: &Periode) -> R<Duree<EnMois>> {
     while n < DOUZE_MOIS {
         n = n.plus(UN_MOIS);
         let meme_quantieme = debut.apres(n)?;
-        let fin_du_mois = if meme_quantieme.jour == debut.jour { meme_quantieme.plus_jours(-1)? } else { meme_quantieme };
+        let fin_du_mois = if meme_quantieme.meme_quantieme(&debut) { meme_quantieme.plus_jours(-1)? } else { meme_quantieme };
         // Le `n`-ieme mois atteint la fin de la periode : il n'en reste aucun jour apres lui.
         if !periode.contient(&fin_du_mois.plus_jours(1)?) {
             break;

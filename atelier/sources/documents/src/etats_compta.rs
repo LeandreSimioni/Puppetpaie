@@ -471,7 +471,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let champs = [
             e.journal.to_string(),
             journal_lib.clone(),
-            format!("{:04}{:05}", e.date.an, NumeroDEcriture::de(e, env.periode)?),
+            format!("{}{:05}", e.date.annee(), NumeroDEcriture::de(e, env.periode)?),
             date.clone(),
             e.compte.to_string(),
             ou_vide(libelle_compte(plan, &e.compte)),
@@ -499,7 +499,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
 /// sinon la nature ; les deux si `nature`), et son mois (MM/AAAA). La zone prend les deux, ou ce qui la distingue se
 /// remplace par sa valeur courte validee (`Envoi::libelle`).
 fn libelle_court(e: &Ecriture, nature: bool) -> (String, String) {
-    let mm = format!("{:02}/{:04}", e.date.mois, e.date.an);
+    let mm = e.date.mois_civil().mm_aaaa();
     let sans_mois = match e.libelle.rfind(" -- ") {
         Some(i) => &e.libelle[..i],
         None => e.libelle.as_str(),
@@ -531,11 +531,6 @@ fn sens(e: &Ecriture) -> (&'static str, Montant) {
     } else {
         ("D", e.debit)
     }
-}
-
-/// La date JJMMAA d'un jour.
-fn jjmmaa(j: socle::date::Jour) -> String {
-    format!("{:02}{:02}{:02}", j.jour, j.mois, j.an % 100)
 }
 
 /// Ni point-virgule ni fin de ligne dans une zone.
@@ -680,7 +675,7 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let (s, montant) = sens(e);
         let mut champs: BTreeMap<&str, String> = [
             ("journal", e.journal.to_string()),
-            ("date", jjmmaa(e.date)),
+            ("date", e.date.jjmmaa()),
             ("type_piece", "OD".to_string()),
             ("compte", compte_de(e).to_string()),
             ("type_compte", String::new()),
@@ -767,7 +762,7 @@ fn quadra(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         ch.insert("compte", compte_quadra(compte_de(e).as_str())?);
         ch.insert("journal", e.journal.to_string());
         ch.insert("folio", "000".to_string());
-        ch.insert("date", jjmmaa(e.date));
+        ch.insert("date", e.date.jjmmaa());
         ch.insert("sens", s.to_string());
         ch.insert("montant", format!("+{}", socle::grandeurs::ecrit::en_centimes::chiffres(montant, 12)));
         ch.insert("affaire", ou_vide(env.section(e)));
@@ -802,7 +797,7 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         out.push(
             [
                 (i + 1).to_string(),
-                jjmmaa(e.date),
+                e.date.jjmmaa(),
                 e.journal.to_string(),
                 compte_de(e).to_string(),
                 String::new(),

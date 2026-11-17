@@ -387,9 +387,9 @@ fn les_certificats_conges_spectacles_seuls_puis_avec_les_bulletins() {
     for c in &contrats {
         assert_eq!(c["atteste_par"], json!("certificat"));
         assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
-        let attendu = if c["salarie"] == json!(a) { (2, 0, "590.00") } else { (0, 3, "468.00") };
+        let attendu = if c["salarie"] == json!(a) { json!([2, 0, "590.00"]) } else { json!([0, 3, "468.00"]) };
         assert!(c["salarie"] == json!(a) || c["salarie"] == json!(t), "{}", c);
-        assert_eq!((c["cachets"].as_i64().unwrap(), c["jours"].as_i64().unwrap(), c["brut"].as_str().unwrap()), attendu, "{}", c);
+        assert_eq!(json!([c["cachets"], c["jours"], c["brut"]]), attendu, "{}", c);
     }
     // Reimporte : rien de neuf.
     reussi(&route(&racine, "importer", json!({})));
@@ -482,9 +482,8 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     for c in &contrats {
         assert_eq!((&c["atteste_par"], &c["numero_objet"]), (&json!("AEM"), &json!("999Z99999901")), "{}", c);
         assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
-        let attendu = if c["salarie"] == json!(a) { (0, 2, 2, "590.40") } else { (0, 0, 3, "468.15") };
-        let n = |k: &str| c[k].as_i64().unwrap();
-        assert_eq!((n("heures"), n("cachets"), n("jours"), c["brut"].as_str().unwrap()), attendu, "{}", c);
+        let attendu = if c["salarie"] == json!(a) { json!([0, 2, 2, "590.40"]) } else { json!([0, 0, 3, "468.15"]) };
+        assert_eq!(json!([c["heures"], c["cachets"], c["jours"], c["brut"]]), attendu, "{}", c);
     }
     reussi(&route(&racine, "importer", json!({})));
     assert_eq!(contrats_importes(&racine).len(), 2);
@@ -504,7 +503,7 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     let contrats = contrats_importes(&racine);
     assert_eq!(contrats.len(), 1, "{:?}", contrats);
     assert_eq!(contrats[0]["atteste_par"], json!("bulletin"), "{}", contrats[0]);
-    assert!(contrats[0]["heures"].as_i64().unwrap() > 0, "{}", contrats[0]);
+    assert!(contrats[0]["heures"].is_u64() && contrats[0]["heures"] != json!(0), "{}", contrats[0]);
     assert_eq!(engagement::importe::tous(&racine).unwrap().len(), 1, "un engagement, pas deux");
 }
 

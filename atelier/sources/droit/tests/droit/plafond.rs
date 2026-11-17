@@ -17,6 +17,7 @@ use socle::echec::R;
 use serde::Deserialize;
 use std::collections::HashMap;
 use crate::outils::le_jour as j;
+use crate::outils::l_annee;
 use crate::outils::typee::{chemin_donnee, code_livre, lire, lire_chemin};
 
 /// Le montant qu'un exemple ecrit.
@@ -69,7 +70,7 @@ fn du_au(d: Jour, f: Jour) -> Periode {
 /// Le PSS : la section `plafond_securite_sociale` du bareme de l'annee (`donnees/baremes/AAAA.json`).
 fn table() -> HashMap<Annee, Pss> {
     let mut t = HashMap::new();
-    for annee in [Annee::constante(2025), Annee::constante(2026)] {
+    for annee in [l_annee("2025"), l_annee("2026")] {
         let b: BaremePss = lire(&code_livre(), &format!("baremes/{}.json", annee));
         t.insert(annee, Pss::en_euros_entiers(b.plafond_securite_sociale.mensuel, b.plafond_securite_sociale.horaire));
     }
@@ -128,7 +129,7 @@ fn la_grille_depuis_le_texte() {
     let t = table();
     let pss = pss_depuis_table(&t);
     let mut cas = 0;
-    for annee in [Annee::constante(2025), Annee::constante(2026)] {
+    for annee in [l_annee("2025"), l_annee("2026")] {
         for mois in annee.les_mois() {
             // Le 1er et le 20 du mois.
             for debut in [mois.premier_jour(), ajouter(mois.premier_jour(), 19)] {

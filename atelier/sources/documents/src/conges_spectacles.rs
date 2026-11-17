@@ -460,7 +460,7 @@ fn cle_absente(k: &str) -> Echec {
 // --------------------------------------------------------------------- rendu
 
 fn cases_date(j: &Jour) -> String {
-    format!("{:02} {:02} {:04}", j.jour, j.mois, j.an)
+    j.jj_mm_aaaa_en_cases()
 }
 
 /// 12345678900017 -> '123456789 00017'.
@@ -528,7 +528,7 @@ fn valeurs(c: &Certificat, p: &ContratDuCertificat, ent: &ChampsEntreprise) -> R
     out.push(("base_conge", dit(c.base.a_l_euro())));
     out.push(("salaire_brut", dit(c.brut.a_l_euro())));
     let e = c.emission;
-    out.push(("date", format!("{:02}/{:02}/{:02}", e.jour, e.mois, e.an % 100)));
+    out.push(("date", e.jj_mm_aa()));
     out.push(("signataire", texte_requis(&sig.nom, "nom")?));
     out.push((
         "agrement",

@@ -1302,17 +1302,49 @@ impl<const N: u8> std::fmt::Display for RangDansUneGrille<N> {
 
 /// UN DECALAGE DANS UNE SUITE QUI TOURNE : tant de crans apres (positif) ou avant (negatif) ; il se lit d'un nombre
 /// entier signe (`1` le suivant, `-1` le precedent : « un autre » conseil du jour, `routes::gestes::conseils`). Il decale
-/// un rang dans une suite de `n` (`depuis`) ; son nombre ne sort pas.
+/// l'element du jour d'une `SuiteQuiTourne` ; son nombre ne sort pas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(transparent)]
 pub struct DecalageDansUneSuite(i64);
 
-impl DecalageDansUneSuite {
-    /// LE RANG `rang` D'UNE SUITE DE `n` RANGS, DECALE DE LUI en tournant : `(rang + decalage) mod n` (un decalage
-    /// negatif recule, et passe du premier au dernier). `n` est non nul.
-    pub fn depuis(self, rang: usize, n: usize) -> usize {
-        // Un compte tient en 128 bits signes ; le reste, de 0 a `n` exclu, est un compte.
-        (rang as i128 + i128::from(self.0)).rem_euclid(n as i128) as usize
+/// UNE SUITE QUI TOURNE AU FIL DES JOURS : ses elements dans leur ordre (jamais aucun), dont chaque jour montre un. Le
+/// pas de la rotation est le premier entier a partir de N x 0,618 qui est premier avec N : deux jours voisins ne tombent
+/// pas sur deux elements voisins (la banque des conseils est rangee par domaine), et N jours de suite les montrent tous ;
+/// un decalage (« un autre ») avance ou recule d'autant de crans, en tournant. Elle rend l'element (`du_jour`) : son rang
+/// ne sort pas. Les conseils « Le saviez-vous ? » du jour (`routes::gestes::conseils`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiteQuiTourne<T>(Vec<T>);
+
+impl<T> SuiteQuiTourne<T> {
+    /// La suite de ces elements, dans leur ordre ; `None` s'il n'y en a aucun.
+    pub fn de(elements: Vec<T>) -> Option<SuiteQuiTourne<T>> {
+        (!elements.is_empty()).then_some(SuiteQuiTourne(elements))
+    }
+
+    /// L'ELEMENT DU JOUR `jour`, decale de `decalage` : le rang `(ordinal x pas) mod N`, puis `(rang + decalage) mod N`
+    /// (un decalage negatif recule, et passe du premier au dernier).
+    pub fn du_jour(mut self, jour: &crate::date::Jour, decalage: Option<DecalageDansUneSuite>) -> T {
+        let n = self.0.len();
+        let mut pas = (n * 618).div_ceil(1000).max(1);
+        while pgcd(pas, n) != 1 {
+            pas += 1;
+        }
+        // Un compte tient en 128 bits signes ; le reste, de 0 a `n` exclu, est un compte, que seul l'element prend.
+        let du_jour = i128::from(jour.ordinal()) * pas as i128;
+        let decale = match decalage {
+            Some(d) => du_jour.rem_euclid(n as i128) + i128::from(d.0),
+            None => du_jour,
+        };
+        self.0.swap_remove(decale.rem_euclid(n as i128) as usize)
+    }
+}
+
+/// Le plus grand diviseur commun de deux comptes.
+fn pgcd(a: usize, b: usize) -> usize {
+    if b == 0 {
+        a
+    } else {
+        pgcd(b, a % b)
     }
 }
 

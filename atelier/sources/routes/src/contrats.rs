@@ -961,7 +961,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             (String::new(), parti)
         };
         // Le jour du depart, « JJ/MM », s'il est dit.
-        let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
+        let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {}", j.jj_mm())).into_iter().collect();
         let remis = etats::mot_de_la_remise(par, etats::PlaceDeLaRemise::Phrase);
         let attente = format!("{}{}{}", ce, remis, le);
         let numero = p.engagement.numero.clone();

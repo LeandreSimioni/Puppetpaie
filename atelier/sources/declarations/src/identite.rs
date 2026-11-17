@@ -90,7 +90,7 @@ impl NaissanceDeclaree {
         let (jour, mois) = (n(jj), n(mm));
         let an = Zone::lue(aaaa, format::AnneeEnChiffres).valeur()?.ok()?;
         let inconnu = |x: u32| x == 0 || x == 99;
-        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (Annee::constante(1800)..=Annee::constante(2099)).contains(&an);
+        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (const { Annee::constante(1800) }..=const { Annee::constante(2099) }).contains(&an);
         if !forme {
             return None;
         }

@@ -112,7 +112,7 @@ impl Echeance {
     /// nominale (le 5 ou le 15 du mois suivant), soit le meme jour du mois declare ; le cahier ne dit pas d'ou il se
     /// compte. Avant ce jour, la DSN est a venir.
     pub fn premier_depot(&self) -> R<Jour> {
-        self.nominale.mois_civil().precedent().jour_exige(self.nominale.jour)
+        self.nominale.avant(socle::date::Duree::mois(1))
     }
 
     /// Pourquoi la date a bouge, ou `None`.

@@ -37,7 +37,7 @@ use droit::contexte::Contexte;
 use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
 use socle::date::{Jour, Periode};
-use socle::grandeurs::DecalageDansUneSuite;
+use socle::grandeurs::{DecalageDansUneSuite, SuiteQuiTourne};
 use droit::emplois;
 use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
@@ -649,24 +649,6 @@ fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -
 
 // ------------------------------------------------------------ le demarrage
 
-fn pgcd(a: usize, b: usize) -> usize {
-    if b == 0 {
-        a
-    } else {
-        pgcd(b, a % b)
-    }
-}
-
-/// Le pas de la rotation : le premier entier a partir de N x 0,618 qui est premier avec N. Deux jours voisins ne
-/// tombent pas sur deux conseils voisins de la banque (rangee par domaine), et N jours de suite les montrent tous.
-fn pas(n: usize) -> usize {
-    let mut s = (n * 618).div_ceil(1000).max(1);
-    while pgcd(s, n) != 1 {
-        s += 1;
-    }
-    s
-}
-
 /// Les conseils generaux affichables cette annee, dans l'ordre de la banque, deja rendus.
 fn generaux(b: &Banque, d: &Donnees) -> R<Vec<ConseilVu>> {
     let mut out = Vec::new();
@@ -686,17 +668,7 @@ fn du_jour(ctx: &Contexte, decalage: Option<DecalageDansUneSuite>) -> R<Option<C
     let b = banque()?;
     let jour = ctx.aujourdhui;
     let d = Donnees::de_l_annee(jour.annee());
-    let liste = generaux(&b, &d)?;
-    let n = liste.len();
-    if n == 0 {
-        return Ok(None);
-    }
-    let rang_du_jour = jour.rang_dans_une_suite(pas(n), n);
-    let rang = match decalage {
-        Some(d) => d.depuis(rang_du_jour, n),
-        None => rang_du_jour,
-    };
-    Ok(liste.into_iter().nth(rang))
+    Ok(SuiteQuiTourne::de(generaux(&b, &d)?).map(|suite| suite.du_jour(&jour, decalage)))
 }
 
 // ------------------------------------------------------- les faits d'une paie

@@ -491,14 +491,14 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     }
     let aujourd_hui = ctx.aujourdhui;
     let lisez_moi = format!(
-        "Exercice {} -- archive de cloture, PuppetPaie, le {:02}/{:02}/{:04}.\n\n\
+        "Exercice {} -- archive de cloture, PuppetPaie, le {}.\n\n\
          engagements/ les engagements de chaque mois ou ils commencent, et leurs paies validees\n\
          sorties/    bulletins, contrats (signes dans envoi/), DPAE, DSN, certificats, courriels\n\
          retours/    les reponses des organismes (net-entreprises, Urssaf DPAE)\n\
          journal/    le journal des depots\n\
          config/     les fiches telles qu'elles etaient a la cloture\n\
          compta/     le journal des ecritures de paie\n",
-        annee, aujourd_hui.jour, aujourd_hui.mois, aujourd_hui.an
+        annee, aujourd_hui.jj_mm_aaaa()
     );
     entrees.push(entree_ecrite("LISEZ-MOI.txt".to_string(), lisez_moi.into_bytes()));
     let n = entrees.len();
