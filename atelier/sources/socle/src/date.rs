@@ -42,18 +42,24 @@ impl Unite for EnMois {}
 mod unite {
     use super::{Jour, R};
 
+    /// Le jeton de ses methodes : il ne se fabrique qu'ici (`JETON`), et elles ne s'appellent pas hors de ce module, meme
+    /// par un generique qui prend une `Unite`.
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     /// Ce que fait une unite, que seul ce module appelle : se compter depuis un jour, se dire.
     pub trait Scellee: Copy {
         /// Le jour `n` unites plus loin (`n` negatif : plus tot).
-        fn decaler(j: &Jour, n: i64) -> R<Jour>;
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+        fn decaler(j: &Jour, n: i64, jeton: Jeton) -> R<Jour>;
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, jeton: Jeton) -> std::fmt::Result;
     }
 
     impl Scellee for super::EnJours {
-        fn decaler(j: &Jour, n: i64) -> R<Jour> {
+        fn decaler(j: &Jour, n: i64, _: Jeton) -> R<Jour> {
             j.plus_jours(n)
         }
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, _: Jeton) -> std::fmt::Result {
             if n <= 1 {
                 write!(f, "{} jour", n)
             } else {
@@ -63,10 +69,10 @@ mod unite {
     }
 
     impl Scellee for super::EnMois {
-        fn decaler(j: &Jour, n: i64) -> R<Jour> {
+        fn decaler(j: &Jour, n: i64, _: Jeton) -> R<Jour> {
             j.plus_mois(n)
         }
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, _: Jeton) -> std::fmt::Result {
             write!(f, "{} mois", n)
         }
     }
@@ -221,7 +227,7 @@ impl Duree<EnMois> {
 /// « 1 jour », « 3 jours », « 2 mois ».
 impl<U: Unite> std::fmt::Display for Duree<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        U::dire(self.0, f)
+        U::dire(self.0, f, unite::JETON)
     }
 }
 
@@ -822,25 +828,19 @@ impl Anciennete {
         crate::grandeurs::du_decimal(num::en_decimal(p))
     }
 
-    /// LES MOIS DE SALAIRE QU'UNE TRANCHE D'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de
-    /// salaire par année d'ancienneté pour les années jusqu'à dix ans ») : ses annees au-dela de `bas` et jusqu'a `haut`
-    /// (`None` : sans borne), chacune `par_annee` mois de salaire ; rien quand elle n'atteint pas `bas`. Le compte se
-    /// fait en annees (`annees`), l'arithmetique de la paie (`num`).
-    pub fn par_annee_dans_la_tranche(self, bas: Anciennete, haut: Option<Anciennete>, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::Coefficient {
-        let annees = self.annees();
+    /// LES MOIS DE SALAIRE QU'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de salaire par
+    /// année d'ancienneté pour les années jusqu'à dix ans ») : ses annees au-dela de `bas` et jusqu'a `haut` (`None` :
+    /// sans borne ; une tranche ; de `ZERO` sans borne, toutes ses annees : un bareme par bandes, un prorata, la mise a la
+    /// retraite d'une convention), chacune `par_annee` mois de salaire ; rien quand elle n'atteint pas `bas`. Exacts : ses
+    /// mois dans la tranche fois `par_annee`, des douziemes de mois de salaire (`grandeurs::MoisDeSalaire`) ; l'annee ne se
+    /// divise qu'au montant.
+    pub fn par_annee_dans_la_tranche(self, bas: Anciennete, haut: Option<Anciennete>, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::MoisDeSalaire {
         let haut = match haut {
-            Some(h) => h.annees(),
-            None => annees,
+            Some(h) => h.0,
+            None => self.0,
         };
-        let part = num::add(annees.min(haut), -bas.annees()).max(Decimal::ZERO);
-        crate::grandeurs::du_decimal(num::mul(part, crate::grandeurs::decimal(par_annee)))
-    }
-
-    /// TOUTES SES ANNEES, chacune a `par_annee` mois de salaire (un bareme par bandes, un prorata, la mise a la retraite
-    /// d'une convention) : annees x coefficient = coefficient, des mois de salaire. Par tranches :
-    /// `par_annee_dans_la_tranche`.
-    pub fn par_annee(self, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::Coefficient {
-        crate::grandeurs::du_decimal(num::mul(self.annees(), crate::grandeurs::decimal(par_annee)))
+        let part = num::sub(self.0.min(haut), bas.0).max(Decimal::ZERO);
+        crate::grandeurs::MoisDeSalaire::douziemes(num::mul(part, crate::grandeurs::decimal(par_annee)))
     }
 
     /// SES MOIS ECRITS TELS QU'ILS SONT, le point decimal, son echelle gardee (`23.4838709677419354838709677`, `24`) :
@@ -1036,14 +1036,14 @@ impl Jour {
     /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
     #[track_caller]
     pub fn apres<U: Unite>(&self, d: Duree<U>) -> R<Jour> {
-        U::decaler(self, i64::from(d.0))
+        U::decaler(self, i64::from(d.0), unite::JETON)
     }
 
     /// LE JOUR QUI PRECEDE DE `d` CELUI-CI : `d` jours plus tot, ou le meme quantieme `d` mois de calendrier plus tot (le
     /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
     #[track_caller]
     pub fn avant<U: Unite>(&self, d: Duree<U>) -> R<Jour> {
-        U::decaler(self, -i64::from(d.0))
+        U::decaler(self, -i64::from(d.0), unite::JETON)
     }
 
     /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne

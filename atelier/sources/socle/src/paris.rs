@@ -331,6 +331,166 @@ impl<'de> serde::Deserialize<'de> for DelaiEnHeures {
     }
 }
 
+/// L'INSTANT QU'ECRIT L'EN-TETE `Date` D'UN COURRIEL (RFC 5322), ou `None` quand il est illisible (ou hors du
+/// calendrier) : la lecture du format `piece::format::DateRfc5322`.
+///
+/// `-0000` est une heure UT, comme `+0000` : la RFC 5322, § 3.3 (`atelier/reference/sources/ietf/LISEZ-MOI.md`), ne lui
+/// retire que l'information sur le fuseau LOCAL de l'expediteur ; un nom de fuseau inconnu (`CEST`) et une zone
+/// militaire valent `-0000` (§ 4.3). Un en-tete sans fuseau se lit comme une heure de Paris : une INFERENCE du moteur,
+/// pas un texte. La RFC exige la zone (`time = time-of-day zone`, l. 808 ; `obs-zone`, l. 1838) et laisse a
+/// l'implementation ce qu'elle fait d'une forme qu'elle ne decrit pas, pourvu qu'elle ne perde pas le message (§ 4,
+/// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
+/// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
+pub(crate) fn date_rfc5322(brut: &str) -> Option<Moment> {
+    let (an, mois, jour, h, mi, s, decalage) = champs_rfc5322(brut)?;
+    let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
+        (Ok(a), Ok(m), Ok(j)) => (a, m, j),
+        // Un champ hors de ce qu'une date peut porter : l'en-tete est illisible.
+        _ => return None,
+    };
+    let j = Jour::nouveau(an, mois, jour)?;
+    if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
+        return None;
+    }
+    match decalage {
+        // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris (l'heure sautee du passage a l'ete) est
+        // illisible.
+        None => {
+            let instant = Moment::a_paris_a_la_seconde(j, HeureDuJour::lue(h, mi)?, s)?;
+            (instant.jour_de_paris() == j && instant.seconde_du_jour_de_paris() == h * 3_600 + mi * 60 + s).then_some(instant)
+        }
+        Some(d) => {
+            // `timezone(timedelta(seconds=d))` : strictement entre -24 h et 24 h.
+            if d.abs() >= 86_400 {
+                return None;
+            }
+            let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
+            Moment::de_secondes(t)
+        }
+    }
+}
+
+/// Les mois en anglais d'un en-tete `Date` (les abreges, puis les noms entiers).
+const MOIS_RFC5322: [&str; 24] = [
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec", "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+];
+
+/// Les champs d'un en-tete `Date` : (an, mois, jour, heure, minute, seconde, decalage en secondes ou `None`). Chacun un
+/// entier signe en chiffres ASCII (ni autres ecritures de chiffres, ni `_`).
+fn champs_rfc5322(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i64>)> {
+    let entier = crate::num::entier_signe;
+    let mut d: Vec<String> = donnees.split(crate::texte::blanc).filter(|x| !x.is_empty()).map(String::from).collect();
+    if d.is_empty() {
+        return None;
+    }
+    const JOURS: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+    if d[0].ends_with(',') || JOURS.contains(&d[0].to_lowercase().as_str()) {
+        d.remove(0);
+    } else if let Some(i) = d[0].rfind(',') {
+        d[0] = d[0][i + 1..].to_string();
+    }
+    if d.len() == 3 {
+        let morceaux: Vec<String> = d[0].split('-').map(String::from).collect();
+        if morceaux.len() == 3 {
+            let reste: Vec<String> = d[1..].to_vec();
+            d = morceaux.into_iter().chain(reste).collect();
+        }
+    }
+    if d.len() == 4 {
+        let s = d[3].clone();
+        let i = s.find('+').or_else(|| s.find('-'));
+        match i {
+            Some(i) if i > 0 => {
+                d.truncate(3);
+                d.push(s[..i].to_string());
+                d.push(s[i..].to_string());
+            }
+            _ => d.push(String::new()),
+        }
+    }
+    if d.len() < 5 {
+        return None;
+    }
+    d.truncate(5);
+    let (mut dd, mut mm, mut yy, mut tm, mut tz) = (d[0].clone(), d[1].clone(), d[2].clone(), d[3].clone(), d[4].clone());
+    if dd.is_empty() || mm.is_empty() || yy.is_empty() {
+        return None;
+    }
+    mm = mm.to_lowercase();
+    if !MOIS_RFC5322.contains(&mm.as_str()) {
+        let ancien = dd.clone();
+        dd = mm.clone();
+        mm = ancien.to_lowercase();
+        if !MOIS_RFC5322.contains(&mm.as_str()) {
+            return None;
+        }
+    }
+    let mut mois = MOIS_RFC5322.iter().position(|m| *m == mm)? as i64 + 1;
+    if mois > 12 {
+        mois -= 12;
+    }
+    if dd.ends_with(',') {
+        dd.pop();
+    }
+    if yy.find(':').is_some_and(|i| i > 0) {
+        std::mem::swap(&mut yy, &mut tm);
+    }
+    if yy.ends_with(',') {
+        yy.pop();
+        if yy.is_empty() {
+            return None;
+        }
+    }
+    if !yy.chars().next().is_some_and(crate::texte::est_chiffre) {
+        std::mem::swap(&mut yy, &mut tz);
+    }
+    if tm.ends_with(',') {
+        tm.pop();
+    }
+    let t: Vec<&str> = tm.split(':').collect();
+    let (hh, mi, ss): (String, String, String) = match t.len() {
+        2 => (t[0].into(), t[1].into(), "0".into()),
+        3 => (t[0].into(), t[1].into(), t[2].into()),
+        1 if t[0].contains('.') => {
+            let p: Vec<&str> = t[0].split('.').collect();
+            match p.len() {
+                2 => (p[0].into(), p[1].into(), "0".into()),
+                3 => (p[0].into(), p[1].into(), p[2].into()),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    let (mut an, jour, heure, minute, seconde) = (entier(&yy)?, entier(&dd)?, entier(&hh)?, entier(&mi)?, entier(&ss)?);
+    if an < 100 {
+        an += if an > 68 { 1900 } else { 2000 };
+    }
+    let tz = tz.to_uppercase();
+    let nommes: [(&str, i64); 14] = [
+        ("UT", 0), ("UTC", 0), ("GMT", 0), ("Z", 0), ("AST", -400), ("ADT", -300), ("EST", -500), ("EDT", -400), ("CST", -600), ("CDT", -500), ("MST", -700),
+        ("MDT", -600), ("PST", -800), ("PDT", -700),
+    ];
+    // Un nom de fuseau que cette table ne connait pas (« CEST »), ou une zone militaire d'une lettre : RFC 5322, § 4.3,
+    // « SHOULD be considered equivalent to "-0000" » -- une heure UT (§ 3.3). Sans fuseau, ou avec un commentaire seul
+    // (« (CEST) »), `None` : l'heure de Paris, une inference du moteur que la RFC laisse a l'implementation (§ 4,
+    // l. 1711-1718 ; `atelier/reference/sources/ietf/LISEZ-MOI.md`).
+    let decalage: Option<i64> = match nommes.iter().find(|(n, _)| *n == tz) {
+        Some((_, v)) => Some(*v),
+        None if !tz.is_empty() && tz.bytes().all(|b| b.is_ascii_alphabetic()) => Some(0),
+        None => entier(&tz),
+    };
+    let decalage = decalage.map(|v| {
+        if v == 0 {
+            0
+        } else {
+            let (signe, v) = if v < 0 { (-1, -v) } else { (1, v) };
+            signe * ((v / 100) * 3600 + (v % 100) * 60)
+        }
+    });
+    Some((an, mois, jour, heure, minute, seconde, decalage))
+}
+
 /// LES ECRITURES D'UN INSTANT : une facon d'ecrire n'est pas un type. Chaque forme de fichier dit la sienne par un
 /// attribut serde (`#[serde(with = "socle::paris::ecrit::seconde")]`, `…::option` pour un `Option<Moment>` : absent ou
 /// `null`, `None`), ou l'ecrit par `ecrit::<forme>::texte`. Une heure de Paris se lit champ a champ, l'instant se

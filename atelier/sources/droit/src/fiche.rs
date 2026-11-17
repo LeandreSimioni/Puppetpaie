@@ -1153,31 +1153,25 @@ notion_lue!(Matricule rangee par tel_quel);
 /// nombre, lu par la lecture du nombre tape ; la fiche l'ecrit en nombre, et l'y relit strictement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct EchelonCcneac(u8);
+pub struct EchelonCcneac(socle::grandeurs::RangDansUneGrille<12>);
 
 /// Ce que la case de l'echelon attend.
 const UN_ECHELON: &str = "un échelon, de 1 à 12";
 
+/// La phrase d'un nombre `ecrit` hors de 1 a 12.
+fn hors_des_echelons(ecrit: &str) -> String {
+    format!("« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué", ecrit)
+}
+
 impl EchelonCcneac {
     /// Son rang dans la grille, de 1 a 12.
     pub fn rang(self) -> usize {
-        usize::from(self.0)
+        self.0.rang()
     }
 
     /// L'echelon tape `texte`, ou la phrase qui le refuse : un texte qui ne se lit pas en nombre entier, par sa raison.
     pub fn lire(texte: &str) -> R<EchelonCcneac> {
-        socle::grandeurs::lu::entier_tape(texte, UN_ECHELON).map_err(socle::echec::refus).and_then(EchelonCcneac::de_rang)
-    }
-
-    /// L'echelon de rang `n`, ou la phrase qui le refuse hors de 1 a 12.
-    fn de_rang(n: u64) -> R<EchelonCcneac> {
-        match u8::try_from(n).ok().filter(|n| (1..=12).contains(n)) {
-            Some(n) => Ok(EchelonCcneac(n)),
-            None => Err(socle::refus!(
-                "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
-                n
-            )),
-        }
+        socle::grandeurs::RangDansUneGrille::tape(texte, UN_ECHELON, hors_des_echelons).map(EchelonCcneac)
     }
 
     /// Ce qui refuse `texte` ; rien pour un texte vide (la case vide s'ecrit nulle).
@@ -1198,7 +1192,7 @@ impl std::fmt::Display for EchelonCcneac {
 /// Un nombre entier (dans une saisie, aussi le texte qu'une personne a tape, par la meme lecture), de 1 a 12 : sa porte.
 impl<'de> Deserialize<'de> for EchelonCcneac {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        EchelonCcneac::de_rang(socle::grandeurs::lu::entier(d, UN_ECHELON)?).map_err(|e| serde::de::Error::custom(e.phrase))
+        socle::grandeurs::RangDansUneGrille::lu(d, UN_ECHELON, hors_des_echelons).map(EchelonCcneac)
     }
 }
 

@@ -238,7 +238,7 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 /// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
 pub fn euros<E: EnEuros>(x: E) -> String {
     // Le signe est celui du montant au centime : ce qui s'arrondit a zero n'en a plus.
-    let c = au_centime(x.decimal_ecrit());
+    let c = au_centime(x.decimal_ecrit(scelle::JETON));
     format!("{}\u{a0}€", aux_centimes(c.is_sign_negative(), c.abs(), '\u{a0}'))
 }
 
@@ -246,7 +246,7 @@ pub fn euros<E: EnEuros>(x: E) -> String {
 /// « 1 234,50 », au centime (`Montant::au_centime`), la virgule décimale, les milliers séparés par une espace ordinaire,
 /// sans « € » ; le signe est celui de l'original (`-0,00` pour un retrait qui s'arrondit à zéro).
 pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
-    chiffres(x.decimal_ecrit())
+    chiffres(x.decimal_ecrit(scelle::JETON))
 }
 
 /// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
@@ -297,19 +297,25 @@ fn aux_centimes(negatif: bool, c: rust_decimal::Decimal, separateur: char) -> St
 pub trait EnEuros: scelle::EnEuros {}
 
 mod scelle {
+    /// Le jeton de `decimal_ecrit` : il ne se fabrique qu'ici (`JETON`), et la methode ne s'appelle pas hors de ce
+    /// module, meme par un generique qui prend `EnEuros`.
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     /// Son decimal, que seuls `euros` et `chiffres_en_euros` ecrivent.
     pub trait EnEuros {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal;
+        fn decimal_ecrit(self, jeton: Jeton) -> rust_decimal::Decimal;
     }
 
     impl EnEuros for crate::grandeurs::Montant {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+        fn decimal_ecrit(self, _: Jeton) -> rust_decimal::Decimal {
             crate::grandeurs::decimal(self)
         }
     }
 
     impl EnEuros for crate::grandeurs::MontantUnitaire {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal {
+        fn decimal_ecrit(self, _: Jeton) -> rust_decimal::Decimal {
             crate::grandeurs::decimal(self)
         }
     }
@@ -341,7 +347,7 @@ fn milliers(entier: &str, separateur: char) -> String {
 /// UNE GRANDEUR TELLE QU'ON LA LIT dans une phrase (des heures, des jours, un effectif, un taux) : la virgule décimale,
 /// sans zéro inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
-    nombre_dit(g.en_decimal())
+    nombre_dit(crate::grandeurs::decimal(g))
 }
 
 /// DES HEURES DITES dans une phrase, au centieme, la moitie au pair (`Heures::a_deux_decimales`), sans zero inutile :
@@ -366,7 +372,7 @@ pub fn heures_et_minutes(h: crate::grandeurs::Heures) -> String {
 
 /// UNE QUANTITE SE DIT AU PLURIEL dès deux (« 1,5 journée », « 2 cachets »).
 pub fn au_pluriel<G: crate::grandeurs::Grandeur>(g: G) -> bool {
-    g.en_decimal() >= rust_decimal::Decimal::TWO
+    crate::grandeurs::decimal(g) >= rust_decimal::Decimal::TWO
 }
 
 /// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
@@ -384,13 +390,13 @@ pub fn a_virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
 /// UNE GRANDEUR CITÉE PAR UN CONSEIL (« 1 234,5 », « 15,5 ») : au centième, la moitié loin de zéro, sans zéro inutile, les
 /// milliers séparés par une espace insécable, la virgule décimale. Son arrondi est celui d'un affichage.
 pub fn par_milliers<G: crate::grandeurs::Grandeur>(g: G) -> String {
-    nombre_par_milliers(g.en_decimal(), None)
+    nombre_par_milliers(crate::grandeurs::decimal(g), None)
 }
 
 /// La même, `decimales` décimales écrites (« 0,90 », « 60 ») : un taux, un coefficient qu'un conseil cite (un montant
 /// s'écrit par `euros`).
 pub fn par_milliers_a<G: crate::grandeurs::Grandeur>(g: G, decimales: u32) -> String {
-    nombre_par_milliers(g.en_decimal(), Some(decimales))
+    nombre_par_milliers(crate::grandeurs::decimal(g), Some(decimales))
 }
 
 /// UN COMPTE DIT DANS UNE PHRASE (« 3 », « 1 200 ») : les milliers séparés par une espace insécable, comme

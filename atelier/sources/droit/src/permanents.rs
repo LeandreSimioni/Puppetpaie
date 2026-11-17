@@ -12,7 +12,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 /// Les regles livrees des contrats permanents, sous `donnees/`.
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("permanents-base.json");
 use socle::echec::R;
-use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Coefficient, Heures, Jours, MoisDeSalaire, Montant, MontantUnitaire, Taux};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -321,7 +321,7 @@ forme! {
     pub struct PalierDeDepart {
         #[serde(deserialize_with = "Anciennete::en_annees")]
         pub anciennete_annees: Anciennete,
-        pub mois_de_salaire: Coefficient,
+        pub mois_de_salaire: MoisDeSalaire,
     }
 }
 
@@ -983,7 +983,7 @@ pub struct PlancherDeLaRupture {
 pub struct IndemniteDuDepart {
     pub montant: Montant,
     pub du: bool,
-    pub mois: Coefficient,
+    pub mois: MoisDeSalaire,
     /// L'anciennete du palier atteint.
     pub palier: Option<Anciennete>,
     pub pourquoi: Option<String>,
@@ -1048,7 +1048,7 @@ pub fn indemnite_licenciement(
 fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant, Anciennete)> {
     let rg = regles()?;
     let comptee = anciennete.mois_complets();
-    let (mut total, mut bas) = (Coefficient::ZERO, Anciennete::ZERO);
+    let (mut total, mut bas) = (MoisDeSalaire::ZERO, Anciennete::ZERO);
     for t in &rg.indemnite_licenciement.taux {
         // La derniere tranche n'a pas de borne : elle va jusqu'a l'anciennete.
         total = total + comptee.par_annee_dans_la_tranche(bas, t.jusqu_a_annees, t.fraction_de_mois);
@@ -1057,7 +1057,6 @@ fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant
             Some(_) | None => break,
         }
     }
-    // Les mois de salaire que le bareme compte sont un coefficient du salaire de reference.
     Ok(((reference * total).au_centime(), comptee))
 }
 
@@ -1178,7 +1177,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
         return Err(socle::echec::livree(&BASE, "depart_a_la_retraite.indemnite.taux"));
     };
     let Some(palier) = tries.iter().filter(|t| anciennete >= t.anciennete_annees).last() else {
-        return Ok(IndemniteDuDepart { montant: Montant::ZERO, du: false, mois: Coefficient::ZERO, palier: None, pourquoi: Some(format!(
+        return Ok(IndemniteDuDepart { montant: Montant::ZERO, du: false, mois: MoisDeSalaire::ZERO, palier: None, pourquoi: Some(format!(
             "{} an(s) d'anciennete, et l'indemnite legale de depart a la retraite commence a {} ans \
              (D1237-1) -- il n'y a pas de prorata en dessous. La convention collective, elle, \
              en prevoit souvent une des la premiere annee.",

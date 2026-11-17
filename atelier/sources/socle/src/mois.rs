@@ -391,6 +391,34 @@ impl<'de> serde::Deserialize<'de> for Annee {
     }
 }
 
+/// LE RANG D'UN NUMERO DANS LA SUITE DE SON ANNEE : celui d'un numero de contrat (`FA1.26.16` : 16) ou d'un numero de
+/// bulletin (`12/2026` : 12). La suite commence au premier (`PREMIER`) et chaque rang donne le suivant ; il se lit d'une
+/// zone ecrite en chiffres (`piece::format::Rang`) et s'ecrit par `Display` (qui suit la largeur demandee : `{:02}`).
+/// L'ordre est celui de la suite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RangDansLAnnee(u32);
+
+impl RangDansLAnnee {
+    /// Le premier de l'annee.
+    pub const PREMIER: RangDansLAnnee = RangDansLAnnee(1);
+
+    /// Le rang ecrit `n` (une zone lue, `piece::format::Rang`).
+    pub(crate) fn lu(n: u32) -> RangDansLAnnee {
+        RangDansLAnnee(n)
+    }
+
+    /// Le rang qui le suit.
+    pub fn suivant(self) -> RangDansLAnnee {
+        RangDansLAnnee(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for RangDansLAnnee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 /// Le mois dont parle un acte, ou le jour qui le date (l'evenement d'un signalement) : ecrit `AAAA-MM` ou `AAAA-MM-JJ`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoisOuJour {

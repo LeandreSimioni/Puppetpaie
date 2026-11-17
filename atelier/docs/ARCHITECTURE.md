@@ -61,7 +61,10 @@ que par la structure :
   voudrait lire du JSON brut ne compile pas (`une_crate_ne_prend_qu_a_celles_du_dessous` le lit dans les `Cargo.toml`).
   `rust_decimal` n'est au `Cargo.toml` que du `socle`, essais compris, et le socle garde internes son décimal et ce qui
   le prend ou le rend (`num`, `d28`, `grandeurs::decimal`, `du_decimal`, les champs de `forme::Nombre` et `Court`) :
-  hors du socle, écrire `Decimal` ou rouvrir une grandeur ne compile pas.
+  hors du socle, écrire `Decimal` ou rouvrir une grandeur ne compile pas. Un trait scellé du socle interdit qu'on
+  l'implémente, pas qu'on appelle ses méthodes par un générique (`B::du(a.en_decimal())` rouvrirait un montant en
+  heures) : chaque méthode scellée (`grandeurs::Grandeur`, `texte::EnEuros`, `piece::Format`, `date::Unite`) exige un
+  jeton que seul son module fabrique.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -188,6 +191,7 @@ un libellé, chacun sa forme.
 | mois de l'année | `MoisDeLAnnee` | `socle/src/mois.rs` |
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
 | année | `Annee` | `socle/src/mois.rs` |
+| rang d'un numéro dans la suite de son année (le contrat `FA1.26.16`, le bulletin `12/2026`) | `RangDansLAnnee` | `socle/src/mois.rs` |
 | période | `Periode` | `socle/src/date.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
 | durée de droit | `Duree<EnJours>`, `Duree<EnMois>` | `socle/src/date.rs` |
@@ -299,8 +303,8 @@ un libellé, chacun sa forme.
   (`annees_au_dixieme`), en années révolues
   (`ans_revolus_dits` : un nombre entier, négatif pour une ancienneté révolue qui l'est ; écrite dans un fichier,
   `ecrite_en_annees_entieres`, relue par `en_annees_entieres`) ; une tranche d'un barème par année
-  lui donne des mois de salaire (`par_annee_dans_la_tranche`, un `Coefficient` : R1234-2), et toutes ses années à une
-  même part, un barème par bandes, un prorata, une mise à la retraite d'une convention (`par_annee`, un `Coefficient`,
+  lui donne des mois de salaire (`par_annee_dans_la_tranche`, des `MoisDeSalaire` exacts : R1234-2), et, de zéro sans
+  borne, toutes ses années à une même part (un barème par bandes, un prorata, une mise à la retraite d'une convention,
   `droit::clauses`) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
@@ -317,7 +321,8 @@ un libellé, chacun sa forme.
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | `Montant` (les indemnités d'une convention aussi : mois de salaire × salaire de référence, au centime, `droit::clauses`) | `socle/src/grandeurs.rs` |
+| montant | `Montant` (les indemnités de rupture aussi : salaire de référence × mois de salaire, au centime, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
+| mois de salaire (ce qu'une indemnité de rupture compte en salaire de référence : un barème par année d'ancienneté, R1234-2 ; le palier, le plafond, le plancher d'une convention ou de la loi) | `MoisDeSalaire` (exacts : un nombre de mois tel que le texte le dit, ou compté sur une ancienneté en douzièmes, `Anciennete::par_annee_dans_la_tranche`, dont la division par douze ne se fait qu'au montant ; mois de salaire + mois de salaire, × coefficient (une majoration) ; salaire de référence × mois de salaire = montant ; écrits tels qu'ils sont, `ecrits`, `ecrits_sans_zero`) | `socle/src/grandeurs.rs` |
 | taux | `Taux` | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; des cachets ne se comptent qu'en entiers (Léandre, 17/11 : « 1,5 cachet, ça n'existe pas ») : chaque porte d'une grandeur refuse des cachets à virgule en nommant la case, et seule une grandeur qui se fractionne (`Fractionnable`, toutes les autres) se prend d'un décimal sans refus (`du_decimal`, `socle::forme::Nombre::grandeur`) ; la quantité imprimée d'une ligne de cachets se lit par `socle::forme::Nombre::cachets` | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
@@ -333,7 +338,7 @@ un libellé, chacun sa forme.
 | quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` (les mois de salaire d'une convention aussi, ses fractions par année et ses plafonds, `droit::clauses`) | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` (la part de mois de salaire qu'un barème donne par année d'ancienneté aussi, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` | `socle/src/grandeurs.rs` |
 | montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
 | taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
@@ -342,8 +347,9 @@ un libellé, chacun sa forme.
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
 | taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
-| nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu` | `socle/src/forme.rs` |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier` (interne au socle), qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture, en rang dans sa grille (`socle::grandeurs::RangDansUneGrille`) ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
+| nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue` ; un nombre lu avant que sa place dise sa grandeur, une fois : celui qu'une pièce imprime, `Nombre::a_virgule`, ou que la norme écrit, `Nombre::de_la_norme`, les seules lectures dont `grandeurs::lu::texte` et `lu::norme` se servent ; l'entier qu'une zone écrit en chiffres, `socle::piece::EntierDUneZone`, que sa colonne lit en sa grandeur, `en`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu`, `socle::piece::EntierDUneZone` | `socle/src/forme.rs`, `socle/src/piece.rs` |
+| rang dans une grille numérotée de 1 à N (l'échelon de la CCNEAC, une grille de douze, `droit::fiche::EchelonCcneac`) | `RangDansUneGrille<N>` (lu d'un nombre entier ou tapé, hors de 1 à N refusé en la phrase de sa notion ; son rang trouve sa ligne dans la grille) | `socle/src/grandeurs.rs` |
 
 **Le détail**
 

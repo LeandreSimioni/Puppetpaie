@@ -39,10 +39,9 @@ use std::path::Path;
 use droit::fiche::{NumeroObjetSpectacle, Statut};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{lu, Cachets, Heures, Jours};
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::Mois;
-use socle::piece::format::Chiffres;
-use socle::piece::Zone;
+use socle::piece::{format, EntierDUneZone, Zone};
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 
@@ -361,14 +360,10 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     let jour = |nom: &str| v(nom).and_then(|t: String| socle::piece::Zone::lue(&t, socle::piece::format::JourEcrit).valeur());
     let ecrit = |nom: &str| v(nom).map(|t| t.replace([' ', '\u{a0}'], ""));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
-    let chiffres = |nom: &str| v(nom).and_then(|t: String| Zone::lue(&t, Chiffres).valeur());
-    let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
-        (Some(a), Some(m), Some(j)) => match (a.try_into(), u32::try_from(m), u32::try_from(j)) {
-            (Ok(a), Ok(m), Ok(j)) => Jour::nouveau(a, m, j),
-            _ => None,
-        },
-        _ => None,
-    };
+    // La date de naissance, imprimee case a case : l'annee, le mois, puis le jour dans ce mois.
+    let annee = v("SALARIE_DT_NAISSANCE_A").and_then(|t| Zone::lue(&t, format::AnneeEnChiffres).valeur()).and_then(Result::ok);
+    let mois = v("SALARIE_DT_NAISSANCE_M").and_then(|t| Zone::lue(&t, format::MoisEnChiffres).valeur());
+    let naissance = annee.zip(mois).and_then(|(a, m)| v("SALARIE_DT_NAISSANCE_J").and_then(|t| Zone::lue(&t, format::JourDuMois(a.mois(m))).valeur()));
     // UN SIRET OU UNE CLE DU NIR QUI N'ONT PAS LEUR FORME se disent, et la page se refuse (`Aem::manque`) ; la cle
     // imprimee se garde quand c'est celle du NIR (`CleNir::du_nir`), comme sur une AEM (`lire_page`).
     let mut fautes: Vec<String> = Vec::new();
@@ -457,8 +452,8 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             fin_contrat: Some(fin),
             en_cours: false,
             periode: periode_attestee(Some(debut.mois_civil()), Some(debut), Some(fin), false),
-            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| Zone::lue(&t, Chiffres).valeur().and(lu::texte_entier(&t))),
-            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| Zone::lue(&t, Chiffres).valeur().and(lu::texte_entier(&t))),
+            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| Zone::lue(&t, format::Chiffres).valeur()).map(EntierDUneZone::en),
+            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| Zone::lue(&t, format::Chiffres).valeur()).map(EntierDUneZone::en),
             cachets_groupes: None,
             jours: None,
             brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::grandeurs::lu::texte(&t)),
@@ -773,7 +768,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.cmp(&b.x0));
     if !en_tetes.is_empty() {
         let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(Mesure::MIN, Mesure::max);
-        let mut par_colonne: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+        let mut par_colonne: std::collections::BTreeMap<&str, Vec<EntierDUneZone>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
         for u in inconnus.iter().filter(|u| u.y0 >= haut && !brut_tete.is_some_and(|r| u.y1 > r.y0) && section(u.y0) == 3) {
             if let Some((c, _)) = en_tetes.iter().map(|(c, t)| (*c, (t.cx() - u.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
@@ -795,15 +790,13 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         } else {
             // Une colonne du formulaire sans nombre ne compte rien : son total est la somme de ce qu'elle porte (aucun
             // nombre, zero). C'est une inference, tiree du formulaire lui-meme.
-            fn somme<G: socle::grandeurs::Grandeur + std::iter::Sum>(textes: Option<&Vec<&str>>) -> Option<G> {
-                textes.into_iter().flatten().map(|t| grandeur::<G>(t)).sum()
+            fn somme<G: socle::grandeurs::Grandeur + std::iter::Sum>(nombres: Option<&Vec<EntierDUneZone>>) -> G {
+                nombres.into_iter().flatten().map(|n| n.en::<G>()).sum()
             }
             let a_l_en_tete = |c: &str| en_tetes.iter().any(|x| x.0 == c);
             if a_l_en_tete("heures") && a_l_en_tete("jours") && (a_l_en_tete("isoles") || a_l_en_tete("groupes")) {
-                match (somme(par_colonne.get("heures")), somme(par_colonne.get("isoles")), somme(par_colonne.get("groupes")), somme(par_colonne.get("jours"))) {
-                    (Some(h), Some(i), Some(g), Some(j)) => (a.heures, a.cachets_isoles, a.cachets_groupes, a.jours) = (Some(h), Some(i), Some(g), Some(j)),
-                    _ => fautes.push("un nombre du mois ne se lit pas en entier"),
-                }
+                (a.heures, a.cachets_isoles, a.cachets_groupes, a.jours) =
+                    (Some(somme(par_colonne.get("heures"))), Some(somme(par_colonne.get("isoles"))), Some(somme(par_colonne.get("groupes"))), Some(somme(par_colonne.get("jours"))));
             }
         }
     }
@@ -843,7 +836,9 @@ fn objet_de_la_piece(texte: Option<&str>) -> Option<NumeroObjetSpectacle> {
     }
 }
 
-fn entier(t: &str) -> Option<&str> {
+/// Un nombre entier du formulaire, ecrit en chiffres seuls, des decimales nulles permises (`12`, `12,00`) : lu une fois,
+/// sa colonne dit sa grandeur (`EntierDUneZone::en`).
+fn entier(t: &str) -> Option<EntierDUneZone> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == ',') || !t.chars().next()?.is_ascii_digit() {
         return None;
     }
@@ -852,10 +847,5 @@ fn entier(t: &str) -> Option<&str> {
         Some(_) => return None,
         None => t,
     };
-    Zone::lue(chiffres, Chiffres).valeur().is_some().then_some(chiffres)
-}
-
-/// La grandeur qu'un nombre entier du formulaire ecrit en chiffres seuls (`entier`) : la porte de sa lecture.
-fn grandeur<G: socle::grandeurs::Grandeur>(t: &str) -> Option<G> {
-    entier(t).and_then(lu::texte_entier)
+    Zone::lue(chiffres, format::Chiffres).valeur()
 }

@@ -982,7 +982,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let mut rubriques: BTreeSet<(RubriqueDeLaNorme, String)> = BTreeSet::new();
     let mut spst = String::new();
     // La mesure (53.002) de l'activite en cours, telle qu'ecrite, jusqu'a son unite (53.003).
-    let mut mesure_ecrite: Option<String> = None;
+    let mut mesure_ecrite: Option<(String, socle::forme::Nombre)> = None;
     for ligne in &lignes {
         if ligne.trim_matches(blanc).is_empty() {
             continue;
@@ -1307,13 +1307,13 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             // La mesure (53.002) vient avant son unite (53.003) : elle se lit a la fin du bloc, dans la grandeur que son
             // unite dit (`MesureDActivite::lue`).
             // Une mesure qui n'est pas un nombre est une faute, que son unite suive ou non (53.003 est conditionnelle).
-            S21_53_002 => mesure_ecrite = fautes.valeur(rub, &v, "un nombre", socle::forme::Nombre::de_la_norme(&v).map(|_| v.clone())),
+            S21_53_002 => mesure_ecrite = fautes.valeur(rub, &v, "un nombre", socle::forme::Nombre::de_la_norme(&v)).map(|n| (v.clone(), n)),
             UniteDeMesure::RUBRIQUE => {
                 let ecrite = mesure_ecrite.take();
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
                 a.unite = UniteDeMesure::du_code(&v);
-                if let (Some(unite), Some(t)) = (a.unite, ecrite) {
-                    a.mesure = fautes.valeur(S21_53_002, &t, crate::dsn::MesureDActivite::attendue(unite), crate::dsn::MesureDActivite::lue(unite, &t));
+                if let (Some(unite), Some((t, n))) = (a.unite, ecrite) {
+                    a.mesure = fautes.valeur(S21_53_002, &t, crate::dsn::MesureDActivite::attendue(unite), crate::dsn::MesureDActivite::lue(unite, n));
                 }
             }
             S21_70_013 => rattachements.push(v),

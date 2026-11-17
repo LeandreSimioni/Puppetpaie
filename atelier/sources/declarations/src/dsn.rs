@@ -2167,16 +2167,15 @@ impl MesureDActivite {
     /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt`) borne ensemble « 10 - heure » et « 21 - forfait heure »
     /// (CCH-13), « 12 - journee » et « 20 - forfait jour » (CCH-14) : des heures (l'heure des intermittents, l'heure du
     /// dimanche en ESAT comprises), des jours (le jour CRPNPAC et les jours calendaires du plafond compris), des cachets
-    /// (isoles ou groupes), et des unites pour la pige, la vacation et la tache. `None` : `t` n'est pas un nombre, ou
-    /// des cachets a virgule (`attendue`).
-    pub fn lue(unite: UniteDeMesure, t: &str) -> Option<MesureDActivite> {
-        use socle::grandeurs::lu::norme as lu;
+    /// (isoles ou groupes), et des unites pour la pige, la vacation et la tache. Le nombre `n` est lu une fois, avant son
+    /// unite (`socle::forme::Nombre::de_la_norme`) ; `None` : des cachets a virgule (`attendue`).
+    pub fn lue(unite: UniteDeMesure, n: socle::forme::Nombre) -> Option<MesureDActivite> {
         use UniteDeMesure as U;
         match unite {
-            U::Heure | U::ForfaitHeure | U::HeuresIntermittents | U::HeureDimancheEsat => lu(t).map(MesureDActivite::Heures),
-            U::Journee | U::ForfaitJour | U::JourCrpnpac | U::JoursCalendairesDuPlafond => lu(t).map(MesureDActivite::Jours),
-            U::CachetsGroupes | U::CachetsIsoles | U::Cachet => lu(t).map(MesureDActivite::Cachets),
-            U::ALaPige | U::ALaVacation | U::ALaTache => lu(t).map(MesureDActivite::Unites),
+            U::Heure | U::ForfaitHeure | U::HeuresIntermittents | U::HeureDimancheEsat => Some(MesureDActivite::Heures(n.grandeur())),
+            U::Journee | U::ForfaitJour | U::JourCrpnpac | U::JoursCalendairesDuPlafond => Some(MesureDActivite::Jours(n.grandeur())),
+            U::CachetsGroupes | U::CachetsIsoles | U::Cachet => n.cachets().ok().map(MesureDActivite::Cachets),
+            U::ALaPige | U::ALaVacation | U::ALaTache => Some(MesureDActivite::Unites(n.grandeur())),
         }
     }
 

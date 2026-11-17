@@ -6,7 +6,7 @@ use crate::outils::typee::{cas_de, jouer, Rendu};
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
-use socle::grandeurs::{Coefficient, Jours, Montant};
+use socle::grandeurs::{Jours, Montant};
 
 /// Une anciennete de la reference, en mois, ecrite en texte (`23.5`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -17,11 +17,6 @@ struct A(#[serde(serialize_with = "Anciennete::ecrite_en_mois")] Anciennete);
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 struct M(#[serde(with = "socle::grandeurs::ecrit::texte")] Montant);
-
-/// Un coefficient de la reference (des mois de salaire), ecrit en texte (`0.5`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-struct C(#[serde(with = "socle::grandeurs::ecrit::texte")] Coefficient);
 
 /// Des jours de la reference, ecrits en texte (`2.5`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -70,7 +65,7 @@ struct PlancherDeLaRupture {
 struct IndemniteDuDepart {
     montant: M,
     du: bool,
-    mois: C,
+    mois: String,
     #[serde(default, serialize_with = "Anciennete::ecrite_en_annees_entieres_opt", deserialize_with = "Anciennete::en_annees_entieres_opt")]
     palier: Option<Anciennete>,
     pourquoi: Option<String>,
@@ -167,7 +162,7 @@ fn indemnite_rupture_conventionnelle(a: &(A, M)) -> Rendu<PlancherDeLaRupture> {
     p::indemnite_rupture_conventionnelle(a.0 .0, &mut || Ok(a.1 .0)).map(|i| PlancherDeLaRupture { plancher: i.plancher.map(M), annees: i.annees.annees_ecrites(), pourquoi: i.pourquoi }).into()
 }
 fn indemnite_depart_retraite(a: &(A, M)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(a.0 .0, &mut || Ok(a.1 .0)).map(|i| IndemniteDuDepart { montant: M(i.montant), du: i.du, mois: C(i.mois), palier: i.palier.map(Anciennete::ans_revolus), pourquoi: i.pourquoi }).into()
+    p::indemnite_depart_retraite(a.0 .0, &mut || Ok(a.1 .0)).map(|i| IndemniteDuDepart { montant: M(i.montant), du: i.du, mois: i.mois.ecrits(), palier: i.palier.map(Anciennete::ans_revolus), pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()

@@ -22,9 +22,16 @@ pub trait Grandeur: Copy + scelle::Scelle {}
 mod scelle {
     use crate::num::Decimal;
 
+    /// LE JETON DES METHODES SCELLEES : il ne se fabrique qu'ici (`JETON`). Un trait scelle interdit de l'implementer,
+    /// pas d'appeler ses methodes par un generique qui prend une grandeur (`B::du(a.en_decimal())` rouvrirait un montant
+    /// en heures) : chacune exige ce jeton, que seul ce module donne. Hors du socle, une grandeur ne se rouvre pas.
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     pub trait Scelle {
-        fn en_decimal(self) -> Decimal;
-        fn du(d: Decimal) -> Self;
+        fn en_decimal(self, jeton: Jeton) -> Decimal;
+        fn du(d: Decimal, jeton: Jeton) -> Self;
         /// Le signe de son unite, tel qu'une personne le tape apres le nombre (« % », « € ») ; aucun pour une grandeur
         /// qui n'en a pas.
         const SIGNES: &'static [&'static str];
@@ -35,7 +42,13 @@ mod scelle {
     }
 }
 
-use scelle::Scelle;
+use scelle::{Scelle, JETON};
+
+/// LA GRANDEUR QUE DIT CE DECIMAL, toute grandeur, des cachets compris : les lectures et ecritures de ce module, qui
+/// savent ce que le decimal est (un entier, une grandeur deja de ce nom).
+fn de_decimal<G: Grandeur>(d: Decimal) -> G {
+    G::du(d, JETON)
+}
 
 /// UNE GRANDEUR QUI SE FRACTIONNE : toute grandeur sauf les cachets, qui ne se comptent qu'en entiers (« 1,5 cachet,
 /// ça n'existe pas »). Seule elle se prend d'un decimal sans refus (`du_decimal`, `forme::Nombre::grandeur`,
@@ -45,12 +58,12 @@ pub trait Fractionnable: Grandeur {}
 /// LE DECIMAL NU D'UNE GRANDEUR, aux seules ecritures et lectures du socle (une ecriture, la norme) : hors du socle, ni
 /// lui ni `rust_decimal` ne se nomment.
 pub(crate) fn decimal<G: Grandeur>(g: G) -> Decimal {
-    g.en_decimal()
+    g.en_decimal(JETON)
 }
 
 /// LA GRANDEUR QUE DIT CE DECIMAL, tel qu'il est (son echelle gardee) : une grandeur qui se fractionne, au socle seul.
 pub(crate) fn du_decimal<G: Fractionnable>(d: Decimal) -> G {
-    G::du(d)
+    de_decimal::<G>(d)
 }
 
 /// LA GRANDEUR QUE DIT LE DECIMAL `d` LU A UNE PORTE (un fichier, une saisie, une piece) ; `cite` : le nombre tel que le
@@ -58,7 +71,7 @@ pub(crate) fn du_decimal<G: Fractionnable>(d: Decimal) -> G {
 fn lue<G: Grandeur>(d: Decimal, cite: &str) -> Result<G, String> {
     match G::ENTIERE && !d.fract().is_zero() {
         true => Err(format!("{} n'est pas un nombre entier : on attend {}", cite, G::ATTENDU)),
-        false => Ok(G::du(d)),
+        false => Ok(de_decimal::<G>(d)),
     }
 }
 
@@ -75,7 +88,7 @@ pub struct NonNul<G: Grandeur>(G);
 impl<G: Grandeur> NonNul<G> {
     /// Cette grandeur, si elle n'est pas nulle.
     pub fn de(g: G) -> Option<NonNul<G>> {
-        (!g.en_decimal().is_zero()).then_some(NonNul(g))
+        (!crate::grandeurs::decimal(g).is_zero()).then_some(NonNul(g))
     }
 }
 
@@ -117,10 +130,10 @@ macro_rules! grandeurs {
         }
 
         impl Scelle for $nom {
-            fn en_decimal(self) -> Decimal {
+            fn en_decimal(self, _: scelle::Jeton) -> Decimal {
                 self.0
             }
-            fn du(d: Decimal) -> $nom {
+            fn du(d: Decimal, _: scelle::Jeton) -> $nom {
                 $nom(d)
             }
             const SIGNES: &'static [&'static str] = &[$($signe),*];
@@ -221,32 +234,32 @@ impl std::ops::Mul<TauxDeChange> for MontantEnDevise {
 /// UNE GRANDEUR SANS ZERO INUTILE (`12.50` devient `12.5`, `24.0` devient `24`, `-0` devient `0`), comme l'ecrit
 /// `ecrit::sans_zero` : la forme canonique des empreintes et des oracles.
 pub fn sans_zero<G: Grandeur>(g: G) -> G {
-    G::du(g.en_decimal().normalize())
+    de_decimal::<G>(crate::grandeurs::decimal(g).normalize())
 }
 
 /// LA GRANDEUR NULLE, son echelle nulle (`0`) : la quantite d'une ligne qu'aucune date ne compte.
 pub fn nulle<G: Grandeur>() -> G {
-    G::du(Decimal::ZERO)
+    de_decimal::<G>(Decimal::ZERO)
 }
 
 /// UNE, son echelle nulle (`1`) : la quantite d'une ligne qui se paie en une fois.
 pub fn une<G: Grandeur>() -> G {
-    G::du(Decimal::ONE)
+    de_decimal::<G>(Decimal::ONE)
 }
 
 /// LA GRANDEUR AU CENTIEME, la moitie au pair, sans zero inutile (`2.125` : `2.12`, `4.50` : `4.5`) : ce qu'une phrase
 /// dit d'une quantite (la designation d'une ligne de paie), dite par `texte::virgule` ; un taux horaire qu'un minimum
 /// ou une ligne ramene a l'heure (`engagement::minima` ; aucun texte depose ne dit cet arrondi).
 pub fn au_centieme_au_pair<G: Grandeur>(g: G) -> G {
-    G::du(g.en_decimal().round_dp(2).normalize())
+    de_decimal::<G>(crate::grandeurs::decimal(g).round_dp(2).normalize())
 }
 
 /// LA GRANDEUR ENTIERE QU'ELLE EST, son echelle ramenee a zero (`4.0` jours : `4`) ; `None` : elle n'est pas entiere
 /// (`4.5` jours). Des jours ou des cachets dits « en nombre entier » se tiennent ainsi.
 pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
-    let d = g.en_decimal();
+    let d = crate::grandeurs::decimal(g);
     match d.fract().is_zero() {
-        true => Some(G::du(d.trunc())),
+        true => Some(de_decimal::<G>(d.trunc())),
         false => None,
     }
 }
@@ -257,18 +270,18 @@ pub fn entiere<G: Grandeur>(g: G) -> Option<G> {
 /// le taux d'une ligne 23 du bordereau et le taux patronal reel d'une provision de conges (deux), un taux de PAS
 /// (`aux_centiemes`).
 pub fn decimales_ecrites<G: Grandeur>(g: G, n: u32) -> G {
-    let mut d = g.en_decimal();
+    let mut d = crate::grandeurs::decimal(g);
     if d.scale() < n {
         d.rescale(n);
     }
-    G::du(d)
+    de_decimal::<G>(d)
 }
 
 /// LA GRANDEUR A DEUX DECIMALES ECRITES qu'elle est (`decimales_ecrites`, `5.5` : `5.50`) ; `None` : elle est ecrite
 /// plus fine que le centieme (`5.505`, `5.500`), comme `ecrit::centimes` la refuse, ou elle porte un signe moins
 /// (`-0.00` compris). Un taux de PAS se tient ainsi.
 pub fn aux_centiemes<G: Grandeur>(g: G) -> Option<G> {
-    let d = g.en_decimal();
+    let d = crate::grandeurs::decimal(g);
     if d.scale() > 2 || d.is_sign_negative() {
         return None;
     }
@@ -278,7 +291,7 @@ pub fn aux_centiemes<G: Grandeur>(g: G) -> Option<G> {
 /// UNE GRANDEUR SANS ZERO INUTILE, UNE DECIMALE AU MOINS (`24` s'ecrit `24.0`, `12.50` `12.5`), comme l'ecrit
 /// `num::court` et la lit `lu::court` : celle d'un taux ou d'heures qu'une paie garde.
 pub fn courte<G: Grandeur>(g: G) -> G {
-    G::du(num::court(g.en_decimal()))
+    de_decimal::<G>(num::court(crate::grandeurs::decimal(g)))
 }
 
 /// Montant unitaire x coefficient = montant unitaire (la moitie du salaire journalier).
@@ -321,9 +334,9 @@ pub enum Signe {
 impl Signe {
     /// La grandeur `g` sous ce signe.
     pub fn de<G: Grandeur>(self, g: G) -> G {
-        let d = g.en_decimal();
+        let d = crate::grandeurs::decimal(g);
         match self {
-            Signe::Moins if !d.is_zero() => G::du(-d),
+            Signe::Moins if !d.is_zero() => de_decimal::<G>(-d),
             Signe::Plus | Signe::Moins => g,
         }
     }
@@ -371,7 +384,7 @@ impl Montant {
     /// prorata du brut de chaque rubrique), exacte : le produit, puis le quotient (`au_centime` la fixe). `tout` n'est pas
     /// nul : l'appelant le refuse.
     pub fn prorata<Q: Grandeur>(self, part: Q, tout: Q) -> Montant {
-        Montant(num::div(num::mul(self.0, part.en_decimal()), tout.en_decimal()))
+        Montant(num::div(num::mul(self.0, part.en_decimal(JETON)), tout.en_decimal(JETON)))
     }
 
     /// Ce montant pour chacune des heures `h` (le SMIC horaire d'un SMIC de reference) : montant / heures = montant
@@ -1164,7 +1177,7 @@ impl crate::forme::Nombre {
     /// LA GRANDEUR QU'IL DIT (la quantite et le taux qu'une ligne d'un bulletin imprime, dans l'unite de sa rubrique),
     /// son echelle gardee : la porte de sa lecture.
     pub fn grandeur<G: Fractionnable>(self) -> G {
-        G::du(self.0)
+        de_decimal::<G>(self.0)
     }
 
     /// LES CACHETS QU'IL DIT (la quantite qu'une ligne d'un bulletin imprime dans une rubrique qui compte des cachets) :
@@ -1174,11 +1187,171 @@ impl crate::forme::Nombre {
     }
 }
 
+/// DES MOIS DE SALAIRE : ce qu'une indemnite de rupture compte en salaire de reference (R1234-2 : « un quart de mois de
+/// salaire par année d'ancienneté » ; le palier, le plafond, le plancher d'une convention). Exacts, rien ne se perd avant
+/// le centime : un nombre de mois tel qu'un texte le dit (`Deserialize`), ou, compte sur une anciennete,
+/// en douziemes (ses mois d'anciennete fois la part de mois de salaire par annee :
+/// `date::Anciennete::par_annee_dans_la_tranche`), dont la division par douze ne se fait qu'au montant (salaire de
+/// reference x mois de salaire = montant, que `Montant::au_centime` fixe). Ils s'ajoutent, se comparent, se majorent
+/// (mois de salaire x coefficient) ; ils s'ecrivent tels qu'ils sont (`ecrits`).
+#[derive(Debug, Clone, Copy)]
+pub struct MoisDeSalaire {
+    /// Les mois, ou leurs douziemes (`en_douziemes`).
+    valeur: Decimal,
+    en_douziemes: bool,
+}
+
+impl MoisDeSalaire {
+    /// Aucun.
+    pub const ZERO: MoisDeSalaire = MoisDeSalaire { valeur: Decimal::ZERO, en_douziemes: false };
+
+    /// Les douziemes de mois de salaire `d` (une anciennete en mois fois une part de mois par annee) : `date::Anciennete`.
+    pub(crate) fn douziemes(d: Decimal) -> MoisDeSalaire {
+        MoisDeSalaire { valeur: d, en_douziemes: true }
+    }
+
+    /// Ses douziemes de mois, exacts.
+    fn en_douziemes(self) -> Decimal {
+        match self.en_douziemes {
+            true => self.valeur,
+            false => num::mul(self.valeur, Decimal::from(12)),
+        }
+    }
+
+    /// Ses mois, ecrits tels qu'ils sont (`0.5` ; compte en douziemes, leur quotient par douze, a vingt-huit decimales au
+    /// plus) : ce qu'une phrase ou un oracle en cite.
+    pub fn ecrits(self) -> String {
+        match self.en_douziemes {
+            true => num::div(self.valeur, Decimal::from(12)).to_string(),
+            false => self.valeur.to_string(),
+        }
+    }
+
+    /// `ecrits`, sans zero inutile (`1.0` : `1`) : ce qu'une phrase en dit (le palier d'un depart a la retraite).
+    pub fn ecrits_sans_zero(self) -> String {
+        match self.en_douziemes {
+            true => num::div(self.valeur, Decimal::from(12)).normalize().to_string(),
+            false => self.valeur.normalize().to_string(),
+        }
+    }
+}
+
+impl PartialEq for MoisDeSalaire {
+    fn eq(&self, o: &MoisDeSalaire) -> bool {
+        self.cmp(o) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for MoisDeSalaire {}
+
+impl PartialOrd for MoisDeSalaire {
+    fn partial_cmp(&self, o: &MoisDeSalaire) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(o))
+    }
+}
+
+/// L'ordre des mois : deux mois dits se comparent tels quels, sinon en douziemes.
+impl Ord for MoisDeSalaire {
+    fn cmp(&self, o: &MoisDeSalaire) -> std::cmp::Ordering {
+        match self.en_douziemes || o.en_douziemes {
+            true => self.en_douziemes().cmp(&o.en_douziemes()),
+            false => self.valeur.cmp(&o.valeur),
+        }
+    }
+}
+
+/// Mois de salaire + mois de salaire = mois de salaire : deux mois dits s'ajoutent tels quels, sinon en douziemes.
+impl std::ops::Add for MoisDeSalaire {
+    type Output = MoisDeSalaire;
+    fn add(self, o: MoisDeSalaire) -> MoisDeSalaire {
+        match self.en_douziemes || o.en_douziemes {
+            true => MoisDeSalaire::douziemes(num::add(self.en_douziemes(), o.en_douziemes())),
+            false => MoisDeSalaire { valeur: num::add(self.valeur, o.valeur), en_douziemes: false },
+        }
+    }
+}
+
+/// Mois de salaire x coefficient = mois de salaire (une majoration de l'indemnite : 1 + son pourcentage), exacts.
+impl std::ops::Mul<Coefficient> for MoisDeSalaire {
+    type Output = MoisDeSalaire;
+    fn mul(self, c: Coefficient) -> MoisDeSalaire {
+        MoisDeSalaire { valeur: num::mul(self.valeur, c.0), en_douziemes: self.en_douziemes }
+    }
+}
+
+/// Salaire de reference x mois de salaire = montant, exact : le produit, puis la division par douze des mois comptes en
+/// douziemes (`Montant::au_centime` le fixe).
+impl std::ops::Mul<MoisDeSalaire> for Montant {
+    type Output = Montant;
+    fn mul(self, m: MoisDeSalaire) -> Montant {
+        match m.en_douziemes {
+            true => Montant(num::div(num::mul(self.0, m.valeur), Decimal::from(12))),
+            false => Montant(num::mul(self.0, m.valeur)),
+        }
+    }
+}
+
+/// Lus d'un nombre de mois, comme un coefficient (un palier, un plafond, un plancher d'un bareme).
+impl<'de> serde::Deserialize<'de> for MoisDeSalaire {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MoisDeSalaire, D::Error> {
+        <Coefficient as serde::Deserialize>::deserialize(d).map(|c| MoisDeSalaire { valeur: c.0, en_douziemes: false })
+    }
+}
+
+/// UN RANG DANS UNE GRILLE DE `N`, numerotee de 1 a `N` (l'echelon d'un emploi de la CCNEAC, une grille de douze :
+/// `droit::fiche::EchelonCcneac`). Il se lit d'un nombre entier, ou d'un texte tape dans une saisie (`lu`, `tape`, la
+/// lecture d'un entier jamais negatif) ; hors de 1 a `N`, il se refuse en la phrase de sa notion (`hors`, qui recoit le
+/// nombre tel qu'il s'ecrit). Il s'ecrit en nombre ; son rang sert a trouver sa ligne dans la grille (`rang`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(transparent)]
+pub struct RangDansUneGrille<const N: u8>(u8);
+
+impl<const N: u8> RangDansUneGrille<N> {
+    /// Le rang `n`, ou la phrase de `hors` hors de 1 a `N`.
+    fn de(n: u64, hors: fn(&str) -> String) -> Result<RangDansUneGrille<N>, String> {
+        match u8::try_from(n).ok().filter(|n| (1..=N).contains(n)) {
+            Some(n) => Ok(RangDansUneGrille(n)),
+            None => Err(hors(&n.to_string())),
+        }
+    }
+
+    /// Le rang qu'une personne a tape (`texte`), ou le refus qui dit pourquoi ce n'en est pas un (`attendu` : ce que la
+    /// case attend ; `hors` : la phrase d'un nombre hors de la grille).
+    pub fn tape(texte: &str, attendu: &'static str, hors: fn(&str) -> String) -> crate::echec::R<RangDansUneGrille<N>> {
+        lu::entier_tape(texte, attendu).and_then(|n| RangDansUneGrille::de(n, hors)).map_err(crate::echec::refus)
+    }
+
+    /// Le rang qu'une forme lit (un fichier, la charge d'une route) : un nombre entier, ou dans une saisie le texte tape
+    /// (`lu::entier`).
+    pub fn lu<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str, hors: fn(&str) -> String) -> Result<RangDansUneGrille<N>, D::Error> {
+        RangDansUneGrille::de(lu::entier(d, attendu)?, hors).map_err(serde::de::Error::custom)
+    }
+
+    /// Son rang, de 1 a `N` : sa ligne dans la grille, a partir de un.
+    pub fn rang(self) -> usize {
+        usize::from(self.0)
+    }
+}
+
+impl<const N: u8> std::fmt::Display for RangDansUneGrille<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl crate::piece::EntierDUneZone {
+    /// LA GRANDEUR QU'IL COMPTE, celle que sa place dit (des heures, des cachets, des jours), son echelle nulle : la
+    /// porte de sa lecture. Un entier : des cachets aussi.
+    pub fn en<G: Grandeur>(self) -> G {
+        de_decimal::<G>(Decimal::from(self.0))
+    }
+}
+
 impl crate::forme::Court {
     /// LA GRANDEUR QU'IL DIT, lu dans sa forme la plus courte avant de savoir sa place (un element d'un tableau ecrit
     /// `[bas, haut, taux]`) : la porte de sa lecture.
     pub fn grandeur<G: Fractionnable>(self) -> G {
-        G::du(self.0)
+        de_decimal::<G>(self.0)
     }
 }
 
@@ -1249,7 +1422,7 @@ pub mod lu {
     /// UN NOMBRE ENTIER, JAMAIS NEGATIF, QU'UNE PERSONNE A TAPE (un compte, des jours de droit, une annee) : lu par
     /// `nombre_tape` (« 1 500 »), puis sa forme ; `attendu` : ce que la case attend. Aussi l'echelon tape d'une fiche
     /// (`droit::fiche::EchelonCcneac`).
-    pub fn entier_tape(t: &str, attendu: &str) -> Result<u64, String> {
+    pub(crate) fn entier_tape(t: &str, attendu: &str) -> Result<u64, String> {
         let d = nombre_tape(t, &[], attendu)?;
         match d.fract().is_zero().then(|| rust_decimal::prelude::ToPrimitive::to_u64(&d.trunc())).flatten() {
             Some(n) => Ok(n),
@@ -1271,7 +1444,7 @@ pub mod lu {
     /// dans une saisie (`forme::lire_saisie`, la charge d'une route), le texte qu'une personne a tape et le nombre JSON
     /// passent par la meme lecture, `entier_tape` (`3.0` vaut 3 comme « 3,0 » ; `1e3` se refuse comme « 1e3 ») ; dans un
     /// fichier, sa forme stricte : un nombre entier, jamais un texte. `attendu` : ce que la case attend.
-    pub fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
+    pub(crate) fn entier<'de, D: serde::Deserializer<'de>>(d: D, attendu: &'static str) -> Result<u64, D::Error> {
         struct Entier(&'static str);
         impl<'de> serde::de::Visitor<'de> for Entier {
             type Value = u64;
@@ -1321,14 +1494,14 @@ pub mod lu {
 
     /// `tapee`, son decimal : la conversion que la lecture d'une saisie passe a `forme` (`forme::decimal_en_nombre`).
     pub(crate) fn tapee_en_decimal<G: Grandeur>(t: &str) -> Result<Decimal, String> {
-        tapee::<G>(t).map(<G as crate::grandeurs::Scelle>::en_decimal)
+        tapee::<G>(t).map(crate::grandeurs::decimal::<G>)
     }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
-    /// francaise ou non (`num::decimal_a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;
+    /// francaise ou non (`forme::Nombre::a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;
     /// `None` : le texte n'est pas un nombre, ou pas un nombre de sa grandeur (des cachets a virgule, `super::lue`).
     pub fn texte<G: Grandeur>(t: &str) -> Option<G> {
-        num::decimal_a_virgule(t).and_then(|d| super::lue_du(d).ok())
+        crate::forme::Nombre::a_virgule(t).and_then(|n| super::lue_du(n.0).ok())
     }
 
     /// LA GRANDEUR QU'UN FICHIER LIVRE ECRIT DANS UN TEXTE (l'operande d'un gabarit des conseils : `*12`, `/31`), le point
@@ -1337,18 +1510,18 @@ pub mod lu {
         t.parse::<Decimal>().map_err(|e| e.to_string()).and_then(|d| super::lue(d, &crate::fichiers::repr(t)))
     }
 
-    /// LA GRANDEUR QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`), comme `num::decimal_lu` la lit, son echelle
-    /// gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre, ou pas un nombre de sa grandeur (des
-    /// cachets a virgule, `super::lue`).
+    /// LA GRANDEUR QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`), comme `forme::Nombre::de_la_norme` la lit, son
+    /// echelle gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre, ou pas un nombre de sa grandeur
+    /// (des cachets a virgule, `super::lue`).
     pub fn norme<G: Grandeur>(t: &str) -> Option<G> {
-        num::decimal_lu(t).and_then(|d| super::lue_du(d).ok())
+        crate::forme::Nombre::de_la_norme(t).and_then(|n| super::lue_du(n.0).ok())
     }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT EN ENTIER (`num::entier_lu` : une zone a largeur fixe de l'AEM, `012`),
     /// son echelle nulle : la porte de sa lecture ; `None` : le texte n'est pas un entier, ou il deborde.
     pub fn texte_entier<G: Grandeur>(t: &str) -> Option<G> {
         match num::entier_lu(t).map(|n| Decimal::try_from_i128_with_scale(n, 0)) {
-            Some(Ok(d)) => Some(<G as crate::grandeurs::Scelle>::du(d)),
+            Some(Ok(d)) => Some(super::de_decimal::<G>(d)),
             Some(Err(_)) | None => None,
         }
     }
@@ -1358,15 +1531,6 @@ pub mod lu {
     /// `None` : le texte n'est pas un entier, ou il deborde.
     pub fn en_centimes(t: &str) -> Option<crate::grandeurs::Montant> {
         num::entier_lu(t).and_then(|c| Decimal::try_from_i128_with_scale(c, 2).ok()).map(crate::grandeurs::Montant)
-    }
-
-    /// LES DEUX GRANDEURS QU'UN MEME TEXTE ENTIER D'UNE PIECE PEUT DIRE (la case « NB JOURS OU CACHETS » d'un
-    /// certificat, qui ne dit pas laquelle), lu une fois comme `texte_entier` ; `None` : le texte n'est pas un entier.
-    pub fn texte_entier_en_deux<A: Grandeur, B: Grandeur>(t: &str) -> Option<(A, B)> {
-        match num::entier_lu(t).map(|n| Decimal::try_from_i128_with_scale(n, 0)) {
-            Some(Ok(d)) => Some((<A as crate::grandeurs::Scelle>::du(d), <B as crate::grandeurs::Scelle>::du(d))),
-            Some(Err(_)) | None => None,
-        }
     }
 
     /// LA GRANDEUR QU'UN NOMBRE ECRIT EN TEXTE DIT (`num::dec_texte`, comme `forme::decimal` lit un texte : « 12.50 »),
@@ -1486,7 +1650,7 @@ pub mod ecrit {
 
         /// La meme, telle qu'une phrase la cite (`12.50`).
         pub fn dit<G: Grandeur>(g: G) -> String {
-            g.en_decimal().to_string()
+            crate::grandeurs::decimal(g).to_string()
         }
 
         /// Relue exactement de son texte, son echelle gardee (un nombre JSON ne se lit pas ainsi).
@@ -1507,7 +1671,7 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn texte<G: Grandeur>(g: G) -> Result<String, String> {
-            let mut c = g.en_decimal();
+            let mut c = crate::grandeurs::decimal(g);
             if c.scale() > 2 {
                 return Err(format!("{} est plus fin que le centime", c));
             }
@@ -1525,7 +1689,7 @@ pub mod ecrit {
 
         /// La grandeur telle qu'une phrase la cite (`7.0`).
         pub fn dit<G: Grandeur>(g: G) -> String {
-            crate::num::court(g.en_decimal()).to_string()
+            crate::num::court(crate::grandeurs::decimal(g)).to_string()
         }
     }
 
@@ -1539,7 +1703,7 @@ pub mod ecrit {
 
         /// La meme, telle qu'une phrase ou une case la cite (`2`, `151.67`).
         pub fn dit<G: Grandeur>(g: G) -> String {
-            g.en_decimal().normalize().to_string()
+            crate::grandeurs::decimal(g).normalize().to_string()
         }
 
         ecriture!();
@@ -1556,7 +1720,7 @@ pub mod ecrit {
 
         /// Le meme texte, la ou une forme l'ecrit sans son attribut (une valeur d'un dictionnaire).
         pub fn texte<G: Grandeur>(g: G) -> String {
-            crate::num::nombre(g.en_decimal())
+            crate::num::nombre(crate::grandeurs::decimal(g))
         }
 
         pub use crate::grandeurs::lu::nombre_ou_texte::deserialize;
@@ -1581,7 +1745,7 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
-            let d = g.en_decimal().normalize();
+            let d = crate::grandeurs::decimal(*g).normalize();
             match (d.scale(), i64::try_from(d.mantissa())) {
                 (0, Ok(n)) => s.serialize_i64(n),
                 _ => crate::forme::ecrire_a_virgule(&d, s),
@@ -1606,7 +1770,7 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
-            crate::forme::ecrire_a_virgule(&g.en_decimal(), s)
+            crate::forme::ecrire_a_virgule(&crate::grandeurs::decimal(*g), s)
         }
 
         /// Un `Option` dans cette ecriture : `None` s'ecrit `null`.
@@ -1648,7 +1812,7 @@ pub mod ecrit {
         /// ecrites (`151.67`, `2.00`) ; un zero s'ecrit sans signe (`0.00`, jamais `-0.00`). Son signe se pose avant
         /// (`Signe::de`).
         pub fn quantite<G: Grandeur>(q: G) -> String {
-            let mut c = q.en_decimal().round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+            let mut c = crate::grandeurs::decimal(q).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
             if c.is_zero() {
                 c = Decimal::ZERO;
             }
@@ -1672,7 +1836,7 @@ pub mod ecrit {
         use crate::grandeurs::Grandeur;
 
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
-            let d = g.en_decimal();
+            let d = crate::grandeurs::decimal(*g);
             match (d.scale(), i64::try_from(d.mantissa())) {
                 (0, Ok(n)) => s.serialize_i64(n),
                 _ => Err(serde::ser::Error::custom(format!("{} n'est pas un entier", d))),

@@ -700,19 +700,17 @@ pub struct Nombre(pub(crate) crate::num::Decimal);
 
 impl Nombre {
     /// LE NOMBRE QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`, `-2`), comme `num::decimal_lu` le lit, son
-    /// echelle gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre.
+    /// echelle gardee : la seule lecture d'un nombre de la norme, avant ou apres que sa place dise sa grandeur
+    /// (`grandeurs::lu::norme`) ; `None` : le texte n'est pas un nombre.
     pub fn de_la_norme(t: &str) -> Option<Nombre> {
         crate::num::decimal_lu(t).map(Nombre)
     }
 
-    /// LE NOMBRE QU'UNE PIECE IMPRIME, a la francaise ou non (`num::decimal_a_virgule` : « 1 512,40 », « 0.000 »), un
-    /// signe moins en tete permis (l'oppose du nombre qui le suit), son echelle gardee : la porte de sa lecture ;
-    /// `None` : le texte n'est pas un nombre.
+    /// LE NOMBRE QU'UNE PIECE IMPRIME, a la francaise ou non (`num::decimal_a_virgule` : « 1 512,40 », « 0.000 », un
+    /// signe en tete), son echelle gardee : la seule lecture d'un nombre imprime, avant ou apres que sa place dise sa
+    /// grandeur (`grandeurs::lu::texte`) ; `None` : le texte n'est pas un nombre.
     pub fn a_virgule(t: &str) -> Option<Nombre> {
-        match t.strip_prefix('-') {
-            Some(r) => crate::num::decimal_a_virgule(r).map(|d| Nombre(-d)),
-            None => crate::num::decimal_a_virgule(t).map(Nombre),
-        }
+        crate::num::decimal_a_virgule(t).map(Nombre)
     }
 }
 
@@ -930,18 +928,19 @@ impl NombreLu {
         }
     }
 
-    /// L'ENTIER QU'IL VAUT EXACTEMENT (`12`, `12.0`), ou `None` : il n'est pas entier, ou ne tient pas en `i64` ; un
-    /// nombre hors de portee d'un decimal se refuse.
-    pub fn entier_exact(&self) -> R<Option<i64>> {
+    /// L'ENTIER QU'IL VAUT EXACTEMENT, ECRIT en chiffres (`12` et `12.0` : « 12 »), comme un entier lu s'ecrit (la cle
+    /// d'une case d'un classeur, qui confond `12` et `12.0`) ; `None` : il n'est pas entier, ou ne tient pas en 64 bits
+    /// signes ; un nombre hors de portee d'un decimal se refuse.
+    pub fn entier_ecrit(&self) -> R<Option<String>> {
         use rust_decimal::prelude::ToPrimitive;
-        Ok(Some(self.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
+        Ok(Some(self.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()).map(|n| n.to_string()))
     }
 
-    /// SA PARTIE ENTIERE, vers zero (`12.7` : `12`), ou `None` quand elle ne tient pas en `i64` ; un nombre hors de
-    /// portee d'un decimal se refuse.
-    pub fn partie_entiere(&self) -> R<Option<i64>> {
+    /// SA PARTIE ENTIERE, vers zero, en compte (une longueur ecrite `12.7` : 12) ; `None` : elle est negative, ou ne
+    /// tient pas en memoire ; un nombre hors de portee d'un decimal se refuse.
+    pub fn compte_tronque(&self) -> R<Option<usize>> {
         use rust_decimal::prelude::ToPrimitive;
-        Ok(self.decimal()?.trunc().to_i64())
+        Ok(self.decimal()?.trunc().to_usize())
     }
 
     /// Le nombre dans sa forme la plus courte (`12.50` : `12.5` ; « -0 » s'ecrit « 0 » : `num::nombre`) : la forme

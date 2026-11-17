@@ -89,9 +89,8 @@ pub struct JoursOuCachetsLus {
 impl JoursOuCachetsLus {
     /// La case `t`, des chiffres seuls ; `None` : elle n'en est pas.
     fn lus(t: &str) -> Option<JoursOuCachetsLus> {
-        socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur()?;
-        let (cachets, jours) = socle::grandeurs::lu::texte_entier_en_deux(t)?;
-        Some(JoursOuCachetsLus { cachets, jours })
+        let n = socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur()?;
+        Some(JoursOuCachetsLus { cachets: n.en(), jours: n.en() })
     }
 
     /// Le nombre que dit la case pour un salarie de ce statut : des cachets pour un artiste, des jours pour un
