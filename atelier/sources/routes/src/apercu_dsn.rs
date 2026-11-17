@@ -43,33 +43,18 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 // ------------------------------------------------------------------ recapitulatif_dsn
 
 /// Un contrat du fichier (`DsnLue`), et ce qu'il declare pour le mois et en rappel d'un mois deja declare. Son numero
-/// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
-struct ContratLu {
+/// (S21.G00.40.009) est obligatoire : un contrat qui ne le porte pas ne se lit pas.
+struct MesuresDuContrat<'a> {
+    contrat: &'a ContratDeclare,
     numero: engagement::numeros::NumeroContrat,
-    periode: PeriodeOuverte,
-    emploi: Option<String>,
-    nature_dsn: Option<String>,
-    objet: Option<droit::fiche::NumeroObjetSpectacle>,
-    fin_declaree: Option<Jour>,
-    motif_fin: Option<droit::natures::MotifDeRupture>,
     mois: Mesures,
     rappel: Mesures,
 }
 
-impl ContratLu {
-    fn de(d: &DsnLue, c: &ContratDeclare) -> R<ContratLu> {
+impl<'a> MesuresDuContrat<'a> {
+    fn de(d: &DsnLue, c: &'a ContratDeclare) -> R<MesuresDuContrat<'a>> {
         let numero = c.numero.clone().ok_or_else(|| refus("Un contrat du fichier ne porte pas son numéro (S21.G00.40.009)."))?;
-        Ok(ContratLu {
-            mois: d.mesures(c.nir.as_ref(), &numero, false),
-            rappel: d.mesures(c.nir.as_ref(), &numero, true),
-            periode: c.periode,
-            emploi: c.emploi.emploi.clone(),
-            nature_dsn: c.nature_dsn.clone(),
-            objet: c.objet.clone(),
-            fin_declaree: c.fin_declaree,
-            motif_fin: c.motif_fin,
-            numero,
-        })
+        Ok(MesuresDuContrat { mois: d.mesures(c.nir.as_ref(), &numero, false), rappel: d.mesures(c.nir.as_ref(), &numero, true), contrat: c, numero })
     }
 }
 
@@ -101,7 +86,7 @@ fn en_mots(t: Option<&str>) -> String {
 }
 
 /// CE QU'UN CONTRAT DU FICHIER DIT AUTREMENT QUE LA PAIE `p` QUI LE PORTE : son brut, ses mesures d'activite, son emploi.
-fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
+fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratDeclare) -> R<Vec<String>> {
     let mut ecarts = Vec::new();
     // Le brut que la paie declare en 51 de type 001 (`dsn::brut_du_51` : abattu sous deduction forfaitaire specifique), a
     // deux decimales.
@@ -137,8 +122,8 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     ecart(&mut ecarts, "cachets", cachets, m.cachets);
     ecart(&mut ecarts, "heures", heures, m.heures);
     let emploi = p.salarie.emploi.en_texte();
-    if emploi != c.emploi {
-        ecarts.push(format!("emploi : la paie dit {}, le fichier {}", en_mots(emploi.as_deref()), en_mots(c.emploi.as_deref())));
+    if emploi != c.emploi.emploi {
+        ecarts.push(format!("emploi : la paie dit {}, le fichier {}", en_mots(emploi.as_deref()), en_mots(c.emploi.emploi.as_deref())));
     }
     Ok(ecarts)
 }
@@ -180,7 +165,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
     let mut salaries = Vec::new();
     let (mut n_contrats, mut n_ecarts, mut n_corrections) = (0usize, 0usize, 0usize);
     for sal in &d.individus {
-        let lus = d.contrats_de(sal.identite.nir.as_ref()).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
+        let lus = d.contrats_de(sal.identite.nir.as_ref()).map(|c| MesuresDuContrat::de(d, c)).collect::<R<Vec<MesuresDuContrat>>>()?;
         let mut contrats = Vec::new();
         // Un contrat se dit par ce qu'il declare pour le mois, comparé a la paie du mois, et par ses rappels d'un mois deja
         // declare (`dsn_lue::Remuneration::rappel`), qui ne se comparent pas a la paie du mois. Un contrat qui n'a que des rappels
@@ -200,7 +185,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
                         ecarts.push("aucune paie du mois ne porte ce contrat".to_string());
                     }
                 }
-                Some(p) => ecarts.extend(ecarts_a_la_paie(p, m, c)?),
+                Some(p) => ecarts.extend(ecarts_a_la_paie(p, m, c.contrat)?),
             }
             if correction {
                 n_corrections += 1;
@@ -210,26 +195,27 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit:
             if !ecarts.is_empty() {
                 n_ecarts += 1;
             }
-            let fin_dit = match (correction, c.fin_declaree) {
+            let declare = c.contrat;
+            let fin_dit = match (correction, declare.fin_declaree) {
                 (true, _) => "mois déjà déclaré".to_string(),
                 (false, Some(j)) => format!("fin le {}", j.jj_mm_aaaa()),
                 (false, None) => "en cours".to_string(),
             };
             contrats.push(ContratDuFichier {
                 activite_dit: activite_dite(m, correction),
-                dates_dit: dates_dites(&c.periode),
+                dates_dit: dates_dites(&declare.periode),
                 fin_dit,
                 numero: c.numero.clone(),
-                contrat: c.periode,
-                emploi: c.emploi.clone(),
-                nature_dsn: c.nature_dsn.clone(),
-                objet: c.objet.clone(),
+                contrat: declare.periode,
+                emploi: declare.emploi.emploi.clone(),
+                nature_dsn: declare.nature_dsn.clone(),
+                objet: declare.objet.clone(),
                 brut: m.brut.map(Montant::au_centime),
                 jours: m.jours,
                 cachets: m.cachets,
                 heures: m.heures,
-                fin_declaree: c.fin_declaree,
-                motif_fin: c.motif_fin,
+                fin_declaree: declare.fin_declaree,
+                motif_fin: declare.motif_fin,
                 remunere: m.remunere,
                 paie: p.is_some(),
                 correction,
