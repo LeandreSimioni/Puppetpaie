@@ -1794,6 +1794,10 @@
                 "CertificatCS_FULLER_Novembre2026.pdf",
                 "AER_FULLER_Novembre2026.pdf"
               ],
+              "resume": {
+                "brut": "300.00",
+                "net": "232.30"
+              },
               "renvoi": false
             }
           ],
