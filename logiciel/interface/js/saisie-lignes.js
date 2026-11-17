@@ -1317,7 +1317,7 @@ function construireCarte(div, e) {
   // devient invisible.
   const nat = natureDe(selNat.value);
   div.querySelector(".e-options").hidden = !(e.metier || e.cadre != null || aUneValeur(e.date_paiement)
-    || CHAMPS_RARES.some((c) => aUneValeur(e[c.cle]))
+    || CHAMPS_RARES.some((c) => aUneValeur(valeurRare(e, c)))
     || ["periode_essai_jours", "personne_remplacee", "repartition_horaire", "clauses_particulieres", "modele_contrat"].some((c) => aUneValeur(e[c]))
     || nat.mensuelle || e.debut && e.debut.slice(0, 7) < document.getElementById("mois").value
     || e.motif_recours || e.motif_rupture);

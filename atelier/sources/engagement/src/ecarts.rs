@@ -488,7 +488,7 @@ fn comparer_une(
         debut: p.periode.map(|o| o.debut()),
         fin: p.periode.and_then(|o| o.fin()),
         // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
-        emploi: p.emploi_imprime.clone().map(|i| droit::emplois::EmploiEngagement { emploi_affichage: None, ..i }),
+        emploi: p.emploi_imprime.clone().map(|i| droit::emplois::EmploiEngagement { emploi: dit(&i.emploi), emploi_affichage: None, ..i }),
         lignes: Some(saisies),
         // Le jour ou l'ancien logiciel a verse : un fait (`Carte::importe`).
         date_paiement: p.verse_le,
