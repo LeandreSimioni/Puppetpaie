@@ -30,7 +30,6 @@ envois = { path = "../envois" }
 compagnie = { path = "../compagnie" }
 # Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
 import = { path = "../import" }
-rust_decimal = { workspace = true }
 serde = { workspace = true }
 # Deflate et CRC-32 (le zip du dossier d'un salarie), deja lies par la fabrique de PDF.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

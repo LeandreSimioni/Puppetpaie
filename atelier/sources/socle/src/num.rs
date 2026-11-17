@@ -44,11 +44,6 @@ pub fn court(x: Decimal) -> Decimal {
     c
 }
 
-/// Une somme de montants, à deux décimales au moins.
-pub fn somme<I: IntoIterator<Item = Decimal>>(it: I) -> Decimal {
-    it.into_iter().fold(crate::grandeurs::Montant::ZERO.decimal(), add)
-}
-
 /// Un `P` (28 chiffres significatifs, exposant libre) en `Decimal`. Au-dela
 /// de 28 decimales (`1/120`), `Decimal` ne tient pas : on ramene a 28 decimales,
 /// au pair sur le demi (le seul second arrondi, inevitable). Un exposant

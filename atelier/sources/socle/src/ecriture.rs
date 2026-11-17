@@ -110,7 +110,7 @@ impl ValeurDeCase {
     }
 
     /// Le nombre qu'elle dit : un nombre, ou un texte qui en ecrit un (`num::dec_texte`).
-    pub fn nombre(&self) -> Option<crate::num::Decimal> {
+    fn nombre(&self) -> Option<crate::num::Decimal> {
         let ecrit = match &self.0 {
             Value::Number(n) => nombre_ecrit(n),
             Value::String(t) => t.clone(),

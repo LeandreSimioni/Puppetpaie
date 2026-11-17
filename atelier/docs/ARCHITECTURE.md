@@ -59,6 +59,9 @@ que par la structure :
 - **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
   l'ont pour leurs essais ; `fabrique-pdf`, hors de l'espace, l'a aussi : à ranger, #419) ; une autre crate qui
   voudrait lire du JSON brut ne compile pas (`une_crate_ne_prend_qu_a_celles_du_dessous` le lit dans les `Cargo.toml`).
+  `rust_decimal` n'est au `Cargo.toml` que du `socle`, essais compris, et le socle garde internes son décimal et ce qui
+  le prend ou le rend (`num`, `d28`, `grandeurs::decimal`, `du_decimal`, les champs de `forme::Nombre` et `Court`) :
+  hors du socle, écrire `Decimal` ou rouvrir une grandeur ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -102,8 +105,8 @@ que par la structure :
     réponse d'un tiers, qui se déclare telle par son type (« Le corps et ses portes ») ;
   - `aucune_valeur_par_defaut_si_absent` : ni `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`,
     `map_or_else` dans les sources des crates ;
-  - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json`, lus dans
-    les `Cargo.toml` ;
+  - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json` et
+    `rust_decimal`, lus dans les `Cargo.toml` ;
   - `les_niveaux_des_lints_tiennent` : chaque crate reprend les niveaux de l'espace, et aucune configuration de Cargo
     ne les abaisse ;
   - `le_catalogue_est_range` : une lecture n'écrit pas, une route sous « Avancé » n'a pas de champ objet, un module a
@@ -153,12 +156,13 @@ seule vérification, à l'arrivée », « On compile peu »).
 DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf entre dans
 ce glossaire dans le lot qui le crée ; la relecture à l'arrivée y cherche le doublon. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
 « À unifier (#419) » : le code a encore plusieurs types pour la notion, le type nommé est la cible. « À créer
-(#419) » : la notion circule encore en `String`, `Decimal` ou entier nu.
+(#419) » : la notion circule encore en `String` ou entier nu.
 
 **Typer, c'est qu'une notion porte son type de bout en bout ; envelopper n'est pas typer.** Une grandeur ne s'ouvre en
-nombre nu (`.decimal()`, `du_decimal`, un `as` entre nombres) qu'à une porte : l'écriture ou la lecture d'un fichier ou
-d'une norme ; le calcul se fait par les opérations des grandeurs (`socle/src/grandeurs.rs`), et une opération qui
-manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
+nombre nu qu'au socle, à ses portes : l'écriture ou la lecture d'un fichier ou d'une norme (`socle::grandeurs::ecrit`,
+`lu`, `socle::texte`) ; hors du socle, le décimal ne se nomme pas (seul le socle prend `rust_decimal`, et `num`, `d28`,
+`grandeurs::decimal`, `du_decimal` lui sont internes) et un `as` entre nombres ne se fait qu'à une porte. Le calcul se
+fait par les opérations des grandeurs (`socle/src/grandeurs.rs`), et une opération qui manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
 pas. Un état ne se code pas en booléens quand il a son type. Les formes d'un fichier, les charges et réponses d'une
 route et les types techniques ne sont pas des notions : ils n'ont pas de ligne ici, mais leurs champs portent les types
 des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`). Une
@@ -290,11 +294,14 @@ un libellé, chacun sa forme.
   `Anciennete::mois_fixes`),
   et elle se compare à lui, s'en écarte (`au_dela_de`) ou
   le compte (`fois_entieres`) ; elle se dit dans l'unité que le texte
-  demande (`annees`, `annees_d28` pour un barème qui compte par année, `semaines_entieres` en
-  `Semaines`), en mois dans une phrase, en années au dixième (`annees_au_dixieme`), en années révolues
+  demande (`semaines_entieres` en `Semaines`), en mois dans une phrase, ou telle qu'elle est (`mois_ecrits`,
+  `annees_ecrites` : la phrase d'une convention ; écrite dans un fichier, `ecrite_en_mois`), en années au dixième
+  (`annees_au_dixieme`), en années révolues
   (`ans_revolus_dits` : un nombre entier, négatif pour une ancienneté révolue qui l'est ; écrite dans un fichier,
   `ecrite_en_annees_entieres`, relue par `en_annees_entieres`) ; une tranche d'un barème par année
-  lui donne des mois de salaire (`par_annee_dans_la_tranche`, un `Coefficient` : R1234-2) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
+  lui donne des mois de salaire (`par_annee_dans_la_tranche`, un `Coefficient` : R1234-2), et toutes ses années à une
+  même part, un barème par bandes, un prorata, une mise à la retraite d'une convention (`par_annee`, un `Coefficient`,
+  `droit::clauses`) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
@@ -310,7 +317,7 @@ un libellé, chacun sa forme.
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | `Montant` ; à unifier (#419) : les indemnités d'une convention, comptées en décimal à 28 chiffres (`droit::clauses`) | `socle/src/grandeurs.rs` |
+| montant | `Montant` (les indemnités d'une convention aussi : mois de salaire × salaire de référence, au centime, `droit::clauses`) | `socle/src/grandeurs.rs` |
 | taux | `Taux` | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; des cachets ne se comptent qu'en entiers (Léandre, 17/11 : « 1,5 cachet, ça n'existe pas ») : chaque porte d'une grandeur refuse des cachets à virgule en nommant la case, et seule une grandeur qui se fractionne (`Fractionnable`, toutes les autres) se prend d'un décimal sans refus (`du_decimal`, `socle::forme::Nombre::grandeur`) ; la quantité imprimée d'une ligne de cachets se lit par `socle::forme::Nombre::cachets` | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
@@ -326,7 +333,7 @@ un libellé, chacun sa forme.
 | quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` ; à unifier (#419) : les mois de salaire d'une convention, comptés en décimal à 28 chiffres (`droit::clauses`) | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` (les mois de salaire d'une convention aussi, ses fractions par année et ses plafonds, `droit::clauses`) | `socle/src/grandeurs.rs` |
 | montant unitaire | `MontantUnitaire` | `socle/src/grandeurs.rs` |
 | montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
 | taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
@@ -340,7 +347,7 @@ un libellé, chacun sa forme.
 
 **Le détail**
 
-- **montant** : une somme en euros, au centime ; aujourd'hui aussi `Decimal` ; une case tapée d'une charge est sa
+- **montant** : une somme en euros, au centime ; une case tapée d'une charge est sa
   grandeur, lue tapée à la porte de la route, pas un texte. **Le nombre tapé**
   (Léandre, 16/11) : « les gens tapent n'importe quoi et après on convertit automatiquement ; ce qui est affiché, c'est
   ce qui a été converti ; un chiffre solide, pas du texte ». Une seule conversion, celle de la route
@@ -349,12 +356,12 @@ un libellé, chacun sa forme.
   fin ; tout le reste se refuse en nommant la case, dans la phrase de la route (`socle::forme::case_refusee`, la seule
   phrase : « Taux AT/MP : « 1 5 » ne se lit pas : … », la case nommée comme l'écran la montre). Ce qu'on garde et ce qu'on affiche est la grandeur convertie ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
-- **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
+- **taux** : un pourcentage appliqué à une base (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
   taux de PAS est sa notion à lui, `droit::pas::TauxDePas`. La majoration d'une heure en plus est un taux (« une
   majoration de salaire de 25 % », L3121-36) : le taux horaire majoré est le taux horaire × (100 % + majoration) ; ce
   n'est ni le multiplicateur d'une assiette (un coefficient) ni la majoration de la caisse des congés.
-- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui aussi `Decimal`,
+- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui aussi
   `i64`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
   (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait ; une ligne
   au montant compte 1, et paie son montant quelle que soit l'unité, `PaiementDeLigne::une_fois`) : elle s'écrit dans son
@@ -391,8 +398,9 @@ un libellé, chacun sa forme.
   `Coefficient::dixiemes`, `Coefficient::centiemes`, `Coefficient::dix_milliemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
   `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
-- Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
-  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`, et
+- Chaque grandeur porte un décimal exact, son échelle gardée ; il n'en sort qu'au socle, par ses écritures et ses
+  lectures (`grandeurs::decimal`, interne au socle) : hors du socle, il ne se nomme pas.
+  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `court`, `centimes`, `sans_zero`, `entier`, et
   `en_centimes`, la zone d'un format comptable), dits par l'attribut serde du champ ; la case d'un état porte la
   grandeur elle-même (`documents::tableaux_export::Val`, une forme), posée une fois par sa colonne, qui dit ce qu'elle
   reçoit (une colonne totalisée, la seule grandeur que son total additionne : `Recoit` ; un cumul se fait avant, sur des

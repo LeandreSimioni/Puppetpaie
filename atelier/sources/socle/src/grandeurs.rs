@@ -1,6 +1,6 @@
 //! L'ARGENT ET LES QUANTITES : un montant, un taux, des heures, des cachets, des jours, des services, des semaines, des
 //! unites d'un forfait, un coefficient, un montant unitaire (« Le glossaire »). Chacun porte un decimal exact, son echelle gardee (`24.0` reste `24.0`) ; il n'en sort
-//! que par une porte nommee (`decimal`), la ou une ecriture ou la norme l'exige. Seules les operations qui ont un sens
+//! qu'au socle (`decimal`, interne), la ou une ecriture ou la norme l'exige. Seules les operations qui ont un sens
 //! se font : montant + montant, montant x taux = montant, heures x montant unitaire = montant ; montant + heures ne
 //! compile pas. L'arithmetique est celle de toute la paie (`num::add`, `mul`, `div` : `d28`) ; l'arrondi au centime se
 //! fait par `Montant::au_centime`, la ou une somme se fixe, et nulle part ailleurs.
@@ -15,7 +15,7 @@
 use crate::num::{self, Decimal};
 use rust_decimal::{MathematicalOps, RoundingStrategy};
 
-/// Ce que toute grandeur porte : un decimal. Il n'en sort que par `decimal`, nomme sur chaque type ; ce trait ne sert
+/// Ce que toute grandeur porte : un decimal. Il n'en sort qu'au socle (`decimal`, interne) ; ce trait ne sert
 /// qu'aux ecritures (`ecrit`) et aux lectures (`lu`) de ce module, scelle (`scelle::Scelle` ne se nomme pas dehors).
 pub trait Grandeur: Copy + scelle::Scelle {}
 
@@ -41,6 +41,17 @@ use scelle::Scelle;
 /// ça n'existe pas »). Seule elle se prend d'un decimal sans refus (`du_decimal`, `forme::Nombre::grandeur`,
 /// `forme::Court::grandeur`) ; des cachets se lisent par une porte qui refuse un nombre a virgule (`lue`).
 pub trait Fractionnable: Grandeur {}
+
+/// LE DECIMAL NU D'UNE GRANDEUR, aux seules ecritures et lectures du socle (une ecriture, la norme) : hors du socle, ni
+/// lui ni `rust_decimal` ne se nomment.
+pub(crate) fn decimal<G: Grandeur>(g: G) -> Decimal {
+    g.en_decimal()
+}
+
+/// LA GRANDEUR QUE DIT CE DECIMAL, tel qu'il est (son echelle gardee) : une grandeur qui se fractionne, au socle seul.
+pub(crate) fn du_decimal<G: Fractionnable>(d: Decimal) -> G {
+    G::du(d)
+}
 
 /// LA GRANDEUR QUE DIT LE DECIMAL `d` LU A UNE PORTE (un fichier, une saisie, une piece) ; `cite` : le nombre tel que le
 /// refus le cite. Des cachets a virgule se refusent : un nombre de cachets est entier.
@@ -82,11 +93,6 @@ macro_rules! grandeurs {
         sorte_de_grandeur!($nom, $sorte);
 
         impl $nom {
-            /// Le decimal nu, a la porte qui l'exige (une ecriture, la norme).
-            pub const fn decimal(self) -> Decimal {
-                self.0
-            }
-
             /// Est-elle nulle ?
             pub fn est_nul(self) -> bool {
                 self.0.is_zero()
@@ -170,13 +176,6 @@ macro_rules! grandeurs {
 macro_rules! sorte_de_grandeur {
     ($nom:ident, fractionnable) => {
         impl Fractionnable for $nom {}
-
-        impl $nom {
-            /// La grandeur que dit ce decimal, tel qu'il est (son echelle gardee).
-            pub const fn du_decimal(d: Decimal) -> $nom {
-                $nom(d)
-            }
-        }
     };
     ($nom:ident, entiere) => {};
     (@entiere fractionnable) => {
@@ -1635,12 +1634,12 @@ pub mod ecrit {
         /// signe (`0.00`, jamais `-0.00`).
         pub fn montant(m: Montant) -> String {
             let c = m.au_centime();
-            if c.est_nul() { Montant::ZERO } else { c }.decimal().to_string()
+            if c.est_nul() { Montant::ZERO } else { c }.0.to_string()
         }
 
         /// Un taux a `decimales` decimales, le demi au pair (`Taux::au_pair`), toutes ecrites (`1.50`, `6.900`).
         pub fn taux(t: Taux, decimales: u32) -> String {
-            let mut d = t.au_pair(decimales).decimal();
+            let mut d = t.au_pair(decimales).0;
             d.rescale(decimales);
             d.to_string()
         }
@@ -1704,7 +1703,7 @@ mod tests {
     /// son oppose par INFERENCE (`arrondi-euro/LISEZ-MOI.md`).
     #[test]
     fn au_centime_arrondit_le_demi_vers_le_haut() {
-        let c = |t: &str| Montant::du_decimal(Decimal::from_str(t).unwrap()).au_centime().decimal().to_string();
+        let c = |t: &str| Montant(Decimal::from_str(t).unwrap()).au_centime().0.to_string();
         assert_eq!(c("2.675"), "2.68");
         assert_eq!(c("2.125"), "2.13");
         assert_eq!(c("258.336"), "258.34");

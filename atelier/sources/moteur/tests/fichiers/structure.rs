@@ -408,22 +408,27 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     }
 }
 
-/// Les crates de l'espace, de bas en haut (`membres`) : chacune ne prend qu'a celles d'en dessous ; et seul le `socle`,
-/// la porte, prend `serde_json` pour son code (`[dependencies]`) : une autre crate qui voudrait lire du JSON brut ne
-/// compile pas.
+/// Les crates de l'espace, de bas en haut (`membres`) : chacune ne prend qu'a celles d'en dessous ; seul le `socle`, la
+/// porte, prend `serde_json` pour son code (`[dependencies]`) : une autre crate qui voudrait lire du JSON brut ne compile
+/// pas ; et seul le `socle` prend `rust_decimal`, essais compris : hors de lui, un nombre nu ne se nomme pas, chaque
+/// nombre a le type de sa notion (`socle::grandeurs`).
 #[test]
 fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     let ordre = membres();
     for (rang, nom) in ordre.iter().enumerate() {
         let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
+        let sections = || t.split("\n[").filter(|s| s.split(']').next().is_some_and(|h| h.ends_with("dependencies")));
+        let dep = |l: &str| l.split([' ', '=', '.']).next().unwrap().to_string();
         // Toute section de dependances du code (`[dependencies]`, `[target.'…'.dependencies]`), pas celles des essais.
-        let sections = t.split("\n[").filter(|s| s.split(']').next().is_some_and(|h| h.ends_with("dependencies") && !h.contains("dev-")));
-        for l in sections.flat_map(|s| s.lines().skip(1)) {
-            let dep = l.split([' ', '=', '.']).next().unwrap();
+        for l in sections().filter(|s| !s.split(']').next().is_some_and(|h| h.contains("dev-"))).flat_map(|s| s.lines().skip(1)) {
+            let dep = dep(l);
             if let Some(r) = ordre.iter().position(|x| *x == dep) {
                 assert!(r < rang, "{} prend a {}, qui n'est pas en dessous", nom, dep);
             }
             assert!(dep != "serde_json" || nom == "socle", "{} prend serde_json pour son code : seul le socle lit le JSON brut, les autres lisent des formes (`socle::forme`)", nom);
+        }
+        for l in sections().flat_map(|s| s.lines().skip(1)) {
+            assert!(dep(l) != "rust_decimal" || nom == "socle", "{} prend rust_decimal : seul le socle le prend, chaque nombre a le type de sa notion (`socle::grandeurs`)", nom);
         }
     }
 }
@@ -670,12 +675,12 @@ fn lignes_ou(motif: &str) -> Vec<String> {
     v
 }
 
-/// AUCUN FLOTTANT : aucune source d'une crate n'ecrit `f32` ni `f64`. Un montant, un taux sont des `Decimal`, une
-/// mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers.
+/// AUCUN FLOTTANT : aucune source d'une crate n'ecrit `f32` ni `f64`. Un montant, un taux sont des grandeurs
+/// (`socle::grandeurs`), une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers.
 #[test]
 fn aucun_flottant_dans_le_code() {
     let fautes = lignes_ou(r"(?:^|[^A-Za-z])f(?:32|64)\b");
-    assert!(fautes.is_empty(), "aucun flottant : un `Decimal`, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
+    assert!(fautes.is_empty(), "aucun flottant : une grandeur, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
 }
 
 /// AUCUNE VALEUR PAR DEFAUT SI ABSENT (`AGENTS.md`, « Un champ facultatif ne s'écrit que s'il est rempli ») : aucune

@@ -4,7 +4,7 @@
 
 pub mod base64;
 pub mod csv;
-pub mod d28;
+pub(crate) mod d28;
 pub mod date;
 pub mod echec;
 pub mod ecran;
@@ -24,7 +24,7 @@ pub mod memoire;
 pub mod mode;
 pub mod mois;
 pub mod nfkc;
-pub mod num;
+pub(crate) mod num;
 pub mod paris;
 pub mod pays;
 pub mod piece;

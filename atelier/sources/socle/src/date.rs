@@ -734,11 +734,6 @@ impl Anciennete {
         Anciennete::revolue(naissance, au).ans_revolus()
     }
 
-    /// `d` mois (un seuil d'un texte, un oracle) : la porte d'un nombre de mois.
-    pub fn de_mois(d: Decimal) -> Anciennete {
-        Anciennete(d)
-    }
-
     /// `n` mois qu'un texte fixe (L3133-3 : « trois mois d'ancienneté »).
     pub fn mois_fixes(n: u32) -> Anciennete {
         Anciennete(Decimal::from(n))
@@ -750,7 +745,7 @@ impl Anciennete {
     }
 
     /// `d` annees (un seuil d'un texte, un oracle) : la porte d'un nombre d'annees, douze mois chacune.
-    pub fn d_annees(d: Decimal) -> Anciennete {
+    pub(crate) fn d_annees(d: Decimal) -> Anciennete {
         Anciennete(num::mul(d, Decimal::from(12)))
     }
 
@@ -808,7 +803,7 @@ impl Anciennete {
     }
 
     /// DITE EN ANNEES, a douze mois l'annee : l'unite d'un bareme qui compte par annee (R1234-2, D1237-1).
-    pub fn annees(self) -> Decimal {
+    pub(crate) fn annees(self) -> Decimal {
         num::div(self.0, Decimal::from(12))
     }
 
@@ -824,7 +819,7 @@ impl Anciennete {
     /// resultat est entier.
     pub fn semaines_entieres(self) -> crate::grandeurs::Semaines {
         let p = crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher();
-        crate::grandeurs::Semaines::du_decimal(num::en_decimal(p))
+        crate::grandeurs::du_decimal(num::en_decimal(p))
     }
 
     /// LES MOIS DE SALAIRE QU'UNE TRANCHE D'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de
@@ -838,19 +833,14 @@ impl Anciennete {
             None => annees,
         };
         let part = num::add(annees.min(haut), -bas.annees()).max(Decimal::ZERO);
-        crate::grandeurs::Coefficient::du_decimal(num::mul(part, par_annee.decimal()))
-    }
-
-    /// Le nombre de ses mois, a la porte d'une ecriture.
-    pub fn mois(self) -> Decimal {
-        self.0
+        crate::grandeurs::du_decimal(num::mul(part, crate::grandeurs::decimal(par_annee)))
     }
 
     /// TOUTES SES ANNEES, chacune a `par_annee` mois de salaire (un bareme par bandes, un prorata, la mise a la retraite
     /// d'une convention) : annees x coefficient = coefficient, des mois de salaire. Par tranches :
     /// `par_annee_dans_la_tranche`.
     pub fn par_annee(self, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::Coefficient {
-        crate::grandeurs::Coefficient::du_decimal(num::mul(self.annees(), par_annee.decimal()))
+        crate::grandeurs::du_decimal(num::mul(self.annees(), crate::grandeurs::decimal(par_annee)))
     }
 
     /// SES MOIS ECRITS TELS QU'ILS SONT, le point decimal, son echelle gardee (`23.4838709677419354838709677`, `24`) :

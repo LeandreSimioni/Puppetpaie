@@ -252,19 +252,19 @@ pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
 /// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
 /// comme `chiffres_en_euros` : « 1 234,50 », au centième, sans unité.
 pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {
-    chiffres(h.decimal())
+    chiffres(crate::grandeurs::decimal(h))
 }
 
 /// UN TAUX DANS UNE COLONNE DE MONTANTS D'UN BULLETIN (le taux personnalisé du prélèvement à la source), écrit comme
 /// `chiffres_en_euros` : « 7,50 », au centième, sans « % ».
 pub fn chiffres_de_taux(t: crate::grandeurs::Taux) -> String {
-    chiffres(t.decimal())
+    chiffres(crate::grandeurs::decimal(t))
 }
 
 /// UN TAUX TEL QUE LE BULLETIN L'IMPRIME dans sa colonne de taux : trois décimales écrites, la moitié au pair (aucun
 /// texte déposé ne dit l'arrondi d'un taux imprimé), la virgule décimale, le signe de l'original (« 9,100 », « -0,500 »).
 pub fn taux_au_millieme(t: crate::grandeurs::Taux) -> String {
-    let x = t.decimal();
+    let x = crate::grandeurs::decimal(t);
     let mut r = x.abs().round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven);
     r.rescale(3);
     format!("{}{}", if x.is_sign_negative() { "-" } else { "" }, r.to_string().replace('.', ","))
@@ -278,7 +278,7 @@ fn chiffres(d: rust_decimal::Decimal) -> String {
 
 /// Le decimal `d` au centime, par l'arrondi d'un montant (`Montant::au_centime`), ses deux decimales ecrites.
 fn au_centime(d: rust_decimal::Decimal) -> rust_decimal::Decimal {
-    crate::grandeurs::Montant::du_decimal(d).au_centime().decimal()
+    crate::grandeurs::decimal(crate::grandeurs::du_decimal::<crate::grandeurs::Montant>(d).au_centime())
 }
 
 /// Les chiffres d'un montant au centime `c`, positif, precedes de « - » si `negatif`, les milliers separes par
@@ -304,13 +304,13 @@ mod scelle {
 
     impl EnEuros for crate::grandeurs::Montant {
         fn decimal_ecrit(self) -> rust_decimal::Decimal {
-            self.decimal()
+            crate::grandeurs::decimal(self)
         }
     }
 
     impl EnEuros for crate::grandeurs::MontantUnitaire {
         fn decimal_ecrit(self) -> rust_decimal::Decimal {
-            self.decimal()
+            crate::grandeurs::decimal(self)
         }
     }
 }
@@ -321,7 +321,7 @@ impl EnEuros for crate::grandeurs::MontantUnitaire {}
 /// UN POURCENTAGE TEL QU'ON LE LIT, et le seul endroit qui en écrit un dans une phrase : « 1,50 % », à deux décimales (la
 /// moitié au pair), la virgule décimale.
 pub fn pourcent(t: crate::grandeurs::Taux) -> String {
-    let mut t = t.decimal().round_dp(2);
+    let mut t = crate::grandeurs::decimal(t).round_dp(2);
     t.rescale(2);
     format!("{} %", t.to_string().replace('.', ","))
 }
@@ -355,7 +355,7 @@ pub fn heures(h: crate::grandeurs::Heures) -> String {
 pub fn heures_et_minutes(h: crate::grandeurs::Heures) -> String {
     use rust_decimal::{Decimal, RoundingStrategy};
     let soixante = Decimal::from(60);
-    let minutes = (h.decimal() * soixante).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+    let minutes = (crate::grandeurs::decimal(h) * soixante).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
     let heures = (minutes / soixante).trunc();
     let reste = minutes - heures * soixante;
     match reste.is_zero() {
@@ -371,7 +371,7 @@ pub fn au_pluriel<G: crate::grandeurs::Grandeur>(g: G) -> bool {
 
 /// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
 /// inutile (« 151,67 », « 8 », « 2,5 »).
-pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
+pub(crate) fn nombre_dit(x: rust_decimal::Decimal) -> String {
     x.normalize().to_string().replace('.', ",")
 }
 

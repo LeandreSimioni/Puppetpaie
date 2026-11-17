@@ -509,7 +509,7 @@ pub fn nombre_du_texte(t: &str) -> serde_json::Number {
 /// UN MONTANT OU UN TAUX EN DECIMAL : un entier garde son echelle nulle, un nombre a virgule sa forme la plus courte
 /// (`1.0` reste `1.0`, `decimal_ecrit`), un nombre ecrit en texte se lit (`num::dec_texte`).
 /// `#[serde(deserialize_with = "socle::forme::decimal")]`.
-pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
+pub(crate) fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
     d.deserialize_any(EnDecimal { texte: TexteLu::Ecrit })
 }
 
@@ -568,7 +568,7 @@ impl<'de> serde::de::Visitor<'de> for EnDecimal {
 }
 
 /// `decimal`, quand la valeur peut manquer ou etre nulle (avec `#[serde(default)]`).
-pub fn decimal_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crate::num::Decimal>, D::Error> {
+pub(crate) fn decimal_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crate::num::Decimal>, D::Error> {
     <Option<Nombre> as serde::Deserialize>::deserialize(d).map(|n| n.map(|n| n.0))
 }
 
@@ -640,7 +640,7 @@ where
 /// UN TAUX, UNE QUOTITE, UN COEFFICIENT, UNE QUANTITE QUE LE CALCUL LIT : un nombre (jamais un texte), en decimal, dans
 /// sa forme la plus courte, une decimale au moins (`num::court` : `24` se lit `24.0`, `0.10` se lit `0.1`).
 /// `#[serde(deserialize_with = "socle::forme::court")]`.
-pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
+pub(crate) fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
     struct EnCourt;
     impl<'de> serde::de::Visitor<'de> for EnCourt {
         type Value = crate::num::Decimal;
@@ -663,7 +663,7 @@ pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decim
 /// Un nombre lu comme `court`, la ou un champ ne se pose pas (une valeur de table, une liste datee), ou la ou il peut
 /// manquer (`Option<Court>` : absent ou nul, il est vide).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Court(pub crate::num::Decimal);
+pub struct Court(pub(crate) crate::num::Decimal);
 
 impl Court {
     /// Le nombre tel qu'une phrase le cite, le fichier qui l'écrit nommé à côté (« 1 500 », « 12,5 »).
@@ -678,6 +678,17 @@ impl<'de> serde::Deserialize<'de> for Court {
     }
 }
 
+/// DEUX TEXTES QUI ECRIVENT LE MEME NOMBRE, a 1e-25 pres (`"2.50"` et `"2.5"` ; un oracle relu, un decimal a 28 chiffres
+/// d'un cote) ; un texte qui n'est pas un nombre ecrit au point decimal n'en ecrit aucun.
+pub fn memes_nombres_ecrits(x: &str, y: &str) -> bool {
+    use std::str::FromStr;
+    use crate::num::Decimal;
+    match (Decimal::from_str(x), Decimal::from_str(y)) {
+        (Ok(x), Ok(y)) => (x - y).abs() < Decimal::from_parts(1, 0, 0, false, 25),
+        _ => false,
+    }
+}
+
 /// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
 pub fn illisible(t: &str) -> String {
     format!("nombre illisible : {}", crate::fichiers::repr(t))
@@ -685,7 +696,7 @@ pub fn illisible(t: &str) -> String {
 
 /// Un nombre decimal, lu comme `decimal`, la ou un champ ne se pose pas (une valeur de table).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Nombre(pub crate::num::Decimal);
+pub struct Nombre(pub(crate) crate::num::Decimal);
 
 impl Nombre {
     /// LE NOMBRE QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`, `-2`), comme `num::decimal_lu` le lit, son
@@ -861,7 +872,7 @@ fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[
 
 /// Ecrit un decimal en nombre a virgule (une grandeur en nombre JSON, un taux rendu), exact, comme les fichiers l'ecrivent
 /// (`ecriture::a_virgule` : `130.0`).
-pub fn ecrire_a_virgule<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
+pub(crate) fn ecrire_a_virgule<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
     use serde::Serialize;
     match crate::ecriture::a_virgule(&d.to_string()) {
         Some(t) => nombre_du_texte(&t).serialize(s),
@@ -870,7 +881,7 @@ pub fn ecrire_a_virgule<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> 
 }
 
 /// `ecrire_a_virgule`, quand la valeur peut manquer (nulle, elle s'ecrit `null`).
-pub fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal>, s: S) -> Result<S::Ok, S::Error> {
+pub(crate) fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal>, s: S) -> Result<S::Ok, S::Error> {
     match d {
         Some(d) => ecrire_a_virgule(d, s),
         None => s.serialize_none(),
@@ -911,23 +922,11 @@ impl From<NombreLu> for serde_json::Number {
 
 impl NombreLu {
     /// Le decimal du nombre : un entier tel quel, un nombre a virgule par sa forme la plus courte (`decimal_ecrit`).
-    pub fn decimal(&self) -> R<crate::num::Decimal> {
+    pub(crate) fn decimal(&self) -> R<crate::num::Decimal> {
         match (self.0.as_i64(), self.0.as_u64()) {
             (Some(i), _) => Ok(i.into()),
             (_, Some(u)) => Ok(u.into()),
             (None, None) => decimal_ecrit(&self.0.to_string()),
-        }
-    }
-
-    /// Le decimal du nombre, son echelle gardee (`130.0`, sa forme ecrite) : un entier tel quel, un nombre a virgule tel
-    /// qu'il s'ecrit. Un nombre hors de portee d'un decimal se refuse.
-    pub fn decimal_avec_echelle(&self) -> R<crate::num::Decimal> {
-        match (self.0.as_i64(), self.0.as_u64()) {
-            (None, None) => {
-                let s = self.ecrit();
-                crate::num::dec_texte(&s).map_err(|_| crate::refus!("nombre hors de portee : {}", s))
-            }
-            _ => self.decimal(),
         }
     }
 

@@ -3,9 +3,7 @@
 //! fixe d'une grille (`tire`). Inclus par les aides de chaque crate (`#[path = ...] mod oracles;`).
 
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
-use rust_decimal::Decimal;
 use serde_json::Value;
 
 
@@ -27,13 +25,7 @@ pub fn reecrire_oracles() -> bool {
 pub fn egal(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => socle::ecriture::canonique(x) == socle::ecriture::canonique(y),
-        (Value::String(x), Value::String(y)) => {
-            x == y
-                || match (Decimal::from_str(x), Decimal::from_str(y)) {
-                    (Ok(x), Ok(y)) => (x - y).abs() < Decimal::from_str("0.0000000000000000000000001").unwrap(),
-                    _ => false,
-                }
-        }
+        (Value::String(x), Value::String(y)) => x == y || socle::forme::memes_nombres_ecrits(x, y),
         (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(a, b)| egal(a, b)),
         (Value::Object(x), Value::Object(y)) => x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| egal(v, w))),
         _ => a == b,

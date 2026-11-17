@@ -53,8 +53,7 @@ zip = { workspace = true }
 
 [dev-dependencies]
 # Les essais lisent la reponse d'une route telle que la page la recoit : du JSON.
-serde_json = { workspace = true }# Les montants qu'un essai compare.
-rust_decimal = { workspace = true }
+serde_json = { workspace = true }
 # Les gardes de structure (`tests/fichiers/structure.rs`, `sources.rs`) cherchent des motifs dans les sources.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Le verrou des sources (`tests/fichiers/sources.rs`) lit les livraisons gzip de LEGI.
