@@ -781,7 +781,7 @@ impl std::ops::Deref for BaremeDuMois {
 }
 
 /// Ce que la section `dsn` de la reduction generale de la pile dit de ses CTP, `None` : elle n'en a pas.
-fn reduction_dsn(pile: &Pile) -> Option<&droit::forme_bareme::ReductionDsn> {
+fn reduction_dsn(pile: &Pile) -> Option<&droit::forme_bareme::CodesDeLaReductionEnDsn> {
     pile.reduction_generale.as_ref().and_then(|r| r.dsn.as_ref())
 }
 

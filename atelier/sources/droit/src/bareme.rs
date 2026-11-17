@@ -7,7 +7,7 @@
 //! ci-dessous) et l'etablissement du salarie (`etablissement_de`, `surcharger`).
 
 use crate::forme_bareme::{
-    CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee,
+    CotisationDsn, CotisationModifiee, CotisationSupplementaire, FamilleDeCotisation, IdDeCotisation, ParametresDeLaReduction, Part, Pile, Rubrique, RubriqueModifiee,
     TauxDate, VersementMobiliteEcrit, CADRE, CADRE_PERMANENT, CCN, MUTUELLE, PREVOYANCE, PREVOYANCE_T2, REGIME_LOCAL, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::assiette::Assiette;
@@ -430,7 +430,7 @@ struct Couche<'a> {
     sante_patronale: Option<&'a CotisationSupplementaire>,
     majoration_conges_115: Option<socle::grandeurs::Coefficient>,
     majoration_conges_110: Option<socle::grandeurs::Coefficient>,
-    reduction_generale: Option<&'a ReductionGenerale>,
+    reduction_generale: Option<&'a ParametresDeLaReduction>,
 }
 
 /// Applique une section de surcouche sur les rubriques du bulletin :
@@ -465,14 +465,14 @@ fn empiler(mut bar: Pile, sec: Couche) -> Pile {
         bar.majoration_conges_110 = m;
     }
     if let Some(s) = sec.reduction_generale {
-        reduction_par_dessus(bar.reduction_generale.get_or_insert_with(ReductionGenerale::default), s);
+        reduction_par_dessus(bar.reduction_generale.get_or_insert_with(ParametresDeLaReduction::default), s);
     }
     bar
 }
 
 /// Ce qu'une couche ecrit de la reduction generale complete ce qu'elle portait, champ par champ, sa section `dsn`
 /// comprise : elle ne la remplace pas.
-pub(crate) fn reduction_par_dessus(rg: &mut ReductionGenerale, s: &ReductionGenerale) {
+pub(crate) fn reduction_par_dessus(rg: &mut ParametresDeLaReduction, s: &ParametresDeLaReduction) {
     macro_rules! si {
         ($($c:ident),*) => { $( if s.$c.is_some() { rg.$c = s.$c.clone(); } )* };
     }

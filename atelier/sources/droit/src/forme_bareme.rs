@@ -246,7 +246,7 @@ forme! {
         pub cotisations_dsn: Vec<CotisationDsn>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisation_sante_patronale: Option<CotisationSupplementaire>,
-        pub reduction_generale: Option<ReductionGenerale>,
+        pub reduction_generale: Option<ParametresDeLaReduction>,
         pub majoration_chomage_cddu: Option<MajorationChomage>,
         pub statuts: Vec<Statut>,
         pub par_statut: BTreeMap<Statut, CoucheStatut>,
@@ -827,9 +827,10 @@ pub enum FormuleDeReduction {
 }
 
 forme! {
-    /// La reduction generale des cotisations (CSS L. 241-13), ou ce qu'une couche en complete.
+    /// Les parametres de la reduction generale des cotisations (CSS L. 241-13) qu'un bareme ecrit, ou ce qu'une couche en
+    /// complete : la forme de sa section ; la reduction d'une paie est `reduction::ReductionGenerale`.
     #[derive(Default)]
-    pub struct ReductionGenerale {
+    pub struct ParametresDeLaReduction {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<Statut>>,
         pub formule: Option<FormuleDeReduction>,
@@ -840,7 +841,7 @@ forme! {
         pub plafond_smic: Option<Coefficient>,
         pub smic_horaire_reference: Option<MontantUnitaire>,
         pub imputation: Option<Imputation>,
-        pub dsn: Option<ReductionDsn>,
+        pub dsn: Option<CodesDeLaReductionEnDsn>,
         /// La fraction du coefficient d'un salarie declare a la caisse des Conges Spectacles (`100/90`).
         pub majoration_caisse_conges: Option<MajorationCaisseConges>,
     }
@@ -887,7 +888,7 @@ forme! {
 forme! {
     /// Ce que la DSN declare de la reduction : les codes 81 de ses parts, le CTP du bordereau.
     #[derive(Default)]
-    pub struct ReductionDsn {
+    pub struct CodesDeLaReductionEnDsn {
         pub code81_urssaf: Option<CodeCotisation81>,
         pub code81_chomage: Option<CodeCotisation81>,
         pub code81_retraite: Option<CodeCotisation81>,
@@ -905,7 +906,7 @@ forme! {
         pub verifie: Option<bool>,
         pub rubriques_bulletin: Option<Vec<Rubrique>>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
-        pub reduction_generale: Option<ReductionGenerale>,
+        pub reduction_generale: Option<ParametresDeLaReduction>,
     }
 }
 
@@ -939,7 +940,7 @@ forme! {
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisation_sante_patronale: Option<CotisationSupplementaire>,
         pub cpf_cdd: Option<CpfCdd>,
-        pub reduction_generale: Option<ReductionGenerale>,
+        pub reduction_generale: Option<ParametresDeLaReduction>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
     }
 }
@@ -1371,7 +1372,7 @@ forme! {
     pub struct StatutModifie {
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
-        pub reduction_generale: Option<ReductionGenerale>,
+        pub reduction_generale: Option<ParametresDeLaReduction>,
     }
 }
 
@@ -1583,7 +1584,7 @@ pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::echec::R<Su
 }
 
 /// CE QUE LA DSN DECLARE DE LA REDUCTION GENERALE D'UNE PILE, ses couches empilees (`bareme::empiler`) : une couche peut
-/// ne dire qu'une partie de `ReductionDsn` (la section d'une nature complete celle du statut), la pile empilee dit tout.
+/// ne dire qu'une partie de `CodesDeLaReductionEnDsn` (la section d'une nature complete celle du statut), la pile empilee dit tout.
 /// Les codes 81.001 de ses trois parts et la cle de totalisation des parts Urssaf et chomage (`Versement.codes81`) ; la
 /// part retraite se totalise sous son code.
 #[derive(Debug, Clone)]

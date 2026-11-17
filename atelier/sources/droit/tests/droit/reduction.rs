@@ -22,7 +22,7 @@ struct ParStatut {
 
 #[derive(Deserialize)]
 struct Technicien {
-    reduction_generale: droit::forme_bareme::ReductionGenerale,
+    reduction_generale: droit::forme_bareme::ParametresDeLaReduction,
 }
 
 /// La grandeur qu'un exemple ecrit.

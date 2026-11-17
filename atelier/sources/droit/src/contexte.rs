@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, VersementMobiliteEcrit};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::MontantUnitaire;
@@ -588,7 +588,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
             modifier_cotisations(st.cotisations_dsn.as_mut().ok_or_else(|| inconnue(&ou, "cotisations_dsn"))?, mods, &ou)?;
         }
         if let Some(r) = &m.reduction_generale {
-            crate::bareme::reduction_par_dessus(st.reduction_generale.get_or_insert_with(ReductionGenerale::default), r);
+            crate::bareme::reduction_par_dessus(st.reduction_generale.get_or_insert_with(ParametresDeLaReduction::default), r);
         }
     }
     for (n, m) in s.par_nature.iter().flatten() {

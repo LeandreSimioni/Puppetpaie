@@ -89,10 +89,11 @@ forme_notee! {
     }
 }
 
-/// Le taux AT/MP d'une ligne du bordereau : celui du bareme du mois declare.
+/// D'OU UNE LIGNE DU BORDEREAU PREND SON TAUX AT/MP (`taux_at` d'un CTP) : du bareme du mois declare
+/// (`declarations::dsn::taux_at_du_ctp`). Une forme de `organismes-base.json`, pas un taux.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TauxAt {
+pub enum TauxAtDuBareme {
     Bareme,
 }
 
@@ -353,7 +354,7 @@ forme_notee! {
         pub qualifiant: QualifiantDAssiette,
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,
-        pub taux_at: Option<TauxAt>,
+        pub taux_at: Option<TauxAtDuBareme>,
         pub statut: Option<crate::fiche::Statut>,
         /// La population : `intermittent` ou `permanent` (`ParNature`).
         #[serde(rename = "nature", default, deserialize_with = "crate::natures::population::option::deserialize")]

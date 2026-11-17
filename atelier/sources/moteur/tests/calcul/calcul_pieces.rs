@@ -37,7 +37,7 @@ fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
 }
 
 /// La section `reduction_generale` d'un bareme de la grille, lue comme la pile la lit.
-fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ReductionGenerale>> {
+fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ParametresDeLaReduction>> {
     bar.get("reduction_generale").filter(|v| !v.is_null()).map(|v| socle::forme::lire(v, "section illisible")).transpose()
 }
 
