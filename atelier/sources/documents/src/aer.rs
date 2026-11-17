@@ -321,9 +321,10 @@ fn numero_de(p: &Paie) -> socle::echec::R<&engagement::numeros::NumeroContrat> {
 }
 
 /// CE QUE L'ATTESTATION COMPARE D'UNE PAIE : son numero de contrat declare (`numero_de`), sa periode payee
-/// (`Engagement::periode_payee`, le contrat borne au mois de la paie), et les heures et cachets que la DSN du mois
-/// declare en activite (bloc 53, `declarations::dsn::mesures_d_activite`) : les cachets et les heures de l'engagement,
-/// ou les heures travaillees d'un contrat paye au mois. France Travail compte les heures de l'artiste qui n'est pas au
+/// (`Engagement::periode_payee`, le contrat borne au mois de la paie), ses cachets (`Engagement::cachets`) et ses heures :
+/// celles de l'engagement (`Engagement::heures`, sans les cachets), ou les heures travaillees d'un contrat paye au mois
+/// (`Paie::heures_travaillees`). Ce ne sont pas les mesures d'activite que la DSN du mois declare au bloc 53
+/// (`declarations::dsn::mesures_d_activite`). France Travail compte les heures de l'artiste qui n'est pas au
 /// cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la forme de cachets, chaque cachet est
 /// converti en heures » ; `plafond-intermittents/unedic-annexe10-convention-20241115.txt`). Un contrat sans fin n'a pas
 /// d'attestation.

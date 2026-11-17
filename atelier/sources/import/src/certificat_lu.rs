@@ -368,8 +368,14 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             match cle {
                 "siret" => {
                     let s: String = v.concat().chars().filter(char::is_ascii_digit).collect();
-                    // Des chiffres qui ne font pas un SIRET : le certificat ne le dit pas.
-                    c.employeur.siret = droit::fiche::Siret::lire(&s).ok();
+                    // Des chiffres qui ne font pas un SIRET : une faute de lecture, qui met la piece de cote.
+                    c.employeur.siret = match (!s.is_empty()).then(|| droit::fiche::Siret::lire(&s)).transpose() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            fautes.push(e.phrase);
+                            None
+                        }
+                    };
                 }
                 "compte" => c.compte = texte(&v).map(|t| documents::conges_spectacles::forme_adherent(&t)),
                 "ce" => c.numero = texte(&v),

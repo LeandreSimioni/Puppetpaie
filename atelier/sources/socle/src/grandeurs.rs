@@ -1126,6 +1126,14 @@ impl crate::forme::Nombre {
     }
 }
 
+impl crate::forme::Court {
+    /// LA GRANDEUR QU'IL DIT, lu dans sa forme la plus courte avant de savoir sa place (un element d'un tableau ecrit
+    /// `[bas, haut, taux]`) : la porte de sa lecture.
+    pub fn grandeur<G: Grandeur>(self) -> G {
+        G::du(self.0)
+    }
+}
+
 /// LES LECTURES D'UNE GRANDEUR AUTRES QUE LA SIENNE (`forme::decimal_en_nombre`) : un champ les dit par son attribut serde
 /// (`…::deserialize`, `…::option::deserialize` pour un `Option`).
 pub mod lu {

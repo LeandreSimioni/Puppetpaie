@@ -497,6 +497,7 @@ const MENTIONS: [(&str, Sorte, Section, usize, bool); 23] = [
     ("code", Sorte::Texte, Section::Entete, 1, false),
     ("emploi", Sorte::Texte, Section::Entete, 1, false),
     ("statut", Sorte::Texte, Section::Entete, 1, false),
+    // L'abattement imprime : aucun calcul ne le lit ; sa mention borne celles qui l'entourent.
     ("abattement", Sorte::Nombre, Section::Entete, 1, false),
     ("conges_spectacles", Sorte::Compact, Section::Entete, 1, false),
     ("periode", Sorte::Periode, Section::Entete, 1, false),
@@ -930,7 +931,6 @@ pub struct Salarie {
     pub code: Option<String>,
     pub emploi: Option<String>,
     pub statut: Option<String>,
-    pub abattement: Option<Decimal>,
     pub conges_spectacles: Option<String>,
 }
 
@@ -1549,7 +1549,6 @@ impl<'a> Lecteur<'a> {
             code: texte(&valeurs, "code"),
             emploi: texte(&valeurs, "emploi"),
             statut: texte(&valeurs, "statut"),
-            abattement: nombre(&valeurs, "abattement"),
             conges_spectacles: texte(&valeurs, "conges_spectacles"),
         };
         let Some(tableau) = tableau? else {

@@ -408,7 +408,7 @@ pub struct TranchePas {
 impl<'de> Deserialize<'de> for TranchePas {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         match <Vec<Option<Court>>>::deserialize(d)?.as_slice() {
-            [Some(b), h, Some(t)] => Ok(TranchePas { bas: Montant::du_decimal(b.0), haut: h.map(|h| Montant::du_decimal(h.0)), taux: Taux::du_decimal(t.0) }),
+            [Some(b), h, Some(t)] => Ok(TranchePas { bas: b.grandeur(), haut: h.map(Court::grandeur), taux: t.grandeur() }),
             autre => {
                 let valeurs: Vec<String> = autre
                     .iter()

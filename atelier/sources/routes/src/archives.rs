@@ -614,7 +614,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })
 }
 
-/// Ce qu'un export rend, avant d'etre mis en JSON (le chemin ecrit en entier, les montants en `Decimal`).
+/// Ce qu'un export rend, avant d'etre mis en JSON (le chemin ecrit en entier, chaque montant dans sa grandeur).
 pub(crate) enum Exporte {
     Casc(crate::importation::casc::Regularisation),
     Livre(documents::etats_paie::LivreDePaie),

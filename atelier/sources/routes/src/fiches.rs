@@ -952,7 +952,7 @@ fn poser_entreprise_note(ctx: &Contexte, case: ChangementEntreprise, jour: Jour,
 
 // ------------------------------------------------------------------ la fiche demandee par courriel
 
-/// Le temps entre une demande de fiche et la reponse de la personne fictive de la compagnie fictive (`DELAI_SIGNATURE`).
+/// Le temps entre une demande de fiche et la reponse de la personne fictive de la compagnie fictive.
 pub(crate) const DELAI_FICTIVE: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Une adresse courriel de forme `x@y.z`, sans blanc ni second `@`.
