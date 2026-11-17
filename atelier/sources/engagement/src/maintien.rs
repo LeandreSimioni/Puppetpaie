@@ -663,7 +663,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
 fn montant_de_principe(bruts: &[Montant], smic: MontantUnitaire, p: &Principe) -> R<MontantUnitaire> {
     let plafond = ((p.heures_du_mois * smic) * p.plafond_smic).au_centime();
     let total = bruts.iter().fold(Montant::ZERO, |t, b| t + (*b).min(plafond));
-    Ok(total.par_jour(p.diviseur).ok_or_else(diviseur_nul)?.fois_coefficient(p.fraction).au_centime())
+    Ok((total.par_jour(p.diviseur).ok_or_else(diviseur_nul)? * p.fraction).au_centime())
 }
 
 /// Les indemnites brutes d'un jour d'accident, normale et majoree, de la paie du mois anterieur (`brut`) au plafond
@@ -672,7 +672,7 @@ fn montants_d_accident(brut: Montant, pass: Montant, p: &PrincipeAccident) -> R<
     let journalier = brut.par_jour(p.diviseur).ok_or_else(diviseur_nul)?;
     let base = journalier.min(pass.fois_taux(p.plafond_pass).au_centime().pour_une_unite());
     let gain_net = journalier - journalier.fois_taux(p.taux_forfaitaire);
-    let au_taux = |fraction: Coefficient| base.fois_coefficient(fraction).min(gain_net).au_centime();
+    let au_taux = |fraction: Coefficient| (base * fraction).min(gain_net).au_centime();
     Ok((au_taux(p.fraction), au_taux(p.fraction_majoree)))
 }
 

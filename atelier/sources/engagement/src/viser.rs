@@ -130,7 +130,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[RangDan
 
 /// Le salaire mensuel de la carte multiplie par `facteur`, au centime, dans sa forme la plus courte.
 fn mis_a_l_echelle(x: MontantUnitaire, facteur: Coefficient) -> MontantUnitaire {
-    socle::grandeurs::courte(x.fois_coefficient(facteur).au_centime())
+    socle::grandeurs::courte((x * facteur).au_centime())
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
@@ -147,7 +147,7 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Coefficient) -> R<bool> {
         // Une ligne ajustable dit son taux dans sa case (`taux_saisi`) : au centime, dans sa forme la plus courte
         // (`mis_a_l_echelle`).
         if let Some(Some(t)) = l.taux_saisi_mut() {
-            *t = socle::grandeurs::courte(t.fois_coefficient(facteur).au_centime());
+            *t = socle::grandeurs::courte((*t * facteur).au_centime());
         }
         touche = true;
     }

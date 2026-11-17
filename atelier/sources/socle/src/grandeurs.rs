@@ -241,17 +241,30 @@ pub fn courte<G: Grandeur>(g: G) -> G {
     G::du(num::court(g.en_decimal()))
 }
 
-/// UNE GRANDEUR MISE A L'ECHELLE D'UN COEFFICIENT (grandeur x coefficient = grandeur de meme nom) : une valeur livree
-/// qu'un conseil cite douze fois, ou en pourcent (`routes::gestes::conseils`).
-pub fn a_l_echelle<G: Grandeur>(g: G, c: Coefficient) -> G {
-    G::du(num::mul(g.en_decimal(), c.0))
+/// Montant unitaire x coefficient = montant unitaire (la moitie du salaire journalier).
+impl std::ops::Mul<Coefficient> for MontantUnitaire {
+    type Output = MontantUnitaire;
+    fn mul(self, c: Coefficient) -> MontantUnitaire {
+        MontantUnitaire(num::mul(self.0, c.0))
+    }
 }
 
-/// UNE GRANDEUR DIVISEE PAR UN COEFFICIENT NON NUL (grandeur / coefficient = grandeur de meme nom) : une valeur livree
-/// qu'un conseil cite sur trente et un jours.
-pub fn divisee_par<G: Grandeur>(g: G, c: NonNul<Coefficient>) -> G {
-    G::du(num::div(g.en_decimal(), c.0 .0))
+/// UNE GRANDEUR DIVISEE PAR UN COEFFICIENT NON NUL : grandeur / coefficient = grandeur de meme nom (une valeur livree
+/// qu'un conseil cite sur trente et un jours, `routes::gestes::conseils`).
+macro_rules! divisee_par_un_coefficient {
+    ($($g:ident),*) => {
+        $(
+            impl std::ops::Div<NonNul<Coefficient>> for $g {
+                type Output = $g;
+                fn div(self, c: NonNul<Coefficient>) -> $g {
+                    $g(num::div(self.0, c.0 .0))
+                }
+            }
+        )*
+    };
 }
+
+divisee_par_un_coefficient!(Montant, MontantUnitaire, Taux, Coefficient);
 
 /// LE SIGNE D'UNE GRANDEUR (celui qu'une ligne de paie donne a ses grandeurs, l'annulation d'un montant declare dans
 /// la DSN) : la garder (`Plus`), ou la retirer (`Moins`, l'oppose). Un zero n'a pas
@@ -943,12 +956,6 @@ impl MontantUnitaire {
     /// unitaire.
     pub fn fois_taux(self, t: Taux) -> MontantUnitaire {
         MontantUnitaire(num::div(num::mul(self.0, t.0), Decimal::ONE_HUNDRED))
-    }
-
-    /// Ce montant unitaire fois le coefficient `c` (la moitie du salaire journalier) : montant unitaire x coefficient =
-    /// montant unitaire.
-    pub fn fois_coefficient(self, c: Coefficient) -> MontantUnitaire {
-        MontantUnitaire(num::mul(self.0, c.0))
     }
 
     /// Sa partie entiere, sans arrondi (le plafond horaire de la Securite sociale, que le bareme lit en euros entiers).

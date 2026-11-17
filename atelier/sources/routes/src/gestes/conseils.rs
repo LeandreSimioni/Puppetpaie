@@ -429,10 +429,13 @@ impl Donnee {
 }
 
 /// Une operation d'un gabarit sur une grandeur.
-fn operer<G: Grandeur>(g: G, op: &Operation) -> G {
+fn operer<G>(g: G, op: &Operation) -> G
+where
+    G: std::ops::Mul<Coefficient, Output = G> + std::ops::Div<socle::grandeurs::NonNul<Coefficient>, Output = G>,
+{
     match op {
-        Operation::Fois(c) => socle::grandeurs::a_l_echelle(g, *c),
-        Operation::DivisePar(c) => socle::grandeurs::divisee_par(g, *c),
+        Operation::Fois(c) => g * *c,
+        Operation::DivisePar(c) => g / *c,
     }
 }
 

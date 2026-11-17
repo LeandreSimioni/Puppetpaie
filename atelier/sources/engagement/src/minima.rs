@@ -377,14 +377,14 @@ impl<'a> Cx<'a> {
             Some(j) if j <= Duree::jours(4) => (par_heure(semaine, semaine_de_4_jours_et_demi, cle)?, "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h".to_string()),
             Some(j) if j >= Duree::jours(89) => {
                 // Pas moins de 130 % du SMIC horaire : le mensuel ramene a l'heure, ou 130 % du SMIC, le plus haut.
-                let horaire = horaire_du_mensuel(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?;
-                let smic = self.paie.smic.fois_coefficient(Coefficient::dixiemes(13));
+                let horaire = horaire_du_mensuel(semaine * semaines_du_mois, heures_du_mois, cle)?;
+                let smic = self.paie.smic * Coefficient::dixiemes(13);
                 (
                     if smic > horaire { smic } else { horaire },
                     format!("contrat de 3 mois ou plus : la semaine x 3,8 par mois de {}, pas moins de 130 % du SMIC", socle::texte::heures(heures_du_mois)),
                 )
             }
-            None => (horaire_du_mensuel(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
+            None => (horaire_du_mensuel(semaine * semaines_du_mois, heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
             Some(_) => (par_heure(semaine, semaine_de_35_h, cle)?, "la semaine de 35 h".to_string()),
         };
         Ok(plancher(
@@ -700,7 +700,7 @@ impl<'a> Cx<'a> {
                 };
                 if let Some(facteur) = gr.facteur.filter(|f| !f.est_nul()) {
                     // Un taux horaire qui ne vaut pas pour toutes les heures : le plus bas taux effectif.
-                    h = h.fois_coefficient(facteur).au_centime_vers_zero();
+                    h = (h * facteur).au_centime_vers_zero();
                     let motif = match gr.facteur_motif.as_deref().filter(|m| !m.is_empty()) {
                         Some(m) => m,
                         None => "taux effectif le plus bas",

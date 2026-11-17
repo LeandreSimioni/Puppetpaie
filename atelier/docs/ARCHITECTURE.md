@@ -374,7 +374,8 @@ un libellé, chacun sa forme.
   part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
   montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant ; une valeur
   livrée qu'un gabarit des conseils cite se met à l'échelle d'un coefficient, ou s'y divise (`*12`, `/31` :
-  `socle::grandeurs::a_l_echelle`, `divisee_par`, la grandeur gardée). Il s'arrondit
+  montant, montant unitaire, taux ou coefficient × coefficient, et ÷ un coefficient non nul, `NonNul<Coefficient>` : la
+  grandeur gardée). Il s'arrondit
   par une fonction par règle (`au_dix_millieme`, la moitié vers le haut ; `a_decimales`, la moitié au pair) ; ses quatre
   décimales s'écrivent à part (`socle::grandeurs::decimales_ecrites`).
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
