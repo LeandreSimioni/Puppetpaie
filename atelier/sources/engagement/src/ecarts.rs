@@ -441,48 +441,40 @@ fn comparer_une(
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
-        // La ligne dans la forme que le catalogue demande de sa rubrique (`ligne::FormeSaisie`), comme la porte la range.
-        use crate::ligne::{self, FormeSaisie, LignePaie, PaiementDeLigne, TauxDeLigne};
+        use crate::ligne::{self, Cle, FormeSaisie, LigneDonnee, LignePaie, PaiementDeLigne, TauxDeLigne};
         let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
-        let forme = FormeSaisie::de(&lue)?;
-        // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
-        let montant = Some(paiement.montant());
-        let heures = l.heures;
-        // Une ligne saisie dit sa quantite dans l'unite de sa rubrique, comme l'import l'a rattachee ; son taux, un montant
-        // unitaire : une rubrique qui n'est pas en pourcentage.
-        let quantite = paiement.quantite();
+        // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
+        let Some(forme) = FormeSaisie::de(&lue)? else {
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
+            continue;
+        };
+        // LA LIGNE DANS LA FORME QUE LE CATALOGUE DEMANDE DE SA RUBRIQUE, rangee par la porte d'une ligne saisie
+        // (`LigneDonnee::ranger`) : elle dit les cles de cette forme, de ce que la ligne imprimee paie. Sa quantite est dans
+        // l'unite de sa rubrique, comme l'import l'a rattachee ; son taux, un montant unitaire (une rubrique qui n'est pas
+        // en pourcentage) ; une ligne en pourcentage, sa base et la part qu'elle en paie, en pourcent ; une ligne au
+        // montant, sa quantite fois son taux, comme le bulletin l'imprime.
+        let voulue = |c: Cle| forme.cles().contains(&c);
         let par_unite = || match paiement.taux() {
             TauxDeLigne::ParUnite(u) => Ok(u),
             TauxDeLigne::PartDeLaBase(_) => Err(socle::refus!("la ligne « {} » paie une part de sa base, et sa rubrique ne la saisit pas ainsi : le signaler au développeur", libelle)),
         };
-        // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
-        let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures, precision: None, dates: jours.clone() }));
-            continue;
+        let (base, part) = match (voulue(Cle::Base), paiement) {
+            (false, _) => (None, None),
+            (true, PaiementDeLigne::Base(base, part)) => (Some(Some(base)), Some(Some(part.en_taux()))),
+            (true, _) => return Err(socle::refus!("la ligne « {} » est d'une rubrique en pourcentage, et l'import ne lui a pas donné de base : le signaler au développeur", libelle)),
         };
-        let (rubrique, dates) = (lue.code, jours.clone());
-        saisies.push(match forme {
-            FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux: Some(par_unite()?), lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux: Some(par_unite()?), heures, lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::Frais | FormeSaisie::FraisSansLimite => LignePaie::Frais(ligne::Frais {
-                rubrique,
-                quantite,
-                taux: Some(par_unite()?),
-                territoire: None,
-                cases: Vec::new(),
-                lieu: None,
-                dates,
-                planning: Vec::new(),
-                marques: ligne::Marques::default(),
-            }),
-            // Une ligne en pourcentage : sa base, et la part qu'elle en paie, en pourcent.
-            FormeSaisie::Pourcentage => match paiement {
-                PaiementDeLigne::Base(base, part) => LignePaie::en_pourcentage(rubrique, base, part.en_taux()),
-                _ => return Err(socle::refus!("la ligne « {} » est d'une rubrique en pourcentage, et l'import ne lui a pas donné de base : le signaler au développeur", libelle)),
-            },
-            FormeSaisie::Montant => LignePaie::Montant(ligne::AuMontant { rubrique, montant }),
-            FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(ligne::AvantageEnNature { rubrique, montant, genre: None }),
-        });
+        let donnee = LigneDonnee {
+            rubrique: Some(lue.code.clone()),
+            quantite: voulue(Cle::Quantite).then_some(paiement.quantite()),
+            taux: if voulue(Cle::Taux) { Some(Some(par_unite()?)) } else { None },
+            heures: voulue(Cle::Heures).then_some(l.heures),
+            base,
+            taux_majoration: part,
+            montant: voulue(Cle::Montant).then_some(Some(paiement.montant())),
+            dates: voulue(Cle::Dates).then(|| jours.clone()),
+            ..LigneDonnee::default()
+        };
+        saisies.push(donnee.ranger(&lue)?);
     }
     // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
     let spectacle = match (mensuelle, dit(&p.spectacle)) {
