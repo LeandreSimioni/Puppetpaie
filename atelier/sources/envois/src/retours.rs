@@ -3411,6 +3411,13 @@ fn illisible_crm_oc(attribut: &str, valeur: &str) -> Echec {
     socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {} vaut {}, pas JJMMAAAA.", attribut, socle::date::repr_texte(valeur)), attribut).reclasser(Classe::Illisible)
 }
 
+/// Un attribut d'un CRM OC lu dans sa forme (`lire`) ; hors d'elle, le CRM ne se lit pas.
+fn attribut_du_crm<T>(texte: Option<String>, attribut: &str, lire: fn(&str) -> R<T>) -> R<Option<T>> {
+    texte
+        .map(|t| lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), attribut).reclasser(Classe::Illisible)))
+        .transpose()
+}
+
 pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
@@ -3428,9 +3435,14 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             .enfants(d)
             .filter(|x| matches!(local(&x.tag), "MandatNetE" | "MandatProp"))
             .map(|m| -> R<MandatOc> {
-                // L'adresse du mandat ; hors de la forme d'une adresse, le CRM ne se lit pas.
-                let url = at(m, "URLMandatProp").map(|t| Url::lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), "URLMandatProp").reclasser(Classe::Illisible))).transpose()?;
-                Ok(MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url })
+                // L'adresse, l'IBAN et le BIC du mandat ; hors de leur forme, le CRM ne se lit pas.
+                Ok(MandatOc {
+                    net_entreprises: local(&m.tag) == "MandatNetE",
+                    iban: attribut_du_crm(at(m, "IBAN"), "IBAN", droit::fiche::Iban::lire)?,
+                    bic: attribut_du_crm(at(m, "BIC"), "BIC", droit::fiche::Bic::lire)?,
+                    ics: at(m, "ICS"),
+                    url: attribut_du_crm(at(m, "URLMandatProp"), "URLMandatProp", Url::lire)?,
+                })
             })
             .collect::<R<Vec<MandatOc>>>()?;
         let mut retours = Vec::new();
@@ -3528,8 +3540,8 @@ pub struct DeclarationOc {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MandatOc {
     pub net_entreprises: bool,
-    pub iban: Option<String>,
-    pub bic: Option<String>,
+    pub iban: Option<droit::fiche::Iban>,
+    pub bic: Option<droit::fiche::Bic>,
     pub ics: Option<String>,
     pub url: Option<Url>,
 }

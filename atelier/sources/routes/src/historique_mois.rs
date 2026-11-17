@@ -945,7 +945,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
                 (false, None) => "à créer auprès de l'organisme".to_string(),
                 (false, Some(u)) => format!("à créer sur le site de l'organisme : {}", u),
             };
-            l.phrases.push(format!("Pas de mandat de prélèvement SEPA{} : {}.", morceau(" pour le compte ", lu(&m.iban), ""), ou));
+            l.phrases.push(format!("Pas de mandat de prélèvement SEPA{} : {}.", morceau(" pour le compte ", m.iban.as_deref(), ""), ou));
         }
         if let Some(contact) = joint([lu(&d.contact), lu(&d.courriel), lu(&d.telephone)], ", ") {
             l.phrases.push(format!("Contact chez l'organisme : {}.", contact));
