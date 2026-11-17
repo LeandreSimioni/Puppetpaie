@@ -1116,7 +1116,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 if pareils.iter().any(|a| a.compte() == le_sien) {
                     phrases.push("contrat déjà attesté".into());
                     EtatContrat::Deja
-                } else if let Some(a) = pareils.iter().find(|a| a.par != Attestation::Aem) {
+                } else if let Some(a) = pareils.iter().find(|a| a.contrat().atteste_par != Attestation::Aem) {
                     phrases.push(format!(
                         "un contrat attesté aux mêmes dates ({}) porte d'autres compteurs : il est gardé, celui du bulletin n'est pas ajouté (le contrat attesté dit {}, le bulletin {})",
                         a.d_ou(),
@@ -1225,8 +1225,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // L'ecart, quand les contrats confirmes tiennent dans les dates de la piece (un certificat coupe au 31 mars
             // n'en porte qu'une part).
             if pareils.iter().all(|a| a.tient_dans(&periode)) {
-                let somme: Option<Montant> = pareils.iter().map(|a| a.brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b));
-                let (cachets, jours): (Option<Cachets>, Option<Jours>) = (pareils.iter().map(|a| a.cachets).sum(), pareils.iter().map(|a| a.jours).sum());
+                let somme: Option<Montant> = pareils.iter().map(|a| a.contrat().brut).try_fold(Montant::ZERO, |s, b| b.map(|b| s + b));
+                let (cachets, jours): (Option<Cachets>, Option<Jours>) = (pareils.iter().map(|a| a.contrat().cachets).sum(), pareils.iter().map(|a| a.contrat().jours).sum());
                 fn n<G: socle::grandeurs::Grandeur>(x: Option<G>) -> String {
                     match x {
                         Some(g) => socle::grandeurs::ecrit::sans_zero::dit(g),
