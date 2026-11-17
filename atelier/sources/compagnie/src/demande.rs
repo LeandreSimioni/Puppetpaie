@@ -606,7 +606,7 @@ mod terminal_windows {
                 }
             });
             match recu.recv_timeout(ATTENTE) {
-                Ok(Ok(m)) => Reponse::Mot(Secret::nouveau(m.trim_end_matches(['\r', '\n']).to_string())),
+                Ok(Ok(m)) => Reponse::Mot(socle::secret::Secret::nouveau(m.trim_end_matches(['\r', '\n']).to_string())),
                 Ok(Err(e)) => Reponse::Refus(socle::refus!("La console ne se lit pas ({}) : refuse. Rien n'est parti.", e)),
                 Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus(socle::echec::refus("Rien n'a ete tape (delai depasse, ou pas de console) : refuse. Rien n'est parti.")),
             }
