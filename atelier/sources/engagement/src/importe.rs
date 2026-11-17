@@ -253,11 +253,11 @@ impl LigneImprimee {
     /// LE RATTACHEMENT D'UNE LIGNE IMPRIMEE, le seul : la ligne de paie qu'elle dit a l'engagement importe, quand l'import
     /// l'a rattachee a une rubrique et qu'elle dit son montant, meme sans quantite ni taux (un forfait n'a pas de
     /// quantite) : ce montant, tel quel, et ce qu'elle paie et ses heures quand elle les dit. Sa ligne de remuneration est
-    /// celle que le calcul rend de cette ligne de paie (`calcul::lignes_brut` : le code et le libelle de sa rubrique) ;
+    /// celle que le calcul rattache a sa rubrique (`calcul::ligne_rattachee` : le code et le libelle de sa rubrique) ;
     /// une ligne qui n'est pas rattachee garde ce qu'elle imprime (`PaieImportee::remuneration`).
-    pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
+    pub fn en_ligne_de_paie(&self) -> Option<crate::ligne::Importee> {
         let rubrique = self.rubrique.clone()?;
-        Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, paiement: self.paiement, heures: self.heures, montant: self.montant? }))
+        Some(crate::ligne::Importee { rubrique, paiement: self.paiement, heures: self.heures, montant: self.montant? })
     }
 }
 
@@ -659,7 +659,7 @@ pub struct PaieImportee {
     pub spectacle: Option<droit::fiche::Spectacle>,
     /// Les lignes de remuneration que le bulletin imprime, dans son ordre (a defaut, le brut que la DSN declare), chacune
     /// avec sa ligne de remuneration quand l'import l'a rattachee (`LigneImprimee::en_ligne_de_paie`).
-    pub remuneration: Vec<(LigneImprimee, Option<crate::calcul::LigneBrut>)>,
+    pub remuneration: Vec<(LigneImprimee, Option<crate::calcul::LigneRattachee>)>,
     /// Les heures pour les annexes 8 et 10 (un cachet compte pour les heures que sa rubrique declare) : la somme de celles
     /// des lignes rattachees, dans sa forme la plus courte ; `None` : aucune ligne n'est rattachee.
     pub heures_annexes: Option<Heures>,
@@ -757,7 +757,7 @@ impl Importe {
             nom: crate::qui_de(&sal)?,
             spectacle: spectacle.clone(),
             dates_travail,
-            lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).collect(),
+            lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).map(crate::LignePaie::Importee).collect(),
             contrat,
             numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
@@ -796,10 +796,10 @@ impl Importe {
         // Chaque ligne imprimee, avec sa ligne de remuneration quand elle est rattachee (`en_ligne_de_paie`).
         let mut remuneration = Vec::new();
         for l in lignes_lues {
-            let rattachee = l.en_ligne_de_paie().map(|lp| crate::calcul::ligne_brut(&lp, &ctx)).transpose()?;
+            let rattachee = l.en_ligne_de_paie().map(|i| crate::calcul::ligne_rattachee(&i, &ctx)).transpose()?;
             remuneration.push((l, rattachee));
         }
-        let rattachees: Vec<&crate::calcul::LigneBrut> = remuneration.iter().filter_map(|(_, r)| r.as_ref()).collect();
+        let rattachees: Vec<&crate::calcul::LigneRattachee> = remuneration.iter().filter_map(|(_, r)| r.as_ref()).collect();
         // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees.
         (engagement.cachets, engagement.heures) = crate::cachets_et_heures(rattachees.iter().map(|r| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), r.heures_annexes)), nat.mensuelle());
         let heures_annexes = (!rattachees.is_empty()).then(|| socle::grandeurs::courte(rattachees.iter().map(|r| r.heures_annexes).sum()));

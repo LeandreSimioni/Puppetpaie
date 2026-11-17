@@ -550,11 +550,13 @@ pub enum PaieDuMois {
 }
 
 /// UNE LIGNE DE REMUNERATION D'UNE PAIE DU MOIS, telle qu'un etat la lit, sans recopie : la ligne de remuneration que le
-/// calcul rend, ou que l'import a rattachee a sa rubrique (`LigneBrut`) ; ou, d'un bulletin importe, une ligne que
-/// l'import n'a pas rattachee, telle qu'il l'imprime (`importe::LigneImprimee` : son libelle, son montant).
+/// calcul rend (`LigneBrut`, elle dit ce qu'elle paie) ; d'un bulletin importe, celle que l'import a rattachee a sa
+/// rubrique (`LigneRattachee`, ce qu'elle paie quand le bulletin l'imprime), ou une ligne qu'il n'a pas rattachee,
+/// telle qu'il l'imprime (`importe::LigneImprimee` : son libelle, son montant).
 #[derive(Debug, Clone, Copy)]
 pub enum RemunerationDuMois<'a> {
-    Rattachee(&'a crate::calcul::LigneBrut),
+    Calculee(&'a crate::calcul::LigneBrut),
+    Rattachee(&'a crate::calcul::LigneRattachee),
     Imprimee(&'a crate::importe::LigneImprimee),
 }
 
@@ -741,7 +743,7 @@ impl PaieDuMois {
     /// Les lignes de remuneration, dans l'ordre du bulletin : celles du calcul, ou celles du bulletin importe.
     pub fn remuneration(&self) -> Vec<RemunerationDuMois<'_>> {
         match self {
-            PaieDuMois::Validee(p) => p.remuneration.iter().map(RemunerationDuMois::Rattachee).collect(),
+            PaieDuMois::Validee(p) => p.remuneration.iter().map(RemunerationDuMois::Calculee).collect(),
             PaieDuMois::Importee(p) => p
                 .remuneration
                 .iter()

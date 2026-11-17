@@ -123,15 +123,20 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);
         let mut retenu = zero;
         for r in p.remuneration() {
-            let l = match r {
-                RemunerationDuMois::Rattachee(l) if !l.soumis => l,
-                RemunerationDuMois::Rattachee(_) => continue,
+            let (code, l_libelle, l_montant) = match r {
+                RemunerationDuMois::Calculee(l) if !l.soumis => (&l.code, &l.libelle, l.montant),
+                RemunerationDuMois::Rattachee(l) if !l.soumis => (&l.code, &l.libelle, l.montant),
+                RemunerationDuMois::Calculee(_) | RemunerationDuMois::Rattachee(_) => continue,
+                // Une ligne que l'import n'a pas rattachee : sans rubrique, ou sans montant.
                 RemunerationDuMois::Imprimee(i) if !i.soumis => {
-                    return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas sa rubrique : rien ne dit si c'est une retenue, elle n'a pas de compte dans le plan comptable.", i.libelle, qui)));
+                    let manque = match i.rubrique {
+                        Some(_) => "son montant : rien ne dit ce qu'elle retient",
+                        None => "sa rubrique : rien ne dit si c'est une retenue",
+                    };
+                    return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas {}, elle n'a pas de compte dans le plan comptable.", i.libelle, qui, manque)));
                 }
                 RemunerationDuMois::Imprimee(_) => continue,
             };
-            let code = &l.code;
             if catalogue::rubrique(&ctx.racine, code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| m.reclasser(Classe::Refuse))? != HorsAssiette::Mouvement {
                 continue;
             }
@@ -139,7 +144,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 return Err(manque_au_plan(
                     format!(
                         "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les retenues : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
-                        code, l.libelle
+                        code, l_libelle
                     ),
                     format!("retenues.{}", code),
                 ));
@@ -147,9 +152,9 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             // Le libelle du plan, sinon celui de la rubrique.
             let libelle = match &regle.libelle {
                 Some(x) => x.clone(),
-                None => l.libelle.clone(),
+                None => l_libelle.clone(),
             };
-            let montant = l.montant.au_centime();
+            let montant = l_montant.au_centime();
             *retenues.entry((regle.compte.clone(), libelle, qui.clone())).or_insert(zero) += montant;
             retenu += montant;
         }

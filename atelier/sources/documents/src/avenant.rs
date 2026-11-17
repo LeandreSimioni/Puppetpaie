@@ -116,11 +116,7 @@ pub(crate) fn ligne_citee(l: &LigneBrut) -> String {
             texte.push(c);
         }
     }
-    // Une ligne calculee dit toujours ce qu'elle paie.
-    match l.paiement {
-        Some(p) => format!("{} à {}", texte, p.taux().dit()),
-        None => texte,
-    }
+    format!("{} à {}", texte, l.paiement.taux().dit())
 }
 
 /// La ligne fait-elle le brut ? (`soumis` de la rubrique.)

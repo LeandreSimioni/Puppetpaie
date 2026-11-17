@@ -139,12 +139,12 @@ pub(crate) fn payees<'a>(rubrique: &CodeDeRubrique, lignes: impl IntoIterator<It
 
 /// LES HEURES SUPPLEMENTAIRES QUE PAIENT les lignes de remuneration `lb` d'une paie (`HEURE_SUPPLEMENTAIRE`).
 pub(crate) fn supplementaires_payees(lb: &[LigneBrut]) -> R<Heures> {
-    payees(&HEURE_SUPPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.and_then(crate::ligne::PaiementDeLigne::quantite))))
+    payees(&HEURE_SUPPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.quantite())))
 }
 
 /// Les heures complementaires que paient les lignes de remuneration `lb` d'une paie (`HEURE_COMPLEMENTAIRE`).
 fn complementaires_payees(lb: &[LigneBrut]) -> R<Heures> {
-    payees(&HEURE_COMPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.and_then(crate::ligne::PaiementDeLigne::quantite))))
+    payees(&HEURE_COMPLEMENTAIRE, lb.iter().map(|l| (&l.code, l.paiement.quantite())))
 }
 
 /// Ce que les heures en plus d'une paie font apres ses cotisations.

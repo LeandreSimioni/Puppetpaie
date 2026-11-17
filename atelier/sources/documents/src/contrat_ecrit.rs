@@ -103,8 +103,8 @@ pub fn marqueurs_au_mois(paie: &Paie, nat: &Nature, m: &mut Valeurs) -> R<()> {
             continue;
         }
         if l.salaire_de_base {
-            // Le salaire de base d'une paie calculee dit toujours son taux, le salaire du mois entier.
-            base = l.paiement.map(|p| format!("un salaire mensuel brut de {}", p.taux().dit()));
+            // Le taux du salaire de base, le salaire du mois entier.
+            base = Some(format!("un salaire mensuel brut de {}", l.paiement.taux().dit()));
         } else if l.montant > Montant::ZERO {
             morceaux.push(ligne_citee(l));
         }

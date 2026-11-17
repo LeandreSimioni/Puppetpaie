@@ -1041,8 +1041,10 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut lignes = Vec::new();
             for r in paie.remuneration() {
                 // Une ligne rattachee a sa rubrique : son code et son libelle au catalogue ; une ligne d'un bulletin
-                // importe qui ne l'est pas : ce qu'il imprime.
+                // importe qui ne l'est pas : ce qu'il imprime. Ce qu'elle paie, quand elle le dit (une ligne calculee le
+                // dit toujours ; une ligne importee, quand le bulletin l'imprime).
                 let (code, libelle, paiement, montant) = match r {
+                    RemunerationDuMois::Calculee(r) => (Some(r.code.clone()), r.libelle.clone(), Some(r.paiement), Some(r.montant)),
                     RemunerationDuMois::Rattachee(r) => (Some(r.code.clone()), r.libelle.clone(), r.paiement, Some(r.montant)),
                     RemunerationDuMois::Imprimee(i) => (None, i.libelle.clone(), None, i.montant),
                 };

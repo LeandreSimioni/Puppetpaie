@@ -753,7 +753,7 @@ fn gain_repetition(ctx: &Contexte, p: &Paie, heures_cachet: HeuresParUnite) -> R
         if l.code != droit::catalogue::REPETITION || l.heures_annexes.est_nul() {
             continue;
         }
-        let Some(engagement::ligne::QuantiteDeLigne::Services(services)) = l.paiement.and_then(engagement::ligne::PaiementDeLigne::quantite) else { continue };
+        let Some(engagement::ligne::QuantiteDeLigne::Services(services)) = l.paiement.quantite() else { continue };
         // Une ligne sans saisie n'a pas de dates connues.
         let Some(s) = s else { continue };
         let dates: BTreeSet<Jour> = s.dates().iter().map(|j| j.jour()).collect();

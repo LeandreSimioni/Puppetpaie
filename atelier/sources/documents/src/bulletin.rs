@@ -72,13 +72,9 @@ fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
     }
 }
 
-/// Une ligne de remuneration au bulletin : sa designation, a son taux quand elle dit ce qu'elle paie (une ligne calculee
-/// le dit toujours).
+/// Une ligne de remuneration au bulletin : sa designation, a son taux.
 fn ligne_au_bulletin(l: &engagement::calcul::LigneBrut) -> String {
-    match l.paiement {
-        Some(p) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(p.taux())),
-        None => l.designation(),
-    }
+    format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux()))
 }
 
 
