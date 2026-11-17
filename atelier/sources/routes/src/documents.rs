@@ -937,7 +937,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
             continue;
         }
         let siennes: Vec<&engagement::calcul::Paie> = paies.iter().zip(&cles).filter(|(_, c)| *c == cle).map(|(p, _)| p).collect();
-        resumes.insert(cle.clone(), envoi::resume_de(&siennes)?);
+        resumes.insert(cle.clone(), envoi::resume_de(&siennes));
     }
     let changes = bulletins_a_refaire(ctx, mois)?;
     let mut choix = Choix { resumes, ..Choix::default() };

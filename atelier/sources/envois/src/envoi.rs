@@ -241,81 +241,27 @@ pub struct Renvoi {
     pub declaration: String,
 }
 
-/// Le resume de la paie d'UN salarie pour le mois, tel que ses documents la disent : par contrat, ses bornes, son
-/// spectacle, ses jours travailles, ses cachets, ses heures, son brut et son net a payer ; et les totaux. Le journal le
-/// garde a chaque envoi des documents (`routes::documents::expedier_envoi`) : c'est l'« ancien » que le courriel de renvoi
-/// compare a la paie refaite. Les montants et les heures s'ecrivent comme le bulletin les ecrit.
-pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
-    let mut contrats = Vec::new();
+/// Le resume de la paie d'UN salarie pour le mois, tel que ses documents la disent : son brut et son net a payer, sur
+/// tous ses contrats du mois. Le journal le garde a chaque envoi des documents (`routes::documents::expedier_envoi`) :
+/// c'est l'« ancien » que le courriel de renvoi compare a la paie refaite (`ce_qui_a_change`) ; ce qui a change dans ses
+/// contrats, l'engagement le dit (`faits`).
+pub fn resume_de(paies: &[&Paie]) -> ResumeDePaie {
     let (mut brut, mut net) = (Montant::ZERO, Montant::ZERO);
     for p in paies {
-        let e = &p.engagement;
-        let mut dates = e.dates_travail.clone();
-        dates.sort();
-        let heures = e.heures.filter(|h| !h.est_nul());
-        let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
-        contrats.push(ContratResume {
-            contrat: e.contrat(),
-            spectacle,
-            jours: dates,
-            cachets: e.cachets,
-            heures,
-            brut: p.brut,
-            net: p.net_a_payer,
-        });
         brut += p.brut;
         net += p.net_a_payer;
     }
-    Ok(ResumeDePaie { contrats, brut, net })
+    ResumeDePaie { brut, net }
 }
 
 /// LE RESUME DE LA PAIE D'UN SALARIE (`resume_de`), tel que le journal le garde avec l'envoi de ses documents.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResumeDePaie {
-    pub contrats: Vec<ContratResume>,
     #[serde(with = "socle::grandeurs::ecrit::texte")]
     pub brut: Montant,
     #[serde(with = "socle::grandeurs::ecrit::texte")]
     pub net: Montant,
-}
-
-/// Un contrat du resume : ses bornes, son spectacle, ses jours, ses cachets, ses heures, son brut et son net.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ContratResume {
-    pub contrat: socle::date::PeriodeOuverte,
-    pub spectacle: Option<String>,
-    pub jours: Vec<socle::date::Jour>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
-    pub cachets: socle::grandeurs::Cachets,
-    /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
-    pub heures: Option<Heures>,
-    #[serde(with = "socle::grandeurs::ecrit::texte")]
-    pub brut: Montant,
-    #[serde(with = "socle::grandeurs::ecrit::texte")]
-    pub net: Montant,
-}
-
-/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::virgule` : « 13,5 », « 24 ») et
-/// relues dans cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
-mod heures_ecrites {
-    use serde::{Deserialize, Serialize};
-    use socle::grandeurs::Heures;
-
-    pub fn serialize<S: serde::Serializer>(h: &Option<Heures>, s: S) -> Result<S::Ok, S::Error> {
-        h.map(socle::texte::virgule).serialize(s)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Heures>, D::Error> {
-        let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
-        let h: Heures = socle::grandeurs::lu::en_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
-        if socle::texte::virgule(h) != t {
-            return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
-        }
-        Ok(Some(h))
-    }
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les
