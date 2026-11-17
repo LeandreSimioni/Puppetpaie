@@ -169,8 +169,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | notion | son type | aujourd'hui |
 |---|---|---|
 | ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut` (la ligne calculée), `importe::LigneDeRemuneration` (celle d'une paie du mois qu'un état lit, recopiée d'une `LigneBrut` pour une paie validée) ; une ligne imprimée importée (`importe::LigneImprimee`, la forme de la zone `importe`) se rattache deux fois, autrement (`LignePaie::Importee` : rubrique et montant ; `importe::remuneration_lue` : rubrique et paiement) |
-| contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
-| contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
+| contrat (ce que l'engagement fait signer : l'engagement lui-même, que le contrat, l'avenant et le certificat lisent dans sa paie, `Paie.engagement` ; ce que seule la saisie dit du contrat écrit, `engagement::ContratEcrit` ; ses formes, la paie écrite `FormeDEngagement` et le contrat parti `envois::ligne::ContratParti`) | `Engagement` | à unifier (#419) : `aer::PaieAer` (la période d'emploi qu'une paie déclare, projetée pour l'AER) |
+| contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`) | `ContratDeclare` | à unifier (#419) : `routes::mois::Atteste` (le calendrier refait, autrement, le découpage mois par mois d'un permanent du registre) |
 | taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
 | taux AT/MP (la ligne datée de la case : code risque, taux, depuis, provenance, notification ; le barème d'une année la porte, `Pile.taux_atmp`, et le refus d'un établissement à part, `Pile.taux_atmp_manque`) | `droit::fiche::TauxAtmp` | à unifier (#419) : `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
@@ -1027,7 +1027,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | notion | son type | déclaré dans |
 |---|---|---|
 | engagement | `Engagement` | `engagement/src/lib.rs` |
-| contrat | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… | — |
+| contrat | deux notions, en tête du glossaire : « contrat (ce que l'engagement fait signer) », `Engagement` ; « contrat déclaré ou attesté », `ContratDeclare` | — |
 | acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
