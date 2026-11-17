@@ -62,13 +62,15 @@
               "2026-11-20": "Salle fictive de Rezé",
               "2026-11-21": "Salle fictive de Rezé"
             },
-            "emploi": null,
-            "emploi_affichage": null,
-            "pcs_ese": null,
-            "code_emploi_ft": null,
-            "statut": null,
-            "statut_conventionnel": null,
-            "statut_categoriel_rc": null,
+            "emploi": {
+              "emploi": null,
+              "emploi_affichage": null,
+              "pcs_ese": null,
+              "code_emploi_ft": null,
+              "statut": null,
+              "statut_conventionnel": null,
+              "statut_categoriel_rc": null
+            },
             "etablissement": null,
             "nature": "cddu_spectacle",
             "quotite_contrat": null,
@@ -1836,7 +1838,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "f117238414934cfe",
+        "empreinte_saisie": "fccf63856df8266d",
         "versions_portees": []
       }
     },
@@ -1907,13 +1909,15 @@
                   "2026-11-20": "Salle fictive de Rezé",
                   "2026-11-21": "Salle fictive de Rezé"
                 },
-                "emploi": null,
-                "emploi_affichage": null,
-                "pcs_ese": null,
-                "code_emploi_ft": null,
-                "statut": null,
-                "statut_conventionnel": null,
-                "statut_categoriel_rc": null,
+                "emploi": {
+                  "emploi": null,
+                  "emploi_affichage": null,
+                  "pcs_ese": null,
+                  "code_emploi_ft": null,
+                  "statut": null,
+                  "statut_conventionnel": null,
+                  "statut_categoriel_rc": null
+                },
                 "etablissement": null,
                 "nature": "cddu_spectacle",
                 "quotite_contrat": null,
@@ -2208,7 +2212,7 @@
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
                 "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "3fe2f490365d01424e42f517039eec67ab929ba6a541700aab56492d8cf8bbae",
-                "fichier code:baremes/2026.json": "924f3b4e4c5c22f782eaa3f6284c2368dae00c59bc7802a7ccc6248ef0b88f8a",
+                "fichier code:baremes/2026.json": "f225e484a4b4ccde2e42f34b2e1a410e775eddf54d805aef869e5a5e0c0d583b",
                 "fichier code:contrats-base.json": "8e2e08f874c18f4a1f104e21a2aecd9b56d12077979c8c5a4f0d50470420e8eb",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
                 "fichier code:minima-conventionnels.json": "541c0912028b3dc8d2f713092b5e41e4cdc534b24cbd8f8586a96581d691e08a",
