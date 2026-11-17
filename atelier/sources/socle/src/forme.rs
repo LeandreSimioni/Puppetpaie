@@ -665,6 +665,13 @@ pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decim
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Court(pub crate::num::Decimal);
 
+impl Court {
+    /// Le nombre tel qu'une phrase le cite, le fichier qui l'écrit nommé à côté (« 1 500 », « 12,5 »).
+    pub fn dit(&self) -> String {
+        crate::texte::nombre_dit_par_milliers(self.0)
+    }
+}
+
 impl<'de> serde::Deserialize<'de> for Court {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         court(d).map(Court)

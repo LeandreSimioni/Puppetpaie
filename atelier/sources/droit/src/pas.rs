@@ -617,7 +617,7 @@ pub fn avertissements(ctx: &Contexte, cles: Option<&[IdSalarie]>, le: Option<Jou
             SituationDuTaux::Valide => continue,
             SituationDuTaux::Perime => {
                 let taux = match s.taux {
-                    Some(t) => format!(" ({} %)", t.to_string().replace('.', ",")),
+                    Some(t) => format!(" ({} %)", socle::texte::a_virgule(t.taux())),
                     None => String::new(),
                 };
                 match s.valable_jusqu_a {

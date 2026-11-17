@@ -664,7 +664,7 @@ impl<'a> Cx<'a> {
             let mut montant = valeurs.iter().find(|v| v.0 == k).unwrap().1;
             if let Some(ab) = gr.abattement_max.filter(|a| !a.est_nul()) {
                 montant = montant.fois_taux(Taux::CENT_POUR_CENT - ab).au_centime_vers_zero();
-                let ab_txt = socle::grandeurs::ecrit::texte::dit(ab).replace('.', ",");
+                let ab_txt = socle::texte::a_virgule(ab);
                 let pourquoi = match gr.abattement_motif.as_deref() {
                     Some(m) => m,
                     None => "ensemble",

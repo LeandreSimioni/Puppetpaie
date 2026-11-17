@@ -248,7 +248,16 @@ impl QuotiteDuContrat {
         }
     }
 
-    /// Son nombre, a la porte qui l'exige (la DSN, le bulletin).
+    /// DITE DANS UNE PHRASE (l'en-tete du bulletin d'un salarie au mois) : au centieme, la moitie au pair, sans zero
+    /// inutile, la virgule decimale (« 151,67 », « 35 »).
+    pub fn dite(self) -> String {
+        match self {
+            QuotiteDuContrat::Heures(h) => socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(h)),
+            QuotiteDuContrat::Jours(j) => socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(j)),
+        }
+    }
+
+    /// Son nombre, a la porte qui l'exige (la DSN).
     pub fn decimal(self) -> Decimal {
         match self {
             QuotiteDuContrat::Heures(h) => h.decimal(),

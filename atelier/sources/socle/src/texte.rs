@@ -313,9 +313,53 @@ pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
     x.normalize().to_string().replace('.', ",")
 }
 
+/// UNE GRANDEUR TELLE QU'ELLE S'ECRIT, LA VIRGULE DECIMALE, son échelle gardée (`ecrit::texte` : « 12,50 », « 1,5 ») :
+/// un taux, un abattement cité dans une phrase, la case d'un état ou d'un CSV à la française.
+pub fn a_virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
+    crate::grandeurs::ecrit::texte::dit(g).replace('.', ",")
+}
+
+/// UNE GRANDEUR CITÉE PAR UN CONSEIL (« 1 234,5 », « 15,5 ») : au centième, la moitié loin de zéro, sans zéro inutile, les
+/// milliers séparés par une espace insécable, la virgule décimale. Son arrondi est celui d'un affichage.
+pub fn par_milliers<G: crate::grandeurs::Grandeur>(g: G) -> String {
+    nombre_par_milliers(g.en_decimal(), None)
+}
+
+/// La même, `decimales` décimales écrites (« 4 005,00 », « 60 ») : un montant, un montant unitaire qu'un conseil cite.
+pub fn par_milliers_a<G: crate::grandeurs::Grandeur>(g: G, decimales: u32) -> String {
+    nombre_par_milliers(g.en_decimal(), Some(decimales))
+}
+
+/// UN COMPTE DIT DANS UNE PHRASE (« 3 », « 1 200 ») : les milliers séparés par une espace insécable, comme
+/// `par_milliers`.
+pub fn compte(n: usize) -> String {
+    milliers(&n.to_string(), '\u{a0}')
+}
+
+/// L'écriture de `par_milliers` et `par_milliers_a` : `decimales` fixe, sinon au centième et les zéros de queue tombent.
+fn nombre_par_milliers(x: rust_decimal::Decimal, decimales: Option<u32>) -> String {
+    let x = match decimales {
+        Some(d) => x.round_dp_with_strategy(d, rust_decimal::RoundingStrategy::MidpointAwayFromZero),
+        None => x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero).normalize(),
+    };
+    let s = match decimales {
+        Some(d) => format!("{:.*}", d as usize, x),
+        None => x.to_string(),
+    };
+    let (signe, s) = match s.strip_prefix('-') {
+        Some(r) => ("-", r),
+        None => ("", s.as_str()),
+    };
+    match s.split_once('.') {
+        Some((e, f)) if !f.is_empty() => format!("{}{},{}", signe, milliers(e, '\u{a0}'), f),
+        Some((e, _)) => format!("{}{}", signe, milliers(e, '\u{a0}')),
+        None => format!("{}{}", signe, milliers(s, '\u{a0}')),
+    }
+}
+
 /// Le même, les milliers séparés par une espace insécable, dans une phrase qui cite une valeur d'un fichier (« 1 500 »,
-/// « 12,5 »).
-pub fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
+/// « 12,5 ») : `forme::Court::dit`.
+pub(crate) fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
     let t = nombre_dit(x);
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),

@@ -241,6 +241,18 @@ pub fn courte<G: Grandeur>(g: G) -> G {
     G::du(num::court(g.en_decimal()))
 }
 
+/// UNE GRANDEUR MISE A L'ECHELLE D'UN COEFFICIENT (grandeur x coefficient = grandeur de meme nom) : une valeur livree
+/// qu'un conseil cite douze fois, ou en pourcent (`routes::gestes::conseils`).
+pub fn a_l_echelle<G: Grandeur>(g: G, c: Coefficient) -> G {
+    G::du(num::mul(g.en_decimal(), c.0))
+}
+
+/// UNE GRANDEUR DIVISEE PAR UN COEFFICIENT NON NUL (grandeur / coefficient = grandeur de meme nom) : une valeur livree
+/// qu'un conseil cite sur trente et un jours.
+pub fn divisee_par<G: Grandeur>(g: G, c: NonNul<Coefficient>) -> G {
+    G::du(num::div(g.en_decimal(), c.0 .0))
+}
+
 /// LE SIGNE D'UNE GRANDEUR (celui qu'une ligne de paie donne a ses grandeurs, l'annulation d'un montant declare dans
 /// la DSN) : la garder (`Plus`), ou la retirer (`Moins`, l'oppose). Un zero n'a pas
 /// de signe : il reste le zero qu'il est, son echelle gardee. Signe x grandeur = grandeur de meme nom (`de`). Ecrit `+`
@@ -1261,6 +1273,12 @@ pub mod lu {
     /// `None` : le texte n'est pas un nombre.
     pub fn texte<G: Grandeur>(t: &str) -> Option<G> {
         num::decimal_a_virgule(t).map(<G as crate::grandeurs::Scelle>::du)
+    }
+
+    /// LA GRANDEUR QU'UN FICHIER LIVRE ECRIT DANS UN TEXTE (l'operande d'un gabarit des conseils : `*12`, `/31`), le point
+    /// decimal, son echelle gardee : la porte de sa lecture ; `Err` : pourquoi le texte n'est pas un nombre.
+    pub fn ecrite<G: Grandeur>(t: &str) -> Result<G, String> {
+        t.parse::<Decimal>().map(<G as crate::grandeurs::Scelle>::du).map_err(|e| e.to_string())
     }
 
     /// LA GRANDEUR QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`), comme `num::decimal_lu` la lit, son echelle

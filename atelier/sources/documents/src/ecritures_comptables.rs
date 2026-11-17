@@ -320,7 +320,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
             Some(a) => a.to_string(),
             None => e.compte.to_string(),
         };
-        let montant = |m: Montant| (!m.est_nul()).then(|| texte::dit(m).replace('.', ","));
+        let montant = |m: Montant| (!m.est_nul()).then(|| socle::texte::a_virgule(m));
         rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()

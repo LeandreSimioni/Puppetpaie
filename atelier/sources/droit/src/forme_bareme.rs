@@ -413,7 +413,7 @@ impl<'de> Deserialize<'de> for TranchePas {
                 let valeurs: Vec<String> = autre
                     .iter()
                     .map(|v| match v {
-                        Some(c) => socle::texte::nombre_dit_par_milliers(c.0),
+                        Some(c) => c.dit(),
                         None => "null".to_string(),
                     })
                     .collect();

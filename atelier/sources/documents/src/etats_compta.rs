@@ -140,6 +140,11 @@ fn deux(v: Montant) -> String {
     texte::dit(v.au_centime())
 }
 
+/// Le meme, la virgule decimale.
+fn deux_a_virgule(v: Montant) -> String {
+    socle::texte::a_virgule(v.au_centime())
+}
+
 /// Non vide, que des chiffres.
 fn tout_chiffres(t: &str) -> bool {
     !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
@@ -478,8 +483,8 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             e.piece.clone(),
             date,
             lib,
-            deux(e.debit).replace('.', ","),
-            deux(e.credit).replace('.', ","),
+            deux_a_virgule(e.debit),
+            deux_a_virgule(e.credit),
             String::new(),
             String::new(),
             String::new(),
@@ -546,7 +551,7 @@ fn virgule(v: Montant) -> String {
     if v.est_nul() {
         String::new()
     } else {
-        deux(v).replace('.', ",")
+        deux_a_virgule(v)
     }
 }
 
@@ -584,7 +589,7 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ("piece", e.piece.clone()),
             ("compte", compte_de(e).to_string()),
             ("libelle", env.libelle(e, false, 25)),
-            ("montant", deux(montant).replace('.', ",")),
+            ("montant", deux_a_virgule(montant)),
             ("sens", s.to_string()),
             ("pointage", String::new()),
             ("analytique", ou_vide(env.section(e))),
@@ -1196,14 +1201,13 @@ impl TotalDuCompte {
     /// Son solde dit « débiteur », « créditeur » ou « nul », la virgule decimale.
     fn solde_dit(&self) -> String {
         let v = self.solde();
-        let t = if v > Montant::ZERO {
-            format!("débiteur {}", texte::dit(v))
+        if v > Montant::ZERO {
+            format!("débiteur {}", socle::texte::a_virgule(v))
         } else if v < Montant::ZERO {
-            format!("créditeur {}", texte::dit(-v))
+            format!("créditeur {}", socle::texte::a_virgule(-v))
         } else {
             "nul".to_string()
-        };
-        t.replace('.', ",")
+        }
     }
 }
 

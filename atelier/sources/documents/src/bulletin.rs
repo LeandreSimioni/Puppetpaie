@@ -93,22 +93,9 @@ fn fmt_taux_de_pas(t: droit::pas::TauxDePas) -> String {
     fmt_taux(t.taux())
 }
 
-/// « 2,5 », et « 2 » quand c'est rond (`quantize` au pair, comme le contexte).
-pub fn jours(x: Decimal) -> String {
-    socle::texte::nombre_dit(x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven))
-}
-
-/// Des jours de conges comme `jours` les ecrit : au centieme, sans zero inutile, la virgule decimale.
+/// Des jours de conges : au centieme, sans zero inutile, la virgule decimale.
 fn jours_de_conges(j: socle::grandeurs::Jours) -> String {
     socle::texte::virgule(j.a_deux_decimales())
-}
-
-/// `jours` d'un nombre de jours facultatif : refuse quand il manque.
-fn jours_option(x: Option<Decimal>) -> R<String> {
-    match x {
-        Some(x) => Ok(jours(x)),
-        None => Err(refus("nombre de jours absent")),
-    }
 }
 
 // ------------------------------------------------------------ les briques
@@ -1048,12 +1035,15 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     if permanent {
         sous_titre = format!(
             "Durée contractuelle : {} h par mois {} durée de référence de l'entreprise : {} h",
-            jours(e.quotite()?.decimal()),
+            e.quotite()?.dite(),
             tiret,
-            jours_option(e.quotite_reference()?.map(engagement::QuotiteDuContrat::decimal))?
+            match e.quotite_reference()? {
+                Some(q) => q.dite(),
+                None => return Err(refus("nombre de jours absent")),
+            }
         );
         ligne_caisse = Vec::new();
-        travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", jours(e.quotite()?.decimal())))];
+        travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", e.quotite()?.dite()))];
     } else {
         sous_titre =
             format!("Numéro d'objet : {} {} Spectacle : {}", du_spectacle(sp.as_ref(), |s| &s.numero_objet, "numero_objet")?, tiret, du_spectacle(sp.as_ref(), |s| &s.titre, "titre")?);

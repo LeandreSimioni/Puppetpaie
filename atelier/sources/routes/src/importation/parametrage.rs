@@ -224,7 +224,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
                 }
                 // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
                 let mois = recu.mise_a_disposition().mois_civil().libelle(socle::mois::Graphie::Accentuee);
-                faits.push(format!("Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).", qui(salarie), recu.taux.to_string().replace('.', ","), mois));
+                faits.push(format!("Prélèvement à la source de {} : taux {} % transmis par la DGFiP, appliqué dans la DSN de {} (S21.G00.50.006 à .008).", qui(salarie), socle::texte::a_virgule(recu.taux.taux()), mois));
             }
             compagnie::taux_pas::TauxDUneDsn::Illisible { salarie, verse_le } => {
                 let mois = verse_le.mois_civil().libelle(socle::mois::Graphie::Accentuee);

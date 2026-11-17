@@ -306,9 +306,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | `Montant` ; à unifier (#419) : les indemnités d'une convention, comptées en décimal à 28 chiffres (`droit::clauses`), et les valeurs des gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
-| taux | `Taux` ; à unifier (#419) : le taux d'une ligne de paie rouvert (`TauxDeLigne::decimal`), les gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
-| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : la quantité d'une ligne et la quotité d'un contrat rouvertes (`QuantiteDeLigne::decimal`, `QuotiteDuContrat::decimal`, que le bulletin dit en décimal), le plafond de quotité d'une nature en décimal (`droit::natures`) | `socle/src/grandeurs.rs` |
+| montant | `Montant` ; à unifier (#419) : les indemnités d'une convention, comptées en décimal à 28 chiffres (`droit::clauses`) | `socle/src/grandeurs.rs` |
+| taux | `Taux` ; à unifier (#419) : le taux d'une ligne de paie rouvert (`TauxDeLigne::decimal`) | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : la quantité d'une ligne et la quotité d'un contrat rouvertes (`QuantiteDeLigne::decimal`, `QuotiteDuContrat::decimal`, que la DSN compare à son plafond ; dite dans une phrase par `QuotiteDuContrat::dite`), le plafond de quotité d'une nature en décimal (`droit::natures`) | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
 | heures du mois (la durée légale d'un mois à temps plein, 151,67 h : la quotité de référence d'une nature, `quotite_reference_defaut` ; celle sur laquelle une convention ramène ses mensuels à l'heure, `droit::minima::Convention.heures_mensuelles`, et une grille au mois sa valeur, `droit::minima::Grille.heures_du_mois` ; une grille ne dit ses heures que dans la grandeur de son unité, `droit::minima::table` refuse l'autre clé) | `Heures` (un mensuel sur les heures du mois : `MontantUnitaire::par_heure`, au centime le plus proche dans toute convention, `engagement::minima` ; dites dans une phrase en heures et minutes, « 151 h 40 », par `socle::texte::heures_et_minutes`) | `socle/src/grandeurs.rs` |
 | grandeur non nulle (un diviseur dont la forme tient qu'il n'est jamais nul : des jours ouvrables lus non nuls, `NonNul::de` ; les jours de la semaine de 5 ou de 6 jours d'un artiste de la 3097, qu'un texte fixe, `Jours::non_nuls`) | `NonNul<G>` (montant unitaire / jours non nuls = montant unitaire, sans refus : `MontantUnitaire::par_jour`, la seule division d'un montant unitaire par des jours) | `socle/src/grandeurs.rs` |
@@ -321,8 +321,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon) | `engagement/src/lib.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` ; à unifier (#419) : les mois de salaire d'une convention, comptés en décimal à 28 chiffres (`droit::clauses`), les gabarits des conseils (`routes::gestes::conseils`) | `socle/src/grandeurs.rs` |
-| montant unitaire | `MontantUnitaire` ; à unifier (#419) : les gabarits des conseils (`routes::gestes::conseils` : le cachet, le plafond horaire) | `socle/src/grandeurs.rs` |
+| coefficient | `Coefficient` ; à unifier (#419) : les mois de salaire d'une convention, comptés en décimal à 28 chiffres (`droit::clauses`) | `socle/src/grandeurs.rs` |
+| montant unitaire | `MontantUnitaire` | `socle/src/grandeurs.rs` |
 | montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
 | taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
 | heures en plus d'un mois, réparties par majoration (les heures supplémentaires d'un temps plein, complémentaires d'un temps partiel ; un palier : des heures à une majoration, un taux que le taux horaire du contrat prend en plus de lui-même) | `droit::heures_en_plus::Reparties`, ses `Palier` (`Heures`, `Taux`) ; la loi et la convention les lisent en grandeurs (`permanents::HeuresEnPlus`, `clauses::HeuresSupplementaires`) | `droit/src/heures_en_plus.rs`, `socle/src/grandeurs.rs` |
@@ -367,7 +367,9 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   l'assiette d'un employeur affilié à une caisse de congés, `majoration_conges_115` et `_110` du barème, 1,115, le
   coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie, la
   part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
-  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant. Il s'arrondit
+  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant ; une valeur
+  livrée qu'un gabarit des conseils cite se met à l'échelle d'un coefficient, ou s'y divise (`*12`, `/31` :
+  `socle::grandeurs::a_l_echelle`, `divisee_par`, la grandeur gardée). Il s'arrondit
   par une fonction par règle (`au_dix_millieme`, la moitié vers le haut ; `a_decimales`, la moitié au pair) ; ses quatre
   décimales s'écrivent à part (`socle::grandeurs::decimales_ecrites`).
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
@@ -396,7 +398,14 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture, par la seule écriture des
   décimales d'une grandeur, `socle::grandeurs::decimales_ecrites` (une écriture, pas un arrondi : la case d'un état, le
   coefficient de la réduction générale ; un taux de PAS par `aux_centiemes`, qui refuse plus fin que le centième).
-- **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
+  Dans une phrase, une grandeur s'écrit par `socle::texte`, une fonction par écriture, qui prend la grandeur : `euros`
+  (« 1 234,50 € »), `pourcent` (« 1,50 % »), `virgule` (sans zéro inutile, « 151,67 »), `a_virgule` (son échelle
+  gardée, « 12,50 » ; aussi la case d'un état ou d'un CSV à la française), `par_milliers` et `par_milliers_a` (ce qu'un
+  conseil cite, « 4 005 », « 46,07 »), `heures_et_minutes` (« 151 h 40 ») ; un compte, `compte` ; une ancienneté, ses
+  mois dits (`Anciennete::mois_dits`, `mois_dits_au_dixieme`) ; la quotité d'un contrat, `QuotiteDuContrat::dite`.
+- **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte. Un nombre lu comme
+  `Court` se cite dans une phrase par `Court::dit` ; l'opérande d'un gabarit des conseils se lit en sa grandeur par
+  `socle::grandeurs::lu::ecrite`.
 
 **Les identifiants**
 

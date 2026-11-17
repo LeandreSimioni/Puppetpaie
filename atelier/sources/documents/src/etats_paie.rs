@@ -846,7 +846,7 @@ pub fn csv_livre(livre: &LivreDePaie) -> Vec<u8> {
         match c {
             CelL::T(t) => t.clone(),
             CelL::Vide | CelL::M(None) => String::new(),
-            CelL::M(Some(d)) => socle::grandeurs::ecrit::texte::dit(*d).replace('.', ","),
+            CelL::M(Some(d)) => socle::texte::a_virgule(*d),
         }
     };
     ligne(&mut s, &[titre_livre(livre)]);
@@ -923,7 +923,7 @@ pub fn pdf_livre(ctx: &Contexte, livre: &LivreDePaie) -> R<Vec<u8>> {
             CelL::T(t) => t.clone(),
             CelL::Vide => String::new(),
             CelL::M(None) => "—".to_string(),
-            CelL::M(Some(d)) => socle::grandeurs::ecrit::texte::dit(*d).replace('.', ","),
+            CelL::M(Some(d)) => socle::texte::a_virgule(*d),
         }
     };
     let rangs: Vec<(Vec<String>, Rangee)> = rangees_livre(livre).iter().map(|(c, g)| (c.iter().map(cel).collect(), *g)).collect();

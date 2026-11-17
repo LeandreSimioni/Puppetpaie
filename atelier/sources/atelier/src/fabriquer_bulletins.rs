@@ -411,7 +411,7 @@ fn a_la_francaise(s: &str, negatif: bool) -> String {
 
 /// Un taux a trois decimales, la moitie loin de zero, « 6,900 ».
 fn taux3(t: Taux) -> String {
-    socle::grandeurs::ecrit::texte::dit(socle::grandeurs::decimales_ecrites(t.loin_de_zero(3), 3)).replace('.', ",")
+    socle::texte::a_virgule(socle::grandeurs::decimales_ecrites(t.loin_de_zero(3), 3))
 }
 
 fn dmy(j: &Jour) -> String {

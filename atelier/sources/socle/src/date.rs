@@ -846,9 +846,20 @@ impl Anciennete {
         crate::grandeurs::Coefficient::du_decimal(num::mul(part, par_annee.decimal()))
     }
 
-    /// Le nombre de ses mois, a la porte d'une phrase ou d'une ecriture.
+    /// Le nombre de ses mois, a la porte d'une ecriture.
     pub fn mois(self) -> Decimal {
         self.0
+    }
+
+    /// SES MOIS DITS DANS UNE PHRASE, tels qu'ils sont, la virgule decimale, sans zero inutile (« 6 », « 3,5 »).
+    pub fn mois_dits(self) -> String {
+        crate::texte::nombre_dit(self.0)
+    }
+
+    /// SES MOIS DITS DANS UNE PHRASE AU DIXIEME, la moitie au pair (« 7,3 ») : l'anciennete qu'un maintien de salaire
+    /// compare a son minimum.
+    pub fn mois_dits_au_dixieme(self) -> String {
+        crate::texte::nombre_dit(self.0.round_dp(1))
     }
 
     /// Lue d'un nombre de mois facultatif, `null` compris : `#[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]`.

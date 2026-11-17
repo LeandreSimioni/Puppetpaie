@@ -559,10 +559,8 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
     let dossier = documents::DossierDeTravail::RegularisationCasc.sous(&ctx.racine);
     let io = |p: &Path, e: std::io::Error| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque);
     std::fs::create_dir_all(&dossier).map_err(|e| io(&dossier, e))?;
-    // Un nombre d'une case du CSV : la grandeur telle qu'elle s'ecrit (`ecrit::texte`), la virgule decimale.
-    fn virgule<G: socle::grandeurs::Grandeur>(g: G) -> String {
-        socle::grandeurs::ecrit::texte::dit(g).replace('.', ",")
-    }
+    // Un nombre d'une case du CSV : la grandeur telle qu'elle s'ecrit, la virgule decimale.
+    use socle::texte::a_virgule as virgule;
     let mut fichiers: Vec<std::path::PathBuf> = vec![];
     // Le classeur modele : voir `liste_nominative_xlsx`.
     liste_nominative_xlsx(ctx, r, &dossier, &mut fichiers)?;
