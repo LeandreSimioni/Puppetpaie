@@ -888,7 +888,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSala
 
 /// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`taux_pas`), date du jour ou il commence de valoir
 /// `depuis` : avant ce jour, la fiche ne le disait pas (la case vide). `note` dit d'ou il vient.
-pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &IdSalarie, valeur: droit::fiche::TauxPas, depuis: Jour, note: &str) -> R<()> {
+pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &IdSalarie, valeur: droit::pas::TauxRecu, depuis: Jour, note: &str) -> R<()> {
     ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::TauxPas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 

@@ -94,7 +94,7 @@ pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
     .ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
     // Un taux recu depuis la demande y a repondu.
     let recus = droit::pas::recus(ctx, cle).map_err(|e| e.reclasser(Classe::Illisible))?;
-    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d >= partie) {
+    if recus.last().map(|r| r.mis_a_disposition).is_some_and(|d| d >= partie) {
         return Ok(None);
     }
     let jour = l.quand().jour();

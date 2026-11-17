@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{Lue, TauxPas};
+use crate::fiche::Lue;
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use crate::type_taux_pas::TypeDeTauxPas;
 use socle::date::{Duree, EnMois, Jour};
@@ -166,12 +166,23 @@ impl<'de> Deserialize<'de> for IdentifiantDuTauxPas {
 
 impl crate::fiche::FormeDeCase for IdentifiantDuTauxPas {}
 
-/// Un taux qui vaut : taux, type, identifiant, tels que le compte rendu les donne.
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct Triplet {
-    pub taux: Option<TauxDePas>,
-    pub type_taux: Option<TypeDeTauxPas>,
-    pub identifiant: Option<IdentifiantDuTauxPas>,
+/// UN TAUX DE PAS RECU : le taux, toujours ecrit (un compte rendu sans taux lisible n'en pose aucun), son type (que le
+/// compte rendu peut taire), l'identifiant et l'instant de sa mise a disposition (AAAAMMJJHHMMSS), et le mois de la DSN
+/// a laquelle il repond. Il vient d'un compte rendu de la DGFiP (`routes::gestes::suites`) ou d'une DSN deja deposee
+/// (`compagnie::taux_pas::derniers_taux_des_dsn`), s'ecrit dans la fiche de son salarie (`taux_pas`, une valeur datee du
+/// jour ou il commence de valoir, `date_d_effet`), qui ne le saisit pas, et la paie applique celui en vigueur
+/// (`taux_dgfip`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TauxRecu {
+    pub taux: TauxDePas,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<TypeDeTauxPas>,
+    pub identifiant: IdentifiantDuTauxPas,
+    #[serde(with = "socle::paris::ecrit::compacte")]
+    pub mis_a_disposition: socle::paris::Moment,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub en_retour_de: Option<Mois>,
 }
 
 // ------------------------------------------------------------- peremption
@@ -187,24 +198,24 @@ pub struct Triplet {
 /// BOI-IR-PAS-30-10-20-20181203.html`).
 pub const VALIDITE: Duree<EnMois> = Duree::mois(2);
 
-/// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
-pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
-    e.mis_a_disposition.map(|i| i.jour_de_paris())
+impl TauxRecu {
+    /// Le jour de sa mise a disposition : d'ou court sa validite.
+    pub fn mise_a_disposition(&self) -> Jour {
+        self.mis_a_disposition.jour_de_paris()
+    }
 }
 
-/// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
-pub fn fin_de_validite(e: &TauxPas) -> Option<Jour> {
-    let debut = mise_a_disposition(e)?;
-    // Au-dela de 9999, aucune fin de validite ne se sait.
-    match debut.mois_civil().apres(VALIDITE) {
+/// Dernier jour ou ce taux est celui du salarie ; `None` au-dela de 9999.
+pub fn fin_de_validite(e: &TauxRecu) -> Option<Jour> {
+    match e.mise_a_disposition().mois_civil().apres(VALIDITE) {
         Ok(m) => Some(m.dernier_jour()),
         Err(_) => None,
     }
 }
 
-/// Un taux qu'on ne sait pas dater est traite comme perime ; le bareme (tout
-/// type autre que 01) ne se perime pas.
-pub fn est_perime(e: &TauxPas, le: Jour) -> bool {
+/// Un taux dont la fin de validite ne se sait pas est traite comme perime ; le bareme (tout type autre que 01) ne se
+/// perime pas.
+pub fn est_perime(e: &TauxRecu, le: Jour) -> bool {
     if !e.r#type.is_some_and(TypeDeTauxPas::transmis) {
         return false;
     }
@@ -232,10 +243,10 @@ pub fn le_jour(ctx: &Contexte, le: Option<Jour>) -> Jour {
 /// LES TAUX RECUS POUR LE SALARIE `cle`, du premier mis a disposition au dernier (a instant egal, dans l'ordre ou ils
 /// se sont ecrits), ceux de sa fiche s'il en a une. Une valeur de la fiche qui n'est pas un taux (la case vide d'avant le
 /// premier) n'en est pas un.
-pub fn recus(ctx: &Contexte, cle: &IdSalarie) -> R<Vec<TauxPas>> {
+pub fn recus(ctx: &Contexte, cle: &IdSalarie) -> R<Vec<TauxRecu>> {
     let mut ecrits: Vec<_> = ctx.salarie_brut(cle).into_iter().flat_map(|fiche| fiche.taux_pas.iter().flatten()).collect();
     ecrits.sort_by_key(|e| e.depuis);
-    let mut r: Vec<TauxPas> = ecrits.into_iter().filter_map(|e| e.valeur.dite()).cloned().collect();
+    let mut r: Vec<TauxRecu> =ecrits.into_iter().filter_map(|e| e.valeur.dite()).cloned().collect();
     r.sort_by_key(|v| v.mis_a_disposition);
     Ok(r)
 }
@@ -251,7 +262,7 @@ pub fn recus(ctx: &Contexte, cle: &IdSalarie) -> R<Vec<TauxPas>> {
 /// articles-20261030.md`) : s'il valait pour les versements qu'elle declare, chaque DSN deposee avant eux serait a
 /// refaire par sa propre reponse, et son annule-et-remplace par la sienne. INFERENCE (les textes supposent la DSN deposee
 /// apres le versement) : un taux en retour de la DSN du mois `M` ne vaut pas pour la paie de `M`, ni d'un mois d'avant.
-fn en_retour_d_un_mois_qui_n_est_pas_avant(e: &TauxPas, mois: Option<Mois>) -> bool {
+fn en_retour_d_un_mois_qui_n_est_pas_avant(e: &TauxRecu, mois: Option<Mois>) -> bool {
     mois.zip(e.en_retour_de.dite()).is_some_and(|(m, retour)| *retour >= m)
 }
 
@@ -275,10 +286,9 @@ pub fn date_d_effet(mad: Jour, en_retour_de: Option<Mois>) -> Jour {
 /// jour ; la retenue est « effectuée par le débiteur lors du paiement » (CGI, art. 1671, 1, meme fichier) : un taux
 /// transmis apres le paiement d'un salaire ne vaut pas pour lui. Aucun taux recu avant ce jour : aucun (la grille de
 /// l'article 204 H s'applique).
-fn en_vigueur<'a>(recus: &'a [TauxPas], le: Jour, mois: Option<Mois>) -> Option<&'a TauxPas> {
-    let mis_a_disposition: Vec<&TauxPas> =
-        recus.iter().filter(|e| mise_a_disposition(e).is_some_and(|d| d <= le) && !en_retour_d_un_mois_qui_n_est_pas_avant(e, mois)).collect();
-    let transmis = |e: &&TauxPas| e.r#type.is_some_and(TypeDeTauxPas::transmis);
+fn en_vigueur<'a>(recus: &'a [TauxRecu], le: Jour, mois: Option<Mois>) -> Option<&'a TauxRecu> {
+    let mis_a_disposition: Vec<&TauxRecu> = recus.iter().filter(|e| e.mise_a_disposition() <= le && !en_retour_d_un_mois_qui_n_est_pas_avant(e, mois)).collect();
+    let transmis = |e: &&TauxRecu| e.r#type.is_some_and(TypeDeTauxPas::transmis);
     // Un compte rendu sans taux transmis ne fait pas oublier un taux transmis encore valide : la DGFiP releve comme une
     // erreur l'« utilisation d'un taux par defaut alors meme que le collecteur dispose d'un taux transmis par la DGFiP qui
     // est encore valide » (DGFiP, « Les comptes rendus metier (CRM) pour le PAS »,
@@ -407,29 +417,31 @@ pub fn rubriques_par_defaut(
 // ------------------------------------------- lequel des deux chemins, et pour
 //                                              quel versement
 
-/// Le triplet a declarer pour un versement du jour `le` de la paie du mois `mois`, ou `None` : pas de taux DGFiP
+/// Le taux recu qui s'applique a un versement du jour `le` de la paie du mois `mois`, ou `None` : pas de taux DGFiP
 /// applicable, c'est la grille. Un taux perime compte pour rien.
 /// UN CALCUL DEPEND DU TAUX DE SON SALARIE A SON JOUR : il le note (`pas <cle> <jour> <mois>`, `empreinte`), et un taux
 /// recu qui le change le fait recalculer.
-pub fn taux_dgfip(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
-    let t = triplet(ctx, cle, le, mois)?;
+pub fn taux_dgfip(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<TauxRecu>> {
+    let t = applique(ctx, cle, le, mois)?;
     if let Some(j) = le {
-        socle::fichiers::noter_lecture(&CleLue::Datee(LectureDatee::Pas { salarie: cle.clone(), le: j, mois }), empreinte_du_triplet(&t));
+        socle::fichiers::noter_lecture(&CleLue::Datee(LectureDatee::Pas { salarie: cle.clone(), le: j, mois }), empreinte_du_taux(&t));
     }
     Ok(t)
 }
 
-fn triplet(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
-    let s = situation(ctx, cle, le, mois)?;
+/// Le taux en vigueur quand sa situation est `Valide` (`situation_et_taux`).
+fn applique(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<TauxRecu>> {
+    let (s, e) = situation_et_taux(ctx, cle, le, mois)?;
     match s.situation {
-        SituationDuTaux::Valide => Ok(Some(Triplet { taux: s.taux, type_taux: s.type_taux, identifiant: s.identifiant })),
+        SituationDuTaux::Valide => Ok(e),
         SituationDuTaux::Perime | SituationDuTaux::Bareme | SituationDuTaux::Inconnu | SituationDuTaux::SansNir => Ok(None),
     }
 }
 
-fn empreinte_du_triplet(t: &Option<Triplet>) -> ValeurLue {
+/// Ce que l'empreinte d'un calcul retient du taux applique : son taux, son type et son identifiant.
+fn empreinte_du_taux(t: &Option<TauxRecu>) -> ValeurLue {
     ValeurLue::Composee(match t {
-        Some(t) => socle::ecriture::json_en_ligne(&(&t.taux, &t.type_taux, &t.identifiant)),
+        Some(t) => socle::ecriture::json_en_ligne(&(&t.taux, &t.r#type, &t.identifiant)),
         None => "aucun".into(),
     })
 }
@@ -437,7 +449,7 @@ fn empreinte_du_triplet(t: &Option<Triplet>) -> ValeurLue {
 /// Ce que `taux_dgfip` a note pour le salarie `cle` au jour `le` (`LectureDatee::Pas`), relu maintenant : l'empreinte
 /// tient tant qu'il est le meme.
 pub fn empreinte(ctx: &Contexte, cle: &IdSalarie, le: Jour, mois: Option<Mois>) -> R<ValeurLue> {
-    Ok(empreinte_du_triplet(&triplet(ctx, cle, Some(le), mois)?))
+    Ok(empreinte_du_taux(&applique(ctx, cle, Some(le), mois)?))
 }
 
 /// La fiche d'un salarie sans ses taux recus : ce qu'une paie lit de la fiche hors du taux, qu'elle lit au jour de son
@@ -446,10 +458,10 @@ pub fn sans_taux_recus(fiche: &crate::fiche::ChampsSalarie) -> crate::fiche::Cha
     crate::fiche::ChampsSalarie { taux_pas: None, ..fiche.clone() }
 }
 
-/// Le prelevement d'UN versement. Un triplet s'applique tel quel, sur la
+/// Le prelevement d'UN versement. Un taux recu s'applique tel quel, sur la
 /// remuneration nette fiscale entiere, sans abattement.
 pub fn du_versement(
-    taux: Option<&Triplet>,
+    taux: Option<&TauxRecu>,
     bareme: &Pile,
     remuneration_nette_fiscale: Montant,
     le: Option<Jour>,
@@ -459,7 +471,7 @@ pub fn du_versement(
     let Some(t) = taux else {
         return rubriques_par_defaut(bareme, remuneration_nette_fiscale, le, contrat_court, zone);
     };
-    let taux = t.taux.ok_or_else(|| refus("nombre attendu, lu null"))?;
+    let taux = t.taux;
     // UNE REMUNERATION NETTE FISCALE NEGATIVE N'EST PAS UNE ASSIETTE NEGATIVE. Fiche DSN 1810 « Remuneration nette fiscale
     // negative » (`atelier/reference/sources/suspension-non-remuneree/net-entreprises-fiche1810-rnf-negative-pas-20250322.txt`) :
     // « La rubrique « Montant soumis au PAS - S21.G00.50.013 » ne peut pas etre renseignee avec une valeur negative. Il
@@ -471,8 +483,8 @@ pub fn du_versement(
     let soumis = plancher(remuneration_nette_fiscale.au_centime());
     Ok(Versement {
         taux,
-        type_taux: t.type_taux,
-        identifiant: t.identifiant.clone(),
+        type_taux: t.r#type,
+        identifiant: Some(t.identifiant.clone()),
         abattement: Montant::ZERO,
         montant_soumis: soumis,
         prelevement: taux.prelevement(soumis).au_centime(),
@@ -537,6 +549,11 @@ pub struct Situation {
 /// Ou en est le taux d'un salarie au jour `le`, pour la paie du mois `mois` (`en_vigueur`). Ne refuse que si sa fiche est
 /// illisible.
 pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Situation> {
+    situation_et_taux(ctx, cle, le, mois).map(|(s, _)| s)
+}
+
+/// La situation du taux, et le taux recu en vigueur qu'elle juge.
+fn situation_et_taux(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<(Situation, Option<TauxRecu>)> {
     let le = le_jour(ctx, le);
     let recus = recus(ctx, cle)?;
     let e = en_vigueur(&recus, le, mois);
@@ -559,20 +576,21 @@ pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option
         }
     };
     // Sans taux, ses cases ne disent rien.
-    Ok(Situation {
+    let s = Situation {
         salarie: cle.clone(),
         situation: quoi,
         libelle: quoi.libelle(),
         taux: e.map(|e| e.taux),
         type_taux: e.and_then(|e| e.r#type),
-        identifiant: e.and_then(|e| e.identifiant.clone()),
+        identifiant: e.map(|e| e.identifiant.clone()),
         valable_jusqu_a: e.and_then(fin_de_validite),
         a_demander: match quoi {
             SituationDuTaux::Perime | SituationDuTaux::Bareme | SituationDuTaux::Inconnu => true,
             SituationDuTaux::Valide | SituationDuTaux::SansNir => false,
         },
-        dernier_recu: recus.last().and_then(|r| r.mis_a_disposition),
-    })
+        dernier_recu: recus.last().map(|r| r.mis_a_disposition),
+    };
+    Ok((s, e.cloned()))
 }
 
 fn archive(ctx: &Contexte, cle: &IdSalarie) -> bool {
@@ -620,7 +638,7 @@ mod tests {
     use super::*;
 
     /// Un taux recu, ecrit en texte et lu par la porte du socle.
-    fn lu(texte: &str) -> TauxPas {
+    fn lu(texte: &str) -> TauxRecu {
         socle::forme::lire_texte(texte, "le taux").unwrap()
     }
 
@@ -628,7 +646,7 @@ mod tests {
         Jour::nouveau(an, mois, j).unwrap()
     }
 
-    fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxPas {
+    fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxRecu {
         let retour = match retour {
             Some(m) => format!(r#", "en_retour_de": "{}""#, m),
             None => String::new(),
@@ -648,7 +666,7 @@ mod tests {
     fn un_taux_vaut_pour_tout_paiement_a_partir_de_sa_mise_a_disposition() {
         let taux = |id: &str, le: &str| recu("9.40", id, le, None);
         let recus = vec![taux("480747943", "20260313070000"), taux("985249073", "20260415100000")];
-        let id = |le: Jour| en_vigueur(&recus, le, None).and_then(|e| e.identifiant.as_ref().map(|i| i.to_string()));
+        let id = |le: Jour| en_vigueur(&recus, le, None).map(|e| e.identifiant.to_string());
         assert_eq!(id(jour(2026, 3, 12)), None);
         assert_eq!(id(jour(2026, 3, 13)), Some("480747943".to_string()));
         assert_eq!(id(jour(2026, 3, 14)), Some("480747943".to_string()));
@@ -677,7 +695,7 @@ mod tests {
     fn le_taux_en_retour_de_la_dsn_d_un_mois_vaut_pour_les_mois_qui_suivent() {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
-        let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).and_then(|e| e.identifiant.as_ref().map(|i| i.to_string()));
+        let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).map(|e| e.identifiant.to_string());
         let decembre = Mois::nouveau(2026, 12).unwrap();
         assert_eq!(id(jour(2026, 12, 31), decembre), Some("157352475".to_string()));
         assert_eq!(id(jour(2027, 1, 5), decembre), Some("157352475".to_string()));

@@ -5,7 +5,7 @@
 
 use crate::outils::typee::{cas_de, code_livre, jouer, lire};
 use droit::forme_bareme::{GrandeurDatee, GrillePas, PasParDefaut, Pile};
-use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, Triplet, Versement};
+use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, TauxRecu, Versement};
 use droit::type_taux_pas::TypeDeTauxPas;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
@@ -116,13 +116,14 @@ struct CasDuTaux {
     zone: String,
 }
 
-/// Le taux recu d'un versement, tel que le compte rendu le donne.
+/// Le taux recu d'un versement, tel que le compte rendu le donne : sa mise a disposition, que le prelevement ne lit pas,
+/// n'est pas dans le cas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TauxRecu {
-    taux: Option<TauxDePas>,
+struct TauxDuCas {
+    taux: TauxDePas,
     type_taux: Option<TypeDeTauxPas>,
-    identifiant: Option<droit::pas::IdentifiantDuTauxPas>,
+    identifiant: droit::pas::IdentifiantDuTauxPas,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,7 +133,7 @@ struct CasDuVersement {
     le: Option<Jour>,
     zone: String,
     contrat_court: bool,
-    recu: Option<TauxRecu>,
+    recu: Option<TauxDuCas>,
 }
 
 fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
@@ -140,7 +141,8 @@ fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
-    let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux, type_taux: r.type_taux, identifiant: r.identifiant.clone() });
+    let mis_a_disposition = socle::paris::Moment::a_paris(Jour::nouveau(2025, 1, 1).unwrap(), socle::paris::HeureDuJour::MINUIT).unwrap();
+    let t = c.recu.as_ref().map(|r| TauxRecu { taux: r.taux, r#type: r.type_taux, identifiant: r.identifiant.clone(), mis_a_disposition, en_retour_de: None });
     suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
 }
 

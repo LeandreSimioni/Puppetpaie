@@ -2749,25 +2749,7 @@ cases! {
     }
 }
 
-/// UN TAUX DE PAS RECU (`droit::pas`) : le taux, toujours ecrit (un compte rendu sans taux lisible n'en pose aucun), son
-/// type, l'identifiant et l'instant de sa mise a disposition (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il
-/// repond. Une entree d'une liste de la fiche, pas une case : ses autres champs sont facultatifs, comme ceux d'une
-/// structure de cases (`cases!`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TauxPas {
-    pub taux: crate::pas::TauxDePas,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r#type: Option<crate::type_taux_pas::TypeDeTauxPas>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub identifiant: Option<crate::pas::IdentifiantDuTauxPas>,
-    #[serde(default, with = "socle::paris::ecrit::compacte::option", skip_serializing_if = "Option::is_none")]
-    pub mis_a_disposition: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub en_retour_de: Option<Mois>,
-}
-
-impl FormeDeCase for TauxPas {
+impl FormeDeCase for crate::pas::TauxRecu {
     fn cases() -> Vec<Declaree> {
         vec![
             declaree::<crate::pas::TauxDePas>("taux"),
@@ -2961,7 +2943,7 @@ fiche! {
         Actif(bool) = "actif" => actif,
         AnniversaireDroits(Jour) = "anniversaire_droits" => anniversaire_droits,
         ModeleBulletin(ModeleBulletin) = "modele_bulletin" => modele_bulletin,
-        TauxPas(TauxPas) = "taux_pas" => taux_pas,
+        TauxPas(crate::pas::TauxRecu) = "taux_pas" => taux_pas,
     }
     pieces CasePieceSalarie {
         /// LES CASES D'UN SALARIE AU MOIS : sa complementaire sante, sa prevoyance, ses jours, sa categorie, ses conges

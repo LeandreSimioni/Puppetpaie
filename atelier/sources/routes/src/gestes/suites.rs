@@ -84,14 +84,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
                 ));
                 continue;
             };
-            tous.push(compagnie::taux_pas::TauxRecu {
-                salarie: x.salarie.clone(),
-                taux,
-                type_taux: x.releve.type_taux,
-                identifiant: x.releve.identifiant.clone(),
-                mis_a_disposition,
-                en_retour_de,
-            });
+            tous.push((x.salarie.clone(), droit::pas::TauxRecu { taux, r#type: x.releve.type_taux, identifiant: x.releve.identifiant.clone(), mis_a_disposition, en_retour_de }));
         }
     }
     crate::gestes::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;

@@ -34,7 +34,7 @@ use socle::grandeurs::{ecrit::norme, Cachets, Heures, Jours, Montant, Signe, Tau
 use socle::refus;
 use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, ReferenceDAdhesion, Versement};
 use engagement::numeros::NumeroContrat;
-use droit::pas::{self, Triplet, ZONE_DEFAUT};
+use droit::pas::{self, TauxRecu, ZONE_DEFAUT};
 
 pub const LOGICIEL: &str = "PUPPETPAIE";
 pub const VERSION: &str = "1.0.0";
@@ -2097,7 +2097,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: Duree<EnJours>) -> R<()
 /// n'a pas de rubrique : il se lit dans l'ecart entre 50.002 et 50.013 (norme 2026.1, p. 245). S21.G00.50.012 est
 /// reservee aux abattements des assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent :
 /// le moteur ne l'ecrit pas.
-fn pas_du_versement(taux_pas: Option<&Triplet>, bar: &Pile, montant: Montant, le: Jour, court: bool) -> R<pas::Versement> {
+fn pas_du_versement(taux_pas: Option<&TauxRecu>, bar: &Pile, montant: Montant, le: Jour, court: bool) -> R<pas::Versement> {
     Ok(pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?)
 }
 
@@ -2538,7 +2538,7 @@ impl Display for NumeroDeVersement {
 }
 
 /// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003).
-fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuContrat, numero: NumeroDeVersement, taux_pas: Option<&Triplet>) -> R<()> {
+fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuContrat, numero: NumeroDeVersement, taux_pas: Option<&TauxRecu>) -> R<()> {
     let e = &p.engagement;
     let periode = e.periode_payee()?;
     // La norme ecrit la periode en deux zones, son debut et sa fin.
@@ -4802,7 +4802,7 @@ certificat de conformite du depot precedent.",
         ));
     }
 
-    let mut pas_par_salarie: HashMap<IdSalarie, Option<Triplet>> = HashMap::new();
+    let mut pas_par_salarie: HashMap<IdSalarie, Option<TauxRecu>> = HashMap::new();
     for cle in paies.iter().filter(|p| p.engagement.sans_paie()).map(cle_salarie) {
         if !pas_par_salarie.contains_key(&cle) {
             let t = pas::taux_dgfip(ctx, &cle, None, Some(mois))?;
