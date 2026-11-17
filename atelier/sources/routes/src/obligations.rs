@@ -1679,7 +1679,7 @@ mod essais {
     /// tranche (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : refuse, il reste du.
     #[test]
     fn un_signalement_de_fin_refuse_au_bilan_reste_du() {
-        let fin = Jour::nouveau(2026, 3, 13).unwrap();
+        let fin: Jour = socle::forme::lire_texte("\"2026-03-13\"", "le jour du test").unwrap();
         let ligne = |verdict: &str| -> Vec<envois::journal::Ligne> {
             let texte = format!(
                 r#"{{"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
@@ -1700,29 +1700,29 @@ mod essais {
     /// prolongation ; depose avant elle, il ne porte pas la fin de subrogation nouvelle, et reste du.
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
-        let jour = |j| Jour::nouveau(2026, 11, j).unwrap();
-        let a = |j, heure: u32| Moment::a_paris(jour(j), HeureDuJour::a(heure, 0)).unwrap();
-        let signalement = |type_declaration: TypeDeLaDeclaration, j, heure| EnvoiDeLArret {
+        let jour = |ecrit: &str| -> Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
+        let a = |ecrit: &str| -> Moment { socle::piece::Zone::lue(ecrit, socle::piece::format::InstantIso).valeur().unwrap() };
+        let signalement = |type_declaration: TypeDeLaDeclaration, le: &str| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration),
             ordre: None,
             mois: None,
             fichier: None,
-            quand: InstantOuJour::from(a(j, heure)),
+            quand: InstantOuJour::from(a(le)),
         };
         let prolongation = Prolongation {
-            le: jour(3),
-            saisi_le: Moment::a_paris(jour(3), const { HeureDuJour::a(15, 0) }).unwrap(),
+            le: jour("2026-11-03"),
+            saisi_le: a("2026-11-03T15:00:00"),
             qui: "t".into(),
-            fin_avant: jour(6),
-            fin: jour(13),
-            periode_de_subrogation_avant: Some(socle::date::Periode::du_au(jour(3), jour(6)).unwrap()),
-            periode_de_subrogation: Some(socle::date::Periode::du_au(jour(3), jour(13)).unwrap()),
+            fin_avant: jour("2026-11-06"),
+            fin: jour("2026-11-13"),
+            periode_de_subrogation_avant: Some(socle::date::Periode::du_au(jour("2026-11-03"), jour("2026-11-06")).unwrap()),
+            periode_de_subrogation: Some(socle::date::Periode::du_au(jour("2026-11-03"), jour("2026-11-13")).unwrap()),
         };
         use TypeDeLaDeclaration::{AnnuleEtRemplace, Normale};
-        let avant = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 9)];
+        let avant = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T09:00:00")];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &avant).unwrap().1.is_none());
-        let apres = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 16)];
+        let apres = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T16:00:00")];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &apres).unwrap().1.is_some());
     }
 }

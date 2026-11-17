@@ -61,7 +61,7 @@ fn transcription_du_cahier_2026_1(quoi: &str) -> PathBuf {
 
 #[test]
 fn chaque_referentiel_livre_et_chaque_table_sont_ce_que_les_textes_deposes_donnent() {
-    let jour = Jour::nouveau(2026, 10, 15).unwrap();
+    let jour: Jour = socle::forme::lire_texte("\"2026-10-15\"", "le jour du test").unwrap();
 
     // La NAF : les deux classeurs de l'Insee.
     let (s, c) = ("insee-naf-2025-structure-20241004.xlsx", "insee-naf-2025-correspondances-naf-rev2-vers-naf-2025-20260107.xlsx");

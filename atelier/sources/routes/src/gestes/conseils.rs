@@ -37,6 +37,7 @@ use droit::contexte::Contexte;
 use droit::cumul::{self, Constantes, Declare};
 use droit::forme_bareme::Pile;
 use socle::date::{Jour, Periode};
+use socle::grandeurs::DecalageDansUneSuite;
 use droit::emplois;
 use droit::emplois::AnnexeChomage as Annexe;
 use droit::minima::Par;
@@ -58,7 +59,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ConseilDuJour,
         geste: "Dire le conseil du jour (« Le saviez-vous ? »).",
-        charge: &[Champ { nom: "decalage", libelle: Affiche::new("Autre conseil"), forme: Forme::Nombre, sens: "un autre conseil : 1 le suivant, 2 celui d'après", avance: false }],
+        charge: &[Champ { nom: "decalage", libelle: Affiche::new("Autre conseil"), forme: Forme::Nombre, sens: "un autre conseil : +1 le suivant, -1 le précédent", avance: false }],
         exemple: r#"{}"#,
         rend: "le conseil (titre, texte, ce qu'il ouvre)",
         refus: &[OPERATION],
@@ -678,7 +679,7 @@ fn generaux(b: &Banque, d: &Donnees) -> R<Vec<ConseilVu>> {
 }
 
 /// Le conseil du jour, decale de `decalage` (« un autre » l'augmente d'un) ; rien quand l'option est decochee.
-fn du_jour(ctx: &Contexte, decalage: Option<usize>) -> R<Option<ConseilVu>> {
+fn du_jour(ctx: &Contexte, decalage: Option<DecalageDansUneSuite>) -> R<Option<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(None);
     }
@@ -690,12 +691,12 @@ fn du_jour(ctx: &Contexte, decalage: Option<usize>) -> R<Option<ConseilVu>> {
     if n == 0 {
         return Ok(None);
     }
-    let rang_du_jour = (jour.ordinal() as i128) * (pas(n) as i128);
+    let rang_du_jour = jour.rang_dans_une_suite(pas(n), n);
     let rang = match decalage {
-        Some(x) => rang_du_jour + x as i128,
+        Some(d) => d.depuis(rang_du_jour, n),
         None => rang_du_jour,
     };
-    Ok(liste.into_iter().nth(rang.rem_euclid(n as i128) as usize))
+    Ok(liste.into_iter().nth(rang))
 }
 
 // ------------------------------------------------------- les faits d'une paie
@@ -1235,7 +1236,7 @@ fn et(noms: &[String]) -> String {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeConseilDuJour {
-    decalage: Option<usize>,
+    decalage: Option<DecalageDansUneSuite>,
 }
 
 /// La charge de `conseils-salarie` : la cle du salarie.

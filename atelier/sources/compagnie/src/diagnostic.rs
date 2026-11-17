@@ -842,8 +842,8 @@ pub struct PageDite {
     pub langue: String,
     pub langues: String,
     pub fuseau: String,
-    /// Le decalage du fuseau de la page sur l'UTC, en minutes (`-getTimezoneOffset()` : `60`), tel que la page l'ecrit.
-    pub decalage_minutes: socle::forme::NombreLu,
+    /// Le decalage du fuseau de la page sur l'UTC (`-getTimezoneOffset()`, en minutes : `60`).
+    pub decalage_minutes: socle::paris::DecalageSurUtc,
     pub agent: String,
     /// La memoire du poste en Go (`navigator.deviceMemory` : `0.5`, `8`), telle que la page l'ecrit.
     pub memoire_go: Option<socle::forme::NombreLu>,

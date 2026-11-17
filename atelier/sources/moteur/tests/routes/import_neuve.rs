@@ -28,7 +28,7 @@ const JOUR: &str = "2026-10-03";
 
 /// `JOUR`, en jour.
 fn le_jour() -> socle::date::Jour {
-    socle::date::Jour::nouveau(2026, 10, 3).unwrap()
+    crate::outils::le_jour(JOUR)
 }
 
 fn route(racine: &Path, nom: &str, charge: Value) -> Value {
@@ -290,7 +290,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!(importes.len(), 1, "{:?}", importes);
     let i = &importes[0];
     assert_eq!((i.objet().carte().numero.as_ref().map(engagement::numeros::NumeroContrat::as_str), i.objet().carte().fin.map(|j| j.iso())), (Some("FU1.26.01"), Some("2026-12-03".to_string())));
-    let paie = i.paies()[&socle::mois::Mois::nouveau(2026, 11).unwrap()].clone();
+    let paie = i.paies()[&crate::outils::le_mois("2026-11")].clone();
     assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(socle::grandeurs::ecrit::texte::dit)), (false, Some("212.30".to_string())), "{:?}", paie);
     assert!(paie.bulletin.is_some(), "le bulletin ne complete pas la paie de la DSN : {:?}", paie);
 

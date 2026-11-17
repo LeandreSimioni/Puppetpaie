@@ -944,7 +944,7 @@ mod tests {
                 ..DuMois::vide()
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
+            let l = lignes(&m, socle::forme::lire_texte("\"2026-03\"", "le mois du test").unwrap(), &au);
             l[0].taux().unwrap()
         };
         let par_unite = |euros: u32| crate::ligne::TauxDeLigne::ParUnite(Montant::euros(euros).pour_une_unite());

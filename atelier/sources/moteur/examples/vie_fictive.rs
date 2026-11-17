@@ -11,6 +11,7 @@
 //!     cargo run --profile essais --example vie_fictive -- livrer <scenario> <dossier de la fictive> [--jusqu-au AAAA-MM-JJ]
 //!
 //! `moteur-atelier scenario ...` est la meme commande.
+#![forbid(unsafe_code)]
 
 fn main() -> std::process::ExitCode {
     routes::scenario::commande(&socle::ligne::arguments())

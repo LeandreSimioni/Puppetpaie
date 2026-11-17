@@ -43,7 +43,7 @@ pub fn mois_impossible(mois: impl std::fmt::Display) -> String {
 
 impl Mois {
     /// Le mois `numero` (1 a 12) de l'annee `an` (1 a 9999) ; refus sinon.
-    pub fn nouveau(an: i32, numero: u32) -> R<Mois> {
+    pub(crate) fn nouveau(an: i32, numero: u32) -> R<Mois> {
         if !(1..=9999).contains(&an) {
             return Err(refus(crate::date::annee_impossible(an)));
         }
@@ -267,7 +267,7 @@ pub struct Annee(i32);
 
 impl Annee {
     /// L'annee `an` (1 a 9999) ; refus sinon.
-    pub fn nouvelle(an: i64) -> R<Annee> {
+    pub(crate) fn nouvelle(an: i64) -> R<Annee> {
         if !(1..=9999).contains(&an) {
             return Err(refus(crate::date::annee_impossible(an)));
         }

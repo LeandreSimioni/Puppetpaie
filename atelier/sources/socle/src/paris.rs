@@ -926,60 +926,49 @@ impl<'de> serde::Deserialize<'de> for InstantOuJour {
     }
 }
 
+/// LE DECALAGE D'UN FUSEAU SUR L'UTC, a la minute : celui qu'une date ou une heure de XML Schema porte (`fuseau_xsd`),
+/// celui que la page dit de son fuseau (`-getTimezoneOffset()`, js/tuyau.js : `compagnie::diagnostic::PageDite`). Il
+/// s'ecrit et se lit en minutes, en nombre (`60` : une heure d'avance sur l'UTC).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DecalageSurUtc(i32);
+
+impl DecalageSurUtc {
+    /// Ses secondes (une avance, positive ; un retard, negatif).
+    fn secondes(self) -> i64 {
+        i64::from(self.0) * 60
+    }
+}
+
 /// LE FUSEAU QU'UNE DATE OU UNE HEURE DE XML SCHEMA PEUT PORTER (XML Schema Part 2, § 3.2.7.3 : `Z`, ou `(+|-)hh:mm`,
-/// `hh` de 00 a 14, `mm` de 00 a 59, et 14 seulement avec `:00`). Il garde ce qui est ecrit : son signe et ses chiffres.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum FuseauXsd {
-    Z,
-    Decalage { moins: bool, heures: u8, minutes: u8 },
+/// `hh` de 00 a 14, `mm` de 00 a 59, et 14 seulement avec `:00`), et rien d'autre ; `None` sinon.
+fn fuseau_xsd(texte: &str) -> Option<DecalageSurUtc> {
+    if texte == "Z" {
+        return Some(DecalageSurUtc(0));
+    }
+    let b = texte.as_bytes();
+    if b.len() != 6 || !matches!(b[0], b'+' | b'-') || b[3] != b':' {
+        return None;
+    }
+    let (heures, minutes) = (deux_chiffres(&b[1..3])?, deux_chiffres(&b[4..6])?);
+    let signe = if b[0] == b'-' { -1 } else { 1 };
+    (heures < 14 && minutes < 60 || heures == 14 && minutes == 0).then_some(DecalageSurUtc(signe * (i32::from(heures) * 60 + i32::from(minutes))))
 }
 
-impl FuseauXsd {
-    /// `Z` ou `(+|-)hh:mm`, et rien d'autre ; `None` sinon.
-    fn lire(texte: &str) -> Option<FuseauXsd> {
-        if texte == "Z" {
-            return Some(FuseauXsd::Z);
-        }
-        let b = texte.as_bytes();
-        if b.len() != 6 || !matches!(b[0], b'+' | b'-') || b[3] != b':' {
-            return None;
-        }
-        let (heures, minutes) = (deux_chiffres(&b[1..3])?, deux_chiffres(&b[4..6])?);
-        (heures < 14 && minutes < 60 || heures == 14 && minutes == 0).then_some(FuseauXsd::Decalage { moins: b[0] == b'-', heures, minutes })
-    }
-
-    /// Son decalage sur UTC, en secondes (`Z` : zero).
-    pub fn secondes(self) -> i64 {
-        match self {
-            FuseauXsd::Z => 0,
-            FuseauXsd::Decalage { moins, heures, minutes } => (if moins { -1 } else { 1 }) * (i64::from(heures) * 3_600 + i64::from(minutes) * 60),
-        }
-    }
-}
-
-impl std::fmt::Display for FuseauXsd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FuseauXsd::Z => f.write_str("Z"),
-            FuseauXsd::Decalage { moins, heures, minutes } => write!(f, "{}{:02}:{:02}", if *moins { '-' } else { '+' }, heures, minutes),
-        }
-    }
-}
-
-/// UNE DATE DE XML SCHEMA (`date`, XML Schema Part 2, § 3.2.9) : `AAAA-MM-JJ`, suivie ou non d'un fuseau (`FuseauXsd`) ;
+/// UNE DATE DE XML SCHEMA (`date`, XML Schema Part 2, § 3.2.9) : `AAAA-MM-JJ`, suivie ou non d'un fuseau (`fuseau_xsd`) ;
 /// la date de reception d'un bilan (`date_reception`, schema des bilans harmonises, l. 318-322 ;
 /// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`). Une annee hors de 1 a
 /// 9999 (un signe moins, plus de quatre chiffres), que le schema permet, sort du calendrier du moteur : elle se refuse.
 /// Rend le jour et le fuseau ecrits ; `None` pour autre chose.
-pub(crate) fn date_xsd(texte: &str) -> Option<(Jour, Option<FuseauXsd>)> {
+pub(crate) fn date_xsd(texte: &str) -> Option<(Jour, Option<DecalageSurUtc>)> {
     let (j, f) = (texte.get(..10)?, texte.get(10..)?);
     let jour = crate::date::jour_iso(j).filter(|x| x.iso() == j)?;
-    let fuseau = if f.is_empty() { None } else { Some(FuseauXsd::lire(f)?) };
+    let fuseau = if f.is_empty() { None } else { Some(fuseau_xsd(f)?) };
     Some((jour, fuseau))
 }
 
 /// UNE HEURE DE XML SCHEMA (`time`, XML Schema Part 2, § 3.2.8) : `hh:mm:ss`, une fraction de seconde ou non (`.` et des
-/// chiffres), un fuseau ou non (`FuseauXsd`) ; `24:00:00` est la fin du jour (XML Schema 1.1, § 3.3.8). L'heure de
+/// chiffres), un fuseau ou non (`fuseau_xsd`) ; `24:00:00` est la fin du jour (XML Schema 1.1, § 3.3.8). L'heure de
 /// reception d'un bilan (`heure_reception`, schema des bilans harmonises, l. 323-327 ; meme fichier que `date_xsd`).
 /// Rend ses secondes depuis minuit (de 0 a 86 400), si la fraction est nulle (absente, ou rien que des zeros : l'heure
 /// tombe sur sa seconde), et le fuseau ecrit (`HeureXsdLue`) ; `None` pour autre chose.
@@ -1000,7 +989,7 @@ pub(crate) fn heure_xsd(texte: &str) -> Option<HeureXsdLue> {
         }
         None => (None, reste),
     };
-    let fuseau = if reste.is_empty() { None } else { Some(FuseauXsd::lire(reste)?) };
+    let fuseau = if reste.is_empty() { None } else { Some(fuseau_xsd(reste)?) };
     let a_la_seconde = fraction.is_none_or(|f| f.bytes().all(|c| c == b'0'));
     let fin_du_jour = h == 24 && m == 0 && s == 0 && a_la_seconde;
     if !(h < 24 && m < 60 && s < 60 || fin_du_jour) {
@@ -1015,7 +1004,7 @@ pub(crate) fn heure_xsd(texte: &str) -> Option<HeureXsdLue> {
 pub struct HeureXsdLue {
     seconde: i64,
     a_la_seconde: bool,
-    fuseau: Option<FuseauXsd>,
+    fuseau: Option<DecalageSurUtc>,
 }
 
 impl HeureXsdLue {
@@ -1029,7 +1018,7 @@ impl HeureXsdLue {
 /// une date seule, sans fuseau, est son jour ; une heure qui ne tombe pas sur sa seconde, ou d'un autre fuseau que sa
 /// date, ne se ramene a rien (`None`) ; sans fuseau, l'heure est celle de Paris (`24:00:00` est le debut du jour
 /// suivant), avec un fuseau, l'instant qu'il dit.
-pub fn instant_xsd(date: (Jour, Option<FuseauXsd>), heure: Option<HeureXsdLue>) -> Option<InstantOuJour> {
+pub fn instant_xsd(date: (Jour, Option<DecalageSurUtc>), heure: Option<HeureXsdLue>) -> Option<InstantOuJour> {
     let (jour, fuseau_date) = date;
     let Some(HeureXsdLue { seconde, a_la_seconde, fuseau }) = heure else {
         return fuseau_date.is_none().then_some(InstantOuJour::Jour(jour));

@@ -3449,7 +3449,8 @@ mod tests {
             assert!(ecrit.contains(garde), "{} manque à la réécriture : {}", garde, ecrit);
         }
         let f = &s.fiches[&IdSalarie::lire("FULLER").unwrap()];
-        assert_eq!(f.au(&Jour::nouveau(2026, 11, 1).unwrap()).actif, None);
-        assert!(f.au(&Jour::nouveau(2026, 11, 2).unwrap()).actif.oui());
+        let j = |ecrit: &str| -> Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
+        assert_eq!(f.au(&j("2026-11-01")).actif, None);
+        assert!(f.au(&j("2026-11-02")).actif.oui());
     }
 }

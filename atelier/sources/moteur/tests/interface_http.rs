@@ -1,5 +1,6 @@
 //! `moteur interface` : le lanceur refuse en phrase et un corps trop gros se dit en JSON. Le journal de la fenetre
 //! va dans un dossier utilisateur sous `CARGO_TARGET_TMPDIR`, jamais celui du poste ; le serveur n'ecoute que sur 127.0.0.1.
+#![forbid(unsafe_code)]
 
 use moteur::interface::demarrer_sur;
 use std::path::Path;

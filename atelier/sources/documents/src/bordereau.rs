@@ -95,22 +95,14 @@ fn date_table(texte: &str) -> R<Option<Jour>> {
     if texte.is_empty() {
         return Ok(None);
     }
-    let p: Vec<&str> = texte.split('-').collect();
-    if p.len() != 3 {
-        return Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", texte));
+    use socle::piece::{format, DateMalEcrite, Zone};
+    match Zone::lue(texte, format::AaaaJjMm).valeur() {
+        Ok(jour) => Ok(Some(jour)),
+        Err(DateMalEcrite::Illisible(morceau)) => {
+            Err(socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", &morceau))
+        }
+        Err(DateMalEcrite::Impossible(phrase)) => Err(refus(phrase)),
     }
-    // Chaque morceau, des chiffres que sa zone lit (`socle::piece`) : l'annee, puis le mois et le jour dans l'ordre que
-    // le jour dit.
-    use socle::piece::{format, Zone};
-    let illisible = |s: &str| socle::echec::a_la_cle("La table des cotisations livrée avec le logiciel porte une date illisible : le signaler au développeur.", "date", s);
-    let (an, x, y) = (p[0].trim(), p[1].trim(), p[2].trim());
-    let nombre = |s: &str| s.parse::<u32>().map_err(|_| illisible(s));
-    let (n_an, n_x, n_y) = (nombre(an)?, nombre(x)?, nombre(y)?);
-    let ((mois, n_mois), (jour, n_jour)) = if n_y > 12 { ((x, n_x), (y, n_y)) } else { ((y, n_y), (x, n_x)) };
-    let impossible = || refus(socle::date::date_impossible(n_an, n_mois, n_jour));
-    let Some(Ok(annee)) = Zone::lue(an, format::AnneeEnChiffres).valeur() else { return Err(impossible()) };
-    let Some(mois) = Zone::lue(mois, format::MoisEnChiffres).valeur() else { return Err(impossible()) };
-    Zone::lue(jour, format::JourDuMois(annee.mois(mois))).valeur().map(Some).ok_or_else(impossible)
 }
 
 fn taux(texte: &str) -> R<Option<Taux>> {

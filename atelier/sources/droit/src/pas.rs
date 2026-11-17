@@ -642,11 +642,14 @@ mod tests {
         socle::forme::lire_texte(texte, "le taux").unwrap()
     }
 
-    /// Le jour que le test ecrit, fait par le socle.
-    macro_rules! jour {
-        ($an:expr, $mois:expr, $jour:expr) => {
-            Jour::nouveau($an, $mois, $jour).unwrap()
-        };
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn jour(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
+
+    /// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme.
+    fn mois(ecrit: &str) -> Mois {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap()
     }
 
     fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxRecu {
@@ -670,12 +673,12 @@ mod tests {
         let taux = |id: &str, le: &str| recu("9.40", id, le, None);
         let recus = vec![taux("480747943", "20260313070000"), taux("985249073", "20260415100000")];
         let id = |le: Jour| en_vigueur(&recus, le, None).map(|e| e.identifiant.to_string());
-        assert_eq!(id(jour!(2026, 3, 12)), None);
-        assert_eq!(id(jour!(2026, 3, 13)), Some("480747943".to_string()));
-        assert_eq!(id(jour!(2026, 3, 14)), Some("480747943".to_string()));
-        assert_eq!(id(jour!(2026, 4, 14)), Some("480747943".to_string()));
-        assert_eq!(id(jour!(2026, 4, 15)), Some("985249073".to_string()));
-        assert_eq!(id(jour!(2024, 12, 31)), None);
+        assert_eq!(id(jour("2026-03-12")), None);
+        assert_eq!(id(jour("2026-03-13")), Some("480747943".to_string()));
+        assert_eq!(id(jour("2026-03-14")), Some("480747943".to_string()));
+        assert_eq!(id(jour("2026-04-14")), Some("480747943".to_string()));
+        assert_eq!(id(jour("2026-04-15")), Some("985249073".to_string()));
+        assert_eq!(id(jour("2024-12-31")), None);
     }
 
     /// BOI-IR-PAS-30-10-20, § 70, exemple 1 (`atelier/reference/sources/bofip/BOI-IR-PAS-30-10-20-20181203.html`) :
@@ -683,9 +686,9 @@ mod tests {
     #[test]
     fn un_taux_vaut_jusqu_a_la_fin_du_deuxieme_mois_qui_suit_sa_mise_a_disposition() {
         let e = recu("5.00", "1", "20260210120000", None);
-        assert_eq!(fin_de_validite(&e), Jour::nouveau(2026, 4, 30));
-        assert!(!est_perime(&e, Jour::nouveau(2026, 4, 30).unwrap()));
-        assert!(est_perime(&e, Jour::nouveau(2026, 5, 1).unwrap()));
+        assert_eq!(fin_de_validite(&e), Some(jour("2026-04-30")));
+        assert!(!est_perime(&e, jour("2026-04-30")));
+        assert!(est_perime(&e, jour("2026-05-01")));
     }
 
     /// LE TAUX EN RETOUR DE LA DSN D'UN MOIS VAUT POUR LES MOIS QUI SUIVENT (BOI-IR-PAS-30-10-20, § 20 et § 70, exemple 1 :
@@ -699,14 +702,14 @@ mod tests {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
         let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).map(|e| e.identifiant.to_string());
-        let decembre = Mois::nouveau(2026, 12).unwrap();
-        assert_eq!(id(jour!(2026, 12, 31), decembre), Some("157352475".to_string()));
-        assert_eq!(id(jour!(2027, 1, 5), decembre), Some("157352475".to_string()));
-        assert_eq!(id(jour!(2027, 1, 31), Mois::nouveau(2027, 1).unwrap()), Some("713288315".to_string()));
+        let decembre = mois("2026-12");
+        assert_eq!(id(jour("2026-12-31"), decembre), Some("157352475".to_string()));
+        assert_eq!(id(jour("2027-01-05"), decembre), Some("157352475".to_string()));
+        assert_eq!(id(jour("2027-01-31"), mois("2027-01")), Some("713288315".to_string()));
         let demande = vec![taux("480747943", "20261221184328", None)];
-        assert!(en_vigueur(&demande, jour!(2026, 12, 31), Some(decembre)).is_some());
-        let mad = jour!(2026, 12, 21);
-        assert_eq!(date_d_effet(mad, Some(decembre)), jour!(2027, 1, 1));
+        assert!(en_vigueur(&demande, jour("2026-12-31"), Some(decembre)).is_some());
+        let mad = jour("2026-12-21");
+        assert_eq!(date_d_effet(mad, Some(decembre)), jour("2027-01-01"));
         assert_eq!(date_d_effet(mad, Some(decembre.precedent())), mad);
         assert_eq!(date_d_effet(mad, None), mad);
     }

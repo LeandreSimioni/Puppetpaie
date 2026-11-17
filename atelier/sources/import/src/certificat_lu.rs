@@ -272,8 +272,11 @@ pub(crate) fn date_en_tete(mots: &[String]) -> Option<(Jour, usize)> {
     if !(ok(j, 2) || ok(j, 1)) || !(ok(m, 2) || ok(m, 1)) || !ok(a, 4) {
         return None;
     }
-    let n = |t: &str| t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
-    Jour::nouveau(n(a).try_into().ok()?, n(m), n(j)).map(|d| (d, 3))
+    // Chaque nombre lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
+    let annee = Zone::lue(a, format::AnneeEnChiffres).valeur()?.ok()?;
+    let mois = Zone::lue(m, format::MoisEnChiffres).valeur()?;
+    Zone::lue(j, format::JourDuMois(annee.mois(mois))).valeur().map(|d| (d, 3))
 }
 
 fn texte(mots: &[String]) -> Option<String> {

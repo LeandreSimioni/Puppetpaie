@@ -1,4 +1,5 @@
 //! `moteur` : la ligne de commande du moteur Rust (`commandes::ligne_de_commande`). Se parse a la main.
+#![forbid(unsafe_code)]
 
 fn usage() -> ! {
     eprintln!(

@@ -35,6 +35,9 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe`, ni dans le binaire ni dans son script de construction (les appels au noyau de Windows sont dans
+# `socle::systeme`).
+unsafe_code = "forbid"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

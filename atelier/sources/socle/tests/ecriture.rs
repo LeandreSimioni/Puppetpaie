@@ -1,6 +1,7 @@
 //! L'ecriture des fichiers (`ecriture`) et le verrou des compteurs (`verrou`). Un JSON de la compagnie s'ecrit en LF,
 //! avec un saut final, ses dossiers crees ; le verrou des compteurs n'est rendu que par celui qui le tient, et un
 //! verrou abandonne se reprend.
+#![forbid(unsafe_code)]
 
 use socle::ecriture::ecrire_json;
 use socle::verrou;

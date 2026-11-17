@@ -1,6 +1,7 @@
 //! `moteur-atelier` : le binaire du nuage, jamais livre. La ligne de commande du moteur (`moteur::commandes`), plus les
 //! commandes de l'atelier (`atelier::commandes`) ; construit avec la feature `atelier` de ce qu'il prend, il peut etre
 //! pointe vers de faux serveurs locaux et refuse tout acte reel.
+#![forbid(unsafe_code)]
 
 fn usage() -> ! {
     eprintln!(

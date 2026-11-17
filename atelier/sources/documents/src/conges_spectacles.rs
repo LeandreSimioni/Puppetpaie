@@ -675,11 +675,9 @@ pub fn recapitulatif(paires: &[(&ContratDuCertificat, NumeroDeCertificat)], ent:
 mod tests {
     use super::*;
 
-    /// Le jour que le test ecrit, fait par le socle.
-    macro_rules! j {
-        ($an:expr, $mois:expr, $jour:expr) => {
-            Jour::nouveau($an, $mois, $jour).unwrap()
-        };
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
     }
 
     fn decouper(periode: Periode, dates: Vec<Jour>, cachets: usize, jours: usize, heures: Option<Heures>) -> R<Vec<(Periode, Vec<Jour>, NombreDuCertificat)>> {
@@ -690,16 +688,16 @@ mod tests {
     /// (`atelier/reference/sources/audiens-dsn/audiens-declarer-payer-conges-spectacles-20261020.md`, l. 15).
     #[test]
     fn un_contrat_a_cheval_se_coupe_au_31_mars() {
-        let dates = vec![j!(2026, 3, 30), j!(2026, 3, 31), j!(2026, 4, 1)];
-        let p = decouper(Periode::du_au(j!(2026, 3, 30), j!(2026, 4, 1)).unwrap(), dates, 3, 3, None).unwrap();
+        let dates = vec![j("2026-03-30"), j("2026-03-31"), j("2026-04-01")];
+        let p = decouper(Periode::du_au(j("2026-03-30"), j("2026-04-01")).unwrap(), dates, 3, 3, None).unwrap();
         assert_eq!(p.len(), 2);
-        assert_eq!((p[0].0.fin(), p[1].0.debut()), (j!(2026, 3, 31), j!(2026, 4, 1)));
+        assert_eq!((p[0].0.fin(), p[1].0.debut()), (j("2026-03-31"), j("2026-04-01")));
         assert_eq!((p[0].2, p[1].2), (NombreDuCertificat::Cachets(Cachets::de_dates(2)), NombreDuCertificat::Cachets(Cachets::de_dates(1))));
     }
 
     #[test]
     fn des_heures_sur_le_31_mars_refusent() {
-        let r = decouper(Periode::du_au(j!(2026, 3, 30), j!(2026, 4, 1)).unwrap(), vec![j!(2026, 3, 30)], 1, 1, Some(Heures::fixes(6)));
+        let r = decouper(Periode::du_au(j("2026-03-30"), j("2026-04-01")).unwrap(), vec![j("2026-03-30")], 1, 1, Some(Heures::fixes(6)));
         assert!(r.unwrap_err().phrase.contains("porteur d'heures (6.0 h)"));
     }
 }

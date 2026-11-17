@@ -1092,16 +1092,17 @@ mod tests {
         std::fs::create_dir_all(r.join("engagements")).unwrap();
         std::fs::write(r.join("engagements").join("2026-10.json"), "{}").unwrap();
         let avant = photo(&r);
+        let mars: Option<Jour> = Some(socle::forme::lire_texte("\"2027-03-01\"", "le jour du test").unwrap());
         assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
-        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
-        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), false).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, mars, true).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, mars, false).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant, "pas meme config/horloge.json");
         assert!(!FICHIER_HORLOGE.dans(&r).exists());
         // Un marqueur de copie de developpement qui n'est PAS une compagnie fictive ne suffit pas.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive", "quoi": "copie"}"#).unwrap();
         let avant = photo(&r);
         assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
-        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, mars, true).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant);
         // Un marqueur illisible se refuse : il ne dit pas si les envois sont joues.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), "{ pas du json").unwrap();

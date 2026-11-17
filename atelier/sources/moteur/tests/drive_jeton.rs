@@ -1,6 +1,7 @@
 //! Le jeton Google renouvele apres un 401, sans boucle (defaut 1), et le jeton revoque : rien ne part vers Drive.
 //! Le jeton se scelle et se lit par la cle du poste, que le moteur ne prend que dans l'environnement (`PUPPETPAIE_CLE`),
 //! d'ou ce fichier seul. Cle et jeton fictifs, dans `CARGO_TARGET_TMPDIR` ; un faux serveur sur `127.0.0.1`.
+#![forbid(unsafe_code)]
 
 #[path = "outils/mod.rs"]
 pub mod outils;

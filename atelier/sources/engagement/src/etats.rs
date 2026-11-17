@@ -1974,8 +1974,8 @@ mod tests_rupture {
         let partie = saisie(carte(ligne(5, "150")));
         let rompu = |taux: &str| {
             saisie(crate::saisie::Carte {
-                debut: Jour::nouveau(2026, 5, 4),
-                fin: Jour::nouveau(2026, 5, 6),
+                debut: Some(socle::forme::lire_texte("\"2026-05-04\"", "le jour du test").unwrap()),
+                fin: Some(socle::forme::lire_texte("\"2026-05-06\"", "le jour du test").unwrap()),
                 motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
                 preavis: Some(crate::saisie::Preavis { genre: droit::preavis::TypeDePreavis::SansClause, debut: None, fin: None }),
                 ..carte(ligne(3, taux))

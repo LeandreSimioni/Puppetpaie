@@ -65,7 +65,9 @@ que par la structure :
   l'implémente, pas qu'on appelle ses méthodes par un générique (`B::du(a.en_decimal())` rouvrirait un montant en
   heures) : chaque méthode scellée (`grandeurs::Grandeur`, `texte::EnEuros`, `piece::Format`, `date::Unite`) exige un
   jeton que seul son module fabrique. `unsafe` le fabriquerait (`std::mem::zeroed`) : l'espace interdit `unsafe_code`,
-  chaque crate le refuse à sa racine (`#![forbid(unsafe_code)]`, qu'aucun `allow` ne lève) ; seul `socle::systeme`, les
+  chaque racine le refuse (`#![forbid(unsafe_code)]`, qu'aucun `allow` ne lève : chaque bibliothèque, binaire, essai,
+  exemple et script de construction de l'espace, sauf la bibliothèque du socle ; la fenêtre et la fabrique, hors de
+  l'espace, dans leur manifeste) ; seul `socle::systeme`, les
   appels au noyau de Windows, le lève, et c'est le seul endroit où un entier signé est imposé par l'extérieur.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
@@ -205,6 +207,8 @@ un libellé, chacun sa forme.
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
+| décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre) | `socle/src/paris.rs` |
+| date mal écrite d'une zone (un morceau illisible tel qu'il s'écrit, ou une date qui n'existe pas et la phrase qui le dit : la date de la table des CTP, `format::AaaaJjMm`) | `DateMalEcrite` | `socle/src/piece.rs` |
 
 **Le détail**
 
@@ -355,6 +359,9 @@ un libellé, chacun sa forme.
 | nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier` (interne au socle), qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture, en rang dans sa grille (`socle::grandeurs::RangDansUneGrille`) ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
 | nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue` ; un nombre lu avant que sa place dise sa grandeur, une fois : celui qu'une pièce imprime, `Nombre::a_virgule`, ou que la norme écrit, `Nombre::de_la_norme`, les seules lectures dont `grandeurs::lu::texte` et `lu::norme` se servent ; l'entier qu'une zone écrit en chiffres, `socle::piece::EntierDUneZone`, que sa colonne lit en sa grandeur, `en`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu`, `socle::piece::EntierDUneZone` | `socle/src/forme.rs`, `socle/src/piece.rs` |
 | rang dans une grille numérotée de 1 à N (l'échelon de la CCNEAC, une grille de douze, `droit::fiche::EchelonCcneac`) | `RangDansUneGrille<N>` (lu d'un nombre entier ou tapé, hors de 1 à N refusé en la phrase de sa notion ; il prend sa ligne dans la grille, `ligne`, et son rang ne sort pas) | `socle/src/grandeurs.rs` |
+| décalage dans une suite qui tourne (« un autre » conseil du jour : `1` le suivant, `-1` le précédent, `routes::gestes::conseils`) | `DecalageDansUneSuite` (lu d'un entier signé ; il décale un rang dans une suite de N en tournant, `depuis`, et son nombre ne sort pas ; le rang du jour dans la suite, `Jour::rang_dans_une_suite`) | `socle/src/grandeurs.rs` |
+| entier d'un petit langage d'un fichier (le modèle `421{code:03}` d'un compte individuel du plan comptable, `documents::plan_comptable`) | `socle::texte::EntierEcrit` (lu de son texte ; son signe, sa valeur absolue écrite en base 10, 16, 8 ou 2, le caractère qu'il code) | `socle/src/texte.rs` |
+| rotation d'une page d'un PDF (`/Rotate`, un multiple de 90 degrés : ce que le relevé d'un PDF écrit en degrés, que l'import et l'atelier lisent) | `fabrique_pdf::inspection::Rotation` (en quarts de tour, ramenée à un tour) | `fabrique-pdf/src/inspection.rs` |
 
 **Le détail**
 
@@ -486,6 +493,8 @@ un libellé, chacun sa forme.
 | courriel envoyé | `envois::envoi::Message<Pour>` | `envois/src/envoi.rs` |
 | expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
 | version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
+| version de la forme du coffre (`coffre.bin`, `version` : seule celle de ce logiciel se lit, une autre se refuse) | `compagnie::coffre::VersionDuCoffre` | `compagnie/src/coffre.rs` |
+| paramètres de la dérivation du mot de passe du logiciel (scrypt : `n`, `r`, `p`, que `coffre.bin` écrit en nombres) | `compagnie::coffre::ParametresDuCoffre` (bornés à leur lecture, les refus dans l'ordre d'OpenSSL ; ceux de la bibliothèque, `scrypt::Params`) | `compagnie/src/coffre.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
 | numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |

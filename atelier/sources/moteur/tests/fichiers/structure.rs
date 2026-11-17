@@ -392,7 +392,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
 fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
-    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 2).unwrap(), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap() };
+    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::piece::Zone::lue("2026-11-02T10:00:00", socle::piece::format::InstantIso).valeur().unwrap() };
     poste.coffre(&a).poser_ouverture(&socle::secret::Secret::nouveau(ADMIN), None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;

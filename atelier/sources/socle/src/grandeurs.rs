@@ -1300,6 +1300,22 @@ impl<const N: u8> std::fmt::Display for RangDansUneGrille<N> {
     }
 }
 
+/// UN DECALAGE DANS UNE SUITE QUI TOURNE : tant de crans apres (positif) ou avant (negatif) ; il se lit d'un nombre
+/// entier signe (`1` le suivant, `-1` le precedent : « un autre » conseil du jour, `routes::gestes::conseils`). Il decale
+/// un rang dans une suite de `n` (`depuis`) ; son nombre ne sort pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(transparent)]
+pub struct DecalageDansUneSuite(i64);
+
+impl DecalageDansUneSuite {
+    /// LE RANG `rang` D'UNE SUITE DE `n` RANGS, DECALE DE LUI en tournant : `(rang + decalage) mod n` (un decalage
+    /// negatif recule, et passe du premier au dernier). `n` est non nul.
+    pub fn depuis(self, rang: usize, n: usize) -> usize {
+        // Un compte tient en 128 bits signes ; le reste, de 0 a `n` exclu, est un compte.
+        (rang as i128 + i128::from(self.0)).rem_euclid(n as i128) as usize
+    }
+}
+
 impl crate::piece::EntierDUneZone {
     /// LA GRANDEUR QU'IL COMPTE, celle que sa place dit (des heures, des cachets, des jours), son echelle nulle : la
     /// porte de sa lecture. Un entier : des cachets aussi.

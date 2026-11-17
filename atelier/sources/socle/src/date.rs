@@ -945,7 +945,7 @@ pub fn jours_du_mois(an: i32, mois: u32) -> u32 {
 
 impl Jour {
     /// `None` si le jour n'existe pas ; l'annee va de 1 a 9999.
-    pub fn nouveau(an: i32, mois: u32, jour: u32) -> Option<Jour> {
+    pub(crate) fn nouveau(an: i32, mois: u32, jour: u32) -> Option<Jour> {
         if !(1..=9999).contains(&an) || !(1..=12).contains(&mois) {
             return None;
         }
@@ -1073,6 +1073,13 @@ impl Jour {
 
     pub fn jours_du_mois(&self) -> u32 {
         jours_du_mois(self.an, self.mois)
+    }
+
+    /// SON RANG DANS UNE SUITE DE `n` RANGS QUI AVANCE DE `pas` CHAQUE JOUR (`n` non nul) : `(ordinal x pas) mod n` (le
+    /// conseil du jour, `routes::gestes::conseils`). Un compte tient en 128 bits signes ; le reste, de 0 a `n` exclu,
+    /// est un compte.
+    pub fn rang_dans_une_suite(&self, pas: usize, n: usize) -> usize {
+        (i128::from(self.ordinal()) * pas as i128).rem_euclid(n as i128) as usize
     }
 
     /// Son jour de la semaine.

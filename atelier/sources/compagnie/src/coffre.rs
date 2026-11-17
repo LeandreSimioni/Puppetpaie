@@ -476,37 +476,59 @@ pub fn deriver(motdepasse: &Secret, kdf: &Kdf) -> R<Vec<u8>> {
         return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", repr_chaine(&kdf.algo))));
     }
     let sel = d64(&kdf.sel)?;
-    scrypt_32(motdepasse.devoiler().as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p))
+    let parametres = ParametresDuCoffre::lus(kdf)?;
+    let mut sortie = vec![0u8; 32];
+    scrypt::scrypt(motdepasse.devoiler().as_bytes(), &sel, &parametres.0, &mut sortie).map_err(|_| parametres_incompatibles())?;
+    Ok(sortie)
 }
 
-fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<u8>> {
-    let invalide = || echec(Classe::Illisible, "parametres scrypt incompatibles (n, r, p)");
-    let memoire_max = || echec(Classe::Illisible, "parametres scrypt : la memoire demandee depasse la borne");
-    if n < 2 || n & (n - 1) != 0 {
-        return Err(echec(Classe::Illisible, "le parametre scrypt n est une puissance de 2"));
+/// LES PARAMETRES DE LA DERIVATION D'UN COFFRE, BORNES A LEUR LECTURE (`Kdf` les ecrit en nombres : `n`, `r`, `p`) :
+/// ceux de la bibliotheque (`scrypt::Params`), que seuls des parametres que la derivation accepte font. Les bornes sont
+/// celles de la derivation que le coffre a toujours suivie (`EVP_PBE_scrypt` d'OpenSSL) : `n` une puissance de 2,
+/// `r` et `p` non nuls et sur 32 bits, `p x r` sous 2^30, `n` sous 2^(16 r), la memoire sous `SCRYPT_MAXMEM`, et un
+/// bloc de 128 x p x r octets qui tient dans un `int` d'OpenSSL.
+struct ParametresDuCoffre(scrypt::Params);
+
+/// Le plus grand produit `p x r` que la derivation d'OpenSSL accepte (`SCRYPT_PR_MAX`, `(1 << 30) - 1`).
+const PR_MAXIMAL: u128 = (1 << 30) - 1;
+
+/// Le plus grand bloc (128 x p x r octets) que la derivation d'OpenSSL accepte : son `Blen` est un `int` C
+/// (`EVP_PBE_scrypt` refuse `Blen > INT_MAX`).
+const BLOC_MAXIMAL: std::ffi::c_int = std::ffi::c_int::MAX;
+
+/// Le refus de parametres que la derivation n'accepte pas.
+fn parametres_incompatibles() -> Echec {
+    echec(Classe::Illisible, "parametres scrypt incompatibles (n, r, p)")
+}
+
+impl ParametresDuCoffre {
+    /// Les parametres que `kdf` ecrit, ou le refus de ce qui les rend inacceptables, dans cet ordre.
+    fn lus(kdf: &Kdf) -> R<ParametresDuCoffre> {
+        let memoire_max = || echec(Classe::Illisible, "parametres scrypt : la memoire demandee depasse la borne");
+        let (n, r, p) = (u128::from(kdf.n), u128::from(kdf.r), u128::from(kdf.p));
+        if n < 2 || !n.is_power_of_two() {
+            return Err(echec(Classe::Illisible, "le parametre scrypt n est une puissance de 2"));
+        }
+        if r == 0 || p == 0 {
+            return Err(parametres_incompatibles());
+        }
+        let (Ok(r32), Ok(p32)) = (u32::try_from(kdf.r), u32::try_from(kdf.p)) else {
+            return Err(echec(Classe::Illisible, "parametres scrypt : r ou p trop grand"));
+        };
+        if p > PR_MAXIMAL / r {
+            return Err(memoire_max());
+        }
+        if 16 * r <= 63 && n >= 1 << (16 * r) {
+            return Err(memoire_max());
+        }
+        let memoire = 128 * p * r + 128 * r * (n + 2);
+        if memoire > u128::from(SCRYPT_MAXMEM) || 128 * p * r > u128::from(BLOC_MAXIMAL.unsigned_abs()) {
+            return Err(memoire_max());
+        }
+        // `n` est une puissance de 2 sous 2^64 : son logarithme, sous 64, tient dans un octet.
+        let Ok(log_n) = u8::try_from(kdf.n.trailing_zeros()) else { return Err(parametres_incompatibles()) };
+        scrypt::Params::new(log_n, r32, p32, 32).map(ParametresDuCoffre).map_err(|_| parametres_incompatibles())
     }
-    if r == 0 || p == 0 {
-        return Err(invalide());
-    }
-    if r > u32::MAX as i128 || p > u32::MAX as i128 {
-        return Err(echec(Classe::Illisible, "parametres scrypt : r ou p trop grand"));
-    }
-    if p > ((1i128 << 30) - 1) / r {
-        return Err(memoire_max());
-    }
-    let log_n = n.trailing_zeros() as i128;
-    if 16 * r <= 63 && n >= 1i128 << (16 * r) {
-        return Err(memoire_max());
-    }
-    let memoire = 128 * p * r + 128 * r * (n + 2);
-    // 128 x p x r ne depasse pas 2^31 - 1, la borne des parametres de la derivation (un entier signe de 32 bits).
-    if memoire > SCRYPT_MAXMEM as i128 || 128 * p * r > (1i128 << 31) - 1 {
-        return Err(memoire_max());
-    }
-    let params = scrypt::Params::new(log_n as u8, r as u32, p as u32, 32).map_err(|_| invalide())?;
-    let mut sortie = vec![0u8; 32];
-    scrypt::scrypt(motdepasse, sel, &params, &mut sortie).map_err(|_| invalide())?;
-    Ok(sortie)
 }
 
 // ------------------------------------------------------------- le poste et ses chemins

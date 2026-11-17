@@ -438,16 +438,17 @@ pub struct Aem<S = &'static str> {
 /// La page d'une AEM.
 pub fn page_aem<S: AsRef<str>>(a: &Aem<S>) -> Vec<Bloc> {
     let mut b = Vec::new();
-    // Une ligne : chaque texte a son abscisse, repoussee au-dela du precedent (un blanc de 10 points entre deux). Les
-    // points que le test ecrit vont tels quels a la fabrique (`Mesure::entier`).
-    let ligne = |b: &mut Vec<Bloc>, y, textes: &[(_, &str)]| {
+    // Une ligne : chaque texte a son abscisse, repoussee au-dela du precedent (un blanc de 10 points entre deux) ;
+    // `SUITE`, juste apres le precedent.
+    const SUITE: Mesure = Mesure::ZERO;
+    let ligne = |b: &mut Vec<Bloc>, y: Mesure, textes: &[(Mesure, &str)]| {
         let mut fin = Mesure::ZERO;
         for (x, texte) in textes {
             if texte.is_empty() {
                 continue;
             }
-            let x = Mesure::entier(*x).max(fin + Mesure::entier(10));
-            t(b, x, Mesure::entier(y), texte);
+            let x = (*x).max(fin + m("10"));
+            t(b, x, y, texte);
             fin = x + texte.chars().count() * m("6.5");
         }
     };
@@ -455,52 +456,52 @@ pub fn page_aem<S: AsRef<str>>(a: &Aem<S>) -> Vec<Bloc> {
     let coche = |l: &str, oui: bool| if oui { format!("{} Ñ", l) } else { l.to_string() };
     let (mm, an) = a.mois.as_ref().split_once('/').unwrap_or(("00", "0000"));
     let (n, e, f) = (jma(&a.naissance), jma(&a.embauche), jma(&a.fin));
-    ligne(&mut b, 35, &[(40, "ACTIVITÉS RELEVANT DES ANNEXES 8 et 10 au règlement de l'Assurance Chômage")]);
-    ligne(&mut b, 47, &[(40, "À REMPLIR PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ")]);
+    ligne(&mut b, m("35"), &[(m("40"), "ACTIVITÉS RELEVANT DES ANNEXES 8 et 10 au règlement de l'Assurance Chômage")]);
+    ligne(&mut b, m("47"), &[(m("40"), "À REMPLIR PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ")]);
     ligne(
         &mut b,
-        78,
-        &[(30, "1 ATTESTATION (AEM)"), (0, "MOIS"), (0, &mm[..1]), (0, &mm[1..]), (0, "20"), (0, &an[2..3]), (0, &an[3..]), (0, "ATTESTATION N°"), (0, a.numero.as_ref())],
+        m("78"),
+        &[(m("30"), "1 ATTESTATION (AEM)"), (SUITE, "MOIS"), (SUITE, &mm[..1]), (SUITE, &mm[1..]), (SUITE, "20"), (SUITE, &an[2..3]), (SUITE, &an[3..]), (SUITE, "ATTESTATION N°"), (SUITE, a.numero.as_ref())],
     );
-    ligne(&mut b, 104, &[(30, "AEM INITIALE Ñ"), (0, "COMPLÉMENTAIRE"), (0, "RECTIFICATIVE POSITIVE"), (0, "OU NÉGATIVE")]);
-    ligne(&mut b, 114, &[(300, "N° DE L'ATTESTATION INITIALE")]);
-    ligne(&mut b, 130, &[(30, "2 EMPLOYEUR")]);
-    ligne(&mut b, 146, &[(30, "N° SIRET"), (0, a.siret.as_ref()), (0, "Code APE/NAF"), (0, a.ape.as_ref()), (0, "N° d'affiliation"), (0, "99999999999")]);
-    ligne(&mut b, 158, &[(30, "N° IDCC"), (0, a.idcc.as_ref()), (0, "Si différent, N° IDCC de la prestation de travail")]);
-    ligne(&mut b, 172, &[(30, "Raison sociale"), (0, a.employeur.as_ref())]);
-    ligne(&mut b, 184, &[(30, "Code Postal"), (0, a.employeur_code_postal.as_ref()), (0, "Commune"), (0, a.employeur_commune.as_ref()), (0, "Courriel")]);
-    ligne(&mut b, 198, &[(30, "N° d'affiliation à la caisse OUI Ñ"), (0, a.adherent.as_ref()), (0, "NON")]);
-    ligne(&mut b, 207, &[(30, "de congés spectacles")]);
-    ligne(&mut b, 230, &[(30, "3 SALARIE")]);
-    ligne(&mut b, 246, &[(30, "Nom de famille"), (0, a.nom.as_ref()), (0, "Prénom"), (0, a.prenom.as_ref())]);
-    ligne(&mut b, 256, &[(30, "(Nom de naissance)")]);
-    ligne(&mut b, 270, &[(30, "Nom d'usage")]);
-    ligne(&mut b, 286, &[(30, "NIR"), (0, a.nir.as_ref()), (0, "Date de naissance"), (0, &n[0]), (0, &n[1]), (0, &n[2])]);
-    ligne(&mut b, 302, &[(30, "Adresse"), (0, a.rue.as_ref())]);
-    ligne(&mut b, 318, &[(30, "Code Postal"), (0, a.code_postal.as_ref()), (0, "Commune"), (0, a.commune.as_ref())]);
-    ligne(&mut b, 340, &[(30, "4 PRESTATION DE TRAVAIL")]);
-    ligne(&mut b, 356, &[(30, "Emploi occupé"), (0, a.emploi.as_ref()), (0, "Numéro Objet"), (0, a.objet.as_ref())]);
+    ligne(&mut b, m("104"), &[(m("30"), "AEM INITIALE Ñ"), (SUITE, "COMPLÉMENTAIRE"), (SUITE, "RECTIFICATIVE POSITIVE"), (SUITE, "OU NÉGATIVE")]);
+    ligne(&mut b, m("114"), &[(m("300"), "N° DE L'ATTESTATION INITIALE")]);
+    ligne(&mut b, m("130"), &[(m("30"), "2 EMPLOYEUR")]);
+    ligne(&mut b, m("146"), &[(m("30"), "N° SIRET"), (SUITE, a.siret.as_ref()), (SUITE, "Code APE/NAF"), (SUITE, a.ape.as_ref()), (SUITE, "N° d'affiliation"), (SUITE, "99999999999")]);
+    ligne(&mut b, m("158"), &[(m("30"), "N° IDCC"), (SUITE, a.idcc.as_ref()), (SUITE, "Si différent, N° IDCC de la prestation de travail")]);
+    ligne(&mut b, m("172"), &[(m("30"), "Raison sociale"), (SUITE, a.employeur.as_ref())]);
+    ligne(&mut b, m("184"), &[(m("30"), "Code Postal"), (SUITE, a.employeur_code_postal.as_ref()), (SUITE, "Commune"), (SUITE, a.employeur_commune.as_ref()), (SUITE, "Courriel")]);
+    ligne(&mut b, m("198"), &[(m("30"), "N° d'affiliation à la caisse OUI Ñ"), (SUITE, a.adherent.as_ref()), (SUITE, "NON")]);
+    ligne(&mut b, m("207"), &[(m("30"), "de congés spectacles")]);
+    ligne(&mut b, m("230"), &[(m("30"), "3 SALARIE")]);
+    ligne(&mut b, m("246"), &[(m("30"), "Nom de famille"), (SUITE, a.nom.as_ref()), (SUITE, "Prénom"), (SUITE, a.prenom.as_ref())]);
+    ligne(&mut b, m("256"), &[(m("30"), "(Nom de naissance)")]);
+    ligne(&mut b, m("270"), &[(m("30"), "Nom d'usage")]);
+    ligne(&mut b, m("286"), &[(m("30"), "NIR"), (SUITE, a.nir.as_ref()), (SUITE, "Date de naissance"), (SUITE, &n[0]), (SUITE, &n[1]), (SUITE, &n[2])]);
+    ligne(&mut b, m("302"), &[(m("30"), "Adresse"), (SUITE, a.rue.as_ref())]);
+    ligne(&mut b, m("318"), &[(m("30"), "Code Postal"), (SUITE, a.code_postal.as_ref()), (SUITE, "Commune"), (SUITE, a.commune.as_ref())]);
+    ligne(&mut b, m("340"), &[(m("30"), "4 PRESTATION DE TRAVAIL")]);
+    ligne(&mut b, m("356"), &[(m("30"), "Emploi occupé"), (SUITE, a.emploi.as_ref()), (SUITE, "Numéro Objet"), (SUITE, a.objet.as_ref())]);
     // « Non » au-dessus de « cadre » : « Non cadre » sur deux rangs, comme le formulaire.
-    ligne(&mut b, 366, &[(150, "Non")]);
+    ligne(&mut b, m("366"), &[(m("150"), "Non")]);
     ligne(
         &mut b,
-        374,
-        &[(30, &coche("Cadre", a.cadre)), (150, &coche("cadre", !a.cadre)), (0, "Réalisateur"), (0, &coche("Artiste", a.artiste)), (0, &coche("Technicien", !a.artiste)), (0, "Ouvrier")],
+        m("374"),
+        &[(m("30"), &coche("Cadre", a.cadre)), (m("150"), &coche("cadre", !a.cadre)), (SUITE, "Réalisateur"), (SUITE, &coche("Artiste", a.artiste)), (SUITE, &coche("Technicien", !a.artiste)), (SUITE, "Ouvrier")],
     );
-    ligne(&mut b, 392, &[(30, "Date d'embauche"), (0, &e[0]), (0, &e[1]), (0, &e[2]), (0, "à Contrat en cours")]);
-    ligne(&mut b, 404, &[(30, "Sinon à Date de fin du contrat de travail"), (0, &f[0]), (0, &f[1]), (0, &f[2])]);
-    ligne(&mut b, 414, &[(30, "(Date de début du contrat)")]);
+    ligne(&mut b, m("392"), &[(m("30"), "Date d'embauche"), (SUITE, &e[0]), (SUITE, &e[1]), (SUITE, &e[2]), (SUITE, "à Contrat en cours")]);
+    ligne(&mut b, m("404"), &[(m("30"), "Sinon à Date de fin du contrat de travail"), (SUITE, &f[0]), (SUITE, &f[1]), (SUITE, &f[2])]);
+    ligne(&mut b, m("414"), &[(m("30"), "(Date de début du contrat)")]);
     // Les en-tetes des nombres, sur deux rangs, et les nombres a leur aplomb.
-    ligne(&mut b, 432, &[(40, "Nombre d'"), (110, "HEURES"), (200, "Nombre de"), (330, "Nombre de")]);
-    ligne(&mut b, 442, &[(40, "effectuées"), (200, "CACHETS*"), (330, "JOURS")]);
-    ligne(&mut b, 452, &[(180, "isolés"), (240, "groupés"), (330, "travaillés")]);
-    ligne(&mut b, 470, &[(122, a.heures.as_ref()), (186, a.isoles.as_ref()), (250, a.groupes.as_ref()), (345, a.jours.as_ref())]);
-    ligne(&mut b, 484, &[(100, "* Uniquement pour les artistes (voir notice)")]);
-    ligne(&mut b, 500, &[(150, "RÉMUNERATION VERSÉES AU COURS DU MOIS")]);
-    ligne(&mut b, 512, &[(40, "SALAIRES BRUTS"), (220, "SALAIRES BRUTS")]);
-    ligne(&mut b, 521, &[(220, "soumis à contributions d'assurance chômage *")]);
-    ligne(&mut b, 536, &[(55, a.brut.as_ref()), (235, a.brut.as_ref())]);
-    ligne(&mut b, 600, &[(30, "5 AUTHENTIFICATION PAR L'EMPLOYEUR")]);
+    ligne(&mut b, m("432"), &[(m("40"), "Nombre d'"), (m("110"), "HEURES"), (m("200"), "Nombre de"), (m("330"), "Nombre de")]);
+    ligne(&mut b, m("442"), &[(m("40"), "effectuées"), (m("200"), "CACHETS*"), (m("330"), "JOURS")]);
+    ligne(&mut b, m("452"), &[(m("180"), "isolés"), (m("240"), "groupés"), (m("330"), "travaillés")]);
+    ligne(&mut b, m("470"), &[(m("122"), a.heures.as_ref()), (m("186"), a.isoles.as_ref()), (m("250"), a.groupes.as_ref()), (m("345"), a.jours.as_ref())]);
+    ligne(&mut b, m("484"), &[(m("100"), "* Uniquement pour les artistes (voir notice)")]);
+    ligne(&mut b, m("500"), &[(m("150"), "RÉMUNERATION VERSÉES AU COURS DU MOIS")]);
+    ligne(&mut b, m("512"), &[(m("40"), "SALAIRES BRUTS"), (m("220"), "SALAIRES BRUTS")]);
+    ligne(&mut b, m("521"), &[(m("220"), "soumis à contributions d'assurance chômage *")]);
+    ligne(&mut b, m("536"), &[(m("55"), a.brut.as_ref()), (m("235"), a.brut.as_ref())]);
+    ligne(&mut b, m("600"), &[(m("30"), "5 AUTHENTIFICATION PAR L'EMPLOYEUR")]);
     b
 }
 

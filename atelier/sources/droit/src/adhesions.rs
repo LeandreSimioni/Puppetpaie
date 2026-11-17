@@ -126,11 +126,14 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
 mod tests {
     use super::*;
 
-    /// Le jour que le test ecrit, fait par le socle.
-    macro_rules! j {
-        ($an:expr, $mois:expr, $jour:expr) => {
-            Jour::nouveau($an, $mois, $jour).unwrap()
-        };
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
+
+    /// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme : sa periode.
+    fn mois(ecrit: &str) -> Periode {
+        Periode::du_mois(socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap())
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,
@@ -139,15 +142,14 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
-        let mois = |an, m| Periode::du_mois(socle::mois::Mois::nouveau(an, m).unwrap());
-        let thalie = Some(j!(2026, 1, 1));
-        assert!(!en_vigueur(thalie, None, &mois(2025, 12)));
-        assert!(en_vigueur(thalie, None, &mois(2026, 1)));
-        let clos = (Some(j!(2025, 1, 1)), Some(j!(2026, 6, 30)));
-        assert!(en_vigueur(clos.0, clos.1, &mois(2026, 6)));
-        assert!(!en_vigueur(clos.0, clos.1, &mois(2026, 7)));
-        assert!(en_vigueur(Some(j!(2026, 3, 15)), None, &mois(2026, 3)));
-        assert!(en_vigueur(None, None, &mois(2025, 1)));
+        let thalie = Some(j("2026-01-01"));
+        assert!(!en_vigueur(thalie, None, &mois("2025-12")));
+        assert!(en_vigueur(thalie, None, &mois("2026-01")));
+        let clos = (Some(j("2025-01-01")), Some(j("2026-06-30")));
+        assert!(en_vigueur(clos.0, clos.1, &mois("2026-06")));
+        assert!(!en_vigueur(clos.0, clos.1, &mois("2026-07")));
+        assert!(en_vigueur(Some(j("2026-03-15")), None, &mois("2026-03")));
+        assert!(en_vigueur(None, None, &mois("2025-01")));
     }
 
     /// L'adhesion CASC-SVP d'une 3090 est celle de la fiche de codification, sans rien de la compagnie

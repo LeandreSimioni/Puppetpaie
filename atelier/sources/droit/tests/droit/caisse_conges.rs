@@ -16,16 +16,16 @@ use droit::fiche::{FicheSalarie, SalarieDuContrat};
 use droit::natures::NatureDeContrat as N;
 use socle::date::{Jour, PeriodeOuverte};
 
+use crate::outils::le_jour as j;
 use crate::outils::typee::lu;
 
 #[test]
 fn qui_est_declare_a_la_caisse() {
     let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
-    let j = |a, m, d| Jour::nouveau(a, m, d).unwrap();
     let comedien = fiche(r#"{"code_emploi_ft": "COM010", "statut": "artiste"}"#, None);
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));
-    let (debut, trois_mois, un_an) = (j(2026, 9, 1), j(2026, 11, 30), j(2027, 8, 31));
+    let (debut, trois_mois, un_an) = (j("2026-09-01"), j("2026-11-30"), j("2027-08-31"));
     assert!(douze_mois_ou_plus(&socle::date::Periode::du_au(debut, un_an).unwrap()).unwrap());
     let contrat = |fin: Option<Jour>| PeriodeOuverte::du(debut, fin).unwrap();
     let (trois_mois, un_an, sans_terme) = (contrat(Some(trois_mois)), contrat(Some(un_an)), contrat(None));

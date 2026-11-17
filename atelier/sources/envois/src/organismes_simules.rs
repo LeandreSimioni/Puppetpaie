@@ -661,12 +661,13 @@ mod tests {
         std::fs::create_dir_all(racine.join(crate::retours::RETOURS)).unwrap();
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
-        let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
+        let j = |ecrit: &str| -> socle::date::Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
         let (a2025, a2026) = (Annee::constante(2025), Annee::constante(2026));
         let personnes = socle::grandeurs::Effectif::personnes;
-        assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j(2027, 1, 5)).unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j(2027, 1, 5)).unwrap());
-        let p = crm_effectif(a2026, socle::grandeurs::lu::en_texte("11.42").unwrap(), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j("2027-01-05")).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j("2027-01-05")).unwrap());
+        let le: Moment = socle::piece::Zone::lue("2027-02-15T10:00:00", socle::piece::format::InstantIso).valeur().unwrap();
+        let p = crm_effectif(a2026, socle::grandeurs::lu::en_texte("11.42").unwrap(), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), le);
         let chemin = crate::releve_retours::archiver_retour(&racine, crate::releve_retours::CanalDesRetours::Dsn, &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
@@ -674,7 +675,7 @@ mod tests {
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
         assert_eq!(e.annees.get(&a2026), socle::grandeurs::lu::norme("11.42").as_ref());
         assert_eq!(e.annees.get(&a2025), Some(&personnes(2)));
-        assert!(!crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j(2027, 3, 1)).unwrap());
+        assert!(!crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j("2027-03-01")).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

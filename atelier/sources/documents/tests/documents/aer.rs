@@ -10,19 +10,12 @@
 //! cachet) -- sans emprunter un octet a une vraie attestation. La compagnie est
 //! inventee de bout en bout.
 
+use crate::outils::le_jour as jour;
 use documents::aer::{self, Authentification, Echec};
-use socle::date::Jour;
 use fabrique_pdf::formulaire::{ChampLu, ValeurLue};
 use fabrique_pdf::mesure::{mesure as m, Mesure};
 
 const HAUTEUR: Mesure = Mesure::entier(842);
-
-/// Le jour que le test ecrit, fait par le socle.
-macro_rules! jour {
-    ($an:expr, $mois:expr, $jour:expr) => {
-        Jour::nouveau($an, $mois, $jour).unwrap()
-    };
-}
 
 fn fiche() -> droit::fiche::ChampsEntreprise {
     socle::forme::lire_texte(
@@ -168,7 +161,7 @@ fn attestation() -> Vec<u8> {
 }
 
 fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[engagement::calcul::Paie]>, forcer: bool, signature: Option<&str>, cachet: Option<&str>) -> Result<Vec<u8>, Echec> {
-    aer::authentifier(pdf, &Authentification { ent, aujourdhui: jour!(2026, 10, 1), signature, paies, forcer, cachet_fichier: cachet.map(std::path::Path::new) })
+    aer::authentifier(pdf, &Authentification { ent, aujourdhui: jour("2026-10-01"), signature, paies, forcer, cachet_fichier: cachet.map(std::path::Path::new) })
 }
 
 
@@ -205,7 +198,7 @@ fn deux_mois(heures_oct: u32) -> Vec<u8> {
 fn lire_un_contrat_sur_deux_mois_colonne_par_colonne() {
     let q = aer::lire_quantites(&aer::champs(&deux_mois(10)).unwrap()).unwrap();
     assert_eq!(q.iter().map(|l| l.numero.as_ref().map(engagement::numeros::NumeroContrat::as_str)).collect::<Vec<_>>(), [Some("SI2.26.19"), Some("SI2.26.19")], "la suite du contrat garde son numero");
-    assert_eq!(q.iter().map(|l| (l.debut, l.fin)).collect::<Vec<_>>(), [(Some(jour!(2026, 9, 29)), Some(jour!(2026, 9, 30))), (Some(jour!(2026, 10, 1)), Some(jour!(2026, 10, 16)))]);
+    assert_eq!(q.iter().map(|l| (l.debut, l.fin)).collect::<Vec<_>>(), [(Some(jour("2026-09-29")), Some(jour("2026-09-30"))), (Some(jour("2026-10-01")), Some(jour("2026-10-16")))]);
     assert_eq!(q.iter().map(|l| l.heures).collect::<Vec<_>>(), [Some(socle::grandeurs::Heures::fixes(8)), Some(socle::grandeurs::Heures::fixes(10))]);
 }
 

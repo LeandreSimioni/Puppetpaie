@@ -2,7 +2,7 @@
 //! « Accident du travail » (`atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`, l. 579-590).
 
 use droit::maintien::{conventionnel, Base, Droit, DureeDUneTranche, Origine, Tranche};
-use socle::date::{Anciennete, Duree, Jour};
+use socle::date::{Anciennete, Duree};
 use socle::grandeurs::Taux;
 
 fn tranches(mois: u32) -> Vec<Tranche> {
@@ -16,7 +16,7 @@ fn tranches(mois: u32) -> Vec<Tranche> {
 fn la_1285_maintient_le_brut_selon_l_anciennete() {
     let idcc = Some(&droit::clauses::IDCC_CCNEAC);
     // `mois` mois revolus, du 1er janvier 2020 au meme quantieme.
-    let entree = Jour::nouveau(2020, 1, 1).unwrap();
+    let entree = crate::outils::le_jour("2020-01-01");
     let anciennete = |mois: u32| Anciennete::revolue(&entree, &entree.apres(Duree::mois(mois)).unwrap());
     let regime = |mois: u32, o: Origine| conventionnel(idcc, anciennete(mois), o).unwrap().unwrap();
     assert!(matches!(regime(5, Origine::Maladie), Droit::PasDu(_)), "rien avant six mois");

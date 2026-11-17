@@ -730,8 +730,8 @@ mod tests {
         let retour = |nature: crate::retours::NatureDuRetour, verdict: Verdict| RetourOrganisme { nature_retour: nature, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
-            e.mois = Some(Mois::nouveau(2026, 6).unwrap());
-            e.quand = socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 7, 5).unwrap(), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap().into();
+            e.mois = Some(socle::forme::lire_texte("\"2026-06\"", "le mois du test").unwrap());
+            e.quand = socle::piece::Zone::lue("2026-07-05T10:00:00", socle::piece::format::InstantIso).valeur().unwrap().into();
             e.retours = retours;
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: engagement::stock::VersionDeLEngagement::premiere(), mois: None }]);
             e

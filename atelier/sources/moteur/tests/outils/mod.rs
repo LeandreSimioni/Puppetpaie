@@ -113,6 +113,11 @@ pub fn le_mois(ecrit: &str) -> socle::mois::Mois {
     socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap()
 }
 
+/// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+pub fn le_jour(ecrit: &str) -> socle::date::Jour {
+    socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+}
+
 /// La fiche datee d'une compagnie de test : chaque valeur de `plate` de tout temps (`droit::fiche::dater`), ses notes `_…`
 /// telles quelles.
 pub fn datee(plate: &Value) -> Value {

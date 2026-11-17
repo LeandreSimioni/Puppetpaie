@@ -678,7 +678,7 @@ mod tests_dpae_partielles {
     use super::*;
 
     fn dossier() -> PathBuf {
-        let r = documents::DossierDuMois::Sorties.dans(&crate::horloge::racine_d_essai(false), socle::mois::Mois::nouveau(2026, 10).unwrap());
+        let r = documents::DossierDuMois::Sorties.dans(&crate::horloge::racine_d_essai(false), socle::forme::lire_texte("\"2026-10\"", "le mois du test").unwrap());
         std::fs::create_dir_all(&r).unwrap();
         r
     }

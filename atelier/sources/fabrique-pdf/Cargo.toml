@@ -36,6 +36,8 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe`, dans aucune cible de la fabrique (sa bibliotheque, son binaire, ses essais, son script de construction).
+unsafe_code = "forbid"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -141,7 +141,7 @@ fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
-    let mis_a_disposition = socle::paris::Moment::a_paris(Jour::nouveau(2025, 1, 1).unwrap(), socle::paris::HeureDuJour::MINUIT).unwrap();
+    let mis_a_disposition = socle::paris::Moment::a_paris(crate::outils::le_jour("2025-01-01"), socle::paris::HeureDuJour::MINUIT).unwrap();
     let t = c.recu.as_ref().map(|r| TauxRecu { taux: r.taux, r#type: r.type_taux, identifiant: r.identifiant.clone(), mis_a_disposition, en_retour_de: None });
     suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
 }

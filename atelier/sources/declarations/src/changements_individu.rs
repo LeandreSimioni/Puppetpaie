@@ -384,14 +384,19 @@ enregistrer, puis saisir la nouvelle : l'ecran demande alors la date d'effet). R
 mod tests {
     use super::*;
 
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
+
     fn declaree() -> Declaree {
         Declaree {
-            mois: Mois::nouveau(2026, 7).unwrap(),
+            mois: socle::forme::lire_texte("\"2026-07\"", "le mois du test").unwrap(),
             identite: IdentiteDeclaree {
                 nir: Some(Nir::lire("2901075999009").unwrap()),
                 nom: Some("CLAIRON".into()),
                 prenoms: Some("LUCILE".into()),
-                naissance: Some(NaissanceDeclaree::du_jour(Jour::nouveau(1990, 10, 2).unwrap())),
+                naissance: Some(NaissanceDeclaree::du_jour(j("1990-10-02"))),
                 ntt: None,
             },
             matricule: Some(Matricule::lire("6").unwrap()),
@@ -399,7 +404,7 @@ mod tests {
     }
 
     fn fin() -> Jour {
-        Jour::nouveau(2026, 9, 30).unwrap()
+        j("2026-09-30")
     }
 
     fn lue(v: &str) -> ChampsSalarie {
@@ -432,12 +437,12 @@ mod tests {
     #[test]
     fn un_changement_date_porte_l_ancienne_valeur_et_un_non_date_refuse() {
         let s = lue(r#"{"nir": "2901075999009", "nom": "DUVAL", "prenom": "LUCILE", "date_naissance": "1990-10-02", "code_salarie": "6"}"#);
-        let b = fiche(r#"{"nom": "CLAIRON"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
+        let b = fiche(r#"{"nom": "CLAIRON"}"#, &[("nom", j("2026-09-15"), "DUVAL")]);
         let mut f = Fichier::nouveau();
         ecrire(&mut f, &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap();
         assert_eq!(f.texte(), "S21.G00.31.001,'15092026'\r\nS21.G00.31.009,'CLAIRON'\r\n");
         // Une fiche qui n'a jamais porte la valeur declaree ne date rien.
-        let b = fiche(r#"{"nom": "AUTRE"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
+        let b = fiche(r#"{"nom": "AUTRE"}"#, &[("nom", j("2026-09-15"), "DUVAL")]);
         let e = ecrire(&mut Fichier::nouveau(), &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap_err();
         assert!(e.phrase.contains("nom de famille") && e.phrase.contains("CLAIRON") && e.phrase.contains("DUVAL"), "{}", e.phrase);
     }
@@ -451,7 +456,7 @@ mod tests {
 
     #[test]
     fn l_identite_du_mois_ignore_un_changement_posterieur() {
-        let b = fiche(r#"{"nom": "CLAIRON", "adresse": "ANCIENNE"}"#, &[("nom", Jour::nouveau(2026, 10, 2).unwrap(), "DUVAL"), ("adresse", Jour::nouveau(2026, 10, 2).unwrap(), "NOUVELLE")]);
+        let b = fiche(r#"{"nom": "CLAIRON", "adresse": "ANCIENNE"}"#, &[("nom", j("2026-10-02"), "DUVAL"), ("adresse", j("2026-10-02"), "NOUVELLE")]);
         let s = FicheSalarie { id: droit::contexte::IdSalarie::lire("DUVAL").unwrap(), champs: lue(r#"{"nom": "DUVAL", "adresse": "NOUVELLE"}"#) };
         let m = identite_du_mois(&s, Some(&b), &fin()).unwrap();
         assert_eq!(m.nom.portee(), Some("CLAIRON"));

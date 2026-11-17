@@ -5,6 +5,7 @@
 //! dans `CARGO_TARGET_TMPDIR` (`PUPPETPAIE_CODE` y pointe) ; le jeton de la fenetre s'ecrit dans un dossier
 //! utilisateur de ce meme dossier temporaire, jamais dans celui du poste. La liste des scripts se LIT dans
 //! l'`index.html` copie : elle n'est pas recopiee ici.
+#![forbid(unsafe_code)]
 
 use moteur::interface::http::{Reponse, Requete};
 use moteur::interface::Fenetre;

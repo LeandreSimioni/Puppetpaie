@@ -406,7 +406,7 @@ impl Arret {
         if self.couvre(&Periode::du_mois(mois))? {
             return Ok(true);
         }
-        let origine = Jour::nouveau(1900, 1, 1).ok_or_else(|| refus("jour inexistant"))?;
+        let origine = const { socle::mois::Annee::constante(1900) }.premier_jour();
         if !self.couvre(&Periode::du_au(origine, mois.premier_jour().plus_jours(-1)?)?)? {
             return Ok(false);
         }
@@ -5333,6 +5333,16 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
+
+    /// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme.
+    fn m(ecrit: &str) -> Mois {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap()
+    }
+
     /// Un dossier de compagnie temporaire : fiches vides, `config/casc-svp.json` des mois regularises.
     fn ctx_dsn(nom: &str, regularises: &[Mois]) -> Contexte {
         let racine: PathBuf = std::env::temp_dir().join(format!("puppetpaie-dsn-{}-{}", std::process::id(), nom));
@@ -5345,17 +5355,17 @@ mod tests {
         let notee = crate::casc::CascSvp {
             quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
             regularisations: vec![crate::casc::RegularisationNotee {
-                annee: socle::mois::Annee::nouvelle(2024).unwrap(),
+                annee: socle::forme::lire_texte("2024", "l'annee du test").unwrap(),
                 mois: regularises.to_vec(),
                 montant: Montant::ZERO,
                 calcule: Montant::ZERO,
-                vire_le: Jour::nouveau(2025, 1, 15).unwrap(),
-                note_le: Jour::nouveau(2025, 1, 16).unwrap(),
+                vire_le: j("2025-01-15"),
+                note_le: j("2025-01-16"),
                 qui: "test".into(),
             }],
         };
         socle::ecriture::ecrire_json(&cfg.join("casc-svp.json"), &notee, 0).unwrap();
-        Contexte::nouveau(&racine, Some(Jour::nouveau(2026, 9, 27).unwrap())).unwrap()
+        Contexte::nouveau(&racine, Some(j("2026-09-27"))).unwrap()
     }
 
     fn orgs_casc() -> Organismes {
@@ -5381,7 +5391,7 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let (orgs, mois) = (orgs_casc(), Mois::nouveau(2026, 9).unwrap());
+        let (orgs, mois) = (orgs_casc(), m("2026-09"));
         let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs, mois).unwrap().unwrap();
         assert_eq!(c.reference.as_str(), "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
@@ -5395,10 +5405,9 @@ mod tests {
     #[test]
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
-        let m = |an, numero| Mois::nouveau(an, numero).unwrap();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m("2026-09")).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m("2024-12")).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &[m("2026-08")]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m("2026-08")).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).
@@ -5431,7 +5440,7 @@ mod tests {
     #[test]
     fn le_versement_dgfip_s_arrondit_a_l_euro_et_verse_zero_pour_un_pas_negatif() {
         let banque: droit::fiche::Banque = socle::forme::lire_texte(r#"{"bic": "BANQFRPPXXX", "iban": "FR7630001007941234567890185"}"#, "banque").unwrap();
-        let juillet = Mois::nouveau(2026, 7).unwrap();
+        let juillet = m("2026-07");
         let montant = |du: &str| -> Option<String> {
             let l = versement_dgfip(socle::grandeurs::lu::norme(du).unwrap(), juillet, &Periode::du_mois(juillet), &banque, false, None).unwrap();
             l.iter().find(|(k, _)| *k == droit::rubrique!("S21.G00.20.005")).map(|(_, v)| format!("'{}'", v))
@@ -5505,22 +5514,15 @@ mod tests {
 
     // ------------------------------------------------------------ l'arret de travail
 
-    /// Le jour que le test ecrit, fait par le socle.
-    macro_rules! j {
-        ($an:expr, $mois:expr, $jour:expr) => {
-            Jour::nouveau($an, $mois, $jour).unwrap()
-        };
-    }
-
     fn arret(reprise: Option<Jour>, fin_previsionnelle: Jour) -> Arret {
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 salarie: IdSalarie::lire("Audinot").unwrap(),
-                contrat_debut: j!(2025, 9, 1),
+                contrat_debut: j("2025-09-01"),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
                 motif: droit::arrets::MotifDArret::Maladie,
-                dernier_jour_travaille: j!(2026, 6, 20),
-                debut: j!(2026, 6, 21),
+                dernier_jour_travaille: j("2026-06-20"),
+                debut: j("2026-06-21"),
                 fin_previsionnelle,
                 subrogation: Some(droit::arrets::SubrogationDeLArret::Non),
                 periode_de_subrogation: None,
@@ -5534,7 +5536,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::paris::Moment::a_paris(j!(2026, 6, 21), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(),
+                saisi_le: socle::paris::Moment::a_paris(j("2026-06-21"), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(),
                 qui: "interface".into(),
                 note: None,
             },
@@ -5546,12 +5548,12 @@ mod tests {
     /// travail » (S21.G00.60.010, p. 269) : le dernier jour d'arret est la veille.
     #[test]
     fn un_arret_repris_le_premier_du_mois_ne_couvre_pas_ce_mois() {
-        let (juin, juillet) = (Periode::du_mois(j!(2026, 6, 1).mois_civil()), Periode::du_mois(j!(2026, 7, 1).mois_civil()));
-        let repris_le_1er = arret(Some(j!(2026, 7, 1)), j!(2026, 7, 3));
+        let (juin, juillet) = (Periode::du_mois(m("2026-06")), Periode::du_mois(m("2026-07")));
+        let repris_le_1er = arret(Some(j("2026-07-01")), j("2026-07-03"));
         assert!(repris_le_1er.couvre(&juin).unwrap());
         assert!(!repris_le_1er.couvre(&juillet).unwrap(), "aucun jour d'arret en juillet");
-        assert!(arret(Some(j!(2026, 7, 2)), j!(2026, 7, 3)).couvre(&juillet).unwrap(), "le 1er juillet est arrete");
-        assert!(arret(None, j!(2026, 7, 1)).couvre(&juillet).unwrap(), "la fin previsionnelle est un jour d'arret");
-        assert!(!arret(None, j!(2026, 6, 30)).couvre(&juillet).unwrap());
+        assert!(arret(Some(j("2026-07-02")), j("2026-07-03")).couvre(&juillet).unwrap(), "le 1er juillet est arrete");
+        assert!(arret(None, j("2026-07-01")).couvre(&juillet).unwrap(), "la fin previsionnelle est un jour d'arret");
+        assert!(!arret(None, j("2026-06-30")).couvre(&juillet).unwrap());
     }
 }

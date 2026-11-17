@@ -2006,9 +2006,9 @@ mod tests_risques_atmp {
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
         assert_eq!(taux_de_l_arrete(&sans, true, false), None);
-        let ouvert = |an, mois| Etablissement { ouverture: socle::date::Jour::nouveau(an, mois, 1), ..Etablissement::default() };
-        assert!(etablissement_neuf(&ouvert(2024, 6), Annee::constante(2026)));
-        assert!(!etablissement_neuf(&ouvert(2023, 12), Annee::constante(2026)));
+        let ouvert = |le: &str| Etablissement { ouverture: Some(socle::forme::lire_texte(&format!("\"{}\"", le), "le jour du test").unwrap()), ..Etablissement::default() };
+        assert!(etablissement_neuf(&ouvert("2024-06-01"), Annee::constante(2026)));
+        assert!(!etablissement_neuf(&ouvert("2023-12-01"), Annee::constante(2026)));
     }
 
     /// Un taux vaut a partir de sa date ; celui d'un risque sans TC ne vaut que pour l'annee de cette date (inference : la
@@ -2022,7 +2022,7 @@ mod tests_risques_atmp {
         let ligne = |code: &str, t: Taux| crate::fiche::TauxAtmp {
             code_risque: Some(CodeRisqueAt::lire(code).unwrap()),
             valeur: Some(t),
-            depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
+            depuis: Some(a25.premier_jour()),
             ..Default::default()
         };
         let (t210, t165) = (socle::grandeurs::lu::tapee::<Taux>("2,1").unwrap(), socle::grandeurs::lu::tapee::<Taux>("1,65").unwrap());

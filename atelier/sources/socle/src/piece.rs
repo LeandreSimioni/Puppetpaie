@@ -50,6 +50,14 @@ impl<'a, F: Format> Zone<'a, F> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EntierDUneZone(pub(crate) i64);
 
+/// CE QUI REND MAL ECRITE UNE DATE D'UNE ZONE (`format::AaaaJjMm`) : un morceau qui ne se lit pas (tel qu'il s'ecrit), ou
+/// une date qui n'existe pas (la phrase qui dit pourquoi, `date::date_impossible`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DateMalEcrite {
+    Illisible(String),
+    Impossible(String),
+}
+
 /// LES FORMATS, un type chacun.
 pub mod format {
     use super::scelle::{Jeton, Scelle};
@@ -134,6 +142,33 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct DateRfc5322;
 
+    /// Une date `AAAA-JJ-MM`, ou `AAAA-MM-JJ` quand son dernier nombre depasse 12, des blancs autour de chaque nombre (la
+    /// table des CTP livree : `documents::bordereau`). Elle se lit en un jour, ou en ce qui la rend mal ecrite
+    /// (`super::DateMalEcrite`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct AaaaJjMm;
+
+    impl Format for AaaaJjMm {}
+    impl Scelle for AaaaJjMm {
+        type Lu = Result<Jour, super::DateMalEcrite>;
+        fn lire(self, t: &str, _: Jeton) -> Result<Jour, super::DateMalEcrite> {
+            use super::{DateMalEcrite, Zone};
+            let p: Vec<&str> = t.split('-').collect();
+            if p.len() != 3 {
+                return Err(DateMalEcrite::Illisible(t.to_string()));
+            }
+            // Chaque morceau, des chiffres : l'annee, puis le mois et le jour dans l'ordre que le jour dit.
+            let (an, x, y) = (p[0].trim(), p[1].trim(), p[2].trim());
+            let nombre = |s: &str| s.parse::<u32>().map_err(|_| DateMalEcrite::Illisible(s.to_string()));
+            let (n_an, n_x, n_y) = (nombre(an)?, nombre(x)?, nombre(y)?);
+            let ((mois, n_mois), (jour, n_jour)) = if n_y > 12 { ((x, n_x), (y, n_y)) } else { ((y, n_y), (x, n_x)) };
+            let impossible = || DateMalEcrite::Impossible(crate::date::date_impossible(n_an, n_mois, n_jour));
+            let Some(Ok(annee)) = Zone::lue(an, AnneeEnChiffres).valeur() else { return Err(impossible()) };
+            let Some(mois) = Zone::lue(mois, MoisEnChiffres).valeur() else { return Err(impossible()) };
+            Zone::lue(jour, JourDuMois(annee.mois(mois))).valeur().ok_or_else(impossible)
+        }
+    }
+
     impl Format for Jjmmaaaa {}
     impl Scelle for Jjmmaaaa {
         type Lu = Option<Jour>;
@@ -200,8 +235,8 @@ pub mod format {
 
     impl Format for DateXsd {}
     impl Scelle for DateXsd {
-        type Lu = Option<(Jour, Option<paris::FuseauXsd>)>;
-        fn lire(self, t: &str, _: Jeton) -> Option<(Jour, Option<paris::FuseauXsd>)> {
+        type Lu = Option<(Jour, Option<paris::DecalageSurUtc>)>;
+        fn lire(self, t: &str, _: Jeton) -> Option<(Jour, Option<paris::DecalageSurUtc>)> {
             paris::date_xsd(t)
         }
     }

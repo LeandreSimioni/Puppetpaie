@@ -1,6 +1,7 @@
 //! Le binaire livre (`moteur`, construit sans la feature `atelier`, que seule la crate `atelier` allume) ne contient pas
 //! la redirection de l'atelier : ni les noms des variables `PUPPETPAIE_ATELIER_*`, ni la phrase du refus. Il reste ici :
 //! il lit le binaire `moteur`, que seuls les essais du moteur voient.
+#![forbid(unsafe_code)]
 
 #[cfg(not(feature = "atelier"))]
 mod livre {
