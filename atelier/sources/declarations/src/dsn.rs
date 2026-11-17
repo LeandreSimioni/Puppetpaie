@@ -2167,7 +2167,8 @@ impl MesureDActivite {
     /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt`) borne ensemble « 10 - heure » et « 21 - forfait heure »
     /// (CCH-13), « 12 - journee » et « 20 - forfait jour » (CCH-14) : des heures (l'heure des intermittents, l'heure du
     /// dimanche en ESAT comprises), des jours (le jour CRPNPAC et les jours calendaires du plafond compris), des cachets
-    /// (isoles ou groupes), et des unites pour la pige, la vacation et la tache. `None` : `t` n'est pas un nombre.
+    /// (isoles ou groupes), et des unites pour la pige, la vacation et la tache. `None` : `t` n'est pas un nombre, ou
+    /// des cachets a virgule (`attendue`).
     pub fn lue(unite: UniteDeMesure, t: &str) -> Option<MesureDActivite> {
         use socle::grandeurs::lu::norme as lu;
         use UniteDeMesure as U;
@@ -2176,6 +2177,16 @@ impl MesureDActivite {
             U::Journee | U::ForfaitJour | U::JourCrpnpac | U::JoursCalendairesDuPlafond => lu(t).map(MesureDActivite::Jours),
             U::CachetsGroupes | U::CachetsIsoles | U::Cachet => lu(t).map(MesureDActivite::Cachets),
             U::ALaPige | U::ALaVacation | U::ALaTache => lu(t).map(MesureDActivite::Unites),
+        }
+    }
+
+    /// CE QUE 53.002 ATTEND dans l'unite `unite`, tel que la faute d'une mesure qui ne se lit pas le dit (`lue`) : des
+    /// cachets en nombre entier, toute autre mesure un nombre.
+    pub fn attendue(unite: UniteDeMesure) -> &'static str {
+        use UniteDeMesure as U;
+        match unite {
+            U::CachetsGroupes | U::CachetsIsoles | U::Cachet => "un nombre entier de cachets",
+            _ => "un nombre",
         }
     }
 

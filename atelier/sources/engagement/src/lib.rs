@@ -922,7 +922,7 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
 /// `MesureDActivite`), calcule ou importe : chacune de ses lignes dit sa quantite dans l'unite de sa rubrique, et les
 /// heures qu'elle fait compter, sous le signe de sa rubrique (une absence en retire). Heures, cachets et jours sont trois
 /// grandeurs independantes (ARCHITECTURE, « Heures, cachets et jours ») :
-/// - les cachets, la partie entiere de la somme des lignes de cachets (un nombre de cachets se compte en entiers) ;
+/// - les cachets, la somme des lignes de cachets (chacune un nombre entier, `Cachets`), sans zero inutile ;
 /// - les heures, celles des autres lignes ; aucune quand elles sont nulles, dans leur forme la plus courte. Pour un
 ///   contrat paye au mois (`mensuel`), ce sont les heures de travail remunere : la quotite payee moins les absences,
 ///   comptees au reel (`imprevus::lignes_du_mois`). Au reel, un mois entier d'absence (154 h en septembre 2026) depasse
@@ -939,7 +939,7 @@ pub(crate) fn cachets_et_heures(lignes: impl IntoIterator<Item = (Option<ligne::
         }
     }
     let autres = if mensuel { autres.max(Heures::ZERO) } else { autres };
-    (cachets.partie_entiere(), (!autres.est_nul()).then(|| courte(autres)))
+    (sans_zero(cachets), (!autres.est_nul()).then(|| courte(autres)))
 }
 
 /// Les jours, sans doublon, que des lignes jouent ou planifient.

@@ -731,8 +731,8 @@ impl PaieDuMois {
         }
     }
 
-    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la partie entiere de la somme de ses lignes de cachets, ce
-    /// que la DSN declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
+    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la somme de ses lignes de cachets, ce que la DSN
+    /// declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
     /// (ses heures, `heures_annexes`, ne sont pas dites).
     pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
         self.heures_annexes().map(|_| self.engagement().cachets)

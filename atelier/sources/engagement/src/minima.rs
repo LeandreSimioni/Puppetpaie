@@ -138,7 +138,7 @@ struct Cx<'a> {
     annexe: Option<AnnexeConvention>,
     /// L'organisation patronale de la compagnie, reconnue par le bareme (`Contexte::organisation_reconnue`) : sa cle.
     organisation: Option<droit::forme_bareme::OrganisationPatronale>,
-    /// Les cachets de la paie, en entiers : ce qu'un palier compte.
+    /// Les cachets de la paie : ce qu'un palier compte.
     nb_cachets: Cachets,
 }
 
@@ -949,8 +949,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
             Some(QuantiteDeLigne::Cachets(c)) => Some(c),
             _ => None,
         })
-        .sum::<Cachets>()
-        .partie_entiere();
+        .sum::<Cachets>();
     // L'organisation de la fiche, reconnue par le bareme de l'annee du premier jour travaille : sa cle, celle des
     // signataires d'un accord. Sans jour travaille, aucun accord ne lie la compagnie (`grille_au`).
     let jour = premier_jour(paie);

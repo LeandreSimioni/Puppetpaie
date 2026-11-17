@@ -1313,7 +1313,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
                 a.unite = UniteDeMesure::du_code(&v);
                 if let (Some(unite), Some(t)) = (a.unite, ecrite) {
-                    a.mesure = fautes.valeur(S21_53_002, &t, "un nombre", crate::dsn::MesureDActivite::lue(unite, &t));
+                    a.mesure = fautes.valeur(S21_53_002, &t, crate::dsn::MesureDActivite::attendue(unite), crate::dsn::MesureDActivite::lue(unite, &t));
                 }
             }
             S21_70_013 => rattachements.push(v),

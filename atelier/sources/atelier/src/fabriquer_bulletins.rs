@@ -612,7 +612,7 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         // une heure compte ses heures). Une ligne en pourcentage n'a pas de quantite : la page n'imprime que des lignes
         // comptees, quantite x taux.
         use QuantiteDeLigne as Q;
-        let Some(quantite) = Q::imprimee(r.unite, l.quantite) else {
+        let Some(quantite) = Q::imprimee(r.unite, l.quantite).map_err(|e| refus!("{} : « {} » : {}", ou, connu.libelle, e))? else {
             return Err(refus!("{} : « {} » est une ligne en pourcentage : la page n'imprime que des lignes comptées (quantité × taux)", ou, connu.libelle));
         };
         let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);

@@ -1029,7 +1029,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort, raison, infos });
             continue;
         }
-        prises.insert(ident, (chemin.clone(), l.page, l.b.brut, l.b.net_a_payer));
+        let lignes = match lignes_imprimees(&l.b, &ctx.racine)? {
+            Ok(x) => x,
+            Err(raison) => {
+                pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort: Sort::Incomplet, raison, infos });
+                continue;
+            }
+        };
+        prises.insert(ident,(chemin.clone(), l.page, l.b.brut, l.b.net_a_payer));
 
         // La paie.
         let (mut ligne, source, avant): (PaieLue, Attestant, Option<PaieLue>) = match &cible {
@@ -1054,7 +1061,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 (x, Attestant::Piece(Source::Bulletin), avant)
             }
         };
-        let ecarts = completer(&mut ligne.paie, &l.b, &copie, l.page, convention_des(&[rang]).as_ref(), &ctx.racine)?;
+        let ecarts = completer(&mut ligne.paie, &l.b, lignes, &copie, l.page, convention_des(&[rang]).as_ref())?;
         // Le contrat que le bulletin atteste ; celui d'un permanent ne compte que son mois : ses heures, ses cachets et
         // ses jours sont ceux de la paie de ce mois (le contrat entier n'en garde pas : `import::ecrite`).
         let atteste = l.compteurs.as_ref().map_err(|m| m.clone().reformuler(|p| format!("ses compteurs ne se lisent pas ({})", p))).and_then(|c| engagement(l, c, &salarie, &copie));
@@ -2012,14 +2019,12 @@ fn entreprise_proposee(e: EntrepriseLue) -> R<(ChampsEntreprise, Vec<FauteDeCase
 /// ailleurs il remplit ce qui est vide et note ce qui differe. Rend les ecarts : (champ, valeur d'avant, le bulletin
 /// l'emporte, valeur du bulletin).
 ///
-/// LE RATTACHEMENT DE SES LIGNES : une ligne de remuneration prend ce qu'elle paie dans l'unite de sa rubrique, que le
-/// catalogue de la compagnie (`racine`) dit a la fin de la periode du bulletin (`PaiementDeLigne::imprime`) ; une ligne
-/// de cotisation, sa base dans la grandeur que sa cotisation compte (`BaseDeCotisation::imprimee`).
-fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page: usize, idcc: Option<&droit::fiche::Idcc>, racine: &Path) -> R<Vec<(&'static str, String, bool, String)>> {
+/// SES LIGNES (`lignes`, `lignes_imprimees`) ; une ligne de cotisation prend sa base dans la grandeur que sa cotisation
+/// compte (`BaseDeCotisation::imprimee`).
+fn completer(ligne: &mut PaieVersee, b: &BulletinLu, lignes: Vec<engagement::importe::LigneImprimee>, copie: &NomDeFichier, page: usize, idcc: Option<&droit::fiche::Idcc>) -> R<Vec<(&'static str, String, bool, String)>> {
     use engagement::calcul::BaseDeCotisation;
     use engagement::ecarts::RegroupementDeComparaison;
-    use engagement::importe::{BulletinSource, CotisationImprimee, LigneImprimee};
-    use engagement::ligne::PaiementDeLigne;
+    use engagement::importe::{BulletinSource, CotisationImprimee};
     let mut ecarts = Vec::new();
     let pas = b.pas.as_ref().and_then(|p| p.montant);
     for (champ, place, v) in [
@@ -2064,17 +2069,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
             *place = x;
         }
     }
-    ligne.lignes = b
-        .lignes
-        .iter()
-        .map(|l| {
-            let paiement = match (&l.rubrique, l.quantite, l.taux) {
-                (Some(code), Some(q), Some(t)) => Some(PaiementDeLigne::imprime(droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, q, t)),
-                _ => None,
-            };
-            Ok(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures })
-        })
-        .collect::<R<_>>()?;
+    ligne.lignes = lignes;
     ligne.dates = b.dates_travaillees.clone();
     ligne.cotisations = Some(
         b.cotisations
@@ -2109,9 +2104,31 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
     Ok(ecarts)
 }
 
+/// LES LIGNES DE REMUNERATION QU'UN BULLETIN IMPRIME, rattachees : chacune prend ce qu'elle paie dans l'unite de sa
+/// rubrique, que le catalogue de la compagnie (`racine`) dit a la fin de la periode du bulletin
+/// (`PaiementDeLigne::imprime`). `Ok(Err(raison))` : une ligne ne se lit pas dans son unite (des cachets a virgule) ; la
+/// page se met de cote et le dit (regle 1).
+fn lignes_imprimees(b: &BulletinLu, racine: &Path) -> R<Result<Vec<engagement::importe::LigneImprimee>, String>> {
+    use engagement::importe::LigneImprimee;
+    use engagement::ligne::PaiementDeLigne;
+    let mut out = Vec::new();
+    for l in &b.lignes {
+        let paiement = match (&l.rubrique, l.quantite, l.taux) {
+            (Some(code), Some(q), Some(t)) => match PaiementDeLigne::imprime(droit::catalogue::rubrique(racine, code, &b.periode.fin())?.unite, q, t) {
+                Ok(p) => Some(p),
+                Err(e) => return Ok(Err(format!("la ligne « {} » ne se lit pas : {}", l.libelle, e))),
+            },
+            _ => None,
+        };
+        out.push(LigneImprimee { libelle: l.libelle.clone(), montant: l.montant, soumis: l.soumis, rubrique: l.rubrique.clone(), paiement, heures: l.heures });
+    }
+    Ok(Ok(out))
+}
+
 /// Le contrat qu'un bulletin atteste, tel qu'un engagement importe le porte (`importe.contrat`), et sa cle `_cle_engagement`.
 /// Les heures se comptent en heures entieres comme celles d'une saisie (`cumul::engagement_de_paie` : arrondi au
-/// pair) ; des cachets ou des jours qui ne sont pas entiers, ou un compteur inconnu, ne font pas de contrat.
+/// pair) ; des jours qui ne sont pas entiers, ou un compteur inconnu, ne font pas de contrat (des cachets sont entiers :
+/// `Cachets`).
 fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeFichier) -> R<(Compte, ContratLu)> {
     use socle::echec::refus;
     // LES JOURS TRAVAILLES sont ceux qu'atteste l'attestation employeur mensuelle de l'intermittent (annexes 8 et 10) ;
@@ -2126,7 +2143,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, copie: &NomDeF
     fn entier<G: socle::grandeurs::Grandeur>(x: G, quoi: &str) -> R<G> {
         socle::grandeurs::entiere(x).ok_or_else(|| socle::echec::refus(format!("{} non entiers ({})", quoi, socle::grandeurs::ecrit::sans_zero::dit(x))))
     }
-    let (cachets, jours) = (entier(cachets, "cachets")?, entier(jours, "jours")?);
+    let (cachets, jours) = (socle::grandeurs::sans_zero(cachets), entier(jours, "jours")?);
     let heures = heures.entieres();
     let enseignement = c.heures_enseignement.map(Heures::entieres);
     let brut = l.b.brut.au_centime();

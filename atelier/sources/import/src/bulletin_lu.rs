@@ -1070,16 +1070,18 @@ pub struct ColonnesEnEuros {
 
 impl Cumul {
     /// Le rang `nom` de la table, ses colonnes `periode` et `cumul` telles que la page les imprime : la porte de leur
-    /// lecture, ou chaque nombre prend sa grandeur.
-    fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Cumul {
-        match nom {
-            NomDeCumul::Cachets => Cumul::Cachets(Colonnes { periode: periode.map(Cachets::du_decimal), cumul: cumul.map(Cachets::du_decimal) }),
+    /// lecture, ou chaque nombre prend sa grandeur. Des cachets a virgule ne sont pas un nombre de cachets : la page ne se
+    /// lit pas, et le refus le dit (`socle::forme::Nombre::cachets`).
+    fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Result<Cumul, Refus> {
+        let cachets = |d: Option<Decimal>| d.map(|d| socle::forme::Nombre(d).cachets()).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e)));
+        Ok(match nom {
+            NomDeCumul::Cachets => Cumul::Cachets(Colonnes { periode: cachets(periode)?, cumul: cachets(cumul)? }),
             NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
             NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
             NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
                 Cumul::Euros(ColonnesEnEuros { periode: periode.map(en_euros), cumul: cumul.map(en_euros) })
             }
-        }
+        })
     }
 }
 
@@ -2422,7 +2424,7 @@ impl<'a> Lecteur<'a> {
                 if *cumul {
                     if let Some((nom, _)) = t.cumuls.iter().find(|(_, l)| l.contains(libelle)) {
                         if !cumuls.iter().any(|(x, _)| x == nom) {
-                            cumuls.push((*nom, Cumul::lu(*nom, col(Genre::Periode), col(Genre::Cumul))));
+                            cumuls.push((*nom, Cumul::lu(*nom, col(Genre::Periode), col(Genre::Cumul))?));
                         }
                     }
                     if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
@@ -2625,7 +2627,8 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
         use engagement::ligne::QuantiteDeLigne as Q;
-        let h = match (Q::imprimee(r.unite, q), par_unite) {
+        let imprimee = Q::imprimee(r.unite, q).map_err(|e| socle::refus!("« {} » : {}", l.libelle, e))?;
+        let h = match (imprimee, par_unite) {
             (Some(Q::Cachets(c)), _) => {
                 cachets = cachets.map(|x| x + c);
                 continue;

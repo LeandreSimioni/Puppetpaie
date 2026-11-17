@@ -775,12 +775,11 @@ fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<Cachets> {
     let mut cachets = Cachets::ZERO;
     for l in e.lignes() {
         let r = catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        // Chaque ligne compte ses cachets entiers.
         if let Some(engagement::ligne::QuantiteDeLigne::Cachets(q)) = l.quantite(r.unite) {
-            cachets += q.partie_entiere();
+            cachets += q;
         }
     }
-    Ok(cachets)
+    Ok(socle::grandeurs::sans_zero(cachets))
 }
 
 /// Ce qu'une ligne de la liste dit d'un contrat passe : ses bornes, ses cachets et ses heures, quand ils sont dits.

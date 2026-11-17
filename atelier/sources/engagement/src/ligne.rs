@@ -510,18 +510,19 @@ impl QuantiteDeLigne {
 
     /// LA QUANTITE QU'UNE LIGNE D'UN BULLETIN IMPRIME (`q`, un nombre lu de la page), dans l'unite `unite` de la rubrique a
     /// laquelle l'import la rattache : la porte de sa lecture ; `None` : le pourcentage, dont le nombre imprime est une
-    /// base (`PaiementDeLigne::imprime`).
-    pub fn imprimee(unite: Unite, q: Nombre) -> Option<QuantiteDeLigne> {
-        Some(match unite {
+    /// base (`PaiementDeLigne::imprime`). `Err` : des cachets a virgule, qui ne sont pas un nombre de cachets
+    /// (`socle::forme::Nombre::cachets`).
+    pub fn imprimee(unite: Unite, q: Nombre) -> Result<Option<QuantiteDeLigne>, String> {
+        Ok(Some(match unite {
             Unite::Heure => QuantiteDeLigne::Heures(q.grandeur()),
-            Unite::Cachet => QuantiteDeLigne::Cachets(q.grandeur()),
+            Unite::Cachet => QuantiteDeLigne::Cachets(q.cachets()?),
             Unite::Jour => QuantiteDeLigne::Jours(q.grandeur()),
             Unite::Service => QuantiteDeLigne::Services(q.grandeur()),
             Unite::Semaine => QuantiteDeLigne::Semaines(q.grandeur()),
             Unite::Mois => QuantiteDeLigne::PartDuMois(q.grandeur()),
             Unite::Forfait => QuantiteDeLigne::Unites(q.grandeur()),
-            Unite::Pourcentage => return None,
-        })
+            Unite::Pourcentage => return Ok(None),
+        }))
     }
 
     /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer) ; `None` :
@@ -749,19 +750,20 @@ impl PaiementDeLigne {
     /// CE QU'UNE LIGNE D'UN BULLETIN IMPORTE PAIE, sa quantite `q` et son taux `t` tels que la page les imprime (des
     /// nombres lus, `import::bulletin_lu`), dans l'unite `unite` de la rubrique a laquelle l'import la rattache : la porte
     /// de leur lecture. Le taux d'une rubrique en pourcentage s'imprime en pourcent (un « 10 » : 10 %) : la part de la
-    /// base qu'il paie se prend comme le calcul la prend d'une ligne en pourcentage (`Taux::en_coefficient`).
-    pub fn imprime(unite: Unite, q: Nombre, t: Nombre) -> PaiementDeLigne {
+    /// base qu'il paie se prend comme le calcul la prend d'une ligne en pourcentage (`Taux::en_coefficient`). `Err` : des
+    /// cachets a virgule, qui ne sont pas un nombre de cachets (`socle::forme::Nombre::cachets`).
+    pub fn imprime(unite: Unite, q: Nombre, t: Nombre) -> Result<PaiementDeLigne, String> {
         use PaiementDeLigne as P;
-        match unite {
+        Ok(match unite {
             Unite::Heure => P::Heures(q.grandeur(), t.grandeur()),
-            Unite::Cachet => P::Cachets(q.grandeur(), t.grandeur()),
+            Unite::Cachet => P::Cachets(q.cachets()?, t.grandeur()),
             Unite::Jour => P::Jours(q.grandeur(), t.grandeur()),
             Unite::Service => P::Services(q.grandeur(), t.grandeur()),
             Unite::Semaine => P::Semaines(q.grandeur(), t.grandeur()),
             Unite::Mois => P::PartDuMois(q.grandeur(), t.grandeur()),
             Unite::Forfait => P::Unites(q.grandeur(), t.grandeur()),
             Unite::Pourcentage => P::Base(q.grandeur(), t.grandeur::<Taux>().en_coefficient()),
-        }
+        })
     }
 
     /// CE QUE PAIE UNE LIGNE AU MONTANT `montant` (une prime, une indemnite, un avantage en nature), quelle que soit

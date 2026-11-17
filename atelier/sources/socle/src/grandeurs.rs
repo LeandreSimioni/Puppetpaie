@@ -30,10 +30,31 @@ mod scelle {
         const SIGNES: &'static [&'static str];
         /// Ce qu'une case de cette grandeur attend, dit a qui la remplit (« un nombre d'heures »).
         const ATTENDU: &'static str;
+        /// Ne se dit-elle qu'en nombre entier (des cachets) ?
+        const ENTIERE: bool;
     }
 }
 
 use scelle::Scelle;
+
+/// UNE GRANDEUR QUI SE FRACTIONNE : toute grandeur sauf les cachets, qui ne se comptent qu'en entiers (« 1,5 cachet,
+/// ça n'existe pas »). Seule elle se prend d'un decimal sans refus (`du_decimal`, `forme::Nombre::grandeur`,
+/// `forme::Court::grandeur`) ; des cachets se lisent par une porte qui refuse un nombre a virgule (`lue`).
+pub trait Fractionnable: Grandeur {}
+
+/// LA GRANDEUR QUE DIT LE DECIMAL `d` LU A UNE PORTE (un fichier, une saisie, une piece) ; `cite` : le nombre tel que le
+/// refus le cite. Des cachets a virgule se refusent : un nombre de cachets est entier.
+fn lue<G: Grandeur>(d: Decimal, cite: &str) -> Result<G, String> {
+    match G::ENTIERE && !d.fract().is_zero() {
+        true => Err(format!("{} n'est pas un nombre entier : on attend {}", cite, G::ATTENDU)),
+        false => Ok(G::du(d)),
+    }
+}
+
+/// `lue`, le nombre cite tel qu'il est ecrit.
+fn lue_du<G: Grandeur>(d: Decimal) -> Result<G, String> {
+    lue(d, &crate::fichiers::repr(&d.to_string()))
+}
 
 /// UNE GRANDEUR QUI N'EST PAS NULLE : un diviseur que la division prend sans refus (`MontantUnitaire::par_jour`). Elle
 /// se lit d'une grandeur, `None` quand elle est nulle (`de`), ou se fixe d'un texte (`Jours::non_nuls`).
@@ -50,7 +71,7 @@ impl<G: Grandeur> NonNul<G> {
 /// Une grandeur par nom : son decimal, sa porte de sortie, l'addition et la soustraction de deux grandeurs de meme nom,
 /// sa lecture.
 macro_rules! grandeurs {
-    ($($nom:ident, [$($signe:literal),*], $attendu:literal, $doc:literal;)*) => {
+    ($($nom:ident, [$($signe:literal),*], $attendu:literal, $doc:literal, $sorte:ident;)*) => {
         /// Les signes d'unite de toutes les grandeurs : un signe d'une autre unite que celle de la case se refuse.
         const TOUS_LES_SIGNES: &[&str] = &[$($($signe,)*)*];
         $(
@@ -58,12 +79,9 @@ macro_rules! grandeurs {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $nom(Decimal);
 
-        impl $nom {
-            /// La grandeur que dit ce decimal, tel qu'il est (son echelle gardee).
-            pub const fn du_decimal(d: Decimal) -> $nom {
-                $nom(d)
-            }
+        sorte_de_grandeur!($nom, $sorte);
 
+        impl $nom {
             /// Le decimal nu, a la porte qui l'exige (une ecriture, la norme).
             pub const fn decimal(self) -> Decimal {
                 self.0
@@ -101,6 +119,7 @@ macro_rules! grandeurs {
             }
             const SIGNES: &'static [&'static str] = &[$($signe),*];
             const ATTENDU: &'static str = $attendu;
+            const ENTIERE: bool = sorte_de_grandeur!(@entiere $sorte);
         }
 
         impl Grandeur for $nom {}
@@ -113,7 +132,7 @@ macro_rules! grandeurs {
 
         impl<'de> serde::Deserialize<'de> for $nom {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$nom, D::Error> {
-                crate::forme::decimal_en_nombre(d, lu::tapee_en_decimal::<$nom>).map($nom)
+                crate::forme::decimal_en_nombre(d, lu::tapee_en_decimal::<$nom>).and_then(|x| lue_du(x).map_err(serde::de::Error::custom))
             }
         }
 
@@ -146,22 +165,44 @@ macro_rules! grandeurs {
     )*};
 }
 
+/// Ce qu'une grandeur est de plus selon sa sorte : une grandeur qui se fractionne (`fractionnable`) se prend d'un
+/// decimal sans refus (`du_decimal`, `Fractionnable`) ; des cachets (`entiere`) ne se lisent qu'entiers (`lue`).
+macro_rules! sorte_de_grandeur {
+    ($nom:ident, fractionnable) => {
+        impl Fractionnable for $nom {}
+
+        impl $nom {
+            /// La grandeur que dit ce decimal, tel qu'il est (son echelle gardee).
+            pub const fn du_decimal(d: Decimal) -> $nom {
+                $nom(d)
+            }
+        }
+    };
+    ($nom:ident, entiere) => {};
+    (@entiere fractionnable) => {
+        false
+    };
+    (@entiere entiere) => {
+        true
+    };
+}
+
 grandeurs! {
-    Montant, ["€"], "un montant en euros", "UN MONTANT : une somme en euros (`1512.40`).";
-    Taux, ["%"], "un taux en pourcent", "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).";
-    Heures, ["h"], "un nombre d'heures", "DES HEURES : une quantite d'heures (`151.67`).";
-    Cachets, [], "un nombre de cachets", "DES CACHETS : une quantite de cachets (`2`).";
-    Jours, [], "un nombre de jours", "DES JOURS : une quantite de jours (`4.92`).";
-    Coefficient, [], "un nombre", "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).";
-    MontantUnitaire, ["€"], "un montant en euros", "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.";
-    Services, [], "un nombre de services", "DES SERVICES : une quantite de services de repetition (`14`).";
-    Semaines, [], "un nombre de semaines", "DES SEMAINES : une quantite de semaines (`2`).";
-    Unites, [], "un nombre d'unités", "DES UNITES : le compte d'un forfait (`3` repas a 15 €).";
-    HeuresParUnite, ["h"], "un nombre d'heures", "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.";
-    JoursParSemaine, [], "un nombre de jours par semaine", "DES JOURS PAR SEMAINE : un rythme, les jours que chaque semaine donne (`1` : « 1 jour par semaine calendaire » d'anciennete, un preavis d'une convention) ; semaines x jours par semaine = jours.";
-    Effectif, [], "un nombre de personnes", "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.";
-    MontantEnDevise, [], "un montant dans sa monnaie", "UN MONTANT EN DEVISE : une somme dans la monnaie de son lieu, qui n'est pas forcement l'euro (`120` dollars : l'indemnite journaliere de mission d'un lieu a l'etranger) ; sa monnaie se dit a cote (`droit::missions::CodeMonnaie`).";
-    TauxDeChange, [], "un taux de change", "UN TAUX DE CHANGE : des euros pour une unite d'une monnaie (`0.92` : le taux de chancellerie d'une monnaie pour un lieu) ; montant en devise x taux de change = montant.";
+    Montant, ["€"], "un montant en euros", "UN MONTANT : une somme en euros (`1512.40`).", fractionnable;
+    Taux, ["%"], "un taux en pourcent", "UN TAUX : un pourcentage applique a une base, ecrit en pourcent comme la norme et les baremes (`6.90` : 6,90 %).", fractionnable;
+    Heures, ["h"], "un nombre d'heures", "DES HEURES : une quantite d'heures (`151.67`).", fractionnable;
+    Cachets, [], "un nombre de cachets", "DES CACHETS : un nombre entier de cachets (`2`) ; chaque porte refuse un nombre a virgule (`lue`), et aucune operation n'en fait un.", entiere;
+    Jours, [], "un nombre de jours", "DES JOURS : une quantite de jours (`4.92`).", fractionnable;
+    Coefficient, [], "un nombre", "UN COEFFICIENT : un multiplicateur sans unite, ni taux ni montant (l'abattement de la CSG `0.9825`).", fractionnable;
+    MontantUnitaire, ["€"], "un montant en euros", "UN MONTANT UNITAIRE : des euros par unite (par heure, par cachet, par jour : `1.50`) ; le « taux » d'une ligne de paie, le plafond ou le SMIC horaire.", fractionnable;
+    Services, [], "un nombre de services", "DES SERVICES : une quantite de services de repetition (`14`).", fractionnable;
+    Semaines, [], "un nombre de semaines", "DES SEMAINES : une quantite de semaines (`2`).", fractionnable;
+    Unites, [], "un nombre d'unités", "DES UNITES : le compte d'un forfait (`3` repas a 15 €).", fractionnable;
+    HeuresParUnite, ["h"], "un nombre d'heures", "DES HEURES PAR UNITE : les heures d'un service, d'un cachet, d'un forfait (`4` : 14 services de 4 h) ; quantite x heures par unite = heures.", fractionnable;
+    JoursParSemaine, [], "un nombre de jours par semaine", "DES JOURS PAR SEMAINE : un rythme, les jours que chaque semaine donne (`1` : « 1 jour par semaine calendaire » d'anciennete, un preavis d'une convention) ; semaines x jours par semaine = jours.", fractionnable;
+    Effectif, [], "un nombre de personnes", "UN EFFECTIF : un nombre de personnes, eventuellement moyen (`11.42`) : celui que l'Urssaf calcule, les beneficiaires de l'OETH, les alternants de la CSA, un seuil d'effectif.", fractionnable;
+    MontantEnDevise, [], "un montant dans sa monnaie", "UN MONTANT EN DEVISE : une somme dans la monnaie de son lieu, qui n'est pas forcement l'euro (`120` dollars : l'indemnite journaliere de mission d'un lieu a l'etranger) ; sa monnaie se dit a cote (`droit::missions::CodeMonnaie`).", fractionnable;
+    TauxDeChange, [], "un taux de change", "UN TAUX DE CHANGE : des euros pour une unite d'une monnaie (`0.92` : le taux de chancellerie d'une monnaie pour un lieu) ; montant en devise x taux de change = montant.", fractionnable;
 }
 
 impl TauxDeChange {
@@ -582,11 +623,6 @@ impl Cachets {
     /// Les cachets que `n` dates comptent, un par date : un compte devient des cachets.
     pub fn de_dates(n: usize) -> Cachets {
         Cachets(Decimal::from(n))
-    }
-
-    /// Sa partie entiere (`2.5` cachets en comptent `2`) : un nombre de cachets declares se compte en entiers.
-    pub fn partie_entiere(self) -> Cachets {
-        Cachets(self.0.trunc())
     }
 
     /// Des cachets qu'un texte fixe, entiers (`5` : l'engagement a la semaine d'un artiste de la 3097).
@@ -1128,15 +1164,21 @@ impl std::fmt::Display for Octets {
 impl crate::forme::Nombre {
     /// LA GRANDEUR QU'IL DIT (la quantite et le taux qu'une ligne d'un bulletin imprime, dans l'unite de sa rubrique),
     /// son echelle gardee : la porte de sa lecture.
-    pub fn grandeur<G: Grandeur>(self) -> G {
+    pub fn grandeur<G: Fractionnable>(self) -> G {
         G::du(self.0)
+    }
+
+    /// LES CACHETS QU'IL DIT (la quantite qu'une ligne d'un bulletin imprime dans une rubrique qui compte des cachets) :
+    /// la porte de leur lecture ; un nombre a virgule se refuse (`lue`), et le refus le cite tel qu'imprime.
+    pub fn cachets(self) -> Result<Cachets, String> {
+        lue(self.0, &crate::fichiers::repr(&crate::texte::nombre_dit(self.0)))
     }
 }
 
 impl crate::forme::Court {
     /// LA GRANDEUR QU'IL DIT, lu dans sa forme la plus courte avant de savoir sa place (un element d'un tableau ecrit
     /// `[bas, haut, taux]`) : la porte de sa lecture.
-    pub fn grandeur<G: Grandeur>(self) -> G {
+    pub fn grandeur<G: Fractionnable>(self) -> G {
         G::du(self.0)
     }
 }
@@ -1156,7 +1198,7 @@ pub mod lu {
     /// : `1.500`) : les milliers ne se separent que d'un blanc. Tout le reste se refuse et dit pourquoi (« 1 5 », « 1e3 »,
     /// « 1_000 », « %5 », « 1h30 », le signe d'une autre unite).
     pub fn tapee<G: Grandeur>(t: &str) -> Result<G, String> {
-        nombre_tape(t, <G as crate::grandeurs::Scelle>::SIGNES, <G as crate::grandeurs::Scelle>::ATTENDU).map(<G as crate::grandeurs::Scelle>::du)
+        nombre_tape(t, <G as crate::grandeurs::Scelle>::SIGNES, <G as crate::grandeurs::Scelle>::ATTENDU).and_then(|d| super::lue(d, &crate::fichiers::repr(t)))
     }
 
     /// LE NOMBRE QU'UNE PERSONNE A TAPE, LA SEULE LECTURE D'UN TEXTE TAPE (`tapee`, `entier_tape`) : les regles de
@@ -1285,21 +1327,22 @@ pub mod lu {
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT (une case d'un formulaire, d'une attestation, d'un bulletin), a la
     /// francaise ou non (`num::decimal_a_virgule` : « 12,5 », « 12.50 »), son echelle gardee : la porte de sa lecture ;
-    /// `None` : le texte n'est pas un nombre.
+    /// `None` : le texte n'est pas un nombre, ou pas un nombre de sa grandeur (des cachets a virgule, `super::lue`).
     pub fn texte<G: Grandeur>(t: &str) -> Option<G> {
-        num::decimal_a_virgule(t).map(<G as crate::grandeurs::Scelle>::du)
+        num::decimal_a_virgule(t).and_then(|d| super::lue_du(d).ok())
     }
 
     /// LA GRANDEUR QU'UN FICHIER LIVRE ECRIT DANS UN TEXTE (l'operande d'un gabarit des conseils : `*12`, `/31`), le point
-    /// decimal, son echelle gardee : la porte de sa lecture ; `Err` : pourquoi le texte n'est pas un nombre.
+    /// decimal, son echelle gardee : la porte de sa lecture ; `Err` : pourquoi le texte n'est pas un nombre de sa grandeur.
     pub fn ecrite<G: Grandeur>(t: &str) -> Result<G, String> {
-        t.parse::<Decimal>().map(<G as crate::grandeurs::Scelle>::du).map_err(|e| e.to_string())
+        t.parse::<Decimal>().map_err(|e| e.to_string()).and_then(|d| super::lue(d, &crate::fichiers::repr(t)))
     }
 
     /// LA GRANDEUR QU'UNE RUBRIQUE DE LA NORME ECRIT (une DSN : `151.67`), comme `num::decimal_lu` la lit, son echelle
-    /// gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre.
+    /// gardee : la porte de sa lecture ; `None` : le texte n'est pas un nombre, ou pas un nombre de sa grandeur (des
+    /// cachets a virgule, `super::lue`).
     pub fn norme<G: Grandeur>(t: &str) -> Option<G> {
-        num::decimal_lu(t).map(<G as crate::grandeurs::Scelle>::du)
+        num::decimal_lu(t).and_then(|d| super::lue_du(d).ok())
     }
 
     /// LA GRANDEUR QU'UN TEXTE D'UNE PIECE ECRIT EN ENTIER (`num::entier_lu` : une zone a largeur fixe de l'AEM, `012`),
@@ -1321,9 +1364,10 @@ pub mod lu {
     }
 
     /// LA GRANDEUR QU'UN NOMBRE ECRIT EN TEXTE DIT (`num::dec_texte`, comme `forme::decimal` lit un texte : « 12.50 »),
-    /// son echelle gardee : la porte de sa lecture. Un texte illisible se refuse.
+    /// son echelle gardee : la porte de sa lecture. Un texte illisible, ou qui n'est pas un nombre de sa grandeur (des
+    /// cachets a virgule, `super::lue`), se refuse.
     pub fn en_texte<G: Grandeur>(t: &str) -> crate::echec::R<G> {
-        num::dec_texte(t).map(<G as crate::grandeurs::Scelle>::du)
+        num::dec_texte(t).and_then(|d| super::lue(d, &crate::fichiers::repr(t)).map_err(crate::echec::refus))
     }
 
     /// Comme `forme::decimal` : un nombre, ou un nombre ecrit en texte (une ligne de paie, une paie ecrite : le moteur
@@ -1333,7 +1377,7 @@ pub mod lu {
         use crate::grandeurs::Grandeur;
 
         pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
-            crate::forme::decimal_ou_tape(d, super::tapee_en_decimal::<G>).map(<G as crate::grandeurs::Scelle>::du)
+            crate::forme::decimal_ou_tape(d, super::tapee_en_decimal::<G>).and_then(|x| crate::grandeurs::lue_du(x).map_err(serde::de::Error::custom))
         }
 
         /// Une grandeur lue ainsi, la ou un champ ne se pose pas (un `Option`).
@@ -1361,7 +1405,7 @@ pub mod lu {
         use crate::grandeurs::Grandeur;
 
         pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<G, D::Error> {
-            crate::forme::court(d).map(<G as crate::grandeurs::Scelle>::du)
+            crate::forme::court(d).and_then(|x| crate::grandeurs::lue_du(x).map_err(serde::de::Error::custom))
         }
 
         /// Une grandeur lue ainsi, la ou un champ ne se pose pas (une valeur datee, un element d'une liste ou d'un
@@ -1444,7 +1488,7 @@ pub mod ecrit {
             use serde::Deserialize;
             let t = String::deserialize(d)?;
             match t.parse::<crate::num::Decimal>() {
-                Ok(x) => Ok(<G as crate::grandeurs::Scelle>::du(x)),
+                Ok(x) => crate::grandeurs::lue(x, &crate::ecriture::json_en_ligne(&t)).map_err(serde::de::Error::custom),
                 Err(_) => Err(serde::de::Error::custom(format!("{} n'est pas un nombre", crate::ecriture::json_en_ligne(&t)))),
             }
         }
