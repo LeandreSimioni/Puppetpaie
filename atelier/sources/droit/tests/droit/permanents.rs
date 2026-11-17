@@ -8,17 +8,10 @@ use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
 use socle::grandeurs::{Jours, Montant};
 
-/// Une anciennete de la reference, en mois, ecrite en texte (`23.5`). L'oracle la garde ecrite (28 decimales) : elle se
-/// compare par son ecriture, l'anciennete comptee etant exacte (1/31 de mois n'est pas son decimal coupe).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+/// Une anciennete de la reference, en mois, ecrite en texte (`23.5`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 struct A(#[serde(serialize_with = "Anciennete::ecrite_en_mois")] Anciennete);
-
-impl PartialEq for A {
-    fn eq(&self, autre: &A) -> bool {
-        self.0.mois_ecrits() == autre.0.mois_ecrits()
-    }
-}
 
 /// Un montant de la reference, ecrit en texte (`2000.00`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -148,8 +141,10 @@ fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
 fn indemnite_precarite(a: &(M,)) -> Rendu<M> {
     p::indemnite_precarite(a.0 .0).map(M).into()
 }
-fn anciennete_mois(a: &(Jour, Jour)) -> A {
-    A(Anciennete::entre(&a.0, &a.1))
+/// L'anciennete comptee entre deux jours, telle qu'elle s'ecrit (`mois_ecrits`) : l'oracle garde ce texte, l'anciennete
+/// comptee est exacte (1/29 de mois n'est pas le decimal coupe que l'oracle relirait).
+fn anciennete_mois(a: &(Jour, Jour)) -> String {
+    Anciennete::entre(&a.0, &a.1).mois_ecrits()
 }
 fn preavis_mois(a: &(A, Motif)) -> Rendu<Option<String>> {
     p::preavis_mois(a.0 .0, motif(&a.1), false).map(|m| m.map(socle::grandeurs::ecrit::texte::dit)).into()
