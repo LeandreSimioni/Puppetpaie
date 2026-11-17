@@ -619,7 +619,7 @@ fn cle_siret(siret: &str) -> bool {
 
 /// La pile porte-t-elle un versement mobilite (une reponse, ou un taux) ?
 fn versement_mobilite_dit(pile: &Pile) -> bool {
-    pile.versement_mobilite.as_ref().is_some_and(|v| !v.est_vide())
+    pile.versement_mobilite.is_some()
 }
 
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
@@ -842,13 +842,13 @@ L'effacer, ou ecrire \"aucun\".",
             }
             continue;
         }
-        let mut attendues: Vec<&str> = v.reponses.keys().map(String::as_str).collect();
+        let mut attendues: Vec<&str> = v.reponses.keys().map(|r| r.ecrite()).collect();
         // Un taux dit l'est avec la commune de l'etablissement : la lecture de la surcouche refuse l'un sans l'autre
         // (`bareme::VersementMobiliteDit::lu`).
         let r = match rep {
             Some(VersementMobiliteDit::Du(_)) => continue,
-            Some(VersementMobiliteDit::Reponse(r)) if attendues.contains(&r.as_str()) => continue,
-            Some(VersementMobiliteDit::Reponse(r)) => Some(r),
+            Some(VersementMobiliteDit::Reponse(r)) if v.reponses.contains_key(r) => continue,
+            Some(VersementMobiliteDit::Reponse(r)) => Some(r.ecrite()),
             None => None,
         };
         noms.push(format!("{} (non porte)", cle));

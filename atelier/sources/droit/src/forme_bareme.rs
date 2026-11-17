@@ -287,12 +287,70 @@ forme! {
 }
 
 /// LE VERSEMENT MOBILITE QUE LA SURCOUCHE DE LA COMPAGNIE ECRIT : son taux et la commune de l'etablissement, ou une
-/// reponse en mots (« aucun », `seuils_effectif.non_portees`). Il se lit une fois (`bareme::VersementMobiliteDit::lu`).
+/// reponse en mots (`ReponseAuVersementMobilite`, `seuils_effectif.non_portees`). Il se lit une fois
+/// (`bareme::VersementMobiliteDit::lu`) ; une reponse inconnue refuse en disant celles qui se donnent.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(try_from = "VersementMobiliteLu")]
 pub enum VersementMobiliteEcrit {
+    Dit(ReponseAuVersementMobilite),
+    Ecrit(VersementMobiliteTaux),
+}
+
+/// `VersementMobiliteEcrit` tel qu'il s'ecrit : un texte, ou un taux et sa commune.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum VersementMobiliteLu {
     Dit(String),
     Ecrit(VersementMobiliteTaux),
+}
+
+impl TryFrom<VersementMobiliteLu> for VersementMobiliteEcrit {
+    type Error = String;
+    fn try_from(l: VersementMobiliteLu) -> Result<VersementMobiliteEcrit, String> {
+        match l {
+            VersementMobiliteLu::Dit(t) => ReponseAuVersementMobilite::lire(&t).map(VersementMobiliteEcrit::Dit),
+            VersementMobiliteLu::Ecrit(v) => Ok(VersementMobiliteEcrit::Ecrit(v)),
+        }
+    }
+}
+
+/// LA REPONSE QU'UNE COMPAGNIE ECRIT AU LIEU D'UN VERSEMENT MOBILITE (`seuils_effectif.non_portees`, ses `reponses`) :
+/// « aucun », aucune autorite ne le lui reclame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(try_from = "String")]
+pub enum ReponseAuVersementMobilite {
+    Aucun,
+}
+
+impl TryFrom<String> for ReponseAuVersementMobilite {
+    type Error = String;
+    fn try_from(t: String) -> Result<ReponseAuVersementMobilite, String> {
+        ReponseAuVersementMobilite::lire(&t)
+    }
+}
+
+impl ReponseAuVersementMobilite {
+    /// Toutes les reponses.
+    const TOUTES: [ReponseAuVersementMobilite; 1] = [ReponseAuVersementMobilite::Aucun];
+
+    /// Telle qu'elle s'ecrit.
+    pub fn ecrite(self) -> &'static str {
+        match self {
+            ReponseAuVersementMobilite::Aucun => "aucun",
+        }
+    }
+
+    /// La reponse ecrite `t`, ou la phrase qui la refuse en disant celles qui se donnent.
+    fn lire(t: &str) -> Result<ReponseAuVersementMobilite, String> {
+        match ReponseAuVersementMobilite::TOUTES.into_iter().find(|r| r.ecrite() == t) {
+            Some(r) => Ok(r),
+            None => Err(format!(
+                "versement_mobilite : « {} » n'est pas une réponse ; il s'écrit par son taux et le code INSEE de la commune de l'établissement, ou par l'une des réponses : {}.",
+                t,
+                ReponseAuVersementMobilite::TOUTES.iter().map(|r| format!("« {} »", r.ecrite())).collect::<Vec<_>>().join(", ")
+            )),
+        }
+    }
 }
 
 forme! {
@@ -1230,7 +1288,7 @@ forme! {
         pub seuil: socle::grandeurs::Effectif,
         pub quoi: String,
         pub texte: Option<String>,
-        pub reponses: BTreeMap<String, String>,
+        pub reponses: BTreeMap<ReponseAuVersementMobilite, String>,
     }
 }
 

@@ -1268,7 +1268,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     let vm = e.versement_mobilite.dite();
     let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).copied();
     let aucun = taux_vm.is_some_and(Taux::est_nul);
-    if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteDit::est_vide)) {
+    if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.is_none()) {
         bar.versement_mobilite = None;
     } else if let Some(v) = vm {
         // La case de l'etablissement se lit en versement mobilite, une fois ; sans son taux ou sans sa commune, c'est elle
@@ -1309,7 +1309,7 @@ pub struct VersementMobilite {
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersementMobiliteDit {
     Du(VersementMobilite),
-    Reponse(String),
+    Reponse(crate::forme_bareme::ReponseAuVersementMobilite),
 }
 
 impl VersementMobiliteDit {
@@ -1334,11 +1334,6 @@ organisatrice ou sur le bordereau Urssaf :\n    \
                 ),
             )),
         }
-    }
-
-    /// Rien de dit : une reponse vide.
-    pub fn est_vide(&self) -> bool {
-        matches!(self, VersementMobiliteDit::Reponse(r) if r.is_empty())
     }
 }
 
