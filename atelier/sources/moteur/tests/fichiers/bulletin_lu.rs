@@ -92,7 +92,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "salarie": {
                 "nom_complet": "BRIOCHE FANCHON", "nom": "BRIOCHE", "prenoms": "FANCHON", "nir": "2881175999001",
                 "cle_nir": "46", "naissance": "1988-11-04", "adresse": ["3 IMPASSE DES ESSAIS", "99999 VILLE FICTIVE"], "code": "7",
-                "emploi": "ARTISTE DRAMATIQUE", "statut": "artiste", "abattement": "0", "conges_spectacles": "Z0000001",
+                "emploi": "ARTISTE DRAMATIQUE", "statut": "artiste", "conges_spectacles": "Z0000001",
             },
             "numero_objet": "999Z99999901",
             "spectacle": "Les Fictifs en Tournée",
@@ -192,7 +192,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
             "salarie": {
                 "nom_complet": "Fanchon BRIOCHE", "nom": "BRIOCHE", "prenoms": "Fanchon", "nir": "2881175999001",
                 "cle_nir": "46", "adresse": ["3 impasse des Essais", "99999 FICTIVE", "FRANCE"], "code": null,
-                "emploi": "Artiste dramatique", "statut": "Artiste", "abattement": null, "conges_spectacles": "Z0000001",
+                "emploi": "Artiste dramatique", "statut": "Artiste", "conges_spectacles": "Z0000001",
             },
             "numero_objet": "186Z99999901",
             "spectacle": null,
