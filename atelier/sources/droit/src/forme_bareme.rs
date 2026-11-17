@@ -259,8 +259,6 @@ forme! {
         pub risques_atmp: Option<RisquesAtmp>,
         pub seuils_effectif: Option<SeuilsEffectif>,
         pub regime_local_alsace_moselle: Option<RegimeLocal>,
-        /// Le versement mobilite de la compagnie ou de l'etablissement (sa fiche) : `bareme::versement_mobilite` le lit.
-        pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub par_organisation_patronale: BTreeMap<OrganisationPatronale, Organisation>,
         pub retraite_t1_repartition: Option<RetraiteT1Repartition>,
         pub par_convention: BTreeMap<crate::fiche::Idcc, Convention>,
@@ -281,11 +279,15 @@ forme! {
         // recoit typee (`bareme::EntrepriseLue`), elle ne la porte pas.
         #[serde(skip)]
         pub etablissement: Option<crate::fiche::Nic>,
+        // Ce que la compagnie dit de son versement mobilite, lu de sa surcouche (`contexte::fondre_la_surcouche`), ou de
+        // la fiche de l'etablissement du salarie (`bareme::surcharger`) : le socle n'en ecrit pas.
+        #[serde(skip)]
+        pub versement_mobilite: Option<crate::bareme::VersementMobiliteDit>,
     }
 }
 
-/// LE VERSEMENT MOBILITE QUE LA COMPAGNIE OU L'ETABLISSEMENT ECRIT : son taux et la commune de l'etablissement, ou une
-/// reponse en mots (« aucun », `seuils_effectif.non_portees`).
+/// LE VERSEMENT MOBILITE QUE LA SURCOUCHE DE LA COMPAGNIE ECRIT : son taux et la commune de l'etablissement, ou une
+/// reponse en mots (« aucun », `seuils_effectif.non_portees`). Il se lit une fois (`bareme::VersementMobiliteDit::lu`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum VersementMobiliteEcrit {
@@ -295,18 +297,10 @@ pub enum VersementMobiliteEcrit {
 
 forme! {
     /// Le taux du versement mobilite et la commune (code INSEE) de l'etablissement, l'autorite qui le fixe.
-    #[derive(Default)]
     pub struct VersementMobiliteTaux {
         pub taux: Option<Taux>,
         pub code_insee: Option<crate::fiche::CodeInsee>,
         pub autorite: Option<String>,
-    }
-}
-
-impl VersementMobiliteEcrit {
-    /// Rien d'ecrit : une reponse vide.
-    pub fn est_vide(&self) -> bool {
-        matches!(self, VersementMobiliteEcrit::Dit(s) if s.is_empty())
     }
 }
 

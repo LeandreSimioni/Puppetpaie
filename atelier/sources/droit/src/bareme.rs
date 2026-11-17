@@ -1268,14 +1268,18 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     let vm = e.versement_mobilite.dite();
     let taux_vm: Option<Taux> = vm.and_then(|v| v.taux.dite()).copied();
     let aucun = taux_vm.is_some_and(Taux::est_nul);
-    if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteEcrit::est_vide)) {
+    if aucun || (e.versement_mobilite.is_none() && bar.versement_mobilite.as_ref().is_none_or(VersementMobiliteDit::est_vide)) {
         bar.versement_mobilite = None;
     } else if let Some(v) = vm {
-        bar.versement_mobilite = Some(VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux {
-            taux: taux_vm,
-            code_insee: v.code_insee.dite().cloned(),
-            ..Default::default()
-        }));
+        // La case de l'etablissement se lit en versement mobilite, une fois ; sans son taux ou sans sa commune, c'est elle
+        // qui se refuse.
+        let (Some(taux), Some(code_insee)) = (taux_vm, v.code_insee.dite().cloned()) else {
+            return Err(socle::refus!(
+                "Établissement « {} » : son versement mobilité n'a pas son taux ou le code INSEE de sa commune ; les deux se lisent sur le bordereau Urssaf de l'établissement (Configuration › Entreprise › Avancé, « Autres établissements »).",
+                nom
+            ));
+        };
+        bar.versement_mobilite = Some(VersementMobiliteDit::Du(VersementMobilite { taux, code_insee, autorite: None }));
     }
     bar.etablissement = Some(e.nic.exigee("nic")?.clone());
     Ok(bar)
@@ -1288,7 +1292,8 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
 /// versement mobilite (`bareme_vm`) et le taux AT/MP d'une ligne du bordereau Urssaf (`dsn::taux_at_du_ctp`).
 pub const PART_DES_TAUX_D_UN_ARTISTE: Taux = Taux::points(70);
 
-/// Le versement mobilite que la compagnie a ecrit dans sa surcouche.
+/// LE VERSEMENT MOBILITE D'UNE PAIE : son taux, la commune (code INSEE) de l'etablissement, l'autorite organisatrice qui
+/// l'a institue quand la surcouche la nomme.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VersementMobilite {
     pub taux: Taux,
@@ -1297,26 +1302,51 @@ pub struct VersementMobilite {
     pub autorite: Option<String>,
 }
 
-/// Le versement mobilite ecrit dans le bareme, ou `None` (rien d'ecrit, ou
-/// « aucun »). Un taux sans code INSEE (`fiche::CodeInsee`) : refus.
-pub fn versement_mobilite(bar: &Pile) -> R<Option<VersementMobilite>> {
-    let Some(VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux { taux, code_insee, autorite, .. })) = &bar.versement_mobilite else {
-        return Ok(None);
-    };
-    match (taux, code_insee) {
-        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: *taux, code_insee: insee.clone(), autorite: autorite.clone() })),
-        _ => Err(refus(
-            "Le versement mobilité est écrit sans son taux ou sans le code de la commune de l'établissement : les lire sur le bordereau Urssaf.",
-            format!(
-                "Bareme {} : le versement mobilite est ecrit sans son taux ou sans \
+/// CE QUE LA COMPAGNIE DIT DE SON VERSEMENT MOBILITE, lu une fois : dans sa surcouche (`VersementMobiliteDit::lu`, a
+/// l'empilement, `contexte::fondre_la_surcouche`), ou dans la fiche de l'etablissement du salarie, qui le remplace
+/// (`surcharger`). Le versement qu'elle doit, ou la reponse qui dit qu'elle n'en doit pas (« aucun » :
+/// `seuils_effectif.non_portees`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum VersementMobiliteDit {
+    Du(VersementMobilite),
+    Reponse(String),
+}
+
+impl VersementMobiliteDit {
+    /// CE QUE LA SURCOUCHE DE L'ANNEE `an` ECRIT (`forme_bareme::VersementMobiliteEcrit`), lu : la porte de sa lecture. Un
+    /// taux sans le code INSEE de la commune (`fiche::CodeInsee`), ou l'inverse : refus.
+    pub fn lu(ecrit: VersementMobiliteEcrit, an: socle::mois::Annee) -> R<VersementMobiliteDit> {
+        match ecrit {
+            VersementMobiliteEcrit::Dit(r) => Ok(VersementMobiliteDit::Reponse(r)),
+            VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux { taux: Some(taux), code_insee: Some(code_insee), autorite, .. }) => {
+                Ok(VersementMobiliteDit::Du(VersementMobilite { taux, code_insee, autorite }))
+            }
+            VersementMobiliteEcrit::Ecrit(_) => Err(refus(
+                "Le versement mobilité est écrit sans son taux ou sans le code de la commune de l'établissement : les lire sur le bordereau Urssaf.",
+                format!(
+                    "Bareme {} : le versement mobilite est ecrit sans son taux ou sans \
 le code INSEE (cinq caracteres) de la commune de l'etablissement. \
 Les deux se lisent sur la deliberation de l'autorite \
 organisatrice ou sur le bordereau Urssaf :\n    \
 \"versement_mobilite\": {{\"taux\": 1.75, \"code_insee\": \"37261\", \
 \"autorite\": \"...\", \"source\": \"...\"}}",
-                annee(bar)
-            ),
-        )),
+                    an
+                ),
+            )),
+        }
+    }
+
+    /// Rien de dit : une reponse vide.
+    pub fn est_vide(&self) -> bool {
+        matches!(self, VersementMobiliteDit::Reponse(r) if r.is_empty())
+    }
+}
+
+/// Le versement mobilite que la paie doit (`VersementMobiliteDit::Du`), ou `None` (rien de dit, ou « aucun »).
+pub fn versement_mobilite(bar: &Pile) -> Option<&VersementMobilite> {
+    match &bar.versement_mobilite {
+        Some(VersementMobiliteDit::Du(v)) => Some(v),
+        Some(VersementMobiliteDit::Reponse(_)) | None => None,
     }
 }
 
@@ -1330,8 +1360,8 @@ fn org_urssaf(bar: &Pile) -> R<crate::organismes::IdentifiantDOrganisme> {
 
 /// La ligne du versement mobilite, au bulletin et dans la DSN.
 pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
-    let vm = match versement_mobilite(&bar)? {
-        Some(v) => v,
+    let vm = match versement_mobilite(&bar) {
+        Some(v) => v.clone(),
         None => return Ok(bar),
     };
     let artiste = *sal.statut.exigee("statut")? == Statut::Artiste;

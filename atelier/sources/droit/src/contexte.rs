@@ -12,7 +12,8 @@ use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche, VersementMobiliteEcrit};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
+use crate::bareme::VersementMobiliteDit;
 use socle::echec::Lieu;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::MontantUnitaire;
@@ -570,8 +571,8 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R
 fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
     let ou = format!("La surcouche de la compagnie ({})", ou);
     pile.annee = s.annee;
-    if s.versement_mobilite.is_some() {
-        pile.versement_mobilite = s.versement_mobilite;
+    if let Some(v) = s.versement_mobilite {
+        pile.versement_mobilite = Some(crate::bareme::VersementMobiliteDit::lu(v, s.annee)?);
     }
     if let Some(mods) = &s.rubriques {
         modifier_rubriques(&mut pile.rubriques_bulletin, mods, &ou)?;
@@ -618,10 +619,7 @@ fn cle_siret(siret: &str) -> bool {
 
 /// La pile porte-t-elle un versement mobilite (une reponse, ou un taux) ?
 fn versement_mobilite_dit(pile: &Pile) -> bool {
-    pile.versement_mobilite.as_ref().is_some_and(|v| match v {
-        VersementMobiliteEcrit::Dit(s) => !s.is_empty(),
-        VersementMobiliteEcrit::Ecrit(t) => t.taux.is_some() || t.code_insee.is_some() || t.autorite.is_some() || t.source.is_some() || t.note.is_some(),
-    })
+    pile.versement_mobilite.as_ref().is_some_and(|v| !v.est_vide())
 }
 
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
@@ -830,7 +828,7 @@ fn controler_effectif(pile: &Pile, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
         let cle = v.cle.to_string();
         let NonPortee::VersementMobilite = v.cle;
         let rep = &pile.versement_mobilite;
-        let taux_ecrit = matches!(rep, Some(VersementMobiliteEcrit::Ecrit(_)));
+        let taux_ecrit = matches!(rep, Some(VersementMobiliteDit::Du(_)));
         if !atteint(v.seuil)? {
             if taux_ecrit {
                 // Un taux ecrit sous le seuil : la compagnie paierait ce qu'elle ne doit pas.
@@ -845,29 +843,18 @@ L'effacer, ou ecrire \"aucun\".",
             continue;
         }
         let mut attendues: Vec<&str> = v.reponses.keys().map(String::as_str).collect();
-        match rep {
-            Some(VersementMobiliteEcrit::Dit(r)) if attendues.contains(&r.as_str()) => continue,
-            Some(VersementMobiliteEcrit::Ecrit(t)) if t.taux.is_some() && t.code_insee.as_deref().is_some_and(|c| c.trim().chars().count() == 5) => continue,
-            _ => {}
-        }
+        // Un taux dit l'est avec la commune de l'etablissement : la lecture de la surcouche refuse l'un sans l'autre
+        // (`bareme::VersementMobiliteDit::lu`).
+        let r = match rep {
+            Some(VersementMobiliteDit::Du(_)) => continue,
+            Some(VersementMobiliteDit::Reponse(r)) if attendues.contains(&r.as_str()) => continue,
+            Some(VersementMobiliteDit::Reponse(r)) => Some(r),
+            None => None,
+        };
         noms.push(format!("{} (non porte)", cle));
-        let constat = match rep {
+        let constat = match r {
             None => "Rien n'est ecrit sur ce point.".to_string(),
-            Some(VersementMobiliteEcrit::Ecrit(t)) => format!(
-                "La valeur ecrite (taux {}, code INSEE {}) n'a pas son taux ET le code INSEE (cinq \
-caracteres) de la commune de l'etablissement : les deux se \
-lisent sur la deliberation de l'autorite ou sur le bordereau \
-Urssaf.",
-                match t.taux {
-                    Some(x) => socle::grandeurs::ecrit::texte::dit(x),
-                    None => "absent".to_string(),
-                },
-                match t.code_insee.as_deref() {
-                    Some(c) => format!("« {} »", c),
-                    None => "absent".to_string(),
-                }
-            ),
-            Some(VersementMobiliteEcrit::Dit(r)) => format!(
+            Some(r) => format!(
                 "La valeur ecrite (« {} ») ne le debloque pas : il n'y a ni \
 rubrique, ni ligne DSN, ni CTP pour la porter -- ecrire un \
 taux ne le ferait pas cotiser.",

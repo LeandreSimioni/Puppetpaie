@@ -3657,7 +3657,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             None,
         ));
     }
-    if let Some(vm) = bareme::versement_mobilite(bar)? {
+    if let Some(vm) = bareme::versement_mobilite(bar) {
         // L'assiette majoree de l'intermittent (CSS L. 243-1-3 ; `bareme::bareme_vm`), le brut du permanent : celle du
         // bloc 81 de chacun. « Pour le versement de transport, le CTP 900 » (Tissot, 2017 ;
         // atelier/reference/sources/majoration-caisses-conges/).

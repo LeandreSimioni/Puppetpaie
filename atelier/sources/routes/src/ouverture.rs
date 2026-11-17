@@ -512,7 +512,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// (`ConfigurationDeLaPage::bareme`).
 fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String>) {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
-        Ok(b) => (matches!(b.versement_mobilite, Some(droit::forme_bareme::VersementMobiliteEcrit::Ecrit(_))), None),
+        Ok(b) => (droit::bareme::versement_mobilite(&b).is_some(), None),
         Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", e.phrase))),
     }
 }

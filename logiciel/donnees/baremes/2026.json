@@ -4401,7 +4401,6 @@
     },
     "note": "Régime local d'Alsace-Moselle : cotisation salariale unique de 1,3 % sur les revenus déplafonnés, DSN 115, CTP 381.\nINFERENCE : le taux plein pour un artiste. L'abattement de 30 % des artistes (arrete du 24/01/1975) porte sur les taux du regime general ; celui du regime local est fixe par son conseil d'administration (L242-13, II), et aucune source lue ne le reduit. L'assiette est celle des cotisations de securite sociale (L242-1), la meme que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
   },
-  "versement_mobilite": null,
   "par_organisation_patronale": {
     "SYNDEAC": {
       "libelle": "Syndicat national des entreprises artistiques et culturelles",
