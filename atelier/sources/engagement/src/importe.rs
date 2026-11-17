@@ -811,14 +811,10 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&lignes_lues, &ctx)?;
-        let cachets = remuneration.iter().fold(socle::grandeurs::Cachets::ZERO, |a, r| match r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
-            Some(crate::ligne::QuantiteDeLigne::Cachets(c)) => a + c,
-            _ => a,
-        });
-        // `Engagement::cachets` compte des cachets entiers.
-        engagement.cachets = cachets.partie_entiere();
-        let heures = remuneration.iter().filter_map(|r| r.heures_annexes).fold(socle::grandeurs::Heures::ZERO, |a, h| a + h);
-        engagement.heures = (!heures.est_nul()).then(|| socle::grandeurs::courte(heures));
+        // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees a une
+        // rubrique.
+        (engagement.cachets, engagement.heures) =
+            crate::cachets_et_heures(remuneration.iter().filter_map(|r| r.heures_annexes.map(|h| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), h))), nat.mensuelle());
         engagement.jours = Jours::de_dates(engagement.dates_travail.len());
         engagement.jours_contrat = engagement.jours;
 

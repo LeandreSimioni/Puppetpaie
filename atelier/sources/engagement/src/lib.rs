@@ -399,9 +399,8 @@ impl Engagement {
             }
         }
 
-        // Ce que la declaration compte : cachets et heures, derives des lignes.
-        let mut cachets_somme = Cachets::ZERO;
-        let mut autres = Heures::ZERO;
+        // Ce que la declaration compte : cachets et heures, derives des lignes (`cachets_et_heures`).
+        let mut comptes = Vec::new();
         let mut premier_cachet: Option<&LignePaie> = None;
         // Les rubriques se lisent a la fin du mois paye (le mois dit, sinon celui de la premiere date jouee).
         let jour_lu = match (mois_saisi, jours_joues.first()) {
@@ -411,27 +410,15 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            match l.quantite(r.unite) {
-                Some(ligne::QuantiteDeLigne::Cachets(q)) => {
-                    cachets_somme += q;
-                    premier_cachet.get_or_insert(l);
-                }
-                // Le signe porte aussi sur les heures, comme au calcul
-                // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
-                // au forfait et sans heures, n'en retire aucune.
-                _ => autres += r.sens.de(l.heures_comptees(r.unite, r.heures_par_unite(l.heures()))?),
+            let quantite = l.quantite(r.unite);
+            if let Some(ligne::QuantiteDeLigne::Cachets(_)) = quantite {
+                premier_cachet.get_or_insert(l);
             }
+            // Le signe porte aussi sur les heures, comme au calcul (`calcul::rattacher`) : une absence en retire. Un
+            // acompte, au forfait et sans heures, n'en retire aucune.
+            comptes.push((quantite, r.sens.de(l.heures_comptees(r.unite, r.heures_par_unite(l.heures()))?)));
         }
-        // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
-        let cachets = cachets_somme.partie_entiere();
-        // Les heures de travail remunere d'un contrat paye au mois : la quotite payee moins les absences, comptees au reel
-        // (`imprevus::lignes_du_mois`). Au reel, un mois entier d'absence (154 h en septembre 2026) depasse la quotite
-        // lissee (151,67 h) : l'activite remuneree est alors 0.00, jamais negative -- « Pour un individu entierement
-        // absent sur le mois, avec une valeur a « 0.00 » », et « Si une DSN contient une activite negative sur la periode
-        // courante, elle sera rejetee par l'assurance chomage » (fiche DSN 2640, `atelier/reference/sources/suspension-
-        // non-remuneree/net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Regles generales »).
-        let autres = if mensuel { autres.max(Heures::ZERO) } else { autres };
-        let heures = if !autres.est_nul() { Some(courte(autres)) } else { None };
+        let (cachets, heures) = cachets_et_heures(comptes, mensuel);
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
         let mut taux_cachet = v.taux_cachet.map(courte);
@@ -944,6 +931,30 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
         });
     }
     Ok(lignes)
+}
+
+/// LES CACHETS ET LES HEURES D'UN ENGAGEMENT, ceux que la DSN declare en activite (S21.G00.53.002 : `declarations::dsn`,
+/// `MesureDActivite`), calcule ou importe : chacune de ses lignes dit sa quantite dans l'unite de sa rubrique, et les
+/// heures qu'elle fait compter, sous le signe de sa rubrique (une absence en retire). Heures, cachets et jours sont trois
+/// grandeurs independantes (ARCHITECTURE, « Heures, cachets et jours ») :
+/// - les cachets, la partie entiere de la somme des lignes de cachets (un nombre de cachets se compte en entiers) ;
+/// - les heures, celles des autres lignes ; aucune quand elles sont nulles, dans leur forme la plus courte. Pour un
+///   contrat paye au mois (`mensuel`), ce sont les heures de travail remunere : la quotite payee moins les absences,
+///   comptees au reel (`imprevus::lignes_du_mois`). Au reel, un mois entier d'absence (154 h en septembre 2026) depasse
+///   la quotite lissee (151,67 h) : l'activite remuneree est alors 0.00, jamais negative -- « Pour un individu
+///   entierement absent sur le mois, avec une valeur a « 0.00 » », et « Si une DSN contient une activite negative sur la
+///   periode courante, elle sera rejetee par l'assurance chomage » (fiche DSN 2640, `atelier/reference/sources/suspension-
+///   non-remuneree/net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Regles generales »).
+pub(crate) fn cachets_et_heures(lignes: impl IntoIterator<Item = (Option<ligne::QuantiteDeLigne>, Heures)>, mensuel: bool) -> (Cachets, Option<Heures>) {
+    let (mut cachets, mut autres) = (Cachets::ZERO, Heures::ZERO);
+    for (quantite, heures) in lignes {
+        match quantite {
+            Some(ligne::QuantiteDeLigne::Cachets(q)) => cachets += q,
+            _ => autres += heures,
+        }
+    }
+    let autres = if mensuel { autres.max(Heures::ZERO) } else { autres };
+    (cachets.partie_entiere(), (!autres.est_nul()).then(|| courte(autres)))
 }
 
 /// Les jours, sans doublon, que des lignes jouent ou planifient.

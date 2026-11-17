@@ -666,12 +666,13 @@ impl PaieDuMois {
     }
 
     /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles
-    /// que le calcul a sommees (`heures_travaillees`), ou celles que l'import a sommees des lignes du bulletin dans
-    /// l'engagement ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    /// que le calcul a sommees (`heures_travaillees`), ou la somme de celles des lignes du bulletin importe, dans sa forme
+    /// la plus courte ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique. Ce ne sont pas les
+    /// heures de son engagement (`Engagement::heures`, celles que la DSN declare : sans les cachets).
     pub fn heures_annexes(&self) -> Option<socle::grandeurs::Heures> {
         match self {
             PaieDuMois::Validee(p) => Some(p.heures_travaillees),
-            PaieDuMois::Importee(p) => self.compte_dit().then(|| p.engagement.heures.into_iter().sum()),
+            PaieDuMois::Importee(p) => self.compte_dit().then(|| socle::grandeurs::courte(p.remuneration.iter().filter_map(|r| r.heures_annexes).sum())),
         }
     }
 
