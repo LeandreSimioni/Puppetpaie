@@ -2787,8 +2787,8 @@ fn motif_dpae(d: &EtatDpae) -> String {
     }
 }
 
-/// Les documents d'un salarie partis pour un mois (`documents_partis`) : quand, et le resume de la paie qu'ils ont
-/// emportee (`envois::envoi::resume_de` des paies parties) ; `None` : aucune paie partie ne se relit.
+/// Les documents d'un salarie partis pour un mois (`documents_partis`) : quand, et ce que leur envoi en a resume
+/// (`envois::etats::resumes_des_documents`, lu tel qu'il est).
 #[derive(Debug, Clone)]
 pub(crate) struct DocumentsPartis {
     pub(crate) quand: InstantOuJour,
@@ -2797,8 +2797,9 @@ pub(crate) struct DocumentsPartis {
 
 /// LES DOCUMENTS PARTIS DE `mois`, par salarie : le dernier envoi de ceux dont tous les engagements valides du mois sont
 /// partis.
-pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::etats::Etat]) -> R<HashMap<IdSalarie, DocumentsPartis>> {
+pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::etats::Etat], lignes: &[envois::journal::Ligne]) -> R<HashMap<IdSalarie, DocumentsPartis>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
+    let resumes = etats::resumes_des_documents(lignes, mois);
     let mut out: HashMap<IdSalarie, DocumentsPartis> = HashMap::new();
     // Les documents d'un salarie partent ensemble, pour tous ses engagements valides du mois : un engagement valide dont
     // ils ne sont pas partis (valide apres leur envoi) les rend a envoyer, avec son bulletin.
@@ -2825,21 +2826,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
         }
         let plus_recent = out.get(cle).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.clone(), DocumentsPartis { resume: None, quand });
-        }
-    }
-    // Ce que leurs documents ont emporte : la paie que chacun de ses engagements partis a payee
-    // (`engagement::etats::paie_partie`), sommee.
-    let mut parties: HashMap<IdSalarie, Vec<engagement::calcul::Paie>> = HashMap::new();
-    for e in etats.iter().filter(|e| matches!(e, engagement::etats::Etat::Partis(_))) {
-        let Some(cle) = e.objet().brut.saisie.carte.salarie.as_ref().filter(|c| out.contains_key(*c)) else { continue };
-        if let Some(p) = engagement::etats::paie_partie(ctx, e.objet(), &departs, mois)? {
-            parties.entry(cle.clone()).or_default().push(p);
-        }
-    }
-    for (cle, paies) in parties {
-        if let Some(d) = out.get_mut(&cle) {
-            d.resume = Some(envois::envoi::resume_de(&paies.iter().collect::<Vec<_>>()));
+            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned().flatten(), quand });
         }
     }
     Ok(out)
