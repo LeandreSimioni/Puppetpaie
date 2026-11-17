@@ -438,8 +438,9 @@ pub struct Aem<S = &'static str> {
 /// La page d'une AEM.
 pub fn page_aem<S: AsRef<str>>(a: &Aem<S>) -> Vec<Bloc> {
     let mut b = Vec::new();
-    // Une ligne : chaque texte a son abscisse, repoussee au-dela du precedent (un blanc de 10 points entre deux).
-    let ligne = |b: &mut Vec<Bloc>, y: i64, textes: &[(i64, &str)]| {
+    // Une ligne : chaque texte a son abscisse, repoussee au-dela du precedent (un blanc de 10 points entre deux). Les
+    // points que le test ecrit vont tels quels a la fabrique (`Mesure::entier`).
+    let ligne = |b: &mut Vec<Bloc>, y, textes: &[(_, &str)]| {
         let mut fin = Mesure::ZERO;
         for (x, texte) in textes {
             if texte.is_empty() {
@@ -447,7 +448,7 @@ pub fn page_aem<S: AsRef<str>>(a: &Aem<S>) -> Vec<Bloc> {
             }
             let x = Mesure::entier(*x).max(fin + Mesure::entier(10));
             t(b, x, Mesure::entier(y), texte);
-            fin = x + m("6.5") * texte.chars().count() as i64;
+            fin = x + texte.chars().count() * m("6.5");
         }
     };
     let jma = |d: &S| -> Vec<String> { d.as_ref().split('/').map(String::from).collect() };

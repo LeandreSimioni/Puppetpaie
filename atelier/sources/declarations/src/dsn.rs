@@ -5505,19 +5505,22 @@ mod tests {
 
     // ------------------------------------------------------------ l'arret de travail
 
-    fn j(an: i32, mois: u32, jour: u32) -> Jour {
-        Jour::nouveau(an, mois, jour).unwrap()
+    /// Le jour que le test ecrit, fait par le socle.
+    macro_rules! j {
+        ($an:expr, $mois:expr, $jour:expr) => {
+            Jour::nouveau($an, $mois, $jour).unwrap()
+        };
     }
 
     fn arret(reprise: Option<Jour>, fin_previsionnelle: Jour) -> Arret {
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 salarie: IdSalarie::lire("Audinot").unwrap(),
-                contrat_debut: j(2025, 9, 1),
+                contrat_debut: j!(2025, 9, 1),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
                 motif: droit::arrets::MotifDArret::Maladie,
-                dernier_jour_travaille: j(2026, 6, 20),
-                debut: j(2026, 6, 21),
+                dernier_jour_travaille: j!(2026, 6, 20),
+                debut: j!(2026, 6, 21),
                 fin_previsionnelle,
                 subrogation: Some(droit::arrets::SubrogationDeLArret::Non),
                 periode_de_subrogation: None,
@@ -5531,7 +5534,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::paris::Moment::a_paris(j(2026, 6, 21), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(),
+                saisi_le: socle::paris::Moment::a_paris(j!(2026, 6, 21), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap(),
                 qui: "interface".into(),
                 note: None,
             },
@@ -5543,12 +5546,12 @@ mod tests {
     /// travail » (S21.G00.60.010, p. 269) : le dernier jour d'arret est la veille.
     #[test]
     fn un_arret_repris_le_premier_du_mois_ne_couvre_pas_ce_mois() {
-        let (juin, juillet) = (Periode::du_mois(j(2026, 6, 1).mois_civil()), Periode::du_mois(j(2026, 7, 1).mois_civil()));
-        let repris_le_1er = arret(Some(j(2026, 7, 1)), j(2026, 7, 3));
+        let (juin, juillet) = (Periode::du_mois(j!(2026, 6, 1).mois_civil()), Periode::du_mois(j!(2026, 7, 1).mois_civil()));
+        let repris_le_1er = arret(Some(j!(2026, 7, 1)), j!(2026, 7, 3));
         assert!(repris_le_1er.couvre(&juin).unwrap());
         assert!(!repris_le_1er.couvre(&juillet).unwrap(), "aucun jour d'arret en juillet");
-        assert!(arret(Some(j(2026, 7, 2)), j(2026, 7, 3)).couvre(&juillet).unwrap(), "le 1er juillet est arrete");
-        assert!(arret(None, j(2026, 7, 1)).couvre(&juillet).unwrap(), "la fin previsionnelle est un jour d'arret");
-        assert!(!arret(None, j(2026, 6, 30)).couvre(&juillet).unwrap());
+        assert!(arret(Some(j!(2026, 7, 2)), j!(2026, 7, 3)).couvre(&juillet).unwrap(), "le 1er juillet est arrete");
+        assert!(arret(None, j!(2026, 7, 1)).couvre(&juillet).unwrap(), "la fin previsionnelle est un jour d'arret");
+        assert!(!arret(None, j!(2026, 6, 30)).couvre(&juillet).unwrap());
     }
 }

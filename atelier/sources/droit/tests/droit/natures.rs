@@ -5,12 +5,16 @@ use crate::outils::typee::{reference, verifier, Ligne};
 use droit::natures::{contrat_court, NatureDeContrat};
 use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
+use socle::forme::NombreLu;
 
-/// Un jour tel que la reference l'ecrit : (an, mois, jour).
-type JourEcrit = (i32, u32, u32);
+/// Un jour tel que la reference l'ecrit : (an, mois, jour), trois nombres.
+type JourEcrit = (NombreLu, NombreLu, NombreLu);
 
-fn jour((an, mois, jour): JourEcrit) -> Jour {
-    Jour { an, mois, jour }
+/// Le jour qu'ils ecrivent, lu par sa porte (`socle::piece`) : `AAAA-MM-JJ`.
+fn jour((an, mois, jour): &JourEcrit) -> Jour {
+    let n = |x: &NombreLu| x.entier_ecrit().unwrap().unwrap();
+    let iso = format!("{:0>4}-{:0>2}-{:0>2}", n(an), n(mois), n(jour));
+    socle::piece::Zone::lue(&iso, socle::piece::format::JourIso).valeur().unwrap()
 }
 
 /// Un contrat et le jour ou on le lit : est-il court ?
@@ -31,8 +35,8 @@ fn contrat_court_des_natures() {
         .into_iter()
         .map(|l| {
             let n = l.cas.nature.proprietes().unwrap();
-            let contrat = PeriodeOuverte::du(jour(l.cas.debut), l.cas.fin.map(jour)).unwrap();
-            let court = contrat_court(&n, &contrat, jour(l.cas.le)).unwrap();
+            let contrat = PeriodeOuverte::du(jour(&l.cas.debut), l.cas.fin.as_ref().map(jour)).unwrap();
+            let court = contrat_court(&n, &contrat, jour(&l.cas.le)).unwrap();
             Ligne { cas: l.cas, attendu: court }
         })
         .collect();

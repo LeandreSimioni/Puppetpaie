@@ -2072,22 +2072,7 @@ pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
 /// qui ne se confond avec aucun autre) ; le dossier d'installation n'y sert pas.
 #[cfg(windows)]
 fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
-    extern "system" {
-        fn OpenProcess(acces: u32, heriter: i32, pid: u32) -> isize;
-        fn WaitForSingleObject(objet: isize, millisecondes: u32) -> u32;
-        fn CloseHandle(objet: isize) -> i32;
-    }
-    const SYNCHRONIZE: u32 = 0x0010_0000;
-    // SAFETY : appels du noyau sur un numero de processus ; la poignee ouverte est refermee.
-    unsafe {
-        let h = OpenProcess(SYNCHRONIZE, 0, pid);
-        if h == 0 {
-            return Ok(true); // deja parti (ou jamais vu : rien a attendre)
-        }
-        let r = WaitForSingleObject(h, 60_000);
-        CloseHandle(h);
-        Ok(r == 0)
-    }
+    Ok(socle::systeme::attendre_la_fin(pid, std::time::Duration::from_secs(60)))
 }
 
 /// Hors Windows, la prise du verrou n'est jamais heritee (CLOEXEC) : quand LA FENETRE DE CETTE INSTALLATION ne repond plus
@@ -2105,23 +2090,25 @@ fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
 }
 
 /// Le code de sortie du relais appele sans `--code`, ou sans `--installation` ni `--racine` : il n'a rien a relayer.
-const RELAIS_MAL_APPELE: i32 = 2;
+fn relais_mal_appele() -> std::process::ExitCode {
+    std::process::ExitCode::from(2)
+}
 
 /// Le relais (`puppetpaie maj-relais --installation I --code C --attendre PID`) : attend la fin du programme qui l'a
 /// lance, bascule, et lance la fenetre (la neuve, ou l'ancienne si la bascule a echoue). Ecrit ce qui s'est passe dans le
 /// journal de la mise a jour. `--racine R` (la compagnie dont `maj/` porte la version prete) au lieu de `--installation` :
 /// c'est ainsi que le programme d'une installation posee qui ne connait pas `--installation` lance le relais de la
 /// version neuve ; ses arguments sont un contrat avec les installations posees, comme la forme des archives.
-pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
+pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     let args = socle::ligne::textes(args);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    let Some(code) = valeur("--code") else { return RELAIS_MAL_APPELE };
+    let Some(code) = valeur("--code") else { return relais_mal_appele() };
     let maj = match (valeur("--installation"), valeur("--racine")) {
         (Some(i), _) => dossier_maj(&i),
         (None, Some(r)) => dossier_maj(&r),
-        (None, None) => return RELAIS_MAL_APPELE,
+        (None, None) => return relais_mal_appele(),
     };
-    let Some(inst) = code.parent().map(Path::to_path_buf) else { return RELAIS_MAL_APPELE };
+    let Some(inst) = code.parent().map(Path::to_path_buf) else { return relais_mal_appele() };
     let pid = valeur("--attendre").and_then(|p| p.to_str().map(str::parse::<u32>));
     let attendu = match pid {
         Some(Ok(p)) => match attendre_fin(p, &inst) {
@@ -2154,7 +2141,7 @@ pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
     if let Err(e) = std::process::Command::new(programme(&code, "puppetpaie")).spawn() {
         noter(&inst, &format!("La fenetre ne se relance pas apres la mise a jour ({}) : la rouvrir a la main.", e));
     }
-    0
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(test)]

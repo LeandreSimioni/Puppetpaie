@@ -17,14 +17,14 @@ fn un_engagement_en_saisie_ne_change_pas_la_dsn() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-12-01";
-    reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
+    reussi(&valider_la_carte(&c, le_mois("2026-11"), "FULLER", jour));
     let dsn = || {
         let r = route(&c, "depot-apercu", json!({"quoi": "dsn", "mois": "2026-11"}), jour);
         std::fs::read_to_string(reussi(&r)["fichier"].as_str().unwrap()).unwrap()
     };
     let seule = dsn();
 
-    let s = saisie(&c, le_mois(2026, 11));
+    let s = saisie(&c, le_mois("2026-11"));
     let spectacle = s["engagements"][0]["spectacle"].clone();
     let nouveau = json!({
         "salarie": "FULLER", "nature": "cddu_spectacle", "spectacle": spectacle, "metier": "ACC010",

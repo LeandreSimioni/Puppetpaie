@@ -322,18 +322,6 @@ fn chiffre(c: char) -> bool {
     valeur_chiffre(c).is_some()
 }
 
-/// Le nombre d'un groupe de chiffres décimaux (toutes écritures), ou `None`.
-fn nombre(t: &str) -> Option<u32> {
-    if t.is_empty() {
-        return None;
-    }
-    let mut v: u32 = 0;
-    for c in t.chars() {
-        v = v.checked_mul(10)?.checked_add(valeur_chiffre(c)?)?;
-    }
-    Some(v)
-}
-
 /// Une date lue `AAAA-M-J` ou `J/M/AAAA` (separateurs `/`, `.`, `-`, espace), en ISO ; `None` si elle ne se
 /// lit pas ou n'existe pas.
 pub fn date_lue(texte: &str) -> Option<Jour> {
@@ -363,7 +351,12 @@ pub fn date_lue(texte: &str) -> Option<Jour> {
         let [j, mo, a] = groupes(&|x| matches!(x, '/' | '.' | '-' | ' '), [(1, 2), (1, 2), (4, 4)])?;
         (a, mo, j)
     };
-    Jour::nouveau(nombre(&a)? as i32, nombre(&mo)?, nombre(&j)?)
+    // Chaque groupe, ses chiffres ramenes a l'ASCII, lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
+    let ascii = |t: &str| -> Option<String> { t.chars().map(|c| char::from_digit(valeur_chiffre(c)?, 10)).collect() };
+    let annee = Zone::lue(&ascii(&a)?, format::AnneeEnChiffres).valeur()?.ok()?;
+    let mois = Zone::lue(&ascii(&mo)?, format::MoisEnChiffres).valeur()?;
+    Zone::lue(&ascii(&j)?, format::JourDuMois(annee.mois(mois))).valeur()
 }
 
 // LES PAYS QUE LA RELEVE SAIT NOMMER : ceux de la liste livree (`pays.rs`, Code officiel geographique de l'INSEE),

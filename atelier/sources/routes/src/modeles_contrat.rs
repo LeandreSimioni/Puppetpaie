@@ -917,7 +917,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
             let v = documents::contrat::valeurs_de_paie(ctx, &ent, &p)?;
             let contrat = modele.lu.decoupe(&nom).map_err(|m| m.reclasser(Classe::Illisible))?;
             let x = documents::avenant::modification_d_apercu(&contrat, &v).map_err(|m| m.reclasser(Classe::Refuse))?;
-            let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero as i64), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
+            let modifs = [fabrique_pdf::forme::Modification { numero: Some(x.numero), article: x.article, avant: x.avant, apres: x.apres, phrase: None }];
             documents::contrat::ecrire_avenant(ctx, &p, &ent, &chemin, &modifs, engagement::numeros::NumeroDAvenant::premier(), p.engagement.contrat().debut(), ctx.aujourdhui, ctx.aujourdhui, &modele, false)?
         }
     }

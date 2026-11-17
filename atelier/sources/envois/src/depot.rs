@@ -21,7 +21,7 @@ pub const RUB_NATURE: &str = "S10.G00.00.005";
 pub const INDICATEUR: (usize, usize) = (72, 75);
 pub const INDICATEUR_REEL: &str = "120";
 pub const INDICATEUR_TEST: &str = "TST";
-pub const LONGUEUR_DPAE: i64 = 990;
+pub const LONGUEUR_DPAE: usize = 990;
 
 #[track_caller]
 fn refus(classe: Classe, message: impl Into<String>) -> Echec {
@@ -155,21 +155,21 @@ pub fn mode_dpae(octets: &[u8]) -> Option<Mode> {
 /// Chaque enregistrement repasse en C_VERSION = TST,
 /// avec la meme affectation de tranche qu'un `bytearray` (une tranche hors du
 /// flux s'ajoute a la fin).
-pub fn basculer_dpae(octets: &[u8], longueur: i64) -> R<Vec<u8>> {
+pub fn basculer_dpae(octets: &[u8], longueur: usize) -> R<Vec<u8>> {
     if longueur == 0 {
         return Err(refus(Classe::CalculImpossible,"integer modulo by zero"));
     }
-    let n = octets.len() as i64;
+    let n = octets.len();
     if n % longueur != 0 {
         return Err(refus(Classe::Illisible,"flux DPAE de longueur inattendue"));
     }
     let mut sortie = octets.to_vec();
-    let (a, b) = (INDICATEUR.0 as i64, INDICATEUR.1 as i64);
-    for i in 0..(n / longueur).max(0) {
-        let long = sortie.len() as i64;
+    let (a, b) = INDICATEUR;
+    for i in 0..n / longueur {
+        let long = sortie.len();
         let debut = (i * longueur + a).min(long);
         let fin = (i * longueur + b).clamp(debut, long);
-        sortie.splice(debut as usize..fin as usize, INDICATEUR_TEST.bytes());
+        sortie.splice(debut..fin, INDICATEUR_TEST.bytes());
     }
     Ok(sortie)
 }

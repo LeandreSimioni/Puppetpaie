@@ -202,7 +202,7 @@ pub struct Remplace {
 #[serde(deny_unknown_fields)]
 pub struct Modification {
     /// Le numéro de l'article cité ; aucun pour une modification dite en clair (`phrase`).
-    pub numero: Option<i64>,
+    pub numero: Option<usize>,
     pub article: String,
     pub avant: Vec<String>,
     pub apres: Vec<String>,

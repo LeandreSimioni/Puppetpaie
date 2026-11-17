@@ -1089,7 +1089,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
                 Err(e) => return Ok(Err(e)),
             };
             if !cle_de_poste(&r.cle) {
-                return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), 0)));
+                return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), None)));
             }
             c.poste = Some(r.poste.clone());
             c.cle = Some(r.cle.clone());

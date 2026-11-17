@@ -10,6 +10,7 @@
 //! et, pour l'ecran seulement (la fonctionnalite Cargo `ecran`, que seul `moteur` demande), le calcul d'une saisie
 //! (`pour_l_ecran`), viser un montant (`viser`), la saisie lue sans paie et le preavis. Un document ou une declaration
 //! ne lit que les paies ecrites d'un engagement valide.
+#![forbid(unsafe_code)]
 
 pub mod calcul;
 pub mod carte;

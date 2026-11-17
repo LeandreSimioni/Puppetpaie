@@ -248,15 +248,18 @@ pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
     if b.len() != 10 || b[2] != b'/' || b[5] != b'/' || !chiffres(0, 2) || !chiffres(3, 5) || !chiffres(6, 10) {
         return Ok(None);
     }
+    // Chaque nombre lu par sa zone (`socle::piece`) ; ses chiffres, pour dire celui qui n'existe pas.
+    use socle::piece::{format, Zone};
     let n = |a: usize, z: usize| t[a..z].parse::<u32>().unwrap();
     let (j, m, a) = (n(0, 2), n(3, 5), n(6, 10));
-    if a < 1 {
-        return Err(refus(socle::date::annee_impossible(a)));
-    }
-    if !(1..=12).contains(&m) {
+    let annee = match Zone::lue(&t[6..10], format::AnneeEnChiffres).valeur() {
+        Some(Ok(annee)) => annee,
+        Some(Err(_)) | None => return Err(refus(socle::date::annee_impossible(a))),
+    };
+    let Some(mois) = Zone::lue(&t[3..5], format::MoisEnChiffres).valeur() else {
         return Err(refus(socle::mois::mois_impossible(m)));
-    }
-    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
+    };
+    Zone::lue(&t[0..2], format::JourDuMois(annee.mois(mois))).valeur().map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne

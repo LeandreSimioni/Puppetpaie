@@ -32,7 +32,8 @@ fn iban() -> String {
 }
 
 struct Sortie {
-    code: i32,
+    /// La fin du garde : son code de sortie (`code`).
+    statut: std::process::ExitStatus,
     out: String,
 }
 
@@ -86,7 +87,7 @@ fn garde(depot: &Path, args: &[&str]) -> Sortie {
     let mut c = Command::new(env!("CARGO_BIN_EXE_moteur-atelier"));
     environnement(&mut c, depot);
     let s = c.arg("verifier-avant-commit").args(args).output().unwrap();
-    Sortie { code: s.status.code().unwrap_or(-1), out: String::from_utf8_lossy(&s.stdout).into_owned() }
+    Sortie { statut: s.status, out: String::from_utf8_lossy(&s.stdout).into_owned() }
 }
 
 /// Les valeurs de `prive/config/` ne sont jamais dans ce que la commande affiche.
@@ -104,7 +105,7 @@ fn une_valeur_de_prive_dans_ce_qui_part_arrete_le_commit() {
     git(&depot, &["add", "atelier/notes.md"]);
     for args in [&[][..], &["--indexes"][..]] {
         let s = garde(&depot, args);
-        assert_eq!(s.code, 1, "{:?} :\n{}", args, s.out);
+        assert_eq!(s.statut.code(), Some(1), "{:?} :\n{}", args, s.out);
         assert!(s.out.contains("atelier/notes.md"), "{}", s.out);
         for (ligne, quoi) in [(2, "salarie.email"), (3, "salarie (identite)"), (4, "siret")] {
             assert!(s.out.lines().any(|l| l.contains(&format!("ligne {} ", ligne)) && l.contains(quoi)), "ligne {} ({}) :\n{}", ligne, quoi, s.out);
@@ -119,7 +120,7 @@ fn le_nir_d_un_salarie_s_arrete_meme_avec_la_marque_d_invention() {
     let depot = monter("nir_lu", true);
     ecrire(&depot, "fictives/x/config/salaries.json", &format!("{{\"nir\": \"{}\"}}\n", NIR_INVENTE));
     let s = garde(&depot, &[]);
-    assert_eq!(s.code, 1, "{}", s.out);
+    assert_eq!(s.statut.code(), Some(1), "{}", s.out);
     assert!(s.out.contains("salarie.nir"), "{}", s.out);
     sans_les_valeurs(&s);
 }

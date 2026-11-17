@@ -1102,14 +1102,7 @@ impl NumeroObjetSpectacle {
     /// son annee. INFERENCE : le siecle (`2000 +`) ; le texte ne donne que deux caracteres, et le numero n'est exige sur
     /// l'AEM qu'au-dela du 31 mars 2008 (meme fichier, l. 5705).
     pub fn annee_de_la_demande(&self) -> Option<socle::mois::Annee> {
-        match self.0.as_bytes() {
-            // De 2000 a 2099 : toujours une annee du calendrier.
-            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => match socle::mois::Annee::nouvelle(2000 + i64::from(d - b'0') * 10 + i64::from(u - b'0')) {
-                Ok(a) => Some(a),
-                Err(_) => None,
-            },
-            _ => None,
-        }
+        socle::piece::Zone::lue(self.0.get(0..2)?, socle::piece::format::Aa).valeur()
     }
 }
 
@@ -1164,9 +1157,10 @@ fn hors_des_echelons(ecrit: &str) -> String {
 }
 
 impl EchelonCcneac {
-    /// Son rang dans la grille, de 1 a 12.
-    pub fn rang(self) -> usize {
-        self.0.rang()
+    /// Sa ligne dans `grille`, les douze echelons d'un groupe de la grille dans leur ordre ; `None` quand elle en compte
+    /// moins.
+    pub fn ligne<T>(self, grille: &[T]) -> Option<&T> {
+        self.0.ligne(grille)
     }
 
     /// L'echelon tape `texte`, ou la phrase qui le refuse : un texte qui ne se lit pas en nombre entier, par sa raison.

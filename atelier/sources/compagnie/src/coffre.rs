@@ -26,7 +26,19 @@ pub const FICHIER: socle::fichiers::NomDeFichier = socle::fichiers::NomDeFichier
 pub const FICHIER_CLE: &str = "cle-poste.bin";
 /// Le nom de la seance gardee, que `Coffre::chemin_gardee` complete de l'empreinte du coffre (un fichier par coffre).
 pub const GARDEE: &str = "ouverture-gardee.bin";
-pub const VERSION: i64 = 2;
+pub const VERSION: VersionDuCoffre = VersionDuCoffre(2);
+
+/// LA VERSION DE LA FORME DU COFFRE, que `coffre.bin` ecrit en nombre (`version`) : seule celle de ce logiciel
+/// (`VERSION`) se lit ; une autre se refuse, sans conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct VersionDuCoffre(u8);
+
+impl std::fmt::Display for VersionDuCoffre {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
 pub const CONSULTATION: &str = "consultation";
 pub const DEPOT: &str = "depot";
 pub const DESCRIPTION: &str = "PuppetPaie - mots de passe des organismes";
@@ -82,7 +94,7 @@ pub const SERVICES: [Service; 3] = [
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Contenu {
-    version: i64,
+    version: VersionDuCoffre,
     kdf: Kdf,
     enveloppes: Enveloppes,
     fiches: BTreeMap<String, FichePosee>,
@@ -487,7 +499,8 @@ fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<
         return Err(memoire_max());
     }
     let memoire = 128 * p * r + 128 * r * (n + 2);
-    if memoire > SCRYPT_MAXMEM as i128 || 128 * p * r > i32::MAX as i128 {
+    // 128 x p x r ne depasse pas 2^31 - 1, la borne des parametres de la derivation (un entier signe de 32 bits).
+    if memoire > SCRYPT_MAXMEM as i128 || 128 * p * r > (1i128 << 31) - 1 {
         return Err(memoire_max());
     }
     let params = scrypt::Params::new(log_n as u8, r as u32, p as u32, 32).map_err(|_| invalide())?;

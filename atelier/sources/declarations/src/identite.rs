@@ -85,9 +85,10 @@ impl NaissanceDeclaree {
     /// Le jour, le mois, l'annee, en chiffres.
     fn des_chiffres(jj: &str, mm: &str, aaaa: &str) -> Option<NaissanceDeclaree> {
         use socle::mois::Annee;
+        use socle::piece::{format, Zone};
         let n = |t: &str| t.bytes().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
-        let (jour, mois, annee) = (n(jj), n(mm), n(aaaa));
-        let an = Annee::nouvelle(i64::from(annee)).ok()?;
+        let (jour, mois) = (n(jj), n(mm));
+        let an = Zone::lue(aaaa, format::AnneeEnChiffres).valeur()?.ok()?;
         let inconnu = |x: u32| x == 0 || x == 99;
         let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (Annee::constante(1800)..=Annee::constante(2099)).contains(&an);
         if !forme {
@@ -96,7 +97,8 @@ impl NaissanceDeclaree {
         if inconnu(jour) || inconnu(mois) {
             return Some(NaissanceDeclaree::Incomplete { jour, mois, an });
         }
-        Jour::nouveau(annee.try_into().ok()?, mois, jour).map(NaissanceDeclaree::Connue)
+        let m = Zone::lue(mm, format::MoisEnChiffres).valeur()?;
+        Zone::lue(jj, format::JourDuMois(an.mois(m))).valeur().map(NaissanceDeclaree::Connue)
     }
 
     /// Celle d'un jour connu.

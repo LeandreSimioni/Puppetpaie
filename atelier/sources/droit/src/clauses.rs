@@ -913,11 +913,12 @@ pub fn indemnite_licenciement(
         if let Some(plafond) = sec.plafond_mois {
             mois = mois.min(plafond);
         }
-        let mut commun = ref_ * mois;
-        if let Some(avant) = sec.taux_avant.as_ref().filter(|avant| anciennete < avant.mois) {
-            // Avant le bareme, une fraction a part.
-            commun = ref_ * anciennete.par_annee_dans_la_tranche(Anciennete::ZERO, None, avant.fraction_de_mois);
-        }
+        // Les mois de salaire de la clause commune ; avant le bareme, une fraction a part.
+        let mois_commun = match sec.taux_avant.as_ref().filter(|avant| anciennete < avant.mois) {
+            Some(avant) => anciennete.par_annee_dans_la_tranche(Anciennete::ZERO, None, avant.fraction_de_mois),
+            None => mois,
+        };
+        let mut commun = (ref_ * mois_commun)?;
         if let Some(majorations) = &sec.majorations_age {
             // Plusieurs ages, chacun son pourcentage et son plancher, puis le plafond. L'age en annees revolues ; sans
             // lui, les deux lectures.
@@ -934,19 +935,20 @@ pub fn indemnite_licenciement(
             let mut meilleur = commun;
             for m in vises {
                 let f = Coefficient::UN + m.pourcentage.en_coefficient();
-                let mut v = ref_ * (mois * f);
+                let mut v = (ref_ * (mois * f))?;
                 if let Some(plancher) = m.plancher_mois {
-                    v = v.max(ref_ * plancher);
+                    v = v.max((ref_ * plancher)?);
                 }
                 meilleur = meilleur.max(v);
             }
             if let Some(plafond) = sec.plafond_majore_mois {
-                meilleur = meilleur.min(ref_ * plafond);
+                meilleur = meilleur.min((ref_ * plafond)?);
             }
             commun = meilleur;
         } else if let Some(maj) = sec.majoration_age.as_ref().filter(|m| anciennete >= m.anciennete_mois_min) {
-            // Une majoration a partir d'un age. Sans l'age, les deux lectures.
-            let majore = (commun * (Coefficient::UN + maj.pourcentage.en_coefficient())).au_centime();
+            // Une majoration a partir d'un age, sur la valeur exacte des mois de salaire, arrondie une fois (Leandre,
+            // 17/11). Sans l'age, les deux lectures.
+            let majore = (ref_ * (mois_commun * (Coefficient::UN + maj.pourcentage.en_coefficient())))?;
             match age {
                 None => {
                     set(&mut lectures, "sans_majoration_age", commun);
@@ -979,7 +981,7 @@ pub fn indemnite_licenciement(
             if let Some(plafond) = c.plafond_mois {
                 mois = mois.min(plafond);
             }
-            set(&mut lectures, n, ref_ * mois);
+            set(&mut lectures, n, (ref_ * mois)?);
         }
     }
     if lectures.is_empty() {
@@ -1042,7 +1044,7 @@ fn fois_la_reference(mois: MoisDeSalaire, reference: &mut dyn FnMut() -> R<Monta
     if mois <= MoisDeSalaire::ZERO {
         return Ok(Montant::ZERO);
     }
-    Ok(reference()? * mois)
+    reference()? * mois
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.

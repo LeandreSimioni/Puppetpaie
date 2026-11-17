@@ -14,7 +14,8 @@ use serde::Serialize;
 use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
-use crate::bulletin::{chemin_net, identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use crate::bulletin::{chemin_net, identite_de, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use fabrique_pdf::FORMAT;
 use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;

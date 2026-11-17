@@ -64,7 +64,8 @@ fn dossier(test: &str) -> PathBuf {
 }
 
 struct Sortie {
-    code: i32,
+    /// La fin du binaire : son code de sortie (`code`).
+    statut: std::process::ExitStatus,
     texte: String,
 }
 
@@ -86,7 +87,7 @@ fn lancer(binaire: &str, args: &[&str], env: &[(&str, &str)]) -> Sortie {
         .output()
         .unwrap();
     let texte = format!("{}{}", String::from_utf8_lossy(&p.stdout), String::from_utf8_lossy(&p.stderr));
-    Sortie { code: p.status.code().unwrap_or(-1), texte }
+    Sortie { statut: p.status, texte }
 }
 
 /// Aucune valeur de l'identite, aucun mot de passe a l'ecran.
@@ -112,7 +113,7 @@ fn sans_la_variable_le_montage_refuse_et_n_ecrit_rien() {
     let d = dossier("sans-variable");
     for variable in [None, Some(""), Some("   ")] {
         let s = monter_avec(PAIE, &d, variable);
-        assert_eq!(s.code, 1, "{}", s.texte);
+        assert_eq!(s.statut.code(), Some(1), "{}", s.texte);
         assert!(s.texte.contains("PUPPETPAIE_COMPAGNIE absente") && s.texte.contains("Rien n'est ecrit"), "{}", s.texte);
         assert!(!d.exists(), "le dossier a ete cree");
     }
@@ -129,7 +130,7 @@ fn une_cle_qui_manque_ou_en_trop_est_nommee_sans_sa_valeur_et_rien_n_est_ecrit()
     en_trop["telephone_portable"] = json!("0611223344");
     for (id, nom) in [(sans_civilite, "civilite"), (sans_medecine, "medecine_travail"), (en_trop, "telephone_portable")] {
         let s = monter_avec(PAIE, &d, Some(&id.to_string()));
-        assert_eq!(s.code, 1, "{}", s.texte);
+        assert_eq!(s.statut.code(), Some(1), "{}", s.texte);
         assert!(s.texte.contains(nom), "{} n'est pas nomme : {}", nom, s.texte);
         rien_d_affiche(&s, &id);
         assert!(!s.texte.contains("0611223344"), "{}", s.texte);
@@ -144,7 +145,7 @@ fn le_montage_refuse_un_dossier_dans_un_depot_git() {
     std::fs::create_dir_all(racine.join(".git")).unwrap();
     let d = racine.join("sous").join("essai");
     let s = monter_avec(PAIE, &d, Some(&identite().to_string()));
-    assert_eq!(s.code, 1, "{}", s.texte);
+    assert_eq!(s.statut.code(), Some(1), "{}", s.texte);
     assert!(!d.exists());
     let _ = std::fs::remove_dir_all(&racine);
 }
@@ -163,7 +164,7 @@ fn une_compagnie_d_essai_montee_se_lit_par_sa_forme() {
     std::fs::write(source.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive fictive-du-test", "quoi": "livree"}).to_string()).unwrap();
     let d = dossier("se-lit");
     let s = lancer(PAIE, &["essai", "monter", d.to_str().unwrap(), "--depuis", source.to_str().unwrap()], &[("PUPPETPAIE_COMPAGNIE", &identite().to_string())]);
-    assert_eq!(s.code, 0, "{}", s.texte);
+    assert_eq!(s.statut.code(), Some(0), "{}", s.texte);
     let ctx = droit::contexte::Contexte::nouveau(&d, None).unwrap_or_else(|e| panic!("la compagnie d'essai ne se lit pas : {}", e.phrase));
     let dpae = ctx.entreprise.api_dpae.as_ref().expect("le compte DPAE");
     // Le SIRET du compte DPAE, vide dans la variable, n'est pas dit : celui de la compagnie sert (`Client::dpae`).

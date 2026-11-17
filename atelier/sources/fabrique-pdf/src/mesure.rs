@@ -142,6 +142,12 @@ impl Mesure {
         (autre.0 != 0).then(|| borne(quotient_arrondi(self.0 as i128 * UN as i128, autre.0 as i128)))
     }
 
+    /// La part de `self` sur un compte de `n` (une moyenne, une colonne parmi `n`), arrondie au millionième ; `None` si
+    /// `n` est nul.
+    pub fn part_sur(self, n: usize) -> Option<Mesure> {
+        (n != 0).then(|| borne(quotient_arrondi(self.0 as i128, n as i128)))
+    }
+
     /// `self` fois `n / d` en un seul arrondi ; `None` si `d` est nul.
     pub fn fois_rapport(self, n: i64, d: i64) -> Option<Mesure> {
         (d != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n as i128, d as i128)))
@@ -392,6 +398,15 @@ impl Div<i64> for Mesure {
     type Output = Mesure;
     fn div(self, n: i64) -> Mesure {
         borne(quotient_arrondi(self.0 as i128, n as i128))
+    }
+}
+
+/// Un compte de fois une mesure (des lignes, des colonnes, des caractères : `n * hauteur`) : ce qu'un appelant compte ne
+/// passe pas en entier signé.
+impl Mul<Mesure> for usize {
+    type Output = Mesure;
+    fn mul(self, m: Mesure) -> Mesure {
+        borne(m.0 as i128 * self as i128)
     }
 }
 

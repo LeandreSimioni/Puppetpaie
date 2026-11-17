@@ -1209,7 +1209,7 @@ const CHASSE: pdf::Mesure = mesure("3.9");
 const CHASSE_ENTETE: pdf::Mesure = mesure("4.2");
 const MARGE_CELLULE: pdf::Mesure = pdf::Mesure::entier(3);
 /// La ligne de texte la plus longue, en caracteres, avant qu'elle raccourcisse.
-const LIGNE_DE_TEXTE: i64 = 40;
+const LIGNE_DE_TEXTE: usize = 40;
 
 /// La largeur de chaque colonne, en fraction de la largeur utile. Une longueur s'y compte en caracteres (gonfles d'un
 /// dixieme pour un total, de trois pour le total general), une largeur en points.
@@ -1220,7 +1220,7 @@ pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Ran
     let mut plus_long_mot = vec![Mesure::ZERO; n];
     let mut mot_entete = vec![Mesure::ZERO; n];
     for (i, (libelle, _)) in entetes.iter().enumerate() {
-        mot_entete[i] = Mesure::entier(libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as i64);
+        mot_entete[i] = libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) * Mesure::UN;
     }
     let gonfle = |caracteres: usize, genre: Rangee| {
         let (n, d) = match genre {
@@ -1228,7 +1228,7 @@ pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Ran
             Rangee::General => (13, 10),
             Rangee::Ligne => (1, 1),
         };
-        match Mesure::entier(caracteres as i64).fois_rapport(n, d) {
+        match (caracteres * Mesure::UN).fois_rapport(n, d) {
             Some(m) => m,
             None => unreachable!("un rapport de dix"),
         }
@@ -1242,10 +1242,10 @@ pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Ran
         }
     }
     let texte: Vec<bool> = entetes.iter().map(|(_, a_droite)| !a_droite).collect();
-    let besoins = |ligne: i64| -> Vec<Mesure> {
+    let besoins = |ligne: usize| -> Vec<Mesure> {
         (0..n)
             .map(|i| {
-                let lg = if texte[i] { plus_long[i].min(Mesure::entier(ligne)).max(plus_long_mot[i]) } else { plus_long[i] };
+                let lg = if texte[i] { plus_long[i].min(ligne * Mesure::UN).max(plus_long_mot[i]) } else { plus_long[i] };
                 (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + MARGE_CELLULE * 2
             })
             .collect()
@@ -1361,7 +1361,7 @@ pub(crate) fn description_pdf(
         blocs.push(paragraphe(format!("Source : {}", src), false, pt(6), Some("#999999"), false, pt(2), zero));
     }
     pdf::Description {
-        format: crate::bulletin::FORMAT,
+        format: fabrique_pdf::FORMAT,
         page: Some(pdf::Page {
             largeur: PAGE_LARGEUR,
             hauteur: PAGE_HAUTEUR,

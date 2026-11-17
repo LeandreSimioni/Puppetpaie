@@ -12,6 +12,7 @@ use socle::paris::Moment;
 use super::Cadre;
 use envois::releve_retours::{Client, EnvironnementNetEntreprises, Panne};
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "depots",
@@ -24,19 +25,19 @@ pub static SPEC: Spec = Spec {
     ],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     match faire(cadre, args) {
         Ok(c) => c,
         Err(e) => refus_reseau_ou_plantage(cadre, e),
     }
 }
 
-fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     // Le moteur ouvre le coffre comme pour `retours` s'il est ferme.
     cadre.ouvrir_le_coffre();
     let Some(mdp) = compagnie::consultation::mot_de_passe_de_consultation(&cadre.ctx, "net-entreprises")? else {
         dire!("Mot de passe absent. Le poser une fois : `route coffre-poser, service net-entreprises`.");
-        return Ok(2);
+        return Ok(ExitCode::from(2));
     };
     let client = Client::dsn(&cadre.ctx, environnement(args)?, Some(mdp));
     derouler(args, client)
@@ -48,7 +49,7 @@ fn environnement(args: &Args) -> Result<EnvironnementNetEntreprises, Echec> {
 }
 
 /// Le compte rendu, avec un client donne (un test le pointe sur un faux serveur local).
-pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
+pub fn derouler(args: &Args, mut client: Client) -> Result<ExitCode, Echec> {
     let environnement = environnement(args)?;
     let (debut, fin) = fenetre(args)?;
     dire!("Depots {}, du {} au {}.\n", environnement, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa());
@@ -65,13 +66,13 @@ pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
         Ok(()) => {}
         Err(p) if p.est_api() => {
             dire!("Echec : {}", p.echec.en_lignes());
-            return Ok(1);
+            return Ok(ExitCode::FAILURE);
         }
         Err(p) => return Err(p.en_echec()),
     }
     if depots.is_empty() {
         dire!("Aucun depot sur la periode. Elargir avec --depuis JJ/MM/AAAA.");
-        return Ok(0);
+        return Ok(ExitCode::SUCCESS);
     }
     for (i, dep) in depots.iter().enumerate() {
         dire!("  depot {}", i + 1);
@@ -81,20 +82,20 @@ pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
         dire!();
     }
     dire!("{} depot(s).", depots.len());
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Le reseau injoignable ou coupe, ou le coffre qui ne s'ouvre pas : une phrase et un code, pas un plantage.
-fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
+fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> ExitCode {
     if matches!(e.classe, Some(Classe::Reseau | Classe::DelaiDepasse)) {
         dire!("Consultation interrompue : le reseau est injoignable ou a ete coupe ({}).\nRien n'est perdu : relancer la commande quand la connexion est revenue.", e.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     // Le coffre ferme et la seance refusee : « rien ici ne l'ouvre » est une phrase pour l'utilisateur, pas un defaut du logiciel.
     // Code 2, comme « le mot de passe n'est nulle part ».
     if e.classe == Some(Classe::Coffre) {
         dire!("{}", e.en_lignes());
-        return 2;
+        return ExitCode::from(2);
     }
     cadre.plantage(e)
 }

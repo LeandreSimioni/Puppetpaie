@@ -284,7 +284,7 @@ impl<'a> Cx<'a> {
     /// emploi au sein de l'entreprise) chaque salarié bénéficie d'un échelon qui lui est attribué par l'employeur »
     /// (art. X.4.1, `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Seule la compagnie le
     /// connait : sans lui, le calcul refuse en nommant la case (son type le borne a 1..12, `droit::fiche::EchelonCcneac`).
-    fn echelon_ccneac(&self) -> R<(usize, String)> {
+    fn echelon_ccneac(&self) -> R<(droit::fiche::EchelonCcneac, String)> {
         let Some(e) = self.fiche.metier.ouvrir(&self.par_la_grille).echelon_ccneac.dite() else {
             return Err(socle::echec::cle(
                 format!(
@@ -294,7 +294,7 @@ impl<'a> Cx<'a> {
                 "echelon_ccneac",
             ));
         };
-        Ok((e.rang(), format!("échelon {} de la fiche", e)))
+        Ok((*e, format!("échelon {} de la fiche", e)))
     }
 
     /// Le taux horaire minimum d'un emploi autre qu'artistique de la CCNEAC.
@@ -305,8 +305,8 @@ impl<'a> Cx<'a> {
         // Le groupe que le catalogue des metiers ecrit en nombre est la cle de sa grille, ecrite en texte.
         let Some(echelons) = grille.groupes.get(&CleDeGrille::lire(&groupe.to_string())?) else { return Ok(None) };
         let (echelon, d_ou) = self.echelon_ccneac()?;
-        let mensuel = *echelons
-            .get(echelon - 1)
+        let mensuel = *echelon
+            .ligne(echelons)
             .ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du groupe {}", echelon, groupe))))?;
         Ok(plancher(
             horaire_du_mensuel(mensuel, grille.heures_mensuelles, "1285.emplois_autres_qu_artistiques.heures_mensuelles")?,

@@ -3,6 +3,7 @@
 //! sociale, les conges et la fin de contrat des permanents, la caisse des conges spectacles. Tout se lit a une date.
 //! Le droit ne connait pas l'engagement : il recoit ce qu'il juge (une fiche, une nature, une date), il ne va pas le
 //! chercher.
+#![forbid(unsafe_code)]
 
 /// UNE CLE DU LOGICIEL, OPAQUE : un texte non vide, sans blancs de bord, gardé tel que lu ; il s'ecrit et se trie comme
 /// lui. INFERENCE pour chacune (aucun texte n'en fixe la forme : ce sont

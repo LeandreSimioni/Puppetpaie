@@ -12,6 +12,6 @@
 //!
 //! `moteur-atelier scenario ...` est la meme commande.
 
-fn main() {
-    std::process::exit(routes::scenario::commande(&socle::ligne::arguments()));
+fn main() -> std::process::ExitCode {
+    routes::scenario::commande(&socle::ligne::arguments())
 }

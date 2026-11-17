@@ -119,18 +119,19 @@ impl From<NumeroContrat> for String {
 }
 
 /// LE NUMERO D'UN CERTIFICAT CONGES SPECTACLES (N CE) : un nombre, le premier des certificats d'une paie partie
-/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent.
+/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent. La suite commence a un : zero
+/// n'en est pas un, et se refuse a la lecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct NumeroDeCertificat(i64);
+pub struct NumeroDeCertificat(std::num::NonZeroU64);
 
 impl NumeroDeCertificat {
     /// Le premier numero de la suite.
-    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(1);
+    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(std::num::NonZeroU64::MIN);
 
     /// Le numero qui le suit dans la sequence continue des certificats.
     pub fn suivant(self) -> NumeroDeCertificat {
-        NumeroDeCertificat(self.0 + 1)
+        NumeroDeCertificat(self.0.saturating_add(1))
     }
 
     /// La suite des numeros a partir de celui-ci, lui compris : elle se zippe avec les certificats qu'elle numerote.

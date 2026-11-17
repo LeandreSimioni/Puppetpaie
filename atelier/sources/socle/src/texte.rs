@@ -441,3 +441,67 @@ pub(crate) fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
     format!("{}{}{}", signe, milliers(entier, '\u{a0}'), decimales)
 }
 
+/// UN ENTIER ECRIT DANS UN TEXTE, que le petit langage d'un modele reecrit (`str.format` : le code salarie du compte
+/// individuel « 421{code:03} », `documents::plan_comptable`) : son signe et ses chiffres, lus une fois, et ses
+/// ecritures (en base dix, seize, huit ou deux ; le caractere qu'il code). Il ne s'ouvre pas en nombre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntierEcrit(i64);
+
+impl EntierEcrit {
+    /// Zero.
+    pub const ZERO: EntierEcrit = EntierEcrit(0);
+    /// Un.
+    pub const UN: EntierEcrit = EntierEcrit(1);
+
+    /// L'entier que `t` ecrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un texte qui n'est
+    /// pas un entier (il se lit alors en texte). Un entier trop grand se refuse, par la raison de sa lecture.
+    pub fn lu(t: &str) -> Result<Option<EntierEcrit>, std::num::ParseIntError> {
+        let (neg, reste) = if let Some(r) = t.strip_prefix('-') {
+            (true, r)
+        } else if let Some(r) = t.strip_prefix('+') {
+            (false, r)
+        } else {
+            (false, t)
+        };
+        let bords_sans_tiret = reste.chars().next().is_some_and(|c| c != '_') && reste.chars().last().is_some_and(|c| c != '_');
+        if !bords_sans_tiret || reste.contains("__") {
+            return Ok(None);
+        }
+        let chiffres: String = reste.chars().filter(|c| *c != '_').collect();
+        if !chiffres.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(None);
+        }
+        chiffres.parse::<i64>().map(|n| Some(EntierEcrit(if neg { -n } else { n })))
+    }
+
+    /// Est-il negatif ?
+    pub fn negatif(self) -> bool {
+        self.0 < 0
+    }
+
+    /// Sa valeur absolue, ecrite en base `base` : `'x'` (seize, minuscules), `'X'` (seize, capitales), `'o'` (huit),
+    /// `'b'` (deux) ; toute autre, en base dix.
+    pub fn absolu_en(self, base: char) -> String {
+        let valeur = self.0.unsigned_abs();
+        match base {
+            'x' => format!("{:x}", valeur),
+            'X' => format!("{:X}", valeur),
+            'o' => format!("{:o}", valeur),
+            'b' => format!("{:b}", valeur),
+            _ => valeur.to_string(),
+        }
+    }
+
+    /// Le caractere qu'il code (`%c`), s'il en code un.
+    pub fn caractere(self) -> Option<char> {
+        u32::try_from(self.0).ok().and_then(char::from_u32)
+    }
+}
+
+/// Ecrit en base dix, signe compris.
+impl std::fmt::Display for EntierEcrit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+

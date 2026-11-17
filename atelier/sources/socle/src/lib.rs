@@ -31,6 +31,8 @@ pub mod pays;
 pub mod piece;
 pub mod secret;
 pub mod nfkd_ascii;
+#[cfg(windows)]
+pub mod systeme;
 pub mod tables_nfkc;
 pub mod temps;
 pub mod texte;

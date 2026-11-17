@@ -76,24 +76,25 @@ fn options(args: &[String]) -> R<Options> {
 }
 
 /// `moteur-atelier guet ...` : le code de sortie (0 quand il sonne, 1 sans transcript, 2 sur une option fausse).
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if args.iter().any(|a| a == "--aide" || a == "-h" || a == "--help") {
         dire!("{}", AIDE);
-        return 0;
+        return ExitCode::SUCCESS;
     }
     let o = match options(args) {
         Ok(o) => o,
         Err(m) => {
             eprintln!("{}\n{}", m.en_lignes(), AIDE);
-            return 2;
+            return ExitCode::from(2);
         }
     };
     match guetter(&o) {
-        Ok(code) => code,
+        Ok(()) => ExitCode::SUCCESS,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }
@@ -106,7 +107,8 @@ fn dit(u: Option<u64>) -> String {
     }
 }
 
-fn guetter(o: &Options) -> R<i32> {
+/// Guette jusqu'a ce que le guet sonne.
+fn guetter(o: &Options) -> R<()> {
     let depot = depot()?;
     let projets = match dossier_maison() {
         Some(m) => m.join(".claude").join("projects"),
@@ -132,12 +134,12 @@ fn guetter(o: &Options) -> R<i32> {
         let s = dernier_usage(&sous_agent)?;
         if let Some(n) = s.filter(|n| *n >= o.seuil) {
             dire!("SEUIL : sous-agent a {} (>= {})", n, o.seuil);
-            return Ok(0);
+            return Ok(());
         }
         if let Some(moi) = &moi {
             if let Some(m) = dernier_usage(moi)?.filter(|m| *m >= SEUIL) {
                 dire!("SEUIL : orchestrateur a {}", m);
-                return Ok(0);
+                return Ok(());
             }
         }
         if o.commits {
@@ -148,14 +150,14 @@ fn guetter(o: &Options) -> R<i32> {
                     None => &h,
                 };
                 dire!("COMMIT {} : sous-agent a {}", court, dit(s));
-                return Ok(0);
+                return Ok(());
             }
         }
         let bouge = date(&sous_agent)?;
         // Un transcript date d'apres l'horloge vient de bouger : il n'est pas immobile.
         if SystemTime::now() > bouge + IMMOBILE {
             dire!("IMMOBILE depuis 20 minutes : sous-agent a {}", dit(s));
-            return Ok(0);
+            return Ok(());
         }
         std::thread::sleep(PAS);
     }

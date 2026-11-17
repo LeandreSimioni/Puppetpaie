@@ -60,9 +60,11 @@ fn jours(n: u32) -> Jours {
     Jours::fixes(n)
 }
 
-/// Le jour (an, mois, jour).
-fn j(an: i32, mois: u32, jour: u32) -> Jour {
-    Jour::nouveau(an, mois, jour).unwrap()
+/// Le jour (an, mois, jour) que le test ecrit, fait par le socle.
+macro_rules! jour_ecrit {
+    ($an:expr, $mois:expr, $jour:expr) => {
+        Jour::nouveau($an, $mois, $jour).unwrap()
+    };
 }
 
 /// La periode du `d` au `f`.
@@ -135,7 +137,7 @@ fn la_grille_depuis_le_texte() {
     for annee in [2025, 2026] {
         for mois in 1..=12u32 {
             for dep in [1, 20] {
-                let debut = j(annee, mois, dep);
+                let debut = jour_ecrit!(annee, mois, dep);
                 for duree in 1..=62u32 {
                     let fin = ajouter(debut, duree - 1);
                     for c in [0, 1, 3, 6] {
@@ -184,9 +186,9 @@ fn les_dates_et_le_mensuel() {
     }
     // pour_paie d'un intermittent = plafond_urssaf avec ses dates.
     let e = EngagementPlafond {
-        mensuelle: false, artiste: true, periode: du_au(j(2026, 5, 20), j(2026, 5, 23)),
-        contrat: du_au(j(2026, 5, 20), j(2026, 5, 23)),
-        dates_travail: vec![j(2026, 5, 20), j(2026, 5, 22)], jours: jours(2),
+        mensuelle: false, artiste: true, periode: du_au(jour_ecrit!(2026, 5, 20), jour_ecrit!(2026, 5, 23)),
+        contrat: du_au(jour_ecrit!(2026, 5, 20), jour_ecrit!(2026, 5, 23)),
+        dates_travail: vec![jour_ecrit!(2026, 5, 20), jour_ecrit!(2026, 5, 22)], jours: jours(2),
     };
     assert_eq!(pour_paie(&e, &pss).unwrap(), montant("720.00"));
     assert_eq!(pour_paie(&e, &pss).unwrap(), plafond_urssaf(&e.contrat, true, &pss, &e.dates_travail).unwrap());
@@ -199,11 +201,11 @@ fn les_dates_et_le_mensuel() {
     // Une paie de janvier d'un contrat du 20/01 au 10/02/2026 ne compte que ses jours (R. 242-2, « pour
     // chaque paie ») ; une date hors de la periode de paie refuse.
     let janvier = EngagementPlafond {
-        mensuelle: false, artiste: true, periode: du_au(j(2026, 1, 20), j(2026, 1, 31)),
-        contrat: du_au(j(2026, 1, 20), j(2026, 2, 10)), dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 1, 24)], jours: jours(3),
+        mensuelle: false, artiste: true, periode: du_au(jour_ecrit!(2026, 1, 20), jour_ecrit!(2026, 1, 31)),
+        contrat: du_au(jour_ecrit!(2026, 1, 20), jour_ecrit!(2026, 2, 10)), dates_travail: vec![jour_ecrit!(2026, 1, 20), jour_ecrit!(2026, 1, 22), jour_ecrit!(2026, 1, 24)], jours: jours(3),
     };
     assert_eq!(pour_paie(&janvier, &pss).unwrap(), montant("387.58"));
-    let err = pour_paie(&EngagementPlafond { dates_travail: vec![j(2026, 1, 20), j(2026, 1, 22), j(2026, 2, 3)], ..janvier }, &pss).unwrap_err().phrase;
+    let err = pour_paie(&EngagementPlafond { dates_travail: vec![jour_ecrit!(2026, 1, 20), jour_ecrit!(2026, 1, 22), jour_ecrit!(2026, 2, 3)], ..janvier }, &pss).unwrap_err().phrase;
     assert!(err.contains("hors de la periode de paie"), "{}", err);
     // Sans jour remunere date, rien ne se compte : refus.
     for (debut, fin, statut, quoi) in &c.sans_date {
@@ -217,9 +219,9 @@ fn bornes_incluses_et_exemples_des_bulletins() {
     let t = table();
     let pss = pss_depuis_table(&t);
     // FAVART 24/05/2026 : un jour, une journee -> 30 x 12 = 360.
-    let r = plafond_urssaf(&Periode::du_jour(j(2026, 5, 24)), true, &pss, &[j(2026, 5, 24)]).unwrap();
+    let r = plafond_urssaf(&Periode::du_jour(jour_ecrit!(2026, 5, 24)), true, &pss, &[jour_ecrit!(2026, 5, 24)]).unwrap();
     assert_eq!(r, Montant::euros(360));
     // FAVART 13-22/05/2026 : dix jours, un jour remunere, 4005 / 31 (BOSS § 1090).
-    let r = plafond_urssaf(&du_au(j(2026, 5, 13), j(2026, 5, 22)), true, &pss, &[j(2026, 5, 15)]).unwrap();
+    let r = plafond_urssaf(&du_au(jour_ecrit!(2026, 5, 13), jour_ecrit!(2026, 5, 22)), true, &pss, &[jour_ecrit!(2026, 5, 15)]).unwrap();
     assert_eq!(r, montant("129.19"));
 }

@@ -12,6 +12,7 @@ use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "retours",
@@ -26,11 +27,11 @@ pub static SPEC: Spec = Spec {
     ],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     super::code(faire(cadre, args))
 }
 
-fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     // La plage : `--depuis` et `--jusqu-a`, celle du moteur.
     let (debut, fin) = moteur::commandes::depots::fenetre(args)?;
     let dpae = args.drapeau("dpae");
@@ -77,5 +78,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             dire!("  {}", a.chemin.display());
         }
     }
-    Ok(if r.incidents.is_empty() { 0 } else { 1 })
+    Ok(if r.incidents.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }

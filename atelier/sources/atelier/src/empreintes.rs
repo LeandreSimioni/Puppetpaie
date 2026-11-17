@@ -123,21 +123,22 @@ pub fn lues(depot: &Path) -> R<BTreeMap<String, socle::fichiers::Empreinte>> {
 }
 
 /// La commande `moteur-atelier empreintes` : ecrit les empreintes des textes deposes du depot ou elle est lancee.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if !args.is_empty() {
         eprintln!("usage : moteur-atelier empreintes (sans argument, depuis le dépôt)");
-        return 2;
+        return ExitCode::from(2);
     }
     let r = std::env::current_dir().map_err(|e| socle::echec::refus(e.to_string())).and_then(|d| crate::verifier_avant_commit::racine_du_depot(&d)).and_then(|d| ecrire(&d));
     match r {
         Ok(n) => {
             println!("{} empreintes écrites dans les {} de {}.", n, LISEZ_MOI, TEXTES);
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }

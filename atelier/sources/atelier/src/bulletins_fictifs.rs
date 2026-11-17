@@ -219,7 +219,7 @@ pub fn page_a<S: AsRef<str>>(a: &A<S>) -> Vec<Bloc> {
     t(b_, m("135.9"), m("262"), s(&a.periode));
     t(b_, m("42.8"), m("273"), "Dates travaillées :");
     for (k, d) in a.dates.iter().enumerate() {
-        t(b_, m("135.9"), m("273") + m("11") * k as i64, s(d));
+        t(b_, m("135.9"), m("273") + k * m("11"), s(d));
     }
     let mut y = m("308");
     t(b_, m("104.9"), y, "LIBELLE");
@@ -292,7 +292,7 @@ pub fn page_a<S: AsRef<str>>(a: &A<S>) -> Vec<Bloc> {
     t(b_, m("255.2"), y + m("2"), &format!("Réglement le : {}", s(&a.regle)));
     t(b_, m("460.3"), y + m("10"), "(EN EUROS)");
     for (k, libelle) in [s(&a.unite), "Salaire brut:", "Plafond Urssaf:", "Cout employeur:"].iter().enumerate() {
-        let yk = y + m("14") + m("11.2") * k as i64;
+        let yk = y + m("14") + k * m("11.2");
         t(b_, m("36.8"), yk, libelle);
         r(b_, m("170.2"), yk, s(&a.cumuls[k][0]));
         r(b_, m("235.5"), yk, s(&a.cumuls[k][1]));

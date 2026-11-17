@@ -23,7 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use socle::echec::{erreur, Classe, Echec, Lieu, R};
-use socle::forme::Objet;
+use socle::forme::{Objet, PhrasesRendues};
 pub use socle::texte::Phrase;
 
 use super::catalogue::{self, Route};
@@ -291,103 +291,6 @@ impl Rendu {
     /// Les phrases qu'il porte, a toute profondeur (`PhrasesRendues`).
     pub fn phrases(&self) -> &PhrasesRendues {
         &self.phrases
-    }
-}
-
-/// LES PHRASES QUE REND UNE ROUTE, celles que l'ecran lit : la `phrase` (un texte), les `phrases` (une liste de textes)
-/// et les `aides` (une table de textes) de la reponse et de chaque ligne qu'elle porte, a toute profondeur. Elles se
-/// lisent en leur forme : une `phrase` qui n'est pas un texte refuse la lecture ; absente ou `null`, il n'y en a pas. Ce
-/// qui porte un autre nom est la forme de la route, deja ecrite : il se parcourt, sans s'y lire.
-#[derive(Clone, Debug, Default)]
-pub struct PhrasesRendues {
-    /// Chaque `phrase` : la sienne, celle de chaque ligne (une carte, un carre, la frise d'un engagement).
-    phrase: Vec<String>,
-    /// Les lignes des `phrases` et les textes des `aides`.
-    autres: Vec<String>,
-}
-
-impl PhrasesRendues {
-    /// Toutes, chaque `phrase` d'abord.
-    pub fn toutes(&self) -> impl Iterator<Item = &str> {
-        self.phrase.iter().chain(&self.autres).map(String::as_str)
-    }
-
-    /// LA PLUS LONGUE DES `phrase`, en caracteres : chacune s'affiche dans la place de la route (`Fiche::phrase`). Aucune :
-    /// zero caractere.
-    pub fn plus_longue(&self) -> usize {
-        self.phrase.iter().map(|p| p.chars().count()).max().into_iter().sum()
-    }
-}
-
-impl<'de> Deserialize<'de> for PhrasesRendues {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<PhrasesRendues, D::Error> {
-        let mut p = PhrasesRendues::default();
-        serde::de::DeserializeSeed::deserialize(Parcours(&mut p), d)?;
-        Ok(p)
-    }
-}
-
-/// Le parcours d'une valeur du rendu, qui range ses phrases dans `PhrasesRendues`.
-struct Parcours<'a>(&'a mut PhrasesRendues);
-
-impl<'de> serde::de::DeserializeSeed<'de> for Parcours<'_> {
-    type Value = ();
-    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
-        d.deserialize_any(self)
-    }
-}
-
-impl<'de> serde::de::Visitor<'de> for Parcours<'_> {
-    type Value = ();
-
-    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str("ce qu'une route rend")
-    }
-
-    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<(), A::Error> {
-        while let Some(cle) = m.next_key::<String>()? {
-            match cle.as_str() {
-                "phrase" => self.0.phrase.extend(m.next_value::<Option<String>>()?),
-                "phrases" => self.0.autres.extend(m.next_value::<Option<Vec<String>>>()?.into_iter().flatten()),
-                "aides" => self.0.autres.extend(m.next_value::<Option<std::collections::BTreeMap<String, String>>>()?.into_iter().flatten().map(|(_, t)| t)),
-                _ => m.next_value_seed(Parcours(&mut *self.0))?,
-            }
-        }
-        Ok(())
-    }
-
-    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut s: A) -> Result<(), A::Error> {
-        while s.next_element_seed(Parcours(&mut *self.0))?.is_some() {}
-        Ok(())
-    }
-
-    fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
-        d.deserialize_any(self)
-    }
-
-    // Une valeur seule n'est la phrase de rien.
-    fn visit_none<E: serde::de::Error>(self) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn visit_unit<E: serde::de::Error>(self) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<(), E> {
-        Ok(())
     }
 }
 

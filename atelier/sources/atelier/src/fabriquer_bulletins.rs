@@ -43,7 +43,8 @@ pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description
 
 // --------------------------------------------------------------------------------------------- la ligne de commande
 
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     let mut libres = Vec::new();
     let mut gabarit = None;
@@ -55,7 +56,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                 Some("spaiectacle") => Gabarit::Spaiectacle,
                 _ => {
                     eprintln!("{}", USAGE);
-                    return 2;
+                    return ExitCode::from(2);
                 }
             };
             gabarit = Some(g);
@@ -67,7 +68,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     }
     let [description, dossier] = libres.as_slice() else {
         eprintln!("{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     };
     let r = socle::forme::lire_fichier::<DescriptionLue>(Path::new(description), "La description des bulletins ne se lit pas.")
         .and_then(|d| fabriquer(d, gabarit, Path::new(dossier)));
@@ -77,11 +78,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                 dire!("{}", f);
             }
             dire!("{} bulletin(s) fabrique(s) dans {}", faits.len(), dossier);
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }
@@ -898,7 +899,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
     };
     let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
     // La page tient-elle ? Le pied finit a 72 points sous le net a payer, la signature est a 810.
-    let bas = m("308") + m("11.2") * (lignes.len() + 1 + cotisations.len()) as i64 + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
+    let bas = m("308") + (lignes.len() + 1 + cotisations.len()) * m("11.2") + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
     if bas > m("800") {
         return Err(refus!("bulletin {} : trop de lignes pour une page CoolPaie", b.rang));
     }
@@ -953,8 +954,8 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
     let ligne = |l: &Ligne| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
     let non_soumis: Vec<_> = b.non_soumis.iter().map(ligne).collect();
-    let titres = cotisations.iter().filter(|c| c.0 < m("50")).count() as i64;
-    let bas = m("308.5") + m("11") * lignes.len() as i64 + m("9") + m("13") * titres + m("10") * (cotisations.len() as i64 - titres) + m("13") + m("18") + m("18") * non_soumis.len() as i64;
+    let titres = cotisations.iter().filter(|c| c.0 < m("50")).count();
+    let bas = m("308.5") + lignes.len() * m("11") + m("9") + titres * m("13") + (cotisations.len() - titres) * m("10") + m("13") + m("18") + non_soumis.len() * m("18");
     if bas > m("645") {
         return Err(refus!("bulletin {} : trop de lignes pour une page sPAIEctacle", b.rang));
     }

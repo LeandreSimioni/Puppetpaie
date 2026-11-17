@@ -103,7 +103,8 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
 
 /// Le message lisible d'une reponse d'erreur de Google. Un corps qui n'est pas une erreur de Google (la page d'un relais,
 /// un corps vide) : le tiers a mal repondu, la panne remonte en citant le statut et le corps.
-fn traduire(code: u16, corps: &str) -> R<String> {
+fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<String> {
+    let code = statut.as_str();
     let (code_g, detail) = socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, &format!("HTTP {} : {}", code, corps))?.code_et_detail();
     if code_g.as_deref() == Some("invalid_grant") {
         return Ok("Autorisation Google perdue ou expiree.\n\
@@ -113,7 +114,7 @@ fn traduire(code: u16, corps: &str) -> R<String> {
                 \x20 relier le Drive (Configuration > Mots de passe)."
             .into());
     }
-    if code == 403 && corps.to_lowercase().contains("insufficient") {
+    if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
         return Ok("Permission refusee : l'autorisation en cours ne couvre pas\n\
                 \x20 cette action. Relier le Drive (Configuration > Mots de\n\
                 \x20 passe) pour\n\
@@ -147,7 +148,7 @@ fn brute(p: Panne) -> Echec {
     match p {
         Panne::Brute(e) => e,
         Panne::Reseau(raison) => erreur(Classe::Reseau, format!("Reseau injoignable : {}", raison)),
-        Panne::Statut { code, .. } => erreur(Classe::Reseau, format!("HTTP {}", code)),
+        Panne::Statut { code, .. } => erreur(Classe::Reseau, format!("HTTP {}", code.as_str())),
     }
 }
 

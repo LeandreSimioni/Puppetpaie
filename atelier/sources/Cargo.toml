@@ -80,6 +80,10 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe` : les traits scelles du socle (`grandeurs`, `texte`, `piece`, `date`) exigent un jeton que seul leur
+# module fabrique, et `unsafe` le fabriquerait (`std::mem::zeroed`). Un seul module le leve, `socle::systeme` (les appels
+# au noyau de Windows) ; chaque autre crate le refuse a sa racine (`#![forbid(unsafe_code)]`), qu'aucun `allow` ne leve.
+unsafe_code = "deny"
 
 [workspace.dependencies]
 # Arithmetique decimale : ROUND_HALF_UP = MidpointAwayFromZero. `serde` : un montant d'un fichier se lit en decimal,

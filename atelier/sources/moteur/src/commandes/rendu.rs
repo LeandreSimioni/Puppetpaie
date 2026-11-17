@@ -11,7 +11,7 @@ struct Enveloppe<'a, T: Serialize> {
 }
 
 /// Ecrit l'enveloppe de `commande` en JSON indente de deux espaces, suivi d'un saut de ligne. Rend le code de sortie, 0.
-pub fn rendre<T: Serialize>(commande: &str, resultat: T) -> i32 {
+pub fn rendre<T: Serialize>(commande: &str, resultat: T) -> std::process::ExitCode {
     dire!("{}", socle::ecriture::json_indente(&Enveloppe { commande, ok: true, resultat }, 2));
-    0
+    std::process::ExitCode::SUCCESS
 }

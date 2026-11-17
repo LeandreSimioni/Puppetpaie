@@ -17,6 +17,7 @@ use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
 use compagnie::coffre::Coffre;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "coffre",
@@ -24,7 +25,7 @@ pub static SPEC: Spec = Spec {
     options: &[Opt::drapeau("fenetre"), Opt::drapeau("json")],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     // `quoi` : `etat` (le defaut de la `Spec`) ou `seance`.
     let r = match args.texte("quoi") {
         Some("seance") => seance(cadre, args),
@@ -35,7 +36,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
         Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
             dire!("! {}", e.en_lignes());
-            2
+            ExitCode::from(2)
         }
         Err(e) => cadre.plantage(e),
     }
@@ -45,7 +46,7 @@ fn vers(e: Echec) -> Echec {
     Echec { classe: None, ..e }
 }
 
-fn faire(cadre: &Cadre) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre) -> Result<ExitCode, Echec> {
     let c = Coffre::du_poste(&cadre.racine);
     dire!("Coffre : {}", c.chemin().display());
     dire!("  scelle (AES-256-GCM). Cle de ce poste : {}", c.chemin_cle().display());
@@ -82,22 +83,22 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
         dire!("  Mot de passe du logiciel : pose. Il est demande a l'ouverture");
         dire!("  de la fenetre et a chaque depot reel, envoi ou signature.");
     }
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 /// `coffre seance` : taper le mot de passe du logiciel UNE fois ; les commandes suivantes ouvrent le coffre sans le redemander, 12 h
 /// au plus. `coffre seance fermer` la clot. Jamais une preuve d'acte reel.
-fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn seance(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     let coffre = Coffre::du_poste(&cadre.racine);
     if args.texte("service") == Some("fermer") {
         let fermee = coffre.oublier_ouverture_gardee()?;
         dire!("{}", if fermee { "Seance fermee." } else { "Aucune seance ouverte." });
-        return Ok(0);
+        return Ok(ExitCode::SUCCESS);
     }
     if let Some(fin) = coffre.fin_ouverture_gardee()? {
         if coffre.ouverture_gardee()?.is_some() {
             dire!("Seance deja ouverte, jusqu'au {}.", socle::paris::ecrit::minute::texte(fin).replace('T', " a "));
-            return Ok(0);
+            return Ok(ExitCode::SUCCESS);
         }
     }
     match compagnie::demande::ouvrir_seance(&cadre.racine) {
@@ -110,11 +111,11 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
                 socle::paris::ecrit::minute::texte(fin).replace('T', " a ")
             );
-            Ok(0)
+            Ok(ExitCode::SUCCESS)
         }
         compagnie::demande::Verdict::Refuse(e) => {
             dire!("! {}", e.en_lignes());
-            Ok(2)
+            Ok(ExitCode::from(2))
         }
     }
 }

@@ -58,7 +58,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ConseilDuJour,
         geste: "Dire le conseil du jour (« Le saviez-vous ? »).",
-        charge: &[Champ { nom: "decalage", libelle: Affiche::new("Autre conseil"), forme: Forme::Nombre, sens: "un autre conseil : +1 le suivant, -1 le précédent", avance: false }],
+        charge: &[Champ { nom: "decalage", libelle: Affiche::new("Autre conseil"), forme: Forme::Nombre, sens: "un autre conseil : 1 le suivant, 2 celui d'après", avance: false }],
         exemple: r#"{}"#,
         rend: "le conseil (titre, texte, ce qu'il ouvre)",
         refus: &[OPERATION],
@@ -678,7 +678,7 @@ fn generaux(b: &Banque, d: &Donnees) -> R<Vec<ConseilVu>> {
 }
 
 /// Le conseil du jour, decale de `decalage` (« un autre » l'augmente d'un) ; rien quand l'option est decochee.
-fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> R<Option<ConseilVu>> {
+fn du_jour(ctx: &Contexte, decalage: Option<usize>) -> R<Option<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(None);
     }
@@ -1235,7 +1235,7 @@ fn et(noms: &[String]) -> String {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeConseilDuJour {
-    decalage: Option<i64>,
+    decalage: Option<usize>,
 }
 
 /// La charge de `conseils-salarie` : la cle du salarie.

@@ -360,12 +360,9 @@ pub fn annees_du_socle(dossier: &Path) -> R<Vec<Annee>> {
                 return None;
             }
             let stem = p.file_stem()?.to_str()?;
-            if stem.is_empty() || !stem.chars().all(|c| c.is_ascii_digit()) {
-                return None;
-            }
-            // Un nom de chiffres qui n'est pas une annee (`0000`, `12345`) n'est pas un socle.
-            let n = stem.bytes().try_fold(0i64, |n, c| n.checked_mul(10)?.checked_add(i64::from(c - b'0')))?;
-            match Annee::nouvelle(n) {
+            // Un nom qui n'est pas des chiffres n'est pas un socle, ni un nom de chiffres qui n'est pas une annee (`0000`,
+            // `12345`).
+            match socle::piece::Zone::lue(stem, socle::piece::format::AnneeEnChiffres).valeur()? {
                 Ok(a) => Some(a),
                 Err(_) => None,
             }

@@ -1435,8 +1435,8 @@ mod tests {
         let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSBBBB"), "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSCCCC"), "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
-        let annonce = |flux: &str, nature: NatureDuRetour, seconde: i64| Annonce {
-            publication: Some(socle::paris::Moment::a_paris_a_la_seconde(Jour::nouveau(2026, 6, 1).unwrap(), const { socle::paris::HeureDuJour::a(11, 0) }, seconde).unwrap()),
+        let annonce = |flux: &str, nature: NatureDuRetour, publiee: &str| Annonce {
+            publication: Some(socle::piece::Zone::lue(publiee, socle::piece::format::InstantIso).valeur().unwrap()),
             production: None,
             ops: None,
             delegataire: None,
@@ -1448,9 +1448,9 @@ mod tests {
             flux: Some(IdDeFlux::lire(flux).unwrap()),
         };
         let retours = vec![
-            annonce("WSBBBB", NatureDuRetour::CertificatDeConformite, 1),
-            annonce("WSINCONNU", NatureDuRetour::CertificatDeConformite, 2),
-            annonce("WSCCCC", NatureDuRetour::BilanDIdentification, 3),
+            annonce("WSBBBB", NatureDuRetour::CertificatDeConformite, "2026-06-01T11:00:01"),
+            annonce("WSINCONNU", NatureDuRetour::CertificatDeConformite, "2026-06-01T11:00:02"),
+            annonce("WSCCCC", NatureDuRetour::BilanDIdentification, "2026-06-01T11:00:03"),
         ];
         let mut contenus = HashMap::new();
         contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());

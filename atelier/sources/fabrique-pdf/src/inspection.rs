@@ -51,6 +51,27 @@ struct InconnuVu {
     ligne: usize,
 }
 
+/// LA ROTATION D'UNE PAGE RELEVEE (`/Rotate`, ISO 32000-1, 7.7.3.3 : un multiple de 90 degrés), que le relevé écrit en
+/// degrés (`rotation`) : lue, ramenée à un tour. Un autre angle ne tourne pas la page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    Aucune,
+    QuartDeTour,
+    DemiTour,
+    TroisQuartsDeTour,
+}
+
+impl<'de> serde::Deserialize<'de> for Rotation {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Rotation, D::Error> {
+        Ok(match i64::deserialize(d)?.rem_euclid(360) {
+            90 => Rotation::QuartDeTour,
+            180 => Rotation::DemiTour,
+            270 => Rotation::TroisQuartsDeTour,
+            _ => Rotation::Aucune,
+        })
+    }
+}
+
 #[derive(Serialize)]
 struct Page {
     largeur: Mesure,

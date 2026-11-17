@@ -59,10 +59,6 @@ use droit::forme_bareme::FamilleDeCotisation;
 use engagement::ecarts::RegroupementDeComparaison;
 use engagement::importe::LogicielDUnBulletin;
 
-/// `n` points.
-const fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
-}
 
 /// La table de lecture, dans `logiciel/donnees/`.
 pub const FICHIER_TABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("bulletins-lecture-base.json");
@@ -71,61 +67,61 @@ pub const FICHIER_TABLE: socle::fichiers::CheminRelatif = socle::fichiers::Chemi
 const TOLERANCE: Mesure = mesure("3.5");
 
 /// Un mot plus loin que cela du precedent ne continue pas un libelle.
-const ECART_MOTS: Mesure = pt(15);
+const ECART_MOTS: Mesure = Mesure::entier(15);
 
 /// Deux morceaux d'un nombre (« 1 » et « 421,13 ») separes de moins que cela forment un seul nombre (l'espace des
 /// milliers grandit avec le corps du texte : 2 points en 9, 4 en 14).
-const ECART_MILLIERS: Mesure = pt(5);
+const ECART_MILLIERS: Mesure = Mesure::entier(5);
 
 /// Un montant « sous » son libelle : au plus a cette distance verticale.
-const DESSOUS_MAX: Mesure = pt(40);
+const DESSOUS_MAX: Mesure = Mesure::entier(40);
 
 /// Les rangs d'une grille du pied : au plus a cette distance sous son en-tete.
-const GRILLE_HAUTEUR: Mesure = pt(60);
+const GRILLE_HAUTEUR: Mesure = Mesure::entier(60);
 
 /// Une periode de dates travaillees plus longue que cela (ses deux bornes comprises) n'est pas depliee en jours.
 const INTERVALLE_MAX: socle::date::Duree<socle::date::EnJours> = socle::date::Duree::jours(367);
 
 /// Sur un rang de l'en-tete, deux mots separes de plus que cela sont deux morceaux (un libelle et sa valeur, deux
 /// colonnes d'adresses) ; « 99999 » et sa commune, ecrits en deux, restent un.
-const ECART_SEGMENT: Mesure = pt(40);
+const ECART_SEGMENT: Mesure = Mesure::entier(40);
 
 /// La valeur d'une mention commence au plus a cette distance de son libelle, sur son rang.
-const VALEUR_LOIN: Mesure = pt(180);
+const VALEUR_LOIN: Mesure = Mesure::entier(180);
 
 /// Les mots d'une valeur se suivent a moins de cet ecart.
-const VALEUR_SUITE: Mesure = pt(40);
+const VALEUR_SUITE: Mesure = Mesure::entier(40);
 
 /// Une valeur sur plusieurs rangs : chaque rang au plus a cette distance du precedent.
-const VALEUR_RANG: Mesure = pt(14);
+const VALEUR_RANG: Mesure = Mesure::entier(14);
 
 /// Les rangs d'un bloc d'adresse se suivent a moins de cet ecart vertical.
-const BLOC_ECART: Mesure = pt(30);
+const BLOC_ECART: Mesure = Mesure::entier(30);
 
 /// Ce qui suit un bloc d'adresse dans sa colonne (le Siret de l'employeur) : au plus a cet ecart vertical.
-const BLOC_SUIVANT: Mesure = pt(35);
+const BLOC_SUIVANT: Mesure = Mesure::entier(35);
 
 /// Deux morceaux de l'en-tete commencent dans la meme colonne a moins de cela.
 const MEME_COLONNE: Mesure = mesure("2.5");
 
 /// Les rangs d'en-tetes du tableau : au plus a cet ecart vertical du « Libellé ».
-const ENTETE_HAUTEUR: Mesure = pt(12);
+const ENTETE_HAUTEUR: Mesure = Mesure::entier(12);
 
 /// Les mots d'un meme en-tete de colonne, sur un rang (« Part Employeur ») : au plus cet ecart.
-const ENTETE_MOTS: Mesure = pt(4);
+const ENTETE_MOTS: Mesure = Mesure::entier(4);
 
 /// Un en-tete precise celui du dessus (« Taux » sous « Part employeur ») si son milieu tombe a moins de cela de lui.
-const SOUS_ENTETE: Mesure = pt(25);
+const SOUS_ENTETE: Mesure = Mesure::entier(25);
 
 /// Un en-tete aligne a droite sous un en-tete de part (« Montant » sous « Part employeur ») en depasse le bord droit
 /// d'au plus cela.
-const GROUPE_MARGE: Mesure = pt(10);
+const GROUPE_MARGE: Mesure = Mesure::entier(10);
 
 /// Un nombre aligne a droite depasse le bord droit de l'en-tete de sa colonne d'au plus cela.
-const COLONNE_MARGE: Mesure = pt(20);
+const COLONNE_MARGE: Mesure = Mesure::entier(20);
 
 /// Le libelle d'un rang finit au moins a cette distance avant la premiere colonne.
-const LIBELLE_MARGE: Mesure = pt(15);
+const LIBELLE_MARGE: Mesure = Mesure::entier(15);
 
 // --------------------------------------------------------------------------------------------- le texte
 
@@ -174,11 +170,6 @@ fn sans_signe(t: &str) -> &str {
     }
 }
 
-/// La valeur de chiffres deja verifies (quatre au plus).
-fn chiffres(t: &str) -> u32 {
-    t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'))
-}
-
 fn ressemble_nombre(t: &str) -> bool {
     let t = sans_signe(t);
     t.starts_with(|c: char| c.is_ascii_digit()) && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')
@@ -192,15 +183,18 @@ pub fn lire_date(texte: &str) -> Option<Jour> {
     if p.len() != 3 || p.iter().any(|x| x.is_empty() || !x.chars().all(|c| c.is_ascii_digit())) {
         return None;
     }
+    // L'annee, le mois et le jour, chacun lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
     let an = match p[2].len() {
-        4 => chiffres(p[2]) as i32,
-        2 => 2000 + chiffres(p[2]) as i32,
+        4 => Zone::lue(p[2], format::AnneeEnChiffres).valeur()?.ok()?,
+        2 => Zone::lue(p[2], format::Aa).valeur()?,
         _ => return None,
     };
     if p[0].len() > 2 || p[1].len() > 2 {
         return None;
     }
-    Jour::nouveau(an, chiffres(p[1]), chiffres(p[0]))
+    let mois = Zone::lue(p[1], format::MoisEnChiffres).valeur()?;
+    Zone::lue(p[0], format::JourDuMois(an.mois(mois))).valeur()
 }
 
 /// LE NIR IMPRIME (`texte`, ses blancs retires, en capitales) : 13 caracteres, ou 15 avec la cle, alors verifiee ; ou ce
@@ -300,7 +294,7 @@ impl Page {
             .map(|i| {
                 let m = &mots[i];
                 (0..mots.len())
-                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - pt(1) && mots[j].x0 - m.x1 <= ECART_MOTS)
+                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - Mesure::entier(1) && mots[j].x0 - m.x1 <= ECART_MOTS)
                     .min_by(|&a, &b| mots[a].x0.cmp(&mots[b].x0))
             })
             .collect();
@@ -348,7 +342,7 @@ impl Page {
     fn dans_un_nombre(&self, m: &Mot, limite: Mesure) -> bool {
         self.nombres.iter().any(|n| {
             let b = n.boite;
-            b.x1 > limite && m.x0 >= b.x0 - mesure("0.01") && m.x1 <= b.x1 + mesure("0.01") && (m.cy() - b.cy()).abs() < pt(1)
+            b.x1 > limite && m.x0 >= b.x0 - mesure("0.01") && m.x1 <= b.x1 + mesure("0.01") && (m.cy() - b.cy()).abs() < Mesure::entier(1)
         })
     }
 
@@ -456,7 +450,12 @@ fn texte_de(mots: &[&Mot]) -> String {
 }
 
 fn milieu(rang: &[&Mot]) -> Mesure {
-    rang.iter().map(|m| m.cy()).sum::<Mesure>() / rang.len().max(1) as i64
+    let somme = rang.iter().map(|m| m.cy()).sum::<Mesure>();
+    // Un rang vide n'a pas de milieu : sa somme, nulle.
+    match somme.part_sur(rang.len()) {
+        Some(m) => m,
+        None => somme,
+    }
 }
 
 // --------------------------------------------------------------------------------------------- la table
@@ -1717,8 +1716,8 @@ impl<'a> Lecteur<'a> {
             let v = if m.sorte == Sorte::Nombre && m.section == Section::Pied {
                 let lu = self.montant_de(&rep, dernier);
                 let pres = match &lu {
-                    Some((_, b)) => self.inconnu_dans(apres, pt(0)).or_else(|| self.inconnu_dans(*b, ECART_MOTS)),
-                    None => self.inconnu_dans(apres, pt(0)),
+                    Some((_, b)) => self.inconnu_dans(apres, Mesure::entier(0)).or_else(|| self.inconnu_dans(*b, ECART_MOTS)),
+                    None => self.inconnu_dans(apres, Mesure::entier(0)),
                 };
                 if let Some(u) = pres {
                     return Err(self.refus_inconnu(u, &self.libelle_de(m.nom)));
@@ -1727,10 +1726,10 @@ impl<'a> Lecteur<'a> {
             } else {
                 let mots = self.valeur(k, &rep, dernier, m.rangs);
                 let pres = match mots.is_empty() {
-                    true => self.inconnu_dans(apres, pt(0)),
+                    true => self.inconnu_dans(apres, Mesure::entier(0)),
                     false => {
                         let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
-                        self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0))
+                        self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, Mesure::entier(0))
                     }
                 };
                 if let Some(u) = pres {
@@ -1784,7 +1783,7 @@ impl<'a> Lecteur<'a> {
             Some(&i) => p.mots[i].x0,
             None => rep.x0,
         };
-        let x_suite = x_valeur.min(rep.x0) - pt(3);
+        let x_suite = x_valeur.min(rep.x0) - Mesure::entier(3);
         let mut cy = rep.cy();
         let mut n = 1;
         while n < rangs && !mots.is_empty() {
@@ -1801,7 +1800,7 @@ impl<'a> Lecteur<'a> {
                 Some(i) => i,
                 None => h,
             };
-            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= pt(3) || (p.mots[premier].x0 - rep.x0).abs() <= pt(3);
+            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= Mesure::entier(3) || (p.mots[premier].x0 - rep.x0).abs() <= Mesure::entier(3);
             if self.debuts[premier].is_some() || !aligne {
                 break;
             }
@@ -1897,7 +1896,7 @@ impl<'a> Lecteur<'a> {
         }
         let fenetre = |n: &&Nombre| {
             let b = n.boite;
-            b.cy() > rep.cy() + pt(2) && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - pt(20) && b.cx() <= rep.x1 + pt(80)
+            b.cy() > rep.cy() + Mesure::entier(2) && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - Mesure::entier(20) && b.cx() <= rep.x1 + Mesure::entier(80)
         };
         let dist = |n: &Nombre| (n.boite.cx() - rep.cx()).hypot(n.boite.cy() - rep.cy());
         p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| (Valeur::Nombre(n.valeur), n.boite))
@@ -1916,7 +1915,7 @@ impl<'a> Lecteur<'a> {
                 continue;
             }
             let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
-            if let Some(u) = self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0)) {
+            if let Some(u) = self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, Mesure::entier(0)) {
                 return Err(self.refus_inconnu(u, "mode de règlement"));
             }
             let apres: Vec<&str> = textes.iter().skip_while(|x| canon(x) != "par").skip(1).copied().collect();
@@ -2393,7 +2392,7 @@ impl<'a> Lecteur<'a> {
                 None => *y + GRILLE_HAUTEUR,
             };
             let seuil = cols.iter().map(|c| c.boite.x0).fold(Mesure::MAX, Mesure::min) - LIBELLE_MARGE;
-            let dans = |cy: Mesure| cy > *y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { pt(0) };
+            let dans = |cy: Mesure| cy > *y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { Mesure::entier(0) };
             let libelles: Vec<&Mot> = p.mots.iter().filter(|m| dans(m.cy()) && m.x1 <= seuil && !p.dans_un_nombre(m, seuil)).collect();
             let rangs: Vec<(String, Mesure)> = en_rangs(libelles).iter().map(|r| (canon(&texte_de(r)), milieu(r))).collect();
             let nombres: Vec<&Nombre> = p.nombres.iter().filter(|n| dans(n.boite.cy()) && n.boite.x1 > seuil).collect();

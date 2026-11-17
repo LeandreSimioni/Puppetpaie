@@ -1235,11 +1235,19 @@ impl std::ops::Mul<Coefficient> for MoisDeSalaire {
 }
 
 /// Salaire de reference x mois de salaire = montant, AU CENTIME : la valeur exacte, arrondie une seule fois, la moitie
-/// loin de zero (la regle de `Montant::au_centime`).
+/// loin de zero (la regle de `Montant::au_centime`). Un montant au-dela de ce qu'un montant peut valoir (vingt-huit
+/// chiffres : un salaire de reference absurde) se refuse, en le disant.
 impl std::ops::Mul<MoisDeSalaire> for Montant {
-    type Output = Montant;
-    fn mul(self, m: MoisDeSalaire) -> Montant {
-        Montant((Fraction::du_decimal(self.0) * m.0).arrondi(2, Moitie::LoinDeZero))
+    type Output = crate::echec::R<Montant>;
+    fn mul(self, m: MoisDeSalaire) -> crate::echec::R<Montant> {
+        match (Fraction::du_decimal(self.0) * m.0).arrondi(2, Moitie::LoinDeZero) {
+            Some(d) => Ok(Montant(d)),
+            None => Err(crate::refus!(
+                "Le montant de {} € × {} mois de salaire dépasse ce qu'un montant peut valoir : le salaire de référence est à vérifier.",
+                crate::texte::euros(self),
+                m.ecrits_sans_zero()
+            )),
+        }
     }
 }
 
@@ -1253,7 +1261,7 @@ impl<'de> serde::Deserialize<'de> for MoisDeSalaire {
 /// UN RANG DANS UNE GRILLE DE `N`, numerotee de 1 a `N` (l'echelon d'un emploi de la CCNEAC, une grille de douze :
 /// `droit::fiche::EchelonCcneac`). Il se lit d'un nombre entier, ou d'un texte tape dans une saisie (`lu`, `tape`, la
 /// lecture d'un entier jamais negatif) ; hors de 1 a `N`, il se refuse en la phrase de sa notion (`hors`, qui recoit le
-/// nombre tel qu'il s'ecrit). Il s'ecrit en nombre ; son rang sert a trouver sa ligne dans la grille (`rang`).
+/// nombre tel qu'il s'ecrit). Il s'ecrit en nombre ; il prend sa ligne dans la grille (`ligne`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(transparent)]
 pub struct RangDansUneGrille<const N: u8>(u8);
@@ -1279,9 +1287,10 @@ impl<const N: u8> RangDansUneGrille<N> {
         RangDansUneGrille::de(lu::entier(d, attendu)?, hors).map_err(serde::de::Error::custom)
     }
 
-    /// Son rang, de 1 a `N` : sa ligne dans la grille, a partir de un.
-    pub fn rang(self) -> usize {
-        usize::from(self.0)
+    /// SA LIGNE DANS `grille`, la grille de ses `N` rangs dans leur ordre (le premier rang, la premiere ligne) ; `None`
+    /// quand la grille en compte moins que lui.
+    pub fn ligne<T>(self, grille: &[T]) -> Option<&T> {
+        grille.get(usize::from(self.0) - 1)
     }
 }
 

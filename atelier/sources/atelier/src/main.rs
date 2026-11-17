@@ -33,7 +33,7 @@ fn main() -> std::process::ExitCode {
     // l'atelier qui passent par son cadre.
     if let Some(nom) = args.first().map(socle::ligne::Argument::texte) {
         if let Some(code) = atelier::commandes::lancer(nom, &args[1..]) {
-            return std::process::ExitCode::from(code.clamp(0, 255) as u8);
+            return code;
         }
     }
     match moteur::commandes::ligne_de_commande(&args, atelier::commandes::commandes()) {

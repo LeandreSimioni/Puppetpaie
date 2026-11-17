@@ -81,7 +81,7 @@ pub enum Variante {
 /// plus, n'a pas de texte à citer de ce côté-là.
 pub struct Modification {
     /// Aucun pour une modification dite en clair (`phrase`).
-    pub numero: Option<i64>,
+    pub numero: Option<usize>,
     pub article: String,
     pub avant: Vec<String>,
     pub apres: Vec<String>,

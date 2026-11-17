@@ -1350,10 +1350,11 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
 }
 
 /// `moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]` : la fenetre dans le navigateur du poste.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     if let Err(e) = installation::fixer_le_code() {
         eprintln!("{}", e.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     compagnie::incidents::brancher_l_engagement();
     #[cfg(feature = "atelier")]
@@ -1361,14 +1362,14 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(reste) => reste,
         Err(e) => {
             eprintln!("{}", e.en_lignes());
-            return 2;
+            return ExitCode::from(2);
         }
     };
     let options = match lire_options(args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{}", e.en_lignes());
-            return 2;
+            return ExitCode::from(2);
         }
     };
     let veille = options.veille;
@@ -1383,11 +1384,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(Instance::Tenue(p)) => p,
         Ok(Instance::Devant) => {
             dire!("PuppetPaie est deja ouvert depuis cette installation : sa fenetre revient devant.");
-            return 0;
+            return ExitCode::SUCCESS;
         }
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}", e.phrase);
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     // La mise a jour se cherche au lancement, pour l'installation (`maj::chercher_en_fond`) ; elle s'appliquera au
@@ -1402,7 +1403,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(x) => x,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     // Les compagnies de l'installation se tiennent a jour en fond, des maintenant, sans rien ouvrir (`prechauffer`).
@@ -1424,7 +1425,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         match p.wait() {
             Ok(_ferme) => {
                 if debut.elapsed() > Duration::from_secs(5) {
-                    return 0;
+                    return ExitCode::SUCCESS;
                 }
             }
             // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
@@ -1439,7 +1440,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     loop {
         std::thread::sleep(Duration::from_secs(5));
         if f.silence() > Duration::from_secs(5 * 60) {
-            return 0;
+            return ExitCode::SUCCESS;
         }
     }
 }

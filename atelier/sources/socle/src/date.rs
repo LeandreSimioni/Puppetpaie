@@ -807,7 +807,10 @@ impl Anciennete {
 
     /// SES ANNEES DITES DANS UNE PHRASE, au dixieme, la moitie au pair, une decimale ecrite (`12.5`, `3.0`).
     pub fn annees_au_dixieme(self) -> String {
-        self.annees().arrondi(1, Moitie::AuPair).to_string()
+        match self.annees().arrondi(1, Moitie::AuPair) {
+            Some(a) => a.to_string(),
+            None => crate::fraction::deborde(),
+        }
     }
 
     /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
@@ -863,7 +866,10 @@ impl Anciennete {
     /// SES MOIS DITS DANS UNE PHRASE AU DIXIEME, la moitie au pair (« 7,3 ») : l'anciennete qu'un maintien de salaire
     /// compare a son minimum.
     pub fn mois_dits_au_dixieme(self) -> String {
-        crate::texte::nombre_dit(self.0.arrondi(1, Moitie::AuPair))
+        match self.0.arrondi(1, Moitie::AuPair) {
+            Some(m) => crate::texte::nombre_dit(m),
+            None => crate::fraction::deborde(),
+        }
     }
 
     /// Lue d'un nombre de mois, exactement tel qu'il est ecrit : sa porte.

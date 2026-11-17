@@ -882,7 +882,8 @@ const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lecture
 
 /// LA LIGNE DE COMMANDE DES SCENARIOS : `moteur-atelier scenario ...` (le banc) et l'exemple `vie_fictive` (sans le binaire
 /// de l'atelier). `rejouer`, `verifier`, `elaguer`. Rend le code de sortie : 1 a la moindre difference.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let mut options = OptionsRejeu::entier();
     let mut a: Vec<&str> = Vec::new();
     let mut it = args.iter();
@@ -893,7 +894,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                 Some(Ok(j)) => options.jusqu_au = Some(j),
                 _ => {
                     eprintln!("--jusqu-au attend un jour, AAAA-MM-JJ.\n{}", USAGE);
-                    return 2;
+                    return ExitCode::from(2);
                 }
             },
             t => a.push(t),
@@ -912,12 +913,12 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
                 Err(e) => {
                     eprintln!("{} : {}", inst.display(), e);
-                    return 2;
+                    return ExitCode::from(2);
                 }
             };
             if pleine {
                 eprintln!("{} n'est pas vide : le rejeu part d'une installation neuve.", inst.display());
-                return 2;
+                return ExitCode::from(2);
             }
             match rejouer(Path::new(sc), inst, &options) {
                 Ok(r) => {
@@ -937,53 +938,53 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                     for e in &r.ecarts {
                         dire!("ECART  {}", e);
                     }
-                    i32::from(!r.ecarts.is_empty())
+                    if r.ecarts.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
                 }
                 Err(m) => {
                     eprintln!("{}", m.en_lignes());
-                    1
+                    ExitCode::FAILURE
                 }
             }
         }
         ["verifier", sc, inst, travail] => match verifier(Path::new(sc), Path::new(inst), Path::new(travail)) {
             Ok(e) if e.is_empty() => {
                 dire!("Le rejeu refait la compagnie du banc, fichier pour fichier ({} s).", socle::temps::ecrit::secondes_au_dixieme_dites(debut.elapsed()));
-                0
+                ExitCode::SUCCESS
             }
             Ok(e) => {
                 for x in &e {
                     dire!("DIFFERENCE  {}", x);
                 }
-                1
+                ExitCode::FAILURE
             }
             Err(m) => {
                 eprintln!("{}", m.en_lignes());
-                1
+                ExitCode::FAILURE
             }
         },
         ["livrer", sc, dest] => match livrer(Path::new(sc), Path::new(dest), options.jusqu_au) {
             Ok(r) => {
                 dire!("{} : {} route(s) rejouee(s), {} geste(s) d'apres le jour laisse(s) a l'horloge, en {} s.", dest, r.routes_rejouees, r.laisses, socle::temps::ecrit::secondes_au_dixieme_dites(debut.elapsed()));
-                0
+                ExitCode::SUCCESS
             }
             Err(m) => {
                 eprintln!("{}", m.en_lignes());
-                1
+                ExitCode::FAILURE
             }
         },
         ["elaguer", sc, vers] => match elaguer(Path::new(sc), Path::new(vers)) {
             Ok((n, o)) => {
                 dire!("{} geste(s) garde(s), {} lecture(s) otee(s) : {}", n, o, vers);
-                0
+                ExitCode::SUCCESS
             }
             Err(m) => {
                 eprintln!("{}", m.en_lignes());
-                1
+                ExitCode::FAILURE
             }
         },
         _ => {
             eprintln!("{}", USAGE);
-            2
+            ExitCode::from(2)
         }
     }
 }

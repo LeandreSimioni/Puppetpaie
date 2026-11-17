@@ -106,11 +106,12 @@ fn rubrique() -> Regex {
 fn a_l_endroit(page: &PageRelevee, b: [Mesure; 4]) -> [Mesure; 4] {
     let (largeur, hauteur) = (page.largeur, page.hauteur);
     let [x0, y0, x1, y1] = b;
-    match page.rotation.rem_euclid(360) {
-        90 => [largeur - y1, x0, largeur - y0, x1],
-        180 => [largeur - x1, hauteur - y1, largeur - x0, hauteur - y0],
-        270 => [y0, hauteur - x1, y1, hauteur - x0],
-        _ => [x0, y0, x1, y1],
+    use fabrique_pdf::inspection::Rotation;
+    match page.rotation {
+        Rotation::QuartDeTour => [largeur - y1, x0, largeur - y0, x1],
+        Rotation::DemiTour => [largeur - x1, hauteur - y1, largeur - x0, hauteur - y0],
+        Rotation::TroisQuartsDeTour => [y0, hauteur - x1, y1, hauteur - x0],
+        Rotation::Aucune => [x0, y0, x1, y1],
     }
 }
 
@@ -124,11 +125,10 @@ fn regrouper(mut filets: Vec<(Mesure, Mesure)>) -> Vec<(Mesure, Mesure)> {
             _ => groupes.push(vec![(centre, longueur)]),
         }
     }
+    // Chaque groupe a au moins un filet : sa moyenne existe.
     groupes
         .iter()
-        .map(|g| {
-            (g.iter().map(|x| x.0).sum::<Mesure>() / g.len() as i64, g.iter().map(|x| x.1).sum::<Mesure>())
-        })
+        .filter_map(|g| Some((g.iter().map(|x| x.0).sum::<Mesure>().part_sur(g.len())?, g.iter().map(|x| x.1).sum::<Mesure>())))
         .collect()
 }
 

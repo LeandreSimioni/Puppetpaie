@@ -712,12 +712,13 @@ pub fn catalogue() -> Vec<Fiche> {
 
 /// `moteur routes [NOM] [--avance] [--json]` : le catalogue en texte (le chemin simple ; toutes avec `--avance`), en JSON
 /// (toutes : chaque fiche porte `avance`), ou la fiche entiere d'une route.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args = socle::ligne::textes(args);
     // Une option que `routes` ne prend pas se refuse, comme a `moteur route` (code 2) : sa valeur se lirait comme un nom.
     if let Some(o) = args.iter().find(|a| a.starts_with("--") && !["--json", "--avance"].contains(&a.as_str())) {
         eprintln!("option inconnue : {} (moteur routes [NOM] [--avance] [--json] ; --racine et --date sont de moteur route)", o);
-        return 2;
+        return ExitCode::from(2);
     }
     let json = args.iter().any(|a| a == "--json");
     let avance = args.iter().any(|a| a == "--avance");
@@ -726,27 +727,27 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     if let Some(nom) = nom {
         let Some(f) = Route::lire(nom).and_then(|r| dans(&tout, r)) else {
             eprintln!("route inconnue : {} (moteur routes --avance les dit toutes)", nom);
-            return 2;
+            return ExitCode::from(2);
         };
         let ecrite = if json { f.ecrite().map(|e| format!("{}\n", socle::ecriture::json_en_ligne(&e))) } else { f.en_texte() };
         match ecrite {
             Ok(t) => dire_sans_ligne!("{}", t),
             Err(e) => {
                 eprintln!("{}", e.phrase);
-                return 1;
+                return ExitCode::FAILURE;
             }
         }
-        return 0;
+        return ExitCode::SUCCESS;
     }
     if json {
         return match catalogue().iter().map(Fiche::ecrite).collect::<R<Vec<_>>>() {
             Ok(routes) => {
                 dire!("{}", socle::ecriture::json_en_ligne(&CatalogueEcrit { routes }));
-                0
+                ExitCode::SUCCESS
             }
             Err(e) => {
                 eprintln!("{}", e.phrase);
-                1
+                ExitCode::FAILURE
             }
         };
     }
@@ -760,5 +761,5 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     if cachees > 0 {
         dire!("\n{} routes avancées ne sont pas montrées : moteur routes --avance", cachees);
     }
-    0
+    ExitCode::SUCCESS
 }

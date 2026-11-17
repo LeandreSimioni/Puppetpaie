@@ -325,15 +325,7 @@ pub fn ouverte(inst: &Path, plage: Plage) -> R<bool> {
 /// enfant la gardait alors ouverte apres la mort de la fenetre (port tenu par un PID mort).
 #[cfg(windows)]
 pub fn sans_heritage(l: &TcpListener) {
-    use std::os::windows::io::AsRawSocket;
-    extern "system" {
-        fn SetHandleInformation(objet: isize, masque: u32, drapeaux: u32) -> i32;
-    }
-    const HANDLE_FLAG_INHERIT: u32 = 1;
-    // SAFETY : la prise est vivante (empruntee) ; on ne change que son drapeau d'heritage.
-    unsafe {
-        SetHandleInformation(l.as_raw_socket() as isize, HANDLE_FLAG_INHERIT, 0);
-    }
+    socle::systeme::sans_heritage(l);
 }
 
 /// Hors de Windows, la prise que la bibliotheque standard cree n'est pas heritable, et aucun fournisseur ne s'intercale.

@@ -1962,7 +1962,7 @@ mod tests_rupture {
     #[test]
     fn un_contrat_rompu_n_a_pas_d_avenant() {
         let jours = |n: usize| ["2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08"][..n].iter().map(|j| format!(r#""{}""#, j)).collect::<Vec<_>>().join(", ");
-        let ligne = |n: usize, taux: i64| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {{"cachets": {}}}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
+        let ligne = |n: usize, taux: &str| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {{"cachets": {}}}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
         let carte = |texte: String| crate::saisie::Carte {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),
@@ -1971,8 +1971,8 @@ mod tests_rupture {
             ..Default::default()
         };
         let saisie = |carte: crate::saisie::Carte| stock::Saisie { carte, ..Default::default() };
-        let partie = saisie(carte(ligne(5, 150)));
-        let rompu = |taux: i64| {
+        let partie = saisie(carte(ligne(5, "150")));
+        let rompu = |taux: &str| {
             saisie(crate::saisie::Carte {
                 debut: Jour::nouveau(2026, 5, 4),
                 fin: Jour::nouveau(2026, 5, 6),
@@ -1981,9 +1981,9 @@ mod tests_rupture {
                 ..carte(ligne(3, taux))
             })
         };
-        assert!(seule_la_rupture(&partie, &rompu(150)));
-        assert!(!seule_la_rupture(&partie, &rompu(180)), "un taux change avec la rupture se refait signer");
-        let raccourci = saisie(carte(ligne(3, 150)));
+        assert!(seule_la_rupture(&partie, &rompu("150")));
+        assert!(!seule_la_rupture(&partie, &rompu("180")), "un taux change avec la rupture se refait signer");
+        let raccourci = saisie(carte(ligne(3, "150")));
         assert!(!seule_la_rupture(&partie, &raccourci), "sans motif de rupture, des jours retires sont un avenant");
     }
 }

@@ -232,18 +232,19 @@ fn groupe<'a>(m: &Regex, t: &'a str) -> Option<&'a str> {
 // ------------------------------------------------------------------ la ligne de commande
 
 /// `moteur-atelier releve-codes ...` : rend le code de sortie.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     }
     let racine = Path::new(&args[1]);
     let aujourdhui = match droit::contexte::aujourdhui_sans_note() {
         Ok(j) => j,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     let r = match args[0].as_str() {
@@ -252,14 +253,14 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         "comparer" => comparer(racine, &dila::Reseau, &aujourdhui),
         v => {
             eprintln!("Verbe inconnu : {}\n\n{}", v, USAGE);
-            return 2;
+            return ExitCode::from(2);
         }
     };
     match r {
-        Ok(()) => 0,
+        Ok(()) => ExitCode::SUCCESS,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }

@@ -236,7 +236,9 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
         let m = e.echec.phrase.to_lowercase();
         m.contains("rate limit") || m.contains("ratelimitexceeded")
     };
-    matches!(e.statut, Some(500 | 502 | 503 | 504 | 429)) || (e.statut == Some(403) && limite())
+    use ureq::http::StatusCode;
+    let passagers = [StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::GATEWAY_TIMEOUT, StatusCode::TOO_MANY_REQUESTS];
+    e.statut.is_some_and(|s| passagers.contains(&s)) || (e.statut == Some(StatusCode::FORBIDDEN) && limite())
 }
 
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
@@ -246,7 +248,7 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
 pub struct ErreurGoogle {
     pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
-    pub statut: Option<u16>,
+    pub statut: Option<ureq::http::StatusCode>,
 }
 
 impl ErreurGoogle {
@@ -404,7 +406,7 @@ impl Client {
         let mut tentative = 0;
         loop {
             let r = match self.appel_une_fois(url, donnees, content_type, methode) {
-                Err(e) if e.statut == Some(401) => {
+                Err(e) if e.statut == Some(ureq::http::StatusCode::UNAUTHORIZED) => {
                     self.acces = None;
                     self.appel_une_fois(url, donnees, content_type, methode)
                 }

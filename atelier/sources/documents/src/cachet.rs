@@ -104,11 +104,11 @@ pub fn lignes(ent: &droit::fiche::ChampsEntreprise) -> Lignes {
 /// pour du texte court, et le SVG n'a pas d'unite de mesure a nous rendre.
 /// Mieux vaut un tampon un rien plus petit qu'un tampon qui deborde.
 fn corps_qui_tient(texte: &str, large: Mesure, depart: Mesure, etroit: Mesure) -> Mesure {
-    let n = texte.chars().count() as i64;
+    let n = texte.chars().count();
     if n == 0 {
         return depart;
     }
-    let tient = match large.sur(etroit * n) {
+    let tient = match large.sur(n * etroit) {
         Some(t) => t,
         None => unreachable!("un caractere a une largeur"),
     };

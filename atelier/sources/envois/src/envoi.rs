@@ -1115,22 +1115,21 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
         }
     }
     let citer = |c: u8| format!("={:02X}", c).into_bytes();
-    let max1 = max as i64 - 1;
     let mut codees: Vec<Vec<u8>> = Vec::new();
     for ligne in lignes_octets(&t) {
-        let long = ligne.len() as i64;
-        let mut debut: i64 = 0;
-        let derniere = long - 1 - max as i64;
-        while debut <= derniere {
-            let fin = debut + max1;
-            if ligne[(fin - 2) as usize] == b'=' {
-                codees.push(ligne[debut as usize..(fin - 1) as usize].to_vec());
+        let long = ligne.len();
+        let mut debut: usize = 0;
+        // Tant qu'il reste plus de `max` octets apres `debut`.
+        while debut + max < long {
+            let fin = debut + max - 1;
+            if ligne[fin - 2] == b'=' {
+                codees.push(ligne[debut..fin - 1].to_vec());
                 debut = fin - 2;
-            } else if ligne[(fin - 1) as usize] == b'=' {
-                codees.push(ligne[debut as usize..fin as usize].to_vec());
+            } else if ligne[fin - 1] == b'=' {
+                codees.push(ligne[debut..fin].to_vec());
                 debut = fin - 1;
             } else {
-                let mut l = ligne[debut as usize..fin as usize].to_vec();
+                let mut l = ligne[debut..fin].to_vec();
                 l.push(b'=');
                 codees.push(l);
                 debut = fin;
@@ -1138,7 +1137,8 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
         }
         match ligne.last() {
             Some(&dernier) if dernier == b' ' || dernier == b'\t' => {
-                let place = debut - derniere;
+                // La place laissee a la fin de la derniere ligne (au moins un octet : `debut + max >= long`).
+                let place = debut + max + 1 - long;
                 let q: Vec<u8> = if place >= 3 {
                     citer(dernier)
                 } else if place == 2 {
@@ -1148,12 +1148,12 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
                     v.extend(citer(dernier));
                     v
                 };
-                let milieu = if (debut as usize) < ligne.len() - 1 { &ligne[debut as usize..ligne.len() - 1] } else { &[][..] };
+                let milieu = if debut < ligne.len() - 1 { &ligne[debut..ligne.len() - 1] } else { &[][..] };
                 let mut l = milieu.to_vec();
                 l.extend(q);
                 codees.push(l);
             }
-            _ => codees.push(ligne[(debut as usize).min(ligne.len())..].to_vec()),
+            _ => codees.push(ligne[debut.min(ligne.len())..].to_vec()),
         }
     }
     if matches!(t.last(), Some(b'\r') | Some(b'\n')) {
@@ -1422,7 +1422,7 @@ fn mot_code(s: &[char]) -> String {
     let q = |b: u8| if b.is_ascii_alphanumeric() || b"-!*+/".contains(&b) { 1 } else if b == b' ' { 1 } else { 3 };
     let longueur_q: usize = octets.iter().map(|b| q(*b)).sum();
     let longueur_b = octets.len().div_ceil(3) * 4;
-    if (longueur_q as i64) - (longueur_b as i64) < 5 {
+    if longueur_q < longueur_b + 5 {
         let mut c = String::new();
         for &b in octets {
             if b == b' ' {
@@ -1575,17 +1575,18 @@ fn plier_en_mot_code(
     let chrome = "utf-8".len() + 7;
     let mut reste: Vec<char> = a_coder.chars().collect();
     while !reste.is_empty() {
-        let place = MAXLEN as i64 - lignes.last().unwrap().len() as i64;
-        let place_texte = place - chrome as i64;
-        if place_texte <= 0 {
+        let occupee = lignes.last().unwrap().len();
+        // La place du texte, l'enveloppe de son mot code (`=?utf-8?q?…?=`) otee ; aucune : une ligne neuve.
+        if occupee + chrome >= MAXLEN {
             let v = voler_blanc(lignes);
             lignes.push(if v.is_empty() { " ".to_string() } else { v });
             nouveau = lignes.last().unwrap().len();
             continue;
         }
-        let mut n = (place_texte as usize).min(reste.len());
+        let place = MAXLEN - occupee;
+        let mut n = (place - chrome).min(reste.len());
         let mut mot = mot_code(&reste[..n]);
-        while mot.len() as i64 - place > 0 && n > 0 {
+        while mot.len() > place && n > 0 {
             n -= 1;
             mot = mot_code(&reste[..n]);
         }

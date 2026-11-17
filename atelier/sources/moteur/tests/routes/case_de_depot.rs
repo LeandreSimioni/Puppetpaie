@@ -16,7 +16,7 @@ fn la_dpae_deposee_emporte_la_demande_de_taux() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-20";
-    reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
+    reussi(&valider_la_carte(&c, le_mois("2026-11"), "FULLER", jour));
 
     reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), jour));
 
@@ -39,7 +39,7 @@ fn une_dpae_a_qui_il_manque_une_case_refuse_au_lieu_de_reprendre_la_partie() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-20";
-    reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
+    reussi(&valider_la_carte(&c, le_mois("2026-11"), "FULLER", jour));
     reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "mode": "test"}), jour));
     let lignes = || -> usize {
         let j = crate::outils::journal(&c);

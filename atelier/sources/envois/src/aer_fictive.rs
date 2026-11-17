@@ -138,12 +138,11 @@ fn colonne(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &
 
 // ------------------------------------------------------------------ le dessin
 
-// Le gabarit se releve en points entiers (`i64`) ; un corps, un trait, une position au demi-point pres sont des
-// `Mesure`.
+// Le gabarit se releve en points : chaque position, chaque corps, chaque trait est une `Mesure`, ecrite par son texte.
 
-/// `n` points.
-fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
+/// Un rectangle `[x0, y0, x1, y1]`, en points.
+fn boite(r: [&str; 4]) -> [Mesure; 4] {
+    r.map(m)
 }
 
 /// Un texte pose en Helvetica, aligne par rapport a `x`.
@@ -161,8 +160,8 @@ fn texte_aligne(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, coule
     })
 }
 
-fn texte(x: i64, y: i64, t: &str, taille: Mesure, gras: bool, couleur: &str) -> Bloc {
-    texte_aligne(pt(x), pt(y), t, taille, gras, couleur, Alignement::Gauche)
+fn texte(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, couleur: &str) -> Bloc {
+    texte_aligne(x, y, t, taille, gras, couleur, Alignement::Gauche)
 }
 
 fn centre(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, couleur: &str) -> Bloc {
@@ -173,36 +172,37 @@ fn trait_en(x1: Mesure, y1: Mesure, x2: Mesure, y2: Mesure, ep: Mesure, couleur:
     Bloc::Trait(Trait { x1, y1, x2, y2, epaisseur: ep, couleur: couleur.to_string() })
 }
 
-fn trait_(x1: i64, y1: i64, x2: i64, y2: i64, ep: Mesure, couleur: &str) -> Bloc {
-    trait_en(pt(x1), pt(y1), pt(x2), pt(y2), ep, couleur)
-}
-
-fn case(b: &mut Vec<Bloc>, r: [i64; 4]) {
+fn case(b: &mut Vec<Bloc>, r: [Mesure; 4]) {
     let [x0, y0, x1, y1] = r;
     for (a, bb, c, d) in [(x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)] {
-        b.push(trait_(a, bb, c, d, m("0.4"), GRIS));
+        b.push(trait_en(a, bb, c, d, m("0.4"), GRIS));
     }
 }
 
-/// Un cadre numerote : le numero dans un carre noir, le titre en capitales, un filet.
-fn cadre(b: &mut Vec<Bloc>, y: i64, n: &str, titre: &str) {
-    b.push(trait_(30, y - 4, 48, y - 4, pt(16), NOIR));
-    b.push(centre(pt(39), pt(y), n, pt(10), true, BLANC));
-    b.push(texte(56, y, titre, pt(10), true, NOIR));
-    b.push(trait_(30, y + 6, 565, y + 6, m("0.6"), NOIR));
+/// Un filet sur toute la largeur du formulaire (de 30 a 565 points), a la hauteur `y`.
+fn filet(y: Mesure, ep: Mesure, couleur: &str) -> Bloc {
+    trait_en(m("30"), y, m("565"), y, ep, couleur)
 }
 
-fn etiquette(b: &mut Vec<Bloc>, x: i64, y: i64, t: &str) {
+/// Un cadre numerote : le numero dans un carre noir, le titre en capitales, un filet.
+fn cadre(b: &mut Vec<Bloc>, y: Mesure, n: &str, titre: &str) {
+    b.push(trait_en(m("30"), y - m("4"), m("48"), y - m("4"), m("16"), NOIR));
+    b.push(centre(m("39"), y, n, m("10"), true, BLANC));
+    b.push(texte(m("56"), y, titre, m("10"), true, NOIR));
+    b.push(filet(y + m("6"), m("0.6"), NOIR));
+}
+
+fn etiquette(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, t: &str) {
     b.push(texte(x, y, t, m("7.5"), false, NOIR));
 }
 
 /// La mention de la compagnie fictive, en tete et en pied de chaque page.
 fn mention(b: &mut Vec<Bloc>, page: usize) {
-    b.push(trait_(30, 48, 565, 48, pt(18), ROUGE));
-    b.push(centre(m("297.6"), pt(51), "COMPAGNIE FICTIVE — DOCUMENT DE DÉMONSTRATION : aucun organisme ne l'a émis, il n'a aucune valeur", pt(8), true, BLANC));
-    b.push(trait_(30, 818, 565, 818, m("0.5"), ROUGE));
-    b.push(texte(30, 829, "Compagnie fictive : imitation de l'attestation que France Travail édite d'après la DSN, pour la démonstration du logiciel.", m("6.5"), false, ROUGE));
-    b.push(texte_aligne(pt(565), pt(829), &format!("{}/3", page), pt(7), false, NOIR, Alignement::Droite));
+    b.push(filet(m("48"), m("18"), ROUGE));
+    b.push(centre(m("297.6"), m("51"), "COMPAGNIE FICTIVE — DOCUMENT DE DÉMONSTRATION : aucun organisme ne l'a émis, il n'a aucune valeur", m("8"), true, BLANC));
+    b.push(filet(m("818"), m("0.5"), ROUGE));
+    b.push(texte(m("30"), m("829"), "Compagnie fictive : imitation de l'attestation que France Travail édite d'après la DSN, pour la démonstration du logiciel.", m("6.5"), false, ROUGE));
+    b.push(texte_aligne(m("565"), m("829"), &format!("{}/3", page), m("7"), false, NOIR, Alignement::Droite));
 }
 
 /// Les champs ajoutes au dessin.
@@ -211,12 +211,12 @@ struct Champs(Vec<ChampAjoute>);
 
 impl Champs {
     /// Imprime (lecture seule) ; une valeur vide n'ecrit pas de champ (le formulaire la laisse a blanc).
-    fn imprime(&mut self, page: usize, nom: &str, r: [i64; 4], v: &str, taille: Mesure, alignement: Alignement) {
+    fn imprime(&mut self, page: usize, nom: &str, r: [Mesure; 4], v: &str, taille: Mesure, alignement: Alignement) {
         if !v.trim().is_empty() {
             self.0.push(ChampAjoute {
                 nom: nom.to_string(),
                 page,
-                rect: r.map(pt),
+                rect: r,
                 valeur: Some(v.to_string()),
                 lecture_seule: true,
                 taille: Some(taille),
@@ -225,14 +225,14 @@ impl Champs {
         }
     }
     /// Une case de la fiche, quand elle est dite.
-    fn imprime_dite(&mut self, page: usize, nom: &str, r: [i64; 4], v: Option<&str>, taille: Mesure, alignement: Alignement) {
+    fn imprime_dite(&mut self, page: usize, nom: &str, r: [Mesure; 4], v: Option<&str>, taille: Mesure, alignement: Alignement) {
         if let Some(v) = v {
             self.imprime(page, nom, r, v, taille, alignement);
         }
     }
     /// A remplir par l'employeur (le cadre 5), a gauche.
-    fn vide(&mut self, nom: &str, r: [i64; 4]) {
-        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r.map(pt), valeur: None, lecture_seule: false, taille: Some(Mesure::entier(9)), alignement: Alignement::Gauche });
+    fn vide(&mut self, nom: &str, r: [Mesure; 4]) {
+        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r, valeur: None, lecture_seule: false, taille: Some(Mesure::entier(9)), alignement: Alignement::Gauche });
     }
 }
 
@@ -268,24 +268,24 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         Some(nir) => format!("{}, {} {}", nir, nom, prenoms),
         None => format!("{} {}", nom, prenoms),
     };
-    f.imprime(1, "ENTETE_PROVENANCE", [7, 5, 588, 16], &provenance, m("6.5"), Alignement::Centre);
-    f.imprime(1, "ENTETE_SALARIE", [88, 16, 571, 26], &qui, m("6.5"), Alignement::Centre);
+    f.imprime(1, "ENTETE_PROVENANCE", boite(["7", "5", "588", "16"]), &provenance, m("6.5"), Alignement::Centre);
+    f.imprime(1, "ENTETE_SALARIE", boite(["88", "16", "571", "26"]), &qui, m("6.5"), Alignement::Centre);
     // Un nom de champ n'est porte qu'une fois : les pages 2 et 3 redisent l'en-tete en texte.
     for b in [&mut p2, &mut p3] {
-        b.push(centre(m("297.6"), pt(13), &provenance, m("6.5"), false, NOIR));
+        b.push(centre(m("297.6"), m("13"), &provenance, m("6.5"), false, NOIR));
         b.push(centre(m("297.6"), m("23.5"), &qui, m("6.5"), false, NOIR));
     }
-    f.imprime(1, "ENTETE_MENTION_LOGICIEL", [88, 26, 571, 37], "Logiciel utilisé PUPPETPAIE - reconstituée à partir des déclarations DSN de la compagnie fictive", m("6.5"), Alignement::Centre);
+    f.imprime(1, "ENTETE_MENTION_LOGICIEL", boite(["88", "26", "571", "37"]), "Logiciel utilisé PUPPETPAIE - reconstituée à partir des déclarations DSN de la compagnie fictive", m("6.5"), Alignement::Centre);
     for (b, n) in [(&mut p1, 1), (&mut p2, 2), (&mut p3, 3)] {
         mention(b, n);
     }
 
     // Page 1 : le titre, a qui elle est destinee, les cadres 1 a 3.
-    p1.push(texte(55, 92, "Attestation employeur pour les activités relevant des", pt(14), true, NOIR));
-    p1.push(texte(55, 109, "annexes 8 et 10 au règlement d'assurance chômage", pt(14), true, NOIR));
-    p1.push(texte(55, 123, "Issue du processus de déclaration prévue par l'article R.133-14 II 2° du code de la sécurité sociale", pt(8), false, NOIR));
-    p1.push(texte(55, 148, "À SIGNER PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ", pt(9), true, NOIR));
-    p1.push(texte(55, 159, "Articles L. 5422-14 et R. 5422-6 du code du travail", m("7.5"), false, NOIR));
+    p1.push(texte(m("55"), m("92"), "Attestation employeur pour les activités relevant des", m("14"), true, NOIR));
+    p1.push(texte(m("55"), m("109"), "annexes 8 et 10 au règlement d'assurance chômage", m("14"), true, NOIR));
+    p1.push(texte(m("55"), m("123"), "Issue du processus de déclaration prévue par l'article R.133-14 II 2° du code de la sécurité sociale", m("8"), false, NOIR));
+    p1.push(texte(m("55"), m("148"), "À SIGNER PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ", m("9"), true, NOIR));
+    p1.push(texte(m("55"), m("159"), "Articles L. 5422-14 et R. 5422-6 du code du travail", m("7.5"), false, NOIR));
     for (i, l) in [
         "Cette attestation est destinée au salarié ayant conclu",
         "plusieurs contrats à durée déterminée d'usage d'une durée",
@@ -298,7 +298,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     .iter()
     .enumerate()
     {
-        p1.push(texte(55, 180 + 10 * i as i64, l, m("7.5"), false, NOIR));
+        p1.push(texte(m("55"), m("180") + i * m("10"), l, m("7.5"), false, NOIR));
     }
     for (i, l) in [
         "ATTENTION, cette attestation doit être transmise par le salarié",
@@ -309,176 +309,168 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     .iter()
     .enumerate()
     {
-        p1.push(texte(320, 180 + 10 * i as i64, l, m("7.5"), i == 0, NOIR));
+        p1.push(texte(m("320"), m("180") + i * m("10"), l, m("7.5"), i == 0, NOIR));
     }
 
-    cadre(&mut p1, 315, "1", "EMPLOYEUR");
-    etiquette(&mut p1, 30, 343, "N° SIRET");
-    f.imprime_dite(1, "EMP_SIRET", [75, 334, 253, 346], ent.siret.portee(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 300, 343, "Code APE/NAF");
-    f.imprime_dite(1, "EMP_APE", [368, 333, 432, 345], ent.naf.portee(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 470, 343, "N° IDCC");
-    f.imprime_dite(1, "EMP_IDCC", [515, 333, 566, 345], idcc.map(|i| &**i), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 362, "Nom ou raison sociale");
-    f.imprime_dite(1, "ENSEIGNE", [146, 352, 567, 365], ent.raison_sociale.portee(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 380, "Adresse");
+    cadre(&mut p1, m("315"), "1", "EMPLOYEUR");
+    etiquette(&mut p1, m("30"), m("343"), "N° SIRET");
+    f.imprime_dite(1, "EMP_SIRET", boite(["75", "334", "253", "346"]), ent.siret.portee(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("300"), m("343"), "Code APE/NAF");
+    f.imprime_dite(1, "EMP_APE", boite(["368", "333", "432", "345"]), ent.naf.portee(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("470"), m("343"), "N° IDCC");
+    f.imprime_dite(1, "EMP_IDCC", boite(["515", "333", "566", "345"]), idcc.map(|i| &**i), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("362"), "Nom ou raison sociale");
+    f.imprime_dite(1, "ENSEIGNE", boite(["146", "352", "567", "365"]), ent.raison_sociale.portee(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("380"), "Adresse");
     let adresse = ent.adresse.portee().map(|a| droit::fiche::avec_complement(a.to_string(), ent.complement_adresse.remplie()));
-    f.imprime_dite(1, "ADR_EMP_CONCATENEE", [74, 370, 567, 383], adresse.as_deref(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 397, "Code postal");
-    f.imprime_dite(1, "ADR_EMP_CP", [90, 388, 155, 399], ent.code_postal.portee(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 165, 397, "Commune");
-    f.imprime_dite(1, "ADR_EMP_LOCALITE", [224, 387, 567, 399], ent.commune.portee(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 425, "Êtes-vous titulaire d'une licence spectacle ou d'un n° de récépissé de déclaration d'entrepreneur");
-    etiquette(&mut p1, 30, 435, "de spectacles vivants valant licence ?");
+    f.imprime_dite(1, "ADR_EMP_CONCATENEE", boite(["74", "370", "567", "383"]), adresse.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("397"), "Code postal");
+    f.imprime_dite(1, "ADR_EMP_CP", boite(["90", "388", "155", "399"]), ent.code_postal.portee(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("165"), m("397"), "Commune");
+    f.imprime_dite(1, "ADR_EMP_LOCALITE", boite(["224", "387", "567", "399"]), ent.commune.portee(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("425"), "Êtes-vous titulaire d'une licence spectacle ou d'un n° de récépissé de déclaration d'entrepreneur");
+    etiquette(&mut p1, m("30"), m("435"), "de spectacles vivants valant licence ?");
     let licence = premier_contrat.and_then(|c| c.licence.as_deref()).filter(|l| !l.is_empty());
-    etiquette(&mut p1, 200, 446, if licence.is_none() { "Non" } else { "Oui, n°" });
-    f.imprime_dite(1, "EMP_LICENCE_1", [236, 437, 494, 448], licence, m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 485, "Numéro d'affiliation à la caisse de congé spectacle :");
+    etiquette(&mut p1, m("200"), m("446"), if licence.is_none() { "Non" } else { "Oui, n°" });
+    f.imprime_dite(1, "EMP_LICENCE_1", boite(["236", "437", "494", "448"]), licence, m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("485"), "Numéro d'affiliation à la caisse de congé spectacle :");
     let caisse = premier_contrat.and_then(|c| c.caisse_conges.as_deref()).filter(|c| !c.is_empty());
-    etiquette(&mut p1, 30, 503, if caisse.is_none() { "Non" } else { "Oui, N°" });
-    f.imprime_dite(1, "EMP_CAISSE_CP_ART_CODE", [78, 493, 331, 505], caisse, m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("503"), if caisse.is_none() { "Non" } else { "Oui, N°" });
+    f.imprime_dite(1, "EMP_CAISSE_CP_ART_CODE", boite(["78", "493", "331", "505"]), caisse, m("8.5"), Alignement::Gauche);
 
-    cadre(&mut p1, 548, "2", "SALARIÉ");
-    etiquette(&mut p1, 30, 590, "Nom de famille (nom de naissance)");
-    f.imprime(1, "SALARIE_NOM_FAMILLE", [209, 580, 563, 594], nom, pt(9), Alignement::Gauche);
-    etiquette(&mut p1, 30, 605, "Nom d'usage (nom d'époux (se))");
-    etiquette(&mut p1, 30, 624, "Prénom(s)");
-    f.imprime(1, "SALARIE_PRENOMS", [86, 614, 563, 627], prenoms, pt(9), Alignement::Gauche);
-    etiquette(&mut p1, 30, 639, "Adresse");
-    f.imprime_dite(1, "SALARIE_ADRESSE", [73, 630, 563, 642], ind.adresse.as_deref(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 652, "Code postal");
-    f.imprime_dite(1, "SALARIE_CP", [93, 643, 158, 655], ind.code_postal.as_deref(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 170, 652, "Commune");
-    f.imprime_dite(1, "SALARIE_ADR_LOCALITE", [237, 643, 563, 655], ind.commune.as_deref(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 667, "NIR (n° de Sécurité sociale)");
-    f.imprime_dite(1, "SALARIE_NIR", [165, 658, 331, 670], ind.identite.nir.as_deref(), m("8.5"), Alignement::Gauche);
-    etiquette(&mut p1, 30, 681, "Date de naissance");
+    cadre(&mut p1, m("548"), "2", "SALARIÉ");
+    etiquette(&mut p1, m("30"), m("590"), "Nom de famille (nom de naissance)");
+    f.imprime(1, "SALARIE_NOM_FAMILLE", boite(["209", "580", "563", "594"]), nom, m("9"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("605"), "Nom d'usage (nom d'époux (se))");
+    etiquette(&mut p1, m("30"), m("624"), "Prénom(s)");
+    f.imprime(1, "SALARIE_PRENOMS", boite(["86", "614", "563", "627"]), prenoms, m("9"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("639"), "Adresse");
+    f.imprime_dite(1, "SALARIE_ADRESSE", boite(["73", "630", "563", "642"]), ind.adresse.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("652"), "Code postal");
+    f.imprime_dite(1, "SALARIE_CP", boite(["93", "643", "158", "655"]), ind.code_postal.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("170"), m("652"), "Commune");
+    f.imprime_dite(1, "SALARIE_ADR_LOCALITE", boite(["237", "643", "563", "655"]), ind.commune.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("667"), "NIR (n° de Sécurité sociale)");
+    f.imprime_dite(1, "SALARIE_NIR", boite(["165", "658", "331", "670"]), ind.identite.nir.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("30"), m("681"), "Date de naissance");
     // AAAA-MM-JJ (`NaissanceDeclaree::iso`), le jour ou le mois tels que declares s'il est inconnu.
     if let Some(n) = ind.identite.naissance.map(|n| n.iso()) {
-        f.imprime(1, "SALARIE_DT_NAISSANCE_J", [123, 672, 149, 683], &n[8..], m("8.5"), Alignement::Centre);
-        f.imprime(1, "SALARIE_DT_NAISSANCE_M", [155, 672, 181, 683], &n[5..7], m("8.5"), Alignement::Centre);
-        f.imprime(1, "SALARIE_DT_NAISSANCE_A", [186, 672, 238, 683], &n[..4], m("8.5"), Alignement::Centre);
+        f.imprime(1, "SALARIE_DT_NAISSANCE_J", boite(["123", "672", "149", "683"]), &n[8..], m("8.5"), Alignement::Centre);
+        f.imprime(1, "SALARIE_DT_NAISSANCE_M", boite(["155", "672", "181", "683"]), &n[5..7], m("8.5"), Alignement::Centre);
+        f.imprime(1, "SALARIE_DT_NAISSANCE_A", boite(["186", "672", "238", "683"]), &n[..4], m("8.5"), Alignement::Centre);
     }
-    etiquette(&mut p1, 280, 681, "Lieu de naissance");
-    f.imprime_dite(1, "SALARIE_LIEU_NAISSANCE", [361, 672, 561, 684], ind.lieu_naissance.as_deref(), m("8.5"), Alignement::Gauche);
+    etiquette(&mut p1, m("280"), m("681"), "Lieu de naissance");
+    f.imprime_dite(1, "SALARIE_LIEU_NAISSANCE", boite(["361", "672", "561", "684"]), ind.lieu_naissance.as_deref(), m("8.5"), Alignement::Gauche);
 
-    cadre(&mut p1, 745, "3", "CONTRAT DE TRAVAIL");
-    etiquette(&mut p1, 30, 773, "Emploi occupé");
-    f.imprime_dite(1, "CON_LIB_EMPLOI", [109, 764, 562, 776], emploi, m("8.5"), Alignement::Gauche);
+    cadre(&mut p1, m("745"), "3", "CONTRAT DE TRAVAIL");
+    etiquette(&mut p1, m("30"), m("773"), "Emploi occupé");
+    f.imprime_dite(1, "CON_LIB_EMPLOI", boite(["109", "764", "562", "776"]), emploi, m("8.5"), Alignement::Gauche);
     let motif_lu = if motif == droit::natures::MotifDeRupture::FinDeCdd { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
-    etiquette(&mut p1, 30, 792, &format!("Motif de la rupture : {}", motif_lu));
+    etiquette(&mut p1, m("30"), m("792"), &format!("Motif de la rupture : {}", motif_lu));
 
     // Page 2 : le cadre 4, une colonne par periode.
-    cadre(&mut p2, 70, "4", "PRESTATIONS DE TRAVAIL ET SALAIRES");
-    let xs: [(i64, i64); COLONNES] = [(147, 227), (230, 310), (315, 396), (397, 478), (482, 563)];
-    let lignes_4: [(i64, i64, &str); 11] = [
-        (82, 100, "Numéro de contrat"),
-        (105, 120, "Début du contrat (du)"),
-        (125, 140, "Fin du contrat (au)"),
-        (145, 172, "Numéro d'objet"),
-        (184, 206, "N° IDCC de la prestation (si différent)"),
-        (218, 233, "Début de période (du)"),
-        (236, 252, "Fin de période (au)"),
-        (258, 273, "Heures"),
-        (282, 298, "Cachets*"),
-        (306, 322, "Nombre de jours travaillés"),
-        (339, 360, "Salaire brut (non plafonné)"),
+    cadre(&mut p2, m("70"), "4", "PRESTATIONS DE TRAVAIL ET SALAIRES");
+    let xs: [(&str, &str); COLONNES] = [("147", "227"), ("230", "310"), ("315", "396"), ("397", "478"), ("482", "563")];
+    let lignes_4: [(&str, &str, &str); 11] = [
+        ("82", "100", "Numéro de contrat"),
+        ("105", "120", "Début du contrat (du)"),
+        ("125", "140", "Fin du contrat (au)"),
+        ("145", "172", "Numéro d'objet"),
+        ("184", "206", "N° IDCC de la prestation (si différent)"),
+        ("218", "233", "Début de période (du)"),
+        ("236", "252", "Fin de période (au)"),
+        ("258", "273", "Heures"),
+        ("282", "298", "Cachets*"),
+        ("306", "322", "Nombre de jours travaillés"),
+        ("339", "360", "Salaire brut (non plafonné)"),
     ];
     for (y0, y1, t) in lignes_4 {
-        p2.push(texte_aligne(pt(32), (pt(y0) + pt(y1)) / 2 + m("2.5"), t, m("7.5"), false, NOIR, Alignement::Gauche));
-        p2.push(trait_en(pt(30), pt(y1) + m("1.5"), pt(565), pt(y1) + m("1.5"), m("0.3"), GRIS));
+        p2.push(texte_aligne(m("32"), (m(y0) + m(y1)) / 2 + m("2.5"), t, m("7.5"), false, NOIR, Alignement::Gauche));
+        p2.push(filet(m(y1) + m("1.5"), m("0.3"), GRIS));
     }
-    etiquette(&mut p2, 32, 392, "Date de paiement");
-    p2.push(trait_(30, 402, 565, 402, m("0.3"), GRIS));
-    p2.push(texte(32, 414, "* Uniquement pour les artistes", pt(7), false, GRIS));
+    etiquette(&mut p2, m("32"), m("392"), "Date de paiement");
+    p2.push(filet(m("402"), m("0.3"), GRIS));
+    p2.push(texte(m("32"), m("414"), "* Uniquement pour les artistes", m("7"), false, GRIS));
     for (i, p) in periodes.iter().enumerate() {
         let n = format!("{:02}", i + 1);
         let (x0, x1) = xs[i];
-        let r = |y0: i64, y1: i64| [x0, y0, x1, y1];
+        let r = |y0: &str, y1: &str| boite([x0, y0, x1, y1]);
         if let Some((numero, deb, fin, objet)) = &p.contrat {
-            f.imprime(2, &format!("CON_NUMERO_{}", n), r(82, 100), numero.as_str(), m("8.5"), Alignement::Centre);
-            f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r(105, 120), deb, m("8.5"), Alignement::Centre);
-            f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125, 140), fin, m("8.5"), Alignement::Centre);
-            f.imprime_dite(2, &format!("CON_OBJET_{}", n), r(145, 172), objet.as_deref(), pt(8), Alignement::Centre);
+            f.imprime(2, &format!("CON_NUMERO_{}", n), r("82", "100"), numero.as_str(), m("8.5"), Alignement::Centre);
+            f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r("105", "120"), deb, m("8.5"), Alignement::Centre);
+            f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r("125", "140"), fin, m("8.5"), Alignement::Centre);
+            f.imprime_dite(2, &format!("CON_OBJET_{}", n), r("145", "172"), objet.as_deref(), m("8"), Alignement::Centre);
             let idcc_contrat = d.contrats_de(ind.identite.nir.as_ref()).find(|c| c.numero.as_ref() == Some(numero)).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
             if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc.map(|j| &**j)) {
-                f.imprime(2, &format!("CON_IDCC_{}", n), r(184, 206), idcc_contrat, m("8.5"), Alignement::Centre);
+                f.imprime(2, &format!("CON_IDCC_{}", n), r("184", "206"), idcc_contrat, m("8.5"), Alignement::Centre);
             }
         }
-        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r(218, 233), &p.periode.debut().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r(236, 252), &p.periode.fin().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r(258, 273), &quantite(p.heures, Heures::ZERO), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r(282, 298), &quantite(p.cachets, Cachets::ZERO), m("8.5"), Alignement::Centre);
-        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r(306, 322), &quantite(p.jours, Jours::ZERO), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_DT_DEB_{}", n), r("218", "233"), &p.periode.debut().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_DT_FIN_{}", n), r("236", "252"), &p.periode.fin().jj_mm_aaaa(), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_HEURES_{}", n), r("258", "273"), &quantite(p.heures, Heures::ZERO), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_NB_CACHET_{}", n), r("282", "298"), &quantite(p.cachets, Cachets::ZERO), m("8.5"), Alignement::Centre);
+        f.imprime(2, &format!("SAL_TPS_TRA_{}", n), r("306", "322"), &quantite(p.jours, Jours::ZERO), m("8.5"), Alignement::Centre);
         let montant = p.brut.map(socle::grandeurs::ecrit::norme::montant);
-        f.imprime_dite(2, &format!("SAL_MONTANT_{}", n), r(339, 360), montant.as_deref(), m("8.5"), Alignement::Centre);
-        f.imprime_dite(2, &format!("SAL_DT_PAI_{}", n), r(379, 400), p.paiement.as_deref(), m("8.5"), Alignement::Centre);
+        f.imprime_dite(2, &format!("SAL_MONTANT_{}", n), r("339", "360"), montant.as_deref(), m("8.5"), Alignement::Centre);
+        f.imprime_dite(2, &format!("SAL_DT_PAI_{}", n), r("379", "400"), p.paiement.as_deref(), m("8.5"), Alignement::Centre);
     }
-    for (titre, y, entetes) in [
-        ("Primes et indemnités", 460, ["Numéro de contrat", "Intitulé de la prime", "Date de paiement", "Montant brut (non plafonné)"]),
-        ("Activité partielle", 660, ["Numéro de contrat", "Du (JJ/MM/AA) au (JJ/MM/AA)", "Nombre d'heures", "Indemnité d'activité partielle"]),
-    ] {
-        p2.push(texte(32, y, titre, pt(9), true, NOIR));
+    // Un tableau a remplir a la main : son titre, quatre en-tetes, `lignes` lignes numerotees.
+    let tableau = |b: &mut Vec<Bloc>, titre: &str, y: Mesure, entetes: [&str; 4], lignes: usize| {
+        b.push(texte(m("32"), y, titre, m("9"), true, NOIR));
         for (i, e) in entetes.iter().enumerate() {
-            p2.push(texte(45 + 130 * i as i64, y + 16, e, pt(7), false, GRIS));
+            b.push(texte(m("45") + i * m("130"), y + m("16"), e, m("7"), false, GRIS));
         }
-        for k in 0..5 {
-            let yy = y + 36 + 20 * k as i64;
-            p2.push(texte(32, yy, &format!("{:02}", k + 1), m("7.5"), false, GRIS));
-            p2.push(trait_(30, yy + 5, 565, yy + 5, m("0.3"), GRIS));
+        for k in 0..lignes {
+            let yy = y + m("36") + k * m("20");
+            b.push(texte(m("32"), yy, &format!("{:02}", k + 1), m("7.5"), false, GRIS));
+            b.push(filet(yy + m("5"), m("0.3"), GRIS));
         }
+    };
+    for (titre, y, entetes) in [
+        ("Primes et indemnités", m("460"), ["Numéro de contrat", "Intitulé de la prime", "Date de paiement", "Montant brut (non plafonné)"]),
+        ("Activité partielle", m("660"), ["Numéro de contrat", "Du (JJ/MM/AA) au (JJ/MM/AA)", "Nombre d'heures", "Indemnité d'activité partielle"]),
+    ] {
+        tableau(&mut p2, titre, y, entetes, 5);
     }
 
     // Page 3 : les absences, les autres remunerations, le cadre 5.
     for (titre, y, entetes, n) in [
-        ("Périodes d'absence du salarié (congés maladie, maternité, paternité, d'adoption)", 90, ["Numéro de contrat", "Motif d'absence", "", "Du (JJ/MM/AA) au (JJ/MM/AA)"], 8),
-        ("Si présence d'autres rémunérations :", 340, ["Du (JJ/MM/AA) au (JJ/MM/AA)", "Date de paiement", "", "Autres rémunérations brutes"], 6),
+        ("Périodes d'absence du salarié (congés maladie, maternité, paternité, d'adoption)", m("90"), ["Numéro de contrat", "Motif d'absence", "", "Du (JJ/MM/AA) au (JJ/MM/AA)"], 8),
+        ("Si présence d'autres rémunérations :", m("340"), ["Du (JJ/MM/AA) au (JJ/MM/AA)", "Date de paiement", "", "Autres rémunérations brutes"], 6),
     ] {
-        p3.push(texte(32, y, titre, pt(9), true, NOIR));
-        for (i, e) in entetes.iter().enumerate() {
-            p3.push(texte(45 + 130 * i as i64, y + 16, e, pt(7), false, GRIS));
-        }
-        for k in 0..n {
-            let yy = y + 36 + 20 * k as i64;
-            p3.push(texte(32, yy, &format!("{:02}", k + 1), m("7.5"), false, GRIS));
-            p3.push(trait_(30, yy + 5, 565, yy + 5, m("0.3"), GRIS));
-        }
+        tableau(&mut p3, titre, y, entetes, n);
     }
-    cadre(&mut p3, 525, "5", "AUTHENTIFICATION PAR L'EMPLOYEUR");
-    etiquette(&mut p3, 35, 554, "Je soussigné(e), (Nom)");
-    case(&mut p3, [131, 542, 569, 558]);
-    f.vide("EMPLOYEUR_NOM", [131, 542, 569, 558]);
-    etiquette(&mut p3, 35, 571, "(Prénom)");
-    case(&mut p3, [74, 560, 569, 575]);
-    f.vide("EMPLOYEUR_PRENOM", [74, 560, 569, 575]);
-    etiquette(&mut p3, 35, 591, "agissant en qualité de");
-    case(&mut p3, [130, 581, 551, 594]);
-    f.vide("EMPLOYEUR_QUALITE_LIB", [130, 581, 551, 594]);
-    etiquette(&mut p3, 35, 610, "certifie que les renseignements indiqués sur la présente attestation sont exacts et notamment, en cas de");
-    etiquette(&mut p3, 35, 620, "cessation du contrat, que le motif de la rupture est une fin de contrat à durée déterminée.");
-    case(&mut p3, [38, 630, 290, 646]);
-    f.vide("EMPLOYEUR_LIEU_SIGN", [38, 630, 290, 646]);
-    etiquette(&mut p3, 318, 642, "Le");
+    cadre(&mut p3, m("525"), "5", "AUTHENTIFICATION PAR L'EMPLOYEUR");
+    // Une case a remplir par l'employeur : son trait, et son champ vide.
+    let mut a_remplir = |b: &mut Vec<Bloc>, nom: &str, r: [&str; 4]| {
+        case(b, boite(r));
+        f.vide(nom, boite(r));
+    };
+    etiquette(&mut p3, m("35"), m("554"), "Je soussigné(e), (Nom)");
+    a_remplir(&mut p3, "EMPLOYEUR_NOM", ["131", "542", "569", "558"]);
+    etiquette(&mut p3, m("35"), m("571"), "(Prénom)");
+    a_remplir(&mut p3, "EMPLOYEUR_PRENOM", ["74", "560", "569", "575"]);
+    etiquette(&mut p3, m("35"), m("591"), "agissant en qualité de");
+    a_remplir(&mut p3, "EMPLOYEUR_QUALITE_LIB", ["130", "581", "551", "594"]);
+    etiquette(&mut p3, m("35"), m("610"), "certifie que les renseignements indiqués sur la présente attestation sont exacts et notamment, en cas de");
+    etiquette(&mut p3, m("35"), m("620"), "cessation du contrat, que le motif de la rupture est une fin de contrat à durée déterminée.");
+    a_remplir(&mut p3, "EMPLOYEUR_LIEU_SIGN", ["38", "630", "290", "646"]);
+    etiquette(&mut p3, m("318"), m("642"), "Le");
     for (nom, r) in [
-        ("EMPLOYEUR_DATE_SIGN_J", [333, 632, 359, 645]),
-        ("EMPLOYEUR_DATE_SIGN_M", [363, 632, 389, 645]),
-        ("EMPLOYEUR_DATE_SIGN_A", [393, 632, 444, 645]),
+        ("EMPLOYEUR_DATE_SIGN_J", ["333", "632", "359", "645"]),
+        ("EMPLOYEUR_DATE_SIGN_M", ["363", "632", "389", "645"]),
+        ("EMPLOYEUR_DATE_SIGN_A", ["393", "632", "444", "645"]),
     ] {
-        case(&mut p3, r);
-        f.vide(nom, r);
+        a_remplir(&mut p3, nom, r);
     }
-    etiquette(&mut p3, 35, 676, "Signature de l'employeur");
-    case(&mut p3, [31, 683, 152, 764]);
-    f.vide("EMPLOYEUR_SIGNATURE", [31, 683, 152, 764]);
-    etiquette(&mut p3, 199, 664, "Personne à joindre concernant cette attestation");
-    case(&mut p3, [199, 671, 392, 694]);
-    f.vide("EMPLOYEUR_CORRES_NOM", [199, 671, 392, 694]);
-    etiquette(&mut p3, 160, 706, "Téléphone");
-    case(&mut p3, [206, 697, 386, 709]);
-    f.vide("EMPLOYEUR_CORRES_TEL", [206, 697, 386, 709]);
-    etiquette(&mut p3, 160, 722, "E-mail");
-    case(&mut p3, [192, 711, 392, 733]);
-    f.vide("EMPLOYEUR_CORRES_EMAIL", [192, 711, 392, 733]);
+    etiquette(&mut p3, m("35"), m("676"), "Signature de l'employeur");
+    a_remplir(&mut p3, "EMPLOYEUR_SIGNATURE", ["31", "683", "152", "764"]);
+    etiquette(&mut p3, m("199"), m("664"), "Personne à joindre concernant cette attestation");
+    a_remplir(&mut p3, "EMPLOYEUR_CORRES_NOM", ["199", "671", "392", "694"]);
+    etiquette(&mut p3, m("160"), m("706"), "Téléphone");
+    a_remplir(&mut p3, "EMPLOYEUR_CORRES_TEL", ["206", "697", "386", "709"]);
+    etiquette(&mut p3, m("160"), m("722"), "E-mail");
+    a_remplir(&mut p3, "EMPLOYEUR_CORRES_EMAIL", ["192", "711", "392", "733"]);
     for (i, l) in [
         "Toute fausse déclaration est passible de deux ans",
         "d'emprisonnement et d'une amende pouvant aller",
@@ -488,11 +480,10 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     .iter()
     .enumerate()
     {
-        p3.push(texte(199, 745 + 9 * i as i64, l, pt(7), i == 3, NOIR));
+        p3.push(texte(m("199"), m("745") + i * m("9"), l, m("7"), i == 3, NOIR));
     }
-    etiquette(&mut p3, 430, 678, "Cachet de l'entreprise");
-    case(&mut p3, [401, 685, 562, 765]);
-    f.vide("EMPLOYEUR_CACHET", [401, 685, 562, 765]);
+    etiquette(&mut p3, m("430"), m("678"), "Cachet de l'entreprise");
+    a_remplir(&mut p3, "EMPLOYEUR_CACHET", ["401", "685", "562", "765"]);
 
     let nulle = Mesure::ZERO;
     let description = Description {
@@ -503,7 +494,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
             marges: Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
         // Chaque texte dit son corps et sa couleur : la police n'en est que la base.
-        police: Some(Police { taille: pt(10), interligne: m("1.25"), couleur: "#000000".to_string() }),
+        police: Some(Police { taille: m("10"),interligne: m("1.25"), couleur: "#000000".to_string() }),
         style: None,
         logo: None,
         titre: Some(format!("Attestation employeur annexes 8 et 10 (compagnie fictive) — {} {}", nom, prenoms)),

@@ -461,7 +461,8 @@ const USAGE: &str = "usage : moteur-atelier verifier-avant-commit [--indexes]\n\
 \x20 sortie : 0 rien trouve, 1 trouve, 2 pas pu verifier\n";
 
 /// `moteur-atelier verifier-avant-commit [--indexes]`, depuis n'importe où dans le dépôt.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     let mut indexes = false;
     for a in args {
@@ -469,11 +470,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             "--indexes" => indexes = true,
             "--aide" | "--help" | "-h" => {
                 dire_sans_ligne!("{}", USAGE);
-                return 0;
+                return ExitCode::SUCCESS;
             }
             _ => {
                 eprint!("{}", USAGE);
-                return 2;
+                return ExitCode::from(2);
             }
         }
     }
@@ -481,11 +482,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     match r {
         Ok(t) => {
             dire_sans_ligne!("{}", rapport(&t));
-            i32::from(!t.is_empty())
+            if t.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE }
         }
         Err(m) => {
             eprintln!("verifier-avant-commit : {}", m.en_lignes());
-            2
+            ExitCode::from(2)
         }
     }
 }

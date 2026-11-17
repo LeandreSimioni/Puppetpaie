@@ -22,6 +22,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 
 use crate::ecritures_comptables::{CodeJournal, NumeroDeCompte, PosteAnalytique};
 use socle::fichiers::repr;
+use socle::texte::EntierEcrit;
 
 // ------------------------------------------------------------------ les listes des exports
 
@@ -650,7 +651,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         ));
     }
     let code = match salarie.code_salarie.portee() {
-        Some(t) => entier_de(t.trim()).map_err(|e| {
+        Some(t) => EntierEcrit::lu(t.trim()).map_err(|e| {
             Refus::Operation(format!("Le code salarié de {} : « {} » n'est pas un entier que le modèle sait écrire ({}).", cle, t.trim(), e))
         })?,
         None => None,
@@ -692,27 +693,6 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
     }
 }
 
-/// Un entier écrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un code qui n'est pas un
-/// entier (il se lit alors en texte). Un entier trop grand se refuse.
-fn entier_de(t: &str) -> Result<Option<i64>, std::num::ParseIntError> {
-    let (neg, reste) = if let Some(r) = t.strip_prefix('-') {
-        (true, r)
-    } else if let Some(r) = t.strip_prefix('+') {
-        (false, r)
-    } else {
-        (false, t)
-    };
-    let bords_sans_tiret = reste.chars().next().is_some_and(|c| c != '_') && reste.chars().last().is_some_and(|c| c != '_');
-    if !bords_sans_tiret || reste.contains("__") {
-        return Ok(None);
-    }
-    let chiffres: String = reste.chars().filter(|c| *c != '_').collect();
-    if !chiffres.chars().all(|c| c.is_ascii_digit()) {
-        return Ok(None);
-    }
-    chiffres.parse::<i64>().map(|n| Some(if neg { -n } else { n }))
-}
-
 // ------------------------------------------------------------- str.format
 
 /// `FormeNonPortee` : une forme que ce module refuse.
@@ -721,7 +701,7 @@ type Faute = (Classe, String);
 /// `code` est l'entier de la fiche, ou "" s'il
 /// n'en a pas. Refuse, sous la classe de l'erreur (`Illisible`, `Manque`...) et une phrase en francais, en suivant `MarkupIterator_next` et
 /// `parse_field`.
-fn formater(modele: &str, code: Option<i64>, cle: &str, profondeur: u32) -> Result<String, Faute> {
+fn formater(modele: &str, code: Option<EntierEcrit>, cle: &str, profondeur: u32) -> Result<String, Faute> {
     if profondeur >= 2 {
         return Err((Classe::Illisible, "mise en forme imbriquée trop profondément".into()));
     }
@@ -824,7 +804,7 @@ fn lire_champ(c: &[char], i: &mut usize) -> Result<(String, String, Option<char>
 }
 
 enum Objet {
-    Entier(i64),
+    Entier(EntierEcrit),
     Texte(String),
 }
 
@@ -840,7 +820,7 @@ const METHODES_TEXTE: [&str; 47] = [
 
 /// `get_field_object` : le champ `nom` (`code`, `cle`, un numero, avec ses `.attribut`
 /// et ses `[indice]`).
-fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, prochain: &mut usize) -> Result<Objet, Faute> {
+fn resoudre(nom: &str, code: Option<EntierEcrit>, cle: &str, auto: &mut Option<bool>, prochain: &mut usize) -> Result<Objet, Faute> {
     let c: Vec<char> = nom.chars().collect();
     let fin_premier = c.iter().take_while(|x| **x != '.' && **x != '[').count();
     let premier: String = c[..fin_premier].iter().collect();
@@ -887,8 +867,8 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
             }
             objet = match (&objet, attribut.as_str()) {
                 (Objet::Entier(n), "real") | (Objet::Entier(n), "numerator") => Objet::Entier(*n),
-                (Objet::Entier(_), "imag") => Objet::Entier(0),
-                (Objet::Entier(_), "denominator") => Objet::Entier(1),
+                (Objet::Entier(_), "imag") => Objet::Entier(EntierEcrit::ZERO),
+                (Objet::Entier(_), "denominator") => Objet::Entier(EntierEcrit::UN),
                 (Objet::Entier(_), a) if METHODES_ENTIER.contains(&a) => return Err((Classe::FormeNonPortee, format!("l'attribut « {} » d'un entier", a))),
                 (Objet::Texte(_), a) if METHODES_TEXTE.contains(&a) || a.starts_with("__") => {
                     return Err((Classe::FormeNonPortee, format!("l'attribut « {} » d'un texte", a)))
@@ -940,7 +920,7 @@ fn remplir(
     spec: &str,
     conversion: Option<char>,
     a_developper: bool,
-    code: Option<i64>,
+    code: Option<EntierEcrit>,
     cle: &str,
     profondeur: u32,
     auto: &mut Option<bool>,
@@ -1103,20 +1083,15 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
             if s.groupe.is_some() && (s.zero || s.alignement == Some('=')) {
                 return Err((Classe::FormeNonPortee, "le groupement des milliers avec remplissage de zeros".into()));
             }
-            let negatif = *n < 0;
-            let valeur = n.unsigned_abs();
+            let negatif = n.negatif();
             let mut corps = match genre {
-                'x' => format!("{:x}", valeur),
-                'X' => format!("{:X}", valeur),
-                'o' => format!("{:o}", valeur),
-                'b' => format!("{:b}", valeur),
                 'c' => {
-                    return match u32::try_from(*n).map(char::from_u32) {
-                        Ok(Some(x)) => Ok(x.to_string()),
-                        _ => Err((Classe::Illisible, format!("{} n'est pas un caractère (%c)", n))),
+                    return match n.caractere() {
+                        Some(x) => Ok(x.to_string()),
+                        None => Err((Classe::Illisible, format!("{} n'est pas un caractère (%c)", n))),
                     }
                 }
-                _ => valeur.to_string(),
+                base => n.absolu_en(base),
             };
             if let (Some(g), 'd') = (s.groupe, genre) {
                 let chiffres: Vec<char> = corps.chars().collect();

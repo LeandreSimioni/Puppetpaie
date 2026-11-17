@@ -26,6 +26,7 @@ use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
 use socle::mois::Annee;
 use envois::transport::{envoyer, Panne, Requete};
+use ureq::http::StatusCode;
 
 use crate::incidents::{CleDIncident, NumeroDePoste};
 
@@ -49,14 +50,14 @@ pub const DELAI: std::time::Duration = std::time::Duration::from_secs(15);
 /// remonte.
 #[derive(Debug)]
 pub enum ErreurFilet {
-    /// Le serveur ne repond pas, ou refuse : ce qu'il en dit, et son statut HTTP (0 sans reponse).
-    Filet { message: String, statut: u16 },
+    /// Le serveur ne repond pas, ou refuse : ce qu'il en dit, et son statut HTTP quand il a repondu.
+    Filet { message: String, statut: Option<StatusCode> },
     /// Une autre panne, sous sa classe.
     Autre(Echec),
 }
 
 impl ErreurFilet {
-    pub(crate) fn filet(message: String, statut: u16) -> ErreurFilet {
+    pub(crate) fn filet(message: String, statut: Option<StatusCode>) -> ErreurFilet {
         ErreurFilet::Filet { message, statut }
     }
 
@@ -256,10 +257,10 @@ fn edition_bridee(quoi: &str) -> String {
 }
 
 /// Un code de réponse HTTP en mots : son code, et sa phrase quand le code en a une.
-fn statut_dit(code: u16) -> String {
-    match phrase(code) {
-        Some(p) => format!("HTTP Error {}: {}", code, p),
-        None => format!("HTTP Error {}", code),
+fn statut_dit(code: StatusCode) -> String {
+    match phrase(code.as_u16()) {
+        Some(p) => format!("HTTP Error {}: {}", code.as_str(), p),
+        None => format!("HTTP Error {}", code.as_str()),
     }
 }
 
@@ -343,7 +344,7 @@ fn panne_dite(p: &Panne) -> String {
 
 /// Ce que le serveur dit d'un refus : son `erreur` ; un corps vide ou qui n'a pas cette forme laisse le statut seul le
 /// dire, et dit pourquoi.
-fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
+fn refus_dit(code: StatusCode, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
     let propre = statut_dit(code);
     match corps {
         Err(p) => format!("{} (corps de la réponse non lu : {})", propre, panne_dite(p)),
@@ -382,17 +383,17 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
             // Une reponse qui ne se lit pas se range avec les pannes de reseau : le passage suivant reessaie.
             let texte = match std::str::from_utf8(&brut) {
                 Ok(t) => t.trim_start_matches('\u{feff}'),
-                Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
+                Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), None)),
             };
             socle::forme::lire_texte::<T>(texte, "réponse illisible")
-                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
+                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), None))
         }
-        Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), code)),
-        Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),
+        Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), Some(code))),
+        Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), None)),
         Err(Panne::Brute(e)) => match e.classe {
             // Une connexion rompue ou qui ne répond plus : le filet est injoignable.
             Some(Classe::DelaiDepasse | Classe::Reseau) => {
-                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
+                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), None))
             }
             _ => Err(ErreurFilet::Autre(e)),
         },
@@ -423,7 +424,9 @@ impl Client {
     fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: std::time::Duration) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
         match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.devoiler())], delai) {
-            Err(ErreurFilet::Filet { message, statut: 401 }) => Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), 401)),
+            Err(ErreurFilet::Filet { message, statut: Some(StatusCode::UNAUTHORIZED) }) => {
+                Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), Some(StatusCode::UNAUTHORIZED)))
+            }
             r => r,
         }
     }

@@ -18,9 +18,11 @@ const MOTS: usize = 16;
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Naturel([u64; MOTS]);
 
-/// Ce qui deborde les 1 024 bits n'est pas un nombre de l'anciennete ni des mois de salaire (voir `MOTS`) : une faute du
-/// code, pas une donnee.
-fn deborde() -> ! {
+/// Ce qui deborde les 1 024 bits n'est pas un nombre de l'anciennete ni des mois de salaire (voir `MOTS`), ni leur
+/// produit par un montant, qui tient dans un decimal : une faute du code. Un montant trop grand pour un decimal, lui, est
+/// une donnee : son arrondi le dit (`arrondi`), et le montant se refuse (`Montant × MoisDeSalaire`). L'ecriture d'une
+/// anciennete dans une phrase (`date::Anciennete`) n'a pas de refus : la sienne, au-dela d'un decimal, tombe ici.
+pub(crate) fn deborde() -> ! {
     panic!("une fraction exacte deborde ses 1 024 bits : un nombre de l'anciennete ou des mois de salaire ne les atteint pas")
 }
 
@@ -328,8 +330,10 @@ impl Fraction {
     }
 
     /// ARRONDIE A `decimales` DECIMALES, la moitie selon `moitie`, de sa valeur exacte, une seule fois : un montant au
-    /// centime, un nombre dit au dixieme.
-    pub(crate) fn arrondi(self, decimales: u32, moitie: Moitie) -> Decimal {
+    /// centime, un nombre dit au dixieme. `None` quand l'arrondi ne tient pas dans un decimal (vingt-huit chiffres) : un
+    /// montant que des donnees absurdes font monter au-dela (un salaire de reference de 10^26 euros), que son lecteur
+    /// refuse.
+    pub(crate) fn arrondi(self, decimales: u32, moitie: Moitie) -> Option<Decimal> {
         let (q, r) = self.num.fois(Naturel::de(10u128.pow(decimales))).divise(self.den);
         let deux_r = r.fois(Naturel::de(2));
         let haut = match deux_r.cmp(&self.den) {
@@ -341,11 +345,8 @@ impl Fraction {
             },
         };
         let q = if haut { q.plus(Naturel::de(1)) } else { q };
-        let Some(q) = q.en_u128().and_then(|q| i128::try_from(q).ok()) else { deborde() };
-        match Decimal::try_from_i128_with_scale(if self.negative { -q } else { q }, decimales) {
-            Ok(d) => d,
-            Err(_) => deborde(),
-        }
+        let q = q.en_u128().and_then(|q| i128::try_from(q).ok())?;
+        Decimal::try_from_i128_with_scale(if self.negative { -q } else { q }, decimales).ok()
     }
 }
 

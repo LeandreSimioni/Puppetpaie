@@ -55,12 +55,12 @@ fn main() -> std::process::ExitCode {
     // Les sous-commandes du moteur : `route` et `routes` (la ligne de commande, sous Windows la seule), et la fabrique.
     match args.first().map(socle::ligne::Argument::texte) {
         Some("route") => match routes::service::commande("route", &args[1..]) {
-            Some(code) => std::process::exit(code),
-            None => std::process::exit(2),
+            Some(code) => return code,
+            None => return std::process::ExitCode::from(2),
         },
-        Some("routes") => std::process::exit(routes::catalogue::commande(&args[1..])),
+        Some("routes") => return routes::catalogue::commande(&args[1..]),
         Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&socle::ligne::textes(&args[1..])),
-        Some("interface") => std::process::exit(moteur::interface::commande(&args[1..])),
+        Some("interface") => return moteur::interface::commande(&args[1..]),
         // Le lanceur Linux demande si la fenetre peut s'ouvrir : le programme se charge (WebKitGTK est la), et un ecran.
         Some("--peut-ouvrir") => {
             let ecran = |n: &str| std::env::var_os(n).is_some_and(|v| !v.is_empty());
@@ -68,9 +68,9 @@ fn main() -> std::process::ExitCode {
             return if ok { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE };
         }
         // Le relais de la mise a jour (`compagnie::maj`) : lance depuis le `maj/` de l'installation, il bascule puis rouvre la fenetre.
-        Some("maj-relais") => std::process::exit(compagnie::maj::relais(&args[1..])),
+        Some("maj-relais") => return compagnie::maj::relais(&args[1..]),
         // `puppetpaie maj` : chercher et preparer une version tout de suite (le bac a sable de l'atelier s'en sert).
-        Some("maj") => std::process::exit(moteur::commandes::maj::commande(&args[1..])),
+        Some("maj") => return moteur::commandes::maj::commande(&args[1..]),
         _ => {}
     }
 

@@ -4,7 +4,7 @@
 use compagnie::maj::{appliquer, installation, revenir, verifier};
 
 /// `moteur maj [--sans-telecharger] [--appliquer] [--revenir]`.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     let args = socle::ligne::textes(args);
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile.
@@ -30,11 +30,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     match r {
         Ok(t) => {
             dire!("{}", t);
-            0
+            std::process::ExitCode::SUCCESS
         }
         Err(e) => {
             dire!("! {}", e.en_lignes());
-            2
+            std::process::ExitCode::from(2)
         }
     }
 }

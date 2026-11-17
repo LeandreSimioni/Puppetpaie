@@ -21,9 +21,6 @@ use fabrique_pdf::mesure::mesure;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// `fabrique.FORMAT`.
-pub const FORMAT: i64 = 3;
-
 pub const ROUGE: &str = "#B22222";
 pub const ARDOISE: &str = "#2C3E50";
 const GRIS: &str = "#555555";
@@ -130,18 +127,18 @@ fn cm(morceaux: Vec<Morceau>, couleur: Option<&str>) -> Cellule {
 }
 
 /// Une cellule du bulletin : son texte, sur combien de colonnes, en gras ou non, sa couleur.
-fn cell(texte: impl Into<String>, etendue: i64, gras: bool, couleur: Option<&str>) -> Cellule {
+fn cell(texte: impl Into<String>, etendue: usize, gras: bool, couleur: Option<&str>) -> Cellule {
     Cellule::Decrite(f::CelluleDecrite {
         texte: Some(texte.into()),
         morceaux: None,
         gras,
         couleur: couleur.map(str::to_string),
         alignement: None,
-        etendue: etendue as usize,
+        etendue,
     })
 }
 
-fn cel(texte: impl Into<String>, etendue: i64) -> Cellule {
+fn cel(texte: impl Into<String>, etendue: usize) -> Cellule {
     cell(texte, etendue, false, None)
 }
 
@@ -229,7 +226,7 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
 }
 
 /// Une ligne « net », blanc sur rouge, 9,5 pt, en gras.
-fn ligne_net(libelle: &str, montant: Montant, colonnes: i64) -> Ligne {
+fn ligne_net(libelle: &str, montant: Montant, colonnes: usize) -> Ligne {
     ligne(
         vec![cel(libelle, colonnes - 1), s(chiffres_en_euros(montant))],
         vec![gras(), Opt::Fond(ROUGE), Opt::Couleur(BLANC), Opt::Taille(mesure("9.5"))],
@@ -356,7 +353,7 @@ pub struct PrelevementDeLEcart {
 }
 
 /// Le bas d'un bulletin RECTIFICATIF.
-fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
+fn rectificatif_lignes(r: &Ecart, colonnes: usize) -> R<Vec<Ligne>> {
     let lignes = [
         ("Net à payer avant impôt du bulletin rectifié", r.net_avant),
         ("Net à payer avant impôt rectifié", r.net_apres),
@@ -392,7 +389,7 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
 /// 25/02/2016 (art. 1, I : « IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE », colonnes Base, Taux, Salarié) : son assiette
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
 /// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas.
-fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>> {
+fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: usize) -> R<Vec<Ligne>> {
     let taux = fmt_taux_de_pas(pas.taux);
     Ok(vec![
         ligne(
@@ -405,7 +402,7 @@ fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>>
 
 /// Une colonne de libelles, une par fenetre.
 fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
-    let n = colonnes.len() as i64;
+    let n = colonnes.len();
     let mut cellules = vec![cell("CUMULS", 1, true, Some(ARDOISE))];
     for c in colonnes {
         cellules.push(cm(vec![m(c.titre.clone(), true, None), mt("\n"), mt(c.sous_titre.clone())], None));
@@ -437,7 +434,8 @@ fn tableau_des_cumuls(colonnes: &[Colonne]) -> Bloc {
         })
         .collect();
     let mut largeurs = vec![mesure("0.4")];
-    largeurs.extend((0..n).map(|_| mesure("0.6") / n));
+    // Chaque colonne, la part d'une sur `n` ; aucune colonne, aucune part.
+    largeurs.extend((0..n).filter_map(|_| mesure("0.6").part_sur(n)));
     tableau(&largeurs, entete, lignes, "#eeeeee")
 }
 
@@ -475,10 +473,10 @@ fn tableau_conges(cpt: &CompteurConges) -> Bloc {
 /// que le code du travail exige (R. 3243-1, 8°, a : « pour les cotisations et contributions [...] a la charge du
 /// salarie, leurs taux ») ; le modele met « - » au taux des lignes que l'employeur paie seul (accidents du travail,
 /// famille). Les deux modeles impriment ce tableau-la (voir `ModeleBulletin`).
-const COLONNES: i64 = 5;
+const COLONNES: usize = 5;
 const LARGEURS: [Mesure; 5] = [mesure("0.55"), mesure("0.12"), mesure("0.09"), mesure("0.12"), mesure("0.12")];
 /// L'annexe du modele *complet* : le libelle, la base, le taux et le montant de chaque part.
-const COLONNES_ANNEXE: i64 = 6;
+const COLONNES_ANNEXE: usize = 6;
 const LARGEURS_ANNEXE: [Mesure; 6] = [mesure("0.46"), mesure("0.11"), mesure("0.09"), mesure("0.11"), mesure("0.11"), mesure("0.12")];
 
 /// LES DEUX MODELES DE BULLETIN.
@@ -719,7 +717,7 @@ fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) ->
     Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal), montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
 
-fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
+fn titre_groupe(titre: &str, colonnes: usize) -> Ligne {
     ligne(vec![cel(titre, colonnes)], vec![gras()])
 }
 
@@ -1252,7 +1250,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
     }
     let marge = Mesure::entier(42);
     Ok(Description {
-        format: FORMAT,
+        format: fabrique_pdf::FORMAT,
         page: Some(f::Page {
             largeur: f::A4_LARGEUR,
             hauteur: f::A4_HAUTEUR,

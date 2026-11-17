@@ -41,6 +41,7 @@
 //! dit a la page (`veille`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
 //! (`scenario`), l'horloge fictive (`horloge`), les courriels joues (`simulation_courriels`). Au-dessus, le moteur : la
 //! ligne de commande, l'interface, l'atelier.
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate socle;
@@ -52,8 +53,6 @@ use socle::ecran::couleur_de_l_etat;
 use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
-
-pub use enveloppe::PhrasesRendues;
 
 pub mod enveloppe;
 pub mod ouverture;

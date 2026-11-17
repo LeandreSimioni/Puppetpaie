@@ -40,6 +40,7 @@
 //! la civilite, la qualite et l'adresse ne sont pas confrontees au repertoire SIRENE.
 
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use droit::natures::RubriqueDeLaNorme;
 use serde::Deserialize;
@@ -519,18 +520,18 @@ Puis, avec PUPPETPAIE_DONNEES=DOSSIER, par moteur route : deposer (quoi dsn ou d
 (la suite : atelier/docs/COMPAGNIE-D-ESSAI.md).";
 
 /// `moteur essai ...` : rend le code de sortie.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
     let args = socle::ligne::textes(args);
     let mut it = args.iter();
     match it.next().map(String::as_str) {
         Some("monter") => {}
         Some("-h" | "--help" | "--aide" | "aide") => {
             dire!("{}", AIDE);
-            return 0;
+            return ExitCode::SUCCESS;
         }
         _ => {
             eprintln!("{}", AIDE);
-            return 2;
+            return ExitCode::from(2);
         }
     }
     let (mut dossier, mut fictive): (Option<PathBuf>, String) = (None, FICTIVE_PAR_DEFAUT.to_string());
@@ -538,29 +539,29 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         match a.as_str() {
             "-h" | "--help" | "--aide" => {
                 dire!("{}", AIDE);
-                return 0;
+                return ExitCode::SUCCESS;
             }
             "--depuis" => match it.next() {
                 Some(v) => fictive = v.clone(),
                 None => {
                     eprintln!("moteur essai monter : --depuis attend une fictive.\n\n{}", AIDE);
-                    return 2;
+                    return ExitCode::from(2);
                 }
             },
             x if x.starts_with("--") => {
                 eprintln!("moteur essai monter : option inconnue : {}\n\n{}", x, AIDE);
-                return 2;
+                return ExitCode::from(2);
             }
             x if dossier.is_none() => dossier = Some(PathBuf::from(x)),
             x => {
                 eprintln!("moteur essai monter : un seul dossier ({} en trop).\n\n{}", x, AIDE);
-                return 2;
+                return ExitCode::from(2);
             }
         }
     }
     if let Err(e) = crate::installation::fixer_le_code() {
         eprintln!("{}", e.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
@@ -572,7 +573,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Err(std::env::VarError::NotPresent) => None,
         Err(std::env::VarError::NotUnicode(_)) => {
             eprintln!("{} n'est pas un texte lisible : un objet JSON sur une ligne est attendu. Rien n'est ecrit.", VARIABLE);
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     match monter(&dossier, &fictive, texte.as_deref()) {
@@ -589,11 +590,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             dire!("  echo '{{\"route\":\"deposer\",\"charge\":{{\"quoi\":\"dsn\",\"mois\":\"AAAA-MM\"}}}}' | moteur route --texte");
             dire!("  puis les retours : echo '{{\"route\":\"ouverture\",\"charge\":{{\"sauvegarder\":false,\"signatures\":false}}}}' | moteur route --texte");
             dire!("(atelier/docs/COMPAGNIE-D-ESSAI.md : l'ordre d'un essai deja fait d'ailleurs, les signalements)");
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }

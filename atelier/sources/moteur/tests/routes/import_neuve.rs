@@ -520,16 +520,17 @@ fn le_bulletin_d_un_mois_ne_remplace_que_ce_mois_du_certificat_et_l_emporte_sur_
         c
     };
     let attendus = |racine: &Path| {
-        let mut contrats: Vec<(String, String, String, i64, String)> = contrats_importes(racine)
+        // Les cachets tels que le contrat importe les ecrit.
+        let mut contrats: Vec<(String, String, String, String, String)> = contrats_importes(racine)
             .iter()
-            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
+            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].to_string(), c["brut"].as_str().unwrap().into()))
             .collect();
         contrats.sort();
         assert_eq!(
             contrats,
             vec![
-                ("bulletin".into(), "2026-01-14".into(), "2026-01-24".into(), 2, "590.00".into()),
-                ("certificat".into(), "2026-02-01".into(), "2026-02-05".into(), 2, "310.00".into()),
+                ("bulletin".into(), "2026-01-14".into(), "2026-01-24".into(), "2".into(), "590.00".into()),
+                ("certificat".into(), "2026-02-01".into(), "2026-02-05".into(), "2".into(), "310.00".into()),
             ]
         );
     };

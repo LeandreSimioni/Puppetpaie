@@ -1,6 +1,7 @@
 //! Les déclarations : la DSN mensuelle et ses signalements, la DPAE, les régularisations, les contrôles de la norme
 //! (usages, formats, natures), et les états qui disent ce qu'une DSN a porté. Chacune se fabrique depuis les paies écrites
 //! de l'engagement validé ; ce qui a été déclaré se lit dans la version sur laquelle la déclaration est partie.
+#![forbid(unsafe_code)]
 
 pub mod amorcage;
 pub mod assujettissement;

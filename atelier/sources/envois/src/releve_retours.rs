@@ -665,7 +665,7 @@ pub fn relever_retours(
                 }
             }
             Err(p) if p.est_api() => {
-                if p.code == Some(404) {
+                if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
                     continue;
                 }
                 releve.incidents.push(format!("Consultation interrompue : {}", p.echec.phrase));

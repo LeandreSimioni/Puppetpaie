@@ -3,6 +3,7 @@
 //! qui tourne) et la publication par GitHub (`publication`). L'atelier (`moteur-atelier`) est une crate au-dessus.
 //!
 //! Le JSON ne se touche qu'a la porte (`routes::enveloppe`) : le moteur n'en touche pas.
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate socle;

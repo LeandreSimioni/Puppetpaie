@@ -3,6 +3,7 @@
 //! ses deux mots de passe, la preuve d'un acte reel et le secret de l'organisme, la demande d'un acte reel, la sauvegarde
 //! et la restauration, la mise a jour, le bridage, le filet, les incidents et les signalements, le journal des pieces
 //! ecrites, les clients de la consultation, les organismes et les taux de PAS recus.
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate socle;

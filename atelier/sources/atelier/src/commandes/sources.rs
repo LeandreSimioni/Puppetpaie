@@ -15,6 +15,7 @@ use crate::sources::{EnLigne, EtatSource};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::rendu::rendre;
 use moteur::commandes::Cadre;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "sources",
@@ -22,13 +23,13 @@ pub static SPEC: Spec = Spec {
     options: &[Opt::drapeau("verifier"), Opt::drapeau("relever"), Opt::drapeau("json")],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     let code = cadre.ctx.code.clone();
     let manifeste = match crate::sources::manifeste(&code) {
         Ok(m) => m,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     // `--relever` ne se fait qu'en retournant voir : il emporte `--verifier`.
@@ -47,7 +48,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(l) => l,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     if args.drapeau("json") {
@@ -90,5 +91,5 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     if !verifier {
         dire!("`--verifier` retelecharge chaque source et compare ; `--relever` pose la nouvelle version a cote de l'ancienne quand elle a change.");
     }
-    0
+    ExitCode::SUCCESS
 }

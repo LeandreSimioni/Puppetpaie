@@ -126,8 +126,11 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
 mod tests {
     use super::*;
 
-    fn j(an: i32, mois: u32, jour: u32) -> Jour {
-        Jour::nouveau(an, mois, jour).unwrap()
+    /// Le jour que le test ecrit, fait par le socle.
+    macro_rules! j {
+        ($an:expr, $mois:expr, $jour:expr) => {
+            Jour::nouveau($an, $mois, $jour).unwrap()
+        };
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,
@@ -136,14 +139,14 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
-        let mois = |an: i32, m: u32| Periode::du_mois(j(an, m, 1).mois_civil());
-        let thalie = Some(j(2026, 1, 1));
+        let mois = |an, m| Periode::du_mois(socle::mois::Mois::nouveau(an, m).unwrap());
+        let thalie = Some(j!(2026, 1, 1));
         assert!(!en_vigueur(thalie, None, &mois(2025, 12)));
         assert!(en_vigueur(thalie, None, &mois(2026, 1)));
-        let clos = (Some(j(2025, 1, 1)), Some(j(2026, 6, 30)));
+        let clos = (Some(j!(2025, 1, 1)), Some(j!(2026, 6, 30)));
         assert!(en_vigueur(clos.0, clos.1, &mois(2026, 6)));
         assert!(!en_vigueur(clos.0, clos.1, &mois(2026, 7)));
-        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &mois(2026, 3)));
+        assert!(en_vigueur(Some(j!(2026, 3, 15)), None, &mois(2026, 3)));
         assert!(en_vigueur(None, None, &mois(2025, 1)));
     }
 
@@ -153,7 +156,7 @@ mod tests {
     #[test]
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
-        let an = |a: i64| socle::mois::Annee::nouvelle(a).unwrap();
+        let an = socle::mois::Annee::constante;
         let soixante = crate::contexte::EffectifsParAnnee { annees: [(an(2025), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
         let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, an(2026)).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));

@@ -108,9 +108,9 @@ pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: socle::date::J
     socle::ecriture::en_valeur(&socle::forme::lire::<F>(datee, "test").unwrap().au(&jour))
 }
 
-/// Le mois `numero` de l'annee `an`, que le test ecrit.
-pub fn le_mois(an: i32, numero: u32) -> socle::mois::Mois {
-    socle::mois::Mois::nouveau(an, numero).unwrap()
+/// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme.
+pub fn le_mois(ecrit: &str) -> socle::mois::Mois {
+    socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap()
 }
 
 /// La fiche datee d'une compagnie de test : chaque valeur de `plate` de tout temps (`droit::fiche::dater`), ses notes `_…`
