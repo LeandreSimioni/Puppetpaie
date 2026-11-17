@@ -72,6 +72,15 @@ fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
     }
 }
 
+/// Une ligne de remuneration au bulletin : sa designation, a son taux quand elle dit ce qu'elle paie (une ligne calculee
+/// le dit toujours).
+fn ligne_au_bulletin(l: &engagement::calcul::LigneBrut) -> String {
+    match l.paiement {
+        Some(p) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(p.taux())),
+        None => l.designation(),
+    }
+}
+
 
 /// Un taux tel que le bulletin l'imprime : 9.1 -> « 9,100 ».
 fn fmt_taux(t: Taux) -> String {
@@ -1166,7 +1175,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // « MONTANT BRUT » (art. 1, I ; VI : mis en valeur).
     if rem.len() <= 1 {
         let titre = match rem.first() {
-            Some(l) => format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux())),
+            Some(l) => ligne_au_bulletin(l),
             None => "SALAIRE".to_string(),
         };
         corps.push(ligne(
@@ -1176,7 +1185,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     } else {
         for l in &rem {
             corps.push(ligne(
-                vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux()))), s(chiffres_en_euros(l.montant))],
+                vec![s(ligne_au_bulletin(l)), s(chiffres_en_euros(l.montant))],
                 vec![],
             ));
         }
@@ -1194,7 +1203,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
-            corps.push(ligne(vec![s(format!("{} à {}", l.designation(), fmt_taux_de_ligne(l.paiement.taux()))), s(chiffres_en_euros(l.montant))], vec![]));
+            corps.push(ligne(vec![s(ligne_au_bulletin(l)), s(chiffres_en_euros(l.montant))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));

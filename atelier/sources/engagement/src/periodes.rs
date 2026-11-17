@@ -100,10 +100,10 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
             dates: Vec::new(),
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
-        // periode, comme `Engagement::nouveau` les tire des lignes du mois.
+        // periode, comme `Engagement::nouveau` les tire des lignes du mois (`cachets_et_heures`).
         let par_unite = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures_par_unite(Some(h));
-        let heures = crate::ligne::QuantiteDeLigne::PartDuMois(q).heures(par_unite);
-        e.heures = if !heures.est_nul() { Some(heures) } else { None };
+        let quantite = crate::ligne::QuantiteDeLigne::PartDuMois(q);
+        (_, e.heures) = crate::cachets_et_heures([(Some(quantite), quantite.heures(par_unite))], true);
         out.push(e);
     }
     Ok(out)
@@ -206,8 +206,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: Heures = parts.iter().filter_map(|p| p.engagement.heures).sum();
-    e.heures = if !heures.est_nul() { Some(socle::grandeurs::courte(heures)) } else { None };
+    // Les heures du mois, celles de ses periodes (`cachets_et_heures`).
+    (_, e.heures) = crate::cachets_et_heures(parts.iter().filter_map(|p| p.engagement.heures).map(|h| (None, h)), true);
     let mut paie = Paie::nouveau(
         e,
         derniere.salarie.clone(),

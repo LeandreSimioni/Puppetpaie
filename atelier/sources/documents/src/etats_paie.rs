@@ -28,7 +28,7 @@ use socle::grandeurs::{nulle, Grandeur, Montant};
 use engagement::ligne::PaiementDeLigne;
 use crate::prelevement::Prelevement;
 use crate::plan_comptable::{EtatDExport, FormatDExport, LogicielComptable, RegroupementDEtat};
-use engagement::etats::PaieDuMois;
+use engagement::etats::{PaieDuMois, RemunerationDuMois};
 use crate::tableaux_export::{
     ecrire as ecrire_tableau, format_possible, jj, libelle_mois, qui, refus, sans_mois, section_du_mois, sections_de, totaliser, colonne as C, ColonneDEtat, ColonneDeMontant, ColonneDeTexte, Ligne,
     Section, Tableau, FORMATS_TABLEAU, R, TOTAL_GENERAL,
@@ -1040,24 +1040,30 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             };
             let mut lignes = Vec::new();
             for r in paie.remuneration() {
+                // Une ligne rattachee a sa rubrique : son code et son libelle au catalogue ; une ligne d'un bulletin
+                // importe qui ne l'est pas : ce qu'il imprime.
+                let (code, libelle, paiement, montant) = match r {
+                    RemunerationDuMois::Rattachee(r) => (Some(r.code.clone()), r.libelle.clone(), r.paiement, Some(r.montant)),
+                    RemunerationDuMois::Imprimee(i) => (None, i.libelle.clone(), None, i.montant),
+                };
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot(C::Code, r.code).t(C::Libelle, r.libelle);
+                l.ot(C::Code, code).t(C::Libelle, libelle);
                 // La colonne « Base ou quantité » : la base en euros d'une ligne en pourcentage, la quantité d'une autre.
-                match r.paiement {
+                match paiement {
                     Some(PaiementDeLigne::Base(b, _)) => l.om(C::Base, Some(b)),
                     p => l.grandeur_ou_rien(C::Base, p.and_then(PaiementDeLigne::quantite)),
                 };
-                l.grandeur_ou_rien(C::TauxSal, r.paiement.map(PaiementDeLigne::taux)).om(C::Gain, r.montant.map(Montant::au_centime));
+                l.grandeur_ou_rien(C::TauxSal, paiement.map(PaiementDeLigne::taux)).om(C::Gain, montant.map(Montant::au_centime));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
-                l.ot(C::Code, c.cotisation.as_ref().map(|i| i.as_str().to_string()));
-                l.t(C::Libelle, c.libelle).base(C::Base, c.base.map(|x| x.au_centime()));
-                l.taux(C::TauxSal, c.taux_salarie).om(C::PartSal, c.montant_salarie.map(Montant::au_centime));
-                l.taux(C::TauxPat, c.taux_employeur).om(C::PartPat, c.montant_employeur.map(Montant::au_centime));
+                l.ot(C::Code, c.cotisation().map(|i| i.as_str().to_string()));
+                l.t(C::Libelle, c.libelle()).base(C::Base, c.base().map(|x| x.au_centime()));
+                l.taux(C::TauxSal, c.taux_salarie()).om(C::PartSal, c.montant_salarie().map(Montant::au_centime));
+                l.taux(C::TauxPat, c.taux_employeur()).om(C::PartPat, c.montant_employeur().map(Montant::au_centime));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {

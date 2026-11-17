@@ -15,7 +15,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use socle::date::{Jour, Periode};
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
-use crate::{Avis, Engagement};
+use crate::{Avis, Engagement, LignePaie};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDePaie, FormeDeRemuneration};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
@@ -37,14 +37,17 @@ fn taux_compose(x: Taux) -> Taux {
 
 // ------------------------------------------------------ les lignes de brut
 
-/// Une ligne de remuneration : une rubrique, une quantite, un taux.
+/// UNE LIGNE DE REMUNERATION : une rubrique, ce qu'elle paie (une quantite a un taux), son montant ; celle que le calcul
+/// rend d'une ligne de paie, ou celle d'un bulletin importe que l'import a rattachee a sa rubrique, son montant lu
+/// (`importe::LigneImprimee::en_ligne_de_paie`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneBrut {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: Unite,
-    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique (`unite`).
-    pub paiement: PaiementDeLigne,
+    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique (`unite`). Toujours dit d'une ligne calculee ;
+    /// `None` : la ligne d'un bulletin importe qui n'imprime que son montant (un forfait n'a pas de quantite).
+    pub paiement: Option<PaiementDeLigne>,
     pub montant: Montant,
     pub heures_annexes: Heures,
     pub soumis: bool,
@@ -74,7 +77,7 @@ impl LigneBrut {
         }
         // UN SALAIRE MENSUEL se paie au mois : sa quantite est la fraction du mois payee (`rubriques-base.json`, `mois`).
         // Un mois entier se dit seul ; une fraction se dit en part du mois, pas en decimales.
-        if let PaiementDeLigne::PartDuMois(part, _) = self.paiement {
+        if let Some(PaiementDeLigne::PartDuMois(part, _)) = self.paiement {
             if part == Coefficient::UN {
                 return self.libelle.clone();
             }
@@ -84,8 +87,8 @@ impl LigneBrut {
             let part = socle::texte::virgule(socle::grandeurs::au_centieme_au_pair(part.en_taux()));
             return format!("{} ({} % du mois)", self.libelle, part);
         }
-        // Une base (une ligne en pourcentage) n'est pas un nombre de choses : son seul libelle.
-        let Some(q) = self.paiement.quantite().map(QuantiteDeLigne::au_centieme) else { return self.libelle.clone() };
+        // Une base (une ligne en pourcentage) n'est pas un nombre de choses, ni un montant seul : son seul libelle.
+        let Some(q) = self.paiement.and_then(PaiementDeLigne::quantite).map(QuantiteDeLigne::au_centieme) else { return self.libelle.clone() };
         let nb = q.dit();
         let (tete, reste) = match self.libelle.split_once(' ') {
             Some((t, r)) => (t, Some(r)),
@@ -131,7 +134,7 @@ impl LigneBrut {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
             unite: self.unite,
-            paiement: self.paiement.sans_zero(),
+            paiement: self.paiement.map(PaiementDeLigne::sans_zero),
             montant: self.montant,
             heures_annexes: self.heures_annexes,
             soumis: self.soumis,
@@ -174,44 +177,56 @@ impl LigneBrut {
 /// Les lignes de remuneration d'un engagement : une par ligne de paie, le
 /// montant arrondi ligne par ligne.
 pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>> {
-    let mut out = Vec::new();
-    for l in &eng.lignes {
-        let (r, paiement, heures_annexes) = rattacher(l.rubrique(), |unite| l.paiement(unite), l.heures(), ctx)?;
-        let dsn_autres_bruts = code_54(&r, l.genre())?;
-        // Le montant qu'un bulletin importe lit se garde tel quel ; toute autre ligne paie sa quantite a son taux.
-        let montant = match l.montant_lu() {
-            Some(lu) => lu,
-            None => r.sens.de(paiement.montant().au_centime()),
-        };
-        out.push(LigneBrut {
-            code: r.code.into(),
-            libelle: r.libelle,
-            unite: r.unite,
-            paiement,
-            montant,
-            heures_annexes,
-            soumis: r.soumis,
-            imposable: r.imposable,
-            conges_spectacles: r.conges_spectacles,
-            salaire_de_base: r.salaire_de_base,
-            retabli: r.retabli,
-            conges_pris: r.conges_pris,
-            dsn_bloc52: r.dsn_bloc52,
-            arret_de_travail: r.arret_de_travail,
-            dsn_autres_bruts,
-            precision: l.precision().map(String::from),
-        });
-    }
-    Ok(out)
+    eng.lignes.iter().map(|l| ligne_brut(l, ctx)).collect()
+}
+
+/// LA LIGNE DE REMUNERATION D'UNE LIGNE DE PAIE, son montant arrondi. La ligne d'un bulletin importe garde son montant tel
+/// qu'il le lit, et ce qu'il dit qu'elle paie (rien d'un forfait imprime a son seul montant) ; toute autre ligne paie sa
+/// quantite a son taux.
+pub(crate) fn ligne_brut(l: &LignePaie, ctx: &Contexte) -> R<LigneBrut> {
+    let (r, paiement, heures_annexes, montant) = match l {
+        LignePaie::Importee(i) => {
+            let (r, paiement, heures) = rattacher(&i.rubrique, |_| Ok(i.paiement), i.heures, ctx)?;
+            (r, paiement, heures, i.montant)
+        }
+        _ => {
+            let (r, paiement, heures) = rattacher(l.rubrique(), |unite| l.paiement(unite), l.heures(), ctx)?;
+            let montant = r.sens.de(paiement.montant().au_centime());
+            (r, Some(paiement), heures, montant)
+        }
+    };
+    let dsn_autres_bruts = code_54(&r, l.genre())?;
+    Ok(LigneBrut {
+        code: r.code.into(),
+        libelle: r.libelle,
+        unite: r.unite,
+        paiement,
+        montant,
+        heures_annexes,
+        soumis: r.soumis,
+        imposable: r.imposable,
+        conges_spectacles: r.conges_spectacles,
+        salaire_de_base: r.salaire_de_base,
+        retabli: r.retabli,
+        conges_pris: r.conges_pris,
+        dsn_bloc52: r.dsn_bloc52,
+        arret_de_travail: r.arret_de_travail,
+        dsn_autres_bruts,
+        precision: l.precision().map(String::from),
+    })
 }
 
 /// LE RATTACHEMENT D'UNE LIGNE A SA RUBRIQUE, son montant mis a part : la rubrique lue, la quantite et le taux que son
-/// unite dit (`paiement`), et ses heures des annexes 8 et 10, sous le signe de la rubrique (une absence en retire ; des
-/// heures nulles gardent leur echelle).
-pub(crate) fn rattacher(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, PaiementDeLigne, Heures)> {
+/// unite dit (`paiement` : `PaiementDeLigne`, ou, d'un bulletin importe, ce qu'il en dit), et ses heures des annexes 8 et
+/// 10, sous le signe de la rubrique (une absence en retire ; des heures nulles gardent leur echelle). Une ligne qui ne
+/// dit pas ce qu'elle paie (un forfait imprime a son seul montant) ne compte aucune heure.
+fn rattacher<P: Copy + Into<Option<PaiementDeLigne>>>(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<P>, heures: Option<socle::grandeurs::HeuresParUnite>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, P, Heures)> {
     let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
     let paiement = paiement(r.unite)?;
-    let h = paiement.heures(r.heures_par_unite(heures))?;
+    let h = match paiement.into() {
+        Some(p) => p.heures(r.heures_par_unite(heures))?,
+        None => courte(Heures::ZERO),
+    };
     let heures_annexes = r.sens.de(h);
     Ok((r, paiement, heures_annexes))
 }
@@ -396,22 +411,6 @@ impl LigneCotisation {
             taux_sal: self.taux_sal.map(courte),
             montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
-        }
-    }
-
-    /// LA LIGNE TELLE QUE SON BULLETIN L'IMPRIME, ce qu'un etat lit d'une paie du mois (`etats::PaieDuMois::cotisations`) :
-    /// tout y est dit, et elle compte dans les totaux de la paie (`total_sal`, `total_pat` somment chaque ligne).
-    pub fn imprimee(&self) -> crate::importe::CotisationImprimee {
-        crate::importe::CotisationImprimee {
-            famille: Some(self.famille.clone()),
-            libelle: self.libelle.clone(),
-            cotisation: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(self.id.clone())),
-            base: Some(self.base),
-            taux_employeur: self.taux_pat,
-            montant_employeur: Some(self.montant_pat),
-            taux_salarie: self.taux_sal,
-            montant_salarie: Some(self.montant_sal),
-            hors_total: false,
         }
     }
 
@@ -654,7 +653,11 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
     for l in lignes.iter().filter(|l| l.code != crate::NUITEE_AU_DELA && l.code != crate::REPAS_AU_DELA) {
         // Deux quantites d'une meme rubrique sont de la meme grandeur ; deux grandeurs ne s'ajouteraient pas, et se diraient
         // a part.
-        let somme = |g: &LigneBrut| g.paiement.plus(l.paiement);
+        let somme = |g: &LigneBrut| match (g.paiement, l.paiement) {
+            (Some(a), Some(b)) => a.plus(b).map(Some),
+            (None, None) => Some(None),
+            _ => None,
+        };
         match groupes.iter_mut().find(|g| g.code == l.code && g.precision == l.precision).and_then(|g| somme(g).map(|p| (g, p))) {
             Some((g, p)) => {
                 g.paiement = p;
@@ -664,7 +667,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
         }
     }
     let base = |l: &LigneBrut| l.libelle.split_once(" (").map(|(b, _)| b.to_string());
-    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.paiement.quantite_ou_base() == b.paiement.quantite_ou_base();
+    let meme_mesure = |a: &LigneBrut, b: &LigneBrut| a.unite == b.unite && a.paiement.map(PaiementDeLigne::quantite_ou_base) == b.paiement.map(PaiementDeLigne::quantite_ou_base);
     let mut dits = Vec::new();
     let mut i = 0;
     while i < groupes.len() {
@@ -688,7 +691,7 @@ pub fn en_bref(lignes: &[LigneBrut]) -> String {
 /// Une ligne (deja additionnee) dite en bref : un forfait qui se compte dit son nombre (« 8 repas »), des heures de
 /// travail se disent en heures (« 28 h de travail ») ; le reste comme au bulletin.
 fn bref(l: &LigneBrut) -> String {
-    let Some(q) = l.paiement.quantite().map(QuantiteDeLigne::au_centieme) else { return l.designation().to_lowercase() };
+    let Some(q) = l.paiement.and_then(PaiementDeLigne::quantite).map(QuantiteDeLigne::au_centieme) else { return l.designation().to_lowercase() };
     let (tete, reste) = match l.libelle.split_once(' ') {
         Some((t, r)) => (t, r),
         None => (l.libelle.as_str(), ""),
@@ -2212,7 +2215,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, lue(montant)),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, paiement: Some(PaiementDeLigne::PartDuMois(socle::grandeurs::Coefficient::UN, lue(montant))),
             montant: lue(montant), heures_annexes: lue(heures), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

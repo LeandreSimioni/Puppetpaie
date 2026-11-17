@@ -307,7 +307,8 @@ pub struct Maintien {
 /// montant, tel qu'il le lit, qui ne se recompose jamais (l'import lit au mieux : ce que le bulletin dit se garde) ; ce
 /// qu'elle paie (sa quantite et son taux, dans l'unite de sa rubrique, que l'import a poses en la rattachant :
 /// `PaiementDeLigne::imprime`) et ses heures, s'il les lit. Une ligne imprimee qu'aucune rubrique ne rattache, ou sans
-/// montant, garde son libelle dans la paie importee (`importe::remuneration_lue`) : elle n'est pas une ligne de paie.
+/// montant, garde ce qu'elle imprime dans la paie importee (`importe::PaieImportee::remuneration`) : elle n'est pas une
+/// ligne de paie.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Importee {
@@ -405,9 +406,17 @@ pub mod en_texte {
         }
     }
 
-    /// Un `Option` dans ces ecritures : `None` s'ecrit `null`.
+    /// Un `Option` dans ces ecritures : `None` s'ecrit `null` (une ligne qui ne dit pas ce qu'elle paie,
+    /// `calcul::LigneBrut::paiement`).
     pub mod option {
-        use super::TauxDeLigne;
+        use super::{PaiementDeLigne, TauxDeLigne};
+
+        pub fn quantite<S: serde::Serializer>(p: &Option<PaiementDeLigne>, s: S) -> Result<S::Ok, S::Error> {
+            match p {
+                Some(p) => super::quantite(p, s),
+                None => s.serialize_none(),
+            }
+        }
 
         pub fn taux<S: serde::Serializer>(t: &Option<TauxDeLigne>, s: S) -> Result<S::Ok, S::Error> {
             match t {

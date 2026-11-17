@@ -248,9 +248,11 @@ pub struct LigneImprimee {
 }
 
 impl LigneImprimee {
-    /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique et qu'elle dit son
-    /// montant : ce montant, tel quel, et ce qu'elle paie et ses heures (son libelle reste celui du bulletin,
-    /// `remuneration_lue`).
+    /// LE RATTACHEMENT D'UNE LIGNE IMPRIMEE, le seul : la ligne de paie qu'elle dit a l'engagement importe, quand l'import
+    /// l'a rattachee a une rubrique et qu'elle dit son montant, meme sans quantite ni taux (un forfait n'a pas de
+    /// quantite) : ce montant, tel quel, et ce qu'elle paie et ses heures quand elle les dit. Sa ligne de remuneration est
+    /// celle que le calcul rend de cette ligne de paie (`calcul::lignes_brut` : le code et le libelle de sa rubrique) ;
+    /// une ligne qui n'est pas rattachee garde ce qu'elle imprime (`PaieImportee::remuneration`).
     pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
         let rubrique = self.rubrique.clone()?;
         Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, paiement: self.paiement, heures: self.heures, montant: self.montant? }))
@@ -258,9 +260,8 @@ impl LigneImprimee {
 }
 
 /// UNE LIGNE DE COTISATION QU'UN BULLETIN IMPRIME ; `cotisation` : celle du bareme que l'import lui a donnee (`None` : il
-/// ne l'a pas qualifiee) ; ce que le bulletin n'imprime pas est vide. C'est aussi la ligne qu'un etat lit d'une paie du
-/// mois (`etats::PaieDuMois::cotisations`) : celle d'une paie validee, telle que son bulletin l'imprime
-/// (`calcul::LigneCotisation::imprimee`).
+/// ne l'a pas qualifiee) ; ce que le bulletin n'imprime pas est vide. Un etat la lit d'une paie du mois importee
+/// (`etats::CotisationDuMois`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CotisationImprimee {
@@ -667,8 +668,12 @@ pub struct PaieImportee {
     pub salarie: droit::fiche::SalarieDuContrat,
     /// La fiche du spectacle dont le numero d'objet est celui que les pieces disent.
     pub spectacle: Option<droit::fiche::Spectacle>,
-    /// Les lignes de remuneration que le bulletin imprime ; a defaut, le brut que la DSN declare.
-    pub remuneration: Vec<LigneDeRemuneration>,
+    /// Les lignes de remuneration que le bulletin imprime, dans son ordre (a defaut, le brut que la DSN declare), chacune
+    /// avec sa ligne de remuneration quand l'import l'a rattachee (`LigneImprimee::en_ligne_de_paie`).
+    pub remuneration: Vec<(LigneImprimee, Option<crate::calcul::LigneBrut>)>,
+    /// Les heures pour les annexes 8 et 10 (un cachet compte pour les heures que sa rubrique declare) : la somme de celles
+    /// des lignes rattachees, dans sa forme la plus courte ; `None` : aucune ligne n'est rattachee.
+    pub heures_annexes: Option<Heures>,
     /// Les lignes de cotisation que le bulletin imprime, sous la cotisation que l'import leur a donnee, chaque taux dans
     /// sa forme la plus courte ; vide quand aucun bulletin ne les donne.
     pub lignes: Vec<CotisationImprimee>,
@@ -688,22 +693,6 @@ pub struct PaieImportee {
     pub numero_bulletin: Option<String>,
     /// Le prelevement a la source que les pieces disent ; `None` : elles n'en disent pas.
     pub pas: Option<PasImporte>,
-}
-
-/// Une ligne de remuneration d'une paie importee : ce que le bulletin imprime, et ce que le catalogue dit de la rubrique
-/// a laquelle l'import l'a rattachee (son code, son unite, ses heures pour les annexes 8 et 10). Une ligne sans rubrique
-/// n'a que son libelle et son montant.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LigneDeRemuneration {
-    pub code: Option<droit::catalogue::CodeDeRubrique>,
-    pub libelle: String,
-    pub unite: Option<droit::catalogue::Unite>,
-    /// Ce qu'elle paie : sa quantite (ou sa base, une ligne en pourcentage) et son taux.
-    pub paiement: Option<crate::ligne::PaiementDeLigne>,
-    pub montant: Option<Montant>,
-    pub heures_annexes: Option<socle::grandeurs::Heures>,
-    /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
-    pub soumis: bool,
 }
 
 /// Le prelevement a la source d'une paie importee : l'impot preleve, et le taux, son type et son identifiant que les
@@ -818,11 +807,16 @@ impl Importe {
             periode: None,
             ecrit: crate::ContratEcrit::default(),
         };
-        let remuneration = remuneration_lue(&lignes_lues, &ctx)?;
-        // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees a une
-        // rubrique.
-        (engagement.cachets, engagement.heures) =
-            crate::cachets_et_heures(remuneration.iter().filter_map(|r| r.heures_annexes.map(|h| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), h))), nat.mensuelle());
+        // Chaque ligne imprimee, avec sa ligne de remuneration quand elle est rattachee (`en_ligne_de_paie`).
+        let mut remuneration = Vec::new();
+        for l in lignes_lues {
+            let rattachee = l.en_ligne_de_paie().map(|lp| crate::calcul::ligne_brut(&lp, &ctx)).transpose()?;
+            remuneration.push((l, rattachee));
+        }
+        let rattachees: Vec<&crate::calcul::LigneBrut> = remuneration.iter().filter_map(|(_, r)| r.as_ref()).collect();
+        // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees.
+        (engagement.cachets, engagement.heures) = crate::cachets_et_heures(rattachees.iter().map(|r| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), r.heures_annexes)), nat.mensuelle());
+        let heures_annexes = (!rattachees.is_empty()).then(|| socle::grandeurs::courte(rattachees.iter().map(|r| r.heures_annexes).sum()));
         engagement.jours = Jours::de_dates(engagement.dates_travail.len());
         engagement.jours_contrat = engagement.jours;
 
@@ -880,6 +874,7 @@ impl Importe {
             salarie: sal,
             spectacle: spec,
             remuneration,
+            heures_annexes,
             lignes: cotisations,
             bases,
             brut,
@@ -1118,30 +1113,4 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
         ecrire_tous(racine, tous)?;
     }
     Ok(changes)
-}
-
-/// LES LIGNES DE REMUNERATION QU'UN BULLETIN IMPORTE IMPRIME, dans les mots du moteur : une ligne que l'import a
-/// rattachee a une rubrique du catalogue (`rubrique`, avec sa quantite et son taux) prend ce que le catalogue dit
-/// d'elle (son unite, ses heures pour les annexes 8 et 10, son assiette : `calcul::lignes_brut`) ; son montant reste
-/// celui du bulletin, et son rattachement (sa rubrique, sa quantite, son unite) ne depend pas de lui. Une ligne sans
-/// rubrique garde son libelle et son montant, rien de plus.
-fn remuneration_lue(lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
-    let mut out = Vec::new();
-    for l in lignes {
-        if let (Some(code), Some(p)) = (&l.rubrique, l.paiement) {
-            let (r, paiement, heures_annexes) = crate::calcul::rattacher(code, |_| Ok(p), l.heures, ctx)?;
-            out.push(LigneDeRemuneration {
-                code: Some(r.code.into()),
-                libelle: r.libelle,
-                unite: Some(r.unite),
-                paiement: Some(paiement),
-                montant: l.montant,
-                heures_annexes: Some(heures_annexes),
-                soumis: r.soumis,
-            });
-            continue;
-        }
-        out.push(LigneDeRemuneration { code: None, libelle: l.libelle.clone(), unite: None, paiement: None, montant: l.montant, heures_annexes: None, soumis: l.soumis });
-    }
-    Ok(out)
 }

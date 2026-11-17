@@ -549,8 +549,79 @@ pub enum PaieDuMois {
     Importee(crate::importe::PaieImportee),
 }
 
-/// Une ligne de remuneration d'une paie du mois, telle qu'un etat la lit (`importe::LigneDeRemuneration`).
-pub type RemunerationDuMois = crate::importe::LigneDeRemuneration;
+/// UNE LIGNE DE REMUNERATION D'UNE PAIE DU MOIS, telle qu'un etat la lit, sans recopie : la ligne de remuneration que le
+/// calcul rend, ou que l'import a rattachee a sa rubrique (`LigneBrut`) ; ou, d'un bulletin importe, une ligne que
+/// l'import n'a pas rattachee, telle qu'il l'imprime (`importe::LigneImprimee` : son libelle, son montant).
+#[derive(Debug, Clone, Copy)]
+pub enum RemunerationDuMois<'a> {
+    Rattachee(&'a crate::calcul::LigneBrut),
+    Imprimee(&'a crate::importe::LigneImprimee),
+}
+
+/// UNE LIGNE DE COTISATION D'UNE PAIE DU MOIS, telle qu'un etat la lit, sans recopie : celle du calcul
+/// (`LigneCotisation`, tout y est dit, et elle compte dans les totaux de la paie), ou celle que le bulletin importe
+/// imprime (`importe::CotisationImprimee`, ce qu'il ne dit pas est vide).
+#[derive(Debug, Clone, Copy)]
+pub enum CotisationDuMois<'a> {
+    Calculee(&'a crate::calcul::LigneCotisation),
+    Imprimee(&'a crate::importe::CotisationImprimee),
+}
+
+impl CotisationDuMois<'_> {
+    /// Sa cotisation (ou le regroupement que l'import a donne a la ligne d'un bulletin) ; `None` : une ligne d'un bulletin
+    /// importe que l'import n'a pas qualifiee.
+    pub fn cotisation(&self) -> Option<crate::ecarts::RegroupementDeComparaison> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
+            CotisationDuMois::Imprimee(l) => l.cotisation.clone(),
+        }
+    }
+
+    pub fn libelle(&self) -> &str {
+        match self {
+            CotisationDuMois::Calculee(l) => &l.libelle,
+            CotisationDuMois::Imprimee(l) => &l.libelle,
+        }
+    }
+
+    /// Sa base, dans la grandeur que sa cotisation compte ; `None` : un bulletin importe qui ne l'imprime pas.
+    pub fn base(&self) -> Option<crate::calcul::BaseDeCotisation> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.base),
+            CotisationDuMois::Imprimee(l) => l.base,
+        }
+    }
+
+    pub fn taux_salarie(&self) -> Option<socle::grandeurs::Taux> {
+        match self {
+            CotisationDuMois::Calculee(l) => l.taux_sal,
+            CotisationDuMois::Imprimee(l) => l.taux_salarie,
+        }
+    }
+
+    pub fn taux_employeur(&self) -> Option<socle::grandeurs::Taux> {
+        match self {
+            CotisationDuMois::Calculee(l) => l.taux_pat,
+            CotisationDuMois::Imprimee(l) => l.taux_employeur,
+        }
+    }
+
+    /// Sa part salariale ; `None` : la colonne qu'un bulletin importe laisse vide.
+    pub fn montant_salarie(&self) -> Option<Montant> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.montant_sal),
+            CotisationDuMois::Imprimee(l) => l.montant_salarie,
+        }
+    }
+
+    /// Sa part patronale ; `None` : la colonne qu'un bulletin importe laisse vide.
+    pub fn montant_employeur(&self) -> Option<Montant> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.montant_pat),
+            CotisationDuMois::Imprimee(l) => l.montant_employeur,
+        }
+    }
+}
 
 impl PaieDuMois {
     pub fn engagement(&self) -> &crate::Engagement {
@@ -641,58 +712,44 @@ impl PaieDuMois {
         }
     }
 
-    /// Les lignes de cotisation, telles que le bulletin les imprime : celles du calcul (`LigneCotisation::imprimee`), ou
-    /// celles du bulletin importe.
-    pub fn cotisations(&self) -> Vec<crate::importe::CotisationImprimee> {
+    /// Les lignes de cotisation, telles que le bulletin les imprime : celles du calcul, ou celles du bulletin importe.
+    pub fn cotisations(&self) -> Vec<CotisationDuMois<'_>> {
         match self {
-            PaieDuMois::Validee(p) => p.lignes.iter().map(crate::calcul::LigneCotisation::imprimee).collect(),
-            PaieDuMois::Importee(p) => p.lignes.clone(),
-        }
-    }
-
-    /// Les pieces d'une paie importee disent-elles ce qu'elle compte (une ligne de remuneration rattachee a une rubrique) ?
-    /// Une paie validee le dit toujours.
-    fn compte_dit(&self) -> bool {
-        match self {
-            PaieDuMois::Validee(_) => true,
-            PaieDuMois::Importee(p) => p.remuneration.iter().any(|r| r.unite.is_some()),
+            PaieDuMois::Validee(p) => p.lignes.iter().map(CotisationDuMois::Calculee).collect(),
+            PaieDuMois::Importee(p) => p.lignes.iter().map(CotisationDuMois::Imprimee).collect(),
         }
     }
 
     /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la partie entiere de la somme de ses lignes de cachets, ce
-    /// que la DSN declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    /// que la DSN declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
+    /// (ses heures, `heures_annexes`, ne sont pas dites).
     pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
-        self.compte_dit().then_some(self.engagement().cachets)
+        self.heures_annexes().map(|_| self.engagement().cachets)
     }
 
     /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles
-    /// que le calcul a sommees (`heures_travaillees`), ou la somme de celles des lignes du bulletin importe, dans sa forme
-    /// la plus courte ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique. Ce ne sont pas les
-    /// heures de son engagement (`Engagement::heures`, celles que la DSN declare : sans les cachets).
+    /// que le calcul a sommees (`heures_travaillees`), ou celles des lignes rattachees du bulletin importe
+    /// (`PaieImportee::heures_annexes`) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    /// Ce ne sont pas les heures de son engagement (`Engagement::heures`, celles que la DSN declare : sans les cachets).
     pub fn heures_annexes(&self) -> Option<socle::grandeurs::Heures> {
         match self {
             PaieDuMois::Validee(p) => Some(p.heures_travaillees),
-            PaieDuMois::Importee(p) => self.compte_dit().then(|| socle::grandeurs::courte(p.remuneration.iter().filter_map(|r| r.heures_annexes).sum())),
+            PaieDuMois::Importee(p) => p.heures_annexes,
         }
     }
 
-    /// Les lignes de remuneration : celles du calcul, ou celles du bulletin importe.
-    pub fn remuneration(&self) -> Vec<RemunerationDuMois> {
+    /// Les lignes de remuneration, dans l'ordre du bulletin : celles du calcul, ou celles du bulletin importe.
+    pub fn remuneration(&self) -> Vec<RemunerationDuMois<'_>> {
         match self {
-            PaieDuMois::Validee(p) => p
+            PaieDuMois::Validee(p) => p.remuneration.iter().map(RemunerationDuMois::Rattachee).collect(),
+            PaieDuMois::Importee(p) => p
                 .remuneration
                 .iter()
-                .map(|r| RemunerationDuMois {
-                    code: Some(r.code.clone()),
-                    libelle: r.libelle.clone(),
-                    unite: Some(r.unite),
-                    paiement: Some(r.paiement),
-                    montant: Some(r.montant),
-                    heures_annexes: Some(r.heures_annexes),
-                    soumis: r.soumis,
+                .map(|(imprimee, rattachee)| match rattachee {
+                    Some(r) => RemunerationDuMois::Rattachee(r),
+                    None => RemunerationDuMois::Imprimee(imprimee),
                 })
                 .collect(),
-            PaieDuMois::Importee(p) => p.remuneration.clone(),
         }
     }
 }

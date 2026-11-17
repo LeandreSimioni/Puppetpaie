@@ -950,7 +950,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         .remuneration
         .iter()
         .filter(|l| cachet(&l.code))
-        .filter_map(|l| match l.paiement.quantite() {
+        .filter_map(|l| match l.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
             Some(QuantiteDeLigne::Cachets(c)) => Some(c),
             _ => None,
         })
@@ -989,7 +989,7 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
         // Un service de repetition se paie en services (`rubriques-base.json`) : au plus un par date.
-        let un_par_jour = match l.paiement.quantite() {
+        let un_par_jour = match l.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
             Some(QuantiteDeLigne::Services(s)) => !dates.is_empty() && s <= Services::comptes(dates.len()),
             _ => false,
         };
@@ -1083,7 +1083,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
             // service, une journee se paient a l'unite).
             let paye = match p.par {
                 Par::Heure => paye_a_l_heure(l),
-                Par::Unite | Par::Cachet | Par::Service => l.paiement.taux().par_unite(),
+                Par::Unite | Par::Cachet | Par::Service => l.paiement.and_then(|p| p.taux().par_unite()),
             };
             let Some(paye) = paye else { continue };
             if p.service_3090 {

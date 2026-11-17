@@ -198,8 +198,8 @@ pub struct FormeDeRemuneration {
     pub libelle: String,
     pub unite: droit::catalogue::Unite,
     /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique, par sa forme (`{"cachets": ["2", "150"]}`),
-    /// sans zero inutile (`calcul::LigneBrut::forme`).
-    pub paiement: crate::ligne::PaiementDeLigne,
+    /// sans zero inutile (`calcul::LigneBrut::forme`) ; `null` : celle d'un bulletin importe qui ne le dit pas.
+    pub paiement: Option<crate::ligne::PaiementDeLigne>,
     #[serde(with = "nombre")]
     pub montant: Montant,
     #[serde(with = "nombre")]

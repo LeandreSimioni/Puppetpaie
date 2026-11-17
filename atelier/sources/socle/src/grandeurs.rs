@@ -1342,22 +1342,23 @@ pub mod lu {
             }
         }
 
-        /// Un `Option` lu ainsi : absent (avec `#[serde(default)]`) ou nul, il est vide.
+        /// Un `Option` lu ainsi (`Lue`) : absent (avec `#[serde(default)]`) ou nul, il est vide.
         pub mod option {
+            use super::Lue;
             use crate::grandeurs::Grandeur;
 
             pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<G>, D::Error> {
-                <Option<crate::forme::Court> as serde::Deserialize>::deserialize(d).map(|c| c.map(|c| <G as crate::grandeurs::Scelle>::du(c.0)))
+                <Option<Lue<G>> as serde::Deserialize>::deserialize(d).map(|c| c.map(|Lue(g)| g))
             }
         }
 
-        /// Une liste facultative lue ainsi : absente (avec `#[serde(default)]`) ou nulle, elle est vide.
+        /// Une liste facultative lue ainsi (`Lue`) : absente (avec `#[serde(default)]`) ou nulle, elle est vide.
         pub mod liste_option {
+            use super::Lue;
             use crate::grandeurs::Grandeur;
 
             pub fn deserialize<'de, G: Grandeur, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<G>>, D::Error> {
-                <Option<Vec<crate::forme::Court>> as serde::Deserialize>::deserialize(d)
-                    .map(|l| l.map(|l| l.into_iter().map(|c| <G as crate::grandeurs::Scelle>::du(c.0)).collect()))
+                <Option<Vec<Lue<G>>> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.into_iter().map(|Lue(g)| g).collect()))
             }
         }
     }
