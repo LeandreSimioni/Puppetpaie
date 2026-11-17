@@ -905,13 +905,6 @@ impl<'de> serde::Deserialize<'de> for Anciennete {
     }
 }
 
-/// Ses mois, tels qu'ils sont (une phrase).
-impl std::fmt::Display for Anciennete {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 const JOURS_PAR_MOIS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /// Le rang du 1970-01-01 a compter du 0001-01-01, qui vaut 1.

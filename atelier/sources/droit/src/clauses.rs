@@ -975,7 +975,7 @@ pub fn indemnite_licenciement(
         article = format!("{}, {}", nom(idcc), c.article);
         hors_primes = c.hors_primes == Some(true);
         if anciennete < c.anciennete_minimale_mois {
-            let p = format!("{} demande {} mois d'anciennete", article, c.anciennete_minimale_mois);
+            let p = format!("{} demande {} mois d'anciennete", article, c.anciennete_minimale_mois.mois_dits());
             return sortie(Vec::new(), article, hors_primes, Some(p), false);
         }
         let ref_ = P::depuis(reference()?.decimal());
@@ -989,7 +989,7 @@ pub fn indemnite_licenciement(
         }
     }
     if lectures.is_empty() {
-        let p = format!("{} mois d'anciennete, et {} en demande {}", P::depuis(anciennete.mois()).plancher(), article, sec.anciennete_minimale_mois);
+        let p = format!("{} mois d'anciennete, et {} en demande {}", P::depuis(anciennete.mois()).plancher(), article, sec.anciennete_minimale_mois.mois_dits());
         return sortie(lectures, article, hors_primes, Some(p), false);
     }
     sortie(lectures, article, hors_primes, pourquoi, true)

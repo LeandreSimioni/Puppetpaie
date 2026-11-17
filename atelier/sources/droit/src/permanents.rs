@@ -1034,7 +1034,7 @@ pub fn indemnite_licenciement(
     if anciennete < mini {
         return Ok(IndemniteLegale::non_due(format!(
             "{} mois d'anciennete, et l'indemnite legale de licenciement en demande {} (L1234-9).",
-            anciennete.mois_complets(), mini)));
+            anciennete.mois_complets().mois_dits(), mini.mois_dits())));
     }
     let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
@@ -1138,7 +1138,7 @@ pub fn indemnite_mise_a_la_retraite(anciennete: Anciennete, reference: &mut dyn 
         return Ok(IndemniteLegale::non_due(format!(
             "{} mois d'anciennete : L1237-7 renvoie a l'indemnite de L1234-9, qui en demande {}. \
              La convention collective peut en prevoir une.",
-            anciennete.mois_complets(), mini)));
+            anciennete.mois_complets().mois_dits(), mini.mois_dits())));
     }
     let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
@@ -1157,12 +1157,12 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Anciennete, reference: &mut
                  l'indemnité spécifique due « au prorata du nombre de mois de présence » ; le plancher est celui de \
                  R1234-2 en vigueur (un quart de mois par année) sur ces mois. C'est la lecture de l'administration, \
                  qui homologue la convention, pas la loi.",
-                anciennete.mois_complets(), mini)) });
+                anciennete.mois_complets().mois_dits(), mini.mois_dits())) });
         }
         return Ok(PlancherDeLaRupture { plancher: None, annees: anciennete, pourquoi: Some(format!(
             "{} mois d'anciennete : L1237-13 renvoie a l'indemnite de L1234-9, qui en demande {}, \
              donc la loi ne donne pas de plancher. Le montant de la convention se saisit.",
-            anciennete.mois_complets(), mini)) });
+            anciennete.mois_complets().mois_dits(), mini.mois_dits())) });
     }
     let (plancher, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(PlancherDeLaRupture { plancher: Some(plancher), annees, pourquoi: None })
@@ -1211,8 +1211,8 @@ pub fn droit_au_maintien(nature: Option<&Nature>, anciennete: Anciennete) -> R<O
     if anciennete < minimum {
         return Ok(Some(format!(
             "L1226-1 demande {} mois d'anciennete au premier jour de l'absence (D1226-8) ; il y en a {}.",
-            minimum,
-            anciennete.au_demi_mois_superieur()
+            minimum.mois_dits(),
+            anciennete.au_demi_mois_superieur().mois_dits()
         )));
     }
     Ok(None)

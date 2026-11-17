@@ -405,12 +405,12 @@ fn ouverture(reg: &Regime, sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool
     }
     let branche = sal.permanent.ouvrir(au_mois).prevoyance_branche_depuis.dite();
     if let (Some(depuis), Some(mois)) = (branche, mois_entre(branche, fin)) {
-        return Ok((mois >= seuil, format!("{} mois dans la branche depuis le {} (seuil {})", mois, depuis.iso(), seuil)));
+        return Ok((mois >= seuil, format!("{} mois dans la branche depuis le {} (seuil {})", mois.mois_dits(), depuis.iso(), seuil.mois_dits())));
     }
     let mois_maison = mois_entre(sal.date_anciennete.dite(), fin);
     if let Some(m) = mois_maison {
         if m >= seuil {
-            return Ok((true, format!("{} mois d'anciennete dans l'entreprise, donc au moins autant dans la branche (seuil {})", m, seuil)));
+            return Ok((true, format!("{} mois d'anciennete dans l'entreprise, donc au moins autant dans la branche (seuil {})", m.mois_dits(), seuil.mois_dits())));
         }
     }
     Err(socle::refus!(
@@ -420,9 +420,9 @@ Configuration › Salariés, « Dans la branche depuis » : le jour où il y est
 avant, son jour d'embauche chez nous. Le supposer venu de la branche le ferait cotiser pour rien, le supposer \
 nouveau le laisserait sans couverture pendant un an.",
         nom_du_salarie(sal),
-        seuil,
+        seuil.mois_dits(),
         match mois_maison {
-            Some(m) => format!("{} mois", m),
+            Some(m) => format!("{} mois", m.mois_dits()),
             None => "aucune date d'anciennete".to_string(),
         }
     ))
@@ -643,7 +643,7 @@ pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &
             "{} : la prevoyance s'ouvre apres {} mois d'anciennete dans la branche, et sa fiche ne date ni son \
 entree dans la branche (« Dans la branche depuis ») ni son anciennete (« Dans la compagnie depuis »).",
             nom_du_salarie(sal),
-            seuil
+            seuil.mois_dits()
         )),
     }
 }

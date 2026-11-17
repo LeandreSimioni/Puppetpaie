@@ -407,7 +407,7 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
         article: a.article,
         lectures: a.lectures.iter().map(|(n, _)| n.clone()).collect(),
         hors_primes: a.hors_primes,
-        anciennete_minimale_mois: a.anciennete_minimale_mois.to_string(),
+        anciennete_minimale_mois: a.anciennete_minimale_mois.mois().to_string(),
         plafond_mois: a.plafond_mois.map(|m| m.0.to_string()),
         motifs_legaux_seulement: a.motifs_legaux_seulement.map(|l| l.iter().map(|m| m.code().to_string()).collect()),
     })
