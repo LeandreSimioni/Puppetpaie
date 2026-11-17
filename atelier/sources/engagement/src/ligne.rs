@@ -302,23 +302,6 @@ pub struct Maintien {
     pub reconstitution: Option<Box<crate::maintien::Reconstitution>>,
 }
 
-/// LA LIGNE QU'UN BULLETIN IMPORTE IMPRIME (`importe::LigneImprimee`), rattachee par l'import a une rubrique : son
-/// montant, tel qu'il le lit, qui ne se recompose jamais (l'import lit au mieux : ce que le bulletin dit se garde) ; ce
-/// qu'elle paie (sa quantite et son taux, dans l'unite de sa rubrique, que l'import a poses en la rattachant :
-/// `PaiementDeLigne::imprime`) et ses heures, s'il les lit. Une ligne imprimee qu'aucune rubrique ne rattache, ou sans
-/// montant, garde ce qu'elle imprime dans la paie importee (`importe::PaieImportee::remuneration`) : elle n'est pas une
-/// ligne de paie.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Importee {
-    pub rubrique: CodeDeRubrique,
-    pub paiement: Option<PaiementDeLigne>,
-    #[serde(with = "texte_option")]
-    pub heures: Option<HeuresParUnite>,
-    #[serde(with = "texte")]
-    pub montant: Montant,
-}
-
 /// UNE LIGNE DE PAIE, sa forme dite (`forme`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "forme", rename_all = "snake_case", deny_unknown_fields)]
@@ -333,7 +316,6 @@ pub enum LignePaie {
     RetenueArret(RetenueArret),
     IndemniteJournaliere(IndemniteJournaliere),
     Maintien(Maintien),
-    Importee(Importee),
 }
 
 /// CE QUE LE MOTEUR POSE SUR UNE LIGNE DE FRAIS CALCULEE, pour l'ecran (`frais_au_dela`) : son rang parmi les lignes de
@@ -405,17 +387,9 @@ pub mod en_texte {
         }
     }
 
-    /// Un `Option` dans ces ecritures : `None` s'ecrit `null` (une ligne qui ne dit pas ce qu'elle paie,
-    /// `calcul::LigneBrut::paiement`).
+    /// Un taux qui peut manquer : `None` s'ecrit `null`.
     pub mod option {
-        use super::{PaiementDeLigne, TauxDeLigne};
-
-        pub fn quantite<S: serde::Serializer>(p: &Option<PaiementDeLigne>, s: S) -> Result<S::Ok, S::Error> {
-            match p {
-                Some(p) => super::quantite(p, s),
-                None => s.serialize_none(),
-            }
-        }
+        use super::TauxDeLigne;
 
         pub fn taux<S: serde::Serializer>(t: &Option<TauxDeLigne>, s: S) -> Result<S::Ok, S::Error> {
             match t {
@@ -1013,7 +987,6 @@ impl LignePaie {
             LignePaie::RetenueArret(l) => &l.rubrique,
             LignePaie::IndemniteJournaliere(l) => &l.rubrique,
             LignePaie::Maintien(l) => &l.rubrique,
-            LignePaie::Importee(l) => &l.rubrique,
         }
     }
 
@@ -1032,7 +1005,6 @@ impl LignePaie {
             LignePaie::RetenueArret(l) => l.paiement.quantite(),
             LignePaie::IndemniteJournaliere(l) => Some(QuantiteDeLigne::Jours(l.jours)),
             LignePaie::Maintien(l) => l.paiement.quantite(),
-            LignePaie::Importee(l) => l.paiement.and_then(PaiementDeLigne::quantite),
         }
     }
 
@@ -1057,7 +1029,6 @@ impl LignePaie {
             LignePaie::Pourcentage(l) => l.base,
             LignePaie::Montant(AuMontant { montant, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant, .. }) => montant.filter(|_| unite == Unite::Pourcentage),
             LignePaie::Composee(Composee { paiement, .. }) | LignePaie::RetenueArret(RetenueArret { paiement, .. }) | LignePaie::Maintien(Maintien { paiement, .. }) => paiement.quantite_ou_base().err(),
-            LignePaie::Importee(l) => l.paiement.and_then(|p| p.quantite_ou_base().err()),
             LignePaie::Unites(_) | LignePaie::UnitesEtHeures(_) | LignePaie::Frais(_) | LignePaie::IndemniteJournaliere(_) => None,
         }
     }
@@ -1077,7 +1048,6 @@ impl LignePaie {
             LignePaie::RetenueArret(l) => Some(l.paiement.taux()),
             LignePaie::IndemniteJournaliere(l) => Some(ParUnite(l.taux)),
             LignePaie::Maintien(l) => Some(l.paiement.taux()),
-            LignePaie::Importee(l) => l.paiement.map(PaiementDeLigne::taux),
         }
     }
 
@@ -1109,7 +1079,6 @@ impl LignePaie {
     /// aussi.
     pub fn paiement(&self, unite: Unite) -> R<PaiementDeLigne> {
         match self {
-            LignePaie::Importee(l) => l.paiement.ok_or_else(|| socle::fichiers::absent("paiement")),
             LignePaie::Montant(AuMontant { montant, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant, .. }) => {
                 Ok(PaiementDeLigne::une_fois(unite, montant.ok_or_else(|| socle::fichiers::absent("montant"))?))
             }
@@ -1128,22 +1097,12 @@ impl LignePaie {
         }
     }
 
-    /// LE MONTANT QU'UN BULLETIN IMPORTE LUI DONNE (une ligne importee), qui ne se recompose pas ; `None` pour toute
-    /// autre ligne, dont le montant est ce qu'elle paie (`paiement`).
-    pub fn montant_lu(&self) -> Option<Montant> {
-        match self {
-            LignePaie::Importee(l) => Some(l.montant),
-            _ => None,
-        }
-    }
-
     /// SES HEURES PAR UNITE, quand elle en dit (`QuantiteDeLigne::heures`) ; aucune pour une indemnite journaliere et le
     /// maintien, qui ne sont pas du travail.
     pub fn heures(&self) -> Option<HeuresParUnite> {
         match self {
             LignePaie::UnitesEtHeures(l) => l.heures,
             LignePaie::Composee(l) => l.heures,
-            LignePaie::Importee(l) => l.heures,
             LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(HeuresParUnite::ZERO),
             LignePaie::Unites(_) | LignePaie::Frais(_) | LignePaie::Pourcentage(_) | LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) | LignePaie::RetenueArret(_) => None,
         }
@@ -1324,7 +1283,6 @@ impl LignePaie {
                 LignePaie::IndemniteJournaliere(IndemniteJournaliere { jours: sans_zero(l.jours), taux: sans_zero(l.taux), assiette_pas: o(l.assiette_pas), ..l })
             }
             LignePaie::Maintien(l) => LignePaie::Maintien(Maintien { paiement: l.paiement.sans_zero(), ..l }),
-            LignePaie::Importee(l) => LignePaie::Importee(Importee { paiement: l.paiement.map(PaiementDeLigne::sans_zero), heures: o(l.heures), montant: sans_zero(l.montant), ..l }),
         }
     }
 }

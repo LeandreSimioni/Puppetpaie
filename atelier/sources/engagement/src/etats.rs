@@ -647,6 +647,15 @@ impl PaieDuMois {
         }
     }
 
+    /// SANS PAIE : un engagement valide sans ligne (`Engagement::sans_paie`), ou une paie importee dont aucune ligne n'est
+    /// rattachee a une rubrique.
+    pub fn sans_paie(&self) -> bool {
+        match self {
+            PaieDuMois::Validee(p) => p.engagement.sans_paie(),
+            PaieDuMois::Importee(p) => p.remuneration.iter().all(|(_, r)| r.is_none()),
+        }
+    }
+
     /// La paie importee, ou `None` pour une paie validee.
     pub fn importee(&self) -> Option<&crate::importe::PaieImportee> {
         match self {

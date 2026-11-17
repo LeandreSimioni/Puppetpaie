@@ -185,22 +185,25 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 }
 
 /// LA LIGNE DE REMUNERATION D'UNE LIGNE DE PAIE, son montant arrondi : ce qu'elle paie, toujours dit (une case vide se
-/// refuse en se nommant, `LignePaie::paiement`), et sa quantite a son taux ; la ligne d'un bulletin importe garde son
-/// montant tel qu'il le lit (`LignePaie::montant_lu`).
+/// refuse en se nommant, `LignePaie::paiement`), et sa quantite a son taux.
 pub(crate) fn ligne_brut(l: &LignePaie, ctx: &Contexte) -> R<LigneBrut> {
-    let (r, paiement, heures_annexes) = rattacher(l.rubrique(), |unite| l.paiement(unite), l.heures(), ctx)?;
-    let montant = match l.montant_lu() {
-        Some(m) => m,
-        None => r.sens.de(paiement.montant().au_centime()),
-    };
+    let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
+    let paiement = l.paiement(r.unite)?;
+    let heures_annexes = heures_annexes(&r, &paiement, l.heures())?;
+    let montant = r.sens.de(paiement.montant().au_centime());
     ligne_de(r, paiement, heures_annexes, montant, l.genre(), l.precision())
 }
 
-/// LA LIGNE D'UN BULLETIN IMPORTE RATTACHEE A SA RUBRIQUE : son montant tel qu'il le lit, et ce qu'il dit qu'elle paie
-/// (rien d'un forfait imprime a son seul montant).
-pub(crate) fn ligne_rattachee(i: &crate::ligne::Importee, ctx: &Contexte) -> R<LigneRattachee> {
-    let (r, paiement, heures_annexes) = rattacher(&i.rubrique, |_| Ok(i.paiement), i.heures, ctx)?;
-    ligne_de(r, paiement, heures_annexes, i.montant, None, None)
+/// LA LIGNE D'UN BULLETIN IMPORTE RATTACHEE A LA RUBRIQUE `code` (`importe::LigneImprimee::rattachee`) : son montant tel
+/// qu'il le lit, qui ne se recompose jamais, et ce qu'il dit qu'elle paie et ses heures par unite quand il les imprime.
+/// Un forfait imprime a son seul montant ne dit pas ce qu'il paie : il ne compte aucune heure.
+pub(crate) fn ligne_rattachee(code: &droit::catalogue::CodeDeRubrique, paiement: Option<PaiementDeLigne>, heures: Option<socle::grandeurs::HeuresParUnite>, montant: Montant, ctx: &Contexte) -> R<LigneRattachee> {
+    let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
+    let heures_annexes = match &paiement {
+        Some(p) => heures_annexes(&r, p, heures)?,
+        None => r.sens.de(courte(Heures::ZERO)),
+    };
+    ligne_de(r, paiement, heures_annexes, montant, None, None)
 }
 
 /// La ligne de remuneration rattachee a sa rubrique `r`, le genre d'un avantage en nature et sa precision quand elle les
@@ -227,19 +230,10 @@ fn ligne_de<P>(r: droit::catalogue::Rubrique, paiement: P, heures_annexes: Heure
     })
 }
 
-/// LE RATTACHEMENT D'UNE LIGNE A SA RUBRIQUE, son montant mis a part : la rubrique lue, la quantite et le taux que son
-/// unite dit (`paiement` : `PaiementDeLigne`, ou, d'un bulletin importe, ce qu'il en dit), et ses heures des annexes 8 et
-/// 10, sous le signe de la rubrique (une absence en retire ; des heures nulles gardent leur echelle). Une ligne qui ne
-/// dit pas ce qu'elle paie (un forfait imprime a son seul montant) ne compte aucune heure.
-fn rattacher<P: Copy + Into<Option<PaiementDeLigne>>>(code: &droit::catalogue::CodeDeRubrique, paiement: impl FnOnce(Unite) -> R<P>, heures: Option<socle::grandeurs::HeuresParUnite>, ctx: &Contexte) -> R<(droit::catalogue::Rubrique, P, Heures)> {
-    let r = rubrique(&ctx.racine, code, &ctx.lue_au)?;
-    let paiement = paiement(r.unite)?;
-    let h = match paiement.into() {
-        Some(p) => p.heures(r.heures_par_unite(heures))?,
-        None => courte(Heures::ZERO),
-    };
-    let heures_annexes = r.sens.de(h);
-    Ok((r, paiement, heures_annexes))
+/// LES HEURES DES ANNEXES 8 ET 10 de ce que paie une ligne rattachee a sa rubrique `r`, a ses heures par unite quand elle
+/// en dit, sous le signe de la rubrique (une absence en retire ; des heures nulles gardent leur echelle).
+fn heures_annexes(r: &droit::catalogue::Rubrique, paiement: &PaiementDeLigne, heures: Option<socle::grandeurs::HeuresParUnite>) -> R<Heures> {
+    Ok(r.sens.de(paiement.heures(r.heures_par_unite(heures))?))
 }
 
 // ----------------------------------------------------------------- sortie

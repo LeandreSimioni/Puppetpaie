@@ -1725,7 +1725,7 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
             LignePaie::Montant(x) => (None, x.montant.is_some(), "", "le montant"),
             LignePaie::AvantageEnNature(x) => (None, x.montant.is_some(), "", "le montant"),
             // UNE LIGNE QUE LE MOTEUR POSE ne se saisit pas.
-            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) | LignePaie::Importee(_) => {
+            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => {
                 return Err(socle::refus!("{} : {} ne se saisit pas : le moteur la pose lui-même. Retirez-la.", qui, ligne));
             }
         };

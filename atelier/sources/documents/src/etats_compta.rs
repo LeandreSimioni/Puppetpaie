@@ -1629,7 +1629,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Err(e) => return Err(e),
         };
         for pa in &paies {
-            if pa.engagement().sans_paie() {
+            if pa.sans_paie() {
                 continue;
             }
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
