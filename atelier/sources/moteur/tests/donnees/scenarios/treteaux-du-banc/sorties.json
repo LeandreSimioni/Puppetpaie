@@ -1804,24 +1804,8 @@
                 "AER_FULLER_Novembre2026.pdf"
               ],
               "resume": {
-                "contrats": [
-                  {
-                    "contrat": {
-                      "du": "2026-11-20",
-                      "au": "2026-11-21"
-                    },
-                    "spectacle": "Le Banc des menteurs",
-                    "jours": [
-                      "2026-11-20",
-                      "2026-11-21"
-                    ],
-                    "cachets": 2,
-                    "brut": "300",
-                    "net": "232.3"
-                  }
-                ],
-                "brut": "300",
-                "net": "232.3"
+                "brut": "300.00",
+                "net": "232.30"
               },
               "renvoi": false
             }
