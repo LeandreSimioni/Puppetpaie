@@ -1137,15 +1137,17 @@ pub(crate) fn engagements(
             date_paiement: carte.date_paiement,
             lieu: carte.lieu.clone(),
             emploi: droit::emplois::EmploiEngagement {
-                pcs_ese: a_la_main.and_then(|e| e.pcs_ese.clone()).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
-                code_emploi_ft: a_la_main.and_then(|e| e.code_emploi_ft.clone()).or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
-                statut: a_la_main.and_then(|e| e.statut).or_else(|| d.map(|d| d.statut)),
-                statut_conventionnel: a_la_main.and_then(|e| e.statut_conventionnel).or_else(|| d.and_then(|d| d.statut_conventionnel)),
-                statut_categoriel_rc: a_la_main.and_then(|e| e.statut_categoriel_rc).or_else(|| d.map(|d| d.statut_categoriel_rc)),
-                // Le libelle que la carte dit ; sinon celui que `resoudre` a donne a CE metier, feminin compris, quand la
-                // carte n'ecrit pas d'emploi (un `emploi` ecrit a la main dirait un autre metier que lui).
-                emploi_affichage: a_la_main.and_then(|e| e.emploi_affichage.clone()).or_else(|| if emploi_ecrit.is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None }),
-                emploi: emploi_ecrit.or_else(|| d.map(|d| d.emploi.clone())),
+                // Le libelle que `resoudre` a donne a CE metier, feminin compris, quand la carte n'ecrit pas d'emploi (un
+                // `emploi` ecrit a la main dirait un autre metier que lui).
+                emploi_affichage: if emploi_ecrit.is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },
+                ecrit: droit::emplois::EmploiEcrit {
+                    pcs_ese: a_la_main.and_then(|e| e.pcs_ese.clone()).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
+                    code_emploi_ft: a_la_main.and_then(|e| e.code_emploi_ft.clone()).or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
+                    statut: a_la_main.and_then(|e| e.statut).or_else(|| d.map(|d| d.statut)),
+                    statut_conventionnel: a_la_main.and_then(|e| e.statut_conventionnel).or_else(|| d.and_then(|d| d.statut_conventionnel)),
+                    statut_categoriel_rc: a_la_main.and_then(|e| e.statut_categoriel_rc).or_else(|| d.map(|d| d.statut_categoriel_rc)),
+                    emploi: emploi_ecrit.or_else(|| d.map(|d| d.emploi.clone())),
+                },
             },
             nature: Some(valide.nature()),
             quotite_contrat: termes.quotite_contrat,

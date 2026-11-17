@@ -1904,21 +1904,23 @@ fn metier_dit(
     femme: bool,
     idcc: Option<&droit::fiche::Idcc>,
 ) -> R<EmploiEngagement> {
-    let mut f = EmploiEngagement { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiEngagement::default() };
-    f.statut = statut;
-    f.statut_categoriel_rc = rc;
-    let Some(intitule) = f.emploi.clone() else { return Ok(f) };
+    let mut f = EmploiEngagement::default();
+    let e = &mut f.ecrit;
+    e.emploi = emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string);
+    e.statut = statut;
+    e.statut_categoriel_rc = rc;
+    let Some(intitule) = e.emploi.clone() else { return Ok(f) };
     if let Some((code, feminin)) = droit::emplois::par_intitule(&intitule, compare).map_err(|m| m.reclasser(Classe::Refuse))? {
-        let cadre = f.statut_categoriel_rc.map(|s| s == droit::fiche::StatutCategorielRc::Cadre);
+        let cadre = e.statut_categoriel_rc.map(|s| s == droit::fiche::StatutCategorielRc::Cadre);
         let r = droit::emplois::resoudre(&code, cadre, feminin || femme, idcc).map_err(|m| m.reclasser(Classe::Refuse))?;
         // Ce que le choix du metier donne ; le statut imprime prime.
-        f.emploi = Some(r.emploi);
+        e.emploi = Some(r.emploi);
+        e.pcs_ese = r.pcs_ese.or(e.pcs_ese.take());
+        e.code_emploi_ft = r.code_emploi_ft.or(e.code_emploi_ft.take());
+        e.statut.get_or_insert(r.statut);
+        e.statut_conventionnel = r.statut_conventionnel.or(e.statut_conventionnel);
+        e.statut_categoriel_rc = Some(r.statut_categoriel_rc);
         f.emploi_affichage = Some(r.emploi_affichage);
-        f.pcs_ese = r.pcs_ese.or(f.pcs_ese);
-        f.code_emploi_ft = r.code_emploi_ft.or(f.code_emploi_ft);
-        f.statut.get_or_insert(r.statut);
-        f.statut_conventionnel = r.statut_conventionnel.or(f.statut_conventionnel);
-        f.statut_categoriel_rc = Some(r.statut_categoriel_rc);
     }
     Ok(f)
 }
@@ -2336,7 +2338,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<Nir, IdSalarie>, a_creer: &[ACree
         }
     }
     let femme = nir.sexe() == Some(droit::fiche::Sexe::Feminin);
-    Ok(metier_dit(None, None, c.emploi.as_deref(), femme, idcc)?.statut)
+    Ok(metier_dit(None, None, c.emploi.as_deref(), femme, idcc)?.ecrit.statut)
 }
 
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,

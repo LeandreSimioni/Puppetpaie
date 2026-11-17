@@ -371,7 +371,7 @@ fn comparer_une(
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.
     let dit = |v: &Option<String>| v.clone().filter(|x| !x.is_empty());
-    let imprimes = p.emploi_imprime.as_ref();
+    let imprimes = p.emploi_imprime.as_ref().map(|i| &i.ecrit);
     c.statut = imprimes.and_then(|i| i.statut).or_else(|| fiche.statut.dite().copied());
     c.cadre = imprimes.and_then(|i| i.statut_categoriel_rc).map(|s| s == droit::fiche::StatutCategorielRc::Cadre).or_else(|| fiche.statut_categoriel_rc.dite().map(|s| *s == droit::fiche::StatutCategorielRc::Cadre));
     let Some(cotisations) = &p.cotisations else {
@@ -488,7 +488,7 @@ fn comparer_une(
         debut: p.periode.map(|o| o.debut()),
         fin: p.periode.and_then(|o| o.fin()),
         // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
-        emploi: p.emploi_imprime.clone().map(|i| droit::emplois::EmploiEngagement { emploi: dit(&i.emploi), emploi_affichage: None, ..i }),
+        emploi: p.emploi_imprime.as_ref().map(|i| droit::emplois::EmploiEcrit { emploi: dit(&i.ecrit.emploi), ..i.ecrit.clone() }).filter(|e| *e != droit::emplois::EmploiEcrit::default()),
         lignes: Some(saisies),
         // Le jour ou l'ancien logiciel a verse : un fait (`Carte::importe`).
         date_paiement: p.verse_le,

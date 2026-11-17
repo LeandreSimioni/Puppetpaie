@@ -231,7 +231,7 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
-            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -276,7 +276,7 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -328,7 +328,7 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -710,8 +710,10 @@ changements! {
     QuotiteReference(Heures) = "quotite_reference" => quotite_reference,
     ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
     SalaireMensuel(MontantUnitaire) ="salaire_mensuel" => salaire_mensuel,
-    /// L'emploi entier, chacun de ses sous-champs dit ou non (`droit::emplois::EmploiEngagement`).
-    Emploi(droit::emplois::EmploiEngagement) = "emploi" => emploi,
+    /// L'emploi entier, chacun de ses sous-champs dit ou non (`droit::emplois::EmploiEcrit`) ; un objet qui n'en dit
+    /// aucun vide la case.
+    #[serde(deserialize_with = "droit::emplois::EmploiEcrit::dit")]
+    Emploi(droit::emplois::EmploiEcrit) = "emploi" => emploi,
     #[serde(deserialize_with = "socle::date::Duree::en_jours_opt")]
     PeriodeEssaiJours(Duree<EnJours>) ="periode_essai_jours" => periode_essai_jours,
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,

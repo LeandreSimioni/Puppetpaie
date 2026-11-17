@@ -44,7 +44,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
         for paie in lecture.paies(m)?.iter() {
             let e = paie.engagement();
             let s = paie.salarie();
-            let emploi = e.emploi.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
+            let emploi = e.emploi.ecrit.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
             out.push(ContratMois {
                 mois: m,
                 cle: s.id.clone(),

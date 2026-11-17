@@ -38,7 +38,7 @@ pub enum Groupe {
 
 /// LA CARTE ET SES CHAMPS, declares une fois : la structure telle qu'elle s'ecrit, et, de chaque champ marque
 /// `#[champ(Groupe, Champ)]`, son nom (`Champ`), son groupe, et ce qui le lit et l'ecrit sans passer par son nom de cle.
-/// Une case faite de plusieurs champs (l'emploi, `droit::emplois::EmploiEngagement`) se marque
+/// Une case faite de plusieurs champs (l'emploi, `droit::emplois::EmploiEcrit`) se marque
 /// `#[champs(Groupe Champ => sous_champ, …)]` : chacun de ses sous-champs est un champ, de son nom, qu'un avenant change
 /// et retire seul ; la case se vide quand plus aucun ne dit rien.
 macro_rules! carte {
@@ -181,9 +181,10 @@ carte! {
             Terme StatutConventionnel => statut_conventionnel,
             Terme StatutCategorielRc => statut_categoriel_rc,
         )]
-        /// L'emploi que la carte ecrit a la main (`droit::emplois::EmploiEngagement`), chaque sous-champ seulement quand
-        /// il est dit ; l'engagement le resout sous son metier (`Engagement::nouveau`).
-        pub emploi: Option<droit::emplois::EmploiEngagement>,
+        /// L'emploi que la carte ecrit a la main (`droit::emplois::EmploiEcrit`), chaque sous-champ seulement quand
+        /// il est dit ; l'engagement le resout sous son metier, avec son libelle lisible (`Engagement::nouveau`).
+        #[serde(default, deserialize_with = "droit::emplois::EmploiEcrit::dit")]
+        pub emploi: Option<droit::emplois::EmploiEcrit>,
         #[champ(Terme, PeriodeEssaiJours)]
         #[serde(default, serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
         pub periode_essai_jours: Option<socle::date::Duree<socle::date::EnJours>>,

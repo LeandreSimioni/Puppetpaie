@@ -14,7 +14,7 @@ use droit::catalogue::{code_54, rubrique, HorsAssiette, Unite};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::{Jour, Periode};
 use socle::texte::euros;
-use droit::emplois::{emploi_de, EmploiEngagement};
+use droit::emplois::{emploi_de, EmploiEcrit, EmploiEngagement};
 use crate::{Avis, Engagement, LignePaie};
 use crate::paie_ecrite::{Cle, FormeDePaie};
 use droit::assiette::Assiette;
@@ -1392,7 +1392,8 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
     }
     .ok_or_else(|| socle::fichiers::absent("debut"))?;
     let cle = e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
-    let emploi = EmploiEngagement { code_emploi_ft: e.emploi.as_ref().and_then(|x| x.code_emploi_ft.clone()).or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from)), ..Default::default() };
+    let code_emploi_ft = e.emploi.as_ref().and_then(|x| x.code_emploi_ft.clone()).or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from));
+    let emploi = EmploiEngagement { ecrit: EmploiEcrit { code_emploi_ft, ..Default::default() }, emploi_affichage: None };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);
     droit::caisse_conges::affilie(&nat, &fiche, &contrat)
 }
