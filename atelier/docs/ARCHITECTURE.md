@@ -168,9 +168,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 
 | notion | son type | aujourd'hui |
 |---|---|---|
-| paie calculée d'un engagement | `engagement::calcul::Paie` | à unifier (#419) : `PaieEcrite`, `PaieLue`, `PaieRelue`, `PaieDuMois` (ses sommes et ses lignes rendent leurs grandeurs) |
-| paie d'un mois importé | `engagement::importe::PaieImportee` | à unifier (#419) : `PaieVersee` |
-| ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut`, `importe::LigneDeRemuneration`, `importe::LigneImprimee` |
+| ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut` (la ligne calculée), `importe::LigneDeRemuneration` (celle d'une paie du mois qu'un état lit, recopiée d'une `LigneBrut` pour une paie validée) ; une ligne imprimée importée (`importe::LigneImprimee`, la forme de la zone `importe`) se rattache deux fois, autrement (`LignePaie::Importee` : rubrique et montant ; `importe::remuneration_lue` : rubrique et paiement) |
 | contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
 | contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
 | taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
@@ -1065,7 +1063,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | type de contrat de la DPAE | `TypeContratDpae` | `droit/src/natures.rs` |
 | lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
 | origine du retour d'un contrat | `envois::ligne::OrigineDuRetourDeContrat` | `envois/src/ligne.rs` |
-| paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs`, `engagement/src/paie_ecrite.rs`, `engagement/src/importe.rs` |
+| paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
+| paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
+| paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
 | ligne de cotisation (calculée) | `engagement::calcul::LigneCotisation` | `engagement/src/calcul.rs` |

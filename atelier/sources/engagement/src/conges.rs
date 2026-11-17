@@ -210,9 +210,10 @@ pub(crate) fn jours_dits(j: Jours) -> String {
     socle::grandeurs::ecrit::sans_zero::dit(j.au_demi_superieur())
 }
 
-/// Ce qu'une paie validee apporte au compteur de conges et a la deduction forfaitaire de l'annee.
+/// Ce qu'une paie validee apporte au compteur de conges et a la deduction forfaitaire de l'annee : pas une copie de la
+/// paie, ce qu'un calcul de l'annee en garde (`lue`), une fois par mois et par salarie.
 #[derive(Debug, Clone)]
-struct PaieLue {
+struct ApportDUnePaie {
     brut: Montant,
     /// La deduction forfaitaire specifique retenue, s'il y en a une.
     dfs: Option<Montant>,
@@ -239,7 +240,7 @@ struct MoisPaye {
 }
 
 /// Ce que la paie validee `p` de `mois` apporte au compteur.
-fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
+fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<ApportDUnePaie> {
     let eng = &p.engagement;
     let cle = &p.salarie.id;
     let mensuel = if eng.nat()?.mensuelle() {
@@ -260,12 +261,12 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     let dfs = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
     let heures_supplementaires = crate::heures_en_plus::supplementaires_payees(&p.remuneration)?;
     let exonere = p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere).map(|x| x.en_euros(droit::assiette::Assiette::HeuresEnPlusExonere)).transpose()?;
-    Ok(PaieLue { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
+    Ok(ApportDUnePaie { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
 
 // Le memo d'une derivation : la profondeur des derivations ouvertes, et ce que les paies de chaque (racine, mois,
-// salarie) ont deja apporte (`PaieLue`), ou le refus d'un mois qui ne se lit pas.
-type PaiesDuMois = R<Vec<PaieLue>>;
+// salarie) ont deja apporte (`ApportDUnePaie`), ou le refus d'un mois qui ne se lit pas.
+type PaiesDuMois = R<Vec<ApportDUnePaie>>;
 
 thread_local! {
     static MEMO: RefCell<(u32, HashMap<(String, String), PaiesDuMois>)> =
@@ -436,7 +437,7 @@ impl Tenue {
     /// `periode` : sa presence, ses jours pris, et, avec `remuneration`, son brut d'un mois ou il est present.
     fn ajouter(
         &mut self, ctx: &Contexte, cle_salarie: &IdSalarie, cle: &IdSalarie, rep: Option<&Reprise>, periode: &Periode, mois: Mois,
-        paies: &[PaieLue], remuneration: bool,
+        paies: &[ApportDUnePaie], remuneration: bool,
     ) -> R<()> {
         let mut present = false;
         for m in paies.iter().filter_map(|p| p.mensuel.as_ref()) {
@@ -774,7 +775,7 @@ pub(crate) fn reprise_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalari
 
 /// La date de debut du contrat paye au mois que portent les paies `paies` du salarie en `mois`, si elle est anterieure
 /// a ce mois ; sinon `None`. Elle se lit dans l'engagement de la paie.
-fn commence_avant(paies: &[PaieLue], mois: Mois) -> Option<Jour> {
+fn commence_avant(paies: &[ApportDUnePaie], mois: Mois) -> Option<Jour> {
     let debut_du_mois = mois.premier_jour();
     paies.iter().filter_map(|p| p.mensuel.as_ref()).map(|m| m.contrat_debut).find(|debut| *debut < debut_du_mois)
 }
@@ -800,7 +801,7 @@ fn mois_de_la_periode(
     cle: &IdSalarie,
     p: &Periode,
     lus: Lus,
-) -> R<Vec<(Mois, Vec<PaieLue>)>> {
+) -> R<Vec<(Mois, Vec<ApportDUnePaie>)>> {
     let mut out = Vec::new();
     let saisis = crate::stock::mois_saisis(&ctx.racine)?;
     for m in p.mois() {
@@ -815,7 +816,7 @@ fn mois_de_la_periode(
 
 /// Ce que les paies validees du salarie `cle` (la cle de sa fiche) en `mois` apportent (`etats::paies_validees`, `lue`),
 /// lu une fois par derivation.
-fn paies_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<PaieLue>> {
+fn paies_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<ApportDUnePaie>> {
     let reference = cle_du_memo(ctx, mois, cle);
     let memo = MEMO.with(|m| {
         let m = m.borrow();
@@ -868,7 +869,7 @@ pub(crate) fn exonere_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSa
 
 /// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `plus` ajoute, depuis `zero`, de chaque paie validee
 /// du salarie `cle`. Une paie validee qui ne se lit pas refuse : le cumul de l'annee ne se devine pas.
-fn cumul_de_l_annee<T: Copy>(ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, plus: impl Fn(T, &PaieLue) -> T, qui: &str, regle: &str) -> R<T> {
+fn cumul_de_l_annee<T: Copy>(ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, plus: impl Fn(T, &ApportDUnePaie) -> T, qui: &str, regle: &str) -> R<T> {
     let _derivation = Derivation::ouvrir();
     let cle_fiche = cle_de_fiche(ctx, cle)?;
     let mut total = zero;
