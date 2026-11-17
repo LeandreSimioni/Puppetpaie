@@ -1057,7 +1057,7 @@ fn bareme_licenciement(anciennete: Anciennete, reference: Montant) -> R<(Montant
             Some(_) | None => break,
         }
     }
-    Ok(((reference * total).au_centime(), comptee))
+    Ok((reference * total, comptee))
 }
 
 /// L'anciennete minimale de l'indemnite de licenciement (L1234-9), en mois.
@@ -1185,7 +1185,7 @@ pub fn indemnite_depart_retraite(anciennete: Anciennete, reference: &mut dyn FnM
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
-        montant: (reference()? * mois).au_centime(),
+        montant: reference()? * mois,
         du: true,
         mois,
         palier: Some(palier.anciennete_annees),

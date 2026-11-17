@@ -60,7 +60,7 @@ que par la structure :
   l'ont pour leurs essais ; `fabrique-pdf`, hors de l'espace, l'a aussi : à ranger, #419) ; une autre crate qui
   voudrait lire du JSON brut ne compile pas (`une_crate_ne_prend_qu_a_celles_du_dessous` le lit dans les `Cargo.toml`).
   `rust_decimal` n'est au `Cargo.toml` que du `socle`, essais compris, et le socle garde internes son décimal et ce qui
-  le prend ou le rend (`num`, `d28`, `grandeurs::decimal`, `du_decimal`, les champs de `forme::Nombre` et `Court`) :
+  le prend ou le rend (`num`, `d28`, `fraction`, `grandeurs::decimal`, `du_decimal`, les champs de `forme::Nombre` et `Court`) :
   hors du socle, écrire `Decimal` ou rouvrir une grandeur ne compile pas. Un trait scellé du socle interdit qu'on
   l'implémente, pas qu'on appelle ses méthodes par un générique (`B::du(a.en_decimal())` rouvrirait un montant en
   heures) : chaque méthode scellée (`grandeurs::Grandeur`, `texte::EnEuros`, `piece::Format`, `date::Unite`) exige un
@@ -290,7 +290,10 @@ un libellé, chacun sa forme.
   `delai_sans_subrogation` un `Delai`, `delai_avec_subrogation` un `AvecLaMensuelle`. La fin d'un délai se compte à un
   seul endroit (`routes::obligations`, `fin_du_delai`).
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
-  (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
+  (`Anciennete::age`). **Exacte** : ses mois sont une fraction (`socle::fraction::Fraction`, interne au socle, la forme
+  de l'ancienneté et des mois de salaire, pas une notion), des jours sur la longueur de leur mois comme des années de
+  douze mois, sans coupure ; elle ne devient un décimal qu'à ses écritures, et les mois de salaire qu'au montant. Elle se
+  compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de
   salaire, le férié chômé), ou en mois révolus (`Anciennete::revolue` : une grille, la prime de présence, l'ouverture
   d'une prévoyance, l'âge en années révolues). Un seuil d'un texte se lit en elle à sa porte (`Deserialize` en mois,
@@ -322,7 +325,7 @@ un libellé, chacun sa forme.
 | notion | son type | déclaré dans |
 |---|---|---|
 | montant | `Montant` (les indemnités de rupture aussi : salaire de référence × mois de salaire, au centime, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
-| mois de salaire (ce qu'une indemnité de rupture compte en salaire de référence : un barème par année d'ancienneté, R1234-2 ; le palier, le plafond, le plancher d'une convention ou de la loi) | `MoisDeSalaire` (exacts : un nombre de mois tel que le texte le dit, ou compté sur une ancienneté en douzièmes, `Anciennete::par_annee_dans_la_tranche`, dont la division par douze ne se fait qu'au montant ; mois de salaire + mois de salaire, × coefficient (une majoration) ; salaire de référence × mois de salaire = montant ; écrits tels qu'ils sont, `ecrits`, `ecrits_sans_zero`) | `socle/src/grandeurs.rs` |
+| mois de salaire (ce qu'une indemnité de rupture compte en salaire de référence : un barème par année d'ancienneté, R1234-2 ; le palier, le plafond, le plancher d'une convention ou de la loi) | `MoisDeSalaire` (exacts, une fraction comme l'ancienneté : un nombre de mois tel que le texte le dit, ou compté sur une ancienneté, `Anciennete::par_annee_dans_la_tranche` ; mois de salaire + mois de salaire, × coefficient (une majoration) ; salaire de référence × mois de salaire = montant, au centime, la valeur exacte arrondie une fois : leur seule porte vers l'argent ; écrits à vingt-huit chiffres, `ecrits`, `ecrits_sans_zero`) | `socle/src/grandeurs.rs` |
 | taux | `Taux` | `socle/src/grandeurs.rs` |
 | quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; des cachets ne se comptent qu'en entiers (Léandre, 17/11 : « 1,5 cachet, ça n'existe pas ») : chaque porte d'une grandeur refuse des cachets à virgule en nommant la case, et seule une grandeur qui se fractionne (`Fractionnable`, toutes les autres) se prend d'un décimal sans refus (`du_decimal`, `socle::forme::Nombre::grandeur`) ; la quantité imprimée d'une ligne de cachets se lit par `socle::forme::Nombre::cachets` | `socle/src/grandeurs.rs` |
 | heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
@@ -2521,7 +2524,8 @@ La différence ne se voit pas sur un contrat au cachet pur, qui n'a qu'une rubri
 | Charges patronales | 212,99 | 213,00 | **212,99** |
 | Coût employeur | 582,99 | 583,00 | **582,99** |
 
-L'arrondi est **au demi supérieur** (`socle::grandeurs::Montant::au_centime`, le seul arrondi au centime) : c'est ce que montrent les 144 cas ambigus des cotisations
+L'arrondi est **au demi supérieur** (`socle::grandeurs::Montant::au_centime`, le seul arrondi au centime ; le même, sur
+la valeur exacte, fait le montant d'une indemnité de rupture, `Montant × MoisDeSalaire`) : c'est ce que montrent les 144 cas ambigus des cotisations
 `S21.G00.81` de ces DSN, 144 sur 144.
 
 ## La nature du contrat, et les salariés permanents

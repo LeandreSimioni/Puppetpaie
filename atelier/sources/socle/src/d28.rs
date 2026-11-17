@@ -25,8 +25,9 @@ fn dix(k: u32) -> Option<i128> {
     10i128.checked_pow(k)
 }
 
-/// Arrondit a 28 chiffres significatifs, au pair sur le demi.
-fn arrondi28(m: i128, e: i32) -> P {
+/// Arrondit a 28 chiffres significatifs, au pair sur le demi (aussi l'ecriture d'une fraction exacte,
+/// `fraction::Fraction::en_decimal`).
+pub(crate) fn arrondi28(m: i128, e: i32) -> P {
     let n = chiffres(m);
     if n <= 28 {
         return P { m, e };
@@ -103,10 +104,6 @@ pub(crate) fn reduire(x: P, e: i32) -> P {
 }
 
 impl P {
-    pub fn entier(n: i64) -> P {
-        P { m: n as i128, e: 0 }
-    }
-
     pub fn depuis(d: Decimal) -> P {
         P { m: d.mantissa(), e: d.scale() as i32 }
     }
@@ -175,14 +172,6 @@ impl P {
             }
         }
         arrondi28(q * (self.m.signum() * o.m.signum()), s)
-    }
-
-    /// `to_integral_value(rounding=ROUND_FLOOR)`.
-    pub fn plancher(self) -> P {
-        if self.e <= 0 {
-            return self;
-        }
-        P { m: self.m.div_euclid(10i128.pow(self.e as u32)), e: 0 }
     }
 }
 

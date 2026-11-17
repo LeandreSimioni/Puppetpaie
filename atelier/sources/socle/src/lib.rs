@@ -13,6 +13,7 @@ pub mod feries;
 pub mod fichiers;
 pub mod fil_de_fond;
 pub mod forme;
+pub(crate) mod fraction;
 pub mod garde_reseau;
 pub mod grandeurs;
 pub mod html;

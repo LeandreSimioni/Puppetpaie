@@ -7,6 +7,7 @@
 //! fichiers deja ecrits : une date lue aujourd'hui se lit comme elle s'est toujours lue.
 
 use crate::echec::{refus, R};
+use crate::fraction::{Fraction, Moitie};
 use crate::num::{self, Decimal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -654,17 +655,25 @@ impl<'de> serde::Deserialize<'de> for PeriodeOuverte {
 /// depuis la naissance. Elle se compte ici, de deux jours, et nulle part ailleurs : en mois et fraction du mois entame
 /// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en
 /// mois ou en annees se lit en elle a sa porte (`Deserialize` : des mois ; `en_annees`, `en_mois_entiers`,
-/// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees`,
-/// `semaines_entieres`), et dans une phrase en mois (`Display`, `mois`) ou en annees revolues (`ans_revolus_dits`).
+/// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees_ecrites`,
+/// `semaines_entieres`), et dans une phrase en mois (`mois_ecrits`, `mois_dits`) ou en annees revolues
+/// (`ans_revolus_dits`).
+/// Exacte : ses mois sont une fraction (`fraction::Fraction`), des jours sur la longueur de leur mois comme des annees de
+/// douze mois, sans coupure ; elle ne devient un decimal qu'a ses ecritures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Anciennete(Decimal);
+pub struct Anciennete(Fraction);
+
+/// Douze mois, l'annee d'une anciennete.
+fn douze() -> Fraction {
+    Fraction::entier(12)
+}
 
 impl Anciennete {
-    pub const ZERO: Anciennete = Anciennete(Decimal::ZERO);
+    pub const ZERO: Anciennete = Anciennete(Fraction::ZERO);
 
     /// LES MOIS COMPLETS DE `depuis` A `au`, `au` compris, ET LA FRACTION DU MOIS ENTAME (ses jours sur ceux du mois de
-    /// `au`) ; rien quand `au` precede `depuis`. Le compte d'un preavis, d'une indemnite de fin de contrat, d'un maintien
-    /// de salaire, d'un ferie chome (le code du travail).
+    /// `au`, exacte) ; rien quand `au` precede `depuis`. Le compte d'un preavis, d'une indemnite de fin de contrat, d'un
+    /// maintien de salaire, d'un ferie chome (le code du travail).
     pub fn entre(depuis: &Jour, au: &Jour) -> Anciennete {
         if au < depuis {
             return Anciennete::ZERO;
@@ -678,8 +687,7 @@ impl Anciennete {
             let (an, precedent) = if au.mois > 1 { (au.an, au.mois - 1) } else { (au.an - 1, 12) };
             jours_du_mois(an, precedent) as i64 + au.jour as i64 + 1 - anniv
         };
-        let dans_le_mois = Decimal::from(jours_du_mois(au.an, au.mois));
-        Anciennete(num::add(Decimal::from(mois), num::div(Decimal::from(reste), dans_le_mois)))
+        Anciennete(Fraction::entier(i128::from(mois)) + Fraction::de(i128::from(reste), u128::from(jours_du_mois(au.an, au.mois))))
     }
 
     /// LES MOIS REVOLUS DE `depuis` AU `au` : un de plus a chaque quantieme de `depuis` atteint ; negatif quand `au`
@@ -687,18 +695,15 @@ impl Anciennete {
     /// l'ouverture d'une prevoyance, un age).
     pub fn revolue(depuis: &Jour, au: &Jour) -> Anciennete {
         let mois = (au.an as i64 - depuis.an as i64) * 12 + (au.mois as i64 - depuis.mois as i64) - i64::from(au.jour < depuis.jour);
-        Anciennete(Decimal::from(mois))
+        Anciennete(Fraction::entier(i128::from(mois)))
     }
 
     /// LE PREMIER JOUR OU L'ANCIENNETE REVOLUE DEPUIS `depuis` LA VAUT (`revolue`) : le meme quantieme autant de mois plus
     /// tard, ou le premier du mois suivant quand ce quantieme n'existe pas (31 janvier + 1 mois : le 1er mars). Une fraction
     /// de mois n'est atteinte a aucun quantieme, ni un jour hors du calendrier : `None`.
     pub fn atteinte(self, depuis: &Jour) -> Option<Jour> {
-        use rust_decimal::prelude::ToPrimitive;
-        if !self.0.fract().is_zero() {
-            return None;
-        }
-        let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + self.0.to_i64()?;
+        let mois = i64::try_from(self.0.en_entier()?).ok()?;
+        let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + mois;
         let (an, mois) = ((rang / 12) as i32, (rang % 12) as u32 + 1);
         Jour::nouveau(an, mois, depuis.jour).or_else(|| {
             let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
@@ -715,7 +720,7 @@ impl Anciennete {
     /// CE QU'ELLE A DE PLUS QUE `seuil` ; rien quand elle ne l'atteint pas.
     pub fn au_dela_de(self, seuil: Anciennete) -> Anciennete {
         if self.0 > seuil.0 {
-            Anciennete(num::sub(self.0, seuil.0))
+            Anciennete(self.0 - seuil.0)
         } else {
             Anciennete::ZERO
         }
@@ -725,13 +730,12 @@ impl Anciennete {
     /// `pas` nul.
     #[track_caller]
     pub fn fois_entieres(self, pas: Anciennete) -> R<u32> {
-        use rust_decimal::prelude::ToPrimitive;
-        if pas.0 <= Decimal::ZERO {
-            return Err(refus(format!("une ancienneté de {} mois ne se compte pas par périodes", pas.0)));
+        if pas.0 <= Fraction::ZERO {
+            return Err(refus(format!("une ancienneté de {} mois ne se compte pas par périodes", pas.mois_ecrits())));
         }
-        match num::div(self.0, pas.0).floor().to_u32() {
+        match (self.0 / pas.0).plancher().en_entier().and_then(|n| u32::try_from(n).ok()) {
             Some(n) => Ok(n),
-            None => Err(refus(crate::forme::illisible(&self.0.to_string()))),
+            None => Err(refus(crate::forme::illisible(&self.mois_ecrits()))),
         }
     }
 
@@ -742,49 +746,42 @@ impl Anciennete {
 
     /// `n` mois qu'un texte fixe (L3133-3 : « trois mois d'ancienneté »).
     pub fn mois_fixes(n: u32) -> Anciennete {
-        Anciennete(Decimal::from(n))
+        Anciennete(Fraction::entier(i128::from(n)))
     }
 
     /// `n` annees qu'un texte fixe, douze mois chacune.
     pub fn ans(n: u32) -> Anciennete {
-        Anciennete(Decimal::from(n * 12))
+        Anciennete(Fraction::entier(i128::from(n) * 12))
     }
 
     /// `d` annees (un seuil d'un texte, un oracle) : la porte d'un nombre d'annees, douze mois chacune.
-    pub(crate) fn d_annees(d: Decimal) -> Anciennete {
-        Anciennete(num::mul(d, Decimal::from(12)))
+    fn d_annees(d: Decimal) -> Anciennete {
+        Anciennete(Fraction::du_decimal(d) * douze())
     }
 
-    /// Les mois qui ne finissent pas une annee, de 0 a 12 exclu.
-    fn reste_de_l_annee(self) -> Decimal {
-        let r = self.0 % Decimal::from(12);
-        if r < Decimal::ZERO {
-            r + Decimal::from(12)
-        } else {
-            r
-        }
+    /// SES ANNEES, a douze mois l'annee, exactes.
+    fn annees(self) -> Fraction {
+        self.0 / douze()
     }
 
     /// SES ANNEES REVOLUES, en anciennete : les mois des annees entieres.
     pub fn ans_revolus(self) -> Anciennete {
-        Anciennete(num::sub(self.0, self.reste_de_l_annee()))
+        Anciennete(self.annees().plancher() * douze())
     }
 
     /// SES ANNEES REVOLUES DITES DANS UNE PHRASE, en nombre entier (`3` ; `-1` pour une anciennete revolue negative,
     /// `revolue`) : les annees de presence d'une prime, le palier d'une indemnite, le seuil d'un minimum.
     pub fn ans_revolus_dits(self) -> String {
-        num::div(self.ans_revolus().0, Decimal::from(12)).trunc().to_string()
+        self.annees().plancher().en_decimal().to_string()
     }
 
     /// Ecrite en nombre entier d'annees (`3`), comme `en_annees_entieres` la relit :
     /// `#[serde(serialize_with = "socle::date::Anciennete::ecrite_en_annees_entieres")]`. Une anciennete qui n'est pas
     /// d'annees entieres (`ans_revolus` la fait telle) ne s'ecrit pas ainsi.
     pub fn ecrite_en_annees_entieres<S: serde::Serializer>(a: &Anciennete, s: S) -> Result<S::Ok, S::Error> {
-        use rust_decimal::prelude::ToPrimitive;
-        let annees = a.annees();
-        match (annees.fract().is_zero(), annees.to_i64()) {
-            (true, Some(n)) => s.serialize_i64(n),
-            (true, None) | (false, _) => Err(serde::ser::Error::custom(format!("une ancienneté de {} mois n'est pas un nombre entier d'années", a.0))),
+        match a.annees().en_entier().and_then(|n| i64::try_from(n).ok()) {
+            Some(n) => s.serialize_i64(n),
+            None => Err(serde::ser::Error::custom(format!("une ancienneté de {} mois n'est pas un nombre entier d'années", a.mois_ecrits()))),
         }
     }
 
@@ -799,60 +796,57 @@ impl Anciennete {
     /// Au demi-mois superieur, sans zero inutile (3,1 mois : 3,5) : l'anciennete qu'une phrase dit en mois (un affichage,
     /// pas une regle).
     pub fn au_demi_mois_superieur(self) -> Anciennete {
-        let demi = (self.0 * Decimal::from(2)).ceil();
-        Anciennete(num::div(demi, Decimal::from(2)).normalize())
+        let deux = Fraction::entier(2);
+        Anciennete((self.0 * deux).plafond() / deux)
     }
 
     /// SES MOIS COMPLETS : le mois entame ne compte pas (R1234-1).
     pub fn mois_complets(self) -> Anciennete {
-        Anciennete(self.0.floor())
-    }
-
-    /// DITE EN ANNEES, a douze mois l'annee : l'unite d'un bareme qui compte par annee (R1234-2, D1237-1).
-    pub(crate) fn annees(self) -> Decimal {
-        num::div(self.0, Decimal::from(12))
+        Anciennete(self.0.plancher())
     }
 
     /// SES ANNEES DITES DANS UNE PHRASE, au dixieme, la moitie au pair, une decimale ecrite (`12.5`, `3.0`).
     pub fn annees_au_dixieme(self) -> String {
-        let mut a = self.annees().round_dp_with_strategy(1, rust_decimal::RoundingStrategy::MidpointNearestEven);
-        a.rescale(1);
-        a.to_string()
+        self.annees().arrondi(1, Moitie::AuPair).to_string()
     }
 
     /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
-    /// d'anciennete (`droit::clauses`). Le compte se fait a vingt-huit chiffres (`d28`), sans arrondi entre ses pas ; son
-    /// resultat est entier.
+    /// d'anciennete (`droit::clauses`). Exact ; son resultat est entier.
     pub fn semaines_entieres(self) -> crate::grandeurs::Semaines {
-        let p = crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher();
-        crate::grandeurs::du_decimal(num::en_decimal(p))
+        crate::grandeurs::du_decimal((self.annees() * Fraction::entier(52)).plancher().en_decimal())
     }
 
     /// LES MOIS DE SALAIRE QU'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de salaire par
     /// année d'ancienneté pour les années jusqu'à dix ans ») : ses annees au-dela de `bas` et jusqu'a `haut` (`None` :
     /// sans borne ; une tranche ; de `ZERO` sans borne, toutes ses annees : un bareme par bandes, un prorata, la mise a la
     /// retraite d'une convention), chacune `par_annee` mois de salaire ; rien quand elle n'atteint pas `bas`. Exacts : ses
-    /// mois dans la tranche fois `par_annee`, des douziemes de mois de salaire (`grandeurs::MoisDeSalaire`) ; l'annee ne se
-    /// divise qu'au montant.
+    /// annees dans la tranche fois `par_annee` (`grandeurs::MoisDeSalaire`), sans coupure jusqu'au montant.
     pub fn par_annee_dans_la_tranche(self, bas: Anciennete, haut: Option<Anciennete>, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::MoisDeSalaire {
         let haut = match haut {
             Some(h) => h.0,
             None => self.0,
         };
-        let part = num::sub(self.0.min(haut), bas.0).max(Decimal::ZERO);
-        crate::grandeurs::MoisDeSalaire::douziemes(num::mul(part, crate::grandeurs::decimal(par_annee)))
+        let part = Anciennete((self.0.min(haut) - bas.0).max(Fraction::ZERO));
+        crate::grandeurs::MoisDeSalaire::comptes(part.annees() * Fraction::du_decimal(crate::grandeurs::decimal(par_annee)))
     }
 
-    /// SES MOIS ECRITS TELS QU'ILS SONT, le point decimal, son echelle gardee (`23.4838709677419354838709677`, `24`) :
-    /// l'anciennete qu'une phrase d'une convention cite (« aucune tranche … ne couvre 23.48… mois »).
+    /// Ses mois en decimal, comme `entre` les compte : ses mois entiers, plus la fraction du mois entame a vingt-huit
+    /// chiffres (un decimal n'en porte pas plus), leur somme a vingt-huit chiffres.
+    fn ecrite(self) -> Decimal {
+        let entiers = self.0.plancher();
+        num::add(entiers.en_decimal(), (self.0 - entiers).en_decimal())
+    }
+
+    /// SES MOIS ECRITS, le point decimal, a vingt-huit chiffres (`23.48387096774193548387096774`, `24`) : l'anciennete
+    /// qu'une phrase d'une convention cite (« aucune tranche … ne couvre 23.48… mois »).
     pub fn mois_ecrits(self) -> String {
-        self.0.to_string()
+        self.ecrite().to_string()
     }
 
-    /// SES ANNEES ECRITES TELLES QU'ELLES SONT, a douze mois l'annee, le point decimal (`2`, `0.5`) : le seuil d'une
+    /// SES ANNEES ECRITES, a douze mois l'annee, le point decimal, a vingt-huit chiffres (`2`, `0.5`) : le seuil d'une
     /// indemnite cite dans une phrase.
     pub fn annees_ecrites(self) -> String {
-        self.annees().to_string()
+        self.annees().en_decimal().to_string()
     }
 
     /// Ecrite en mois, en texte, son echelle gardee (`mois_ecrits`), comme sa lecture la relit (`Deserialize`) :
@@ -863,18 +857,23 @@ impl Anciennete {
 
     /// SES MOIS DITS DANS UNE PHRASE, tels qu'ils sont, la virgule decimale, sans zero inutile (« 6 », « 3,5 »).
     pub fn mois_dits(self) -> String {
-        crate::texte::nombre_dit(self.0)
+        crate::texte::nombre_dit(self.ecrite())
     }
 
     /// SES MOIS DITS DANS UNE PHRASE AU DIXIEME, la moitie au pair (« 7,3 ») : l'anciennete qu'un maintien de salaire
     /// compare a son minimum.
     pub fn mois_dits_au_dixieme(self) -> String {
-        crate::texte::nombre_dit(self.0.round_dp(1))
+        crate::texte::nombre_dit(self.0.arrondi(1, Moitie::AuPair))
+    }
+
+    /// Lue d'un nombre de mois, exactement tel qu'il est ecrit : sa porte.
+    fn de_mois(d: Decimal) -> Anciennete {
+        Anciennete(Fraction::du_decimal(d))
     }
 
     /// Lue d'un nombre de mois facultatif, `null` compris : `#[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]`.
     pub fn en_mois_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
-        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete))
+        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete::de_mois))
     }
 
     /// Lue d'un nombre d'annees (un champ `…_annees` ou `age_…` d'un fichier) : `#[serde(deserialize_with = "socle::date::Anciennete::en_annees")]`.
@@ -889,29 +888,34 @@ impl Anciennete {
 
     /// Lue d'un nombre entier d'annees.
     pub fn en_annees_entieres<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        <i64 as serde::Deserialize>::deserialize(d).map(|a| Anciennete::d_annees(Decimal::from(a)))
+        <i64 as serde::Deserialize>::deserialize(d).map(Anciennete::ans_lus)
+    }
+
+    /// `n` annees entieres lues : douze mois chacune.
+    fn ans_lus(n: i64) -> Anciennete {
+        Anciennete(Fraction::entier(i128::from(n)) * douze())
     }
 
     /// `en_annees_entieres`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_annees_entieres_opt")]`.
     pub fn en_annees_entieres_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
-        <Option<i64> as serde::Deserialize>::deserialize(d).map(|a| a.map(|a| Anciennete::d_annees(Decimal::from(a))))
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|a| a.map(Anciennete::ans_lus))
     }
 
     /// Lue d'un nombre entier de mois.
     pub fn en_mois_entiers<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        <i64 as serde::Deserialize>::deserialize(d).map(|m| Anciennete(Decimal::from(m)))
+        <i64 as serde::Deserialize>::deserialize(d).map(|m| Anciennete(Fraction::entier(i128::from(m))))
     }
 
     /// `en_mois_entiers`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_mois_entiers_opt")]`.
     pub fn en_mois_entiers_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
-        <Option<i64> as serde::Deserialize>::deserialize(d).map(|m| m.map(|m| Anciennete(Decimal::from(m))))
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|m| m.map(|m| Anciennete(Fraction::entier(i128::from(m)))))
     }
 }
 
-/// Lue d'un nombre de mois, comme `forme::decimal`.
+/// Lue d'un nombre de mois, comme `forme::decimal`, exactement tel qu'il est ecrit.
 impl<'de> serde::Deserialize<'de> for Anciennete {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        crate::forme::decimal(d).map(Anciennete)
+        crate::forme::decimal(d).map(Anciennete::de_mois)
     }
 }
 

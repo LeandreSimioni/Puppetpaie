@@ -12,6 +12,7 @@
 //! `forme::court` le dit
 //! (`#[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]`).
 
+use crate::fraction::{Fraction, Moitie};
 use crate::num::{self, Decimal};
 use rust_decimal::{MathematicalOps, RoundingStrategy};
 
@@ -1189,85 +1190,39 @@ impl crate::forme::Nombre {
 
 /// DES MOIS DE SALAIRE : ce qu'une indemnite de rupture compte en salaire de reference (R1234-2 : « un quart de mois de
 /// salaire par année d'ancienneté » ; le palier, le plafond, le plancher d'une convention). Exacts, rien ne se perd avant
-/// le centime : un nombre de mois tel qu'un texte le dit (`Deserialize`), ou, compte sur une anciennete,
-/// en douziemes (ses mois d'anciennete fois la part de mois de salaire par annee :
-/// `date::Anciennete::par_annee_dans_la_tranche`), dont la division par douze ne se fait qu'au montant (salaire de
-/// reference x mois de salaire = montant, que `Montant::au_centime` fixe). Ils s'ajoutent, se comparent, se majorent
-/// (mois de salaire x coefficient) ; ils s'ecrivent tels qu'ils sont (`ecrits`).
-#[derive(Debug, Clone, Copy)]
-pub struct MoisDeSalaire {
-    /// Les mois, ou leurs douziemes (`en_douziemes`).
-    valeur: Decimal,
-    en_douziemes: bool,
-}
+/// le centime (`fraction::Fraction`) : un nombre de mois tel qu'un texte le dit (`Deserialize`), ou compte sur une
+/// anciennete (ses annees fois la part de mois de salaire par annee : `date::Anciennete::par_annee_dans_la_tranche`). Ils
+/// s'ajoutent, se comparent, se majorent (mois de salaire x coefficient) ; salaire de reference x mois de salaire = le
+/// montant au centime, leur seule porte vers l'argent ; ils s'ecrivent a vingt-huit chiffres (`ecrits`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MoisDeSalaire(Fraction);
 
 impl MoisDeSalaire {
     /// Aucun.
-    pub const ZERO: MoisDeSalaire = MoisDeSalaire { valeur: Decimal::ZERO, en_douziemes: false };
+    pub const ZERO: MoisDeSalaire = MoisDeSalaire(Fraction::ZERO);
 
-    /// Les douziemes de mois de salaire `d` (une anciennete en mois fois une part de mois par annee) : `date::Anciennete`.
-    pub(crate) fn douziemes(d: Decimal) -> MoisDeSalaire {
-        MoisDeSalaire { valeur: d, en_douziemes: true }
+    /// Les mois de salaire `f`, comptes sur une anciennete : `date::Anciennete`.
+    pub(crate) fn comptes(f: Fraction) -> MoisDeSalaire {
+        MoisDeSalaire(f)
     }
 
-    /// Ses douziemes de mois, exacts.
-    fn en_douziemes(self) -> Decimal {
-        match self.en_douziemes {
-            true => self.valeur,
-            false => num::mul(self.valeur, Decimal::from(12)),
-        }
-    }
-
-    /// Ses mois, ecrits tels qu'ils sont (`0.5` ; compte en douziemes, leur quotient par douze, a vingt-huit decimales au
-    /// plus) : ce qu'une phrase ou un oracle en cite.
+    /// Ses mois, ecrits a vingt-huit chiffres, sans zero inutile quand ils tombent juste (`0.5`,
+    /// `2.083333333333333333333333333`) : ce qu'un oracle en cite.
     pub fn ecrits(self) -> String {
-        match self.en_douziemes {
-            true => num::div(self.valeur, Decimal::from(12)).to_string(),
-            false => self.valeur.to_string(),
-        }
+        self.0.en_decimal().to_string()
     }
 
-    /// `ecrits`, sans zero inutile (`1.0` : `1`) : ce qu'une phrase en dit (le palier d'un depart a la retraite).
+    /// `ecrits`, sans aucun zero inutile (`1.0` : `1`) : ce qu'une phrase en dit (le palier d'un depart a la retraite).
     pub fn ecrits_sans_zero(self) -> String {
-        match self.en_douziemes {
-            true => num::div(self.valeur, Decimal::from(12)).normalize().to_string(),
-            false => self.valeur.normalize().to_string(),
-        }
+        self.0.en_decimal().normalize().to_string()
     }
 }
 
-impl PartialEq for MoisDeSalaire {
-    fn eq(&self, o: &MoisDeSalaire) -> bool {
-        self.cmp(o) == std::cmp::Ordering::Equal
-    }
-}
-
-impl Eq for MoisDeSalaire {}
-
-impl PartialOrd for MoisDeSalaire {
-    fn partial_cmp(&self, o: &MoisDeSalaire) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(o))
-    }
-}
-
-/// L'ordre des mois : deux mois dits se comparent tels quels, sinon en douziemes.
-impl Ord for MoisDeSalaire {
-    fn cmp(&self, o: &MoisDeSalaire) -> std::cmp::Ordering {
-        match self.en_douziemes || o.en_douziemes {
-            true => self.en_douziemes().cmp(&o.en_douziemes()),
-            false => self.valeur.cmp(&o.valeur),
-        }
-    }
-}
-
-/// Mois de salaire + mois de salaire = mois de salaire : deux mois dits s'ajoutent tels quels, sinon en douziemes.
+/// Mois de salaire + mois de salaire = mois de salaire, exacts.
 impl std::ops::Add for MoisDeSalaire {
     type Output = MoisDeSalaire;
     fn add(self, o: MoisDeSalaire) -> MoisDeSalaire {
-        match self.en_douziemes || o.en_douziemes {
-            true => MoisDeSalaire::douziemes(num::add(self.en_douziemes(), o.en_douziemes())),
-            false => MoisDeSalaire { valeur: num::add(self.valeur, o.valeur), en_douziemes: false },
-        }
+        MoisDeSalaire(self.0 + o.0)
     }
 }
 
@@ -1275,26 +1230,23 @@ impl std::ops::Add for MoisDeSalaire {
 impl std::ops::Mul<Coefficient> for MoisDeSalaire {
     type Output = MoisDeSalaire;
     fn mul(self, c: Coefficient) -> MoisDeSalaire {
-        MoisDeSalaire { valeur: num::mul(self.valeur, c.0), en_douziemes: self.en_douziemes }
+        MoisDeSalaire(self.0 * Fraction::du_decimal(c.0))
     }
 }
 
-/// Salaire de reference x mois de salaire = montant, exact : le produit, puis la division par douze des mois comptes en
-/// douziemes (`Montant::au_centime` le fixe).
+/// Salaire de reference x mois de salaire = montant, AU CENTIME : la valeur exacte, arrondie une seule fois, la moitie
+/// loin de zero (la regle de `Montant::au_centime`).
 impl std::ops::Mul<MoisDeSalaire> for Montant {
     type Output = Montant;
     fn mul(self, m: MoisDeSalaire) -> Montant {
-        match m.en_douziemes {
-            true => Montant(num::div(num::mul(self.0, m.valeur), Decimal::from(12))),
-            false => Montant(num::mul(self.0, m.valeur)),
-        }
+        Montant((Fraction::du_decimal(self.0) * m.0).arrondi(2, Moitie::LoinDeZero))
     }
 }
 
-/// Lus d'un nombre de mois, comme un coefficient (un palier, un plafond, un plancher d'un bareme).
+/// Lus d'un nombre de mois, comme un coefficient (un palier, un plafond, un plancher d'un bareme), exactement.
 impl<'de> serde::Deserialize<'de> for MoisDeSalaire {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MoisDeSalaire, D::Error> {
-        <Coefficient as serde::Deserialize>::deserialize(d).map(|c| MoisDeSalaire { valeur: c.0, en_douziemes: false })
+        <Coefficient as serde::Deserialize>::deserialize(d).map(|c| MoisDeSalaire(Fraction::du_decimal(c.0)))
     }
 }
 
