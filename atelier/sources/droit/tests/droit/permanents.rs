@@ -8,10 +8,17 @@ use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
 use socle::grandeurs::{Jours, Montant};
 
-/// Une anciennete de la reference, en mois, ecrite en texte (`23.5`).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Une anciennete de la reference, en mois, ecrite en texte (`23.5`). L'oracle la garde ecrite (28 decimales) : elle se
+/// compare par son ecriture, l'anciennete comptee etant exacte (1/31 de mois n'est pas son decimal coupe).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
 struct A(#[serde(serialize_with = "Anciennete::ecrite_en_mois")] Anciennete);
+
+impl PartialEq for A {
+    fn eq(&self, autre: &A) -> bool {
+        self.0.mois_ecrits() == autre.0.mois_ecrits()
+    }
+}
 
 /// Un montant de la reference, ecrit en texte (`2000.00`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
