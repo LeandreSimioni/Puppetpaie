@@ -11,6 +11,7 @@
 use droit::fiche::Lue as _;
 use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
+use socle::grandeurs::Octets;
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -388,7 +389,7 @@ fn agent(delai: u64, url: &Url) -> Result<ureq::Agent, Panne> {
 
 /// Lit le corps par morceaux : un silence de `delai`
 /// secondes entre deux morceaux, pas une duree totale.
-fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) -> Result<Vec<u8>, Panne> {
+fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<Octets>, https: bool) -> Result<Vec<u8>, Panne> {
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, std::io::Error>>();
     std::thread::spawn(move || {
         let mut r = corps.into_reader();
@@ -429,9 +430,9 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
 }
 
 /// N octets lus, M attendus de plus.
-fn coupee(lus: usize, attendu: Option<u64>) -> Panne {
+fn coupee(lus: usize, attendu: Option<Octets>) -> Panne {
     let message = match attendu {
-        Some(a) if a as usize > lus => format!("IncompleteRead({} bytes read, {} more expected)", lus, a as usize - lus),
+        Some(a) if a > Octets::de_longueur(lus) => format!("IncompleteRead({} bytes read, {} more expected)", lus, a.en_usize() - lus),
         _ => format!("IncompleteRead({} bytes read)", lus),
     };
     Panne::brute(Classe::Reseau, message)
@@ -591,7 +592,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
     let code = parts.status.as_u16();
     let entetes = en_tetes_de(&parts);
     // Une longueur annoncee qui ne se lit pas n'annonce rien.
-    let attendu = entete(&entetes, "Content-Length").and_then(|v| socle::num::entier_de_chiffres(v.trim())).map(i64::unsigned_abs);
+    let attendu = entete(&entetes, "Content-Length").and_then(|v| Octets::ecrite(v.trim()));
     let brut = lire_corps(corps, r.delai, attendu, https);
     if !(200..300).contains(&code) {
         return Err(Panne::Statut { code, corps: brut.map_err(Box::new) });

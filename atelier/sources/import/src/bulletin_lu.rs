@@ -81,8 +81,8 @@ const DESSOUS_MAX: Mesure = pt(40);
 /// Les rangs d'une grille du pied : au plus a cette distance sous son en-tete.
 const GRILLE_HAUTEUR: Mesure = pt(60);
 
-/// Une periode de dates travaillees plus longue que cela n'est pas depliee en jours.
-const INTERVALLE_MAX: i64 = 366;
+/// Une periode de dates travaillees plus longue que cela (ses deux bornes comprises) n'est pas depliee en jours.
+const INTERVALLE_MAX: socle::date::Duree<socle::date::EnJours> = socle::date::Duree::jours(367);
 
 /// Sur un rang de l'en-tete, deux mots separes de plus que cela sont deux morceaux (un libelle et sa valeur, deux
 /// colonnes d'adresses) ; « 99999 » et sa commune, ecrits en deux, restent un.
@@ -1534,7 +1534,7 @@ impl<'a> Lecteur<'a> {
             .collect::<Vec<_>>();
         let mut jours_travailles = Vec::new();
         for p in &dates_travaillees {
-            if p.fin().moins(&p.debut()) > INTERVALLE_MAX {
+            if p.duree() > INTERVALLE_MAX {
                 self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", p.debut().iso(), p.fin().iso())));
                 continue;
             }

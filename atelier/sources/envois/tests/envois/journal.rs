@@ -18,12 +18,12 @@ fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
 }
 
 /// Le `jour` d'octobre 2026 a `heure` pile.
-fn instant(jour: u32, heure: i64) -> socle::paris::Moment {
-    socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), socle::paris::HeureDuJour::lue(heure, 0).unwrap()).unwrap()
+fn instant(jour: u32, heure: u32) -> socle::paris::Moment {
+    socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), socle::paris::HeureDuJour::a(heure, 0)).unwrap()
 }
 
 /// La ligne datee du `jour` d'octobre 2026 a `heure`, que le test dit.
-fn a(jour: u32, heure: i64) -> journal::Datation {
+fn a(jour: u32, heure: u32) -> journal::Datation {
     journal::Datation::Lue { quand: instant(jour, heure).into(), origine: "le test".into() }
 }
 

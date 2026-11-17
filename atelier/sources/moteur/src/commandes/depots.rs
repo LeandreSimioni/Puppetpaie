@@ -112,7 +112,7 @@ fn fenetre(args: &Args) -> Result<(Moment, Moment), Echec> {
     };
     let debut = match args.tape("depuis") {
         Some(j) => borne(Moment::a_paris(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, socle::paris::HeureDuJour::MINUIT))?,
-        None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
+        None => fin.moins_duree(routes::gestes::ouverture::TRENTE_JOURS).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))
 }

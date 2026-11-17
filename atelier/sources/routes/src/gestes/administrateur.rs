@@ -644,10 +644,10 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) ->
         Q::Obligation(C::SignalementArretRectificatif) => {
             let piece = P::SignalementArret;
             let tete = format!("{}{}_{}_ar", piece.sorte().prefixe(), salarie, compact).to_lowercase();
-            let rang = |p: &PathBuf| -> Option<i64> {
+            let rang = |p: &PathBuf| -> Option<droit::natures::NumeroDOrdre> {
                 let n = p.file_name()?.to_string_lossy().to_lowercase();
-                // Un nom qui ne finit pas par un rang n'est pas un annule-et-remplace.
-                n.strip_prefix(&tete)?.strip_suffix(".dsn")?.parse::<i64>().into_iter().next()
+                // Un nom qui ne finit pas par un numero d'ordre n'est pas un annule-et-remplace.
+                droit::natures::NumeroDOrdre::lu(n.strip_prefix(&tete)?.strip_suffix(".dsn")?)
             };
             let dossier = dossier_du_signalement(&ctx.racine, mois, piece);
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));

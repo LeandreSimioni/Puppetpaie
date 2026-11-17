@@ -1023,6 +1023,12 @@ impl Octets {
         Octets(octets)
     }
 
+    /// LA TAILLE QU'UN TIERS ECRIT EN CHIFFRES SEULS (la longueur qu'une reponse HTTP annonce, `Content-Length`), a la
+    /// porte qui la lit ; `None` pour tout autre texte (`num::entier_de_chiffres`).
+    pub fn ecrite(t: &str) -> Option<Octets> {
+        crate::num::entier_de_chiffres(t).map(|n| Octets(n.unsigned_abs()))
+    }
+
     /// LA TAILLE QUE `fabrique_pdf` COMPTE (une longueur en memoire : l'image recue avant d'etre allegee), a sa porte.
     pub fn de_longueur(n: usize) -> Octets {
         Octets(n as u64)

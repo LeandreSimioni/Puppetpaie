@@ -678,7 +678,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
     // CE QUI RESTE A LIRE, quand un passage s'est interrompu. Un releve qui tairait la difference se donnerait pour
     // complet, et c'est precisement ce qu'on ne veut pas d'une source.
     if !meta.complet {
-        let reste = totales as i64 - lues as i64;
+        let reste = totales.checked_sub(lues).ok_or_else(|| refus!("{} : {} livraisons lues sur {}.", dossier.join("releve.json").display(), lues, totales))?;
         let au = match &meta.derniere_livraison {
             Some(l) => format!("au {}", l.jour().jj_mm_aaaa()),
             None => "avant toute livraison".to_string(),

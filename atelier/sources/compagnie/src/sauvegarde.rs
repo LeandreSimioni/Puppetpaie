@@ -210,10 +210,7 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
     let jour = depuis.jour_de_paris();
     match maintenant.jour_de_paris().moins(&jour) {
-        0 => {
-            let s = depuis.seconde_du_jour_de_paris();
-            format!("depuis {:02}:{:02}", s / 3_600, (s % 3_600) / 60)
-        }
+        0 => format!("depuis {}", depuis.heure_de_paris()),
         1 => "depuis hier".to_string(),
         _ => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
     }

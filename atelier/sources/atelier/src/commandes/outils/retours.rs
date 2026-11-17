@@ -43,7 +43,7 @@ fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
     };
     let debut = match args.tape("depuis") {
         Some(j) => a(j, |j| Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT))?,
-        None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
+        None => fin.moins_duree(routes::gestes::ouverture::TRENTE_JOURS).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))
 }
