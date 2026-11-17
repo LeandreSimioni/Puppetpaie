@@ -19,7 +19,9 @@ warnings = { level = "deny", priority = -1 }
 unused = { level = "deny", priority = -1 }
 dead_code = "forbid"
 deprecated = "forbid"
-unused_imports = "forbid"
+# `deny`, pas `forbid` : le `tauri::generate_context!` porte son `allow(unused_imports)` (`tauri-codegen`), qu'un
+# `forbid` refuse (la fenetre ne compilait plus pour Windows). Aucun `allow` de notre code.
+unused_imports = "deny"
 unused_variables = "forbid"
 unused_assignments = "forbid"
 # `deny`, pas `forbid` : le `thread_local!` de la bibliotheque standard porte son `allow(unused_mut)` sous Windows.
