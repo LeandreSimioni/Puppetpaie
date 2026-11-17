@@ -698,11 +698,6 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     l
 }
 
-/// `AAAA-MM-JJ` (ou `AAAA-MM-JJThh:mm:ss`) en `JJ/MM/AAAA` ; autre chose tel quel.
-fn date_lisible(d: &str) -> String {
-    etats::quand_lisible(&d.chars().take(10).collect::<String>())
-}
-
 /// La premiere lettre en capitale.
 fn majuscule(t: &str) -> String {
     let mut c = t.chars();
@@ -863,7 +858,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
             ecarts.push(format!("prénom de référence « {} »", r));
         }
         if let Some(r) = rf.naissance.filter(|r| d.naissance != Some(*r)) {
-            ecarts.push(format!("née ou né le {} selon le répertoire{}", date_lisible(&r.iso()), morceau(" (déclaré : ", d.naissance.map(|n| date_lisible(&n.iso())).as_deref(), ")")));
+            ecarts.push(format!("née ou né le {} selon le répertoire{}", r.jj_mm_aaaa(), morceau(" (déclaré : ", d.naissance.map(|n| n.jj_mm_aaaa()).as_deref(), ")")));
         }
         if let Some(r) = rf.nir.as_ref().filter(|r| d.nir.as_ref() != Some(*r)) {
             let declare = match (&d.nir, &d.ntt) {

@@ -3113,7 +3113,8 @@ pub struct ParametreNeores {
 pub struct IdentiteNeores {
     /// Le NIR (R001) ou le NTT (R002), le nom (R004), le prenom (R006) et la naissance (R008) declares.
     pub declaree: IdentiteDeclaree,
-    /// Le NIR (R003), le nom (R005), le prenom (R007) et la naissance (R009) de reference.
+    /// Le NIR (R003), le nom (R005), le prenom (R007) et la naissance (R009, aucune quand le SNGI ne la connait pas) de
+    /// reference.
     pub reference: IdentiteDeclaree,
     /// R010.
     pub matricule: Option<droit::fiche::Matricule>,
@@ -3123,6 +3124,16 @@ pub struct IdentiteNeores {
 /// un retour de la norme se lit strictement, une autre forme le refuse.
 fn naissance_du_retour(t: &str) -> R<NaissanceDeclaree> {
     NaissanceDeclaree::lire_iso(t).ok_or_else(|| socle::refus!("« {} » n'est pas une date de naissance AAAA-MM-JJ (RO.B009.R008, R009).", t))
+}
+
+/// La date de naissance de reference (RO.B009.R009), celle que le SNGI enregistre ; aucune quand il ne la connait pas :
+/// « Si date de naissance inconnue : 0000-00-00 » (meme cahier, l. 2899, et son CSL 00, l. 2906-2908). La declaree
+/// (R008) n'admet pas cette forme : son annee est obligatoire.
+fn naissance_de_reference(t: &str) -> R<Option<NaissanceDeclaree>> {
+    match t {
+        "0000-00-00" => Ok(None),
+        _ => naissance_du_retour(t).map(Some),
+    }
 }
 
 /// Une information (`RO.B011`) et ses individus (`RO.B012`).
@@ -3294,7 +3305,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                     ntt: None,
                     nom: x("RO_B009_R005"),
                     prenoms: x("RO_B009_R007"),
-                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R009"), naissance_du_retour)?,
+                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R009"), naissance_de_reference)?.flatten(),
                 },
                 matricule: forme_du_retour(rubrique_de(&a, b, "RO_B009_R010"), droit::fiche::Matricule::lire)?,
             })
@@ -3411,6 +3422,16 @@ fn illisible_crm_oc(attribut: &str, valeur: &str) -> Echec {
     socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {} vaut {}, pas JJMMAAAA.", attribut, socle::date::repr_texte(valeur)), attribut).reclasser(Classe::Illisible)
 }
 
+/// Le BIC d'un mandat SEPA a creer ; aucun quand l'organisme ne le connait pas : le schema admet onze soulignes « pour
+/// prendre en compte les cas possibles de BIC inconnu » (`atelier/reference/sources/gip-mds-api-dsn/
+/// ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` l. 79-80 ; `ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd` l. 33, 78).
+fn bic_du_mandat(t: &str) -> R<Option<droit::fiche::Bic>> {
+    match t {
+        "___________" => Ok(None),
+        _ => droit::fiche::Bic::lire(t).map(Some),
+    }
+}
+
 /// Un attribut d'un CRM OC lu dans sa forme (`lire`) ; hors d'elle, le CRM ne se lit pas.
 fn attribut_du_crm<T>(texte: Option<String>, attribut: &str, lire: fn(&str) -> R<T>) -> R<Option<T>> {
     texte
@@ -3439,7 +3460,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 Ok(MandatOc {
                     net_entreprises: local(&m.tag) == "MandatNetE",
                     iban: attribut_du_crm(at(m, "IBAN"), "IBAN", droit::fiche::Iban::lire)?,
-                    bic: attribut_du_crm(at(m, "BIC"), "BIC", droit::fiche::Bic::lire)?,
+                    bic: attribut_du_crm(at(m, "BIC"), "BIC", bic_du_mandat)?.flatten(),
                     ics: at(m, "ICS"),
                     url: attribut_du_crm(at(m, "URLMandatProp"), "URLMandatProp", Url::lire)?,
                 })
@@ -3541,6 +3562,7 @@ pub struct DeclarationOc {
 pub struct MandatOc {
     pub net_entreprises: bool,
     pub iban: Option<droit::fiche::Iban>,
+    /// Aucun : l'organisme ne connait pas le BIC (`bic_du_mandat`).
     pub bic: Option<droit::fiche::Bic>,
     pub ics: Option<String>,
     pub url: Option<Url>,

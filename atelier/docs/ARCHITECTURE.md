@@ -553,7 +553,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   (`changements_individu::Declaree`), celle d'une fiche telle que la DPAE l'écrit (`routes::depots`), l'individu de la
   liste nominative de la CASC-SVP. Sa serde : `nom`, `prenoms`, `naissance`, `nir`, `ntt` (une réponse qui l'aplatit).
 - **date de naissance déclarée** : S21.G00.30.006, `JJMMAAAA`, dont le jour ou le mois peuvent être inconnus (`00` ou
-  `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`). Un jour connu (`Connue`, celui d'une fiche ou d'une
+  `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`), et sa naissance de référence (R009) inconnue du
+  SNGI, `0000-00-00`, n'est aucune (l'identité de référence est sans naissance). Un jour connu (`Connue`, celui d'une fiche ou d'une
   pièce qui l'imprime, `du_jour`), ou ses chiffres tels que déclarés (`Incomplete`) ; écrite `jjmmaaaa`, `jj_mm_aaaa`,
   `iso` (sa serde) ; le jour qu'elle dit, `jour`.
 - **employeur lu d'une pièce** : la raison sociale et le SIRET qu'une pièce d'autrui imprime (un bulletin, une AEM, un
