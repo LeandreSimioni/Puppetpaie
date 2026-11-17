@@ -20,7 +20,6 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::R;
 use socle::grandeurs::Heures;
-use socle::texte::virgule;
 
 /// La duree quotidienne maximale de travail effectif (L. 3121-18) : 10 heures.
 const MAXIMUM_QUOTIDIEN: Heures = Heures::fixes(10);
@@ -31,11 +30,6 @@ const JOURNEE: Heures = Heures::fixes(24);
 /// Des heures au-dela de `seuil`, a un milliardieme d'heure pres (ce qu'une moyenne sur plusieurs jours laisse).
 fn au_dela(h: Heures, seuil: Heures) -> bool {
     h > seuil + Heures::UN_MILLIARDIEME
-}
-
-/// Des heures d'un jour, pour un message : au centieme (la porte de la phrase).
-fn heures_dites(h: Heures) -> String {
-    virgule(h.a_deux_decimales())
 }
 
 /// Les heures de travail de chaque jour des lignes `lignes` d'un engagement, et si l'une d'elles est une moyenne (une
@@ -72,9 +66,9 @@ pub fn plus_d_une_journee(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<
     let trop: Vec<(Jour, (Heures, bool))> = heures_par_jour(ctx, lignes)?.into_iter().filter(|(_, (h, _))| au_dela(*h, JOURNEE)).collect();
     let Some((j, (h, moyenne))) = trop.first() else { return Ok(None) };
     Ok(Some(format!(
-        "{} : {} h de travail {}le {}{} : saisissez les heures de ce jour-là, ou répartissez-les sur plus de jours.",
+        "{} : {} de travail {}le {}{} : saisissez les heures de ce jour-là, ou répartissez-les sur plus de jours.",
         qui,
-        heures_dites(*h),
+        socle::texte::heures(*h),
         if *moyenne { "en moyenne " } else { "" },
         j.jj_mm_aaaa(),
         crate::JOURNEE_DE_PLUS_DE_24
@@ -90,7 +84,7 @@ pub fn au_dela_du_maximum(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<
         return Ok(None);
     }
     let moyenne = longs.iter().any(|(_, (_, m))| *m);
-    let dits: Vec<String> = longs.iter().map(|(j, (h, _))| format!("{} h le {}", heures_dites(*h), j.jj_mm())).collect();
+    let dits: Vec<String> = longs.iter().map(|(j, (h, _))| format!("{} le {}", socle::texte::heures(*h), j.jj_mm())).collect();
     Ok(Some(format!(
         "{} : {}{}. La durée quotidienne de travail effectif ne peut dépasser 10 heures (code du travail, L. 3121-18), sauf \
          une convention ou un accord qui la porte jusqu'à 12 heures (L. 3121-19), une dérogation de l'inspecteur du travail \

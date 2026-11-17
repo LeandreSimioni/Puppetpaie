@@ -12,12 +12,10 @@ use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::texte::{chiffres_en_euros, euros};
 use socle::echec::{refus, R};
-use socle::num::Decimal;
 use socle::grandeurs::{Montant, Taux};
 use droit::pas::Versement;
 use droit::forme_bareme::{self as cot, IdDeCotisation};
 use engagement::ecarts::RegroupementDeComparaison as Regroupement;
-use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Mesure, Morceau};
 use fabrique_pdf::mesure::mesure;
 use std::collections::HashMap;
@@ -53,15 +51,6 @@ pub const IDENTITE_EXTENSIONS: [&str; 3] = [".svg", ".png", ".jpg"];
 
 // ------------------------------------------------------------ les formats (util)
 
-/// Un taux arrondi a `dp` decimales au pair sur le demi (aucun texte depose ne dit l'arrondi d'un taux imprime), ecrit
-/// avec ses decimales ; le signe est celui de l'original.
-fn fixe(x: Decimal, dp: u32) -> (bool, String) {
-    let neg = x.is_sign_negative();
-    let mut r = x.abs().round_dp_with_strategy(dp, RoundingStrategy::MidpointNearestEven);
-    r.rescale(dp);
-    (neg, r.to_string())
-}
-
 /// Le taux d'une ligne de remuneration au bulletin : un montant par unite (« 1 234,50 »), ou le pourcentage de sa base
 /// qu'une ligne en pourcentage paie (« 10 % »).
 fn fmt_taux_de_ligne(t: engagement::ligne::TauxDeLigne) -> String {
@@ -78,11 +67,8 @@ fn ligne_au_bulletin(l: &engagement::calcul::LigneBrut) -> String {
 }
 
 
-/// Un taux tel que le bulletin l'imprime : 9.1 -> « 9,100 ».
-fn fmt_taux(t: Taux) -> String {
-    let (neg, s) = fixe(t.decimal(), 3);
-    format!("{}{}", if neg { "-" } else { "" }, s.replace('.', ","))
-}
+/// Un taux tel que le bulletin l'imprime : 9.1 -> « 9,100 » (`socle::texte::taux_au_millieme`).
+use socle::texte::taux_au_millieme as fmt_taux;
 
 /// Un taux de PAS, imprime comme un taux (`fmt_taux`).
 fn fmt_taux_de_pas(t: droit::pas::TauxDePas) -> String {

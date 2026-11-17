@@ -409,10 +409,8 @@ fn a_la_francaise(s: &str, negatif: bool) -> String {
     format!("{}{},{}", if negatif { "-" } else { "" }, groupes.join(" "), dec)
 }
 
-/// Un taux a trois decimales, la moitie loin de zero, « 6,900 ».
-fn taux3(t: Taux) -> String {
-    socle::texte::a_virgule(socle::grandeurs::decimales_ecrites(t.loin_de_zero(3), 3))
-}
+/// Un taux a trois decimales, « 6,900 », ecrit comme le bulletin du logiciel l'ecrit.
+use socle::texte::taux_au_millieme as taux3;
 
 fn dmy(j: &Jour) -> String {
     j.jj_mm_aaaa()

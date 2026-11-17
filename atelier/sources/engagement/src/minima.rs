@@ -77,11 +77,6 @@ fn paye_a_l_heure(l: &LigneBrut) -> Option<MontantUnitaire> {
 const CINQ_JOURS: NonNul<Jours> = Jours::non_nuls(std::num::NonZeroU32::new(5).expect("cinq n'est pas nul"));
 const SIX_JOURS: NonNul<Jours> = Jours::non_nuls(std::num::NonZeroU32::new(6).expect("six n'est pas nul"));
 
-/// Les heures du mois telles qu'une phrase les dit (« 151,67 h »).
-fn heures_dites(h: Heures) -> String {
-    format!("{} h", virgule(h))
-}
-
 
 
 /// La duree du contrat en jours calendaires, bornes comprises.
@@ -360,7 +355,7 @@ impl<'a> Cx<'a> {
                     "CCN 2642, {} en CDI ou CDD de droit commun : {} par mois pour 35 h, ramenés à l'heure sur {}",
                     fonction,
                     euros(m),
-                    heures_dites(heures_du_mois)
+                    socle::texte::heures(heures_du_mois)
                 ),
             ));
         }
@@ -386,7 +381,7 @@ impl<'a> Cx<'a> {
                 let smic = self.paie.smic.fois_coefficient(Coefficient::dixiemes(13));
                 (
                     if smic > horaire { smic } else { horaire },
-                    format!("contrat de 3 mois ou plus : la semaine x 3,8 par mois de {}, pas moins de 130 % du SMIC", heures_dites(heures_du_mois)),
+                    format!("contrat de 3 mois ou plus : la semaine x 3,8 par mois de {}, pas moins de 130 % du SMIC", socle::texte::heures(heures_du_mois)),
                 )
             }
             None => (horaire_du_mensuel(semaine.fois_coefficient(semaines_du_mois), heures_du_mois, cle)?, "durée du contrat inconnue : la base mensuelle, la plus basse".to_string()),
@@ -427,7 +422,7 @@ impl<'a> Cx<'a> {
                         emploi,
                         niveau.as_str().replace('_', " "),
                         euros(mensuel),
-                        heures_dites(heures_du_mois)
+                        socle::texte::heures(heures_du_mois)
                     ),
                 ));
             }
@@ -789,7 +784,7 @@ impl<'a> Cx<'a> {
                     niveau.as_str().replace('_', " "),
                     d_ou,
                     euros(montant),
-                    heures_dites(heures_du_mois)
+                    socle::texte::heures(heures_du_mois)
                 ),
             ));
         }
@@ -811,7 +806,7 @@ impl<'a> Cx<'a> {
         }
         let Some(&montant) = grille.du_niveau(&niveau) else { return Ok(None) };
         let du_mensuel = match mensuel {
-            true => format!(" (le mensuel pour {}, ramené à l'heure)", heures_dites(heures_mensuelles(t3090, "3090")?)),
+            true => format!(" (le mensuel pour {}, ramené à l'heure)", socle::texte::heures(heures_mensuelles(t3090, "3090")?)),
             false => String::new(),
         };
         Ok(plancher(montant, format!("CCN 3090, {}, taux horaire {}{}", ou, niveau.as_str().replace('_', " "), du_mensuel)))

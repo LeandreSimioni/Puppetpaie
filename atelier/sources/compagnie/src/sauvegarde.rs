@@ -208,11 +208,13 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 
 /// « depuis 09:51 » le jour meme, « depuis hier », « depuis le 18/10 ».
 fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
-    let jour = depuis.jour_de_paris();
-    match maintenant.jour_de_paris().moins(&jour) {
-        0 => format!("depuis {}", depuis.heure_de_paris()),
-        1 => "depuis hier".to_string(),
-        _ => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
+    let (jour, aujourdhui) = (depuis.jour_de_paris(), maintenant.jour_de_paris());
+    // Les jours ecoules d'un jour qui n'est pas apres aujourd'hui.
+    let ecoules = (jour <= aujourdhui).then(|| socle::date::Duree::ecoulee(&jour, &aujourdhui));
+    match ecoules {
+        Some(d) if d == socle::date::Duree::jours(0) => format!("depuis {}", depuis.heure_de_paris()),
+        Some(d) if d == socle::date::Duree::jours(1) => "depuis hier".to_string(),
+        Some(_) | None => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
     }
 }
 

@@ -255,6 +255,15 @@ pub fn chiffres_de_taux(t: crate::grandeurs::Taux) -> String {
     chiffres(t.decimal())
 }
 
+/// UN TAUX TEL QUE LE BULLETIN L'IMPRIME dans sa colonne de taux : trois décimales écrites, la moitié au pair (aucun
+/// texte déposé ne dit l'arrondi d'un taux imprimé), la virgule décimale, le signe de l'original (« 9,100 », « -0,500 »).
+pub fn taux_au_millieme(t: crate::grandeurs::Taux) -> String {
+    let x = t.decimal();
+    let mut r = x.abs().round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven);
+    r.rescale(3);
+    format!("{}{}", if x.is_sign_negative() { "-" } else { "" }, r.to_string().replace('.', ","))
+}
+
 /// L'écriture de `chiffres_en_euros` et de `chiffres_d_heures` : au centième, le signe de l'original, les milliers
 /// séparés par une espace ordinaire.
 fn chiffres(d: rust_decimal::Decimal) -> String {
@@ -329,6 +338,12 @@ pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
     nombre_dit(g.en_decimal())
 }
 
+/// DES HEURES DITES dans une phrase, au centieme, la moitie au pair (`Heures::a_deux_decimales`), sans zero inutile :
+/// « 151,67 h », « 11 h ».
+pub fn heures(h: crate::grandeurs::Heures) -> String {
+    format!("{} h", virgule(h.a_deux_decimales()))
+}
+
 /// DES HEURES DITES EN HEURES ET MINUTES dans une phrase (151,67 h : « 151 h 40 »), a la minute la plus proche, la
 /// moitie vers le haut ; des heures entieres, sans minutes (« 35 h »).
 pub fn heures_et_minutes(h: crate::grandeurs::Heures) -> String {
@@ -366,7 +381,8 @@ pub fn par_milliers<G: crate::grandeurs::Grandeur>(g: G) -> String {
     nombre_par_milliers(g.en_decimal(), None)
 }
 
-/// La même, `decimales` décimales écrites (« 4 005,00 », « 60 ») : un montant, un montant unitaire qu'un conseil cite.
+/// La même, `decimales` décimales écrites (« 0,90 », « 60 ») : un taux, un coefficient qu'un conseil cite (un montant
+/// s'écrit par `euros`).
 pub fn par_milliers_a<G: crate::grandeurs::Grandeur>(g: G, decimales: u32) -> String {
     nombre_par_milliers(g.en_decimal(), Some(decimales))
 }
