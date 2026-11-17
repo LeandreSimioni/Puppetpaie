@@ -791,7 +791,7 @@ fn aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe() {
 /// LA FABRIQUE EST UNE PORTE ENTIERE (« Les garde-fous sont dans la structure ») : ses entiers sont ceux de la norme PDF
 /// et des polices, et rien de la paie n'y entre. Son manifeste (`fabrique-pdf/Cargo.toml`) ne prend aucune crate de
 /// l'espace ni `rust_decimal` ; aucun de ses sources (sa bibliotheque, son binaire, ses essais, son script de
-/// construction) n'ecrit `Decimal` ; aucun type qu'elle declare (`struct`, `enum`, `type`, `trait`) ne porte le nom d'un
+/// construction) ne nomme le decimal de `rust_decimal` ; aucun type qu'elle declare (`struct`, `enum`, `type`, `trait`) ne porte le nom d'un
 /// type que « Le glossaire » declare hors d'elle (une notion de la paie, du temps, d'un organisme).
 #[test]
 fn la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie() {
@@ -836,7 +836,7 @@ fn la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie() {
         for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
             let ou = format!("{}:{}", p.strip_prefix(espace()).unwrap().display(), n + 1);
             if decimal.is_match(l) {
-                fautes.push(format!("{} : `Decimal`", ou));
+                fautes.push(format!("{} : le decimal de `rust_decimal`", ou));
             }
             if let Some(c) = declaration.captures(l) {
                 if de_la_paie.contains(&c[1]) {
