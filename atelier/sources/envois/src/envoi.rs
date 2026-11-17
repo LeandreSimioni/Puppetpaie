@@ -46,7 +46,7 @@ use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
-use socle::grandeurs::{Heures, Montant};
+use socle::grandeurs::Montant;
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins. `pour` : celui a qui il s'adresse, tel que
 /// l'envoyeur le retrouve apres l'envoi, du type de ce qu'il est (un salarie : `IdSalarie`) ; l'envoi ne le lit pas.
@@ -159,10 +159,10 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         }
         let mut volume: Vec<String> = Vec::new();
         if !e.cachets.est_nul() {
-            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
+            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if socle::texte::au_pluriel(e.cachets) { "s" } else { "" }));
         }
         if let Some(h) = e.heures.filter(|h| !h.est_nul()) {
-            volume.push(format!("{} heure{}", socle::texte::virgule(h), if h > Heures::fixes(1) { "s" } else { "" }));
+            volume.push(format!("{} heure{}", socle::texte::virgule(h), if socle::texte::au_pluriel(h) { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
