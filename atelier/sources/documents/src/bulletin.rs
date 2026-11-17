@@ -331,7 +331,7 @@ fn nom_imprime(sal: &ChampsSalarie) -> R<String> {
 /// L'emploi tel que le bulletin l'imprime : celui que l'engagement choisit, lisible et accorde a la fiche
 /// (`emploi_affichage`), sinon celui de la fiche, sinon le libelle que la DSN declare (`emploi`, S21.G00.40.006).
 fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> R<String> {
-    let lisible = e.emploi_affichage.clone().filter(|t| !t.trim().is_empty())
+    let lisible = e.emploi.emploi_affichage.clone().filter(|t| !t.trim().is_empty())
         .or_else(|| sal.emploi_affichage.portee().filter(|t| !t.trim().is_empty()).map(str::to_string));
     match lisible {
         Some(t) => Ok(t),

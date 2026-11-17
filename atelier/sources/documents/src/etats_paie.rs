@@ -1461,7 +1461,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // Les cachets et les heures que la paie compte ; une paie importee dont aucune ligne n'est rattachee a une
             // rubrique ne les dit pas : ils restent vides.
             let (cachets, heures) = (paie.cachets(), paie.heures_annexes());
-            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
+            let emploi = e.emploi.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
             let debut = e.contrat().debut().iso();
             // La fin du contrat, sinon son dernier jour travaille.
             let fin = match e.contrat().fin() {

@@ -1601,7 +1601,7 @@ impl<'a> Moteur<'a> {
             let echeances = if self.ecrit {
                 None
             } else {
-                let code_emploi = p.engagement.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
+                let code_emploi = p.engagement.emploi.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
                 let ent = &self.ctx.entreprise;
                 let remise = droit::echeances::remise_du_contrat(&p.engagement.contrat().debut(), ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
                 Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.contrat().debut()), contrat: remise })

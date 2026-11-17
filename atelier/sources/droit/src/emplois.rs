@@ -633,8 +633,12 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -
     Ok(out)
 }
 
-/// Ce que `emploi_de` lit d'un engagement.
-#[derive(Debug, Clone, Default)]
+/// L'EMPLOI D'UN ENGAGEMENT : ce qu'il dit de l'emploi qu'il fait declarer, le metier de sa carte resolu (`resoudre`)
+/// sous ce que la carte ecrit a la main (`engagement::engagements`), ou ce qu'un bulletin importe imprime ; chaque champ
+/// seulement quand il est dit, le reste vient de la fiche du salarie (`emploi_de`). Ce n'est pas un metier du catalogue
+/// (`Metier`). Il s'ecrit en un objet, dans la paie ecrite et ce dont un engagement se fabrique.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmploiEngagement {
     pub emploi: Option<String>,
     /// Le libelle lisible que l'engagement a resolu.

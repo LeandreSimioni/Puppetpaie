@@ -536,12 +536,8 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
         taux_cachet: eng.taux_cachet,
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),
-        emploi: eng.emploi.clone(),
-        pcs_ese: eng.pcs_ese.clone(),
-        code_emploi_ft: eng.code_emploi_ft.clone(),
-        statut: eng.statut.clone(),
-        statut_conventionnel: eng.statut_conventionnel.clone(),
-        statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
+        // Son emploi, sans le libelle lisible que l'engagement du mois a resolu.
+        emploi: droit::emplois::EmploiEngagement { emploi_affichage: None, ..eng.emploi.clone() },
         ..Default::default()
     };
     let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie), eng.versement).map_err(|m| m.reclasser(Classe::Illisible))?;

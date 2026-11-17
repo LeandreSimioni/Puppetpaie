@@ -226,7 +226,9 @@ pub struct PaieVersee {
     pub dates: Vec<socle::date::Periode>,
     /// Les lignes de cotisation du bulletin ; `None` : aucun bulletin ne les a donnees.
     pub cotisations: Option<Vec<CotisationImprimee>>,
-    pub emploi_imprime: Option<EmploiImprime>,
+    /// L'emploi que CE bulletin imprime, en champs de la fiche (`import::bulletins::statut_et_metier`) : celui de
+    /// l'engagement importe.
+    pub emploi_imprime: Option<droit::emplois::EmploiEngagement>,
     pub bulletin: Option<BulletinSource>,
     pub importe_le: Option<Jour>,
 }
@@ -302,19 +304,6 @@ mod bases_en_texte {
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<BaseAssujettie, Montant>, D::Error> {
         BTreeMap::<BaseAssujettie, EnTexte>::deserialize(d).map(|t| t.into_iter().map(|(k, EnTexte(m))| (k, m)).collect())
     }
-}
-
-/// Le statut et l'emploi que CE bulletin imprime, en champs de la fiche (`import::bulletins::statut_et_metier`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EmploiImprime {
-    pub emploi: Option<String>,
-    pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
-    pub statut: Option<droit::fiche::Statut>,
-    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
-    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
 }
 
 /// Le bulletin qui a complete la paie : sa copie, sa page, le logiciel qui l'a fait, son numero, le numero du contrat
@@ -734,7 +723,10 @@ impl Importe {
             None => None,
         };
         // L'emploi que le bulletin imprime ; un bulletin qui ne l'imprime pas n'en dit rien.
-        let imprime = |champ: fn(&EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| champ(i).clone());
+        let emploi = match &p.emploi_imprime {
+            Some(e) => e.clone(),
+            None => droit::emplois::EmploiEngagement::default(),
+        };
         // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
         // Sans fin dite, un autre finit avec la paie.
         let contrat = match (self.carte().contrat()?, p.periode) {
@@ -783,13 +775,7 @@ impl Importe {
             heures: None,
             lieu: String::new(),
             lieux: BTreeMap::new(),
-            emploi: imprime(|i| &i.emploi),
-            emploi_affichage: imprime(|i| &i.emploi_affichage),
-            pcs_ese: p.emploi_imprime.as_ref().and_then(|i| i.pcs_ese.clone()),
-            code_emploi_ft: p.emploi_imprime.as_ref().and_then(|i| i.code_emploi_ft.clone()),
-            statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
-            statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
-            statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
+            emploi,
             etablissement: None,
             nature,
             quotite_contrat: quotite,

@@ -1122,25 +1122,17 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> R<Salar
     let nat = eng.nat()?;
     let cle = &eng.salarie;
     crate::fiche_du_salarie(ctx, cle)?;
-    let emploi = EmploiEngagement {
-        emploi: eng.emploi.clone(),
-        emploi_affichage: eng.emploi_affichage.clone(),
-        pcs_ese: eng.pcs_ese.clone(),
-        code_emploi_ft: eng.code_emploi_ft.clone(),
-        statut: eng.statut.clone(),
-        statut_conventionnel: eng.statut_conventionnel.clone(),
-        statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
-    };
+    let emploi = &eng.emploi;
     let fiche = if let Some(au_mois) = nat.au_mois() {
         // La fiche de la derniere periode elementaire : un mois decoupe declare la derniere valeur connue
         // (norme DSN 2026.1, § 2.1.2.4, p. 22) ; un mois d'un seul tenant, la periode de paie entiere. La dispense de
         // sante se lit sur ces memes bornes (`dispense_de_la_periode`).
         let derniere = *crate::periodes::bornes(ctx, eng)?.last().ok_or_else(|| refus("aucune periode de paie"))?;
         let du_mois = droit::emplois::emploi_du_mois(ctx, cle, &derniere)?;
-        let fiche = dispense_de_la_periode(emploi_de(&du_mois, &emploi)?, &au_mois, &derniere)?;
+        let fiche = dispense_de_la_periode(emploi_de(&du_mois, emploi)?, &au_mois, &derniere)?;
         sante_de_la_suspension(ctx, eng, &au_mois, convention_de_l_employeur(ctx, fiche))?
     } else {
-        convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.contrat().debut())?, &emploi)?)
+        convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.contrat().debut())?, emploi)?)
     };
     let mut fiche = etablissement_du_contrat(fiche, eng);
     // L'embauche que ce contrat est (`DebutDeLAnciennete::Embauche`) date l'anciennete que la fiche ne dit pas encore ;

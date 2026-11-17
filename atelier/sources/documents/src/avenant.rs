@@ -27,7 +27,7 @@ use engagement::saisie::{Champ, Valeur};
 use socle::date::Jour;
 use socle::grandeurs::Montant;
 use socle::mois::Mois;
-use droit::emplois::{emploi_de, EmploiEngagement};
+use droit::emplois::emploi_de;
 use socle::nfkc::nfkc;
 use socle::echec::{refus, R};
 
@@ -391,18 +391,8 @@ pub fn ent_du_mois(ctx: &Contexte, mois: Mois) -> droit::contexte::EntrepriseDuD
 pub fn valeurs_de_la_paie(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Paie, numero: Option<&NumeroContrat>) -> R<Valeurs> {
     let eng = &paie.engagement;
     let nat = eng.nature.proprietes()?;
-    let texte = |c: &Option<String>| c.clone().filter(|s| !s.is_empty());
     let fiche = ctx.fiche_de(&eng.salarie)?;
-    let emploi = EmploiEngagement {
-        emploi: texte(&eng.emploi),
-        emploi_affichage: texte(&eng.emploi_affichage),
-        pcs_ese: eng.pcs_ese.clone(),
-        code_emploi_ft: eng.code_emploi_ft.clone(),
-        statut: eng.statut,
-        statut_conventionnel: eng.statut_conventionnel,
-        statut_categoriel_rc: eng.statut_categoriel_rc,
-    };
-    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat().debut())?, &emploi)?;
+    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.contrat().debut())?, &eng.emploi)?;
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;

@@ -59,7 +59,7 @@ use droit::fiche::{
 use import::proposee::FicheProposee;
 use crate::fiches::SorteDeFiche;
 use crate::importation::fiches::{redemandees, verifier_comme_a_l_ecriture};
-use engagement::importe::EmploiImprime;
+use droit::emplois::EmploiEngagement;
 use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::R;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -1848,7 +1848,7 @@ impl SalarieLu {
 /// La fiche d'un salarie que proposent ses pieces : ce qu'elles impriment de lui, puis ce que son statut et son metier
 /// donnent (`statut_et_metier` : l'emploi du catalogue remplace l'intitule imprime), ses formes lisibles, et active ; et
 /// la faute de chaque case qu'elles impriment hors de son type (la case reste vide).
-fn salarie_propose(s: SalarieLu, metier: &EmploiImprime) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
+fn salarie_propose(s: SalarieLu, metier: &EmploiEngagement) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let (mut f, mut fautes): (ChampsSalarie, Vec<FauteDeCase>) = proposee::de(&s)?;
     let (m, fautes_du_metier): (ChampsSalarie, Vec<FauteDeCase>) = proposee::de(metier)?;
     f.fondre(&m);
@@ -1874,7 +1874,7 @@ fn salarie_propose(s: SalarieLu, metier: &EmploiImprime) -> R<(ChampsSalarie, Ve
 ///
 /// LE METIER SE RESOUT SOUS LA CONVENTION COLLECTIVE QUE LES PIECES DECLARENT (`idcc`) : un metier peut etre cadre dans
 /// l'une et pas dans l'autre (`emplois::Metier::cadre_par_defaut`). Aucune : celle du catalogue par defaut.
-pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme: bool, idcc: Option<&droit::fiche::Idcc>) -> R<EmploiImprime> {
+pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme: bool, idcc: Option<&droit::fiche::Idcc>) -> R<EmploiEngagement> {
     let mots: Vec<String> = statut.into_iter().flat_map(bulletin_lu::jetons).collect();
     let dit = mots.iter().find_map(|m| match m.as_str() {
         "artiste" => Some(droit::fiche::Statut::Artiste),
@@ -1896,8 +1896,8 @@ fn metier_dit(
     emploi: Option<&str>,
     femme: bool,
     idcc: Option<&droit::fiche::Idcc>,
-) -> R<EmploiImprime> {
-    let mut f = EmploiImprime { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiImprime::default() };
+) -> R<EmploiEngagement> {
+    let mut f = EmploiEngagement { emploi: emploi.map(str::trim).filter(|i| !i.is_empty()).map(str::to_string), ..EmploiEngagement::default() };
     f.statut = statut;
     f.statut_categoriel_rc = rc;
     let Some(intitule) = f.emploi.clone() else { return Ok(f) };
@@ -1917,8 +1917,8 @@ fn metier_dit(
 }
 
 /// Le statut et l'emploi imprimes disent-ils quelque chose ?
-fn dit_quelque_chose(e: &EmploiImprime) -> bool {
-    *e != EmploiImprime::default()
+fn dit_quelque_chose(e: &EmploiEngagement) -> bool {
+    *e != EmploiEngagement::default()
 }
 
 /// La suite des licences que les bulletins impriment (mois, numero), la plus ancienne d'abord, comme les DSN.

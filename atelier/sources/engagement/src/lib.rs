@@ -50,7 +50,7 @@ use std::sync::Arc;
 
 use droit::catalogue::{rubrique, CodeDeRubrique};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
+use droit::fiche::Statut;
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
 pub use ligne::{DateDeLigne, LignePaie};
 use socle::date::{Jour, Periode, PeriodeOuverte};
@@ -94,15 +94,9 @@ pub struct Engagement {
     pub heures: Option<Heures>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
-    pub emploi: Option<String>,
-    /// Le libelle lisible du metier de CET engagement (`emplois::resoudre`, au
-    /// feminin si la fiche le dit) ; `None` si l'engagement ne choisit pas de metier.
-    pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
-    pub statut: Option<Statut>,
-    pub statut_conventionnel: Option<StatutConventionnel>,
-    pub statut_categoriel_rc: Option<StatutCategorielRc>,
+    /// Son emploi (`droit::emplois::EmploiEngagement`) : le libelle lisible de son metier, au feminin si la fiche le dit,
+    /// quand il en choisit un.
+    pub emploi: droit::emplois::EmploiEngagement,
     /// L'etablissement (NIC) ou le salarie est rattache pour CE contrat, quand la compagnie en a plusieurs ; `None` : le
     /// principal. La fiche du salarie le porte pour la paie et les declarations du contrat (`calcul::fiche_de_l_engagement`).
     pub etablissement: Option<droit::fiche::Nic>,
@@ -183,13 +177,7 @@ pub struct Assemble {
     pub jours_contrat: Option<Jours>,
     pub date_paiement: Option<Jour>,
     pub lieu: Option<String>,
-    pub emploi: Option<String>,
-    pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
-    pub statut: Option<Statut>,
-    pub statut_conventionnel: Option<StatutConventionnel>,
-    pub statut_categoriel_rc: Option<StatutCategorielRc>,
+    pub emploi: droit::emplois::EmploiEngagement,
     pub etablissement: Option<droit::fiche::Nic>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub quotite_contrat: Option<Heures>,
@@ -579,12 +567,6 @@ impl Engagement {
             lieu: v.lieu.iter().cloned().collect(),
             lieux,
             emploi: v.emploi.clone(),
-            emploi_affichage: v.emploi_affichage.clone(),
-            pcs_ese: v.pcs_ese.clone(),
-            code_emploi_ft: v.code_emploi_ft.clone(),
-            statut: v.statut.clone(),
-            statut_conventionnel: v.statut_conventionnel.clone(),
-            statut_categoriel_rc: v.statut_categoriel_rc.clone(),
             etablissement: v.etablissement.clone(),
             nature,
             quotite_contrat: v.quotite_contrat.map(courte),
@@ -827,13 +809,6 @@ impl Engagement {
             lieux: self.lieux.clone(),
             emploi: self.emploi.clone(),
             // Ecrit seulement quand il est dit.
-            emploi_affichage: self.emploi_affichage.clone(),
-            pcs_ese: self.pcs_ese.clone(),
-            code_emploi_ft: self.code_emploi_ft.clone(),
-            statut: self.statut.clone(),
-            statut_conventionnel: self.statut_conventionnel.clone(),
-            statut_categoriel_rc: self.statut_categoriel_rc.clone(),
-            // Ecrit seulement quand il est dit.
             etablissement: self.etablissement.clone(),
             nature: self.nature,
             quotite_contrat: nombre_f(self.quotite_contrat),
@@ -887,12 +862,6 @@ impl Engagement {
             lieu: f.lieu.clone(),
             lieux: f.lieux.clone(),
             emploi: f.emploi.clone(),
-            emploi_affichage: f.emploi_affichage.clone(),
-            pcs_ese: f.pcs_ese.clone(),
-            code_emploi_ft: f.code_emploi_ft.clone(),
-            statut: f.statut,
-            statut_conventionnel: f.statut_conventionnel,
-            statut_categoriel_rc: f.statut_categoriel_rc,
             etablissement: f.etablissement.clone(),
             nature: f.nature,
             quotite_contrat: f.quotite_contrat,
@@ -1206,15 +1175,17 @@ pub(crate) fn engagements(
             lignes,
             date_paiement: carte.date_paiement,
             lieu: carte.lieu.clone(),
-            emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
-            pcs_ese: carte.pcs_ese.clone().or_else(|| d.and_then(|d| d.pcs_ese.clone())),
-            code_emploi_ft: carte.code_emploi_ft.clone().or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
-            statut: carte.statut.or_else(|| d.map(|d| d.statut)),
-            statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),
-            statut_categoriel_rc: carte.statut_categoriel_rc.or_else(|| d.map(|d| d.statut_categoriel_rc)),
-            // Le libelle que `resoudre` a donne a CE metier, feminin compris ; un `emploi` ecrit a la main dirait un autre
-            // metier que lui.
-            emploi_affichage: if ecrit(&carte.emploi).is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },
+            emploi: droit::emplois::EmploiEngagement {
+                emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
+                pcs_ese: carte.pcs_ese.clone().or_else(|| d.and_then(|d| d.pcs_ese.clone())),
+                code_emploi_ft: carte.code_emploi_ft.clone().or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
+                statut: carte.statut.or_else(|| d.map(|d| d.statut)),
+                statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),
+                statut_categoriel_rc: carte.statut_categoriel_rc.or_else(|| d.map(|d| d.statut_categoriel_rc)),
+                // Le libelle que `resoudre` a donne a CE metier, feminin compris ; un `emploi` ecrit a la main dirait un
+                // autre metier que lui.
+                emploi_affichage: if ecrit(&carte.emploi).is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },
+            },
             nature: Some(valide.nature()),
             quotite_contrat: termes.quotite_contrat,
             quotite_reference_saisie: termes.quotite_reference,
