@@ -180,19 +180,21 @@ fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
     Ok(s.identite.nir.clone().map(|n| (n, s.cle_nir.clone())))
 }
 
-/// Le Siret imprime, ses chiffres, lu par sa lecture de piece ; aucun s'il n'est pas imprime.
+/// Le Siret imprime, tel que la lecture du bulletin l'a lu (`bulletin_lu::Entreprise`), ou ce qui le refuse ; aucun s'il
+/// n'est pas imprime.
 fn siret_imprime(b: &BulletinLu) -> Option<R<droit::fiche::Siret>> {
-    let s: String = b.entreprise.siret.as_deref()?.chars().filter(char::is_ascii_digit).collect();
-    Some(droit::fiche::Siret::d_une_piece(&s))
+    let e = &b.entreprise;
+    match (&e.employeur.siret, &e.faute_siret) {
+        (_, Some(faute)) => Some(Err(socle::echec::refus(faute.clone()))),
+        (Some(s), None) => Some(Ok(s.clone())),
+        (None, None) => None,
+    }
 }
 
 /// Le Siret imprime, quand ses chiffres font un Siret : ce que les comparaisons lisent. Ceux qui n'en font pas se disent
 /// en faute de la case de la fiche (`fiche_entreprise`).
 fn siret_lu(b: &BulletinLu) -> Option<droit::fiche::Siret> {
-    match siret_imprime(b) {
-        Some(Ok(s)) => Some(s),
-        Some(Err(_)) | None => None,
-    }
+    b.entreprise.employeur.siret.clone()
 }
 
 /// UNE CASE QU'UNE PIECE IMPRIME, lue par la lecture de piece de son type (`d_une_piece`) : hors de sa forme, la case
@@ -403,11 +405,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut sirens_autres: std::collections::BTreeSet<droit::fiche::Siren> =
         pieces.iter().filter(|(_, aem, _)| *aem).flat_map(|(_, _, e)| e.sirens.iter().cloned()).collect();
     sirens_autres.extend(lus.iter().filter_map(|l| siret_lu(&l.b)).map(|s| s.siren()));
-    sirens_autres.extend(certificats.iter().filter_map(|c| c.c.siret.as_ref()).map(droit::fiche::Siret::siren));
+    sirens_autres.extend(certificats.iter().filter_map(|c| c.c.employeur.siret.as_ref()).map(droit::fiche::Siret::siren));
     let siren = import::dsn_aem::siren_de_reference(&ctx.entreprise, &sirens_dsn, &sirens_autres);
     let mut gardes_cert: Vec<Attestee> = Vec::new();
     for c in certificats {
-        let raison = match (&c.c.siret, &siren) {
+        let raison = match (&c.c.employeur.siret, &siren) {
             (Some(s), Some(r)) if s.siren() != *r => Some(format!("{} d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris", c.nom())),
             (Some(_), None) => Some(import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
             _ => None,
@@ -730,7 +732,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // 6b. L'entreprise des certificats et des AEM : son numero d'adherent a la Caisse (« COMPTE »), que ni le bulletin ni la DSN
     // n'imprime toujours, son Siret et sa raison sociale ; comme pour un bulletin, la fiche qui existe garde ce qu'elle a.
-    if let Some(dernier) = certificats.iter().rev().find(|c| c.c.siret.is_some()).or(certificats.last()) {
+    if let Some(dernier) = certificats.iter().rev().find(|c| c.c.employeur.siret.is_some()).or(certificats.last()) {
         let (proposees, fautes) = entreprise_du_certificat(dernier)?;
         if siren_fiche.is_some() {
             let mut ec = Vec::new();
@@ -1940,7 +1942,7 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<(ChampsEntreprise, Vec<FauteDeCase>
     let siret = de_la_piece(siret_imprime(&l.b), E::Siret, &mut fautes);
     let adresse = adresse_lue(&e.adresse);
     let f = EntrepriseLue {
-        raison_sociale: e.nom.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
+        raison_sociale: e.employeur.raison_sociale.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
         siren: siret.as_ref().map(droit::fiche::Siret::siren),
         nic: siret.as_ref().map(droit::fiche::Siret::nic),
         siret: siret.clone(),
@@ -2293,10 +2295,10 @@ fn entreprise_du_certificat(p: &Attestee) -> R<(ChampsEntreprise, Vec<FauteDeCas
         idcc: aem.and_then(|a| a.idcc.clone()),
         code_postal: de_la_piece(aem.and_then(|a| a.employeur_code_postal.as_deref()).map(CodePostal::d_une_piece), E::CodePostal, &mut fautes),
         commune: aem.and_then(|a| a.employeur_commune.clone()),
-        raison_sociale: c.employeur.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
-        siren: c.siret.as_ref().map(droit::fiche::Siret::siren),
-        nic: c.siret.as_ref().map(droit::fiche::Siret::nic),
-        siret: c.siret.clone(),
+        raison_sociale: c.employeur.raison_sociale.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
+        siren: c.employeur.siret.as_ref().map(droit::fiche::Siret::siren),
+        nic: c.employeur.siret.as_ref().map(droit::fiche::Siret::nic),
+        siret: c.employeur.siret.clone(),
         adherent: c.compte.clone(),
         ..EntrepriseLue::default()
     };

@@ -85,7 +85,7 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "logiciel": "coolpaie",
             "numero": "7/2026",
             "entreprise": {
-                "nom": "Compagnie des Essais", "adresse": ["12 rue Imaginaire", "99998 Nullepart"],
+                "raison_sociale": "Compagnie des Essais", "adresse": ["12 rue Imaginaire", "99998 Nullepart"],
                 "siret": "99999999900017", "naf": "9001Z", "urssaf": "999999999999",
                 "convention": "IDCC n° 3090 - Spectacle vivant du secteur privé", "licence": "L-R-99-9",
             },
@@ -185,7 +185,7 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
             "logiciel": "spaiectacle",
             "numero": null,
             "entreprise": {
-                "nom": "Les Ateliers Fictifs", "adresse": ["Maison des Essais", "99998 Fictiveville"],
+                "raison_sociale": "Les Ateliers Fictifs", "adresse": ["Maison des Essais", "99998 Fictiveville"],
                 "siret": "99999999900025", "naf": "9001Z", "urssaf": null,
                 "convention": "Entreprises du secteur privé du spectacle vivant", "licence": null,
             },

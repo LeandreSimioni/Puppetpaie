@@ -47,7 +47,7 @@
 //! et le bulletin l'emporte sur ce qu'il compte lui-meme.
 
 use std::path::Path;
-use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
+use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, Periode};
 use socle::echec::R;
 use socle::num::Decimal;
@@ -217,6 +217,13 @@ fn nir_imprime(texte: &str) -> R<(droit::fiche::Nir, Option<droit::fiche::CleNir
         }
         None => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
     }
+}
+
+/// LE SIRET IMPRIME, ses chiffres (« 999 999 999 00017 »), lu par sa lecture de piece (`Siret::d_une_piece`), ou ce qui
+/// le refuse.
+fn siret_imprime(texte: &str) -> R<droit::fiche::Siret> {
+    let s: String = texte.chars().filter(char::is_ascii_digit).collect();
+    droit::fiche::Siret::d_une_piece(&s)
 }
 
 /// Un mot qui n'est que ponctuation (« — », « · », « : », « - », « | ») : il borne une valeur, il n'en est pas.
@@ -884,9 +891,13 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
 /// l'absent en `null`.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Entreprise {
-    pub nom: Option<String>,
+    /// La raison sociale (premier rang de son adresse) et le SIRET imprime, lu a la porte (`siret_imprime`).
+    #[serde(flatten)]
+    pub employeur: EmployeurLu,
+    /// Ce qui refuse le SIRET imprime ; aucun : il ne l'est pas, ou il se lit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faute_siret: Option<String>,
     pub adresse: Vec<String>,
-    pub siret: Option<String>,
     pub naf: Option<String>,
     pub urssaf: Option<String>,
     pub convention: Option<String>,
@@ -1515,6 +1526,11 @@ impl<'a> Lecteur<'a> {
             Some(Err(e)) => (None, None, Some(e.phrase)),
             None => (None, None, None),
         };
+        let (siret_lu, faute_siret) = match texte(&valeurs, "siret").map(|s| siret_imprime(&s)) {
+            Some(Ok(s)) => (Some(s), None),
+            Some(Err(e)) => (None, Some(e.phrase)),
+            None => (None, None),
+        };
         let salarie = Salarie {
             nom_complet: nom_s.clone(),
             identite: IdentiteDeclaree { nom, prenoms: prenom, naissance: date(&valeurs, "naissance").map(NaissanceDeclaree::du_jour), nir: nir_lu, ntt: None },
@@ -1604,9 +1620,9 @@ impl<'a> Lecteur<'a> {
             logiciel,
             numero: texte(&valeurs, "numero"),
             entreprise: Entreprise {
-                nom: entreprise.as_ref().and_then(|e| e.lignes.first().cloned()),
+                employeur: EmployeurLu { raison_sociale: entreprise.as_ref().and_then(|e| e.lignes.first().cloned()), siret: siret_lu },
+                faute_siret,
                 adresse: entreprise.into_iter().flat_map(|e| e.lignes.into_iter().skip(1)).collect(),
-                siret: texte(&valeurs, "siret"),
                 naf: texte(&valeurs, "naf"),
                 urssaf: texte(&valeurs, "urssaf"),
                 convention: texte(&valeurs, "convention"),

@@ -1,7 +1,7 @@
 //! L'identite declaree d'une personne : ce qu'une piece (une DSN, une DPAE, une AEM, un certificat d'emploi, un
-//! bulletin, un compte rendu NEOReS) ou une DSN partie dit de qui elle est.
+//! bulletin, un compte rendu NEOReS) ou une DSN partie dit de qui elle est ; et l'employeur qu'une piece imprime.
 
-use droit::fiche::Nir;
+use droit::fiche::{Nir, Siret};
 use serde::Serialize;
 use socle::date::Jour;
 
@@ -35,6 +35,16 @@ impl IdentiteDeclaree {
             (None, None) => None,
         }
     }
+}
+
+/// L'EMPLOYEUR LU D'UNE PIECE d'autrui (un bulletin, une AEM, un certificat d'emploi Congés Spectacles) : la raison
+/// sociale et le SIRET qu'elle imprime, chacun vide quand elle ne l'imprime pas (ou l'imprime hors de sa forme, pour le
+/// SIRET : `Siret::d_une_piece`). La raison sociale est du texte, telle qu'imprimee ; la fiche Entreprise la range a sa
+/// porte (`droit::fiche::RaisonSociale`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct EmployeurLu {
+    pub raison_sociale: Option<String>,
+    pub siret: Option<Siret>,
 }
 
 /// UNE DATE DE NAISSANCE DECLAREE (S21.G00.30.006) : `JJMMAAAA`, dont le jour ou le mois peuvent etre inconnus, ecrits

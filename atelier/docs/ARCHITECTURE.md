@@ -182,7 +182,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
 | ordre de paiement (et le crédit que sa somme due laisse, `documents::bordereau::Credit`, qu'il porte : `dsn::Ordre.credit`, rendu tel quel par `OrdreEnClair.credit`) | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser` |
 | nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` |
-| employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
 **Le temps**
@@ -417,6 +416,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | identifiant d'un individu | `IdentifiantDIndividu` | `declarations/src/ntt.rs` |
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
 | date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
+| employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -556,6 +556,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`). Un jour connu (`Connue`, celui d'une fiche ou d'une
   pièce qui l'imprime, `du_jour`), ou ses chiffres tels que déclarés (`Incomplete`) ; écrite `jjmmaaaa`, `jj_mm_aaaa`,
   `iso` (sa serde) ; le jour qu'elle dit, `jour`.
+- **employeur lu d'une pièce** : la raison sociale et le SIRET qu'une pièce d'autrui imprime (un bulletin, une AEM, un
+  certificat d'emploi Congés Spectacles), chacun vide quand elle ne l'imprime pas ou, pour le SIRET, hors de sa forme
+  (`Siret::d_une_piece` ; le SIRET imprimé d'un bulletin se lit à sa porte, `bulletin_lu::Entreprise`, sa faute à côté).
+  La raison sociale est du texte tel qu'imprimé ; la fiche Entreprise proposée la range (`RaisonSociale`). Ce que l'AEM
+  dit en commun avec un certificat (`Aem::commun`) le passe tel quel. L'entreprise d'une DSN lue
+  (`dsn_lue::EntrepriseDeclaree`) est une forme de la fiche Entreprise, ses SIREN et NIC typés.
 - **case d'identité** : un des quatre identifiants que le bloc « Changements individu » reporte quand il change : NIR,
   nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011). Une liste de la norme : `TOUTES` dans l'ordre du
   bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit

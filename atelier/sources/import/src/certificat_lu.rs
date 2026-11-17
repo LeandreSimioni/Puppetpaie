@@ -26,7 +26,7 @@
 use std::path::Path;
 
 use documents::conges_spectacles::NombreDuCertificat;
-use declarations::identite::IdentiteDeclaree;
+use declarations::identite::{EmployeurLu, IdentiteDeclaree};
 use droit::fiche::Nir;
 use socle::date::{Jour, Periode};
 use socle::grandeurs::Montant;
@@ -113,11 +113,10 @@ impl JoursOuCachetsLus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
-    pub siret: Option<droit::fiche::Siret>,
+    /// Le SIRET, et la raison sociale, imprimee sur le rang du NIR.
+    pub employeur: EmployeurLu,
     /// Le numero d'adherent de l'employeur, ecrit comme la fiche le garde (`documents::conges_spectacles::forme_adherent`).
     pub compte: Option<String>,
-    /// La raison sociale, imprimee sur le rang du NIR.
-    pub employeur: Option<String>,
     /// Le N° CE.
     pub numero: Option<String>,
     /// Le nom, les prenoms et les treize caracteres du NIR ; sa cle s'il l'imprime.
@@ -326,9 +325,8 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     }
     let mut c = Certificat {
         page,
-        siret: None,
+        employeur: EmployeurLu::default(),
         compte: None,
-        employeur: None,
         numero: None,
         identite: IdentiteDeclaree::default(),
         cle_nir: None,
@@ -371,7 +369,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                 "siret" => {
                     let s: String = v.concat().chars().filter(char::is_ascii_digit).collect();
                     // Des chiffres qui ne font pas un SIRET : le certificat ne le dit pas.
-                    c.siret = droit::fiche::Siret::lire(&s).ok();
+                    c.employeur.siret = droit::fiche::Siret::lire(&s).ok();
                 }
                 "compte" => c.compte = texte(&v).map(|t| documents::conges_spectacles::forme_adherent(&t)),
                 "ce" => c.numero = texte(&v),
@@ -390,9 +388,9 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                         };
                         c.identite.nir = Some(nir);
                         c.cle_nir = cle;
-                        c.employeur = texte(&v[pris..]);
+                        c.employeur.raison_sociale = texte(&v[pris..]);
                     }
-                    None => c.employeur = texte(&v),
+                    None => c.employeur.raison_sociale = texte(&v),
                 },
                 "nom" => c.identite.nom = texte(&v),
                 "prenom" => c.identite.prenoms = texte(&v),

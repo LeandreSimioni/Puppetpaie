@@ -46,7 +46,7 @@ use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 
 use crate::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
-use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
+use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 
 /// Ce qui marque une case cochee, a droite de son libelle (« Ñ » : la coche d'une police sans table).
 const MARQUES: [&str; 5] = ["Ñ", "✔", "✓", "☒", "X"];
@@ -153,10 +153,10 @@ pub struct Aem {
     /// Le mois de l'attestation.
     pub mois: Option<Mois>,
     pub numero: Option<String>,
-    pub siret: Option<droit::fiche::Siret>,
+    /// La raison sociale et le SIRET.
+    pub employeur: EmployeurLu,
     pub ape: Option<String>,
     pub idcc: Option<droit::fiche::Idcc>,
-    pub employeur: Option<String>,
     pub employeur_code_postal: Option<String>,
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
@@ -273,9 +273,8 @@ impl Aem {
         }
         Certificat {
             page: self.page,
-            siret: self.siret.clone(),
-            compte: self.adherent.clone(),
             employeur: self.employeur.clone(),
+            compte: self.adherent.clone(),
             numero: self.numero.clone(),
             identite: self.identite.clone(),
             cle_nir: self.cle_nir.clone(),
@@ -431,10 +430,9 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             page,
             mois: Some(debut.mois_civil()),
             numero: None,
-            siret: siret.clone(),
+            employeur: EmployeurLu { raison_sociale: v("ENSEIGNE"), siret: siret.clone() },
             ape: v("EMP_APE"),
             idcc: idcc.clone(),
-            employeur: v("ENSEIGNE"),
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
@@ -636,10 +634,9 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         page,
         mois: None,
         numero: None,
-        siret: None,
+        employeur: EmployeurLu::default(),
         ape: None,
         idcc: None,
-        employeur: None,
         employeur_code_postal: None,
         employeur_commune: None,
         adherent: None,
@@ -673,7 +670,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
     // Un SIRET ou un IDCC imprimés qui n'ont pas leur forme se disent (`a.faute`), comme la clé du NIR plus bas.
     let mut fautes_d_identite: Vec<String> = Vec::new();
-    a.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
+    a.employeur.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
         Ok(s) => s,
         Err(e) => {
             fautes_d_identite.push(e.phrase);
@@ -688,7 +685,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
             None
         }
     };
-    a.employeur = texte(lu("raison", Some(1)));
+    a.employeur.raison_sociale = texte(lu("raison", Some(1)));
     a.employeur_code_postal = lu("code_postal", Some(1)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur_commune = texte(lu("commune", Some(1)));
     a.adherent = lu("adherent", Some(1))
