@@ -59,15 +59,15 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
         for v in &d.versements {
             // « -1 » : un CDD court sans taux personnalise (`norme-dsn/texte/bloc-S21.G00.50.txt`, S21.G00.50.008) ;
             // aucun taux n'a ete transmis. Sans la date du versement (S21.G00.50.001), le taux ne se date pas.
-            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
+            let (Some(id), Some(j), Some(cle)) = (v.nets.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
             // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) n'en pose aucun : une
             // DSN venue d'ailleurs se lit au mieux (`dsn_lue`, vide), et le compte rendu de l'import le dit.
-            let rel = match v.taux_pas {
+            let rel = match v.nets.taux_pas {
                 Some(t) => TauxDUneDsn::Transmis(
                     (*cle).clone(),
-                    TauxRecu { taux: t, r#type: v.type_pas, identifiant: id.clone(), mis_a_disposition: instant_du_jour(j)?, en_retour_de: None },
+                    TauxRecu { taux: t, r#type: v.nets.type_pas, identifiant: id.clone(), mis_a_disposition: instant_du_jour(j)?, en_retour_de: None },
                 ),
                 None => TauxDUneDsn::Illisible { salarie: (*cle).clone(), verse_le: j },
             };

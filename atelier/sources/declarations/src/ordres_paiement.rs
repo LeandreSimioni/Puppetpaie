@@ -95,7 +95,7 @@ fn est_agirc_arrco(v: Option<&Versement>) -> bool {
 /// `date` (ISO, ou `null` quand aucun texte ne la dit), `quand` (la phrase de la page), `source` (d'ou vient la date) et
 /// `credit` (le trop-verse que l'ordre ne reprend pas ou reprend, et ce que la compagnie en fait ; `null` sans
 /// trop-verse). `jour_echeance` : 5 ou 15 (`Contexte::echeance_dsn`).
-pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
+pub fn decrire(ordres: &[crate::dsn::OrdreDePaiement], mois: Mois, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
     let base = droit::organismes::base()?;
     let mut out = Vec::new();
     for o in ordres {
@@ -174,7 +174,7 @@ pub struct OrdreEnClair {
     #[serde(rename = "quand")]
     pub quand_dit: String,
     pub source: &'static str,
-    /// Le trop-verse de l'ordre (`dsn::Ordre.credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie
+    /// Le trop-verse de l'ordre (`dsn::OrdreDePaiement.credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie
     /// en fait.
     pub credit: Option<bordereau::Credit>,
 }

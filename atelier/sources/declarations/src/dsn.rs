@@ -4339,7 +4339,7 @@ fn citee_par_la_base(a: &Option<IdentifiantDAffiliation>) -> String {
 /// (20.006, 20.007), pour quand (20.011), et le credit que la somme due laisse (`bordereau::credit` : ce que la compagnie
 /// a verse en trop et que l'ordre ne reprend pas, ce qu'il reprend deja, l'Urssaf seulement ; `None` sans credit).
 #[derive(Clone, Debug)]
-pub struct Ordre {
+pub struct OrdreDePaiement {
     pub organisme: IdentifiantDOrganisme,
     pub reference: Option<String>,
     pub montant: Montant,
@@ -4362,7 +4362,7 @@ pub struct BordereauEcrit {
 /// Une DSN fabriquee : son texte, ses ordres de paiement dans l'ordre du fichier, et ses bordereaux Urssaf.
 pub struct Fabriquee {
     pub texte: String,
-    pub ordres: Vec<Ordre>,
+    pub ordres: Vec<OrdreDePaiement>,
     pub bordereaux: Vec<BordereauEcrit>,
 }
 
@@ -5001,7 +5001,7 @@ certificat de conformite du depot precedent.",
     let place_dgfip = f.lignes.len();
     // Les ordres de paiement, dans l'ordre du fichier ; ceux des organismes complementaires a leur place, ecrits apres
     // les individus.
-    let mut ordres: Vec<Option<Ordre>> = Vec::new();
+    let mut ordres: Vec<Option<OrdreDePaiement>> = Vec::new();
     let mut places_ordres_oc: Vec<(IdentifiantDOrganisme, usize)> = Vec::new();
     // Un organisme complementaire : celui d'une adhesion prevoyance (S21.G00.15.002 = S21.G00.20.001).
     let organismes_complementaires: HashSet<IdentifiantDOrganisme> =
@@ -5031,7 +5031,7 @@ certificat de conformite du depot precedent.",
             let a = bordereau::a_verser(m);
             (a.montant, Destinataire::Autre, a.credit, Montant::ZERO)
         };
-        ordres.push(Some(Ordre {
+        ordres.push(Some(OrdreDePaiement {
             organisme: siret.clone(),
             reference: reference_versement(v, &ent),
             montant,
@@ -5060,7 +5060,7 @@ certificat de conformite du depot precedent.",
             continue;
         }
         let d_o = mois_o.premier_jour();
-        ordres.push(Some(Ordre {
+        ordres.push(Some(OrdreDePaiement {
             organisme: siret_urssaf.clone(),
             reference: None,
             montant: *mt_o,
@@ -5284,7 +5284,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
         if !bloc.is_empty() {
             let a = a_verser_aux_composants(&siens);
             if let Some((_, i)) = places_ordres_oc.iter().find(|(s, _)| *s == siret) {
-                ordres[*i] = Some(Ordre {
+                ordres[*i] = Some(OrdreDePaiement {
                     organisme: siret.clone(),
                     reference: reference_versement(v, &ent),
                     montant: a.montant,
@@ -5305,7 +5305,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
         let montant = a_verser_a_la_dgfip(du);
         let reste = if montant.est_nul() { (-du).max(Montant::ZERO) } else { Montant::ZERO };
         let credit = bordereau::credit(Destinataire::Dgfip, reste, Montant::ZERO);
-        ordres.insert(0, Some(Ordre { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, periode: periode_du_mois, date_paiement: None, destinataire: Destinataire::Dgfip, credit }));
+        ordres.insert(0, Some(OrdreDePaiement { organisme: DGFIP, reference: Some(DGFIP_PAS.to_string()), montant, periode: periode_du_mois, date_paiement: None, destinataire: Destinataire::Dgfip, credit }));
     }
     f.lignes.splice(place_dgfip..place_dgfip, dgfip);
 

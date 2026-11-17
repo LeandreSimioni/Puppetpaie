@@ -395,16 +395,8 @@ pub struct VersementLu {
     pub nir: Option<Nir>,
     /// .001.
     pub verse_le: Option<Jour>,
-    /// .002.
-    pub net_imposable: Option<Montant>,
-    /// .004.
-    pub net_verse: Option<Montant>,
-    /// .006 a .008.
-    pub taux_pas: Option<TauxDePas>,
-    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
-    /// .009.
-    pub pas: Option<Montant>,
+    /// .002 a .009.
+    pub nets: Nets,
     pub remunerations: Vec<Remuneration>,
     /// LES BASES ASSUJETTIES QUE LA DSN DECLARE (bloc 78 ; `norme-dsn/texte/bloc-S21.G00.78.txt`), dans l'ordre.
     pub bases: Vec<BaseLue>,
@@ -489,12 +481,7 @@ impl VersementLu {
         VersementLu {
             nir,
             verse_le,
-            net_imposable: None,
-            net_verse: None,
-            taux_pas: None,
-            type_pas: None,
-            identifiant_pas: None,
-            pas: None,
+            nets: Nets::default(),
             remunerations: Vec::new(),
             bases: Vec::new(),
         }
@@ -511,8 +498,8 @@ impl VersementLu {
     }
 }
 
-/// Ce que le bloc 50 dit du versement : ses nets (.002, .004) et son prelevement a la source (.006 a .009). Le bloc n'a
-/// pas de numero de contrat (`bloc-S21.G00.50.txt`) : ces montants ne sont ceux d'un contrat que si le versement ne paie
+/// Ce que le bloc 50 dit du versement : ses nets (.002, .004) et son prelevement a la source (.006 a .008 : le taux, son
+/// type et son identifiant ; .009 : l'impot preleve). Le bloc n'a pas de numero de contrat (`bloc-S21.G00.50.txt`) : ces montants ne sont ceux d'un contrat que si le versement ne paie
 /// que lui, et lui seul (`PaieDuContrat::nets`).
 #[derive(Clone, Debug, Default)]
 pub struct Nets {
@@ -664,11 +651,11 @@ impl DsnLue {
     /// Les versements dont le prelevement a la source est declare (S21.G00.50.007), et ceux preleves sur la grille (un
     /// type autre que `01`, le taux transmis par la DGFiP).
     pub fn pas_versements(&self) -> usize {
-        self.versements.iter().filter(|v| v.type_pas.is_some()).count()
+        self.versements.iter().filter(|v| v.nets.type_pas.is_some()).count()
     }
 
     pub fn pas_bareme(&self) -> usize {
-        self.versements.iter().filter(|v| v.type_pas.is_some_and(|t| !t.transmis())).count()
+        self.versements.iter().filter(|v| v.nets.type_pas.is_some_and(|t| !t.transmis())).count()
     }
 
     /// Les contrats de l'individu `nir` (aucun : ceux des individus sans NIR).
@@ -758,14 +745,7 @@ impl DsnLue {
             verse_le: payeurs.last().and_then(|v| v.verse_le),
             mesures: self.mesures(nir, numero, false),
             bases,
-            nets: seul.map(|v| Nets {
-                net_imposable: v.net_imposable,
-                net_verse: v.net_verse,
-                taux_pas: v.taux_pas,
-                type_pas: v.type_pas,
-                identifiant_pas: v.identifiant_pas.clone(),
-                pas: v.pas,
-            }),
+            nets: seul.map(|v| v.nets.clone()),
             avec,
         }
     }
@@ -1290,11 +1270,11 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             S21_50_002 => {
                 let m = fautes.euros(rub, &v);
-                versement.into_iter().for_each(|x| x.net_imposable = m);
+                versement.into_iter().for_each(|x| x.nets.net_imposable = m);
             }
             S21_50_004 => {
                 let m = fautes.euros(rub, &v);
-                versement.into_iter().for_each(|x| x.net_verse = m);
+                versement.into_iter().for_each(|x| x.nets.net_verse = m);
             }
             // Un taux ecrit en decimal simple (« 7 », « 7.5 », « 7.50 ») se lit, ses deux decimales ecrites
             // (`TauxDePas::du_taux`) ; toute autre ecriture (« +7 », « 1_0 », « 75e-1 », « 7.500 », « 100 ») laisse la case
@@ -1306,17 +1286,17 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     None => chiffres(&v),
                 };
                 let t = if simple { socle::grandeurs::lu::norme::<Taux>(&v).and_then(TauxDePas::du_taux) } else { None };
-                versement.into_iter().for_each(|x| x.taux_pas = t);
+                versement.into_iter().for_each(|x| x.nets.taux_pas = t);
             }
             TypeDeTauxPas::RUBRIQUE => {
                 let t = fautes.code(rub, &v);
-                versement.into_iter().for_each(|x| x.type_pas = t);
+                versement.into_iter().for_each(|x| x.nets.type_pas = t);
             }
             // Un identifiant hors de sa forme laisse la case vide (une DSN lue : un inconnu ne s'invente pas).
-            S21_50_008 => versement.into_iter().for_each(|x| x.identifiant_pas = droit::pas::IdentifiantDuTauxPas::lire(&v).ok()),
+            S21_50_008 => versement.into_iter().for_each(|x| x.nets.identifiant_pas = droit::pas::IdentifiantDuTauxPas::lire(&v).ok()),
             S21_50_009 => {
                 let m = fautes.euros(rub, &v);
-                versement.into_iter().for_each(|x| x.pas = m);
+                versement.into_iter().for_each(|x| x.nets.pas = m);
             }
             S21_51_001 => {
                 let Some(x) = versement else { continue };

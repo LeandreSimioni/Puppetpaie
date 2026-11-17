@@ -395,7 +395,7 @@ pub fn reprise_urssaf(courant: Montant, credit: Montant) -> (AVerser, Montant) {
     (AVerser { montant: v.montant, credit: credit.max(Montant::ZERO) - deduit + v.credit }, deduit)
 }
 
-/// LE CREDIT D'UN ORDRE DE PAIEMENT (`declarations::dsn::Ordre.credit`), tel que la page le dit : combien, ce que la
+/// LE CREDIT D'UN ORDRE DE PAIEMENT (`declarations::dsn::OrdreDePaiement.credit`), tel que la page le dit : combien, ce que la
 /// compagnie fait, et le texte qui le dit ; les deux montants au centime.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Credit {

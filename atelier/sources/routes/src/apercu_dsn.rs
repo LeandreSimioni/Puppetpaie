@@ -73,7 +73,7 @@ struct VersementDuFichier {
 
 impl VersementDuFichier {
     fn de(v: &VersementLu) -> VersementDuFichier {
-        VersementDuFichier { date: v.verse_le, net_verse: v.net_verse, net_fiscal: v.net_imposable, taux_pas: v.taux_pas, montant_pas: v.pas }
+        VersementDuFichier { date: v.verse_le, net_verse: v.nets.net_verse, net_fiscal: v.nets.net_imposable, taux_pas: v.nets.taux_pas, montant_pas: v.nets.pas }
     }
 }
 
