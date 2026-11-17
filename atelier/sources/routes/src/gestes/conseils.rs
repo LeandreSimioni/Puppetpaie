@@ -437,7 +437,8 @@ fn operer<G: Grandeur>(g: G, op: &Operation) -> G {
 }
 
 impl ValeurLivree {
-    /// Telle que la phrase la cite : `decimales` ecrites, sinon au centieme sans zero inutile (`socle::texte`).
+    /// Telle que la phrase la cite : un montant en euros, par la seule ecriture d'un montant (`socle::texte::euros`, son
+    /// « € » compris) ; une autre grandeur, `decimales` ecrites, sinon au centieme sans zero inutile (`socle::texte`).
     fn dite(self, decimales: Option<u32>) -> String {
         fn dite<G: Grandeur>(g: G, decimales: Option<u32>) -> String {
             match decimales {
@@ -446,8 +447,8 @@ impl ValeurLivree {
             }
         }
         match self {
-            ValeurLivree::Montant(g) => dite(g, decimales),
-            ValeurLivree::MontantUnitaire(g) => dite(g, decimales),
+            ValeurLivree::Montant(g) => socle::texte::euros(g),
+            ValeurLivree::MontantUnitaire(g) => socle::texte::euros(g),
             ValeurLivree::Taux(g) => dite(g, decimales),
             ValeurLivree::Coefficient(g) => dite(g, decimales),
         }
@@ -477,14 +478,14 @@ fn val_compte(n: usize) -> Valeur {
     Valeur { texte: socle::texte::compte(n), pluriel: n >= 2 }
 }
 
-/// Un montant unitaire que la phrase cite, a deux decimales : sa porte.
+/// Un montant unitaire que la phrase cite, en euros (`socle::texte::euros`) : sa porte.
 fn val_unitaire(m: MontantUnitaire) -> Valeur {
-    val_texte(socle::texte::par_milliers_a(m, 2))
+    val_texte(socle::texte::euros(m))
 }
 
-/// Un montant que la phrase cite, au centime : sa porte.
+/// Un montant que la phrase cite, en euros (`socle::texte::euros`) : sa porte.
 fn val_euros(m: Montant) -> Valeur {
-    val_texte(socle::texte::par_milliers_a(m.au_centime(), 2))
+    val_texte(socle::texte::euros(m))
 }
 
 /// Les donnees que les gabarits lisent : le socle livre de l'annee (lu au 1er janvier, a la premiere valeur qu'un
