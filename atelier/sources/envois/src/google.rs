@@ -23,8 +23,8 @@ pub fn jetons_de_la_base(base: &Url) -> Url {
 pub const PERMISSIONS: [&str; 2] =
     ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/userinfo.email"];
 
-/// Le delai d'un appel a Google, en secondes.
-pub const DELAI: u64 = 60;
+/// Le delai d'un appel a Google.
+pub const DELAI: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// L'APPLICATION GOOGLE QUI DEMANDE L'AUTORISATION (celle du logiciel, ou celle que la compagnie a posee) : ses
 /// identifiants, que l'appelant a lus.
@@ -153,7 +153,7 @@ fn brute(p: Panne) -> Echec {
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
 /// de Google, traduit, `Err` pour une panne brute. `adresse` : `JETONS`, ou un serveur local.
-pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafraichissement: &socle::secret::Secret, delai: u64) -> R<Result<socle::secret::Secret, ErreurGoogle>> {
+pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafraichissement: &socle::secret::Secret, delai: std::time::Duration) -> R<Result<socle::secret::Secret, ErreurGoogle>> {
     let corps = encoder(&[
         ("client_id", application.client_id.clone()),
         ("client_secret", application.client_secret.devoiler().to_string()),

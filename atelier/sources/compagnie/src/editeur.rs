@@ -43,7 +43,7 @@ pub const REDEMANDER_IDENTITE: &str = "Le serveur ne reconnait plus ce poste : r
 pub const SERVEUR_PAR_DEFAUT: Url = Url::du_moteur("https://filet.puppetpaie.fr");
 
 /// Le filet ne doit jamais faire attendre une paie.
-pub const DELAI: u64 = 15;
+pub const DELAI: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Une erreur du filet, que les appelants rattrapent (le passage suivant reessaie), ou une autre panne, un refus qui
 /// remonte.
@@ -360,7 +360,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
 }
 
 /// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
-pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
+pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action: &str, corps: &C, entetes: &[(&str, &str)], delai: std::time::Duration) -> Result<T, ErreurFilet> {
     if crate::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
         return Err(ErreurFilet::Autre(socle::echec::erreur(Classe::EditionBridee, edition_bridee(action))));
     }
@@ -420,7 +420,7 @@ impl Client {
     /// Une action du poste : le numero dans le corps, la cle dans l'en-tete. Un 401
     /// du serveur (poste inconnu, revoque, ou cle fausse : il ne dit pas lequel) se
     /// complete de ce qu'il y a a faire.
-    fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: u64) -> Result<T, ErreurFilet> {
+    fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: std::time::Duration) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
         match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.devoiler())], delai) {
             Err(ErreurFilet::Filet { message, statut: 401 }) => Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), 401)),
@@ -441,7 +441,7 @@ impl Client {
 
     /// Un message au developpeur (`problemes::Corps`) : un texte, des incidents et des captures ; le delai est plus long.
     pub fn signaler<C: Serialize>(&self, corps: &C) -> Result<Retour, ErreurFilet> {
-        self.post_du_poste("retour", corps, 60)
+        self.post_du_poste("retour", corps, std::time::Duration::from_secs(60))
     }
 
     /// `POST /reponses` : les reponses aux messages `numeros`.

@@ -1611,11 +1611,11 @@ impl Recherche {
         let lue = p.version.as_ref().map(VersionDuLogiciel::lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
         let essai = p.nouvel_essai.map(|t| {
-            let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
-            match s {
+            let d = t.saturating_duration_since(std::time::Instant::now());
+            match d.as_secs() {
                 0 => "nouvel essai maintenant".to_string(),
                 1..=59 => "nouvel essai dans moins d'une minute".to_string(),
-                _ => format!("nouvel essai dans {} min", s.div_ceil(60)),
+                _ => format!("nouvel essai dans {} min", socle::temps::ecrit::minutes_commencees_dites(d)),
             }
         });
         let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<Coefficient>) = match p.etape {

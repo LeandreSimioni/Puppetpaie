@@ -1,5 +1,5 @@
 //! La veille de la fenetre : relever les retours, les signatures et les fiches, puis
-//! sauvegarder, a l'ouverture puis toutes les `minutes`. En arriere-plan, jamais dans une requete ; un tour a la fois.
+//! sauvegarder, a l'ouverture puis toutes les `periode`. En arriere-plan, jamais dans une requete ; un tour a la fois.
 //! Elle ne depose rien : elle appelle la route `ouverture`, qui ne connait que la releve et la sauvegarde. Ce qu'elle
 //! dit a la page (son etat, le bandeau) : `routes::veille`.
 
@@ -20,8 +20,9 @@ use routes::enveloppe::{Charge, Refus};
 
 pub struct Veille {
     racine: PathBuf,
-    pub minutes: u64,
-    jours: socle::date::Duree<socle::date::EnJours>,
+    /// Le temps entre deux tours de la boucle ; zero : aucune boucle.
+    pub periode: Duration,
+    jours: Duration,
     erreur: Mutex<Option<String>>,
     en_cours: AtomicBool,
     sauvegarde_en_cours: AtomicBool,
@@ -42,10 +43,10 @@ pub struct EtapeDeLaVeille {
 }
 
 impl Veille {
-    pub fn nouvelle(racine: &Path, minutes: u64, etats: Option<Arc<FileDesEtats>>) -> Arc<Veille> {
+    pub fn nouvelle(racine: &Path, periode: Duration, etats: Option<Arc<FileDesEtats>>) -> Arc<Veille> {
         Arc::new(Veille {
             racine: racine.to_path_buf(),
-            minutes,
+            periode,
             jours: routes::gestes::ouverture::TRENTE_JOURS,
             erreur: Mutex::new(None),
             en_cours: AtomicBool::new(false),
@@ -95,17 +96,17 @@ impl Veille {
             en_cours,
             sauvegarde_en_cours,
             etape,
-            minutes: self.minutes,
+            minutes: self.periode,
             dernier,
             erreur,
         }
     }
 
-    /// Dans combien de minutes part le prochain tour, arrondi a la minute superieure (au moins 1) ; aucun sans boucle.
-    fn prochain_dans(&self) -> Option<u64> {
+    /// Dans combien de temps part le prochain tour, une minute au moins ; aucun sans boucle.
+    fn prochain_dans(&self) -> Option<Duration> {
         let p = *tenu(&self.prochain);
         match p {
-            Some(t) if self.minutes > 0 => Some(t.saturating_duration_since(Instant::now()).as_secs().div_ceil(60).max(1)),
+            Some(t) if !self.periode.is_zero() => Some(t.saturating_duration_since(Instant::now()).max(Duration::from_secs(60))),
             Some(_) | None => None,
         }
     }
@@ -150,16 +151,16 @@ impl Veille {
         self.etat()
     }
 
-    /// Le premier tour, complet, puis un tour toutes les `minutes` tant que la veille n'est pas arretee.
+    /// Le premier tour, complet, puis un tour toutes les `periode` tant que la veille n'est pas arretee.
     pub fn demarrer(self: &Arc<Self>) {
         let v = self.clone();
         routes::fil_de_routes(move || {
             // La mise a jour ne se cherche pas ici, a l'ouverture d'une compagnie : c'est le logiciel qui la cherche pour
             // lui-meme, au lancement (`maj::chercher_en_fond`).
             v.tour(false, true);
-            while v.minutes > 0 {
-                *tenu(&v.prochain) = Some(Instant::now() + Duration::from_secs(v.minutes * 60));
-                for _ in 0..v.minutes * 60 {
+            while !v.periode.is_zero() {
+                *tenu(&v.prochain) = Some(Instant::now() + v.periode);
+                for _ in 0..v.periode.as_secs() {
                     if v.arretee.load(Ordering::SeqCst) {
                         return;
                     }

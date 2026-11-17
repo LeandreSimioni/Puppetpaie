@@ -855,8 +855,8 @@ pub(crate) struct EnvoiPrepare {
     client: Box<dyn Courriel>,
     /// La preuve deja verifiee avant la fabrique (`preparer_envoi` avec une preuve) : l.expedition ne la redemande pas.
     preuve: Option<Preuve>,
-    /// La duree de la preparation (lecture du mois, messages, boite), en millisecondes : le journal la garde.
-    preparation_ms: u128,
+    /// La duree de la preparation (lecture du mois, messages, boite) : le journal la garde.
+    preparation: std::time::Duration,
 }
 /// A QUI LES DOCUMENTS DU MOIS PARTENT. Chaque salarie du mois est dans l'un de trois cas, lus dans le journal
 /// (`crate::etapes::documents_partis` : ce que l'engagement sait de ce qui est parti) et dans ses engagements :
@@ -1052,12 +1052,12 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             expediteur, signataire
         ));
     }
-    Ok(EnvoiPrepare { messages, expediteur, avertissements, choix, documents, client, preuve, preparation_ms: socle::temps::duree(debut).as_millis() })
+    Ok(EnvoiPrepare { messages, expediteur, avertissements, choix, documents, client, preuve, preparation: socle::temps::duree(debut) })
 }
 
 /// Ce qui suit la preparation : la PREUVE (le mot de passe du logiciel), l'envoi, le journal. `qui` : la ligne du journal.
 pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, preuve: &Preuve, qui: &str) -> R<DocumentsEnvoyes> {
-    let EnvoiPrepare { messages, expediteur, avertissements, choix, documents, mut client, preuve: verifiee, preparation_ms } = prepare;
+    let EnvoiPrepare { messages, expediteur, avertissements, choix, documents, mut client, preuve: verifiee, preparation } = prepare;
     let preuve = match &verifiee {
         Some(p) => p,
         None => preuve,
@@ -1085,11 +1085,10 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?;
-    let preuve_ms = socle::temps::duree(t_preuve).as_millis();
+    let mot_de_passe = socle::temps::duree(t_preuve);
     let t_envoi = std::time::Instant::now();
     let envoye = envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None);
-    let envoi_ms = socle::temps::duree(t_envoi).as_millis();
-    let durees = journal::Durees { preparation: preparation_ms as u64, mot_de_passe: preuve_ms as u64, envoi: envoi_ms as u64 };
+    let durees = journal::Durees { preparation, mot_de_passe, envoi: socle::temps::duree(t_envoi) };
     let le_mois = Some(mois);
     let detail = |servis: &[journal::Servi]| journal::DetailDocuments {
         salaries: servis.to_vec(),

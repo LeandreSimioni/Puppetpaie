@@ -131,8 +131,8 @@ fn au_jour_pose(t: Moment) -> Moment {
     };
     // Autant de jours de 24 heures qu'il y en a de l'un a l'autre, en avant ou en arriere.
     let decale = match jour >= montre {
-        true => t.jours_plus_tard(Duree::ecoulee(&montre, &jour)),
-        false => t.jours_plus_tot(Duree::ecoulee(&jour, &montre)),
+        true => t.plus_duree(Duree::ecoulee(&montre, &jour).de_24_heures()),
+        false => t.moins_duree(Duree::ecoulee(&jour, &montre).de_24_heures()),
     };
     match decale {
         Some(t) => t,
@@ -273,6 +273,12 @@ pub fn duree(debut: Instant) -> std::time::Duration {
     }
 }
 
+/// AUTANT DE JOURS DE 24 HEURES, une duree mesuree que le logiciel fixe (les retours qu'un releve remonte, jusqu'a cet
+/// age : `ecrit::jours_opt`).
+pub const fn jours_de_24_heures(n: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(n * 86_400)
+}
+
 /// LES ECRITURES D'UNE DUREE MESUREE (`std::time::Duration`, « Le glossaire ») : une facon d'ecrire n'est pas un type.
 /// Chaque forme dit la sienne par un attribut serde (`#[serde(with = "socle::temps::ecrit::secondes_au_dixieme")]`), ou
 /// la dit dans une phrase (`secondes_au_dixieme_dites`, `secondes_dites`, `dite_a_la_seconde`, `heures_dites`) ; elles
@@ -308,6 +314,44 @@ pub mod ecrit {
         }
     }
 
+    /// SES MINUTES ENTIERES, la minute commencee non comptee (2 min 59 s : 2).
+    fn minutes_entieres(d: Duration) -> u64 {
+        d.as_secs() / 60
+    }
+
+    /// SES MINUTES COMMENCEES, toute fraction comptee (2 min 0,1 s : 3) : un delai qu'on annonce.
+    fn minutes_commencees(d: Duration) -> u64 {
+        (d.as_secs() + u64::from(d.subsec_nanos() > 0)).div_ceil(60)
+    }
+
+    /// En millisecondes entieres, la milliseconde commencee non comptee : `#[serde(with =
+    /// "socle::temps::ecrit::millisecondes")]` (les durees d'un envoi de documents, au journal).
+    pub mod millisecondes {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_u64(u64::try_from(d.as_millis()).map_err(serde::ser::Error::custom)?)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+            <u64 as serde::Deserialize>::deserialize(d).map(Duration::from_millis)
+        }
+    }
+
+    /// DITE EN MILLISECONDES ENTIERES dans une phrase (`millisecondes`) : « 12 ».
+    pub fn millisecondes_dites(d: Duration) -> String {
+        d.as_millis().to_string()
+    }
+
+    /// En minutes entieres (`minutes_entieres`) : `#[serde(serialize_with = "socle::temps::ecrit::minutes::serialize")]`.
+    pub mod minutes {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_u64(super::minutes_entieres(*d))
+        }
+    }
+
     /// En minutes entieres, facultative (`null` quand elle n'est pas dite) : `#[serde(with =
     /// "socle::temps::ecrit::minutes_opt")]`.
     pub mod minutes_opt {
@@ -316,7 +360,7 @@ pub mod ecrit {
         pub fn serialize<S: serde::Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
             match d {
                 None => s.serialize_none(),
-                Some(d) => s.serialize_some(&(d.as_secs() / 60)),
+                Some(d) => s.serialize_some(&super::minutes_entieres(*d)),
             }
         }
 
@@ -326,6 +370,36 @@ pub mod ecrit {
                 Some(n) => n.checked_mul(60).map(|s| Some(Duration::from_secs(s))).ok_or_else(|| serde::de::Error::custom(format!("{} minutes : une durée trop longue", n))),
             }
         }
+    }
+
+    /// En jours de 24 heures entiers, facultative (`null` quand elle n'est pas dite) : `#[serde(with =
+    /// "socle::temps::ecrit::jours_opt")]` (la fenetre des retours qu'une ouverture releve).
+    pub mod jours_opt {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+            match d {
+                None => s.serialize_none(),
+                Some(d) => s.serialize_some(&(d.as_secs() / 86_400)),
+            }
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+            match <Option<u64> as serde::Deserialize>::deserialize(d)? {
+                None => Ok(None),
+                Some(n) => n.checked_mul(86_400).map(|s| Some(Duration::from_secs(s))).ok_or_else(|| serde::de::Error::custom(format!("{} jours : une durée trop longue", n))),
+            }
+        }
+    }
+
+    /// DITE EN MINUTES ENTIERES dans une phrase (`minutes_entieres`) : « 3 ».
+    pub fn minutes_entieres_dites(d: Duration) -> String {
+        minutes_entieres(d).to_string()
+    }
+
+    /// DITE EN MINUTES COMMENCEES dans une phrase (`minutes_commencees`), un delai qu'on annonce : « 3 ».
+    pub fn minutes_commencees_dites(d: Duration) -> String {
+        minutes_commencees(d).to_string()
     }
 
     /// DITE EN SECONDES AU DIXIEME dans une phrase, la moitie loin de zero : « 1.2 », « 0.0 ».
@@ -356,7 +430,7 @@ pub mod ecrit {
 
     /// DITE EN HEURES dans une phrase, a la minute d'avant : « 12 h », « 1 h 05 ».
     pub fn heures_dites(d: Duration) -> String {
-        let minutes = d.as_secs() / 60;
+        let minutes = minutes_entieres(d);
         match minutes % 60 {
             0 => format!("{} h", minutes / 60),
             m => format!("{} h {:02}", minutes / 60, m),

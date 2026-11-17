@@ -38,7 +38,8 @@ use routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
 use socle::echec::{Classe, R};
 use socle::memoire::tenu;
 
-pub const MINUTES_VEILLE: u64 = 20;
+/// Le temps entre deux passages de la veille, par defaut (`--veille MINUTES`).
+pub const VEILLE: std::time::Duration = std::time::Duration::from_secs(20 * 60);
 
 const MOT_DE_PASSE: &str = include_str!("pages/mot_de_passe.html");
 const CHOIX_MOT_DE_PASSE: &str = include_str!("pages/choix_mot_de_passe.html");
@@ -200,7 +201,7 @@ pub struct Fenetre {
     administrateur: Mutex<Option<socle::secret::Secret>>,
     temoin: Mutex<Instant>,
     journal: Mutex<Option<PathBuf>>,
-    minutes_veille: u64,
+    veille: std::time::Duration,
     /// Ce que fait « fermer » : arreter le processus (le navigateur), ou fermer la fenetre Tauri.
     pub fermer: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
@@ -508,7 +509,7 @@ pub fn page_logiciel(racine: &Path, jeton: &socle::secret::Secret) -> R<String> 
 }
 
 impl Fenetre {
-    pub fn nouvelle(minutes_veille: u64, local: PathBuf, port: u16) -> R<Arc<Fenetre>> {
+    pub fn nouvelle(veille: std::time::Duration, local: PathBuf, port: u16) -> R<Arc<Fenetre>> {
         Ok(Arc::new(Fenetre {
             jeton: jeton(&local)?,
             port,
@@ -519,7 +520,7 @@ impl Fenetre {
             administrateur: Mutex::new(None),
             temoin: Mutex::new(Instant::now()),
             journal: Mutex::new(None),
-            minutes_veille,
+            veille,
             fermer: Mutex::new(None),
         }))
     }
@@ -701,7 +702,7 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        let veille = Veille::nouvelle(&racine, self.minutes_veille, Some(etats.clone()));
+        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()));
         veille.demarrer();
         self.poser_phase(Phase::Ouverte { racine, veille, etats });
     }
@@ -1175,7 +1176,7 @@ pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> Stri
         Some(h) => h,
         None => heure.as_str(),
     };
-    let mut ligne = format!("{} route {} {} ms", a_l_heure, nom, duree.as_millis());
+    let mut ligne = format!("{} route {} {} ms", a_l_heure, nom, socle::temps::ecrit::millisecondes_dites(duree));
     if let Some(r) = rendu.refus() {
         ligne.push_str(&format!(" refus {}", socle::echec::classe_notee(r.classe)));
     }
@@ -1217,24 +1218,24 @@ pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> socle::echec::R<I
 
 /// Demarre le serveur de la fenetre dans un fil, sur l'ecoute de la page que le verrou a prise (`Prise`, que l'appelant
 /// garde tant que la fenetre vit : elle porte le verrou). Rend la fenetre et son port.
-pub fn demarrer(minutes_veille: u64, prise: &Prise) -> std::io::Result<(Arc<Fenetre>, u16)> {
+pub fn demarrer(veille: std::time::Duration, prise: &Prise) -> std::io::Result<(Arc<Fenetre>, u16)> {
     let page = prise.page.try_clone()?;
     instance::sans_heritage(&page);
-    servir_sur(minutes_veille, page, prise.port)
+    servir_sur(veille, page, prise.port)
 }
 
 /// Demarre le serveur de la fenetre dans un fil, au port `port` s'il est libre (sinon un port que le systeme donne : la
 /// ligne « la fenetre ecoute sur » dit lequel). Rend la fenetre et le port. Hors du verrou : `moteur interface --port`, et
 /// les essais.
-pub fn demarrer_sur(minutes_veille: u64, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
+pub fn demarrer_sur(veille: std::time::Duration, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     let (ecouteur, port) = http::ecouter(port)?;
-    servir_sur(minutes_veille, ecouteur, port)
+    servir_sur(veille, ecouteur, port)
 }
 
-fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
+fn servir_sur(veille: std::time::Duration, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     // L'heure du lancement et les paniques notees (`diagnostic`) : ce qu'un retour et un incident disent de la fenetre.
     compagnie::diagnostic::installer();
-    let f = Fenetre::nouvelle(minutes_veille, navigateur::dossier_local(&installation::base(), port), port).map_err(|e| std::io::Error::other(e.en_lignes()))?;
+    let f = Fenetre::nouvelle(veille, navigateur::dossier_local(&installation::base(), port), port).map_err(|e| std::io::Error::other(e.en_lignes()))?;
     let servie = f.clone();
     std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
     f.ecrire(&format!("PuppetPaie {} : la fenetre ecoute sur 127.0.0.1:{}.\n", version(), port));
@@ -1246,7 +1247,7 @@ fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io:
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub port: Option<u16>,
-    pub minutes_veille: u64,
+    pub veille: std::time::Duration,
     pub sans_navigateur: bool,
 }
 
@@ -1255,7 +1256,7 @@ const USAGE: &str = "Usage : moteur interface [--port N] [--sans-navigateur] [--
 /// Les options de `moteur interface`. Une valeur qui ne se lit pas est refusee, jamais remplacee par le defaut.
 pub fn lire_options(args: &[socle::ligne::Argument]) -> R<Options> {
     let args = socle::ligne::textes(args);
-    let mut o = Options { port: None, minutes_veille: MINUTES_VEILLE, sans_navigateur: false };
+    let mut o = Options { port: None, veille: VEILLE, sans_navigateur: false };
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1272,7 +1273,9 @@ pub fn lire_options(args: &[socle::ligne::Argument]) -> R<Options> {
                 i += 2;
             }
             "--veille" if i + 1 < args.len() => {
-                o.minutes_veille = args[i + 1].parse().map_err(|_| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
+                // Des minutes entieres, la porte de la ligne de commande.
+                let minutes: u64 = args[i + 1].parse().map_err(|_| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
+                o.veille = minutes.checked_mul(60).map(std::time::Duration::from_secs).ok_or_else(|| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
                 i += 2;
             }
             autre => return Err(socle::refus!("Option inconnue : {}. {}", autre, USAGE)),
@@ -1368,7 +1371,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             return 2;
         }
     };
-    let minutes = options.minutes_veille;
+    let veille = options.veille;
     let devant: Arc<Mutex<Option<(String, PathBuf)>>> = Arc::new(Mutex::new(None));
     let pour_devant = devant.clone();
     let instance = prendre_instance(move || {
@@ -1392,8 +1395,8 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     preparer_l_installation();
     compagnie::maj::chercher_en_fond();
     let demarre = match options.port {
-        Some(p) => demarrer_sur(minutes, p),
-        None => demarrer(minutes, &prise),
+        Some(p) => demarrer_sur(veille, p),
+        None => demarrer(veille, &prise),
     };
     let (f, port) = match demarre {
         Ok(x) => x,

@@ -517,13 +517,16 @@ impl RetourOrganisme {
 
 // ------------------------------------------------------------------ les envois au salarie
 
-/// Les durees d'un envoi de documents, en millisecondes.
+/// Les durees d'un envoi de documents, ecrites en millisecondes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Durees {
-    pub preparation: u64,
-    pub mot_de_passe: u64,
-    pub envoi: u64,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub preparation: std::time::Duration,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub mot_de_passe: std::time::Duration,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub envoi: std::time::Duration,
 }
 
 /// Un salarie que des documents ont servi : ses pieces, le resume de sa paie, et si c'etait un renvoi.

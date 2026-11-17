@@ -120,9 +120,9 @@ impl Duree<EnJours> {
         Duree::de(if n > 0 { n as u32 } else { 0 })
     }
 
-    /// Ses jours, comptes depuis un instant (`paris::Moment::jours_plus_tot`).
-    pub(crate) fn nombre_de_jours(self) -> i64 {
-        i64::from(self.0)
+    /// AUTANT DE JOURS DE 24 HEURES, une duree mesuree : le decalage de la montre au jour pose (`temps`).
+    pub(crate) fn de_24_heures(self) -> std::time::Duration {
+        std::time::Duration::from_secs(u64::from(self.0) * 86_400)
     }
 
     /// UN JOUR PAR SEMAINE COMMENCEE (C. trav. L. 1242-10 : « un jour par semaine »).

@@ -104,15 +104,16 @@ fn borne(m: Option<Moment>) -> Result<Moment, Echec> {
     m.ok_or_else(|| socle::echec::erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
 }
 
-/// La plage de recherche, du debut du jour `depuis` a la fin du jour `jusqu-a`. Par defaut, les 30 derniers jours.
-fn fenetre(args: &Args) -> Result<(Moment, Moment), Echec> {
+/// LA PLAGE DE RECHERCHE DES RETOURS, la seule : du debut du jour `depuis` a la fin du jour `jusqu-a` (inclus). Par
+/// defaut, jusqu'a maintenant, et les 30 derniers jours de 24 heures (`ouverture::TRENTE_JOURS`).
+pub fn fenetre(args: &Args) -> Result<(Moment, Moment), Echec> {
     let fin = match args.tape("jusqu-a") {
         Some(j) => borne(Moment::derniere_seconde_a_paris(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?))?,
         None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
         Some(j) => borne(Moment::a_paris(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, socle::paris::HeureDuJour::MINUIT))?,
-        None => fin.jours_plus_tot(routes::gestes::ouverture::TRENTE_JOURS).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
+        None => fin.moins_duree(routes::gestes::ouverture::TRENTE_JOURS).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))
 }

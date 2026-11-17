@@ -104,17 +104,6 @@ impl Moment {
         Moment::de_nanos(self.0 - d.as_nanos() as i128)
     }
 
-    /// `d` JOURS DE 24 HEURES plus tot : le debut d'une fenetre de jours qui finit a cet instant (les retours qu'un
-    /// releve remonte) ; `None` hors du calendrier.
-    pub fn jours_plus_tot(self, d: crate::date::Duree<crate::date::EnJours>) -> Option<Moment> {
-        Moment::de_nanos(self.0 - i128::from(d.nombre_de_jours()) * 86_400 * NANOS)
-    }
-
-    /// `d` jours de 24 heures plus tard (la montre portee au jour pose, `temps::secondes`) ; `None` hors du calendrier.
-    pub fn jours_plus_tard(self, d: crate::date::Duree<crate::date::EnJours>) -> Option<Moment> {
-        Moment::de_nanos(self.0 + i128::from(d.nombre_de_jours()) * 86_400 * NANOS)
-    }
-
     /// La duree de `avant` a cet instant ; `None` si `avant` est apres.
     pub fn depuis(self, avant: Moment) -> Option<std::time::Duration> {
         let ns = self.0.checked_sub(avant.0).filter(|ns| *ns >= 0)?;

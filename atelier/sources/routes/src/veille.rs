@@ -14,7 +14,9 @@ pub struct EtatDeLaVeille {
     pub en_cours: bool,
     pub sauvegarde_en_cours: bool,
     pub etape: Option<String>,
-    pub minutes: u64,
+    /// Le temps entre deux passages de la boucle, en minutes ; zero : aucune boucle.
+    #[serde(serialize_with = "socle::temps::ecrit::minutes::serialize")]
+    pub minutes: std::time::Duration,
     pub dernier: Option<Trace>,
     pub erreur: Option<String>,
 }
@@ -58,7 +60,8 @@ pub struct DitDuBandeau {
     termine: &'static str,
 }
 
-pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<u64>, fictive: bool) -> DitDuBandeau {
+pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
+    let dans = dans.map(socle::temps::ecrit::minutes_commencees_dites);
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
         Some(t) => heure_du_passage(t.quand),

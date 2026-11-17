@@ -39,7 +39,7 @@ impl socle::forme::ReponseDUnTiers for ReponseCompte {}
 /// `google.AUTORISATION`, `google.USERINFO`, `google.DELAI_AUTORISATION`.
 const AUTORISATION: Url = Url::du_moteur("https://accounts.google.com/o/oauth2/v2/auth");
 const USERINFO: Url = Url::du_moteur("https://www.googleapis.com/oauth2/v3/userinfo");
-pub const DELAI_AUTORISATION: u64 = 300;
+pub const DELAI_AUTORISATION: Duration = Duration::from_secs(300);
 
 /// `google.PAGE_RETOUR`.
 fn page_retour(titre: &str, couleur: &str, texte: &str) -> String {
@@ -231,7 +231,7 @@ fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Ech
 pub fn autoriser(
     application: &Application,
     adresses: &Adresses,
-    delai: u64,
+    delai: Duration,
     dire_url: &dyn Fn(&Url),
     dire: &dyn Fn(&str),
 ) -> Result<JetonGoogle, Echec> {
@@ -302,7 +302,7 @@ pub fn autoriser(
     };
     dire_url(&url);
 
-    let recu = match rx.recv_timeout(Duration::from_secs(delai)) {
+    let recu = match rx.recv_timeout(delai) {
         Ok(r) => {
             rejoindre(fil)?;
             r?
@@ -317,7 +317,7 @@ pub fn autoriser(
             rejoindre(fil)?;
             return Err(refus(format!(
                 "Aucune reponse de Google en {} minutes : aucune autorisation enregistree. Recommencer, et accepter dans la fenetre du navigateur.",
-                std::cmp::max(1, delai / 60)
+                socle::temps::ecrit::minutes_entieres_dites(delai.max(Duration::from_secs(60)))
             )));
         }
     };

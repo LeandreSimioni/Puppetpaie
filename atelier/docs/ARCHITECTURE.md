@@ -194,7 +194,7 @@ un libellé, chacun sa forme.
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
-| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
+| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
 
 **Le détail**
 
@@ -299,11 +299,12 @@ un libellé, chacun sa forme.
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
 - **durée mesurée** : un temps écoulé, de la montre ou entre deux instants (`Moment::depuis`, `plus_duree`,
-  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Ses écritures sont toutes
-  dans `socle::temps::ecrit` : dans un fichier, en secondes au dixième ou en minutes entières, dites par l'attribut
-  serde du champ ; dans une phrase, en secondes au dixième ou entières, à la seconde (« 1 h 12 min 5 s ») ou en heures
-  (`heures_dites`, « 12 h »). `envois::ligne::Durees`, à unifier, est des millisecondes : une
-  écriture.
+  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Des jours de 24 heures
+  (la fenêtre des retours qu'un relevé remonte) en sont une (`socle::temps::jours_de_24_heures`), un délai d'attente
+  du réseau aussi, et le temps entre deux passages de la veille. Ses écritures sont toutes dans `socle::temps::ecrit` :
+  dans un fichier, en secondes au dixième, en millisecondes, en minutes ou en jours entiers, dites par l'attribut serde
+  du champ ; dans une phrase, en secondes au dixième ou entières, en millisecondes, en minutes entières ou commencées,
+  à la seconde (« 1 h 12 min 5 s ») ou en heures (`heures_dites`, « 12 h »).
 
 **L'argent et les quantités**
 

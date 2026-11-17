@@ -37,8 +37,8 @@ pub const MESSAGES: [(u16, &str); 7] = [
     (503, "Service indisponible."),
 ];
 
-const DELAI_APPEL: u64 = 60;
-pub const DELAI_DEPOT: u64 = 120;
+const DELAI_APPEL: Duration = Duration::from_secs(60);
+pub const DELAI_DEPOT: Duration = Duration::from_secs(120);
 const MAX_REDIRECTIONS: usize = 10;
 
 /// Ce que le guide dit d'un statut HTTP, s'il en dit quelque chose.
@@ -365,9 +365,9 @@ fn mandataire(url: &Url) -> Result<Option<ureq::Proxy>, Panne> {
 }
 
 /// L'agent d'une demande. En essai, le garde-fou reseau (`garde_reseau`) le regle : rien ne sort de la machine.
-fn agent(delai: u64, url: &Url) -> Result<ureq::Agent, Panne> {
+fn agent(delai: Duration, url: &Url) -> Result<ureq::Agent, Panne> {
     let tls = url.texte().starts_with("https:");
-    let d = Some(Duration::from_secs(delai));
+    let d = Some(delai);
     let mut c = ureq::Agent::config_builder()
         .proxy(mandataire(url)?)
         .http_status_as_error(false)
@@ -389,7 +389,7 @@ fn agent(delai: u64, url: &Url) -> Result<ureq::Agent, Panne> {
 
 /// Lit le corps par morceaux : un silence de `delai`
 /// secondes entre deux morceaux, pas une duree totale.
-fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<Octets>, https: bool) -> Result<Vec<u8>, Panne> {
+fn lire_corps(corps: ureq::Body, delai: Duration, attendu: Option<Octets>, https: bool) -> Result<Vec<u8>, Panne> {
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, std::io::Error>>();
     std::thread::spawn(move || {
         let mut r = corps.into_reader();
@@ -414,7 +414,7 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<Octets>, https: boo
     });
     let mut tout = Vec::new();
     loop {
-        match rx.recv_timeout(Duration::from_secs(delai)) {
+        match rx.recv_timeout(delai) {
             Ok(Ok(m)) if m.is_empty() => return Ok(tout),
             Ok(Ok(m)) => tout.extend_from_slice(&m),
             Ok(Err(e)) => {
@@ -499,7 +499,8 @@ pub struct Requete<'a> {
     pub corps_gzip: bool,
     /// Un depot part toujours en POST, meme vide.
     pub post: bool,
-    pub delai: u64,
+    /// L'attente de la reponse : la connexion, et chaque silence de la lecture du corps.
+    pub delai: Duration,
     /// Des en-tetes en plus (le canal de l'editeur : `User-Agent`, `X-Filet-Cle`).
     pub entetes: &'a [(&'a str, &'a str)],
     /// Ne pas demander `gzip` (le canal de l'editeur ne le demande pas).
@@ -510,7 +511,7 @@ pub struct Requete<'a> {
 
 impl<'a> Requete<'a> {
     /// Un GET de `url`, sans jeton, sans corps ni en-tete de plus, qui demande `gzip`.
-    pub fn get(url: &'a Url, delai: u64) -> Requete<'a> {
+    pub fn get(url: &'a Url, delai: Duration) -> Requete<'a> {
         Requete { url, jeton: None, donnees: None, content_type: None, corps_gzip: false, post: false, delai, entetes: &[], sans_gzip: false, methode: None }
     }
 }
@@ -757,7 +758,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
-pub fn depot(url: &Url, jeton: &socle::secret::Secret, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
+pub fn depot(url: &Url, jeton: &socle::secret::Secret, corps_gzip: &[u8], forme: &str, delai: Duration) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         jeton: Some(jeton),
         donnees: Some(corps_gzip),

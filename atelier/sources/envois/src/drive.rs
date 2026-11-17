@@ -213,7 +213,7 @@ pub const DRIVE_TELEVERSEMENT: Url = Url::du_moteur("https://www.googleapis.com/
 pub const DOSSIER_DRIVE: &str = "application/vnd.google-apps.folder";
 
 /// `urlopen(..., timeout=120)` des appels Drive.
-const DELAI_APPEL: u64 = 120;
+const DELAI_APPEL: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// LES NOUVELLES TENTATIVES (un « HTTP 500 : Internal Error » passager ne doit pas remonter a la personne). Google le dit pour l'API Drive
 /// (`atelier/reference/sources/google-drive-api/`, LISEZ-MOI.md) : sur 500, 502, 503, 504 et 429, « use exponential backoff to
@@ -382,7 +382,7 @@ impl Client {
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
             ));
         };
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(60))??;
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))??;
         self.acces = Some(acces.clone());
         Ok(acces)
     }

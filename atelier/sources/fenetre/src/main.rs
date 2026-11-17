@@ -99,7 +99,7 @@ fn main() -> std::process::ExitCode {
     // Sinon le logiciel cherche, en fond, une version plus recente pour l'installation : elle s'appliquera au prochain
     // lancement.
     compagnie::maj::chercher_en_fond();
-    let (fenetre, port) = match moteur::interface::demarrer(moteur::interface::MINUTES_VEILLE, &prise) {
+    let (fenetre, port) = match moteur::interface::demarrer(moteur::interface::VEILLE, &prise) {
         Ok(x) => x,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);

@@ -12,7 +12,6 @@ use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
-use socle::paris::Moment;
 
 pub static SPEC: Spec = Spec {
     commande: "retours",
@@ -31,25 +30,9 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     super::code(faire(cadre, args))
 }
 
-/// La plage : `--depuis` et `--jusqu-a` (inclus : du debut de l'un a la fin de l'autre), par defaut les 30 derniers jours.
-fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
-    let a = |t: &socle::ligne::Argument, instant: fn(socle::date::Jour) -> Option<Moment>| {
-        let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
-        instant(j).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
-    };
-    let fin = match args.tape("jusqu-a") {
-        Some(j) => a(j, Moment::derniere_seconde_a_paris)?,
-        None => socle::temps::secondes(),
-    };
-    let debut = match args.tape("depuis") {
-        Some(j) => a(j, |j| Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT))?,
-        None => fin.jours_plus_tot(routes::gestes::ouverture::TRENTE_JOURS).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
-    };
-    Ok((debut, fin))
-}
-
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let (debut, fin) = plage(args)?;
+    // La plage : `--depuis` et `--jusqu-a`, celle du moteur.
+    let (debut, fin) = moteur::commandes::depots::fenetre(args)?;
     let dpae = args.drapeau("dpae");
     refuser_si_pas_redirige(cadre, if dpae { Organisme::Dpae } else { Organisme::Dsn }, "la releve des retours")?;
     cadre.ouvrir_le_coffre();

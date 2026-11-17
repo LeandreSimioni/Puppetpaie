@@ -768,7 +768,7 @@ impl OrigineDeLAppel {
 pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: OrigineDeLAppel, nom: &str, ecriture: bool, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
     let forme = en_forme(Some(racine), charge);
     let ch = if forme == "{}" || forme == "null" { String::new() } else { format!(" {}", compact(&forme, CHARGE_LIGNE_MAX)) };
-    let ms = duree.as_millis();
+    let ms = socle::temps::ecrit::millisecondes_dites(duree);
     let (fin, cle_issue, refusee) = match issue {
         Ok(()) => (format!("→ ok, {} ms", ms), "ok".to_string(), false),
         Err((classe, message)) => {
@@ -780,7 +780,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: OrigineDeLAppel
         OrigineDeLAppel::Page => "route",
         OrigineDeLAppel::Fond => "fond, route",
     };
-    let t = maintenant_ms().saturating_sub(ms as u64);
+    let t = maintenant_ms().saturating_sub(duree.as_millis() as u64);
     // DE QUOI REJOUER : la ligne du fil coupe la charge ; une ecriture de la page (ou un refus) la garde entiere, mise en
     // forme -- la saisie qui a mene au refus se rejoue sur une fictive (`ecritures`).
     if source == OrigineDeLAppel::Page && (ecriture || refusee) {
