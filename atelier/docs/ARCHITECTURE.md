@@ -421,6 +421,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
 | date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
 | employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
+| nom déclaré, prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -554,8 +555,12 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   (`dpae::EnregistrementRelu`, `dpae::LigneDuCertificat`), une AEM, un certificat d'emploi, un bulletin d'autrui (dont le
   NIR imprimé se lit à sa porte, `bulletin_lu::Salarie`, sa clé et sa faute à côté), l'identité déclarée et celle de
   référence d'un compte rendu NEOReS (`envois::retours::IdentiteNeores`) ; et l'identité qu'une DSN partie a déclarée
-  (`changements_individu::Declaree`), celle d'une fiche telle que la DPAE l'écrit (`routes::depots`), l'individu de la
-  liste nominative de la CASC-SVP. Sa serde : `nom`, `prenoms`, `naissance`, `nir`, `ntt` (une réponse qui l'aplatit).
+  (`changements_individu::Declaree`). Sa serde : `nom`, `prenoms`, `naissance`, `nir`, `ntt` (une réponse qui
+  l'aplatit). L'identité de notre fiche n'en est pas une : ses cases gardent leurs types (`Nir`, `NomDeclare`,
+  `PrenomDeclare`, un `Jour` de naissance, jamais incomplet), qu'elle se compare à une DPAE relue (`routes::depots`) ou
+  s'écrive dans la liste nominative de la CASC-SVP (`routes::importation::casc::IndividuReg`).
+- **nom déclaré, prénom déclaré** : les cases nom et prénom de la fiche d'un salarié, 32 caractères au plus (la DPAE
+  en écrit 32, la DSN 80) ; un texte vide n'en est pas un.
 - **date de naissance déclarée** : S21.G00.30.006, `JJMMAAAA`, dont le jour ou le mois peuvent être inconnus (`00` ou
   `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`), et sa naissance de référence (R009) inconnue du
   SNGI, `0000-00-00`, n'est aucune (l'identité de référence est sans naissance). Un jour connu (`Connue`, celui d'une fiche ou d'une

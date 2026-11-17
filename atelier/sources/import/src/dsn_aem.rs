@@ -452,7 +452,9 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
 /// cle de Luhn ; sinon l'AEM passe, avec un avertissement nomme (`AEM_SANS_SIRET`) -- on ne refuse pas au hasard.
 pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 
-/// Ce qu'une piece (DSN, AEM) dit de son employeur.
+/// LES SIREN QU'UNE PIECE (DSN, AEM) PORTE, pour trier ce qui est de la compagnie (`siren_de_reference`) : ni sa raison
+/// sociale ni son SIRET entier (l'employeur lu d'une piece, `declarations::identite::EmployeurLu`, est une autre
+/// lecture).
 #[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).

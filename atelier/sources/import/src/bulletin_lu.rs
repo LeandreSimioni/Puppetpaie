@@ -49,7 +49,7 @@
 use std::path::Path;
 use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, Periode};
-use socle::echec::R;
+use socle::echec::{Echec, R};
 use socle::num::Decimal;
 use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours, Montant, Taux};
 use fabrique_pdf::mesure::mesure;
@@ -887,16 +887,24 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
 
 // --------------------------------------------------------------------------------------------- le bulletin lu
 
+/// La faute d'une case imprimee, ecrite par sa phrase.
+fn faute_ecrite<S: serde::Serializer>(f: &Option<Echec>, s: S) -> Result<S::Ok, S::Error> {
+    match f {
+        Some(e) => s.collect_str(e),
+        None => s.serialize_none(),
+    }
+}
+
 /// CE QU'UNE PAGE LUE DIT, telle qu'elle s'ecrit : les montants en textes exacts (`"1421.13"`), les dates en ISO,
 /// l'absent en `null`.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Entreprise {
     /// La raison sociale (premier rang de son adresse) et le SIRET imprime, lu a la porte (`siret_imprime`).
     #[serde(flatten)]
     pub employeur: EmployeurLu,
     /// Ce qui refuse le SIRET imprime ; aucun : il ne l'est pas, ou il se lit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub faute_siret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "faute_ecrite")]
+    pub faute_siret: Option<Echec>,
     pub adresse: Vec<String>,
     pub naf: Option<String>,
     pub urssaf: Option<String>,
@@ -904,7 +912,7 @@ pub struct Entreprise {
     pub licence: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Salarie {
     /// Le nom tel qu'il est ecrit (premier rang de son adresse).
     pub nom_complet: Option<String>,
@@ -915,8 +923,8 @@ pub struct Salarie {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle_nir: Option<droit::fiche::CleNir>,
     /// Ce qui refuse le NIR imprime ; aucun : il ne l'est pas, ou il se lit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub faute_nir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "faute_ecrite")]
+    pub faute_nir: Option<Echec>,
     pub adresse: Vec<String>,
     pub code: Option<String>,
     pub emploi: Option<String>,
@@ -1074,7 +1082,7 @@ impl Cumul {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct BulletinLu {
     /// Le logiciel que sa signature nomme (`logiciels` de la table) ; `None` : un autre.
     pub logiciel: Option<LogicielDUnBulletin>,
@@ -1523,12 +1531,12 @@ impl<'a> Lecteur<'a> {
         let nir = texte(&valeurs, "nir");
         let (nir_lu, cle_nir, faute_nir) = match nir.as_deref().map(nir_imprime) {
             Some(Ok((n, cle))) => (Some(n), cle, None),
-            Some(Err(e)) => (None, None, Some(e.phrase)),
+            Some(Err(e)) => (None, None, Some(e)),
             None => (None, None, None),
         };
         let (siret_lu, faute_siret) = match texte(&valeurs, "siret").map(|s| siret_imprime(&s)) {
             Some(Ok(s)) => (Some(s), None),
-            Some(Err(e)) => (None, Some(e.phrase)),
+            Some(Err(e)) => (None, Some(e)),
             None => (None, None),
         };
         let salarie = Salarie {

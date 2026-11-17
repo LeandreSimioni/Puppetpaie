@@ -175,7 +175,7 @@ pub(crate) fn compare(t: &str) -> String {
 fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
     let s = &b.salarie;
     if let Some(faute) = &s.faute_nir {
-        return Err(socle::echec::refus(faute.clone()));
+        return Err(faute.clone());
     }
     Ok(s.identite.nir.clone().map(|n| (n, s.cle_nir.clone())))
 }
@@ -185,7 +185,7 @@ fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
 fn siret_imprime(b: &BulletinLu) -> Option<R<droit::fiche::Siret>> {
     let e = &b.entreprise;
     match (&e.employeur.siret, &e.faute_siret) {
-        (_, Some(faute)) => Some(Err(socle::echec::refus(faute.clone()))),
+        (_, Some(faute)) => Some(Err(faute.clone())),
         (Some(s), None) => Some(Ok(s.clone())),
         (None, None) => None,
     }

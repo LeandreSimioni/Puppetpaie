@@ -14,7 +14,6 @@ use crate::gestes::depot_acte;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
-use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
 use engagement::numeros::NumeroContrat;
@@ -974,12 +973,6 @@ pub(crate) fn lire_octets(chemin: &Path) -> R<Vec<u8>> {
     std::fs::read(chemin).map_err(|e| erreur_io(&e, chemin))
 }
 
-/// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
-struct IdentiteDeFiche {
-    cle: IdSalarie,
-    identite: IdentiteDeclaree,
-}
-
 /// UNE EMBAUCHE QUE LE FICHIER DPAE DECLARE : le salarie (`?` s'il n'est pas de la configuration), son nom, son contrat
 /// (numero, bornes, nature), si elle est deja declaree, et sa pastille.
 #[derive(Debug, Clone, Serialize)]
@@ -1023,22 +1016,6 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     let m = crate::etapes::Moteur::nouveau(ctx);
     let lignes_journal = m.lignes()?;
     let faites = etats::embauches_par_depot(&lignes_journal);
-    // L'IDENTITE DE CHAQUE FICHE, telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et
-    // sa date de naissance (`JJMMAAAA`).
-    let fiches: Vec<IdentiteDeFiche> = ctx
-        .salaries
-        .iter()
-        .map(|(k, f)| IdentiteDeFiche {
-            cle: k.clone(),
-            identite: IdentiteDeclaree {
-                nir: f.champs.nir.dite().cloned(),
-                nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
-                prenoms: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
-                naissance: f.champs.date_naissance.dite().copied().map(NaissanceDeclaree::du_jour),
-                ntt: None,
-            },
-        })
-        .collect();
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
     // qui relie la DPAE, partie ou refusee, a son engagement.
     let departs = m.departs()?;
@@ -1069,18 +1046,35 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
         let e_id = &e.identite;
-        let trouve: Option<&IdentiteDeFiche> = match &e_id.nir {
-            Some(nir) => fiches.iter().find(|f| f.identite.nir.as_ref() == Some(nir)),
-            None => {
-                fiches.iter().find(|f| f.identite.nom.is_some() && f.identite.nom == e_id.nom && f.identite.prenoms == e_id.prenoms && f.identite.naissance == e_id.naissance)
-            }
-        };
+        // La fiche se compare telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et sa
+        // date de naissance.
+        fn en_capitales<T: AsRef<str>>(t: &Option<T>) -> Option<String> {
+            t.as_ref().map(|t| t.as_ref().trim().to_uppercase())
+        }
+        let trouve: Option<&IdSalarie> = ctx
+            .salaries
+            .iter()
+            .find(|(_, f)| {
+                let c = &f.champs;
+                match &e_id.nir {
+                    Some(nir) => c.nir.as_ref() == Some(nir),
+                    None => {
+                        let meme_naissance = match (c.date_naissance, e_id.naissance) {
+                            (None, None) => true,
+                            (Some(j), Some(n)) => n.jour() == Some(j),
+                            _ => false,
+                        };
+                        c.nom.is_some() && en_capitales(&c.nom) == e_id.nom && en_capitales(&c.prenom) == e_id.prenoms && meme_naissance
+                    }
+                }
+            })
+            .map(|(k, _)| k);
         let debut = e
             .date_embauche
             .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
         jours.push(debut);
-        let id = trouve.map(|f| (f.cle.clone(), Some(debut)));
-        let nom = match trouve.and_then(|f| ctx.salaries.get(&f.cle)).and_then(|f| f.champs.nomme()) {
+        let id = trouve.map(|k| (k.clone(), Some(debut)));
+        let nom = match trouve.and_then(|k| ctx.salaries.get(k)).and_then(|f| f.champs.nomme()) {
             Some(n) => n,
             None => "salarié inconnu de la configuration".to_string(),
         };
@@ -1091,9 +1085,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
             (None, None) => None,
         };
         let numero = id.as_ref().and_then(|k| numeros.get(k)).cloned();
-        let deja = trouve.zip(numero.as_ref()).is_some_and(|(f, n)| faites.contains_key(&(f.cle.clone(), Some(n.clone()))));
+        let deja = trouve.zip(numero.as_ref()).is_some_and(|(k, n)| faites.contains_key(&(k.clone(), Some(n.clone()))));
         lignes.push(EmbaucheDuFichier {
-            salarie: trouve.map(|f| f.cle.clone()),
+            salarie: trouve.cloned(),
             nom,
             contrat: PeriodeOuverte::du(debut, e.date_fin).map_err(|x| x.reclasser(Classe::Illisible))?,
             numero,

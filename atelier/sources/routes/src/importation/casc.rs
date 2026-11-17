@@ -11,7 +11,6 @@
 //! voir `liste_nominative_xlsx`.
 
 use droit::fiche::Lue as _;
-use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::fiche::Nir;
 use socle::echec::Classe;
 use std::path::Path;
@@ -117,25 +116,26 @@ pub struct AnneeReg {
     pub date_libelle: String,
 }
 
+/// Un salarie d'une annee du dossier, et la masse de ses salaires.
 #[derive(Serialize)]
 pub struct SalarieReg {
     pub annee: Annee,
-    pub salarie: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<Nir>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<Jour>,
-    pub adresse: String,
+    pub individu: IndividuReg,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub masse: Montant,
 }
 
-/// Le salarie d'une ligne de la liste nominative, tel que sa fiche le dit.
-#[derive(Serialize)]
+/// Le salarie d'une ligne de la liste nominative, tel que sa fiche le dit : ses cases, dans leurs types.
+#[derive(Clone, Serialize)]
 pub struct IndividuReg {
-    /// Son NIR, son nom, son prenom, sa date de naissance.
-    #[serde(flatten)]
-    pub identite: IdentiteDeclaree,
+    /// La liste nominative se tient par NIR : une fiche sans NIR ne s'y range pas.
+    pub nir: Nir,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nom: Option<droit::fiche::NomDeclare>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prenom: Option<droit::fiche::PrenomDeclare>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -362,52 +362,36 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
             // Les colonnes de l'etat nomment les cases de la fiche typee, chacune telle qu'elle s'ecrit.
             let f = &p.salarie.champs;
             let dit = |t: Option<&str>| t.filter(|t| !t.is_empty()).map(str::to_string);
-            let (nom, prenom) = (dit(f.nom.portee()), dit(f.prenom.portee()));
             let (adresse, code_postal, commune) = (dit(f.adresse.portee()), dit(f.code_postal.portee()), dit(f.commune.portee()));
             let brut = p.brut;
-            // La liste nominative se tient par NIR : une fiche sans NIR ne s'y range pas.
-            let nir = p.salarie.champs.nir.dite().cloned().ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
+            let nir = f.nir.dite().cloned().ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
+            let individu = IndividuReg {
+                nir: nir.clone(),
+                nom: f.nom.clone(),
+                prenom: f.prenom.clone(),
+                date_naissance: f.date_naissance,
+                adresse,
+                code_postal,
+                commune,
+                email: f.email.clone(),
+            };
             masse += brut;
             match mois_sal.iter_mut().find(|(n, _, _)| *n == nir) {
                 Some((_, _, t)) => *t += brut,
-                None => mois_sal.push((nir.clone(), match nom.clone() {
-                    Some(n) => n,
+                None => mois_sal.push((nir.clone(), match &f.nom {
+                    Some(n) => n.to_string(),
                     None => nir.to_string(),
                 }, brut)),
             }
-            let cle = (an, nir.clone());
+            let cle = (an, nir);
             let pos = match par_salarie.iter().position(|(k, _)| *k == cle) {
                 Some(i) => i,
                 None => {
-                    let adresse: Vec<String> = [adresse.clone(), code_postal.clone(), commune.clone()].into_iter().flatten().collect();
-                    par_salarie.push((
-                        cle,
-                        SalarieReg {
-                            annee: an,
-                            salarie: [nom.clone(), prenom.clone()].into_iter().flatten().collect::<Vec<_>>().join(" "),
-                            nir: Some(nir.clone()),
-                            date_naissance: p.salarie.champs.date_naissance.dite().copied(),
-                            adresse: adresse.join(" "),
-                            masse: nulle(),
-                        },
-                    ));
+                    par_salarie.push((cle, SalarieReg { annee: an, individu: individu.clone(), masse: nulle() }));
                     par_salarie.len() - 1
                 }
             };
             par_salarie[pos].1.masse += brut;
-            let individu = IndividuReg {
-                identite: IdentiteDeclaree {
-                    nir: p.salarie.champs.nir.dite().cloned(),
-                    nom,
-                    prenoms: prenom,
-                    naissance: p.salarie.champs.date_naissance.dite().copied().map(NaissanceDeclaree::du_jour),
-                    ntt: None,
-                },
-                adresse,
-                code_postal,
-                commune,
-                email: p.salarie.champs.email.dite().cloned(),
-            };
             let contrat = ContratReg { numero: p.numero.clone(), periode: p.periode, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: dit(f.emploi.portee()) };
             emplois.push(EmploiReg {
                 annee: an,
@@ -601,7 +585,12 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<std::path::PathBuf> {
         &["annee", "salarie", "NIR", "date de naissance", "adresse", "masse"],
         r.salaries
             .iter()
-            .map(|s| vec![s.annee.to_string(), s.salarie.clone(), cellule(&s.nir), s.date_naissance.iter().map(Jour::iso).collect(), s.adresse.clone(), virgule(s.masse)])
+            .map(|s| {
+                let i = &s.individu;
+                let salarie = [cellule(&i.nom), cellule(&i.prenom)].into_iter().filter(|t| !t.is_empty()).collect::<Vec<_>>().join(" ");
+                let adresse = [&i.adresse, &i.code_postal, &i.commune].into_iter().flatten().cloned().collect::<Vec<_>>().join(" ");
+                vec![s.annee.to_string(), salarie, i.nir.to_string(), i.date_naissance.iter().map(Jour::iso).collect(), adresse, virgule(s.masse)]
+            })
             .collect(),
     )?);
     for (nom, c) in [("CASC-SVP_courriel-audiens.txt", &r.courriel_audiens), ("CASC-SVP_courriel-casc.txt", &r.courriel_casc)] {
@@ -690,15 +679,13 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let simple = Style::CLASSEUR;
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
-    let mut cumul: Vec<((Annee, Option<Nir>), Montant)> = Vec::new();
-    let texte_de = cellule;
+    let mut cumul: Vec<((Annee, Nir), Montant)> = Vec::new();
     let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
         let artiste = c.pcs_ese.as_ref().is_some_and(droit::fiche::CodePcsEse::est_un_artiste_du_spectacle);
-        let nir = i.identite.nir.clone();
-        let cle = (x.annee, nir.clone());
+        let cle = (x.annee, i.nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {
             Some((_, t)) => {
                 *t += x.brut;
@@ -709,7 +696,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
                 x.brut
             }
         };
-        let cle_nir = cellule(&nir.as_ref().and_then(droit::fiche::CleNir::du_nir));
+        let cle_nir = cellule(&droit::fiche::CleNir::du_nir(&i.nir));
         // Une case vide du fichier quand la date n'est pas dite.
         let jj = |j: &Option<Jour>| -> String { j.iter().map(Jour::jj_mm_aaaa).collect() };
         let textes: Vec<(u16, String)> = vec![
@@ -717,15 +704,15 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (1, siret.clone()),
             (4, x.annee.to_string()),
             (5, aujourdhui.clone()),
-            (6, coupe(texte_de(&i.identite.nom), 30)),
-            (8, coupe(texte_de(&i.identite.prenoms), 32)),
-            (9, i.identite.naissance.iter().map(NaissanceDeclaree::jj_mm_aaaa).collect()),
-            (10, format!("{}{}", cellule(&nir), cle_nir)),
-            (13, coupe(texte_de(&i.adresse), 32)),
-            (15, coupe(texte_de(&i.code_postal), 5)),
-            (16, coupe(texte_de(&i.commune), 26)),
+            (6, coupe(cellule(&i.nom), 30)),
+            (8, coupe(cellule(&i.prenom), 32)),
+            (9, jj(&i.date_naissance)),
+            (10, format!("{}{}", i.nir, cle_nir)),
+            (13, coupe(cellule(&i.adresse), 32)),
+            (15, coupe(cellule(&i.code_postal), 5)),
+            (16, coupe(cellule(&i.commune), 26)),
             (19, cellule(&i.email)),
-            (21, coupe(texte_de(&c.emploi), 34)),
+            (21, coupe(cellule(&c.emploi), 34)),
             (22, jj(&x.periode.map(|o| o.debut()))),
             (23, jj(&x.periode.and_then(|o| o.fin()))),
             (25, "I".to_string()),
