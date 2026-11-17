@@ -1266,25 +1266,28 @@ impl std::fmt::Display for Effet {
     }
 }
 
-/// CE QUE LE MOTEUR NE PORTE PAS au-dela d'un seuil, et que la compagnie dit elle-meme dans sa surcouche.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum NonPortee {
+/// CE QUE LE MOTEUR NE PORTE PAS au-dela d'un seuil, et que la compagnie dit elle-meme dans sa surcouche : chacun sa
+/// forme, et les reponses qu'il admet (`cle` le nomme).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "cle", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SeuilNonPorte {
     /// Le versement mobilite (`Pile::versement_mobilite`) : un taux et la commune, ou une reponse.
-    VersementMobilite,
+    VersementMobilite(SeuilDuVersementMobilite),
 }
 
-impl std::fmt::Display for NonPortee {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl SeuilNonPorte {
+    /// Son nom, tel qu'il s'ecrit (`cle`) et que la surcouche le nomme.
+    pub fn cle(&self) -> &'static str {
         match self {
-            NonPortee::VersementMobilite => write!(f, "versement_mobilite"),
+            SeuilNonPorte::VersementMobilite(_) => "versement_mobilite",
         }
     }
 }
 
 forme! {
-    pub struct SeuilNonPorte {
-        pub cle: NonPortee,
+    /// Le seuil du versement mobilite, que le moteur ne porte pas au-dela, et les reponses qu'une compagnie peut ecrire
+    /// au lieu de son taux.
+    pub struct SeuilDuVersementMobilite {
         pub seuil: socle::grandeurs::Effectif,
         pub quoi: String,
         pub texte: Option<String>,

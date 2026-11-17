@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, SeuilNonPorte, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
 use crate::bareme::VersementMobiliteDit;
 use socle::echec::Lieu;
 use socle::grandeurs::ecrit::sans_zero;
@@ -824,9 +824,9 @@ fn controler_effectif(pile: &Pile, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
         ));
     }
 
-    for v in &decl.non_portees {
-        let cle = v.cle.to_string();
-        let NonPortee::VersementMobilite = v.cle;
+    for n in &decl.non_portees {
+        let cle = n.cle();
+        let SeuilNonPorte::VersementMobilite(v) = n;
         let rep = &pile.versement_mobilite;
         let taux_ecrit = matches!(rep, Some(VersementMobiliteDit::Du(_)));
         if !atteint(v.seuil)? {
