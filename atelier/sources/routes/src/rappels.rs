@@ -553,8 +553,8 @@ pub(crate) struct Echeance {
     mois: Option<Mois>,
     annee: Option<Annee>,
     fichier: Option<std::path::PathBuf>,
-    engagements: i64,
-    validees: i64,
+    engagements: usize,
+    validees: usize,
     spectacles: Vec<SpectacleARevoir>,
     salarie: Option<droit::contexte::IdSalarie>,
     a_saisir: Vec<String>,
@@ -763,8 +763,8 @@ pub(crate) struct EcheanceDite {
     pub(crate) annee: Option<Annee>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub(crate) fichier: Option<std::path::PathBuf>,
-    pub(crate) engagements: i64,
-    pub(crate) validees: i64,
+    pub(crate) engagements: usize,
+    pub(crate) validees: usize,
     pub(crate) spectacles: Vec<SpectacleARevoir>,
     pub(crate) salarie: Option<droit::contexte::IdSalarie>,
     pub(crate) a_saisir: Vec<String>,
@@ -1320,9 +1320,9 @@ fn dsn_deposable(st: &Etat, mois: Mois) -> R<Option<(String, std::path::PathBuf)
 }
 
 /// Combien d'engagements le mois montre, et combien sont valides.
-fn engagements_valides(ctx: &Contexte, mois: Mois) -> R<(i64, i64)> {
+fn engagements_valides(ctx: &Contexte, mois: Mois) -> R<(usize, usize)> {
     let valides = engagement::etats::valides_du_mois(ctx, mois)?;
-    Ok((valides.len() as i64, valides.iter().filter(|v| **v).count() as i64))
+    Ok((valides.len(), valides.iter().filter(|v| **v).count()))
 }
 
 fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
@@ -1370,7 +1370,7 @@ fn rappel_dsn(st: &Etat, le_mois: Mois, modele: &ModeleDsn) -> R<Echeance> {
         return Ok(r);
     }
 
-    let s = |n: i64| if n == 1 { "" } else { "s" };
+    let s = |n: usize| if n == 1 { "" } else { "s" };
     if let Some((nom, chemin)) = dsn_deposable(st, mois)? {
         r.etape = Some(EtapeDEcheance::ADeposer);
         r.detail = format!(
@@ -1579,7 +1579,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
         r.quand_dit = format!("avant la première heure de travail, le {}", jour.jj_mm_aaaa());
         r.detail = quand;
         r.etat = if retard { EnRetard } else { AFaire };
-        r.engagements = groupe.len() as i64;
+        r.engagements = groupe.len();
         out.push(r);
     }
     Ok(out)

@@ -158,6 +158,18 @@ impl From<NumeroDeRetour> for String {
     }
 }
 
+/// LE NUMERO DU TICKET qui suit un retour chez l'editeur, que le serveur du filet rend avec son adresse (`ticket_numero`) :
+/// un entier, ecrit et lu tel quel, dit « ticket n° 12 ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NumeroDeTicket(u64);
+
+impl std::fmt::Display for NumeroDeTicket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (le
 /// serveur ecrit `""` sinon : aucune ; son numero absent).
 #[derive(Debug, Deserialize)]
@@ -166,7 +178,7 @@ pub struct Retour {
     pub numero: NumeroDeRetour,
     #[serde(deserialize_with = "socle::forme::absent_si_vide")]
     pub ticket: Option<Url>,
-    pub ticket_numero: Option<i64>,
+    pub ticket_numero: Option<NumeroDeTicket>,
 }
 
 /// `POST /reponses` : les reponses aux retours de ce poste.

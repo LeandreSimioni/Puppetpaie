@@ -45,7 +45,7 @@ pub fn relever_retours_dpae(ctx: &Contexte, debut: Moment, fin: Moment, tout: bo
 /// Le simulateur rend les retours des depots joues qui les attendent : le nombre de depots
 /// completes, et ce que le rangement des AER jouees laisse a faire (une attestation que la paie ne confirme pas, un nom
 /// qu'aucune fiche ne porte). Un rangement qui echoue est un refus.
-pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
+pub fn rattacher_simulation(ctx: &Contexte) -> R<(usize, Vec<String>)> {
     let mut s = Suites::default();
     let n = envois::releve_retours::rattacher_simulation(ctx, &mut s);
     let faites = crate::gestes::suites::faire(ctx, s)?;

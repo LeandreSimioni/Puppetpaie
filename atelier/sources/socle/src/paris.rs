@@ -104,6 +104,11 @@ impl Moment {
         Moment::de_nanos(self.0 + d.as_nanos() as i128)
     }
 
+    /// `d` plus tot, a la nanoseconde ; `None` hors du calendrier.
+    pub fn moins_duree(self, d: std::time::Duration) -> Option<Moment> {
+        Moment::de_nanos(self.0 - d.as_nanos() as i128)
+    }
+
     /// La duree de `avant` a cet instant ; `None` si `avant` est apres.
     pub fn depuis(self, avant: Moment) -> Option<std::time::Duration> {
         let ns = self.0.checked_sub(avant.0).filter(|ns| *ns >= 0)?;

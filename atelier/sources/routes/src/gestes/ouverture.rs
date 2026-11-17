@@ -24,6 +24,7 @@
 //! dit (`maj::Recherche::etat`).
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +33,6 @@ use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
-use socle::num::Decimal;
 use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
@@ -85,12 +85,12 @@ pub struct Options {
     pub signatures: bool,
     /// Ce qui part chez l'editeur (incidents, reponses aux signalements).
     pub filet: bool,
-    /// Combien de jours en arriere on cherche les retours.
-    pub jours: i64,
+    /// Jusqu'ou en arriere on cherche les retours.
+    pub jours: Duration,
     /// Le dossier racine dans le Drive.
     pub racine_drive: String,
-    /// Ne rien refaire si la derniere ouverture a moins de N minutes (0 : toujours).
-    pub pas_avant: i64,
+    /// Ne rien refaire si la derniere ouverture est plus recente (zero : toujours).
+    pub pas_avant: Duration,
     /// Le passage periodique : saute la sauvegarde quand rien n'a bouge sur le disque.
     pub veille: bool,
     /// Envoyer chez l'editeur ce que le journal des incidents a note, et relever ses reponses, avant de rendre la main ;
@@ -103,6 +103,9 @@ pub struct Options {
     pub sauvegarde_seule: bool,
 }
 
+/// Les trente jours de retours qu'un passage ordinaire releve.
+pub const TRENTE_JOURS: Duration = Duration::from_secs(30 * 86_400);
+
 impl Options {
     /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours.
     pub fn entiere() -> Options {
@@ -111,9 +114,9 @@ impl Options {
             retours: true,
             signatures: true,
             filet: true,
-            jours: 30,
+            jours: TRENTE_JOURS,
             racine_drive: sauvegarde::RACINE_DRIVE.to_string(),
-            pas_avant: 0,
+            pas_avant: Duration::ZERO,
             veille: false,
             incidents_editeur: true,
             sauvegarde_seule: false,
@@ -123,7 +126,8 @@ impl Options {
 
 /// LA CHARGE DE LA ROUTE `ouverture` : chaque option dite, ou absente. Les interrupteurs disent `false` pour ne pas faire
 /// (sauvegarder, retours, signatures, filet, incidents_editeur) et `true` pour faire autrement (veille, sauvegarde_seule) ;
-/// `jours`, `pas_avant` et `racine_drive` remplacent ce que fait un passage ordinaire (`Options::default`).
+/// `jours` (en jours), `pas_avant` (en minutes) et `racine_drive` remplacent ce que fait un passage ordinaire
+/// (`Options::entiere`).
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChargeOuverture {
@@ -141,10 +145,10 @@ pub struct ChargeOuverture {
     pub incidents_editeur: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sauvegarde_seule: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub jours: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pas_avant: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::jours_opt")]
+    pub jours: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::temps::ecrit::minutes_opt")]
+    pub pas_avant: Option<Duration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub racine_drive: Option<String>,
 }
@@ -207,8 +211,8 @@ pub struct Ouverture {
     pub phrases_coffre: Vec<String>,
     /// Ce que l'horloge de la compagnie fictive a joue aujourd'hui, en phrases.
     pub horloge: Vec<String>,
-    /// La duree de l'ouverture, en secondes, au dixieme.
-    pub secondes: Decimal,
+    /// La duree de l'ouverture.
+    pub duree: Duration,
     /// Le reseau manquait : dit une fois, pas par erreur.
     pub hors_ligne: bool,
     /// Ce qui n'a pas repondu, une phrase par service (l'erreur telle qu'elle est venue) : le reseau manquait pour CELA,
@@ -234,7 +238,7 @@ impl Ouverture {
             a_poser: Vec::new(),
             phrases_coffre: Vec::new(),
             horloge: Vec::new(),
-            secondes: Decimal::ZERO,
+            duree: Duration::ZERO,
             hors_ligne: false,
             injoignables: Vec::new(),
             retenue: false,
@@ -317,7 +321,7 @@ impl Ouverture {
         Ok(OuvertureDite {
             phrase,
             quand: self.quand,
-            secondes: self.secondes,
+            secondes: self.duree,
             sauvegarde,
             retours,
             signatures: self.signatures.map(ReleveSignatures::dite),
@@ -343,8 +347,8 @@ pub struct OuvertureDite {
     pub phrase: String,
     #[serde(with = "socle::paris::ecrit::francaise")]
     pub quand: Moment,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    pub secondes: Decimal,
+    #[serde(with = "socle::temps::ecrit::secondes_au_dixieme")]
+    pub secondes: Duration,
     pub sauvegarde: Option<SauvegardeDite>,
     pub retours: Option<RetoursDits>,
     pub signatures: Option<ReleveDite>,
@@ -398,7 +402,7 @@ pub struct RetoursDits {
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub archives: Vec<PathBuf>,
     pub archives_detail: Vec<RetourArchiveDit>,
-    pub rattaches: i64,
+    pub rattaches: usize,
 }
 
 /// Un retour archive : ou, sa nature et son libelle.
@@ -420,7 +424,7 @@ pub struct RetoursDpaeDits {
     pub nouveaux: usize,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     pub archives: Vec<PathBuf>,
-    pub rattaches: i64,
+    pub rattaches: usize,
 }
 
 /// Les fiches de salarie revenues a un passage.
@@ -499,8 +503,8 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
 pub struct Trace {
     #[serde(with = "socle::paris::ecrit::francaise")]
     pub quand: Moment,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::decimal")]
-    pub secondes: Decimal,
+    #[serde(with = "socle::temps::ecrit::secondes_au_dixieme")]
+    pub secondes: Duration,
     /// La ligne de la sauvegarde, quand elle a eu lieu.
     pub sauvegarde: Option<String>,
     /// Ce qui persiste de la sauvegarde (`sauvegarde::souci`).
@@ -577,7 +581,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
     let sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
     let trace = Trace {
         quand: r.quand,
-        secondes: r.secondes,
+        secondes: r.duree,
         sauvegarde: r.sauvegarde.as_ref().map(Sauvegarde::resume),
         sauvegarde_souci,
         retours,
@@ -653,9 +657,14 @@ fn est_copie(racine: &Path) -> bool {
     racine.join(MARQUEUR_COPIE).is_file()
 }
 
-/// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace.
-fn age_de_la_derniere(precedente: &Trace) -> i64 {
-    socle::temps::secondes().entieres() - precedente.quand.entieres()
+/// `pas_avant` : l'age de la derniere ouverture (le `quand` de sa trace), dit en minutes entieres (« 3 » ; une trace
+/// d'apres maintenant, « -1 »), quand elle est plus recente que `pas_avant` ; `None` sinon.
+fn trop_recente(precedente: &Trace, pas_avant: Duration) -> Option<String> {
+    let maintenant = socle::temps::secondes();
+    match maintenant.depuis(precedente.quand) {
+        Some(age) => (age < pas_avant).then(|| (age.as_secs() / 60).to_string()),
+        None => precedente.quand.depuis(maintenant).map(|avance| format!("-{}", (avance.as_secs() + u64::from(avance.subsec_nanos() > 0)).div_ceil(60))),
+    }
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
@@ -685,7 +694,7 @@ fn trier_hors_ligne(r: &mut Ouverture) {
 fn clore(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Instant) -> R<()> {
     finir_les_etapes(ctx)?;
     trier_hors_ligne(r);
-    r.secondes = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
+    r.duree = socle::temps::duree(debut);
     noter_ouverture(ctx, r)
 }
 
@@ -699,11 +708,10 @@ fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Insta
         return clore(ctx, r, debut);
     };
     trier_hors_ligne(r);
-    let ma_duree = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
-    r.secondes = ma_duree;
+    r.duree = socle::temps::duree(debut);
     trace.sauvegarde = r.sauvegarde.as_ref().map(Sauvegarde::resume);
     trace.sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
-    trace.secondes = (trace.secondes + ma_duree).round_dp_with_strategy(1, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
+    trace.secondes += r.duree;
     trace.hors_ligne = trace.hors_ligne || r.hors_ligne;
     // La sauvegarde qui ne passe pas ne tait plus la ligne des retours : la releve, elle, est passee.
     trace.injoignables.extend(r.injoignables.iter().cloned());
@@ -754,10 +762,9 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         return sauvegarder_seulement(ctx, opt, clients, r, debut, precedente);
     }
 
-    if let (true, Some(p)) = (opt.pas_avant > 0, &precedente) {
-        let age = age_de_la_derniere(p);
-        if age < opt.pas_avant * 60 {
-            r.incidents.push(format!("Ouverture deja faite il y a {} minute(s) : rien a refaire.", age.div_euclid(60)));
+    if let (false, Some(p)) = (opt.pas_avant.is_zero(), &precedente) {
+        if let Some(minutes) = trop_recente(p, opt.pas_avant) {
+            r.incidents.push(format!("Ouverture deja faite il y a {} minute(s) : rien a refaire.", minutes));
             r.retenue = true;
             return Ok(r);
         }
@@ -953,7 +960,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
             let fin = socle::temps::secondes();
-            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
+            match fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -988,7 +995,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             let fin = socle::temps::secondes();
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
+            let rel = fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
                 Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });

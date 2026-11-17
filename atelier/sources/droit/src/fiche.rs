@@ -655,6 +655,18 @@ impl Matricule {
             ))
         }
     }
+
+    /// LE MATRICULE D'UNE FICHE NEUVE, quand l'employeur n'en a pas choisi : le plus grand des matricules `portes` qui
+    /// s'ecrit en chiffres seuls (sans ses blancs autour), plus un ; « 1 » quand aucun ne s'ecrit ainsi.
+    pub fn suivant<'a>(portes: impl Iterator<Item = &'a str>) -> R<Matricule> {
+        let mut plus_grand: u64 = 0;
+        for c in portes.map(str::trim).filter(|c| !c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
+            let n = c.parse::<u64>().map_err(|e| socle::refus!("Matricule illisible : {} ({}).", c, e))?;
+            plus_grand = plus_grand.max(n);
+        }
+        let n = plus_grand.checked_add(1).ok_or_else(|| socle::refus!("Matricule illisible : {} n'a pas de suivant.", plus_grand))?;
+        Matricule::lire(&n.to_string())
+    }
 }
 
 /// Le matricule saisi se garde tel quel : le choix de sa valeur revient a l'employeur.

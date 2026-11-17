@@ -267,6 +267,84 @@ pub fn duree(debut: Instant) -> std::time::Duration {
     }
 }
 
+/// LES ECRITURES D'UNE DUREE MESUREE (`std::time::Duration`, « Le glossaire ») : une facon d'ecrire n'est pas un type.
+/// Chaque forme dit la sienne par un attribut serde (`#[serde(with = "socle::temps::ecrit::secondes_au_dixieme")]`), ou
+/// la dit dans une phrase (`heures_dites`).
+pub mod ecrit {
+    use std::time::Duration;
+
+    /// En secondes, au dixieme, la moitie loin de zero : un nombre a virgule (`1.2`, `0.0` ; `num::secondes_au_dixieme`),
+    /// relu tel qu'il est ecrit (un nombre, ou son texte).
+    pub mod secondes_au_dixieme {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Duration, s: S) -> Result<S::Ok, S::Error> {
+            crate::forme::ecrire_a_virgule(&crate::num::secondes_au_dixieme(*d), s)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duration, D::Error> {
+            use rust_decimal::prelude::ToPrimitive;
+            let lu = crate::forme::decimal(d)?;
+            (lu * crate::num::Decimal::from(1_000_000_000u64))
+                .trunc()
+                .to_u64()
+                .map(Duration::from_nanos)
+                .ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une durée", lu)))
+        }
+    }
+
+    /// Un nombre entier de `unite` secondes, facultatif (`null` : `None`).
+    fn lue_en<'de, D: serde::Deserializer<'de>>(d: D, unite: u64, quoi: &str) -> Result<Option<Duration>, D::Error> {
+        match <Option<u64> as serde::Deserialize>::deserialize(d)? {
+            None => Ok(None),
+            Some(n) => n.checked_mul(unite).map(|s| Some(Duration::from_secs(s))).ok_or_else(|| serde::de::Error::custom(format!("{} {} : une durée trop longue", n, quoi))),
+        }
+    }
+
+    /// Ecrite en son nombre entier de `unite` secondes, facultative (`null` quand elle n'est pas dite).
+    fn ecrite_en<S: serde::Serializer>(d: &Option<Duration>, s: S, unite: u64) -> Result<S::Ok, S::Error> {
+        match d {
+            None => s.serialize_none(),
+            Some(d) => s.serialize_some(&(d.as_secs() / unite)),
+        }
+    }
+
+    /// En jours entiers, facultative : `#[serde(with = "socle::temps::ecrit::jours_opt")]`.
+    pub mod jours_opt {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+            super::ecrite_en(d, s, 86_400)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+            super::lue_en(d, 86_400, "jours")
+        }
+    }
+
+    /// En minutes entieres, facultative : `#[serde(with = "socle::temps::ecrit::minutes_opt")]`.
+    pub mod minutes_opt {
+        use std::time::Duration;
+
+        pub fn serialize<S: serde::Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
+            super::ecrite_en(d, s, 60)
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duration>, D::Error> {
+            super::lue_en(d, 60, "minutes")
+        }
+    }
+
+    /// DITE EN HEURES dans une phrase, a la minute d'avant : « 12 h », « 1 h 05 ».
+    pub fn heures_dites(d: Duration) -> String {
+        let minutes = d.as_secs() / 60;
+        match minutes % 60 {
+            0 => format!("{} h", minutes / 60),
+            m => format!("{} h {:02}", minutes / 60, m),
+        }
+    }
+}
+
 /// Le numero du processus, pour un identifiant (un `Message-ID`) : au rejeu, toujours 1.
 pub fn numero_de_processus() -> u32 {
     if aleas_fixes_ici() {

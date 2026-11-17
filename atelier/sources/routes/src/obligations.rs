@@ -222,21 +222,6 @@ fn lendemain(j: Jour) -> R<Jour> {
 }
 
 
-/// Les feries de l'annee `a`, tels que le calendrier les saute (`f` : les chomes de la compagnie, ou les fetes legales) ;
-/// un fichier des feries qui ne se lit pas est `Illisible`.
-fn feries_lus(f: impl Fn(socle::mois::Annee) -> R<socle::feries::Jours>) -> impl Fn(socle::mois::Annee) -> R<socle::feries::Jours> {
-    move |a| f(a).map_err(|m| m.reclasser(Classe::Illisible))
-}
-
-/// Ce qui fait echouer un compte du calendrier : ses feries illisibles (`feries_lus`) le restent ; sinon le compte sort
-/// du calendrier.
-fn compte_impossible(m: socle::echec::Echec) -> socle::echec::Echec {
-    match m.classe {
-        Some(Classe::Illisible) => m,
-        _ => m.reclasser(Classe::CalculImpossible),
-    }
-}
-
 /// LA FIN D'UN DELAI qui court de `depart` (`quoi` : sa cle dans la base) : en jours ouvres, sur les feries que la
 /// compagnie chome (sa fiche, `feries::chomes`) ; en jours ; en heures, dimanches et onze fetes legales non compris
 /// (R. 441-3), depuis l'heure du depart -- sans heure dite, minuit (`HEURE_DE_CONNAISSANCE_PRESUMEE`, l'echeance la plus
@@ -245,7 +230,7 @@ fn fin_du_delai(ctx: &Contexte, delai: &Delai, depart: InstantOuJour) -> R<Insta
     match delai {
         Delai::JoursOuvres { jours, .. } => {
             let dits = ctx.entreprise.feries_chomes();
-            let jour = jours.apres(depart.jour(), feries_lus(|a| socle::feries::chomes(a, dits))).map_err(compte_impossible)?;
+            let jour = socle::feries::compte_du_calendrier(|a| socle::feries::chomes(a, dits), |f| jours.apres(depart.jour(), f))?;
             Ok(InstantOuJour::Jour(jour))
         }
         Delai::Jours { jours, .. } => Ok(InstantOuJour::Jour(plus(depart.jour(), *jours)?)),
@@ -254,7 +239,7 @@ fn fin_du_delai(ctx: &Contexte, delai: &Delai, depart: InstantOuJour) -> R<Insta
                 Some(h) => h,
                 None => HEURE_DE_CONNAISSANCE_PRESUMEE,
             };
-            let (jour, heure) = heures.heures_apres(depart.jour(), a, feries_lus(socle::feries::feries)).map_err(compte_impossible)?;
+            let (jour, heure) = socle::feries::compte_du_calendrier(socle::feries::feries, |f| heures.heures_apres(depart.jour(), a, f))?;
             jour_et_heure::a_la_minute(jour, heure)
                 .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : {} n'est pas une heure de Paris le {}.", heure, jour.jj_mm_aaaa())))
         }
@@ -288,14 +273,6 @@ fn butoir_ecrit<S: serde::Serializer>(fin: &Option<InstantOuJour>, s: S) -> Resu
     map.serialize_entry("butoir", &jour)?;
     map.serialize_entry("butoir_heure", &heure)?;
     map.end()
-}
-
-fn s(n: i64) -> &'static str {
-    if n > 1 {
-        "s"
-    } else {
-        ""
-    }
 }
 
 // ------------------------------------------------------------ ce qui est saisi
@@ -731,7 +708,6 @@ impl Obligation {
             self.depart = Some(d.dit());
         }
         self.butoir = Some(fin);
-        let restants = butoir.moins(&aujourdhui);
         let (etat, phrase) = match &fait {
             Some(f) => {
                 let dans_les_temps = f.le <= butoir;
@@ -747,18 +723,15 @@ impl Obligation {
                 )
             }
             None if depart.is_some_and(|d| d.jour() > aujourdhui) => (EtatDObligation::AVenir, format!("À venir : {}, soit au plus tard {}.", delai, quand_butoir)),
-            None if restants >= 0 => (
+            None if butoir == aujourdhui => (EtatDObligation::AFaire, format!("À faire au plus tard {} : c'est aujourd'hui.", quand_butoir)),
+            None if butoir > aujourdhui => (
                 EtatDObligation::AFaire,
-                format!(
-                    "À faire au plus tard {}{}.",
-                    quand_butoir,
-                    match restants {
-                        0 => " : c'est aujourd'hui".to_string(),
-                        n => format!(" : il reste {} jour{}", n, s(n)),
-                    }
-                ),
+                format!("À faire au plus tard {} : il reste {}.", quand_butoir, socle::date::Duree::du_au(&lendemain(aujourdhui)?, &butoir)),
             ),
-            None => (EtatDObligation::EnRetard, format!("En retard de {} jour{} : c'était à faire au plus tard {}.", -restants, s(-restants), quand_butoir)),
+            None => (
+                EtatDObligation::EnRetard,
+                format!("En retard de {} : c'était à faire au plus tard {}.", socle::date::Duree::du_au(&lendemain(butoir)?, &aujourdhui), quand_butoir),
+            ),
         };
         self.poser_l_etat(etat);
         self.fait = fait.map(|f| f.dit);

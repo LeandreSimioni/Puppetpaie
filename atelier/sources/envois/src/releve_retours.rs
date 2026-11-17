@@ -324,7 +324,7 @@ pub struct Releve {
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
-    pub rattaches: i64,
+    pub rattaches: usize,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
     pub a_faire: Vec<String>,
 }
@@ -491,7 +491,7 @@ pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
 /// LE SIMULATEUR : pose les retours des depots joues qui les attendent, et rend le nombre de
 /// depots completes. Ne touche a aucune autre ligne : un vrai depot (flux sans le prefixe) garde ses vrais retours. Les
 /// attestations France Travail jouees s'archivent dans `retours/` comme les vraies, et vont dans les suites, a ranger.
-pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
+pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
     let mut a_archiver: Vec<(Annonce, Vec<u8>)> = Vec::new();
     // Ce que les organismes rendent de plus (refus, taux du PAS, effectif) : archive puis range par le meme chemin
     // qu'un retour reel (`rattacher_retours_avec_contenus`), qui en lit le verdict.

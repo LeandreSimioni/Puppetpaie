@@ -21,7 +21,6 @@ const INDISPONIBLE_D_AFFILEE: usize = 3;
 /// `client` : le client Drive a utiliser. `None` : le vrai (`Client::nouveau`), construit AVANT
 /// l'inventaire ; il refuse une copie de developpement.
 pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option<&mut dyn Drive>) -> Result<Sauvegarde, ErreurGoogle> {
-    let debut = std::time::Instant::now();
     let mut propre: Client;
     let client: &mut dyn Drive = match client {
         Some(c) => c,
@@ -43,7 +42,6 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         octets_deposes: socle::grandeurs::Octets::ZERO,
         exclus: ecartes,
         disparus: 0,
-        secondes: socle::num::Decimal::ZERO,
         incidents: Vec::new(),
         reportes: Vec::new(),
         persistant: None,
@@ -204,6 +202,5 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     };
     resultat.persistant = phrase_persistante(&nouvel_index, socle::temps::secondes())?;
     ecrire_index(racine, &nouvel_index)?;
-    resultat.secondes = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
     Ok(resultat)
 }

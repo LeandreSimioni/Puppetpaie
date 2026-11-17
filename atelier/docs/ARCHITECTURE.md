@@ -207,7 +207,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
 | délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
-| durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
+| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, les trente jours de retours qu'un passage relève, l'âge d'un doublon) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
 
 **Le détail**
 
@@ -308,7 +308,11 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
-- **durée mesurée** : un temps écoulé ; `envois::ligne::Durees`, à unifier, est des millisecondes : une écriture.
+- **durée mesurée** : un temps écoulé, de la montre ou entre deux instants (`Moment::depuis`, `plus_duree`,
+  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Ses écritures sont les
+  modules de `socle::temps::ecrit` (en secondes au dixième, en jours ou en minutes entiers), dites par l'attribut serde
+  du champ ; dans une phrase, `heures_dites` (« 12 h »). `envois::ligne::Durees`, à unifier, est des millisecondes : une
+  écriture.
 
 **L'argent et les quantités**
 
@@ -456,6 +460,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
 | version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
+| numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |

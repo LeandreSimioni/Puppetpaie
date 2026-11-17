@@ -98,12 +98,7 @@ pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
         return Ok(None);
     }
     let jour = l.quand().jour();
-    // Un fichier des feries qui ne se lit pas est illisible ; un compte qui sort du calendrier, impossible.
-    let feries = |a| socle::feries::feries(a).map_err(|e| e.reclasser(Classe::Illisible));
-    let avant = DELAI_DE_LA_REPONSE.apres(jour, feries).map_err(|e| match e.classe {
-        Some(Classe::Illisible) => e,
-        _ => e.reclasser(Classe::CalculImpossible),
-    })?;
+    let avant = socle::feries::compte_du_calendrier(socle::feries::feries, |f| DELAI_DE_LA_REPONSE.apres(jour, f))?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
 

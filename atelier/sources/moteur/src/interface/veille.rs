@@ -21,7 +21,7 @@ use routes::enveloppe::{Charge, Refus};
 pub struct Veille {
     racine: PathBuf,
     pub minutes: u64,
-    jours: i64,
+    jours: std::time::Duration,
     erreur: Mutex<Option<String>>,
     en_cours: AtomicBool,
     sauvegarde_en_cours: AtomicBool,
@@ -46,7 +46,7 @@ impl Veille {
         Arc::new(Veille {
             racine: racine.to_path_buf(),
             minutes,
-            jours: 30,
+            jours: routes::gestes::ouverture::TRENTE_JOURS,
             erreur: Mutex::new(None),
             en_cours: AtomicBool::new(false),
             sauvegarde_en_cours: AtomicBool::new(false),

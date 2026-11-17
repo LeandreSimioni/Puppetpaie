@@ -317,7 +317,7 @@ pub struct Signalement {
     pub envoi: EnvoiDuMessage,
     pub numero: Option<NumeroDeRetour>,
     pub ticket: Option<socle::garde_reseau::Url>,
-    pub ticket_numero: Option<i64>,
+    pub ticket_numero: Option<crate::editeur::NumeroDeTicket>,
     pub reponse: Option<String>,
     #[serde(with = "socle::paris::ecrit::minute_utc::option")]
     pub repondu_le: Option<socle::paris::Moment>,
@@ -508,7 +508,7 @@ pub struct Enregistre {
 ///
 /// UN MEME MESSAGE NE S'ENREGISTRE QU'UNE FOIS (sinon il partirait deux fois, l'un « arrive », l'autre « pas encore
 /// parti, le contenu n'est plus sur cet ordinateur »). Deux gardes :
-/// - le meme texte avec les memes captures, enregistre depuis moins de `DOUBLON_SECONDES` (un double clic, une requete
+/// - le meme texte avec les memes captures, enregistre depuis moins de `DOUBLON` (un double clic, une requete
 ///   rejouee par la fenetre), n'ajoute pas de ligne : la route rend celle qui existe (`deja`) ;
 /// - le corps et sa ligne s'ecrivent sous le meme verrou, que l'effacement (`effacer_les_partis`) tient aussi : un
 ///   passage de `partir` lance par le premier envoi ne peut pas effacer le corps du second avant que sa ligne l'annonce.
@@ -535,7 +535,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         lu: None,
     };
     let ecrit = modifier(racine, |lignes| {
-        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || !maintenant.depuis(l.enregistre).is_some_and(|d| d.as_secs() >= DOUBLON_SECONDES as u64))) {
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || !maintenant.depuis(l.enregistre).is_some_and(|d| d >= DOUBLON))) {
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {
@@ -561,7 +561,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
 }
 
 /// Un message enregistre depuis moins de dix minutes, et identique, est le meme message.
-const DOUBLON_SECONDES: i64 = 600;
+const DOUBLON: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// L'empreinte de ce qu'on a ecrit : le texte (caviarde) et les captures, rien de ce qui change d'une seconde a l'autre
 /// (incidents joints, version).

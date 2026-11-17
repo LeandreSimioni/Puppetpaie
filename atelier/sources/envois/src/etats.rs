@@ -1209,7 +1209,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
 /// Le nombre ajoute ; les incidents a noter (dans
 /// l'ordre) s'ajoutent a `incidents`, que l'appelant ecrit dans le journal des
 /// incidents, meme quand le rattachement s'arrete sur une erreur.
-fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<i64> {
+fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<usize> {
     if !chemin(racine).exists() {
         return Ok(0);
     }
@@ -1270,7 +1270,7 @@ pub struct AvecIncidents<T> {
 
 /// Range les retours `retours` (la liste des retours) en face des lignes du journal qu'ils concernent (par le flux).
 /// `contenus` donne, pour chaque `(flux, nature, publication)` telecharge, les octets du retour : le verdict se lit dedans.
-pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<i64> {
+pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<usize> {
     let mut incidents = Vec::new();
     let dico: HashMap<CleDuContenu, Vec<u8>> = contenus.iter().cloned().collect();
     let resultat = rattacher_retours(racine, retours, &dico, &mut incidents);
@@ -1278,7 +1278,7 @@ pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], conte
 }
 
 /// `rattacher_retours_avec_contenus` sans contenus : les retours deja archives.
-pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncidents<i64> {
+pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncidents<usize> {
     rattacher_retours_avec_contenus(racine, retours, &[])
 }
 

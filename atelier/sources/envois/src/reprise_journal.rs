@@ -133,7 +133,7 @@ pub struct Reprise {
     pub sans_mois: Vec<DepotVu>,
     pub illisibles: Vec<String>,
     pub ecrit: bool,
-    pub rattaches: i64,
+    pub rattaches: usize,
 }
 
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les

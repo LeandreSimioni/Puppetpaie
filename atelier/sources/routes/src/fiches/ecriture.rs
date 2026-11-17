@@ -517,7 +517,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
         // Le matricule d'une fiche neuve : le suivant. Un matricule saisi est garde tel quel. L'ANCIENNETE PART DE
         // L'EMBAUCHE, pas du jour de la fiche : la validation du premier engagement la pose (`poser_anciennete_a_l_embauche`).
         if plate.code_salarie.remplie().map(str::trim).is_none_or(str::is_empty) {
-            plate.code_salarie = Some(droit::fiche::Matricule::lire(&matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?.to_string())?);
+            plate.code_salarie = Some(matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?);
         }
         Ok(())
     }
@@ -624,13 +624,8 @@ fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()
 
 /// Le prochain matricule (S21.G00.30.019, que l'employeur choisit : `norme-dsn/texte-2027/bloc-S21.G00.30.txt`) : le
 /// plus grand code salarie numerique que le fichier ait jamais porte, plus un. Chaque valeur datee compte.
-fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<i64> {
-    let codes = salaries.fiches.values().flat_map(|s| s.code_salarie.iter().flatten()).filter_map(|e| e.valeur.portee().map(str::trim));
-    let numeriques: Vec<i64> = codes
-        .filter(|c| !c.is_empty() && c.chars().all(|x| x.is_ascii_digit()))
-        .map(|c| c.parse::<i64>().map_err(|e| refus(format!("Matricule illisible : {} ({}).", c, e))))
-        .collect::<R<_>>()?;
-    Ok(numeriques.into_iter().fold(0, i64::max) + 1)
+fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<droit::fiche::Matricule> {
+    droit::fiche::Matricule::suivant(salaries.fiches.values().flat_map(|s| s.code_salarie.iter().flatten()).filter_map(|e| e.valeur.portee()))
 }
 
 // ------------------------------------------------------------------ la saisie

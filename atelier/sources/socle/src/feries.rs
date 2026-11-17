@@ -154,6 +154,18 @@ pub fn chomes(annee: Annee, dits: Option<&str>) -> R<Jours> {
     }
 }
 
+/// UN COMPTE DU CALENDRIER SUR DES FERIES (des jours ouvres, un delai en heures) : `compte` les recoit de `feries` ; un
+/// fichier des feries qui ne se lit pas le rend `Illisible`, tout autre echec du compte sort du calendrier
+/// (`CalculImpossible`). Le seul endroit qui le dit.
+pub fn compte_du_calendrier<T>(feries: impl Fn(Annee) -> R<Jours>, compte: impl FnOnce(&dyn Fn(Annee) -> R<Jours>) -> R<T>) -> R<T> {
+    use crate::echec::Classe;
+    let lus = |a: Annee| feries(a).map_err(|m| m.reclasser(Classe::Illisible));
+    compte(&lus).map_err(|m| match m.classe {
+        Some(Classe::Illisible) => m,
+        _ => m.reclasser(Classe::CalculImpossible),
+    })
+}
+
 /// Les feries chomes d'une periode, annees a cheval comprises.
 pub fn chomes_entre(periode: &Periode, dits: Option<&str>) -> R<Jours> {
     let mut out = Jours::new();

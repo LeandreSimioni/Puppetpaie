@@ -83,7 +83,7 @@ impl Cadre {
         // Sur la sortie d'ERREUR : les phrases d'une seance ne doivent pas polluer la sortie standard d'un `--json`.
         eprintln!();
         eprintln!("Le coffre de ce poste ne s'ouvre pas avec sa cle. Ouverture de la seance : le mot de passe du logiciel, une");
-        eprintln!("fois, pour {} h.", ::compagnie::demande::HEURES_SEANCE);
+        eprintln!("fois, pour {}.", socle::temps::ecrit::heures_dites(::compagnie::demande::DUREE_DE_LA_SEANCE));
         if let ::compagnie::demande::Verdict::Refuse(e) = ::compagnie::demande::ouvrir_seance(&self.racine) {
             eprintln!("! {}", e.en_lignes());
         }

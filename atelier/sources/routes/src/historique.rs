@@ -158,7 +158,7 @@ struct RepriseDite {
     sans_mois: Vec<DepotVu>,
     illisibles: Vec<String>,
     ecrit: bool,
-    rattaches: i64,
+    rattaches: usize,
     ecran: EcranDeLaReprise,
 }
 

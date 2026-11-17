@@ -38,8 +38,8 @@ use socle::mois::MoisOuJour;
 /// Combien de fois on laisse retaper un mot de passe refuse avant de renoncer.
 const ESSAIS: u8 = 3;
 
-/// Heures de la seance (`coffre seance`).
-pub const HEURES_SEANCE: i64 = 12;
+/// La duree de la seance (`coffre seance`) : douze heures.
+pub const DUREE_DE_LA_SEANCE: std::time::Duration = std::time::Duration::from_secs(12 * 3_600);
 
 /// Ce qui va partir, tel que l'humain doit le lire avant de taper.
 #[derive(Clone, Debug, PartialEq)]
@@ -138,11 +138,11 @@ fn question_de_l_acte(acte: &Acte, essai: u8, precedent_refuse: bool) -> Questio
     Question { titre: "PuppetPaie : autoriser cet acte".into(), lignes, essai, precedent_refuse, seance: false, invite: None }
 }
 
-fn question_de_la_seance(heures: i64, essai: u8, precedent_refuse: bool) -> Question {
+fn question_de_la_seance(duree: std::time::Duration, essai: u8, precedent_refuse: bool) -> Question {
     Question {
         titre: "PuppetPaie : ouvrir le coffre".into(),
         lignes: vec![
-            format!("Le mot de passe du logiciel ouvre le coffre pour {} h.", heures),
+            format!("Le mot de passe du logiciel ouvre le coffre pour {}.", socle::temps::ecrit::heures_dites(duree)),
             "Il n'autorise AUCUN acte reel : chaque depot, envoi ou signature le redemandera.".into(),
         ],
         essai,
@@ -209,7 +209,7 @@ pub fn mot_de_passe_de_l_acte(racine: &Path, acte: &Acte) -> R<Secret> {
     obtenir(racine, canal.as_ref(), |essai, refuse| question_de_l_acte(acte, essai, refuse))
 }
 
-/// La seance : le mot de passe tape une fois, GARDE `HEURES_SEANCE` h (`Coffre::garder_ouverture`) et retenu pour la
+/// La seance : le mot de passe tape une fois, GARDE `DUREE_DE_LA_SEANCE` (`Coffre::garder_ouverture`) et retenu pour la
 /// commande. Elle ouvre le coffre ; elle n'autorise jamais un acte reel.
 pub fn ouvrir_seance(racine: &Path) -> Verdict {
     let ouverte = || -> R<()> {
@@ -217,9 +217,9 @@ pub fn ouvrir_seance(racine: &Path) -> Verdict {
             return Err(e);
         }
         let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
-        let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(HEURES_SEANCE, essai, refuse))?;
+        let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(DUREE_DE_LA_SEANCE, essai, refuse))?;
         let coffre = Coffre::du_poste(racine);
-        let fin = coffre.maintenant.plus(HEURES_SEANCE * 3600).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
+        let fin = coffre.maintenant.plus_duree(DUREE_DE_LA_SEANCE).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
         coffre.garder_ouverture(&m, fin)?;
         retenir_mot_de_passe_tape(&m);
         Ok(())

@@ -60,7 +60,7 @@ pub struct ObjetDeclare {
     pub numero: droit::fiche::NumeroObjetSpectacle,
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
-    pub contrats: i64,
+    pub contrats: usize,
     /// La piece qui le declare.
     pub source: crate::reponse::Source,
 }

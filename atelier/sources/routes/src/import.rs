@@ -513,7 +513,7 @@ pub(crate) fn apercu_lu(
         numero: NumeroObjetSpectacle,
         premier: String,
         dernier: String,
-        contrats: i64,
+        contrats: usize,
         aem: bool,
     }
     let mut objets: Vec<Objet> = lecture

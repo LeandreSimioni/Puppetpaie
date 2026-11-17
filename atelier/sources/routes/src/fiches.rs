@@ -952,8 +952,8 @@ fn poser_entreprise_note(ctx: &Contexte, case: ChangementEntreprise, jour: Jour,
 
 // ------------------------------------------------------------------ la fiche demandee par courriel
 
-/// Secondes entre une demande de fiche et la reponse de la personne fictive de la compagnie fictive (`DELAI_SIGNATURE`).
-pub(crate) const DELAI_FICTIVE: i64 = 20;
+/// Le temps entre une demande de fiche et la reponse de la personne fictive de la compagnie fictive (`DELAI_SIGNATURE`).
+pub(crate) const DELAI_FICTIVE: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Une adresse courriel de forme `x@y.z`, sans blanc ni second `@`.
 fn adresse_valide(adresse: &str) -> bool {
@@ -1344,9 +1344,9 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
 }
 
 /// La boite de la compagnie fictive, vue par la releve. Chaque demande de fiche partie
-/// depuis `delai` secondes y trouve sa reponse remplie ; la vraie releve la lit et cree la fiche. Ce qu'on y envoie
+/// depuis `delai` y trouve sa reponse remplie ; la vraie releve la lit et cree la fiche. Ce qu'on y envoie
 /// s'ecrit comme tout courriel joue (`BoiteQuiRepond`, partagee avec `BoiteDesSignatures`).
-pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
+pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: std::time::Duration) -> R<BoiteQuiRepond> {
     let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
     let maintenant = socle::temps::secondes();
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
@@ -1358,7 +1358,7 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
             InstantOuJour::Jour(j) => Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT),
         };
         let Some(partie) = partie else { continue };
-        if !maintenant.depuis(partie).is_some_and(|d| d.as_secs() as i64 >= delai) {
+        if !maintenant.depuis(partie).is_some_and(|d| d >= delai) {
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;

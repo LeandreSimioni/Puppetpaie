@@ -99,8 +99,6 @@ pub struct Sauvegarde {
     pub exclus: usize,
     /// Purges entre l'inventaire et l'envoi : pas un incident.
     pub disparus: usize,
-    /// La duree du passage, en secondes, au dixieme.
-    pub secondes: socle::num::Decimal,
     /// Le detail brut de ce qui n'est pas passe (`dossier : erreur`), pour la ligne de commande. La fenetre ne le montre
     /// pas : un dossier reporte au passage suivant n'est pas un incident.
     pub incidents: Vec<String>,
@@ -190,8 +188,8 @@ fn combien(reportes: &[Reporte], un: &str, plusieurs: &str) -> String {
 /// incident a montrer : Google rend parfois un 500 que le passage suivant ne voit plus. Ce qui se dit, c'est ce qui dure :
 /// le meme dossier (ou fichier) en echec sur `PASSAGES_QUI_DURENT` passages de suite (une heure, a vingt minutes d'une veille a
 /// l'autre), ou depuis `UNE_JOURNEE`, ou une journee entiere sans sauvegarde complete.
-pub const PASSAGES_QUI_DURENT: i64 = 3;
-pub const UNE_JOURNEE: i64 = 86_400;
+pub const PASSAGES_QUI_DURENT: usize = 3;
+pub const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
 
 /// « un dossier n'a pas pu être envoyé », « 2 fichiers n'ont pas pu être envoyés ».
 fn ce_qui_manque(nd: usize, nf: usize) -> String {
@@ -223,7 +221,7 @@ fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
 
 /// `maintenant` est-il une journee au moins apres `depuis` ?
 fn une_journee_apres(maintenant: Moment, depuis: Moment) -> bool {
-    maintenant.depuis(depuis).is_some_and(|d| d.as_secs() >= UNE_JOURNEE as u64)
+    maintenant.depuis(depuis).is_some_and(|d| d >= UNE_JOURNEE)
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'instant `maintenant`, ou `None`.
@@ -274,12 +272,12 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
 
 // ---------------------------------------------------------------- l'inventaire
 
-/// La taille et la date de modification (secondes entieres) d'un fichier (`inventaire`).
+/// La taille et la date de modification (a la seconde) d'un fichier (`inventaire`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Etat {
     pub octets: Octets,
-    pub mtime: i64,
+    pub mtime: Moment,
 }
 
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
@@ -346,7 +344,7 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
                 format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
             ));
         };
-        trouves.push((relatif, Etat { octets: Octets::du_disque(&m), mtime: date.entieres() }));
+        trouves.push((relatif, Etat { octets: Octets::du_disque(&m), mtime: date.a_la_seconde() }));
     }
     Ok((trouves, ecartes))
 }
@@ -410,7 +408,7 @@ pub struct Index {
 pub struct EchecIndexe {
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub depuis: socle::paris::Moment,
-    pub passages: i64,
+    pub passages: usize,
     pub cause: String,
 }
 
