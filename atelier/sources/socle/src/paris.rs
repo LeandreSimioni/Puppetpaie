@@ -347,6 +347,39 @@ pub mod ecrit {
         (super::dans_le_calendrier(l.div_euclid(86_400)), l.rem_euclid(86_400))
     }
 
+    /// L'HEURE ET LA MINUTE DE PARIS d'un instant (`Moment::seconde_du_jour_de_paris`), chacune sur deux chiffres,
+    /// separees par `entre` (« 16:28 », « 1628 ») : l'heure d'un enregistrement dite a l'ecran, une zone d'une norme (la
+    /// DPAE), la marque d'un fichier.
+    pub fn heure_minute(m: Moment, entre: &str) -> String {
+        let s = m.seconde_du_jour_de_paris();
+        format!("{:02}{}{:02}", s / 3_600, entre, s / 60 % 60)
+    }
+
+    /// L'heure, la minute et la seconde de Paris d'un instant, separees par `entre` (« 16:28:05 », « 162805 ») : l'en-tete
+    /// `Date` d'un courriel (RFC 5322, 3.3), le nom d'un courriel ecrit.
+    pub fn heure_minute_seconde(m: Moment, entre: &str) -> String {
+        format!("{}{}{:02}", heure_minute(m, entre), entre, m.seconde_du_jour_de_paris() % 60)
+    }
+
+    /// LA DATE ET L'HEURE DOS de Paris d'un instant, a la seconde paire d'avant (l'horodatage d'un fichier d'une archive
+    /// zip, PKWARE APPNOTE 4.4.6) : `(date, heure)` ; `None` hors des annees 1980 a 2107, que le format ne dit pas.
+    pub fn dos(m: Moment) -> Option<(u16, u16)> {
+        let (j, s) = (m.jour_de_paris(), m.seconde_du_jour_de_paris());
+        if !(1980..2108).contains(&j.an) {
+            return None;
+        }
+        let date = (((j.an - 1980) as u16) << 9) | ((j.mois as u16) << 5) | j.jour as u16;
+        let heure = (((s / 3_600) as u16) << 11) | (((s / 60 % 60) as u16) << 5) | (s % 60 / 2) as u16;
+        Some((date, heure))
+    }
+
+    /// Le decalage de l'heure de Paris sur l'UTC a cet instant (`super::decalage`), ecrit `+HHMM` ou `-HHMM` (RFC 5322,
+    /// 3.3).
+    pub fn decalage(m: Moment) -> String {
+        let d = super::decalage(m);
+        format!("{}{:02}{:02}", if d < 0 { '-' } else { '+' }, d.abs() / 3_600, d.abs() % 3_600 / 60)
+    }
+
     /// Le jour et la seconde du jour UTC d'un instant (arrondi a la microseconde, puis tronque).
     fn utc(m: Moment) -> (Jour, i64) {
         let s = m.a_la_microseconde().entieres();

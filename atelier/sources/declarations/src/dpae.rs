@@ -341,11 +341,7 @@ impl Embauche {
     }
 }
 
-/// L'heure et la minute de `m` a Paris, chacune sur deux chiffres, separees par `entre` (HHMM, HHhMM).
-fn heure_minute(m: Moment, entre: &str) -> String {
-    let s = m.seconde_du_jour_de_paris();
-    format!("{:02}{}{:02}", s / 3_600, entre, s / 60 % 60)
-}
+use socle::paris::ecrit::heure_minute;
 
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
@@ -360,8 +356,7 @@ pub struct Parametres<'a> {
 /// La zone `horodatage` d'une minute : JJMMAAAAHHMM.
 fn horodatage_dpae(m: Moment) -> String {
     let m = m.a_la_minute();
-    let (j, s) = (m.jour_de_paris(), m.seconde_du_jour_de_paris());
-    format!("{:02}{:02}{:04}{:02}{:02}", j.jour, j.mois, j.an, s / 3_600, s / 60 % 60)
+    format!("{}{}", m.jour_de_paris().jjmmaaaa(), heure_minute(m, ""))
 }
 
 fn poser(buf: &mut [char], nom: &str, valeur: &str) -> R<()> {
@@ -555,15 +550,9 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     use std::io::Write;
 
     // L'horodatage, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
-    let minute = horodatage.a_la_minute();
-    let jour = minute.jour_de_paris();
-    let s = minute.seconde_du_jour_de_paris();
-    let (j, mo, h, m) = (jour.jour, jour.mois, (s / 3_600) as u32, (s / 60 % 60) as u32);
-    if !(1980..2108).contains(&jour.an) {
+    let Some((date, heure)) = socle::paris::ecrit::dos(horodatage.a_la_minute()) else {
         return Err(socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)));
-    }
-    let a = jour.an as u32;
-    let (date, heure) = (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5));
+    };
     let mut crc = Crc::new();
     crc.update(donnees);
     let somme = crc.sum();
@@ -581,8 +570,8 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     u16_(&mut z, 20);
     u16_(&mut z, drapeau);
     u16_(&mut z, 8);
-    u16_(&mut z, heure as u16);
-    u16_(&mut z, date as u16);
+    u16_(&mut z, heure);
+    u16_(&mut z, date);
     u32_(&mut z, somme);
     u32_(&mut z, comprime.len() as u32);
     u32_(&mut z, donnees.len() as u32);
@@ -597,8 +586,8 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     u16_(&mut z, 20);
     u16_(&mut z, drapeau);
     u16_(&mut z, 8);
-    u16_(&mut z, heure as u16);
-    u16_(&mut z, date as u16);
+    u16_(&mut z, heure);
+    u16_(&mut z, date);
     u32_(&mut z, somme);
     u32_(&mut z, comprime.len() as u32);
     u32_(&mut z, donnees.len() as u32);

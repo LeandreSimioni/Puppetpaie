@@ -972,14 +972,11 @@ pub(crate) struct Entree {
 
 /// La date et l'heure locales (Paris) au format DOS, a partir de secondes unix.
 fn horodatage_dos(t: socle::paris::Moment) -> (u16, u16) {
-    let reste = t.seconde_du_jour_de_paris();
-    let (h, m, s) = (reste / 3600, (reste % 3600) / 60, reste % 60);
     // Le format DOS commence le 01/01/1980 : un instant d'avant s'y ecrit.
-    let jour = t.jour_de_paris();
-    if jour.an < 1980 {
-        return ((1 << 5) | 1, 0);
+    match socle::paris::ecrit::dos(t) {
+        Some(d) => d,
+        None => ((1 << 5) | 1, 0),
     }
-    ((((jour.an - 1980) as u16) << 9) | ((jour.mois as u16) << 5) | jour.jour as u16, ((h as u16) << 11) | ((m as u16) << 5) | (s / 2) as u16)
 }
 
 /// Deflate, CRC-32, cree sous Unix.

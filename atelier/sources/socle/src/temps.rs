@@ -392,6 +392,11 @@ pub mod ecrit {
         }
     }
 
+    /// DITE EN MINUTES ET SECONDES dans une phrase, a la seconde d'avant : « 2:41 », « 0:05 ».
+    pub fn minutes_et_secondes_dites(d: Duration) -> String {
+        format!("{}:{:02}", minutes_entieres(d), d.as_secs() % 60)
+    }
+
     /// DITE EN MINUTES ENTIERES dans une phrase (`minutes_entieres`) : « 3 ».
     pub fn minutes_entieres_dites(d: Duration) -> String {
         minutes_entieres(d).to_string()

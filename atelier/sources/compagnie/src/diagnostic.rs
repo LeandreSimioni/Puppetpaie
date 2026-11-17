@@ -713,8 +713,7 @@ fn ajouter(t: u64, texte: String, cle: String) {
 
 /// « -2:41 » : il y a deux minutes et quarante et une secondes.
 fn relatif(maintenant: u64, t: u64) -> String {
-    let s = maintenant.saturating_sub(t) / 1000;
-    format!("-{}:{:02}", s / 60, s % 60)
+    format!("-{}", socle::temps::ecrit::minutes_et_secondes_dites(std::time::Duration::from_millis(maintenant.saturating_sub(t))))
 }
 
 /// Le fil des trois dernieres minutes, une ligne par action, la plus ancienne d'abord ; vide hors de la fenetre.

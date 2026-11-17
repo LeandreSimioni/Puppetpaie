@@ -438,8 +438,7 @@ fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel ecrit maintenant.
 fn marque_a_la_minute() -> String {
     let maintenant = socle::temps::secondes().a_la_seconde();
-    let (j, s) = (maintenant.jour_de_paris(), maintenant.seconde_du_jour_de_paris());
-    format!("_{}-{:02}{:02}", j.aaaammjj(), s / 3_600, s / 60 % 60)
+    format!("_{}-{}", maintenant.jour_de_paris().aaaammjj(), socle::paris::ecrit::heure_minute(maintenant, ""))
 }
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel, suivie de `-2`, `-3`... tant que `DPAE_<etiq><marque>.txt` existe deja.

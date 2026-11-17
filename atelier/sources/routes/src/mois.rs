@@ -1051,7 +1051,6 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
     let a = socle::temps::secondes().a_la_seconde();
-    let s = a.seconde_du_jour_de_paris();
     Ok(CarteEcrite {
         phrase: match &a_completer {
             Some(m) => socle::phrase!("Carte enregistrée ; à compléter avant de valider : {}", m),
@@ -1060,7 +1059,7 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         engagement: id,
         brouillon,
         a_completer,
-        enregistre_dit: format!("Enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60),
+        enregistre_dit: format!("Enregistré à {}", socle::paris::ecrit::heure_minute(a, ":")),
         enregistre_a: a,
     })
 }

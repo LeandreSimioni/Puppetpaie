@@ -602,10 +602,9 @@ pub fn hexa_au_hasard(octets: usize) -> R<String> {
 
 /// `%Y%m%d-%H%M%S-%f` de l'heure de Paris : l'ordre des noms est celui des envois.
 fn horodatage_de(t: socle::paris::Moment) -> String {
-    let (j, s) = (t.jour_de_paris(), t.seconde_du_jour_de_paris());
     // Les microsecondes entieres de la fraction de seconde.
     let micros = t.nanosecondes() / 1_000;
-    format!("{:04}{:02}{:02}-{:02}{:02}{:02}-{:06}", j.an, j.mois, j.jour, s / 3600, s % 3600 / 60, s % 60, micros)
+    format!("{}-{}-{:06}", t.jour_de_paris().aaaammjj(), socle::paris::ecrit::heure_minute_seconde(t, ""), micros)
 }
 
 impl Courriel for BoiteSimulee {
