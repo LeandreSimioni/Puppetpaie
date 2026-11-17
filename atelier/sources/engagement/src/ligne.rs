@@ -807,7 +807,7 @@ impl PaiementDeLigne {
     }
 
     /// Sans zero inutile (`socle::grandeurs::sans_zero`), sa quantite et son taux : la forme canonique d'une ligne, et
-    /// celle de la paie ecrite (`calcul::LigneBrut::forme`).
+    /// celle de la paie ecrite (`calcul::EcritSansZero`).
     pub fn sans_zero(self) -> PaiementDeLigne {
         use PaiementDeLigne as P;
         match self {

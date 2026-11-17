@@ -16,7 +16,7 @@ use socle::date::{Jour, Periode};
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
 use crate::{Avis, Engagement, LignePaie};
-use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDePaie, FormeDeRemuneration};
+use crate::paie_ecrite::{Cle, FormeDePaie};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::grandeurs::{courte, Coefficient, Heures, Montant, MontantUnitaire, Taux};
@@ -40,15 +40,21 @@ fn taux_compose(x: Taux) -> Taux {
 /// UNE LIGNE DE REMUNERATION : une rubrique, ce qu'elle paie (`P`), son montant. Celle que le calcul rend d'une ligne de
 /// paie dit toujours ce qu'elle paie, une quantite a un taux (`LigneBrut`, `P` = `PaiementDeLigne`) ; celle d'un
 /// bulletin importe que l'import a rattachee a sa rubrique garde son montant lu, et ce qu'elle paie quand le bulletin
-/// l'imprime (`LigneRattachee` : un forfait imprime a son seul montant n'a pas de quantite).
-#[derive(Debug, Clone, PartialEq)]
+/// l'imprime (`LigneRattachee` : un forfait imprime a son seul montant n'a pas de quantite). Celle du calcul s'ecrit
+/// dans la paie ecrite (`paie_ecrite::FormeDePaie::remuneration`), ses nombres en texte normalise.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, bound(serialize = "P: EcritSansZero", deserialize = "P: serde::Deserialize<'de>"))]
 pub struct LigneBrut<P = PaiementDeLigne> {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: Unite,
-    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique (`unite`).
+    /// Ce qu'elle paie, sa quantite et son taux dans l'unite de sa rubrique (`unite`), ecrit par sa forme sans zero
+    /// inutile (`{"cachets": ["2", "150"]}`).
+    #[serde(serialize_with = "EcritSansZero::ecrit")]
     pub paiement: P,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub montant: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub heures_annexes: Heures,
     pub soumis: bool,
     pub imposable: bool,
@@ -62,6 +68,18 @@ pub struct LigneBrut<P = PaiementDeLigne> {
     /// Ce que la ligne dit d'elle-meme sur le bulletin quand sa quantite ne suffit pas : la part payee d'un mois incomplet
     /// (`droit::periodes::DecompteDuMois::sur_le_bulletin`).
     pub precision: Option<String>,
+}
+
+/// L'ECRITURE DE CE QU'UNE LIGNE DE REMUNERATION PAIE : par sa forme, sans zero inutile (`PaiementDeLigne::sans_zero`).
+/// Seule la ligne du calcul s'ecrit.
+pub trait EcritSansZero {
+    fn ecrit<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error>;
+}
+
+impl EcritSansZero for PaiementDeLigne {
+    fn ecrit<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&self.sans_zero(), s)
+    }
 }
 
 /// UNE LIGNE D'UN BULLETIN IMPORTE RATTACHEE A SA RUBRIQUE (`importe::LigneImprimee::rattachee`) : son montant tel que
@@ -132,50 +150,6 @@ impl LigneBrut {
         }
     }
 
-    /// Sa forme ecrite, avec sa designation au bulletin.
-    pub fn forme(&self) -> FormeDeRemuneration {
-        FormeDeRemuneration {
-            code: self.code.clone(),
-            libelle: self.libelle.clone(),
-            unite: self.unite,
-            paiement: self.paiement.sans_zero(),
-            montant: self.montant,
-            heures_annexes: self.heures_annexes,
-            soumis: self.soumis,
-            imposable: self.imposable,
-            conges_spectacles: self.conges_spectacles,
-            salaire_de_base: self.salaire_de_base,
-            retabli: self.retabli,
-            conges_pris: self.conges_pris,
-            dsn_bloc52: self.dsn_bloc52.clone(),
-            arret_de_travail: self.arret_de_travail,
-            dsn_autres_bruts: self.dsn_autres_bruts,
-            precision: self.precision.clone(),
-            designation: self.designation(),
-        }
-    }
-
-    /// Relue de sa forme ecrite.
-    pub(crate) fn de_la_forme(f: &FormeDeRemuneration) -> LigneBrut {
-        LigneBrut {
-            code: f.code.clone(),
-            libelle: f.libelle.clone(),
-            unite: f.unite,
-            paiement: f.paiement,
-            montant: f.montant,
-            heures_annexes: f.heures_annexes,
-            soumis: f.soumis,
-            imposable: f.imposable,
-            conges_spectacles: f.conges_spectacles,
-            salaire_de_base: f.salaire_de_base,
-            retabli: f.retabli,
-            conges_pris: f.conges_pris,
-            dsn_bloc52: f.dsn_bloc52.clone(),
-            arret_de_travail: f.arret_de_travail,
-            dsn_autres_bruts: f.dsn_autres_bruts,
-            precision: f.precision.clone(),
-        }
-    }
 }
 
 /// Les lignes de remuneration d'un engagement : une par ligne de paie, le
@@ -383,17 +357,28 @@ impl BaseDeCotisation {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct LigneCotisation {
+/// UNE LIGNE DE COTISATION. Elle s'ecrit dans la paie ecrite (`paie_ecrite::FormeDePaie::lignes`), ses nombres en texte
+/// dans leur forme la plus courte ; sa base `B` s'ecrit en nombre, des euros ou des heures, sans son unite
+/// (`BaseDeCotisation::en_nombre`) : elle se lit sa base en nombre (`LigneCotisation<socle::forme::Nombre>`, la seule
+/// qui se lit), que `relue` lit aussitot dans la grandeur que sa cotisation compte (`BaseDeCotisation::relue`) ; elle ne
+/// circule que sa base typee.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields, bound(serialize = "B: Copy + Into<BaseDeCotisation>", deserialize = "B: serde::Deserialize<'de> + Into<socle::forme::Nombre>"))]
+pub struct LigneCotisation<B = BaseDeCotisation> {
     /// La cotisation de la ligne.
     pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: droit::forme_bareme::FamilleDeCotisation,
     pub libelle: String,
-    pub base: BaseDeCotisation,
+    #[serde(serialize_with = "crate::paie_ecrite::base_en_nombre")]
+    pub base: B,
+    #[serde(with = "socle::grandeurs::ecrit::nombre::option")]
     pub taux_pat: Option<Taux>,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub montant_pat: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::nombre::option")]
     pub taux_sal: Option<Taux>,
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     pub montant_sal: Montant,
     pub masquer_base_et_taux: bool,
 }
@@ -403,34 +388,22 @@ impl LigneCotisation {
     pub fn est(&self, id: &droit::forme_bareme::IdDeCotisation) -> bool {
         self.id == *id
     }
+}
 
-    /// Sa forme ecrite : un taux en decimal par sa forme la plus courte.
-    pub fn forme(&self) -> FormeDeCotisation {
-        FormeDeCotisation {
-            id: self.id.clone(),
-            famille: self.famille.clone(),
-            libelle: self.libelle.clone(),
-            base: self.base,
-            taux_pat: self.taux_pat.map(courte),
+impl LigneCotisation<socle::forme::Nombre> {
+    /// La ligne lue, sa base dans la grandeur que sa cotisation compte (`BaseDeCotisation::relue`) : la porte de sa
+    /// lecture.
+    pub(crate) fn relue(self) -> LigneCotisation {
+        LigneCotisation {
+            base: BaseDeCotisation::relue(&self.id, self.base),
+            id: self.id,
+            famille: self.famille,
+            libelle: self.libelle,
+            taux_pat: self.taux_pat,
             montant_pat: self.montant_pat,
-            taux_sal: self.taux_sal.map(courte),
+            taux_sal: self.taux_sal,
             montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
-        }
-    }
-
-    /// Relue de sa forme ecrite (sa base relue par `BaseDeCotisation::relue`).
-    pub(crate) fn de_la_forme(f: &FormeDeCotisation) -> LigneCotisation {
-        LigneCotisation {
-            id: f.id.clone(),
-            famille: f.famille.clone(),
-            libelle: f.libelle.clone(),
-            base: f.base,
-            taux_pat: f.taux_pat.map(courte),
-            montant_pat: f.montant_pat,
-            taux_sal: f.taux_sal.map(courte),
-            montant_sal: f.montant_sal,
-            masquer_base_et_taux: f.masquer_base_et_taux,
         }
     }
 }
@@ -2179,13 +2152,13 @@ impl Paie {
             heures: self.heures,
             heures_absence: self.heures_absence,
             heures_travaillees: self.heures_travaillees,
-            lignes: self.lignes.iter().map(LigneCotisation::forme).collect(),
+            lignes: self.lignes.clone(),
             net_a_payer: self.net_a_payer,
             net_imposable: self.net_imposable,
             net_social: self.net_social,
             numero_bulletin: self.numero_bulletin.clone(),
             reduction_generale: self.reduction_generale.clone(),
-            remuneration: self.remuneration.iter().map(LigneBrut::forme).collect(),
+            remuneration: self.remuneration.clone(),
             salaire_de_base: self.salaire_de_base,
             salaire_retabli: self.salaire_retabli,
             salarie: Cle { cle: self.salarie.id.clone() },
