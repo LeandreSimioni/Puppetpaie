@@ -42,14 +42,11 @@ use droit::fiche::Lue as _;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use rust_decimal::Decimal;
-
-use socle::texte::nombre_dit;
 use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Heures, Montant};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins. `pour` : celui a qui il s'adresse, tel que
 /// l'envoyeur le retrouve apres l'envoi, du type de ce qu'il est (un salarie : `IdSalarie`) ; l'envoi ne le lit pas.
@@ -164,8 +161,8 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         if !e.cachets.est_nul() {
             volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero()) {
-            volume.push(format!("{} heure{}", nombre_dit(h), if h > Decimal::ONE { "s" } else { "" }));
+        if let Some(h) = e.heures.filter(|h| !h.est_nul()) {
+            volume.push(format!("{} heure{}", socle::texte::virgule(h), if h > Heures::fixes(1) { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -250,12 +247,12 @@ pub struct Renvoi {
 /// compare a la paie refaite. Les montants et les heures s'ecrivent comme le bulletin les ecrit.
 pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
     let mut contrats = Vec::new();
-    let (mut brut, mut net) = (Decimal::ZERO, Decimal::ZERO);
+    let (mut brut, mut net) = (Montant::ZERO, Montant::ZERO);
     for p in paies {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero());
+        let heures = e.heures.filter(|h| !h.est_nul());
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
             contrat: e.contrat(),
@@ -263,11 +260,11 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
             jours: dates,
             cachets: e.cachets,
             heures,
-            brut: p.brut.decimal(),
-            net: p.net_a_payer.decimal(),
+            brut: p.brut,
+            net: p.net_a_payer,
         });
-        brut += p.brut.decimal();
-        net += p.net_a_payer.decimal();
+        brut += p.brut;
+        net += p.net_a_payer;
     }
     Ok(ResumeDePaie { contrats, brut, net })
 }
@@ -277,8 +274,10 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
 #[serde(deny_unknown_fields)]
 pub struct ResumeDePaie {
     pub contrats: Vec<ContratResume>,
-    pub brut: Decimal,
-    pub net: Decimal,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub brut: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub net: Montant,
 }
 
 /// Un contrat du resume : ses bornes, son spectacle, ses jours, ses cachets, ses heures, son brut et son net.
@@ -292,25 +291,27 @@ pub struct ContratResume {
     pub cachets: socle::grandeurs::Cachets,
     /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
-    pub heures: Option<Decimal>,
-    pub brut: Decimal,
-    pub net: Decimal,
+    pub heures: Option<Heures>,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub brut: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub net: Montant,
 }
 
-/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::nombre_dit` : « 13,5 », « 24 ») et relues dans
-/// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
+/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::virgule` : « 13,5 », « 24 ») et
+/// relues dans cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod heures_ecrites {
     use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
+    use socle::grandeurs::Heures;
 
-    pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        h.map(super::nombre_dit).serialize(s)
+    pub fn serialize<S: serde::Serializer>(h: &Option<Heures>, s: S) -> Result<S::Ok, S::Error> {
+        h.map(socle::texte::virgule).serialize(s)
     }
 
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Heures>, D::Error> {
         let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
-        let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
-        if super::nombre_dit(h) != t {
+        let h: Heures = socle::grandeurs::lu::en_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
+        if socle::texte::virgule(h) != t {
             return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
         }
         Ok(Some(h))
@@ -326,10 +327,10 @@ pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau:
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
         let (brut_a, brut_n, net_a, net_n) = (
-            socle::texte::euros(Montant::du_decimal(a.brut)),
-            socle::texte::euros(Montant::du_decimal(n.brut)),
-            socle::texte::euros(Montant::du_decimal(a.net)),
-            socle::texte::euros(Montant::du_decimal(n.net)),
+            socle::texte::euros(a.brut),
+            socle::texte::euros(n.brut),
+            socle::texte::euros(a.net),
+            socle::texte::euros(n.net),
         );
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));

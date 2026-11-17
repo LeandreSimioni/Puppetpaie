@@ -1502,6 +1502,18 @@ pub mod ecrit {
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
             crate::forme::ecrire_a_virgule(&g.en_decimal(), s)
         }
+
+        /// Un `Option` dans cette ecriture : `None` s'ecrit `null`.
+        pub mod option {
+            use crate::grandeurs::Grandeur;
+
+            pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &Option<G>, s: S) -> Result<S::Ok, S::Error> {
+                match g {
+                    Some(g) => super::serialize(g, s),
+                    None => s.serialize_none(),
+                }
+            }
+        }
     }
 
     /// TELLE QUE LA NORME DSN L'ECRIT dans ses rubriques (cahier technique : « avec decimale », le point decimal) : un

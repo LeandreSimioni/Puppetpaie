@@ -44,7 +44,6 @@ use socle::date::{Jour, Periode, PeriodeOuverte};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
-use socle::num::Decimal;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
@@ -1625,8 +1624,8 @@ pub(crate) struct VuePaie {
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     taux_cachet: Option<MontantUnitaire>,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    heures: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::option::serialize")]
+    heures: Option<Heures>,
     faits_avances: Vec<&'static str>,
     /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).
     propose: engagement::proposees::Proposees,
@@ -1636,14 +1635,17 @@ pub(crate) struct VuePaie {
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
     jours: Jours,
     lieu: Option<String>,
-    brut: Decimal,
-    net_a_payer: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    brut: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    net_a_payer: Montant,
     /// Le net paye, connu quand le prelevement a la source l'est (`Paie::pas`, a la validation) ; vide avant.
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     net_paye: Option<Montant>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     net_imposable: Montant,
-    cout_employeur: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    cout_employeur: Montant,
     avertissements: Vec<String>,
     informations: Vec<String>,
     emploi: EmploiVu,
@@ -1772,7 +1774,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         dates_travail: e.dates_travail.clone(),
         cachets: e.cachets,
         taux_cachet,
-        heures: e.heures.map(socle::grandeurs::Heures::decimal),
+        heures: e.heures,
         // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
         // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
@@ -1797,14 +1799,14 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             .collect(),
         jours: e.jours,
         lieu,
-        brut: p.brut.au_centime().decimal(),
-        net_a_payer: p.net_a_payer.au_centime().decimal(),
+        brut: p.brut.au_centime(),
+        net_a_payer: p.net_a_payer.au_centime(),
         // CE QUE LA COMPAGNIE VIRE : la somme effectivement recue par le salarie (C. trav. R. 3243-1, 10°,
         // `atelier/reference/sources/code-du-travail/articles-20261029.md`), le « MONTANT NET À PAYER » du bulletin :
         // le net a payer moins l'impot preleve a la source.
         net_paye,
         net_imposable: p.net_imposable.au_centime(),
-        cout_employeur: p.cout_employeur.au_centime().decimal(),
+        cout_employeur: p.cout_employeur.au_centime(),
         avertissements: p.avertissements.iter().filter(|a| !a.info).map(|a| a.texte.clone()).collect(),
         informations: p.avertissements.iter().filter(|a| a.info).map(|a| a.texte.clone()).collect(),
         emploi: EmploiVu { libelle: s.emploi.clone(), code_emploi_ft: s.code_emploi_ft.clone(), statut: s.statut.clone(), cadre: droit::bareme::est_cadre(s) },
@@ -1885,8 +1887,10 @@ struct Trois {
     /// Vide tant que le net paye d'une de ces paies ne l'est (`VuePaie::net_paye`).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     net_paye: Option<Montant>,
-    brut: Decimal,
-    cout_employeur: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    brut: Montant,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    cout_employeur: Montant,
     engagements: usize,
 }
 
@@ -1897,7 +1901,7 @@ fn net_paye_de<'a>(vues: impl Iterator<Item = &'a VuePaie>) -> Option<Montant> {
 
 impl Trois {
     fn de(vues: &[&VuePaie]) -> Trois {
-        let somme = |f: fn(&VuePaie) -> Decimal| vues.iter().fold(Montant::ZERO, |t, v| t + Montant::du_decimal(f(v))).au_centime().decimal();
+        let somme = |f: fn(&VuePaie) -> Montant| vues.iter().fold(Montant::ZERO, |t, v| t + f(v)).au_centime();
         Trois { net_paye: net_paye_de(vues.iter().copied()), brut: somme(|v| v.brut), cout_employeur: somme(|v| v.cout_employeur), engagements: vues.len() }
     }
 }
@@ -1980,7 +1984,7 @@ struct Calcul {
     mois: Mois,
     libelle: String,
     paies: Vec<PaieVue>,
-    total_cout: Decimal,
+    total_cout: Montant,
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
     total_net: Option<Montant>,
     blocs: Vec<Option<Trois>>,
@@ -1997,7 +2001,8 @@ struct Apercu {
     mois: Mois,
     libelle: String,
     paies: Vec<PaieDeLApercu>,
-    total_cout: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    total_cout: Montant,
     /// Vide tant qu'un net paye du mois ne l'est (`VuePaie::net_paye`).
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     total_net: Option<Montant>,
@@ -2226,7 +2231,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             v.informations.insert(0, phrase);
         }
     }
-    let total_cout = vues.iter().fold(Montant::ZERO, |t, v| t + Montant::du_decimal(v.cout_employeur)).au_centime().decimal();
+    let total_cout = vues.iter().fold(Montant::ZERO, |t, v| t + v.cout_employeur).au_centime();
     let total_net = net_paye_de(vues.iter());
     // LES TROIS NOMBRES, sommes ici : par carte (une carte, un engagement) et par salarie (la colonne « Le mois »).
     let blocs = vues.iter().map(|v| Some(Trois::de(&[v]))).collect();
@@ -2244,7 +2249,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             let trois = Trois::de(vs);
             ParSalarie {
                 engagements_dit: socle::ecran::compte(vs.len(), "engagement", "engagements"),
-                survol_dit: format!("coût employeur {} · brut {}", socle::texte::euros(Montant::du_decimal(trois.cout_employeur)), socle::texte::euros(Montant::du_decimal(trois.brut))),
+                survol_dit: format!("coût employeur {} · brut {}", socle::texte::euros(trois.cout_employeur), socle::texte::euros(trois.brut)),
                 salarie: vs[0].salarie.clone(),
                 nom: nom.clone(),
                 trois,
