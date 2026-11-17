@@ -25,7 +25,7 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
+use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure};
 use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
@@ -1618,15 +1618,6 @@ finit pas tout seul, et le motif commande les droits du salarie a l'assurance ch
 }
 
 
-/// La quotite telle que la DSN la compte : au centieme, le demi au pair (40.012, 40.013).
-fn au_centieme_au_pair(q: droit::natures::QuotiteDuContrat) -> droit::natures::QuotiteDuContrat {
-    use droit::natures::QuotiteDuContrat as Q;
-    match q {
-        Q::Heures(h) => Q::Heures(h.a_deux_decimales()),
-        Q::Jours(j) => Q::Jours(j.a_deux_decimales()),
-    }
-}
-
 /// La quotite ecrite dans la DSN (`norme::quantite`), dans son unite.
 fn quotite_ecrite(q: droit::natures::QuotiteDuContrat) -> String {
     use droit::natures::QuotiteDuContrat as Q;
@@ -1837,26 +1828,18 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add_opt(droit::rubrique!("S21.G00.40.010"), e.contrat().fin().map(|j| j.jjmmaaaa()))?;
     }
     f.add(droit::rubrique!("S21.G00.40.011"), nat.unite_quotite());
-    // La quotite dans l'unite que 40.011 vient d'ecrire.
-    let quotite = au_centieme_au_pair(e.quotite()?);
-    // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
-    // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
-    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: droit::natures::QuotiteDuContrat| -> R<()> {
-        let plafond = nat.plafond_quotite();
+    // La quotite dans l'unite que 40.011 vient d'ecrire, avec le plafond de la nature (`contrats-base.json`,
+    // `unite_quotite.plafond`), qui vaut pour 40.012 comme pour 40.013 : CCH-12 du bloc 40 (journee, 31.00), CCH-13
+    // (heure, 250.00) ; cahier technique 2026.1, p. 189.
+    let quotite = e.quotite_plafonnee()?.au_centieme_au_pair();
+    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, q: droit::natures::QuotitePlafonnee| -> R<()> {
         // Ce que la DSN ecrit : la quotite a deux decimales, comparee au plafond de la nature, dans son unite.
-        let valeur = quotite_ecrite(q);
-        if plafond.au_moins(q)? {
+        if !q.depasse() {
             return Ok(());
         }
-        let cch = match nat.unite_quotite() {
-            UniteDeQuotite::Journee | UniteDeQuotite::ForfaitJour => " CCH-12",
-            UniteDeQuotite::Heure | UniteDeQuotite::ForfaitHeure => " CCH-13",
-            autre => {
-                return Err(refus!(
-                    "La norme DSN ne plafonne la quotité qu'en unités 10, 12, 20 et 21 (CCH-12 et CCH-13 du bloc 40) ; la nature {} la compte en unité « {} » : le signaler au développeur.",
-                    nat.libelle, autre
-                ))
-            }
+        let cch = match q {
+            droit::natures::QuotitePlafonnee::Jours { .. } => " CCH-12",
+            droit::natures::QuotitePlafonnee::Heures { .. } => " CCH-13",
         };
         Err(refus!(
             "Contrat {} {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
@@ -1867,24 +1850,24 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
                 None => format!("commence le {}, sans terme", e.contrat().debut().jjmmaaaa()),
             },
             quoi,
-            valeur,
-            quotite_ecrite(plafond),
+            quotite_ecrite(q.quotite()),
+            quotite_ecrite(q.plafond()),
             nat.unite_quotite(),
             rubrique,
             cch
         ))
     };
     depasse(droit::rubrique!("S21.G00.40.013"), "quotite", quotite)?;
-    match e.quotite_reference()? {
+    match e.reference_plafonnee()? {
         Some(reference) => {
-            let r = au_centieme_au_pair(reference);
+            let r = reference.au_centieme_au_pair();
             depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", r)?;
-            quotite_de_reference_sans_heures_supplementaires(f, p, &nat, reference)?;
-            f.add(droit::rubrique!("S21.G00.40.012"), quotite_ecrite(r))
+            quotite_de_reference_sans_heures_supplementaires(f, p, &nat, reference.quotite())?;
+            f.add(droit::rubrique!("S21.G00.40.012"), quotite_ecrite(r.quotite()))
         }
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
     }
-    f.add(droit::rubrique!("S21.G00.40.013"), quotite_ecrite(quotite));
+    f.add(droit::rubrique!("S21.G00.40.013"), quotite_ecrite(quotite.quotite()));
     // La modalite que la nature fixe, sinon celle de l'engagement (`Engagement::modalite_temps_travail`).
     f.ecrire_code(e.modalite_temps_travail()?)?;
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {

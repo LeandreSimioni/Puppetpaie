@@ -554,12 +554,23 @@ impl Engagement {
 
     /// S21.G00.40.013 : les jours du contrat (CDDU), les heures du contrat signe (mensuel).
     pub fn quotite(&self) -> R<QuotiteDuContrat> {
+        Ok(self.quotite_plafonnee()?.quotite())
+    }
+
+    /// S21.G00.40.013 et son plafond, dans l'unite que sa nature dit (`Nature::selon_l_unite`) : les jours du contrat,
+    /// les heures du contrat signe.
+    pub fn quotite_plafonnee(&self) -> R<droit::natures::QuotitePlafonnee> {
         let nat = self.nat()?;
-        if !nat.mensuelle() {
-            return Ok(QuotiteDuContrat::Jours(self.jours_contrat));
-        }
+        nat.selon_l_unite(
+            |plafond| Ok(droit::natures::QuotitePlafonnee::Jours { quotite: self.jours_contrat, plafond }),
+            |plafond| Ok(droit::natures::QuotitePlafonnee::Heures { quotite: self.heures_du_contrat(&nat)?, plafond }),
+        )
+    }
+
+    /// Les heures par mois du contrat signe, que la saisie dit.
+    fn heures_du_contrat(&self, nat: &Nature) -> R<Heures> {
         match self.quotite_contrat {
-            Some(q) => Ok(QuotiteDuContrat::Heures(courte(q))),
+            Some(q) => Ok(courte(q)),
             None => Err(socle::refus!(
                 "{} : combien d'heures par mois ? La durée du travail se lit sur le contrat signé \
                  (151,67 h pour un temps plein à 35 h) et la DSN la déclare. À taper dans la case « Heures par \
@@ -571,19 +582,28 @@ impl Engagement {
 
     /// S21.G00.40.012 : la quotite de reference de l'entreprise.
     pub fn quotite_reference(&self) -> R<Option<QuotiteDuContrat>> {
+        Ok(self.reference_plafonnee()?.map(droit::natures::QuotitePlafonnee::quotite))
+    }
+
+    /// S21.G00.40.012 et son plafond, dans l'unite que sa nature dit (`Nature::selon_l_unite`) : les jours du contrat ;
+    /// en heures, la duree collective saisie, sinon la duree legale que la nature porte.
+    pub fn reference_plafonnee(&self) -> R<Option<droit::natures::QuotitePlafonnee>> {
         let nat = self.nat()?;
-        if !nat.mensuelle() {
-            return Ok(Some(QuotiteDuContrat::Jours(courte(self.jours_contrat))));
-        }
-        // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que la nature
-        // porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
-        Ok(match self.quotite_reference_saisie {
-            Some(q) if q.est_nul() => {
-                return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
-            }
-            Some(q) => Some(QuotiteDuContrat::Heures(q)),
-            None => nat.quotite_reference_defaut().map(QuotiteDuContrat::Heures),
-        })
+        nat.selon_l_unite(
+            |plafond| Ok(Some(droit::natures::QuotitePlafonnee::Jours { quotite: courte(self.jours_contrat), plafond })),
+            |plafond| {
+                // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que
+                // la nature porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
+                let reference = match self.quotite_reference_saisie {
+                    Some(q) if q.est_nul() => {
+                        return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
+                    }
+                    Some(q) => Some(q),
+                    None => nat.quotite_reference_defaut(),
+                };
+                Ok(reference.map(|quotite| droit::natures::QuotitePlafonnee::Heures { quotite, plafond }))
+            },
+        )
     }
 
     /// S21.G00.40.014 : temps plein (10) ou temps partiel (20). C. trav. L. 3123-1, 1° et 2° : est a temps partiel le
