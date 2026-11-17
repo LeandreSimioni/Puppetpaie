@@ -208,6 +208,12 @@ pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {
     chiffres(h.decimal())
 }
 
+/// UN TAUX DANS UNE COLONNE DE MONTANTS D'UN BULLETIN (le taux personnalisé du prélèvement à la source), écrit comme
+/// `chiffres_en_euros` : « 7,50 », au centième, sans « % ».
+pub fn chiffres_de_taux(t: crate::grandeurs::Taux) -> String {
+    chiffres(t.decimal())
+}
+
 /// L'écriture de `chiffres_en_euros` et de `chiffres_d_heures` : au centième, le signe de l'original, les milliers
 /// séparés par une espace ordinaire.
 fn chiffres(d: rust_decimal::Decimal) -> String {

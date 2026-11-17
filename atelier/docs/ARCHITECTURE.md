@@ -386,8 +386,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   paie un jour (unités × montant unitaire), l'écart au-dessus de la limite (un montant) et son prix par unité
   (`Montant::par_unite` : montant / unités = montant unitaire).
 - Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
-  `Taux::points`, `Taux::centiemes_de_point`, `Coefficient::entier_fixe`, `Coefficient::dixiemes`,
-  `Coefficient::centiemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
+  `Taux::points`, `Taux::centiemes_de_point`, `Taux::milliemes_de_point`, `Coefficient::entier_fixe`,
+  `Coefficient::dixiemes`, `Coefficient::centiemes`, `Coefficient::dix_milliemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
   `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
   (`socle::grandeurs::lu::en_texte`).
 - Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.

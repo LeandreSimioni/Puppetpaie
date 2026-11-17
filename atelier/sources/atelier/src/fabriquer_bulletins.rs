@@ -26,17 +26,18 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use rust_decimal::RoundingStrategy;
 use serde::Deserialize;
 use socle::forme::Nombre;
 
 use super::bulletins_fictifs::{m, page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
+use engagement::ligne::QuantiteDeLigne;
 use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, Taux};
-use socle::num::Decimal;
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
+// Un montant tel que le bulletin l'imprime, « 1 234,56 » : l'ecriture du socle.
+use socle::texte::chiffres_en_euros as fr;
 
 pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description.json> <dossier> [--gabarit coolpaie|spaiectacle]";
 
@@ -95,34 +96,32 @@ enum Base {
 }
 
 /// Les cotisations d'un FAUX bulletin : (cle, base, taux employeur et salarie de l'intermittent, puis du permanent).
-/// Des taux vraisemblables d'un logiciel de paie, en millièmes de pour cent (7000 : 7,000 %) ; `None` : pas de part. Ils
-/// ne fondent aucune regle (le moteur ne s'en sert pas, l'import ne les recalcule pas) : ils donnent des montants
+/// Des taux vraisemblables d'un logiciel de paie, ecrits en milliemes de point (7000 : 7,000 %) ; `None` : pas de part.
+/// Ils ne fondent aucune regle (le moteur ne s'en sert pas, l'import ne les recalcule pas) : ils donnent des montants
 /// coherents a relire.
-const COTISATIONS: [(&str, Base, Option<i64>, Option<i64>, Option<i64>, Option<i64>); 13] = [
-    ("maladie", Base::Brut, Some(7000), None, Some(7000), None),
-    ("prevoyance", Base::Brut, Some(1040), Some(120), Some(800), Some(800)),
-    ("atmp", Base::Brut, Some(1050), None, Some(1050), None),
-    ("vieillesse_plafonnee", Base::Plafonnee, Some(8550), Some(6900), Some(8550), Some(6900)),
-    ("vieillesse_deplafonnee", Base::Brut, Some(2020), Some(400), Some(2020), Some(400)),
-    ("complementaire", Base::Plafonnee, Some(6010), Some(4010), Some(6010), Some(4010)),
-    ("famille", Base::Brut, Some(3450), None, Some(3450), None),
-    ("chomage", Base::Brut, Some(9050), Some(2400), Some(4300), None),
-    ("autres", Base::Brut, Some(2836), None, Some(2836), None),
-    ("conges_spectacles", Base::Brut, Some(15500), None, None, None),
-    ("conventionnelles", Base::Brut, Some(300), None, Some(300), None),
-    ("csg_deductible", Base::Csg, None, Some(6800), None, Some(6800)),
-    ("csg_non_deductible", Base::Csg, None, Some(2900), None, Some(2900)),
+const COTISATIONS: [(&str, Base, Option<Taux>, Option<Taux>, Option<Taux>, Option<Taux>); 13] = [
+    ("maladie", Base::Brut, Some(t(7000)), None, Some(t(7000)), None),
+    ("prevoyance", Base::Brut, Some(t(1040)), Some(t(120)), Some(t(800)), Some(t(800))),
+    ("atmp", Base::Brut, Some(t(1050)), None, Some(t(1050)), None),
+    ("vieillesse_plafonnee", Base::Plafonnee, Some(t(8550)), Some(t(6900)), Some(t(8550)), Some(t(6900))),
+    ("vieillesse_deplafonnee", Base::Brut, Some(t(2020)), Some(t(400)), Some(t(2020)), Some(t(400))),
+    ("complementaire", Base::Plafonnee, Some(t(6010)), Some(t(4010)), Some(t(6010)), Some(t(4010))),
+    ("famille", Base::Brut, Some(t(3450)), None, Some(t(3450)), None),
+    ("chomage", Base::Brut, Some(t(9050)), Some(t(2400)), Some(t(4300)), None),
+    ("autres", Base::Brut, Some(t(2836)), None, Some(t(2836)), None),
+    ("conges_spectacles", Base::Brut, Some(t(15500)), None, None, None),
+    ("conventionnelles", Base::Brut, Some(t(300)), None, Some(t(300)), None),
+    ("csg_deductible", Base::Csg, None, Some(t(6800)), None, Some(t(6800))),
+    ("csg_non_deductible", Base::Csg, None, Some(t(2900)), None, Some(t(2900))),
 ];
 
-/// Un taux de `COTISATIONS`, en pourcentage a trois decimales.
-fn taux_millieme(t: Option<i64>) -> Option<Decimal> {
-    t.map(|m| Decimal::new(m, 3))
+/// Un taux de `COTISATIONS`, en milliemes de point.
+const fn t(milliemes: u32) -> Taux {
+    Taux::milliemes_de_point(milliemes)
 }
 
 /// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels) : 0,9825.
-fn assiette_csg() -> Decimal {
-    Decimal::new(9825, 4)
-}
+const ASSIETTE_CSG: Coefficient = Coefficient::dix_milliemes(9825);
 
 /// La table des parametres du BOSS deposee : elle porte le PSS de 2021 a 2026 (codes PSS_M_METROP et PSS_H_METROP),
 /// les annees qu'aucun bareme livre n'a (2024).
@@ -136,7 +135,6 @@ fn table_boss() -> std::path::PathBuf {
 /// l'invente pas.
 fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
     let entier = droit::plafond::Pss::en_euros_entiers;
-    let lu = |m: Decimal, h: Decimal| entier(Montant::du_decimal(m), socle::grandeurs::MontantUnitaire::du_decimal(h));
     if let Some(p) = droit::contexte::socle_livre_lu(annee)?.and_then(|pile| pile.plafond_securite_sociale) {
         return Ok(entier(p.mensuel, p.horaire));
     }
@@ -144,14 +142,16 @@ fn pss(annee: socle::mois::Annee) -> R<droit::plafond::Pss> {
     let octets = std::fs::read(&chemin).map_err(|e| refus!("{} : {}", chemin.display(), e))?;
     let texte = String::from_utf8_lossy(&octets);
     let effet = format!("01/01/{}", annee);
-    let valeur = |code: &str| -> R<Option<Decimal>> {
+    fn valeur<G: socle::grandeurs::Grandeur>(texte: &str, chemin: &Path, effet: &str, code: &str) -> R<Option<G>> {
         let Some(c) = texte.lines().map(|l| l.split(';').collect::<Vec<&str>>()).find(|c| c.len() >= 4 && c[0] == code && c[3].trim() == effet) else {
             return Ok(None);
         };
-        socle::num::decimal_a_virgule(c[2]).map(Some).ok_or_else(|| refus!("{} : {} au {} : {} ne se lit pas en nombre", chemin.display(), code, effet, c[2]))
-    };
-    match (valeur("PSS_M_METROP")?, valeur("PSS_H_METROP")?) {
-        (Some(m), Some(h)) => Ok(lu(m, h)),
+        socle::grandeurs::lu::texte(c[2]).map(Some).ok_or_else(|| refus!("{} : {} au {} : {} ne se lit pas en nombre", chemin.display(), code, effet, c[2]))
+    }
+    let mensuel = valeur::<Montant>(&texte, &chemin, &effet, "PSS_M_METROP")?;
+    let horaire = valeur::<MontantUnitaire>(&texte, &chemin, &effet, "PSS_H_METROP")?;
+    match (mensuel, horaire) {
+        (Some(m), Some(h)) => Ok(entier(m, h)),
         _ => Err(refus!(
             "pas de plafond de la Sécurité sociale pour {} : ni bareme livré (logiciel/donnees/baremes/{}.json) ni ligne \
              PSS_M_METROP/PSS_H_METROP au 01/01/{} dans {} -- déposez le texte qui le donne",
@@ -175,11 +175,12 @@ struct Salarie {
     conges_spectacles: Option<String>,
 }
 
+/// Une ligne comptee : sa quantite dans l'unite de sa rubrique, son taux, ce qu'elle paie au centime.
 struct Ligne {
     libelle: String,
-    quantite: Decimal,
-    taux: Decimal,
-    montant: Decimal,
+    quantite: QuantiteDeLigne,
+    taux: MontantUnitaire,
+    montant: Montant,
     cachets: Cachets,
     heures: Heures,
 }
@@ -205,18 +206,19 @@ struct Bulletin {
 /// Les cotisations, le net imposable et l'impot preleve d'une paie (les `lignes` d'une paie de PuppetPaie, telles quelles).
 struct Paie {
     cotisations: Vec<CotisationPayee>,
-    net_imposable: Decimal,
-    pas: Decimal,
+    net_imposable: Montant,
+    pas: Montant,
 }
 
 struct CotisationPayee {
     /// La cle de sa famille (`familles` de la table de lecture), et comment sPAIEctacle l'imprime.
     famille: (&'static str, RenduB),
     libelle: String,
-    base: Option<Decimal>,
-    taux_salarie: Option<Decimal>,
-    montant_salarie: Decimal,
-    montant_employeur: Decimal,
+    /// Sa base, dans la colonne des montants du bulletin.
+    base: Option<Montant>,
+    taux_salarie: Option<Taux>,
+    montant_salarie: Montant,
+    montant_employeur: Montant,
 }
 
 // --------------------------------------------------------------------------------------------- la forme de la description
@@ -305,8 +307,10 @@ struct BulletinLu {
     taux_pas: Taux,
     regle_le: Jour,
     cotisations: Option<Vec<CotisationLue>>,
-    net_imposable: Option<Nombre>,
-    pas: Option<Nombre>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    net_imposable: Option<Montant>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pas: Option<Montant>,
 }
 
 #[derive(Deserialize)]
@@ -320,8 +324,10 @@ struct ObjetLu {
 #[serde(deny_unknown_fields)]
 struct LigneLue {
     libelle: String,
+    /// Dans l'unite de la rubrique de son libelle : lue a la lecture de la ligne (`QuantiteDeLigne::imprimee`).
     quantite: Nombre,
-    taux: Nombre,
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    taux: MontantUnitaire,
 }
 
 /// Une cotisation d'une paie de PuppetPaie (une de ses `lignes`, telle quelle).
@@ -330,10 +336,14 @@ struct LigneLue {
 struct CotisationLue {
     famille: String,
     libelle: String,
-    base: Option<Nombre>,
-    taux_sal: Option<Nombre>,
-    montant_sal: Nombre,
-    montant_pat: Nombre,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    base: Option<Montant>,
+    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    taux_sal: Option<Taux>,
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    montant_sal: Montant,
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    montant_pat: Montant,
     masquer_base_et_taux: bool,
 }
 
@@ -373,12 +383,6 @@ fn deux_rangs(texte: &str, largeur: usize, quoi: &str) -> R<[String; 2]> {
 
 // --------------------------------------------------------------------------------------------- l'ecriture des nombres
 
-/// « 1 234,56 », comme les bulletins l'impriment.
-fn fr(x: Decimal) -> String {
-    let x = Montant::du_decimal(x).au_centime().decimal();
-    a_la_francaise(&format!("{:.2}", x.abs()), x.is_sign_negative() && !x.is_zero())
-}
-
 /// Une quantite au centieme, « 1 234,50 », comme les cumuls l'impriment : son ecriture au centime
 /// (`grandeurs::ecrit::centimes`), a la francaise.
 fn fr_quantite<G: socle::grandeurs::Grandeur>(g: G) -> R<String> {
@@ -405,11 +409,9 @@ fn a_la_francaise(s: &str, negatif: bool) -> String {
     format!("{}{},{}", if negatif { "-" } else { "" }, groupes.join(" "), dec)
 }
 
-/// Un taux a trois decimales, « 6,900 ».
-fn taux3(x: Decimal) -> String {
-    let mut t = x.round_dp_with_strategy(3, RoundingStrategy::MidpointAwayFromZero);
-    t.rescale(3);
-    t.to_string().replace('.', ",")
+/// Un taux a trois decimales, la moitie loin de zero, « 6,900 ».
+fn taux3(t: Taux) -> String {
+    socle::grandeurs::ecrit::texte::dit(socle::grandeurs::decimales_ecrites(t.loin_de_zero(3), 3)).replace('.', ",")
 }
 
 fn dmy(j: &Jour) -> String {
@@ -420,8 +422,8 @@ fn dmy_court(j: &Jour) -> String {
     format!("{:02}/{:02}/{:02}", j.jour, j.mois, j.an % 100)
 }
 
-fn pct(base: Decimal, taux: Option<Decimal>) -> Option<Decimal> {
-    taux.map(|t| Montant::du_decimal(base).fois_taux(Taux::du_decimal(t)).au_centime().decimal())
+fn pct(base: Montant, taux: Option<Taux>) -> Option<Montant> {
+    taux.map(|t| base.fois_taux(t).au_centime())
 }
 
 // --------------------------------------------------------------------------------------------- le calcul du faux bulletin
@@ -431,28 +433,28 @@ struct Cumuls {
     cachets: Cachets,
     heures: Heures,
     jours: Jours,
-    brut: Decimal,
-    plafond: Decimal,
-    cout: Decimal,
-    net_imposable: Decimal,
-    pas: Decimal,
+    brut: Montant,
+    plafond: Montant,
+    cout: Montant,
+    net_imposable: Montant,
+    pas: Montant,
 }
 
 /// Ce que le faux logiciel a calcule pour un bulletin.
 struct Calcule {
-    brut: Decimal,
-    plafond: Decimal,
-    assiette_csg: Decimal,
+    brut: Montant,
+    plafond: Montant,
+    assiette_csg: Montant,
     /// (cle, base, taux employeur, montant employeur, taux salarie, montant salarie)
-    cotisations: Vec<(&'static str, Decimal, Option<Decimal>, Option<Decimal>, Option<Decimal>, Option<Decimal>)>,
-    total_employeur: Decimal,
-    total_salarie: Decimal,
-    net_social: Decimal,
-    net_avant_impot: Decimal,
-    net_imposable: Decimal,
-    pas: Decimal,
-    net_a_payer: Decimal,
-    cout: Decimal,
+    cotisations: Vec<(&'static str, Montant, Option<Taux>, Option<Montant>, Option<Taux>, Option<Montant>)>,
+    total_employeur: Montant,
+    total_salarie: Montant,
+    net_social: Montant,
+    net_avant_impot: Montant,
+    net_imposable: Montant,
+    pas: Montant,
+    net_a_payer: Montant,
+    cout: Montant,
     cachets: Cachets,
     heures: Heures,
     jours: Jours,
@@ -461,7 +463,7 @@ struct Calcule {
 }
 
 fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
-    let brut: Decimal = b.lignes.iter().map(|l| l.montant).sum();
+    let brut: Montant = b.lignes.iter().map(|l| l.montant).sum();
     let mut jours_travailles: BTreeSet<Jour> = BTreeSet::new();
     jours_travailles.extend(b.dates.iter().flat_map(|p| p.jours()));
     let jours = Jours::de_dates(jours_travailles.len());
@@ -475,13 +477,12 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
-    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?
-    .decimal();
-    let assiette_csg = Montant::du_decimal(brut * assiette_csg()).au_centime().decimal();
+    .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
+    let assiette_csg = (brut * ASSIETTE_CSG).au_centime();
     let mut cotisations = Vec::new();
-    let (mut total_e, mut total_s, mut csg_non_deductible) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
+    let (mut total_e, mut total_s, mut csg_non_deductible) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
-        let (te, ts) = if b.permanent { (taux_millieme(ep), taux_millieme(sp)) } else { (taux_millieme(ei), taux_millieme(si)) };
+        let (te, ts) = if b.permanent { (ep, sp) } else { (ei, si) };
         if te.is_none() && ts.is_none() {
             continue;
         }
@@ -491,8 +492,8 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
             Base::Csg => assiette_csg,
         };
         let (me, ms) = (pct(assiette, te), pct(assiette, ts));
-        total_e += me.into_iter().sum::<Decimal>();
-        total_s += ms.into_iter().sum::<Decimal>();
+        total_e += me.into_iter().sum::<Montant>();
+        total_s += ms.into_iter().sum::<Montant>();
         if cle == "csg_non_deductible" {
             csg_non_deductible = ms.into_iter().sum();
         }
@@ -502,14 +503,14 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         total_e = p.cotisations.iter().map(|c| c.montant_employeur).sum();
         total_s = p.cotisations.iter().map(|c| c.montant_salarie).sum();
     }
-    let non_soumis: Decimal = b.non_soumis.iter().map(|l| l.montant).sum();
+    let non_soumis: Montant = b.non_soumis.iter().map(|l| l.montant).sum();
     let net_social = brut - total_s;
     let net_avant_impot = net_social + non_soumis;
     let (net_imposable, pas) = match &b.paie {
         Some(p) => (p.net_imposable, p.pas),
         None => {
             let n = net_social + csg_non_deductible;
-            (n, b.taux_pas.prelevement(Montant::du_decimal(n)).au_centime().decimal())
+            (n, b.taux_pas.prelevement(n).au_centime())
         }
     };
     let cout = brut + total_e + non_soumis;
@@ -608,20 +609,23 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
                 if r.soumis { "lignes" } else { "non_soumis" }
             ));
         }
-        let (q, taux) = (l.quantite.0, l.taux.0);
         // La quantite de la ligne dans l'unite de sa rubrique (`QuantiteDeLigne`), comme le lecteur de bulletins la compte
         // (`import::bulletin_lu`) : ses cachets, ou ses heures (le forfait du catalogue, sinon celles que le libelle dit ;
-        // une heure compte ses heures).
-        use engagement::ligne::QuantiteDeLigne as Q;
+        // une heure compte ses heures). Une ligne en pourcentage n'a pas de quantite : la page n'imprime que des lignes
+        // comptees, quantite x taux.
+        use QuantiteDeLigne as Q;
+        let Some(quantite) = Q::imprimee(r.unite, l.quantite) else {
+            return Err(refus!("{} : « {} » est une ligne en pourcentage : la page n'imprime que des lignes comptées (quantité × taux)", ou, connu.libelle));
+        };
         let (mut cachets, mut heures) = (Cachets::ZERO, Heures::ZERO);
-        match (Q::imprimee(r.unite, l.quantite), r.heures_forfait.or(connu.heures)) {
-            (Some(Q::Cachets(c)), _) => cachets = c,
-            (Some(q), Some(u)) => heures = q.fois(u),
-            (None, Some(_)) => return Err(refus!("{} : « {} » est une ligne en pourcentage, sans heures par unité", ou, connu.libelle)),
-            (Some(Q::Heures(h)), None) => heures = h,
+        match (quantite, r.heures_forfait.or(connu.heures)) {
+            (Q::Cachets(c), _) => cachets = c,
+            (q, Some(u)) => heures = q.fois(u),
+            (Q::Heures(h), None) => heures = h,
             (_, None) => {}
         }
-        Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: Montant::du_decimal(q * taux).au_centime().decimal(), cachets, heures })
+        let montant = engagement::ligne::PaiementDeLigne::de(quantite, l.taux).montant().au_centime();
+        Ok(Ligne { libelle: connu.libelle.clone(), quantite, taux: l.taux, montant, cachets, heures })
     };
 
     let mut bulletins = Vec::new();
@@ -679,10 +683,10 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
 
 /// Les cotisations d'une paie (`cotisations` : les `lignes` d'une paie de PuppetPaie), son `net_imposable` et son impot
 /// preleve (`pas`) : les trois ensemble, ou aucun.
-fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Nombre>, pas: Option<Nombre>, g: &Table, gabarit: Gabarit, ou: &str) -> R<Option<Paie>> {
+fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Montant>, pas: Option<Montant>, g: &Table, gabarit: Gabarit, ou: &str) -> R<Option<Paie>> {
     let (liste, net_imposable, pas) = match (liste, net_imposable, pas) {
         (None, None, None) => return Ok(None),
-        (Some(l), Some(n), Some(p)) => (l, n.0, p.0),
+        (Some(l), Some(n), Some(p)) => (l, n, p),
         _ => return Err(refus!("{} : `cotisations`, `net_imposable` et `pas` vont ensemble", ou)),
     };
     if gabarit != Gabarit::Spaiectacle {
@@ -705,10 +709,10 @@ fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Nombre>, p
         cotisations.push(CotisationPayee {
             famille,
             libelle: c.libelle,
-            base: if masquee { None } else { c.base.map(|n| n.0) },
-            taux_salarie: if masquee { None } else { c.taux_sal.map(|n| n.0) },
-            montant_salarie: c.montant_sal.0,
-            montant_employeur: c.montant_pat.0,
+            base: if masquee { None } else { c.base },
+            taux_salarie: if masquee { None } else { c.taux_sal },
+            montant_salarie: c.montant_sal,
+            montant_employeur: c.montant_pat,
         });
     }
     Ok(Some(Paie { cotisations, net_imposable, pas }))
@@ -819,18 +823,18 @@ const EXONERATIONS: &str = "EXONÉRATIONS ET ALLÈGEMENTS DE COTISATIONS";
 /// s'imprime pas ; une ligne sans aucun montant non plus (elle se lirait comme un titre).
 fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
     let mut out: Vec<RangB<String>> = Vec::new();
-    let montant = |x: Decimal| if x.is_zero() { String::new() } else { fr(x) };
+    let montant = |x: Montant| if x.est_nul() { String::new() } else { fr(x) };
     let mut k = 0;
     while k < p.cotisations.len() {
         let (famille, rendu) = p.cotisations[k].famille;
         let n = p.cotisations[k..].iter().take_while(|c| c.famille.0 == famille).count();
-        let groupe: Vec<&CotisationPayee> = p.cotisations[k..k + n].iter().filter(|c| !(c.montant_salarie.is_zero() && c.montant_employeur.is_zero())).collect();
+        let groupe: Vec<&CotisationPayee> = p.cotisations[k..k + n].iter().filter(|c| !(c.montant_salarie.est_nul() && c.montant_employeur.est_nul())).collect();
         k += n;
         if groupe.is_empty() {
             continue;
         }
         let seule = |x: Mesure, c: &CotisationPayee| -> RangB<String> {
-            let taux = c.taux_salarie.filter(|_| !c.montant_salarie.is_zero()).map(taux3).into_iter().collect();
+            let taux = c.taux_salarie.filter(|_| !c.montant_salarie.est_nul()).map(taux3).into_iter().collect();
             (x, c.libelle.clone(), famille, c.base.map(fr).into_iter().collect(), taux, montant(c.montant_salarie), montant(c.montant_employeur))
         };
         match rendu {
@@ -845,10 +849,10 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
                 out.push(r);
             }
             RenduB::Rang(libelle) => {
-                let bases: BTreeSet<Option<Decimal>> = groupe.iter().map(|c| c.base).collect();
+                let bases: BTreeSet<Option<Montant>> = groupe.iter().map(|c| c.base).collect();
                 let base = if bases.len() == 1 { bases.into_iter().flatten().map(fr).collect() } else { String::new() };
-                let s: Decimal = groupe.iter().map(|c| c.montant_salarie).sum();
-                let e: Decimal = groupe.iter().map(|c| c.montant_employeur).sum();
+                let s: Montant = groupe.iter().map(|c| c.montant_salarie).sum();
+                let e: Montant = groupe.iter().map(|c| c.montant_employeur).sum();
                 out.push((m("39"), libelle.into(), famille, base, String::new(), montant(s), montant(e)));
             }
         }
@@ -885,8 +889,8 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         if let Some(t) = titre {
             cotisations.push((m("33.9"), t.into(), "", vide(), vide(), vide(), vide(), vide()));
         }
-        let taux = |t: &Option<Decimal>| t.map(taux3).into_iter().collect::<String>();
-        let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
+        let taux = |t: &Option<Taux>| t.map(taux3).into_iter().collect::<String>();
+        let montant = |m: &Option<Montant>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), taux(te), montant(me), taux(ts), montant(ms)));
     }
     let cachets = c.periode.cachets > Cachets::ZERO;
@@ -894,7 +898,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         true => ("Cachets:", fr_quantite(c.periode.cachets)?, fr_quantite(c.annee.cachets)?),
         false => ("Heures:", fr_quantite(c.periode.heures.au_centieme())?, fr_quantite(c.annee.heures.au_centieme())?),
     };
-    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
+    let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
     // La page tient-elle ? Le pied finit a 72 points sous le net a payer, la signature est a 810.
     let bas = m("308") + m("11.2") * (lignes.len() + 1 + cotisations.len()) as i64 + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
     if bas > m("800") {
@@ -914,7 +918,12 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         cotisations,
         total: [fr(c.total_employeur), fr(c.total_salarie)],
         net: fr(c.net_avant_impot),
-        pas: [fr(c.net_imposable), format!("{:.3}", b.taux_pas.taux().decimal()), format!("{:.2}", c.pas), fr(c.annee.pas)],
+        pas: [
+            fr(c.net_imposable),
+            socle::grandeurs::ecrit::texte::dit(socle::grandeurs::decimales_ecrites(b.taux_pas.taux(), 3)),
+            socle::grandeurs::ecrit::texte::dit(c.pas.au_centime()),
+            fr(c.annee.pas),
+        ],
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
@@ -940,10 +949,10 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         if let Some(t) = titre {
             cotisations.push((m("39"), t.into(), "", vide(), vide(), vide(), vide()));
         }
-        let montant = |m: &Option<Decimal>| m.map(fr).into_iter().collect::<String>();
+        let montant = |m: &Option<Montant>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), ts.map(taux3).into_iter().collect(), montant(ms), montant(me)));
     }
-    let ligne = |l: &Ligne| (socle::texte::nombre_dit(l.quantite), l.libelle.clone(), fr(l.taux), fr(l.montant));
+    let ligne = |l: &Ligne| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
     let non_soumis: Vec<_> = b.non_soumis.iter().map(ligne).collect();
     let titres = cotisations.iter().filter(|c| c.0 < m("50")).count() as i64;
@@ -992,7 +1001,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         entete_pas: vec![(m("280.9"), "base"), (m("339"), "taux personnalisé"), (m("442.2"), "montant"), (m("502.7"), "cumul annuel")],
         pas: (
             "IMPOT SUR LE REVENU PRELEVE A LA SOURCE".into(),
-            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), fr(b.taux_pas.taux().decimal())), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
+            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), socle::texte::chiffres_de_taux(b.taux_pas.taux())), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
         ),
         net_imposable: Some((fr(c.net_imposable), fr(c.annee.net_imposable))),
         cumuls,
@@ -1020,7 +1029,7 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
         // Le premier bulletin de l'annee part de cumuls nuls.
         let fin = b.periode.fin();
         let annee = cumuls.entry((b.salarie, fin.annee())).or_insert_with(|| {
-            let z = Decimal::ZERO;
+            let z = Montant::ZERO;
             Cumuls { cachets: Cachets::ZERO, heures: Heures::ZERO, jours: Jours::ZERO, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
         });
         let c = calculer(b, annee)?;
