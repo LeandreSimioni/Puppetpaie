@@ -115,7 +115,9 @@ pub(crate) fn age(ctx: &Contexte, e: &Carte) -> R<Option<Anciennete>> {
 
 // ------------------------------------------------------------ le preavis
 
-pub struct Preavis {
+/// LE PREAVIS QUE LE SOLDE COMPTE pour une fin de contrat : sa duree, ce qu'en donnent la loi et la convention, et ce
+/// qui le dit en mots.
+pub struct PreavisCompte {
     /// Sa duree et d'ou elle vient ; aucune quand elle ne se compte pas (`pourquoi` le dit).
     pub duree: Option<DureeDuPreavis>,
     /// Ce que la loi en donne, et la convention, en mois de salaire.
@@ -165,7 +167,7 @@ fn terme_du_preavis(fin: &socle::date::Jour, mois: Coefficient) -> R<Option<socl
 }
 
 /// `age` : celui du salarie au dernier jour ecrit du contrat (`age`).
-pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>, age: Option<Anciennete>) -> R<Preavis> {
+pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete, motif: Option<MotifDeRupture>, age: Option<Anciennete>) -> R<PreavisCompte> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
@@ -177,7 +179,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Anciennete
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
     let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
     let categorie_dite: String = categorie.map(clauses::categorie_en_mots).into_iter().collect();
-    let mut out = Preavis { duree: None, legal, convention: conv_mois, dit: String::new(), pourquoi: None };
+    let mut out = PreavisCompte { duree: None, legal, convention: conv_mois, dit: String::new(), pourquoi: None };
     let rel = clauses::releve(idcc)?;
     let releve = rel.as_ref().is_some_and(|r| r.loi_seule(clauses::Section::Preavis).is_none());
     // La rupture anticipee d'un CDD par le salarie qui part pour un CDI (L1243-2) : un preavis en jours, que ni la loi du

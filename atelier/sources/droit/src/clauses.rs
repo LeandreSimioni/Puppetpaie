@@ -53,7 +53,7 @@ forme! {
         pub libelle: String,
         pub loi_seule: Option<BTreeMap<Section, String>>,
         pub categories: Option<Categories>,
-        pub preavis: Option<Preavis>,
+        pub preavis: Option<SectionDuPreavis>,
         pub indemnite_licenciement: Option<Licenciement>,
         pub rupture_conventionnelle: Option<RuptureConventionnelle>,
         pub mise_a_la_retraite: Option<MiseALaRetraite>,
@@ -111,8 +111,9 @@ fn preavis_par_categorie<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Optio
 }
 
 forme! {
-    /// Le preavis : par categorie, ou le meme pour toutes ; des motifs qui n'en ouvrent pas ; un supplement selon l'age.
-    pub struct Preavis {
+    /// Ce qu'une convention ecrit du preavis (une forme de `clauses-base.json`) : par categorie, ou le meme pour toutes ;
+    /// des motifs qui n'en ouvrent pas ; un supplement selon l'age. Ce qu'elle en dit pour un salarie : `PreavisDit`.
+    pub struct SectionDuPreavis {
         pub article: String,
         /// Les motifs de rupture (S21.G00.62.002) qui n'ouvrent pas ce preavis, chacun avec la phrase qui le dit.
         pub motifs_hors_preavis: Option<BTreeMap<MotifDeRupture, String>>,

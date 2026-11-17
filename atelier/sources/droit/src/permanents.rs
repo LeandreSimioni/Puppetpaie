@@ -41,7 +41,7 @@ forme! {
     pub struct Regles {
         pub conges_payes: CongesPayes,
         pub indemnite_precarite: Precarite,
-        pub preavis: Preavis,
+        pub preavis: ReglesDuPreavis,
         pub indemnite_licenciement: Licenciement,
         pub indemnites_de_rupture: IndemnitesDeRupture,
         pub regime_des_indemnites_de_rupture: Regime,
@@ -133,7 +133,9 @@ forme! {
 }
 
 forme! {
-    pub struct Preavis {
+    /// Ce que la loi dit du preavis d'un permanent (la section `preavis` de `permanents-base.json`) : une forme ; le
+    /// preavis d'une fin de contrat est `engagement::saisie::Preavis`, sa duree `engagement::solde::DureeDuPreavis`.
+    pub struct ReglesDuPreavis {
         pub tranches: Vec<TrancheDePreavis>,
         pub motifs_sans_preavis: ParMotif,
         pub rupture_anticipee_cdd: RuptureAnticipeeCdd,

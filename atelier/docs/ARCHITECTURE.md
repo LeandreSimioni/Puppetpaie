@@ -171,8 +171,7 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut` (la ligne calculée), `importe::LigneDeRemuneration` (celle d'une paie du mois qu'un état lit, recopiée d'une `LigneBrut` pour une paie validée) ; une ligne imprimée importée (`importe::LigneImprimee`, la forme de la zone `importe`) se rattache deux fois, autrement (`LignePaie::Importee` : rubrique et montant ; `importe::remuneration_lue` : rubrique et paiement) |
 | contrat (ce que l'engagement fait signer : l'engagement lui-même, que le contrat, l'avenant et le certificat lisent dans sa paie, `Paie.engagement` ; ce que seule la saisie dit du contrat écrit, `engagement::ContratEcrit` ; ses formes, la paie écrite `FormeDEngagement` et le contrat parti `envois::ligne::ContratParti`) | `Engagement` | à unifier (#419) : `aer::PaieAer` (la période d'emploi qu'une paie déclare, projetée pour l'AER) |
 | contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`) | `ContratDeclare` | à unifier (#419) : `routes::mois::Atteste` (le calendrier refait, autrement, le découpage mois par mois d'un permanent du registre) |
-| versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
-| préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
+| versement mobilité (son taux, la commune de l'établissement, l'autorité qui l'institue ; ses formes : la case d'une fiche, `droit::fiche::VersementMobilite`, ce que la surcouche du barème écrit, `forme_bareme::VersementMobiliteEcrit`, `VersementMobiliteTaux`, lue par la seule `bareme::versement_mobilite`) | `droit::bareme::VersementMobilite` | à unifier (#419) : la case d'un établissement recopiée dans la forme du barème pour y être relue (`bareme::surcharger`) |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
 **Le temps**
@@ -1083,6 +1082,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |
+| préavis d'une fin de contrat (son type, S21.G00.63.001, et ses dates, que la carte saisit) | `Preavis` | `engagement/src/saisie.rs` |
+| préavis que le solde compte (sa durée, ce qu'en donnent la loi et la convention, et ce qui le dit en mots) | `PreavisCompte` | `engagement/src/solde.rs` |
+| préavis que la convention dit pour un salarié (sa durée en mois de salaire, en jours quand elle le dit ainsi, son article, ou pourquoi elle n'en donne pas ; ce que la convention en écrit est une forme de `clauses-base.json`, `SectionDuPreavis`, et ce que la loi en dit, une forme de `permanents-base.json`, `droit::permanents::ReglesDuPreavis`) | `PreavisDit` | `droit/src/clauses.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
 | fiche proposée (par l'import, l'une des trois, typée) | `FicheProposee` | `import/src/proposee.rs` |

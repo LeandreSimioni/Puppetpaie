@@ -2205,7 +2205,7 @@ pub fn lue_sans_paie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Vec<calcul::
 /// et la convention, et laquelle s'applique (`solde::duree_du_preavis`), a l'anciennete du contrat et a l'age du salarie
 /// (`solde::age`).
 #[cfg(feature = "ecran")]
-pub fn preavis(ctx: &Contexte, e: &saisie::Carte, contrat: &Periode, motif: Option<MotifDeRupture>) -> R<solde::Preavis> {
+pub fn preavis(ctx: &Contexte, e: &saisie::Carte, contrat: &Periode, motif: Option<MotifDeRupture>) -> R<solde::PreavisCompte> {
     solde::duree_du_preavis(ctx, e, contrat.anciennete(), motif, solde::age(ctx, e)?)
 }
 
