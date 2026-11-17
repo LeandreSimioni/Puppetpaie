@@ -17,6 +17,7 @@ use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
 use socle::forme::Court;
+use socle::grandeurs::lu::court;
 use socle::grandeurs::{Coefficient, HeuresParUnite, Montant, MontantUnitaire, Taux};
 use socle::num::Decimal;
 use socle::mois::Annee;
@@ -63,7 +64,7 @@ pub struct ComposantsDates(pub Vec<Taux>);
 
 impl<'de> Deserialize<'de> for ComposantsDates {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        datee::valeur::<D, Vec<Court>>(d).map(|v| ComposantsDates(v.into_iter().map(|c| Taux::du_decimal(c.0)).collect()))
+        datee::valeur::<D, Vec<court::Lue<Taux>>>(d).map(|v| ComposantsDates(v.into_iter().map(|c| c.0).collect()))
     }
 }
 
@@ -88,7 +89,7 @@ pub struct TauxDate(pub Taux);
 
 impl<'de> Deserialize<'de> for TauxDate {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        datee::valeur::<D, Court>(d).map(|c| TauxDate(Taux::du_decimal(c.0)))
+        datee::valeur::<D, court::Lue<Taux>>(d).map(|c| TauxDate(c.0))
     }
 }
 

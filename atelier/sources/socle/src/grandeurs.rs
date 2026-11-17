@@ -1331,6 +1331,17 @@ pub mod lu {
             crate::forme::court(d).map(<G as crate::grandeurs::Scelle>::du)
         }
 
+        /// Une grandeur lue ainsi, la ou un champ ne se pose pas (une valeur datee, un element d'une liste ou d'un
+        /// tableau ecrit `[bas, haut, taux]`) ; `Option<Lue<G>>` : absente ou nulle, elle est vide.
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct Lue<G>(pub G);
+
+        impl<'de, G: Grandeur> serde::Deserialize<'de> for Lue<G> {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lue<G>, D::Error> {
+                deserialize(d).map(Lue)
+            }
+        }
+
         /// Un `Option` lu ainsi : absent (avec `#[serde(default)]`) ou nul, il est vide.
         pub mod option {
             use crate::grandeurs::Grandeur;

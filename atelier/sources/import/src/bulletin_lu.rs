@@ -56,6 +56,7 @@ use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
 use droit::forme_bareme::FamilleDeCotisation;
+use engagement::ecarts::RegroupementDeComparaison;
 use engagement::importe::LogicielDUnBulletin;
 
 /// `n` points.
@@ -617,7 +618,7 @@ pub struct Table {
     /// (famille, titres canoniques).
     familles: Vec<(FamilleDeCotisation, Vec<String>)>,
     /// (cotisation, libelles canoniques) : la cotisation qu'une ligne imprimee est.
-    cotisations: Vec<(String, Vec<String>)>,
+    cotisations: Vec<(RegroupementDeComparaison, Vec<String>)>,
     /// (cumul, libelles canoniques).
     cumuls: Vec<(NomDeCumul, Vec<String>)>,
     /// (nom, signature : les libelles qui doivent tous se trouver).
@@ -642,7 +643,7 @@ struct TableEcrite {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     familles: Vec<(FamilleDeCotisation, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    cotisations: Vec<(String, Libelles)>,
+    cotisations: Vec<(RegroupementDeComparaison, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cumuls: Vec<(NomDeCumul, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -836,9 +837,9 @@ impl Table {
 
     /// La cotisation que la ligne de cotisation imprimee `libelle` est (`cotisations` de la table) ; `None` : un libelle
     /// que la table ne connait pas.
-    pub fn cotisation(&self, libelle: &str) -> Option<&str> {
+    pub fn cotisation(&self, libelle: &str) -> Option<&RegroupementDeComparaison> {
         let c = canon(libelle);
-        self.cotisations.iter().find(|(_, l)| l.iter().any(|x| *x == c)).map(|(k, _)| k.as_str())
+        self.cotisations.iter().find(|(_, l)| l.iter().any(|x| *x == c)).map(|(k, _)| k)
     }
 
     /// La famille (`familles` de la table) que le titre imprime `libelle` nomme ; `None` : un titre qu'elle ne connait pas.
@@ -964,7 +965,7 @@ pub struct Cotisation {
     /// LA COTISATION QUE LA LIGNE EST, dans les mots du moteur (`cotisations` de la table, par son libelle : l'identifiant
     /// du bareme, ou le grain auquel le modele de l'arrete du 25/02/2016 regroupe plusieurs lignes) ; `None` : un libelle
     /// que la table ne connait pas, garde tel quel et non qualifie.
-    pub cotisation: Option<String>,
+    pub cotisation: Option<RegroupementDeComparaison>,
     /// La base imprimee, un nombre lu : des euros, ou des heures (la deduction des heures supplementaires), ce que sa
     /// cotisation dit (`engagement::calcul::BaseDeCotisation::imprimee`).
     #[serde(serialize_with = "nombre_lu")]
@@ -2502,7 +2503,7 @@ impl Corps {
 fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: String, r: &RangCorps) -> Cotisation {
     Cotisation {
         famille: famille.clone(),
-        cotisation: table.cotisation(&libelle).map(str::to_string),
+        cotisation: table.cotisation(&libelle).cloned(),
         libelle,
         base: r.colonne(Genre::Base, None).map(socle::forme::Nombre),
         taux_employeur: r.taux(Some(Part::Employeur)),

@@ -173,7 +173,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`) | `ContratDeclare` | à unifier (#419) : `routes::mois::Atteste` (le calendrier refait, autrement, le découpage mois par mois d'un permanent du registre) |
 | versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
 | préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
-| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie` |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
 
 **Le temps**
@@ -336,7 +335,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
 | plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
 | taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
-| nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu` | `socle/src/forme.rs` |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier`, qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
+| nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu` | `socle/src/forme.rs` |
 
 **Le détail**
 
@@ -1113,9 +1113,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
 | case qu'une rubrique fait saisir | `CaseSaisie` | `droit/src/catalogue.rs` |
 | origine d'une rubrique | `OrigineDeRubrique` | `droit/src/catalogue.rs` |
-| cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
+| cotisation du bulletin | `IdDeCotisation` | `droit/src/forme_bareme.rs` |
 | famille d'une cotisation | `FamilleDeCotisation` | `droit/src/forme_bareme.rs` |
-| regroupement de la comparaison | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
+| regroupement de la comparaison (aussi ce que la table de lecture des bulletins dit qu'une ligne de cotisation imprimée est, lu à sa porte : `cotisations` de `bulletins-lecture-base.json`) | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
 | taux AT/MP (la ligne datée de la case : code risque, taux, depuis, provenance, notification ; le barème d'une année la porte, `Pile.taux_atmp`, et le refus d'un établissement à part, `Pile.taux_atmp_manque`. Ses formes, à leur porte : la notification d'une CARSAT, `envois::retours::TauxAtmpNotifie`, que la seule `routes::atmp::recue` fait ligne de la case ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxAtmpAnnonce` ; la ligne d'un CTP qui prend le taux du barème, `droit::organismes::TauxAtDuBareme`, une forme de `organismes-base.json`) | `droit::fiche::TauxAtmp` | `droit/src/fiche.rs` |
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
@@ -1127,7 +1127,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
-| emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
+| emploi (un métier par son code ; sa fiche vient du catalogue ou de la nomenclature, `FicheDuMetier`, dont `FicheDuCatalogue` et `EmploiFt` sont les formes des fichiers ; les sept champs qu'il fait déclarer, `ChampsDuMetier` ; un métier d'un déroulant, `MetierDuDeroulant`, une réponse) | `Metier` ; à unifier (#419) : `EmploiEngagement` (les sept champs que l'engagement redit, un à un, `Option`) | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |

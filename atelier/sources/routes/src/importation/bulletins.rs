@@ -2080,12 +2080,12 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         b.cotisations
             .iter()
             .map(|c| {
-                let cotisation = c.cotisation.as_deref().map(RegroupementDeComparaison::lire).transpose()?;
+                let cotisation = c.cotisation.clone();
                 let id = match &cotisation {
                     Some(RegroupementDeComparaison::Cotisation(id)) => Some(id),
                     Some(_) | None => None,
                 };
-                Ok(CotisationImprimee {
+                CotisationImprimee {
                     famille: c.famille.clone(),
                     libelle: c.libelle.clone(),
                     base: c.base.map(|n| BaseDeCotisation::imprimee(id, n)),
@@ -2095,9 +2095,9 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
                     taux_salarie: c.taux_salarie,
                     montant_salarie: c.montant_salarie,
                     hors_total: c.hors_total,
-                })
+                }
             })
-            .collect::<R<_>>()?,
+            .collect(),
     );
     // Le statut et l'emploi que CE bulletin imprime : un salarie artiste un mois peut etre technicien, ou non cadre au
     // regime general, un autre ; la comparaison des calculs lit celui de la paie (`engagement::ecarts`), pas la fiche.
