@@ -255,9 +255,8 @@ impl Registre {
                 tous.push(lu(nir, &c, periode, Attestant::Historique));
                 continue;
             }
-            // Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat.
-            for (mois, p) in i.paies() {
-                let periode = engagement::contrat_dans_le_mois(&contrat, *mois, &quel)?;
+            // Le contrat d'un permanent s'atteste mois par mois (`Importe::mois_par_mois`).
+            for (periode, p) in i.mois_par_mois(&contrat, &quel)? {
                 let mut a = lu(nir, &c, periode, Attestant::Historique);
                 let compte = &mut a.ligne.contrat;
                 (compte.heures, compte.cachets, compte.jours, compte.brut) = (p.heures, p.cachets, p.jours, p.brut);

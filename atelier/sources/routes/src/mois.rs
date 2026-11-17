@@ -797,9 +797,9 @@ fn dit_du_contrat(periode: &Periode, cachets: Option<Cachets>, heures: Option<He
     dit
 }
 
-/// UN CONTRAT QU'UN ENGAGEMENT IMPORTE ATTESTE (`engagement::importe::Importe::contrat_lu`) ; celui d'un permanent, mois
-/// par mois : chaque paie, aux jours qu'elle paie et avec ce que son bulletin compte. Ce que l'attestation ne dit pas
-/// reste vide.
+/// UNE LIGNE DU CALENDRIER : un contrat qu'un engagement importe atteste (`engagement::importe::Importe::contrat_lu`) ;
+/// celui d'un permanent, mois par mois, comme le registre de l'import l'atteste (`Importe::mois_par_mois`) : chaque mois
+/// verse, aux dates du mois dans le contrat, avec ce que son bulletin compte. Ce que l'attestation ne dit pas reste vide.
 struct Atteste {
     salarie: IdSalarie,
     periode: Periode,
@@ -829,14 +829,10 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             }
             continue;
         }
-        for (&mois_paye, p) in i.paies() {
-            // Une paie d'un permanent couvre son mois, aux jours du contrat qu'elle dit dans le mois, sinon du premier au
-            // dernier jour.
-            let le_mois = Periode::du_mois(mois_paye);
-            let periode = match p.periode.and_then(|o| o.croise(&le_mois)) {
-                Some(x) => x,
-                None => le_mois,
-            };
+        // Un permanent dont l'engagement ne dit pas le debut ne se place dans aucun mois (le registre de l'import le dit
+        // muet).
+        let Some(contrat) = c.periode else { continue };
+        for (periode, p) in i.mois_par_mois(&contrat, &format!("le contrat de l'historique de {}", salarie))? {
             out.push(atteste(periode, (p.cachets, p.heures, p.jours)));
         }
     }

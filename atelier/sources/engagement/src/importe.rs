@@ -545,6 +545,14 @@ impl Importe {
         &self.pieces().paies
     }
 
+    /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste : chaque mois
+    /// verse, aux dates du mois dans le contrat (`crate::contrat_dans_le_mois`, qui refuse un mois verse hors de ses
+    /// dates), avec la paie de ce mois. `contrat` : ses dates (`ContratLu::periode`, lues de l'engagement : `contrat_lu`) ;
+    /// `qui` : le contrat tel qu'un refus le nomme. Le registre de l'import et le calendrier des mois passes le lisent.
+    pub fn mois_par_mois(&self, contrat: &PeriodeOuverte, qui: &str) -> R<Vec<(socle::date::Periode, &PaieVersee)>> {
+        self.paies().iter().map(|(m, p)| Ok((crate::contrat_dans_le_mois(contrat, *m, qui)?, p))).collect()
+    }
+
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste
     /// (`routes::importation::bulletins` : une AEM, un certificat Congés Spectacles, un bulletin qui porte une marque du
     /// spectacle). `None` : elle reste a dire (`a_dire`).
