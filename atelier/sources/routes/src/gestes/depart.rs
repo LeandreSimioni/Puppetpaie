@@ -25,7 +25,7 @@ use crate::dossier_salarie::cle_de;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use documents::conges_spectacles::{self, PaieCs};
+use documents::conges_spectacles::{self, ContratDuCertificat};
 use declarations::produire_regularisations::{self as regularisations, Reg};
 use crate::etapes::Moteur;
 use compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
@@ -834,7 +834,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
     // Dans l'ordre des salaries demandes ; un salarie qu'ils ne nomment pas vient apres eux.
     pour_cs.sort_by_key(|(cle, _, _)| (cles.iter().position(|c| c == cle).is_none(), cles.iter().position(|c| c == cle)));
     let mut prochain_ce: Option<NumeroDeCertificat> = None;
-    let mut certificats: Vec<(usize, &PaieCs, NumeroDeCertificat)> = Vec::new();
+    let mut certificats: Vec<(usize, &ContratDuCertificat, NumeroDeCertificat)> = Vec::new();
     for (cle, debut, pc) in &pour_cs {
         let Some(pc) = pc else { continue };
         let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.contrat().debut() == *debut) else { continue };
@@ -846,7 +846,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
                     None => documents::ecrire_documents::prochain_certificat(ctx)?,
                 };
                 // Un numero par periode de conges du contrat, a partir de `n`.
-                if let Some(dernier) = n.suite().zip(conges_spectacles::decouper(&pc.engagement)?).map(|(x, _)| x).last() {
+                if let Some(dernier) = n.suite().zip(conges_spectacles::decouper(pc)?).map(|(x, _)| x).last() {
                     prochain_ce = Some(dernier.suivant());
                     faits.reserves.enregistrer_certificat(an, dernier);
                     a_poser.entry(i).or_default().1 = Some((n, dernier));
@@ -897,7 +897,7 @@ struct Impression<'a> {
     paies: &'a [Paie],
     numeros: &'a [Option<NumeroDeBulletin>],
     rectificatifs: &'a HashMap<usize, documents::bulletin::Rectificatif>,
-    certificats: &'a [(usize, &'a PaieCs, NumeroDeCertificat)],
+    certificats: &'a [(usize, &'a ContratDuCertificat, NumeroDeCertificat)],
 }
 
 /// Le nom d'une piece de l'archive du mois `etiq` : le prefixe de sa sorte, l'etiquette du mois, puis `fin`
@@ -955,7 +955,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
         if !siennes.is_empty() && a_ecrire(&piece) {
             documents::fabrique::ecrire_pdf(&bulletins(&siennes, Some(paies))?, &piece)?;
         }
-        let ses_certificats: Vec<(&PaieCs, NumeroDeCertificat)> = imp.certificats.iter().filter(|(i, _, _)| cle_de(&paies[*i]) == *cle).map(|(_, pc, n)| (*pc, *n)).collect();
+        let ses_certificats: Vec<(&ContratDuCertificat, NumeroDeCertificat)> = imp.certificats.iter().filter(|(i, _, _)| cle_de(&paies[*i]) == *cle).map(|(_, pc, n)| (*pc, *n)).collect();
         let piece = envois::envoi::chemin_de_la_piece(documents::PieceDuMois::CertificatCs, &sortie, cle, &etiq);
         if !ses_certificats.is_empty() && a_ecrire(&piece) {
             let description = conges_spectacles::description_numerotee(&ses_certificats, ent)?;
@@ -967,7 +967,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
         documents::fabrique::ecrire_pdf(&bulletins(&archivees, None)?, &archive)?;
     }
     if !imp.certificats.is_empty() {
-        let mut paires: Vec<(&PaieCs, NumeroDeCertificat)> = imp.certificats.iter().map(|(_, pc, n)| (*pc, *n)).collect();
+        let mut paires: Vec<(&ContratDuCertificat, NumeroDeCertificat)> = imp.certificats.iter().map(|(_, pc, n)| (*pc, *n)).collect();
         paires.sort_by_key(|(_, n)| *n);
         let archives = documents::PieceDuMois::CertificatsCs.dossier().sous(&sortie);
         let archive = archives.join(archive_du_mois(SorteDePieceProduite::CertificatsCs, &etiq, ".pdf"));
@@ -1563,7 +1563,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
         let (mut pour_cs, _) = crate::dossier_salarie::certificats_dus(&ctx, &paies)?;
         // Dans l'ordre des salaries de l'envoi ; un salarie que l'envoi ne nomme pas vient apres eux.
         pour_cs.sort_by_key(|(cle, _, _)| (cles.iter().position(|c| c == cle).is_none(), cles.iter().position(|c| c == cle)));
-        let mut certificats: Vec<(usize, &PaieCs, NumeroDeCertificat)> = Vec::new();
+        let mut certificats: Vec<(usize, &ContratDuCertificat, NumeroDeCertificat)> = Vec::new();
         for (cle, debut, pc) in &pour_cs {
             let Some(pc) = pc else { continue };
             let Some(i) = (0..paies.len()).find(|i| cle_de(&paies[*i]) == *cle && paies[*i].engagement.contrat().debut() == *debut) else { continue };

@@ -1066,6 +1066,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
 | ligne de cotisation (calculée) | `engagement::calcul::LigneCotisation` | `engagement/src/calcul.rs` |
