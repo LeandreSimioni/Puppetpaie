@@ -1,6 +1,7 @@
 //! L'AER remplie et signee par la fabrique (`documents::aer`), sur une attestation FICTIVE : la forme relue (le cadre 5
-//! rempli, les chiffres de France Travail intacts), les chiffres egaux aux paies (une periode en trop ou en moins est un
-//! ecart, un contrat sur deux mois se compare colonne par colonne), et le refus de signer ce qui ne concorde pas.
+//! rempli, les chiffres de France Travail intacts, un contrat sur deux mois lu colonne par colonne), et le refus de
+//! signer ce qu'aucune paie n'explique. Les chiffres egaux aux paies se jouent au moteur (`moteur/tests/routes/aer.rs`) :
+//! une paie ne se fabrique que sur une compagnie.
 //!
 //! Le PDF d'essai est ecrit ici en octets bruts (catalogue, AcroForm, trois
 //! pages, champs widgets, table xref) : il imite l'AER de France Travail --
@@ -9,7 +10,7 @@
 //! cachet) -- sans emprunter un octet a une vraie attestation. La compagnie est
 //! inventee de bout en bout.
 
-use documents::aer::{self, Authentification, Echec, PaieAer};
+use documents::aer::{self, Authentification, Echec};
 use socle::date::Jour;
 use fabrique_pdf::formulaire::{ChampLu, ValeurLue};
 use fabrique_pdf::mesure::{mesure as m, Mesure};
@@ -166,21 +167,7 @@ fn attestation() -> Vec<u8> {
     formulaire(&champs_aer(2, 12))
 }
 
-fn paie(numero: &str, debut: Jour, fin: Jour, cachets: u32, heures: u32) -> PaieAer {
-    use socle::grandeurs::{Cachets, Heures};
-    use socle::num::Decimal;
-    PaieAer { numero: engagement::numeros::NumeroContrat::lire(numero).unwrap(), periode: socle::date::Periode::du_au(debut, fin).unwrap(), cachets: Cachets::du_decimal(Decimal::from(cachets)), heures: Some(Heures::du_decimal(Decimal::from(heures))) }
-}
-
-fn paies_justes() -> Vec<PaieAer> {
-    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), 2, 12), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), 1, 0)]
-}
-
-fn paies_fausses() -> Vec<PaieAer> {
-    vec![paie("FA1.26.15", jour(2026, 8, 1), jour(2026, 8, 31), 2, 24), paie("MA2.26.15", jour(2026, 8, 5), jour(2026, 8, 6), 1, 0)]
-}
-
-fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[PaieAer]>, forcer: bool, signature: Option<&str>, cachet: Option<&str>) -> Result<Vec<u8>, Echec> {
+fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[engagement::calcul::Paie]>, forcer: bool, signature: Option<&str>, cachet: Option<&str>) -> Result<Vec<u8>, Echec> {
     aer::authentifier(pdf, &Authentification { ent, aujourdhui: jour(2026, 10, 1), signature, paies, forcer, cachet_fichier: cachet.map(std::path::Path::new) })
 }
 
@@ -193,28 +180,11 @@ fn valeur_de<'a>(champs: &'a [ChampLu], nom: &str) -> &'a ValeurLue {
     &le_champ(champs, nom).valeur
 }
 
-// ------------------------------------------------------------------ verifier
-
-/// Une periode imprimee qu'aucune paie n'explique, ou une periode de la paie que l'attestation ne porte pas : signer
-/// certifierait exacte une attestation qui ajoute ou retire une periode d'emploi. C'est un ecart, jamais un silence.
-#[test]
-fn verifier_une_periode_en_trop_ou_en_moins_est_un_ecart() {
-    let e = aer::verifier(&attestation(), &paies_justes()[..1]).unwrap();
-    assert_eq!(e.len(), 1, "{:?}", e);
-    assert!(e[0].contains("MA2.26.15") && e[0].contains("aucune paie"), "{:?}", e);
-    let mut plus = paies_justes();
-    plus.push(paie("FA1.26.15", jour(2026, 7, 1), jour(2026, 7, 31), 9, 99));
-    let e = aer::verifier(&attestation(), &plus).unwrap();
-    assert_eq!(e.len(), 1, "{:?}", e);
-    assert!(e[0].contains("2026-07-01") && e[0].contains("ne porte pas"), "{:?}", e);
-    // Le meme contrat sous un autre numero (le compteur d'aujourd'hui, pas celui de la DSN) ne s'explique pas.
-    let e = aer::verifier(&attestation(), &[paie("FA1.26.18", jour(2026, 8, 1), jour(2026, 8, 31), 2, 12), paies_justes()[1].clone()]).unwrap();
-    assert_eq!(e.len(), 2, "{:?}", e);
-}
+// ------------------------------------------------------------------ lire
 
 /// UN CONTRAT SUR DEUX MOIS (la forme d'une vraie AER d'octobre 2026, depot prive `reference-privee/exemples/`) : une
-/// colonne par mois, le numero du contrat imprime dans la premiere seulement. Chaque colonne se compare a la paie de
-/// son mois, sous le numero declare.
+/// colonne par mois, le numero du contrat imprime dans la premiere seulement. Chaque colonne se lit sous le numero
+/// declare, et ses heures telles qu'elle les imprime.
 fn deux_mois(heures_oct: u32) -> Vec<u8> {
     let mut c = Vec::new();
     let colonnes = [("29/09/2026", "30/09/2026", Some("SI2.26.19"), 8), ("01/10/2026", "16/10/2026", None, heures_oct)];
@@ -232,35 +202,34 @@ fn deux_mois(heures_oct: u32) -> Vec<u8> {
 }
 
 #[test]
-fn verifier_un_contrat_sur_deux_mois_colonne_par_colonne() {
-    let paies = [paie("SI2.26.19", jour(2026, 9, 29), jour(2026, 9, 30), 0, 8), paie("SI2.26.19", jour(2026, 10, 1), jour(2026, 10, 16), 0, 10)];
+fn lire_un_contrat_sur_deux_mois_colonne_par_colonne() {
     let q = aer::lire_quantites(&aer::champs(&deux_mois(10)).unwrap()).unwrap();
     assert_eq!(q.iter().map(|l| l.numero.as_ref().map(engagement::numeros::NumeroContrat::as_str)).collect::<Vec<_>>(), [Some("SI2.26.19"), Some("SI2.26.19")], "la suite du contrat garde son numero");
-    assert_eq!(aer::verifier(&deux_mois(10), &paies).unwrap(), Vec::<String>::new());
-    let e = aer::verifier(&deux_mois(12), &paies).unwrap();
-    assert_eq!(e.len(), 1, "{:?}", e);
-    assert!(["SI2.26.19", "2026-10-01", "12 heures", "10"].iter().all(|x| e[0].contains(x)), "{:?}", e);
-    // La paie d'octobre seule (septembre oublie) : la colonne de septembre ne s'explique pas.
-    let e = aer::verifier(&deux_mois(10), &paies[1..]).unwrap();
-    assert_eq!(e.len(), 1, "{:?}", e);
-    assert!(e[0].contains("2026-09-29"), "{:?}", e);
+    assert_eq!(q.iter().map(|l| (l.debut, l.fin)).collect::<Vec<_>>(), [(Some(jour(2026, 9, 29)), Some(jour(2026, 9, 30))), (Some(jour(2026, 10, 1)), Some(jour(2026, 10, 16)))]);
+    assert_eq!(q.iter().map(|l| l.heures).collect::<Vec<_>>(), [Some(socle::grandeurs::Heures::fixes(8)), Some(socle::grandeurs::Heures::fixes(10))]);
 }
 
 // ------------------------------------------------------------------ authentifier
 
+/// Une periode imprimee qu'aucune paie n'explique : signer certifierait exacte une attestation qui ajoute une periode
+/// d'emploi. C'est un ecart, jamais un silence, et rien ne se signe.
 #[test]
-fn authentifier_refuse_une_attestation_qui_ne_concorde_pas() {
-    let r = signer(&attestation(), &fiche(), Some(&paies_fausses()), false, None, None);
+fn authentifier_refuse_une_attestation_qu_aucune_paie_n_explique() {
+    let r = signer(&attestation(), &fiche(), Some(&[][..]), false, None, None);
     match r {
-        Err(Echec::Ecarts(e)) => assert!(e[0].contains("FA1.26.15"), "{:?}", e),
+        Err(Echec::Ecarts(e)) => {
+            assert_eq!(e.len(), 2, "{:?}", e);
+            assert!(e[0].contains("FA1.26.15") && e[1].contains("MA2.26.15") && e.iter().all(|x| x.contains("aucune paie")), "{:?}", e);
+        }
         autre => panic!("une attestation fausse a ete signee : {:?}", autre.map(|o| o.len())),
     }
 }
 
+/// Signer sans regarder les paies (`paies: None`) : possible, mais il faut le vouloir.
 #[test]
 fn authentifier_remplit_le_cadre_5_et_ne_touche_pas_aux_chiffres() {
     let avant = aer::champs(&attestation()).unwrap();
-    let signe = signer(&attestation(), &fiche(), Some(&paies_justes()), false, None, None).unwrap();
+    let signe = signer(&attestation(), &fiche(), None, false, None, None).unwrap();
     let apres = aer::champs(&signe).unwrap();
     let attendu = [
         ("EMPLOYEUR_NOM", "MARTIN"),
@@ -290,5 +259,4 @@ fn authentifier_remplit_le_cadre_5_et_ne_touche_pas_aux_chiffres() {
     assert_eq!(valeur_de(&apres, "EMPLOYEUR_CACHET"), &ValeurLue::Rien);
     // le contenu qu'on lit toujours : l'attestation ne se lit pas autrement
     assert_eq!(aer::lire_quantites(&apres).ok(), aer::lire_quantites(&avant).ok());
-    assert_eq!(aer::verifier(&signe, &paies_justes()).unwrap(), Vec::<String>::new());
 }

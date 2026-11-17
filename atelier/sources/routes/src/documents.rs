@@ -342,7 +342,7 @@ fn paies_de_la_periode(ctx: &Contexte, periode: Mois) -> R<Vec<engagement::calcu
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). `None` : la
 /// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
 /// ne se lisent pas refusent la comparaison.
-fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<documents::aer::PaieAer>>> {
+fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<engagement::calcul::Paie>>> {
     if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
         return Ok(None);
     }
@@ -434,7 +434,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             imprime.extend(documents::aer::lire_quantites(&champs)?);
         }
         if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle)? {
-            let ecarts = documents::aer::ecarts(&imprime, &attendues);
+            let ecarts = documents::aer::ecarts(&imprime, &attendues)?;
             if !ecarts.is_empty() && !forcer {
                 // Une seule fausse et rien ne part.
                 fait.refusees.push((cle, periode, ecarts));

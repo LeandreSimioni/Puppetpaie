@@ -169,7 +169,6 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | notion | son type | aujourd'hui |
 |---|---|---|
 | ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut` (la ligne calculée), `importe::LigneDeRemuneration` (celle d'une paie du mois qu'un état lit, recopiée d'une `LigneBrut` pour une paie validée) ; une ligne imprimée importée (`importe::LigneImprimee`, la forme de la zone `importe`) se rattache deux fois, autrement (`LignePaie::Importee` : rubrique et montant ; `importe::remuneration_lue` : rubrique et paiement) |
-| contrat (ce que l'engagement fait signer : l'engagement lui-même, que le contrat, l'avenant et le certificat lisent dans sa paie, `Paie.engagement` ; ce que seule la saisie dit du contrat écrit, `engagement::ContratEcrit` ; ses formes, la paie écrite `FormeDEngagement` et le contrat parti `envois::ligne::ContratParti`) | `Engagement` | à unifier (#419) : `aer::PaieAer` (la période d'emploi qu'une paie déclare, projetée pour l'AER) |
 | contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`) | `ContratDeclare` | à unifier (#419) : `routes::mois::Atteste` (le calendrier refait, autrement, le découpage mois par mois d'un permanent du registre) |
 | versement mobilité (son taux, la commune de l'établissement, l'autorité qui l'institue ; ses formes : la case d'une fiche, `droit::fiche::VersementMobilite`, ce que la surcouche du barème écrit, `forme_bareme::VersementMobiliteEcrit`, `VersementMobiliteTaux`, lue par la seule `bareme::versement_mobilite`) | `droit::bareme::VersementMobilite` | à unifier (#419) : la case d'un établissement recopiée dans la forme du barème pour y être relue (`bareme::surcharger`) |
 | phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
@@ -1021,7 +1020,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | notion | son type | déclaré dans |
 |---|---|---|
 | engagement | `Engagement` | `engagement/src/lib.rs` |
-| contrat | deux notions, en tête du glossaire : « contrat (ce que l'engagement fait signer) », `Engagement` ; « contrat déclaré ou attesté », `ContratDeclare` | — |
+| contrat (ce que l'engagement fait signer) | aucun type : ce n'est pas une donnée, c'est le document qu'on fabrique depuis l'engagement validé (`Engagement`), comme le bulletin depuis la paie (le contrat, l'avenant, le certificat et l'AER lisent la `Paie` et son engagement ; l'ancien texte d'un avenant, la paie que la version partie a écrite, `etats::paie_ecrite_relue`). Ce que seule la saisie dit du contrat écrit : `engagement::ContratEcrit` ; ses formes : la paie écrite, `FormeDEngagement`, et le contrat parti, `envois::ligne::ContratParti`. Ce qu'une pièce ou un organisme dit d'un contrat est une autre notion : « contrat déclaré ou attesté », `ContratDeclare` | — |
 | acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
@@ -1345,7 +1344,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **source de la durée d'un préavis** : le motif de la rupture (aucun préavis), la loi (L1234-1), ou l'article de la
   convention ; dite par `DureeDuPreavis::qui`.
 - **durée d'un préavis** : une durée qui se compte, en mois, avec sa source, l'une n'allant pas sans l'autre
-  (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit). Ses mois sont des mois de salaire,
+  (`PreavisCompte.duree` ; aucune quand elle ne se compte pas, `PreavisCompte.pourquoi` le dit). Ses mois sont des mois de salaire,
   ce que paie son indemnité compensatrice : un `Coefficient` (la part du mois que sa ligne paie), de la loi
   (`permanents::preavis_mois`, des mois entiers ; zéro : le motif n'en ouvre pas), de la convention
   (`clauses::PreavisDit.mois`, une fraction quand elle le dit en jours, rendus en mois de trente jours,
