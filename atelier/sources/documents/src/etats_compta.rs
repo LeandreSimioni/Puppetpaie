@@ -239,7 +239,7 @@ fn libelle_de(plan: &Plan, e: &Ecriture) -> Option<String> {
 /// Une ligne d'ecriture pour un tableau.
 fn ligne_de(e: &Ecriture, plan: &Plan) -> Ligne {
     let mut l = Ligne::nouvelle();
-    l.t(C::Journal, e.journal.to_string()).t(C::Date, e.date.jj_mm_aaaa()).t(C::Piece, e.piece.clone()).t(C::Compte, compte_de(e).to_string());
+    l.t(C::Journal, e.journal.to_string()).t(C::Date, e.date.jj_mm_aaaa()).t(C::Piece, e.piece()).t(C::Compte, compte_de(e).to_string());
     l.ot(C::LibelleCompte, libelle_de(plan, e)).t(C::Libelle, e.libelle.clone());
     l.om(C::Debit, Some(e.debit).filter(|m| !m.est_nul()));
     l.om(C::Credit, Some(e.credit).filter(|m| !m.est_nul()));
@@ -273,10 +273,7 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     for &m in &p.mois {
-        for mut e in ecritures_du_mois(ctx, m, &plan, departs)? {
-            e.piece = format!("PAIE-{}", m);
-            out.push(e);
-        }
+        out.extend(ecritures_du_mois(ctx, m, &plan, departs)?);
     }
     if !socle::fichiers::existe_lu(&crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine))? {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
@@ -480,7 +477,7 @@ fn fec(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ou_vide(libelle_compte(plan, &e.compte)),
             ou_vide(e.auxiliaire.as_ref().map(NumeroDeCompte::to_string)),
             ou_vide(e.auxiliaire_libelle.clone()),
-            e.piece.clone(),
+            e.piece(),
             date,
             lib,
             deux_a_virgule(e.debit),
@@ -586,7 +583,7 @@ fn ximport(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ("journal", e.journal.to_string()),
             ("date", e.date.aaaammjj()),
             ("echeance", String::new()),
-            ("piece", e.piece.clone()),
+            ("piece", e.piece()),
             ("compte", compte_de(e).to_string()),
             ("libelle", env.libelle(e, false, 25)),
             ("montant", deux_a_virgule(montant)),
@@ -688,7 +685,7 @@ fn sage_pnm(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
             ("compte", compte_de(e).to_string()),
             ("type_compte", String::new()),
             ("auxiliaire", String::new()),
-            ("reference", e.piece.clone()),
+            ("reference", e.piece()),
             ("libelle", env.libelle(e, false, 25)),
             ("paiement", String::new()),
             ("echeance", String::new()),
@@ -810,7 +807,7 @@ fn ebp(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
                 compte_de(e).to_string(),
                 String::new(),
                 format!("\"{}\"", env.libelle(e, true, 40).replace('"', "'")),
-                ebp_texte("piece", &e.piece, 15)?,
+                ebp_texte("piece", &e.piece(), 15)?,
                 deux(montant),
                 s.to_string(),
                 String::new(),
@@ -867,7 +864,7 @@ fn pennylane(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
                 compte
             )));
         }
-        let mut champs = vec![e.date.jj_mm_aaaa(), journal.to_string(), e.piece.clone(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
+        let mut champs = vec![e.date.jj_mm_aaaa(), journal.to_string(), e.piece(), compte, libelle_entier(e), virgule(e.debit), virgule(e.credit)];
         if analytique {
             // Une ligne ventilee porte sa famille, sa categorie (le spectacle) et son code ; les autres laissent les trois
             // colonnes vides.
@@ -1164,11 +1161,7 @@ pub fn trop_longs(ctx: &Contexte, format: FormatDExport, departs: &engagement::d
     let mut ecr = Vec::new();
     let periode = Periode::nouvelle(ctx, None, None, true, false)?.mois;
     for &m in &periode {
-        let mut du_mois = ecritures_du_mois(ctx, m, &plan, departs)?;
-        for e in du_mois.iter_mut() {
-            e.piece = format!("PAIE-{}", m);
-        }
-        ecr.extend(du_mois);
+        ecr.extend(ecritures_du_mois(ctx, m, &plan, departs)?);
     }
     let env = envoi(ctx, &plan, &periode, None, format)?;
     fabriquer(&ec, &ecr, &env)?;

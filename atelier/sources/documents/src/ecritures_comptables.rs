@@ -62,8 +62,13 @@ pub struct Ecriture {
     pub auxiliaire: Option<NumeroDeCompte>,
     /// Le libelle du sous-compte : le salarie.
     pub auxiliaire_libelle: Option<String>,
-    /// Posee par les etats des ecritures comptables (« PAIE-AAAA-MM »).
-    pub piece: String,
+}
+
+impl Ecriture {
+    /// Sa piece, celle de son mois : une ecriture (une piece) par mois (« PAIE-AAAA-MM »).
+    pub fn piece(&self) -> String {
+        format!("PAIE-{}", self.mois)
+    }
 }
 
 /// La date de l'ecriture d'un mois (son dernier jour) et son libelle (« Decembre 2026 »).
@@ -255,7 +260,6 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             mois,
             auxiliaire: auxiliaire.cloned(),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
-            piece: String::new(),
         });
     };
     for (titre, m) in &brut_par_spectacle {
