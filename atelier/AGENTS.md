@@ -60,7 +60,7 @@ soient droits.
 - **Les mots** : l'**engagement** est au centre et porte ses calculs ; le **contrat** est ce qu'il fait signer ; la
   **paie** part avec le bulletin et ne nomme jamais l'engagement. Tout document se fabrique depuis l'engagement validé,
   sans recalcul. **Une notion, un type** : chaque notion a son seul type, que dit « Le glossaire »
-  (`docs/ARCHITECTURE.md`) ; un type neuf est une notion du glossaire, sinon Léandre décide.
+  (`docs/ARCHITECTURE.md`) ; un type neuf entre au glossaire dans le lot qui le crée, et la relecture à l'arrivée y cherche le doublon.
 - **Un seul chemin pour chaque chose** ; un second se ferme dans le commit qui ouvre le premier. **Une carte écrit
   l'engagement de son salarié, et lui seul** ; le mois n'est jamais une unité d'écriture ; un mois importé ne reçoit pas
   d'engagement neuf. L'engagement ne lit pas le journal ; le moteur le lit une fois par geste (`envois::journal::lu`) ;
@@ -77,7 +77,8 @@ soient droits.
   absence qui devient une valeur (0, CDDU, « 12 mois ») : c'est cela qui est interdit.
 - **Un geste, une route, qui obéit** : ni état, ni bouton, ni refus de plus pour une règle (le droit vit dans le calcul) ;
   un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
-  diff à l'arrivée le tient).
+  diff à l'arrivée le tient). **Enregistrer sans rien changer n'est jamais une faute** (Léandre : « on peut appuyer sur
+  enregistrer comme on veut ») : rien ne change, rien ne se refuse.
 - **Reconstruire, c'est renommer et rebrancher** : vérifier une fois à la main sur une fictive, puis supprimer l'ancien
   et ses tests dans le même geste ; un lot finit avec moins de lignes et de tests (sauf une forme qu'on déclare). Rien
   sans l'aval de Léandre ; une pause demandée est une pause.

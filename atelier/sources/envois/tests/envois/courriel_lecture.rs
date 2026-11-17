@@ -106,7 +106,8 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                 message_id: identifiant_de(&m),
                 date: {
                     // L'heure de la releve, que l'oracle ecrit `MAINTENANT`.
-                    let releve = socle::paris::Moment::de_secondes((1 - 719_163) * 86_400).unwrap();
+                    // Le 1er janvier de l'an 1 a minuit UTC, une heure de Paris : aucun courriel n'en est date.
+                    let releve: socle::paris::Moment = socle::piece::Zone::lue("0001-01-01T01:00:00", socle::piece::format::InstantIso).valeur().unwrap();
                     let lue = date_de(&m, releve);
                     if lue == releve { "MAINTENANT".to_string() } else { socle::paris::ecrit::seconde::texte(lue) }
                 },

@@ -13,7 +13,7 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Echec, R};
 
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Place, Refus, Route, FORME, OPERATION};
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 const FORMAT: Champ = Champ {
     nom: "format", libelle: Affiche::new("Format"), forme: Forme::Texte,
@@ -69,7 +69,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for Libelles {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -116,7 +116,7 @@ struct Libelles {
     format: Option<FormatDExport>,
     nom: Option<&'static str>,
     libelles: Vec<Ligne>,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// Une valeur trop longue : ce qu'elle est et sa cle, la zone en mots, son texte long, la place qu'elle a, la
@@ -157,11 +157,11 @@ fn zone(d: &Depasse) -> String {
 /// LIRE : ce qui depasse, sa proposition, sa valeur validee.
 fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
     let (format, borne) = match format_de(ctx, c.format)? {
-        None => return Ok(Libelles { format: None, nom: None, libelles: Vec::new(), phrase: "Aucun logiciel du comptable retenu : rien à raccourcir.".to_string() }),
+        None => return Ok(Libelles { format: None, nom: None, libelles: Vec::new(), phrase: Phrase::fixe("Aucun logiciel du comptable retenu : rien à raccourcir.") }),
         Some(f) => match FormatBorne::de(f) {
             Some(b) => (f, b),
             None => {
-                let phrase = format!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f);
+                let phrase = socle::phrase!("Le format « {} » ne borne pas ses libellés : rien à raccourcir.", f);
                 return Ok(Libelles { format: Some(f), nom: None, libelles: Vec::new(), phrase });
             }
         },
@@ -172,11 +172,11 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
         .collect();
     let reste = libelles.iter().filter(|l| l.court.is_none()).count();
     let phrase = if libelles.is_empty() {
-        format!("Tous les libellés tiennent dans le format {}.", borne.nom())
+        socle::phrase!("Tous les libellés tiennent dans le format {}.", borne.nom())
     } else if reste == 0 {
-        format!("{} : {} libellés trop longs, chacun a sa valeur courte.", borne.nom(), libelles.len())
+        socle::phrase!("{} : {} libellés trop longs, chacun a sa valeur courte.", borne.nom(), libelles.len())
     } else {
-        format!("{} : {} libellés trop longs, {} sans valeur courte. Garder ou changer chaque proposition, puis enregistrer.", borne.nom(), libelles.len(), reste)
+        socle::phrase!("{} : {} libellés trop longs, {} sans valeur courte. Garder ou changer chaque proposition, puis enregistrer.", borne.nom(), libelles.len(), reste)
     };
     Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles, phrase })
 }
@@ -197,7 +197,7 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
         return Err(faute(format!("Le format « {} » ne borne pas ses libellés : il n'a pas de libellé court.", format), format.as_str()));
     };
     if c.libelles.is_empty() {
-        let phrase = format!("Aucun libellé court à enregistrer pour {} : rien n'est écrit.", borne.nom());
+        let phrase = socle::phrase!("Aucun libellé court à enregistrer pour {} : rien n'est écrit.", borne.nom());
         return Ok(Libelles { format: Some(format), nom: Some(borne.nom()), libelles: Vec::new(), phrase });
     }
     let trop: Vec<Depasse> = depasses(ctx, format)?;
@@ -228,6 +228,6 @@ fn enregistrer(ctx: &Contexte, c: ChargeEnregistrer) -> R<Libelles> {
     let mut r = libelles_courts(ctx, ChargeLire { format: Some(format) })?;
     let reste = r.libelles.iter().filter(|l| l.court.is_none()).count();
     let suite = if reste == 0 { format!("chaque libellé trop long pour {} a sa valeur courte", borne.nom()) } else { format!("{} encore sans valeur courte pour {}", reste, borne.nom()) };
-    r.phrase = format!("{} enregistré{} ; {}.", socle::ecran::compte(c.libelles.len(), "libellé court", "libellés courts"), if c.libelles.len() > 1 { "s" } else { "" }, suite);
+    r.phrase = socle::phrase!("{} enregistré{} ; {}.", socle::ecran::compte(c.libelles.len(), "libellé court", "libellés courts"), if c.libelles.len() > 1 { "s" } else { "" }, suite);
     Ok(r)
 }

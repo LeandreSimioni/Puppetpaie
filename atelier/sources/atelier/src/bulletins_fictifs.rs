@@ -13,15 +13,11 @@
 //! sont ceux qu'on lui donne, inventes (regle 9 a).
 
 use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Mesure, Page, Police, PoliceFixe, TexteFixe};
-use fabrique_pdf::mesure::mesure;
+/// Une position ou un corps releve sur les bulletins, en points : `m!("135.9")`.
+pub use fabrique_pdf::mesure as m;
 use std::path::Path;
 
 // ------------------------------------------------------------------------------------------- la fabrique
-
-/// Une position ou un corps releve sur les bulletins, en points : `m("135.9")`.
-pub const fn m(t: &str) -> Mesure {
-    mesure(t)
-}
 
 /// Un texte pose, maigre, en Helvetica, de la couleur de la page.
 fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Alignement) -> Bloc {
@@ -39,12 +35,12 @@ fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Ali
 }
 
 pub fn t(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Gauche));
+    b.push(texte_fixe(x, y, texte, m!("9"), Alignement::Gauche));
 }
 
 /// Un nombre, aligne a droite sur `x`.
 pub fn r(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Droite));
+    b.push(texte_fixe(x, y, texte, m!("9"), Alignement::Droite));
 }
 
 pub fn grand(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str, taille: Mesure) {
@@ -55,13 +51,13 @@ pub fn grand(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str, taille: Mesur
 pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
     let nulle = Mesure::ZERO;
     let d = Description {
-        format: 3,
+        format: fabrique_pdf::FORMAT,
         page: Some(Page {
-            largeur: mesure("595.22"),
-            hauteur: Mesure::entier(842),
+            largeur: m!("595.22"),
+            hauteur: m!("842"),
             marges: Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: Some(Police { taille: Mesure::entier(9), interligne: mesure("1.25"), couleur: "#000000".to_string() }),
+        police: Some(Police { taille: m!("9"), interligne: m!("1.25"), couleur: "#000000".to_string() }),
         style: None,
         logo: None,
         titre: None,
@@ -181,129 +177,129 @@ pub fn page_a<S: AsRef<str>>(a: &A<S>) -> Vec<Bloc> {
     let mut b = Vec::new();
     let b_ = &mut b;
     let id = &a.id;
-    grand(b_, m("320"), m("45"), &format!("Bulletin de paie n° {}", s(&a.numero)), m("11"));
+    grand(b_, m!("320"), m!("45"), &format!("Bulletin de paie n° {}", s(&a.numero)), m!("11"));
     if let Some((objet, titre)) = &a.objet {
-        t(b_, m("354.3"), m("65"), &format!("numéro d'objet : {}", s(objet)));
-        t(b_, m("354.3"), m("76"), &format!("Spectacle : {}", s(titre)));
+        t(b_, m!("354.3"), m!("65"), &format!("numéro d'objet : {}", s(objet)));
+        t(b_, m!("354.3"), m!("76"), &format!("Spectacle : {}", s(titre)));
     }
-    grand(b_, m("28.4"), m("120"), s(&id.entreprise[0]), m("11"));
-    t(b_, m("283.5"), m("120"), &format!("{} {}", s(&id.nom).to_uppercase(), s(&id.prenom).to_uppercase()));
-    t(b_, m("28.4"), m("132"), s(&id.entreprise[1]));
-    t(b_, m("283.5"), m("132"), &s(&id.adresse[0]).to_uppercase());
-    t(b_, m("28.4"), m("143"), s(&id.entreprise[2]));
-    t(b_, m("283.5"), m("143"), &s(&id.adresse[1]).to_uppercase());
+    grand(b_, m!("28.4"), m!("120"), s(&id.entreprise[0]), m!("11"));
+    t(b_, m!("283.5"), m!("120"), &format!("{} {}", s(&id.nom).to_uppercase(), s(&id.prenom).to_uppercase()));
+    t(b_, m!("28.4"), m!("132"), s(&id.entreprise[1]));
+    t(b_, m!("283.5"), m!("132"), &s(&id.adresse[0]).to_uppercase());
+    t(b_, m!("28.4"), m!("143"), s(&id.entreprise[2]));
+    t(b_, m!("283.5"), m!("143"), &s(&id.adresse[1]).to_uppercase());
     for (y, gauche, valeur_g, droite, valeur_d) in [
-        (m("172"), "N° Siret :", s(&id.siret), "Date de naissance :", s(&id.naissance)),
-        (m("183"), "NAF(APE) :", s(&id.naf), "N° Sécurité Sociale :", s(&id.nir)),
-        (m("194"), "Urssaf :", s(&id.urssaf), "Code Salarié :", s(&id.code)),
-        (m("205"), "Conv. collective :", s(&id.convention[0]), "Emploi :", s(&a.emploi)),
-        (m("227"), "Licence spec. N° :", s(&id.licence), "Abattement :", "0 %"),
+        (m!("172"), "N° Siret :", s(&id.siret), "Date de naissance :", s(&id.naissance)),
+        (m!("183"), "NAF(APE) :", s(&id.naf), "N° Sécurité Sociale :", s(&id.nir)),
+        (m!("194"), "Urssaf :", s(&id.urssaf), "Code Salarié :", s(&id.code)),
+        (m!("205"), "Conv. collective :", s(&id.convention[0]), "Emploi :", s(&a.emploi)),
+        (m!("227"), "Licence spec. N° :", s(&id.licence), "Abattement :", "0 %"),
     ] {
-        t(b_, m("28.4"), y, gauche);
+        t(b_, m!("28.4"), y, gauche);
         if !valeur_g.is_empty() {
-            t(b_, m("127.5"), y, valeur_g);
+            t(b_, m!("127.5"), y, valeur_g);
         }
-        t(b_, m("283.5"), y, droite);
-        t(b_, m("436.4"), y, valeur_d);
+        t(b_, m!("283.5"), y, droite);
+        t(b_, m!("436.4"), y, valeur_d);
     }
     if !s(&id.convention[1]).is_empty() {
-        t(b_, m("127.5"), m("216"), s(&id.convention[1]));
+        t(b_, m!("127.5"), m!("216"), s(&id.convention[1]));
     }
-    t(b_, m("283.5"), m("217.5"), "Statut :");
-    t(b_, m("436.4"), m("217.5"), s(&a.statut));
-    t(b_, m("283.5"), m("238"), "N° de Congés Spectacles :");
+    t(b_, m!("283.5"), m!("217.5"), "Statut :");
+    t(b_, m!("436.4"), m!("217.5"), s(&a.statut));
+    t(b_, m!("283.5"), m!("238"), "N° de Congés Spectacles :");
     if let Some(c) = &id.conges_spectacles {
-        t(b_, m("436.4"), m("238"), s(c));
+        t(b_, m!("436.4"), m!("238"), s(c));
     }
-    t(b_, m("79.5"), m("262"), "Périodes :");
-    t(b_, m("135.9"), m("262"), s(&a.periode));
-    t(b_, m("42.8"), m("273"), "Dates travaillées :");
+    t(b_, m!("79.5"), m!("262"), "Périodes :");
+    t(b_, m!("135.9"), m!("262"), s(&a.periode));
+    t(b_, m!("42.8"), m!("273"), "Dates travaillées :");
     for (k, d) in a.dates.iter().enumerate() {
-        t(b_, m("135.9"), m("273") + m("11") * k as i64, s(d));
+        t(b_, m!("135.9"), m!("273") + k * m!("11"), s(d));
     }
-    let mut y = m("308");
-    t(b_, m("104.9"), y, "LIBELLE");
-    t(b_, m("324.3"), y, "Base");
-    t(b_, m("382.6"), y, "Part Employeur");
-    t(b_, m("504.6"), y, "Part Salarié");
+    let mut y = m!("308");
+    t(b_, m!("104.9"), y, "LIBELLE");
+    t(b_, m!("324.3"), y, "Base");
+    t(b_, m!("382.6"), y, "Part Employeur");
+    t(b_, m!("504.6"), y, "Part Salarié");
     for (q, libelle, taux, montant) in &a.lignes {
-        y += m("11.2");
-        t(b_, m("56.7"), y, &format!("{} {}", s(q), s(libelle)));
-        r(b_, m("346"), y, s(taux));
-        r(b_, m("453.7"), y, s(montant));
+        y += m!("11.2");
+        t(b_, m!("56.7"), y, &format!("{} {}", s(q), s(libelle)));
+        r(b_, m!("346"), y, s(taux));
+        r(b_, m!("453.7"), y, s(montant));
     }
-    y += m("11.2");
-    t(b_, m("56.7"), y, "SALAIRE BRUT");
-    r(b_, m("453.7"), y, s(&a.brut));
-    y += m("14.2");
-    for (x, texte) in [(m("394.1"), "Taux"), (m("453.9"), "Montant"), (m("504.8"), "Taux"), (m("561.6"), "Montant")] {
+    y += m!("11.2");
+    t(b_, m!("56.7"), y, "SALAIRE BRUT");
+    r(b_, m!("453.7"), y, s(&a.brut));
+    y += m!("14.2");
+    for (x, texte) in [(m!("394.1"), "Taux"), (m!("453.9"), "Montant"), (m!("504.8"), "Taux"), (m!("561.6"), "Montant")] {
         r(b_, x, y, texte);
     }
     for (x, libelle, _, base, te, me, ts, ms) in a.cotisations.iter() {
-        y += m("11.2");
+        y += m!("11.2");
         t(b_, *x, y, s(libelle));
         let base = match s(base) {
             "B" => s(&a.brut),
             "C" => s(&a.csg),
             autre => autre,
         };
-        for (xd, v) in [(m("345.9"), base), (m("394.2"), s(te)), (m("453.7"), s(me)), (m("504.9"), s(ts)), (m("561.5"), s(ms))] {
+        for (xd, v) in [(m!("345.9"), base), (m!("394.2"), s(te)), (m!("453.7"), s(me)), (m!("504.9"), s(ts)), (m!("561.5"), s(ms))] {
             if !v.is_empty() {
                 r(b_, xd, y, v);
             }
         }
     }
-    y += m("22");
-    t(b_, m("36.8"), y, "Total des Cotisations et Contributions");
-    r(b_, m("434"), y, s(&a.total[0]));
-    r(b_, m("561.4"), y, s(&a.total[1]));
-    y += m("20.3");
-    t(b_, m("33.9"), y, "NET SOCIAL");
-    r(b_, m("561.6"), y, s(&a.net));
-    y += m("11");
-    t(b_, m("33.9"), y, "NET A PAYER AVANT IMPOT SUR LE REVENU");
-    r(b_, m("561.5"), y, s(&a.net));
+    y += m!("22");
+    t(b_, m!("36.8"), y, "Total des Cotisations et Contributions");
+    r(b_, m!("434"), y, s(&a.total[0]));
+    r(b_, m!("561.4"), y, s(&a.total[1]));
+    y += m!("20.3");
+    t(b_, m!("33.9"), y, "NET SOCIAL");
+    r(b_, m!("561.6"), y, s(&a.net));
+    y += m!("11");
+    t(b_, m!("33.9"), y, "NET A PAYER AVANT IMPOT SUR LE REVENU");
+    r(b_, m!("561.5"), y, s(&a.net));
     // Le pied.
-    y += m("11.5");
-    t(b_, m("33.9"), y, "Impôt sur le revenu");
-    t(b_, m("310.9"), y, "base");
-    t(b_, m("396.3"), y, "taux personnalisé");
-    t(b_, m("486.8"), y, "montant");
-    t(b_, m("543"), y, "cumul");
-    y += m("14");
-    t(b_, m("33.9"), y, "Impôt sur le revenu prélevé à la source");
-    r(b_, m("331.7"), y, s(&a.pas[0]));
-    r(b_, m("466.8"), y, s(&a.pas[1]));
-    t(b_, m("471.6"), y, "%");
-    r(b_, m("516"), y, s(&a.pas[2]));
-    r(b_, m("567.2"), y, s(&a.pas[3]));
-    y += m("8.5");
-    t(b_, m("33.9"), y, "Net Imposable");
-    r(b_, m("518.9"), y, s(&a.net_imposable[0]));
-    r(b_, m("567.2"), y, s(&a.net_imposable[1]));
-    y += m("8.5");
-    t(b_, m("33.9"), y, "Montant net des heures compl / suppl exonérées");
-    r(b_, m("518.9"), y, "0,00");
-    r(b_, m("567.2"), y, "0,00");
-    y += m("13");
-    t(b_, m("131.8"), y, "Période");
-    t(b_, m("203.6"), y, "Cumul");
-    t(b_, m("435.7"), y, "NET A PAYER AU SALARIE");
-    t(b_, m("255.2"), y + m("2"), &format!("Réglement le : {}", s(&a.regle)));
-    t(b_, m("460.3"), y + m("10"), "(EN EUROS)");
+    y += m!("11.5");
+    t(b_, m!("33.9"), y, "Impôt sur le revenu");
+    t(b_, m!("310.9"), y, "base");
+    t(b_, m!("396.3"), y, "taux personnalisé");
+    t(b_, m!("486.8"), y, "montant");
+    t(b_, m!("543"), y, "cumul");
+    y += m!("14");
+    t(b_, m!("33.9"), y, "Impôt sur le revenu prélevé à la source");
+    r(b_, m!("331.7"), y, s(&a.pas[0]));
+    r(b_, m!("466.8"), y, s(&a.pas[1]));
+    t(b_, m!("471.6"), y, "%");
+    r(b_, m!("516"), y, s(&a.pas[2]));
+    r(b_, m!("567.2"), y, s(&a.pas[3]));
+    y += m!("8.5");
+    t(b_, m!("33.9"), y, "Net Imposable");
+    r(b_, m!("518.9"), y, s(&a.net_imposable[0]));
+    r(b_, m!("567.2"), y, s(&a.net_imposable[1]));
+    y += m!("8.5");
+    t(b_, m!("33.9"), y, "Montant net des heures compl / suppl exonérées");
+    r(b_, m!("518.9"), y, "0,00");
+    r(b_, m!("567.2"), y, "0,00");
+    y += m!("13");
+    t(b_, m!("131.8"), y, "Période");
+    t(b_, m!("203.6"), y, "Cumul");
+    t(b_, m!("435.7"), y, "NET A PAYER AU SALARIE");
+    t(b_, m!("255.2"), y + m!("2"), &format!("Réglement le : {}", s(&a.regle)));
+    t(b_, m!("460.3"), y + m!("10"), "(EN EUROS)");
     for (k, libelle) in [s(&a.unite), "Salaire brut:", "Plafond Urssaf:", "Cout employeur:"].iter().enumerate() {
-        let yk = y + m("14") + m("11.2") * k as i64;
-        t(b_, m("36.8"), yk, libelle);
-        r(b_, m("170.2"), yk, s(&a.cumuls[k][0]));
-        r(b_, m("235.5"), yk, s(&a.cumuls[k][1]));
+        let yk = y + m!("14") + k * m!("11.2");
+        t(b_, m!("36.8"), yk, libelle);
+        r(b_, m!("170.2"), yk, s(&a.cumuls[k][0]));
+        r(b_, m!("235.5"), yk, s(&a.cumuls[k][1]));
     }
     if a.mode {
-        t(b_, m("255.2"), y + m("14"), "mode de règlement : Virement");
+        t(b_, m!("255.2"), y + m!("14"), "mode de règlement : Virement");
     }
-    grand(b_, m("469.5"), y + m("32"), &format!("{} €", s(&a.net_a_payer)), m("14"));
-    t(b_, m("439.7"), y + m("51"), "Total versé par l'employeur");
-    grand(b_, m("478.9"), y + m("72"), &format!("{} €", s(&a.total_verse)), m("11"));
-    grand(b_, m("31"), m("810"), "coolpaie 4.0.0.8.312", m("7"));
+    grand(b_, m!("469.5"), y + m!("32"), &format!("{} €", s(&a.net_a_payer)), m!("14"));
+    t(b_, m!("439.7"), y + m!("51"), "Total versé par l'employeur");
+    grand(b_, m!("478.9"), y + m!("72"), &format!("{} €", s(&a.total_verse)), m!("11"));
+    grand(b_, m!("31"), m!("810"), "coolpaie 4.0.0.8.312", m!("7"));
     b
 }
 
@@ -348,161 +344,161 @@ pub fn page_b<S: AsRef<str>>(p: &B<S>) -> Vec<Bloc> {
     let mut b = Vec::new();
     let b_ = &mut b;
     let id = &p.id;
-    grand(b_, m("39"), m("36"), s(&id.entreprise[0]), m("10"));
-    grand(b_, m("375"), m("38"), "Bulletin de paie", m("14"));
-    t(b_, m("545.6"), m("36"), s(&id.code));
-    t(b_, m("39"), m("54"), s(&id.entreprise[1]));
-    t(b_, m("375"), m("55"), "Période");
-    t(b_, m("443"), m("55"), s(&p.periode));
-    t(b_, m("39"), m("76"), s(&id.entreprise[2]));
-    t(b_, m("375"), m("67.5"), s(&p.periode_courte));
-    t(b_, m("39"), m("93"), "Siret");
-    t(b_, m("87"), m("93"), &siret_espace(s(&id.siret)));
-    t(b_, m("39"), m("102"), "Code APE");
-    t(b_, m("87"), m("102"), s(&id.naf));
-    t(b_, m("375"), m("107"), "Règlement");
-    t(b_, m("443"), m("107"), s(&p.reglement));
-    t(b_, m("375"), m("121"), "Numéro d'objet");
+    grand(b_, m!("39"), m!("36"), s(&id.entreprise[0]), m!("10"));
+    grand(b_, m!("375"), m!("38"), "Bulletin de paie", m!("14"));
+    t(b_, m!("545.6"), m!("36"), s(&id.code));
+    t(b_, m!("39"), m!("54"), s(&id.entreprise[1]));
+    t(b_, m!("375"), m!("55"), "Période");
+    t(b_, m!("443"), m!("55"), s(&p.periode));
+    t(b_, m!("39"), m!("76"), s(&id.entreprise[2]));
+    t(b_, m!("375"), m!("67.5"), s(&p.periode_courte));
+    t(b_, m!("39"), m!("93"), "Siret");
+    t(b_, m!("87"), m!("93"), &siret_espace(s(&id.siret)));
+    t(b_, m!("39"), m!("102"), "Code APE");
+    t(b_, m!("87"), m!("102"), s(&id.naf));
+    t(b_, m!("375"), m!("107"), "Règlement");
+    t(b_, m!("443"), m!("107"), s(&p.reglement));
+    t(b_, m!("375"), m!("121"), "Numéro d'objet");
     if !s(&p.objet).is_empty() {
-        t(b_, m("443"), m("121"), s(&p.objet));
+        t(b_, m!("443"), m!("121"), s(&p.objet));
     }
-    t(b_, m("39"), m("126.5"), &format!("Convention Collective : {}", s(&id.convention[0])));
-    t(b_, m("375"), m("133"), "Analytique");
+    t(b_, m!("39"), m!("126.5"), &format!("Convention Collective : {}", s(&id.convention[0])));
+    t(b_, m!("375"), m!("133"), "Analytique");
     if !s(&p.analytique).is_empty() {
-        t(b_, m("443"), m("133"), s(&p.analytique));
+        t(b_, m!("443"), m!("133"), s(&p.analytique));
     }
     if !s(&id.convention[1]).is_empty() {
-        t(b_, m("39"), m("135.7"), s(&id.convention[1]));
+        t(b_, m!("39"), m!("135.7"), s(&id.convention[1]));
     }
-    t(b_, m("39"), m("145"), "Durée congés payés : code du travail, art L3141-3 à 11");
-    grand(b_, m("314"), m("175"), &format!("{} {}", s(&id.prenom), s(&id.nom).to_uppercase()), m("10"));
-    t(b_, m("39"), m("176.5"), "Emploi");
-    t(b_, m("108"), m("176.5"), s(&p.emploi));
-    t(b_, m("39"), m("187.5"), "Statut");
-    t(b_, m("108"), m("187.5"), s(&p.statut));
-    t(b_, m("314"), m("200"), s(&id.adresse[0]));
-    t(b_, m("39"), m("209.5"), "NIR");
-    t(b_, m("108"), m("209.5"), &nir_espace(s(&id.nir)));
+    t(b_, m!("39"), m!("145"), "Durée congés payés : code du travail, art L3141-3 à 11");
+    grand(b_, m!("314"), m!("175"), &format!("{} {}", s(&id.prenom), s(&id.nom).to_uppercase()), m!("10"));
+    t(b_, m!("39"), m!("176.5"), "Emploi");
+    t(b_, m!("108"), m!("176.5"), s(&p.emploi));
+    t(b_, m!("39"), m!("187.5"), "Statut");
+    t(b_, m!("108"), m!("187.5"), s(&p.statut));
+    t(b_, m!("314"), m!("200"), s(&id.adresse[0]));
+    t(b_, m!("39"), m!("209.5"), "NIR");
+    t(b_, m!("108"), m!("209.5"), &nir_espace(s(&id.nir)));
     if let Some(c) = &id.conges_spectacles {
-        t(b_, m("39"), m("220.5"), "N° Congés Sp.");
-        t(b_, m("108"), m("220.5"), s(c));
+        t(b_, m!("39"), m!("220.5"), "N° Congés Sp.");
+        t(b_, m!("108"), m!("220.5"), s(c));
     }
     match s(&id.adresse[1]).split_once(' ') {
         Some((cp, commune)) => {
-            t(b_, m("314"), m("222"), cp);
+            t(b_, m!("314"), m!("222"), cp);
             if !commune.is_empty() {
-                t(b_, m("369"), m("222"), commune);
+                t(b_, m!("369"), m!("222"), commune);
             }
         }
-        None => t(b_, m("314"), m("222"), s(&id.adresse[1])),
+        None => t(b_, m!("314"), m!("222"), s(&id.adresse[1])),
     }
-    t(b_, m("314"), m("233"), "FRANCE");
-    t(b_, m("499"), m("264"), "XYZ");
-    t(b_, m("399.8"), m("279.5"), "Taux");
-    t(b_, m("458.2"), m("279.5"), "Part");
-    t(b_, m("523.2"), m("279.5"), "Part");
-    t(b_, m("126.2"), m("286.5"), "libellé");
-    t(b_, m("339.7"), m("286.5"), "base");
-    t(b_, m("394.5"), m("290"), "salarial");
-    t(b_, m("452.7"), m("290"), "salarié");
-    t(b_, m("509.2"), m("290"), "employeur");
-    let mut y = m("308.5");
+    t(b_, m!("314"), m!("233"), "FRANCE");
+    t(b_, m!("499"), m!("264"), "XYZ");
+    t(b_, m!("399.8"), m!("279.5"), "Taux");
+    t(b_, m!("458.2"), m!("279.5"), "Part");
+    t(b_, m!("523.2"), m!("279.5"), "Part");
+    t(b_, m!("126.2"), m!("286.5"), "libellé");
+    t(b_, m!("339.7"), m!("286.5"), "base");
+    t(b_, m!("394.5"), m!("290"), "salarial");
+    t(b_, m!("452.7"), m!("290"), "salarié");
+    t(b_, m!("509.2"), m!("290"), "employeur");
+    let mut y = m!("308.5");
     let ligne = |b_: &mut Vec<Bloc>, y: Mesure, (q, libelle, base, montant): &(S, S, S, S)| {
-        t(b_, m("59.5"), y, &format!("{} ", s(q)));
-        t(b_, m("74"), y, s(libelle));
-        r(b_, m("374.4"), y, s(base));
-        r(b_, m("494.4"), y, s(montant));
+        t(b_, m!("59.5"), y, &format!("{} ", s(q)));
+        t(b_, m!("74"), y, s(libelle));
+        r(b_, m!("374.4"), y, s(base));
+        r(b_, m!("494.4"), y, s(montant));
     };
     for l in &p.lignes {
         ligne(b_, y, l);
-        y += m("11");
+        y += m!("11");
     }
-    t(b_, m("74"), y, s(&p.brut.0));
-    r(b_, m("494.4"), y, s(&p.brut.1));
+    t(b_, m!("74"), y, s(&p.brut.0));
+    r(b_, m!("494.4"), y, s(&p.brut.1));
     let cotisation = |b_: &mut Vec<Bloc>, y: Mesure, c: &RangB<S>| {
         t(b_, c.0, y, s(&c.1));
         if !s(&c.3).is_empty() {
-            r(b_, m("374.4"), y, s(&c.3));
+            r(b_, m!("374.4"), y, s(&c.3));
         }
         if !s(&c.4).is_empty() {
-            r(b_, m("419.7"), y, s(&c.4));
-            t(b_, m("421.9"), y, "%");
+            r(b_, m!("419.7"), y, s(&c.4));
+            t(b_, m!("421.9"), y, "%");
         }
         if !s(&c.5).is_empty() {
-            r(b_, m("495"), y, s(&c.5));
+            r(b_, m!("495"), y, s(&c.5));
         }
         if !s(&c.6).is_empty() {
-            r(b_, m("559"), y, s(&c.6));
+            r(b_, m!("559"), y, s(&c.6));
         }
     };
-    y += m("9");
+    y += m!("9");
     for c in &p.cotisations {
-        y += if c.0 < m("50") { m("13") } else { m("10") };
+        y += if c.0 < m!("50") { m!("13") } else { m!("10") };
         cotisation(b_, y, c);
     }
-    y += m("13");
-    t(b_, m("74"), y, s(&p.total.0));
-    r(b_, m("494.4"), y, s(&p.total.1));
-    r(b_, m("558.3"), y, s(&p.total.2));
+    y += m!("13");
+    t(b_, m!("74"), y, s(&p.total.0));
+    r(b_, m!("494.4"), y, s(&p.total.1));
+    r(b_, m!("558.3"), y, s(&p.total.2));
     for c in &p.apres_total {
-        y += m("12");
+        y += m!("12");
         cotisation(b_, y, c);
     }
     if let Some(n) = &p.net_social {
-        y += m("18");
-        t(b_, m("74"), y, "MONTANT NET SOCIAL");
-        r(b_, m("494.2"), y, s(n));
+        y += m!("18");
+        t(b_, m!("74"), y, "MONTANT NET SOCIAL");
+        r(b_, m!("494.2"), y, s(n));
     }
     for l in &p.non_soumis {
-        y += m("18");
+        y += m!("18");
         ligne(b_, y, l);
     }
-    let mut y = m("655");
-    t(b_, m("39"), y, "NET A PAYER AVANT IMPOT SUR LE REVENU");
-    r(b_, m("494.2"), y, s(&p.net_avant_impot));
-    y += m("19");
-    t(b_, m("99.6"), y, "Impôt sur le revenu");
+    let mut y = m!("655");
+    t(b_, m!("39"), y, "NET A PAYER AVANT IMPOT SUR LE REVENU");
+    r(b_, m!("494.2"), y, s(&p.net_avant_impot));
+    y += m!("19");
+    t(b_, m!("99.6"), y, "Impôt sur le revenu");
     for (x, mot) in &p.entete_pas {
         t(b_, *x, y, mot);
     }
     if let Some((n, c)) = &p.net_imposable {
-        y += m("17");
-        t(b_, m("39"), y, "Montant net imposable");
-        r(b_, m("486.2"), y, s(n));
-        r(b_, m("563"), y, s(c));
-        y += m("13");
-        t(b_, m("39"), y, "Montant net des HC/HS/RTT exonérées");
-        r(b_, m("563"), y, "0,00");
+        y += m!("17");
+        t(b_, m!("39"), y, "Montant net imposable");
+        r(b_, m!("486.2"), y, s(n));
+        r(b_, m!("563"), y, s(c));
+        y += m!("13");
+        t(b_, m!("39"), y, "Montant net des HC/HS/RTT exonérées");
+        r(b_, m!("563"), y, "0,00");
     }
-    y += m("16");
-    t(b_, m("39"), y, s(&p.pas.0));
+    y += m!("16");
+    t(b_, m!("39"), y, s(&p.pas.0));
     for (x, v) in &p.pas.1 {
-        r(b_, *x, y + m("0.5"), s(v));
+        r(b_, *x, y + m!("0.5"), s(v));
     }
-    let mut y = m("737");
-    t(b_, m("39"), y, "BASE");
-    t(b_, m("131"), y, "Période");
-    t(b_, m("189"), y, "Cumul");
-    t(b_, m("475"), y + m("3"), "Net payé");
+    let mut y = m!("737");
+    t(b_, m!("39"), y, "BASE");
+    t(b_, m!("131"), y, "Période");
+    t(b_, m!("189"), y, "Cumul");
+    t(b_, m!("475"), y + m!("3"), "Net payé");
     for (libelle, periode, cumul) in &p.cumuls {
-        y += m("11");
-        t(b_, m("39"), y, s(libelle));
+        y += m!("11");
+        t(b_, m!("39"), y, s(libelle));
         if !s(periode).is_empty() {
-            r(b_, m("165"), y, s(periode));
-            r(b_, m("220"), y, s(cumul));
+            r(b_, m!("165"), y, s(periode));
+            r(b_, m!("220"), y, s(cumul));
         }
     }
-    grand(b_, m("493.3"), m("765"), &format!("{} €", s(&p.net_paye)), m("14"));
-    t(b_, m("445"), m("787"), "Total versé par");
-    t(b_, m("450.2"), m("795"), "l'employeur");
+    grand(b_, m!("493.3"), m!("765"), &format!("{} €", s(&p.net_paye)), m!("14"));
+    t(b_, m!("445"), m!("787"), "Total versé par");
+    t(b_, m!("450.2"), m!("795"), "l'employeur");
     if p.allegement {
-        t(b_, m("510"), m("787"), "Allègement de");
-        t(b_, m("506"), m("795"), "cotisations empl.");
-        grand(b_, m("460"), m("812"), &format!("{} €", s(&p.total_verse)), m("11"));
-        grand(b_, m("532"), m("812"), "0,00 €", m("11"));
+        t(b_, m!("510"), m!("787"), "Allègement de");
+        t(b_, m!("506"), m!("795"), "cotisations empl.");
+        grand(b_, m!("460"), m!("812"), &format!("{} €", s(&p.total_verse)), m!("11"));
+        grand(b_, m!("532"), m!("812"), "0,00 €", m!("11"));
     } else {
-        grand(b_, m("524.7"), m("792"), &format!("{} €", s(&p.total_verse)), m("11"));
+        grand(b_, m!("524.7"), m!("792"), &format!("{} €", s(&p.total_verse)), m!("11"));
     }
-    grand(b_, m("504.7"), m("828"), "GHS - sPAIEctacle ©", m("6.5"));
+    grand(b_, m!("504.7"), m!("828"), "GHS - sPAIEctacle ©", m!("6.5"));
     b
 }

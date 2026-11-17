@@ -10,8 +10,7 @@ use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte, IdSalarie};
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
-use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours};
-use socle::num::{add, Decimal};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant};
 
 /// Les constantes du decompte, lues dans les donnees livrees (le catalogue des rubriques et `annexes`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,7 +60,7 @@ pub struct Declare {
     pub heures: Heures,
     pub cachets: Cachets,
     pub jours: Jours,
-    pub brut: Decimal,
+    pub brut: Montant,
     /// Part de `heures` qui est de l'enseignement (dedans, pas en plus).
     pub heures_enseignement: Heures,
 }
@@ -170,8 +169,8 @@ impl Position {
         self.engagements.iter().map(|e| e.jours).sum()
     }
 
-    pub fn brut(&self) -> Decimal {
-        self.engagements.iter().fold(socle::grandeurs::Montant::ZERO.decimal(), |a, e| add(a, e.brut))
+    pub fn brut(&self) -> Montant {
+        self.engagements.iter().fold(Montant::ZERO, |a, e| a + e.brut)
     }
 
     /// Heures restant a acquerir pour atteindre le seuil ; 0 si atteint.
@@ -183,9 +182,10 @@ impl Position {
         Ok(self.heures_ouverture()? >= self.constantes.seuil_heures)
     }
 
-    /// Jours restant avant la fin de la fenetre ; negatif si elle est passee.
-    pub fn jours_restants(&self, aujourdhui: Jour) -> i64 {
-        self.periode.fin().moins(&aujourdhui)
+    /// Les jours qui restent avant la fin de la fenetre, du lendemain d'`aujourdhui` a sa fin ; aucun quand elle est
+    /// passee ou finit aujourd'hui.
+    pub fn jours_restants(&self, aujourdhui: Jour) -> Duree<EnJours> {
+        Duree::ecoulee(&aujourdhui, &self.periode.fin())
     }
 
     /// Les cachets qu'il manque pour le seuil, le dernier entame compte ; un cachet de zero heure refuse.
@@ -285,7 +285,7 @@ pub struct Colonne {
     pub cachets: Cachets,
     pub heures: Heures,
     pub heures_equivalentes: Heures,
-    pub brut: Decimal,
+    pub brut: Montant,
     /// Heures restantes avant le seuil (colonne droits).
     pub reste: Option<Heures>,
     /// Date d'anniversaire (colonne droits).

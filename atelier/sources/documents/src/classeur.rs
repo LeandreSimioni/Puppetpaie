@@ -4,14 +4,14 @@
 //!
 //! Un .xlsx est une archive zip de XML (Office Open XML, ECMA-376, partie 1 : SpreadsheetML) : `[Content_Types].xml`,
 //! `_rels/.rels`, `xl/workbook.xml` et ses liens, `xl/styles.xml`, `xl/worksheets/sheet1.xml`. Un nombre s'y ecrit en
-//! texte (`<v>1234.56</v>`) : le decimal s'y ecrit exact, dans sa forme la plus courte. Un texte s'ecrit en ligne
+//! texte (`<v>1234.56</v>`) : une grandeur s'y ecrit exacte, dans sa forme la plus courte. Un texte s'ecrit en ligne
 //! (`t="inlineStr"`), comme `socle::lecture_xlsx` le relit.
 
 use std::collections::BTreeMap;
 use std::io::Write;
 
 use socle::echec::{erreur, Classe, R};
-use socle::num::Decimal;
+use socle::grandeurs::Grandeur;
 
 /// L'alignement vertical d'une cellule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -55,7 +55,8 @@ impl Style {
 enum Valeur {
     Vide,
     Texte(String),
-    Nombre(Decimal),
+    /// Un nombre, tel que la feuille l'ecrit (`<v>1234.56</v>`).
+    Nombre(String),
 }
 
 /// UNE FEUILLE, le seul contenu d'un classeur qu'on ecrit.
@@ -83,9 +84,14 @@ impl Feuille {
         self.cellules.insert((ligne, colonne), (Valeur::Texte(texte.into()), style.clone()));
     }
 
-    /// Un nombre exact en (`ligne`, `colonne`).
-    pub fn nombre(&mut self, ligne: u32, colonne: u16, nombre: Decimal, style: &Style) {
-        self.cellules.insert((ligne, colonne), (Valeur::Nombre(nombre), style.clone()));
+    /// Une grandeur en (`ligne`, `colonne`), en nombre exact, dans sa forme la plus courte (`ecrit::sans_zero`) : sa porte.
+    pub fn nombre<G: Grandeur>(&mut self, ligne: u32, colonne: u16, g: G, style: &Style) {
+        self.cellules.insert((ligne, colonne), (Valeur::Nombre(socle::grandeurs::ecrit::sans_zero::dit(g)), style.clone()));
+    }
+
+    /// Un nombre entier en (`ligne`, `colonne`) : un compte, un rang.
+    pub fn entier(&mut self, ligne: u32, colonne: u16, n: usize, style: &Style) {
+        self.cellules.insert((ligne, colonne), (Valeur::Nombre(n.to_string()), style.clone()));
     }
 
     /// La largeur des colonnes `premiere` a `derniere`, en caracteres.
@@ -192,7 +198,7 @@ impl Feuille {
                 match v {
                     Valeur::Vide => x.push_str(&format!("<c r=\"{}\" s=\"{}\"/>", r, s)),
                     Valeur::Texte(t) => x.push_str(&format!("<c r=\"{}\" s=\"{}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">{}</t></is></c>", r, s, echappe(t))),
-                    Valeur::Nombre(d) => x.push_str(&format!("<c r=\"{}\" s=\"{}\"><v>{}</v></c>", r, s, d.normalize())),
+                    Valeur::Nombre(n) => x.push_str(&format!("<c r=\"{}\" s=\"{}\"><v>{}</v></c>", r, s, n)),
                 }
             }
             x.push_str("</row>");

@@ -88,7 +88,7 @@ enum Empreinte {
 #[derive(Serialize)]
 struct Format {
     #[serde(skip_serializing_if = "Option::is_none")]
-    longueur: Option<[i64; 2]>,
+    longueur: Option<[usize; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     csl: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -329,7 +329,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
         }
         let (longueur, valeurs) = match lon {
             Some(l) => {
-                let n = |i: usize| l[i].parse::<i64>().map_err(|e| refus!("{} : longueur illisible {} ({})", rid, &l[0], e));
+                let n = |i: usize| l[i].parse::<usize>().map_err(|e| refus!("{} : longueur illisible {} ({})", rid, &l[0], e));
                 let apres = l.get_match().end();
                 (Some([n(1)?, n(2)?]), liste_de(valeurs_du_cahier(&corps[apres..]), rid, notes))
             }
@@ -359,19 +359,12 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
 fn cle(c: &Cellule) -> R<String> {
     Ok(match c {
         Cellule::Texte(s) => format!("t{}", s),
-        Cellule::Entier(i) => format!("n{}", i),
-        Cellule::AVirgule(n) => match entier_exact(n)? {
+        Cellule::Nombre(n) => match n.entier_ecrit()? {
             Some(i) => format!("n{}", i),
             None => format!("f{}", n.ecrit()),
         },
-        Cellule::Booleen(b) => format!("n{}", *b as i64),
+        Cellule::Booleen(b) => format!("n{}", u8::from(*b)),
     })
-}
-
-/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None` ; un nombre qui ne tient pas en decimal refuse.
-fn entier_exact(n: &socle::forme::NombreLu) -> R<Option<i64>> {
-    use rust_decimal::prelude::ToPrimitive;
-    Ok(Some(n.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
 }
 
 /// La valeur de la derniere colonne titree `nom` (une ligne plus courte que l'en-tete se complete de vides), ou `None`.
@@ -389,15 +382,14 @@ fn champ_exige<'a>(
     champ(entete, ligne, nom).ok_or_else(|| refus!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
 }
 
-/// L'entier d'une case : un entier, un nombre a virgule tronque, un booleen (0 ou 1), un texte d'entier.
-fn entier_de(c: &Cellule) -> R<i64> {
-    use rust_decimal::prelude::ToPrimitive;
+/// La longueur d'une case (un compte de caracteres) : un entier, un nombre a virgule tronque, un booleen (0 ou 1), un
+/// texte d'entier ; une longueur negative ne se lit pas.
+fn longueur_de(c: &Cellule) -> R<usize> {
     match c {
-        Cellule::Entier(i) => Ok(*i),
-        Cellule::AVirgule(n) => n.decimal()?.trunc().to_i64().ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
-        Cellule::Booleen(b) => Ok(*b as i64),
+        Cellule::Nombre(n) => n.compte_tronque()?.ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
+        Cellule::Booleen(b) => Ok(usize::from(*b)),
         Cellule::Texte(s) => {
-            strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
+            strip(s).parse::<usize>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
         }
     }
 }
@@ -453,7 +445,7 @@ fn relever_xlsx(
         };
         let lg = |nom: &str| champ(&entete_types, genre, nom).flatten();
         let longueur = match (lg("Lg Min"), lg("Lg Max")) {
-            (Some(min), Some(max)) => Some([entier_de(min)?, entier_de(max)?]),
+            (Some(min), Some(max)) => Some([longueur_de(min)?, longueur_de(max)?]),
             _ => None,
         };
         let expression = match lg("Regexp") {

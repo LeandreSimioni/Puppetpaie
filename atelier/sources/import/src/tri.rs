@@ -34,7 +34,7 @@ const PROFONDEUR_MAX: usize = 4;
 
 /// Ce qu'une archive peut rendre une fois decompressee, en tout : au-dela, elle n'est pas ouverte (une
 /// « bombe » de zip remplirait le disque).
-const DECOMPRESSE_MAX: u64 = 2 * 1024 * 1024 * 1024;
+const DECOMPRESSE_MAX: socle::grandeurs::Octets = socle::grandeurs::Octets::en_ko(2 * 1024 * 1024);
 
 /// Le gabarit AEM que l'import lit (`importation::lire_aem`) : 1000 caracteres par enregistrement.
 const AEM_LONGUEUR: usize = 1000;
@@ -357,7 +357,7 @@ impl Trieur {
         // Les entrees qui ne s'extraient pas : elles ont leur sort elles aussi, apres l'archive.
         let mut refusees: Vec<Fichier> = Vec::new();
         let mut extraites = 0usize;
-        let mut total: u64 = 0;
+        let mut total = socle::grandeurs::Octets::ZERO;
         for i in 0..z.len() {
             let mut e = match z.by_index(i) {
                 Ok(e) => e,
@@ -387,11 +387,14 @@ impl Trieur {
                 continue;
             }
             let mut contenu = Vec::new();
-            let lu = (&mut e).take(DECOMPRESSE_MAX - total + 1).read_to_end(&mut contenu);
-            let ecrit = lu.map_err(|x| x.to_string()).and_then(|n| {
-                total += n as u64;
+            // La borne de la lecture, a la porte d'`io::Read` : ce qui reste permis, et un octet de plus pour voir le
+            // depassement.
+            let reste = DECOMPRESSE_MAX.en_usize().saturating_sub(total.en_usize()) as u64 + 1;
+            let lu = (&mut e).take(reste).read_to_end(&mut contenu);
+            let ecrit = lu.map_err(|x| x.to_string()).and_then(|_| {
+                total += socle::grandeurs::Octets::de(&contenu);
                 if total > DECOMPRESSE_MAX {
-                    return Err(format!("l'archive rend plus de {} Mo decompresses", DECOMPRESSE_MAX / (1024 * 1024)));
+                    return Err(format!("l'archive rend plus de {} decompresses", DECOMPRESSE_MAX));
                 }
                 if let Some(p) = chemin.parent() {
                     std::fs::create_dir_all(p).map_err(|x| x.to_string())?;

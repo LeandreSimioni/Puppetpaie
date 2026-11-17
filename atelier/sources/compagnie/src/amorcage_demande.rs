@@ -67,24 +67,9 @@ fn gauche(t: &str, n: usize) -> String {
     format!("{}{}", t, " ".repeat(n.saturating_sub(t.chars().count())))
 }
 
-
-/// Le jour ouvre qui tombe `combien` jours ouvres apres `depart` -- ni samedi, ni dimanche, ni fete legale.
-fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
-    let mut jour = depart;
-    let mut restants = combien;
-    while restants > 0 {
-        jour = jour.plus_jours(1).map_err(|e| e.reclasser(Classe::CalculImpossible))?;
-        if jour.jour_de_la_semaine() >= 5 {
-            continue;
-        }
-        let feries = socle::feries::feries(jour.annee()).map_err(|e| e.reclasser(Classe::Illisible))?;
-        if feries.iter().any(|(j, _)| *j == jour) {
-            continue;
-        }
-        restants -= 1;
-    }
-    Ok(jour)
-}
+/// Le delai de la reponse de la DGFiP : « un délai qui ne devrait pas excéder 5 jours ouvrés » (BOI-IR-PAS-30-10-20, § 30),
+/// ni samedi, ni dimanche, ni fete legale.
+const DELAI_DE_LA_REPONSE: socle::date::JoursOuvres = socle::date::JoursOuvres::de(5);
 
 /// LA DEMANDE DE TAUX DU SALARIE `cle` QUI ATTEND SA REPONSE : le dernier signalement d'amorcage reel parti pour lui
 /// (accepte, et pas refuse au bilan : regle 5), s'il est parti apres le dernier taux recu pour lui, et tant que le delai
@@ -104,16 +89,16 @@ pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
     // L'heure de la demande ; un jour seul compte de son debut.
     let partie = match l.quand() {
         socle::paris::InstantOuJour::Instant(i) => Some(i),
-        socle::paris::InstantOuJour::Jour(j) => socle::paris::Moment::a_paris(j, 0, 0, 0),
+        socle::paris::InstantOuJour::Jour(j) => socle::paris::Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT),
     }
     .ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
     // Un taux recu depuis la demande y a repondu.
     let recus = droit::pas::recus(ctx, cle).map_err(|e| e.reclasser(Classe::Illisible))?;
-    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d >= partie) {
+    if recus.last().map(|r| r.mis_a_disposition).is_some_and(|d| d >= partie) {
         return Ok(None);
     }
     let jour = l.quand().jour();
-    let avant = jours_ouvres_apres(jour, 5)?;
+    let avant = socle::feries::compte_du_calendrier(socle::feries::feries, |f| DELAI_DE_LA_REPONSE.apres(jour, f))?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
 

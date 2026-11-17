@@ -38,7 +38,8 @@ use routes::enveloppe::{Charge, Refus, Rendu, Reponse as RouteReponse};
 use socle::echec::{Classe, R};
 use socle::memoire::tenu;
 
-pub const MINUTES_VEILLE: u64 = 20;
+/// Le temps entre deux passages de la veille, par defaut (`--veille MINUTES`).
+pub const VEILLE: std::time::Duration = std::time::Duration::from_secs(20 * 60);
 
 const MOT_DE_PASSE: &str = include_str!("pages/mot_de_passe.html");
 const CHOIX_MOT_DE_PASSE: &str = include_str!("pages/choix_mot_de_passe.html");
@@ -200,7 +201,7 @@ pub struct Fenetre {
     administrateur: Mutex<Option<socle::secret::Secret>>,
     temoin: Mutex<Instant>,
     journal: Mutex<Option<PathBuf>>,
-    minutes_veille: u64,
+    veille: std::time::Duration,
     /// Ce que fait « fermer » : arreter le processus (le navigateur), ou fermer la fenetre Tauri.
     pub fermer: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
@@ -508,7 +509,7 @@ pub fn page_logiciel(racine: &Path, jeton: &socle::secret::Secret) -> R<String> 
 }
 
 impl Fenetre {
-    pub fn nouvelle(minutes_veille: u64, local: PathBuf, port: u16) -> R<Arc<Fenetre>> {
+    pub fn nouvelle(veille: std::time::Duration, local: PathBuf, port: u16) -> R<Arc<Fenetre>> {
         Ok(Arc::new(Fenetre {
             jeton: jeton(&local)?,
             port,
@@ -519,7 +520,7 @@ impl Fenetre {
             administrateur: Mutex::new(None),
             temoin: Mutex::new(Instant::now()),
             journal: Mutex::new(None),
-            minutes_veille,
+            veille,
             fermer: Mutex::new(None),
         }))
     }
@@ -701,7 +702,7 @@ impl Fenetre {
         let etats = self.file_de(&racine);
         self.fil.devant(Some(&etats));
         etats.tout_verifier();
-        let veille = Veille::nouvelle(&racine, self.minutes_veille, Some(etats.clone()));
+        let veille = Veille::nouvelle(&racine, self.veille, Some(etats.clone()));
         veille.demarrer();
         self.poser_phase(Phase::Ouverte { racine, veille, etats });
     }
@@ -754,7 +755,7 @@ impl Fenetre {
                 }
                 let texte = std::str::from_utf8(corps).map_err(|e| socle::echec::refus(e.to_string()))?;
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
-                let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
+                let instant = socle::paris::Moment::a_paris(jour, const { socle::paris::HeureDuJour::a(9, 0) }).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
                     return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::ecrit::seconde::texte(socle::temps::secondes())));
                 }
@@ -808,7 +809,7 @@ impl Fenetre {
         if nom == Route::AdministrateurTableau {
             let c: routes::accueil::ChargeTableau = match charge.lire() {
                 Ok(c) => c,
-                Err(e) => return RouteReponse::de(nom, Err(e)),
+                Err(e) => return RouteReponse::de(nom, Err(routes::case_nommee(nom, e))),
             };
             if c.garde == Some(true) || c.relever == Some(true) {
                 return api::route_de_l_installation(nom, charge);
@@ -965,7 +966,7 @@ impl Fenetre {
                 if nom == Route::CompagnieSupprimer {
                     let c: suppression::ChargeSupprimer = match charge.lire() {
                         Ok(c) => c,
-                        Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(e))),
+                        Err(e) => return Reponse::json(200, &RouteReponse::de(nom, Err(routes::case_nommee(nom, e)))),
                     };
                     if c.confirme == Some(true) {
                         let rendu = if veille.as_ref().is_some_and(|v| v.occupee()) {
@@ -1175,7 +1176,7 @@ pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> Stri
         Some(h) => h,
         None => heure.as_str(),
     };
-    let mut ligne = format!("{} route {} {} ms", a_l_heure, nom, duree.as_millis());
+    let mut ligne = format!("{} route {} {} ms", a_l_heure, nom, socle::temps::ecrit::millisecondes_dites(duree));
     if let Some(r) = rendu.refus() {
         ligne.push_str(&format!(" refus {}", socle::echec::classe_notee(r.classe)));
     }
@@ -1217,24 +1218,24 @@ pub fn prendre_instance(devant: impl Fn() + Send + 'static) -> socle::echec::R<I
 
 /// Demarre le serveur de la fenetre dans un fil, sur l'ecoute de la page que le verrou a prise (`Prise`, que l'appelant
 /// garde tant que la fenetre vit : elle porte le verrou). Rend la fenetre et son port.
-pub fn demarrer(minutes_veille: u64, prise: &Prise) -> std::io::Result<(Arc<Fenetre>, u16)> {
+pub fn demarrer(veille: std::time::Duration, prise: &Prise) -> std::io::Result<(Arc<Fenetre>, u16)> {
     let page = prise.page.try_clone()?;
     instance::sans_heritage(&page);
-    servir_sur(minutes_veille, page, prise.port)
+    servir_sur(veille, page, prise.port)
 }
 
 /// Demarre le serveur de la fenetre dans un fil, au port `port` s'il est libre (sinon un port que le systeme donne : la
 /// ligne « la fenetre ecoute sur » dit lequel). Rend la fenetre et le port. Hors du verrou : `moteur interface --port`, et
 /// les essais.
-pub fn demarrer_sur(minutes_veille: u64, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
+pub fn demarrer_sur(veille: std::time::Duration, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     let (ecouteur, port) = http::ecouter(port)?;
-    servir_sur(minutes_veille, ecouteur, port)
+    servir_sur(veille, ecouteur, port)
 }
 
-fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
+fn servir_sur(veille: std::time::Duration, ecouteur: TcpListener, port: u16) -> std::io::Result<(Arc<Fenetre>, u16)> {
     // L'heure du lancement et les paniques notees (`diagnostic`) : ce qu'un retour et un incident disent de la fenetre.
     compagnie::diagnostic::installer();
-    let f = Fenetre::nouvelle(minutes_veille, navigateur::dossier_local(&installation::base(), port), port).map_err(|e| std::io::Error::other(e.en_lignes()))?;
+    let f = Fenetre::nouvelle(veille, navigateur::dossier_local(&installation::base(), port), port).map_err(|e| std::io::Error::other(e.en_lignes()))?;
     let servie = f.clone();
     std::thread::spawn(move || http::servir(ecouteur, Arc::new(move |r| servie.traiter(r))));
     f.ecrire(&format!("PuppetPaie {} : la fenetre ecoute sur 127.0.0.1:{}.\n", version(), port));
@@ -1246,7 +1247,7 @@ fn servir_sur(minutes_veille: u64, ecouteur: TcpListener, port: u16) -> std::io:
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Options {
     pub port: Option<u16>,
-    pub minutes_veille: u64,
+    pub veille: std::time::Duration,
     pub sans_navigateur: bool,
 }
 
@@ -1255,7 +1256,7 @@ const USAGE: &str = "Usage : moteur interface [--port N] [--sans-navigateur] [--
 /// Les options de `moteur interface`. Une valeur qui ne se lit pas est refusee, jamais remplacee par le defaut.
 pub fn lire_options(args: &[socle::ligne::Argument]) -> R<Options> {
     let args = socle::ligne::textes(args);
-    let mut o = Options { port: None, minutes_veille: MINUTES_VEILLE, sans_navigateur: false };
+    let mut o = Options { port: None, veille: VEILLE, sans_navigateur: false };
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -1272,7 +1273,9 @@ pub fn lire_options(args: &[socle::ligne::Argument]) -> R<Options> {
                 i += 2;
             }
             "--veille" if i + 1 < args.len() => {
-                o.minutes_veille = args[i + 1].parse().map_err(|_| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
+                // Des minutes entieres, la porte de la ligne de commande.
+                let minutes: u64 = args[i + 1].parse().map_err(|_| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
+                o.veille = minutes.checked_mul(60).map(std::time::Duration::from_secs).ok_or_else(|| socle::refus!("Duree de veille illisible : {}. {}", args[i + 1], USAGE))?;
                 i += 2;
             }
             autre => return Err(socle::refus!("Option inconnue : {}. {}", autre, USAGE)),
@@ -1321,7 +1324,7 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
     let hors_calendrier = || socle::echec::refus(socle::date::HORS_CALENDRIER);
     let depart = match (jour, dernier) {
         (Some(j), dernier) => {
-            let neuf_heures = socle::paris::Moment::a_paris(j, 9, 0, 0).ok_or_else(hors_calendrier)?;
+            let neuf_heures = socle::paris::Moment::a_paris(j, const { socle::paris::HeureDuJour::a(9, 0) }).ok_or_else(hors_calendrier)?;
             if let Some(t) = dernier.filter(|t| neuf_heures <= *t) {
                 return Err(socle::echec::refus_avec(
                     format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::ecrit::seconde::texte(t)),
@@ -1330,7 +1333,7 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
             }
             Some(neuf_heures)
         }
-        (None, Some(t)) => Some(t.plus(60).ok_or_else(hors_calendrier)?),
+        (None, Some(t)) => Some(t.plus_duree(std::time::Duration::from_secs(60)).ok_or_else(hors_calendrier)?),
         (None, None) => None,
     };
     if let Some(t) = depart {
@@ -1347,10 +1350,11 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
 }
 
 /// `moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]` : la fenetre dans le navigateur du poste.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     if let Err(e) = installation::fixer_le_code() {
         eprintln!("{}", e.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     compagnie::incidents::brancher_l_engagement();
     #[cfg(feature = "atelier")]
@@ -1358,17 +1362,17 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(reste) => reste,
         Err(e) => {
             eprintln!("{}", e.en_lignes());
-            return 2;
+            return ExitCode::from(2);
         }
     };
     let options = match lire_options(args) {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{}", e.en_lignes());
-            return 2;
+            return ExitCode::from(2);
         }
     };
-    let minutes = options.minutes_veille;
+    let veille = options.veille;
     let devant: Arc<Mutex<Option<(String, PathBuf)>>> = Arc::new(Mutex::new(None));
     let pour_devant = devant.clone();
     let instance = prendre_instance(move || {
@@ -1380,11 +1384,11 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(Instance::Tenue(p)) => p,
         Ok(Instance::Devant) => {
             dire!("PuppetPaie est deja ouvert depuis cette installation : sa fenetre revient devant.");
-            return 0;
+            return ExitCode::SUCCESS;
         }
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}", e.phrase);
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     // La mise a jour se cherche au lancement, pour l'installation (`maj::chercher_en_fond`) ; elle s'appliquera au
@@ -1392,22 +1396,28 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     preparer_l_installation();
     compagnie::maj::chercher_en_fond();
     let demarre = match options.port {
-        Some(p) => demarrer_sur(minutes, p),
-        None => demarrer(minutes, &prise),
+        Some(p) => demarrer_sur(veille, p),
+        None => demarrer(veille, &prise),
     };
     let (f, port) = match demarre {
         Ok(x) => x,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     // Les compagnies de l'installation se tiennent a jour en fond, des maintenant, sans rien ouvrir (`prechauffer`).
     f.prechauffer();
-    *tenu(&f.fermer) = Some(Box::new(|| {
-        std::thread::spawn(|| {
+    // Ce qui arrete la fenetre arrive au fil principal, qui rend son code de sortie : « fermer » (la reponse part
+    // d'abord), ou la fin du navigateur a nous.
+    let (signal, signaux) = std::sync::mpsc::channel::<Signal>();
+    let pour_fermer = signal.clone();
+    *tenu(&f.fermer) = Some(Box::new(move || {
+        let pour_fermer = pour_fermer.clone();
+        std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
-            std::process::exit(0);
+            // Le fil principal deja sorti n'attend plus rien.
+            let _ = pour_fermer.send(Signal::Fermer);
         });
     }));
     let url = f.adresse("puppetpaie.localhost", port);
@@ -1415,30 +1425,41 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     dire!("{}", url);
     let navigateur = if options.sans_navigateur { None } else { navigateur::ouvrir(&url, &f.dossier_local().join("navigateur"), &|t| f.ecrire(t)) };
     // Le navigateur a nous : sa fermeture arrete PuppetPaie. Sinon, plus aucune page depuis cinq minutes l'arrete
-    // (la page interroge la veille chaque minute).
+    // (la page interroge la veille chaque minute) ; sans navigateur, seul « fermer ».
+    let mut guetter_le_silence = !options.sans_navigateur;
     if let Some(mut p) = navigateur {
-        let debut = Instant::now();
-        match p.wait() {
-            Ok(_ferme) => {
-                if debut.elapsed() > Duration::from_secs(5) {
-                    return 0;
-                }
-            }
-            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
-            Err(e) => f.ecrire(&format!("Le navigateur ne se laisse pas attendre ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e)),
-        }
-    }
-    if options.sans_navigateur {
-        loop {
-            std::thread::sleep(Duration::from_secs(3600));
-        }
+        guetter_le_silence = false;
+        std::thread::spawn(move || {
+            let debut = Instant::now();
+            let fin = p.wait().map(|_ferme| debut.elapsed());
+            let _ = signal.send(Signal::NavigateurFini(fin));
+        });
     }
     loop {
-        std::thread::sleep(Duration::from_secs(5));
-        if f.silence() > Duration::from_secs(5 * 60) {
-            return 0;
+        match signaux.recv_timeout(Duration::from_secs(5)) {
+            Ok(Signal::Fermer) => return ExitCode::SUCCESS,
+            Ok(Signal::NavigateurFini(Ok(duree))) if duree > Duration::from_secs(5) => return ExitCode::SUCCESS,
+            Ok(Signal::NavigateurFini(Ok(_))) => guetter_le_silence = true,
+            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
+            Ok(Signal::NavigateurFini(Err(e))) => {
+                f.ecrire(&format!("Le navigateur ne se laisse pas attendre ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e));
+                guetter_le_silence = true;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return ExitCode::SUCCESS,
+        }
+        if guetter_le_silence && f.silence() > Duration::from_secs(5 * 60) {
+            return ExitCode::SUCCESS;
         }
     }
+}
+
+/// Ce qui arrete la fenetre dans le navigateur, dit au fil principal (`commande`).
+enum Signal {
+    /// La route « fermer ».
+    Fermer,
+    /// Le navigateur a nous s'est ferme (apres combien de temps), ou ne se laisse pas attendre.
+    NavigateurFini(std::io::Result<Duration>),
 }
 
 /// CE QUE LA PAGE DIT QUAND LE MOTEUR NE PEUT PLUS LE DIRE : le serveur qui ne repond plus, une reponse illisible. La

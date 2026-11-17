@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
+use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, SeuilNonPorte, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
+use crate::bareme::VersementMobiliteDit;
 use socle::echec::Lieu;
 use socle::grandeurs::ecrit::sans_zero;
 use socle::grandeurs::MontantUnitaire;
@@ -107,7 +108,7 @@ pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) 
             if let Some(j) = v.depuis {
                 for (nic, (_, ferme)) in vus.iter_mut() {
                     if !presents.contains(&nic.as_deref()) && ferme.is_none() {
-                        *ferme = Some(j.plus_jours(-1)?);
+                        *ferme = Some(j.avant(Duree::jours(1))?);
                     }
                 }
             }
@@ -359,12 +360,9 @@ pub fn annees_du_socle(dossier: &Path) -> R<Vec<Annee>> {
                 return None;
             }
             let stem = p.file_stem()?.to_str()?;
-            if stem.is_empty() || !stem.chars().all(|c| c.is_ascii_digit()) {
-                return None;
-            }
-            // Un nom de chiffres qui n'est pas une annee (`0000`, `12345`) n'est pas un socle.
-            let n = stem.bytes().try_fold(0i64, |n, c| n.checked_mul(10)?.checked_add(i64::from(c - b'0')))?;
-            match Annee::nouvelle(n) {
+            // Un nom qui n'est pas des chiffres n'est pas un socle, ni un nom de chiffres qui n'est pas une annee (`0000`,
+            // `12345`).
+            match socle::piece::Zone::lue(stem, socle::piece::format::AnneeEnChiffres).valeur()? {
                 Ok(a) => Some(a),
                 Err(_) => None,
             }
@@ -570,8 +568,8 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R
 fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
     let ou = format!("La surcouche de la compagnie ({})", ou);
     pile.annee = s.annee;
-    if s.versement_mobilite.is_some() {
-        pile.versement_mobilite = s.versement_mobilite;
+    if let Some(v) = s.versement_mobilite {
+        pile.versement_mobilite = Some(crate::bareme::VersementMobiliteDit::lu(v, s.annee)?);
     }
     if let Some(mods) = &s.rubriques {
         modifier_rubriques(&mut pile.rubriques_bulletin, mods, &ou)?;
@@ -588,7 +586,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
             modifier_cotisations(st.cotisations_dsn.as_mut().ok_or_else(|| inconnue(&ou, "cotisations_dsn"))?, mods, &ou)?;
         }
         if let Some(r) = &m.reduction_generale {
-            crate::bareme::reduction_par_dessus(st.reduction_generale.get_or_insert_with(ReductionGenerale::default), r);
+            crate::bareme::reduction_par_dessus(st.reduction_generale.get_or_insert_with(ParametresDeLaReduction::default), r);
         }
     }
     for (n, m) in s.par_nature.iter().flatten() {
@@ -618,10 +616,7 @@ fn cle_siret(siret: &str) -> bool {
 
 /// La pile porte-t-elle un versement mobilite (une reponse, ou un taux) ?
 fn versement_mobilite_dit(pile: &Pile) -> bool {
-    pile.versement_mobilite.as_ref().is_some_and(|v| match v {
-        VersementMobiliteEcrit::Dit(s) => !s.is_empty(),
-        VersementMobiliteEcrit::Ecrit(t) => t.taux.is_some() || t.code_insee.is_some() || t.autorite.is_some() || t.source.is_some() || t.note.is_some(),
-    })
+    pile.versement_mobilite.is_some()
 }
 
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
@@ -826,11 +821,11 @@ fn controler_effectif(pile: &Pile, eff: &EffectifsParAnnee, ou: &str) -> R<()> {
         ));
     }
 
-    for v in &decl.non_portees {
-        let cle = v.cle.to_string();
-        let NonPortee::VersementMobilite = v.cle;
+    for n in &decl.non_portees {
+        let cle = n.cle();
+        let SeuilNonPorte::VersementMobilite(v) = n;
         let rep = &pile.versement_mobilite;
-        let taux_ecrit = matches!(rep, Some(VersementMobiliteEcrit::Ecrit(_)));
+        let taux_ecrit = matches!(rep, Some(VersementMobiliteDit::Du(_)));
         if !atteint(v.seuil)? {
             if taux_ecrit {
                 // Un taux ecrit sous le seuil : la compagnie paierait ce qu'elle ne doit pas.
@@ -844,30 +839,19 @@ L'effacer, ou ecrire \"aucun\".",
             }
             continue;
         }
-        let mut attendues: Vec<&str> = v.reponses.keys().map(String::as_str).collect();
-        match rep {
-            Some(VersementMobiliteEcrit::Dit(r)) if attendues.contains(&r.as_str()) => continue,
-            Some(VersementMobiliteEcrit::Ecrit(t)) if t.taux.is_some() && t.code_insee.as_deref().is_some_and(|c| c.trim().chars().count() == 5) => continue,
-            _ => {}
-        }
+        let mut attendues: Vec<&str> = v.reponses.keys().map(|r| r.ecrite()).collect();
+        // Un taux dit l'est avec la commune de l'etablissement : la lecture de la surcouche refuse l'un sans l'autre
+        // (`bareme::VersementMobiliteDit::lu`).
+        let r = match rep {
+            Some(VersementMobiliteDit::Du(_)) => continue,
+            Some(VersementMobiliteDit::Reponse(r)) if v.reponses.contains_key(r) => continue,
+            Some(VersementMobiliteDit::Reponse(r)) => Some(r.ecrite()),
+            None => None,
+        };
         noms.push(format!("{} (non porte)", cle));
-        let constat = match rep {
+        let constat = match r {
             None => "Rien n'est ecrit sur ce point.".to_string(),
-            Some(VersementMobiliteEcrit::Ecrit(t)) => format!(
-                "La valeur ecrite (taux {}, code INSEE {}) n'a pas son taux ET le code INSEE (cinq \
-caracteres) de la commune de l'etablissement : les deux se \
-lisent sur la deliberation de l'autorite ou sur le bordereau \
-Urssaf.",
-                match t.taux {
-                    Some(x) => x.decimal().to_string(),
-                    None => "absent".to_string(),
-                },
-                match t.code_insee.as_deref() {
-                    Some(c) => format!("« {} »", c),
-                    None => "absent".to_string(),
-                }
-            ),
-            Some(VersementMobiliteEcrit::Dit(r)) => format!(
+            Some(r) => format!(
                 "La valeur ecrite (« {} ») ne le debloque pas : il n'y a ni \
 rubrique, ni ligne DSN, ni CTP pour la porter -- ecrire un \
 taux ne le ferait pas cotiser.",
@@ -1267,7 +1251,7 @@ pub fn surcouche(an: Annee) -> R<CheminRelatif> {
 pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<Annee> {
     let an = chemin.texte().strip_prefix(BAREMES.texte())?.strip_prefix('/')?.strip_suffix(".json")?;
     // Un nom qui n'est pas une annee ne nomme pas une surcouche.
-    let an = match Annee::nouvelle(socle::num::entier_de_chiffres(an)?) {
+    let an = match socle::piece::Zone::lue(an, socle::piece::format::AnneeEnChiffres).valeur()? {
         Ok(a) => a,
         Err(_) => return None,
     };
@@ -1662,8 +1646,8 @@ impl Contexte {
     pub fn plafond_securite_sociale(&self, annee: Annee) -> R<crate::plafond::Pss> {
         let jour = annee.premier_jour();
         let lue = self.pile_lue(&jour, &self.entreprise)?;
-        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss { mensuel: p.mensuel.partie_entiere(), horaire: p.horaire.partie_entiere() });
-        match plafond.filter(|p| !p.mensuel.est_nul() && !p.horaire.est_nul()) {
+        let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss::en_euros_entiers(p.mensuel, p.horaire));
+        match plafond.filter(|p| !p.mensuel().est_nul() && !p.horaire().est_nul()) {
             Some(p) => Ok(p),
             None => Err(socle::echec::refus_avec(
                 "Le barème de l'année n'a pas le plafond de la Sécurité sociale : le signaler au développeur.",

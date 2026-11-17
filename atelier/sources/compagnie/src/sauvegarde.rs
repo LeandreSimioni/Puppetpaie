@@ -20,6 +20,7 @@
 use std::collections::BTreeMap;
 use socle::echec::Classe;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
+use socle::grandeurs::Octets;
 use socle::paris::Moment;
 use std::path::{Path, PathBuf};
 
@@ -83,7 +84,7 @@ impl EtatFichier {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fichier {
     pub relatif: CheminRelatif,
-    pub octets: u64,
+    pub octets: Octets,
     pub etat: EtatFichier,
 }
 
@@ -94,12 +95,10 @@ pub struct Sauvegarde {
     pub compte: Option<String>,
     pub deposes: Vec<Fichier>,
     pub identiques: usize,
-    pub octets_deposes: u64,
+    pub octets_deposes: Octets,
     pub exclus: usize,
     /// Purges entre l'inventaire et l'envoi : pas un incident.
     pub disparus: usize,
-    /// La duree du passage, en secondes, au dixieme.
-    pub secondes: socle::num::Decimal,
     /// Le detail brut de ce qui n'est pas passe (`dossier : erreur`), pour la ligne de commande. La fenetre ne le montre
     /// pas : un dossier reporte au passage suivant n'est pas un incident.
     pub incidents: Vec<String>,
@@ -167,7 +166,7 @@ impl Sauvegarde {
             }
             return format!("Sauvegarde : {} fichier(s) inchange(s){}.", self.identiques, reporte);
         }
-        format!("Sauvegarde : {} fichier(s) envoye(s), {}, {} inchange(s){}.", self.deposes.len(), lisible(self.octets_deposes), self.identiques, reporte)
+        format!("Sauvegarde : {} fichier(s) envoye(s), {}, {} inchange(s){}.", self.deposes.len(), self.octets_deposes, self.identiques, reporte)
     }
 }
 
@@ -189,8 +188,8 @@ fn combien(reportes: &[Reporte], un: &str, plusieurs: &str) -> String {
 /// incident a montrer : Google rend parfois un 500 que le passage suivant ne voit plus. Ce qui se dit, c'est ce qui dure :
 /// le meme dossier (ou fichier) en echec sur `PASSAGES_QUI_DURENT` passages de suite (une heure, a vingt minutes d'une veille a
 /// l'autre), ou depuis `UNE_JOURNEE`, ou une journee entiere sans sauvegarde complete.
-pub const PASSAGES_QUI_DURENT: i64 = 3;
-pub const UNE_JOURNEE: i64 = 86_400;
+pub const PASSAGES_QUI_DURENT: usize = 3;
+pub const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
 
 /// « un dossier n'a pas pu être envoyé », « 2 fichiers n'ont pas pu être envoyés ».
 fn ce_qui_manque(nd: usize, nf: usize) -> String {
@@ -209,20 +208,19 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 
 /// « depuis 09:51 » le jour meme, « depuis hier », « depuis le 18/10 ».
 fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
-    let jour = depuis.jour_de_paris();
-    match maintenant.jour_de_paris().moins(&jour) {
-        0 => {
-            let s = depuis.seconde_du_jour_de_paris();
-            format!("depuis {:02}:{:02}", s / 3_600, (s % 3_600) / 60)
-        }
-        1 => "depuis hier".to_string(),
-        _ => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
+    let (jour, aujourdhui) = (depuis.jour_de_paris(), maintenant.jour_de_paris());
+    // Les jours ecoules d'un jour qui n'est pas apres aujourd'hui.
+    let ecoules = (jour <= aujourdhui).then(|| socle::date::Duree::ecoulee(&jour, &aujourdhui));
+    match ecoules {
+        Some(d) if d == socle::date::Duree::jours(0) => format!("depuis {}", depuis.heure_de_paris()),
+        Some(d) if d == socle::date::Duree::jours(1) => "depuis hier".to_string(),
+        Some(_) | None => format!("depuis le {}", jour.jj_mm()),
     }
 }
 
 /// `maintenant` est-il une journee au moins apres `depuis` ?
 fn une_journee_apres(maintenant: Moment, depuis: Moment) -> bool {
-    maintenant.depuis(depuis).is_some_and(|d| d.as_secs() >= UNE_JOURNEE as u64)
+    maintenant.depuis(depuis).is_some_and(|d| d >= UNE_JOURNEE)
 }
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'instant `maintenant`, ou `None`.
@@ -271,33 +269,14 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     }
 }
 
-/// UNE TAILLE EN MEGA-OCTETS (2^20) TELLE QU'UNE PHRASE LA DIT, au dixieme, la seule ecriture d'une taille en Mo :
-/// « 3.5 Mo », la decimale ecrite `decimale` (« 3,5 Mo »).
-pub fn en_mo(octets: u64, decimale: char) -> String {
-    match socle::num::quotient(u128::from(octets), 1_048_576, 1) {
-        Some(t) => format!("{} Mo", t.replace('.', decimale.encode_utf8(&mut [0; 4]))),
-        None => unreachable!("un mega-octet n'est pas nul"),
-    }
-}
-
-pub(crate) fn lisible(octets: u64) -> String {
-    if octets >= 1024 * 1024 {
-        en_mo(octets, '.')
-    } else if octets >= 1024 {
-        format!("{} Ko", octets / 1024)
-    } else {
-        format!("{} o", octets)
-    }
-}
-
 // ---------------------------------------------------------------- l'inventaire
 
-/// La taille et la date de modification (secondes entieres) d'un fichier (`inventaire`).
+/// La taille et la date de modification (a la seconde) d'un fichier (`inventaire`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Etat {
-    pub octets: u64,
-    pub mtime: i64,
+    pub octets: Octets,
+    pub mtime: Moment,
 }
 
 /// Un nom ou un suffixe exclu, ou un dossier exclu n'importe ou dans le chemin relatif
@@ -364,7 +343,7 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(CheminRelatif, Etat)>, usize), 
                 format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
             ));
         };
-        trouves.push((relatif, Etat { octets: m.len(), mtime: date.entieres() }));
+        trouves.push((relatif, Etat { octets: Octets::du_disque(&m), mtime: date.a_la_seconde() }));
     }
     Ok((trouves, ecartes))
 }
@@ -428,7 +407,7 @@ pub struct Index {
 pub struct EchecIndexe {
     #[serde(with = "socle::paris::ecrit::saisie")]
     pub depuis: socle::paris::Moment,
-    pub passages: i64,
+    pub passages: usize,
     pub cause: String,
 }
 

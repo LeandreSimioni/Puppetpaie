@@ -20,6 +20,7 @@ pub mod urssaf;
 pub mod usages;
 
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use serde::Serialize;
 
@@ -80,16 +81,16 @@ const USAGE: &str = "usage : moteur-atelier extraire naf <structure.xlsx> <corre
 La sortie se nomme toujours ; un fichier deja la ne se remplace qu'avec --remplacer.";
 
 /// `moteur-atelier extraire ...` : rend le code de sortie (2 : la commande est mal formee, 1 : le releve refuse, 0 : ecrit).
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
     let args: &[String] = &socle::ligne::textes(args);
     if args.iter().any(|a| matches!(a.as_str(), "-h" | "--help" | "--aide")) {
         dire!("{}", USAGE);
-        return 0;
+        return ExitCode::SUCCESS;
     }
     let remplacer = args.iter().any(|a| a == "--remplacer");
     if let Some(o) = args.iter().find(|a| a.starts_with("--") && a.as_str() != "--remplacer") {
         eprintln!("option inconnue : {}\n{}", o, USAGE);
-        return 2;
+        return ExitCode::from(2);
     }
     let pos: Vec<&str> = args.iter().filter(|a| !a.starts_with("--")).map(String::as_str).collect();
     if pos.first() == Some(&"transcrire") {
@@ -101,7 +102,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Some("urssaf") => 4,
         _ => {
             eprintln!("{}", USAGE);
-            return 2;
+            return ExitCode::from(2);
         }
     };
     if pos.len() != attendus + 1 {
@@ -109,13 +110,13 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             "moteur-atelier extraire {} attend {} chemins, la sortie en dernier : rien n'est ecrit.\n{}",
             pos[0], attendus, USAGE
         );
-        return 2;
+        return ExitCode::from(2);
     }
     let sources: Vec<PathBuf> = pos[1..attendus].iter().map(PathBuf::from).collect();
     let sortie = PathBuf::from(pos[attendus]);
     if let Err(m) = verifier_la_sortie(&sources, &sortie, remplacer) {
         eprintln!("{}", m.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     let jour = socle::temps::jour_de_paris();
     let releve = match pos[0] {
@@ -128,18 +129,18 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         Ok(r) => r,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     if let Err(m) = ecrire(&releve, &sortie, remplacer) {
         eprintln!("{}", m.en_lignes());
-        return 1;
+        return ExitCode::FAILURE;
     }
     for l in &releve.bilan {
         dire!("{}", l);
     }
     dire!("-> {}", sortie.display());
-    0
+    ExitCode::SUCCESS
 }
 
 /// La sortie avant tout releve : un `.json`, qui n'est aucune des sources, et qui n'existe pas encore (sauf `--remplacer`).
@@ -246,20 +247,20 @@ pub(crate) fn en_transcription(source: &Path) -> bool {
 }
 
 /// `moteur-atelier extraire transcrire <cahier.pdf> <usages.txt> <formats.txt>` : les deux transcriptions du cahier.
-fn transcrire(args: &[&str], remplacer: bool) -> i32 {
+fn transcrire(args: &[&str], remplacer: bool) -> ExitCode {
     let [pdf, usages_txt, formats_txt] = args else {
         eprintln!("moteur-atelier extraire transcrire attend le cahier en PDF puis les deux sorties : rien n'est ecrit.\n{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     };
     let (pdf, sorties) = (PathBuf::from(pdf), [PathBuf::from(usages_txt), PathBuf::from(formats_txt)]);
     for s in &sorties {
         if !en_transcription(s) {
             eprintln!("Une transcription est un fichier .txt (recu : {}) : rien n'est ecrit.", s.display());
-            return 1;
+            return ExitCode::FAILURE;
         }
         if s.exists() && !remplacer {
             eprintln!("{} existe deja (`--remplacer` pour l'ecraser) : rien n'est ecrit.", s.display());
-            return 1;
+            return ExitCode::FAILURE;
         }
     }
     let faites = usages::transcrire(&pdf).and_then(|u| Ok((u, formats::transcrire(&pdf)?)));
@@ -267,18 +268,18 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
         Ok(x) => x,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     for (texte, sortie) in [(u, &sorties[0]), (f, &sorties[1])] {
         let tmp = socle::ecriture::provisoire(sortie);
         if let Err(e) = std::fs::write(&tmp, texte).and_then(|_| std::fs::rename(&tmp, sortie)) {
             eprintln!("{}", socle::fichiers::effacer_apres(refus!("{} : {}", sortie.display(), e), &tmp).en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
         dire!("-> {}", sortie.display());
     }
-    0
+    ExitCode::SUCCESS
 }
 
 // ------------------------------------------------------------------ les aides communes

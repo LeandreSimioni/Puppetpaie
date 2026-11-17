@@ -12,6 +12,7 @@ use moteur::commandes::Cadre;
 use compagnie::preuve::Preuve;
 use routes::gestes::depot_acte;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "depot-dsn",
@@ -19,14 +20,14 @@ pub static SPEC: Spec = Spec {
     options: &[Opt::valeur("ordre"), Opt::choix("environnement", envois::releve_retours::EnvironnementNetEntreprises::NOMS, Some("production"))],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     super::code(faire(cadre, args))
 }
 
-fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     let Some(fichier) = args.tape("fichier").filter(|f| !f.texte().is_empty()) else {
         dire!("depot-dsn FICHIER|AAAA-MM [--ordre N] [--environnement editeur] : un depot de TEST.");
-        return Ok(2);
+        return Ok(ExitCode::from(2));
     };
     let ordre = match args.texte("ordre").filter(|t| !t.is_empty()) {
         None => None,
@@ -34,7 +35,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             Ok(n) => Some(n),
             Err(e) => {
                 dire!("--ordre N : un entier positif ({}).", e.phrase);
-                return Ok(2);
+                return Ok(ExitCode::from(2));
             }
         },
     };
@@ -53,5 +54,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     if let Some(flux) = &fait.flux {
         dire!("Flux : {} -- les retours s'y rattacheront (outil retours, ou la route ouverture).", flux);
     }
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }

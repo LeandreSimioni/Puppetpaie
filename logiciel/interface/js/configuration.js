@@ -470,10 +470,10 @@ function vueNaturesADire(liste) {
     fin: (x) => `<label>Fin prévue <input type="date" data-nature-champ="fin"></label>`,
     numero: (x) => `<label title="${aideDe("import_numero")}">Numéro du contrat
         <input type="text" data-nature-champ="numero" placeholder="${echapper(x.numero_placeholder)}"></label>`,
-    salaire: (x) => `<label>Salaire mensuel brut <input type="number" step="0.01" min="0" data-nature-champ="salaire"
+    salaire: (x) => `<label>Salaire mensuel brut <input type="text" inputmode="decimal" data-nature-champ="salaire"
         placeholder="celui du contrat signé"></label>`,
     quotite: (x) => `<label title="${aideDe("import_quotite")}">Heures par mois
-        <input type="number" step="0.01" min="0" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
+        <input type="text" inputmode="decimal" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
   };
   const lignes = liste.map((x) => `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
@@ -522,8 +522,8 @@ document.addEventListener("click", async (ev) => {
   try {
     const charge = { salarie: b.dataset.natureSalarie, nature };
     rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      // Une case de nombre part en nombre (la durée du travail : des heures, lues en nombre par le moteur).
-      charge[c.dataset.natureChamp] = c.value === "" ? null : (c.type === "number" ? Number(c.value) : c.value);
+      // Chaque case part telle qu'elle est tapée : la route convertit un nombre (le salaire, les heures par mois).
+      charge[c.dataset.natureChamp] = c.value.trim() === "" ? null : c.value.trim();
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
@@ -866,7 +866,7 @@ const SECTIONS_FICHE = {
   ],
 };
 
-/* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`droit::conges::JOURS_DE_LA_SEMAINE`). */
+/* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`socle::date::JourDeLaSemaine::NOMS`). */
 const JOURS_DE_LA_SEMAINE = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
 /* Les champs que la machine deduit d'un autre, ou qu'elle connait sans
@@ -989,7 +989,8 @@ function caseSousChamp(parent, k, val, genre) {
       `<option value="${echapper(v)}" ${(val == null ? v === "" : String(val) === v) ? "selected" : ""}>${echapper(lib)}</option>`).join("")}</select>`;
   }
   if (genre.nombre) {
-    return `<input type="number" step="0.01" min="0" ${attrs} data-sous-type="nombre"${valeurDeDepart(val)}>`;
+    // Un nombre se tape tel quel (« 1,5 % ») : la route le convertit.
+    return `<input type="text" inputmode="decimal" ${attrs} data-sous-type="nombre"${valeurDeDepart(val)}>`;
   }  // Une date se choisit dans un calendrier, comme partout ; la valeur
   // reste AAAA-MM-JJ. Une valeur ancienne d'une autre forme reste un texte.
   if (genre.date && (val == null || /^(\d{4}-\d{2}-\d{2})?$/.test(String(val)))) {
@@ -1324,8 +1325,8 @@ async function brancherAtmp() {
   };
   $("atmp-enregistrer").onclick = async (ev) => {
     ev.preventDefault();
-    const nombre = String(valeur.value).trim().replace(",", ".");
-    const ligne = { code_risque: code.value.trim() || null, valeur: nombre === "" ? null : Number(nombre), depuis: depuis.value || null };
+    // Le taux part tel qu'il est tapé (« 1,5 % ») : la route le convertit, et le refuse en nommant la case.
+    const ligne = { code_risque: code.value.trim() || null, valeur: valeur.value.trim() || null, depuis: depuis.value || null };
     const charge = { nom: "entreprise", changements: [{ case: "taux_atmp", valeur: ligne }] };
     try {
       let r = await api("enregistrer-fiche", charge);
@@ -1370,7 +1371,7 @@ function SANTE_HTML() {
       </select></label>
     <label class="coche"><input type="checkbox" id="config-sante-conjoint"> conjoint couvert</label>
     <label>Enfants couverts
-      <input type="number" min="0" step="1" id="config-sante-enfants" value="0"></label>
+      <input type="text" inputmode="numeric" id="config-sante-enfants" value="0"></label>
     <div class="aide">${echapper(ETAT.sante_aide)}</div>
   </div>`;
 }

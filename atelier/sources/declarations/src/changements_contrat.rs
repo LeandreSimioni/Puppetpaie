@@ -290,7 +290,7 @@ correction de mois deja declares, que le logiciel ne fait pas.",
             // En cours de mois : la paie decoupee au jour du changement le porte (; norme, § 2.1.2.5 p. 22-23 :
             // 41.001 au jour, 41.028 au premier du mois), pour ce que le decoupage sait calculer.
             if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)?) {
-                let suivant = Jour { jour: 1, ..debut_m.plus_jours(31)? };
+                let suivant = mois.suivant().premier_jour();
                 let comment = if md.decoupable && md.saisie && md.origines.is_empty() {
                     " La paie se decoupe au jour d'un avenant quand la saisie dit les termes du contrat d'avant (`avant` : \
 `salaire_mensuel` et `quotite_contrat`) ; sinon, le"
@@ -394,7 +394,7 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
         let date = date_du_changement(ctx, p, md, &decl, mois, avant, apres)?;
         let debut = ddmmaaaa(debut_declare(ecrit, "le bloc contrat ecrit", p)?)
             .ok_or_else(|| socle::refus!("{} : la date de debut du bloc contrat ecrit (S21.G00.40.001) ne se lit pas.", qui(p)))?;
-        let profondeur = Jour { jour: 1, ..date }.max(debut);
+        let profondeur = date.mois_civil().premier_jour().max(debut);
         let ancienne = match md.liste {
             Some(relue) => relue(norme, avant)?.to_string(),
             None => avant.to_string(),

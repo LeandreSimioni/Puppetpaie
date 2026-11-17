@@ -246,9 +246,17 @@ impl Echec {
         match &mut self.a_part {
             None => self.a_part = Some(APart::Lieu(Lieu { chemin: chemin(), ..Lieu::default() })),
             Some(APart::Lieu(a)) => a.chemin = a.chemin.take().or_else(chemin),
-            Some(APart::Forme(_)) => {}
+            Some(APart::Forme(_)) | Some(APart::Case(_)) => {}
         }
         self
+    }
+
+    /// LA CASE D'UNE SAISIE QUI LE FAIT, s'il est le refus d'une saisie a l'une de ses cases (`forme::lire_saisie`).
+    pub fn case_refusee(&self) -> Option<&CaseRefusee> {
+        match &self.a_part {
+            Some(APart::Case(c)) => Some(c),
+            Some(APart::Lieu(_)) | Some(APart::Forme(_)) | None => None,
+        }
     }
 }
 
@@ -360,12 +368,33 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
 
 /// CE QU'UN REFUS PORTE A PART, ecrit sans etiquette : l'objet rendu est celui de la variante. Un `Lieu` (un chemin, un
 /// fichier, une cle, ce qui a ete lu), ou la forme que declare la couche qui refuse (l'etat d'un depot, les anomalies
-/// d'une fiche, l'archive alteree), gardee typee jusqu'a la porte, qui l'ecrit une fois ; personne ne la relit.
+/// d'une fiche, l'archive alteree), gardee typee jusqu'a la porte, qui l'ecrit une fois ; personne ne la relit. Ou la case
+/// d'une saisie qui se refuse (`CaseRefusee`), dont la route fait sa phrase.
 #[derive(Clone, serde::Serialize)]
 #[serde(untagged)]
 pub enum APart {
     Lieu(Lieu),
     Forme(#[serde(serialize_with = "forme_ecrite")] std::sync::Arc<dyn erased_serde::Serialize + Send + Sync>),
+    Case(CaseRefusee),
+}
+
+/// UNE CASE D'UNE SAISIE QUI SE REFUSE (`forme::lire_saisie`, la charge d'une route) : sa case, la ou la faute est ; son
+/// chemin dans la saisie et pourquoi, ecrits a part (`cle`, `detail`). La route en fait sa phrase (`forme::case_refusee`),
+/// la case nommee comme sa fiche la montre.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CaseRefusee {
+    #[serde(skip)]
+    pub case: CaseDeLaSaisie,
+    pub cle: String,
+    pub detail: String,
+}
+
+/// LA CASE D'UNE SAISIE OU UNE FAUTE EST : la cle de la saisie qui la porte, ou la case que nomme le changement qui la
+/// porte (`{"case": "salaire_mensuel", "valeur": …}`, la carte).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaseDeLaSaisie {
+    Cle(String),
+    DUnChangement(String),
 }
 
 impl APart {
@@ -378,7 +407,7 @@ impl APart {
     pub fn lieu(&self) -> Option<&Lieu> {
         match self {
             APart::Lieu(l) => Some(l),
-            APart::Forme(_) => None,
+            APart::Forme(_) | APart::Case(_) => None,
         }
     }
 }
@@ -399,6 +428,7 @@ impl std::fmt::Debug for APart {
         match self {
             APart::Lieu(l) => f.debug_tuple("Lieu").field(l).finish(),
             APart::Forme(_) => f.debug_tuple("Forme").field(&crate::ecriture::json_en_ligne(self)).finish(),
+            APart::Case(c) => f.debug_tuple("Case").field(c).finish(),
         }
     }
 }

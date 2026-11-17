@@ -61,13 +61,15 @@ pub struct Inspection {
 #[serde(deny_unknown_fields)]
 pub struct Chiffrement {
     pub filtre: String,
-    #[serde(rename = "V")]
-    pub v: i64,
-    #[serde(rename = "R")]
-    pub r: i64,
-    pub longueur: i64,
-    #[serde(rename = "P")]
-    pub p: i64,
+    /// Les parametres du chiffrement (ISO 32000-1, 7.6.3.2), que l'import ne lit pas.
+    #[serde(rename = "V", deserialize_with = "socle::forme::non_lue")]
+    pub v: socle::forme::NonLue,
+    #[serde(rename = "R", deserialize_with = "socle::forme::non_lue")]
+    pub r: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    pub longueur: socle::forme::NonLue,
+    #[serde(rename = "P", deserialize_with = "socle::forme::non_lue")]
+    pub p: socle::forme::NonLue,
     pub methode: String,
 }
 
@@ -77,7 +79,7 @@ pub struct Chiffrement {
 pub struct PageRelevee {
     pub largeur: Mesure,
     pub hauteur: Mesure,
-    pub rotation: i64,
+    pub rotation: fabrique_pdf::inspection::Rotation,
     pub polices: Vec<String>,
     pub images: Vec<Boite>,
     pub traits: Vec<Boite>,

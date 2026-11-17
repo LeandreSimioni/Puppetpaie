@@ -249,8 +249,8 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 struct TextesDeFiche(Vec<(CaseDeFiche, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-        let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
+    fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
+        let textes: Vec<String> = liste.iter().filter_map(|e| texte_de(&socle::ecriture::CaseEcrite(&e.valeur))).collect();
         if !textes.is_empty() {
             self.0.push((cle, textes));
         }
@@ -713,8 +713,7 @@ fn ajouter(t: u64, texte: String, cle: String) {
 
 /// « -2:41 » : il y a deux minutes et quarante et une secondes.
 fn relatif(maintenant: u64, t: u64) -> String {
-    let s = maintenant.saturating_sub(t) / 1000;
-    format!("-{}:{:02}", s / 60, s % 60)
+    format!("-{}", socle::temps::ecrit::minutes_et_secondes_dites(std::time::Duration::from_millis(maintenant.saturating_sub(t))))
 }
 
 /// Le fil des trois dernieres minutes, une ligne par action, la plus ancienne d'abord ; vide hors de la fenetre.
@@ -768,7 +767,7 @@ impl OrigineDeLAppel {
 pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: OrigineDeLAppel, nom: &str, ecriture: bool, charge: &C, duree: Duration, issue: Result<(), (&str, &str)>) {
     let forme = en_forme(Some(racine), charge);
     let ch = if forme == "{}" || forme == "null" { String::new() } else { format!(" {}", compact(&forme, CHARGE_LIGNE_MAX)) };
-    let ms = duree.as_millis();
+    let ms = socle::temps::ecrit::millisecondes_dites(duree);
     let (fin, cle_issue, refusee) = match issue {
         Ok(()) => (format!("→ ok, {} ms", ms), "ok".to_string(), false),
         Err((classe, message)) => {
@@ -780,7 +779,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: OrigineDeLAppel
         OrigineDeLAppel::Page => "route",
         OrigineDeLAppel::Fond => "fond, route",
     };
-    let t = maintenant_ms().saturating_sub(ms as u64);
+    let t = maintenant_ms().saturating_sub(duree.as_millis() as u64);
     // DE QUOI REJOUER : la ligne du fil coupe la charge ; une ecriture de la page (ou un refus) la garde entiere, mise en
     // forme -- la saisie qui a mene au refus se rejoue sur une fictive (`ecritures`).
     if source == OrigineDeLAppel::Page && (ecriture || refusee) {
@@ -843,7 +842,8 @@ pub struct PageDite {
     pub langue: String,
     pub langues: String,
     pub fuseau: String,
-    pub decalage_minutes: i64,
+    /// Le decalage du fuseau de la page sur l'UTC (`-getTimezoneOffset()`, en minutes : `60`).
+    pub decalage_minutes: socle::paris::DecalageSurUtc,
     pub agent: String,
     /// La memoire du poste en Go (`navigator.deviceMemory` : `0.5`, `8`), telle que la page l'ecrit.
     pub memoire_go: Option<socle::forme::NombreLu>,
@@ -1049,39 +1049,12 @@ fn memoire() -> (Lu<u64>, Lu<u64>) {
 
 #[cfg(windows)]
 fn memoire() -> (Lu<u64>, Lu<u64>) {
-    #[repr(C)]
-    struct EtatMemoire {
-        longueur: u32,
-        charge: u32,
-        physique_totale: u64,
-        physique_libre: u64,
-        pagination_totale: u64,
-        pagination_libre: u64,
-        virtuelle_totale: u64,
-        virtuelle_libre: u64,
-        etendue_libre: u64,
-    }
-    extern "system" {
-        fn GlobalMemoryStatusEx(etat: *mut EtatMemoire) -> i32;
-    }
-    let mut e = EtatMemoire {
-        longueur: std::mem::size_of::<EtatMemoire>() as u32,
-        charge: 0,
-        physique_totale: 0,
-        physique_libre: 0,
-        pagination_totale: 0,
-        pagination_libre: 0,
-        virtuelle_totale: 0,
-        virtuelle_libre: 0,
-        etendue_libre: 0,
-    };
-    // SAFETY : la structure est celle de MEMORYSTATUSEX, sa longueur posee comme l'appel l'exige.
-    let ok = unsafe { GlobalMemoryStatusEx(&mut e) } != 0;
-    if ok {
-        (Lu::Dit(e.physique_totale / (1024 * 1024)), Lu::Dit(e.physique_libre / (1024 * 1024)))
-    } else {
-        let pourquoi = std::io::Error::last_os_error().to_string();
-        (Lu::PasDit(pourquoi.clone()), Lu::PasDit(pourquoi))
+    match socle::systeme::memoire_physique() {
+        Ok((totale, libre)) => (Lu::Dit(totale / (1024 * 1024)), Lu::Dit(libre / (1024 * 1024))),
+        Err(e) => {
+            let pourquoi = e.to_string();
+            (Lu::PasDit(pourquoi.clone()), Lu::PasDit(pourquoi))
+        }
     }
 }
 
@@ -1094,18 +1067,9 @@ fn memoire() -> (Lu<u64>, Lu<u64>) {
 /// Le disque libre la ou vit `p`, en Mo.
 #[cfg(windows)]
 fn disque_libre(p: &Path) -> Lu<u64> {
-    use std::os::windows::ffi::OsStrExt;
-    extern "system" {
-        fn GetDiskFreeSpaceExW(dossier: *const u16, libre_appelant: *mut u64, total: *mut u64, libre_total: *mut u64) -> i32;
-    }
-    let large: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let (mut libre, mut total, mut libre_total) = (0u64, 0u64, 0u64);
-    // SAFETY : un chemin termine par zero, trois sorties vivantes.
-    let ok = unsafe { GetDiskFreeSpaceExW(large.as_ptr(), &mut libre, &mut total, &mut libre_total) } != 0;
-    if ok {
-        Lu::Dit(libre / (1024 * 1024))
-    } else {
-        Lu::PasDit(std::io::Error::last_os_error().to_string())
+    match socle::systeme::disque_libre(p) {
+        Ok(libre) => Lu::Dit(libre / (1024 * 1024)),
+        Err(e) => Lu::PasDit(e.to_string()),
     }
 }
 
@@ -1120,19 +1084,6 @@ fn disque_libre(p: &Path) -> Lu<u64> {
         Some(Ok(k)) => Lu::Dit(k / 1024),
         Some(Err(e)) => Lu::PasDit(format!("df : {}", e)),
         None => Lu::PasDit("df ne dit pas le disque libre".to_string()),
-    }
-}
-
-/// « 1 h 12 min 5 s ».
-fn duree_lisible(d: Duration) -> String {
-    let s = d.as_secs();
-    let (h, m, s) = (s / 3600, (s % 3600) / 60, s % 60);
-    if h > 0 {
-        format!("{} h {} min {} s", h, m, s)
-    } else if m > 0 {
-        format!("{} min {} s", m, s)
-    } else {
-        format!("{} s", s)
     }
 }
 
@@ -1224,7 +1175,7 @@ pub fn machine(racine: &Path) -> Machine {
             Err(e) => e.phrase,
         },
         langue_systeme: langue,
-        duree_lance: duree_lisible(demarrage().elapsed()),
+        duree_lance: socle::temps::ecrit::dite_a_la_seconde(demarrage().elapsed()),
         mises_a_jour,
         page: page(),
     }

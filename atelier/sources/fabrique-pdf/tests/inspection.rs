@@ -5,7 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
-use fabrique_pdf::mesure::{mesure, Mesure};
+use fabrique_pdf::mesure;
+use fabrique_pdf::mesure::Mesure;
 use serde_json::{json, Value};
 
 pub mod commun;
@@ -40,14 +41,14 @@ fn boite(v: &Value) -> [Mesure; 4] {
     [f(&a[0]), f(&a[1]), f(&a[2]), f(&a[3])]
 }
 
-/// `n` points.
-fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
+/// `n` points : `n` fois un point.
+fn pt(n: usize) -> Mesure {
+    n * Mesure::UN
 }
 
-/// `a` vaut `b` à `tolerance` près (une mesure écrite en décimal).
-fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
-    (a - b).abs() <= mesure(tolerance)
+/// `a` vaut `b` à `tolerance` près.
+fn proche(a: Mesure, b: Mesure, tolerance: Mesure) -> bool {
+    (a - b).abs() <= tolerance
 }
 
 /// Un contrat de la fabrique : un titre, un paragraphe, une image, un tableau cadré, sur 2 pages.
@@ -59,15 +60,15 @@ fn contrat(largeur: Mesure, hauteur: Mesure) -> Vec<u8> {
         "format": 1,
         "page": {"largeur": largeur, "hauteur": hauteur,
                  "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}},
-        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
+        "police": {"taille": 10, "interligne": mesure!("1.25"), "couleur": "#000000"},
         "titre": "Contrat éàç — DUPONT",
         "documents": [{"blocs": [
             para("Bonjour le monde"),
             json!({"type": "image", "chemin": chemin(&exemples().join("signature.png")), "largeur": 92, "flottante": false}),
             json!({"type": "tableau",
-                   "colonnes": [{"largeur": mesure("0.6"), "alignement": "gauche"}, {"largeur": mesure("0.4"), "alignement": "droite"}],
+                   "colonnes": [{"largeur": mesure!("0.6"), "alignement": "gauche"}, {"largeur": mesure!("0.4"), "alignement": "droite"}],
                    "marge_cellule": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}, "espace_avant": 0, "espace_apres": 0,
-                   "filets_cellules": {"couleur": "#000000", "epaisseur": mesure("0.5")},
+                   "filets_cellules": {"couleur": "#000000", "epaisseur": mesure!("0.5")},
                    "lignes": [{"cellules": ["Salaire brut", "1 234,56"], "gras": false},
                               {"cellules": ["Net", "987,65"], "gras": false}]}),
         ]}, {"blocs": [para("Deuxième page")]}]
@@ -99,7 +100,7 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     let mots = p["mots"].as_array().unwrap();
     let bonjour = mots.iter().find(|m| m["texte"] == "Bonjour").expect("le mot Bonjour");
     let b = boite(&bonjour["rect"]);
-    assert!(proche(b[0], pt(50), "1"), "x0 = marge gauche : {:?}", b);
+    assert!(proche(b[0], pt(50), mesure!("1")), "x0 = marge gauche : {:?}", b);
     assert!(b[1] >= pt(50) && b[3] < pt(80), "juste sous la marge haute : {:?}", b);
     assert!(b[3] - b[1] > pt(9) && b[3] - b[1] < pt(13), "hauteur d'un corps de 10 : {:?}", b);
     assert!(b[2] - b[0] > pt(25) && b[2] - b[0] < pt(45), "largeur de « Bonjour » : {:?}", b);
@@ -113,7 +114,7 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     let images = p["images"].as_array().unwrap();
     assert_eq!(images.len(), 1);
     let i = boite(&images[0]);
-    assert!(proche(i[2] - i[0], pt(92), "0.1") && proche(i[0], pt(50), "0.1"), "{:?}", i);
+    assert!(proche(i[2] - i[0], pt(92), mesure!("0.1")) && proche(i[0], pt(50), mesure!("0.1")), "{:?}", i);
     assert!(i[1] > b[3] && i[3] > i[1], "sous le paragraphe : {:?}", i);
 
     // Les traits : le cadre de chaque cellule (4 cellules, filets de 0,5 pt dessinés en rectangles
@@ -151,10 +152,10 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
 #[test]
 fn page_paysage() {
     let d = dossier_temp("inspection-paysage");
-    let pdf = ecrire(&d, "paysage.pdf", &contrat(mesure("841.89"), mesure("595.28")));
+    let pdf = ecrire(&d, "paysage.pdf", &contrat(mesure!("841.89"), mesure!("595.28")));
     let j = inspecter(&pdf);
     let p = &j["pages"][0];
-    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (mesure("841.89"), mesure("595.28")));
+    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (mesure!("841.89"), mesure!("595.28")));
     assert_eq!(p["rotation"], 0);
 }
 
@@ -201,10 +202,10 @@ fn page_tournee() {
     // « Descender -207 », et les avances « N T » 611, « N o », « N u », « N n », « N e » 556, « N r » 333 (un Tj ne
     // crène pas) : haut 90 - 7,18 = 82,82, bas 90 + 2,07 = 92,07, droite 30 + 31,68 = 61,68.
     assert!(
-        proche(b[0], pt(30), "0.01")
-            && proche(b[1], mesure("82.82"), "0.01")
-            && proche(b[2], mesure("61.68"), "0.01")
-            && proche(b[3], mesure("92.07"), "0.01"),
+        proche(b[0], pt(30), mesure!("0.01"))
+            && proche(b[1], mesure!("82.82"), mesure!("0.01"))
+            && proche(b[2], mesure!("61.68"), mesure!("0.01"))
+            && proche(b[3], mesure!("92.07"), mesure!("0.01")),
         "{:?}",
         b
     );

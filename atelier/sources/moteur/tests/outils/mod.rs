@@ -8,11 +8,9 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use rust_decimal::Decimal;
 use serde_json::{json, Value};
 
 // ------------------------------------------------------------------ les dossiers
@@ -110,9 +108,14 @@ pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: socle::date::J
     socle::ecriture::en_valeur(&socle::forme::lire::<F>(datee, "test").unwrap().au(&jour))
 }
 
-/// Le mois `numero` de l'annee `an`, que le test ecrit.
-pub fn le_mois(an: i32, numero: u32) -> socle::mois::Mois {
-    socle::mois::Mois::nouveau(an, numero).unwrap()
+/// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme.
+pub fn le_mois(ecrit: &str) -> socle::mois::Mois {
+    socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap()
+}
+
+/// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+pub fn le_jour(ecrit: &str) -> socle::date::Jour {
+    socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
 }
 
 /// La fiche datee d'une compagnie de test : chaque valeur de `plate` de tout temps (`droit::fiche::dater`), ses notes `_…`
@@ -314,8 +317,9 @@ pub fn refus(r: &Value) -> (String, String) {
 
 // ------------------------------------------------------------------ lire une DSN
 
-pub fn dec(s: &str) -> Decimal {
-    Decimal::from_str(s).unwrap_or_else(|_| panic!("montant illisible : {:?}", s))
+/// La grandeur qu'un texte d'une reponse ou d'un exemple ecrit (« 14.90 »), son echelle gardee.
+pub fn grandeur<G: socle::grandeurs::Grandeur>(s: &str) -> G {
+    socle::grandeurs::lu::en_texte(s).unwrap_or_else(|_| panic!("nombre illisible : {:?}", s))
 }
 
 /// Un nombre à virgule d'une charge ou d'un fichier, écrit en texte (`nombre("151.67")`) : le JSON le garde tel quel

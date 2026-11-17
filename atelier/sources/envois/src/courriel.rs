@@ -42,8 +42,8 @@ use droit::contexte::Contexte;
 use socle::echec::{Classe, Echec, R};
 
 pub const FICHIER_SERVEURS: &str = "courriel.json";
-/// Secondes, par connexion.
-pub const DELAI: u64 = 60;
+/// L'attente, par connexion.
+pub const DELAI: Duration = Duration::from_secs(60);
 pub const DOSSIER_RECEPTION: &str = "INBOX";
 pub const DOSSIER_COURRIELS: &str = "courriels-simules";
 
@@ -153,7 +153,7 @@ impl<T: Read + Write + ?Sized> Flux for T {}
 fn connecter(hote: &str, port: u16) -> R<TcpStream> {
     // En essai, le garde-fou reseau : aucune boite reelle.
     socle::garde_reseau::directe(hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
-    let delai = Duration::from_secs(DELAI);
+    let delai = DELAI;
     let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
     let mut derniere = None;
     for a in adresses {
@@ -513,7 +513,7 @@ impl Courriel for Client {
             .port(port)
             .tls(if port == 587 { Tls::Required(tls) } else { Tls::Wrapper(tls) })
             .credentials(Credentials::new(self.compte.clone(), mdp))
-            .timeout(Some(Duration::from_secs(DELAI)))
+            .timeout(Some(DELAI))
             .build();
         let sur_le_fil = donnees_du_fil(&brut);
         transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| erreur(traduire(&e.to_string())))?;
@@ -602,10 +602,9 @@ pub fn hexa_au_hasard(octets: usize) -> R<String> {
 
 /// `%Y%m%d-%H%M%S-%f` de l'heure de Paris : l'ordre des noms est celui des envois.
 fn horodatage_de(t: socle::paris::Moment) -> String {
-    let (j, s) = (t.jour_de_paris(), t.seconde_du_jour_de_paris());
     // Les microsecondes entieres de la fraction de seconde.
     let micros = t.nanosecondes() / 1_000;
-    format!("{:04}{:02}{:02}-{:02}{:02}{:02}-{:06}", j.an, j.mois, j.jour, s / 3600, s % 3600 / 60, s % 60, micros)
+    format!("{}-{}-{:06}", t.jour_de_paris().aaaammjj(), socle::paris::ecrit::heure_minute_seconde(t, ""), micros)
 }
 
 impl Courriel for BoiteSimulee {

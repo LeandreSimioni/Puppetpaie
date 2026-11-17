@@ -39,14 +39,14 @@ use std::path::Path;
 use droit::fiche::{NumeroObjetSpectacle, Statut};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{lu, Cachets, Heures, Jours};
+use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::Mois;
-use socle::num::entier_de_chiffres;
-use socle::num::Decimal;
-use fabrique_pdf::mesure::mesure;
+use socle::piece::{format, EntierDUneZone, Zone};
+use fabrique_pdf::mesure;
 use crate::releve::Mesure;
 
 use crate::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
+use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 
 /// Ce qui marque une case cochee, a droite de son libelle (« Ñ » : la coche d'une police sans table).
 const MARQUES: [&str; 5] = ["Ñ", "✔", "✓", "☒", "X"];
@@ -67,10 +67,10 @@ struct Mot {
 
 impl Mot {
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1) / 2
+        (self.y0 + self.y1) * mesure!("0.5")
     }
     fn cx(&self) -> Mesure {
-        (self.x0 + self.x1) / 2
+        (self.x0 + self.x1) * mesure!("0.5")
     }
 }
 
@@ -89,7 +89,7 @@ struct Rubrique {
 
 impl Rubrique {
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1) / 2
+        (self.y0 + self.y1) * mesure!("0.5")
     }
 }
 
@@ -139,12 +139,7 @@ const RUBRIQUES: [(&str, &str); 37] = [
 const COLONNES: [(&str, &str); 4] = [("heures", "heures"), ("isoles", "isoles"), ("groupes", "groupes"), ("jours", "jours")];
 
 /// Deux mots sont sur la meme ligne quand leurs milieux verticaux sont a moins de cela.
-const LIGNE: Mesure = mesure("3.5");
-
-/// `n` points.
-const fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
-}
+const LIGNE: Mesure = mesure!("3.5");
 
 /// Ce qu'une AEM en PDF dit, page par page.
 #[derive(Clone, Debug, PartialEq)]
@@ -153,21 +148,19 @@ pub struct Aem {
     /// Le mois de l'attestation.
     pub mois: Option<Mois>,
     pub numero: Option<String>,
-    pub siret: Option<droit::fiche::Siret>,
+    /// La raison sociale et le SIRET.
+    pub employeur: EmployeurLu,
     pub ape: Option<String>,
     pub idcc: Option<droit::fiche::Idcc>,
-    pub employeur: Option<String>,
     pub employeur_code_postal: Option<String>,
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
-    /// Le NIR imprime, sans sa cle ; aucun hors de sa forme (`droit::fiche::Nir::d_une_piece`).
-    pub nir: Option<droit::fiche::Nir>,
+    /// Le nom, les prenoms, la date de naissance et le NIR imprimes, sans sa cle ; aucun NIR hors de sa forme
+    /// (`droit::fiche::Nir::d_une_piece`).
+    pub identite: IdentiteDeclaree,
     pub cle_nir: Option<droit::fiche::CleNir>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
     pub nom_usage: Option<String>,
-    pub naissance: Option<Jour>,
     pub rue: Option<String>,
     pub code_postal: Option<String>,
     pub commune: Option<String>,
@@ -187,7 +180,7 @@ pub struct Aem {
     pub cachets_isoles: Option<Cachets>,
     pub cachets_groupes: Option<Cachets>,
     pub jours: Option<Jours>,
-    pub brut: Option<Decimal>,
+    pub brut: Option<socle::grandeurs::Montant>,
     /// Complementaire ou rectificative quand la case est cochee.
     pub corrige: Option<NatureDUneAem>,
     /// Une periode d'une AER Cinéma Spectacle (`lire_aer`), qui atteste au meme rang qu'une AEM.
@@ -245,7 +238,7 @@ impl Aem {
             return Some(format!("AEM : {}", f));
         }
         let mut m: Vec<&str> = Vec::new();
-        if self.nir.is_none() {
+        if self.identite.nir.is_none() {
             m.push("le NIR");
         }
         if self.mois.is_none() {
@@ -275,17 +268,14 @@ impl Aem {
         }
         Certificat {
             page: self.page,
-            siret: self.siret.clone(),
-            compte: self.adherent.clone(),
             employeur: self.employeur.clone(),
+            compte: self.adherent.clone(),
             numero: self.numero.clone(),
-            nir: self.nir.clone(),
+            identite: self.identite.clone(),
             cle_nir: self.cle_nir.clone(),
-            nom: self.nom.clone(),
-            prenom: self.prenom.clone(),
             nom_usage: self.nom_usage.clone(),
             pseudonyme: None,
-            nom_complet: match (&self.prenom, &self.nom) {
+            nom_complet: match (&self.identite.prenoms, &self.identite.nom) {
                 (Some(p), Some(n)) => Some(format!("{} {}", p, n)),
                 _ => None,
             },
@@ -365,14 +355,10 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     let jour = |nom: &str| v(nom).and_then(|t: String| socle::piece::Zone::lue(&t, socle::piece::format::JourEcrit).valeur());
     let ecrit = |nom: &str| v(nom).map(|t| t.replace([' ', '\u{a0}'], ""));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
-    let chiffres = |nom: &str| v(nom).and_then(|t: String| entier_de_chiffres(&t));
-    let naissance = match (chiffres("SALARIE_DT_NAISSANCE_A"), chiffres("SALARIE_DT_NAISSANCE_M"), chiffres("SALARIE_DT_NAISSANCE_J")) {
-        (Some(a), Some(m), Some(j)) => match (i32::try_from(a), u32::try_from(m), u32::try_from(j)) {
-            (Ok(a), Ok(m), Ok(j)) => Jour::nouveau(a, m, j),
-            _ => None,
-        },
-        _ => None,
-    };
+    // La date de naissance, imprimee case a case : l'annee, le mois, puis le jour dans ce mois.
+    let annee = v("SALARIE_DT_NAISSANCE_A").and_then(|t| Zone::lue(&t, format::AnneeEnChiffres).valeur()).and_then(Result::ok);
+    let mois = v("SALARIE_DT_NAISSANCE_M").and_then(|t| Zone::lue(&t, format::MoisEnChiffres).valeur());
+    let naissance = annee.zip(mois).and_then(|(a, m)| v("SALARIE_DT_NAISSANCE_J").and_then(|t| Zone::lue(&t, format::JourDuMois(a.mois(m))).valeur()));
     // UN SIRET OU UNE CLE DU NIR QUI N'ONT PAS LEUR FORME se disent, et la page se refuse (`Aem::manque`) ; la cle
     // imprimee se garde quand c'est celle du NIR (`CleNir::du_nir`), comme sur une AEM (`lire_page`).
     let mut fautes: Vec<String> = Vec::new();
@@ -435,19 +421,21 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             page,
             mois: Some(debut.mois_civil()),
             numero: None,
-            siret: siret.clone(),
+            employeur: EmployeurLu { raison_sociale: v("ENSEIGNE"), siret: siret.clone() },
             ape: v("EMP_APE"),
             idcc: idcc.clone(),
-            employeur: v("ENSEIGNE"),
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
             cle_nir: cle_nir.clone(),
-            nir: nir_lu.clone(),
-            nom: v("SALARIE_NOM_FAMILLE"),
-            prenom: v("SALARIE_PRENOMS"),
+            identite: IdentiteDeclaree {
+                nom: v("SALARIE_NOM_FAMILLE"),
+                prenoms: v("SALARIE_PRENOMS"),
+                naissance: naissance.map(NaissanceDeclaree::du_jour),
+                nir: nir_lu.clone(),
+                ntt: None,
+            },
             nom_usage: None,
-            naissance,
             rue: v("SALARIE_ADRESSE"),
             code_postal: v("SALARIE_CP"),
             commune: v("SALARIE_ADR_LOCALITE"),
@@ -459,11 +447,11 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             fin_contrat: Some(fin),
             en_cours: false,
             periode: periode_attestee(Some(debut.mois_civil()), Some(debut), Some(fin), false),
-            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
-            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| entier_de_chiffres(&t).and(lu::texte_entier(&t))),
+            heures: ecrit(&nom("SAL_NB_HEURES_")).and_then(|t| Zone::lue(&t, format::Chiffres).valeur()).map(EntierDUneZone::en),
+            cachets_isoles: ecrit(&nom("SAL_NB_CACHET_")).and_then(|t| Zone::lue(&t, format::Chiffres).valeur()).map(EntierDUneZone::en),
             cachets_groupes: None,
             jours: None,
-            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
+            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::grandeurs::lu::texte(&t)),
             corrige: None,
             aer: true,
             faute: faute.clone(),
@@ -525,10 +513,10 @@ impl Inconnu {
         Inconnu { releve: u.clone(), x0, x1, y0, y1 }
     }
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1) / 2
+        (self.y0 + self.y1) * mesure!("0.5")
     }
     fn cx(&self) -> Mesure {
-        (self.x0 + self.x1) / 2
+        (self.x0 + self.x1) * mesure!("0.5")
     }
 }
 
@@ -562,7 +550,7 @@ fn rubriques(mots: &[Mot]) -> Vec<Rubrique> {
             faits.dedup();
             // Les mots d'une rubrique se suivent (pas de valeur entre eux), et ne finissent pas au milieu d'un mot.
             let fin_dans_le_mot = js.get(p.len()).is_some_and(|j| j.1 == *faits.last().unwrap());
-            let serres = faits.windows(2).all(|w| mots[w[1]].x0 - mots[w[0]].x1 < pt(15));
+            let serres = faits.windows(2).all(|w| mots[w[1]].x0 - mots[w[0]].x1 < mesure!("15"));
             if fin_dans_le_mot || !serres || faits.iter().any(|k| prises[*k]) {
                 continue;
             }
@@ -590,7 +578,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     // Les sections du formulaire, par leur titre : 2 EMPLOYEUR, 3 SALARIE, 4 PRESTATION DE TRAVAIL, 5 AUTHENTIFICATION.
     let haut_de = |cle: &str| rs.iter().find(|r| r.cle == cle).map(|r| r.y0);
     let bornes = [haut_de("employeur"), haut_de("salarie"), haut_de("prestation"), haut_de("authentification")];
-    let section = |y: Mesure| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - pt(1))).count() };
+    let section = |y: Mesure| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - mesure!("1"))).count() };
 
     // Le premier caractere que rien ne dit d'une case lue : la case ne se lit pas, l'AEM le dit (ISO 32000-1, 9.10.2).
     // Une case dont la rubrique n'a pas de hauteur (sa police ne la dit pas) ne se lit pas non plus : sa ligne se borne
@@ -612,13 +600,13 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
             ));
             return Vec::new();
         }
-        let tol = (r.y1 - r.y0).max(pt(4)) * mesure("0.6");
+        let tol = (r.y1 - r.y0).max(mesure!("4")) * mesure!("0.6");
         let suivante = rs.iter().filter(|o| o.x0 > r.x1 && (o.cy() - r.cy()).abs() <= tol).map(|o| o.x0).fold(Mesure::MAX, Mesure::min);
         if let Some(u) = inconnus.iter().find(|u| u.x1 >= r.x0 && u.x0 < suivante && (u.cy() - r.cy()).abs() <= tol) {
             noter(u, r.cle);
         }
         let mut v: Vec<usize> = (0..mots.len())
-            .filter(|&k| !pris.contains(&k) && !marques.contains(&k) && mots[k].x0 >= r.x1 - pt(1) && mots[k].x0 < suivante && (mots[k].cy() - r.cy()).abs() <= tol)
+            .filter(|&k| !pris.contains(&k) && !marques.contains(&k) && mots[k].x0 >= r.x1 - mesure!("1") && mots[k].x0 < suivante && (mots[k].cy() - r.cy()).abs() <= tol)
             .collect();
         v.sort_by(|a, b| mots[*a].x0.cmp(&mots[*b].x0));
         v.into_iter().map(|k| mots[k].texte.clone()).collect()
@@ -637,19 +625,15 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         page,
         mois: None,
         numero: None,
-        siret: None,
+        employeur: EmployeurLu::default(),
         ape: None,
         idcc: None,
-        employeur: None,
         employeur_code_postal: None,
         employeur_commune: None,
         adherent: None,
-        nir: None,
+        identite: IdentiteDeclaree::default(),
         cle_nir: None,
-        nom: None,
-        prenom: None,
         nom_usage: None,
-        naissance: None,
         rue: None,
         code_postal: None,
         commune: None,
@@ -677,7 +661,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
     // Un SIRET ou un IDCC imprimés qui n'ont pas leur forme se disent (`a.faute`), comme la clé du NIR plus bas.
     let mut fautes_d_identite: Vec<String> = Vec::new();
-    a.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
+    a.employeur.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
         Ok(s) => s,
         Err(e) => {
             fautes_d_identite.push(e.phrase);
@@ -692,7 +676,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
             None
         }
     };
-    a.employeur = texte(lu("raison", Some(1)));
+    a.employeur.raison_sociale = texte(lu("raison", Some(1)));
     a.employeur_code_postal = lu("code_postal", Some(1)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur_commune = texte(lu("commune", Some(1)));
     a.adherent = lu("adherent", Some(1))
@@ -700,8 +684,8 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         .map(|x| documents::conges_spectacles::forme_adherent(x))
         .find(|x| documents::conges_spectacles::faute_adherent(x).is_none());
 
-    a.nom = texte(lu("nom", Some(2)));
-    a.prenom = texte(lu("prenom", Some(2)));
+    a.identite.nom = texte(lu("nom", Some(2)));
+    a.identite.prenoms = texte(lu("prenom", Some(2)));
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
@@ -709,15 +693,15 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         match &cle {
             Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == **k) {
                 Some(c) => {
-                    a.nir = Some(nir);
+                    a.identite.nir = Some(nir);
                     a.cle_nir = Some(c);
                 }
                 None => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
             },
-            None => a.nir = Some(nir),
+            None => a.identite.nir = Some(nir),
         }
     }
-    a.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| d.0);
+    a.identite.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| NaissanceDeclaree::du_jour(d.0));
     a.rue = texte(lu("adresse", Some(2)));
     a.code_postal = lu("code_postal", Some(2)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.commune = texte(lu("commune", Some(2)));
@@ -731,7 +715,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     for &k in &marques {
         let m = &mots[k];
         let Some(l) = (0..mots.len())
-            .filter(|&j| j != k && mots[j].x1 <= m.x0 + pt(1) && m.x0 - mots[j].x1 <= pt(12) && (mots[j].cy() - m.cy()).abs() <= pt(5))
+            .filter(|&j| j != k && mots[j].x1 <= m.x0 + mesure!("1") && m.x0 - mots[j].x1 <= mesure!("12") && (mots[j].cy() - m.cy()).abs() <= mesure!("5"))
             .min_by(|a, b| (m.x0 - mots[*a].x1).cmp(&(m.x0 - mots[*b].x1)))
         else {
             continue;
@@ -749,8 +733,8 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
                 let w = &mots[l];
                 let non = mots.iter().any(|o| {
                     jetons(&o.texte) == ["non"]
-                        && (((o.cy() - w.cy()).abs() <= LIGNE && w.x0 - o.x1 >= pt(0) && w.x0 - o.x1 < pt(8))
-                            || ((o.x0 - w.x0).abs() <= pt(3) && w.cy() - o.cy() > pt(2) && w.cy() - o.cy() < pt(12)))
+                        && (((o.cy() - w.cy()).abs() <= LIGNE && w.x0 - o.x1 >= Mesure::ZERO && w.x0 - o.x1 < mesure!("8"))
+                            || ((o.x0 - w.x0).abs() <= mesure!("3") && w.cy() - o.cy() > mesure!("2") && w.cy() - o.cy() < mesure!("12")))
                 });
                 a.cadre = Some(!non);
             }
@@ -762,7 +746,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     // ou non, rien ne le dit.
     for u in inconnus {
         let l = (0..mots.len())
-            .filter(|&j| mots[j].x1 <= u.x0 + pt(1) && u.x0 - mots[j].x1 <= pt(12) && (mots[j].cy() - u.cy()).abs() <= pt(5))
+            .filter(|&j| mots[j].x1 <= u.x0 + mesure!("1") && u.x0 - mots[j].x1 <= mesure!("12") && (mots[j].cy() - u.cy()).abs() <= mesure!("5"))
             .min_by(|a, b| (u.x0 - mots[*a].x1).cmp(&(u.x0 - mots[*b].x1)));
         if let Some(lib) = l.and_then(|l| jetons(&mots[l].texte).last().cloned()) {
             if matches!(lib.as_str(), "complementaire" | "positive" | "negative" | "artiste" | "technicien" | "ouvrier" | "cours" | "cadre") {
@@ -779,10 +763,10 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.cmp(&b.x0));
     if !en_tetes.is_empty() {
         let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(Mesure::MIN, Mesure::max);
-        let mut par_colonne: std::collections::BTreeMap<&str, Vec<&str>> = std::collections::BTreeMap::new();
+        let mut par_colonne: std::collections::BTreeMap<&str, Vec<EntierDUneZone>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
         for u in inconnus.iter().filter(|u| u.y0 >= haut && !brut_tete.is_some_and(|r| u.y1 > r.y0) && section(u.y0) == 3) {
-            if let Some((c, _)) = en_tetes.iter().map(|(c, t)| (*c, (t.cx() - u.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
+            if let Some((c, _)) = en_tetes.iter().map(|(c, t)| (*c, (t.cx() - u.cx()).abs())).filter(|x| x.1 <= mesure!("45")).min_by(|a, b| a.1.cmp(&b.1)) {
                 noter(u, c);
             }
         }
@@ -791,7 +775,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
                 continue;
             }
             let Some(n) = entier(&m.texte) else { continue };
-            match en_tetes.iter().map(|(c, t)| (*c, (t.cx() - m.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
+            match en_tetes.iter().map(|(c, t)| (*c, (t.cx() - m.cx()).abs())).filter(|x| x.1 <= mesure!("45")).min_by(|a, b| a.1.cmp(&b.1)) {
                 Some((c, _)) => par_colonne.entry(c).or_default().push(n),
                 None => ambigu = true,
             }
@@ -801,28 +785,26 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         } else {
             // Une colonne du formulaire sans nombre ne compte rien : son total est la somme de ce qu'elle porte (aucun
             // nombre, zero). C'est une inference, tiree du formulaire lui-meme.
-            fn somme<G: socle::grandeurs::Grandeur + std::iter::Sum>(textes: Option<&Vec<&str>>) -> Option<G> {
-                textes.into_iter().flatten().map(|t| grandeur::<G>(t)).sum()
+            fn somme<G: socle::grandeurs::Grandeur + std::iter::Sum>(nombres: Option<&Vec<EntierDUneZone>>) -> G {
+                nombres.into_iter().flatten().map(|n| n.en::<G>()).sum()
             }
             let a_l_en_tete = |c: &str| en_tetes.iter().any(|x| x.0 == c);
             if a_l_en_tete("heures") && a_l_en_tete("jours") && (a_l_en_tete("isoles") || a_l_en_tete("groupes")) {
-                match (somme(par_colonne.get("heures")), somme(par_colonne.get("isoles")), somme(par_colonne.get("groupes")), somme(par_colonne.get("jours"))) {
-                    (Some(h), Some(i), Some(g), Some(j)) => (a.heures, a.cachets_isoles, a.cachets_groupes, a.jours) = (Some(h), Some(i), Some(g), Some(j)),
-                    _ => fautes.push("un nombre du mois ne se lit pas en entier"),
-                }
+                (a.heures, a.cachets_isoles, a.cachets_groupes, a.jours) =
+                    (Some(somme(par_colonne.get("heures"))), Some(somme(par_colonne.get("isoles"))), Some(somme(par_colonne.get("groupes"))), Some(somme(par_colonne.get("jours"))));
             }
         }
     }
     // Le brut : le nombre sous « SALAIRES BRUTS », a son aplomb.
     if let Some(r) = brut_tete {
-        let cx = (r.x0 + r.x1) / 2;
-        if let Some(u) = inconnus.iter().find(|u| u.y0 > r.y1 && u.y0 < r.y1 + pt(40) && (u.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10)) {
+        let cx = (r.x0 + r.x1) * mesure!("0.5");
+        if let Some(u) = inconnus.iter().find(|u| u.y0 > r.y1 && u.y0 < r.y1 + mesure!("40") && (u.cx() - cx).abs() <= (r.x1 - r.x0) * mesure!("0.5") + mesure!("10")) {
             noter(u, "salaires bruts");
         }
         a.brut = mots
             .iter()
-            .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + pt(40) && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10))
-            .filter_map(|m| crate::bulletin_lu::lire_nombre(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
+            .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + mesure!("40") && (m.cx() - cx).abs() <= (r.x1 - r.x0) * mesure!("0.5") + mesure!("10"))
+            .filter_map(|m| crate::bulletin_lu::lire_montant(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
             .min_by(|a, b| a.0.cmp(&b.0))
             .map(|x| x.1);
     }
@@ -849,7 +831,9 @@ fn objet_de_la_piece(texte: Option<&str>) -> Option<NumeroObjetSpectacle> {
     }
 }
 
-fn entier(t: &str) -> Option<&str> {
+/// Un nombre entier du formulaire, ecrit en chiffres seuls, des decimales nulles permises (`12`, `12,00`) : lu une fois,
+/// sa colonne dit sa grandeur (`EntierDUneZone::en`).
+fn entier(t: &str) -> Option<EntierDUneZone> {
     if !t.chars().all(|c| c.is_ascii_digit() || c == ',') || !t.chars().next()?.is_ascii_digit() {
         return None;
     }
@@ -858,10 +842,5 @@ fn entier(t: &str) -> Option<&str> {
         Some(_) => return None,
         None => t,
     };
-    entier_de_chiffres(chiffres).is_some().then_some(chiffres)
-}
-
-/// La grandeur qu'un nombre entier du formulaire ecrit en chiffres seuls (`entier`) : la porte de sa lecture.
-fn grandeur<G: socle::grandeurs::Grandeur>(t: &str) -> Option<G> {
-    entier(t).and_then(lu::texte_entier)
+    Zone::lue(chiffres, format::Chiffres).valeur()
 }

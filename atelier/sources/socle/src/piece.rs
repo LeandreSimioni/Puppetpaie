@@ -1,49 +1,69 @@
 //! UNE ZONE D'UNE PIECE LUE : le texte qu'une piece porte a un endroit que sa norme fixe -- une rubrique d'une DSN ou
 //! d'une DPAE, une position d'une AEM, un element d'un retour XML, une cellule d'un CSV livre, une date dans le nom d'un
-//! fichier depose. C'est la seule porte par laquelle le texte d'une piece devient un jour, un mois ou un instant : la zone
+//! fichier depose. C'est la seule porte par laquelle le texte d'une piece devient un jour, un mois, un instant, une heure
+//! ou un entier ecrit en chiffres : la zone
 //! se fabrique avec le format que la norme de la piece donne a cet endroit (`format`, un type par format), que le
 //! lecteur de chaque piece passe ; elle ne se lit que dans ce format. Ce n'est pas une preuve d'origine : c'est la lecture
 //! typee de ce qu'on lit, au format de son texte.
 
 use crate::echec::R;
 
-/// La lecture d'un format, que seule une `Zone` appelle : le trait ne se nomme pas hors de ce module.
+/// La lecture d'un format, que seule une `Zone` appelle : le trait ne se nomme pas hors de ce module, et sa lecture
+/// exige un jeton que seul ce module fabrique (un generique qui prend un `Format` ne l'appelle pas).
 mod scelle {
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     pub trait Scelle {
         type Lu;
-        fn lire(texte: &str) -> Self::Lu;
+        fn lire(self, texte: &str, jeton: Jeton) -> Self::Lu;
     }
 }
 
 /// Un format qu'une norme donne a une zone. Scelle : seuls les formats de `format` en sont, et leur lecture ne
 /// s'appelle que par la zone (`Zone::valeur`).
-pub trait Format: scelle::Scelle {}
+pub trait Format: scelle::Scelle + Copy {}
 
 /// Le texte d'une zone d'une piece, tel que la piece l'ecrit, et le format que sa norme lui donne.
 #[derive(Debug, Clone, Copy)]
 pub struct Zone<'a, F: Format> {
     texte: &'a str,
-    format: std::marker::PhantomData<F>,
+    format: F,
 }
 
 impl<'a, F: Format> Zone<'a, F> {
-    /// La zone qui porte `texte`, au format `_format`.
-    pub fn lue(texte: &'a str, _format: F) -> Zone<'a, F> {
-        Zone { texte, format: std::marker::PhantomData }
+    /// La zone qui porte `texte`, au format `format`.
+    pub fn lue(texte: &'a str, format: F) -> Zone<'a, F> {
+        Zone { texte, format }
     }
 
     /// Ce qu'elle dit, lu dans son format.
     pub fn valeur(&self) -> <F as scelle::Scelle>::Lu {
-        <F as scelle::Scelle>::lire(self.texte)
+        self.format.lire(self.texte, scelle::JETON)
     }
+}
+
+/// UN ENTIER QU'UNE ZONE ECRIT EN CHIFFRES SEULS (`format::Chiffres`), quand la zone ne dit pas seule ce qu'il compte :
+/// la colonne d'une AEM imprimee, la case « NB JOURS OU CACHETS » d'un certificat. Il ne se lit qu'en la grandeur que
+/// sa place dit (`en`, une fois), son echelle nulle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntierDUneZone(pub(crate) i64);
+
+/// CE QUI REND MAL ECRITE UNE DATE D'UNE ZONE (`format::AaaaJjMm`) : un morceau qui ne se lit pas (tel qu'il s'ecrit), ou
+/// une date qui n'existe pas (la phrase qui dit pourquoi, `date::date_impossible`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DateMalEcrite {
+    Illisible(String),
+    Impossible(String),
 }
 
 /// LES FORMATS, un type chacun.
 pub mod format {
-    use super::scelle::Scelle;
-    use super::{Format, R};
+    use super::scelle::{Jeton, Scelle};
+    use super::{EntierDUneZone, Format, R};
     use crate::date::Jour;
-    use crate::mois::Mois;
+    use crate::mois::{Annee, Mois, MoisDeLAnnee, RangDansLAnnee};
     use crate::paris;
 
     /// Un jour `JJMMAAAA` (la DSN, la DPAE, un compte rendu d'organisme) : huit chiffres, et rien d'autre.
@@ -53,6 +73,12 @@ pub mod format {
     /// Un jour `AAAAMMJJ` (l'AEM, le nom d'un fichier depose, une date KALI).
     #[derive(Debug, Clone, Copy)]
     pub struct Aaaammjj;
+
+    /// Un jour `JJ/MM/AAAA` imprime (l'attestation employeur) : deux chiffres, une barre, deux chiffres, une barre, quatre
+    /// chiffres. Il se lit en un jour, ou en ce qui le rend impossible (`super::DateMalEcrite::Impossible` : l'annee
+    /// d'abord, sinon le mois, sinon le jour) ; `None` : le texte n'a pas cette forme.
+    #[derive(Debug, Clone, Copy)]
+    pub struct JjMmAaaa;
 
     /// Un jour `AAAA-MM-JJ`, et cette forme seule (une rubrique de nature date d'un retour NEOReS).
     #[derive(Debug, Clone, Copy)]
@@ -82,22 +108,100 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct DateXsd;
 
-    /// Une heure de XML Schema (`paris::heure_xsd`) : ses secondes depuis minuit, sa fraction nulle ou non, son fuseau.
+    /// Une heure de XML Schema (`paris::heure_xsd`) : `paris::HeureXsdLue`.
     #[derive(Debug, Clone, Copy)]
     pub struct HeureXsd;
+
+    /// Une heure du jour `HHMM` (l'horodatage d'une DPAE relue, H_CREATION) : quatre chiffres, et rien d'autre.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Hhmm;
+
+    /// Un entier ecrit en chiffres seuls, de un a dix-huit, quand sa place dit seule ce qu'il compte (une case d'un
+    /// formulaire, la colonne d'une AEM imprimee) : tout autre texte (vide, un signe, un autre caractere, plus long) n'en
+    /// est pas un. Il se lit en `EntierDUneZone`, que sa place lit dans sa grandeur.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Chiffres;
+
+    /// Une annee en chiffres seuls, de un a dix-huit (`2026` : celle d'un numero de bulletin `12/2026`, du nom d'une
+    /// surcouche `2026.json`, d'une date imprimee case a case) : `None` quand le texte n'en est pas l'ecriture, et le
+    /// refus d'une annee hors de 1 a 9999 (`Annee::nouvelle`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct AnneeEnChiffres;
+
+    /// Une annee en deux chiffres, de 2000 a 2099 (`26` : celle d'un numero de contrat `FA1.26.16`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct Aa;
+
+    /// Le numero d'un mois en chiffres seuls (`3`, `03`), de 1 a 12 (le mois d'une date imprimee case a case).
+    #[derive(Debug, Clone, Copy)]
+    pub struct MoisEnChiffres;
+
+    /// Le jour du mois `0` en chiffres seuls (`5`, `05`) : le jour d'une date imprimee case a case, dans son mois.
+    #[derive(Debug, Clone, Copy)]
+    pub struct JourDuMois(pub Mois);
+
+    /// Le rang d'un numero dans la suite de son annee, en chiffres seuls (`16` : `FA1.26.16` ; `12` : `12/2026`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct Rang;
+
+    /// L'en-tete `Date` d'un courriel (RFC 5322 : `Mon, 13 Oct 2026 09:12:00 +0200`), lu comme `paris::date_rfc5322` le dit.
+    #[derive(Debug, Clone, Copy)]
+    pub struct DateRfc5322;
+
+    /// Une date `AAAA-JJ-MM`, ou `AAAA-MM-JJ` quand son dernier nombre depasse 12, des blancs autour de chaque nombre (la
+    /// table des CTP livree : `documents::bordereau`). Elle se lit en un jour, ou en ce qui la rend mal ecrite
+    /// (`super::DateMalEcrite`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct AaaaJjMm;
+
+    impl Format for AaaaJjMm {}
+    impl Scelle for AaaaJjMm {
+        type Lu = Result<Jour, super::DateMalEcrite>;
+        fn lire(self, t: &str, _: Jeton) -> Result<Jour, super::DateMalEcrite> {
+            use super::{DateMalEcrite, Zone};
+            let p: Vec<&str> = t.split('-').collect();
+            if p.len() != 3 {
+                return Err(DateMalEcrite::Illisible(t.to_string()));
+            }
+            // Chaque morceau, des chiffres : l'annee, puis le mois et le jour dans l'ordre que le jour dit.
+            let (an, x, y) = (p[0].trim(), p[1].trim(), p[2].trim());
+            let nombre = |s: &str| s.parse::<u32>().map_err(|_| DateMalEcrite::Illisible(s.to_string()));
+            let (n_an, n_x, n_y) = (nombre(an)?, nombre(x)?, nombre(y)?);
+            let ((mois, n_mois), (jour, n_jour)) = if n_y > 12 { ((x, n_x), (y, n_y)) } else { ((y, n_y), (x, n_x)) };
+            let impossible = || DateMalEcrite::Impossible(crate::date::date_impossible(n_an, n_mois, n_jour));
+            let Some(Ok(annee)) = Zone::lue(an, AnneeEnChiffres).valeur() else { return Err(impossible()) };
+            let Some(mois) = Zone::lue(mois, MoisEnChiffres).valeur() else { return Err(impossible()) };
+            Zone::lue(jour, JourDuMois(annee.mois(mois))).valeur().ok_or_else(impossible)
+        }
+    }
 
     impl Format for Jjmmaaaa {}
     impl Scelle for Jjmmaaaa {
         type Lu = Option<Jour>;
-        fn lire(t: &str) -> Option<Jour> {
+        fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
             crate::date::lire_jjmmaaaa(t)
+        }
+    }
+
+    impl Format for JjMmAaaa {}
+    impl Scelle for JjMmAaaa {
+        type Lu = Option<Result<Jour, super::DateMalEcrite>>;
+        fn lire(self, t: &str, _: Jeton) -> Option<Result<Jour, super::DateMalEcrite>> {
+            let b = t.as_bytes();
+            let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
+            if b.len() != 10 || b[2] != b'/' || b[5] != b'/' || !chiffres(0, 2) || !chiffres(3, 5) || !chiffres(6, 10) {
+                return None;
+            }
+            let n = |a: usize, z: usize| b[a..z].iter().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
+            let (jour, mois, an) = (n(0, 2), n(3, 5), n(6, 10));
+            Some(Jour::nouveau(an as i32, mois, jour).ok_or_else(|| super::DateMalEcrite::Impossible(crate::date::date_impossible(an, mois, jour))))
         }
     }
 
     impl Format for Aaaammjj {}
     impl Scelle for Aaaammjj {
         type Lu = Option<Jour>;
-        fn lire(t: &str) -> Option<Jour> {
+        fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
             crate::date::lire_aaaammjj(t)
         }
     }
@@ -105,7 +209,7 @@ pub mod format {
     impl Format for JourIso {}
     impl Scelle for JourIso {
         type Lu = Option<Jour>;
-        fn lire(t: &str) -> Option<Jour> {
+        fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
             crate::date::jour_iso(t).filter(|j| j.iso() == t)
         }
     }
@@ -113,7 +217,7 @@ pub mod format {
     impl Format for JourEcrit {}
     impl Scelle for JourEcrit {
         type Lu = Option<Jour>;
-        fn lire(t: &str) -> Option<Jour> {
+        fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
             Jour::du_texte(t)
         }
     }
@@ -121,7 +225,7 @@ pub mod format {
     impl Format for MoisDsn {}
     impl Scelle for MoisDsn {
         type Lu = R<Mois>;
-        fn lire(t: &str) -> R<Mois> {
+        fn lire(self, t: &str, _: Jeton) -> R<Mois> {
             Mois::de_la_dsn(t)
         }
     }
@@ -129,7 +233,7 @@ pub mod format {
     impl Format for Mmaaaa {}
     impl Scelle for Mmaaaa {
         type Lu = Option<Mois>;
-        fn lire(t: &str) -> Option<Mois> {
+        fn lire(self, t: &str, _: Jeton) -> Option<Mois> {
             (t.len() == 6 && t.is_ascii()).then(|| Mois::du_texte(&format!("{}-{}", &t[2..], &t[..2]))).flatten()
         }
     }
@@ -137,7 +241,7 @@ pub mod format {
     impl Format for InstantIso {}
     impl Scelle for InstantIso {
         type Lu = Option<paris::Moment>;
-        fn lire(t: &str) -> Option<paris::Moment> {
+        fn lire(self, t: &str, _: Jeton) -> Option<paris::Moment> {
             paris::ecrit::seconde::lu(t)
         }
     }
@@ -145,24 +249,95 @@ pub mod format {
     impl Format for InstantCompact {}
     impl Scelle for InstantCompact {
         type Lu = Option<paris::Moment>;
-        fn lire(t: &str) -> Option<paris::Moment> {
+        fn lire(self, t: &str, _: Jeton) -> Option<paris::Moment> {
             paris::ecrit::compacte::lu(t)
         }
     }
 
     impl Format for DateXsd {}
     impl Scelle for DateXsd {
-        type Lu = Option<(Jour, Option<paris::FuseauXsd>)>;
-        fn lire(t: &str) -> Option<(Jour, Option<paris::FuseauXsd>)> {
+        type Lu = Option<(Jour, Option<paris::DecalageSurUtc>)>;
+        fn lire(self, t: &str, _: Jeton) -> Option<(Jour, Option<paris::DecalageSurUtc>)> {
             paris::date_xsd(t)
         }
     }
 
     impl Format for HeureXsd {}
     impl Scelle for HeureXsd {
-        type Lu = Option<(i64, bool, Option<paris::FuseauXsd>)>;
-        fn lire(t: &str) -> Option<(i64, bool, Option<paris::FuseauXsd>)> {
+        type Lu = Option<paris::HeureXsdLue>;
+        fn lire(self, t: &str, _: Jeton) -> Option<paris::HeureXsdLue> {
             paris::heure_xsd(t)
+        }
+    }
+
+    impl Format for Hhmm {}
+    impl Scelle for Hhmm {
+        type Lu = Option<paris::HeureDuJour>;
+        fn lire(self, t: &str, _: Jeton) -> Option<paris::HeureDuJour> {
+            if t.len() != 4 || !t.is_ascii() {
+                return None;
+            }
+            paris::HeureDuJour::lue(crate::num::entier_de_chiffres(&t[..2])?, crate::num::entier_de_chiffres(&t[2..])?)
+        }
+    }
+
+    impl Format for Chiffres {}
+    impl Scelle for Chiffres {
+        type Lu = Option<EntierDUneZone>;
+        fn lire(self, t: &str, _: Jeton) -> Option<EntierDUneZone> {
+            crate::num::entier_de_chiffres(t).map(EntierDUneZone)
+        }
+    }
+
+    impl Format for AnneeEnChiffres {}
+    impl Scelle for AnneeEnChiffres {
+        type Lu = Option<R<Annee>>;
+        fn lire(self, t: &str, _: Jeton) -> Option<R<Annee>> {
+            crate::num::entier_de_chiffres(t).map(Annee::nouvelle)
+        }
+    }
+
+    impl Format for Aa {}
+    impl Scelle for Aa {
+        type Lu = Option<Annee>;
+        fn lire(self, t: &str, _: Jeton) -> Option<Annee> {
+            match t.len() {
+                2 => Annee::nouvelle(2000 + crate::num::entier_de_chiffres(t)?).ok(),
+                _ => None,
+            }
+        }
+    }
+
+    impl Format for MoisEnChiffres {}
+    impl Scelle for MoisEnChiffres {
+        type Lu = Option<MoisDeLAnnee>;
+        fn lire(self, t: &str, _: Jeton) -> Option<MoisDeLAnnee> {
+            let n = crate::num::entier_de_chiffres(t)?;
+            MoisDeLAnnee::TOUS.into_iter().find(|m| i64::from(m.numero()) == n)
+        }
+    }
+
+    impl Format for JourDuMois {}
+    impl Scelle for JourDuMois {
+        type Lu = Option<Jour>;
+        fn lire(self, t: &str, _: Jeton) -> Option<Jour> {
+            self.0.jour(u32::try_from(crate::num::entier_de_chiffres(t)?).ok()?)
+        }
+    }
+
+    impl Format for Rang {}
+    impl Scelle for Rang {
+        type Lu = Option<RangDansLAnnee>;
+        fn lire(self, t: &str, _: Jeton) -> Option<RangDansLAnnee> {
+            u32::try_from(crate::num::entier_de_chiffres(t)?).ok().map(RangDansLAnnee::lu)
+        }
+    }
+
+    impl Format for DateRfc5322 {}
+    impl Scelle for DateRfc5322 {
+        type Lu = Option<paris::Moment>;
+        fn lire(self, t: &str, _: Jeton) -> Option<paris::Moment> {
+            paris::date_rfc5322(t)
         }
     }
 }

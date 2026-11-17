@@ -7,6 +7,7 @@
 //! routes (`scenario`) ; la publication par GitHub non plus : elle est dans le moteur (`moteur::publication`).
 //!
 //! L'atelier allume la feature `atelier` de ce qu'il prend (`Cargo.toml`) : la redirection, le refus de tout acte reel.
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate socle;

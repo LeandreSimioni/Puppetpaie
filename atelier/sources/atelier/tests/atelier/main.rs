@@ -1,6 +1,7 @@
 //! Les essais de l'atelier, dans sa propre cible (la feature `atelier` de ce qu'il prend) : le garde avant commit et le
 //! verrou des donnees reelles qu'il porte, et la fidelite des referentiels livres aux textes deposes. Un fichier seul :
 //! `cargo nextest run --cargo-profile essais -p atelier -E 'test(/^<fichier>::/)'`.
+#![forbid(unsafe_code)]
 
 // Les aides, dont les oracles communs a plusieurs crates : publiques, ce binaire n'en prend que ce qu'il emploie.
 pub mod outils;

@@ -37,7 +37,8 @@ impl Pastille {
     }
 }
 
-/// « 1 salarié », « 3 salariés » : `n` et le nom, au pluriel quand il le faut (un `s` de plus, ou `pluriel`).
+/// « 1 salarié », « 3 salariés » : `n` (`texte::compte`) et le nom, au pluriel quand il le faut (un `s` de plus, ou
+/// `pluriel`).
 pub fn compte(n: usize, un: &str, pluriel: &str) -> String {
-    format!("{} {}", n, if n > 1 { pluriel } else { un })
+    format!("{} {}", crate::texte::compte(n), if n > 1 { pluriel } else { un })
 }

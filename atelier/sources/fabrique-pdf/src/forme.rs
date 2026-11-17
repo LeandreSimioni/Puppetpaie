@@ -11,7 +11,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::description::{francais, Refus};
+use crate::description::{francais, NumeroDuFormat, Refus};
 pub use crate::mesure::Mesure;
 
 /// La largeur d'une page A4, en points (210 mm).
@@ -32,7 +32,7 @@ pub fn lire<T: serde::de::DeserializeOwned>(texte: &str, quoi: &str) -> Result<T
 #[serde(deny_unknown_fields)]
 pub struct Description {
     /// 1, 2 ou 3 (FORMAT.md) ; un `modele` demande 2 au moins.
-    pub format: i64,
+    pub format: NumeroDuFormat,
     /// Sans elle : celle du style ; une description sans style la dit.
     pub page: Option<Page>,
     /// Sans elle : celle du style ; une description sans style la dit.
@@ -202,7 +202,7 @@ pub struct Remplace {
 #[serde(deny_unknown_fields)]
 pub struct Modification {
     /// Le numéro de l'article cité ; aucun pour une modification dite en clair (`phrase`).
-    pub numero: Option<i64>,
+    pub numero: Option<usize>,
     pub article: String,
     pub avant: Vec<String>,
     pub apres: Vec<String>,
@@ -460,7 +460,7 @@ pub struct Tableau {
 #[serde(deny_unknown_fields)]
 pub struct Remplissage {
     /// `FORMAT`.
-    pub format: i64,
+    pub format: NumeroDuFormat,
     /// Nom du champ → texte à y écrire ; sans eux : aucun.
     pub champs: Option<BTreeMap<String, String>>,
     /// Sans elles : aucune.
@@ -497,7 +497,7 @@ pub struct ImagePosee {
 #[serde(deny_unknown_fields)]
 pub struct AjoutDeChamps {
     /// `FORMAT`.
-    pub format: i64,
+    pub format: NumeroDuFormat,
     pub champs: Vec<ChampAjoute>,
 }
 

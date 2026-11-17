@@ -832,7 +832,7 @@ function brancherTaxeSalaires(racine = "#config-formulaire") {
       const v = String(c.value).trim();
       if (v === "") return;
       const t = c.dataset.sousType;
-      o[c.dataset.sousCle] = t === "nombre" ? nombreTape(v) : t === "booleen" ? v === "true" : v;
+      o[c.dataset.sousCle] = t === "booleen" ? v === "true" : v;
     });
     return o;
   };
@@ -899,10 +899,11 @@ function brancherSante(fiche) {
   const ecrire = () => {
     if (!champ) return;
     // Pas de niveau : pas de mutuelle. `null` et non un objet vide — une
-    // fiche qui porterait {"niveau": ""} ferait croire à un choix fait.
+    // fiche qui porterait {"niveau": ""} ferait croire à un choix fait. Le nombre d'enfants part tel qu'il est tapé : la
+    // route le convertit, et le refuse en nommant la case.
     champ.value = JSON.stringify(
       niveau.value ? { niveau: niveau.value, conjoint: conjoint.checked,
-                       enfants: enfants.value === "" ? null : +enfants.value } : null, null, 1);
+                       enfants: enfants.value.trim() || null } : null, null, 1);
     champ.classList.remove("faute");
     verifierFormulaire();
   };
@@ -1070,7 +1071,7 @@ function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIG
     if (c.dataset.sousType) {
       types.add(p);
       if (String(c.value).trim() === "") o[k] = null;
-      else if (c.dataset.sousType === "nombre") o[k] = nombreTape(c.value);
+      // Un nombre part tel qu'il est tapé : la route le convertit.
       // Un oui/non : un vrai booleen, comme une case a cocher.
       else if (c.dataset.sousType === "booleen") o[k] = c.value === "true";
       else o[k] = c.value;

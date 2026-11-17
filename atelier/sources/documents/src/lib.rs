@@ -1,5 +1,6 @@
 //! Les documents : ce qu'un engagement validé fait imprimer, signer ou envoyer. Chacun se fabrique au moment où il part,
 //! depuis les paies écrites de l'engagement validé (`engagement::etats`) ; aucun ne recalcule une paie.
+#![forbid(unsafe_code)]
 
 pub mod aer;
 pub mod avenant;

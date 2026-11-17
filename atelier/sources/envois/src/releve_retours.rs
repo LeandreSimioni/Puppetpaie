@@ -324,7 +324,7 @@ pub struct Releve {
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
-    pub rattaches: i64,
+    pub rattaches: usize,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
     pub a_faire: Vec<String>,
 }
@@ -470,6 +470,9 @@ fn en_echec(p: Panne) -> Echec {
     p.en_echec()
 }
 
+/// Une journee de recherche : vingt-quatre heures.
+const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
+
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
 pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     // La requete ecrit ses bornes a la seconde : une fraction ne fait pas une tranche de plus.
@@ -477,8 +480,8 @@ pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        let suivant = if fin.depuis(t).is_some_and(|d| d > std::time::Duration::from_secs(86_400)) {
-            t.plus(86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
+        let suivant = if fin.depuis(t).is_some_and(|d| d > UNE_JOURNEE) {
+            t.plus_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
         } else {
             fin
         };
@@ -491,7 +494,7 @@ pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
 /// LE SIMULATEUR : pose les retours des depots joues qui les attendent, et rend le nombre de
 /// depots completes. Ne touche a aucune autre ligne : un vrai depot (flux sans le prefixe) garde ses vrais retours. Les
 /// attestations France Travail jouees s'archivent dans `retours/` comme les vraies, et vont dans les suites, a ranger.
-pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
+pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
     let mut a_archiver: Vec<(Annonce, Vec<u8>)> = Vec::new();
     // Ce que les organismes rendent de plus (refus, taux du PAS, effectif) : archive puis range par le meme chemin
     // qu'un retour reel (`rattacher_retours_avec_contenus`), qui en lit le verdict.
@@ -662,7 +665,7 @@ pub fn relever_retours(
                 }
             }
             Err(p) if p.est_api() => {
-                if p.code == Some(404) {
+                if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
                     continue;
                 }
                 releve.incidents.push(format!("Consultation interrompue : {}", p.echec.phrase));
@@ -803,7 +806,7 @@ pub fn relever_retours_dpae(
 /// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
 pub fn derniere_journee() -> R<(Moment, Moment)> {
     let fin = socle::temps::secondes();
-    Ok((fin.plus(-86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
+    Ok((fin.moins_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif

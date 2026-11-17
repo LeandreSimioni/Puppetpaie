@@ -45,7 +45,7 @@ pub const JOUR_DE_JANVIER: u32 = 16;
 /// L'annee dont le nombre est du `aujourdhui` : l'annee passee, a partir du 16 janvier ; aucune avant. L'annee 1 n'a
 /// pas d'annee passee : refus.
 pub fn annee_due(aujourdhui: Jour) -> R<Option<Annee>> {
-    if aujourdhui.mois > 1 || aujourdhui.jour >= JOUR_DE_JANVIER {
+    if aujourdhui >= aujourdhui.annee().janvier().jour_exige(JOUR_DE_JANVIER)? {
         Ok(Some(aujourdhui.annee().precedente()?))
     } else {
         Ok(None)

@@ -5,13 +5,11 @@
 
 use std::cell::Cell;
 
-use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
+use crate::calcul::{fiche_de_l_engagement, Paie};
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
 use socle::echec::R;
-use socle::grandeurs::{Heures, MontantUnitaire};
-use socle::num::court;
 
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
 /// engagement telles quelles (celles d'un permanent, deduites) et le plafond d'un temps partiel.
@@ -97,7 +95,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, MontantUnitaire::du_decimal(court(v.smic.decimal())), v.heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, socle::grandeurs::courte(v.smic), v.heures, tp);
     // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
     let mut periodes_lues = Vec::new();
     for (n, x) in v.periodes.iter().enumerate() {
@@ -107,7 +105,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         sub.lignes = e.lignes.clone();
         // Une periode elementaire est celle d'un salarie au mois : sa quotite compte des heures.
         sub.quotite_contrat = Some(socle::grandeurs::courte(e.quotite.heures("La quotité d'une période élémentaire")?));
-        sub.heures = e.heures.map(|h| Heures::du_decimal(court(h.decimal())));
+        sub.heures = e.heures.map(socle::grandeurs::courte);
         periodes_lues.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }
     let p = paie.ecrire();
@@ -123,11 +121,11 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     p.heures_travaillees = v.heures_travaillees;
     p.heures_absence = v.heures_absence;
     p.numero_bulletin = v.numero_bulletin.clone();
-    p.lignes = v.lignes.iter().map(LigneCotisation::de_la_forme).collect();
-    p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
+    p.lignes = v.lignes.clone();
+    p.remuneration = v.remuneration.clone();
     p.bases = v.bases.clone();
     p.reduction_generale = v.reduction_generale.clone();
-    p.deduction_forfaitaire = v.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::de_la_forme);
+    p.deduction_forfaitaire = v.deduction_forfaitaire.clone();
     p.avertissements = v.avertissements.clone();
     p.periodes = periodes_lues;
     Ok(paie)

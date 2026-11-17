@@ -23,7 +23,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::conges::{avertir, info};
-use crate::Chiffre;
 use droit::arrets::{MotifDArret, MotifDeReprise, SubrogationDeLArret};
 use droit::permanents::{MotifDeSuspension, ProprietesDeSuspension};
 use droit::contexte::{Contexte, IdSalarie};
@@ -35,8 +34,7 @@ use crate::numeros::NumeroContrat;
 use socle::fichiers::repr;
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero::dit;
-use socle::grandeurs::{Heures, Jours, MontantUnitaire};
-use socle::num::{div, Decimal};
+use socle::grandeurs::{Heures, Jours, Montant, MontantUnitaire};
 
 /// Le dossier du magasin, sous les donnees de la compagnie.
 pub const DOSSIER: socle::fichiers::NomDeFichier = socle::fichiers::MAGASIN_DES_IMPREVUS;
@@ -77,11 +75,16 @@ pub struct ArretSaisi {
     pub reprise: Option<Jour>,
     pub reprise_motif: Option<MotifDeReprise>,
     pub date_accident: Option<Jour>,
-    pub jours_deja_indemnises: Option<Chiffre>,
-    pub ij_brute: Option<Chiffre>,
-    pub ij_nette: Option<Chiffre>,
-    pub ij_brute_majoree: Option<Chiffre>,
-    pub ij_nette_majoree: Option<Chiffre>,
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+    pub jours_deja_indemnises: Option<socle::date::Duree<socle::date::EnJours>>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_brute: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_nette: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_brute_majoree: Option<MontantUnitaire>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub ij_nette_majoree: Option<MontantUnitaire>,
     pub prolongations: Vec<Prolongation>,
     pub reprises: Vec<RepriseNotee>,
     #[serde(with = "socle::paris::ecrit::saisie")]
@@ -267,9 +270,9 @@ pub fn est_un_arret(imp: &Imprevu) -> bool {
 pub fn verifier(imp: &Imprevu) -> R<()> {
     let Imprevu::Arret(a) = imp else { return Ok(()) };
     for (k, x) in [("ij_brute", &a.ij_brute), ("ij_nette", &a.ij_nette), ("ij_brute_majoree", &a.ij_brute_majoree), ("ij_nette_majoree", &a.ij_nette_majoree)] {
-        if let Some(x) = x.as_ref().filter(|x| x.vrai()) {
-            if x.grandeur::<MontantUnitaire>()? <= MontantUnitaire::ZERO {
-                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, x.en_texte()));
+        if let Some(x) = x.filter(|x| !x.est_nul()) {
+            if x <= MontantUnitaire::ZERO {
+                return Err(socle::echec::a_la_cle("Un montant par jour de l'arrêt doit être positif.", k, dit(x)));
             }
         }
     }
@@ -386,18 +389,18 @@ pub fn jour_de_rangement(imp: &Imprevu) -> R<Jour> {
 /// net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 1683).
 pub fn dernier_jour_declare(arret: &ArretSaisi) -> R<Jour> {
     let (travaille, debut) = (arret.dernier_jour_travaille, arret.debut);
-    Ok(if debut <= travaille { travaille } else { debut.plus_jours(-1)? })
+    Ok(if debut <= travaille { travaille } else { debut.avant(socle::date::Duree::jours(1))? })
 }
 
 /// Le premier jour d'absence d'un arret (`premier_jour`).
 pub(crate) fn premier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
-    dernier_jour_declare(arret)?.plus_jours(1)
+    dernier_jour_declare(arret)?.apres(socle::date::Duree::jours(1))
 }
 
 /// Le dernier jour d'absence d'un arret : la veille de sa reprise, sinon sa fin previsionnelle (`dernier_jour`).
 pub(crate) fn dernier_jour_d_arret(arret: &ArretSaisi) -> R<Jour> {
     match arret.reprise {
-        Some(r) => r.plus_jours(-1),
+        Some(r) => r.avant(socle::date::Duree::jours(1)),
         None => Ok(arret.fin_previsionnelle),
     }
 }
@@ -610,9 +613,9 @@ pub fn suspendu_sans_remuneration(
         }
     }
     let siennes = par_premier_jour(siennes)?;
-    let mut couvert_jusqu_a = periode.debut().plus_jours(-1)?;
+    let mut couvert_jusqu_a = periode.debut().avant(socle::date::Duree::jours(1))?;
     for imp in &siennes {
-        if premier_jour(imp)? > couvert_jusqu_a.plus_jours(1)? {
+        if premier_jour(imp)? > couvert_jusqu_a.apres(socle::date::Duree::jours(1))? {
             return Ok(Vec::new());
         }
         couvert_jusqu_a = couvert_jusqu_a.max(dernier_jour(imp)?);
@@ -740,19 +743,19 @@ pub struct MoisDuContrat<'a> {
     /// Le contrat borne au mois.
     pub presence: Periode,
     pub mois: Mois,
-    pub salaire_du_mois: Decimal,
+    pub salaire_du_mois: Montant,
     pub heures_par_jour: socle::grandeurs::HeuresParUnite,
     pub jours_payes: Jours,
     pub horaire: &'a droit::periodes::Horaire,
 }
 
-/// UN TAUX SANS ARRONDI : le quotient tel quel, en texte (`num::dec` le relit sans perte), pour que la quantite fois le
-/// taux, arrondi une fois au centime par la ligne (`calcul::lignes_brut`), donne le montant du quotient -- et le
-/// salaire entier quand les heures sont toutes celles du mois. Un taux arrondi au centime AVANT de multiplier laissait
-/// 0,07 EUR de salaire sur un mois entier d'absence (2 310 / 151,67 = 15,23, x 151,67 = 2 309,93) : aucun texte ne
-/// l'arrondit (Cass. soc. 11/02/1982, ci-dessous, est un quotient).
-fn taux_exact(montant: Decimal, quantite: Decimal) -> Decimal {
-    div(montant, quantite).normalize()
+/// UN TAUX SANS ARRONDI : le quotient tel quel, sans zero inutile, pour que la quantite fois le taux, arrondi une fois
+/// au centime par la ligne (`calcul::lignes_brut`), donne le montant du quotient -- et le salaire entier quand les
+/// heures sont toutes celles du mois. Un taux arrondi au centime AVANT de multiplier laissait 0,07 EUR de salaire sur un
+/// mois entier d'absence (2 310 / 151,67 = 15,23, x 151,67 = 2 309,93) : aucun texte ne l'arrondit (Cass. soc.
+/// 11/02/1982, ci-dessous, est un quotient). `None` : aucune heure.
+fn taux_exact(montant: Montant, heures: Heures) -> Option<MontantUnitaire> {
+    montant.par_heure(heures).map(socle::grandeurs::sans_zero)
 }
 
 /// LA FICHE DU SALARIE D'UN IMPREVU, rattachee a l'etablissement du contrat qu'il suspend (`calcul::etablissement_du_contrat`) :
@@ -818,21 +821,10 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), Jours::ZERO);
     let nat = e.nature_lue()?;
     // Les sommes du mois, a zero avant le premier arret.
-    let mut maintien = crate::maintien::DuMois {
-        loi: Decimal::ZERO,
-        convention_brut: None,
-        au_net: None,
-        ij_subrogees_brutes: Decimal::ZERO,
-        ij_subrogees_nettes: Decimal::ZERO,
-        ij_subrogees_jours: 0,
-        assiette_pas: Decimal::ZERO,
-        heures: Heures::ZERO,
-        avis: Vec::new(),
-    };
+    let mut maintien = crate::maintien::DuMois::vide();
     // Le taux de l'heure d'absence : le salaire du mois sur ses heures de travail (Cass. soc. 11/02/1982).
     let heures_du_mois = (m.jours_payes * m.heures_par_jour).au_centieme();
-    // Le salaire du mois est encore un decimal : les heures s'y ouvrent.
-    let taux_horaire = if heures_du_mois > Heures::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois.decimal())) } else { None };
+    let taux_horaire = taux_exact(m.salaire_du_mois, heures_du_mois).filter(|_| heures_du_mois > Heures::ZERO);
     // Un contrat sans date de debut ecrite ne se designe pas : aucun imprevu ne peut le nommer (S21.G00.40.001).
     let imprevus: Vec<_> = e
         .debut
@@ -849,7 +841,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         };
         let heures = (jours * m.heures_par_jour).au_centieme();
         // Les heures retirees et leur taux, quand le mois en retire.
-        let retenue = || -> R<Option<(Heures, Decimal)>> {
+        let retenue = || -> R<Option<(Heures, MontantUnitaire)>> {
             match taux_horaire {
                 Some(t) if heures > Heures::ZERO => Ok(Some((socle::grandeurs::courte(heures), t))),
                 _ => Ok(None),
@@ -878,14 +870,10 @@ nomme cette absence. Rien n'est calcule.",
                     libelle_du_motif(&motif)
                 ), "arrets-base.json"));
             };
-            lignes.extend(retenue()?.map(|(quantite, taux)| {
-                crate::LignePaie::RetenueArret(crate::ligne::RetenueArret {
-                    rubrique,
-                    // La ligne ecrite ne garde que le nombre de ses heures : sa porte.
-                    quantite: socle::forme::Nombre(quantite.decimal()),
-                    taux: socle::grandeurs::MontantUnitaire::du_decimal(taux),
-                })
-            }));
+            if let Some((quantite, taux)) = retenue()? {
+                let paiement = crate::ligne::PaiementDeLigne::Heures(quantite, taux);
+                lignes.push(crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, paiement }));
+            }
             absents += jours;
             avert.push(info(format!(
                 "{} : arrêt de travail ({}) du {} au {} : {} ; la DSN de chaque mois qu'il traverse le déclare.",
@@ -911,9 +899,10 @@ nomme cette absence. Rien n'est calcule.",
                     motif.texte()
                 )));
             } else {
-                lignes.extend(retenue()?.map(|(quantite, taux)| {
-                    crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, crate::ligne::QuantiteDeLigne::Heures(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux))
-                }));
+                if let Some((quantite, taux)) = retenue()? {
+                    let paiement = crate::ligne::PaiementDeLigne::Heures(quantite, taux);
+                    lignes.push(crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, paiement));
+                }
                 absents += jours;
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
@@ -939,11 +928,6 @@ fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60<MotifDArret>>) ->
         Some(m) => &m.libelle,
         None => "inconnu de la norme",
     }
-}
-
-/// Le libelle d'une rubrique, que le catalogue connait.
-fn libelle_rubrique(racine: &Path, code: &droit::catalogue::CodeDeRubrique, jour: &Jour) -> R<String> {
-    Ok(droit::catalogue::rubrique(racine, code, jour)?.libelle)
 }
 
 /// LES CACHETS ET SERVICES DE LA SAISIE QUI TOMBENT DANS UN IMPREVU : pour chaque mois saisi qu'il croise, les lignes des
@@ -975,8 +959,9 @@ pub struct CachetPaye {
     pub rubrique: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub dates: Vec<Jour>,
-    pub quantite: Option<Decimal>,
-    pub taux: Option<Decimal>,
+    pub quantite: Option<crate::ligne::QuantiteDeLigne>,
+    #[serde(serialize_with = "crate::ligne::en_texte::option::taux")]
+    pub taux: Option<crate::ligne::TauxDeLigne>,
 }
 
 fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &IdSalarie, absence: &Periode) -> R<Vec<CachetPaye>> {
@@ -998,18 +983,18 @@ fn cachets_de_l_engagement(ctx: &Contexte, mois: Mois, i: crate::saisie::RangDan
         if dedans.is_empty() {
             continue;
         }
-        let rubrique = l.rubrique().clone();
+        let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         out.push(CachetPaye {
             mois,
             engagement: i,
             numero: e.numero.clone(),
             spectacle: e.spectacle.clone(),
             ligne: j,
-            libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
-            rubrique,
+            libelle: r.libelle,
+            rubrique: l.rubrique().clone(),
             dates: dedans,
-            quantite: l.quantite_ecrite(),
-            taux: l.taux().map(crate::ligne::TauxDeLigne::decimal),
+            quantite: l.quantite(r.unite),
+            taux: l.taux(),
         });
     }
     Ok(out)

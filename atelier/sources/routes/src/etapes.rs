@@ -45,7 +45,7 @@ use crate::catalogue::Route;
 use crate::catalogue::Ecran;
 use crate::SansCharge;
 use socle::ecran::couleur_de_l_etat;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::depots::{Designation, EmbaucheDesignee, Quoi};
 use crate::gestes::signature::ContratSigneDit;
 
@@ -282,7 +282,7 @@ impl Etape {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Bilan {
     mois: Mois,
-    phrase: String,
+    phrase: Phrase,
     colonnes: Vec<String>,
     pub(crate) etapes: Vec<Etape>,
 }
@@ -290,7 +290,7 @@ pub(crate) struct Bilan {
 /// `mois-a-ouvrir` : le mois a ouvrir, celui du jour, et les etapes qui restent au premier.
 #[derive(Debug, Serialize)]
 struct MoisAOuvrir {
-    phrase: String,
+    phrase: Phrase,
     mois: Mois,
     courant: Mois,
     reste: Vec<QuelleEtape>,
@@ -300,28 +300,28 @@ struct MoisAOuvrir {
 /// lit, et les engagements non actifs du mois.
 #[derive(Debug, Serialize)]
 pub(crate) struct EtatParEngagement<'a> {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: Phrase,
+    phrases: Vec<Phrase>,
     mois: Mois,
     engagements: Vec<LigneDePage<'a>>,
     non_actifs: &'a [NonActif],
 }
 
 impl Dite for EtatParEngagement<'_> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Bilan {
     /// La phrase du bilan, celle de l'ecran du mois.
-    pub(crate) fn phrase(&self) -> &str {
+    pub(crate) fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 /// La phrase d'un engagement dans `etat-par-engagement` : qui, son contrat, puis ce que disent ses carres et sa frise.
-fn phrase_de_la_ligne(l: &LigneDePage) -> String {
+fn phrase_de_la_ligne(l: &LigneDePage) -> Phrase {
     let qui = match (l.nom, l.numero) {
         (Some(n), Some(c)) => format!("{} ({})", n, c),
         (Some(n), None) => n.to_string(),
@@ -329,7 +329,7 @@ fn phrase_de_la_ligne(l: &LigneDePage) -> String {
         (None, None) => "engagement à compléter".to_string(),
     };
     let dit: Vec<&str> = l.carres.iter().map(|c| c.phrase.as_str()).chain(l.versions.map(|f| f.phrase.as_str())).collect();
-    format!("{} : {}", qui, dit.join(" ; "))
+    socle::phrase!("{} : {}", qui, dit.join(" ; "))
 }
 
 /// Un engagement non actif du mois (`non_actifs`).
@@ -350,9 +350,10 @@ struct NonActif {
 /// Les quatre etapes du mois, dans l'ordre de l'habitude (aucun texte n'impose d'ordre).
 const ORDRE: [QuelleEtape; 4] = [QuelleEtape::Dpae, QuelleEtape::Signature, QuelleEtape::Dsn, QuelleEtape::Documents];
 
-/// L'echeance d'un depot de DSN : `mots` le `jour` a `heure`, d'apres `source`.
-fn echeance_dsn(jour: Jour, heure: &'static str, source: &str) -> Echeance {
-    Echeance { jour, mots: droit::echeances::Tournure::AvantLe, heure, source: source.into() }
+/// L'echeance d'un depot de DSN : avant l'instant `limite` (midi du jour de l'echeance ; minuit qui finit sa veille pour
+/// un annule-et-remplace), d'apres `source`.
+fn echeance_dsn(limite: Moment, source: &str) -> Echeance {
+    Echeance { quand: InstantOuJour::Instant(limite), mots: droit::echeances::Tournure::AvantLe, source: source.into() }
 }
 
 /// Faire signer les contrats du mois : l'apercu, puis la demande.
@@ -452,10 +453,10 @@ fn phrase_du_groupe(nom: &str, g: &Groupe) -> Option<String> {
 
 /// LA PHRASE DU MOIS : ce qu'en disent ses cases, l'une apres l'autre (`phrase_du_groupe`) ; un mois sans engagement le
 /// dit une fois en tete (`tete`), sans redire ses etapes qui n'ont rien a faire.
-fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> String {
+fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> Phrase {
     let cases = etapes.iter().flat_map(|e| &e.groupes).filter_map(|g| g.phrase.clone());
     let morceaux: Vec<String> = tete.into_iter().chain(cases).collect();
-    format!("{}.", morceaux.join(". "))
+    socle::phrase!("{}.", morceaux.join(". "))
 }
 
 // ------------------------------------------------------------ les colonnes
@@ -1600,7 +1601,7 @@ impl<'a> Moteur<'a> {
             let echeances = if self.ecrit {
                 None
             } else {
-                let code_emploi = p.engagement.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
+                let code_emploi = p.engagement.emploi.ecrit.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
                 let ent = &self.ctx.entreprise;
                 let remise = droit::echeances::remise_du_contrat(&p.engagement.contrat().debut(), ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
                 Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.contrat().debut()), contrat: remise })
@@ -1854,7 +1855,7 @@ impl<'a> Moteur<'a> {
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
         let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| m.reclasser(Classe::Illisible))?;
-        Ok(e.veille())
+        e.veille()
     }
 
     /// Le refus d'un annule-et-remplace du mois apres sa `limite` (cahier technique DSN §1.4.2) ; `Ok` jusqu'a elle.
@@ -1974,12 +1975,13 @@ impl<'a> Moteur<'a> {
             out.saisie_modifiee = Some(true);
         }
         let quand = derniere.quand().dit();
-        let jour = lim.jj_mm_aaaa();
+        // La limite, son jour et son heure (« le 14/12/2026 à minuit ») : l'heure dite par `HeureDuJour`.
+        let jour = format!("{} {}", lim.jj_mm_aaaa(), socle::paris::HeureDuJour::MINUIT.dite());
         if corriges > 0 {
             let pluriel = if corriges > 1 { "s" } else { "" };
             out.corrigee_par_la_suivante = true;
             out.phrase = format!(
-                "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({} à minuit) — {} contrat{} corrigé{} par la DSN suivante",
+                "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — {} contrat{} corrigé{} par la DSN suivante",
                 quand, jour, corriges, pluriel, pluriel
             );
             return Ok(out);
@@ -1987,15 +1989,15 @@ impl<'a> Moteur<'a> {
         if modifiee {
             if admis {
                 out.a_envoyer = true;
-                out.phrase = format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {} à minuit", quand, jour);
+                out.phrase = format!("Paie modifiée depuis la DSN du {} — annule-et-remplace à envoyer, jusqu'au {}", quand, jour);
             } else {
                 out.phrase = format!(
-                    "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({} à minuit) — la correction part dans la DSN suivante",
+                    "Paie modifiée depuis la DSN du {}, après la limite de l'annule-et-remplace ({}) — la correction part dans la DSN suivante",
                     quand, jour
                 );
             }
         } else if admis {
-            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", out.prochain_ordre, jour);
+            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {}", out.prochain_ordre, jour);
         }
         Ok(out)
     }
@@ -2136,7 +2138,7 @@ impl<'a> Moteur<'a> {
         }
         let paies = self.etat_par_engagement(le_mois)?;
         let echeance_de = |ps: &[&Vue], dpae: bool| -> Option<Echeance> {
-            ps.iter().filter_map(|p| p.echeances.as_ref()).map(|e| if dpae { &e.dpae } else { &e.contrat }).min_by_key(|e| e.jour).cloned()
+            ps.iter().filter_map(|p| p.echeances.as_ref()).map(|e| if dpae { &e.dpae } else { &e.contrat }).min_by_key(|e| e.jour()).cloned()
         };
 
         // --- Les colonnes : chaque engagement a son point, la DSN celui de son etablissement.
@@ -2172,7 +2174,7 @@ impl<'a> Moteur<'a> {
                     // Le jour de l'embauche passe, la DPAE qui devait le preceder (L. 1221-10) est en retard ; elle se depose
                     // toujours.
                     let echeance = echeance_de(&siens, true);
-                    let en_retard = siens.iter().filter(|p| p.echeances.as_ref().is_some_and(|e| e.dpae.jour < self.ctx.aujourdhui)).count();
+                    let en_retard = siens.iter().filter(|p| p.echeances.as_ref().is_some_and(|e| e.dpae.jour() < self.ctx.aujourdhui)).count();
                     let etat = match en_retard {
                         0 => "à déposer".to_string(),
                         r if r == n => "à déposer, en retard".to_string(),
@@ -2302,7 +2304,7 @@ impl<'a> Moteur<'a> {
             // Une fiche qui ne dit pas encore son NIC n'a que son siege : sa classe ne le nomme pas.
             return Ok(vec![(ent.nic_principal().cloned().into_iter().collect(), g)]);
         }
-        let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(|e| e.jour));
+        let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(Echeance::jour));
         let mut classes: Vec<(Vec<Nic>, Groupe)> = Vec::new();
         for nic in ent.nics()? {
             let g = self.groupes_dsn_de(mois, Some(&nic))?;
@@ -2331,7 +2333,7 @@ impl<'a> Moteur<'a> {
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<Groupe> {
         let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
-        let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
+        let au_depot = echeance_dsn(echeance.limite()?, "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
         if !partie {
@@ -2354,7 +2356,7 @@ impl<'a> Moteur<'a> {
         // Partie : faite, tant qu'aucun retour ne revient KO. Ce qui la rouvre : une paie modifiee depuis.
         let r = self.etat_remplacement(le_mois, nic)?;
         let libelle = format!("Refaire la DSN (annule-et-remplace, ordre {})…", r.prochain_ordre);
-        let veille = echeance_dsn(r.limite, "à minuit", "Cahier technique DSN 2026.1, § 1.4.2 (atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt)");
+        let veille = echeance_dsn(echeance.limite_de_l_annule_et_remplace()?, "Cahier technique DSN 2026.1, § 1.4.2 (atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt)");
         let modifiee = r.saisie_modifiee == Some(true);
         if modifiee && r.a_envoyer {
             // Un annule-et-remplace deja ecrit montre son chemin ; sinon, le refaire.
@@ -2374,7 +2376,7 @@ impl<'a> Moteur<'a> {
                 None,
                 String::new(),
                 format!("à corriger dans la DSN de {}", suivant.libelle(Graphie::Accentuee)),
-                Some(echeance_dsn(e2.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 (declarations::echeance_dsn)")),
+                Some(echeance_dsn(e2.limite()?, "Cahier technique DSN 2026.1, § 1.4.2 (declarations::echeance_dsn)")),
                 Some(a),
             ));
         }
@@ -2442,11 +2444,11 @@ impl<'a> Moteur<'a> {
             let reste = self.etapes_restantes(m)?;
             if !reste.is_empty() {
                 let noms: Vec<&str> = ORDRE.iter().filter(|c| reste.contains(c)).map(|c| c.nom()).collect();
-                let phrase = format!("À ouvrir : {}, où il reste {}.", m.libelle(socle::mois::Graphie::Accentuee), noms.join(", "));
+                let phrase = socle::phrase!("À ouvrir : {}, où il reste {}.", m.libelle(socle::mois::Graphie::Accentuee), noms.join(", "));
                 return Ok(MoisAOuvrir { phrase, mois: m, courant, reste });
             }
         }
-        let phrase = format!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", courant.libelle(Graphie::Accentuee));
+        let phrase = socle::phrase!("À ouvrir : {}, le mois du jour ; rien ne reste aux mois d'avant.", courant.libelle(Graphie::Accentuee));
         Ok(MoisAOuvrir { phrase, mois: courant, courant, reste: Vec::new() })
     }
 
@@ -2824,7 +2826,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
         }
         let plus_recent = out.get(cle).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned().flatten(), quand });
+            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle).cloned(), quand });
         }
     }
     Ok(out)
@@ -2950,7 +2952,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for MoisAOuvrir {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -2970,8 +2972,8 @@ impl LesDeuxEtats {
     pub(crate) fn par_engagement(&self) -> EtatParEngagement<'_> {
         let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
         let phrase = match engagements.len() {
-            0 => format!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
-            n => format!("Engagements du mois : {}.", n),
+            0 => socle::phrase!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
+            n => socle::phrase!("Engagements du mois : {}.", n),
         };
         let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
         EtatParEngagement { phrase, phrases, mois: self.mois, engagements, non_actifs: &self.non_actifs }

@@ -42,9 +42,6 @@ use droit::fiche::Lue as _;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use rust_decimal::Decimal;
-
-use socle::texte::nombre_dit;
 use documents::{PieceDuMois, SorteDePieceProduite};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
@@ -162,10 +159,10 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         }
         let mut volume: Vec<String> = Vec::new();
         if !e.cachets.est_nul() {
-            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if e.cachets > socle::grandeurs::Cachets::UN { "s" } else { "" }));
+            volume.push(format!("{} cachet{}", socle::grandeurs::ecrit::sans_zero::dit(e.cachets), if socle::texte::au_pluriel(e.cachets) { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero()) {
-            volume.push(format!("{} heure{}", nombre_dit(h), if h > Decimal::ONE { "s" } else { "" }));
+        if let Some(h) = e.heures.filter(|h| !h.est_nul()) {
+            volume.push(format!("{} heure{}", socle::texte::virgule(h), if socle::texte::au_pluriel(h) { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -244,77 +241,27 @@ pub struct Renvoi {
     pub declaration: String,
 }
 
-/// Le resume de la paie d'UN salarie pour le mois, tel que ses documents la disent : par contrat, ses bornes, son
-/// spectacle, ses jours travailles, ses cachets, ses heures, son brut et son net a payer ; et les totaux. Le journal le
-/// garde a chaque envoi des documents (`routes::documents::expedier_envoi`) : c'est l'« ancien » que le courriel de renvoi
-/// compare a la paie refaite. Les montants et les heures s'ecrivent comme le bulletin les ecrit.
-pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
-    let mut contrats = Vec::new();
-    let (mut brut, mut net) = (Decimal::ZERO, Decimal::ZERO);
+/// Le resume de la paie d'UN salarie pour le mois, tel que ses documents la disent : son brut et son net a payer, sur
+/// tous ses contrats du mois. Le journal le garde a chaque envoi des documents (`routes::documents::expedier_envoi`) :
+/// c'est l'« ancien » que le courriel de renvoi compare a la paie refaite (`ce_qui_a_change`) ; ce qui a change dans ses
+/// contrats, l'engagement le dit (`faits`).
+pub fn resume_de(paies: &[&Paie]) -> ResumeDePaie {
+    let (mut brut, mut net) = (Montant::ZERO, Montant::ZERO);
     for p in paies {
-        let e = &p.engagement;
-        let mut dates = e.dates_travail.clone();
-        dates.sort();
-        let heures = e.heures.map(socle::grandeurs::Heures::decimal).filter(|h| !h.is_zero());
-        let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
-        contrats.push(ContratResume {
-            contrat: e.contrat(),
-            spectacle,
-            jours: dates,
-            cachets: e.cachets,
-            heures,
-            brut: p.brut.decimal(),
-            net: p.net_a_payer.decimal(),
-        });
-        brut += p.brut.decimal();
-        net += p.net_a_payer.decimal();
+        brut += p.brut;
+        net += p.net_a_payer;
     }
-    Ok(ResumeDePaie { contrats, brut, net })
+    ResumeDePaie { brut, net }
 }
 
 /// LE RESUME DE LA PAIE D'UN SALARIE (`resume_de`), tel que le journal le garde avec l'envoi de ses documents.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResumeDePaie {
-    pub contrats: Vec<ContratResume>,
-    pub brut: Decimal,
-    pub net: Decimal,
-}
-
-/// Un contrat du resume : ses bornes, son spectacle, ses jours, ses cachets, ses heures, son brut et son net.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ContratResume {
-    pub contrat: socle::date::PeriodeOuverte,
-    pub spectacle: Option<String>,
-    pub jours: Vec<socle::date::Jour>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::serialize")]
-    pub cachets: socle::grandeurs::Cachets,
-    /// Ses heures, s'il en a, ecrites comme le bulletin les ecrit (`heures_ecrites`).
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "heures_ecrites")]
-    pub heures: Option<Decimal>,
-    pub brut: Decimal,
-    pub net: Decimal,
-}
-
-/// Les heures d'un contrat du resume, ecrites comme le bulletin les ecrit (`socle::texte::nombre_dit` : « 13,5 », « 24 ») et relues dans
-/// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
-mod heures_ecrites {
-    use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
-
-    pub fn serialize<S: serde::Serializer>(h: &Option<Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        h.map(super::nombre_dit).serialize(s)
-    }
-
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Decimal>, D::Error> {
-        let Some(t) = Option::<String>::deserialize(d)? else { return Ok(None) };
-        let h = socle::num::dec_texte(&t.replacen(',', ".", 1)).map_err(|e| serde::de::Error::custom(e.phrase))?;
-        if super::nombre_dit(h) != t {
-            return Err(serde::de::Error::custom(format!("heures {} : elles s'écrivent comme le bulletin les écrit (« 13,5 »).", socle::fichiers::repr(&t))));
-        }
-        Ok(Some(h))
-    }
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub brut: Montant,
+    #[serde(with = "socle::grandeurs::ecrit::texte")]
+    pub net: Montant,
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les
@@ -326,10 +273,10 @@ pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau:
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
         let (brut_a, brut_n, net_a, net_n) = (
-            socle::texte::euros(Montant::du_decimal(a.brut)),
-            socle::texte::euros(Montant::du_decimal(n.brut)),
-            socle::texte::euros(Montant::du_decimal(a.net)),
-            socle::texte::euros(Montant::du_decimal(n.net)),
+            socle::texte::euros(a.brut),
+            socle::texte::euros(n.brut),
+            socle::texte::euros(a.net),
+            socle::texte::euros(n.net),
         );
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));
@@ -811,7 +758,7 @@ fn en_mime_complet<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<
         },
         Entete::Adresse("To", message.destinataire.clone()),
         Entete::Libre("Subject", message.sujet.clone()),
-        Entete::Date(date_de(date)),
+        Entete::Date(socle::paris::ecrit::rfc5322(date)),
         Entete::MessageId(message_id),
     ];
     let mime_version = || Entete::Simple("MIME-Version", "1.0".to_string());
@@ -1038,33 +985,8 @@ impl From<IdDeCourriel> for String {
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
 pub fn nouveau_message_id(domaine: &str) -> R<IdDeCourriel> {
-    let maintenant = socle::temps::secondes();
-    let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
-    IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
-}
-
-/// La date RFC 5322 d'un instant, heure de Paris (§ 3.3, `date-time` ;
-/// `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`).
-fn date_de(t: socle::paris::Moment) -> String {
-    const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    let decalage = socle::paris::decalage(t);
-    let (j, secondes) = (t.jour_de_paris(), t.seconde_du_jour_de_paris());
-    // Le 01/01/1970 etait un jeudi.
-    let semaine = (j.ordinal() - 719_163 + 3).rem_euclid(7) as usize;
-    format!(
-        "{}, {:02} {} {:04} {:02}:{:02}:{:02} {}{:02}{:02}",
-        JOURS[semaine],
-        j.jour,
-        MOIS[j.mois as usize - 1],
-        j.an,
-        secondes / 3600,
-        secondes % 3600 / 60,
-        secondes % 60,
-        if decalage < 0 { '-' } else { '+' },
-        decalage.abs() / 3600,
-        decalage.abs() % 3600 / 60
-    )
+    let centiemes = socle::paris::ecrit::centiemes(socle::temps::secondes());
+    IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes,socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
 /// Le nombre de lignes d'un texte, pour le refus d'un en-tête à plusieurs lignes.
@@ -1173,22 +1095,21 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
         }
     }
     let citer = |c: u8| format!("={:02X}", c).into_bytes();
-    let max1 = max as i64 - 1;
     let mut codees: Vec<Vec<u8>> = Vec::new();
     for ligne in lignes_octets(&t) {
-        let long = ligne.len() as i64;
-        let mut debut: i64 = 0;
-        let derniere = long - 1 - max as i64;
-        while debut <= derniere {
-            let fin = debut + max1;
-            if ligne[(fin - 2) as usize] == b'=' {
-                codees.push(ligne[debut as usize..(fin - 1) as usize].to_vec());
+        let long = ligne.len();
+        let mut debut: usize = 0;
+        // Tant qu'il reste plus de `max` octets apres `debut`.
+        while debut + max < long {
+            let fin = debut + max - 1;
+            if ligne[fin - 2] == b'=' {
+                codees.push(ligne[debut..fin - 1].to_vec());
                 debut = fin - 2;
-            } else if ligne[(fin - 1) as usize] == b'=' {
-                codees.push(ligne[debut as usize..fin as usize].to_vec());
+            } else if ligne[fin - 1] == b'=' {
+                codees.push(ligne[debut..fin].to_vec());
                 debut = fin - 1;
             } else {
-                let mut l = ligne[debut as usize..fin as usize].to_vec();
+                let mut l = ligne[debut..fin].to_vec();
                 l.push(b'=');
                 codees.push(l);
                 debut = fin;
@@ -1196,7 +1117,8 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
         }
         match ligne.last() {
             Some(&dernier) if dernier == b' ' || dernier == b'\t' => {
-                let place = debut - derniere;
+                // La place laissee a la fin de la derniere ligne (au moins un octet : `debut + max >= long`).
+                let place = debut + max + 1 - long;
                 let q: Vec<u8> = if place >= 3 {
                     citer(dernier)
                 } else if place == 2 {
@@ -1206,12 +1128,12 @@ pub fn quoted_printable(corps: &[u8], max: usize) -> Vec<u8> {
                     v.extend(citer(dernier));
                     v
                 };
-                let milieu = if (debut as usize) < ligne.len() - 1 { &ligne[debut as usize..ligne.len() - 1] } else { &[][..] };
+                let milieu = if debut < ligne.len() - 1 { &ligne[debut..ligne.len() - 1] } else { &[][..] };
                 let mut l = milieu.to_vec();
                 l.extend(q);
                 codees.push(l);
             }
-            _ => codees.push(ligne[(debut as usize).min(ligne.len())..].to_vec()),
+            _ => codees.push(ligne[debut.min(ligne.len())..].to_vec()),
         }
     }
     if matches!(t.last(), Some(b'\r') | Some(b'\n')) {
@@ -1480,7 +1402,7 @@ fn mot_code(s: &[char]) -> String {
     let q = |b: u8| if b.is_ascii_alphanumeric() || b"-!*+/".contains(&b) { 1 } else if b == b' ' { 1 } else { 3 };
     let longueur_q: usize = octets.iter().map(|b| q(*b)).sum();
     let longueur_b = octets.len().div_ceil(3) * 4;
-    if (longueur_q as i64) - (longueur_b as i64) < 5 {
+    if longueur_q < longueur_b + 5 {
         let mut c = String::new();
         for &b in octets {
             if b == b' ' {
@@ -1633,17 +1555,18 @@ fn plier_en_mot_code(
     let chrome = "utf-8".len() + 7;
     let mut reste: Vec<char> = a_coder.chars().collect();
     while !reste.is_empty() {
-        let place = MAXLEN as i64 - lignes.last().unwrap().len() as i64;
-        let place_texte = place - chrome as i64;
-        if place_texte <= 0 {
+        let occupee = lignes.last().unwrap().len();
+        // La place du texte, l'enveloppe de son mot code (`=?utf-8?q?…?=`) otee ; aucune : une ligne neuve.
+        if occupee + chrome >= MAXLEN {
             let v = voler_blanc(lignes);
             lignes.push(if v.is_empty() { " ".to_string() } else { v });
             nouveau = lignes.last().unwrap().len();
             continue;
         }
-        let mut n = (place_texte as usize).min(reste.len());
+        let place = MAXLEN - occupee;
+        let mut n = (place - chrome).min(reste.len());
         let mut mot = mot_code(&reste[..n]);
-        while mot.len() as i64 - place > 0 && n > 0 {
+        while mot.len() > place && n > 0 {
             n -= 1;
             mot = mot_code(&reste[..n]);
         }

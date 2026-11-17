@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::ouverture::mois_connus;
 use crate::SansCharge;
 use droit::contexte::Contexte;
@@ -111,31 +111,31 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for ExercicesDits {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Regularisations {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for ClotureDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Archive {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for RepriseDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -151,14 +151,14 @@ struct ChargeReprise {
 /// l'ecran), deja connu, sans mois, illisible, si elle a ecrit, et ce que l'Historique en dit (`ecran`).
 #[derive(Debug, Serialize)]
 struct RepriseDite {
-    phrase: String,
+    phrase: Phrase,
     trouves: Vec<DepotVu>,
     ajoutes: Vec<AjoutDit>,
     deja: Vec<DepotVu>,
     sans_mois: Vec<DepotVu>,
     illisibles: Vec<String>,
     ecrit: bool,
-    rattaches: i64,
+    rattaches: usize,
     ecran: EcranDeLaReprise,
 }
 
@@ -204,7 +204,7 @@ fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
         logiciel: "Le nom du logiciel n'est pas une annotation : il est lu dans le certificat de conformité. C'est lui qui distingue le dépôt d'un autre logiciel d'un dépôt PuppetPaie.",
         bouton: format!("Reprendre ces {} dépôt(s)", n),
     };
-    let phrase = format!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", r.trouves.len(), n, if r.ecrit { "" } else { " (rien n'est écrit)" });
+    let phrase = socle::phrase!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", r.trouves.len(), n, if r.ecrit { "" } else { " (rien n'est écrit)" });
     let ajoutes = r.ajoutes.into_iter().map(ajout_dit).collect();
     Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, illisibles: r.illisibles, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
 }
@@ -237,7 +237,7 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
 /// Ce que rend `regularisations` : sa phrase, et par mois d'origine les corrections que la page montre.
 #[derive(Debug, Serialize)]
 struct Regularisations {
-    phrase: String,
+    phrase: Phrase,
     corrections: Vec<CorrectionsDuMois>,
 }
 
@@ -270,13 +270,13 @@ fn regularisations(ctx: &Contexte) -> R<Regularisations> {
             out.push(CorrectionsDuMois { mois, corrections });
         }
     }
-    Ok(Regularisations { phrase: format!("Mois qui portent des corrections : {}.", out.len()), corrections: out })
+    Ok(Regularisations { phrase: socle::phrase!("Mois qui portent des corrections : {}.", out.len()), corrections: out })
 }
 
 /// Ce que rend `cloture` : sa phrase, et l'exercice clos ou rouvert.
 #[derive(Debug, serde::Serialize)]
 struct ClotureDite {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     cloture: crate::gestes::exercice_ecrit::Cloture,
 }
@@ -286,10 +286,10 @@ fn cloture(ctx: &Contexte, c: crate::gestes::exercice_ecrit::ChargeCloture) -> R
     use crate::gestes::exercice_ecrit::Cloture;
     let cloture = crate::gestes::exercice_ecrit::cloture_route(ctx, c)?;
     let phrase = match &cloture {
-        Cloture::Rouverte(r) => format!("Exercice {} rouvert ; son archive reste.", r.annee),
+        Cloture::Rouverte(r) => socle::phrase!("Exercice {} rouvert ; son archive reste.", r.annee),
         Cloture::Close(e) => {
             let reste = if e.manques.is_empty() { String::new() } else { format!(" Pas archivé : {}.", e.manques.iter().map(|m| m.trim_end_matches('.')).collect::<Vec<_>>().join(" ; ")) };
-            format!("Exercice {} clos : {} fichiers archivés.{}", e.annee, e.fichiers, reste)
+            socle::phrase!("Exercice {} clos : {} fichiers archivés.{}", e.annee, e.fichiers, reste)
         }
     };
     Ok(ClotureDite { phrase, cloture })
@@ -298,8 +298,8 @@ fn cloture(ctx: &Contexte, c: crate::gestes::exercice_ecrit::ChargeCloture) -> R
 /// Ce que rend `exercices` : sa phrase, une ligne par annee (`phrases`), chaque annee, et le dossier des archives.
 #[derive(Debug, serde::Serialize)]
 struct ExercicesDits {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: Phrase,
+    phrases: Vec<Phrase>,
     exercices: Vec<ExerciceDit>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: std::path::PathBuf,
@@ -329,8 +329,8 @@ struct ExportDeLAnnee {
 fn exercices_route(ctx: &Contexte) -> R<ExercicesDits> {
     let exercices = etat_exercices(ctx)?;
     Ok(ExercicesDits {
-        phrase: format!("Exercices : {}.", exercices.len()),
-        phrases: exercices.iter().map(|e| format!("{} : {}", e.annee, e.pastille.mots)).collect(),
+        phrase: socle::phrase!("Exercices : {}.", exercices.len()),
+        phrases: exercices.iter().map(|e| socle::phrase!("{} : {}", e.annee, e.pastille.mots)).collect(),
         exercices,
         dossier: documents::DossierHorsDuMois::Exercices.sous(&ctx.racine),
     })
@@ -394,9 +394,9 @@ fn archiver(ctx: &Contexte, charge: ChargeArchiver) -> R<Archive> {
     // Le dossier du Drive tel que l'écran le dit : ses dossiers séparés comme les places de l'écran.
     let ou = format!("{} › {}", r.racine_drive, r.mois);
     let phrase = if joue {
-        format!("Compagnie fictive : rien ne part au Drive. {} fichier(s) iraient dans le dossier {}.", r.fichiers.len(), ou)
+        socle::phrase!("Compagnie fictive : rien ne part au Drive. {} fichier(s) iraient dans le dossier {}.", r.fichiers.len(), ou)
     } else {
-        format!("{} fichier(s) déposé(s) dans le Drive, dossier {}.", r.fichiers.len(), ou)
+        socle::phrase!("{} fichier(s) déposé(s) dans le Drive, dossier {}.", r.fichiers.len(), ou)
     };
     let fichiers = r.fichiers.into_iter().map(|f| FichierDepose { nom: f.nom.into(), octets: f.octets, remplace: f.remplace }).collect();
     Ok(Archive { phrase, mois: r.mois, dossier, compte: r.compte, fichiers })
@@ -412,7 +412,7 @@ struct ChargeArchiver {
 /// Ce que rend `archiver` : sa phrase, le mois, le dossier du Drive, le compte lie, et chaque fichier depose.
 #[derive(Debug, Serialize)]
 struct Archive {
-    phrase: String,
+    phrase: Phrase,
     mois: socle::mois::Mois,
     dossier: String,
     compte: Option<String>,
@@ -423,7 +423,7 @@ struct Archive {
 #[derive(Debug, Serialize)]
 struct FichierDepose {
     nom: String,
-    octets: u64,
+    octets: socle::grandeurs::Octets,
     remplace: bool,
 }
 

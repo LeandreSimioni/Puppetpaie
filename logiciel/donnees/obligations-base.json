@@ -18,14 +18,9 @@
       },
       "destinataire": "L'Assurance Maladie (indemnités journalières) et les organismes de prévoyance.",
       "delai_sans_subrogation": {
-        "jours_ouvres": 5,
-        "depart": "connaissance_arret",
-        "dit": "dans les cinq jours ouvrés qui suivent le jour où la compagnie a connaissance de l'arrêt"
+        "jours_ouvres": {"jours": 5, "dit": "dans les cinq jours ouvrés qui suivent le jour où la compagnie a connaissance de l'arrêt"}
       },
-      "delai_avec_subrogation": {
-        "avec_la_mensuelle": true,
-        "dit": "au plus tard avec la DSN mensuelle du mois où l'arrêt commence"
-      },
+      "delai_avec_subrogation": {"dit": "au plus tard avec la DSN mensuelle du mois où l'arrêt commence"},
       "connaissance_presumee": "le premier jour de l'arrêt (le lendemain du dernier jour travaillé) : le plus tôt où la compagnie a pu le savoir. Si elle l'a su plus tard, saisir ce jour-là.",
       "exceptions": [
         "R. 133-14, II, 1° : quand aucune retenue n'a été faite pour l'arrêt sur le salaire du mois où il commence (salaire maintenu), le signalement peut partir avec la DSN mensuelle de ce mois. Le moteur ne le présume pas : il compte cinq jours ouvrés tant que la compagnie ne pratique pas la subrogation.",
@@ -48,9 +43,7 @@
       "ou": "En DSN, sur net-entreprises : le signalement d'arrêt (nature 04) que le logiciel écrit, de type « annule et remplace », qui vise l'identifiant du signalement déjà parti (sur son certificat de conformité) et porte la nouvelle date de fin de subrogation (S21.G00.60.006).",
       "destinataire": "L'Assurance Maladie (la période de subrogation, avant le prochain paiement d'indemnités journalières).",
       "delai": {
-        "jours_ouvres": 5,
-        "depart": "prolongation",
-        "dit": "le plus vite possible dès la prolongation connue ; au plus tard, comme un signalement d'arrêt, dans les cinq jours ouvrés qui suivent"
+        "jours_ouvres": {"jours": 5, "dit": "le plus vite possible dès la prolongation connue ; au plus tard, comme un signalement d'arrêt, dans les cinq jours ouvrés qui suivent"}
       },
       "inferences": [
         "La fiche 1983 ne chiffre pas le délai : « le plus rapidement possible dès connaissance de la prolongation de l'arrêt », « dans des délais raisonnables, afin que la caisse primaire d'assurance maladie enregistre la nouvelle période de subrogation, avant le prochain paiement d'indemnités journalières ». Le moteur retient celui d'un signalement d'arrêt, cinq jours ouvrés à connaissance de l'évènement (fiche 673), compté du jour où la prolongation de la subrogation est saisie. C'est une inférence."
@@ -76,14 +69,9 @@
       },
       "destinataire": "L'Assurance Maladie et les organismes de prévoyance.",
       "delai_sans_subrogation": {
-        "jours_ouvres": 5,
-        "depart": "reprise",
-        "dit": "dans les cinq jours ouvrés qui suivent la reprise"
+        "jours_ouvres": {"jours": 5, "dit": "dans les cinq jours ouvrés qui suivent la reprise"}
       },
-      "delai_avec_subrogation": {
-        "avec_la_mensuelle": true,
-        "dit": "au plus tard avec la DSN mensuelle du mois de la reprise"
-      },
+      "delai_avec_subrogation": {"dit": "au plus tard avec la DSN mensuelle du mois de la reprise"},
       "exceptions": [
         "Le cahier technique (§ 5.4) dit « cinq jours ouvrables » ; R. 133-14 et l'arrêté du 2 juillet 2013 disent « jours ouvrés » : le moteur prend les jours ouvrés, la lecture la plus courte."
       ],
@@ -103,9 +91,7 @@
       "ou": "En DSN, sur net-entreprises : le fichier « signalement de fin de contrat de travail unique » (nature 07) que le logiciel écrit.",
       "destinataire": "France Travail (l'attestation employeur du salarié), les organismes de prévoyance.",
       "delai": {
-        "jours_ouvres": 5,
-        "depart": "fin_contrat",
-        "dit": "dans les cinq jours ouvrés qui suivent la fin du contrat"
+        "jours_ouvres": {"jours": 5, "dit": "dans les cinq jours ouvrés qui suivent la fin du contrat"}
       },
       "exceptions": [
         "R. 133-14, II, 2° : la fin d'un CDD d'usage (3° de L. 1242-2 du code du travail) arrivé à son terme suit le circuit dérogatoire, avec la DSN mensuelle, sauf si le salarié demande le délai de cinq jours (fiches 1902 et 2062) : ces fins-là ne sont pas dans la liste."
@@ -124,11 +110,7 @@
       "qui": "employeur",
       "destinataire": "La caisse primaire d'assurance maladie dont relève la victime.",
       "delai": {
-        "heures": 48,
-        "sans_dimanches": true,
-        "sans_feries": true,
-        "depart": "connaissance_accident",
-        "dit": "dans les quarante-huit heures, dimanches et jours fériés non compris, à compter du moment où la compagnie a connaissance de l'accident"
+        "heures_hors_dimanches_et_feries": {"heures": 48, "dit": "dans les quarante-huit heures, dimanches et jours fériés non compris, à compter du moment où la compagnie a connaissance de l'accident"}
       },
       "connaissance_presumee": "le jour de l'accident (la date saisie sur l'arrêt), dès minuit : la lecture la plus exigeante. La victime doit en informer l'employeur dans la journée, ou au plus tard dans les vingt-quatre heures (R. 441-2). Saisir le jour et l'heure où la compagnie l'a su.",
       "ou": [
@@ -180,9 +162,7 @@
       "qui": "salarie",
       "destinataire": "La caisse primaire d'assurance maladie.",
       "delai": {
-        "jours": 15,
-        "depart": "debut_arret",
-        "dit": "dans les quinze jours qui suivent la cessation du travail"
+        "jours": {"jours": 15, "dit": "dans les quinze jours qui suivent la cessation du travail"}
       },
       "textes": [
         {"reference": "Code de la sécurité sociale, art. L. 461-5", "fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/L461-5.xml", "dit": "« Toute maladie professionnelle dont la réparation est demandée […] doit être, par les soins de la victime, déclarée à la caisse primaire dans un délai déterminé »."},
@@ -199,9 +179,7 @@
       "qui": "employeur",
       "destinataire": "La caisse primaire d'assurance maladie du salarié : les indemnités journalières du congé de deuil (CSS L. 331-9).",
       "delai": {
-        "jours": 0,
-        "depart": "connaissance_arret",
-        "dit": "dès réception de l'avis d'arrêt de travail"
+        "jours": {"jours": 0, "dit": "dès réception de l'avis d'arrêt de travail"}
       },
       "connaissance_presumee": "le premier jour de l'arrêt (le lendemain du dernier jour travaillé). Le salarié prévient la compagnie vingt-quatre heures au moins avant chaque période du congé (C. trav. L. 3142-1-1) : si elle l'a su un autre jour, saisir ce jour-là.",
       "ou": [

@@ -8,14 +8,15 @@ use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use envois::retours::NatureDuRetour;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec { commande: "aer", positionnels: &[], options: &[Opt::valeur("mois"), Opt::drapeau("forcer")] };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     super::code(faire(cadre, args))
 }
 
-fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     let mois = args.tape("mois").map(socle::ligne::Argument::mois).transpose()?;
     let fait = routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
     if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
@@ -23,7 +24,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NatureDuRetour::AerSpectacle),
             None => dire!("Aucune attestation dans les retours de nature {}.", NatureDuRetour::AerSpectacle),
         }
-        return Ok(2);
+        return Ok(ExitCode::from(2));
     }
     for (periode, cle, chemin) in &fait.ecrits {
         dire!("{}  {:<12} {}", periode, cle, chemin.display());
@@ -44,5 +45,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         }
         dire!("\nLa correction se fait sur la DSN, et France Travail reedite l'attestation. --forcer signe quand meme.");
     }
-    Ok(if fait.refusees.is_empty() { 0 } else { 2 })
+    Ok(if fait.refusees.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(2) })
 }

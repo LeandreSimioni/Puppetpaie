@@ -85,14 +85,14 @@ fn bulletin_lu_coolpaie_cachets_et_services_de_repetition_chaque_champ() {
             "logiciel": "coolpaie",
             "numero": "7/2026",
             "entreprise": {
-                "nom": "Compagnie des Essais", "adresse": ["12 rue Imaginaire", "99998 Nullepart"],
+                "raison_sociale": "Compagnie des Essais", "adresse": ["12 rue Imaginaire", "99998 Nullepart"],
                 "siret": "99999999900017", "naf": "9001Z", "urssaf": "999999999999",
                 "convention": "IDCC n° 3090 - Spectacle vivant du secteur privé", "licence": "L-R-99-9",
             },
             "salarie": {
-                "nom_complet": "BRIOCHE FANCHON", "nom": "BRIOCHE", "prenom": "FANCHON", "nir": "288117599900146",
-                "naissance": "1988-11-04", "adresse": ["3 IMPASSE DES ESSAIS", "99999 VILLE FICTIVE"], "code": "7",
-                "emploi": "ARTISTE DRAMATIQUE", "statut": "artiste", "abattement": "0", "conges_spectacles": "Z0000001",
+                "nom_complet": "BRIOCHE FANCHON", "nom": "BRIOCHE", "prenoms": "FANCHON", "nir": "2881175999001",
+                "cle_nir": "46", "naissance": "1988-11-04", "adresse": ["3 IMPASSE DES ESSAIS", "99999 VILLE FICTIVE"], "code": "7",
+                "emploi": "ARTISTE DRAMATIQUE", "statut": "artiste", "conges_spectacles": "Z0000001",
             },
             "numero_objet": "999Z99999901",
             "spectacle": "Les Fictifs en Tournée",
@@ -185,14 +185,14 @@ fn bulletin_lu_spaiectacle_cachets_facultative_et_defraiement_non_soumis() {
             "logiciel": "spaiectacle",
             "numero": null,
             "entreprise": {
-                "nom": "Les Ateliers Fictifs", "adresse": ["Maison des Essais", "99998 Fictiveville"],
+                "raison_sociale": "Les Ateliers Fictifs", "adresse": ["Maison des Essais", "99998 Fictiveville"],
                 "siret": "99999999900025", "naf": "9001Z", "urssaf": null,
                 "convention": "Entreprises du secteur privé du spectacle vivant", "licence": null,
             },
             "salarie": {
-                "nom_complet": "Fanchon BRIOCHE", "nom": "BRIOCHE", "prenom": "Fanchon", "nir": "288117599900146",
-                "naissance": null, "adresse": ["3 impasse des Essais", "99999 FICTIVE", "FRANCE"], "code": null,
-                "emploi": "Artiste dramatique", "statut": "Artiste", "abattement": null, "conges_spectacles": "Z0000001",
+                "nom_complet": "Fanchon BRIOCHE", "nom": "BRIOCHE", "prenoms": "Fanchon", "nir": "2881175999001",
+                "cle_nir": "46", "adresse": ["3 impasse des Essais", "99999 FICTIVE", "FRANCE"], "code": null,
+                "emploi": "Artiste dramatique", "statut": "Artiste", "conges_spectacles": "Z0000001",
             },
             "numero_objet": "186Z99999901",
             "spectacle": null,
@@ -270,8 +270,8 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     );
     assert!(b.avertissements.iter().all(|a| matches!(a, import::bulletin_lu::Avertissement::Incoherence(_))), "{:?}", b.avertissements);
     // Rien n'est corrige : les montants sont ceux de la page.
-    assert_eq!(b.brut.to_string(), "600.00");
-    assert_eq!(b.net_a_payer.to_string(), "487.80");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.brut), "600.00");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.net_a_payer), "487.80");
 
     // La somme versee non imprimee (un impot nul) : le net avant impot moins l'impot preleve, imprimes l'un et l'autre
     // (R. 3243-1, 9° et 10°, `code-du-travail/xml/R3243-1.xml` ; le modele de l'arrete du 25/02/2016), et le compte rendu
@@ -282,7 +282,7 @@ fn bulletin_lu_un_ecart_est_un_avertissement_pas_une_correction() {
     pdf(vec![page], &sans_net);
     let l = lire(&sans_net).unwrap();
     let b = lu(&l[0]);
-    assert_eq!(b.net_a_payer.to_string(), "477.82");
+    assert_eq!(socle::grandeurs::ecrit::norme::montant(b.net_a_payer), "477.82");
     assert!(
         b.avertissements.iter().any(|a| matches!(a, import::bulletin_lu::Avertissement::Lecture(t) if t.starts_with("le net à payer n'est pas imprimé"))),
         "{:?}",

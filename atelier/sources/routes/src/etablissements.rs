@@ -72,12 +72,12 @@ fn lisible(e: &Etablissement) -> String {
     let mut morceaux = vec![nom(e), format!("SIRET {}", e.siret.remplie().map(str::to_string).into_iter().collect::<String>()), adresse];
     if let Some(t) = &e.taux_atmp {
         if let Some(code) = t.code_risque.dite() {
-            let taux = t.valeur.as_ref().map(|v| format!(", taux {} %", v.ecrit().replace('.', ","))).into_iter().collect::<String>();
+            let taux = t.valeur.map(|v| format!(", taux {} %", socle::texte::virgule(v))).into_iter().collect::<String>();
             morceaux.push(format!("code risque {}{}", code, taux));
         }
     }
     if let Some(vm) = &e.versement_mobilite {
-        let taux = vm.taux.as_ref().map(|t| t.ecrit().replace('.', ",")).into_iter().collect::<String>();
+        let taux = vm.taux.map(socle::texte::virgule).into_iter().collect::<String>();
         morceaux.push(format!("versement mobilité {} %", taux));
     }
     morceaux.into_iter().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join(" · ")
@@ -179,7 +179,7 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
             }
         }
         if let Some(vm) = &o.versement_mobilite {
-            let paye = vm.taux.as_ref().map(droit::fiche::NombreDeFiche::grandeur::<socle::grandeurs::Taux>).transpose().map_err(|e| e.reclasser(Classe::Refuse))?.is_some_and(|t| !t.est_nul());
+            let paye = vm.taux.is_some_and(|t| !t.est_nul());
             if paye && vm.code_insee.remplie().map(|c| c.trim().chars().count()) != Some(5) {
                 griefs.push(format!("{} : le code INSEE de sa commune (cinq caractères), que la DSN déclare avec le versement mobilité", nom));
             }

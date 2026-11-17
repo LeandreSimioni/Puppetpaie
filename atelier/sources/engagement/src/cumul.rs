@@ -18,9 +18,8 @@ fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<Heures>
         if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
             continue;
         }
-        let q = l.quantite(r.unite).ok_or_else(|| socle::fichiers::absent("quantite"))?;
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        heures += r.sens.de(q.heures(r.heures_par_unite(l.heures()))?);
+        heures += r.sens.de(l.heures_comptees(r.unite, r.heures_par_unite(l.heures()))?);
     }
     Ok(heures.entieres())
 }
@@ -72,7 +71,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
         heures,
         cachets: e.cachets,
         jours: e.jours,
-        brut: p.brut.decimal(),
+        brut: p.brut,
         heures_enseignement: heures_enseignement(ctx, &e.lignes)?.min(heures),
     }))
 }

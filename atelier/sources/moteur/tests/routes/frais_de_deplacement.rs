@@ -17,7 +17,9 @@
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dec, dossier_de_test, reussi, route};
+use socle::grandeurs::{Montant, MontantUnitaire};
+
+use crate::outils::{dossier_de_test, grandeur, reussi, route};
 
 #[test]
 fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
@@ -41,14 +43,16 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
     };
     // `frais` : les lignes de frais de la carte (« repas », « nuitee »), chacune avec ses cases cochées.
     let paie = |frais: &[(&str, &[&str])]| -> Value {
-        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
+        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, cases) in frais {
-            lignes.push(json!({"rubrique": rubrique, "quantite": 2, "taux": null, "territoire": null, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": 2}, "taux": null, "territoire": null, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };
     let ligne = |p: &Value, code: &str| p["remuneration"].as_array().and_then(|l| l.iter().find(|x| x["rubrique"] == code)).cloned();
-    let n = |v: &Value| dec(v.as_str().unwrap());
+    // Un montant, et le taux d'une ligne (des euros par unite), tels que la reponse les ecrit.
+    let n = |v: &Value| grandeur::<Montant>(v.as_str().unwrap());
+    let t = |v: &Value| grandeur::<MontantUnitaire>(v.as_str().unwrap());
     let cases = |p: &Value, i: u64| -> Vec<String> {
         p["cases"].as_array().unwrap().iter().filter(|c| c["ligne"] == i).map(|c| c["case"].as_str().unwrap().to_string()).collect()
     };
@@ -56,25 +60,25 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
 
     // Un repas sans nuitée, sans case : la limite du repas hors des locaux, 10,40 (7,45 au-delà, soumis).
     let repas = paie(&[("repas", &[])]);
-    assert_eq!(n(&ligne(&repas, "repas").unwrap()["taux"]), dec("10.4"));
-    assert_eq!(n(&ligne(&repas, "repas_au_dela").expect("la part du repas au-delà")["montant"]), dec("14.90"));
+    assert_eq!(t(&ligne(&repas, "repas").unwrap()["taux"]), grandeur("10.4"));
+    assert_eq!(n(&ligne(&repas, "repas_au_dela").expect("la part du repas au-delà")["montant"]), grandeur("14.90"));
     assert_eq!(cases(&repas, 1), ["restaurant", "justificatif"]);
     // Au restaurant : 17,85 sous 21,40, hors assiette au tarif de la convention.
     let restaurant = paie(&[("repas", &["restaurant"])]);
     assert!(ligne(&restaurant, "repas_au_dela").is_none());
-    assert_eq!((n(&ligne(&restaurant, "repas").unwrap()["taux"]), n(&restaurant["brut"])), (dec("17.85"), n(&sans["brut"])));
+    assert_eq!((t(&ligne(&restaurant, "repas").unwrap()["taux"]), n(&restaurant["brut"])), (grandeur("17.85"), n(&sans["brut"])));
 
     // En tournée hors de Paris : le repas en grand déplacement à 21,40 sans case ; la nuitée à 56,80, 13,48 au-delà.
     let tournee = paie(&[("repas", &[]), ("nuitee", &[])]);
     assert!(ligne(&tournee, "repas_au_dela").is_none());
-    assert_eq!(n(&ligne(&tournee, "nuitee").unwrap()["taux"]), dec("56.8"));
-    assert_eq!(n(&ligne(&tournee, "nuitee_au_dela").expect("la part de la nuitée au-delà")["montant"]), dec("26.96"));
+    assert_eq!(t(&ligne(&tournee, "nuitee").unwrap()["taux"]), grandeur("56.8"));
+    assert_eq!(n(&ligne(&tournee, "nuitee_au_dela").expect("la part de la nuitée au-delà")["montant"]), grandeur("26.96"));
     assert_eq!((cases(&tournee, 1), cases(&tournee, 2)), (Vec::<String>::new(), vec!["paris".to_string(), "justificatif".into()]));
     // À Paris : 70,28 sous 76,60 ; tout est hors assiette.
     let paris = paie(&[("repas", &[]), ("nuitee", &["paris"])]);
     assert!(ligne(&paris, "nuitee_au_dela").is_none());
     assert_eq!(n(&paris["brut"]), n(&sans["brut"]));
-    assert_eq!(n(&paris["net_a_payer"]) - n(&sans["net_a_payer"]), dec("176.26"));
+    assert_eq!(n(&paris["net_a_payer"]) - n(&sans["net_a_payer"]), grandeur("176.26"));
     assert_eq!(n(&paris["cout_employeur"]), n(&sans["cout_employeur"]));
     // Le justificatif conservé : la fraction excédentaire reste hors de l'assiette.
     let justifie = paie(&[("repas", &[]), ("nuitee", &["justificatif"])]);
@@ -83,10 +87,10 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
 
     // HORS DE LA MÉTROPOLE, le lieu de la ligne (`territoire`) dit la limite. `frais` : (rubrique, taux, lieu, cases).
     let ailleurs = |frais: &[(&str, &str, &str, &[&str])]| -> Value {
-        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
+        let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, taux, lieu, cases) in frais {
             let q = if *rubrique == "repas" { 4 } else { 2 };
-            lignes.push(json!({"rubrique": rubrique, "quantite": q, "taux": taux, "territoire": lieu, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": q}, "taux": taux, "territoire": lieu, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };
@@ -94,17 +98,17 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
     // (`atelier/reference/sources/arrete-2006-indemnites-de-mission/legifrance-arrete-20060703-indemnites-de-mission-20261103.txt`,
     // l. 17-30 ; BOSS § 1350-1360) : 120 € la nuit, 20 € le repas aux Antilles, 24 € en Nouvelle-Calédonie.
     let dom = ailleurs(&[("nuitee", "130", "dom", &[]), ("repas", "25", "dom", &[])]);
-    assert_eq!((n(&ligne(&dom, "nuitee").unwrap()["taux"]), n(&ligne(&dom, "repas").unwrap()["taux"])), (dec("120"), dec("20")));
-    assert_eq!(n(&ligne(&dom, "repas_au_dela").unwrap()["montant"]), dec("20.00"));
+    assert_eq!((t(&ligne(&dom, "nuitee").unwrap()["taux"]), t(&ligne(&dom, "repas").unwrap()["taux"])), (grandeur("120"), grandeur("20")));
+    assert_eq!(n(&ligne(&dom, "repas_au_dela").unwrap()["montant"]), grandeur("20.00"));
     let noumea = ailleurs(&[("repas", "25", "pacifique", &[])]);
-    assert_eq!(n(&ligne(&noumea, "repas").unwrap()["taux"]), dec("24"));
+    assert_eq!(t(&ligne(&noumea, "repas").unwrap()["taux"]), grandeur("24"));
     // À l'étranger : une limite par jour pour la nuitée et les repas, l'indemnité de mission du lieu (BOSS § 1380-1390 ;
     // annexe de l'arrêté : New York, du 1er septembre au 31 décembre, 490 USD), au taux de chancellerie du jour
     // (`atelier/reference/sources/dgfip-frais-de-mission/`, 0,8807 au 01/10/2026) : 431,54 € ; 400 + 2 × 60 = 520 €
     // par jour, 88,46 € au-delà, sur la nuitée. Logé par la compagnie, réduite de 65 % (art. 2) : 151,04 €.
     let new_york = ailleurs(&[("nuitee", "400", "NY", &[]), ("repas", "60", "NY", &[])]);
-    assert_eq!(n(&ligne(&new_york, "nuitee_au_dela").unwrap()["montant"]), dec("176.92"));
+    assert_eq!(n(&ligne(&new_york, "nuitee_au_dela").unwrap()["montant"]), grandeur("176.92"));
     assert!(ligne(&new_york, "repas_au_dela").is_none());
     let loge = ailleurs(&[("repas", "90", "NY", &["loge"])]);
-    assert_eq!(n(&ligne(&loge, "repas_au_dela").unwrap()["montant"]), dec("57.92"));
+    assert_eq!(n(&ligne(&loge, "repas_au_dela").unwrap()["montant"]), grandeur("57.92"));
 }

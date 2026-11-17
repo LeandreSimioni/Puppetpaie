@@ -9,6 +9,12 @@ function rubriqueDe(code) {
   return ETAT.rubriques.find((r) => r.code === code);
 }
 
+/** Le nombre d'une quantité de ligne, telle que le moteur l'écrit dans l'unité de sa rubrique (`{"cachets": "2"}`) ;
+ *  rien quand la case est vide. */
+function nombreDeLaQuantite(q) {
+  return q == null ? q : Object.values(q)[0];
+}
+
 /** Le déroulant des rubriques, dans l'ordre où le moteur les rend. CE QUE LA CARTE PROPOSE, LE MOTEUR LE DIT
  *  (`propose.rubriques` : de l'aperçu pour un engagement, de `nouvelle_carte` pour une carte qui ne nomme pas encore
  *  son salarié) ; la page ne connaît aucune rubrique. La rubrique DÉJÀ choisie reste toujours offerte : une saisie ne
@@ -117,6 +123,9 @@ function ligneRubrique(l = {}, propose) {
   // UNE LIGNE EN POURCENTAGE (majoration, précarité) : le
   // fichier dit `base` et `taux_majoration` ; les deux mêmes champs les
   // montrent, « 120 € à 25 % ».
+  // UNE LIGNE EN UNITÉS : le moteur écrit sa quantité dans l'unité de sa rubrique (`{"cachets": "2"}`) ; le champ en
+  // montre le nombre.
+  l = { ...l, quantite: nombreDeLaQuantite(l.quantite) };
   if (l.base !== undefined || l.taux_majoration !== undefined) {
     l = { ...l, quantite: l.base, taux: l.taux_majoration };
   }
@@ -144,11 +153,11 @@ function ligneRubrique(l = {}, propose) {
     <!-- LES JOURS D'ABORD : ce sont eux qui situent l'engagement et
          qui comptent les cachets. -->
     <button type="button" class="r-jours-btn" title="cocher les jours">—</button>
-    <input class="r-quantite" type="number" min="0" step="0.5" placeholder="qté"
+    <input class="r-quantite" type="text" inputmode="decimal" placeholder="qté"
           ${valeurDeDepart(l.quantite)}>
     <select class="r-code"></select>
     <span class="r-mot discret">à</span>
-    <input class="r-taux" type="number" min="0" step="0.01" placeholder="taux"
+    <input class="r-taux" type="text" inputmode="decimal" placeholder="taux"
           ${valeurDeDepart(l.taux)}>
     <span class="r-mot discret">€</span>
     <input class="r-lieu" placeholder="lieu — figure au contrat"
@@ -175,7 +184,7 @@ function ligneRubrique(l = {}, propose) {
          mois SUIVANT sont le planning de la ligne (data-planning). -->
     <input class="r-jours" type="hidden"
           ${valeurDeDepart(l.dates ? l.dates.map((x) => +jourDe(x).slice(8)).join(" ") : undefined)}>
-    <input class="r-heures" type="number" min="0" step="0.5" placeholder="heures"
+    <input class="r-heures" type="text" inputmode="decimal" placeholder="heures"
           ${valeurDeDepart(l.heures)}>
     <button class="supprimer" title="retirer cette ligne">&times;</button>
     <!-- LE LIEU PROPRE À UN JOUR : une date du fichier peut dire le sien,
@@ -267,14 +276,10 @@ function ligneRubrique(l = {}, propose) {
   };
   div.querySelector(".supprimer").onclick = () => { div.remove(); rafraichirApercu(); };
   div.querySelectorAll("input").forEach((c) => { c.oninput = rafraichirApercu; });
-  // Taper un taux ici, c'est donner celui de la prochaine ligne DE LA MÊME RUBRIQUE.
+  // Taper un taux ici, c'est donner celui de la prochaine ligne DE LA MÊME RUBRIQUE : celui que la route a converti, une
+  // fois la carte écrite (`montrerLeConverti`).
   div.querySelector(".r-taux").oninput = () => {
-    const v = div.querySelector(".r-taux").value;
-    const r = div.querySelector(".r-code").value;
-    if (v !== "" && +v > 0) {
-      TAUX_PAR_RUBRIQUE[r] = +v;
-      if (r === "cachet") afficherRappelsMois();
-    }
+    div.dataset.tauxTape = "1";
     rafraichirApercu();
   };
   /* LES JOURS COMPTENT LES CACHETS. Taper « 14 15 17 18 » sur une ligne de
@@ -634,12 +639,13 @@ const CHAMPS_RARES = [
   { cle: "lieu", libelle: "Lieu du contrat", type: "text" },
   { cle: "taux_cachet", libelle: "Cachet du contrat", type: "number" },
   { cle: "jours", libelle: "Jours travaillés déclarés", type: "number" },
-  { cle: "emploi", libelle: "Emploi déclaré", type: "text" },
-  { cle: "pcs_ese", libelle: "PCS-ESE", type: "text" },
-  { cle: "code_emploi_ft", libelle: "Code emploi France Travail", type: "text" },
-  { cle: "statut", libelle: "Statut", type: "text" },
-  { cle: "statut_conventionnel", libelle: "Statut conventionnel", type: "text" },
-  { cle: "statut_categoriel_rc", libelle: "Statut catégoriel (retraite complémentaire)", type: "text" },
+  // L'emploi est une case de la carte faite de six champs (`emploi`, `droit::emplois::EmploiEcrit`).
+  { cle: "emploi", dans: "emploi", libelle: "Emploi déclaré", type: "text" },
+  { cle: "pcs_ese", dans: "emploi", libelle: "PCS-ESE", type: "text" },
+  { cle: "code_emploi_ft", dans: "emploi", libelle: "Code emploi France Travail", type: "text" },
+  { cle: "statut", dans: "emploi", libelle: "Statut", type: "text" },
+  { cle: "statut_conventionnel", dans: "emploi", libelle: "Statut conventionnel", type: "text" },
+  { cle: "statut_categoriel_rc", dans: "emploi", libelle: "Statut catégoriel (retraite complémentaire)", type: "text" },
   { cle: "quotite_reference", libelle: "Quotité de référence", type: "number" },
   { cle: "modalite_temps_travail", libelle: "Modalité temps de travail", type: "text" },
   { cle: "indemnite_licenciement", libelle: "Indemnité de licenciement", type: "number" },
@@ -648,18 +654,23 @@ const CHAMPS_RARES = [
 
 const aUneValeur = (v) => v !== undefined && v !== null && v !== "" && v !== false;
 
+/** La valeur d'un champ rare sur l'engagement : à sa clé, ou dans la case qui le porte (`dans`). */
+function valeurRare(e, c) {
+  return c.dans ? (e[c.dans] || {})[c.cle] : e[c.cle];
+}
+
 /** Les champs rares que l'engagement porte, posés dans le formulaire. */
 function poserRares(div, e) {
   const paye = div.querySelector(".e-paye-le");
   paye.value = texteDeLaCase(e.date_paiement);
   paye.onchange = rafraichirApercu;
   const cible = div.querySelector(".e-rares");
-  cible.innerHTML = CHAMPS_RARES.filter((c) => aUneValeur(e[c.cle])).map((c) => c.type === "checkbox"
+  cible.innerHTML = CHAMPS_RARES.filter((c) => aUneValeur(valeurRare(e, c))).map((c) => c.type === "checkbox"
     ? `<label class="coche" title="${aideDe(c.cle)}"><input type="checkbox" class="e-rare"
          data-cle="${c.cle}" data-type="checkbox" checked> ${echapper(c.libelle)}</label>`
     : `<label title="${aideDe(c.cle)}">${echapper(c.libelle)}
-         <input class="e-rare" data-cle="${c.cle}" data-type="${c.type}" type="${c.type}"
-           ${c.type === "number" ? `step="any"` : ""} value="${echapper(String(e[c.cle]))}"></label>`).join("");
+         <input class="e-rare" data-cle="${c.cle}" ${c.dans ? `data-dans="${c.dans}"` : ""} data-type="${c.type}" type="text"
+           ${c.type === "number" ? `inputmode="decimal"` : ""} value="${echapper(String(valeurRare(e, c)))}"></label>`).join("");
   cible.hidden = !cible.children.length;
   cible.querySelectorAll(".e-rare").forEach((c) => { c.onchange = rafraichirApercu; c.oninput = rafraichirApercu; });
 }
@@ -668,8 +679,11 @@ function poserRares(div, e) {
 function raresDuBloc(div, e) {
   div.querySelectorAll(".e-rare").forEach((c) => {
     if (c.dataset.type === "checkbox") { if (c.checked) e[c.dataset.cle] = true; return; }
+    // Un nombre part tel qu'il est tapé : la route le convertit (`enregistrer-saisie`).
     const v = c.value.trim();
-    if (v !== "") e[c.dataset.cle] = c.dataset.type === "number" ? +v : v;
+    if (v === "") return;
+    if (c.dataset.dans) (e[c.dataset.dans] = e[c.dataset.dans] || {})[c.dataset.cle] = v;
+    else e[c.dataset.cle] = v;
   });
 }
 
@@ -726,7 +740,7 @@ function nommerLesCases(div) {
 function ecritDuBloc(div, e) {
   div.querySelectorAll(".e-ecrit-champ").forEach((c) => {
     const v = c.value.trim();
-    if (v !== "") e[c.dataset.cle] = c.dataset.type === "number" ? +v : v;
+    if (v !== "") e[c.dataset.cle] = v;
   });
   // LE NUMÉRO DÉJÀ DÉCLARÉ EN DSN, quand le moteur demande sa case : il est celui du contrat ; vide, le moteur en donne un.
   const n = div.querySelector(".e-numero-dit");
@@ -931,10 +945,10 @@ function construireCarte(div, e) {
     <div class="e-permanent" hidden>
       <div class="e-mois-paye">
         <label>Salaire mensuel brut
-          <input type="number" step="0.01" min="0" class="e-salaire"
+          <input type="text" inputmode="decimal" class="e-salaire"
                  placeholder="celui du contrat signé"></label>
         <label title="${aideDe("heures_par_mois")}">Heures par mois
-          <input type="number" step="0.01" min="0" class="e-quotite">
+          <input type="text" inputmode="decimal" class="e-quotite">
           <button type="button" class="lien e-temps-plein" hidden></button></label>
       </div>
       <div class="e-faits">
@@ -1001,11 +1015,11 @@ function construireCarte(div, e) {
     </div>
     <div class="e-chiffres" hidden>
       <label title="${aideDe("net")}">Net salarié
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="net"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="net"></label>
       <label title="le brut du bulletin">Brut
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="brut"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="brut"></label>
       <label title="${aideDe("cout")}">Coût entreprise
-        <input type="number" step="0.01" min="0" class="e-vise" data-cible="cout"></label>
+        <input type="text" inputmode="decimal" class="e-vise" data-cible="cout"></label>
       <span class="e-chiffres-note discret">${aideDe("viser")}</span>
     </div>
     <div class="e-options" hidden>
@@ -1054,7 +1068,7 @@ function construireCarte(div, e) {
         <label data-ecrit="numero" hidden title="${aideDe("numero")}">Numéro en DSN
           <input type="text" class="e-numero-dit"></label>
         <label data-ecrit="periode_essai_jours" hidden title="${aideDe("periode_essai_jours")}">Période d'essai (jours)
-          <input type="number" min="0" step="1" class="e-ecrit-champ" data-cle="periode_essai_jours" data-type="number"></label>
+          <input type="text" inputmode="numeric" class="e-ecrit-champ" data-cle="periode_essai_jours"></label>
         <label data-ecrit="personne_remplacee" hidden title="${aideDe("personne_remplacee")}">Personne remplacée
           <input type="text" class="e-ecrit-champ" data-cle="personne_remplacee" placeholder="nom, qualification"></label>
         <label data-ecrit="repartition_horaire" hidden title="${aideDe("repartition_horaire")}">Répartition des horaires
@@ -1303,7 +1317,7 @@ function construireCarte(div, e) {
   // devient invisible.
   const nat = natureDe(selNat.value);
   div.querySelector(".e-options").hidden = !(e.metier || e.cadre != null || aUneValeur(e.date_paiement)
-    || CHAMPS_RARES.some((c) => aUneValeur(e[c.cle]))
+    || CHAMPS_RARES.some((c) => aUneValeur(valeurRare(e, c)))
     || ["periode_essai_jours", "personne_remplacee", "repartition_horaire", "clauses_particulieres", "modele_contrat"].some((c) => aUneValeur(e[c]))
     || nat.mensuelle || e.debut && e.debut.slice(0, 7) < document.getElementById("mois").value
     || e.motif_recours || e.motif_rupture);
@@ -1495,7 +1509,7 @@ function ligneFait(quoi, v = {}) {
     div.innerHTML = `
       <label>rubrique <input type="text" class="f-rubrique" placeholder="prime"
        ${valeurDeDepart(v.rubrique)}></label>
-      <label>montant <input type="number" step="0.01" class="f-montant"
+      <label>montant <input type="text" inputmode="decimal" class="f-montant"
        ${valeurDeDepart(v.montant)}></label>
       ${v.libelle ? `<label>libellé <input class="f-libelle" value="${echapper(v.libelle)}"></label>` : ""}
       <button class="retirer-fait lien" title="retirer">&#x2715;</button>`;
@@ -1530,7 +1544,7 @@ function poserFaitsAvances(div, e) {
   if (!cible) return;
   cible.innerHTML = casesAvancees().map((c) => `
     <label data-fait="${echapper(c.nom)}" hidden>${echapper(c.libelle)}
-      <input type="number" step="0.01" min="0" class="e-fait-nombre" data-cle="${echapper(c.nom)}"
+      <input type="text" inputmode="decimal" class="e-fait-nombre" data-cle="${echapper(c.nom)}"
             ${valeurDeDepart(e[c.nom])}></label>`).join("");
   cible.querySelectorAll("input").forEach((c) => { c.onchange = rafraichirApercu; });
   montrerFaitsAvances(div, div._faitsAvances);
@@ -1556,7 +1570,7 @@ function montrerFaitsAvances(div, appeles) {
 function faitsAvancesDuBloc(div, e) {
   div.querySelectorAll(".e-faits-avances [data-fait]").forEach((l) => {
     const v = l.querySelector("input").value.trim();
-    if (v !== "" && !l.hidden) e[l.dataset.fait] = +v;
+    if (v !== "" && !l.hidden) e[l.dataset.fait] = v;
   });
 }
 
@@ -1578,7 +1592,7 @@ function faitsDuBloc(div) {
     .map((f) => ({ debut: val(f, ".f-debut"), fin: val(f, ".f-fin") }))
     .filter((c) => c.debut || c.fin);
   const primes = [...div.querySelectorAll(".fait-primes")]
-    .map((f) => ({ montant: +val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") }))
+    .map((f) => ({ montant: val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") }))
     .filter((p) => p.montant);
   return { conges, primes };
 }
@@ -1701,8 +1715,8 @@ function lignesDuBloc(div, mois) {
     if (!ligneEnvoyee(r)) return null;
     const code = r.querySelector(".r-code").value;
     const rr = rubriqueDe(code);
-    // Un nombre tapé, ou `null` : une case vide.
-    const nombre = (x) => (x === "" ? null : +x);
+    // Un nombre tel qu'il est tapé (la route le convertit), ou `null` : une case vide.
+    const nombre = (x) => (x.trim() === "" ? null : x.trim());
     const texte = (x) => (x.trim() === "" ? null : x.trim());
     // Un jour qui dit son propre lieu s'écrit {"jour", "lieu"}, les autres nus.
     const propres = new Map([...r.querySelectorAll(".r-lieu-jour")]
@@ -1711,9 +1725,11 @@ function lignesDuBloc(div, mois) {
     // Ce que chaque case de la ligne dit ; la ligne n'en écrit que celles que le moteur demande de sa rubrique
     // (`cles`), toutes : une ligne en pourcentage écrit sa base et son pourcentage, une ligne au montant sa somme (le
     // champ du taux), une ligne de frais son lieu hors de la métropole et ses cases cochées.
+    // La quantité s'écrit dans l'unité de sa rubrique, sous la clé que le moteur en dit (`quantite` de la rubrique).
+    const quantite = (x) => (x.trim() === "" || !rr || !rr.quantite ? null : { [rr.quantite]: x.trim() });
     const valeurs = {
       rubrique: code,
-      quantite: nombre(q),
+      quantite: quantite(q),
       taux: nombre(t),
       heures: nombre(h),
       base: nombre(q),

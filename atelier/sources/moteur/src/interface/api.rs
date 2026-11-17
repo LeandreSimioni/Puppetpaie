@@ -133,6 +133,7 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     // LE FIL : la route de la page, sa charge mise en forme, sa duree, son issue. Une erreur de la page (`incident-navigateur`)
     // s'y dit comme telle.
     if nom == Route::IncidentNavigateur {
+        // Relue pour le fil seulement : la route l'a deja servie (et son refus est deja note).
         let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>() {
             Ok(r) => {
                 let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
@@ -201,7 +202,7 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
             // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue, et son dossier.
             use routes::scenario::{Genre, Geste};
             let rendu = e.geste(|| {
-                let a: routes::accueil::ChargeAjouter = charge.lire()?;
+                let a: routes::accueil::ChargeAjouter = charge.lire().map_err(|e| routes::case_nommee(nom, e))?;
                 let r = routes::dans_la_fenetre(&o, nom, charge);
                 let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| socle::echec::refus(x.phrase))?;
                 let geste = Geste { nom: Some(a.nom), venue: Some(a.venue), compagnie: Some(e.compagnie(&ajoutee.chemin)?), ..Geste::du_banc(Genre::Ajouter) };

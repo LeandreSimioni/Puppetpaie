@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, CheminRelatif};
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::{Montant, MontantEnDevise, TauxDeChange};
 use socle::piece::format::JourEcrit;
 use socle::piece::Zone;
 
@@ -126,26 +126,28 @@ struct Datee<T> {
 #[derive(Debug, Default)]
 struct Tables {
     /// code -> (nom de la table, lignes datees (monnaie, montant)), du plus ancien au plus recent.
-    indemnites: HashMap<LieuDeMission, (String, Vec<Datee<(CodeMonnaie, Decimal)>>)>,
+    indemnites: HashMap<LieuDeMission, (String, Vec<Datee<(CodeMonnaie, MontantEnDevise)>>)>,
     /// (monnaie, code) -> taux de chancellerie dates.
-    change: HashMap<(CodeMonnaie, LieuDeMission), Vec<Datee<Decimal>>>,
+    change: HashMap<(CodeMonnaie, LieuDeMission), Vec<Datee<TauxDeChange>>>,
     /// code de ville -> (nom, pays).
     villes: HashMap<LieuDeMission, (String, socle::pays::CodePays)>,
 }
 
-/// L'indemnite d'un jour, en euros, et d'ou elle vient.
+/// L'indemnite d'un jour, en euros (au centime), et d'ou elle vient : son montant dans sa monnaie, et le taux de change
+/// de cette monnaie.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Indemnite {
-    pub euros: Decimal,
-    pub montant: Decimal,
+    pub euros: Montant,
+    pub montant: MontantEnDevise,
     pub monnaie: CodeMonnaie,
-    pub change: Decimal,
+    pub change: TauxDeChange,
 }
 
 impl Indemnite {
-    /// Ce que l'empreinte d'une paie retient de l'indemnite d'un jour.
+    /// Ce que l'empreinte d'une paie retient de l'indemnite d'un jour : ses nombres en texte, leur echelle gardee.
     pub fn empreinte(&self) -> socle::fichiers::ValeurLue {
-        socle::fichiers::ValeurLue::Composee(format!("{} {} {} {}", self.euros, self.montant, self.monnaie, self.change))
+        use socle::grandeurs::ecrit::texte::dit;
+        socle::fichiers::ValeurLue::Composee(format!("{} {} {} {}", dit(self.euros), dit(self.montant), self.monnaie, dit(self.change)))
     }
 }
 
@@ -198,7 +200,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let code = LieuDeMission::lire(code).map_err(|e| ou(&format!("code_pays ({})", e.phrase)))?;
         let monnaie = CodeMonnaie::lire(monnaie).map_err(|e| ou(&format!("code_monnaie ({})", e.phrase)))?;
         let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
-        let montant = socle::num::decimal_a_virgule(cellule(c_montant, "groupe_1")?).ok_or_else(|| ou("groupe_1"))?;
+        let montant: MontantEnDevise = socle::grandeurs::lu::texte(cellule(c_montant, "groupe_1")?).ok_or_else(|| ou("groupe_1"))?;
         let e = t.indemnites.entry(code).or_insert_with(|| (String::new(), Vec::new()));
         e.1.push(Datee { depuis: date, valeur: (monnaie, montant) });
         e.1.sort_by_key(|d| d.depuis);
@@ -219,7 +221,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let m = CodeMonnaie::lire(m).map_err(|e| ou(&format!("monnaie_source ({})", e.phrase)))?;
         let code = LieuDeMission::lire(code).map_err(|e| ou(&format!("code_pays ({})", e.phrase)))?;
         let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
-        let taux = socle::num::decimal_a_virgule(cellule(c_taux, "taux")?).ok_or_else(|| ou("taux"))?;
+        let taux: TauxDeChange = socle::grandeurs::lu::texte(cellule(c_taux, "taux")?).ok_or_else(|| ou("taux"))?;
         let e = t.change.entry((m, code)).or_default();
         e.push(Datee { depuis: date, valeur: taux });
         e.sort_by_key(|d| d.depuis);
@@ -260,14 +262,14 @@ pub fn du_jour(code: &LieuDeMission, jour: &Jour) -> R<Indemnite> {
     let (nom, lignes) = t.indemnites.get(code).ok_or_else(|| pas_un_lieu(code.texte()))?;
     let (monnaie, montant) = en_vigueur(lignes, jour).ok_or_else(|| socle::refus!("La table des indemnités de mission ne dit rien pour {} au {}.", nom, jour.jj_mm_aaaa()))?;
     let change = if monnaie.est_l_euro() {
-        Decimal::ONE
+        TauxDeChange::UN
     } else {
         t.change
             .get(&(monnaie.clone(), code.clone()))
             .and_then(|l| en_vigueur(l, jour))
             .ok_or_else(|| socle::refus!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
     };
-    Ok(Indemnite { euros: socle::grandeurs::Montant::du_decimal(montant * change).au_centime().decimal(), montant, monnaie, change })
+    Ok(Indemnite { euros: (montant * change).au_centime(), montant, monnaie, change })
 }
 
 fn pas_un_lieu(code: &str) -> socle::echec::Echec {

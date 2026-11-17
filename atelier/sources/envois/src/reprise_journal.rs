@@ -133,7 +133,7 @@ pub struct Reprise {
     pub sans_mois: Vec<DepotVu>,
     pub illisibles: Vec<String>,
     pub ecrit: bool,
-    pub rattaches: i64,
+    pub rattaches: usize,
 }
 
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les
@@ -301,7 +301,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte)? {
-            let (Some(nir), Some(debut)) = (ligne.nir.clone(), ligne.date_embauche) else { continue };
+            let (Some(nir), Some(debut)) = (ligne.identite.nir.clone(), ligne.date_embauche) else { continue };
             let iso = debut.iso();
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou

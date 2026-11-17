@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs;
@@ -206,7 +206,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 macro_rules! dites {
     ($($t:ty),*) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -275,8 +275,8 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
         listes: Vec<(CaseDeFiche, R<Vec<droit::fiche::Datee<ValeurDeCase>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
-        fn liste<T: serde::Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&e.valeur), note: e.note.clone() })).collect();
+        fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
+            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), note: e.note.clone() })).collect();
             self.listes.push((cle, lue));
         }
     }
@@ -512,7 +512,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// (`ConfigurationDeLaPage::bareme`).
 fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String>) {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
-        Ok(b) => (matches!(b.versement_mobilite, Some(droit::forme_bareme::VersementMobiliteEcrit::Ecrit(_))), None),
+        Ok(b) => (droit::bareme::versement_mobilite(&b).is_some(), None),
         Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", e.phrase))),
     }
 }
@@ -601,7 +601,7 @@ pub(crate) struct ImageIdentite {
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) octets: Option<u64>,
+    pub(crate) octets: Option<socle::grandeurs::Octets>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "format_ecrit")]
     pub(crate) format: Option<fabrique_pdf::alleger::FormatDImage>,
     #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
@@ -675,7 +675,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
             None => e.dossier = Some(dossier.clone()),
             Some((f, format)) => {
                 let st = std::fs::metadata(&f).map_err(|x| socle::echec::du_disque(&f, &x).reclasser(Classe::Disque))?;
-                e.octets = Some(st.len());
+                e.octets = Some(socle::grandeurs::Octets::du_disque(&st));
                 e.format = Some(format);
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
                 e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
@@ -812,7 +812,7 @@ pub(crate) struct ConfigurationDeLaPage {
 /// La route `configuration` : la configuration et sa phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ConfigurationDite {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     configuration: ConfigurationDeLaPage,
 }
@@ -1258,6 +1258,9 @@ pub(crate) struct RubriqueDeLaPage {
     /// LES CLES QU'UNE LIGNE DE CETTE RUBRIQUE DIT, toutes et seules (`engagement::ligne::FormeSaisie`) : la page les
     /// ecrit, `null` pour une case vide.
     cles: Vec<&'static str>,
+    /// LA CLE DE SA QUANTITE, dans l'unite de la rubrique (`engagement::ligne::QuantiteDeLigne::cle` : `{"cachets": 2}`),
+    /// quand une ligne en dit une (`cles`).
+    quantite: Option<&'static str>,
 }
 
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
@@ -1297,6 +1300,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         vec![]
     };
     Ok(RubriqueDeLaPage {
+        quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| cles.contains(&engagement::ligne::Cle::Quantite.nom())),
         cles,
         lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
         lieux,
@@ -1461,12 +1465,12 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 #[derive(Debug, Clone, serde::Serialize)]
 struct NiveauDeSante {
     niveau: droit::forme_bareme::NiveauDeGarantie,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    assure: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    conjoint: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
-    enfant: socle::num::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    assure: socle::grandeurs::Taux,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    conjoint: socle::grandeurs::Taux,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
+    enfant: socle::grandeurs::Taux,
     libelle: String,
 }
 
@@ -1486,10 +1490,10 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
-            assure: t.assure.decimal(),
-            conjoint: t.conjoint.decimal(),
-            enfant: t.enfant.decimal(),
-            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure.decimal()),
+            assure: t.assure,
+            conjoint: t.conjoint,
+            enfant: t.enfant,
+            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
         })
         .collect())
 }
@@ -1547,7 +1551,7 @@ struct OrganismeUrssaf {
 /// fictive en dit, l'historique des mois, les listes ou l'on choisit et les referentiels livres avec le logiciel.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct EtatDeLaPage {
-    phrase: String,
+    phrase: Phrase,
     configuration: ConfigurationDeLaPage,
     auteur: compagnie::auteur::Auteur,
     simulation: bool,
@@ -1709,7 +1713,7 @@ pub(crate) struct Version {
     exigee: Option<String>,
     signee: bool,
     avant: Option<compagnie::maj::VersionDuLogiciel>,
-    phrase: String,
+    phrase: Phrase,
 }
 
 /// La version du logiciel, ce qui est pret, ce
@@ -1729,7 +1733,7 @@ pub(crate) fn version() -> R<Version> {
         None => (None, None, None),
     };
     Ok(Version {
-        phrase: format!("Version installée : {}.{}", courante_v, dite),
+        phrase: socle::phrase!("Version installée : {}.{}", courante_v, dite),
         courante: courante_v,
         // Le depot d'ou l'on recoit : celui qui est pose, sinon celui du moteur (`maj::DEPOT_PAR_DEFAUT`).
         depot: compagnie::maj::depot(depot),
@@ -1743,13 +1747,13 @@ pub(crate) fn version() -> R<Version> {
 }
 
 /// La configuration en une phrase : la compagnie, ses fiches, et ses erreurs s'il y en a.
-fn dire_la_configuration(c: &ConfigurationDeLaPage) -> String {
+fn dire_la_configuration(c: &ConfigurationDeLaPage) -> Phrase {
     let nom = match c.entreprise.donnees.fiche.nommee() {
         Some(n) => n.to_string(),
         None => "Compagnie sans nom".to_string(),
     };
     let erreurs: String = c.erreurs.iter().map(|p| format!(" ; {}", p.mots)).collect();
-    format!(
+    socle::phrase!(
         "{} : {}, {}{}.",
         nom,
         socle::ecran::compte(c.salaries.len(), "salarié", "salariés"),
@@ -1851,7 +1855,7 @@ pub(crate) struct Coulisses {
 /// l'intro, le circuit de chaque genre et la phrase de chaque courriel.
 #[derive(Debug, Clone, serde::Serialize)]
 struct CourrielsFictifs {
-    phrase: String,
+    phrase: Phrase,
     courriels: Vec<envois::simulation_courriels::CourrielJoue>,
     dernier: Option<String>,
     intro: String,
@@ -1874,7 +1878,7 @@ fn courriels_fictifs(ctx: &Contexte, charge: &crate::simulation_courriels::Charg
     let n = phrases.len();
     let s = if n > 1 { "s" } else { "" };
     Ok(CourrielsFictifs {
-        phrase: format!("Courriels simulés : {}.", n),
+        phrase: socle::phrase!("Courriels simulés : {}.", n),
         courriels: joues.courriels,
         dernier: joues.dernier,
         intro: format!("{} courriel{} joué{} — rien n'a quitté le poste.{}", n, s, s, if n > 1 { " Chacun reçoit les siens :" } else { "" }),

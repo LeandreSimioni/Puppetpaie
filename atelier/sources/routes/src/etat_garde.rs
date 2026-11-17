@@ -49,7 +49,7 @@ use socle::fichiers::{CheminRelatif, Empreinte};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, ILLISIBLE, MOIS};
-use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Porte, Rendu, Reponse};
+use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Options, Phrase, Porte, Rendu, Reponse};
 use crate::etapes::{Bilan, ChargeMois};
 
 /// Le format du fichier de l'ouverture : un autre se refait avant de se montrer. 5 : le mois a ouvrir en sa forme
@@ -457,7 +457,7 @@ struct DuMois<'a> {
 }
 
 impl Dite for DuMois<'_> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         self.bilan.phrase()
     }
 }
@@ -472,14 +472,14 @@ fn du_mois<'a>(racine: &Path, bilan: &'a Bilan) -> R<DuMois<'a>> {
 /// entree par route, au format d'une reponse de la page), et s'il est perime.
 #[derive(Serialize)]
 struct EcranDuMois<'a> {
-    phrase: &'a str,
+    phrase: &'a Phrase,
     mois: Mois,
     lectures: BTreeMap<&'static str, ALaPage<'a>>,
     perime: bool,
 }
 
 impl Dite for EcranDuMois<'_> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         self.phrase
     }
 }
@@ -513,7 +513,7 @@ impl EtatDeLOuverture {
 /// fenetre n'attend que `patienter`) : la phrase de ce que fait le moteur, et rien d'autre.
 #[derive(Serialize)]
 pub struct Demarrage<'a> {
-    phrase: String,
+    phrase: Phrase,
     pret: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<Mois>,
@@ -533,7 +533,7 @@ pub struct Demarrage<'a> {
 }
 
 impl Dite for Demarrage<'_> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -559,7 +559,7 @@ impl<'a> Demarrage<'a> {
     fn pret(racine: &Path, ouv: &'a EtatDeLOuverture, etat: &'a EtatDuMois, perime: bool, jour: &Jour, a_cote: ACote) -> Demarrage<'a> {
         let ecran = etat.ecran(racine, perime);
         Demarrage {
-            phrase: ecran.phrase.to_string(),
+            phrase: ecran.phrase.clone(),
             pret: true,
             mois: Some(etat.mois),
             aujourdhui: Some(jour.iso()),
@@ -572,7 +572,7 @@ impl<'a> Demarrage<'a> {
     }
 
     /// Pas encore pret : ce que fait le moteur.
-    fn en_attente(phrase: String) -> Demarrage<'static> {
+    fn en_attente(phrase: Phrase) -> Demarrage<'static> {
         Demarrage { phrase, pret: false, mois: None, aujourdhui: None, lectures: None, ecran: None, veille: None, maj: None, signalements: None }
     }
 }
@@ -1234,12 +1234,12 @@ impl FileDesEtats {
 
     /// CE QUE FAIT LE MOTEUR, en une phrase (jamais une roue qui tourne sans dire pourquoi) : ce que le fil refait en ce
     /// moment.
-    pub fn phrase(&self) -> String {
+    pub fn phrase(&self) -> Phrase {
         match self.verrou().en_cours {
-            Some(Cle::Ouverture) => "Lecture de la compagnie : sa configuration, ses échéances, ses rappels…".into(),
-            Some(Cle::Tableau) => "Tableau des déclarations de la compagnie…".into(),
-            Some(Cle::Mois(m)) => format!("Calcul de {}…", m.libelle(socle::mois::Graphie::Accentuee)),
-            None => "Préparation de l'écran…".into(),
+            Some(Cle::Ouverture) => Phrase::fixe("Lecture de la compagnie : sa configuration, ses échéances, ses rappels…"),
+            Some(Cle::Tableau) => Phrase::fixe("Tableau des déclarations de la compagnie…"),
+            Some(Cle::Mois(m)) => socle::phrase!("Calcul de {}…", m.libelle(socle::mois::Graphie::Accentuee)),
+            None => Phrase::fixe("Préparation de l'écran…"),
         }
     }
 

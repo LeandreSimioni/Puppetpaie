@@ -9,8 +9,7 @@
 use serde::{Deserialize, Serialize};
 use socle::date::{Jour, PeriodeOuverte};
 use socle::echec::R;
-use socle::forme::NombreLu;
-use socle::grandeurs::{Heures, Montant};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire};
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -39,16 +38,42 @@ pub enum Groupe {
 
 /// LA CARTE ET SES CHAMPS, declares une fois : la structure telle qu'elle s'ecrit, et, de chaque champ marque
 /// `#[champ(Groupe, Champ)]`, son nom (`Champ`), son groupe, et ce qui le lit et l'ecrit sans passer par son nom de cle.
+/// Une case faite de plusieurs champs (l'emploi, `droit::emplois::EmploiEcrit`) se marque
+/// `#[champs(Groupe Champ => sous_champ, …)]` : chacun de ses sous-champs est un champ, de son nom, qu'un avenant change
+/// et retire seul ; la case se vide quand plus aucun ne dit rien.
 macro_rules! carte {
-    (
-        $(#[$sattr:meta])*
-        pub struct $carte:ident {
-            $( #[champ($groupe:ident, $variante:ident)] $(#[$attr:meta])* pub $champ:ident : Option<$t:ty>, )*
+    (@nom (champ $f:ident)) => { stringify!($f) };
+    (@nom (sous $f:ident $s:ident)) => { stringify!($s) };
+    (@prendre $moi:tt $de:tt (champ $f:ident)) => { $moi.$f = $de.$f.clone() };
+    (@prendre $moi:tt $de:tt (sous $f:ident $s:ident)) => {
+        match $de.$f.as_ref().and_then(|e| e.$s.clone()) {
+            Some(x) => $moi.$f.get_or_insert_with(Default::default).$s = Some(x),
+            None => carte!(@ote $moi (sous $f $s)),
         }
-    ) => {
+    };
+    (@ote $moi:tt (champ $f:ident)) => { $moi.$f = None };
+    (@ote $moi:tt (sous $f:ident $s:ident)) => {
+        if let Some(e) = $moi.$f.as_mut() {
+            e.$s = None;
+            if *e == Default::default() {
+                $moi.$f = None;
+            }
+        }
+    };
+    (@dit $moi:tt (champ $f:ident)) => { $moi.$f.is_some() };
+    (@dit $moi:tt (sous $f:ident $s:ident)) => { $moi.$f.as_ref().is_some_and(|e| e.$s.is_some()) };
+    (@valeur $moi:tt (champ $f:ident)) => { $moi.$f.as_ref().and_then(Simple::simple) };
+    (@valeur $moi:tt (sous $f:ident $s:ident)) => { $moi.$f.as_ref().and_then(|e| e.$s.as_ref()).and_then(Simple::simple) };
+    (@lire $tete:tt {$($s:tt)*} {$($c:tt)*} #[champ($g:ident, $v:ident)] $(#[$attr:meta])* pub $f:ident : Option<$t:ty>, $($reste:tt)*) => {
+        carte!(@lire $tete {$($s)* $(#[$attr])* pub $f: Option<$t>,} {$($c)* [$g $v (champ $f)]} $($reste)*);
+    };
+    (@lire $tete:tt {$($s:tt)*} {$($c:tt)*} #[champs($($g:ident $v:ident => $sf:ident),* $(,)?)] $(#[$attr:meta])* pub $f:ident : Option<$t:ty>, $($reste:tt)*) => {
+        carte!(@lire $tete {$($s)* $(#[$attr])* pub $f: Option<$t>,} {$($c)* $([$g $v (sous $f $sf)])*} $($reste)*);
+    };
+    (@lire [$(#[$sattr:meta])* $carte:ident] {$($s:tt)*} {$([$groupe:ident $variante:ident $acces:tt])*}) => {
         $(#[$sattr])*
         pub struct $carte {
-            $( $(#[$attr])* pub $champ: Option<$t>, )*
+            $($s)*
         }
 
         /// UN CHAMP DE LA CARTE, tel qu'un avenant le retire (`stock::Avenant::retires`) ; il s'ecrit par son nom de cle.
@@ -59,9 +84,9 @@ macro_rules! carte {
             /// Tous les champs, dans l'ordre de la carte.
             pub const TOUS: &'static [Champ] = &[ $( Champ::$variante, )* ];
 
-            /// Son nom de cle.
+            /// Son nom de cle (celui d'un sous-champ : `statut` de l'emploi).
             pub fn nom(self) -> &'static str {
-                match self { $( Champ::$variante => stringify!($champ), )* }
+                match self { $( Champ::$variante => carte!(@nom $acces), )* }
             }
 
             /// Son groupe.
@@ -73,17 +98,17 @@ macro_rules! carte {
         impl $carte {
             /// Le champ `c` de `de` pose sur la carte, tel quel (dit ou non).
             pub fn prendre(&mut self, de: &$carte, c: Champ) {
-                match c { $( Champ::$variante => self.$champ = de.$champ.clone(), )* }
+                match c { $( Champ::$variante => carte!(@prendre self de $acces), )* }
             }
 
             /// Le champ `c` ote.
             pub fn ote(&mut self, c: Champ) {
-                match c { $( Champ::$variante => self.$champ = None, )* }
+                match c { $( Champ::$variante => carte!(@ote self $acces), )* }
             }
 
             /// Le champ `c` est-il dit ?
             pub fn dit(&self, c: Champ) -> bool {
-                match c { $( Champ::$variante => self.$champ.is_some(), )* }
+                match c { $( Champ::$variante => carte!(@dit self $acces), )* }
             }
 
             /// Le champ `c` tel qu'il se compare (`socle::ecriture::comparable`) : la carte qui ne dit que lui, ecrite
@@ -97,9 +122,15 @@ macro_rules! carte {
             /// La valeur du champ `c` quand elle est un texte, un nombre ou un oui-non (un terme, une clause) ; `None`
             /// sinon, ou s'il n'est pas dit.
             pub fn valeur_du(&self, c: Champ) -> Option<Valeur> {
-                match c { $( Champ::$variante => self.$champ.as_ref().and_then(Simple::simple), )* }
+                match c { $( Champ::$variante => carte!(@valeur self $acces), )* }
             }
         }
+    };
+    (
+        $(#[$sattr:meta])*
+        pub struct $carte:ident { $($corps:tt)* }
+    ) => {
+        carte!(@lire [$(#[$sattr])* $carte] {} {} $($corps)*);
     };
 }
 
@@ -140,21 +171,23 @@ carte! {
         #[champ(Terme, ModaliteTempsTravail)]
         pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
-        pub salaire_mensuel: Option<NombreLu>,
-        #[champ(Terme, Emploi)]
-        pub emploi: Option<String>,
-        #[champ(Terme, PcsEse)]
-        pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-        #[champ(Terme, CodeEmploiFt)]
-        pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
-        #[champ(Terme, Statut)]
-        pub statut: Option<droit::fiche::Statut>,
-        #[champ(Terme, StatutConventionnel)]
-        pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
-        #[champ(Terme, StatutCategorielRc)]
-        pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub salaire_mensuel: Option<MontantUnitaire>,
+        #[champs(
+            Terme Emploi => emploi,
+            Terme PcsEse => pcs_ese,
+            Terme CodeEmploiFt => code_emploi_ft,
+            Terme Statut => statut,
+            Terme StatutConventionnel => statut_conventionnel,
+            Terme StatutCategorielRc => statut_categoriel_rc,
+        )]
+        /// L'emploi que la carte ecrit a la main (`droit::emplois::EmploiEcrit`), chaque sous-champ seulement quand
+        /// il est dit ; l'engagement le resout sous son metier, avec son libelle lisible (`Engagement::nouveau`).
+        #[serde(default, deserialize_with = "droit::emplois::EmploiEcrit::dit")]
+        pub emploi: Option<droit::emplois::EmploiEcrit>,
         #[champ(Terme, PeriodeEssaiJours)]
-        pub periode_essai_jours: Option<NombreLu>,
+        #[serde(default, serialize_with = "socle::date::Duree::ecrite_en_jours_opt", deserialize_with = "socle::date::Duree::en_jours_opt")]
+        pub periode_essai_jours: Option<socle::date::Duree<socle::date::EnJours>>,
         #[champ(Terme, PersonneRemplacee)]
         pub personne_remplacee: Option<String>,
         #[champ(Terme, RepartitionHoraire)]
@@ -173,15 +206,20 @@ carte! {
         #[champ(Fait, DatePaiement)]
         pub date_paiement: Option<Jour>,
         #[champ(Fait, Jours)]
-        pub jours: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub jours: Option<Jours>,
         #[champ(Fait, TauxCachet)]
-        pub taux_cachet: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub taux_cachet: Option<MontantUnitaire>,
         #[champ(Fait, HeuresSupplementaires)]
-        pub heures_supplementaires: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_supplementaires: Option<Heures>,
         #[champ(Fait, HeuresSupplementairesA50)]
-        pub heures_supplementaires_a_50: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_supplementaires_a_50: Option<Heures>,
         #[champ(Fait, HeuresComplementaires)]
-        pub heures_complementaires: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub heures_complementaires: Option<Heures>,
         #[champ(Fait, IndemniteLicenciement)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub indemnite_licenciement: Option<Montant>,
@@ -206,13 +244,15 @@ carte! {
         #[champ(Fin, PreavisNonEffectue)]
         pub preavis_non_effectue: Option<bool>,
         #[champ(Fin, PreavisMois)]
-        pub preavis_mois: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub preavis_mois: Option<Coefficient>,
         #[champ(Fin, PrecariteDue)]
         pub precarite_due: Option<bool>,
         #[champ(Fin, PrecaritePourquoi)]
         pub precarite_pourquoi: Option<String>,
         #[champ(Deduit, JoursContrat)]
-        pub jours_contrat: Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub jours_contrat: Option<Jours>,
         #[champ(Deduit, DateModification)]
         pub date_modification: Option<Jour>,
         #[champ(Deduit, Avant)]
@@ -240,13 +280,24 @@ impl Champ {
 pub enum Valeur {
     Nature(droit::natures::NatureDeContrat),
     Texte(String),
-    Nombre(NombreLu),
+    /// Un coefficient (les mois de salaire d'un preavis).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Coefficient(Coefficient),
     /// Des heures (la duree du travail, en heures par mois).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Heures(Heures),
     /// Un montant (l'indemnite de licenciement retenue).
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     Montant(Montant),
+    /// Un montant unitaire (le salaire mensuel, le taux du cachet).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    MontantUnitaire(MontantUnitaire),
+    /// Des jours (les jours du mois).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    Jours(Jours),
+    /// Une duree de droit en jours (la periode d'essai).
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours")]
+    Duree(socle::date::Duree<socle::date::EnJours>),
     Oui(bool),
 }
 
@@ -319,9 +370,9 @@ macro_rules! code_simple {
 }
 code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail, droit::preavis::TransactionEnCours);
 
-impl Simple for NombreLu {
+impl Simple for Coefficient {
     fn simple(&self) -> Option<Valeur> {
-        Some(Valeur::Nombre(self.clone()))
+        Some(Valeur::Coefficient(*self))
     }
 }
 
@@ -334,6 +385,24 @@ impl Simple for Heures {
 impl Simple for Montant {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Montant(*self))
+    }
+}
+
+impl Simple for MontantUnitaire {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::MontantUnitaire(*self))
+    }
+}
+
+impl Simple for Jours {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Jours(*self))
+    }
+}
+
+impl Simple for socle::date::Duree<socle::date::EnJours> {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Duree(*self))
     }
 }
 
@@ -476,7 +545,8 @@ impl CongePris {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Prime {
-    pub montant: NombreLu,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub montant: Montant,
     /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
     pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: Option<String>,
@@ -497,7 +567,8 @@ pub struct Preavis {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Avant {
-    pub salaire_mensuel: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub salaire_mensuel: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub quotite_contrat: Option<Heures>,
 }
@@ -516,7 +587,8 @@ pub struct Validee {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CeQueLeMoisDit {
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
 }
 
 /// LE MOIS DE L'ECRAN (`stock::vue_du_mois`) : le mois, le cachet qu'il dit par defaut, et la vue de chaque engagement qui
@@ -525,7 +597,8 @@ pub struct CeQueLeMoisDit {
 #[serde(deny_unknown_fields)]
 pub struct VueDuMois {
     pub mois: socle::mois::Mois,
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
     pub engagements: Vec<Carte>,
 }
 

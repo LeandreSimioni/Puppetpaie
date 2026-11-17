@@ -8,6 +8,7 @@
 //! Codes : 0 tout est revenu ; 1 des incidents (un fichier, une empreinte) ; 2 un refus, rien n'a ete ecrit.
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use super::actes::refuser_si_pas_redirige;
 use super::actes::Organisme;
@@ -42,15 +43,15 @@ struct Restauree {
     resultat: restauration::RestaurationDite,
 }
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     let json = args.drapeau("json");
-    let refus = |classe: Option<socle::echec::Classe>, message: &str| -> i32 {
+    let refus = |classe: Option<socle::echec::Classe>, message: &str| -> ExitCode {
         if json {
             dire!("{}", socle::ecriture::json_en_ligne(&Refuse { ok: false, erreur: ErreurDite { classe, message } }));
         } else {
             dire!("! {}", message);
         }
-        2
+        ExitCode::from(2)
     };
     if let Err(e) = refuser_si_pas_redirige(cadre, Organisme::Google, "la restauration depuis le Drive") {
         return refus(Some(socle::echec::Classe::Refuse), &e.en_lignes());
@@ -79,9 +80,10 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
     let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible));
-    let code = if r.incidents.is_empty() { 0 } else { 1 };
+    let ok = r.incidents.is_empty();
+    let code = if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE };
     if json {
-        dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok: code == 0, resultat: r.dite(reste) }));
+        dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok, resultat: r.dite(reste) }));
         return code;
     }
     for f in &r.redescendus {

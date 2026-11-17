@@ -14,7 +14,8 @@ use serde::Serialize;
 use socle::date::Jour;
 
 use crate::avenant::valeurs_de_la_paie;
-use crate::bulletin::{chemin_net, identite_de, FORMAT, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use crate::bulletin::{chemin_net, identite_de, LOGO_LARGEUR, LOGO_MARGE_DROITE, LOGO_MARGE_HAUT};
+use fabrique_pdf::FORMAT;
 use droit::contexte::EntrepriseDuDocument;
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
@@ -57,9 +58,9 @@ pub fn document_modele(lu: &ModeleLu, valeurs: &Valeurs) -> forme::Modele {
     }
 }
 
-/// Les valeurs que le modele lit dans cette paie (sa forme canonique, `Paie::canon`).
+/// Les valeurs que le modele lit dans cette paie.
 pub fn valeurs_de_paie(ctx: &Contexte, ent: &EntrepriseDuDocument, p: &Paie) -> R<Valeurs> {
-    Ok(valeurs_de_la_paie(ctx, ent, &p.canon()?, None)?)
+    valeurs_de_la_paie(ctx, ent, p, None)
 }
 
 /// Ce qu'un refus de modele porte a part : le modele, le marqueur en cause, et ce qu'il faut ecrire a sa place.

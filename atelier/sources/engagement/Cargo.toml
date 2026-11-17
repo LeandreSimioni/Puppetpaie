@@ -12,7 +12,6 @@ publish = false
 [dependencies]
 socle = { path = "../socle" }
 droit = { path = "../droit" }
-rust_decimal = { workspace = true }
 # Le numero de contrat lu et ecrit comme la chaine qu'il est (`numeros::NumeroContrat`).
 serde = { workspace = true }
 sha2 = { workspace = true }

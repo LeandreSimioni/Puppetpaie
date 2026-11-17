@@ -26,13 +26,14 @@
 use std::path::Path;
 
 use documents::conges_spectacles::NombreDuCertificat;
+use declarations::identite::{EmployeurLu, IdentiteDeclaree};
 use droit::fiche::Nir;
 use socle::date::{Jour, Periode};
-use socle::num::Decimal;
+use socle::grandeurs::Montant;
 use crate::releve::Mesure;
 
 /// Deux mots sont sur le meme rang quand leurs milieux verticaux sont a moins de cela.
-const TOLERANCE: Mesure = Mesure::entier(4);
+const TOLERANCE: Mesure = fabrique_pdf::mesure!("4");
 
 /// Un mot de la page et sa boite.
 #[derive(Clone, Debug)]
@@ -88,9 +89,8 @@ pub struct JoursOuCachetsLus {
 impl JoursOuCachetsLus {
     /// La case `t`, des chiffres seuls ; `None` : elle n'en est pas.
     fn lus(t: &str) -> Option<JoursOuCachetsLus> {
-        socle::num::entier_de_chiffres(t)?;
-        let (cachets, jours) = socle::grandeurs::lu::texte_entier_en_deux(t)?;
-        Some(JoursOuCachetsLus { cachets, jours })
+        let n = socle::piece::Zone::lue(t, socle::piece::format::Chiffres).valeur()?;
+        Some(JoursOuCachetsLus { cachets: n.en(), jours: n.en() })
     }
 
     /// Le nombre que dit la case pour un salarie de ce statut : des cachets pour un artiste, des jours pour un
@@ -112,18 +112,15 @@ impl JoursOuCachetsLus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
-    pub siret: Option<droit::fiche::Siret>,
+    /// Le SIRET, et la raison sociale, imprimee sur le rang du NIR.
+    pub employeur: EmployeurLu,
     /// Le numero d'adherent de l'employeur, ecrit comme la fiche le garde (`documents::conges_spectacles::forme_adherent`).
     pub compte: Option<String>,
-    /// La raison sociale, imprimee sur le rang du NIR.
-    pub employeur: Option<String>,
     /// Le N° CE.
     pub numero: Option<String>,
-    /// Les treize caracteres du NIR, et sa cle s'il l'imprime.
-    pub nir: Option<Nir>,
+    /// Le nom, les prenoms et les treize caracteres du NIR ; sa cle s'il l'imprime.
+    pub identite: IdentiteDeclaree,
     pub cle_nir: Option<droit::fiche::CleNir>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
     pub nom_usage: Option<String>,
     pub pseudonyme: Option<String>,
     /// Le nom tel que le bloc d'adresse l'ecrit, puis les rangs de l'adresse.
@@ -136,8 +133,8 @@ pub struct Certificat {
     pub periode: Option<Periode>,
     /// Le « NB JOURS OU CACHETS » (des chiffres seuls), lu une fois, a la lecture de la piece.
     pub nombre: Option<JoursOuCachetsLus>,
-    pub base_conge: Option<Decimal>,
-    pub brut: Option<Decimal>,
+    pub base_conge: Option<Montant>,
+    pub brut: Option<Montant>,
     /// La date de signature.
     pub signe_le: Option<Jour>,
 }
@@ -146,7 +143,7 @@ impl Certificat {
     /// Ce qui manque pour que le certificat atteste un contrat ; `None` : rien.
     pub fn manque(&self) -> Option<String> {
         let mut m: Vec<&str> = Vec::new();
-        if self.nir.is_none() {
+        if self.identite.nir.is_none() {
             m.push("le NIR");
         }
         if self.periode.is_none() {
@@ -183,7 +180,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
             continue;
         }
         let [x0, y0, _, y1] = m.rect.connue();
-        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2, y0 });
+        mots.push(Mot { texte, x0, cy: (y0 + y1) * fabrique_pdf::mesure!("0.5"), y0 });
     }
     mots
 }
@@ -275,8 +272,11 @@ pub(crate) fn date_en_tete(mots: &[String]) -> Option<(Jour, usize)> {
     if !(ok(j, 2) || ok(j, 1)) || !(ok(m, 2) || ok(m, 1)) || !ok(a, 4) {
         return None;
     }
-    let n = |t: &str| t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'));
-    Jour::nouveau(n(a) as i32, n(m), n(j)).map(|d| (d, 3))
+    // Chaque nombre lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
+    let annee = Zone::lue(a, format::AnneeEnChiffres).valeur()?.ok()?;
+    let mois = Zone::lue(m, format::MoisEnChiffres).valeur()?;
+    Zone::lue(j, format::JourDuMois(annee.mois(mois))).valeur().map(|d| (d, 3))
 }
 
 fn texte(mots: &[String]) -> Option<String> {
@@ -285,9 +285,9 @@ fn texte(mots: &[String]) -> Option<String> {
 }
 
 /// Un montant arrondi a l'euro (« 1 234 », « 480 ») : des chiffres, des blancs de milliers.
-fn montant(mots: &[String]) -> Option<Decimal> {
+fn montant(mots: &[String]) -> Option<Montant> {
     let t: String = mots.concat();
-    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::bulletin_lu::lire_nombre(&t)).flatten()
+    (!t.is_empty() && t.chars().all(|c| c.is_ascii_digit() || c == ',' || c == '.')).then(|| crate::bulletin_lu::lire_montant(&t)).flatten()
 }
 
 /// Le NIR imprime en tete du rang : treize caracteres (chiffres, et 2A ou 2B pour un ne en Corse), puis sa cle de deux
@@ -327,14 +327,11 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     }
     let mut c = Certificat {
         page,
-        siret: None,
+        employeur: EmployeurLu::default(),
         compte: None,
-        employeur: None,
         numero: None,
-        nir: None,
+        identite: IdentiteDeclaree::default(),
         cle_nir: None,
-        nom: None,
-        prenom: None,
         nom_usage: None,
         pseudonyme: None,
         nom_complet: None,
@@ -357,7 +354,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     }
     // Une case lue qui porte un caractere que rien ne dit ne se lit pas (ISO 32000-1, 9.10.2) : le bloc d'adresse, ou
     // les rubriques d'un rang.
-    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]) / 2;
+    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]) * fabrique_pdf::mesure!("0.5");
     if let Some(u) = p.inconnus.iter().find(|u| u.rect.connue()[3] < titre_y) {
         fautes.push(u.phrase(page, "nom et adresse du salarié"));
     }
@@ -373,8 +370,14 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             match cle {
                 "siret" => {
                     let s: String = v.concat().chars().filter(char::is_ascii_digit).collect();
-                    // Des chiffres qui ne font pas un SIRET : le certificat ne le dit pas.
-                    c.siret = droit::fiche::Siret::lire(&s).ok();
+                    // Des chiffres qui ne font pas un SIRET : une faute de lecture, qui met la piece de cote.
+                    c.employeur.siret = match (!s.is_empty()).then(|| droit::fiche::Siret::lire(&s)).transpose() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            fautes.push(e.phrase);
+                            None
+                        }
+                    };
                 }
                 "compte" => c.compte = texte(&v).map(|t| documents::conges_spectacles::forme_adherent(&t)),
                 "ce" => c.numero = texte(&v),
@@ -391,14 +394,14 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                             },
                             None => None,
                         };
-                        c.nir = Some(nir);
+                        c.identite.nir = Some(nir);
                         c.cle_nir = cle;
-                        c.employeur = texte(&v[pris..]);
+                        c.employeur.raison_sociale = texte(&v[pris..]);
                     }
-                    None => c.employeur = texte(&v),
+                    None => c.employeur.raison_sociale = texte(&v),
                 },
-                "nom" => c.nom = texte(&v),
-                "prenom" => c.prenom = texte(&v),
+                "nom" => c.identite.nom = texte(&v),
+                "prenom" => c.identite.prenoms = texte(&v),
                 "usage" => c.nom_usage = texte(&v),
                 "pseudonyme" => c.pseudonyme = texte(&v),
                 "emploi" => c.emploi = texte(&v),

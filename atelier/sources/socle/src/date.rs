@@ -7,13 +7,14 @@
 //! fichiers deja ecrits : une date lue aujourd'hui se lit comme elle s'est toujours lue.
 
 use crate::echec::{refus, R};
+use crate::fraction::{Fraction, Moitie};
 use crate::num::{self, Decimal};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Jour {
-    pub an: i32,
-    pub mois: u32,
-    pub jour: u32,
+    pub(crate) an: i32,
+    pub(crate) mois: u32,
+    pub(crate) jour: u32,
 }
 
 /// UNE DUREE DE DROIT (« Le glossaire ») : des jours (`Duree<EnJours>`) ou des mois de calendrier (`Duree<EnMois>`), de
@@ -21,7 +22,7 @@ pub struct Jour {
 /// `Duree::mois`, `Duree::annees` (douze mois) ; un fichier la dit en nombre, lu en elle a sa porte (`en_jours`,
 /// `en_mois` et leurs facultatives). Elle se compte depuis un jour (`Jour::apres`, `Jour::avant`), un mois (`Mois::apres`,
 /// `Mois::avant`) ou une annee (`Annee::les_precedentes`), en mois ; elle se mesure du premier au dernier jour d'une
-/// suite de jours (`Duree::du_au`) ; deux durees de la meme unite se comparent et s'ajoutent ; elle se dit dans une
+/// suite de jours (`Duree::du_au`), ou des jours ecoules entre deux jours (`Duree::ecoulee`) ; deux durees de la meme unite se comparent et s'ajoutent ; elle se dit dans une
 /// phrase (`Display` : « 3 jours », « 2 mois »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Duree<U>(u32, std::marker::PhantomData<U>);
@@ -42,18 +43,24 @@ impl Unite for EnMois {}
 mod unite {
     use super::{Jour, R};
 
+    /// Le jeton de ses methodes : il ne se fabrique qu'ici (`JETON`), et elles ne s'appellent pas hors de ce module, meme
+    /// par un generique qui prend une `Unite`.
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     /// Ce que fait une unite, que seul ce module appelle : se compter depuis un jour, se dire.
     pub trait Scellee: Copy {
         /// Le jour `n` unites plus loin (`n` negatif : plus tot).
-        fn decaler(j: &Jour, n: i64) -> R<Jour>;
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
+        fn decaler(j: &Jour, n: i64, jeton: Jeton) -> R<Jour>;
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, jeton: Jeton) -> std::fmt::Result;
     }
 
     impl Scellee for super::EnJours {
-        fn decaler(j: &Jour, n: i64) -> R<Jour> {
+        fn decaler(j: &Jour, n: i64, _: Jeton) -> R<Jour> {
             j.plus_jours(n)
         }
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, _: Jeton) -> std::fmt::Result {
             if n <= 1 {
                 write!(f, "{} jour", n)
             } else {
@@ -63,10 +70,10 @@ mod unite {
     }
 
     impl Scellee for super::EnMois {
-        fn decaler(j: &Jour, n: i64) -> R<Jour> {
+        fn decaler(j: &Jour, n: i64, _: Jeton) -> R<Jour> {
             j.plus_mois(n)
         }
-        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn dire(n: u32, f: &mut std::fmt::Formatter<'_>, _: Jeton) -> std::fmt::Result {
             write!(f, "{} mois", n)
         }
     }
@@ -106,9 +113,23 @@ impl Duree<EnJours> {
 
     /// LES JOURS DU `debut` AU `fin`, l'un et l'autre compris ; aucun quand `fin` precede `debut`.
     pub fn du_au(debut: &Jour, fin: &Jour) -> Duree<EnJours> {
-        // De 0001-01-01 a 9999-12-31, l'ecart tient sur 32 bits ; negatif, la suite est vide.
-        let n = fin.moins(debut) + 1;
+        Duree::de_l_ecart(fin.moins(debut) + 1)
+    }
+
+    /// LES JOURS ECOULES DE `depuis` A `au` : du lendemain de `depuis` a `au`, compris ; aucun quand `au` ne suit pas
+    /// `depuis` (« il reste 3 jours », l'age d'une source).
+    pub fn ecoulee(depuis: &Jour, au: &Jour) -> Duree<EnJours> {
+        Duree::de_l_ecart(au.moins(depuis))
+    }
+
+    /// Un ecart de jours ; negatif, aucun. De 0001-01-01 a 9999-12-31, il tient sur 32 bits.
+    fn de_l_ecart(n: i64) -> Duree<EnJours> {
         Duree::de(if n > 0 { n as u32 } else { 0 })
+    }
+
+    /// AUTANT DE JOURS DE 24 HEURES, une duree mesuree : le decalage de la montre au jour pose (`temps`).
+    pub(crate) fn de_24_heures(self) -> std::time::Duration {
+        std::time::Duration::from_secs(u64::from(self.0) * 86_400)
     }
 
     /// UN JOUR PAR SEMAINE COMMENCEE (C. trav. L. 1242-10 : « un jour par semaine »).
@@ -116,25 +137,48 @@ impl Duree<EnJours> {
         Duree::de(self.0.div_ceil(7))
     }
 
+    /// DITE EN ABREGE, « 3 j » : la case d'un tableau qui la montre (les jours avant le reexamen des droits).
+    pub fn dite_en_abrege(self) -> String {
+        format!("{} j", self.0)
+    }
+
     /// SON NOMBRE DE JOURS, A L'ECRITURE D'UNE NORME qui le dit en nombre (la DSN : S21.G00.86.003).
     pub fn jours_a_ecrire(self) -> u32 {
         self.0
     }
 
-    /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]`.
+    /// Lue d'un nombre entier de jours : `#[serde(deserialize_with = "socle::date::Duree::en_jours")]` ; dans la charge
+    /// d'une route (`forme::lire_saisie`), aussi le nombre qu'une personne a tape (`grandeurs::lu::entier`, « 30 »).
     pub fn en_jours<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Duree<EnJours>, D::Error> {
-        <u32 as serde::Deserialize>::deserialize(d).map(Duree::jours)
+        let n = crate::grandeurs::lu::entier(d, "un nombre entier de jours")?;
+        u32::try_from(n).map(Duree::jours).map_err(serde::de::Error::custom)
     }
 
     /// `en_jours`, facultatif : `#[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]`.
     pub fn en_jours_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Duree<EnJours>>, D::Error> {
-        <Option<u32> as serde::Deserialize>::deserialize(d).map(|n| n.map(Duree::jours))
+        /// Une duree lue par `en_jours`, la ou un champ ne se pose pas (un `Option`).
+        struct Lue(Duree<EnJours>);
+        impl<'de> serde::Deserialize<'de> for Lue {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Lue, D::Error> {
+                Duree::en_jours(d).map(Lue)
+            }
+        }
+        <Option<Lue> as serde::Deserialize>::deserialize(d).map(|l| l.map(|l| l.0))
     }
 
     /// Ecrite en son nombre de jours (un champ `…jours` d'un fichier) : `#[serde(serialize_with =
     /// "socle::date::Duree::ecrite_en_jours")]`.
     pub fn ecrite_en_jours<S: serde::Serializer>(d: &Duree<EnJours>, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_u32(d.0)
+    }
+
+    /// `ecrite_en_jours`, facultative (`null` quand elle n'est pas dite) : `#[serde(serialize_with =
+    /// "socle::date::Duree::ecrite_en_jours_opt")]`.
+    pub fn ecrite_en_jours_opt<S: serde::Serializer>(d: &Option<Duree<EnJours>>, s: S) -> Result<S::Ok, S::Error> {
+        match d {
+            None => s.serialize_none(),
+            Some(d) => s.serialize_some(&d.0),
+        }
     }
 }
 
@@ -184,7 +228,193 @@ impl Duree<EnMois> {
 /// « 1 jour », « 3 jours », « 2 mois ».
 impl<U: Unite> std::fmt::Display for Duree<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        U::dire(self.0, f)
+        U::dire(self.0, f, unite::JETON)
+    }
+}
+
+// LES FERIES QU'UN CALENDRIER SAUTE se donnent une annee a la fois (`feries`) : les onze fetes legales
+// (`feries::feries`), ou ceux que la compagnie chome (`|a| feries::chomes(a, dits)`, sa fiche) ; chaque regle garde les
+// siens.
+
+/// UN JOUR DE LA SEMAINE (« Le glossaire »), du lundi au dimanche, dans cet ordre : celui d'un jour
+/// (`Jour::jour_de_la_semaine`), ou une case d'une fiche (les jours travailles d'un permanent). Il s'ecrit et se dit par
+/// son nom (« lundi »), la seule liste des noms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum JourDeLaSemaine {
+    Lundi,
+    Mardi,
+    Mercredi,
+    Jeudi,
+    Vendredi,
+    Samedi,
+    Dimanche,
+}
+
+impl JourDeLaSemaine {
+    /// Tous, du lundi au dimanche.
+    pub const TOUS: [JourDeLaSemaine; 7] = [
+        JourDeLaSemaine::Lundi,
+        JourDeLaSemaine::Mardi,
+        JourDeLaSemaine::Mercredi,
+        JourDeLaSemaine::Jeudi,
+        JourDeLaSemaine::Vendredi,
+        JourDeLaSemaine::Samedi,
+        JourDeLaSemaine::Dimanche,
+    ];
+
+    /// Leurs noms, du lundi au dimanche, tels qu'ils s'ecrivent et se disent.
+    pub const NOMS: [&'static str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+
+    /// Son nom (« lundi »).
+    pub fn nom(self) -> &'static str {
+        JourDeLaSemaine::NOMS[self as usize]
+    }
+
+    /// Le jour de rang `rang` depuis le lundi (0), modulo la semaine.
+    fn de_rang(rang: i64) -> JourDeLaSemaine {
+        JourDeLaSemaine::TOUS[rang.rem_euclid(7) as usize]
+    }
+}
+
+impl std::fmt::Display for JourDeLaSemaine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+impl serde::Serialize for JourDeLaSemaine {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JourDeLaSemaine {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JourDeLaSemaine, D::Error> {
+        /// Son nom, et rien d'autre ; un autre mot se refuse en disant les noms.
+        struct ParSonNom;
+        impl serde::de::Visitor<'_> for ParSonNom {
+            type Value = JourDeLaSemaine;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("variant identifier")
+            }
+            fn visit_str<E: serde::de::Error>(self, mot: &str) -> Result<JourDeLaSemaine, E> {
+                match JourDeLaSemaine::TOUS.into_iter().find(|j| j.nom() == mot) {
+                    Some(j) => Ok(j),
+                    None => Err(E::unknown_variant(mot, &JourDeLaSemaine::NOMS)),
+                }
+            }
+        }
+        d.deserialize_str(ParSonNom)
+    }
+}
+
+/// LA SEMAINE D'UN CALENDRIER (« Le glossaire ») : du lundi au vendredi (les jours ouvres), ou du lundi au samedi (les
+/// jours ouvrables).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Semaine {
+    DuLundiAuVendredi,
+    DuLundiAuSamedi,
+}
+
+impl Semaine {
+    /// Le jour `j` de la semaine en est-il ?
+    pub fn contient(self, j: JourDeLaSemaine) -> bool {
+        match self {
+            Semaine::DuLundiAuVendredi => j <= JourDeLaSemaine::Vendredi,
+            Semaine::DuLundiAuSamedi => j <= JourDeLaSemaine::Samedi,
+        }
+    }
+}
+
+/// LE CALENDRIER D'UNE SEMAINE (`semaine`), moins les feries qu'on lui donne : pourquoi `jour` n'en est pas (« samedi »,
+/// « dimanche », « Assomption, fête légale »), ou `None` s'il en est.
+pub(crate) fn hors_de_la_semaine(jour: Jour, semaine: Semaine, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Option<String>> {
+    let jds = jour.jour_de_la_semaine();
+    if !semaine.contient(jds) {
+        return Ok(Some(jds.nom().to_string()));
+    }
+    Ok(feries(jour.annee())?.into_iter().find(|(j, _)| *j == jour).map(|(_, nom)| format!("{}, fête légale", nom)))
+}
+
+/// Le `n`-ieme jour de `semaine` apres `depuis` (`plus_tard`) ou avant lui, `depuis` exclu.
+fn compter(depuis: Jour, n: u32, plus_tard: bool, semaine: Semaine, feries: &impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+    let (mut jour, mut reste) = (depuis, n);
+    while reste > 0 {
+        jour = jour.plus_jours(if plus_tard { 1 } else { -1 })?;
+        if hors_de_la_semaine(jour, semaine, feries)?.is_none() {
+            reste -= 1;
+        }
+    }
+    Ok(jour)
+}
+
+/// DES JOURS OUVRES : un compte de jours du lundi au vendredi, moins les feries qu'on donne au calendrier (CSS R. 133-14,
+/// II ; BOI-IR-PAS-30-10-20, § 30). Ce n'est pas une `Duree` : il ne devient un jour que par le calendrier (`apres`),
+/// qui sait quels jours comptent. Un texte le fixe (`de`), ou un fichier le dit en nombre, lu en lui a sa porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoursOuvres(u32);
+
+impl JoursOuvres {
+    /// `n` jours ouvres, qu'un texte fixe.
+    pub const fn de(n: u32) -> JoursOuvres {
+        JoursOuvres(n)
+    }
+
+    /// Le jour ouvre qui tombe ce nombre de jours ouvres apres `depuis`, `depuis` exclu.
+    pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, true, Semaine::DuLundiAuVendredi, &feries)
+    }
+
+    /// Le jour ouvre qui tombe ce nombre de jours ouvres avant `depuis`, `depuis` exclu.
+    pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, false, Semaine::DuLundiAuVendredi, &feries)
+    }
+
+    /// LE PREMIER JOUR OUVRE A PARTIR DE `jour`, lui compris, et chaque jour saute avec ce qu'il est (« samedi »,
+    /// « Assomption, fête légale »).
+    pub fn premier_a_partir_de(jour: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<(Jour, Vec<(Jour, String)>)> {
+        let (mut jour, mut sautes) = (jour, Vec::new());
+        while let Some(pourquoi) = hors_de_la_semaine(jour, Semaine::DuLundiAuVendredi, &feries)? {
+            sautes.push((jour, pourquoi));
+            jour = jour.plus_jours(1)?;
+        }
+        Ok((jour, sautes))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JoursOuvres {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JoursOuvres, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(JoursOuvres)
+    }
+}
+
+/// DES JOURS OUVRABLES : un compte de jours du lundi au samedi, moins les feries qu'on donne au calendrier (C. trav.
+/// L. 1242-13 ; CCN 1285, titre XV). Ce n'est pas une `Duree` : il ne devient un jour que par le calendrier (`apres`,
+/// `avant`). Un texte le fixe (`de`), ou un fichier le dit en nombre, lu en lui a sa porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoursOuvrables(u32);
+
+impl JoursOuvrables {
+    /// `n` jours ouvrables, qu'un texte fixe.
+    pub const fn de(n: u32) -> JoursOuvrables {
+        JoursOuvrables(n)
+    }
+
+    /// Le jour ouvrable qui tombe ce nombre de jours ouvrables apres `depuis`, `depuis` exclu.
+    pub fn apres(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, true, Semaine::DuLundiAuSamedi, &feries)
+    }
+
+    /// Le jour ouvrable qui tombe ce nombre de jours ouvrables avant `depuis`, `depuis` exclu (« les quinze jours
+    /// ouvrables précédant »).
+    pub fn avant(self, depuis: Jour, feries: impl Fn(crate::mois::Annee) -> R<crate::feries::Jours>) -> R<Jour> {
+        compter(depuis, self.0, false, Semaine::DuLundiAuSamedi, &feries)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for JoursOuvrables {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<JoursOuvrables, D::Error> {
+        <u32 as serde::Deserialize>::deserialize(d).map(JoursOuvrables)
     }
 }
 
@@ -419,17 +649,25 @@ impl<'de> serde::Deserialize<'de> for PeriodeOuverte {
 /// depuis la naissance. Elle se compte ici, de deux jours, et nulle part ailleurs : en mois et fraction du mois entame
 /// (`entre`), ou en mois revolus (`revolue`) et en annees revolues (`ans_revolus`, `age`). Un seuil qu'un texte dit en
 /// mois ou en annees se lit en elle a sa porte (`Deserialize` : des mois ; `en_annees`, `en_mois_entiers`,
-/// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees`,
-/// `nombre_d_ans_revolus`, `semaines_entieres`), et dans une phrase en mois (`Display`, `mois`).
+/// `en_annees_entieres`) et elle se compare a lui ; elle se dit dans l'unite que le texte demande (`annees_ecrites`,
+/// `semaines_entieres`), et dans une phrase en mois (`mois_ecrits`, `mois_dits`) ou en annees revolues
+/// (`ans_revolus_dits`).
+/// Exacte : ses mois sont une fraction (`fraction::Fraction`), des jours sur la longueur de leur mois comme des annees de
+/// douze mois, sans coupure ; elle ne devient un decimal qu'a ses ecritures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Anciennete(Decimal);
+pub struct Anciennete(Fraction);
+
+/// Douze mois, l'annee d'une anciennete.
+fn douze() -> Fraction {
+    Fraction::entier(12)
+}
 
 impl Anciennete {
-    pub const ZERO: Anciennete = Anciennete(Decimal::ZERO);
+    pub const ZERO: Anciennete = Anciennete(Fraction::ZERO);
 
     /// LES MOIS COMPLETS DE `depuis` A `au`, `au` compris, ET LA FRACTION DU MOIS ENTAME (ses jours sur ceux du mois de
-    /// `au`) ; rien quand `au` precede `depuis`. Le compte d'un preavis, d'une indemnite de fin de contrat, d'un maintien
-    /// de salaire, d'un ferie chome (le code du travail).
+    /// `au`, exacte) ; rien quand `au` precede `depuis`. Le compte d'un preavis, d'une indemnite de fin de contrat, d'un
+    /// maintien de salaire, d'un ferie chome (le code du travail).
     pub fn entre(depuis: &Jour, au: &Jour) -> Anciennete {
         if au < depuis {
             return Anciennete::ZERO;
@@ -443,8 +681,7 @@ impl Anciennete {
             let (an, precedent) = if au.mois > 1 { (au.an, au.mois - 1) } else { (au.an - 1, 12) };
             jours_du_mois(an, precedent) as i64 + au.jour as i64 + 1 - anniv
         };
-        let dans_le_mois = Decimal::from(jours_du_mois(au.an, au.mois));
-        Anciennete(num::add(Decimal::from(mois), num::div(Decimal::from(reste), dans_le_mois)))
+        Anciennete(Fraction::entier(i128::from(mois)) + Fraction::de(i128::from(reste), u128::from(jours_du_mois(au.an, au.mois))))
     }
 
     /// LES MOIS REVOLUS DE `depuis` AU `au` : un de plus a chaque quantieme de `depuis` atteint ; negatif quand `au`
@@ -452,18 +689,15 @@ impl Anciennete {
     /// l'ouverture d'une prevoyance, un age).
     pub fn revolue(depuis: &Jour, au: &Jour) -> Anciennete {
         let mois = (au.an as i64 - depuis.an as i64) * 12 + (au.mois as i64 - depuis.mois as i64) - i64::from(au.jour < depuis.jour);
-        Anciennete(Decimal::from(mois))
+        Anciennete(Fraction::entier(i128::from(mois)))
     }
 
     /// LE PREMIER JOUR OU L'ANCIENNETE REVOLUE DEPUIS `depuis` LA VAUT (`revolue`) : le meme quantieme autant de mois plus
     /// tard, ou le premier du mois suivant quand ce quantieme n'existe pas (31 janvier + 1 mois : le 1er mars). Une fraction
     /// de mois n'est atteinte a aucun quantieme, ni un jour hors du calendrier : `None`.
     pub fn atteinte(self, depuis: &Jour) -> Option<Jour> {
-        use rust_decimal::prelude::ToPrimitive;
-        if !self.0.fract().is_zero() {
-            return None;
-        }
-        let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + self.0.to_i64()?;
+        let mois = i64::try_from(self.0.en_entier()?).ok()?;
+        let rang = depuis.an as i64 * 12 + (depuis.mois as i64 - 1) + mois;
         let (an, mois) = ((rang / 12) as i32, (rang % 12) as u32 + 1);
         Jour::nouveau(an, mois, depuis.jour).or_else(|| {
             let (an, mois) = if mois == 12 { (an + 1, 1) } else { (an, mois + 1) };
@@ -480,7 +714,7 @@ impl Anciennete {
     /// CE QU'ELLE A DE PLUS QUE `seuil` ; rien quand elle ne l'atteint pas.
     pub fn au_dela_de(self, seuil: Anciennete) -> Anciennete {
         if self.0 > seuil.0 {
-            Anciennete(num::sub(self.0, seuil.0))
+            Anciennete(self.0 - seuil.0)
         } else {
             Anciennete::ZERO
         }
@@ -490,13 +724,12 @@ impl Anciennete {
     /// `pas` nul.
     #[track_caller]
     pub fn fois_entieres(self, pas: Anciennete) -> R<u32> {
-        use rust_decimal::prelude::ToPrimitive;
-        if pas.0 <= Decimal::ZERO {
-            return Err(refus(format!("une ancienneté de {} mois ne se compte pas par périodes", pas.0)));
+        if pas.0 <= Fraction::ZERO {
+            return Err(refus(format!("une ancienneté de {} mois ne se compte pas par périodes", pas.mois_ecrits())));
         }
-        match num::div(self.0, pas.0).floor().to_u32() {
+        match (self.0 / pas.0).plancher().en_entier().and_then(|n| u32::try_from(n).ok()) {
             Some(n) => Ok(n),
-            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+            None => Err(refus(crate::forme::illisible(&self.mois_ecrits()))),
         }
     }
 
@@ -505,82 +738,142 @@ impl Anciennete {
         Anciennete::revolue(naissance, au).ans_revolus()
     }
 
-    /// `d` mois (un seuil d'un texte, un oracle) : la porte d'un nombre de mois.
-    pub fn de_mois(d: Decimal) -> Anciennete {
-        Anciennete(d)
+    /// `n` mois qu'un texte fixe (L3133-3 : « trois mois d'ancienneté »).
+    pub fn mois_fixes(n: u32) -> Anciennete {
+        Anciennete(Fraction::entier(i128::from(n)))
     }
 
     /// `n` annees qu'un texte fixe, douze mois chacune.
     pub fn ans(n: u32) -> Anciennete {
-        Anciennete(Decimal::from(n * 12))
+        Anciennete(Fraction::entier(i128::from(n) * 12))
     }
 
     /// `d` annees (un seuil d'un texte, un oracle) : la porte d'un nombre d'annees, douze mois chacune.
-    pub fn d_annees(d: Decimal) -> Anciennete {
-        Anciennete(num::mul(d, Decimal::from(12)))
+    fn d_annees(d: Decimal) -> Anciennete {
+        Anciennete(Fraction::du_decimal(d) * douze())
     }
 
-    /// Les mois qui ne finissent pas une annee, de 0 a 12 exclu.
-    fn reste_de_l_annee(self) -> Decimal {
-        let r = self.0 % Decimal::from(12);
-        if r < Decimal::ZERO {
-            r + Decimal::from(12)
-        } else {
-            r
-        }
+    /// SES ANNEES, a douze mois l'annee, exactes.
+    fn annees(self) -> Fraction {
+        self.0 / douze()
     }
 
     /// SES ANNEES REVOLUES, en anciennete : les mois des annees entieres.
     pub fn ans_revolus(self) -> Anciennete {
-        Anciennete(num::sub(self.0, self.reste_de_l_annee()))
+        Anciennete(self.annees().plancher() * douze())
     }
 
-    /// LE NOMBRE DE SES ANNEES ENTIERES, ce qu'un texte compte (la prime de presence, l'allongement d'un maintien).
-    #[track_caller]
-    pub fn nombre_d_ans_revolus(self) -> R<i64> {
-        use rust_decimal::prelude::ToPrimitive;
-        match num::div(self.ans_revolus().0, Decimal::from(12)).trunc().to_i64() {
-            Some(n) => Ok(n),
-            None => Err(refus(crate::num::illisible(&self.0.to_string()))),
+    /// SES ANNEES REVOLUES DITES DANS UNE PHRASE, en nombre entier (`3` ; `-1` pour une anciennete revolue negative,
+    /// `revolue`) : les annees de presence d'une prime, le palier d'une indemnite, le seuil d'un minimum.
+    pub fn ans_revolus_dits(self) -> String {
+        self.annees().plancher().en_decimal().to_string()
+    }
+
+    /// Ecrite en nombre entier d'annees (`3`), comme `en_annees_entieres` la relit :
+    /// `#[serde(serialize_with = "socle::date::Anciennete::ecrite_en_annees_entieres")]`. Une anciennete qui n'est pas
+    /// d'annees entieres (`ans_revolus` la fait telle) ne s'ecrit pas ainsi.
+    pub fn ecrite_en_annees_entieres<S: serde::Serializer>(a: &Anciennete, s: S) -> Result<S::Ok, S::Error> {
+        match a.annees().en_entier().and_then(|n| i64::try_from(n).ok()) {
+            Some(n) => s.serialize_i64(n),
+            None => Err(serde::ser::Error::custom(format!("une ancienneté de {} mois n'est pas un nombre entier d'années", a.mois_ecrits()))),
+        }
+    }
+
+    /// `ecrite_en_annees_entieres`, facultative : `None` s'ecrit `null`.
+    pub fn ecrite_en_annees_entieres_opt<S: serde::Serializer>(a: &Option<Anciennete>, s: S) -> Result<S::Ok, S::Error> {
+        match a {
+            Some(a) => Anciennete::ecrite_en_annees_entieres(a, s),
+            None => s.serialize_none(),
         }
     }
 
     /// Au demi-mois superieur, sans zero inutile (3,1 mois : 3,5) : l'anciennete qu'une phrase dit en mois (un affichage,
     /// pas une regle).
     pub fn au_demi_mois_superieur(self) -> Anciennete {
-        let demi = (self.0 * Decimal::from(2)).ceil();
-        Anciennete(num::div(demi, Decimal::from(2)).normalize())
+        let deux = Fraction::entier(2);
+        Anciennete((self.0 * deux).plafond() / deux)
     }
 
     /// SES MOIS COMPLETS : le mois entame ne compte pas (R1234-1).
     pub fn mois_complets(self) -> Anciennete {
-        Anciennete(self.0.floor())
+        Anciennete(self.0.plancher())
     }
 
-    /// DITE EN ANNEES, a douze mois l'annee : l'unite d'un bareme qui compte par annee (R1234-2, D1237-1).
-    pub fn annees(self) -> Decimal {
-        num::div(self.0, Decimal::from(12))
-    }
-
-    /// DITE EN ANNEES, a vingt-huit chiffres (`d28`) : l'unite des baremes d'une convention (`droit::clauses`).
-    pub fn annees_d28(self) -> crate::d28::P {
-        crate::d28::P::depuis(self.0).div(crate::d28::P::entier(12))
+    /// SES ANNEES DITES DANS UNE PHRASE, au dixieme, la moitie au pair, une decimale ecrite (`12.5`, `3.0`).
+    pub fn annees_au_dixieme(self) -> String {
+        match self.annees().arrondi(1, Moitie::AuPair) {
+            Some(a) => a.to_string(),
+            None => crate::fraction::deborde(),
+        }
     }
 
     /// LES SEMAINES CALENDAIRES ENTIERES qu'elle compte, cinquante-deux par annee : un preavis dit en jours par semaine
-    /// d'anciennete (`droit::clauses`).
-    pub fn semaines_entieres(self) -> crate::d28::P {
-        crate::d28::P::depuis(self.0).mul(crate::d28::P::entier(52)).div(crate::d28::P::entier(12)).plancher()
+    /// d'anciennete (`droit::clauses`). Exact ; son resultat est entier.
+    pub fn semaines_entieres(self) -> crate::grandeurs::Semaines {
+        crate::grandeurs::du_decimal((self.annees() * Fraction::entier(52)).plancher().en_decimal())
     }
 
-    /// Le nombre de ses mois, a la porte d'une phrase ou d'une ecriture.
-    pub fn mois(self) -> Decimal {
-        self.0
+    /// LES MOIS DE SALAIRE QU'UN BAREME PAR ANNEE D'ANCIENNETE LUI DONNE (R1234-2 : « un quart de mois de salaire par
+    /// année d'ancienneté pour les années jusqu'à dix ans ») : ses annees au-dela de `bas` et jusqu'a `haut` (`None` :
+    /// sans borne ; une tranche ; de `ZERO` sans borne, toutes ses annees : un bareme par bandes, un prorata, la mise a la
+    /// retraite d'une convention), chacune `par_annee` mois de salaire ; rien quand elle n'atteint pas `bas`. Exacts : ses
+    /// annees dans la tranche fois `par_annee` (`grandeurs::MoisDeSalaire`), sans coupure jusqu'au montant.
+    pub fn par_annee_dans_la_tranche(self, bas: Anciennete, haut: Option<Anciennete>, par_annee: crate::grandeurs::Coefficient) -> crate::grandeurs::MoisDeSalaire {
+        let haut = match haut {
+            Some(h) => h.0,
+            None => self.0,
+        };
+        let part = Anciennete((self.0.min(haut) - bas.0).max(Fraction::ZERO));
+        crate::grandeurs::MoisDeSalaire::comptes(part.annees() * Fraction::du_decimal(crate::grandeurs::decimal(par_annee)))
+    }
+
+    /// Ses mois en decimal, comme `entre` les compte : ses mois entiers, plus la fraction du mois entame a vingt-huit
+    /// chiffres (un decimal n'en porte pas plus), leur somme a vingt-huit chiffres.
+    fn ecrite(self) -> Decimal {
+        let entiers = self.0.plancher();
+        num::add(entiers.en_decimal(), (self.0 - entiers).en_decimal())
+    }
+
+    /// SES MOIS ECRITS, le point decimal, a vingt-huit chiffres (`23.48387096774193548387096774`, `24`) : l'anciennete
+    /// qu'une phrase d'une convention cite (« aucune tranche … ne couvre 23.48… mois »).
+    pub fn mois_ecrits(self) -> String {
+        self.ecrite().to_string()
+    }
+
+    /// SES ANNEES ECRITES, a douze mois l'annee, le point decimal, a vingt-huit chiffres (`2`, `0.5`) : le seuil d'une
+    /// indemnite cite dans une phrase.
+    pub fn annees_ecrites(self) -> String {
+        self.annees().en_decimal().to_string()
+    }
+
+    /// Ecrite en mois, en texte, son echelle gardee (`mois_ecrits`), comme sa lecture la relit (`Deserialize`) :
+    /// `#[serde(serialize_with = "socle::date::Anciennete::ecrite_en_mois")]`.
+    pub fn ecrite_en_mois<S: serde::Serializer>(a: &Anciennete, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&a.mois_ecrits())
+    }
+
+    /// SES MOIS DITS DANS UNE PHRASE, tels qu'ils sont, la virgule decimale, sans zero inutile (« 6 », « 3,5 »).
+    pub fn mois_dits(self) -> String {
+        crate::texte::nombre_dit(self.ecrite())
+    }
+
+    /// SES MOIS DITS DANS UNE PHRASE AU DIXIEME, la moitie au pair (« 7,3 ») : l'anciennete qu'un maintien de salaire
+    /// compare a son minimum.
+    pub fn mois_dits_au_dixieme(self) -> String {
+        match self.0.arrondi(1, Moitie::AuPair) {
+            Some(m) => crate::texte::nombre_dit(m),
+            None => crate::fraction::deborde(),
+        }
+    }
+
+    /// Lue d'un nombre de mois, exactement tel qu'il est ecrit : sa porte.
+    fn de_mois(d: Decimal) -> Anciennete {
+        Anciennete(Fraction::du_decimal(d))
     }
 
     /// Lue d'un nombre de mois facultatif, `null` compris : `#[serde(deserialize_with = "socle::date::Anciennete::en_mois_opt")]`.
     pub fn en_mois_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
-        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete))
+        crate::forme::decimal_opt(d).map(|a| a.map(Anciennete::de_mois))
     }
 
     /// Lue d'un nombre d'annees (un champ `…_annees` ou `age_…` d'un fichier) : `#[serde(deserialize_with = "socle::date::Anciennete::en_annees")]`.
@@ -595,31 +888,34 @@ impl Anciennete {
 
     /// Lue d'un nombre entier d'annees.
     pub fn en_annees_entieres<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        <i64 as serde::Deserialize>::deserialize(d).map(|a| Anciennete::d_annees(Decimal::from(a)))
+        <i64 as serde::Deserialize>::deserialize(d).map(Anciennete::ans_lus)
+    }
+
+    /// `n` annees entieres lues : douze mois chacune.
+    fn ans_lus(n: i64) -> Anciennete {
+        Anciennete(Fraction::entier(i128::from(n)) * douze())
+    }
+
+    /// `en_annees_entieres`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_annees_entieres_opt")]`.
+    pub fn en_annees_entieres_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|a| a.map(Anciennete::ans_lus))
     }
 
     /// Lue d'un nombre entier de mois.
     pub fn en_mois_entiers<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        <i64 as serde::Deserialize>::deserialize(d).map(|m| Anciennete(Decimal::from(m)))
+        <i64 as serde::Deserialize>::deserialize(d).map(|m| Anciennete(Fraction::entier(i128::from(m))))
     }
 
     /// `en_mois_entiers`, facultatif : `#[serde(default, deserialize_with = "socle::date::Anciennete::en_mois_entiers_opt")]`.
     pub fn en_mois_entiers_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Anciennete>, D::Error> {
-        <Option<i64> as serde::Deserialize>::deserialize(d).map(|m| m.map(|m| Anciennete(Decimal::from(m))))
+        <Option<i64> as serde::Deserialize>::deserialize(d).map(|m| m.map(|m| Anciennete(Fraction::entier(i128::from(m)))))
     }
 }
 
-/// Lue d'un nombre de mois, comme `forme::decimal`.
+/// Lue d'un nombre de mois, comme `forme::decimal`, exactement tel qu'il est ecrit.
 impl<'de> serde::Deserialize<'de> for Anciennete {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Anciennete, D::Error> {
-        crate::forme::decimal(d).map(Anciennete)
-    }
-}
-
-/// Ses mois, tels qu'ils sont (une phrase).
-impl std::fmt::Display for Anciennete {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        crate::forme::decimal(d).map(Anciennete::de_mois)
     }
 }
 
@@ -628,12 +924,12 @@ const JOURS_PAR_MOIS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 3
 /// Le rang du 1970-01-01 a compter du 0001-01-01, qui vaut 1.
 const ORDINAL_EPOQUE_UNIX: i64 = 719_163;
 
-pub fn bissextile(an: i32) -> bool {
+pub(crate) fn bissextile(an: i32) -> bool {
     (an % 4 == 0 && an % 100 != 0) || an % 400 == 0
 }
 
 /// `calendar.monthrange(an, mois)[1]`, pour un mois de 1 a 12.
-pub fn jours_du_mois(an: i32, mois: u32) -> u32 {
+pub(crate) fn jours_du_mois(an: i32, mois: u32) -> u32 {
     if mois == 2 && bissextile(an) {
         29
     } else {
@@ -643,7 +939,7 @@ pub fn jours_du_mois(an: i32, mois: u32) -> u32 {
 
 impl Jour {
     /// `None` si le jour n'existe pas ; l'annee va de 1 a 9999.
-    pub fn nouveau(an: i32, mois: u32, jour: u32) -> Option<Jour> {
+    pub(crate) fn nouveau(an: i32, mois: u32, jour: u32) -> Option<Jour> {
         if !(1..=9999).contains(&an) || !(1..=12).contains(&mois) {
             return None;
         }
@@ -690,6 +986,17 @@ impl Jour {
         format!("{:02}/{:02}", self.jour, self.mois)
     }
 
+    /// `J/MM`, le quantieme sans zero devant, sans l'annee (« 5/03 » : la periode courte d'un bulletin fictif).
+    pub fn j_mm(&self) -> String {
+        format!("{}/{:02}", self.jour, self.mois)
+    }
+
+    /// `J/MM/AA`, le quantieme sans zero devant, l'annee en ses deux derniers chiffres (« 5/03/26 » : la periode courte
+    /// d'un bulletin fictif).
+    pub fn j_mm_aa(&self) -> String {
+        format!("{}/{:02}/{}", self.jour, self.mois, self.annee().aa())
+    }
+
     /// `JJMMAAAA`.
     pub fn jjmmaaaa(&self) -> String {
         format!("{:02}{:02}{:04}", self.jour, self.mois, self.an)
@@ -700,9 +1007,47 @@ impl Jour {
         format!("{:04}{:02}{:02}", self.an, self.mois, self.jour)
     }
 
+    /// `JJ/MM/AA`, l'annee en ses deux derniers chiffres (la date d'un certificat Congés Spectacles, d'un bulletin
+    /// fictif).
+    pub fn jj_mm_aa(&self) -> String {
+        format!("{:02}/{:02}/{}", self.jour, self.mois, self.annee().aa())
+    }
+
+    /// `JJMMAA` (la date d'une ecriture d'un export comptable).
+    pub fn jjmmaa(&self) -> String {
+        format!("{:02}{:02}{}", self.jour, self.mois, self.annee().aa())
+    }
+
+    /// `JJ`, `MM` et `AAAA`, chacun dans sa case d'un formulaire (l'attestation employeur), ou les trois separees d'un
+    /// blanc (`cases().join(" ")` : le certificat Congés Spectacles).
+    pub fn cases(&self) -> [String; 3] {
+        [format!("{:02}", self.jour), format!("{:02}", self.mois), format!("{:04}", self.an)]
+    }
+
+    /// Son quantieme dans son mois, ecrit sans zero devant (« 5 ») : le seul endroit ou le numero d'un jour dans son
+    /// mois sort d'un jour, a une ecriture.
+    pub fn quantieme_ecrit(&self) -> String {
+        self.jour.to_string()
+    }
+
+    /// « mercredi 23 septembre 2026 ».
+    pub fn en_clair(&self) -> String {
+        format!("{} {} {} {}", self.jour_de_la_semaine(), self.jour, self.mois_civil().nom(crate::mois::Graphie::Accentuee), self.an)
+    }
+
+    /// Le premier jour de son mois ?
+    pub fn premier_du_mois(&self) -> bool {
+        self.jour == 1
+    }
+
+    /// A-t-il le meme quantieme que `autre` (le 31 d'un mois et le 31 d'un autre) ?
+    pub fn meme_quantieme(&self, autre: &Jour) -> bool {
+        self.jour == autre.jour
+    }
+
     /// Le 0001-01-01 vaut 1. Formule des jours depuis
     /// l'epoque (annee commencant en mars, cycles de 400 ans).
-    pub fn ordinal(&self) -> i64 {
+    pub(crate) fn ordinal(&self) -> i64 {
         let a = i64::from(self.an) - i64::from(self.mois <= 2);
         let ere = a.div_euclid(400);
         let annee_d_ere = a - ere * 400;
@@ -713,7 +1058,7 @@ impl Jour {
     }
 
     /// Le jour de rang `ordinal` (le 0001-01-01 vaut 1). `None` hors de 0001-01-01 .. 9999-12-31.
-    pub fn depuis_ordinal(ordinal: i64) -> Option<Jour> {
+    pub(crate) fn depuis_ordinal(ordinal: i64) -> Option<Jour> {
         let z = ordinal - ORDINAL_EPOQUE_UNIX + 719_468;
         let ere = z.div_euclid(146_097);
         let jour_d_ere = z - ere * 146_097;
@@ -730,13 +1075,14 @@ impl Jour {
     }
 
     /// Le jour du `n`-ieme jour apres l'epoque Unix (1970-01-01), pour l'horloge.
-    pub fn depuis_jours_unix(jours: i64) -> Option<Jour> {
+    pub(crate) fn depuis_jours_unix(jours: i64) -> Option<Jour> {
         Jour::depuis_ordinal(jours + ORDINAL_EPOQUE_UNIX)
     }
 
-    /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999.
+    /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999 ; hors du socle, un jour se decale d'une duree
+    /// (`apres`, `avant`).
     #[track_caller]
-    pub fn plus_jours(&self, n: i64) -> R<Jour> {
+    pub(crate) fn plus_jours(&self, n: i64) -> R<Jour> {
         match Jour::depuis_ordinal(self.ordinal() + n) { Some(j) => Ok(j), None => Err(refus(HORS_CALENDRIER)) }
     }
 
@@ -744,14 +1090,14 @@ impl Jour {
     /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
     #[track_caller]
     pub fn apres<U: Unite>(&self, d: Duree<U>) -> R<Jour> {
-        U::decaler(self, i64::from(d.0))
+        U::decaler(self, i64::from(d.0), unite::JETON)
     }
 
     /// LE JOUR QUI PRECEDE DE `d` CELUI-CI : `d` jours plus tot, ou le meme quantieme `d` mois de calendrier plus tot (le
     /// dernier jour du mois s'il ne l'a pas) ; refus hors des annees 1 a 9999.
     #[track_caller]
     pub fn avant<U: Unite>(&self, d: Duree<U>) -> R<Jour> {
-        U::decaler(self, -i64::from(d.0))
+        U::decaler(self, -i64::from(d.0), unite::JETON)
     }
 
     /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne
@@ -765,7 +1111,7 @@ impl Jour {
     }
 
     /// `(self - autre).days`.
-    pub fn moins(&self, autre: &Jour) -> i64 {
+    pub(crate) fn moins(&self, autre: &Jour) -> i64 {
         self.ordinal() - autre.ordinal()
     }
 
@@ -773,9 +1119,9 @@ impl Jour {
         jours_du_mois(self.an, self.mois)
     }
 
-    /// 0 = lundi ... 6 = dimanche.
-    pub fn jour_de_la_semaine(&self) -> u32 {
-        ((self.ordinal() + 6) % 7) as u32
+    /// Son jour de la semaine.
+    pub fn jour_de_la_semaine(&self) -> JourDeLaSemaine {
+        JourDeLaSemaine::de_rang(self.ordinal() + 6)
     }
 
     /// Le mois civil du jour.
@@ -796,18 +1142,18 @@ pub fn annee_impossible(an: impl std::fmt::Display) -> String {
 
 use crate::mois::mois_impossible;
 
-pub fn jour_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn jour_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     format!("date impossible : {}", iso(an, mois, jour))
 }
 
 /// `AAAA-MM-JJ` de trois nombres tels qu'ils sont, la seule ecriture ISO d'une date : celle d'un `Jour`, d'une date
 /// impossible, d'une date de naissance declaree dont le jour ou le mois sont inconnus (`00`, `99`).
-pub fn iso(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn iso(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     format!("{:04}-{:02}-{:02}", an.into(), mois.into(), jour.into())
 }
 
 /// Ce qui rend une date impossible : l'annee d'abord, sinon le mois, sinon le jour.
-pub fn date_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+pub(crate) fn date_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
     let (an, mois, jour) = (an.into(), mois.into(), jour.into());
     if !(1..=9999).contains(&an) {
         annee_impossible(an)

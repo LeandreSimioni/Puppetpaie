@@ -26,12 +26,11 @@ use import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVise
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, OPERATION, SALARIE};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{self, en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
 use droit::fiche::{ChampsEntreprise, ChampsSalarie, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie, FicheSalarieDatee, Nir, NomDeFiche, NumeroObjetSpectacle, ValeurDeCase};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
-use socle::grandeurs::Montant;
 use socle::mois::MoisOuJour;
 
 const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
@@ -88,7 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         ],
         exemple: r#"{"salarie":"TARTEMPION","nature":"cdi"}"#,
         rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -216,13 +215,13 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<(ChampsSalarie, Vec<FauteDeCase>)> 
             None => None,
         },
     };
-    let femme = decl.nir.as_ref().and_then(Nir::sexe) == Some(droit::fiche::Sexe::Feminin);
+    let femme = decl.individu.identite.nir.as_ref().and_then(Nir::sexe) == Some(droit::fiche::Sexe::Feminin);
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     // Ce que la fiche neuve recoit d'une DSN, a cote de son identite et de son emploi (`SalarieDeclare::fiche`).
     let (mut f, fautes) = decl.fiche()?;
     let de_la_dsn = ChampsSalarie {
-        nir: decl.nir.clone(),
-        nir_cle: decl.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
+        nir: decl.individu.identite.nir.clone(),
+        nir_cle: decl.individu.identite.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
         initiales_contrat: Some(decl.initiales.clone()).filter(|i| !i.is_empty()),
         date_anciennete: decl.premier_contrat,
         statut,
@@ -335,7 +334,7 @@ impl SansNets {
 
 /// Le salarie qu'une DSN declare, en clair : son nom, son prenom.
 fn libelle_de(i: &declarations::dsn_lue::IndividuDeclare) -> String {
-    [i.nom.clone(), i.prenom.as_deref().map(declarations::champs::titre)].into_iter().flatten().collect::<Vec<_>>().join(" ")
+    [i.identite.nom.clone(), i.identite.prenoms.as_deref().map(declarations::champs::titre)].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
 /// LE NOM QUE LA PERSONNE A DONNE A LA COMPAGNIE (« Ajouter une compagnie ») reste le sien : la fiche que l'import cree
@@ -367,11 +366,10 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
-    (x.brut, x.bases) = (d.mesures.brut.map(Montant::du_decimal), d.bases.clone());
+    (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
     if let Some(n) = &d.nets {
-        (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
-        // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
-        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
+        x.nets = n.clone();
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x
@@ -479,7 +477,7 @@ pub(crate) fn apercu_lu(
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
     for decl in ordre {
         let libelle = libelle_de(&decl.individu);
-        if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
+        if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = &ctx.salaries[cle].champs;
             let ec = ecarts(fiche, &decl.fiche()?.0, decl.mois)?;
             let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &FicheProposee::vide(NomDeFiche::Salarie));
@@ -496,7 +494,7 @@ pub(crate) fn apercu_lu(
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(&donnees, &fautes)?;
         salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
         a_creer_liste.push(ACreer { rang: Some(salaries.len() - 1), donnees, fautes });
-        cles_a_venir.insert(decl.nir.clone());
+        cles_a_venir.insert(decl.individu.identite.nir.clone());
         a_creer += 1;
     }
 
@@ -514,7 +512,7 @@ pub(crate) fn apercu_lu(
         numero: NumeroObjetSpectacle,
         premier: String,
         dernier: String,
-        contrats: i64,
+        contrats: usize,
         aem: bool,
     }
     let mut objets: Vec<Objet> = lecture
@@ -629,7 +627,7 @@ pub(crate) fn apercu_lu(
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| objets_aem.get(&(nir.clone()?, periode?.fermee()?)).cloned());
         if v.paie.nets.is_none() {
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
-            let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
+            let qui = match (lecture.salaries.iter().find(|s| s.individu.identite.nir == *nir), nir) {
                 (Some(s), _) => libelle_de(&s.individu),
                 (None, Some(n)) => n.to_string(),
                 (None, None) => format!("Le salarié du contrat {}", contrat),
@@ -655,7 +653,7 @@ pub(crate) fn apercu_lu(
         contrats_sans_fiche: sans_fiche,
         avertissements,
         rien_a_faire,
-        phrase: String::new(),
+        phrase: Phrase::fixe(""),
         contrats_nouveaux: 0,
         ecrit: false,
         fichiers: Vec::new(),
@@ -744,10 +742,10 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     };
     let phrase = match (&importe_le, &debut, &fin) {
         (Some(le), Some(du), Some(au)) => {
-            format!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
+            socle::phrase!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
-        (Some(le), _, _) => format!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
-        (None, _, _) => "Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent.".to_string(),
+        (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
+        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent."),
     };
     Ok(EtatImportation {
         phrase,
@@ -772,7 +770,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
 /// `importation-etat` : ce qui a deja ete repris, et ce que la page en dit.
 #[derive(Debug, Serialize)]
 struct EtatImportation {
-    phrase: String,
+    phrase: Phrase,
     importe_le: Option<Jour>,
     contrats: usize,
     salaries: usize,
@@ -795,7 +793,7 @@ struct EtatImportation {
 }
 
 impl Dite for EtatImportation {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }

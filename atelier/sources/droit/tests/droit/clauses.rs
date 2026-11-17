@@ -5,14 +5,13 @@
 //! fiche du releve. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit les references.
 
 use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin, Rendu};
-use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
+use crate::outils::typee::lu;
+use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche};
 use droit::fiche::{ChampsSalarie, Idcc, Statut};
 use serde::{Deserialize, Serialize};
 use socle::date::{Anciennete, Duree, Jour};
 use socle::echec::R;
-use socle::grandeurs::Montant;
-use socle::num::Decimal;
-use std::str::FromStr;
+use socle::grandeurs::{MoisDeSalaire, Montant};
 
 // ------------------------------------------------------------- les entrees
 
@@ -67,23 +66,23 @@ pub(crate) fn grilles() -> Grilles {
     lire_chemin(&chemin_donnee("clauses/grilles.json"))
 }
 
-pub(crate) fn dec(s: &str) -> Decimal {
-    Decimal::from_str(s).unwrap()
-}
-
 /// Le salaire de reference d'un oracle, ecrit en texte.
 fn reference_lue(s: &str) -> Montant {
     socle::grandeurs::lu::texte(s).unwrap()
 }
 
-/// L'anciennete d'un oracle, en mois.
+/// L'anciennete d'un oracle, en mois, ecrite en texte : lue par sa porte.
 fn anc(s: &str) -> Anciennete {
-    Anciennete::de_mois(dec(s))
+    lu(&socle::ecriture::json_en_ligne(s))
 }
 
-/// L'age d'un oracle, en annees.
+/// Une anciennete lue d'un nombre d'annees.
+#[derive(Deserialize)]
+struct AnneesLues(#[serde(deserialize_with = "Anciennete::en_annees")] Anciennete);
+
+/// L'age d'un oracle, en annees, ecrit en texte : lu par sa porte.
 fn age_lu(s: &str) -> Anciennete {
-    Anciennete::d_annees(dec(s))
+    lu::<AnneesLues>(&socle::ecriture::json_en_ligne(s)).0
 }
 
 /// La fiche ecrite `texte`, avec la case `cle` posee a `valeur` (un texte).
@@ -180,13 +179,13 @@ pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, mot
     g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(idcc_dit(idcc).as_ref(), categorie_dite(categorie).as_ref(), anc(a), motif_lu(motif), age.as_deref().map(age_lu)))).collect()
 }
 
-pub(crate) fn annees(g: &Grilles) -> Vec<P> {
-    g.annees.iter().map(|a| P::depuis(dec(a))).collect()
+pub(crate) fn annees(g: &Grilles) -> Vec<Anciennete> {
+    g.annees.iter().map(|a| age_lu(a)).collect()
 }
 
 /// La lecture d'une liste du bareme (`texte`), en tranches ou en bandes (`genre`), a chaque anciennete de la grille ;
 /// `None` : elle ne se lit pas ainsi.
-pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<P>> {
+pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<MoisDeSalaire>> {
     match genre {
         "tranches" => {
             let taux: Vec<Tranche> = socle::forme::lire_texte(texte, "").ok()?;
@@ -199,14 +198,14 @@ pub(crate) fn bloc_lecture(g: &Grilles, texte: &str, genre: &str) -> Option<Vec<
     }
 }
 
-pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Option<i64>)> {
+pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(MoisDeSalaire, Option<Anciennete>)> {
     let t = c::table().unwrap();
     let conv = t.convention(idcc_dit(idcc).as_ref()).unwrap();
     let (paliers, prorata) = match section {
         "mise_a_la_retraite" => conv.mise_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
         _ => conv.depart_a_la_retraite.as_ref().map(|m| (m.paliers.as_ref().unwrap(), m.prorata.as_ref())).unwrap(),
     };
-    g.annees.iter().map(|a| c::paliers(paliers, prorata, age_lu(a))).map(|(m, p)| (m, p.map(|p| p.nombre_d_ans_revolus().unwrap()))).collect()
+    g.annees.iter().map(|a| c::paliers(paliers, prorata, age_lu(a))).map(|(m, p)| (m, p.map(Anciennete::ans_revolus))).collect()
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
@@ -266,10 +265,6 @@ pub(crate) fn bloc_prime(g: &Grilles, idcc: &str, annexe: &str, code: &str) -> V
 
 // ------------------------------------------------------------- les resultats ecrits
 
-fn nombre(p: Option<P>) -> Option<String> {
-    p.map(|p| p.to_string())
-}
-
 /// Un montant tel que la reference l'ecrit (`1234.50`).
 fn montant_ecrit(m: Montant) -> String {
     socle::grandeurs::ecrit::texte::texte(m).unwrap()
@@ -321,8 +316,8 @@ pub(crate) struct RetraiteLue {
     montant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    palier: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", serialize_with = "Anciennete::ecrite_en_annees_entieres_opt", deserialize_with = "Anciennete::en_annees_entieres_opt")]
+    palier: Option<Anciennete>,
     #[serde(skip_serializing_if = "Option::is_none")]
     article: Option<String>,
     hors_primes: bool,
@@ -337,11 +332,13 @@ pub(crate) struct RetraiteLue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PrimeLue {
-    pourcentage: i64,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pourcentage: socle::grandeurs::Taux,
     base: Option<String>,
     article: String,
     pourquoi: Option<String>,
-    annees: i64,
+    #[serde(serialize_with = "Anciennete::ecrite_en_annees_entieres", deserialize_with = "Anciennete::en_annees_entieres")]
+    annees: Anciennete,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -365,7 +362,8 @@ pub(crate) fn profil_ecrit(p: Profil) -> ProfilLu {
 }
 
 pub(crate) fn preavis_ecrit(p: PreavisDit) -> PreavisLu {
-    PreavisLu { mois: nombre(p.mois), article: p.article, jours: nombre(p.jours), pourquoi: p.pourquoi }
+    use socle::grandeurs::ecrit::texte::dit;
+    PreavisLu { mois: p.mois.map(dit), article: p.article, jours: p.jours.map(dit), pourquoi: p.pourquoi }
 }
 
 pub(crate) fn indemnite_ecrite(i: Indemnite) -> IndemniteLue {
@@ -385,8 +383,8 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
     RetraiteLue {
         releve: r.releve,
         montant: r.montant.map(montant_ecrit),
-        mois: nombre(r.mois),
-        palier: r.palier.map(|p| p.nombre_d_ans_revolus().unwrap()),
+        mois: r.mois.map(MoisDeSalaire::ecrits),
+        palier: r.palier.map(Anciennete::ans_revolus),
         article: r.article,
         hors_primes: r.hors_primes,
         prevenance_mois: r.prevenance_mois,
@@ -396,7 +394,7 @@ pub(crate) fn retraite_ecrite(r: Retraite) -> RetraiteLue {
 }
 
 pub(crate) fn prime_ecrite(p: Option<Prime>) -> Option<PrimeLue> {
-    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: nombre(p.base), article: p.article, pourquoi: p.pourquoi, annees: p.annees.nombre_d_ans_revolus().unwrap() })
+    p.map(|p| PrimeLue { pourcentage: p.pourcentage, base: p.base.map(socle::grandeurs::ecrit::texte::dit), article: p.article, pourquoi: p.pourquoi, annees: p.annees.ans_revolus() })
 }
 
 pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
@@ -404,8 +402,8 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
         article: a.article,
         lectures: a.lectures.iter().map(|(n, _)| n.clone()).collect(),
         hors_primes: a.hors_primes,
-        anciennete_minimale_mois: a.anciennete_minimale_mois.to_string(),
-        plafond_mois: a.plafond_mois.map(|m| m.0.to_string()),
+        anciennete_minimale_mois: a.anciennete_minimale_mois.mois_ecrits(),
+        plafond_mois: a.plafond_mois.map(MoisDeSalaire::ecrits),
         motifs_legaux_seulement: a.motifs_legaux_seulement.map(|l| l.iter().map(|m| m.code().to_string()).collect()),
     })
 }
@@ -525,12 +523,16 @@ pub(crate) struct CasLecture {
 }
 
 pub(crate) fn empreinte_lecture(g: &Grilles, x: &CasLecture) -> String {
-    empreinte(&bloc_lecture(g, &x.liste, &x.genre).unwrap().iter().map(|p| p.to_string()).collect::<Vec<_>>())
+    empreinte(&bloc_lecture(g, &x.liste, &x.genre).unwrap().into_iter().map(MoisDeSalaire::ecrits).collect::<Vec<_>>())
 }
 
 pub(crate) fn empreinte_paliers(g: &Grilles, (idcc, section): &(String, String)) -> String {
-    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (m.to_string(), p)).collect::<Vec<_>>())
+    empreinte(&bloc_paliers(g, idcc, section).into_iter().map(|(m, p)| (m.ecrits(), p.map(EnAnnees))).collect::<Vec<_>>())
 }
+
+/// Un palier ecrit dans une empreinte en nombre entier d'annees.
+#[derive(Serialize)]
+struct EnAnnees(#[serde(serialize_with = "Anciennete::ecrite_en_annees_entieres")] Anciennete);
 
 pub(crate) fn empreinte_annexe(g: &Grilles, (idcc, annexe): &(String, String)) -> String {
     bloc(bloc_annexe(g, idcc, annexe), annexe_ecrite)
@@ -615,18 +617,18 @@ fn prime_d_anciennete() {
 /// 20261020.md`, l. 763). Un jour ouvrable va du lundi au samedi.
 #[test]
 fn la_remise_du_contrat_suit_l1242_13_et_la_1285_pour_ses_musiciens() {
-    let j = |m, d| Jour::nouveau(2026, m, d).unwrap();
+    let j = crate::outils::le_jour;
     let code = |c: &str| droit::fiche::CodeEmploiFt::lire(c).unwrap();
     // Un vendredi : le samedi, puis le lundi (le dimanche n'est pas ouvrable).
-    let loi = droit::echeances::remise_du_contrat(&j(11, 20), Some(&droit::fiche::IDCC_3090), Some(&code("ART170")), None).unwrap();
-    assert_eq!(loi.jour, j(11, 23));
+    let loi = droit::echeances::remise_du_contrat(&j("2026-11-20"), Some(&droit::fiche::IDCC_3090), Some(&code("ART170")), None).unwrap();
+    assert_eq!(loi.jour(), j("2026-11-23"));
     assert!(loi.source.contains("L. 1242-13"), "{}", loi.source);
     // Le meme musicien sous la 1285 : quinze jours ouvrables avant le jeudi 10/12, sans compter les dimanches.
-    let musicien = droit::echeances::remise_du_contrat(&j(12, 10), Some(&c::IDCC_CCNEAC), Some(&code("ART170")), None).unwrap();
-    assert_eq!(musicien.jour, j(11, 23));
+    let musicien = droit::echeances::remise_du_contrat(&j("2026-12-10"), Some(&c::IDCC_CCNEAC), Some(&code("ART170")), None).unwrap();
+    assert_eq!(musicien.jour(), j("2026-11-23"));
     assert!(musicien.source.contains("1285") && musicien.source.contains("XV"), "{}", musicien.source);
     // Un metier hors du titre XV, sous la 1285 : la loi seule.
-    let autre = droit::echeances::remise_du_contrat(&j(12, 10), Some(&c::IDCC_CCNEAC), Some(&code("ZZZ999")), None).unwrap();
-    assert_eq!(autre.jour, j(12, 12));
+    let autre = droit::echeances::remise_du_contrat(&j("2026-12-10"), Some(&c::IDCC_CCNEAC), Some(&code("ZZZ999")), None).unwrap();
+    assert_eq!(autre.jour(), j("2026-12-12"));
     assert!(autre.source.contains("L. 1242-13"), "{}", autre.source);
 }

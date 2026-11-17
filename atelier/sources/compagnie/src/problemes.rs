@@ -23,12 +23,13 @@ use crate::editeur::{NumeroDeRetour, Retour};
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
+use socle::grandeurs::Octets;
 use socle::paris::Moment;
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
 /// 1,5 Mo decodes.
-const CAPTURE_MAX: usize = 1536 * 1024;
+const CAPTURE_MAX: Octets = Octets::en_ko(1536);
 pub const CAPTURES_MAX: usize = 5;
 const INCIDENTS_JOINTS: usize = 10;
 /// « Un probleme, une idee ? », sous la racine de la compagnie.
@@ -141,7 +142,7 @@ pub struct CaptureQuiPart {
 /// Une capture lue : ce qui part, et sa taille decodee.
 struct Capture {
     part: CaptureQuiPart,
-    octets: usize,
+    octets: Octets,
 }
 
 fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
@@ -156,10 +157,11 @@ fn capture_valide(c: &CaptureDeLaPage) -> R<Capture> {
     if brut.is_empty() {
         return Err(refus("Une capture est vide."));
     }
-    if brut.len() > CAPTURE_MAX {
-        return Err(refus("Une capture dépasse 1,5 Mo."));
+    let octets = Octets::de(&brut);
+    if octets > CAPTURE_MAX {
+        return Err(refus(&format!("Une capture dépasse {}.", CAPTURE_MAX)));
     }
-    Ok(Capture { part: CaptureQuiPart { genre: c.genre, donnees }, octets: brut.len() })
+    Ok(Capture { part: CaptureQuiPart { genre: c.genre, donnees }, octets })
 }
 
 fn captures_valides(captures: &[CaptureDeLaPage]) -> R<Vec<Capture>> {
@@ -210,7 +212,7 @@ pub struct CaptureMontree {
 }
 
 /// Le corps exact qui part, si le caviardage a retire quelque chose, et les captures lues.
-fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<(Corps<CaptureQuiPart>, bool, Vec<usize>)> {
+fn corps_signalement(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<(Corps<CaptureQuiPart>, bool, Vec<Octets>)> {
     let texte = texte.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)).to_string();
     if texte.is_empty() {
         return Err(refus("Écrivez votre message avant d'envoyer."));
@@ -269,7 +271,7 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
         .captures
         .iter()
         .zip(&tailles)
-        .map(|(c, n)| CaptureMontree { genre: c.genre, donnees: format!("({} Ko, non affichés)", n.div_ceil(1024)) })
+        .map(|(c, n)| CaptureMontree { genre: c.genre, donnees: format!("({}, non affichés)", n) })
         .collect();
     let corps = Corps {
         texte: corps.texte,
@@ -315,7 +317,7 @@ pub struct Signalement {
     pub envoi: EnvoiDuMessage,
     pub numero: Option<NumeroDeRetour>,
     pub ticket: Option<socle::garde_reseau::Url>,
-    pub ticket_numero: Option<i64>,
+    pub ticket_numero: Option<crate::editeur::NumeroDeTicket>,
     pub reponse: Option<String>,
     #[serde(with = "socle::paris::ecrit::minute_utc::option")]
     pub repondu_le: Option<socle::paris::Moment>,
@@ -506,7 +508,7 @@ pub struct Enregistre {
 ///
 /// UN MEME MESSAGE NE S'ENREGISTRE QU'UNE FOIS (sinon il partirait deux fois, l'un « arrive », l'autre « pas encore
 /// parti, le contenu n'est plus sur cet ordinateur »). Deux gardes :
-/// - le meme texte avec les memes captures, enregistre depuis moins de `DOUBLON_SECONDES` (un double clic, une requete
+/// - le meme texte avec les memes captures, enregistre depuis moins de `DOUBLON` (un double clic, une requete
 ///   rejouee par la fenetre), n'ajoute pas de ligne : la route rend celle qui existe (`deja`) ;
 /// - le corps et sa ligne s'ecrivent sous le meme verrou, que l'effacement (`effacer_les_partis`) tient aussi : un
 ///   passage de `partir` lance par le premier envoi ne peut pas effacer le corps du second avant que sa ligne l'annonce.
@@ -533,7 +535,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         lu: None,
     };
     let ecrit = modifier(racine, |lignes| {
-        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || !maintenant.depuis(l.enregistre).is_some_and(|d| d.as_secs() >= DOUBLON_SECONDES as u64))) {
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || !maintenant.depuis(l.enregistre).is_some_and(|d| d >= DOUBLON))) {
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {
@@ -559,7 +561,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
 }
 
 /// Un message enregistre depuis moins de dix minutes, et identique, est le meme message.
-const DOUBLON_SECONDES: i64 = 600;
+const DOUBLON: std::time::Duration = std::time::Duration::from_secs(600);
 
 /// L'empreinte de ce qu'on a ecrit : le texte (caviarde) et les captures, rien de ce qui change d'une seconde a l'autre
 /// (incidents joints, version).

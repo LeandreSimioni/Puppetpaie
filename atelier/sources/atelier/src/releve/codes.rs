@@ -66,6 +66,7 @@ pub mod textes;
 pub use textes::{Domaine, Texte, TEXTES};
 
 use socle::echec::{Echec, R};
+use socle::temps::ecrit::secondes_dites;
 
 pub const BASE: &str = "https://echanges.dila.gouv.fr/OPENDATA/LEGI/";
 pub const GLOBAL: &str = "Freemium_legi_global_20250713-140000.tar.gz";
@@ -231,18 +232,19 @@ fn groupe<'a>(m: &Regex, t: &'a str) -> Option<&'a str> {
 // ------------------------------------------------------------------ la ligne de commande
 
 /// `moteur-atelier releve-codes ...` : rend le code de sortie.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     }
     let racine = Path::new(&args[1]);
     let aujourdhui = match droit::contexte::aujourdhui_sans_note() {
         Ok(j) => j,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            return 1;
+            return ExitCode::FAILURE;
         }
     };
     let r = match args[0].as_str() {
@@ -251,27 +253,19 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         "comparer" => comparer(racine, &dila::Reseau, &aujourdhui),
         v => {
             eprintln!("Verbe inconnu : {}\n\n{}", v, USAGE);
-            return 2;
+            return ExitCode::from(2);
         }
     };
     match r {
-        Ok(()) => 0,
+        Ok(()) => ExitCode::SUCCESS,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }
 
 // ------------------------------------------------------------------ moissonner
-
-/// Une duree en secondes entieres, la moitie au pair, pour le dire.
-pub(crate) fn secondes(d: std::time::Duration) -> String {
-    match socle::num::quotient(d.as_nanos(), 1_000_000_000, 0) {
-        Some(t) => t,
-        None => unreachable!("une seconde n'est pas nulle"),
-    }
-}
 
 /// Fait defiler une archive et garde les articles en vigueur ; rend (fichiers d'article des textes suivis, duree).
 ///
@@ -436,7 +430,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         let etat = EtatLegi { changes: Vec::new(), construit_le: jour, global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
         let mut ent: EntrepotLegi = Entrepot::neuf(&dossier, etat);
         let (vus, sec) = passer_le_global(&mut ent, &mut journal, source, None)?;
-        dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes(sec), ent.articles.len()));
+        dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes_dites(sec), ent.articles.len()));
         ent.sauver(jour)?;
         ent
     };
@@ -518,7 +512,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
 fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: Jour) -> R<()> {
     dire(&format!("== textes ajoutes depuis la construction : {} ==", absents.join(", ")));
     let (vus, sec) = passer_le_global(ent, journal, source, Some(absents))?;
-    dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes(sec)));
+    dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes_dites(sec)));
     let mut lues: Vec<LivraisonDila> = ent.lues().into_iter().collect();
     lues.sort();
     let urls: Vec<String> = lues.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
@@ -678,7 +672,7 @@ fn rapport_d_un_texte(dossier: &Path, cible: &Path, texte: &Texte) -> R<()> {
     // CE QUI RESTE A LIRE, quand un passage s'est interrompu. Un releve qui tairait la difference se donnerait pour
     // complet, et c'est precisement ce qu'on ne veut pas d'une source.
     if !meta.complet {
-        let reste = totales as i64 - lues as i64;
+        let reste = totales.checked_sub(lues).ok_or_else(|| refus!("{} : {} livraisons lues sur {}.", dossier.join("releve.json").display(), lues, totales))?;
         let au = match &meta.derniere_livraison {
             Some(l) => format!("au {}", l.jour().jj_mm_aaaa()),
             None => "avant toute livraison".to_string(),
@@ -787,7 +781,7 @@ fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<Ha
     dire(&format!(
         "  {} fichiers parcourus en {}s ; {}/{} versions anterieures retrouvees",
         vus,
-        secondes(t0.elapsed()),
+        secondes_dites(t0.elapsed()),
         trouves.len(),
         vise.len()
     ));

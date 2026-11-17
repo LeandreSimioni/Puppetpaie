@@ -12,6 +12,7 @@ use crate::description::{
     PoliceFixe, Refus, Repere, Rvb, CORPS_PLANCHER,
 };
 use crate::dessin::{Dessin, Famille, Image, Polices, Style};
+use crate::mesure;
 use crate::mesure::Mesure;
 
 /// La marge des comparaisons de hauteurs (un centième de millimètre) : un bloc qui dépasse la place de moins que
@@ -317,7 +318,7 @@ impl Paragraphe {
         for st in styles {
             let p = st.corps * self.interligne;
             let (asc, desc) = (ctx.polices.ascendante(&st), ctx.polices.descendante(&st));
-            let demi = (p - (asc + desc)) / 2;
+            let demi = (p - (asc + desc)) * mesure!("0.5");
             pas = pas.max(p);
             base = base.max(demi + asc);
         }
@@ -346,14 +347,14 @@ impl Paragraphe {
             if !ligne.runs.is_empty() {
                 let decalage = match self.alignement {
                     Alignement::Gauche | Alignement::Justifie => Mesure::ZERO,
-                    Alignement::Centre => (max - ligne.largeur) / 2,
+                    Alignement::Centre => (max - ligne.largeur) * mesure!("0.5"),
                     Alignement::Droite => max - ligne.largeur,
                 };
                 let mut espace = Mesure::ZERO;
                 if self.alignement == Alignement::Justifie && !ligne.fin && ligne.espaces > 0 {
                     let reste = max - ligne.largeur;
                     if reste > Mesure::ZERO {
-                        espace = reste / ligne.espaces as i64;
+                        espace = reste.divisee_par(ligne.espaces as i64);
                     }
                 }
                 let morceaux: Vec<(Style, &str)> = ligne.runs.iter().map(|m| (m.style, m.texte.as_str())).collect();
@@ -451,7 +452,7 @@ impl Fixe {
                 let largeur = ctx.polices.largeur(style, texte);
                 let x = match alignement {
                     Alignement::Droite => *x - largeur,
-                    Alignement::Centre => *x - largeur / 2,
+                    Alignement::Centre => *x - largeur * mesure!("0.5"),
                     _ => *x,
                 };
                 poser_texte(ctx, dessin, page, x, *y - ctx.polices.ascendante(style), *style, texte);
@@ -614,7 +615,7 @@ impl Colonnes {
             let mut colonne = zone.decalee(x, self.avant);
             colonne.l = lc;
             if let Some((couleur, e)) = self.filet {
-                let y = colonne.y + e / 2;
+                let y = colonne.y + e * mesure!("0.5");
                 dessin.trait_(&[(colonne.x, y), (colonne.x + lc, y)], e, couleur);
             }
             let mut dedans = colonne.decalee(Mesure::ZERO, epaisseur + self.marge_haut);
@@ -708,10 +709,10 @@ impl Tableau {
             let haut: Option<Filet> = l.filet_haut;
             let bas: Option<Filet> = l.filet_bas.or(if *corps { self.filet_lignes } else { None });
             if let Some((c, e)) = haut {
-                dessin.trait_(&[(x0, y0 + e / 2), (x0 + self.largeur, y0 + e / 2)], e, c);
+                dessin.trait_(&[(x0, y0 + e * mesure!("0.5")), (x0 + self.largeur, y0 + e * mesure!("0.5"))], e, c);
             }
             if let Some((c, e)) = bas {
-                let yb = y0 + *h - e / 2;
+                let yb = y0 + *h - e * mesure!("0.5");
                 dessin.trait_(&[(x0, yb), (x0 + self.largeur, yb)], e, c);
             }
         }
@@ -813,7 +814,7 @@ impl Decor {
                 let l = ctx.polices.largeur(&r.style, &texte);
                 let x = match ou {
                     0 => gauche,
-                    1 => (gauche + fin) / 2 - l / 2,
+                    1 => (gauche + fin) * mesure!("0.5") - l * mesure!("0.5"),
                     _ => fin - l,
                 };
                 poser_texte(ctx, dessin, page, x, y, r.style, &texte);
@@ -935,7 +936,7 @@ fn construire(
             let style = match largeur_max {
                 Some(place) => {
                     let largeur = ctx.polices.largeur(&style, &texte);
-                    match taille.fois_rapport(place.en_millioniemes(), largeur.en_millioniemes()) {
+                    match taille.fois_rapport(*place, largeur) {
                         Some(reduit) if largeur > *place => style.corps(reduit.max(CORPS_PLANCHER)),
                         _ => style,
                     }
@@ -960,13 +961,13 @@ fn construire(
             let mut image = charger_image(chemin, *l, ou, "image")?;
             let mut largeur_image = *l;
             if image.hauteur() > *h + EPS {
-                if let Some(reduite) = l.fois_rapport(h.en_millioniemes(), image.hauteur().en_millioniemes()) {
+                if let Some(reduite) = l.fois_rapport(*h, image.hauteur()) {
                     largeur_image = reduite;
                     image = charger_image(chemin, largeur_image, ou, "image")?;
                 }
             }
             let (dx, dy) =
-                if *centree { ((*l - largeur_image) / 2, (*h - image.hauteur()) / 2) } else { (Mesure::ZERO, Mesure::ZERO) };
+                if *centree { ((*l - largeur_image) * mesure!("0.5"), (*h - image.hauteur()) * mesure!("0.5")) } else { (Mesure::ZERO, Mesure::ZERO) };
             Noeud::Fixe(Fixe {
                 origine: cadre.origine,
                 page: cadre.page,

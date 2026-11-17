@@ -1,6 +1,6 @@
 //! L'arithmetique decimale a 28 chiffres significatifs, au pair sur le demi, apres chaque operation, avec un exposant
 //! qui peut depasser 28 decimales (`0.08333333333333333333333333334`), ce que `rust_decimal` ne sait pas porter : celle
-//! de toute la paie (`num::add`, `sub`, `mul`, `div` passent par elle) et des clauses des conventions (`droit::clauses`).
+//! de toute la paie (`num::add`, `sub`, `mul`, `div` passent par elle).
 
 use rust_decimal::Decimal;
 use std::cmp::Ordering;
@@ -9,8 +9,8 @@ use std::fmt;
 /// `m * 10^-e`.
 #[derive(Clone, Copy, Debug)]
 pub struct P {
-    pub m: i128,
-    pub e: i32,
+    pub(crate) m: i128,
+    pub(crate) e: i32,
 }
 
 fn chiffres(m: i128) -> u32 {
@@ -25,8 +25,9 @@ fn dix(k: u32) -> Option<i128> {
     10i128.checked_pow(k)
 }
 
-/// Arrondit a 28 chiffres significatifs, au pair sur le demi.
-fn arrondi28(m: i128, e: i32) -> P {
+/// Arrondit a 28 chiffres significatifs, au pair sur le demi (aussi l'ecriture d'une fraction exacte,
+/// `fraction::Fraction::en_decimal`).
+pub(crate) fn arrondi28(m: i128, e: i32) -> P {
     let n = chiffres(m);
     if n <= 28 {
         return P { m, e };
@@ -103,12 +104,6 @@ pub(crate) fn reduire(x: P, e: i32) -> P {
 }
 
 impl P {
-    pub const ZERO: P = P { m: 0, e: 0 };
-
-    pub fn entier(n: i64) -> P {
-        P { m: n as i128, e: 0 }
-    }
-
     pub fn depuis(d: Decimal) -> P {
         P { m: d.mantissa(), e: d.scale() as i32 }
     }
@@ -177,51 +172,6 @@ impl P {
             }
         }
         arrondi28(q * (self.m.signum() * o.m.signum()), s)
-    }
-
-    /// Arrondi à `dp` décimales, au pair sur le demi ; un nombre trop grand pour s'écrire à `dp` décimales se refuse.
-    pub fn quantifier(self, dp: i32) -> crate::echec::R<P> {
-        if self.e > dp {
-            return Ok(reduire(self, dp));
-        }
-        let m = match u32::try_from(i64::from(dp) - i64::from(self.e)) {
-            Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
-            Err(_) => None,
-        };
-        match m {
-            Some(m) => Ok(P { m, e: dp }),
-            None => Err(crate::refus!("Le nombre {} est trop grand pour s'écrire à {} décimales : le signaler au développeur.", self, dp)),
-        }
-    }
-
-    /// Un montant au centime, la regle de `grandeurs::Montant::au_centime` (la moitie vers le haut, le negatif comme son
-    /// oppose, deux decimales ecrites), sur le `P` exact, une fois : sans passer par les 28 decimales d'un `Decimal`.
-    pub fn au_centime(self) -> crate::echec::R<P> {
-        if self.e <= 2 {
-            let m = match u32::try_from(2i64 - i64::from(self.e)) {
-                Ok(k) => dix(k).and_then(|p| self.m.checked_mul(p)),
-                Err(_) => None,
-            };
-            return match m {
-                Some(m) => Ok(P { m, e: 2 }),
-                None => Err(crate::refus!("Le montant {} est trop grand pour s'écrire au centime : le signaler au développeur.", self)),
-            };
-        }
-        // Au-dela de 10^38, |m| (28 chiffres au plus) est sous la moitie du diviseur : le centime est zero, exactement.
-        let Some(p) = 10i128.checked_pow((self.e - 2) as u32) else { return Ok(P { m: 0, e: 2 }) };
-        let (mut q, r) = (self.m / p, (self.m % p).abs());
-        if r >= p - r {
-            q += self.m.signum();
-        }
-        Ok(P { m: q, e: 2 })
-    }
-
-    /// `to_integral_value(rounding=ROUND_FLOOR)`.
-    pub fn plancher(self) -> P {
-        if self.e <= 0 {
-            return self;
-        }
-        P { m: self.m.div_euclid(10i128.pow(self.e as u32)), e: 0 }
     }
 }
 

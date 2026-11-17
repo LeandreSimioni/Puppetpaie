@@ -28,7 +28,7 @@ const JOUR: &str = "2026-10-03";
 
 /// `JOUR`, en jour.
 fn le_jour() -> socle::date::Jour {
-    socle::date::Jour::nouveau(2026, 10, 3).unwrap()
+    crate::outils::le_jour(JOUR)
 }
 
 fn route(racine: &Path, nom: &str, charge: Value) -> Value {
@@ -290,8 +290,8 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!(importes.len(), 1, "{:?}", importes);
     let i = &importes[0];
     assert_eq!((i.objet().carte().numero.as_ref().map(engagement::numeros::NumeroContrat::as_str), i.objet().carte().fin.map(|j| j.iso())), (Some("FU1.26.01"), Some("2026-12-03".to_string())));
-    let paie = i.paies()[&socle::mois::Mois::nouveau(2026, 11).unwrap()].clone();
-    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(|n| n.decimal().to_string())), (false, Some("212.30".to_string())), "{:?}", paie);
+    let paie = i.paies()[&crate::outils::le_mois("2026-11")].clone();
+    assert_eq!((paie.contrat.d_un_bulletin(), paie.net_a_payer.map(socle::grandeurs::ecrit::texte::dit)), (false, Some("212.30".to_string())), "{:?}", paie);
     assert!(paie.bulletin.is_some(), "le bulletin ne complete pas la paie de la DSN : {:?}", paie);
 
     let avant = engagements_ecrits(&racine);
@@ -299,7 +299,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     assert_eq!(route("retirer-engagement", json!({"mois": "2026-11", "engagement": {"salarie": "FULLER", "debut": "2026-11-21", "rang": 0}, "confirme": false}))["ok"], json!(false));
     // Le mois importe le dit des l'ouverture, et une carte neuve ne s'y ecrit pas.
     assert!(reussi(&route("saisie", json!({"mois": "2026-11"})))["ferme_aux_neufs"].is_string());
-    let neuve = json!({"mois": "2026-11", "carte": {"neuve": "cddu_spectacle"}, "changements": [{"case": "salarie", "valeur": "FULLER"}, {"case": "lignes", "valeur": [{"rubrique": "cachet", "quantite": 1, "taux": 150, "lieu": null, "dates": ["2026-11-25"], "planning": []}]}]});
+    let neuve = json!({"mois": "2026-11", "carte": {"neuve": "cddu_spectacle"}, "changements": [{"case": "salarie", "valeur": "FULLER"}, {"case": "lignes", "valeur": [{"rubrique": "cachet", "quantite": {"cachets": 1}, "taux": 150, "lieu": null, "dates": ["2026-11-25"], "planning": []}]}]});
     assert_eq!(route("enregistrer-saisie", neuve)["ok"], json!(false));
     assert_eq!(engagements_ecrits(&racine), avant);
 
@@ -315,7 +315,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     let c = &r["contrats"][0];
     assert_eq!((c["contrat"]["du"].clone(), c["contrat"]["au"].clone(), c["numero"].clone()), (json!("2026-11-20"), json!("2026-12-03"), json!("FU1.26.01")), "{}", r);
     let mut e = c["engagement"].clone();
-    e["lignes"] = json!([{"rubrique": "cachet", "quantite": 2, "taux": 150, "lieu": null, "dates": ["2026-12-02", "2026-12-03"], "planning": []}]);
+    e["lignes"] = json!([{"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": ["2026-12-02", "2026-12-03"], "planning": []}]);
     reussi(&crate::outils::valider(&racine, "2026-12", None, &e, jour));
     // Le contrat a ete signe dans l'ancien logiciel : il ne se refait pas signer ici.
     let signature = reussi(&route("signature-apercu", json!({"mois": "2026-12"}))).clone();
@@ -387,9 +387,9 @@ fn les_certificats_conges_spectacles_seuls_puis_avec_les_bulletins() {
     for c in &contrats {
         assert_eq!(c["atteste_par"], json!("certificat"));
         assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
-        let attendu = if c["salarie"] == json!(a) { (2, 0, "590.00") } else { (0, 3, "468.00") };
+        let attendu = if c["salarie"] == json!(a) { json!([2, 0, "590.00"]) } else { json!([0, 3, "468.00"]) };
         assert!(c["salarie"] == json!(a) || c["salarie"] == json!(t), "{}", c);
-        assert_eq!((c["cachets"].as_i64().unwrap(), c["jours"].as_i64().unwrap(), c["brut"].as_str().unwrap()), attendu, "{}", c);
+        assert_eq!(json!([c["cachets"], c["jours"], c["brut"]]), attendu, "{}", c);
     }
     // Reimporte : rien de neuf.
     reussi(&route(&racine, "importer", json!({})));
@@ -482,9 +482,8 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     for c in &contrats {
         assert_eq!((&c["atteste_par"], &c["numero_objet"]), (&json!("AEM"), &json!("999Z99999901")), "{}", c);
         assert_eq!(c["periode"], json!({"du": "2026-01-14", "au": "2026-01-24"}));
-        let attendu = if c["salarie"] == json!(a) { (0, 2, 2, "590.40") } else { (0, 0, 3, "468.15") };
-        let n = |k: &str| c[k].as_i64().unwrap();
-        assert_eq!((n("heures"), n("cachets"), n("jours"), c["brut"].as_str().unwrap()), attendu, "{}", c);
+        let attendu = if c["salarie"] == json!(a) { json!([0, 2, 2, "590.40"]) } else { json!([0, 0, 3, "468.15"]) };
+        assert_eq!(json!([c["heures"], c["cachets"], c["jours"], c["brut"]]), attendu, "{}", c);
     }
     reussi(&route(&racine, "importer", json!({})));
     assert_eq!(contrats_importes(&racine).len(), 2);
@@ -504,7 +503,7 @@ fn les_aem_en_pdf_seules_et_le_contrat_d_un_certificat_que_le_bulletin_remplace(
     let contrats = contrats_importes(&racine);
     assert_eq!(contrats.len(), 1, "{:?}", contrats);
     assert_eq!(contrats[0]["atteste_par"], json!("bulletin"), "{}", contrats[0]);
-    assert!(contrats[0]["heures"].as_i64().unwrap() > 0, "{}", contrats[0]);
+    assert!(contrats[0]["heures"].is_u64() && contrats[0]["heures"] != json!(0), "{}", contrats[0]);
     assert_eq!(engagement::importe::tous(&racine).unwrap().len(), 1, "un engagement, pas deux");
 }
 
@@ -520,16 +519,17 @@ fn le_bulletin_d_un_mois_ne_remplace_que_ce_mois_du_certificat_et_l_emporte_sur_
         c
     };
     let attendus = |racine: &Path| {
-        let mut contrats: Vec<(String, String, String, i64, String)> = contrats_importes(racine)
+        // Les cachets tels que le contrat importe les ecrit.
+        let mut contrats: Vec<(String, String, String, String, String)> = contrats_importes(racine)
             .iter()
-            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].as_i64().unwrap(), c["brut"].as_str().unwrap().into()))
+            .map(|c| (c["atteste_par"].as_str().unwrap().into(), c["periode"]["du"].as_str().unwrap().into(), c["periode"]["au"].as_str().unwrap().into(), c["cachets"].to_string(), c["brut"].as_str().unwrap().into()))
             .collect();
         contrats.sort();
         assert_eq!(
             contrats,
             vec![
-                ("bulletin".into(), "2026-01-14".into(), "2026-01-24".into(), 2, "590.00".into()),
-                ("certificat".into(), "2026-02-01".into(), "2026-02-05".into(), 2, "310.00".into()),
+                ("bulletin".into(), "2026-01-14".into(), "2026-01-24".into(), "2".into(), "590.00".into()),
+                ("certificat".into(), "2026-02-01".into(), "2026-02-05".into(), "2".into(), "310.00".into()),
             ]
         );
     };

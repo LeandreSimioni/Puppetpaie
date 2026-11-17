@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
-use socle::mois::Annee;
+use socle::mois::{Annee, RangDansLAnnee};
 
 use crate::departs::Departs;
 use crate::stock::{self, Objet};
@@ -93,22 +93,15 @@ impl NumeroContrat {
     /// L'annee (2000 + les deux chiffres) et le rang d'un numero que `former` a donne (`FA1.26.16`) ; `None` pour un
     /// numero d'une autre forme (un contrat repris d'un autre logiciel). Le rang ne sort pas d'ici : il ne sert qu'a
     /// trouver le plus haut numero pris (`derniers_pris`) et a donner le suivant (`former`).
-    fn annee_et_rang(&self) -> Option<(Annee, u32)> {
+    fn annee_et_rang(&self) -> Option<(Annee, RangDansLAnnee)> {
+        use socle::piece::{format, Zone};
         let (tete, rang) = self.0.rsplit_once('.')?;
         let (_, yy) = tete.rsplit_once('.')?;
-        if yy.len() != 2 {
-            return None;
-        }
-        // Deux chiffres : de 2000 a 2099, toujours une annee du calendrier.
-        let annee = match Annee::nouvelle(2000 + socle::num::entier_de_chiffres(yy)?) {
-            Ok(a) => a,
-            Err(_) => return None,
-        };
-        Some((annee, u32::try_from(socle::num::entier_de_chiffres(rang)?).ok()?))
+        Some((Zone::lue(yy, format::Aa).valeur()?, Zone::lue(rang, format::Rang).valeur()?))
     }
 
     /// Son rang dans l'annee `annee`, s'il est un numero que `former` a donne cette annee-la.
-    fn rang_en(&self, annee: Annee) -> Option<u32> {
+    fn rang_en(&self, annee: Annee) -> Option<RangDansLAnnee> {
         self.annee_et_rang().filter(|(a, _)| *a == annee).map(|(_, r)| r)
     }
 }
@@ -126,18 +119,19 @@ impl From<NumeroContrat> for String {
 }
 
 /// LE NUMERO D'UN CERTIFICAT CONGES SPECTACLES (N CE) : un nombre, le premier des certificats d'une paie partie
-/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent.
+/// (`paie_ecrite::PaieEcrite::ce`), ecrit et lu tel quel ; les suivants le continuent. La suite commence a un : zero
+/// n'en est pas un, et se refuse a la lecture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct NumeroDeCertificat(i64);
+pub struct NumeroDeCertificat(std::num::NonZeroU64);
 
 impl NumeroDeCertificat {
     /// Le premier numero de la suite.
-    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(1);
+    pub const PREMIER: NumeroDeCertificat = NumeroDeCertificat(std::num::NonZeroU64::MIN);
 
     /// Le numero qui le suit dans la sequence continue des certificats.
     pub fn suivant(self) -> NumeroDeCertificat {
-        NumeroDeCertificat(self.0 + 1)
+        NumeroDeCertificat(self.0.saturating_add(1))
     }
 
     /// La suite des numeros a partir de celui-ci, lui compris : elle se zippe avec les certificats qu'elle numerote.
@@ -161,7 +155,7 @@ impl std::fmt::Display for NumeroDeCertificat {
 #[serde(into = "String")]
 pub struct NumeroDeBulletin {
     annee: Annee,
-    rang: u32,
+    rang: RangDansLAnnee,
 }
 
 impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
@@ -173,25 +167,26 @@ impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
 impl NumeroDeBulletin {
     /// Le numero ecrit `texte` : des chiffres, `/`, l'annee en quatre chiffres ; toute autre forme se refuse.
     pub fn lire(texte: &str) -> R<NumeroDeBulletin> {
+        use socle::piece::{format, Zone};
         let lu = texte.split_once('/').and_then(|(n, an)| {
-            let rang = u32::try_from(socle::num::entier_de_chiffres(n)?).ok()?;
-            let annee = if an.len() == 4 { socle::num::entier_de_chiffres(an) } else { None }?;
+            let rang = Zone::lue(n, format::Rang).valeur()?;
+            let annee = if an.len() == 4 { Zone::lue(an, format::AnneeEnChiffres).valeur() } else { None }?;
             Some((rang, annee))
         });
         match lu {
-            Some((rang, annee)) => Ok(NumeroDeBulletin { annee: Annee::nouvelle(annee)?, rang }),
+            Some((rang, annee)) => Ok(NumeroDeBulletin { annee: annee?, rang }),
             None => Err(socle::refus!("« {} » n'est pas un numéro de bulletin : son rang, « / », puis l'année en quatre chiffres (12/2026)", texte)),
         }
     }
 
     /// Le premier bulletin de l'annee `annee` (`1/AAAA`).
     pub fn premier(annee: Annee) -> NumeroDeBulletin {
-        NumeroDeBulletin { annee, rang: 1 }
+        NumeroDeBulletin { annee, rang: RangDansLAnnee::PREMIER }
     }
 
     /// Le bulletin qui le suit dans la suite de son annee.
     pub fn suivant(&self) -> NumeroDeBulletin {
-        NumeroDeBulletin { annee: self.annee, rang: self.rang + 1 }
+        NumeroDeBulletin { annee: self.annee, rang: self.rang.suivant() }
     }
 
     /// Son annee.
@@ -258,8 +253,8 @@ pub fn le_contrat(numero: Option<&NumeroContrat>, salarie: &IdSalarie) -> String
 pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: Annee, dernier: Option<&NumeroContrat>) -> R<NumeroContrat> {
     use droit::fiche::Lue;
     let rang = match dernier {
-        Some(d) => d.rang_en(annee).ok_or_else(|| socle::refus!("Défaut du logiciel : le contrat n° {} n'est pas un numéro de {} donné par le logiciel ; aucun numéro ne le suit.", d, annee))? + 1,
-        None => 1,
+        Some(d) => d.rang_en(annee).ok_or_else(|| socle::refus!("Défaut du logiciel : le contrat n° {} n'est pas un numéro de {} donné par le logiciel ; aucun numéro ne le suit.", d, annee))?.suivant(),
+        None => RangDansLAnnee::PREMIER,
     };
     let an = annee.to_string();
     NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], rang))
@@ -454,7 +449,7 @@ mod tests {
         let fiche = |initiales: &str| -> droit::fiche::ChampsSalarie {
             socle::forme::lire_texte(&format!(r#"{{"initiales_contrat": "{}", "code_salarie": "1"}}"#, initiales), "fiche").unwrap()
         };
-        let an = Annee::constante(2026);
+        let an: Annee = socle::forme::lire_texte("2026", "l'annee du test").unwrap();
         assert_eq!(former(&fiche("FA"), an, None).ok().map(String::from), Some("FA1.26.01".to_string()));
         assert_eq!(former(&fiche("FA"), an, Some(&n)).ok().map(String::from), Some("FA1.26.14".to_string()));
         assert!(former(&fiche("F#"), an, None).is_err());

@@ -12,7 +12,7 @@ use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
-use socle::paris::Moment;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "retours",
@@ -27,29 +27,13 @@ pub static SPEC: Spec = Spec {
     ],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     super::code(faire(cadre, args))
 }
 
-/// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
-fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
-    let a = |t: &socle::ligne::Argument, h: i64, m: i64, s: i64| {
-        let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
-        Moment::a_paris(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
-    };
-    let fin = match args.tape("jusqu-a") {
-        Some(j) => a(j, 23, 59, 59)?,
-        None => socle::temps::secondes(),
-    };
-    let debut = match args.tape("depuis") {
-        Some(j) => a(j, 0, 0, 0)?,
-        None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
-    };
-    Ok((debut, fin))
-}
-
-fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let (debut, fin) = plage(args)?;
+fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
+    // La plage : `--depuis` et `--jusqu-a`, celle du moteur.
+    let (debut, fin) = moteur::commandes::depots::fenetre(args)?;
     let dpae = args.drapeau("dpae");
     refuser_si_pas_redirige(cadre, if dpae { Organisme::Dpae } else { Organisme::Dsn }, "la releve des retours")?;
     cadre.ouvrir_le_coffre();
@@ -94,5 +78,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             dire!("  {}", a.chemin.display());
         }
     }
-    Ok(if r.incidents.is_empty() { 0 } else { 1 })
+    Ok(if r.incidents.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }

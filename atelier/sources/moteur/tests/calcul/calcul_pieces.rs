@@ -2,7 +2,7 @@
 //! une grille (par empreinte, en entier pour quelques groupes). Les refus sont des attendus.
 //! `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit l'oracle.
 
-use crate::outils::{dec, dossier_de_test, lire_oracle, oracle, sceller};
+use crate::outils::{dossier_de_test, grandeur, lire_oracle, oracle, sceller};
 use droit::catalogue::{code_54, rubrique};
 use droit::reduction::{au_dela_du_seuil, reduction_generale};
 use serde_json::{json, Value};
@@ -10,21 +10,13 @@ use socle::grandeurs::{Coefficient, Heures, Montant};
 
 const ORACLE: &str = "calcul-pieces.json";
 
-/// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
-fn decimal(v: &Value) -> socle::echec::R<rust_decimal::Decimal> {
-    match v {
-        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
-            Ok(l) => l.decimal(),
-            Err(e) => match e {},
-        },
-        autre => Err(socle::refus!("nombre attendu, lu {}", autre)),
-    }
-}
-
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
 fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
     Ok(match v {
-        Value::Number(_) => Value::String(socle::num::nombre(decimal(v)?)),
+        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
+            Ok(l) => Value::String(l.sans_zero()?),
+            Err(e) => match e {},
+        },
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
         Value::Object(o) => Value::Object(
             o.iter()
@@ -37,7 +29,7 @@ fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
 }
 
 /// La section `reduction_generale` d'un bareme de la grille, lue comme la pile la lit.
-fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ReductionGenerale>> {
+fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ParametresDeLaReduction>> {
     bar.get("reduction_generale").filter(|v| !v.is_null()).map(|v| socle::forme::lire(v, "section illisible")).transpose()
 }
 
@@ -60,7 +52,7 @@ fn le_code_du_bloc_54() {
     let racine = dossier_de_test("calcul_pieces", "code_54");
     let mut refus = 0;
     for c in cas.as_array_mut().unwrap() {
-        let r = rubrique(&racine, &droit::catalogue::CodeDeRubrique::lire(c[0].as_str().unwrap()).unwrap(), &socle::date::Jour::nouveau(2026, 10, 28).unwrap()).unwrap();
+        let r = rubrique(&racine, &droit::catalogue::CodeDeRubrique::lire(c[0].as_str().unwrap()).unwrap(), &crate::outils::le_jour("2026-10-28")).unwrap();
         let vu = socle::forme::lire::<Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>>(&c[1]["genre"], "La ligne ne se lit pas.").and_then(|g| code_54(&r, g));
         refus += vu.is_err() as usize;
         c[2] = essai(vu.map(|o| o.map_or(Value::Null, |a| Value::String(a.code().to_string()))));
@@ -101,7 +93,7 @@ fn la_reduction_generale() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), caisse));
+            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut, grandeur::<Montant>(b.as_str().unwrap()), grandeur::<Heures>(h), caisse));
             appliquees += matches!(r, Ok(Some(_))) as usize;
             vus.push(essai(r.map(|o| o.map_or(Value::Null, |x| socle::ecriture::en_valeur(&x)))));
         }
@@ -124,9 +116,9 @@ fn le_seuil_de_smic() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(decimal).transpose();
+            let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(|s| socle::forme::lire::<Coefficient>(s, "seuil illisible")).transpose();
             vus.push(essai(section(bar).and_then(|rg| match seuil? {
-                Some(s) => au_dela_du_seuil(rg.as_ref(), Montant::du_decimal(dec(b.as_str().unwrap())), Heures::du_decimal(dec(h)), Coefficient::du_decimal(s)),
+                Some(s) => au_dela_du_seuil(rg.as_ref(), grandeur::<Montant>(b.as_str().unwrap()), grandeur::<Heures>(h), s),
                 None => Ok(true),
             }).map(Value::Bool)));
         }

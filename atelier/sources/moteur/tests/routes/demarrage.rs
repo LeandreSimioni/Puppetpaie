@@ -23,7 +23,7 @@ const JOUR: &str = "2026-11-02";
 
 /// `JOUR`, en jour.
 fn le_jour() -> socle::date::Jour {
-    socle::date::Jour::nouveau(2026, 11, 2).unwrap()
+    crate::outils::le_jour(JOUR)
 }
 
 fn neuve(test: &str) -> PathBuf {

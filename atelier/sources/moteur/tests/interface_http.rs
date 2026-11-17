@@ -1,5 +1,6 @@
 //! `moteur interface` : le lanceur refuse en phrase et un corps trop gros se dit en JSON. Le journal de la fenetre
 //! va dans un dossier utilisateur sous `CARGO_TARGET_TMPDIR`, jamais celui du poste ; le serveur n'ecoute que sur 127.0.0.1.
+#![forbid(unsafe_code)]
 
 use moteur::interface::demarrer_sur;
 use std::path::Path;
@@ -53,7 +54,7 @@ fn requete_brute(port: u16, brut: &str) -> (u16, String) {
 #[test]
 fn le_lanceur_refuse_en_phrase_et_un_corps_trop_gros_se_dit_en_json() {
     let (_verrou, utilisateur) = utilisateur();
-    let (_f, port) = demarrer_sur(0, 0).unwrap();
+    let (_f, port) = demarrer_sur(std::time::Duration::ZERO, 0).unwrap();
     let (code, corps) = requete_brute(port, "POST /lanceur/choisir HTTP/1.1\r\nHost: x\r\nContent-Length: 2\r\n\r\n[]");
     assert_eq!(code, 403);
     let v: serde_json::Value = serde_json::from_str(&corps).unwrap();

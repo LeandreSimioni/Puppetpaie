@@ -1,5 +1,52 @@
 //! Le texte : le blanc, les accents, la cle de recherche.
 
+/// UNE PHRASE DITE AUX GENS : ce que le moteur compose pour qu'une personne le lise (la phrase que rend une route, un
+/// conseil, un avis). Elle se compose par `socle::phrase!` (comme `format!`), ou d'un texte fixe (`fixe`) ; un nombre y entre par l'ecriture de sa grandeur (`euros`, `virgule`, `par_milliers`…). Elle s'ecrit en
+/// texte, telle quelle (serde, `Display`), et ne se rouvre pas : une phrase en cite une autre par `Display`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Phrase(String);
+
+impl Phrase {
+    /// Une phrase ecrite telle quelle dans le moteur.
+    pub fn fixe(t: &'static str) -> Phrase {
+        Phrase(t.to_string())
+    }
+
+    /// Une phrase composee : la porte de `socle::phrase!`, qui seule l'appelle (`format_args!`).
+    #[doc(hidden)]
+    pub fn de_format(a: std::fmt::Arguments<'_>) -> Phrase {
+        Phrase(a.to_string())
+    }
+
+    /// Ne dit-elle rien (vide, ou des blancs seuls) ?
+    pub fn est_vide(&self) -> bool {
+        self.0.trim().is_empty()
+    }
+
+    /// LES PHRASES `phrases` MISES BOUT A BOUT, separees par `separateur` : une phrase en suit une autre sans se rouvrir.
+    pub fn jointes(phrases: impl IntoIterator<Item = Phrase>, separateur: &str) -> Phrase {
+        Phrase(phrases.into_iter().map(|p| p.0).collect::<Vec<_>>().join(separateur))
+    }
+}
+
+impl std::fmt::Display for Phrase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl serde::Serialize for Phrase {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Phrase {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Phrase, D::Error> {
+        <String as serde::Deserialize>::deserialize(d).map(Phrase)
+    }
+}
+
 /// Le blanc d'Unicode (`char::is_whitespace`), plus `\x1c` a `\x1f` : ce qu'on retire autour d'une valeur lue et ce qui
 /// separe les mots.
 pub fn blanc(c: char) -> bool {
@@ -191,7 +238,7 @@ pub fn salarie_nomme(nom: Option<&str>, nom_affichage: Option<&str>, prenom: Opt
 /// porte). Un fichier déclaré (DSN, bordereau, format d'un organisme) écrit ses montants dans la forme que sa norme impose.
 pub fn euros<E: EnEuros>(x: E) -> String {
     // Le signe est celui du montant au centime : ce qui s'arrondit a zero n'en a plus.
-    let c = au_centime(x.decimal_ecrit());
+    let c = au_centime(x.decimal_ecrit(scelle::JETON));
     format!("{}\u{a0}€", aux_centimes(c.is_sign_negative(), c.abs(), '\u{a0}'))
 }
 
@@ -199,13 +246,28 @@ pub fn euros<E: EnEuros>(x: E) -> String {
 /// « 1 234,50 », au centime (`Montant::au_centime`), la virgule décimale, les milliers séparés par une espace ordinaire,
 /// sans « € » ; le signe est celui de l'original (`-0,00` pour un retrait qui s'arrondit à zéro).
 pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
-    chiffres(x.decimal_ecrit())
+    chiffres(x.decimal_ecrit(scelle::JETON))
 }
 
 /// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
 /// comme `chiffres_en_euros` : « 1 234,50 », au centième, sans unité.
 pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {
-    chiffres(h.decimal())
+    chiffres(crate::grandeurs::decimal(h))
+}
+
+/// UN TAUX DANS UNE COLONNE DE MONTANTS D'UN BULLETIN (le taux personnalisé du prélèvement à la source), écrit comme
+/// `chiffres_en_euros` : « 7,50 », au centième, sans « % ».
+pub fn chiffres_de_taux(t: crate::grandeurs::Taux) -> String {
+    chiffres(crate::grandeurs::decimal(t))
+}
+
+/// UN TAUX TEL QUE LE BULLETIN L'IMPRIME dans sa colonne de taux : trois décimales écrites, la moitié au pair (aucun
+/// texte déposé ne dit l'arrondi d'un taux imprimé), la virgule décimale, le signe de l'original (« 9,100 », « -0,500 »).
+pub fn taux_au_millieme(t: crate::grandeurs::Taux) -> String {
+    let x = crate::grandeurs::decimal(t);
+    let mut r = x.abs().round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven);
+    r.rescale(3);
+    format!("{}{}", if x.is_sign_negative() { "-" } else { "" }, r.to_string().replace('.', ","))
 }
 
 /// L'écriture de `chiffres_en_euros` et de `chiffres_d_heures` : au centième, le signe de l'original, les milliers
@@ -216,7 +278,7 @@ fn chiffres(d: rust_decimal::Decimal) -> String {
 
 /// Le decimal `d` au centime, par l'arrondi d'un montant (`Montant::au_centime`), ses deux decimales ecrites.
 fn au_centime(d: rust_decimal::Decimal) -> rust_decimal::Decimal {
-    crate::grandeurs::Montant::du_decimal(d).au_centime().decimal()
+    crate::grandeurs::decimal(crate::grandeurs::du_decimal::<crate::grandeurs::Montant>(d).au_centime())
 }
 
 /// Les chiffres d'un montant au centime `c`, positif, precedes de « - » si `negatif`, les milliers separes par
@@ -235,20 +297,26 @@ fn aux_centimes(negatif: bool, c: rust_decimal::Decimal, separateur: char) -> St
 pub trait EnEuros: scelle::EnEuros {}
 
 mod scelle {
+    /// Le jeton de `decimal_ecrit` : il ne se fabrique qu'ici (`JETON`), et la methode ne s'appelle pas hors de ce
+    /// module, meme par un generique qui prend `EnEuros`.
+    pub struct Jeton(());
+
+    pub(super) const JETON: Jeton = Jeton(());
+
     /// Son decimal, que seuls `euros` et `chiffres_en_euros` ecrivent.
     pub trait EnEuros {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal;
+        fn decimal_ecrit(self, jeton: Jeton) -> rust_decimal::Decimal;
     }
 
     impl EnEuros for crate::grandeurs::Montant {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal {
-            self.decimal()
+        fn decimal_ecrit(self, _: Jeton) -> rust_decimal::Decimal {
+            crate::grandeurs::decimal(self)
         }
     }
 
     impl EnEuros for crate::grandeurs::MontantUnitaire {
-        fn decimal_ecrit(self) -> rust_decimal::Decimal {
-            self.decimal()
+        fn decimal_ecrit(self, _: Jeton) -> rust_decimal::Decimal {
+            crate::grandeurs::decimal(self)
         }
     }
 }
@@ -259,7 +327,7 @@ impl EnEuros for crate::grandeurs::MontantUnitaire {}
 /// UN POURCENTAGE TEL QU'ON LE LIT, et le seul endroit qui en écrit un dans une phrase : « 1,50 % », à deux décimales (la
 /// moitié au pair), la virgule décimale.
 pub fn pourcent(t: crate::grandeurs::Taux) -> String {
-    let mut t = t.decimal().round_dp(2);
+    let mut t = crate::grandeurs::decimal(t).round_dp(2);
     t.rescale(2);
     format!("{} %", t.to_string().replace('.', ","))
 }
@@ -279,18 +347,88 @@ fn milliers(entier: &str, separateur: char) -> String {
 /// UNE GRANDEUR TELLE QU'ON LA LIT dans une phrase (des heures, des jours, un effectif, un taux) : la virgule décimale,
 /// sans zéro inutile (« 151,67 », « 8 », « 2,5 »).
 pub fn virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
-    nombre_dit(g.en_decimal())
+    nombre_dit(crate::grandeurs::decimal(g))
+}
+
+/// DES HEURES DITES dans une phrase, au centieme, la moitie au pair (`Heures::a_deux_decimales`), sans zero inutile :
+/// « 151,67 h », « 11 h ».
+pub fn heures(h: crate::grandeurs::Heures) -> String {
+    format!("{} h", virgule(h.a_deux_decimales()))
+}
+
+/// DES HEURES DITES EN HEURES ET MINUTES dans une phrase (151,67 h : « 151 h 40 »), a la minute la plus proche, la
+/// moitie vers le haut ; des heures entieres, sans minutes (« 35 h »).
+pub fn heures_et_minutes(h: crate::grandeurs::Heures) -> String {
+    use rust_decimal::{Decimal, RoundingStrategy};
+    let soixante = Decimal::from(60);
+    let minutes = (crate::grandeurs::decimal(h) * soixante).round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+    let heures = (minutes / soixante).trunc();
+    let reste = minutes - heures * soixante;
+    match reste.is_zero() {
+        true => format!("{} h", heures.normalize()),
+        false => format!("{} h {:0>2}", heures.normalize(), reste.normalize().to_string()),
+    }
+}
+
+/// UNE QUANTITE SE DIT AU PLURIEL dès deux (« 1,5 journée », « 2 cachets »).
+pub fn au_pluriel<G: crate::grandeurs::Grandeur>(g: G) -> bool {
+    crate::grandeurs::decimal(g) >= rust_decimal::Decimal::TWO
 }
 
 /// UN NOMBRE TEL QU'ON LE LIT dans une phrase, et le seul endroit qui l'écrit ainsi : la virgule décimale, sans zéro
 /// inutile (« 151,67 », « 8 », « 2,5 »).
-pub fn nombre_dit(x: rust_decimal::Decimal) -> String {
+pub(crate) fn nombre_dit(x: rust_decimal::Decimal) -> String {
     x.normalize().to_string().replace('.', ",")
 }
 
+/// UNE GRANDEUR TELLE QU'ELLE S'ECRIT, LA VIRGULE DECIMALE, son échelle gardée (`ecrit::texte` : « 12,50 », « 1,5 ») :
+/// un taux, un abattement cité dans une phrase, la case d'un état ou d'un CSV à la française.
+pub fn a_virgule<G: crate::grandeurs::Grandeur>(g: G) -> String {
+    crate::grandeurs::ecrit::texte::dit(g).replace('.', ",")
+}
+
+/// UNE GRANDEUR CITÉE PAR UN CONSEIL (« 1 234,5 », « 15,5 ») : au centième, la moitié loin de zéro, sans zéro inutile, les
+/// milliers séparés par une espace insécable, la virgule décimale. Son arrondi est celui d'un affichage.
+pub fn par_milliers<G: crate::grandeurs::Grandeur>(g: G) -> String {
+    nombre_par_milliers(crate::grandeurs::decimal(g), None)
+}
+
+/// La même, `decimales` décimales écrites (« 0,90 », « 60 ») : un taux, un coefficient qu'un conseil cite (un montant
+/// s'écrit par `euros`).
+pub fn par_milliers_a<G: crate::grandeurs::Grandeur>(g: G, decimales: u32) -> String {
+    nombre_par_milliers(crate::grandeurs::decimal(g), Some(decimales))
+}
+
+/// UN COMPTE DIT DANS UNE PHRASE (« 3 », « 1 200 ») : les milliers séparés par une espace insécable, comme
+/// `par_milliers`.
+pub fn compte(n: usize) -> String {
+    milliers(&n.to_string(), '\u{a0}')
+}
+
+/// L'écriture de `par_milliers` et `par_milliers_a` : `decimales` fixe, sinon au centième et les zéros de queue tombent.
+fn nombre_par_milliers(x: rust_decimal::Decimal, decimales: Option<u32>) -> String {
+    let x = match decimales {
+        Some(d) => x.round_dp_with_strategy(d, rust_decimal::RoundingStrategy::MidpointAwayFromZero),
+        None => x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero).normalize(),
+    };
+    let s = match decimales {
+        Some(d) => format!("{:.*}", d as usize, x),
+        None => x.to_string(),
+    };
+    let (signe, s) = match s.strip_prefix('-') {
+        Some(r) => ("-", r),
+        None => ("", s.as_str()),
+    };
+    match s.split_once('.') {
+        Some((e, f)) if !f.is_empty() => format!("{}{},{}", signe, milliers(e, '\u{a0}'), f),
+        Some((e, _)) => format!("{}{}", signe, milliers(e, '\u{a0}')),
+        None => format!("{}{}", signe, milliers(s, '\u{a0}')),
+    }
+}
+
 /// Le même, les milliers séparés par une espace insécable, dans une phrase qui cite une valeur d'un fichier (« 1 500 »,
-/// « 12,5 »).
-pub fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
+/// « 12,5 ») : `forme::Court::dit`.
+pub(crate) fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
     let t = nombre_dit(x);
     let (signe, t) = match t.strip_prefix('-') {
         Some(r) => ("-", r),
@@ -301,5 +439,69 @@ pub fn nombre_dit_par_milliers(x: rust_decimal::Decimal) -> String {
         None => (t, String::new()),
     };
     format!("{}{}{}", signe, milliers(entier, '\u{a0}'), decimales)
+}
+
+/// UN ENTIER ECRIT DANS UN TEXTE, que le petit langage d'un modele reecrit (`str.format` : le code salarie du compte
+/// individuel « 421{code:03} », `documents::plan_comptable`) : son signe et ses chiffres, lus une fois, et ses
+/// ecritures (en base dix, seize, huit ou deux ; le caractere qu'il code). Il ne s'ouvre pas en nombre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntierEcrit(i64);
+
+impl EntierEcrit {
+    /// Zero.
+    pub const ZERO: EntierEcrit = EntierEcrit(0);
+    /// Un.
+    pub const UN: EntierEcrit = EntierEcrit(1);
+
+    /// L'entier que `t` ecrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un texte qui n'est
+    /// pas un entier (il se lit alors en texte). Un entier trop grand se refuse, par la raison de sa lecture.
+    pub fn lu(t: &str) -> Result<Option<EntierEcrit>, std::num::ParseIntError> {
+        let (neg, reste) = if let Some(r) = t.strip_prefix('-') {
+            (true, r)
+        } else if let Some(r) = t.strip_prefix('+') {
+            (false, r)
+        } else {
+            (false, t)
+        };
+        let bords_sans_tiret = reste.chars().next().is_some_and(|c| c != '_') && reste.chars().last().is_some_and(|c| c != '_');
+        if !bords_sans_tiret || reste.contains("__") {
+            return Ok(None);
+        }
+        let chiffres: String = reste.chars().filter(|c| *c != '_').collect();
+        if !chiffres.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(None);
+        }
+        chiffres.parse::<i64>().map(|n| Some(EntierEcrit(if neg { -n } else { n })))
+    }
+
+    /// Est-il negatif ?
+    pub fn negatif(self) -> bool {
+        self.0 < 0
+    }
+
+    /// Sa valeur absolue, ecrite en base `base` : `'x'` (seize, minuscules), `'X'` (seize, capitales), `'o'` (huit),
+    /// `'b'` (deux) ; toute autre, en base dix.
+    pub fn absolu_en(self, base: char) -> String {
+        let valeur = self.0.unsigned_abs();
+        match base {
+            'x' => format!("{:x}", valeur),
+            'X' => format!("{:X}", valeur),
+            'o' => format!("{:o}", valeur),
+            'b' => format!("{:b}", valeur),
+            _ => valeur.to_string(),
+        }
+    }
+
+    /// Le caractere qu'il code (`%c`), s'il en code un.
+    pub fn caractere(self) -> Option<char> {
+        u32::try_from(self.0).ok().and_then(char::from_u32)
+    }
+}
+
+/// Ecrit en base dix, signe compris.
+impl std::fmt::Display for EntierEcrit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
 }
 

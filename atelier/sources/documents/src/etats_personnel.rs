@@ -14,7 +14,7 @@ use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use crate::plan_comptable::EtatDExport;
 use socle::grandeurs::Montant;
-use crate::tableaux_export::{jj, qui, refus, section_du_mois, sections_de, ColonneDEtat as C, Ligne, Section, Tableau, R};
+use crate::tableaux_export::{jj, qui, refus, section_du_mois, sections_de, colonne as C, Ligne, RangDansLEtat, Section, Tableau, R};
 
 // ============================================================ 13. les contrats
 
@@ -44,7 +44,7 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
         for paie in lecture.paies(m)?.iter() {
             let e = paie.engagement();
             let s = paie.salarie();
-            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
+            let emploi = e.emploi.ecrit.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
             out.push(ContratMois {
                 mois: m,
                 cle: s.id.clone(),
@@ -75,7 +75,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut l = Ligne::nouvelle();
         l.m(C::Mois, c.mois).t(C::Cle, c.cle.to_string()).t(C::Salarie, c.salarie.clone()).ot(C::Contrat, c.contrat.clone()).t(C::Nature, c.libelle_nature.clone());
         l.ot(C::Emploi, c.emploi.clone()).ot(C::Spectacle, c.spectacle.clone()).ot(C::Objet, c.objet.as_ref().map(|o| o.to_string())).t(C::Debut, c.debut.jj_mm_aaaa()).ot(C::Fin, c.fin.map(|j| j.jj_mm_aaaa()));
-        l.od(C::Brut, c.brut.map(Montant::decimal));
+        l.om(C::Brut, c.brut);
         lignes.push(l);
     }
     if contrats.iter().any(|c| c.contrat.is_none()) {
@@ -180,7 +180,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     rangees.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes: Vec<Ligne> = Vec::new();
     for (i, (_, mut l)) in rangees.into_iter().enumerate() {
-        l.n(C::Ordre, (i + 1) as i64);
+        l.rang(C::Ordre, RangDansLEtat::de_l_indice(i));
         lignes.push(l);
     }
     avert.push("La nationalité est le pays de nationalité de la fiche, suivi de la catégorie déclarée en DSN (française, Union européenne, EEE hors Union, reste du monde) ; une fiche sans pays n'en montre que la catégorie. Pour un salarié étranger hors UE, le registre doit aussi porter le type et le numéro du titre de travail (art. D1221-24) — à compléter à la main.".to_string());

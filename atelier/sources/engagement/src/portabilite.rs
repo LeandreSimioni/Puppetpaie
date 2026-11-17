@@ -87,7 +87,7 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
     }
     let mut depuis = debut;
     loop {
-        let veille = depuis.plus_jours(-1)?;
+        let veille = depuis.avant(Duree::jours(1))?;
         match contrats.iter().filter(|p| p.contient(&veille)).map(Periode::debut).min() {
             Some(d) => depuis = d,
             None => return Ok(depuis),
@@ -105,9 +105,9 @@ fn mois_arrondis(periode: &Periode) -> R<Duree<EnMois>> {
     while n < DOUZE_MOIS {
         n = n.plus(UN_MOIS);
         let meme_quantieme = debut.apres(n)?;
-        let fin_du_mois = if meme_quantieme.jour == debut.jour { meme_quantieme.plus_jours(-1)? } else { meme_quantieme };
+        let fin_du_mois = if meme_quantieme.meme_quantieme(&debut) { meme_quantieme.avant(Duree::jours(1))? } else { meme_quantieme };
         // Le `n`-ieme mois atteint la fin de la periode : il n'en reste aucun jour apres lui.
-        if !periode.contient(&fin_du_mois.plus_jours(1)?) {
+        if !periode.contient(&fin_du_mois.apres(Duree::jours(1))?) {
             break;
         }
     }

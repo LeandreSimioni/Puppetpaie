@@ -20,7 +20,7 @@ use compagnie::problemes::{self, Apercu, BilanMessages, CaptureDeLaPage, EtatDuM
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use socle::echec::{Classe, R};
@@ -247,7 +247,7 @@ impl ChargeMessage {
 /// Ce que rend une route qui ne dit qu'un compte : sa phrase, et ce qu'elle a compte.
 #[derive(Debug, Serialize)]
 struct Compte {
-    phrase: String,
+    phrase: Phrase,
     #[serde(skip_serializing_if = "Option::is_none")]
     retires: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,7 +257,7 @@ struct Compte {
 /// Ce que rend `incident-navigateur`.
 #[derive(Debug, Serialize)]
 struct IncidentNote {
-    phrase: &'static str,
+    phrase: Phrase,
     note: bool,
     empreinte: Option<incidents::CleDIncident>,
 }
@@ -265,7 +265,7 @@ struct IncidentNote {
 /// Ce que rendent `incidents-lire` et `incidents-regrouper` : les lignes gardees (`compagnie::incidents`), en phrases.
 #[derive(Debug, Serialize)]
 struct Incidents {
-    phrase: String,
+    phrase: Phrase,
     phrases: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lignes: Option<Vec<Ligne>>,
@@ -276,7 +276,7 @@ struct Incidents {
 /// Ce que rend un passage d'envoi (`incidents-envoyer`, `signalements-partir`) : son bilan, et sa phrase.
 #[derive(Debug, Serialize)]
 struct Envoi<B: Serialize> {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     bilan: B,
 }
@@ -284,7 +284,7 @@ struct Envoi<B: Serialize> {
 /// Ce que rend `signalement-apercu` : ce que `compagnie::problemes` en dit, et sa phrase.
 #[derive(Debug, Serialize)]
 struct Message {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     apercu: Apercu,
 }
@@ -305,7 +305,7 @@ struct SignalementDit {
 /// Ce que rend `signalements` (et ce que `signalement-envoyer` rend avec lui) : les messages, les reponses non lues.
 #[derive(Debug, Serialize)]
 pub(crate) struct Signalements {
-    phrase: String,
+    phrase: Phrase,
     signalements: Vec<SignalementDit>,
     non_lues: usize,
     reponses_dit: Option<String>,
@@ -316,7 +316,7 @@ pub(crate) struct Signalements {
 /// Ce que rend `signalement-envoyer` : le message enregistre, et la liste des messages.
 #[derive(Debug, Serialize)]
 struct Envoye {
-    phrase: String,
+    phrase: Phrase,
     id: problemes::IdDeMessage,
     deja: bool,
     signalements: Vec<SignalementDit>,
@@ -358,7 +358,7 @@ struct Groupe {
 /// L'ecran « ce qui est parti chez l'editeur » : le serveur, si l'envoi est actif, les comptes, les groupes.
 #[derive(Debug, Serialize)]
 struct Diagnostic {
-    phrase: String,
+    phrase: Phrase,
     serveur: socle::garde_reseau::Url,
     envoi: bool,
     total: usize,
@@ -379,7 +379,7 @@ struct Diagnostic {
 macro_rules! dites {
     ($($t:ty),*) => {
         $(impl Dite for $t {
-            fn phrase(&self) -> &str {
+            fn phrase(&self) -> &Phrase {
                 &self.phrase
             }
         })*
@@ -388,14 +388,14 @@ macro_rules! dites {
 dites!(Compte, Incidents, Message, Signalements, Envoye, Diagnostic);
 
 impl<B: Serialize> Dite for Envoi<B> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for IncidentNote {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -411,7 +411,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             // Ce que la page a vu (`incidents::RapportNavigateur`), que le journal des incidents met en forme.
             let ligne = incidents::depuis_navigateur(racine, &charge.lire()?)?;
             en_json(IncidentNote {
-                phrase: if ligne.is_some() { "Incident noté." } else { "Rien n'est noté." },
+                phrase: Phrase::fixe(if ligne.is_some() { "Incident noté." } else { "Rien n'est noté." }),
                 note: ligne.is_some(),
                 empreinte: ligne.map(|l| l.empreinte),
             })
@@ -427,8 +427,8 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             // La couleur du message qui le dit : un envoi impossible est refuse, sinon parti.
             etat.couleur = Some(socle::ecran::couleur_de_l_etat(if bilan.erreur.is_some() { socle::ecran::EtatDEcran::Refuse } else { socle::ecran::EtatDEcran::Fait }));
             etat.phrase = match &bilan.erreur {
-                Some(e) => format!("Envoi impossible : {}", e),
-                None => format!("{} incident(s) envoyé(s).", bilan.envoyes),
+                Some(e) => socle::phrase!("Envoi impossible : {}", e),
+                None => socle::phrase!("{} incident(s) envoyé(s).", bilan.envoyes),
             };
             etat.bilan = Some(bilan);
             en_json(etat)
@@ -444,31 +444,31 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             incidents::regler_envoi(racine, c.actif)?;
             let mut etat = diagnostic_etat(racine)?;
             etat.phrase = if etat.envoi {
-                "Le signalement des dysfonctionnements est réactivé.".to_string()
+                Phrase::fixe("Le signalement des dysfonctionnements est réactivé.")
             } else {
-                "Le signalement des dysfonctionnements est désactivé : rien ne part plus chez l'éditeur.".to_string()
+                Phrase::fixe("Le signalement des dysfonctionnements est désactivé : rien ne part plus chez l'éditeur.")
             };
             en_json(etat)
         }
         Route::IncidentsLire => {
             let c: ChargeIncidents = charge.lire()?;
             let lignes = incidents::lire(racine, c.quoi, c.en_attente == Some(true))?;
-            en_json(Incidents { phrase: format!("{} incident(s) gardé(s) sur ce poste.", lignes.len()), phrases: lignes.iter().map(phrase_d_incident).collect(), lignes: Some(lignes), paquets: None })
+            en_json(Incidents { phrase: socle::phrase!("{} incident(s) gardé(s) sur ce poste.", lignes.len()), phrases: lignes.iter().map(phrase_d_incident).collect(), lignes: Some(lignes), paquets: None })
         }
         Route::IncidentsRegrouper => {
             let c: ChargeNature = charge.lire()?;
             let paquets = incidents::regrouper(racine, c.quoi)?;
-            en_json(Incidents { phrase: format!("{} sorte(s) d'incident gardée(s) sur ce poste.", paquets.len()), phrases: paquets.iter().map(phrase_de_paquet).collect(), lignes: None, paquets: Some(paquets) })
+            en_json(Incidents { phrase: socle::phrase!("{} sorte(s) d'incident gardée(s) sur ce poste.", paquets.len()), phrases: paquets.iter().map(phrase_de_paquet).collect(), lignes: None, paquets: Some(paquets) })
         }
         Route::IncidentsOublier => {
             let c: ChargeNature = charge.lire()?;
             let n = incidents::oublier(racine, c.quoi)?;
-            en_json(Compte { phrase: format!("{} incident(s) effacé(s) de ce poste.", n), retires: Some(n), lues: None })
+            en_json(Compte { phrase: socle::phrase!("{} incident(s) effacé(s) de ce poste.", n), retires: Some(n), lues: None })
         }
         Route::SignalementApercu => {
             let c: ChargeMessage = charge.lire()?;
             let apercu = problemes::apercu(racine, &c.texte, c.ecran.as_deref(), c.captures())?;
-            let phrase = format!("Ce message partirait chez {}, avec {} incidents et {} captures.", apercu.serveur, apercu.incidents, apercu.captures);
+            let phrase = socle::phrase!("Ce message partirait chez {}, avec {} incidents et {} captures.", apercu.serveur, apercu.incidents, apercu.captures);
             en_json(Message { phrase, apercu })
         }
         Route::SignalementEnvoyer => {
@@ -478,15 +478,15 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             let depart = liste.signalements.iter().find(|s| s.vu.garde.id == e.id).map(|s| s.depart.mots.clone());
             let dit = if e.deja { "Ce message est déjà enregistré." } else { "Message enregistré pour le développeur." };
             let phrase = match depart {
-                Some(d) => format!("{} {}", dit, d),
-                None => dit.to_string(),
+                Some(d) => socle::phrase!("{} {}", dit, d),
+                None => Phrase::fixe(dit),
             };
             en_json(Envoye { phrase, id: e.id, deja: e.deja, signalements: liste.signalements, non_lues: liste.non_lues, reponses_dit: liste.reponses_dit, ecran: liste.ecran })
         }
         Route::SignalementsLus => {
             let SansCharge {} = charge.lire()?;
             let n = problemes::signalements_lus(racine)?;
-            en_json(Compte { phrase: format!("Réponses marquées lues : {}.", n), retires: None, lues: Some(n) })
+            en_json(Compte { phrase: socle::phrase!("Réponses marquées lues : {}.", n), retires: None, lues: Some(n) })
         }
         Route::SignalementsPartir => {
             let SansCharge {} = charge.lire()?;
@@ -613,7 +613,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let total = lignes.len();
     let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi, annees.first());
     Ok(Diagnostic {
-        phrase: format!(
+        phrase: socle::phrase!(
             "Signalement des dysfonctionnements : {} ; incidents gardés : {}, partis : {}, en attente : {}.",
             if envoi { "actif" } else { "désactivé" },
             total,
@@ -660,7 +660,7 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
     let reponses_dit = (non_lues > 0).then(|| socle::ecran::compte(non_lues, "réponse", "réponses"));
     let phrases = dits.iter().map(|s| format!("« {} » : {}", s.vu.garde.texte, s.depart.mots.to_lowercase())).collect();
     Ok(Signalements {
-        phrase: format!("Messages au développeur : {} ; réponses non lues : {}.", dits.len(), non_lues),
+        phrase: socle::phrase!("Messages au développeur : {} ; réponses non lues : {}.", dits.len(), non_lues),
         signalements: dits,
         non_lues,
         reponses_dit,
@@ -670,15 +670,12 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
 }
 
 /// Un passage d'envoi (incidents ou messages) : ce qui est parti, ce qui attend, et pourquoi.
-fn phrase_d_envoi(partis: usize, reste: usize, erreur: Option<&str>, occupe: bool) -> String {
+fn phrase_d_envoi(partis: usize, reste: usize, erreur: Option<&str>, occupe: bool) -> Phrase {
     if occupe {
-        return "Un autre envoi est en cours : il prend aussi ceux-ci.".to_string();
+        return Phrase::fixe("Un autre envoi est en cours : il prend aussi ceux-ci.");
     }
-    let mut p = format!("{} parti(s) chez le développeur ; {} en attente.", partis, reste);
-    if let Some(e) = erreur {
-        p.push_str(&format!(" {}", e));
-    }
-    p
+    let erreur: String = erreur.iter().map(|e| format!(" {}", e)).collect();
+    socle::phrase!("{} parti(s) chez le développeur ; {} en attente.{}", partis, reste, erreur)
 }
 
 /// Un incident garde : quand, sa nature, ce qu'il dit, et s'il est parti.

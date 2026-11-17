@@ -59,6 +59,16 @@ que par la structure :
 - **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
   l'ont pour leurs essais ; `fabrique-pdf`, hors de l'espace, l'a aussi : à ranger, #419) ; une autre crate qui
   voudrait lire du JSON brut ne compile pas (`une_crate_ne_prend_qu_a_celles_du_dessous` le lit dans les `Cargo.toml`).
+  `rust_decimal` n'est au `Cargo.toml` que du `socle`, essais compris, et le socle garde internes son décimal et ce qui
+  le prend ou le rend (`num`, `d28`, `fraction`, `grandeurs::decimal`, `du_decimal`, les champs de `forme::Nombre` et `Court`) :
+  hors du socle, écrire `Decimal` ou rouvrir une grandeur ne compile pas. Un trait scellé du socle interdit qu'on
+  l'implémente, pas qu'on appelle ses méthodes par un générique (`B::du(a.en_decimal())` rouvrirait un montant en
+  heures) : chaque méthode scellée (`grandeurs::Grandeur`, `texte::EnEuros`, `piece::Format`, `date::Unite`) exige un
+  jeton que seul son module fabrique. `unsafe` le fabriquerait (`std::mem::zeroed`) : l'espace interdit `unsafe_code`,
+  chaque racine le refuse (`#![forbid(unsafe_code)]`, qu'aucun `allow` ne lève : chaque bibliothèque, binaire, essai,
+  exemple et script de construction de l'espace, sauf la bibliothèque du socle ; la fenêtre et la fabrique, hors de
+  l'espace, dans leur manifeste) ; seul `socle::systeme`, les
+  appels au noyau de Windows, le lève, et c'est le seul endroit où un entier signé est imposé par l'extérieur.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -93,17 +103,30 @@ que par la structure :
   code propre à une cible se range sous son `cfg`.
 - **Le verrou simple** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce qu'il
   fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux ci-dessus) ;
-  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; trois tests courts, sans liste, qui lisent les
+  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; des tests courts, sans liste, qui lisent les
   sources des crates ; et la relecture du diff de chaque lot à l'arrivée, qui tient tout le reste.
 - **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions ; les tests de structure
   sont les bienvenus, un test qui fige un détail ne s'écrit pas :
   - `aucun_flottant_dans_le_code` : aucune source d'une crate n'écrit `f32` ni `f64` ;
+  - `aucun_entier_signe_brut` : aucune source hors du `socle` et de `fabrique-pdf` (une porte entière, qui a son
+    verrou) n'écrit un entier signé, de toute largeur (`i8` à `i128`, `isize`), ni un littéral qui en porte le suffixe,
+    ni son nom de C (`c_int`…) ou ses alias de `libc` et de `std::os` (`RawFd`, `pid_t`, `time_t`, `ssize_t`, `off_t`…),
+    ni `NonZeroI…`, `AtomicI…` : le logiciel, ses essais, exemples et scripts de construction, l'atelier, la fenêtre,
+    `empreinte.rs` ; seule la cible de Cargo de l'espace (`target/`) n'est pas lue ;
+  - `aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe` : le socle et la fabrique calculent en
+    entiers dedans, mais aucune fonction publique, aucun type d'une constante publique, aucun champ ni alias public,
+    aucune variante d'une énumération publique, aucun en-tête d'une implémentation d'un trait (`impl … for …`) de leur
+    bibliothèque ne prend ni ne rend un entier signé, sur une ligne comme sur plusieurs : ce qu'ils offrent au reste
+    du logiciel est typé, l'interne s'écrit `pub(crate)` ;
+  - `la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie` : `fabrique-pdf` ne prend ni crate de l'espace ni
+    `rust_decimal`, n'écrit pas `Decimal`, et ne déclare aucun type au nom d'un type que ce glossaire déclare hors
+    d'elle ;
   - `chaque_forme_lue_refuse_une_cle_inconnue` : chaque `derive(Deserialize)` porte `deny_unknown_fields`, sauf une
     réponse d'un tiers, qui se déclare telle par son type (« Le corps et ses portes ») ;
   - `aucune_valeur_par_defaut_si_absent` : ni `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`,
     `map_or_else` dans les sources des crates ;
-  - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json`, lus dans
-    les `Cargo.toml` ;
+  - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json` et
+    `rust_decimal`, lus dans les `Cargo.toml` ;
   - `les_niveaux_des_lints_tiennent` : chaque crate reprend les niveaux de l'espace, et aucune configuration de Cargo
     ne les abaisse ;
   - `le_catalogue_est_range` : une lecture n'écrit pas, une route sous « Avancé » n'a pas de champ objet, un module a
@@ -150,44 +173,29 @@ seule vérification, à l'arrivée », « On compile peu »).
 ## Le glossaire
 
 **Une notion, un type ; une façon d'écrire n'est pas un type** : elle se dit dans la forme du fichier qui la porte (la
-DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf est une notion de
-ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
+DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf entre dans
+ce glossaire dans le lot qui le crée ; la relecture à l'arrivée y cherche le doublon. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
 « À unifier (#419) » : le code a encore plusieurs types pour la notion, le type nommé est la cible. « À créer
-(#419) » : la notion circule encore en `String`, `Decimal` ou entier nu.
+(#419) » : la notion circule encore en `String` ou entier nu.
 
 **Typer, c'est qu'une notion porte son type de bout en bout ; envelopper n'est pas typer.** Une grandeur ne s'ouvre en
-nombre nu (`.decimal()`, `du_decimal`, un `as` entre nombres) qu'à une porte : l'écriture ou la lecture d'un fichier ou
-d'une norme ; le calcul se fait par les opérations des grandeurs (`socle/src/grandeurs.rs`), et une opération qui
-manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
+nombre nu qu'au socle, à ses portes : l'écriture ou la lecture d'un fichier ou d'une norme (`socle::grandeurs::ecrit`,
+`lu`, `socle::texte`) ; hors du socle, le décimal ne se nomme pas (seul le socle prend `rust_decimal`, et `num`, `d28`,
+`grandeurs::decimal`, `du_decimal` lui sont internes) et un `as` entre nombres ne se fait qu'à une porte. Le calcul se
+fait par les opérations des grandeurs (`socle/src/grandeurs.rs`), et une opération qui manque s'y ajoute. Un nombre lu d'un fichier se lit tout de suite en sa grandeur. Les champs d'un `Jour` ne s'ouvrent
 pas. Un état ne se code pas en booléens quand il a son type. Les formes d'un fichier, les charges et réponses d'une
 route et les types techniques ne sont pas des notions : ils n'ont pas de ligne ici, mais leurs champs portent les types
-des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`) ; et,
-jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux gens (`String`).
+des notions. **Ne sont pas des notions** : un compte (« combien de… », `usize`) ; les notes d'une forme (`NonLue`). Une
+phrase dite aux gens est une `Phrase` (« phrase » ci-dessous) ; celles qui sont encore des `String` sont le dernier
+chantier (#419). Ni un texte tapé dans une charge (`socle::forme::TexteDit`, jamais vide), ni le libellé court de
+l'écran qu'une fiche écrit en constante (`routes::affiche::Affiche`) ne sont une phrase composée : ce sont une saisie et
+un libellé, chacun sa forme.
 
 **Les notions que le typage (#419) unifie ou crée** (la carte du typage ; chacune rejoint sa section quand elle est faite)
 
 | notion | son type | aujourd'hui |
 |---|---|---|
-| paie calculée d'un engagement | `engagement::calcul::Paie` | à unifier (#419) : `PaieEcrite`, `PaieLue`, `PaieRelue`, `PaieDuMois` (ses sommes et ses lignes rendent leurs grandeurs) |
-| paie d'un mois importé | `engagement::importe::PaieImportee` | à unifier (#419) : `PaieVersee` |
-| ligne de rémunération | `engagement::ligne::LignePaie` | à unifier (#419) : `calcul::LigneBrut`, `importe::LigneDeRemuneration`, `importe::LigneImprimee` |
-| ligne de cotisation | `engagement::calcul::LigneCotisation` | à unifier (#419) : `importe::LigneDeCotisation`, `importe::CotisationImprimee`, `droit::organismes::Ligne` |
-| contrat (ce que l'engagement fait signer) | `ContratEcrit` | à unifier (#419) : `ContratLu`, `ContratRelu` ; les copies de l'engagement (`ContratCs`, `PaieCs`, `PaieAer`, `avenant::Eng`, `ContratResume`, `ResumeDePaie`) disparaissent |
-| contrat déclaré ou attesté (ce qu'un organisme en dit) | `ContratDeclare` | à unifier (#419) : `changements_contrat::Declare`, `dsn_lue::ContratDeclare`, `ContratAtteste`, `attestes::Atteste` |
-| taux de PAS reçu (son taux, sa date, d'où il vient) | `compagnie::taux_pas::TauxRecu` | à unifier (#419) : `droit::fiche::TauxPas`, `ReleveTauxPas`, `TauxPasLus`, `TauxPasAnnonce`, `PasImporte.taux` |
-| taux AT/MP | `TauxAtmp` | à unifier (#419) : `fiche::TauxAtmp`, `forme_bareme::TauxAtmp`, `organismes::TauxAt`, `TauxAtmpNotifie`, `TauxAtmpAnnonce` |
-| versement mobilité | `VersementMobilite` | à unifier (#419) : `fiche::`, `bareme::`, `forme_bareme::VersementMobiliteEcrit`/`Taux` |
-| déduction forfaitaire spécifique d'une paie | `calcul::DeductionForfaitaire` | à unifier (#419) : `forme_bareme::DeductionForfaitaire`, `AbattementDfs` |
-| réduction générale d'une paie | `droit::reduction::ReductionGenerale` | à unifier (#419) : `forme_bareme::ReductionGenerale`, `ReductionDsn` sont des formes, à renommer |
-| maintien de salaire | `MaintienDeSalaire` | à unifier (#419) : `maintien::{Regime, Tranche, Droit}`, `permanents::Maintien`, `engagement::maintien::*`, `ligne::Maintien` |
-| préavis | `Preavis` | à unifier (#419) : `saisie::Preavis`, `solde::Preavis`, `DureeDuPreavis`, `PreavisDit` |
-| versement déclaré | `VersementDeclare` | à unifier (#419) : `DernierDeclare`, `VersementLu`, `Nets`, `VersementEcrit` |
-| ordre de paiement | `OrdreDePaiement` | à unifier (#419) : `dsn::Ordre`, `OrdreEnClair`, `bordereau::AVerser`, `Credit`, `CreditEnClair` |
-| nombre écrit (une saisie gardée telle qu'écrite) | `socle::forme::NombreEcrit`, à la porte seulement | à unifier (#419) : `Court`, `Nombre`, `NombreLu`, `Remplie`, `NombreDeFiche`, `ligne::Chiffre` |
-| identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | à créer (#419) : `IdentiteDeclaree` | treize types lus ou déclarés, `nom`/`prenom` en `String` |
-| employeur lu d'une pièce | à créer (#419) : `EmployeurLu` | trois types, des `String` |
-| taille d'un fichier | à créer (#419) : `Octets` | des `u64` |
-| phrase dite aux gens (le dernier chantier) | à créer (#419) : `Phrase` | `socle::forme::TexteDit`, `routes::affiche::Affiche`, des `String` |
+| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore du texte nu, qui entrent dans leur phrase à la frontière par `socle::phrase!("{}", …)` ; une phrase ne se compose que par `socle::phrase!` (sa seule porte, `Phrase::de_format`, ne prend qu'un `format_args!`), et en suit une autre sans se rouvrir par `Phrase::jointes` | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
 
 **Le temps**
 
@@ -199,35 +207,59 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | mois | `Mois` | `socle/src/mois.rs` |
 | mois de l'année | `MoisDeLAnnee` | `socle/src/mois.rs` |
 | mois ou jour | `MoisOuJour` | `socle/src/mois.rs` |
-| année | `Annee` ; à unifier (#419) : des `i32` | `socle/src/mois.rs` |
+| année | `Annee` | `socle/src/mois.rs` |
+| rang d'un numéro dans la suite de son année (le contrat `FA1.26.16`, le bulletin `12/2026`) | `RangDansLAnnee` | `socle/src/mois.rs` |
 | période | `Periode` | `socle/src/date.rs` |
 | période ouverte | `PeriodeOuverte` | `socle/src/date.rs` |
-| durée de droit | `Duree<EnJours>`, `Duree<EnMois>` ; à unifier (#419) : des entiers nus | `socle/src/date.rs` |
+| durée de droit | `Duree<EnJours>`, `Duree<EnMois>` | `socle/src/date.rs` |
+| jour de la semaine | `JourDeLaSemaine` | `socle/src/date.rs` |
+| semaine d'un calendrier (du lundi au vendredi, du lundi au samedi) | `Semaine` | `socle/src/date.rs` |
+| jours ouvrés, jours ouvrables (un compte de jours que le calendrier change en jour : pas une `Duree`) | `JoursOuvres`, `JoursOuvrables` | `socle/src/date.rs` |
+| heure du jour | `HeureDuJour` | `socle/src/paris.rs` |
+| délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
+| délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
-| durée mesurée | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` | la bibliothèque standard ; `envois/src/ligne.rs` |
+| durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture, le délai et l'âge d'un verrou) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
+| décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre ; celui de Paris à un instant, interne au socle, s'écrit `+HHMM` dans la date d'un courriel, `socle::paris::ecrit::rfc5322`) | `socle/src/paris.rs` |
+| date mal écrite d'une zone (un morceau illisible tel qu'il s'écrit, ou une date qui n'existe pas et la phrase qui le dit : la date de la table des CTP, `format::AaaaJjMm`) | `DateMalEcrite` | `socle/src/piece.rs` |
 
 **Le détail**
 
 - **instant** : un point du temps, à la nanoseconde ; aussi « à la minute près ». Ses écritures (à la seconde, à la
   minute, la saisie, la française, l'UTC du filet, le bloc de la plate-forme DSN, les secondes locales) sont les modules
-  de `socle::paris::ecrit`, dits par l'attribut serde du champ ; « pas encore » : `Option<Moment>`.
+  de `socle::paris::ecrit`, dits par l'attribut serde du champ (et ses centièmes de seconde depuis 1970, la part de
+  l'instant dans l'identifiant d'un courriel, `ecrit::centiemes`) ; « pas encore » : `Option<Moment>`.
 - **instant ou jour** : l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit
   d'un jour, une obligation d'un arrêt dite faite ou une connaissance sans heure). Écrit en un champ
   (`AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`), ou en deux, le jour et l'heure `HH:MM` (`socle::paris::ecrit::jour_et_heure` :
   la fiche de suivi des obligations d'un arrêt et ce que ses routes rendent, l'instant limite de l'échéance d'une DSN,
   `declarations::echeance_dsn::EcheanceDite`) ; l'heure qu'une charge saisit (`H:M`, un ou deux chiffres) se lit à sa
-  porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Le butoir d'une obligation (`routes::obligations::Obligation.butoir`)
-  s'écrit aussi en deux champs, `butoir` et `butoir_heure`, où un instant à minuit est la fin du jour d'avant, écrite
-  `24:00` (« jusqu'à minuit »).
-- **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone.
-- **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom.
+  porte par `jour_et_heure::saisie` (les charges des obligations d'un arrêt). Un instant à minuit est la fin du jour
+  d'avant (« jusqu'à minuit ») : le jour qu'il dit se lit, à un seul endroit, par `jour_et_heure::jour_limite`, pour le
+  butoir d'une obligation (`routes::obligations::Obligation.butoir`, écrit aussi en deux champs, `butoir` et
+  `butoir_heure`, minuit écrit `24:00`) comme pour une échéance du mois (`droit::echeances::Echeance.quand` : la DPAE et
+  la remise du contrat, un jour seul ; le dépôt d'une DSN, midi ; son annule-et-remplace, le minuit qui finit la veille,
+  « avant le 14/12/2026 à minuit »).
+- **jour** : un jour civil ; les marqueurs de `socle::piece::format` sont des formats de zone. Le numéro d'un jour dans
+  son mois n'est pas une notion : il ne sort d'un `Jour` qu'à une écriture (`iso`, `jj_mm_aaaa`, `jj_mm`, `jj_mm_aa`,
+  `jjmmaaaa`, `jjmmaa`, `aaaammjj`, `j_mm`, `j_mm_aa`, `cases`, `quantieme_ecrit`, `en_clair`) ; ses champs sont
+  privés au socle, et un lecteur prend son mois (`mois_civil`), son année (`annee`), une comparaison
+  (`premier_du_mois`, `meme_quantieme`), la veille ou le lendemain (`avant`, `apres` d'un jour : « durée de droit ») ;
+  un `JJ/MM/AAAA` imprimé se lit par sa zone (`socle::piece::format::JjMmAaaa`, la date impossible dite par le socle) ;
+  tapé dans une charge (le jour d'effet d'un
+  changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
+  jour qui n'est pas de ce mois se refuse à sa case.
+- **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom ; son numéro s'écrit `mm`,
+  `mm_aaaa` (« 05/2026 ») ; un mois qu'un texte fixe s'écrit de son texte, lu à la compilation
+  (`socle::mois!("2026-03")`, par `socle::mois::DateEcrite` : aucun texte lu à l'exécution n'y entre).
 - **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
   table des noms de mois ; un fichier qui l'écrit par son numéro (`echeancier-base.json`) se lit en lui.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Une seule forme : le nombre (`2025`), par sa serde ; clé d'un objet, son texte comme
   toute clé (`"2025"`, la clé de `paies_annuelles`). Elle se calcule par ses
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
-  année qu'un texte fixe s'écrit `Annee::constante`.
+  année qu'un texte fixe s'écrit de son texte, lu à la compilation (`socle::annee!("2026")`, comme le mois) ; un test écrit la
+  sienne en texte (`"2026"`), lue par sa forme. Ses deux derniers chiffres s'écrivent `aa`.
 - **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
   par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes
   (`debut`, `fin`), ses jours (`jours`), sa durée (`duree`, en `Duree<EnJours>`), l'ancienneté qu'elle donne (celle
@@ -243,82 +275,194 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   dans son type** : `Duree<U>`, où `U` est `EnJours` ou `EnMois` (les marqueurs du socle ; `Unite`, scellé, n'en admet
   pas d'autre) ; une année d'un texte est douze mois. Une durée qu'un texte fixe s'écrit `Duree::jours`, `Duree::mois`,
   `Duree::annees` ; un fichier la dit en nombre, lu en elle à sa porte (`en_jours`, `en_mois`, et leurs facultatives ;
-  écrite par `ecrite_en_jours`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire`). Elle se compte depuis un jour,
+  écrite par `ecrite_en_jours`, `ecrite_en_jours_opt`, `ecrite_en_mois_opt`, et à la DSN par `jours_a_ecrire` ; dite en abrégé, « 3 j », par `dite_en_abrege` ; dans la
+  charge d'une route, `en_jours` lit aussi des jours tapés, par la lecture du nombre tapé : la période d'essai d'une
+  carte, les jours déjà indemnisés d'un arrêt, les jours de retours d'une ouverture). Elle se compte depuis un jour,
   dans l'une ou l'autre unité (`Jour::apres`, `Jour::avant`), en mois depuis un mois (`Mois::apres`, `Mois::avant`) ou
   une année (`Annee::les_precedentes`) ; des mois se disent en jours depuis un jour (`en_jours_depuis`) ; elle se
-  mesure d'une suite de jours (`Duree::du_au`) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,
+  mesure d'une suite de jours (`Duree::du_au`), ou des jours écoulés entre deux jours, du lendemain du premier au second
+  (`Duree::ecoulee` : « il reste 3 jours », l'âge d'une source) ; des jours de vingt-quatre heures, elle recule ou
+  avance un instant (`Moment::jours_plus_tot`, `jours_plus_tard` : les jours de retours qu'un relevé remonte, trente
+  pour un passage, quatre-vingt-douze pour l'ordre d'un signalement ; la montre portée au jour posé) ; deux durées ne se comparent et ne s'ajoutent que dans la même unité,
   ce que le compilateur tient ; elle se dit dans une phrase (« 3 jours », « 2 mois »). La durée d'une tranche de
   maintien de salaire (`droit::maintien::DureeDUneTranche`) est une durée de droit en jours ou en mois, ou « tant que la
   caisse verse ses indemnités ».
+- **jour de la semaine** : du lundi au dimanche, dans cet ordre ; celui d'un jour (`Jour::jour_de_la_semaine`), ou une
+  case d'une fiche (les jours travaillés d'un permanent, `droit::conges::JoursTravailles`). Il s'écrit et se dit par son
+  nom, la seule liste des noms (`JourDeLaSemaine::NOMS`) ; son numéro ISO (1 le lundi) ne sert qu'à lire une date de
+  semaine ISO 8601.
+- **semaine d'un calendrier** : les jours de la semaine qu'un calendrier compte, du lundi au vendredi (les jours ouvrés,
+  le premier jour de semaine après un CDD) ou du lundi au samedi (les jours ouvrables, les heures de R. 441-3) ;
+  `Semaine::contient`.
+- **jours ouvrés, jours ouvrables** : un compte de jours, jamais négatif, qui n'est pas une durée de droit : il ne
+  devient un jour que par **un seul calendrier par règle**, écrit une fois (`socle/src/date.rs`) : du lundi au vendredi
+  pour les jours ouvrés (`JoursOuvres::apres`, `avant`, et le premier jour ouvré à partir d'un jour,
+  `JoursOuvres::premier_a_partir_de`, le report de la DSN), du lundi au samedi pour les jours ouvrables
+  (`JoursOuvrables::apres`, `avant` : « les quinze jours ouvrables précédant »), chacun moins les fériés qu'on lui donne,
+  une année à la fois (les onze fêtes légales, `feries::feries`, ou ceux que la compagnie chôme, `feries::chomes`). Un
+  texte le fixe (`JoursOuvres::de`) ; un fichier le dit en nombre, lu en lui à sa porte.
+- **heure du jour** : un point dans le jour, à la minute, heure de Paris, de 00:00 à 23:59 (midi, l'heure limite de la
+  DSN ; 8 h, l'heure d'embauche que la DPAE porte ; minuit). « Jusqu'à minuit » est le début du jour suivant. Une heure
+  que le code tient d'un texte s'écrit `HeureDuJour::a` (`MIDI`, `MINUIT`) ; lue d'une pièce, `HeureDuJour::lue`. Elle
+  fait l'instant d'un jour (`Moment::a_paris`, `jour_et_heure::a_la_minute`) et se lit d'un instant
+  (`Moment::heure_de_paris`, `jour_et_heure::heure`) ; elle s'écrit `HH:MM` (son `Display`, sa serde) et se dit dans une
+  phrase (`dite` : « à midi », « à minuit », « à 09:30 »).
+- **délai en heures** : des heures qui courent d'une heure du jour sur le calendrier des jours ouvrables (dimanches et
+  fériés non compris : CSS R. 441-3, quarante-huit heures) ; ni une quantité d'heures de travail, ni une durée mesurée.
+  Lu en nombre à sa porte, il ne devient un instant que par `DelaiEnHeures::heures_apres`.
+- **délai d'une obligation** : ce qui fixe, d'un fait, la date ou le moment limite d'une obligation (un signalement, une
+  déclaration d'accident, une attestation) : en jours ouvrés, en jours, en heures hors dimanches et fériés (`Delai`, une
+  `enum` qui court d'un fait, avec la phrase qui le dit, écrite par son cas dans `obligations-base.json`), ou, pour le
+  signalement d'un employeur subrogé, avec la DSN mensuelle du mois de l'événement (`AvecLaMensuelle`, sa phrase seule :
+  sa fin est l'échéance de cette DSN). Chaque champ du fichier n'admet que ce qui a un sens pour lui : `delai` et
+  `delai_sans_subrogation` un `Delai`, `delai_avec_subrogation` un `AvecLaMensuelle`. La fin d'un délai se compte à un
+  seul endroit (`routes::obligations`, `fin_du_delai`).
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
-  (`Anciennete::age`). Elle se compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
+  (`Anciennete::age`). **Exacte** : ses mois sont une fraction (`socle::fraction::Fraction`, interne au socle, la forme
+  de l'ancienneté et des mois de salaire, pas une notion), des jours sur la longueur de leur mois comme des années de
+  douze mois, sans coupure ; elle ne devient un décimal qu'à ses écritures, et les mois de salaire qu'au montant. Elle se
+  compte au seul `socle/src/date.rs`, de deux jours : en mois complets et fraction du mois
   entamé, le jour d'arrivée compris (`Anciennete::entre` : le préavis, les indemnités de fin de contrat, le maintien de
   salaire, le férié chômé), ou en mois révolus (`Anciennete::revolue` : une grille, la prime de présence, l'ouverture
   d'une prévoyance, l'âge en années révolues). Un seuil d'un texte se lit en elle à sa porte (`Deserialize` en mois,
-  `en_annees`, `en_mois_entiers`, `en_annees_entieres` ; un seuil que le code tient d'un texte s'écrit `Anciennete::ans`),
+  `en_annees`, `en_mois_entiers`, `en_annees_entieres` ; un seuil que le code tient d'un texte s'écrit `Anciennete::ans`,
+  `Anciennete::mois_fixes`),
   et elle se compare à lui, s'en écarte (`au_dela_de`) ou
   le compte (`fois_entieres`) ; elle se dit dans l'unité que le texte
-  demande (`annees`, `annees_d28` pour un barème qui compte par année, `nombre_d_ans_revolus`, `semaines_entieres`), en
-  mois dans une phrase ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
+  demande (`semaines_entieres` en `Semaines`), en mois dans une phrase, ou telle qu'elle est (`mois_ecrits`,
+  `annees_ecrites` : la phrase d'une convention ; écrite dans un fichier, `ecrite_en_mois`), en années au dixième
+  (`annees_au_dixieme`), en années révolues
+  (`ans_revolus_dits` : un nombre entier, négatif pour une ancienneté révolue qui l'est ; écrite dans un fichier,
+  `ecrite_en_annees_entieres`, relue par `en_annees_entieres`) ; une tranche d'un barème par année
+  lui donne des mois de salaire (`par_annee_dans_la_tranche`, des `MoisDeSalaire` exacts : R1234-2), et, de zéro sans
+  borne, toutes ses années à une même part (un barème par bandes, un prorata, une mise à la retraite d'une convention,
+  `droit::clauses`) ; dite en jours (S21.G00.86.003), elle est la durée de droit du jour d'arrivée au jour dit,
   compris (`Anciennete::en_jours`). D'où part l'ancienneté dans l'entreprise d'un salarié est un jour
   (`engagement::calcul::DebutDeLAnciennete`) ; une condition d'ancienneté d'une grille des minima est une forme
   (`droit::minima::ConditionDAnciennete`).
-- **durée mesurée** : un temps écoulé ; `envois::ligne::Durees`, à unifier, est des millisecondes : une écriture.
+- **durée mesurée** : un temps écoulé, de la montre ou entre deux instants (`Moment::depuis`, `plus_duree`,
+  `moins_duree`) ; ni une durée de droit (des jours de calendrier), ni des heures de travail. Des jours de 24 heures
+  (la fenêtre des retours qu'un relevé remonte) en sont une (`socle::temps::jours_de_24_heures`), un délai d'attente
+  du réseau aussi, le temps entre deux passages de la veille, et le délai d'un verrou et son âge (`socle::verrou` : un
+  verrou d'un fichier daté du futur, d'une horloge reculée, dit son avance). Ses écritures sont toutes dans `socle::temps::ecrit` :
+  dans un fichier, en secondes au dixième, en millisecondes, en minutes ou en jours entiers, dites par l'attribut serde
+  du champ ; dans une phrase, en secondes au dixième ou entières, en millisecondes, en minutes entières ou commencées,
+  à la seconde (« 1 h 12 min 5 s ») ou en heures (`heures_dites`, « 12 h »).
 
 **L'argent et les quantités**
 
 | notion | son type | déclaré dans |
 |---|---|---|
-| montant | `Montant` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| taux | `Taux` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; à unifier (#419) : des décimaux et des entiers nus | `socle/src/grandeurs.rs` |
-| heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures`) | `socle/src/grandeurs.rs` |
+| montant | `Montant` (les indemnités de rupture aussi : salaire de référence × mois de salaire, au centime, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
+| mois de salaire (ce qu'une indemnité de rupture compte en salaire de référence : un barème par année d'ancienneté, R1234-2 ; le palier, le plafond, le plancher d'une convention ou de la loi) | `MoisDeSalaire` (exacts, une fraction comme l'ancienneté : un nombre de mois tel que le texte le dit, ou compté sur une ancienneté, `Anciennete::par_annee_dans_la_tranche` ; mois de salaire + mois de salaire, × coefficient (une majoration) ; salaire de référence × mois de salaire = montant, au centime, la valeur exacte arrondie une fois : leur seule porte vers l'argent, qui refuse un montant au-delà de vingt-huit chiffres (une saisie absurde) ; une majoration se fait sur les mois (mois × coefficient), jamais sur un montant déjà arrondi ; écrits à vingt-huit chiffres, `ecrits`, `ecrits_sans_zero`) | `socle/src/grandeurs.rs` |
+| taux | `Taux` | `socle/src/grandeurs.rs` |
+| quantité | `Heures`, `Cachets`, `Jours`, `Services`, `Semaines`, `Unites` (le compte d'un forfait) ; des cachets ne se comptent qu'en entiers (Léandre, 17/11 : « 1,5 cachet, ça n'existe pas ») : chaque porte d'une grandeur refuse des cachets à virgule en nommant la case, et seule une grandeur qui se fractionne (`Fractionnable`, toutes les autres) se prend d'un décimal sans refus (`du_decimal`, `socle::forme::Nombre::grandeur`) ; la quantité imprimée d'une ligne de cachets se lit par `socle::forme::Nombre::cachets` | `socle/src/grandeurs.rs` |
+| heures par unité (les heures d'un service, d'un cachet, d'un forfait : 14 services de 4 h ; le `heures` d'une ligne, le `heures_forfait` d'une rubrique ; les heures d'une grille des minima qui paie la semaine, la journée ou l'heure, `droit::minima::Grille.heures_par_unite`, et la semaine d'une convention, 35 h, 31,5 h, 40 h) | `HeuresParUnite` (quantité × heures par unité = `Heures`, au centième d'heure : `QuantiteDeLigne::heures` ; le prix d'une unité sur ses heures, `MontantUnitaire::par_heure_de_l_unite`) | `socle/src/grandeurs.rs` |
+| heures du mois (la durée légale d'un mois à temps plein, 151,67 h : la quotité de référence d'une nature, `quotite_reference_defaut` ; celle sur laquelle une convention ramène ses mensuels à l'heure, `droit::minima::Convention.heures_mensuelles`, et une grille au mois sa valeur, `droit::minima::Grille.heures_du_mois` ; une grille ne dit ses heures que dans la grandeur de son unité, `droit::minima::table` refuse l'autre clé) | `Heures` (un mensuel sur les heures du mois : `MontantUnitaire::par_heure`, au centime le plus proche dans toute convention, `engagement::minima` ; dites dans une phrase en heures et minutes, « 151 h 40 », par `socle::texte::heures_et_minutes`) | `socle/src/grandeurs.rs` |
+| grandeur non nulle (un diviseur dont la forme tient qu'il n'est jamais nul : des jours ouvrables lus non nuls, `NonNul::de` ; les jours de la semaine de 5 ou de 6 jours d'un artiste de la 3097, qu'un texte fixe, `Jours::non_nuls`) | `NonNul<G>` (montant unitaire / jours non nuls = montant unitaire, sans refus : `MontantUnitaire::par_jour`, la seule division d'un montant unitaire par des jours) | `socle/src/grandeurs.rs` |
+| jours par semaine (un rythme : « 1 jour par semaine calendaire » d'ancienneté, un préavis d'une convention, `clauses::TranchePreavis.jours_par_semaine`) | `JoursParSemaine` (semaines × jours par semaine = `Jours`) | `socle/src/grandeurs.rs` |
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
-| quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, la part du mois payée, ou la base en euros d'une ligne en pourcentage) | `engagement/src/ligne.rs` |
+| quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
-| effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; écrit en 13.003 par `norme::quantite`) | `socle/src/grandeurs.rs` |
-| mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets ou des heures, chacun sa grandeur, comme le dit la mesure de la nature ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
-| quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon) | `engagement/src/lib.rs` |
+| effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; le banc le compte des DSN déposées, `envois::organismes_simules`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
+| mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
+| quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon ; le plafond de 40.012 et 40.013 d'une nature en est une, lu une fois dans l'unité de 40.011 ; l'unité d'un contrat, la seule source, est celle de sa nature, `Nature::selon_l_unite` ; dite dans une phrase par `QuotiteDuContrat::dite`) | `droit/src/natures.rs` |
+| quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
-| coefficient | `Coefficient` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| montant unitaire | `MontantUnitaire` ; à unifier (#419) : des décimaux nus | `socle/src/grandeurs.rs` |
-| base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures`) | `engagement/src/calcul.rs` |
+| coefficient | `Coefficient` (la part de mois de salaire qu'un barème donne par année d'ancienneté aussi, `droit::clauses`, `droit::permanents`) | `socle/src/grandeurs.rs` |
+| montant unitaire | `MontantUnitaire` | `socle/src/grandeurs.rs` |
+| montant en devise (une somme dans la monnaie de son lieu, sa monnaie dite à côté, `droit::missions::CodeMonnaie` : l'indemnité journalière de mission d'un lieu à l'étranger, `droit::missions::Indemnite`) | `MontantEnDevise` (montant en devise × taux de change = montant) | `socle/src/grandeurs.rs` |
+| taux de change (des euros pour une unité d'une monnaie : le taux de chancellerie d'une monnaie pour un lieu, `change.csv`) | `TauxDeChange` (`TauxDeChange::UN` : l'euro) | `socle/src/grandeurs.rs` |
+| heures en plus d'un mois, réparties par majoration (les heures supplémentaires d'un temps plein, complémentaires d'un temps partiel ; un palier : des heures à une majoration, un taux que le taux horaire du contrat prend en plus de lui-même) | `droit::heures_en_plus::Reparties`, ses `Palier` (`Heures`, `Taux`) ; la loi et la convention les lisent en grandeurs (`permanents::HeuresEnPlus`, `clauses::HeuresSupplementaires`) | `droit/src/heures_en_plus.rs`, `socle/src/grandeurs.rs` |
+| base d'une ligne de cotisation, valeur d'une assiette d'une paie (calculée, ou que les pièces d'une paie importée disent) | `BaseDeCotisation` (des euros, ou des heures : la déduction des heures supplémentaires, l'assiette des heures en plus, `Assiette::en_heures` ; une paie écrite l'écrit sans son unité, `en_nombre`, et la relit dans la grandeur que sa cotisation ou son assiette compte, `relue`, `de_l_assiette` ; un état l'écrit par `Ligne::base`) | `engagement/src/calcul.rs` |
 | signe d'une grandeur (garder ou retirer : une ligne de paie, ce que son sens fait au brut, le `sens` d'une rubrique au catalogue ; l'annulation d'un montant déclaré dans la DSN) | `Signe` (signe × grandeur = grandeur) | `socle/src/grandeurs.rs` |
-| plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure) | `droit/src/plafond.rs` |
-| nombre lu | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` | `socle/src/forme.rs` |
+| plafond de la sécurité sociale d'une année | `Pss` (sa valeur mensuelle, en euros ; sa valeur horaire, en euros par heure ; en euros entiers, par le seul chemin qui en fait un, `Pss::en_euros_entiers`, ses champs privés : le barème de la compagnie, `Contexte::plafond_securite_sociale`, le socle livré de la CASC, le résolveur de l'atelier ; le plafond d'une paie se calcule en grandeurs, `droit::plafond`) | `droit/src/plafond.rs` |
+| taille d'un fichier (une image posée et son poids visé, ce que la sauvegarde envoie et la restauration redescend, une archive, une capture, ce qu'une mise à jour reçoit) | `Octets` (écrite en octets dans un fichier, tapée en Ko dans une saisie, `Octets::ko` ; dite d'une seule façon, par son affichage : en Ko au centième, en Mo au dixième au-delà de mille Ko ; octets / octets = coefficient, `rapport`) | `socle/src/grandeurs.rs` |
+| écart en octets dans un fichier lu (la position d'un octet depuis son début, ou l'écart entre deux positions : le répertoire et les membres d'une archive zip, `envois::retours` ; signé, car une archive abîmée place un membre avant le début, ce que sa lecture refuse en le disant) | `EcartEnOctets` (lu d'un champ, `lu`, ou d'une position en mémoire, `de_position` ; s'ajoute, se retranche, se compare, s'écrit en nombre ; redevient une position en mémoire s'il ne précède pas le début, `au_plus`) | `socle/src/grandeurs.rs` |
+| nombre écrit (ce qu'une personne a tapé, converti en sa grandeur par `socle::grandeurs::lu::tapee`, la seule conversion : à la porte d'une route, une grandeur de sa charge se lit tapée, `socle::forme::lire_saisie` ; un nombre entier, une année, des jours de droit, un compte, par la même lecture, `lu::entier` (interne au socle), qu'il soit tapé ou en nombre JSON ; le numéro d'un jour, en `Jour` dans le mois de sa charge, `socle::forme::Objet::jour_du_mois` ; l'échelon d'une fiche par la même lecture, en rang dans sa grille (`socle::grandeurs::RangDansUneGrille`) ; un poids en Ko, `Octets::ko` ; un refus nomme la case dans la phrase de la route, `socle::echec::CaseRefusee`) | la grandeur elle-même, lue tapée à la porte | `socle/src/grandeurs.rs` |
+| nombre lu (une grandeur qu'un fichier écrit « court », là où un champ ne se pose pas, se lit dans sa grandeur, `socle::grandeurs::lu::court::Lue` ; un nombre lu avant que sa place dise sa grandeur, une fois : celui qu'une pièce imprime, `Nombre::a_virgule`, ou que la norme écrit, `Nombre::de_la_norme`, les seules lectures dont `grandeurs::lu::texte` et `lu::norme` se servent ; l'entier qu'une zone écrit en chiffres, `socle::piece::EntierDUneZone`, que sa colonne lit en sa grandeur, `en`) | pas une notion : `socle::forme::Court`, `Nombre`, `NombreLu`, `socle::piece::EntierDUneZone` | `socle/src/forme.rs`, `socle/src/piece.rs` |
+| rang dans une grille numérotée de 1 à N (l'échelon de la CCNEAC, une grille de douze, `droit::fiche::EchelonCcneac`) | `RangDansUneGrille<N>` (lu d'un nombre entier ou tapé, hors de 1 à N refusé en la phrase de sa notion ; il prend sa ligne dans la grille, `ligne`, et son rang ne sort pas) | `socle/src/grandeurs.rs` |
+| suite qui tourne au fil des jours (les conseils « Le saviez-vous ? », dont chaque jour montre un, `routes::gestes::conseils`) | `SuiteQuiTourne<T>` (jamais vide, `de` ; elle rend l'élément du jour, `du_jour`, au pas premier avec N à partir de N × 0,618 : son rang ne sort pas) | `socle/src/grandeurs.rs` |
+| décalage dans une suite qui tourne (« un autre » conseil du jour : `1` le suivant, `-1` le précédent, `routes::gestes::conseils`) | `DecalageDansUneSuite` (lu d'un entier signé ; il décale l'élément du jour d'une `SuiteQuiTourne` en tournant, et son nombre ne sort pas) | `socle/src/grandeurs.rs` |
+| entier d'un petit langage d'un fichier (le modèle `421{code:03}` d'un compte individuel du plan comptable, `documents::plan_comptable`) | `socle::texte::EntierEcrit` (lu de son texte ; son signe, sa valeur absolue écrite en base 10, 16, 8 ou 2, le caractère qu'il code) | `socle/src/texte.rs` |
+| rotation d'une page d'un PDF (`/Rotate`, un multiple de 90 degrés : ce que le relevé d'un PDF écrit en degrés, que l'import et l'atelier lisent) | `fabrique_pdf::inspection::Rotation` (en quarts de tour, ramenée à un tour) | `fabrique-pdf/src/inspection.rs` |
 
 **Le détail**
 
-- **montant** : une somme en euros, au centime ; aujourd'hui aussi `Decimal` ; le
-  nombre d'une fiche, `droit::fiche::NombreDeFiche`, est une écriture (il garde ce qu'on a tapé), pas un montant ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
+- **montant** : une somme en euros, au centime ; une case tapée d'une charge est sa
+  grandeur, lue tapée à la porte de la route, pas un texte. **Le nombre tapé**
+  (Léandre, 16/11) : « les gens tapent n'importe quoi et après on convertit automatiquement ; ce qui est affiché, c'est
+  ce qui a été converti ; un chiffre solide, pas du texte ». Une seule conversion, celle de la route
+  (`socle::grandeurs::lu::tapee`), jamais une copie ailleurs : la virgule ou le point séparent les décimales, seule
+  l'espace sépare les milliers (« 1.500 » vaut 1,5 ; « 1 500 », mille cinq cents), le signe de l'unité se tolère à la
+  fin ; tout le reste se refuse en nommant la case, dans la phrase de la route (`socle::forme::case_refusee`, la seule
+  phrase : « Taux AT/MP : « 1 5 » ne se lit pas : … », la case nommée comme l'écran la montre). Ce qu'on garde et ce qu'on affiche est la grandeur convertie ; `engagement::ligne::AuMontant` et `EnPourcentage` sont des lignes de paie, pas des montants. L'arrondi au centime
   est un seul, `Montant::au_centime` (la moitié vers le haut, deux décimales écrites).
-- **taux** : un pourcentage appliqué à une base ; aujourd'hui aussi `Decimal` (le solde de la taxe d'apprentissage se lit dans la forme
+- **taux** : un pourcentage appliqué à une base (le solde de la taxe d'apprentissage se lit dans la forme
   `droit::forme_bareme::SoldeTaxeApprentissage`) ; le
-  taux de PAS est sa notion à lui, `droit::pas::TauxDePas`.
-- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui `Decimal`, `i64`,
-  `engagement::ligne::Chiffre`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
-  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait, la base en
-  euros d'une ligne en pourcentage ; une ligne au montant compte 1) : la ligne écrite ne garde que son nombre, et prend
-  son unité quand sa rubrique est lue ; quantité × montant unitaire = montant. Sa quantité et son taux se lisent
-  ensemble (`PaiementDeLigne::de_l_unite`) : une rubrique en pourcentage donne une base et la part qu'elle en paie,
-  toute autre une quantité et un montant unitaire ; une ligne composée d'une rubrique en pourcentage a la forme d'une
-  ligne en pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si,
-  et seulement si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée garde le montant que son
-  bulletin dit (`LignePaie::montant_lu`), qui ne se recompose pas.
-- **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, une majoration, le
-  coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie) ;
-  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant.
+  taux de PAS est sa notion à lui, `droit::pas::TauxDePas`. La majoration d'une heure en plus est un taux (« une
+  majoration de salaire de 25 % », L3121-36) : le taux horaire majoré est le taux horaire × (100 % + majoration) ; ce
+  n'est ni le multiplicateur d'une assiette (un coefficient) ni la majoration de la caisse des congés.
+- **quantité** : des heures, des cachets, des jours : trois grandeurs indépendantes ; aujourd'hui aussi
+  `i64`. La quantité d'une ligne de paie (`QuantiteDeLigne`) est dans l'unité que dit sa rubrique
+  (`droit::catalogue::Unite` : heures, cachets, jours, services, semaines, part du mois, unités d'un forfait ; une ligne
+  au montant compte 1, et paie son montant quelle que soit l'unité, `PaiementDeLigne::une_fois`) : elle s'écrit dans son
+  unité, par sa forme (`{"cachets": "2"}`), la charge comme le fichier, et la porte d'une ligne saisie la range dans
+  l'unité de sa rubrique (`LigneDonnee::ranger`) ; quantité × montant unitaire = montant. Une ligne en pourcentage n'a
+  pas de quantité : elle paie une part de sa base en euros (`PaiementDeLigne::Base`, `EnPourcentage.base`). Une ligne
+  que le moteur compose porte ce qu'elle paie (`PaiementDeLigne`, sa quantité et son taux) : une rubrique en pourcentage
+  donne une base et la part qu'elle en paie, toute autre une quantité et un montant unitaire (`PaiementDeLigne::de`) ;
+  une ligne composée d'une rubrique en pourcentage a la forme d'une ligne en
+  pourcentage (`LignePaie::en_pourcentage`), et la saisie d'une rubrique dit une base et un pourcentage si, et seulement
+  si, son unité est le pourcentage (`FormeSaisie::de`). Une ligne importée n'est pas une ligne de paie : rattachée à sa rubrique, elle
+  garde le montant que son bulletin dit (`calcul::LigneRattachee`), qui ne se recompose pas ; sa quantité et son taux imprimés se lisent dans l'unité de sa
+  rubrique (`PaiementDeLigne::imprime`).
+- **coefficient** : un multiplicateur sans unité, ni taux ni montant (l'abattement de la CSG, le multiplicateur de
+  l'assiette d'un employeur affilié à une caisse de congés, `majoration_conges_115` et `_110` du barème, 1,115, le
+  coefficient de la réduction générale, la part du mois payée, la part de sa base qu'une ligne en pourcentage paie, la
+  part reçue d'une mise à jour, la part salariée d'une répartition de la tranche 1) ;
+  montant × coefficient = montant ; la part du mois × le salaire mensuel (un montant unitaire) = montant ; une valeur
+  livrée qu'un gabarit des conseils cite se met à l'échelle d'un coefficient, ou s'y divise (`*12`, `/31` :
+  montant, montant unitaire, taux ou coefficient × coefficient, et ÷ un coefficient non nul, `NonNul<Coefficient>` : la
+  grandeur gardée). Il s'arrondit
+  par une fonction par règle (`au_dix_millieme`, la moitié vers le haut ; `a_decimales`, la moitié au pair) ; ses quatre
+  décimales s'écrivent à part (`socle::grandeurs::decimales_ecrites`).
 - **montant unitaire** : des euros par unité (par heure, par cachet, par jour) : le taux d'une ligne de paie qui se
-  paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire ; quantité ×
-  montant unitaire = montant.
-- Chaque grandeur porte un décimal exact, son échelle gardée ; elle n'en sort que par `decimal`, à la porte qui l'exige.
-  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `centimes`, `sans_zero`, `entier`), dits par
-  l'attribut serde du champ. Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
+  paie à l'unité (`TauxDeLigne::ParUnite`), le plafond de la sécurité sociale horaire, le SMIC horaire, un minimum
+  conventionnel et chaque valeur des grilles des minima (`droit::minima::Minimum`, par heure, par cachet, par service,
+  par journée, par semaine, par mois), la limite d'exonération d'une nuitée ou d'un repas au barème
+  (`forme_bareme::FraisParZone`, `FraisDeRepas`, `LogementEtRepas`) ; quantité × montant unitaire = montant. Les frais
+  à l'étranger se comptent jour par jour en grandeurs : les unités d'un jour (`Unites::reparties_sur`), ce que la ligne
+  paie un jour (unités × montant unitaire), l'écart au-dessus de la limite (un montant) et son prix par unité
+  (`Montant::par_unite` : montant / unités = montant unitaire).
+- Une grandeur qu'un texte fixe s'écrit par son écriture constante, au socle, jamais par `du_decimal` : `Montant::euros`,
+  `Taux::points`, `Taux::centiemes_de_point`, `Taux::milliemes_de_point`, `Coefficient::entier_fixe`,
+  `Coefficient::dixiemes`, `Coefficient::centiemes`, `Coefficient::dix_milliemes`, `Heures::fixes`, `Heures::centiemes`, `Jours::fixes`, `Effectif::personnes`, et les constantes nommées (`ZERO`,
+  `UN`, `Heures::UN_MILLIARDIEME`…) ; une grandeur qu'un exemple d'un test écrit se lit de son texte
+  (`socle::grandeurs::lu::en_texte`).
+- Chaque grandeur porte un décimal exact, son échelle gardée ; il n'en sort qu'au socle, par ses écritures et ses
+  lectures (`grandeurs::decimal`, interne au socle) : hors du socle, il ne se nomme pas.
+  Ses écritures sont les modules de `socle::grandeurs::ecrit` (`texte`, `court`, `centimes`, `sans_zero`, `entier`, et
+  `en_centimes`, la zone d'un format comptable), dits par l'attribut serde du champ ; la case d'un état porte la
+  grandeur elle-même (`documents::tableaux_export::Val`, une forme), posée une fois par sa colonne, qui dit ce qu'elle
+  reçoit (une colonne totalisée, la seule grandeur que son total additionne : `Recoit` ; un cumul se fait avant, sur des
+  grandeurs, `etats_paie::CumulDuLivre`), écrite à chacune de ses portes (le texte, le JSON,
+  la feuille du classeur, `classeur::Feuille::nombre`, qui prend la grandeur) ; case d'une fiche (`fiche!`, ses listes datées), elle s'écrit en nombre JSON par
+  `socle::ecriture::EcritureDeCase` (les heures du forfait d'une rubrique, son plafond de cachets par mois). Le modèle : `engagement::heures_en_plus::Suites` et la route `regularisations`. La DSN
   écrit un montant, un taux et une quantité par `socle::grandeurs::ecrit::norme` (`montant` : au centime, jamais
   « -0.00 » ; `taux` : ses décimales, la moitié au pair, toutes écrites ; `quantite` : au centième, la moitié vers le
-  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture.
-- **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte.
+  haut, jamais « -0.00 »). Un taux se calcule par `Taux::au_pair` ; son échelle ne se pose qu'à l'écriture, par la seule écriture des
+  décimales d'une grandeur, `socle::grandeurs::decimales_ecrites` (une écriture, pas un arrondi : la case d'un état, le
+  coefficient de la réduction générale ; un taux de PAS par `aux_centiemes`, qui refuse plus fin que le centième).
+  Dans une phrase, une grandeur s'écrit par `socle::texte`, une fonction par écriture, qui prend la grandeur : `euros`
+  (« 1 234,50 € »), `pourcent` (« 1,50 % »), `virgule` (sans zéro inutile, « 151,67 »), `a_virgule` (son échelle
+  gardée, « 12,50 » ; aussi la case d'un état ou d'un CSV à la française), `par_milliers` et `par_milliers_a` (ce qu'un
+  conseil cite, « 4 005 », « 46,07 »), `heures_et_minutes` (« 151 h 40 ») ; un compte, `compte` ; une ancienneté, ses
+  mois dits (`Anciennete::mois_dits`, `mois_dits_au_dixieme`) ; la quotité d'un contrat, `QuotiteDuContrat::dite`.
+- **nombre lu** : un nombre tel qu'un fichier l'écrit ; ce sont des écritures, lues à la porte. Un nombre lu comme
+  `Court` se cite dans une phrase par `Court::dit` ; l'opérande d'un gabarit des conseils se lit en sa grandeur par
+  `socle::grandeurs::lu::ecrite`.
 
 **Les identifiants**
 
@@ -327,6 +471,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | NIR | `droit::fiche::Nir` | `droit/src/fiche.rs` |
 | NTT | `Ntt` | `declarations/src/ntt.rs` |
 | identifiant d'un individu | `IdentifiantDIndividu` | `declarations/src/ntt.rs` |
+| identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
+| date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
+| employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
+| nom déclaré, prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -337,6 +485,8 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'un avenant au contrat | `NumeroDAvenant` | `engagement/src/numeros.rs` |
 | rang d'une ligne parmi celles de sa carte | `RangDeLigne` | `engagement/src/ligne.rs` |
 | rang d'un engagement dans l'écran de son mois (dit à partir de un) | `RangDansLeMois` | `engagement/src/saisie.rs` |
+| rang d'une ligne dans son état (dit à partir de un : le numéro d'ordre du registre du personnel) | `RangDansLEtat` | `documents/src/tableaux_export.rs` |
+| numéro d'une écriture comptable (le rang de son mois, sa pièce, parmi les mois de la période exportée, partagé par les lignes du mois ; seuls l'écrivent le FEC, `EcritureNum`, et XIMPORT) | `NumeroDEcriture` | `documents/src/etats_compta.rs` |
 | version d'un engagement (la première à sa validation, la suivante quand ce qui est parti change) | `VersionDeLEngagement` | `engagement/src/stock.rs` |
 | numéro d'objet spectacle | `NumeroObjetSpectacle` | `droit/src/fiche.rs` |
 | IDCC | `Idcc` | `droit/src/fiche.rs` |
@@ -368,7 +518,10 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | courriel envoyé | `envois::envoi::Message<Pour>` | `envois/src/envoi.rs` |
 | expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
 | version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
+| version de la forme du coffre (`coffre.bin`, `version` : seule celle de ce logiciel se lit, une autre se refuse) | `compagnie::coffre::VersionDuCoffre` | `compagnie/src/coffre.rs` |
+| paramètres de la dérivation du mot de passe du logiciel (scrypt : `n`, `r`, `p`, que `coffre.bin` écrit en nombres) | `compagnie::coffre::ParametresDuCoffre` (bornés à leur lecture, les refus dans l'ordre d'OpenSSL ; ceux de la bibliothèque, `scrypt::Params`) | `compagnie/src/coffre.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
+| numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
@@ -424,11 +577,13 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
 | numéro d'ordre | `NumeroDOrdre` | `droit/src/natures.rs` |
 | identifiant de déclaration | `IdentifiantDeDeclaration` | `droit/src/natures.rs` |
 | code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
+| groupe d'un risque AT/MP en Alsace-Moselle (le numéro de groupe de l'annexe 3 de l'arrêté de tarification, auquel l'annexe donne un taux) | `GroupeAlsaceMoselle` | `droit/src/bareme.rs` |
 | code Urssaf de la DPAE | `CodeUrssafDpae` | `declarations/src/urssaf.rs` |
 | identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
 | accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
 | classe d'un échec noté | `ClasseNotee` | `socle/src/echec.rs` |
+| case d'une saisie qu'un refus nomme (la clé de la charge, ou la case que nomme un changement de la carte) | `CaseDeLaSaisie` (le refus qui la porte : `CaseRefusee`) | `socle/src/echec.rs` |
 
 **Le détail**
 
@@ -440,13 +595,38 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   engagement importé, les retours ; un NIR en cours de saisie reste son texte.
 - **NTT** : le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020). Il se fabrique pour un salarié
   (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule), ou dans un retour de la
-  norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS). Que portent l'identité qu'une DSN partie a déclarée
-  (`changements_individu::Declaree`), l'individu d'une DSN lue et l'identité en écart d'un compte rendu NEOReS
-  (`envois::retours::IdentiteNeores`, à côté du NIR déclaré, R001).
+  norme (`Ntt::lire`, strict : RO.B009.R002 de NEOReS). Que porte l'identité déclarée (`IdentiteDeclaree`).
 - **identifiant d'un individu** : ce qui identifie un individu dans une DSN : son NIR, ou, sans NIR, son NTT (« Un
   individu s'identifie par son NIR **ou** par son NTT »). `Nir(Nir)`, `Ntt(Ntt)`, écrit dans aucun fichier, trié NIR
-  d'abord ; celui d'un individu d'une DSN lue, `IndividuDeclare::identifiant` (le NIR, sinon le NTT). Que portent
+  d'abord ; celui d'une identité déclarée, `IdentiteDeclaree::identifiant` (le NIR, sinon le NTT). Que portent
   l'effectif que le simulateur des organismes compte et le contrôle des doublons (CCH-14).
+- **identité déclarée d'une personne** : ce qu'une pièce ou une DSN partie dit de qui elle est : son nom de famille, ses
+  prénoms, sa date de naissance, son NIR, son NTT (le bloc 30 de la DSN : 30.001, .002, .004, .006, .020), chaque case
+  vide quand la pièce ne la porte pas. Le NIR et le NTT vont ensemble sur la première DSN où le NIR arrive. Le nom et les
+  prénoms sont du texte : la norme ne leur donne qu'une longueur (DSN 80, DPAE 32 : celle de la fiche,
+  `droit::fiche::NomDeclare`), et la pièce d'autrui ne se refuse pas pour elle. Chaque lecture d'une pièce la rend une
+  fois : l'individu d'une DSN lue (`dsn_lue::IndividuDeclare.identite`, que la fiche proposée écrit sous ses clés,
+  `import::dsn_aem::SalarieDeclare::fiche`), une DPAE relue et une ligne du certificat de conformité
+  (`dpae::EnregistrementRelu`, `dpae::LigneDuCertificat`), une AEM, un certificat d'emploi, un bulletin d'autrui (dont le
+  NIR imprimé se lit à sa porte, `bulletin_lu::Salarie`, sa clé et sa faute à côté), l'identité déclarée et celle de
+  référence d'un compte rendu NEOReS (`envois::retours::IdentiteNeores`) ; et l'identité qu'une DSN partie a déclarée
+  (`changements_individu::Declaree`). Sa serde : `nom`, `prenoms`, `naissance`, `nir`, `ntt` (une réponse qui
+  l'aplatit). L'identité de notre fiche n'en est pas une : ses cases gardent leurs types (`Nir`, `NomDeclare`,
+  `PrenomDeclare`, un `Jour` de naissance, jamais incomplet), qu'elle se compare à une DPAE relue (`routes::depots`) ou
+  s'écrive dans la liste nominative de la CASC-SVP (`routes::importation::casc::IndividuReg`).
+- **nom déclaré, prénom déclaré** : les cases nom et prénom de la fiche d'un salarié, 32 caractères au plus (la DPAE
+  en écrit 32, la DSN 80) ; un texte vide n'en est pas un.
+- **date de naissance déclarée** : S21.G00.30.006, `JJMMAAAA`, dont le jour ou le mois peuvent être inconnus (`00` ou
+  `99`) ; un compte rendu NEOReS l'écrit `AAAA-MM-JJ` (`lire_iso`), et sa naissance de référence (R009) inconnue du
+  SNGI, `0000-00-00`, n'est aucune (l'identité de référence est sans naissance). Un jour connu (`Connue`, celui d'une fiche ou d'une
+  pièce qui l'imprime, `du_jour`), ou ses chiffres tels que déclarés (`Incomplete`) ; écrite `jjmmaaaa`, `jj_mm_aaaa`,
+  `iso` (sa serde) ; le jour qu'elle dit, `jour`.
+- **employeur lu d'une pièce** : la raison sociale et le SIRET qu'une pièce d'autrui imprime (un bulletin, une AEM, un
+  certificat d'emploi Congés Spectacles), chacun vide quand elle ne l'imprime pas ou, pour le SIRET, hors de sa forme
+  (`Siret::d_une_piece` ; le SIRET imprimé d'un bulletin se lit à sa porte, `bulletin_lu::Entreprise`, sa faute à côté).
+  La raison sociale est du texte tel qu'imprimé ; la fiche Entreprise proposée la range (`RaisonSociale`). Ce que l'AEM
+  dit en commun avec un certificat (`Aem::commun`) le passe tel quel. L'entreprise d'une DSN lue
+  (`dsn_lue::EntrepriseDeclaree`) est une forme de la fiche Entreprise, ses SIREN et NIC typés.
 - **case d'identité** : un des quatre identifiants que le bloc « Changements individu » reporte quand il change : NIR,
   nom de famille, prénoms, date de naissance (S21.G00.31.008 à .011). Une liste de la norme : `TOUTES` dans l'ordre du
   bloc 31, sa rubrique (`r31`), son libellé, la case de la fiche qui la porte ; sa valeur telle que le bloc 30 l'écrit
@@ -855,6 +1035,13 @@ jusqu'au dernier chantier (#419, « phrase » ci-dessous), une phrase dite aux g
   lui (`accord`). Une clé du logiciel, non vide.
 - **classe d'un échec noté** : ce que la mémoire des échecs dit d'un échec : sa classe, un refus ordinaire (`-`), une
   panique (`panique`) ; ce que le diagnostic montre.
+- **case d'une saisie qu'un refus nomme** : là où une faute de la charge d'une route se trouve, quel que soit son niveau
+  (`socle::forme::lire_saisie`, `Objet::jour_du_mois`) : la clé de la charge qui la porte, ou la case que nomme le
+  changement qui la porte (`{"case": "salaire_mensuel", "valeur": …}`). La route en fait sa phrase, la case nommée comme
+  sa fiche la montre (`routes::case_nommee`, la seule fabrique, quelle que soit l'entrée qui lit la charge). La case d'un
+  changement (`DUnChangement`) est le texte de la clé de la carte : le socle, où se lit la charge, ne voit pas
+  `engagement`, dont la carte nomme ses cases (`engagement::carte::libelle_de_la_case`, que la route lit) ; il ne la lit
+  pas, il la rend.
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
@@ -869,7 +1056,7 @@ en cours (62.008), `TransactionEnCours`, le mois de rattachement d'un FCTU (50.0
 (52.001), `TypeDePrime` (`droit/src/type_de_prime.rs`), que portent la rubrique (`dsn_bloc52`), ses lignes de paie et
 `permanents-base.json`. L'arrêt (bloc 60) : son motif (60.001), `MotifDArret`, le motif de la reprise (60.011),
 `MotifDeReprise`, la subrogation (60.004), `SubrogationDeLArret` (`droit/src/arrets.rs`, `arrets-base.json` en dit
-les propriétés ; la case « subrogation » d'un permanent, `fiche::Subrogation`, est une autre notion). Le motif d'une
+les propriétés ; la case « subrogation » d'un permanent, `fiche::Subrogation`, et la subrogation qu'une convention donne, `clauses::Subrogation` (une pièce du maintien de salaire), sont deux autres notions). Le motif d'une
 suspension (65.001), `MotifDeSuspension` (`droit/src/permanents.rs`, ses propriétés : `ProprietesDeSuspension`). Le
 contrat et son activité (`droit/src/natures.rs`, `contrats-base.json` dit celles de chaque nature) : l'unité de la
 quotité (40.011), `UniteDeQuotite` ; la modalité de déclaration de la fin (62.017, le circuit dérogatoire),
@@ -898,7 +1085,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | notion | son type | déclaré dans |
 |---|---|---|
 | engagement | `Engagement` | `engagement/src/lib.rs` |
-| contrat | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… | — |
+| contrat (ce que l'engagement fait signer) | aucun type : ce n'est pas une donnée, c'est le document qu'on fabrique depuis l'engagement validé (`Engagement`), comme le bulletin depuis la paie (le contrat, l'avenant, le certificat et l'AER lisent la `Paie` et son engagement ; l'ancien texte d'un avenant, la paie que la version partie a écrite, `etats::paie_ecrite_relue`). Ce que seule la saisie dit du contrat écrit : `engagement::ContratEcrit` ; ses formes : la paie écrite, `FormeDEngagement`, et le contrat parti, `envois::ligne::ContratParti`. Ce qu'une pièce ou un organisme dit d'un contrat est une autre notion : « contrat déclaré ou attesté », qui suit | — |
+| contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`, et le calendrier des mois passés dans la sienne, `routes::mois::Atteste`. Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat, par un seul découpage, `Importe::mois_par_mois`) | `ContratDeclare` | — |
 | acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
@@ -918,9 +1106,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
-| colonne d'un état | `ColonneDEtat` | `documents/src/tableaux_export.rs` |
+| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, un compte, la base d'une assiette ; ce qui ne s'additionne pas a sa sorte sans total — les jours d'un compteur de congés, un compte, un montant —, jamais un total effacé après coup) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJours`, `ColonneDeCompte`, `ColonneDeCompteSansTotal`, `ColonneDeMontantSansTotal`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
+| cumul de lignes du livre de paie (combien de bulletins, et chacun de ses montants : le seul cumul des états, `cumuls_par` ; le livre, le récapitulatif annuel, la masse salariale, le coût par spectacle, le coût de l'année d'une fiche, la masse des contributions de branche, le taux patronal réel ; la clé et les lignes retenues se disent à la porte de chaque état) | `CumulDuLivre` | `documents/src/etats_paie.rs` |
+| somme d'un montant du livre sur des lignes (ce que portent celles qui le disent, et combien le disent : une paie importée peut le taire) | `SommeDuLivre` | `documents/src/etats_paie.rs` |
+| total d'un compte sur les écritures d'une période (son libellé, son débit, son crédit, son solde : le sous-total du grand livre et la ligne de la balance, un seul calcul, `totaux_par_compte`) | `TotalDuCompte` | `documents/src/etats_compta.rs` |
 | poste analytique | `PosteAnalytique` | `documents/src/ecritures_comptables.rs` |
 | code analytique d'un spectacle | `CodeAnalytique` | `droit/src/fiche.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
@@ -931,9 +1122,17 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | type de contrat de la DPAE | `TypeContratDpae` | `droit/src/natures.rs` |
 | lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
 | origine du retour d'un contrat | `envois::ligne::OrigineDuRetourDeContrat` | `envois/src/ligne.rs` |
-| paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs`, `engagement/src/paie_ecrite.rs`, `engagement/src/importe.rs` |
+| paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
+| paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
+| paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
+| ligne de rémunération (ce qu'une ligne de paie paie, sa rubrique et son montant. Celle que le calcul rend dit toujours ce qu'elle paie, `LigneBrut` (son paiement obligatoire) ; celle d'un bulletin importé que l'import a rattachée à sa rubrique garde son montant lu, et ce qu'elle paie quand il l'imprime, `LigneRattachee` (la même ligne, son paiement facultatif : un forfait imprimé à son seul montant) ; un seul rattachement, `importe::LigneImprimee::rattachee` : une rubrique et un montant ; elle n'est pas une ligne de paie (`LignePaie`). Ses formes : la paie écrite, la ligne du calcul elle-même (son paiement écrit sans zéro, `EcritSansZero`) ; la zone `importe`, `LigneImprimee`, qu'une ligne non rattachée garde. Un état la lit d'une paie du mois sans recopie, `etats::RemunerationDuMois` : la ligne calculée, la ligne rattachée, ou ce que le bulletin importé imprime) | `engagement::calcul::LigneBrut`, `engagement::calcul::LigneRattachee` | `engagement/src/calcul.rs` |
+| ligne de cotisation (celle que le calcul rend ; la forme de la zone `importe`, la ligne qu'un bulletin importé imprime, `importe::CotisationImprimee`, ce qu'il ne dit pas vide ; la forme écrite, la ligne du calcul elle-même, lue sa base en nombre puis relue (`LigneCotisation::relue`). Un état la lit d'une paie du mois sans recopie, `etats::CotisationDuMois` : la ligne calculée, ou celle du bulletin importé) | `engagement::calcul::LigneCotisation` | `engagement/src/calcul.rs` |
+| versement mobilité (son taux, la commune de l'établissement, l'autorité qui l'institue ; ses formes : la case d'une fiche, `droit::fiche::VersementMobilite`, ce que la surcouche du barème écrit, `forme_bareme::VersementMobiliteEcrit`, `VersementMobiliteTaux`) | `droit::bareme::VersementMobilite` | `droit/src/bareme.rs` |
+| réponse au versement mobilité (ce qu'une compagnie écrit au lieu d'un taux, un choix : « aucun » ; une réponse inconnue refuse à la lecture en disant celles qui se donnent ; les clés des `reponses` du seuil du versement mobilité dans `seuils_effectif.non_portees`, `forme_bareme::SeuilNonPorte::VersementMobilite`, chaque chose non portée sa forme et ses réponses) | `droit::forme_bareme::ReponseAuVersementMobilite` | `droit/src/forme_bareme.rs` |
+| ce que la compagnie dit de son versement mobilité (le versement qu'elle doit, ou sa réponse qu'elle n'en doit pas, `ReponseAuVersementMobilite`), lu une fois : de sa surcouche à l'empilement (`VersementMobiliteDit::lu`), ou de la case de l'établissement du salarié, qui le remplace (`bareme::surcharger`) ; la paie, la DSN, les contrôles et l'ouverture le lisent sur la pile | `droit::bareme::VersementMobiliteDit` | `droit/src/bareme.rs` |
 | salarié | `IdSalarie`, `droit::fiche::FicheSalarie` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
 | compagnie | `compagnie::installation::Compagnie` | `compagnie/src/installation.rs` |
 | spectacle | `IdSpectacle`, `droit::fiche::Spectacle` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
@@ -949,8 +1148,12 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
+| numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
 | source de la durée d'un préavis | `SourceDuPreavis` | `engagement/src/solde.rs` |
 | durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |
+| préavis d'une fin de contrat (son type, S21.G00.63.001, et ses dates, que la carte saisit) | `Preavis` | `engagement/src/saisie.rs` |
+| préavis que le solde compte (sa durée, ce qu'en donnent la loi et la convention, et ce qui le dit en mots) | `PreavisCompte` | `engagement/src/solde.rs` |
+| préavis que la convention dit pour un salarié (sa durée en mois de salaire, en jours quand elle le dit ainsi, son article, ou pourquoi elle n'en donne pas ; ce que la convention en écrit est une forme de `clauses-base.json`, `SectionDuPreavis`, et ce que la loi en dit, une forme de `permanents-base.json`, `droit::permanents::ReglesDuPreavis`) | `PreavisDit` | `droit/src/clauses.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |
 | fiche proposée (par l'import, l'une des trois, typée) | `FicheProposee` | `import/src/proposee.rs` |
@@ -959,6 +1162,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qu'une case écrit | `MotEcrit` | `socle/src/ecriture.rs` |
 | valeur d'une case d'une fiche | `ValeurDeCase` | `socle/src/ecriture.rs` |
 | liste lue élément par élément | `socle::forme::Liste` | `socle/src/forme.rs` |
+| liste qu'un fichier ne peut pas laisser vide (une liste vide se refuse à sa lecture : les paliers des heures complémentaires, les paliers annuels des heures supplémentaires d'une convention, ses tranches de préavis communes à toutes les catégories, ses suppléments et majorations selon l'âge, les paliers et tranches de ses indemnités de retraite, les changements d'une carte ; une forme qui le dit en ses mots la fait de sa liste, `AuMoinsUn::de`) | `socle::forme::AuMoinsUn` | `socle/src/forme.rs` |
 | clé d'échéance | `CleDEcheance` | `routes/src/rappels.rs` |
 | échéance de l'année | `CleDAnnuelle` | `routes/src/rappels.rs` |
 | genre d'une échéance | `GenreDEcheance` | `routes/src/rappels.rs` |
@@ -980,9 +1184,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
 | case qu'une rubrique fait saisir | `CaseSaisie` | `droit/src/catalogue.rs` |
 | origine d'une rubrique | `OrigineDeRubrique` | `droit/src/catalogue.rs` |
-| cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
+| cotisation du bulletin | `IdDeCotisation` | `droit/src/forme_bareme.rs` |
 | famille d'une cotisation | `FamilleDeCotisation` | `droit/src/forme_bareme.rs` |
-| regroupement de la comparaison | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
+| regroupement de la comparaison (aussi ce que la table de lecture des bulletins dit qu'une ligne de cotisation imprimée est, lu à sa porte : `cotisations` de `bulletins-lecture-base.json`) | `RegroupementDeComparaison`, `TotalDuBulletin` | `engagement/src/ecarts.rs` |
+| taux AT/MP (la ligne datée de la case : code risque, taux, depuis, provenance, notification ; le barème d'une année la porte, `Pile.taux_atmp`, et le refus d'un établissement à part, `Pile.taux_atmp_manque`. Ses formes, à leur porte : la notification d'une CARSAT, `envois::retours::TauxAtmpNotifie`, que la seule `routes::atmp::recue` fait ligne de la case ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxAtmpAnnonce` ; la ligne d'un CTP qui prend le taux du barème, `droit::organismes::TauxAtDuBareme`, une forme de `organismes-base.json`) | `droit::fiche::TauxAtmp` | `droit/src/fiche.rs` |
 | origine du taux AT/MP comparé | `OrigineDuTauxAtmp` | `engagement/src/ecarts.rs` |
 | mesure d'un écart de la comparaison (l'écart relatif d'une base ou d'un montant, notre taux et le leur, ou une cotisation d'un seul côté ; sa variante dit ce qui diffère) | `MesureDeLEcart` | `engagement/src/ecarts.rs` |
 | ce qui diffère dans un écart de la comparaison (la base, un taux, un montant, une cotisation d'un seul côté) | `CeQuiDiffere` | `engagement/src/ecarts.rs` |
@@ -993,7 +1198,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
-| emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
+| emploi (un métier par son code ; sa fiche vient du catalogue ou de la nomenclature, `FicheDuMetier`, dont `FicheDuCatalogue` et `EmploiFt` sont les formes des fichiers ; les sept champs qu'il fait déclarer, `ChampsDuMetier` ; un métier d'un déroulant, `MetierDuDeroulant`, une réponse) | `Metier` | `droit/src/emplois.rs` |
+| emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
+| emploi écrit (les six champs de l'emploi qu'une carte écrit à la main ou qu'un bulletin importé imprime, sans libellé lisible ; un emploi qui n'en dit aucun n'est pas écrit, sa case est vide, `EmploiEcrit::dit`. La carte le porte en une case, `engagement::saisie::Carte.emploi`, et un changement de la carte l'écrit entier, `{"case": "emploi", "valeur": {…}}` ; chacun de ses champs reste un champ de la carte, `saisie::Champ`, qu'un avenant change et retire seul ; l'import y pose l'emploi qu'un bulletin imprime, `EmploiEngagement.ecrit`) | `EmploiEcrit` | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
@@ -1004,7 +1211,6 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
-| part de la tranche 1 | `PartDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
@@ -1013,15 +1219,26 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
 | catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
+| déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
+| taux de PAS reçu (son taux, son type, son identifiant, l'instant de sa mise à disposition, la DSN mensuelle à laquelle il répond ; la case `taux_pas` de la fiche d'un salarié le porte, qui ne se saisit pas ; il se reçoit pour un salarié, la clé de sa fiche à côté ; la paie applique celui en vigueur, `taux_dgfip`. Ses formes, à leur porte : ce qu'un compte rendu de nature 94 dit, `envois::retours::ReleveTauxPas` ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxPasAnnonce` ; la situation du taux d'un salarié, `Situation`) | `droit::pas::TauxRecu` | `droit/src/pas.rs` |
+| prélèvement d'un versement (le taux appliqué, son type et son identifiant, l'abattement, le montant soumis, l'impôt prélevé : S21.G00.50.006 à .013 ; ce que les pièces d'une paie importée en disent, sans abattement ni montant soumis, `engagement::importe::PasImporte`) | `droit::pas::Versement` | `droit/src/pas.rs` |
 | taux de PAS que la dernière DSN déposée d'un salarié dit (un taux transmis, qui se reçoit, ou un taux illisible, qui ne pose rien) | `compagnie::taux_pas::TauxDUneDsn` | `compagnie/src/taux_pas.rs` |
+| réduction générale d'une paie (ce que le barème en écrit est une forme de sa section, `droit::forme_bareme::ParametresDeLaReduction`, et ses codes en DSN, `droit::forme_bareme::CodesDeLaReductionEnDsn`) | `droit::reduction::ReductionGenerale` | `droit/src/reduction.rs` |
 | formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
+| place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
+| ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants, lus une fois de `sante_svp`, `droit::bareme::ayants_droit`, que la cotisation santé compte et que la DSN déclare en 70.008, 70.011) | `AyantsDroit` | `droit/src/bareme.rs` |
+| ordre de paiement (bloc S21.G00.20 : à qui, combien, pour quelle période, pour quand, et le crédit que sa somme due laisse, `documents::bordereau::Credit`. Ce qu'une somme due fait verser et laisse en crédit est un calcul, `documents::bordereau::AVerser` ; l'ordre en clair que la boîte du dépôt montre, `declarations::ordres_paiement::OrdreEnClair`, une réponse) | `OrdreDePaiement` | `declarations/src/dsn.rs` |
+| versement déclaré (ce qu'une DSN partie a déclaré pour un contrat : ses rubriques écrites, ses nets, son brut, ses frais, son taux de PAS ; ce qu'une correction annule ; avec la paie et le bulletin qu'il annule, `DernierDeclare`. Ses formes : ce que la mensuelle écrit, `declarations::dsn::VersementEcrit` ; le bloc 50 d'une DSN lue, `declarations::dsn_lue::VersementLu`, et ce qu'il dit des nets et du prélèvement, `engagement::importe::Nets`, que la paie d'un contrat qu'il paie seul reprend, et que porte la paie versée d'un engagement importé, `PaieVersee.nets`) | `VersementDeclare` | `declarations/src/versement_declare.rs` |
+| numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
+| rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
+| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
 
 **Le détail**
 
@@ -1199,7 +1416,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **source de la durée d'un préavis** : le motif de la rupture (aucun préavis), la loi (L1234-1), ou l'article de la
   convention ; dite par `DureeDuPreavis::qui`.
 - **durée d'un préavis** : une durée qui se compte, en mois, avec sa source, l'une n'allant pas sans l'autre
-  (`Preavis.duree` ; aucune quand elle ne se compte pas, `Preavis.pourquoi` le dit).
+  (`PreavisCompte.duree` ; aucune quand elle ne se compte pas, `PreavisCompte.pourquoi` le dit). Ses mois sont des mois de salaire,
+  ce que paie son indemnité compensatrice : un `Coefficient` (la part du mois que sa ligne paie), de la loi
+  (`permanents::preavis_mois`, des mois entiers ; zéro : le motif n'en ouvre pas), de la convention
+  (`clauses::PreavisDit.mois`, une fraction quand elle le dit en jours, rendus en mois de trente jours,
+  `Jours::en_mois_de_trente_jours`, au dix-millième), ou de la carte (`preavis_mois`) ; son terme ne se compte que de
+  mois entiers (`Coefficient::en_mois_entiers`, qui dit sinon pourquoi : `socle::grandeurs::MoisNonEntiers`, une
+  fraction, qui n'a pas de terme, ou hors du calendrier, qui se refuse).
 - **fiche saisie** : la saisie d'une fiche est la fiche typée elle-même (`ChampsEntreprise`, `ChampsSalarie`,
   `ChampsSpectacle`), ses fautes à côté ; chaque case se nettoie et se type une fois, à l'entrée (`lire_cases`, la seule
   porte d'un formulaire ; `Changements::lire` pour `enregistrer-fiche`), et personne ne relit le texte tapé. La table
@@ -1324,9 +1547,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   seul (`autres`), celles de la convention (`convention`), les tranches de l'Apec (`apec`), ou un total du bulletin
   (`Total(TotalDuBulletin)` : `cotisations_salariales`, `cotisations_patronales`, `net_social`, `net_imposable`).
   Écrit par son texte, trié comme lui ; la clé de `cotisations` de la table de lecture des bulletins. Que portent un
-  écart, la ligne de cotisation qu'un bulletin importé imprime, l'incident d'un écart d'import, la ligne de cotisation
-  d'une paie du mois (`importe::LigneDeCotisation.id` : la cotisation d'une paie validée, la cotisation ou le
-  regroupement d'une paie importée), et les `regroupements` du plan comptable (`autres`, `convention`, `apec` seuls, à
+  écart, la ligne de cotisation qu'un bulletin imprime (`importe::CotisationImprimee.cotisation` : la cotisation d'une
+  paie validée, la cotisation ou le regroupement d'une paie importée), l'incident d'un écart d'import, et les `regroupements` du plan comptable (`autres`, `convention`, `apec` seuls, à
   part des `lignes`, qui ne prennent que des cotisations).
 - **origine du taux AT/MP comparé** : d'où vient le taux AT/MP du calcul d'une comparaison : la compagnie, ou le
   bulletin importé (l'AT/MP n'est alors pas comparé). Une liste du logiciel, écrite `compagnie`, `bulletin`.
@@ -1403,8 +1625,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **répartition de la tranche 1** : la part employeur et la part salariée de la retraite complémentaire en tranche 1
   d'une branche (`retraite_t1_repartition` du socle : `avant_1999`, chaque colonne de `par_idcc`). Deux écritures,
   gardées telles que lues et réécrites ainsi : en pourcentages (`EnPourcentages`, « 60/40 »), en fractions
-  (`EnFractions`, « 2/3-1/3 ») ; ce que le calcul partage, ses deux parts irréductibles (`parts`,
-  `PartDeLaTrancheUne`, même fichier). Ce n'est pas une fraction de la norme (`natures::Fraction`, S20.G00.05.003).
+  (`EnFractions`, « 2/3-1/3 ») ; ce que le calcul partage, ses deux parts, chacune un coefficient (`parts` ; taux ×
+  coefficient = taux, `parts_t1`). Ce n'est pas une fraction de la norme (`natures::Fraction`, S20.G00.05.003).
 - **majoration de la caisse des congés** : ce par quoi le coefficient de la réduction générale d'un salarié déclaré à
   la caisse des Congés Spectacles se multiplie (`majoration_caisse_conges` du barème, « 100/90 ») : son numérateur et
   son dénominateur tels qu'écrits, sans les réduire (le calcul reste `c × 100 / 90`) ; réécrite comme lue.
@@ -1452,12 +1674,30 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
   de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
   forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
+- **déduction forfaitaire spécifique d'une paie** : ce que le calcul d'un contrat abat (`calcul::abattement_dfs`, en
+  montants : le taux de l'année par rubrique de salaire, le plafond annuel, l'assiette minimum), et ce que la paie
+  écrite garde telle quelle (sa forme est la sienne, ses grandeurs en texte normalisé) ; le bulletin en imprime le taux
+  et le montant, la DSN le taux (40.023) et le montant (54 de type 10), sans le recomposer. Ce que l'année avait déjà
+  déduit (`deja`) est le cumul de l'année des paies validées (`conges::dfs_des_mois_anterieurs`) et des contrats
+  précédents du mois ; un cumul de l'année est la grandeur de ce qu'il somme, pas une notion. La règle de l'année est
+  la section du barème (`forme_bareme::DfsDuBareme`, une forme), dont `calcul::deduction_forfaitaire` tire la DFS d'un
+  salarié (`DfsDuSalarie`).
 - **formule de la réduction générale** : celle que le barème nomme (`formule`) : `fillon`, au coefficient `t` ; sans
   elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
 - **identifiant d'une affiliation** : l'« Identifiant technique Affiliation » de la norme, une seule rubrique sous deux
   blocs : le bloc 70 le déclare (S21.G00.70.012), la base 31 le cite (S21.G00.78.005) (`bloc-S21.G00.70.txt` l. 75-80,
-  `bloc-S21.G00.78.txt` l. 409-417). Le moteur le fait depuis la place de l'adhésion du contrat (`202` et suivants,
-  `declarations::dsn::affiliation_de_la_place`) ; le barème le nomme pour une cotisation (`affectation`, `202`, `203`)
+  `bloc-S21.G00.78.txt` l. 409-417). Il se compose à un seul endroit (`202` et suivants,
+  `declarations::dsn::identifiant_d_affiliation`), du **rang du contrat** sous l'individu (`RangDuContrat` : l'ordre
+  de ses blocs 40, les contrats payés ce mois puis ceux qu'une régularisation ajoute ; le premier, puis le suivant ; son
+  nombre ne sert qu'ici, il ne s'écrit dans aucune rubrique) et de la **place d'une
+  affiliation** (`PlaceDAffiliation` : la place de l'adhésion parmi celles de la nature du contrat ; pour un permanent,
+  la première est la prévoyance, la seconde la santé ; une contribution du mois, la CASC-SVP ou une contribution de
+  branche, prend la sienne à un seul endroit, `declarations::dsn::placer`, qui voit les adhésions de la nature et les
+  contributions déjà placées, et que le bloc 70 et la base 31 lisent tous deux), chaque contrat se réservant un nombre
+  de places (`places_par_contrat`, un compte) ; sa relecture (`place_de`) rend une `PlaceDAffiliation`. Le **numéro d'un
+  versement** (`NumeroDeVersement`, S21.G00.50.003, de 01 à 99 : le premier, puis le suivant ; il s'écrit sur deux
+  chiffres par son affichage) n'est pas le rang du contrat : une régularisation d'un contrat aussi payé ce mois a le
+  rang de ce contrat et un numéro de versement à elle. Le barème nomme l'identifiant pour une cotisation (`affectation`, `202`, `203`)
   quand plusieurs partagent un code 81.001, et il distingue leur clé (`059:203`, `CleDeCotisationDsn`). Que portent la
   cotisation de la DSN (`dsn::Cotisation`), la contribution d'un mois, les affiliations d'un versement écrit ou déclaré
   (avec leur référence d'adhésion, 70.013), la ligne 81 d'une DSN relue et les relectures du fichier en cours
@@ -2112,7 +2352,8 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
-  note l'année faite.
+  note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
+  elle-même : elle dit ce que cette régularisation ferait partir, ou son refus.
 - **Les écarts de calcul** (`import/ecarts.rs`, `engagement/src/ecarts.rs`) : à la fin de chaque import, et à
   l'ouverture de la compagnie pour les paies importées pas encore comparées (`journal/ecarts-import.json`), chaque paie
   importée se compare à ce que le moteur aurait calculé de la même saisie, avec les barèmes et la configuration à la
@@ -2320,7 +2561,8 @@ La différence ne se voit pas sur un contrat au cachet pur, qui n'a qu'une rubri
 | Charges patronales | 212,99 | 213,00 | **212,99** |
 | Coût employeur | 582,99 | 583,00 | **582,99** |
 
-L'arrondi est **au demi supérieur** (`socle::grandeurs::Montant::au_centime`, le seul arrondi au centime) : c'est ce que montrent les 144 cas ambigus des cotisations
+L'arrondi est **au demi supérieur** (`socle::grandeurs::Montant::au_centime`, le seul arrondi au centime ; le même, sur
+la valeur exacte, fait le montant d'une indemnité de rupture, `Montant × MoisDeSalaire`) : c'est ce que montrent les 144 cas ambigus des cotisations
 `S21.G00.81` de ces DSN, 144 sur 144.
 
 ## La nature du contrat, et les salariés permanents

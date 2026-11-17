@@ -72,7 +72,7 @@ use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
 use socle::fichiers::{Empreinte, NomDeFichier};
-use socle::num::Decimal;
+use socle::grandeurs::{Coefficient, Octets};
 use socle::paris::Moment;
 use socle::garde_reseau::Url;
 
@@ -516,22 +516,24 @@ type Rate = (EchecDeMiseAJour, Echec);
 
 /// `lire_depot`, en disant a `suivre` ce qui est recu (octets recus, octets attendus si le depot le dit) : la barre de
 /// l'indicateur (`Recherche`). Un echec dit s'il est injoignable (`HorsLigne`) ou absent (`Introuvable`).
-fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn Fn(Octets, Option<Octets>)) -> Result<Vec<u8>, Rate> {
     const LIMITE: u64 = 512 * 1024 * 1024;
-    let lire_tout = |lecteur: &mut dyn Read, attendus: Option<u64>| -> std::io::Result<Vec<u8>> {
+    // La longueur que le disque ou le serveur annonce, en octets : la porte de leur lecture.
+    let lire_tout = |lecteur: &mut dyn Read, annonces: Option<u64>| -> std::io::Result<Vec<u8>> {
         let mut o = Vec::new();
-        if let Some(n) = attendus {
+        if let Some(n) = annonces {
             o.reserve(n.min(LIMITE) as usize);
         }
+        let attendus = annonces.map(Octets::lue);
         let mut tampon = vec![0u8; 64 * 1024];
-        suivre(0, attendus);
+        suivre(Octets::ZERO, attendus);
         loop {
             let n = lecteur.read(&mut tampon)?;
             if n == 0 {
                 return Ok(o);
             }
             o.extend_from_slice(&tampon[..n]);
-            suivre(o.len() as u64, attendus);
+            suivre(Octets::de(&o), attendus);
         }
     };
     let adresse = match depot {
@@ -540,8 +542,8 @@ fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn
             let p = dossier.join(nom);
             let dit = |e: std::io::Error| (EchecDeMiseAJour::Introuvable, socle::echec::du_disque(&p, &e));
             let mut f = std::fs::File::open(&p).map_err(dit)?;
-            let attendus = f.metadata().map_err(dit)?.len();
-            return lire_tout(&mut f, Some(attendus)).map_err(dit);
+            let annonces = f.metadata().map_err(dit)?.len();
+            return lire_tout(&mut f, Some(annonces)).map_err(dit);
         }
     };
     let url = Url::lire(&format!("{}/{}", adresse.texte().trim_end_matches('/'), nom)).map_err(|e| (EchecDeMiseAJour::HorsLigne, e))?;
@@ -555,9 +557,9 @@ fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn
         let mot = if matches!(e, ureq::Error::StatusCode(_)) { EchecDeMiseAJour::Introuvable } else { EchecDeMiseAJour::HorsLigne };
         (mot, socle::refus!("{} : {}", url, e))
     })?;
-    let attendus = r.body().content_length();
+    let annonces = r.body().content_length();
     let mut lecteur = r.body_mut().with_config().limit(LIMITE).reader();
-    lire_tout(&mut lecteur, attendus).map_err(|e| (EchecDeMiseAJour::HorsLigne,socle::refus!("{} : {}", url, e)))
+    lire_tout(&mut lecteur, annonces).map_err(|e| (EchecDeMiseAJour::HorsLigne,socle::refus!("{} : {}", url, e)))
 }
 
 /// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `moteur::publication` et que lit chaque installation, une
@@ -860,7 +862,7 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
 /// entre dans une installation : la mise a jour, les fictives, les systemes qu'un dossier portable ajoute
 /// (`completer_le_portable`). Un echec de lecture porte `HorsLigne` ou `Introuvable` ; une archive qui n'est pas la
 /// notre, `ArchiveAlteree` ou `SignatureRefusee`.
-fn archive_verifiee(depot: &DepotDesMisesAJour, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn archive_verifiee(depot: &DepotDesMisesAJour, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(Octets, Option<Octets>)) -> Result<Vec<u8>, Rate> {
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = Empreinte::des_octets(&octets);
     if sha != *attendu {
@@ -926,7 +928,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     'jeux: for jeu in jeux {
         let mut recues = Vec::new();
         for (k, a) in jeu {
-            let suivre = |recus: u64, attendus: Option<u64>| suivi.poser(Etape::Telechargement, Some(version), |p| (p.recus, p.attendus) = (recus, attendus));
+            let suivre = |recus: Octets, attendus: Option<Octets>| suivi.poser(Etape::Telechargement, Some(version), |p| (p.recus, p.attendus) = (recus, attendus));
             match archive_verifiee(depot, a.signee(), cles, &suivre) {
                 Ok(o) => recues.push((k, o)),
                 Err((m @ (EchecDeMiseAJour::HorsLigne | EchecDeMiseAJour::Introuvable), e)) => {
@@ -1051,13 +1053,13 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         for (a, systemes) in a_prendre {
             let qui = systemes.iter().map(|s| s.lu()).collect::<Vec<_>>().join(" et ");
             let dit = std::cell::Cell::new(None);
-            let suivre = |recus: u64, attendus: Option<u64>| {
-                let quart = attendus.filter(|a| *a > 0).map(|a| recus * 4 / a);
+            let suivre = |recus: Octets, attendus: Option<Octets>| {
+                // Le quart recu (0 a 4) : la ligne se dit a chaque quart.
+                let quart = attendus.and_then(|a| recus.rapport(a)).map(|c| (c * Coefficient::entier_fixe(4)).entier());
                 if quart.is_some() && quart != dit.get() {
                     dit.set(quart);
-                    let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
                     if let Some(a) = attendus {
-                        eprintln!("{} : {} reçus sur {}", qui, mo(recus), mo(a));
+                        eprintln!("{} : {} reçus sur {}", qui, recus, a);
                     }
                 }
             };
@@ -1078,20 +1080,19 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         std::fs::write(inst.join(crate::coffre::MARQUEUR_PORTABLE), crate::coffre::CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&inst, &e))?;
     }
     let noms = |l: &[Systeme]| l.iter().map(|s| s.lu()).collect::<Vec<_>>().join(", ");
-    let mut phrase = if ajoutes.is_empty() && absents.is_empty() {
-        "Les trois systèmes sont déjà là.".to_string()
+    use socle::texte::Phrase;
+    let portable = inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file();
+    let ajoutes_dits = if ajoutes.is_empty() && absents.is_empty() {
+        Phrase::fixe("Les trois systèmes sont déjà là.")
     } else if ajoutes.is_empty() {
-        String::new()
+        Phrase::fixe("")
     } else {
-        format!("Ajoutés : {}.", noms(&ajoutes))
+        socle::phrase!("Ajoutés : {}.", noms(&ajoutes))
     };
-    if !absents.is_empty() {
-        phrase.push_str(&format!("{}La {} n'est pas publiée pour {}.", if phrase.is_empty() { "" } else { " " }, version.lue(), noms(&absents)));
-    }
-    if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
-        phrase.push_str(" Le dossier est portable.");
-    }
-    Ok(PortableComplete { ajoutes, absents, version, portable: inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file(), phrase })
+    let absents_dits = if absents.is_empty() { Phrase::fixe("") } else { socle::phrase!("La {} n'est pas publiée pour {}.", version.lue(), noms(&absents)) };
+    let portable_dit = Phrase::fixe(if portable { "Le dossier est portable." } else { "" });
+    let phrase = Phrase::jointes([ajoutes_dits, absents_dits, portable_dit].into_iter().filter(|p| !p.est_vide()), " ");
+    Ok(PortableComplete { ajoutes, absents, version, portable, phrase })
 }
 
 /// CE QUE REND `portable-completer` (`completer_le_portable`) : les systemes ajoutes, ceux que la version ne publie pas, la
@@ -1102,7 +1103,7 @@ pub struct PortableComplete {
     pub absents: Vec<Systeme>,
     pub version: VersionDuLogiciel,
     pub portable: bool,
-    pub phrase: String,
+    pub phrase: socle::texte::Phrase,
 }
 
 
@@ -1491,8 +1492,8 @@ pub enum Etape {
 struct Point {
     etape: Etape,
     version: Option<VersionDuLogiciel>,
-    recus: u64,
-    attendus: Option<u64>,
+    recus: Octets,
+    attendus: Option<Octets>,
     /// Ce qui a fait echouer la recherche, a l'etape `Echec` ; vide a toute autre.
     mot: Option<EchecDeMiseAJour>,
     /// La phrase `calcul` de la version prete : ce qu'elle change d'un calcul de paie (vide : rien).
@@ -1512,7 +1513,7 @@ impl Point {
         Point {
             etape: Etape::Aucune,
             version: None,
-            recus: 0,
+            recus: Octets::ZERO,
             attendus: None,
             mot: None,
             calcul: String::new(),
@@ -1608,16 +1609,15 @@ impl Recherche {
         let p = self.tenu();
         let lue = p.version.as_ref().map(VersionDuLogiciel::lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
-        let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
         let essai = p.nouvel_essai.map(|t| {
-            let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
-            match s {
+            let d = t.saturating_duration_since(std::time::Instant::now());
+            match d.as_secs() {
                 0 => "nouvel essai maintenant".to_string(),
                 1..=59 => "nouvel essai dans moins d'une minute".to_string(),
-                _ => format!("nouvel essai dans {} min", s.div_ceil(60)),
+                _ => format!("nouvel essai dans {} min", socle::temps::ecrit::minutes_commencees_dites(d)),
             }
         });
-        let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<Decimal>) = match p.etape {
+        let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<Coefficient>) = match p.etape {
             Etape::Aucune => ("", None, false, None),
             Etape::Recherche => ("Recherche de mise à jour…", None, false, None),
             Etape::AJour => (
@@ -1632,15 +1632,15 @@ impl Recherche {
             ),
             Etape::Telechargement => (
                 "Mise à jour en cours",
-                match p.attendus.filter(|a| *a > 0) {
-                    Some(a) => nommee(&format!(": {} sur {}", mo(p.recus), mo(a))),
-                    None => nommee(&format!(": {} reçus", mo(p.recus))),
+                match p.attendus.filter(|a| *a > Octets::ZERO) {
+                    Some(a) => nommee(&format!(": {} sur {}", p.recus, a)),
+                    None => nommee(&format!(": {} reçus", p.recus)),
                 },
                 true,
                 // La part recue, au millionieme : la page la montre au millieme.
-                p.attendus.filter(|a| *a > 0).map(|a| (Decimal::from(p.recus) / Decimal::from(a)).min(Decimal::ONE).round_dp(6)),
+                p.attendus.and_then(|a| p.recus.rapport(a)).map(|c| if c > Coefficient::UN { Coefficient::UN } else { c.a_decimales(6) }),
             ),
-            Etape::Preparation => ("Mise à jour en cours", nommee(": vérification"), true, Some(Decimal::ONE)),
+            Etape::Preparation => ("Mise à jour en cours", nommee(": vérification"), true, Some(Coefficient::UN)),
             Etape::Prete => (
                 "Redémarrer pour mettre à jour",
                 if p.calcul.is_empty() {
@@ -1708,8 +1708,8 @@ pub struct EtatDeLaRecherche {
     pub texte: String,
     pub detail: Option<String>,
     pub barre: bool,
-    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
-    pub progression: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub progression: Option<Coefficient>,
     pub en_cours: bool,
     pub relire_ms: Option<u64>,
     pub redemarrer: bool,
@@ -2072,22 +2072,7 @@ pub fn lancer_relais(inst: &Path, version: &VersionDuLogiciel) -> R<bool> {
 /// qui ne se confond avec aucun autre) ; le dossier d'installation n'y sert pas.
 #[cfg(windows)]
 fn attendre_fin(pid: u32, _inst: &Path) -> R<bool> {
-    extern "system" {
-        fn OpenProcess(acces: u32, heriter: i32, pid: u32) -> isize;
-        fn WaitForSingleObject(objet: isize, millisecondes: u32) -> u32;
-        fn CloseHandle(objet: isize) -> i32;
-    }
-    const SYNCHRONIZE: u32 = 0x0010_0000;
-    // SAFETY : appels du noyau sur un numero de processus ; la poignee ouverte est refermee.
-    unsafe {
-        let h = OpenProcess(SYNCHRONIZE, 0, pid);
-        if h == 0 {
-            return Ok(true); // deja parti (ou jamais vu : rien a attendre)
-        }
-        let r = WaitForSingleObject(h, 60_000);
-        CloseHandle(h);
-        Ok(r == 0)
-    }
+    Ok(socle::systeme::attendre_la_fin(pid, std::time::Duration::from_secs(60)))
 }
 
 /// Hors Windows, la prise du verrou n'est jamais heritee (CLOEXEC) : quand LA FENETRE DE CETTE INSTALLATION ne repond plus
@@ -2105,23 +2090,25 @@ fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
 }
 
 /// Le code de sortie du relais appele sans `--code`, ou sans `--installation` ni `--racine` : il n'a rien a relayer.
-const RELAIS_MAL_APPELE: i32 = 2;
+fn relais_mal_appele() -> std::process::ExitCode {
+    std::process::ExitCode::from(2)
+}
 
 /// Le relais (`puppetpaie maj-relais --installation I --code C --attendre PID`) : attend la fin du programme qui l'a
 /// lance, bascule, et lance la fenetre (la neuve, ou l'ancienne si la bascule a echoue). Ecrit ce qui s'est passe dans le
 /// journal de la mise a jour. `--racine R` (la compagnie dont `maj/` porte la version prete) au lieu de `--installation` :
 /// c'est ainsi que le programme d'une installation posee qui ne connait pas `--installation` lance le relais de la
 /// version neuve ; ses arguments sont un contrat avec les installations posees, comme la forme des archives.
-pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
+pub fn relais(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     let args = socle::ligne::textes(args);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    let Some(code) = valeur("--code") else { return RELAIS_MAL_APPELE };
+    let Some(code) = valeur("--code") else { return relais_mal_appele() };
     let maj = match (valeur("--installation"), valeur("--racine")) {
         (Some(i), _) => dossier_maj(&i),
         (None, Some(r)) => dossier_maj(&r),
-        (None, None) => return RELAIS_MAL_APPELE,
+        (None, None) => return relais_mal_appele(),
     };
-    let Some(inst) = code.parent().map(Path::to_path_buf) else { return RELAIS_MAL_APPELE };
+    let Some(inst) = code.parent().map(Path::to_path_buf) else { return relais_mal_appele() };
     let pid = valeur("--attendre").and_then(|p| p.to_str().map(str::parse::<u32>));
     let attendu = match pid {
         Some(Ok(p)) => match attendre_fin(p, &inst) {
@@ -2154,7 +2141,7 @@ pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
     if let Err(e) = std::process::Command::new(programme(&code, "puppetpaie")).spawn() {
         noter(&inst, &format!("La fenetre ne se relance pas apres la mise a jour ({}) : la rouvrir a la main.", e));
     }
-    0
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(test)]
@@ -2187,7 +2174,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![CleDArchive::Du(Systeme::DE_CE_PROGRAMME)], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: socle::piece::Zone::lue("2026-11-01T09:00:00", socle::piece::format::InstantIso).valeur().unwrap(), archives: vec![CleDArchive::Du(Systeme::DE_CE_PROGRAMME)], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 

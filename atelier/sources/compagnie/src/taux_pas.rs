@@ -1,53 +1,28 @@
-//! Les taux de prelevement a la source que la DGFiP a fait connaitre (un compte rendu de nature 94, `suites`) ou que les
-//! DSN deposees declarent (l'import), tels qu'ils se recoivent (`TauxRecu`) ; leur ecriture dans la fiche de chaque
-//! salarie est `gestes::taux_pas::enregistrer`.
+//! Les taux de prelevement a la source que les DSN deposees declarent (l'import), tels qu'ils se recoivent
+//! (`droit::pas::TauxRecu`, avec la cle de la fiche de son salarie) ; leur ecriture dans la fiche de chaque salarie est
+//! `gestes::taux_pas::enregistrer`.
 
 use droit::fiche::Lue as _;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
+use droit::pas::TauxRecu;
 use socle::date::Jour;
-
-/// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --
-/// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
-/// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
-#[derive(Debug, Clone)]
-pub struct TauxRecu {
-    pub salarie: droit::contexte::IdSalarie,
-    pub taux: droit::pas::TauxDePas,
-    pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant: droit::pas::IdentifiantDuTauxPas,
-    pub mis_a_disposition: socle::paris::Moment,
-    pub en_retour_de: Option<socle::mois::Mois>,
-}
-
-impl TauxRecu {
-    /// Le taux tel que la fiche de son salarie l'ecrit.
-    pub fn dans_la_fiche(&self) -> droit::fiche::TauxPas {
-        droit::fiche::TauxPas {
-            taux: self.taux,
-            r#type: self.type_taux,
-            identifiant: Some(self.identifiant.clone()),
-            mis_a_disposition: Some(self.mis_a_disposition),
-            en_retour_de: self.en_retour_de,
-        }
-    }
-}
 
 /// CE QUE LA DERNIERE DSN DEPOSEE D'UN SALARIE DIT DE SON TAUX DE PAS : un taux transmis par la DGFiP, ou un taux qu'elle
 /// n'ecrit pas comme la norme (S21.G00.50.006), qui n'en est pas un : il ne pose rien, et se dit (le jour du versement
-/// qui l'applique). Un taux transmis se recoit.
+/// qui l'applique). Un taux transmis se recoit, pour le salarie de la cle.
 #[derive(Debug, Clone)]
 pub enum TauxDUneDsn {
-    Transmis(TauxRecu),
-    Illisible { salarie: droit::contexte::IdSalarie, verse_le: Jour },
+    Transmis(IdSalarie, TauxRecu),
+    Illisible { salarie: IdSalarie, verse_le: Jour },
 }
 
 impl TauxDUneDsn {
     /// Les taux transmis de `l`, a recevoir (`routes::gestes::taux_pas::enregistrer`).
-    pub fn transmis(l: &[TauxDUneDsn]) -> Vec<TauxRecu> {
+    pub fn transmis(l: &[TauxDUneDsn]) -> Vec<(IdSalarie, TauxRecu)> {
         l.iter()
             .filter_map(|t| match t {
-                TauxDUneDsn::Transmis(recu) => Some(recu.clone()),
+                TauxDUneDsn::Transmis(salarie, recu) => Some((salarie.clone(), recu.clone())),
                 TauxDUneDsn::Illisible { .. } => None,
             })
             .collect()
@@ -56,7 +31,7 @@ impl TauxDUneDsn {
 
 /// Le debut du jour `j` (`AAAAMMJJ000000`).
 fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
-    socle::paris::Moment::a_paris(j, 0, 0, 0).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
+    socle::paris::Moment::a_paris(j, socle::paris::HeureDuJour::MINUIT).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
 }
 
 /// LE DERNIER TAUX TRANSMIS PAR LA DGFiP QUE LES DSN DEJA DEPOSEES DE `dossier` DECLARENT, par salarie (un releve tel que
@@ -84,20 +59,16 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
         for v in &d.versements {
             // « -1 » : un CDD court sans taux personnalise (`norme-dsn/texte/bloc-S21.G00.50.txt`, S21.G00.50.008) ;
             // aucun taux n'a ete transmis. Sans la date du versement (S21.G00.50.001), le taux ne se date pas.
-            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
+            let (Some(id), Some(j), Some(cle)) = (v.nets.identifiant_pas.as_ref().filter(|i| !i.sans_crm()), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
             // Un taux que la DSN n'ecrit pas comme la norme (deux chiffres, deux decimales au plus) n'en pose aucun : une
             // DSN venue d'ailleurs se lit au mieux (`dsn_lue`, vide), et le compte rendu de l'import le dit.
-            let rel = match v.taux_pas {
-                Some(t) => TauxDUneDsn::Transmis(TauxRecu {
-                    salarie: (*cle).clone(),
-                    taux: t,
-                    type_taux: v.type_pas,
-                    identifiant: id.clone(),
-                    mis_a_disposition: instant_du_jour(j)?,
-                    en_retour_de: None,
-                }),
+            let rel = match v.nets.taux_pas {
+                Some(t) => TauxDUneDsn::Transmis(
+                    (*cle).clone(),
+                    TauxRecu { taux: t, r#type: v.nets.type_pas, identifiant: id.clone(), mis_a_disposition: instant_du_jour(j)?, en_retour_de: None },
+                ),
                 None => TauxDUneDsn::Illisible { salarie: (*cle).clone(), verse_le: j },
             };
             match trouve.iter_mut().find(|(k, _)| k == *cle) {

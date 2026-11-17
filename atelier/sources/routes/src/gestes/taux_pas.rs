@@ -1,33 +1,32 @@
-//! L'ECRITURE DES TAUX DE PAS RECUS (`compagnie::taux_pas::TauxRecu`) : chacun s'ecrit dans la fiche de son salarie
-//! (`routes::fiches::poser_taux_recu`), et les engagements qu'il touche se recalculent. `droit::pas` les lit.
+//! L'ECRITURE DES TAUX DE PAS RECUS (`droit::pas::TauxRecu`, chacun avec la cle de la fiche de son salarie) : chacun
+//! s'ecrit dans la fiche de son salarie (`routes::fiches::poser_taux_recu`), et les engagements qu'il touche se
+//! recalculent. `droit::pas` les lit.
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
+use droit::pas::TauxRecu;
 use socle::echec::Echec;
-use compagnie::taux_pas::TauxRecu;
 
 /// Ecrit des taux recus ; rend les changements lisibles (`CLE : ...`). Chacun s'ecrit a sa date d'effet
 /// (`droit::pas::date_d_effet`). Un taux deja recu (meme identifiant, meme taux, meme instant) ne s'ecrit pas deux fois.
-pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result<Vec<String>, Echec> {
+pub fn enregistrer(ctx: &Contexte, releves: &[(IdSalarie, TauxRecu)], source: &str) -> Result<Vec<String>, Echec> {
     let mut changements = Vec::new();
-    let mut ecrits: Vec<(droit::contexte::IdSalarie, droit::fiche::TauxPas)> = Vec::new();
-    for r in releves {
-        let cle = r.salarie.clone();
-        let lu = r.dans_la_fiche();
-        let mad = r.mis_a_disposition.jour_de_paris();
+    let mut ecrits: Vec<(&IdSalarie, &TauxRecu)> = Vec::new();
+    for (cle, r) in releves {
+        let mad = r.mise_a_disposition();
         let depuis = droit::pas::date_d_effet(mad, r.en_retour_de);
-        let deja = droit::pas::recus(ctx, &cle)?.into_iter().chain(ecrits.iter().filter(|(c, _)| *c == cle).map(|(_, v)| v.clone())).any(|v| v == lu);
+        let deja = droit::pas::recus(ctx, cle)?.iter().chain(ecrits.iter().filter(|(c, _)| *c == cle).map(|(_, v)| *v)).any(|v| v == r);
         if deja {
             continue;
         }
-        crate::fiches::poser_taux_recu(ctx, &cle, lu.clone(), depuis, source)?;
+        crate::fiches::poser_taux_recu(ctx, cle, r.clone(), depuis, source)?;
         fn dit<T: std::fmt::Display>(o: &Option<T>) -> String {
             match o {
                 Some(t) => t.to_string(),
                 None => "non dit".to_string(),
             }
         }
-        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, r.taux, dit(&r.type_taux), r.identifiant, mad.jj_mm_aaaa()));
-        ecrits.push((cle, lu));
+        changements.push(format!("{} : taux {}, type {}, identifiant {}, mis a disposition le {}", cle, r.taux, dit(&r.r#type), r.identifiant, mad.jj_mm_aaaa()));
+        ecrits.push((cle, r));
     }
     if !changements.is_empty() {
         refaire_les_engagements(ctx)?;

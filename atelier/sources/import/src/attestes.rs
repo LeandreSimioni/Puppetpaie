@@ -20,13 +20,13 @@ use std::collections::{BTreeSet, HashMap};
 
 use droit::contexte::Contexte;
 use droit::fiche::Nir;
-use engagement::importe::{Attestation, ContratLu};
+use engagement::importe::{Attestation, ContratAtteste, ContratLu};
 use crate::reponse::{Attestant, Source};
 use socle::date::Periode;
 use socle::echec::R;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant};
 
-/// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
+/// Un contrat atteste : de qui (NIR), quand, d'ou, et sa ligne, qui dit par quoi il l'est et ce qu'il compte.
 #[derive(Clone, Debug)]
 pub struct Atteste {
     pub(crate) nir: Nir,
@@ -34,22 +34,22 @@ pub struct Atteste {
     pub(crate) periode: Periode,
     /// L'AEM, le bulletin, le certificat (la piece de cet import), ou l'historique.
     pub(crate) source: Attestant,
-    /// Ce qui l'atteste.
-    pub par: Attestation,
-    pub(crate) heures: Option<Heures>,
-    pub cachets: Option<Cachets>,
-    pub jours: Option<Jours>,
-    pub brut: Option<Montant>,
-    /// Sa ligne, sans ses dates : `periode` les dit (`ecrite`).
+    /// Sa ligne, sans ses dates : `periode` les dit (`ecrite`). Pour le contrat d'un permanent de l'historique, elle
+    /// compte ce que la paie de son mois porte.
     ligne: ContratLu,
     /// Pour un contrat de l'historique : sa ligne telle que l'historique la porte (l'ecriture la retrouve par elle).
     historique: Option<ContratLu>,
 }
 
 impl Atteste {
+    /// Ce que sa piece atteste du contrat : par quoi, et ce qu'il compte.
+    pub fn contrat(&self) -> &ContratAtteste {
+        &self.ligne.contrat
+    }
+
     /// Son nom dans le compte rendu.
     pub fn d_ou(&self) -> String {
-        match (self.source, self.par) {
+        match (self.source, self.contrat().atteste_par) {
             (Attestant::Historique, Attestation::Certificat) => "historique, d'un certificat".into(),
             (Attestant::Historique, Attestation::Aem) => "historique, d'une AEM".into(),
             (s, _) => s.nom().into(),
@@ -57,17 +57,19 @@ impl Atteste {
     }
 
     pub fn de_certificat(&self) -> bool {
-        self.par == Attestation::Certificat
+        self.contrat().atteste_par == Attestation::Certificat
     }
 
     /// Ce qu'il compte : ses heures, ses cachets, ses jours, son brut.
     pub fn compte(&self) -> (Option<Heures>, Option<Cachets>, Option<Jours>, Option<Montant>) {
-        (self.heures, self.cachets, self.jours, self.brut)
+        let c = self.contrat();
+        (c.heures, c.cachets, c.jours, c.brut)
     }
 
     /// Ce qu'il compte, en mots, pour dire un ecart avec ses deux valeurs.
     pub fn en_mots(&self) -> String {
-        en_mots(self.heures, self.cachets, self.jours, self.brut)
+        let (heures, cachets, jours, brut) = self.compte();
+        en_mots(heures, cachets, jours, brut)
     }
 
     /// Sa ligne, a ses dates, telle qu'elle s'ecrit.
@@ -100,17 +102,10 @@ pub fn en_mots(heures: Option<Heures>, cachets: Option<Cachets>, jours: Option<J
 
 /// Ce qu'un contrat atteste aux dates `periode` dit, pour le registre.
 fn lu(nir: &Nir, ligne: &ContratLu, periode: Periode, source: Attestant) -> Atteste {
-    let c = &ligne.contrat;
     Atteste {
         nir: nir.clone(),
         periode,
         source,
-        par: c.atteste_par,
-        heures: c.heures,
-        cachets: c.cachets,
-        jours: c.jours,
-        // Le brut que la ligne lue ecrit (un nombre de sa forme) : sa porte.
-        brut: c.brut.map(Montant::du_decimal),
         ligne: ContratLu { periode: None, ..ligne.clone() },
         historique:(source == Attestant::Historique).then(|| ligne.clone()),
     }
@@ -148,8 +143,9 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
     fn somme<G: std::iter::Sum<G>>(coupants: &[&&Atteste], f: fn(&Atteste) -> Option<G>) -> Option<G> {
         coupants.iter().map(|p| f(p)).sum()
     }
-    let (heures, cachets, jours) = (somme(&coupants, |p| p.heures), somme(&coupants, |p| p.cachets), somme(&coupants, |p| p.jours));
-    let brut: Option<Montant> = coupants.iter().map(|p| p.brut).try_fold(Montant::ZERO, |a, b| b.map(|b| a + b));
+    let (heures, cachets, jours) = (somme(&coupants, |p| p.contrat().heures), somme(&coupants, |p| p.contrat().cachets), somme(&coupants, |p| p.contrat().jours));
+    let brut: Option<Montant> = coupants.iter().map(|p| p.contrat().brut).try_fold(Montant::ZERO, |a, b| b.map(|b| a + b));
+    let sien = c.contrat();
     // Le certificat compte dans une seule unite (des cachets ou des jours) : le reste se compte dans la sienne ; l'autre
     // reste ce que le certificat en dit.
     fn reste<G: Copy + PartialOrd + std::ops::Sub<Output = G>>(le_sien: Option<G>, ailleurs: Option<G>, zero: G) -> Option<G> {
@@ -158,9 +154,9 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
             autre => autre,
         }
     }
-    let (reste_cachets, reste_jours) = (reste(c.cachets, cachets, Cachets::ZERO), reste(c.jours, jours, Jours::ZERO));
-    let reste_brut = c.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Montant::ZERO);
-    let unite_lue = c.cachets.is_none_or(|n| n.est_nul() || cachets.is_some_and(|x| x > Cachets::ZERO)) && c.jours.is_none_or(|n| n.est_nul() || jours.is_some_and(|x| x > Jours::ZERO));
+    let (reste_cachets, reste_jours) = (reste(sien.cachets, cachets, Cachets::ZERO), reste(sien.jours, jours, Jours::ZERO));
+    let reste_brut = sien.brut.zip(brut).map(|(a, b)| a - b).filter(|b| *b > Montant::ZERO);
+    let unite_lue = sien.cachets.is_none_or(|n| n.est_nul() || cachets.is_some_and(|x| x > Cachets::ZERO)) && sien.jours.is_none_or(|n| n.est_nul() || jours.is_some_and(|x| x > Jours::ZERO));
     // Un reste se compte dans une seule unite : des cachets restants, ou des jours restants.
     let positifs = matches!((reste_cachets, reste_jours), (Some(a), Some(b)) if a >= Cachets::ZERO && b >= Jours::ZERO && (a > Cachets::ZERO || b > Jours::ZERO));
     let (true, true, Some(reste_brut)) = (unite_lue, positifs, reste_brut) else {
@@ -177,11 +173,9 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> R<Reste> {
         .croise(&mois_du_reste)
         .ok_or_else(|| socle::refus!("le reste du certificat ({}) tombe hors de son contrat ({})", mois_du_reste, c.periode))?;
     let mut ligne = c.ligne.clone();
-    // La ligne lue ecrit son brut en nombre (`ContratLu`) : sa porte.
-    let b = reste_brut.au_centime().decimal();
     ligne.contrat.cachets = reste_cachets;
     ligne.contrat.jours = reste_jours;
-    ligne.contrat.brut = Some(b);
+    ligne.contrat.brut = Some(reste_brut.au_centime());
     ligne.contrat.base_conge = None;
     Ok(Reste::Seul(ligne, periode))
 }
@@ -261,11 +255,11 @@ impl Registre {
                 tous.push(lu(nir, &c, periode, Attestant::Historique));
                 continue;
             }
-            // Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat.
-            for (mois, p) in i.paies() {
-                let periode = engagement::contrat_dans_le_mois(&contrat, *mois, &quel)?;
+            // Le contrat d'un permanent s'atteste mois par mois (`Importe::mois_par_mois`).
+            for (periode, p) in i.mois_par_mois(&contrat, &quel)? {
                 let mut a = lu(nir, &c, periode, Attestant::Historique);
-                (a.heures, a.cachets, a.jours, a.brut) = (p.heures, p.cachets, p.jours, p.brut);
+                let compte = &mut a.ligne.contrat;
+                (compte.heures, compte.cachets, compte.jours, compte.brut) = (p.heures, p.cachets, p.jours, p.brut);
                 tous.push(a);
             }
         }
@@ -299,7 +293,7 @@ impl Registre {
             let remplaces: Vec<usize> = (0..self.tous.len())
                 .filter(|i| {
                     let x = &self.tous[*i];
-                    x.nir == *nir && x.periode.croise(&periode).is_some() && (x.de_certificat() || (source == Source::Bulletin && x.par == Attestation::Aem))
+                    x.nir == *nir && x.periode.croise(&periode).is_some() && (x.de_certificat() || (source == Source::Bulletin && x.contrat().atteste_par == Attestation::Aem))
                 })
                 .collect();
             for i in remplaces.into_iter().rev() {

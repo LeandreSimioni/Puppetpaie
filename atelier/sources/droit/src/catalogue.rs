@@ -589,15 +589,14 @@ fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubriqu
         conges_spectacles: dite(f.conges_spectacles, "conges_spectacles", &faute)?,
         source: dite(f.source, "source", &faute)?,
         sens: dite(f.sens, "sens", &faute)?,
-        // Une case de fiche garde le nombre tel qu'on l'a ecrit (`NombreDeFiche`) : sa grandeur se lit ici, a la porte de
-        // la fiche.
-        heures_forfait: f.heures_forfait.map(|m| m.court().map(socle::grandeurs::HeuresParUnite::du_decimal)).transpose()?,
+        // Dans sa forme la plus courte, une decimale au moins (`12.0`), comme une paie garde ses heures (`courte`).
+        heures_forfait: f.heures_forfait.map(socle::grandeurs::courte),
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,
         dsn_autres_bruts: f.dsn_autres_bruts,
         annexe: f.annexe,
-        plafond_mensuel: f.plafond_mensuel.map(|n| socle::grandeurs::Cachets::du_decimal(socle::num::Decimal::from(n))),
+        plafond_mensuel: f.plafond_mensuel,
         plafond_annuel_heures: f.plafond_annuel_heures,
         compte_pour: dite(f.compte_pour, "compte_pour", &faute)?,
         salaire_de_base: dite(f.salaire_de_base, "salaire_de_base", &faute)?,
@@ -621,7 +620,7 @@ pub const RUBRIQUES_COMPAGNIE: socle::fichiers::CheminRelatif = socle::fichiers:
 fn rubriques_datees(racine: &Path) -> R<bool> {
     struct UneDatee(bool);
     impl VoirListe for UneDatee {
-        fn liste<T: serde::Serialize>(&mut self, _: crate::fiche::CaseDeFiche, liste: &[Datee<T>]) {
+        fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, _: crate::fiche::CaseDeFiche, liste: &[Datee<T>]) {
             self.0 |= liste.iter().any(|e| e.depuis.is_some());
         }
     }

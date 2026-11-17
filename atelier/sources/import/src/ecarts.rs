@@ -130,12 +130,13 @@ pub struct Cas {
     cadre: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     taux_atmp: Option<OrigineDuTauxAtmp>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    notre_taux: Option<socle::num::Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    leur_taux: Option<socle::num::Decimal>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ecart_relatif: Option<socle::num::Decimal>,
+    /// Ecrits dans leur forme la plus courte ; « -0 » est 0 (`ecrit::sans_zero`).
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
+    notre_taux: Option<socle::grandeurs::Taux>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
+    leur_taux: Option<socle::grandeurs::Taux>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
+    ecart_relatif: Option<socle::grandeurs::Coefficient>,
 }
 
 fn montant() -> &'static Regex {
@@ -206,8 +207,6 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     let mut propre = Propre { connus: &connus, vus: Default::default() };
     // Le logiciel que le lecteur a reconnu au bulletin ; un autre se dit « autre ».
     let logiciel = |c: &Comparaison| LogicielDuRapport(c.logiciel.clone());
-    // Sa forme la plus courte ; « -0 » est 0.
-    let nombre = |t: Option<socle::num::Decimal>| t.map(|d| if d.is_zero() { socle::num::Decimal::ZERO } else { d.normalize() });
     let cas = |c: &Comparaison| Cas {
         mois: c.mois,
         logiciel: None,
@@ -234,11 +233,11 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
                 for e in liste {
                     // Ce que l'ecart mesure, ecrit dans le rapport.
                     let (notre_taux, leur_taux, ecart_relatif) = match e.mesure {
-                        MesureDeLEcart::TauxSalarie { notre, leur } | MesureDeLEcart::TauxEmployeur { notre, leur } => (Some(notre.decimal()), Some(leur.decimal()), None),
-                        MesureDeLEcart::Base(r) | MesureDeLEcart::MontantSalarie(r) | MesureDeLEcart::MontantEmployeur(r) => (None, None, r.map(socle::grandeurs::Coefficient::decimal)),
+                        MesureDeLEcart::TauxSalarie { notre, leur } | MesureDeLEcart::TauxEmployeur { notre, leur } => (Some(notre), Some(leur), None),
+                        MesureDeLEcart::Base(r) | MesureDeLEcart::MontantSalarie(r) | MesureDeLEcart::MontantEmployeur(r) => (None, None, r),
                         MesureDeLEcart::AbsenteDuBulletin | MesureDeLEcart::AbsenteDuCalcul => (None, None, None),
                     };
-                    let x = Cas { notre_taux: nombre(notre_taux), leur_taux: nombre(leur_taux), ecart_relatif: nombre(ecart_relatif), ..cas(c) };
+                    let x = Cas { notre_taux, leur_taux, ecart_relatif, ..cas(c) };
                     let (libelles, v) = ecarts.entry((e.cotisation.clone(), e.mesure.ce_qui_differe(), logiciel(c))).or_default();
                     for l in &e.libelles {
                         if !libelles.contains(l) {

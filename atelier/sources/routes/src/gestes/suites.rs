@@ -84,14 +84,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
                 ));
                 continue;
             };
-            tous.push(compagnie::taux_pas::TauxRecu {
-                salarie: x.salarie.clone(),
-                taux,
-                type_taux: x.releve.type_taux,
-                identifiant: x.releve.identifiant.clone(),
-                mis_a_disposition,
-                en_retour_de,
-            });
+            tous.push((x.salarie.clone(), droit::pas::TauxRecu { taux, r#type: x.releve.type_taux, identifiant: x.releve.identifiant.clone(), mis_a_disposition, en_retour_de }));
         }
     }
     crate::gestes::taux_pas::enregistrer(ctx, &tous, "CRM DGFiP nature 94")?;
@@ -132,7 +125,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
             if Some(&t.siren) != ctx.entreprise.siren.dite() || Some(&t.nic) != ctx.entreprise.nic.dite() {
                 a_faire.push(format!(
                     "{} : le taux {} (code risque {}) est celui de l'établissement {}{}, {}. Rien n'est posé.",
-                    source, t.taux, t.code_risque, t.siren, t.nic, la_fiche
+                    source, socle::texte::virgule(t.taux), t.code_risque, t.siren, t.nic, la_fiche
                 ));
                 continue;
             }

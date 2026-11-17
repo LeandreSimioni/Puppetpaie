@@ -733,7 +733,7 @@ pub struct Copie {
 /// CE QUE L'APERCU OU LA REPRISE D'UN DOSSIER REND (`importation-apercu`, `importer`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Importation {
-    pub phrase: String,
+    pub phrase: socle::texte::Phrase,
     pub source: String,
     /// Les DSN lues, les fichiers d'AEM lus.
     pub dsn: usize,
@@ -909,7 +909,7 @@ impl Importation {
         self.dire();
         let b = &self.bulletins;
         let periode: String = b.periode.map(|p| format!(" (du {} au {})", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
-        self.phrase = format!(
+        self.phrase = socle::phrase!(
             "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
             b.lus,
             periode,

@@ -8,19 +8,49 @@
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crate::echec::R;
 
-/// Au-dela, un verrou est tenu pour abandonne (10 minutes).
-pub const DELAI_VERROU: i64 = 600;
+/// Au-dela, un verrou est tenu pour abandonne (10 minutes) : une duree mesuree.
+pub const DELAI_VERROU: Duration = Duration::from_secs(600);
 
-/// Le verrou est tenu par un autre : sa marque et son age en secondes.
+/// Le verrou est tenu par un autre : sa marque et son age.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verrouille {
     pub chemin: PathBuf,
     pub detenteur: String,
-    pub age: i64,
+    age: AgeDuVerrou,
+}
+
+/// L'AGE D'UN VERROU, une duree mesuree depuis la date de son fichier (`SystemTime::duration_since`) : ecoulee, ou, pour
+/// un fichier date du futur (une horloge reculee), l'avance de sa date sur la montre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgeDuVerrou {
+    Ecoule(Duration),
+    DateDuFutur(Duration),
+}
+
+impl AgeDuVerrou {
+    /// Le verrou tient-il encore, a ce `delai` ? Compte en secondes entieres, tronquees : un fichier date du futur d'une
+    /// seconde au moins tient toujours ; de moins d'une seconde, il a zero seconde.
+    fn tient(self, delai: Duration) -> bool {
+        match self {
+            AgeDuVerrou::Ecoule(d) => d.as_secs() < delai.as_secs(),
+            AgeDuVerrou::DateDuFutur(d) => d.as_secs() > 0 || delai.as_secs() > 0,
+        }
+    }
+}
+
+/// En secondes entieres, tronquees, precedees de `-` pour une date du futur (« 12 », « -3 »).
+impl std::fmt::Display for AgeDuVerrou {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgeDuVerrou::Ecoule(d) => write!(f, "{}", d.as_secs()),
+            AgeDuVerrou::DateDuFutur(d) if d.as_secs() == 0 => f.write_str("0"),
+            AgeDuVerrou::DateDuFutur(d) => write!(f, "-{}", d.as_secs()),
+        }
+    }
 }
 
 impl Verrouille {
@@ -48,19 +78,18 @@ pub fn marque(qui: &str, pid: u32, maintenant: &str) -> String {
     format!("{} pid {} {}", qui, pid, maintenant)
 }
 
-fn age_secondes(chemin: &Path) -> std::io::Result<i64> {
+fn age_du_verrou(chemin: &Path) -> std::io::Result<AgeDuVerrou> {
     let modifie = std::fs::metadata(chemin)?.modified()?;
-    // Les secondes entieres ecoulees, tronquees vers zero (un fichier date du futur a un age negatif).
     Ok(match SystemTime::now().duration_since(modifie) {
-        Ok(d) => d.as_secs() as i64,
-        Err(e) => -(e.duration().as_secs() as i64),
+        Ok(d) => AgeDuVerrou::Ecoule(d),
+        Err(e) => AgeDuVerrou::DateDuFutur(e.duration()),
     })
 }
 
 /// Prend le verrou, ou rend qui le tient. Un verrou plus vieux que `delai`
 /// est leve, une fois, puis on retente. Une erreur d'ecriture (dossier
 /// absent...) est une erreur, pas un verrou tenu.
-pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<(), Verrouille>> {
+pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<(), Verrouille>> {
     let disque = |e: std::io::Error| crate::echec::du_disque(&chemin, &e);
     let mut leve = false;
     loop {
@@ -70,14 +99,14 @@ pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<(), Verrouil
                 return Ok(Ok(()));
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                let lu = age_secondes(chemin).and_then(|age| std::fs::read(chemin).map(|b| (age, String::from_utf8_lossy(&b).trim().to_string())));
+                let lu = age_du_verrou(chemin).and_then(|age| std::fs::read(chemin).map(|b| (age, String::from_utf8_lossy(&b).trim().to_string())));
                 let (age, detenteur) = match lu {
                     Ok(l) => l,
                     // Disparu entre-temps : on retente.
                     Err(e) if e.kind() == ErrorKind::NotFound => continue,
                     Err(e) => return Err(disque(e)),
                 };
-                if age < delai || leve {
+                if age.tient(delai) || leve {
                     return Ok(Err(Verrouille { chemin: chemin.to_path_buf(), detenteur, age }));
                 }
                 crate::fichiers::effacer(chemin)?;
@@ -111,7 +140,7 @@ pub struct Verrou {
 }
 
 impl Verrou {
-    pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<Verrou, Verrouille>> {
+    pub fn prendre(chemin: &Path, marque: &str, delai: Duration) -> R<Result<Verrou, Verrouille>> {
         Ok(prendre(chemin, marque, delai)?.map(|_| Verrou { chemin: chemin.to_path_buf(), marque: marque.to_string() }))
     }
 }

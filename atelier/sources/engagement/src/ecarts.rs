@@ -39,12 +39,11 @@ use crate::calcul::LigneCotisation;
 use droit::forme_bareme::{
     IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
-use crate::importe::{Importe, LogicielDUnBulletin, PaieVersee};
+use crate::importe::{CotisationImprimee, Importe, LogicielDUnBulletin, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
-use socle::num::Decimal;
 use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Ce que l'on compare d'une ligne, et qui differe (`MesureDeLEcart::ce_qui_differe`).
@@ -292,17 +291,6 @@ pub fn cotisation_de(l: &LigneCotisation, garanties: &[IdDeCotisation]) -> Regro
     RegroupementDeComparaison::Cotisation(l.id.clone())
 }
 
-/// Une ligne de cotisation du bulletin importe.
-#[derive(Clone, Debug)]
-struct Lue {
-    libelle: String,
-    base: Option<Montant>,
-    taux_salarie: Option<Taux>,
-    taux_employeur: Option<Taux>,
-    montant_salarie: Option<Montant>,
-    montant_employeur: Option<Montant>,
-}
-
 /// Un centime : l'ecart de montant qu'un arrondi fait sur une ligne, et qui n'est pas un ecart.
 const UN_CENTIME: Montant = Montant::UN_CENTIME;
 
@@ -383,8 +371,7 @@ fn comparer_une(
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.
     let dit = |v: &Option<String>| v.clone().filter(|x| !x.is_empty());
-    let imprime = |champ: fn(&crate::importe::EmploiImprime) -> &Option<String>| p.emploi_imprime.as_ref().and_then(|i| dit(champ(i)));
-    let imprimes = p.emploi_imprime.as_ref();
+    let imprimes = p.emploi_imprime.as_ref().map(|i| &i.ecrit);
     c.statut = imprimes.and_then(|i| i.statut).or_else(|| fiche.statut.dite().copied());
     c.cadre = imprimes.and_then(|i| i.statut_categoriel_rc).map(|s| s == droit::fiche::StatutCategorielRc::Cadre).or_else(|| fiche.statut_categoriel_rc.dite().map(|s| *s == droit::fiche::StatutCategorielRc::Cadre));
     let Some(cotisations) = &p.cotisations else {
@@ -399,9 +386,8 @@ fn comparer_une(
     let mut atmp_imprime: Option<(Option<Taux>, Option<Montant>, Option<Montant>)> = None;
     if !ctx.taux_atmp_dit(an) {
         let ligne = cotisations.iter().find(|l| l.cotisation == Some(RegroupementDeComparaison::Cotisation(ATMP)));
-        // La porte de lecture de la ligne imprimee (la paie importee les garde en decimal).
         atmp_imprime = ligne
-            .map(|l| (l.taux_employeur.map(Taux::du_decimal), l.montant_employeur.map(Montant::du_decimal), l.base.map(Montant::du_decimal)))
+            .map(|l| (l.taux_employeur, l.montant_employeur, l.base.and_then(crate::calcul::BaseDeCotisation::montant)))
             .filter(|(t, m, _)| t.is_some() || m.is_some_and(|m| !m.est_nul()));
         if atmp_imprime.is_some() {
             ctx = ctx.avec_le_taux_atmp_lu(an, TAUX_ATMP_D_ESSAI);
@@ -453,41 +439,41 @@ fn comparer_une(
             }
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
-        let quantite = l.quantite.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité", libelle))?;
-        let taux = l.taux.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas son taux", libelle))?;
-        // La ligne dans la forme que le catalogue demande de sa rubrique (`ligne::FormeSaisie`), comme la porte la range.
-        use crate::ligne::{self, FormeSaisie, LignePaie};
+        let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
+        use crate::ligne::{self, Cle, FormeSaisie, LigneDonnee, LignePaie, PaiementDeLigne, TauxDeLigne};
         let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
-        let forme = FormeSaisie::de(&lue)?;
-        // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
-        let montant = Some(socle::grandeurs::Montant::du_decimal(quantite * taux));
-        let heures = l.heures;
-        let (base, taux_majoration) = (Some(socle::grandeurs::Montant::du_decimal(quantite)), Some(socle::grandeurs::Taux::du_decimal(taux * Decimal::ONE_HUNDRED)));
-        let (quantite, taux) = (socle::forme::Nombre(quantite), socle::grandeurs::MontantUnitaire::du_decimal(taux));
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
-        let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures, precision: None, dates: jours.clone() }));
+        let Some(forme) = FormeSaisie::de(&lue)? else {
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
             continue;
         };
-        let (rubrique, quantite, taux, dates) = (lue.code, Some(quantite), Some(taux), jours.clone());
-        saisies.push(match forme {
-            FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux, lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures, lieu: None, dates, planning: Vec::new() }),
-            FormeSaisie::Frais | FormeSaisie::FraisSansLimite => LignePaie::Frais(ligne::Frais {
-                rubrique,
-                quantite,
-                taux,
-                territoire: None,
-                cases: Vec::new(),
-                lieu: None,
-                dates,
-                planning: Vec::new(),
-                marques: ligne::Marques::default(),
-            }),
-            FormeSaisie::Pourcentage => LignePaie::Pourcentage(ligne::EnPourcentage { rubrique, base, taux_majoration }),
-            FormeSaisie::Montant => LignePaie::Montant(ligne::AuMontant { rubrique, montant }),
-            FormeSaisie::AvantageEnNature => LignePaie::AvantageEnNature(ligne::AvantageEnNature { rubrique, montant, genre: None }),
-        });
+        // LA LIGNE DANS LA FORME QUE LE CATALOGUE DEMANDE DE SA RUBRIQUE, rangee par la porte d'une ligne saisie
+        // (`LigneDonnee::ranger`) : elle dit les cles de cette forme, de ce que la ligne imprimee paie. Sa quantite est dans
+        // l'unite de sa rubrique, comme l'import l'a rattachee ; son taux, un montant unitaire (une rubrique qui n'est pas
+        // en pourcentage) ; une ligne en pourcentage, sa base et la part qu'elle en paie, en pourcent ; une ligne au
+        // montant, sa quantite fois son taux, comme le bulletin l'imprime.
+        let voulue = |c: Cle| forme.cles().contains(&c);
+        let par_unite = || match paiement.taux() {
+            TauxDeLigne::ParUnite(u) => Ok(u),
+            TauxDeLigne::PartDeLaBase(_) => Err(socle::refus!("la ligne « {} » paie une part de sa base, et sa rubrique ne la saisit pas ainsi : le signaler au développeur", libelle)),
+        };
+        let (base, part) = match (voulue(Cle::Base), paiement) {
+            (false, _) => (None, None),
+            (true, PaiementDeLigne::Base(base, part)) => (Some(Some(base)), Some(Some(part.en_taux()))),
+            (true, _) => return Err(socle::refus!("la ligne « {} » est d'une rubrique en pourcentage, et l'import ne lui a pas donné de base : le signaler au développeur", libelle)),
+        };
+        let donnee = LigneDonnee {
+            rubrique: Some(lue.code.clone()),
+            quantite: voulue(Cle::Quantite).then_some(paiement.quantite()),
+            taux: if voulue(Cle::Taux) { Some(Some(par_unite()?)) } else { None },
+            heures: voulue(Cle::Heures).then_some(l.heures),
+            base,
+            taux_majoration: part,
+            montant: voulue(Cle::Montant).then_some(Some(paiement.montant())),
+            dates: voulue(Cle::Dates).then(|| jours.clone()),
+            ..LigneDonnee::default()
+        };
+        saisies.push(donnee.ranger(&lue)?);
     }
     // Le spectacle que le bulletin nomme ; sans titre, celui dont la fiche porte son numero d'objet.
     let spectacle = match (mensuelle, dit(&p.spectacle)) {
@@ -501,12 +487,8 @@ fn comparer_une(
         nature: Some(nature),
         debut: p.periode.map(|o| o.debut()),
         fin: p.periode.and_then(|o| o.fin()),
-        emploi: imprime(|i| &i.emploi),
-        pcs_ese: imprimes.and_then(|i| i.pcs_ese.clone()),
-        code_emploi_ft: imprimes.and_then(|i| i.code_emploi_ft.clone()),
-        statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
-        statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
-        statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
+        // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
+        emploi: p.emploi_imprime.as_ref().map(|i| droit::emplois::EmploiEcrit { emploi: dit(&i.ecrit.emploi), ..i.ecrit.clone() }).filter(|e| *e != droit::emplois::EmploiEcrit::default()),
         lignes: Some(saisies),
         // Le jour ou l'ancien logiciel a verse : un fait (`Carte::importe`).
         date_paiement: p.verse_le,
@@ -535,19 +517,11 @@ fn comparer_une(
     let garanties = crate::calcul::garanties_de_prevoyance(&ctx, paie)?;
 
     // Les deux cotes, par cotisation.
-    let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<Lue>> = BTreeMap::new();
+    let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
     let mut hors_total: Vec<RegroupementDeComparaison> = Vec::new();
     for l in cotisations {
-        let lue = Lue {
-            libelle: l.libelle.clone(),
-            base: l.base.map(Montant::du_decimal),
-            taux_salarie: l.taux_salarie.map(Taux::du_decimal),
-            taux_employeur: l.taux_employeur.map(Taux::du_decimal),
-            montant_salarie: l.montant_salarie.map(Montant::du_decimal),
-            montant_employeur: l.montant_employeur.map(Montant::du_decimal),
-        };
-        if lue.montant_salarie.is_none() && lue.montant_employeur.is_none() {
+        if l.montant_salarie.is_none() && l.montant_employeur.is_none() {
             continue;
         }
         match l.cotisation.clone() {
@@ -555,11 +529,11 @@ fn comparer_une(
                 if l.hors_total && !hors_total.contains(&code) {
                     hors_total.push(code.clone());
                 }
-                leurs.entry(code).or_default().push(lue)
+                leurs.entry(code).or_default().push(l)
             }
             None => {
-                if !c.non_rattachees.contains(&lue.libelle) {
-                    c.non_rattachees.push(lue.libelle);
+                if !c.non_rattachees.contains(&l.libelle) {
+                    c.non_rattachees.push(l.libelle.clone());
                 }
             }
         }
@@ -585,7 +559,7 @@ fn comparer_une(
         if atmp_lu && *code == RegroupementDeComparaison::Cotisation(ATMP) {
             continue;
         }
-        let eux: &[Lue] = match leurs.get(code) {
+        let eux: &[&CotisationImprimee] = match leurs.get(code) {
             Some(v) => v,
             None => &[],
         };
@@ -627,7 +601,7 @@ fn comparer_une(
         }
         let ([l], [n]) = (eux, nous) else { continue };
         // Une base en heures (la deduction des heures supplementaires) est masquee au bulletin : elle ne se compare pas.
-        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.filter(|_| !n.masquer_base_et_taux), n.base) {
+        if let (Some(b), crate::calcul::BaseDeCotisation::Montant(notre)) = (l.base.and_then(crate::calcul::BaseDeCotisation::montant).filter(|_| !n.masquer_base_et_taux), n.base) {
             if (b - notre).abs() > UN_CENTIME {
                 ecarts.push(ecart(MesureDeLEcart::Base(relatif(b, notre))));
             }
@@ -653,7 +627,7 @@ fn comparer_une(
         (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
         (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
         (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
-        (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
+        (TotalDuBulletin::NetImposable, paie.net_imposable, p.nets.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
         if (leur - notre).abs() > UN_CENTIME {
@@ -667,7 +641,7 @@ fn comparer_une(
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
 fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
-    (leur - notre).rapport(notre).map(Coefficient::a_quatre_decimales)
+    (leur - notre).rapport(notre).map(|e| e.a_decimales(4))
 }
 
 /// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.

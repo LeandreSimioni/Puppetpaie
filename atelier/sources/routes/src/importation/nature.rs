@@ -226,38 +226,15 @@ pub(crate) struct ChargeNature {
     pub(crate) debut: Option<Jour>,
     pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
-    pub(crate) salaire: Option<MontantSaisi>,
+    /// Le salaire, un nombre, ou tel que la personne l'a tape (« 1 850,00 »), converti a la porte (`Charge::lire`).
+    pub(crate) salaire: Option<socle::grandeurs::MontantUnitaire>,
     pub(crate) quotite: Option<socle::grandeurs::Heures>,
-}
-
-/// Un montant tel qu'il se saisit : un texte (« 1 850,00 ») ou un nombre.
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
-pub(crate) enum MontantSaisi {
-    Texte(String),
-    Nombre(socle::forme::NombreLu),
-}
-
-impl MontantSaisi {
-    fn texte(&self) -> String {
-        match self {
-            MontantSaisi::Texte(t) => t.clone(),
-            MontantSaisi::Nombre(n) => n.to_string(),
-        }
-    }
-}
-
-impl ChargeNature {
-    /// Le salaire demande, tel qu'il est dit, sans ses blancs ; rien pour une case vide.
-    fn salaire(&self) -> Option<String> {
-        self.salaire.as_ref().map(MontantSaisi::texte).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-    }
 }
 
 /// Ce qu'`importation-nature` rend : les contrats ecrits, ce qui reste a dire, et ce que l'ecran en dit.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct NatureDite {
-    pub(crate) phrase: String,
+    pub(crate) phrase: socle::texte::Phrase,
     pub(crate) ecrits: usize,
     pub(crate) a_dire: Vec<ADire>,
     /// La fiche Entreprise vient de dire que la compagnie emploie des permanents.
@@ -326,11 +303,11 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
             Demande::Salaire => {
-                let v = charge.salaire().ok_or_else(manque)?;
-                match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
-                    Some(n) => contrat.salaire_mensuel = Some(n),
-                    None => return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", v))),
-                };
+                let salaire = charge.salaire.ok_or_else(manque)?;
+                if salaire <= socle::grandeurs::MontantUnitaire::ZERO {
+                    return Err(refus(format!("« {} » n'est pas un salaire mensuel brut : rien n'a été écrit.", socle::grandeurs::ecrit::sans_zero::dit(salaire))));
+                }
+                contrat.salaire_mensuel = Some(socle::grandeurs::courte(salaire));
             }
             Demande::Quotite => {
                 let h = charge.quotite.ok_or_else(manque)?;
@@ -389,19 +366,18 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     };
     // Ce que l'ecran dit du geste, et sa couleur : la nature est ecrite, c'est fait ; ce qui reste a dire pour un
     // permanent est une ligne de « Pour demarrer », qui a la sienne.
-    let mut phrase = format!("Nature enregistrée sur {} contrat{} repris.", ecrits, if ecrits > 1 { "s" } else { "" });
+    use socle::texte::Phrase;
+    let mut phrases = vec![socle::phrase!("Nature enregistrée sur {} contrat{} repris.", ecrits, if ecrits > 1 { "s" } else { "" })];
     if permanents_declares {
-        phrase.push_str(" La compagnie emploie donc des salariés au mois : « Pour démarrer » dit ce que cela demande encore.");
+        phrases.push(Phrase::fixe("La compagnie emploie donc des salariés au mois : « Pour démarrer » dit ce que cela demande encore."));
     }
-    for p in &parametrage {
-        phrase.push(' ');
-        phrase.push_str(p);
-    }
-    Ok(NatureDite { phrase, ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
+    // Ce que le parametrage repris dit, encore en texte (#419, le dernier chantier).
+    phrases.extend(parametrage.iter().map(|p| socle::phrase!("{}", p)));
+    Ok(NatureDite { phrase: Phrase::jointes(phrases, " "), ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
 }
 
 impl crate::enveloppe::Dite for NatureDite {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -432,13 +408,17 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         for champ in demande(nat, en_cours) {
             let pose = match champ {
                 Demande::Numero => Some(charge.numero = Some(numero.clone())),
-                Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
+                Demande::Salaire => match p.paie.mesures.salaire_habituel {
+                    // Le salaire de base d'un mois : le montant d'une unite, le mois.
+                    Some(m) => Some(charge.salaire = Some(m.pour_une_unite())),
+                    None => None,
+                },
                 Demande::Debut => c.map(|c| charge.debut = Some(c.periode.debut())),
                 Demande::Fin => c.and_then(|c| c.periode.fin()).map(|j| charge.fin = Some(j)),
                 // La duree d'un contrat au mois : la quotite que la DSN declare en heures.
                 Demande::Quotite => match c.and_then(|c| c.quotite) {
-                    Some(engagement::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(h)),
-                    Some(engagement::QuotiteDuContrat::Jours(_)) | None => None,
+                    Some(droit::natures::QuotiteDuContrat::Heures(h)) => Some(charge.quotite = Some(h)),
+                    Some(droit::natures::QuotiteDuContrat::Jours(_)) | None => None,
                 },
             };
             complet &= pose.is_some();

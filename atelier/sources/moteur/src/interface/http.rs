@@ -9,8 +9,10 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::Duration;
 
+use socle::grandeurs::Octets;
+
 /// Au-dela, une requete est refusee : la page n'envoie que du JSON et des images de quelques Mo.
-const CORPS_MAX: usize = 64 * 1024 * 1024;
+const CORPS_MAX: Octets = Octets::en_ko(64 * 1024);
 
 pub struct Requete {
     pub methode: String,
@@ -103,8 +105,8 @@ fn hexa(c: u8) -> u8 {
 }
 
 /// La longueur du corps (`Content-Length`), ou le code du refus : illisible (400), trop gros (413).
-fn longueur_du_corps(v: &str) -> Result<usize, u16> {
-    let n: usize = v.trim().parse().map_err(|_| 400u16)?;
+fn longueur_du_corps(v: &str) -> Result<Octets, u16> {
+    let n = Octets::lue(v.trim().parse().map_err(|_| 400u16)?);
     if n > CORPS_MAX {
         return Err(413);
     }
@@ -139,7 +141,7 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Resul
     const LONGUEUR: &str = "content-length";
     if let Some(v) = entetes.get(LONGUEUR) {
         match longueur_du_corps(v) {
-            Ok(n) => corps.resize(n, 0),
+            Ok(n) => corps.resize(n.en_usize(), 0),
             Err(code) => return Ok(Some(Err(code))),
         }
     }
@@ -164,8 +166,8 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Resul
 fn refus_de_lecture(code: u16) -> Reponse {
     let message = match code {
         413 => format!(
-            "La demande est trop grosse pour PuppetPaie (plus de {} Mo) : rien n'a été lu ni enregistré.",
-            CORPS_MAX / (1024 * 1024)
+            "La demande est trop grosse pour PuppetPaie (plus de {}) : rien n'a été lu ni enregistré.",
+            CORPS_MAX
         ),
         _ => format!("La demande n'a pas pu être lue (code {}).", code),
     };

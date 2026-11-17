@@ -6,6 +6,7 @@
 //! fabriquent aucun document, n'ouvrent jamais le coffre et ne decident pas de ce qui part. Ce qu'un envoi releve en
 //! chemin (un incident, ce qu'il faut marquer) se rend a l'appelant, qui le note. L'engagement ne lit pas le journal :
 //! `moteur` lui passe ce qui est parti (`journal::departs`).
+#![forbid(unsafe_code)]
 
 pub mod aer_fictive;
 pub mod branchement;

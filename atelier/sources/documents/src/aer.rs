@@ -47,7 +47,7 @@ use std::path::Path;
 use std::collections::BTreeMap;
 
 use fabrique_pdf::forme::{ImagePosee, Mesure, Remplissage};
-use fabrique_pdf::mesure::mesure;
+use fabrique_pdf::mesure;
 use fabrique_pdf::formulaire::ChampLu;
 
 use crate::cachet;
@@ -55,6 +55,7 @@ use socle::date::{Jour, Periode};
 use socle::echec::refus;
 use socle::mois::Mois;
 use socle::grandeurs::{Cachets, Heures};
+use engagement::calcul::Paie;
 
 /// Les champs du cadre 5, et rien d'autre.
 pub const CHAMPS_TEXTE: [&str; 10] = [
@@ -196,14 +197,15 @@ impl Cadre5 {
     }
 
     pub fn valeurs(&self) -> Vec<(&'static str, String)> {
+        let [jj, mm, aaaa] = self.le.cases();
         let v = [
             self.nom.clone(),
             self.prenom.clone(),
             self.qualite.clone(),
             self.lieu.clone(),
-            format!("{:02}", self.le.jour),
-            format!("{:02}", self.le.mois),
-            format!("{:04}", self.le.an),
+            jj,
+            mm,
+            aaaa,
             self.correspondant.clone(),
             self.telephone.to_string(),
             self.courriel.to_string(),
@@ -241,21 +243,12 @@ fn concordent<G: socle::grandeurs::Grandeur + PartialEq>(a: Option<G>, b: Option
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
 /// n'existe pas (31/02) se refuse.
 pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
-    let t = t.trim();
-    let b = t.as_bytes();
-    let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
-    if b.len() != 10 || b[2] != b'/' || b[5] != b'/' || !chiffres(0, 2) || !chiffres(3, 5) || !chiffres(6, 10) {
-        return Ok(None);
+    use socle::piece::{format, DateMalEcrite, Zone};
+    match Zone::lue(t.trim(), format::JjMmAaaa).valeur() {
+        None => Ok(None),
+        Some(Ok(j)) => Ok(Some(j)),
+        Some(Err(DateMalEcrite::Impossible(p) | DateMalEcrite::Illisible(p))) => Err(refus(p)),
     }
-    let n = |a: usize, z: usize| t[a..z].parse::<u32>().unwrap();
-    let (j, m, a) = (n(0, 2), n(3, 5), n(6, 10));
-    if a < 1 {
-        return Err(refus(socle::date::annee_impossible(a)));
-    }
-    if !(1..=12).contains(&m) {
-        return Err(refus(socle::mois::mois_impossible(m)));
-    }
-    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
@@ -312,38 +305,29 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
     Ok(out)
 }
 
-/// Ce que `verifier` lit d'une paie : le numero de contrat DECLARE, la periode du mois (le contrat borne au mois de la
-/// paie : `PaieAer::du_mois`), les quantites du mois.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PaieAer {
-    pub numero: engagement::numeros::NumeroContrat,
-    pub periode: Periode,
-    pub cachets: Cachets,
-    /// `None` : l'engagement au cachet ne dit pas d'heures.
-    pub heures: Option<Heures>,
+/// Le numero de contrat DECLARE d'une paie, sous lequel l'attestation l'imprime ; une paie sans numero ne se rapproche
+/// de rien.
+fn numero_de(p: &Paie) -> socle::echec::R<&engagement::numeros::NumeroContrat> {
+    let e = &p.engagement;
+    e.numero.as_ref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))
 }
 
-impl PaieAer {
-    /// La periode d'une paie : sa periode payee (`Engagement::periode_payee`), et les heures et cachets que
-    /// la DSN du mois declare en activite (bloc 53, `declarations::dsn::mesures_d_activite`) : les cachets et les heures
-    /// de l'engagement, ou les heures travaillees d'un contrat paye au mois. France Travail compte les heures de
-    /// l'artiste qui n'est pas au cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la
-    /// forme de cachets, chaque cachet est converti en heures » ; `plafond-intermittents/unedic-annexe10-convention-
-    /// 20241115.txt`).
-    pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
-        let e = &p.engagement;
-        let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        if e.contrat().fin().is_none() {
-            return Err(socle::refus!("contrat {} sans fin", numero));
-        }
-        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
-        Ok(PaieAer {
-            numero,
-            periode: e.periode_payee()?,
-            cachets: e.cachets,
-            heures: heures.map(socle::grandeurs::sans_zero),
-        })
+/// CE QUE L'ATTESTATION COMPARE D'UNE PAIE : son numero de contrat declare (`numero_de`), sa periode payee
+/// (`Engagement::periode_payee`, le contrat borne au mois de la paie), ses cachets (`Engagement::cachets`) et ses heures :
+/// celles de l'engagement (`Engagement::heures`, sans les cachets), ou les heures travaillees d'un contrat paye au mois
+/// (`Paie::heures_travaillees`). Ce ne sont pas les mesures d'activite que la DSN du mois declare au bloc 53
+/// (`declarations::dsn::mesures_d_activite`). France Travail compte les heures de l'artiste qui n'est pas au
+/// cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la forme de cachets, chaque cachet est
+/// converti en heures » ; `plafond-intermittents/unedic-annexe10-convention-20241115.txt`). Un contrat sans fin n'a pas
+/// d'attestation.
+fn comparee(p: &Paie) -> socle::echec::R<(&engagement::numeros::NumeroContrat, Periode, Cachets, Option<Heures>)> {
+    let e = &p.engagement;
+    let numero = numero_de(p)?;
+    if e.contrat().fin().is_none() {
+        return Err(socle::refus!("contrat {} sans fin", numero));
     }
+    let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
+    Ok((numero, e.periode_payee()?, e.cachets, heures.map(socle::grandeurs::sans_zero)))
 }
 
 fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
@@ -374,11 +358,12 @@ fn nom_du_contrat(numero: Option<&engagement::numeros::NumeroContrat>) -> String
 /// ceux de la paie (ce qui se perd en silence ; un ecart de brut se verrait au premier coup d'oeil sur le bulletin). Une
 /// colonne qu'aucune paie n'explique est un ecart ; une periode de la paie qu'aucune colonne ne porte aussi : signer,
 /// ce serait certifier exacte une attestation qui ajoute ou retire une periode d'emploi.
-pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
+pub fn ecarts(imprime: &[Ligne], paies: &[Paie]) -> socle::echec::R<Vec<String>> {
+    let paies = paies.iter().map(comparee).collect::<socle::echec::R<Vec<_>>>()?;
     let mut ecarts = Vec::new();
     for ligne in imprime {
-        let p = paies.iter().find(|p| Some(&p.numero) == ligne.numero.as_ref() && ligne.porte(&p.periode));
-        let Some(p) = p else {
+        let p = paies.iter().find(|(numero, periode, _, _)| Some(*numero) == ligne.numero.as_ref() && ligne.porte(periode));
+        let Some((_, _, cachets, heures)) = p else {
             ecarts.push(format!(
                 "{} ({}) : une periode sur l'attestation qu'aucune paie n'explique ({} cachets, {} heures)",
                 nom_du_contrat(ligne.numero.as_ref()),
@@ -391,25 +376,25 @@ pub fn ecarts(imprime: &[Ligne], paies: &[PaieAer]) -> Vec<String> {
         let ecart = |quoi: &str, vu: String, n: String| {
             format!("{} ({}) : {} {} sur l'attestation, {} dans la paie", nom_du_contrat(ligne.numero.as_ref()), periode(ligne.debut, ligne.fin), vu, quoi, n)
         };
-        if !concordent(ligne.cachets, Some(p.cachets), Cachets::est_nul) {
-            ecarts.push(ecart("cachets", nombre(ligne.cachets), nombre(Some(p.cachets))));
+        if !concordent(ligne.cachets, Some(*cachets), Cachets::est_nul) {
+            ecarts.push(ecart("cachets", nombre(ligne.cachets), nombre(Some(*cachets))));
         }
-        if !concordent(ligne.heures, p.heures, Heures::est_nul) {
-            ecarts.push(ecart("heures", nombre(ligne.heures), nombre(p.heures)));
+        if !concordent(ligne.heures, *heures, Heures::est_nul) {
+            ecarts.push(ecart("heures", nombre(ligne.heures), nombre(*heures)));
         }
     }
-    for p in paies {
-        if !imprime.iter().any(|l| l.numero.as_ref() == Some(&p.numero) && l.porte(&p.periode)) {
+    for (numero, p, cachets, heures) in &paies {
+        if !imprime.iter().any(|l| l.numero.as_ref() == Some(*numero) && l.porte(p)) {
             ecarts.push(format!(
                 "{} ({}) : une periode de la paie ({} cachets, {} heures) que l'attestation ne porte pas",
-                nom_du_contrat(Some(&p.numero)),
-                periode(Some(p.periode.debut()), Some(p.periode.fin())),
-                nombre(Some(p.cachets)),
-                nombre(p.heures)
+                nom_du_contrat(Some(*numero)),
+                periode(Some(p.debut()), Some(p.fin())),
+                nombre(Some(*cachets)),
+                nombre(*heures)
             ));
         }
     }
-    ecarts
+    Ok(ecarts)
 }
 
 /// Les champs du formulaire, lus par la fabrique.
@@ -418,16 +403,16 @@ pub fn champs(donnees: &[u8]) -> R<Vec<ChampLu>> {
 }
 
 /// `verifier` : les ecarts entre l'attestation `donnees` et ces paies.
-pub fn verifier(donnees: &[u8], paies: &[PaieAer]) -> R<Vec<String>> {
+pub fn verifier(donnees: &[u8], paies: &[Paie]) -> R<Vec<String>> {
     let lues = lire_quantites(&champs(donnees)?)?;
-    Ok(ecarts(&lues, paies))
+    Ok(ecarts(&lues, paies)?)
 }
 
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
 /// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::SorteDImage::largeur_imprimee`).
-pub const CASE_SIGNATURE: Mesure = Mesure::entier(121);
-pub const CASE_CACHET: Mesure = Mesure::entier(161);
+pub const CASE_SIGNATURE: Mesure = mesure!("121");
+pub const CASE_CACHET: Mesure = mesure!("161");
 
 /// La signature occupe le haut de la case, sur 80 % de sa largeur.
 ///
@@ -436,9 +421,9 @@ pub const CASE_CACHET: Mesure = Mesure::entier(161);
 /// [x0, y0, x1, y1] en points, l'origine en haut a gauche de la page.
 pub fn cadre_signature(rect: [Mesure; 4]) -> [Mesure; 4] {
     let [x0, y0, x1, y1] = rect;
-    let largeur = (x1 - x0) * mesure("0.8");
-    let hauteur = (y1 - y0) * mesure("0.55");
-    let quatre = Mesure::entier(4);
+    let largeur = (x1 - x0) * mesure!("0.8");
+    let hauteur = (y1 - y0) * mesure!("0.55");
+    let quatre = mesure!("4");
     [x0 + quatre, y0 + quatre, x0 + quatre + largeur, y0 + quatre + hauteur]
 }
 
@@ -462,7 +447,7 @@ pub struct Authentification<'a> {
     pub signature: Option<&'a str>,
     /// Les paies du mois, pour la verification. Les omettre, c'est signer sans
     /// regarder -- possible, mais il faut le vouloir.
-    pub paies: Option<&'a [PaieAer]>,
+    pub paies: Option<&'a [Paie]>,
     /// Signer malgre un ecart. Reserve au cas ou l'ecart est explique et
     /// accepte ; il laisse une trace dans le journal de la commande.
     pub forcer: bool,
@@ -476,7 +461,7 @@ pub fn authentifier(donnees: &[u8], a: &Authentification) -> R<Vec<u8>> {
     // L'ordre des refus : l'ecart d'abord (il lit le
     // formulaire), puis les cles de la fiche, puis la lecture du formulaire.
     if let Some(paies) = a.paies {
-        let ecarts = ecarts(&lire_quantites(&champs(donnees)?)?, paies);
+        let ecarts = ecarts(&lire_quantites(&champs(donnees)?)?, paies)?;
         if !ecarts.is_empty() && !a.forcer {
             return Err(Echec::Ecarts(ecarts));
         }
@@ -528,24 +513,21 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
 /// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
-    let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == *cle;
+pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<Paie>) -> socle::echec::R<Vec<Paie>> {
+    let de_lui = |p: &Paie| p.salarie.id == *cle;
     let mut out = Vec::new();
-    for p in paies_du_mois(periode).iter().filter(|p| de_lui(p)) {
-        let e = &p.engagement;
-        if !due(p)? {
+    for p in paies_du_mois(periode).into_iter().filter(|p| de_lui(p)) {
+        if !due(&p)? {
             continue;
         }
-        let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        let mut m = e.contrat().debut().mois_civil();
+        let numero = numero_de(&p)?.clone();
+        let mut m = p.engagement.contrat().debut().mois_civil();
         while m < periode {
-            for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_ref() == Some(&numero) && !q.engagement.sans_paie()) {
-                out.push(PaieAer::du_mois(q)?);
-            }
+            out.extend(paies_du_mois(m).into_iter().filter(|q| de_lui(q) && q.engagement.numero.as_ref() == Some(&numero) && !q.engagement.sans_paie()));
             m = m.suivant();
         }
-        if !e.sans_paie() {
-            out.push(PaieAer::du_mois(p)?);
+        if !p.engagement.sans_paie() {
+            out.push(p);
         }
     }
     Ok(out)

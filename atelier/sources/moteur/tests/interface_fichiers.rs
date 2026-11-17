@@ -5,6 +5,7 @@
 //! dans `CARGO_TARGET_TMPDIR` (`PUPPETPAIE_CODE` y pointe) ; le jeton de la fenetre s'ecrit dans un dossier
 //! utilisateur de ce meme dossier temporaire, jamais dans celui du poste. La liste des scripts se LIT dans
 //! l'`index.html` copie : elle n'est pas recopiee ici.
+#![forbid(unsafe_code)]
 
 use moteur::interface::http::{Reponse, Requete};
 use moteur::interface::Fenetre;
@@ -56,7 +57,7 @@ fn banc() -> (&'static Banc, MutexGuard<'static, ()>) {
         }
         // Debloquee par le geste : bridee, l'accueil n'ajouterait pas la compagnie reelle d'un test.
         outils::debloquer(&base);
-        let fenetre = Fenetre::nouvelle(0, utilisateur.clone(), 1).unwrap();
+        let fenetre = Fenetre::nouvelle(std::time::Duration::ZERO, utilisateur.clone(), 1).unwrap();
         Banc { logiciel, fenetre }
     });
     (b, verrou)
@@ -243,7 +244,7 @@ fn tuile_ajoutee(html: &str) -> String {
 #[test]
 fn retour_et_echap_ramenent_des_pages_du_mot_de_passe_au_choix_de_la_compagnie() {
     let (_b, _v) = banc();
-    let f = Fenetre::nouvelle(0, _b.logiciel.parent().unwrap().join("utilisateur"), 1).unwrap();
+    let f = Fenetre::nouvelle(std::time::Duration::ZERO, _b.logiciel.parent().unwrap().join("utilisateur"), 1).unwrap();
     let adresse = f.adresse("127.0.0.1", 1);
     let jeton = adresse.split("jeton=").nth(1).unwrap().to_string();
     let est_l_accueil = |html: &str| html.contains("data-id=\"cie:") && !html.contains("id=\"mdp\"");

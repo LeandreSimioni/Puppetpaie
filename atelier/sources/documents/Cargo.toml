@@ -13,7 +13,6 @@ publish = false
 socle = { path = "../socle" }
 droit = { path = "../droit" }
 engagement = { path = "../engagement" }
-rust_decimal = { workspace = true }
 # Les formes que les pieces lisent et rendent (`libelles_courts.rs`, `contrat.rs`, `fiche_questionnaire.rs`...).
 serde = { workspace = true }
 # Le PDF : la description part a la fabrique dans le meme processus.

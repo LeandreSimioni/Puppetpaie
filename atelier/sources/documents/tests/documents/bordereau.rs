@@ -65,7 +65,7 @@ fn un_montant_negatif_s_arrondit_comme_son_oppose_par_inference() {
 
 #[test]
 fn un_ctp_inconnu_fait_refuser() {
-    let e = montant(&[l("000", "920", "100.00", "")], &Jour::nouveau(2026, 9, 1).unwrap()).unwrap_err().phrase;
+    let e = montant(&[l("000", "920", "100.00", "")], &crate::outils::le_jour("2026-09-01")).unwrap_err().phrase;
     assert!(e.contains("000") && e.contains("Rien n'est ecrit"), "{}", e);
 }
 

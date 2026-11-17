@@ -37,7 +37,7 @@ fn de_la_validation_a_l_attestation() {
     };
     refus(&valider(&c, "2026-03", None, &saisie("accroissement"), "2026-02-25"));
     // Les changements d'un appel s'ecrivent tout ou rien : un motif refuse, la carte ne s'ecrit pas.
-    assert!(engagement::stock::vue_du_mois(&c, socle::mois::Mois::nouveau(2026, 3).unwrap()).unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie != Some(droit::contexte::IdSalarie::lire("FULLER").unwrap()))), "un motif refuse : rien n'est ecrit");
+    assert!(engagement::stock::vue_du_mois(&c, crate::outils::le_mois("2026-03")).unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie != Some(droit::contexte::IdSalarie::lire("FULLER").unwrap()))), "un motif refuse : rien n'est ecrit");
     reussi(&valider(&c, "2026-03", None, &saisie("02"), "2026-02-25"));
     // Le contrat CDD se fabrique depuis l'engagement valide : un modele qui tairait une mention de L1242-12 se refuse
     // (`documents::contrat_ecrit::manques`), le PDF imprime porte donc la nature, le motif de recours et le terme.
@@ -104,6 +104,6 @@ fn de_la_validation_a_l_attestation() {
     let ap = route(&c, "apercu", json!({"mois": "2026-06", "modifications": []}), "2026-06-20");
     let svoboda = reussi(&ap)["paies"].as_array().unwrap().iter().find(|p| p.to_string().contains("SVOBODA")).cloned().expect("SVOBODA");
     let iccp = svoboda["remuneration"].as_array().unwrap().iter().find(|l| l["rubrique"] == "indemnite_compensatrice_conges").cloned().expect("l'indemnite compensatrice");
-    let taux = crate::outils::dec(iccp["taux"].to_string().trim_matches('"'));
-    assert!(taux * crate::outils::dec("24") <= crate::outils::dec("3400"), "un jour de conge paye plus qu'un jour de travail : {}", iccp);
+    let taux: socle::grandeurs::MontantUnitaire = crate::outils::grandeur(iccp["taux"].to_string().trim_matches('"'));
+    assert!(socle::grandeurs::Jours::fixes(24) * taux <= socle::grandeurs::Montant::euros(3400), "un jour de conge paye plus qu'un jour de travail : {}", iccp);
 }

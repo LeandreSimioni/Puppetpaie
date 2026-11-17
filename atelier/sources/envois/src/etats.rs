@@ -167,7 +167,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.contrat.debut()) && meme_nom(x.salarie.as_str(), &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == Some(x.contrat.debut()) && c.nom.as_deref().is_some_and(|nom| meme_nom(x.salarie.as_str(), nom)));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
@@ -467,7 +467,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
 /// CE QUE LES DOCUMENTS DU MOIS DISAIENT, par salarie : le resume de sa paie (`envoi::resume_de`) dans la derniere ligne
 /// d'envoi de documents qui l'a servi (un envoi coupe en route ne porte que ceux qu'il a servis). Qu'ils soient partis,
 /// c'est l'engagement qui le sait (`journal::departs`) ; ceci n'en dit que le contenu.
-pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<IdSalarie, Option<crate::envoi::ResumeDePaie>> {
+pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<IdSalarie, crate::envoi::ResumeDePaie> {
     let mut out = HashMap::new();
     for e in crate::journal::filtrer(lignes, Some(Acte::Documents), Some(mois), None).filter_map(Ligne::documents) {
         for s in &e.detail.salaries {
@@ -590,7 +590,7 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         for l in c.personnes().into_iter().flatten() {
             match &l.etat {
                 EtatDeLaDpae::Enregistree { dossier } => dossiers.push(dossier.texte()),
-                EtatDeLaDpae::DejaExistante { .. } => existantes.push(&l.nom),
+                EtatDeLaDpae::DejaExistante { .. } => existantes.extend(l.nom.as_deref()),
                 EtatDeLaDpae::Refusee { .. } => {}
             }
         }
@@ -701,7 +701,7 @@ pub struct Repetition {
     pub motif: Option<String>,
     pub etat: EtatDuTest,
     pub titre: String,
-    pub phrase: String,
+    pub phrase: socle::texte::Phrase,
 }
 
 /// OU EN EST LE TEST, dit une fois : teste et conforme (le reel peut partir), en test (son compte rendu est attendu),
@@ -770,17 +770,17 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
         (Some(c), _, _) if compte_rendu == Some(CompteRenduDuTest::Ok) => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
-            format!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
+            socle::phrase!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
         ),
         (Some(c), _, _) => (
             EtatDuTest::EnTest,
             format!("{} est en test — son compte rendu est attendu", cette),
-            format!("Envoyée en test le {}. {}", c.quand().dit(), ENSUITE),
+            socle::phrase!("Envoyée en test le {}. {}", c.quand().dit(), ENSUITE),
         ),
         (None, Some(r), _) => (
             EtatDuTest::TestRefuse,
             "Le test est refusé".into(),
-            format!(
+            socle::phrase!(
                 "Essayé le {} : {}. Le même refus attendrait le dépôt réel : c'est cela qu'il faut corriger.",
                 r.quand().dit(),
                 pourquoi_rate(r).trim_end_matches('.')
@@ -789,9 +789,9 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &EmpreinteCourte, nom
         (None, None, Some(p)) => (
             EtatDuTest::Ecrite,
             "Pas de test valable pour ce contenu".into(),
-            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", p.quand().dit(), ENSUITE),
+            socle::phrase!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", p.quand().dit(), ENSUITE),
         ),
-        (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
+        (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), socle::phrase!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
     Repetition {
         empreinte: empreinte.clone(),
@@ -1070,8 +1070,8 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
         }
         let p = PersonneCertifiee {
             libelle: l.code.libelle().to_string(),
-            nom: l.nom,
-            prenom: l.prenom,
+            nom: l.identite.nom,
+            prenom: l.identite.prenoms,
             embauche: l.embauche,
             etat: l.etat,
             code: l.code,
@@ -1080,7 +1080,10 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
         };
         // Refusee : la ligne le dit dans ses anomalies.
         if let EtatDeLaDpae::Refusee { .. } = p.etat {
-            anomalies.push(format!("{} -- {}", p.libelle, p.nom));
+            anomalies.push(match &p.nom {
+                Some(nom) => format!("{} -- {}", p.libelle, nom),
+                None => p.libelle.clone(),
+            });
         }
         personnes.push(p);
     }
@@ -1209,7 +1212,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
 /// Le nombre ajoute ; les incidents a noter (dans
 /// l'ordre) s'ajoutent a `incidents`, que l'appelant ecrit dans le journal des
 /// incidents, meme quand le rattachement s'arrete sur une erreur.
-fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<i64> {
+fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<usize> {
     if !chemin(racine).exists() {
         return Ok(0);
     }
@@ -1270,7 +1273,7 @@ pub struct AvecIncidents<T> {
 
 /// Range les retours `retours` (la liste des retours) en face des lignes du journal qu'ils concernent (par le flux).
 /// `contenus` donne, pour chaque `(flux, nature, publication)` telecharge, les octets du retour : le verdict se lit dedans.
-pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<i64> {
+pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<usize> {
     let mut incidents = Vec::new();
     let dico: HashMap<CleDuContenu, Vec<u8>> = contenus.iter().cloned().collect();
     let resultat = rattacher_retours(racine, retours, &dico, &mut incidents);
@@ -1278,7 +1281,7 @@ pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], conte
 }
 
 /// `rattacher_retours_avec_contenus` sans contenus : les retours deja archives.
-pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncidents<i64> {
+pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncidents<usize> {
     rattacher_retours_avec_contenus(racine, retours, &[])
 }
 
@@ -1432,8 +1435,8 @@ mod tests {
         let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSBBBB"), "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e100000000000000", "f.dsn", true, Some("WSCCCC"), "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
-        let annonce = |flux: &str, nature: NatureDuRetour, seconde: i64| Annonce {
-            publication: Some(socle::paris::Moment::a_paris(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap()),
+        let annonce = |flux: &str, nature: NatureDuRetour, publiee: &str| Annonce {
+            publication: Some(socle::piece::Zone::lue(publiee, socle::piece::format::InstantIso).valeur().unwrap()),
             production: None,
             ops: None,
             delegataire: None,
@@ -1445,9 +1448,9 @@ mod tests {
             flux: Some(IdDeFlux::lire(flux).unwrap()),
         };
         let retours = vec![
-            annonce("WSBBBB", NatureDuRetour::CertificatDeConformite, 1),
-            annonce("WSINCONNU", NatureDuRetour::CertificatDeConformite, 2),
-            annonce("WSCCCC", NatureDuRetour::BilanDIdentification, 3),
+            annonce("WSBBBB", NatureDuRetour::CertificatDeConformite, "2026-06-01T11:00:01"),
+            annonce("WSINCONNU", NatureDuRetour::CertificatDeConformite, "2026-06-01T11:00:02"),
+            annonce("WSCCCC", NatureDuRetour::BilanDIdentification, "2026-06-01T11:00:03"),
         ];
         let mut contenus = HashMap::new();
         contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());

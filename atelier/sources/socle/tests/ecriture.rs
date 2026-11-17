@@ -1,6 +1,7 @@
 //! L'ecriture des fichiers (`ecriture`) et le verrou des compteurs (`verrou`). Un JSON de la compagnie s'ecrit en LF,
 //! avec un saut final, ses dossiers crees ; le verrou des compteurs n'est rendu que par celui qui le tient, et un
 //! verrou abandonne se reprend.
+#![forbid(unsafe_code)]
 
 use socle::ecriture::ecrire_json;
 use socle::verrou;
@@ -27,9 +28,9 @@ fn ecrire_json_en_lf_avec_saut_final_et_dossiers() {
 fn le_verrou_se_prend_se_refuse_se_rend() {
     let d = dossier("verrou");
     let p = d.join(".compteurs.verrou");
-    assert_eq!(verrou::prendre(&p, "moi pid 1 x", 600).unwrap(), Ok(()));
+    assert_eq!(verrou::prendre(&p, "moi pid 1 x", verrou::DELAI_VERROU).unwrap(), Ok(()));
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "moi pid 1 x");
-    let refus = verrou::prendre(&p, "autre pid 2 y", 600).unwrap().unwrap_err();
+    let refus = verrou::prendre(&p, "autre pid 2 y", verrou::DELAI_VERROU).unwrap().unwrap_err();
     assert_eq!(refus.detenteur, "moi pid 1 x");
     // Le sortant ne retire que le sien.
     verrou::rendre(&p, "autre pid 2 y").unwrap();
@@ -44,6 +45,6 @@ fn un_verrou_perime_est_repris() {
     let p = d.join(".compteurs.verrou");
     std::fs::write(&p, "mort pid 9 z").unwrap();
     // Delai nul : tout verrou existant est deja abandonne.
-    assert_eq!(verrou::prendre(&p, "moi pid 1 x", 0).unwrap(), Ok(()));
+    assert_eq!(verrou::prendre(&p, "moi pid 1 x", std::time::Duration::ZERO).unwrap(), Ok(()));
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "moi pid 1 x");
 }

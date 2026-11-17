@@ -80,9 +80,9 @@ fn tables() -> Result<&'static Tables, Refus> {
 }
 
 /// Une lecture dans les octets du programme : ce qui dépasse se refuse.
-struct Octets<'a>(&'a [u8]);
+struct OctetsDuProgramme<'a>(&'a [u8]);
 
-impl<'a> Octets<'a> {
+impl<'a> OctetsDuProgramme<'a> {
     fn tranche(&self, debut: usize, n: usize, quoi: &str) -> Result<&'a [u8], Refus> {
         match debut.checked_add(n).and_then(|fin| self.0.get(debut..fin)) {
             Some(t) => Ok(t),
@@ -198,7 +198,7 @@ fn dict(d: &[u8]) -> Result<Vec<(u16, Vec<i64>)>, Refus> {
 /// encodé.
 pub(crate) fn noms_des_codes(programme: &[u8]) -> Result<Vec<Option<String>>, Refus> {
     let t = tables()?;
-    let o = Octets(programme);
+    let o = OctetsDuProgramme(programme);
     // Table 8 : la version majeure 1 est la seule que la spécification déposée décrit.
     let majeure = o.card8(0, "l'en-tête")?;
     if majeure != 1 {

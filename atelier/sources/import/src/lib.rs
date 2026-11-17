@@ -5,6 +5,7 @@
 //! importe tel que la page le montre (`mois`), les ecarts de calcul (`ecarts`) et le caviardage de ce qui part chez
 //! l'editeur (`caviardage`) ; le guide de ce qu'on y met (`guide`). Ce que l'import compose et ecrit pour une route est
 //! dans `routes::importation`.
+#![forbid(unsafe_code)]
 
 pub mod aem_lu;
 pub mod attestes;

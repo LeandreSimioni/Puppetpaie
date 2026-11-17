@@ -2,6 +2,7 @@
 //! bascule d'un depot en test et la preuve d'un depot reel, la lecture des retours reels transcrits, la boite simulee,
 //! un envoi coupe en route. Rien ne sort de la machine (un faux serveur local). Un fichier seul :
 //! `cargo nextest run --cargo-profile essais -p envois -E 'test(/^<fichier>::/)'`.
+#![forbid(unsafe_code)]
 
 // Les aides, dont le faux serveur que les essais du moteur prennent aussi : publiques, chacun n'en prend que ce qu'il
 // emploie.

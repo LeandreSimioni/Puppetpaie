@@ -38,12 +38,10 @@
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::paris::{ecrit::jour_et_heure, InstantOuJour, Moment};
+use socle::paris::{ecrit::jour_et_heure, HeureDuJour, InstantOuJour, Moment};
 
-/// L'heure limite du depot le jour de l'echeance, midi, en minutes depuis minuit (cahier technique DSN 2026.1, § 1.4.2).
-pub const MINUTE_LIMITE: u32 = 12 * 60;
-
-const JOURS: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+/// L'heure limite du depot le jour de l'echeance, midi (cahier technique DSN 2026.1, § 1.4.2).
+pub const HEURE_LIMITE: HeureDuJour = HeureDuJour::MIDI;
 
 /// Ce que la reponse d'une route porte de ses textes et de ses inferences.
 const TEXTES: [&str; 4] = [
@@ -64,29 +62,13 @@ pub struct Echeance {
     pub jour: Jour,
     /// Les jours sautes, et pourquoi (« samedi », « dimanche », « Assomption, fête légale »).
     pub sautes: Vec<(Jour, String)>,
-    /// La veille de `jour` (`veille`).
-    veille: Jour,
 }
 
-/// Pourquoi `j` n'est pas un jour ouvre du point de depot, ou `None` s'il l'est.
-pub fn non_ouvre(j: &Jour) -> R<Option<String>> {
-    match j.jour_de_la_semaine() {
-        5 => return Ok(Some("samedi".into())),
-        6 => return Ok(Some("dimanche".into())),
-        _ => {}
-    }
-    Ok(socle::feries::feries(j.annee())?.into_iter().find(|(d, _)| d == j).map(|(_, nom)| format!("{}, fête légale", nom)))
-}
-
-/// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2).
+/// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2) :
+/// le calendrier du point de depot, les onze fetes legales.
 pub fn reporter(nominale: Jour) -> R<Echeance> {
-    let (mut jour, mut sautes) = (nominale, Vec::new());
-    while let Some(pourquoi) = non_ouvre(&jour)? {
-        sautes.push((jour, pourquoi));
-        jour = jour.plus_jours(1)?;
-    }
-    let veille = jour.plus_jours(-1)?;
-    Ok(Echeance { nominale, jour, sautes, veille })
+    let (jour, sautes) = socle::date::JoursOuvres::premier_a_partir_de(nominale, socle::feries::feries)?;
+    Ok(Echeance { nominale, jour, sautes })
 }
 
 /// L'echeance de la DSN du mois `mois` : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois suivant, reporte
@@ -103,7 +85,7 @@ pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: Mois) -> R<Echeanc
 }
 
 fn lisible(j: &Jour) -> String {
-    format!("{} {}", JOURS[j.jour_de_la_semaine() as usize], j.jj_mm_aaaa())
+    format!("{} {}", j.jour_de_la_semaine(), j.jj_mm_aaaa())
 }
 
 impl Echeance {
@@ -118,9 +100,10 @@ impl Echeance {
     }
 
     /// Le dernier jour (jusqu'a minuit) ou un annule-et-remplace integral est admis : la veille de l'echeance (cahier
-    /// technique § 1.4.2 ; inference 3 : la veille de l'echeance reportee).
-    pub fn veille(&self) -> Jour {
-        self.veille
+    /// technique § 1.4.2 ; inference 3 : la veille de l'echeance reportee), lu de son instant limite
+    /// (`limite_de_l_annule_et_remplace`) : une seule limite.
+    pub fn veille(&self) -> R<Jour> {
+        Ok(jour_et_heure::jour_limite(InstantOuJour::Instant(self.limite_de_l_annule_et_remplace()?)))
     }
 
     /// LE PREMIER JOUR OU LA DSN DU MOIS PEUT PARTIR : un mois avant son echeance. Cahier technique DSN 2026.1, § 1.4.2
@@ -129,7 +112,7 @@ impl Echeance {
     /// nominale (le 5 ou le 15 du mois suivant), soit le meme jour du mois declare ; le cahier ne dit pas d'ou il se
     /// compte. Avant ce jour, la DSN est a venir.
     pub fn premier_depot(&self) -> R<Jour> {
-        self.nominale.mois_civil().precedent().jour_exige(self.nominale.jour)
+        self.nominale.avant(socle::date::Duree::mois(1))
     }
 
     /// Pourquoi la date a bouge, ou `None`.
@@ -151,14 +134,23 @@ impl Echeance {
 
     /// « lundi 16/11/2026 à midi ».
     pub fn phrase(&self) -> String {
-        format!("{} à midi", lisible(&self.jour))
+        format!("{} {}", lisible(&self.jour), HEURE_LIMITE.dite())
     }
 
-    /// L'instant limite du depot : son jour, a l'heure limite (`MINUTE_LIMITE`, a Paris).
+    /// L'instant limite du depot : son jour, a l'heure limite (`HEURE_LIMITE`, a Paris).
     pub fn limite(&self) -> R<Moment> {
-        match jour_et_heure::a_la_minute(self.jour, i64::from(MINUTE_LIMITE)) {
+        match jour_et_heure::a_la_minute(self.jour, HEURE_LIMITE) {
             Some(InstantOuJour::Instant(m)) => Ok(m),
-            _ => Err(refus(format!("L'échéance du {} à midi n'est pas une heure de Paris.", self.jour.jj_mm_aaaa()))),
+            _ => Err(refus(format!("L'échéance du {} {} n'est pas une heure de Paris.", self.jour.jj_mm_aaaa(), HEURE_LIMITE.dite()))),
+        }
+    }
+
+    /// L'instant limite d'un annule-et-remplace integral : « la veille a minuit » (cahier technique § 1.4.2), le minuit
+    /// qui finit la `veille`, soit le debut du jour de l'echeance (`jour_et_heure::jour_limite` en redonne la veille).
+    pub fn limite_de_l_annule_et_remplace(&self) -> R<Moment> {
+        match jour_et_heure::a_la_minute(self.jour, HeureDuJour::MINUIT) {
+            Some(InstantOuJour::Instant(m)) => Ok(m),
+            _ => Err(refus(format!("Le {} à minuit n'est pas une heure de Paris.", self.jour.jj_mm_aaaa()))),
         }
     }
 
@@ -170,7 +162,7 @@ impl Echeance {
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
-            veille_annule_et_remplace: Some(self.veille),
+            veille_annule_et_remplace: Some(self.veille()?),
             textes: TEXTES,
             inference: INFERENCE,
         })

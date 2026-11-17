@@ -8,8 +8,6 @@
 //! (`dsn::versement_ecrit`), ses montants sont ceux de la paie. Une rubrique que l'annulation ne sait pas reprendre
 //! REFUSE (regle 1).
 
-use std::str::FromStr;
-
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::contexte::Contexte;
 use droit::natures::{RubriqueDeLaNorme, TypeDeRemuneration};
@@ -19,7 +17,6 @@ use engagement::calcul::Paie;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::grandeurs::Montant;
 use socle::mois::Mois;
-use socle::num::Decimal;
 
 /// Les rubriques d'un versement que l'annulation reprend, et si elles portent un montant (a changer de signe).
 /// Le bloc 52 (primes) n'y est pas : `bloc_regularisation` ne l'a jamais ecrit, ni avant ni apres (fiche N7,
@@ -147,22 +144,22 @@ pub(crate) fn illisible(k: RubriqueDeLaNorme, v: &str, quoi: &str) -> Echec {
 /// Le brut (S21.G00.51.013 du type 001) de lignes de versement ; chaque rubrique y doit etre de celles que
 /// l'annulation sait reprendre, chaque montant lisible. Les lignes sont lues telles que la norme les ecrit : la porte.
 fn verifier_et_brut(lignes: &[(RubriqueDeLaNorme, String)], numero: &engagement::numeros::NumeroContrat, quoi: &str) -> R<Montant> {
-    let mut brut: Option<Decimal> = None;
+    let mut brut: Option<Montant> = None;
     let mut type_51: Option<TypeDeRemuneration> = None;
     for (k, v) in lignes {
         let k = *k;
         let montant = est_un_montant(k).ok_or_else(|| socle::refus!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
         if montant {
-            Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
+            montant_ecrit(k, v, quoi)?;
         }
         if k == droit::rubrique!("S21.G00.51.011") {
             type_51 = TypeDeRemuneration::du_code(v);
         } else if k == droit::rubrique!("S21.G00.51.013") && type_51 == Some(TypeDeRemuneration::Brute) {
-            let m = Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
-            brut = Some(brut.iter().sum::<Decimal>() + m);
+            let m = montant_ecrit(k, v, quoi)?;
+            brut = Some(brut.into_iter().sum::<Montant>() + m);
         }
     }
-    brut.map(Montant::du_decimal).ok_or_else(|| socle::refus!("le versement du contrat {} ne declare pas de brut (S21.G00.51.011 = 001) dans {}", numero, quoi))
+    brut.ok_or_else(|| socle::refus!("le versement du contrat {} ne declare pas de brut (S21.G00.51.011 = 001) dans {}", numero, quoi))
 }
 
 /// Le montant net social declare : le S21.G00.58.004 du seul bloc 58 de type 03 de ces lignes ; aucun ou plusieurs
@@ -174,11 +171,11 @@ fn net_social_de(lignes: &[(RubriqueDeLaNorme, String)], numero: &engagement::nu
         if *k == droit::rubrique!("S21.G00.58.003") {
             type_58 = Some(v);
         } else if *k == droit::rubrique!("S21.G00.58.004") && type_58 == Some("03") {
-            nets.push(Decimal::from_str(v).map_err(|_| illisible(*k, v, quoi))?);
+            nets.push(montant_ecrit(*k, v, quoi)?);
         }
     }
     match nets[..] {
-        [n] => Ok(Montant::du_decimal(n)),
+        [n] => Ok(n),
         _ => Err(socle::refus!(
             "le versement du contrat {} declare {} montant(s) net social (S21.G00.58.003 = 03) dans {} : le net verse au salarie ne se lit pas",
             numero,
@@ -192,15 +189,20 @@ fn net_social_de(lignes: &[(RubriqueDeLaNorme, String)], numero: &engagement::nu
 /// lues telles que la norme les ecrit : la porte.
 fn frais_de(lignes: &[(RubriqueDeLaNorme, String)], quoi: &str) -> R<Montant> {
     let mut type_54: Option<AutreElementDeRevenuBrut> = None;
-    let mut total = Decimal::ZERO;
+    let mut total = Montant::ZERO;
     for (k, v) in lignes {
         if *k == droit::rubrique!("S21.G00.54.001") {
             type_54 = AutreElementDeRevenuBrut::du_code(v);
         } else if *k == droit::rubrique!("S21.G00.54.002") && type_54.is_some_and(|t| FRAIS_54.contains(&t)) {
-            total += Decimal::from_str(v).map_err(|_| illisible(*k, v, quoi))?;
+            total += montant_ecrit(*k, v, quoi)?;
         }
     }
-    Ok(Montant::du_decimal(total))
+    Ok(total)
+}
+
+/// Le montant `v` de la rubrique `k`, tel que la norme l'ecrit (la porte de sa lecture) ; illisible, il refuse.
+fn montant_ecrit(k: RubriqueDeLaNorme, v: &str, quoi: &str) -> R<Montant> {
+    socle::grandeurs::lu::norme::<Montant>(v).ok_or_else(|| illisible(k, v, quoi))
 }
 
 /// Le versement que la paie declaree `p` de `mois` a fait partir, tel que les fonctions de la mensuelle l'ecrivent

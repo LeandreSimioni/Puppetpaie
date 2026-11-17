@@ -12,7 +12,7 @@ use droit::contexte::{aujourdhui, Contexte};
 use socle::date::{Jour, Periode};
 use crate::dsn::{
     autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
-    remunerations, usage_admet, Arret, Fichier, LOGICIEL, VERSION,
+    remunerations, usage_admet, Arret, Fichier, RangDuContrat, LOGICIEL, VERSION,
 };
 use engagement::Engagement;
 use socle::echec::{Classe, R};
@@ -537,12 +537,12 @@ ou un annule.",
     // Les emplois multiples (`40.036`) : les autres contrats du salarie dans la periode de paie du signalement.
     let du_mois = crate::dsn::contrats_du_mois(ctx, payee.debut().mois_civil(), departs)?;
     let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
-    bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, 1, &bar, true, &siens, NATURE, Some(fin), emplois)?;
+    bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, RangDuContrat::PREMIER, &bar, true, &siens, NATURE, Some(fin), emplois)?;
 
     // ------------------------------------------------------------ S21 versement
     // La date de versement : la fin de la periode de paie.
     f.add(droit::rubrique!("S21.G00.50.001"), payee.fin().jjmmaaaa());
-    f.add(droit::rubrique!("S21.G00.50.003"), "01");
+    f.add(droit::rubrique!("S21.G00.50.003"), crate::dsn::NumeroDeVersement::PREMIER);
     f.add(droit::rubrique!("S21.G00.50.020"), defaut(&nomenclatures()?.rattachement_versement, "rattachement_versement")?);
     // Un mois decoupe en periodes elementaires : les remunerations et les bases de chacune, datees de ses bornes.
     let bornes = |q: &engagement::calcul::Paie| -> R<Periode> {
@@ -555,7 +555,7 @@ ou un annule.",
     autre_revenu(&mut f, paie, &bar, &payee, Signe::Plus)?;
     // Les bases de prevoyance ne partent pas dans un FCTU (CCH-14, p. 293).
     for q in paie.elementaires() {
-        bases_et_cotisations(&mut f, q, &bar, 1, &bornes(q)?, Signe::Plus, NATURE, &BASES_INTERDITES)?;
+        bases_et_cotisations(&mut f, q, &bar, RangDuContrat::PREMIER, &bornes(q)?, Signe::Plus, NATURE, &BASES_INTERDITES)?;
     }
 
     // ------------------------------------------------------------ S21 anciennete

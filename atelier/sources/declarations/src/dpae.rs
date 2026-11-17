@@ -25,9 +25,10 @@ use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::fichiers::{modele_de, repr};
-use socle::paris::Moment;
+use socle::paris::{HeureDuJour, Moment};
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
+use crate::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use crate::urssaf::CodeUrssafDpae;
 use crate::usages::strip;
 
@@ -35,7 +36,7 @@ use crate::usages::strip;
 pub const LONGUEUR: usize = 990;
 
 /// L'heure d'embauche que porte la DPAE : 8 h. Rien ne la demande.
-const HEURE_EMBAUCHE: i64 = 8;
+const HEURE_EMBAUCHE: HeureDuJour = HeureDuJour::a(8, 0);
 
 /// POSITIONS 0-BASED, [debut, fin). Le dessin d'enregistrement officiel
 /// (Format 120, `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.pdf`) compte a
@@ -335,16 +336,12 @@ pub struct Embauche {
 impl Embauche {
     /// L'instant de l'embauche : son premier jour, a l'heure que la DPAE porte (`HEURE_EMBAUCHE`, a Paris).
     pub fn instant(&self) -> R<Moment> {
-        Moment::a_paris(self.contrat.debut(), HEURE_EMBAUCHE, 0, 0)
-            .ok_or_else(|| socle::refus!("L'embauche du {} à {} h n'est pas une heure de Paris.", self.contrat.debut().jj_mm_aaaa(), HEURE_EMBAUCHE))
+        Moment::a_paris(self.contrat.debut(), HEURE_EMBAUCHE)
+            .ok_or_else(|| socle::refus!("L'embauche du {} {} n'est pas une heure de Paris.", self.contrat.debut().jj_mm_aaaa(), HEURE_EMBAUCHE.dite()))
     }
 }
 
-/// L'heure et la minute de `m` a Paris, chacune sur deux chiffres, separees par `entre` (HHMM, HHhMM).
-fn heure_minute(m: Moment, entre: &str) -> String {
-    let s = m.seconde_du_jour_de_paris();
-    format!("{:02}{}{:02}", s / 3_600, entre, s / 60 % 60)
-}
+use socle::paris::ecrit::heure_minute;
 
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
@@ -359,8 +356,7 @@ pub struct Parametres<'a> {
 /// La zone `horodatage` d'une minute : JJMMAAAAHHMM.
 fn horodatage_dpae(m: Moment) -> String {
     let m = m.a_la_minute();
-    let (j, s) = (m.jour_de_paris(), m.seconde_du_jour_de_paris());
-    format!("{:02}{:02}{:04}{:02}{:02}", j.jour, j.mois, j.an, s / 3_600, s / 60 % 60)
+    format!("{}{}", m.jour_de_paris().jjmmaaaa(), heure_minute(m, ""))
 }
 
 fn poser(buf: &mut [char], nom: &str, valeur: &str) -> R<()> {
@@ -554,15 +550,9 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     use std::io::Write;
 
     // L'horodatage, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
-    let minute = horodatage.a_la_minute();
-    let jour = minute.jour_de_paris();
-    let s = minute.seconde_du_jour_de_paris();
-    let (j, mo, h, m) = (jour.jour, jour.mois, (s / 3_600) as u32, (s / 60 % 60) as u32);
-    if !(1980..2108).contains(&jour.an) {
+    let Some((date, heure)) = socle::paris::ecrit::dos(horodatage.a_la_minute()) else {
         return Err(socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)));
-    }
-    let a = jour.an as u32;
-    let (date, heure) = (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5));
+    };
     let mut crc = Crc::new();
     crc.update(donnees);
     let somme = crc.sum();
@@ -580,8 +570,8 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     u16_(&mut z, 20);
     u16_(&mut z, drapeau);
     u16_(&mut z, 8);
-    u16_(&mut z, heure as u16);
-    u16_(&mut z, date as u16);
+    u16_(&mut z, heure);
+    u16_(&mut z, date);
     u32_(&mut z, somme);
     u32_(&mut z, comprime.len() as u32);
     u32_(&mut z, donnees.len() as u32);
@@ -596,8 +586,8 @@ pub fn zip(nom: &str, donnees: &[u8], horodatage: Moment) -> R<Vec<u8>> {
     u16_(&mut z, 20);
     u16_(&mut z, drapeau);
     u16_(&mut z, 8);
-    u16_(&mut z, heure as u16);
-    u16_(&mut z, date as u16);
+    u16_(&mut z, heure);
+    u16_(&mut z, date);
     u32_(&mut z, somme);
     u32_(&mut z, comprime.len() as u32);
     u32_(&mut z, donnees.len() as u32);
@@ -729,12 +719,9 @@ fn tranche(r: &[char], a: usize, b: usize) -> String {
 pub struct EnregistrementRelu {
     /// Ecrit `JJMMAAAAHHMM`, sans secondes, a Paris (`horodatage_relu`).
     pub horodatage: Option<Moment>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
-    pub nir: Option<droit::fiche::Nir>,
-    /// Ecrite `JJMMAAAA`.
-    pub date_naissance: Option<Jour>,
+    /// Le nom, le prenom, la date de naissance (ecrite `JJMMAAAA`) et le NIR : a blanc, le salarie n'avait pas de NIR
+    /// (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
+    pub identite: IdentiteDeclaree,
     /// Ecrite `JJMMAAAA`.
     pub date_embauche: Option<Jour>,
     pub type_contrat: Option<droit::natures::TypeContratDpae>,
@@ -748,10 +735,9 @@ fn horodatage_relu(h: &str) -> Option<Moment> {
     if h.len() != 12 || !h.is_ascii() {
         return None;
     }
-    let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x))?;
-    let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x))?;
+    let heure = socle::piece::Zone::lue(&h[8..12], socle::piece::format::Hhmm).valeur()?;
     let j = socle::piece::Zone::lue(&h[..8], socle::piece::format::Jjmmaaaa).valeur()?;
-    Moment::a_paris(j, heure, minute, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == heure * 3_600 + minute * 60)
+    Moment::a_paris(j, heure).filter(|m| m.jour_de_paris() == j && m.heure_de_paris() == heure)
 }
 
 /// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
@@ -788,10 +774,13 @@ pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
                     Some(h) => horodatage_relu(&h),
                     None => None,
                 },
-                nom: zone("nom"),
-                prenom: zone("prenom"),
-                nir,
-                date_naissance: jour("date_naissance")?,
+                identite: IdentiteDeclaree {
+                    nom: zone("nom"),
+                    prenoms: zone("prenom"),
+                    naissance: jour("date_naissance")?.map(NaissanceDeclaree::du_jour),
+                    nir,
+                    ntt: None,
+                },
                 date_embauche: jour("date_embauche")?,
                 type_contrat,
                 date_fin: jour("date_fin")?,
@@ -1030,10 +1019,8 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 /// Une DPAE du certificat de conformite (nature 41) : chaque zone telle que l'enregistrement la porte, sans ses blancs.
 #[derive(Debug, Clone)]
 pub struct LigneDuCertificat {
-    pub nom: String,
-    pub prenom: String,
-    /// Aucun quand la zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
-    pub nir: Option<droit::fiche::Nir>,
+    /// Le nom, le prenom et le NIR : aucun quand sa zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
+    pub identite: IdentiteDeclaree,
     /// Aucun quand la zone est a blanc.
     pub embauche: Option<Jour>,
     /// C_RETOUR_AR.
@@ -1088,10 +1075,9 @@ pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
             "" => None,
             n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
+        let rempli = |t: String| Some(t).filter(|t| !t.is_empty());
         out.push(LigneDuCertificat {
-            nom: c("nom"),
-            prenom: c("prenom"),
-            nir,
+            identite: IdentiteDeclaree { nom: rempli(c("nom")), prenoms: rempli(c("prenom")), naissance: None, nir, ntt: None },
             embauche,
             code,
             etat: EtatDeLaDpae::du_certificat(code, DossierDpae::de_la_zone(z("dossier"))),
@@ -1109,6 +1095,11 @@ mod tests {
     use super::*;
     use droit::natures::NatureDeContrat as N;
     use socle::fichiers::dossier_du_code;
+
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
 
     /// Le gabarit neutre livre avec le logiciel.
     fn neutre() -> Vec<char> {
@@ -1130,7 +1121,7 @@ mod tests {
                 id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(),
                 champs: socle::forme::lire_texte(fiche, "la fiche du test").unwrap(),
             }),
-            contrat: PeriodeOuverte::du(Jour::nouveau(2026, 10, 1).unwrap(), fin).unwrap(),
+            contrat: PeriodeOuverte::du(j("2026-10-01"), fin).unwrap(),
             nature,
             spectacle: None,
         }
@@ -1161,7 +1152,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<CodeUrssafDpae>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: Moment::a_paris(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap(), code_urssaf: code, ent, chemins }
+        Parametres { horodatage: socle::piece::Zone::lue("2026-10-03T14:07:00", socle::piece::format::InstantIso).valeur().unwrap(), code_urssaf: code, ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {
@@ -1186,7 +1177,7 @@ mod tests {
         let m = enr(&e, None, None).unwrap_err().phrase;
         assert!(m.contains("date de fin"), "{}", m);
         // Avec son terme, il part, type 1 (CDD) et date de fin dans la case.
-        let e = embauche(N::Cdd, Jour::nouveau(2026, 12, 31));
+        let e = embauche(N::Cdd, Some(j("2026-12-31")));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "31122026");
@@ -1199,13 +1190,13 @@ mod tests {
         assert_eq!(zone(&t, "type_contrat"), "2");
         assert_eq!(zone(&t, "date_fin"), " ".repeat(8));
         // Une fin portee par un CDI n'est pas declaree : il n'a pas de terme.
-        let e = embauche(N::Cdi, Jour::nouveau(2026, 12, 31));
+        let e = embauche(N::Cdi, Some(j("2026-12-31")));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "date_fin"), " ".repeat(8));
     }
 
     #[test]
     fn un_cdd_d_usage_est_un_cdd_avec_terme() {
-        let e = embauche(N::CdduSpectacle, Jour::nouveau(2026, 10, 5));
+        let e = embauche(N::CdduSpectacle, Some(j("2026-10-05")));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "05102026");
@@ -1308,11 +1299,11 @@ mod tests {
 
     #[test]
     fn un_cddu_ecrit_000_en_periode_d_essai_les_autres_la_laissent_a_blanc() {
-        let e = embauche(N::CdduSpectacle, Jour::nouveau(2026, 10, 5));
+        let e = embauche(N::CdduSpectacle, Some(j("2026-10-05")));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "000");
         let e = embauche(N::Cdi, None);
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
-        let e = embauche(N::Cdd, Jour::nouveau(2026, 12, 31));
+        let e = embauche(N::Cdd, Some(j("2026-12-31")));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
     }
 

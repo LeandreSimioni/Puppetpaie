@@ -549,12 +549,81 @@ pub enum PaieDuMois {
     Importee(crate::importe::PaieImportee),
 }
 
-/// Une ligne de cotisation d'une paie du mois, telle qu'un etat la lit : celle d'une paie validee, tous ses montants
-/// dits, ou celle qu'un bulletin importe imprime (`importe::LigneDeCotisation`).
-pub type CotisationDuMois = crate::importe::LigneDeCotisation;
+/// UNE LIGNE DE REMUNERATION D'UNE PAIE DU MOIS, telle qu'un etat la lit, sans recopie : la ligne de remuneration que le
+/// calcul rend (`LigneBrut`, elle dit ce qu'elle paie) ; d'un bulletin importe, celle que l'import a rattachee a sa
+/// rubrique (`LigneRattachee`, ce qu'elle paie quand le bulletin l'imprime), ou une ligne qu'il n'a pas rattachee,
+/// telle qu'il l'imprime (`importe::LigneImprimee` : son libelle, son montant).
+#[derive(Debug, Clone, Copy)]
+pub enum RemunerationDuMois<'a> {
+    Calculee(&'a crate::calcul::LigneBrut),
+    Rattachee(&'a crate::calcul::LigneRattachee),
+    Imprimee(&'a crate::importe::LigneImprimee),
+}
 
-/// Une ligne de remuneration d'une paie du mois, telle qu'un etat la lit (`importe::LigneDeRemuneration`).
-pub type RemunerationDuMois = crate::importe::LigneDeRemuneration;
+/// UNE LIGNE DE COTISATION D'UNE PAIE DU MOIS, telle qu'un etat la lit, sans recopie : celle du calcul
+/// (`LigneCotisation`, tout y est dit, et elle compte dans les totaux de la paie), ou celle que le bulletin importe
+/// imprime (`importe::CotisationImprimee`, ce qu'il ne dit pas est vide).
+#[derive(Debug, Clone, Copy)]
+pub enum CotisationDuMois<'a> {
+    Calculee(&'a crate::calcul::LigneCotisation),
+    Imprimee(&'a crate::importe::CotisationImprimee),
+}
+
+impl CotisationDuMois<'_> {
+    /// Sa cotisation (ou le regroupement que l'import a donne a la ligne d'un bulletin) ; `None` : une ligne d'un bulletin
+    /// importe que l'import n'a pas qualifiee.
+    pub fn cotisation(&self) -> Option<crate::ecarts::RegroupementDeComparaison> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
+            CotisationDuMois::Imprimee(l) => l.cotisation.clone(),
+        }
+    }
+
+    pub fn libelle(&self) -> &str {
+        match self {
+            CotisationDuMois::Calculee(l) => &l.libelle,
+            CotisationDuMois::Imprimee(l) => &l.libelle,
+        }
+    }
+
+    /// Sa base, dans la grandeur que sa cotisation compte ; `None` : un bulletin importe qui ne l'imprime pas.
+    pub fn base(&self) -> Option<crate::calcul::BaseDeCotisation> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.base),
+            CotisationDuMois::Imprimee(l) => l.base,
+        }
+    }
+
+    pub fn taux_salarie(&self) -> Option<socle::grandeurs::Taux> {
+        match self {
+            CotisationDuMois::Calculee(l) => l.taux_sal,
+            CotisationDuMois::Imprimee(l) => l.taux_salarie,
+        }
+    }
+
+    pub fn taux_employeur(&self) -> Option<socle::grandeurs::Taux> {
+        match self {
+            CotisationDuMois::Calculee(l) => l.taux_pat,
+            CotisationDuMois::Imprimee(l) => l.taux_employeur,
+        }
+    }
+
+    /// Sa part salariale ; `None` : la colonne qu'un bulletin importe laisse vide.
+    pub fn montant_salarie(&self) -> Option<Montant> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.montant_sal),
+            CotisationDuMois::Imprimee(l) => l.montant_salarie,
+        }
+    }
+
+    /// Sa part patronale ; `None` : la colonne qu'un bulletin importe laisse vide.
+    pub fn montant_employeur(&self) -> Option<Montant> {
+        match self {
+            CotisationDuMois::Calculee(l) => Some(l.montant_pat),
+            CotisationDuMois::Imprimee(l) => l.montant_employeur,
+        }
+    }
+}
 
 impl PaieDuMois {
     pub fn engagement(&self) -> &crate::Engagement {
@@ -575,6 +644,15 @@ impl PaieDuMois {
         match self {
             PaieDuMois::Validee(p) => p.spectacle.as_ref(),
             PaieDuMois::Importee(p) => p.spectacle.as_ref(),
+        }
+    }
+
+    /// SANS PAIE : un engagement valide sans ligne (`Engagement::sans_paie`), ou une paie importee dont aucune ligne n'est
+    /// rattachee a une rubrique.
+    pub fn sans_paie(&self) -> bool {
+        match self {
+            PaieDuMois::Validee(p) => p.engagement.sans_paie(),
+            PaieDuMois::Importee(p) => p.remuneration.iter().all(|(_, r)| r.is_none()),
         }
     }
 
@@ -645,45 +723,44 @@ impl PaieDuMois {
         }
     }
 
-    /// Les lignes de cotisation : celles du calcul, ou celles du bulletin importe.
-    pub fn cotisations(&self) -> Vec<CotisationDuMois> {
+    /// Les lignes de cotisation, telles que le bulletin les imprime : celles du calcul, ou celles du bulletin importe.
+    pub fn cotisations(&self) -> Vec<CotisationDuMois<'_>> {
         match self {
-            PaieDuMois::Validee(p) => p
-                .lignes
-                .iter()
-                .map(|l| CotisationDuMois {
-                    id: Some(crate::ecarts::RegroupementDeComparaison::Cotisation(l.id.clone())),
-                    famille: Some(l.famille.clone()),
-                    libelle: l.libelle.clone(),
-                    base: Some(l.base),
-                    taux_pat: l.taux_pat,
-                    montant_pat: Some(l.montant_pat),
-                    taux_sal: l.taux_sal,
-                    montant_sal: Some(l.montant_sal),
-                })
-                .collect(),
-            PaieDuMois::Importee(p) => p.lignes.clone(),
+            PaieDuMois::Validee(p) => p.lignes.iter().map(CotisationDuMois::Calculee).collect(),
+            PaieDuMois::Importee(p) => p.lignes.iter().map(CotisationDuMois::Imprimee).collect(),
         }
     }
 
-    /// Les lignes de remuneration : celles du calcul, ou celles du bulletin importe.
-    pub fn remuneration(&self) -> Vec<RemunerationDuMois> {
+    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la somme de ses lignes de cachets, ce que la DSN
+    /// declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
+    /// (ses heures, `heures_annexes`, ne sont pas dites).
+    pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
+        self.heures_annexes().map(|_| self.engagement().cachets)
+    }
+
+    /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles
+    /// que le calcul a sommees (`heures_travaillees`), ou celles des lignes rattachees du bulletin importe
+    /// (`PaieImportee::heures_annexes`) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique.
+    /// Ce ne sont pas les heures de son engagement (`Engagement::heures`, celles que la DSN declare : sans les cachets).
+    pub fn heures_annexes(&self) -> Option<socle::grandeurs::Heures> {
         match self {
-            PaieDuMois::Validee(p) => p
+            PaieDuMois::Validee(p) => Some(p.heures_travaillees),
+            PaieDuMois::Importee(p) => p.heures_annexes,
+        }
+    }
+
+    /// Les lignes de remuneration, dans l'ordre du bulletin : celles du calcul, ou celles du bulletin importe.
+    pub fn remuneration(&self) -> Vec<RemunerationDuMois<'_>> {
+        match self {
+            PaieDuMois::Validee(p) => p.remuneration.iter().map(RemunerationDuMois::Calculee).collect(),
+            PaieDuMois::Importee(p) => p
                 .remuneration
                 .iter()
-                .map(|r| RemunerationDuMois {
-                    code: Some(r.code.clone()),
-                    libelle: r.libelle.clone(),
-                    unite: Some(r.unite),
-                    quantite: Some(r.quantite),
-                    taux: Some(r.taux),
-                    montant: Some(r.montant),
-                    heures_annexes: Some(r.heures_annexes),
-                    soumis: r.soumis,
+                .map(|(imprimee, rattachee)| match rattachee {
+                    Some(r) => RemunerationDuMois::Rattachee(r),
+                    None => RemunerationDuMois::Imprimee(imprimee),
                 })
                 .collect(),
-            PaieDuMois::Importee(p) => p.remuneration.clone(),
         }
     }
 }
@@ -887,7 +964,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     let cle = &p.salarie.id;
     let fin = e.periode_payee()?.fin();
     let taux = droit::pas::taux_dgfip(ctx, cle, Some(e.date_du_versement()?), Some(e.mois))?;
-    let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
+    let bareme = ctx.bareme(&fin.mois_civil().premier_jour())?;
     let court = droit::natures::contrat_court(&*e.nat()?, &e.contrat(), fin)?;
     // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
@@ -1885,7 +1962,7 @@ mod tests_rupture {
     #[test]
     fn un_contrat_rompu_n_a_pas_d_avenant() {
         let jours = |n: usize| ["2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08"][..n].iter().map(|j| format!(r#""{}""#, j)).collect::<Vec<_>>().join(", ");
-        let ligne = |n: usize, taux: i64| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
+        let ligne = |n: usize, taux: &str| format!(r#"{{"forme": "unites", "rubrique": "cachet", "quantite": {{"cachets": {}}}, "taux": {}, "lieu": "Salle", "dates": [{}], "planning": []}}"#, n, taux, jours(n));
         let carte = |texte: String| crate::saisie::Carte {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),
@@ -1894,19 +1971,19 @@ mod tests_rupture {
             ..Default::default()
         };
         let saisie = |carte: crate::saisie::Carte| stock::Saisie { carte, ..Default::default() };
-        let partie = saisie(carte(ligne(5, 150)));
-        let rompu = |taux: i64| {
+        let partie = saisie(carte(ligne(5, "150")));
+        let rompu = |taux: &str| {
             saisie(crate::saisie::Carte {
-                debut: Jour::nouveau(2026, 5, 4),
-                fin: Jour::nouveau(2026, 5, 6),
+                debut: Some(socle::forme::lire_texte("\"2026-05-04\"", "le jour du test").unwrap()),
+                fin: Some(socle::forme::lire_texte("\"2026-05-06\"", "le jour du test").unwrap()),
                 motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
                 preavis: Some(crate::saisie::Preavis { genre: droit::preavis::TypeDePreavis::SansClause, debut: None, fin: None }),
                 ..carte(ligne(3, taux))
             })
         };
-        assert!(seule_la_rupture(&partie, &rompu(150)));
-        assert!(!seule_la_rupture(&partie, &rompu(180)), "un taux change avec la rupture se refait signer");
-        let raccourci = saisie(carte(ligne(3, 150)));
+        assert!(seule_la_rupture(&partie, &rompu("150")));
+        assert!(!seule_la_rupture(&partie, &rompu("180")), "un taux change avec la rupture se refait signer");
+        let raccourci = saisie(carte(ligne(3, "150")));
         assert!(!seule_la_rupture(&partie, &raccourci), "sans motif de rupture, des jours retires sont un avenant");
     }
 }
@@ -1969,6 +2046,16 @@ fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: 
     let eng = relire::engagements_ecrits(ctx, &data, &[&ecrite.paie])?.pop().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paie"))?;
     let lue = relire::paie_sur_ses_fiches(ctx, eng, &ecrite.paie, &ecrite.fiches)?;
     Ok(Some(paie_sur_son_ecrite(lue, &ecrite)))
+}
+
+/// LA PAIE DE `mois` QUE LA VERSION `version` DE `o` A ECRITE, relue de ce qu'elle a ecrit et de lui seul : son
+/// engagement compris (`Engagement::de_sa_forme`), sur les fiches que son calcul a lues ; `None` si cette version n'a
+/// pas de paie pour ce mois. C'est ce que le contrat disait sur cette version (l'ancien texte d'un avenant) : rien ne s'y
+/// recalcule, rien ne s'y relit d'aujourd'hui (ni la saisie, ni le jour du versement, ni l'emploi).
+pub fn paie_ecrite_relue(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
+    let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
+    let eng = crate::Engagement::de_sa_forme(&ecrite.paie.engagement, crate::qui_de(&ecrite.fiches.paie.fiche.champs)?);
+    relire::paie_sur_ses_fiches(ctx, eng, &ecrite.paie, &ecrite.fiches).map(Some)
 }
 
 /// LA PAIE DECLAREE de `mois` : celle que la version sur laquelle la derniere DSN qui a declare ce mois est partie a

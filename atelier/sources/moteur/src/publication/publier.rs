@@ -337,7 +337,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
         ));
     }
     let mut archives = Archives::default();
-    let mut tailles: Vec<(NomDeFichier, usize)> = Vec::new();
+    let mut tailles: Vec<(NomDeFichier, socle::grandeurs::Octets)> = Vec::new();
     let mut faites: Vec<(NomDeFichier, Vec<u8>)> = Vec::new();
     for cle in presents.iter().copied().map(CleDArchive::Du).chain([CleDArchive::DeTous]) {
         let octets = archiver(c, cle)?;
@@ -348,7 +348,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
         let nom = nom_d_archive(&version, cle)?;
         let systemes = (cle == CleDArchive::DeTous).then(|| presents.clone());
         archives.poser(cle, ArchivePubliee { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, systemes });
-        tailles.push((nom.clone(), octets.len()));
+        tailles.push((nom.clone(), socle::grandeurs::Octets::de(&octets)));
         faites.push((nom, octets));
     }
     // LES FICTIVES, a part (`archiver_fictives`) : signees comme les archives, nommees sous `fictives` avec leur empreinte.
@@ -359,7 +359,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     }
     let nom = nom_des_fictives(&version)?;
     let fictives = FictivesPubliees { archive: nom.clone(), sha256: Empreinte::des_octets(&octets), signature, empreinte };
-    tailles.push((nom.clone(), octets.len()));
+    tailles.push((nom.clone(), socle::grandeurs::Octets::de(&octets)));
     faites.push((nom, octets));
     // LES ARCHIVES D'INSTALLATION, a cote (`archiver_installation`) : Linux et Mac s'ils sont publies, et tous les
     // systemes (le dossier portable) ; Windows a son installeur. Ni signees ni nommees dans `derniere.json` : aucune
@@ -367,7 +367,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     for cle in presents.iter().copied().filter(|s| *s != Systeme::Windows).map(CleDArchive::Du).chain([CleDArchive::DeTous]) {
         let octets = archiver_installation(c, cle)?;
         let nom = nom_d_installation(&version, cle)?;
-        tailles.push((nom.clone(), octets.len()));
+        tailles.push((nom.clone(), socle::grandeurs::Octets::de(&octets)));
         faites.push((nom, octets));
     }
     // Rien n'est ecrit avant que toutes soient signees et verifiees.
@@ -397,14 +397,14 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
 /// jour, celle des fictives, puis celles d'installation), et le dossier.
 pub struct Publication {
     pub manifeste: Publiee,
-    pub tailles: Vec<(NomDeFichier, usize)>,
+    pub tailles: Vec<(NomDeFichier, socle::grandeurs::Octets)>,
     pub dossier: PathBuf,
 }
 
 impl Publication {
     /// Ce que `moteur maj --publier-github` dit des archives publiees : leur nom et leur taille.
     pub(crate) fn dire_les_archives(&self) -> String {
-        self.tailles.iter().map(|(nom, n)| format!("{} ({} Ko)", nom, n / 1024)).collect::<Vec<_>>().join(", ")
+        self.tailles.iter().map(|(nom, n)| format!("{} ({})", nom, n)).collect::<Vec<_>>().join(", ")
     }
 }
 

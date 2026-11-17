@@ -3,11 +3,11 @@
 //! `{"dossier": ...}` : la boite aux lettres `import/` entiere, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
 //! qui est repris (DSN, AEM, PDF dont une page au moins est reprise) est COPIE dans `historique/bulletins/`, sous le nom
 //! de sa copie (`<empreinte>.<pdf|dsn|txt>` : rien de personnel ; `importation::bulletins::nom_copie`) -- rien ne s'ecrase ;
-//! l'apercu est relu DANS ces copies, et c'est lui qui s'ecrit ; l'alerte CASC-SVP (`alerte_apres_import`) ; les fiches
+//! l'apercu est relu DANS ces copies, et c'est lui qui s'ecrit ; les fiches
 //! a creer (entreprise, salaries, spectacles), ecrites comme celles de l'ecran (`crate::fiches::ecrire_fiche`,
 //! `forcer`) ; les ENGAGEMENTS IMPORTES (`engagement::importe`), chacun dans `engagements/AAAA-MM.json`, le fichier de son
 //! mois d'entree (`engagement::importe::ecrire_tous`) : le contrat qu'une AEM ou un bulletin atteste, et ce qui a ete verse, mois par mois (la DSN
-//! deposee, completee par le bulletin). Un import se rejoue sans dommage. La reponse est celle de l'apercu, completee de
+//! deposee, completee par le bulletin) ; puis l'alerte CASC-SVP (`alerte_apres_import`). Un import se rejoue sans dommage. La reponse est celle de l'apercu, completee de
 //! ce qui a ete ecrit (`ecrit`, `fichiers`, `copie`) ; elle garde le compte rendu (`tri`) du dossier lu, pour l'ecran ;
 //! un document accepte et pas lu part en incident, masque (`importation::incident`). Les pieces copiees restent sous
 //! `historique/` : le dossier du salarie montre les pages des bulletins, l'alerte CASC-SVP relit les DSN.
@@ -29,7 +29,6 @@ use engagement::numeros::NumeroContrat;
 use socle::date::PeriodeOuverte;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
-use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
 use import::attestes::BlocDImport;
 use import::reponse::{Copie, EtatFiche, Importation};
@@ -68,9 +67,9 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 
-/// `lire_dsn_casc` : la DSN deposee, et si elle porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a
-/// l'adhesion que la DSN nomme `contrat` en bloc 15). `None` : illisible.
-pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<(declarations::dsn_lue::DsnLue, bool)>> {
+/// `lire_dsn_casc` : si la DSN deposee porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a l'adhesion que la
+/// DSN nomme `contrat` en bloc 15). `None` : illisible.
+pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<bool>> {
     let Some(d) = declarations::dsn_lue::lire_une_dsn(chemin)? else { return Ok(None) };
     let porte = d
         .adhesions
@@ -78,62 +77,32 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::Referenc
         .filter(|a| a.libelle == contrat.as_str())
         .filter_map(|a| a.reference.as_ref())
         .any(|r| d.rattachements.contains(r));
-    Ok(Some((d, porte)))
+    Ok(Some(porte))
 }
 
-/// L'alerte apres l'import : une compagnie de la 3090 qui arrive de CoolPaie avec des DSN de 2025
-/// ou apres : la CASC-SVP y manque peut-etre. Rien si ce n'est pas la 3090, ou si tout est regularise ; toute
-/// refus `Refuse` de la regularisation (`regularisation_casc_svp(ecrire=False)`) vaut « rien ». Seuls comptent
-/// le nombre de mois, la periode et le total, que cette fonction calcule comme la regularisation.
+/// L'alerte apres l'import, lue avec ce que l'import a ecrit (`ctx`) : une compagnie de la 3090 qui arrive d'un autre
+/// logiciel avec des DSN de 2025 ou apres, d'ou la CASC-SVP manque peut-etre. Elle dit ce que la regularisation de
+/// toutes les annees ferait partir (`importation::casc::regularisation`, calculee sans rien ecrire) : ses mois, sa
+/// periode, son total. Rien si ce n'est pas la 3090, ou s'il n'y a rien a regulariser ; une regularisation qui refuse
+/// (une annee dont le taux n'est pas releve, une DSN importee dont le fichier manque, une fiche sans NIR) dit son refus,
+/// qui est ce que l'export dirait.
 fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
     let base = droit::adhesions::casc_svp_base()?;
-    let ent = &ctx.entreprise;
-    if ent.idcc.dite() != Some(&base.idcc) {
+    if ctx.entreprise.idcc.dite() != Some(&base.idcc) {
         return Ok(None);
     }
-    let eff = ctx.effectif()?;
-    let faits: HashSet<Mois> = declarations::casc::mois_regularises(ctx)?.into_iter().collect();
-    // `mois_disponibles` : les mois des paies declarees, et les mois saisis.
-    let mut dispo: BTreeSet<Mois> = BTreeSet::new();
-    dispo.extend(engagement::importe::paies_lues(&ctx.racine)?.into_iter().map(|x| x.mois));
-    dispo.extend(engagement::stock::mois_saisis(&ctx.racine)?);
-    let depuis = base.depuis;
-    let contrat = base.dsn.contrat.clone();
-    let mut par_mois: Vec<(Mois, Decimal)> = Vec::new();
-    for &m in dispo.iter().filter(|m| **m >= depuis && !faits.contains(*m)) {
-        // Un mois d'une annee ou la compagnie est exemptee (article 4.22 B) ne doit rien.
-        if crate::importation::casc::exemptee_au_mois(ctx, &eff, m)? {
-            continue;
-        }
-        // Une DSN importee dont le fichier manque ne se controle pas : l'alerte le dit.
-        let chemin = match dsn_importee(ctx, m) {
-            Ok(Some(c)) => c,
-            Ok(None) => continue,
-            Err(m) => return Ok(Some(format!("CASC-SVP : {}", m.phrase))),
-        };
-        let Some((d, porte)) = lire_dsn_casc(&chemin, &contrat)? else { return Ok(None) };
-        if porte {
-            continue;
-        }
-        let mut masse = socle::grandeurs::Montant::ZERO.decimal();
-        for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
-            masse += b;
-        }
-        let Some(taux) = base.taux.de(m.annee()) else { return Ok(None) };
-        let cot = socle::grandeurs::Montant::du_decimal(masse * taux / Decimal::from(100)).au_centime().decimal();
-        par_mois.push((m, cot));
-    }
-    if par_mois.is_empty() {
-        return Ok(None);
-    }
-    let libelle = |m: Mois| m.libelle(socle::mois::Graphie::Accentuee);
-    let periode = format!("{} à {}", libelle(par_mois[0].0), libelle(par_mois[par_mois.len() - 1].0));
-    let total = par_mois.iter().fold(Decimal::ZERO, |a, (_, c)| a + *c);
+    let demande = crate::importation::casc::Demande { mois: None, annee: None, toutes_les_annees: true, jusqu_a: None, annees: Vec::new(), vire_le: Vec::new(), boite_liee: false };
+    let r = match crate::importation::casc::regularisation(ctx, &demande) {
+        Ok(crate::importation::casc::ARegulariser::Dossier(r)) => r,
+        Ok(crate::importation::casc::ARegulariser::Rien(_)) => return Ok(None),
+        Err(e) if e.classe == Some(Classe::Refuse) => return Ok(Some(format!("CASC-SVP : {}", e.phrase))),
+        Err(e) => return Err(e),
+    };
     Ok(Some(format!(
         "CASC-SVP : {} DSN déposée(s) depuis janvier 2025 ({}) ne portent peut-être pas la cotisation CASC-SVP -- un logiciel qui n'était pas paramétré l'a omise. Si Audiens ne l'a pas encaissée, {} sont à régulariser : Exports > « regularisation-casc-svp » fait le dossier (virements, courriels, liste nominative).",
-        par_mois.len(),
-        periode,
-        socle::texte::euros(socle::grandeurs::Montant::du_decimal(total))
+        r.mois.len(),
+        r.periode,
+        socle::texte::euros(r.total)
     )))
 }
 
@@ -158,7 +127,7 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
             l.clone_from(b);
         }
     }
-    for (l, x) in [(&mut ligne.brut, &b.brut), (&mut ligne.net_imposable, &b.net_imposable), (&mut ligne.net_a_payer, &b.net_a_payer), (&mut ligne.pas, &b.pas)] {
+    for (l, x) in [(&mut ligne.brut, &b.brut), (&mut ligne.nets.net_imposable, &b.nets.net_imposable), (&mut ligne.net_a_payer, &b.net_a_payer), (&mut ligne.nets.pas, &b.nets.pas)] {
         gagne(l, x);
     }
     if ligne.numero_objet.is_none() {
@@ -694,9 +663,6 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     if !copie.differents.is_empty() {
         imp.reponse.avertissements.push(avertissement_differents(&copie.differents, "ce dossier"));
     }
-    if let Some(alerte) = alerte_apres_import(ctx)? {
-        imp.reponse.avertissements.push(alerte);
-    }
     imp.reponse.tri = tri;
     imp.reponse.source = dossier.display().to_string();
     let note = format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa());
@@ -762,7 +728,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     };
     reponse.dire();
     let b = &reponse.bulletins;
-    reponse.phrase = format!(
+    reponse.phrase = socle::phrase!(
         "Repris : {}, {} ; fiches écrites : {}.{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
@@ -771,5 +737,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;
+    // L'alerte CASC-SVP lit les engagements et les fiches que l'import vient d'ecrire, comme la regularisation ; en
+    // dernier, pour que son erreur ne saute aucune etape de l'import.
+    if let Some(alerte) = alerte_apres_import(&frais)? {
+        reponse.avertissements.push(alerte);
+    }
     Ok(reponse)
 }

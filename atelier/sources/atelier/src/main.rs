@@ -1,8 +1,9 @@
 //! `moteur-atelier` : le binaire du nuage, jamais livre. La ligne de commande du moteur (`moteur::commandes`), plus les
 //! commandes de l'atelier (`atelier::commandes`) ; construit avec la feature `atelier` de ce qu'il prend, il peut etre
 //! pointe vers de faux serveurs locaux et refuse tout acte reel.
+#![forbid(unsafe_code)]
 
-fn usage() -> ! {
+fn usage() -> std::process::ExitCode {
     eprintln!(
         "usage : moteur-atelier [--dev] COMMANDE [options]   (la ligne de commande du produit et de l'atelier : moteur-atelier aide)\n\
          \x20       moteur-atelier route [--racine R] [--date D]   (route et charge en JSON sur l entree standard : les routes de l interface)\n\
@@ -18,7 +19,7 @@ fn usage() -> ! {
          \x20       moteur-atelier releve-missions SOURCES DONNEES   (les tables des missions a l'etranger de la DGFiP, avant de publier)\n\
          \x20       moteur-atelier fabriquer-bulletins DESCRIPTION.json DOSSIER [--gabarit coolpaie|spaiectacle]   (des bulletins fictifs)"
     );
-    std::process::exit(2)
+    std::process::ExitCode::from(2)
 }
 
 fn main() -> std::process::ExitCode {
@@ -33,7 +34,7 @@ fn main() -> std::process::ExitCode {
     // l'atelier qui passent par son cadre.
     if let Some(nom) = args.first().map(socle::ligne::Argument::texte) {
         if let Some(code) = atelier::commandes::lancer(nom, &args[1..]) {
-            return std::process::ExitCode::from(code.clamp(0, 255) as u8);
+            return code;
         }
     }
     match moteur::commandes::ligne_de_commande(&args, atelier::commandes::commandes()) {

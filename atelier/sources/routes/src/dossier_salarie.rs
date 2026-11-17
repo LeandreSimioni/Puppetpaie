@@ -23,10 +23,10 @@ use serde::{Deserialize, Serialize};
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use engagement::calcul::Paie;
-use documents::conges_spectacles::{self, ContratCs, MoisPaye, PaieCs};
+use documents::conges_spectacles::{self, ContratDuCertificat, MoisPaye};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
@@ -73,7 +73,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> Result<Rendu, Echec> {
 }
 
 impl Dite for DossierRendu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -83,9 +83,9 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
     let d = construire(ctx, demande)?;
     let qui = d.salaries.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ");
     let p = if d.fichiers.is_empty() {
-        format!("Dossier de {} ({}) : rien n'est écrit.", qui, d.periode)
+        socle::phrase!("Dossier de {} ({}) : rien n'est écrit.", qui, d.periode)
     } else {
-        format!("Dossier de {} ({}) : {}.", qui, d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
+        socle::phrase!("Dossier de {} ({}) : {}.", qui, d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
     };
     Ok(DossierRendu::de(d, p, None))
 }
@@ -148,7 +148,7 @@ pub(crate) struct DossierEnvoye {
 /// sous `envoi` ce que l'envoi a fait.
 #[derive(Debug, Serialize)]
 pub(crate) struct DossierRendu {
-    phrase: String,
+    phrase: Phrase,
     salaries: Vec<IdSalarie>,
     categories: Vec<CategorieDeDocument>,
     periode: String,
@@ -164,7 +164,7 @@ pub(crate) struct DossierRendu {
 }
 
 impl DossierRendu {
-    pub(crate) fn de(d: Dossier, phrase: String, envoi: Option<DossierEnvoye>) -> DossierRendu {
+    pub(crate) fn de(d: Dossier, phrase: Phrase, envoi: Option<DossierEnvoye>) -> DossierRendu {
         let phrases = d.avertissements.iter().chain(&d.refus).cloned().collect();
         DossierRendu {
             phrase,
@@ -248,7 +248,7 @@ impl Periode {
         match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Periode::Mois(m)),
             (None, Some(a), false) => {
-                if a < socle::mois::Annee::constante(1000) {
+                if a < socle::annee!("1000") {
                     return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a)));
                 }
                 Ok(Periode::Annee(a))
@@ -441,9 +441,9 @@ fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [
 
 
 
-/// `Paie` -> ce que le certificat en lit : le brut est celui du calcul, a deux decimales.
-pub(crate) fn paie_cs(p: &Paie) -> R<PaieCs> {
-    Ok(PaieCs { engagement: ContratCs::de(&p.engagement)?, brut: p.brut.au_centime(), salarie: p.salarie.champs.clone() })
+/// Le contrat d'un seul mois, tel que son certificat le couvre : le brut est celui du calcul, a deux decimales.
+pub(crate) fn contrat_du_certificat(p: &Paie) -> ContratDuCertificat {
+    ContratDuCertificat { engagement: p.engagement.clone(), brut: p.brut.au_centime(), salarie: p.salarie.champs.clone(), mois_payes: Vec::new() }
 }
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
@@ -454,8 +454,9 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
     let Some(brut) = p.brut.map(Montant::au_centime) else { return Ok(None) };
     let dates: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
     let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
-    let (Some(q), Some(t)) = (cachets.quantite, cachets.taux) else { return Ok(None) };
-    let (quantite, taux) = (Some(socle::forme::Nombre(q)), Some(socle::grandeurs::MontantUnitaire::du_decimal(t)));
+    // Les cachets que la ligne paie, a leur taux.
+    let Some(engagement::ligne::PaiementDeLigne::Cachets(q, t)) = cachets.paiement else { return Ok(None) };
+    let (quantite, taux) = (Some(engagement::ligne::QuantiteDeLigne::Cachets(q)), Some(t));
     if dates.is_empty() {
         return Ok(None);
     }
@@ -474,7 +475,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
 /// `paie_du_contrat_entier` : le contrat recompose sur tous ses mois, pour son certificat. Les mois d'avant se lisent
 /// dans les paies validees de l'engagement (`engagement::etats::paie_ecrite_de`). Rend la paie du certificat et les
 /// mois du contrat dont aucune paie n'est ecrite.
-fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
+fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, Vec<Mois>)> {
     let eng = &p.engagement;
     let cle = cle_de(p);
     let mois_du = eng.mois_du_contrat()?;
@@ -514,8 +515,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     if eng.nat()?.mensuelle() {
         let fin_du_mois = eng.fin_mois();
         mois_payes.push(MoisPaye { fin: fin_du_mois, jours: eng.jours, brut: p.brut.au_centime() });
-        let contrat = ContratCs { jours: jours + eng.jours, dates_travail: Vec::new(), cachets: socle::grandeurs::Cachets::ZERO, heures: None, taux_cachet: None, mois_payes, ..ContratCs::de(eng)? };
-        return Ok((PaieCs { engagement: contrat, brut, salarie: p.salarie.champs.clone() }, manquants));
+        return Ok((ContratDuCertificat { engagement: eng.clone(), brut, salarie: p.salarie.champs.clone(), mois_payes }, manquants));
     }
     lignes.extend(eng.lignes.iter().cloned());
     // Le planning des mois passes a ete paye dans son mois : il ne compte pas deux fois.
@@ -533,31 +533,25 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         fin: eng.contrat().fin(),
         numero: eng.numero.clone(),
         jours: Some(jours + eng.jours),
-        taux_cachet: eng.taux_cachet.map(|t| engagement::Chiffre::de_decimal(t.decimal())),
+        taux_cachet: eng.taux_cachet,
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),
         emploi: eng.emploi.clone(),
-        pcs_ese: eng.pcs_ese.clone(),
-        code_emploi_ft: eng.code_emploi_ft.clone(),
-        statut: eng.statut.clone(),
-        statut_conventionnel: eng.statut_conventionnel.clone(),
-        statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
         ..Default::default()
     };
     let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie), eng.versement).map_err(|m| m.reclasser(Classe::Illisible))?;
-    let cs = PaieCs { engagement: ContratCs::de(&entier)?, brut, salarie: p.salarie.champs.clone() };
-    Ok((cs, manquants))
+    Ok((ContratDuCertificat { engagement: entier, brut, salarie: p.salarie.champs.clone(), mois_payes: Vec::new() }, manquants))
 }
 
-/// Un certificat du : `(salarie, debut du contrat, paie du certificat)`.
-pub(crate) type Du = (IdSalarie, socle::date::Jour, Option<PaieCs>);
+/// Un certificat du : `(salarie, debut du contrat, contrat du certificat)`.
+pub(crate) type Du = (IdSalarie, socle::date::Jour, Option<ContratDuCertificat>);
 
 /// `certificats_dus` : un certificat par contrat qui FINIT, pour le contrat entier quand il deborde
 /// du mois. Rend les certificats (dans l'ordre ou ils sont dus) et les avertissements.
 pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec<String>)> {
     let mut dus: Vec<Du> = Vec::new();
     let mut avertissements = Vec::new();
-    let poser = |dus: &mut Vec<Du>, cle: IdSalarie, debut: socle::date::Jour, v: Option<PaieCs>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
+    let poser = |dus: &mut Vec<Du>, cle: IdSalarie, debut: socle::date::Jour, v: Option<ContratDuCertificat>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
         Some(d) => d.2 = v,
         None => dus.push((cle, debut, v)),
     };
@@ -575,7 +569,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
         if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
         } else if place == engagement::PlaceDuMois::Seul {
-            poser(&mut dus, cle, debut, Some(paie_cs(p)?));
+            poser(&mut dus, cle, debut, Some(contrat_du_certificat(p)));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;
             poser(&mut dus, cle, debut, Some(entier));
@@ -726,11 +720,11 @@ fn mois_puppetpaie(
         let trouve = |cle: &IdSalarie, debut: socle::date::Jour| pour_cs.iter().find(|(c, de, _)| c == cle && *de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
         let mut tous: Vec<NumeroDeCertificat> = Vec::new();
-        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, NumeroDeCertificat)>)> = Vec::new();
+        let mut paires: Vec<(IdSalarie, Vec<(&ContratDuCertificat, NumeroDeCertificat)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
             let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.contrat().debut()), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
-            let combien = conges_spectacles::decouper(&pc.engagement)?.len();
+            let combien = conges_spectacles::decouper(pc)?.len();
             tous.extend(n.suite().take(combien));
             if cles.contains(&cle) {
                 match paires.iter_mut().find(|(c, _)| *c == cle) {
@@ -768,7 +762,7 @@ fn mois_puppetpaie(
                     let mut ses_pages: Vec<usize> = Vec::new();
                     let mut etrangeres: Vec<NumeroDeCertificat> = Vec::new();
                     for (pc, n) in siens {
-                        for x in n.suite().take(conges_spectacles::decouper(&pc.engagement)?.len()) {
+                        for x in n.suite().take(conges_spectacles::decouper(pc)?.len()) {
                             let page = tous.iter().position(|y| *y == x);
                             if let Some(page) = page.filter(|&i| t.get(i).is_some_and(|p| sans_accents(p).contains(&sans_accents(&nom)))) {
                                 ses_pages.push(page);
@@ -977,14 +971,11 @@ pub(crate) struct Entree {
 
 /// La date et l'heure locales (Paris) au format DOS, a partir de secondes unix.
 fn horodatage_dos(t: socle::paris::Moment) -> (u16, u16) {
-    let reste = t.seconde_du_jour_de_paris();
-    let (h, m, s) = (reste / 3600, (reste % 3600) / 60, reste % 60);
     // Le format DOS commence le 01/01/1980 : un instant d'avant s'y ecrit.
-    let jour = t.jour_de_paris();
-    if jour.an < 1980 {
-        return ((1 << 5) | 1, 0);
+    match socle::paris::ecrit::dos(t) {
+        Some(d) => d,
+        None => ((1 << 5) | 1, 0),
     }
-    ((((jour.an - 1980) as u16) << 9) | ((jour.mois as u16) << 5) | jour.jour as u16, ((h as u16) << 11) | ((m as u16) << 5) | (s / 2) as u16)
 }
 
 /// Deflate, CRC-32, cree sous Unix.

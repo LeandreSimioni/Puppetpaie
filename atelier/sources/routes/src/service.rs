@@ -58,7 +58,7 @@ pub(crate) fn contexte(o: &Options) -> R<Contexte> {
 /// UN ACTE REEL PAR `moteur route` : la demande du mot de passe du logiciel est celle du moteur (`demande::Reel` : sa
 /// fenetre, sinon le terminal de l'humain, sans echo, sinon un refus). L'entree standard est celle d'un programme (un LLM,
 /// un script) : aucun secret ne s'y lit, ils sont retires de la charge (`Charge::sans_les_secrets`) et la route les demande a un humain.
-pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
+pub fn commande(quoi: &str, args: &[Argument]) -> Option<std::process::ExitCode> {
     if quoi != "route" {
         return None;
     }
@@ -82,7 +82,7 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
             } else {
                 dire!("{}", refusee.en_json());
             }
-            return Some(1);
+            return Some(std::process::ExitCode::FAILURE);
         }
     };
     // `--date D` est l'aujourd'hui de la route : le jour du contexte, et celui de l'horloge (`socle::temps`, le jour pose)
@@ -116,5 +116,5 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
     }
     // UN REFUS SORT EN 1 (la reponse reste la meme) : qui se fie au code de sortie ne croit pas le geste fait. 2 : la
     // commande elle-meme est mal dite (`usage`).
-    Some(if reponse.est_rendue() { 0 } else { 1 })
+    Some(if reponse.est_rendue() { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE })
 }

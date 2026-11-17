@@ -11,13 +11,14 @@
 //! `boss/boss-heures-supplementaires-20260601.txt`.
 
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
+use socle::texte::virgule;
 
-/// Des heures a une majoration (en pourcent).
+/// Des heures a une majoration.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Palier {
-    pub heures: Decimal,
-    pub majoration: Decimal,
+    pub heures: Heures,
+    pub majoration: Taux,
 }
 
 /// Les heures du mois reparties par majoration, et ce qu'il y a a en dire (un contingent, un plafond depasse).
@@ -41,64 +42,60 @@ fn supplementaires_de_la_convention(idcc: Option<&crate::fiche::Idcc>) -> R<Opti
 /// heures de la semaine, 50 % au-dela (L3121-36), et le mois ne dit pas lesquelles sont au-dela de la huitieme d'une
 /// semaine (elles se decomptent par semaine, L3121-29) : la carte le demande (`heures_supplementaires_a_50`).
 pub fn paliers_conventionnels(idcc: Option<&crate::fiche::Idcc>) -> R<bool> {
-    Ok(supplementaires_de_la_convention(idcc)?.is_some_and(|c| c.paliers_annuels.as_ref().is_some_and(|p| !p.is_empty())))
+    Ok(supplementaires_de_la_convention(idcc)?.is_some_and(|c| c.paliers_annuels.is_some()))
 }
 
 /// LES HEURES SUPPLEMENTAIRES DU MOIS, par majoration. `heures` : celles du mois ; `a_50` : celles d'entre elles qui
 /// passent la huitieme d'une semaine (la loi seule les lit) ; `deja` : celles des mois d'avant dans l'annee, que les
 /// paliers annuels d'une convention et son contingent comptent (1285, VI.9 et VI.12).
-pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50: Decimal, deja: Decimal) -> R<Reparties> {
+pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, a_50: Heures, deja: Heures) -> R<Reparties> {
     let mut r = Reparties::default();
-    if heures <= Decimal::ZERO {
+    if heures <= Heures::ZERO {
         return Ok(r);
     }
     let conv = supplementaires_de_la_convention(idcc)?;
-    match &conv {
-        Some(c) if c.paliers_annuels.as_ref().is_some_and(|p| !p.is_empty()) => {
+    match conv.as_ref().and_then(|c| c.paliers_annuels.as_ref().map(|p| (c, p))) {
+        Some((c, paliers)) => {
             // Les paliers annuels de la convention : la n-ieme heure de l'annee prend la majoration de son palier ; au-dela
             // du dernier palier (le contingent), `au_dela_du_contingent`.
-            let mut debut = Decimal::ZERO;
+            let mut debut = Heures::ZERO;
             let mut reste = heures;
             let mut rang = deja;
-            for p in c.paliers_annuels.iter().flatten() {
-                let fin = debut + p.heures.0;
-                let ici = (fin - rang).max(Decimal::ZERO).min(reste);
-                if ici > Decimal::ZERO {
-                    ajouter(&mut r.paliers, ici, p.majoration.0);
+            for p in paliers.iter() {
+                let fin = debut + p.heures;
+                let ici = (fin - rang).max(Heures::ZERO).min(reste);
+                if ici > Heures::ZERO {
+                    ajouter(&mut r.paliers, ici, p.majoration);
                     reste -= ici;
                     rang += ici;
                 }
                 debut = fin;
             }
-            if reste > Decimal::ZERO {
+            if reste > Heures::ZERO {
                 let au_dela = c.au_dela_du_contingent.ok_or_else(|| socle::echec::livree(&crate::clauses::FICHIER, "heures_supplementaires.au_dela_du_contingent"))?;
-                ajouter(&mut r.paliers, reste, au_dela.0);
+                ajouter(&mut r.paliers, reste, au_dela);
             }
         }
-        _ => {
+        None => {
             if a_50 > heures {
                 return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
                      les premières sont une part des secondes. Rien n'est calculé.",
-                    socle::texte::nombre_dit(a_50), socle::texte::nombre_dit(heures)
+                    virgule(a_50), virgule(heures)
                 ));
             }
-            let hebdo = loi()?.heures_supplementaires.paliers_hebdomadaires;
-            let (premier, second) = match (hebdo.first(), hebdo.get(1)) {
-                (Some(a), Some(b)) => (a.majoration, b.majoration),
-                _ => return Err(socle::echec::livree(&crate::permanents::BASE, "heures_en_plus.heures_supplementaires.paliers_hebdomadaires")),
-            };
-            ajouter(&mut r.paliers, heures - a_50, premier);
-            ajouter(&mut r.paliers, a_50, second);
+            let (premier, second) = loi()?.heures_supplementaires.paliers_hebdomadaires;
+            ajouter(&mut r.paliers, heures - a_50, premier.majoration);
+            ajouter(&mut r.paliers, a_50, second.majoration);
         }
     }
-    if let Some(contingent) = conv.as_ref().and_then(|c| c.contingent_annuel).map(|c| c.0).filter(|c| !c.is_zero()) {
+    if let Some(contingent) = conv.as_ref().and_then(|c| c.contingent_annuel).filter(|c| !c.est_nul()) {
         if deja + heures > contingent {
             r.avis.push(format!(
                 "Heures supplémentaires de l'année : {} avec ce mois, au-delà du contingent annuel de {} heures de la convention. \
                  Les heures au-delà ouvrent droit à une contrepartie obligatoire en repos (C. trav. L3121-30), à poser hors de la paie.",
-                socle::texte::nombre_dit(deja + heures),
-                socle::texte::nombre_dit(contingent)
+                virgule(deja + heures),
+                virgule(contingent)
             ));
         }
     }
@@ -109,27 +106,26 @@ pub fn supplementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, a_50:
 /// 10 % dans le dixieme des heures du contrat, 25 % jusqu'au tiers ; une convention qui ne fixe pas d'autre taux la
 /// laisse (1285, VI.13 bis : 25 % au-dela du dixieme, rien dans le dixieme). Le plafond : le dixieme sans accord
 /// (L3123-28), le tiers quand la convention le permet ; au-dela, un avis.
-pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contrat: Decimal) -> R<Reparties> {
+pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Heures, contrat: Heures) -> R<Reparties> {
     let mut r = Reparties::default();
-    if heures <= Decimal::ZERO {
+    if heures <= Heures::ZERO {
         return Ok(r);
     }
     let hc = loi()?.heures_complementaires;
-    let mut debut = Decimal::ZERO;
+    let mut debut = Heures::ZERO;
     let mut reste = heures;
-    let mut derniere = Decimal::ZERO;
-    for p in &hc.paliers {
+    for p in hc.paliers.iter() {
         let fin = p.jusqu_au.de(contrat);
-        derniere = p.majoration;
-        let ici = (fin - debut).max(Decimal::ZERO).min(reste);
-        if ici > Decimal::ZERO {
-            ajouter(&mut r.paliers, ici, derniere);
+        let ici = (fin - debut).max(Heures::ZERO).min(reste);
+        if ici > Heures::ZERO {
+            ajouter(&mut r.paliers, ici, p.majoration);
             reste -= ici;
         }
         debut = fin;
     }
-    if reste > Decimal::ZERO {
-        ajouter(&mut r.paliers, reste, derniere);
+    if reste > Heures::ZERO {
+        // Au-dela du dernier palier, sa majoration.
+        ajouter(&mut r.paliers, reste, hc.paliers.dernier().majoration);
     }
     // Le plafond de la convention quand elle en fixe un, celui de la loi (L. 3123-28) sinon.
     let plafond = match crate::clauses::releve(idcc)?.and_then(|c| c.heures_complementaires) {
@@ -141,16 +137,16 @@ pub fn complementaires(idcc: Option<&crate::fiche::Idcc>, heures: Decimal, contr
         r.avis.push(format!(
             "{} heures complémentaires pour un contrat de {} heures par mois : au-delà du {} de la durée du contrat que la loi ou la \
              convention permettent (C. trav. L3123-20, L3123-28). Le logiciel les paie ; au-delà, la durée du contrat se revoit.",
-            socle::texte::nombre_dit(heures),
-            socle::texte::nombre_dit(contrat.round_dp(2)),
+            virgule(heures),
+            virgule(contrat.a_deux_decimales()),
             plafond.en_mots()
         ));
     }
     Ok(r)
 }
 
-fn ajouter(v: &mut Vec<Palier>, heures: Decimal, majoration: Decimal) {
-    if heures <= Decimal::ZERO {
+fn ajouter(v: &mut Vec<Palier>, heures: Heures, majoration: Taux) {
+    if heures <= Heures::ZERO {
         return;
     }
     match v.iter_mut().find(|p| p.majoration == majoration) {
@@ -160,18 +156,18 @@ fn ajouter(v: &mut Vec<Palier>, heures: Decimal, majoration: Decimal) {
 }
 
 /// Le taux maximum de la reduction de cotisations salariales (D241-21 : 11,31 %).
-pub fn taux_maximum_de_reduction() -> R<Decimal> {
+pub fn taux_maximum_de_reduction() -> R<Taux> {
     Ok(loi()?.reduction_salariale.taux_maximum)
 }
 
 /// La deduction patronale par heure supplementaire (D241-24) : 1,50 EUR sous vingt salaries, 0,50 EUR a partir de vingt.
-pub fn deduction_par_heure(au_moins_20: bool) -> R<Decimal> {
+pub fn deduction_par_heure(au_moins_20: bool) -> R<MontantUnitaire> {
     let d = loi()?.deduction_patronale;
     Ok(if au_moins_20 { d.au_moins_20_salaries } else { d.moins_de_20_salaries })
 }
 
 /// La limite annuelle de l'exoneration d'impot sur le revenu (CGI 81 quater : 7 500 EUR).
-pub fn limite_de_l_exoneration() -> R<Decimal> {
+pub fn limite_de_l_exoneration() -> R<Montant> {
     Ok(loi()?.exoneration_impot.limite_annuelle)
 }
 
@@ -179,28 +175,29 @@ pub fn limite_de_l_exoneration() -> R<Decimal> {
 mod tests {
     use super::*;
 
-    fn d(s: &str) -> Decimal {
-        s.parse().unwrap()
+    /// `n` heures.
+    fn h(n: usize) -> Heures {
+        Heures::UNE.fois(n)
     }
 
     #[test]
     fn la_loi_majore_de_25_les_huit_premieres_heures_d_une_semaine_et_de_50_les_suivantes() {
         // L3121-36, sans convention relevee (une compagnie sans IDCC).
-        let r = supplementaires(None, d("12"), d("3"), Decimal::ZERO).unwrap();
-        assert_eq!(r.paliers, vec![Palier { heures: d("9"), majoration: d("25") }, Palier { heures: d("3"), majoration: d("50") }]);
+        let r = supplementaires(None, h(12), h(3), Heures::ZERO).unwrap();
+        assert_eq!(r.paliers, vec![Palier { heures: h(9), majoration: Taux::points(25) }, Palier { heures: h(3), majoration: Taux::points(50) }]);
     }
 
     #[test]
     fn la_1285_majore_les_80_premieres_heures_de_l_annee_de_25_puis_de_50() {
         // CCNEAC VI.12 : 75 heures deja faites dans l'annee, 10 ce mois : 5 a 25 %, 5 a 50 % ; la semaine ne compte pas.
-        let r = supplementaires(Some(&crate::clauses::IDCC_CCNEAC), d("10"), d("4"), d("75")).unwrap();
-        assert_eq!(r.paliers, vec![Palier { heures: d("5"), majoration: d("25") }, Palier { heures: d("5"), majoration: d("50") }]);
+        let r = supplementaires(Some(&crate::clauses::IDCC_CCNEAC), h(10), h(4), h(75)).unwrap();
+        assert_eq!(r.paliers, vec![Palier { heures: h(5), majoration: Taux::points(25) }, Palier { heures: h(5), majoration: Taux::points(50) }]);
     }
 
     #[test]
     fn la_loi_majore_de_10_les_heures_complementaires_du_dixieme_et_de_25_les_suivantes() {
         // L3123-29 : un contrat de 100 heures par mois, 14 heures complementaires : 10 a 10 %, 4 a 25 %.
-        let r = complementaires(None, d("14"), d("100")).unwrap();
-        assert_eq!(r.paliers, vec![Palier { heures: d("10"), majoration: d("10") }, Palier { heures: d("4"), majoration: d("25") }]);
+        let r = complementaires(None, h(14), h(100)).unwrap();
+        assert_eq!(r.paliers, vec![Palier { heures: h(10), majoration: Taux::points(10) }, Palier { heures: h(4), majoration: Taux::points(25) }]);
     }
 }

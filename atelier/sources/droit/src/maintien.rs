@@ -1,5 +1,5 @@
 //! LE MAINTIEN DE SALAIRE D'UN ARRET DE TRAVAIL : ce que la loi et la convention garantissent, lu une fois, sous une seule
-//! forme (`Regime`). Le module dit le droit ; il ne compte pas les jours d'un arret ni ne fait la paie
+//! forme (`MaintienDeSalaire`). Le module dit le droit ; il ne compte pas les jours d'un arret ni ne fait la paie
 //! (`engagement::maintien`).
 //!
 //! - La loi : L1226-1 (une annee d'anciennete ; pas pour les intermittents), D1226-1 (90 % puis deux tiers de la
@@ -19,7 +19,6 @@ use crate::clauses;
 use socle::date::{Anciennete, Duree, EnJours, EnMois};
 use socle::echec::R;
 use socle::grandeurs::{Coefficient, Taux};
-use socle::num::{div, Decimal};
 
 /// Ce qui a cause l'arret, quand c'est une maladie ou un accident : le champ `origine` d'un motif S21.G00.60.001 de
 /// `arrets-base.json` (`crate::arrets`).
@@ -63,16 +62,17 @@ pub struct Tranche {
     pub taux: Taux,
 }
 
-/// Sur quoi porte le pourcentage garanti.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Sur quoi porte le pourcentage garanti : `brut` ou `net` dans `clauses-conventionnelles-base.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Base {
     Brut,
     Net,
 }
 
-/// Ce qu'un texte garantit pour un arret, a l'anciennete du salarie.
+/// LE MAINTIEN DE SALAIRE : ce qu'un texte garantit pour un arret, a l'anciennete du salarie.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Regime {
+pub struct MaintienDeSalaire {
     /// Le texte, pour les phrases : « la loi (L1226-1) », « la convention 1285 (art. X.4.6) ».
     pub texte: String,
     pub base: Base,
@@ -80,27 +80,33 @@ pub struct Regime {
     pub tranches: Vec<Tranche>,
     /// « un montant total superieur a la remuneration nette qu'il aurait effectivement percue » est exclu.
     pub plafond_net: bool,
-    /// La convention donne la subrogation a tout salarie qui a droit au maintien.
-    pub subrogation: bool,
+    /// La subrogation que la convention donne ; la loi n'en donne pas (`None`).
+    pub subrogation: Option<clauses::Subrogation>,
 }
 
-/// Le droit d'un salarie a un regime, ou pourquoi il n'en a pas.
+/// Le droit d'un salarie a un maintien, ou pourquoi il n'en a pas.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Droit {
-    Du(Regime),
+    Du(MaintienDeSalaire),
     PasDu(String),
 }
 
 /// Le pourcentage en fraction : deux tiers exacts pour 66,66 (D1226-1, 2°, « deux tiers ») et 66,66 de la 3090 et de la
 /// 2642 (« 2/3 », « 66,66 % » : le meme deux tiers ecrit au centieme) ; le taux sur cent sinon.
 pub fn fraction(taux: Taux) -> Coefficient {
-    let taux = taux.decimal();
-    Coefficient::du_decimal(if taux == Decimal::new(6666, 2) {
-        div(Decimal::from(2), Decimal::from(3))
+    if taux == DEUX_TIERS_AU_CENTIEME {
+        Coefficient::fraction(2, TROIS)
     } else {
-        div(taux, Decimal::ONE_HUNDRED)
-    })
+        taux.en_coefficient()
+    }
 }
+
+/// Les deux tiers que D1226-1, 2°, et les conventions ecrivent au centieme (« 66,66 % »).
+const DEUX_TIERS_AU_CENTIEME: Taux = Taux::centiemes_de_point(6666);
+/// Le denominateur des deux tiers.
+const TROIS: std::num::NonZeroU32 = std::num::NonZeroU32::new(3).expect("trois n'est pas nul");
+/// Le premier pourcentage de la loi (D1226-1, 1° : « 90 % »), celui des conventions qui ne disent que leurs jours a 90 %.
+const QUATRE_VINGT_DIX: Taux = Taux::points(90);
 
 // ------------------------------------------------------------------ la loi
 
@@ -111,17 +117,14 @@ pub fn legal(nature: &Nature, anciennete: Anciennete, origine: Origine) -> R<Dro
         return Ok(Droit::PasDu(refus));
     }
     let carence = crate::permanents::jours_de_carence(origine.professionnelle(), origine == Origine::Trajet)?;
-    let tranches = crate::permanents::duree_du_maintien(anciennete)?
-        .into_iter()
-        .map(|t| Tranche { duree: DureeDUneTranche::Jours(t.jours),taux: Taux::du_decimal(t.taux) })
-        .collect();
-    Ok(Droit::Du(Regime {
+    let tranches = crate::permanents::duree_du_maintien(anciennete)?;
+    Ok(Droit::Du(MaintienDeSalaire {
         texte: "la loi (L1226-1)".into(),
         base: Base::Brut,
         carence,
         tranches,
         plafond_net: false,
-        subrogation: false,
+        subrogation: None,
     }))
 }
 
@@ -141,7 +144,7 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
                 (_, None, Some(j)) => DureeDUneTranche::Jours(j),
                 (_, None, None) => return Err(manque(ou, "jours")),
             };
-            Ok(Tranche { duree, taux: Taux::du_decimal(t.taux.0) })
+            Ok(Tranche { duree, taux: t.taux })
         })
         .collect()
 }
@@ -180,8 +183,8 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
                 Some(l) => match l.tranches.as_deref() {
                     Some(t) if !t.is_empty() => Ok(tranches(t, &ou)?),
                     _ => Ok(vec![
-                        Tranche { duree: DureeDUneTranche::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: Taux::du_decimal(Decimal::from(90)) },
-                        Tranche { duree: DureeDUneTranche::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: Taux::du_decimal(Decimal::new(6666, 2)) },
+                        Tranche { duree: DureeDUneTranche::Jours(l.jours_90.ok_or_else(|| manque(&ou, "jours_90"))?), taux: QUATRE_VINGT_DIX },
+                        Tranche { duree: DureeDUneTranche::Jours(l.jours_66.ok_or_else(|| manque(&ou, "jours_66"))?), taux: DEUX_TIERS_AU_CENTIEME },
                     ]),
                 },
             };
@@ -195,24 +198,21 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
             "{} (art. {}) demande {} mois d'anciennete ; il y en a {}.",
             nom,
             article,
-            socle::texte::nombre_dit(minimum.mois()),
-            socle::texte::nombre_dit(anciennete.mois().round_dp(1))
+            minimum.mois_dits(),
+            anciennete.mois_dits_au_dixieme()
         ))));
     }
     let tranches = match liste {
         Ok(t) => t,
         Err(pas_du) => return Ok(Some(Droit::PasDu(pas_du))),
     };
-    Ok(Some(Droit::Du(Regime {
+    Ok(Some(Droit::Du(MaintienDeSalaire {
         texte: format!("{} (art. {})", nom, article),
-        base: match base {
-            clauses::BaseDuMaintien::Brut => Base::Brut,
-            clauses::BaseDuMaintien::Net => Base::Net,
-        },
+        base,
         carence,
         tranches,
         plafond_net,
-        subrogation: subrogation == Some(clauses::Subrogation::ToutSalarie),
+        subrogation,
     })))
 }
 
@@ -220,7 +220,7 @@ pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete: Anciennete, 
 
 /// Le regime en une phrase : « la convention 1285 (art. X.4.6) : 3 mois à 100 % puis 3 mois à 75 % du salaire brut,
 /// sans carence ».
-pub fn phrase(r: &Regime) -> String {
+pub fn phrase(r: &MaintienDeSalaire) -> String {
     let tr: Vec<String> = r
         .tranches
         .iter()

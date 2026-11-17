@@ -25,7 +25,7 @@ use droit::fiche::{
     Lue as _, MotEcrit, NomDeCase, NomDeFiche, Piece,
 };
 use droit::natures::RubriqueDeLaNorme;
-use socle::date::Jour;
+use socle::date::{Jour, JourDeLaSemaine};
 use socle::echec::Echec;
 use socle::fichiers::dossier_du_code;
 use socle::texte::sans_accent;
@@ -288,7 +288,7 @@ pub struct Champ {
     pub libelle: String,
     pub forme: Forme,
     pub aide: String,
-    pub longueur: Option<i64>,
+    pub longueur: Option<usize>,
     pub exemple: String,
     pub choix: Vec<String>,
     pub declare: bool,
@@ -538,7 +538,7 @@ pub struct Description<'a> {
     pub libelle: &'a str,
     pub forme: Forme,
     pub aide: &'a str,
-    pub longueur: Option<i64>,
+    pub longueur: Option<usize>,
     pub exemple: &'a str,
     pub choix: &'a [String],
     pub declare: bool,
@@ -1037,7 +1037,10 @@ fn date_iso(s: &str) -> Option<Jour> {
             None
         }
     };
-    let an = chiffres(0, 4)? as i32;
+    // L'annee, le mois et le jour, chacun lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
+    let zone = |a: usize| s.get(a..a + 2);
+    let annee = Zone::lue(s.get(0..4)?, format::AnneeEnChiffres).valeur()?.ok()?;
     let mut p = 4;
     let sep = b.get(p) == Some(&b'-');
     if sep {
@@ -1064,18 +1067,19 @@ fn date_iso(s: &str) -> Option<Jour> {
             return None;
         }
         // Le lundi de la semaine 1 est celui de la semaine du 4 janvier.
-        let quatre = Jour::nouveau(an, 1, 4)?;
-        let lundi1 = quatre.ordinal() - i64::from(quatre.jour_de_la_semaine());
+        use socle::date::Duree;
+        let quatre = annee.janvier().jour(4)?;
+        let lundi1 = (0..7).filter_map(|k| quatre.avant(Duree::jours(k)).ok()).find(|j| j.jour_de_la_semaine() == JourDeLaSemaine::Lundi)?;
         // Une annee compte 53 semaines si elle commence un jeudi, ou un
         // mercredi quand elle est bissextile ; 52 sinon.
-        let premier = Jour::nouveau(an, 1, 1)?.jour_de_la_semaine();
-        let semaines = if premier == 3 || (premier == 2 && socle::date::bissextile(an)) { 53 } else { 52 };
+        let premier = annee.premier_jour().jour_de_la_semaine();
+        let semaines = if premier == JourDeLaSemaine::Jeudi || (premier == JourDeLaSemaine::Mercredi && annee.bissextile()) { 53 } else { 52 };
         if semaine > semaines {
             return None;
         }
-        return Jour::depuis_ordinal(lundi1 + (i64::from(semaine) - 1) * 7 + i64::from(jour) - 1);
+        return lundi1.apres(Duree::jours((semaine - 1) * 7 + jour - 1)).ok();
     }
-    let mois = chiffres(p, 2)?;
+    let mois = Zone::lue(zone(p)?, format::MoisEnChiffres).valeur()?;
     p += 2;
     if sep {
         if b.get(p) != Some(&b'-') {
@@ -1083,12 +1087,12 @@ fn date_iso(s: &str) -> Option<Jour> {
         }
         p += 1;
     }
-    let jour = chiffres(p, 2)?;
+    let jour = Zone::lue(zone(p)?, format::JourDuMois(annee.mois(mois))).valeur()?;
     p += 2;
     if p != b.len() {
         return None;
     }
-    Jour::nouveau(an, mois, jour)
+    Some(jour)
 }
 
 // ------------------------------------------------------------ normalisation
@@ -1320,22 +1324,20 @@ const MORCEAUX_NIR: [(usize, usize, &str, &str, &str); 6] = [
     (10, 13, "le numero d'ordre a l'etat civil", "001 a 999", "ordre a l'etat civil"),
 ];
 
-/// Le nombre que des chiffres ASCII ecrivent ; un autre caractere n'en ecrit pas.
-fn entier_ecrit(morceau: &str) -> Option<i64> {
-    if morceau.is_empty() || !morceau.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    morceau.bytes().try_fold(0i64, |n, b| n.checked_mul(10)?.checked_add(i64::from(b - b'0')))
+/// Des chiffres ASCII seuls ; un autre caractere n'en ecrit pas.
+fn chiffres_ascii(morceau: &str) -> bool {
+    !morceau.is_empty() && morceau.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// Les bornes du cahier technique, morceau par morceau.
+/// Les bornes du cahier technique, morceau par morceau. Chaque morceau a la longueur que sa place fixe (le NIR en a
+/// treize) : ses chiffres se comparent dans l'ordre de leur texte comme le nombre qu'ils ecrivent.
 fn morceau_de_nir_va(debut: usize, morceau: &str) -> bool {
     match debut {
         0 => morceau == "1" || morceau == "2",
         1 => tous_chiffres(morceau),
-        3 => tous_chiffres(morceau) && entier_ecrit(morceau).is_some_and(|m| (1..=12).contains(&m) || m == 20 || (30..=42).contains(&m) || (50..=99).contains(&m)),
-        5 => morceau == "2A" || morceau == "2B" || (tous_chiffres(morceau) && entier_ecrit(morceau).is_some_and(|n| (1..=99).contains(&n))),
-        _ => tous_chiffres(morceau) && entier_ecrit(morceau).is_some_and(|n| n >= 1),
+        3 => chiffres_ascii(morceau) && (("01"..="12").contains(&morceau) || morceau == "20" || ("30"..="42").contains(&morceau) || ("50"..="99").contains(&morceau)),
+        5 => morceau == "2A" || morceau == "2B" || (chiffres_ascii(morceau) && morceau != "00"),
+        _ => chiffres_ascii(morceau) && morceau.bytes().any(|b| b != b'0'),
     }
 }
 
@@ -1358,14 +1360,13 @@ fn explication_nir(nir: &str) -> R<Option<String>> {
     if !tous_chiffres(v) && !nir_de_corse(v) {
         return Ok(Some("un NIR ne porte que des chiffres (le departement de Corse excepte : 2A ou 2B)".into()));
     }
-    let n = v.chars().count() as i64;
+    let n = v.chars().count();
     if n != 13 {
-        let manque = 13 - n;
         let morceaux: Vec<String> = MORCEAUX_NIR.iter().map(|(deb, fin, _, _, court)| format!("{} ({})", court, fin - deb)).collect();
         return Ok(Some(format!(
             "{} chiffres saisis, 13 attendus : il en {}. Un NIR se compose de {} ; sa cle, 2 chiffres de plus, se saisit dans la case d'a cote.",
             n,
-            if manque > 0 { format!("manque {}", manque) } else { format!("a {} de trop", -manque) },
+            if n < 13 { format!("manque {}", 13 - n) } else { format!("a {} de trop", n - 13) },
             morceaux.join(", ")
         )));
     }
@@ -1522,7 +1523,7 @@ struct Regle<'a> {
     libelle: &'a str,
     forme: Forme,
     rubrique: Option<RubriqueDeLaNorme>,
-    longueur: Option<i64>,
+    longueur: Option<usize>,
 }
 
 /// `verifier_champ` : un message si la valeur saisie est fautive, sinon `None`. Une case vide n'est pas une faute : ce
@@ -1605,7 +1606,7 @@ fn verifier_champ(c: Regle<'_>, valeur: MotEcrit) -> R<Option<String>> {
         }
     }
     if let Some(l) = c.longueur {
-        let n = v.chars().count() as i64;
+        let n = v.chars().count();
         if n != l {
             return Ok(Some(format!("{} caracteres attendus, {} saisis", l, n)));
         }
@@ -1797,7 +1798,7 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
         if let (Some(nee), Some(nir)) = (d.date_naissance.dite(), &nir) {
             if nir.chars().count() == 13 && tous_chiffres(&tranche(nir, 1, 5)) {
                 let (an, mo) = (tranche(nir, 1, 3), tranche(nir, 3, 5));
-                let (n24, n57) = (format!("{:02}", nee.an.rem_euclid(100)), format!("{:02}", nee.mois));
+                let (n24, n57) = (nee.annee().aa(), nee.mois_civil().mm());
                 if n24 != an || (mo != "00" && n57 != mo) {
                     out.push(constat(S::Nir, Gravite::Avertissement, format!("le NIR annonce {}/{}, la date de naissance dit {}/{}", mo, an, n57, n24)));
                 }
@@ -1936,15 +1937,15 @@ fn verifier<F: FicheSaisie>(donnees: &F, croises: Vec<Constat>, inactive: bool) 
 
 /// La signature des courriels de la fiche Entreprise (`courriel_signature`) : du HTML colle, dont la seule regle est le
 /// poids : 150 Ko, tout le HTML compris.
-pub const LIMITE_OCTETS: usize = 150 * 1024;
+pub const LIMITE_OCTETS: socle::grandeurs::Octets = socle::grandeurs::Octets::en_ko(150);
 
 /// La phrase d'une signature trop lourde, ou rien.
 pub fn trop_lourde(html: &str) -> Option<String> {
-    let n = html.len();
+    let n = socle::grandeurs::Octets::de(html.as_bytes());
     if n > LIMITE_OCTETS {
         Some(format!(
-            "la signature pese {} Ko, 150 Ko au plus, images comprises. Une image collee dans la signature pese tout son poids ; un lien vers une image en ligne presque rien",
-            n.div_ceil(1024)
+            "la signature pese {}, {} au plus, images comprises. Une image collee dans la signature pese tout son poids ; un lien vers une image en ligne presque rien",
+            n, LIMITE_OCTETS
         ))
     } else {
         None

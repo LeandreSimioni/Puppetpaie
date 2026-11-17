@@ -12,7 +12,7 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 use socle::echec::{Echec, R};
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
-/// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du moteur, `jours_ouvres_apres`).
+/// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du socle, `socle::date::JoursOuvres`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BaseDesObligations {
@@ -48,7 +48,7 @@ pub struct DeBase {
     pub sauf_motifs: Option<SaufMotifs>,
     pub delai: Option<Delai>,
     pub delai_sans_subrogation: Option<Delai>,
-    pub delai_avec_subrogation: Option<Delai>,
+    pub delai_avec_subrogation: Option<AvecLaMensuelle>,
     pub connaissance_presumee: Option<String>,
     pub exceptions: Vec<String>,
     pub inferences: Vec<String>,
@@ -153,23 +153,44 @@ pub struct SaufMotifs {
     _texte: TexteDepose,
 }
 
-/// Un delai : en jours ouvres, en jours, en heures (dimanches et feries non compris), ou avec la DSN mensuelle ; et la
-/// phrase qui le dit.
+/// LE DELAI D'UNE OBLIGATION QUI COURT D'UN FAIT (« Le glossaire »), l'un de ses trois cas, et la phrase qui le dit
+/// (`dit`) : en jours ouvres (CSS R. 133-14, II : cinq), en jours (R. 461-5 : quinze ; « dès réception » : zero), en
+/// heures, dimanches et jours feries non compris (R. 441-3 : quarante-huit). Le fichier l'ecrit par son cas :
+/// `{"jours_ouvres": {"jours": 5, "dit": "…"}}`. Le signalement d'un employeur subroge ne court pas d'un fait : il part
+/// avec la DSN mensuelle (`AvecLaMensuelle`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum Delai {
+    JoursOuvres {
+        jours: socle::date::JoursOuvres,
+        dit: String,
+    },
+    Jours {
+        #[serde(deserialize_with = "socle::date::Duree::en_jours")]
+        jours: socle::date::Duree<socle::date::EnJours>,
+        dit: String,
+    },
+    HeuresHorsDimanchesEtFeries {
+        heures: socle::paris::DelaiEnHeures,
+        dit: String,
+    },
+}
+
+impl Delai {
+    /// La phrase qui le dit.
+    pub fn dit(&self) -> &str {
+        match self {
+            Delai::JoursOuvres { dit, .. } | Delai::Jours { dit, .. } | Delai::HeuresHorsDimanchesEtFeries { dit, .. } => dit,
+        }
+    }
+}
+
+/// LE DELAI D'UN SIGNALEMENT QUAND L'EMPLOYEUR EST SUBROGE (« Le glossaire ») : avec la DSN mensuelle du mois de
+/// l'evenement (CSS R. 133-14, II), et la phrase qui le dit. Il ne court d'aucun fait : sa fin est l'echeance de cette
+/// DSN (`echeance_dsn`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Delai {
-    pub jours_ouvres: Option<i64>,
-    #[serde(default, deserialize_with = "socle::date::Duree::en_jours_opt")]
-    pub jours: Option<socle::date::Duree<socle::date::EnJours>>,
-    pub heures: Option<i64>,
-    #[serde(rename = "sans_dimanches")]
-    _sans_dimanches: Option<bool>,
-    #[serde(rename = "sans_feries")]
-    _sans_feries: Option<bool>,
-    #[serde(rename = "avec_la_mensuelle")]
-    _avec_la_mensuelle: Option<bool>,
-    #[serde(rename = "depart")]
-    _depart: Option<String>,
+pub struct AvecLaMensuelle {
     pub dit: String,
 }
 
@@ -294,7 +315,7 @@ impl DeBase {
     }
 
     /// Le delai `quoi` (`delai`, `delai_sans_subrogation`, `delai_avec_subrogation`), que l'obligation doit porter.
-    pub fn delai_de<'a>(&self, d: &'a Option<Delai>, quoi: &str) -> R<&'a Delai> {
+    pub fn delai_de<'a, D>(&self, d: &'a Option<D>, quoi: &str) -> R<&'a D> {
         d.as_ref().ok_or_else(|| livree(&format!("{}.{}", self.libelle, quoi)))
     }
 

@@ -38,8 +38,8 @@ use socle::mois::MoisOuJour;
 /// Combien de fois on laisse retaper un mot de passe refuse avant de renoncer.
 const ESSAIS: u8 = 3;
 
-/// Heures de la seance (`coffre seance`).
-pub const HEURES_SEANCE: i64 = 12;
+/// La duree de la seance (`coffre seance`) : douze heures.
+pub const DUREE_DE_LA_SEANCE: std::time::Duration = std::time::Duration::from_secs(12 * 3_600);
 
 /// Ce qui va partir, tel que l'humain doit le lire avant de taper.
 #[derive(Clone, Debug, PartialEq)]
@@ -138,11 +138,11 @@ fn question_de_l_acte(acte: &Acte, essai: u8, precedent_refuse: bool) -> Questio
     Question { titre: "PuppetPaie : autoriser cet acte".into(), lignes, essai, precedent_refuse, seance: false, invite: None }
 }
 
-fn question_de_la_seance(heures: i64, essai: u8, precedent_refuse: bool) -> Question {
+fn question_de_la_seance(duree: std::time::Duration, essai: u8, precedent_refuse: bool) -> Question {
     Question {
         titre: "PuppetPaie : ouvrir le coffre".into(),
         lignes: vec![
-            format!("Le mot de passe du logiciel ouvre le coffre pour {} h.", heures),
+            format!("Le mot de passe du logiciel ouvre le coffre pour {}.", socle::temps::ecrit::heures_dites(duree)),
             "Il n'autorise AUCUN acte reel : chaque depot, envoi ou signature le redemandera.".into(),
         ],
         essai,
@@ -209,7 +209,7 @@ pub fn mot_de_passe_de_l_acte(racine: &Path, acte: &Acte) -> R<Secret> {
     obtenir(racine, canal.as_ref(), |essai, refuse| question_de_l_acte(acte, essai, refuse))
 }
 
-/// La seance : le mot de passe tape une fois, GARDE `HEURES_SEANCE` h (`Coffre::garder_ouverture`) et retenu pour la
+/// La seance : le mot de passe tape une fois, GARDE `DUREE_DE_LA_SEANCE` (`Coffre::garder_ouverture`) et retenu pour la
 /// commande. Elle ouvre le coffre ; elle n'autorise jamais un acte reel.
 pub fn ouvrir_seance(racine: &Path) -> Verdict {
     let ouverte = || -> R<()> {
@@ -217,9 +217,9 @@ pub fn ouvrir_seance(racine: &Path) -> Verdict {
             return Err(e);
         }
         let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
-        let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(HEURES_SEANCE, essai, refuse))?;
+        let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(DUREE_DE_LA_SEANCE, essai, refuse))?;
         let coffre = Coffre::du_poste(racine);
-        let fin = coffre.maintenant.plus(HEURES_SEANCE * 3600).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
+        let fin = coffre.maintenant.plus_duree(DUREE_DE_LA_SEANCE).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
         coffre.garder_ouverture(&m, fin)?;
         retenir_mot_de_passe_tape(&m);
         Ok(())
@@ -606,7 +606,7 @@ mod terminal_windows {
                 }
             });
             match recu.recv_timeout(ATTENTE) {
-                Ok(Ok(m)) => Reponse::Mot(Secret::nouveau(m.trim_end_matches(['\r', '\n']).to_string())),
+                Ok(Ok(m)) => Reponse::Mot(socle::secret::Secret::nouveau(m.trim_end_matches(['\r', '\n']).to_string())),
                 Ok(Err(e)) => Reponse::Refus(socle::refus!("La console ne se lit pas ({}) : refuse. Rien n'est parti.", e)),
                 Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => Reponse::Refus(socle::echec::refus("Rien n'a ete tape (delai depasse, ou pas de console) : refuse. Rien n'est parti.")),
             }
@@ -738,7 +738,7 @@ mod tests {
 
     /// Le mois des actes de ces tests.
     fn septembre() -> MoisOuJour {
-        MoisOuJour::Mois(socle::mois::Mois::nouveau(2026, 9).unwrap())
+        MoisOuJour::Mois(socle::forme::lire_texte("\"2026-09\"", "le mois du test").unwrap())
     }
 
     // `PUPPETPAIE_CLE` est une variable du processus : un test a la fois y touche.
@@ -759,7 +759,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), 10, 0, 0).unwrap(), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::piece::Zone::lue("2026-10-08T10:00:00", socle::piece::format::InstantIso).valeur().unwrap(), variables: Default::default() }
         }
     }
 

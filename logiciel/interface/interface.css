@@ -406,7 +406,7 @@ tr.total td { font-weight: bold; border-top: 2px solid var(--texte); border-bott
 #config-sante > label:first-child { flex: 1 1 22rem; }
 #config-sante label.coche { display: flex; align-items: center; gap: 6px; height: 30px; }
 #config-sante label.coche input { width: auto; margin: 0; }
-#config-sante input[type="number"] { width: 6rem; }
+#config-sante-enfants { width: 6rem; }
 #config-sante .aide { flex-basis: 100%; }
 
 /* -------------------------------------------------------- configuration */
@@ -825,7 +825,7 @@ details.mois-hist[open] > summary { border-bottom-left-radius: 0; border-bottom-
 .fait { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; margin-bottom: 4px; }
 .fait label { font-size: 12px; color: var(--discret); }
 .fait input, .fait select { display: block; padding: .3rem .4rem; }
-.fait input[type="number"] { width: 7rem; }
+.fait input[type="number"], .fait input[inputmode="decimal"] { width: 7rem; }
 input.jour-du-mois { width: 4rem; }
 /* Une valeur courte se lit entière : la case prend la largeur que sa zone permet (son attribut size). */
 input.x-court { width: auto; }

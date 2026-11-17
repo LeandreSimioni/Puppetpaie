@@ -908,7 +908,7 @@ pub(crate) fn pour_la_piece(modifications: &[ArticleModifie]) -> Vec<fabrique_pd
     modifications
         .iter()
         .map(|m| fabrique_pdf::forme::Modification {
-            numero: m.numero.map(|n| n as i64),
+            numero: m.numero,
             article: m.article.clone(),
             avant: m.avant.clone(),
             apres: m.apres.clone(),

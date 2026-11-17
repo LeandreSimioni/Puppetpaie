@@ -18,7 +18,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::ecriture::{CaseEcrite, EcritureDeCase};
+use socle::grandeurs::{Cachets, HeuresParUnite, Jours, Montant, Taux};
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -132,12 +133,9 @@ struct CaseSeule {
 
 impl<C: DeserializeOwned> Changements<C> {
     /// LES CHANGEMENTS TAPES `liste`, CHACUN LU SEUL dans le type de sa case : ceux qui se lisent, et la faute de chacun
-    /// des autres, toutes ensemble (`FauteDeCase`). Une liste vide, ou un changement qui ne nomme pas une case d'une
-    /// fiche, refuse la charge.
+    /// des autres, toutes ensemble (`FauteDeCase`). Un changement qui ne nomme pas une case d'une fiche refuse la charge ;
+    /// une liste vide n'en lit aucun : la fiche s'enregistre telle qu'elle est (Léandre, 16/11).
     pub fn lire(liste: &socle::forme::Liste) -> R<(Changements<C>, Vec<FauteDeCase>)> {
-        if liste.est_vide() {
-            return Err(socle::echec::refus("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
-        }
         let mut lus = Vec::new();
         let mut fautes = Vec::new();
         for (case, lu) in liste.chacun::<CaseSeule>("valeur").into_iter().zip(liste.chacun::<C>("valeur")) {
@@ -252,95 +250,6 @@ pub fn dit(m: &MotEcrit) -> bool {
         MotEcrit::Mot(t) | MotEcrit::Nombre(t) => !t.is_empty(),
         MotEcrit::OuiNon(b) => *b,
         MotEcrit::Structure => true,
-    }
-}
-
-/// UN NOMBRE D'UNE FICHE (un montant, un taux, une quantite), une ecriture et non une grandeur : un nombre JSON, ou un texte qui se lit en decimal (`12,5` compris), garde tel
-/// qu'il est ecrit (`socle::forme::NombreEcrit`).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(from = "socle::forme::NombreEcrit")]
-pub enum NombreDeFiche {
-    Entier(i64),
-    Naturel(u64),
-    /// Un nombre ecrit avec sa virgule, dans sa forme la plus courte (`socle::forme::NombreEcrit::Flottant`).
-    Flottant(Decimal),
-    /// Un texte qui se lit en decimal (`socle::num::decimal_lu`).
-    Texte(String),
-}
-
-impl NombreDeFiche {
-    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
-    pub fn decimal(&self) -> R<Decimal> {
-        match self {
-            NombreDeFiche::Entier(i) => Ok(Decimal::from(*i)),
-            NombreDeFiche::Naturel(u) => Ok(Decimal::from(*u)),
-            NombreDeFiche::Flottant(x) => Ok(*x),
-            NombreDeFiche::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
-        }
-    }
-
-    /// LA GRANDEUR QU'IL DIT (les jours et les montants de la reprise des conges), lue de son ecriture comme `decimal` :
-    /// la porte de sa lecture. Un texte illisible se refuse.
-    pub fn grandeur<G: socle::grandeurs::Grandeur>(&self) -> R<G> {
-        let t = self.ecrit();
-        socle::grandeurs::lu::norme(&t).ok_or_else(|| socle::echec::refus(socle::num::illisible(&t)))
-    }
-
-    /// Le decimal, un nombre a virgule dans sa forme la plus courte, son echelle telle qu'elle s'ecrit (`130.0`) ; un texte
-    /// se lit sans virgule.
-    pub fn dec(&self) -> R<Decimal> {
-        match self {
-            NombreDeFiche::Texte(s) => socle::num::dec_texte(s),
-            autre => autre.decimal(),
-        }
-    }
-
-    /// Le taux, la quotite ou le coefficient qu'il dit, dans sa forme la plus courte (`socle::num::court`) ; un texte se
-    /// lit sans virgule.
-    pub fn court(&self) -> R<Decimal> {
-        self.dec().map(socle::num::court)
-    }
-
-    /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
-    /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
-    pub fn entier(&self) -> R<Option<i64>> {
-        match self {
-            NombreDeFiche::Entier(i) => Ok(Some(*i)),
-            NombreDeFiche::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
-            NombreDeFiche::Naturel(_) | NombreDeFiche::Flottant(_) => Ok(None),
-        }
-    }
-
-    /// Tel qu'il est ecrit, pour un message : un texte tel quel, un nombre sous sa forme ecrite.
-    pub fn ecrit(&self) -> String {
-        match self {
-            NombreDeFiche::Entier(i) => i.to_string(),
-            NombreDeFiche::Naturel(u) => u.to_string(),
-            NombreDeFiche::Flottant(x) => x.to_string(),
-            NombreDeFiche::Texte(s) => s.clone(),
-        }
-    }
-}
-
-impl Serialize for NombreDeFiche {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            NombreDeFiche::Entier(i) => s.serialize_i64(*i),
-            NombreDeFiche::Naturel(u) => s.serialize_u64(*u),
-            NombreDeFiche::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
-            NombreDeFiche::Texte(t) => s.serialize_str(t),
-        }
-    }
-}
-
-impl From<socle::forme::NombreEcrit> for NombreDeFiche {
-    fn from(n: socle::forme::NombreEcrit) -> NombreDeFiche {
-        match n {
-            socle::forme::NombreEcrit::Entier(i) => NombreDeFiche::Entier(i),
-            socle::forme::NombreEcrit::Naturel(u) => NombreDeFiche::Naturel(u),
-            socle::forme::NombreEcrit::Flottant(x) => NombreDeFiche::Flottant(x),
-            socle::forme::NombreEcrit::Texte(s) => NombreDeFiche::Texte(s),
-        }
     }
 }
 
@@ -745,6 +654,18 @@ impl Matricule {
                 Self::LONGUEUR
             ))
         }
+    }
+
+    /// LE MATRICULE D'UNE FICHE NEUVE, quand l'employeur n'en a pas choisi : le plus grand des matricules `portes` qui
+    /// s'ecrit en chiffres seuls (sans ses blancs autour), plus un ; « 1 » quand aucun ne s'ecrit ainsi.
+    pub fn suivant<'a>(portes: impl Iterator<Item = &'a str>) -> R<Matricule> {
+        let mut plus_grand: u64 = 0;
+        for c in portes.map(str::trim).filter(|c| !c.is_empty() && c.chars().all(|x| x.is_ascii_digit())) {
+            let n = c.parse::<u64>().map_err(|e| socle::refus!("Matricule illisible : {} ({}).", c, e))?;
+            plus_grand = plus_grand.max(n);
+        }
+        let n = plus_grand.checked_add(1).ok_or_else(|| socle::refus!("Matricule illisible : {} n'a pas de suivant.", plus_grand))?;
+        Matricule::lire(&n.to_string())
     }
 }
 
@@ -1181,14 +1102,7 @@ impl NumeroObjetSpectacle {
     /// son annee. INFERENCE : le siecle (`2000 +`) ; le texte ne donne que deux caracteres, et le numero n'est exige sur
     /// l'AEM qu'au-dela du 31 mars 2008 (meme fichier, l. 5705).
     pub fn annee_de_la_demande(&self) -> Option<socle::mois::Annee> {
-        match self.0.as_bytes() {
-            // De 2000 a 2099 : toujours une annee du calendrier.
-            [d @ b'0'..=b'9', u @ b'0'..=b'9', ..] => match socle::mois::Annee::nouvelle(2000 + i64::from(d - b'0') * 10 + i64::from(u - b'0')) {
-                Ok(a) => Some(a),
-                Err(_) => None,
-            },
-            _ => None,
-        }
+        socle::piece::Zone::lue(self.0.get(0..2)?, socle::piece::format::Aa).valeur()
     }
 }
 
@@ -1228,27 +1142,30 @@ notion_lue!(Matricule rangee par tel_quel);
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
-/// (`lire`) et a la saisie (`FormeDeCase::FAUTE`), en une phrase qui dit quoi faire. Il se lit d'un nombre ou d'un texte
-/// de chiffres (la case de la page envoie son texte) ; il s'ecrit en nombre.
+/// (`lire`) et a la saisie (`FormeDeCase::FAUTE`), en une phrase qui dit quoi faire. Une saisie le tape ou l'envoie en
+/// nombre, lu par la lecture du nombre tape ; la fiche l'ecrit en nombre, et l'y relit strictement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct EchelonCcneac(u8);
+pub struct EchelonCcneac(socle::grandeurs::RangDansUneGrille<12>);
+
+/// Ce que la case de l'echelon attend.
+const UN_ECHELON: &str = "un échelon, de 1 à 12";
+
+/// La phrase d'un nombre `ecrit` hors de 1 a 12.
+fn hors_des_echelons(ecrit: &str) -> String {
+    format!("« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué", ecrit)
+}
 
 impl EchelonCcneac {
-    /// Son rang dans la grille, de 1 a 12.
-    pub fn rang(self) -> usize {
-        usize::from(self.0)
+    /// Sa ligne dans `grille`, les douze echelons d'un groupe de la grille dans leur ordre ; `None` quand elle en compte
+    /// moins.
+    pub fn ligne<T>(self, grille: &[T]) -> Option<&T> {
+        self.0.ligne(grille)
     }
 
-    /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
+    /// L'echelon tape `texte`, ou la phrase qui le refuse : un texte qui ne se lit pas en nombre entier, par sa raison.
     pub fn lire(texte: &str) -> R<EchelonCcneac> {
-        match socle::num::entier_de_chiffres(texte.trim()).filter(|n| (1..=12).contains(n)) {
-            Some(n) => Ok(EchelonCcneac(n as u8)),
-            None => Err(socle::refus!(
-                "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
-                texte
-            )),
-        }
+        socle::grandeurs::RangDansUneGrille::tape(texte, UN_ECHELON, hors_des_echelons).map(EchelonCcneac)
     }
 
     /// Ce qui refuse `texte` ; rien pour un texte vide (la case vide s'ecrit nulle).
@@ -1266,15 +1183,10 @@ impl std::fmt::Display for EchelonCcneac {
     }
 }
 
+/// Un nombre entier (dans une saisie, aussi le texte qu'une personne a tape, par la meme lecture), de 1 a 12 : sa porte.
 impl<'de> Deserialize<'de> for EchelonCcneac {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let ecrit = match socle::forme::NombreEcrit::deserialize(d)? {
-            socle::forme::NombreEcrit::Entier(i) => i.to_string(),
-            socle::forme::NombreEcrit::Naturel(u) => u.to_string(),
-            socle::forme::NombreEcrit::Flottant(x) => x.to_string(),
-            socle::forme::NombreEcrit::Texte(t) => t,
-        };
-        EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))
+        socle::grandeurs::RangDansUneGrille::lu(d, UN_ECHELON, hors_des_echelons).map(EchelonCcneac)
     }
 }
 
@@ -1690,10 +1602,17 @@ fn declaree_de_piece<T: FormeDeCase>(cle: CaseDePiece) -> Declaree<CaseDeFiche> 
 
 impl FormeDeCase for String {}
 impl FormeDeCase for bool {}
-impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
-impl FormeDeCase for NombreDeFiche {}
+impl FormeDeCase for usize {}
+// Une grandeur s'ecrit en nombre (`ecrit::nombre_json` : l'attribut de sa case dans une structure, son
+// `socle::ecriture::EcritureDeCase` en case d'une fiche) ; tapee, elle se lit a la porte de la route qui ecrit la fiche
+// (`socle::grandeurs::lu::tapee`).
+impl FormeDeCase for Taux {}
+impl FormeDeCase for Montant {}
+impl FormeDeCase for Jours {}
+impl FormeDeCase for HeuresParUnite {}
+impl FormeDeCase for Cachets {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
 impl FormeDeCase for crate::bareme::CodeRisqueAt {
@@ -1907,10 +1826,6 @@ impl<C: std::fmt::Debug, K> std::fmt::Debug for PieceFermee<C, K> {
     }
 }
 
-/// Une case vide ne s'ecrit pas.
-fn vide<T>(case: &&Option<T>) -> bool {
-    case.is_none()
-}
 
 /// UNE FICHE DATEE : ses champs a un jour (`$plate`), et la fiche telle qu'ecrite (`$datee`), chaque champ une liste
 /// datee ; `au` lit l'une dans l'autre, la valeur en vigueur de chaque champ (`valeur_au`).
@@ -1968,11 +1883,11 @@ macro_rules! fiche {
             fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
                 #[derive(Serialize)]
                 struct APlat<'a> {
-                    $( #[serde(rename = $ecrit, skip_serializing_if = "vide")] $champ: &'a Option<$t>, )*
-                    $( $( #[serde(rename = $pecrit, skip_serializing_if = "vide")] $pchamp: &'a Option<$pt>, )* )*
-                    $( $( #[serde(skip_serializing_if = "vide")] $note: &'a Option<String>, )* )?
+                    $( #[serde(rename = $ecrit, skip_serializing_if = "CaseEcrite::vide")] $champ: CaseEcrite<'a, $t>, )*
+                    $( $( #[serde(rename = $pecrit, skip_serializing_if = "CaseEcrite::vide")] $pchamp: CaseEcrite<'a, $pt>, )* )*
+                    $( $( #[serde(skip_serializing_if = "CaseEcrite::vide")] $note: CaseEcrite<'a, String>, )* )?
                 }
-                APlat { $( $champ: &self.$champ, )* $( $( $pchamp: &self.$piece.cases.$pchamp, )* )* $( $( $note: &self.$note, )* )? }.serialize(s)
+                APlat { $( $champ: CaseEcrite(&self.$champ), )* $( $( $pchamp: CaseEcrite(&self.$piece.cases.$pchamp), )* )* $( $( $note: CaseEcrite(&self.$note), )* )? }.serialize(s)
             }
         }
 
@@ -2105,10 +2020,10 @@ macro_rules! fiche {
             /// que la forme ne declare pas n'ecrit rien.
             pub fn ecrite_au_chemin(&self, k: CaseDeFiche, chemin: &[&str]) -> MotEcrit {
                 $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
-                    return socle::ecriture::mot_au_chemin(&self.$champ, chemin);
+                    return socle::ecriture::mot_au_chemin(&CaseEcrite(&self.$champ), chemin);
                 } )*
                 $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
-                    return socle::ecriture::mot_au_chemin(&self.$piece.cases.$pchamp, chemin);
+                    return socle::ecriture::mot_au_chemin(&CaseEcrite(&self.$piece.cases.$pchamp), chemin);
                 } )* )*
                 MotEcrit::Vide
             }
@@ -2116,10 +2031,10 @@ macro_rules! fiche {
             /// La valeur de la case `k`, ecrite comme le fichier l'ecrit ; vide, aucune.
             pub fn valeur_ecrite(&self, k: CaseDeFiche) -> Option<ValeurDeCase> {
                 $( if k == CaseDeFiche::Case(NomDeCase($ecrit)) {
-                    return ValeurDeCase::de(&self.$champ);
+                    return ValeurDeCase::de(&CaseEcrite(&self.$champ));
                 } )*
                 $( $( if k == CaseDeFiche::Piece($pcles::$pvar.into()) {
-                    return ValeurDeCase::de(&self.$piece.cases.$pchamp);
+                    return ValeurDeCase::de(&CaseEcrite(&self.$piece.cases.$pchamp));
                 } )* )*
                 None
             }
@@ -2337,16 +2252,17 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
-    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]);
+    fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]);
 }
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(deserialize = "T: DeserializeOwned"))]
+#[serde(deny_unknown_fields, bound(serialize = "T: EcritureDeCase", deserialize = "T: DeserializeOwned"))]
 pub struct Datee<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depuis: Option<Jour>,
     /// La valeur ; nulle, la case est vide a partir de `depuis`.
+    #[serde(serialize_with = "socle::ecriture::case_ecrite")]
     pub valeur: Option<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -2418,7 +2334,7 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
         }
         if let (Some(e), Some(depuis)) = (debut.checked_sub(1).map(|p| &toutes[p]), toutes[debut].depuis) {
             if let Some(valeur) = e.valeur.clone() {
-                avant = Some(Avant { valeur, jusqu_au: depuis.plus_jours(-1)?, note: e.note.clone() });
+                avant = Some(Avant { valeur, jusqu_au: depuis.avant(socle::date::Duree::jours(1))?, note: e.note.clone() });
             }
         }
     }
@@ -2706,10 +2622,16 @@ impl ModeleBulletin {
     }
 }
 
-choix! {
-    pub enum JourDeLaSemaine {
-        Lundi = "lundi", Mardi = "mardi", Mercredi = "mercredi", Jeudi = "jeudi", Vendredi = "vendredi", Samedi = "samedi",
-        Dimanche = "dimanche",
+use socle::date::JourDeLaSemaine;
+
+/// Un jour de la semaine est un choix d'une case (les jours travailles) : ses valeurs sont ses noms.
+impl FormeDeCase for JourDeLaSemaine {
+    const VALEURS: &'static [&'static str] = &JourDeLaSemaine::NOMS;
+}
+
+impl Choix for JourDeLaSemaine {
+    fn code(&self) -> &'static str {
+        self.nom()
     }
 }
 
@@ -2788,41 +2710,34 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: NombreDeFiche }
+    pub struct SanteSvp {
+        niveau: crate::forme_bareme::NiveauDeGarantie,
+        conjoint: bool,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::compte::option::deserialize")]
+        enfants: usize,
+    }
 }
 
 cases! {
     /// Les conges a la reprise, lus sur le dernier bulletin de l'ancien logiciel.
     pub struct CongesReprise {
         date: Jour,
-        report: NombreDeFiche,
-        acquis_report: NombreDeFiche,
-        remuneration_report: NombreDeFiche,
-        acquis: NombreDeFiche,
-        pris: NombreDeFiche,
-        remuneration_periode: NombreDeFiche,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        report: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        acquis_report: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        remuneration_report: Montant,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        acquis: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pris: Jours,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        remuneration_periode: Montant,
     }
 }
 
-/// UN TAUX DE PAS RECU (`droit::pas`) : le taux, toujours ecrit (un compte rendu sans taux lisible n'en pose aucun), son
-/// type, l'identifiant et l'instant de sa mise a disposition (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il
-/// repond. Une entree d'une liste de la fiche, pas une case : ses autres champs sont facultatifs, comme ceux d'une
-/// structure de cases (`cases!`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TauxPas {
-    pub taux: crate::pas::TauxDePas,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r#type: Option<crate::type_taux_pas::TypeDeTauxPas>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub identifiant: Option<crate::pas::IdentifiantDuTauxPas>,
-    #[serde(default, with = "socle::paris::ecrit::compacte::option", skip_serializing_if = "Option::is_none")]
-    pub mis_a_disposition: Option<socle::paris::Moment>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub en_retour_de: Option<Mois>,
-}
-
-impl FormeDeCase for TauxPas {
+impl FormeDeCase for crate::pas::TauxRecu {
     fn cases() -> Vec<Declaree> {
         vec![
             declaree::<crate::pas::TauxDePas>("taux"),
@@ -2845,7 +2760,14 @@ cases! {
 }
 
 cases! {
-    pub struct TauxPrevoyance { t1_non_cadre: NombreDeFiche, t1_cadre: NombreDeFiche, part_patronale: NombreDeFiche }
+    pub struct TauxPrevoyance {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        t1_non_cadre: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        t1_cadre: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_patronale: Taux,
+    }
 }
 
 cases! {
@@ -2854,12 +2776,23 @@ cases! {
 }
 
 cases! {
-    pub struct SantePermanents { taux_contrat: NombreDeFiche, part_patronale: NombreDeFiche }
+    pub struct SantePermanents {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        taux_contrat: Taux,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_patronale: Taux,
+    }
 }
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct AssujettissementALaTaxe { tva: Tva, part_tva: NombreDeFiche, sous_franchise: bool, association_1679a: bool }
+    pub struct AssujettissementALaTaxe {
+        tva: Tva,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        part_tva: Taux,
+        sous_franchise: bool,
+        association_1679a: bool,
+    }
 }
 
 cases! {
@@ -2881,7 +2814,8 @@ cases! {
     /// `notification` celle d'ou elle vient.
     pub struct TauxAtmp, cles CaseTauxAtmp {
         CodeRisque(crate::bareme::CodeRisqueAt) = "code_risque" => code_risque,
-        Valeur(NombreDeFiche) = "valeur" => valeur,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        Valeur(Taux) = "valeur" => valeur,
         Depuis(Jour) = "depuis" => depuis,
         Provenance(ProvenanceAtmp) = "provenance" => provenance,
         Notification(NotificationAtmp) = "notification" => notification,
@@ -2889,7 +2823,11 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(NombreDeFiche) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite {
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        Taux(Taux) = "taux" => taux,
+        CodeInsee(CodeInsee) = "code_insee" => code_insee,
+    }
 }
 
 cases! {
@@ -2993,7 +2931,7 @@ fiche! {
         Actif(bool) = "actif" => actif,
         AnniversaireDroits(Jour) = "anniversaire_droits" => anniversaire_droits,
         ModeleBulletin(ModeleBulletin) = "modele_bulletin" => modele_bulletin,
-        TauxPas(TauxPas) = "taux_pas" => taux_pas,
+        TauxPas(crate::pas::TauxRecu) = "taux_pas" => taux_pas,
     }
     pieces CasePieceSalarie {
         /// LES CASES D'UN SALARIE AU MOIS : sa complementaire sante, sa prevoyance, ses jours, sa categorie, ses conges
@@ -3174,13 +3112,13 @@ fiche! {
         CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
         Source(String) = "source" => source,
         Sens(socle::grandeurs::Signe) = "sens" => sens,
-        HeuresForfait(NombreDeFiche) = "heures_forfait" => heures_forfait,
+        HeuresForfait(HeuresParUnite) = "heures_forfait" => heures_forfait,
         Plafond(crate::catalogue::Unite) = "plafond" => plafond,
         Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(crate::catalogue::DsnTypeDeRubrique) = "dsn_type" => dsn_type,
         DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
         Annexe(crate::emplois::AnnexeChomage) = "annexe" => annexe,
-        PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,
+        PlafondMensuel(Cachets) = "plafond_mensuel" => plafond_mensuel,
         PlafondAnnuelHeures(crate::catalogue::PlafondAnnuelHeures) = "plafond_annuel_heures" => plafond_annuel_heures,
         ComptePour(crate::catalogue::ComptePour) = "compte_pour" => compte_pour,
         SalaireDeBase(bool) = "salaire_de_base" => salaire_de_base,
@@ -3511,7 +3449,8 @@ mod tests {
             assert!(ecrit.contains(garde), "{} manque à la réécriture : {}", garde, ecrit);
         }
         let f = &s.fiches[&IdSalarie::lire("FULLER").unwrap()];
-        assert_eq!(f.au(&Jour::nouveau(2026, 11, 1).unwrap()).actif, None);
-        assert!(f.au(&Jour::nouveau(2026, 11, 2).unwrap()).actif.oui());
+        let j = |ecrit: &str| -> Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
+        assert_eq!(f.au(&j("2026-11-01")).actif, None);
+        assert!(f.au(&j("2026-11-02")).actif.oui());
     }
 }

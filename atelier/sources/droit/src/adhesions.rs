@@ -15,8 +15,8 @@ use std::sync::{Arc, OnceLock};
 use crate::fiche::Lue;
 use socle::date::{Jour, Periode};
 use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
-use socle::forme::Nombre;
 use socle::echec::R;
+use socle::grandeurs::{Montant, Taux};
 
 use crate::organismes::Adhesion;
 use crate::source::forme_notee;
@@ -47,14 +47,20 @@ forme_notee! {
     /// Le taux de la cotisation, en pourcentage, par annee de salaires (`AAAA`).
     pub struct TauxCasc {
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub par_annee: Vec<(socle::mois::Annee, Nombre)>,
+        pub par_annee: Vec<(socle::mois::Annee, Taux)>,
     }
 }
 
 impl TauxCasc {
     /// Le taux de l'annee `an`, s'il est releve.
-    pub fn de(&self, an: socle::mois::Annee) -> Option<socle::num::Decimal> {
-        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| t.0)
+    pub fn de(&self, an: socle::mois::Annee) -> Option<Taux> {
+        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| *t)
+    }
+
+    /// LA COTISATION D'UN MOIS sur sa masse `masse`, au taux `taux` de son annee (`de`) : au centime
+    /// (`Montant::au_centime`). La seule : la regularisation et l'alerte apres l'import la prennent ici.
+    pub fn cotisation(taux: Taux, masse: Montant) -> Montant {
+        masse.fois_taux(taux).au_centime()
     }
 }
 
@@ -120,8 +126,14 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
 mod tests {
     use super::*;
 
-    fn j(an: i32, mois: u32, jour: u32) -> Jour {
-        Jour::nouveau(an, mois, jour).unwrap()
+    /// Le jour que le test ecrit (`AAAA-MM-JJ`), lu par sa forme.
+    fn j(ecrit: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap()
+    }
+
+    /// Le mois que le test ecrit (`AAAA-MM`), lu par sa forme : sa periode.
+    fn mois(ecrit: &str) -> Periode {
+        Periode::du_mois(socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap())
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,
@@ -130,15 +142,14 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
-        let mois = |an: i32, m: u32| Periode::du_mois(j(an, m, 1).mois_civil());
-        let thalie = Some(j(2026, 1, 1));
-        assert!(!en_vigueur(thalie, None, &mois(2025, 12)));
-        assert!(en_vigueur(thalie, None, &mois(2026, 1)));
-        let clos = (Some(j(2025, 1, 1)), Some(j(2026, 6, 30)));
-        assert!(en_vigueur(clos.0, clos.1, &mois(2026, 6)));
-        assert!(!en_vigueur(clos.0, clos.1, &mois(2026, 7)));
-        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &mois(2026, 3)));
-        assert!(en_vigueur(None, None, &mois(2025, 1)));
+        let thalie = Some(j("2026-01-01"));
+        assert!(!en_vigueur(thalie, None, &mois("2025-12")));
+        assert!(en_vigueur(thalie, None, &mois("2026-01")));
+        let clos = (Some(j("2025-01-01")), Some(j("2026-06-30")));
+        assert!(en_vigueur(clos.0, clos.1, &mois("2026-06")));
+        assert!(!en_vigueur(clos.0, clos.1, &mois("2026-07")));
+        assert!(en_vigueur(Some(j("2026-03-15")), None, &mois("2026-03")));
+        assert!(en_vigueur(None, None, &mois("2025-01")));
     }
 
     /// L'adhesion CASC-SVP d'une 3090 est celle de la fiche de codification, sans rien de la compagnie
@@ -147,12 +158,12 @@ mod tests {
     #[test]
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
-        let an = |a: i64| socle::mois::Annee::nouvelle(a).unwrap();
-        let soixante = crate::contexte::EffectifsParAnnee { annees: [(an(2025), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
-        let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, an(2026)).unwrap().unwrap();
+        let an = |ecrit: &str| -> socle::mois::Annee { socle::forme::lire_texte(ecrit, "l'annee du test").unwrap() };
+        let soixante = crate::contexte::EffectifsParAnnee { annees: [(an("2025"), socle::grandeurs::Effectif::personnes(60))].into(), premiere_embauche: None, cinquante_salaries: true };
+        let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, an("2026")).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));
-        assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, an(2026)).unwrap().is_none());
+        assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, an("2026")).unwrap().is_none());
         let exemptee = fiche(r#"{"idcc": "3090", "casc_svp_exemptee": true, "representation_personnel": "cse"}"#);
-        assert!(casc_svp(&exemptee, &soixante, an(2026)).unwrap().is_none());
+        assert!(casc_svp(&exemptee, &soixante, an("2026")).unwrap().is_none());
     }
 }

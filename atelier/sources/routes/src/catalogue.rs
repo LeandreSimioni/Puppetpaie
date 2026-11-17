@@ -644,13 +644,13 @@ struct ChargeDuCatalogue {
 /// Ce que rend `routes` : la phrase, une ligne par route (« nom : geste »), et la fiche de chacune.
 #[derive(serde::Serialize)]
 struct LeCatalogue {
-    phrase: String,
-    phrases: Vec<String>,
+    phrase: socle::texte::Phrase,
+    phrases: Vec<socle::texte::Phrase>,
     routes: Vec<FicheEcrite>,
 }
 
 impl Dite for LeCatalogue {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -668,8 +668,8 @@ pub fn route(route: Route, charge: &Charge) -> R<Rendu> {
 
 fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
     let fiches: Vec<Fiche> = catalogue().into_iter().filter(|f| c.avance == Some(true) || !f.ecran.avance()).collect();
-    let phrases: Vec<String> = fiches.iter().map(|f| format!("{} : {}", f.nom(), f.geste)).collect();
-    Ok(LeCatalogue { phrase: format!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
+    let phrases: Vec<socle::texte::Phrase> = fiches.iter().map(|f| socle::phrase!("{} : {}", f.nom(), f.geste)).collect();
+    Ok(LeCatalogue { phrase: socle::phrase!("Routes : {} (la fiche de chacune : moteur routes NOM).", phrases.len()), phrases, routes: fiches.iter().map(Fiche::ecrite).collect::<R<_>>()? })
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
@@ -712,12 +712,13 @@ pub fn catalogue() -> Vec<Fiche> {
 
 /// `moteur routes [NOM] [--avance] [--json]` : le catalogue en texte (le chemin simple ; toutes avec `--avance`), en JSON
 /// (toutes : chaque fiche porte `avance`), ou la fiche entiere d'une route.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args = socle::ligne::textes(args);
     // Une option que `routes` ne prend pas se refuse, comme a `moteur route` (code 2) : sa valeur se lirait comme un nom.
     if let Some(o) = args.iter().find(|a| a.starts_with("--") && !["--json", "--avance"].contains(&a.as_str())) {
         eprintln!("option inconnue : {} (moteur routes [NOM] [--avance] [--json] ; --racine et --date sont de moteur route)", o);
-        return 2;
+        return ExitCode::from(2);
     }
     let json = args.iter().any(|a| a == "--json");
     let avance = args.iter().any(|a| a == "--avance");
@@ -726,27 +727,27 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     if let Some(nom) = nom {
         let Some(f) = Route::lire(nom).and_then(|r| dans(&tout, r)) else {
             eprintln!("route inconnue : {} (moteur routes --avance les dit toutes)", nom);
-            return 2;
+            return ExitCode::from(2);
         };
         let ecrite = if json { f.ecrite().map(|e| format!("{}\n", socle::ecriture::json_en_ligne(&e))) } else { f.en_texte() };
         match ecrite {
             Ok(t) => dire_sans_ligne!("{}", t),
             Err(e) => {
                 eprintln!("{}", e.phrase);
-                return 1;
+                return ExitCode::FAILURE;
             }
         }
-        return 0;
+        return ExitCode::SUCCESS;
     }
     if json {
         return match catalogue().iter().map(Fiche::ecrite).collect::<R<Vec<_>>>() {
             Ok(routes) => {
                 dire!("{}", socle::ecriture::json_en_ligne(&CatalogueEcrit { routes }));
-                0
+                ExitCode::SUCCESS
             }
             Err(e) => {
                 eprintln!("{}", e.phrase);
-                1
+                ExitCode::FAILURE
             }
         };
     }
@@ -760,5 +761,5 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     if cachees > 0 {
         dire!("\n{} routes avancées ne sont pas montrées : moteur routes --avance", cachees);
     }
-    0
+    ExitCode::SUCCESS
 }

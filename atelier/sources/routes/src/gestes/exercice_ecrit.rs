@@ -23,7 +23,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::fichiers::{CheminRelatif, Empreinte, NomDeFichier};
 use socle::mois::{Annee, Mois};
-use socle::grandeurs::Montant;
+use socle::grandeurs::{Montant, Octets};
 use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
@@ -97,7 +97,7 @@ pub(crate) struct EcritureRendue {
 /// fichier ecrit (son nom ; `dossier`, celui ou il est), le plan comptable pris, et ce qu'il faut savoir.
 #[derive(Debug, Serialize)]
 pub(crate) struct ExportComptaRendu {
-    phrase: String,
+    phrase: socle::texte::Phrase,
     annee: Annee,
     du: u32,
     au: u32,
@@ -115,7 +115,7 @@ pub(crate) struct ExportComptaRendu {
 }
 
 impl crate::enveloppe::Dite for ExportComptaRendu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -126,8 +126,8 @@ impl ExportCompta {
         let dossier = self.fichier.as_ref().and_then(|f| f.parent()).map(Path::to_path_buf);
         let fichier = self.fichier.as_deref().map(NomDeFichier::du).transpose()?;
         let phrase = match &fichier {
-            Some(f) => format!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
-            None => format!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
+            Some(f) => socle::phrase!("Export comptable de {} : {} écritures, dans {} (le dossier des exercices).", self.annee, self.ecritures.len(), f),
+            None => socle::phrase!("Export comptable de {} : {} écritures, rien n'est écrit.", self.annee, self.ecritures.len()),
         };
         Ok(ExportComptaRendu {
             phrase,
@@ -309,7 +309,7 @@ pub(crate) struct ExerciceNote {
     pub(crate) le: Moment,
     qui: String,
     archive: CheminRelatif,
-    octets: u64,
+    octets: Octets,
     empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
@@ -324,7 +324,7 @@ struct ExerciceRouvertNote {
     le: Moment,
     qui: String,
     archive: CheminRelatif,
-    octets: u64,
+    octets: Octets,
     empreinte: Empreinte,
     fichiers: u64,
     forcee: bool,
@@ -491,14 +491,14 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     }
     let aujourd_hui = ctx.aujourdhui;
     let lisez_moi = format!(
-        "Exercice {} -- archive de cloture, PuppetPaie, le {:02}/{:02}/{:04}.\n\n\
+        "Exercice {} -- archive de cloture, PuppetPaie, le {}.\n\n\
          engagements/ les engagements de chaque mois ou ils commencent, et leurs paies validees\n\
          sorties/    bulletins, contrats (signes dans envoi/), DPAE, DSN, certificats, courriels\n\
          retours/    les reponses des organismes (net-entreprises, Urssaf DPAE)\n\
          journal/    le journal des depots\n\
          config/     les fiches telles qu'elles etaient a la cloture\n\
          compta/     le journal des ecritures de paie\n",
-        annee, aujourd_hui.jour, aujourd_hui.mois, aujourd_hui.an
+        annee, aujourd_hui.jj_mm_aaaa()
     );
     entrees.push(entree_ecrite("LISEZ-MOI.txt".to_string(), lisez_moi.into_bytes()));
     let n = entrees.len();
@@ -514,7 +514,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             le,
             qui: qui.to_string(),
             archive: relatif,
-            octets: octets.len() as u64,
+            octets: Octets::de(&octets),
             empreinte: empreinte.clone(),
             fichiers: n as u64,
             forcee: forcer && !sans_dsn.is_empty(),
@@ -522,7 +522,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
         },
     );
     ecrire_exercices(ctx, &tous)?;
-    Ok(ExerciceClos { annee, le, archive, octets: octets.len(), empreinte, fichiers: n, manques })
+    Ok(ExerciceClos { annee, le, archive, octets: Octets::de(&octets), empreinte, fichiers: n, manques })
 }
 
 /// Un exercice clos : l'annee, quand, l'archive (son chemin, sa taille, son empreinte, le nombre de fichiers qu'elle
@@ -534,7 +534,7 @@ pub(crate) struct ExerciceClos {
     le: Moment,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     archive: PathBuf,
-    octets: usize,
+    octets: Octets,
     empreinte: Empreinte,
     pub(crate) fichiers: usize,
     pub(crate) manques: Vec<String>,

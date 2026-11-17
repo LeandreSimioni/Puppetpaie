@@ -41,6 +41,7 @@
 //! dit a la page (`veille`) ; et ce qu'une installation fait d'une compagnie fictive : le scenario du banc
 //! (`scenario`), l'horloge fictive (`horloge`), les courriels joues (`simulation_courriels`). Au-dessus, le moteur : la
 //! ligne de commande, l'interface, l'atelier.
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate socle;
@@ -52,8 +53,6 @@ use socle::ecran::couleur_de_l_etat;
 use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
-
-pub use enveloppe::PhrasesRendues;
 
 pub mod enveloppe;
 pub mod ouverture;
@@ -177,7 +176,7 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
     let _geste = socle::forme::geste();
     compagnie::incidents::brancher_l_engagement();
-    let rendu = servir(o, route, charge);
+    let rendu = servir(o, route, charge).map_err(|e| case_nommee(route, e));
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
@@ -190,6 +189,35 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
         refus_a_sa_place(r, route.nom(), &refus.phrase);
     }
     reponse
+}
+
+/// LE REFUS `e` DE LA ROUTE `route`, s'il est celui d'une case de sa charge (`Charge::lire`, `CaseRefusee`) : sa phrase
+/// dit la case comme l'ecran la montre, et pourquoi (`socle::forme::case_refusee`), et la memoire des echecs la note ;
+/// tout autre refus, tel quel. La seule fabrique de cette phrase, quelle que soit l'entree qui lit la charge (la route
+/// servie, la fenetre qui lit une charge avant elle).
+#[track_caller]
+pub fn case_nommee(route: Route, e: Echec) -> Echec {
+    let phrase = match e.case_refusee() {
+        Some(c) => socle::forme::case_refusee(&libelle_de_la_case(route, &c.case), &c.detail),
+        None => return e,
+    };
+    socle::echec::noter_echec(e.classe, &phrase);
+    Echec { phrase, ..e }
+}
+
+/// LE LIBELLE D'UNE CASE DE LA CHARGE DE `route`, tel que l'ecran le montre : une cle, par le champ de sa fiche
+/// (`catalogue::Champ`) ; la case que nomme un changement (`{"case": "salaire_mensuel", …}`), par la carte
+/// (`engagement::carte::libelle_de_la_case`). Sans libelle, la case se dit par sa cle.
+fn libelle_de_la_case(route: Route, case: &socle::echec::CaseDeLaSaisie) -> String {
+    use socle::echec::CaseDeLaSaisie;
+    let libelle = match case {
+        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.iter().find(|c| c.nom == cle)).map(|c| c.libelle.texte()),
+        CaseDeLaSaisie::DUnChangement(cle) => ::engagement::carte::libelle_de_la_case(cle),
+    };
+    match (libelle, case) {
+        (Some(l), _) => l.to_string(),
+        (None, CaseDeLaSaisie::Cle(cle) | CaseDeLaSaisie::DUnChangement(cle)) => cle.clone(),
+    }
 }
 
 /// LA ROUTE `route` SERVIE : ce qu'elle rend, ou son refus. L'aiguillage, rien d'autre.

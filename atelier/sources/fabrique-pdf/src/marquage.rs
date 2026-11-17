@@ -20,7 +20,8 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use crate::description::{defaut, illisible, refus, Refus};
 use crate::lecture;
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 
 /// Le corps de la marque, en points.
 pub const CORPS: Mesure = Mesure::entier(6);
@@ -29,7 +30,7 @@ pub const X: Mesure = Mesure::entier(34);
 /// La distance de sa ligne de base au bord bas de la page, en points.
 pub const DISTANCE_DU_BAS: Mesure = Mesure::entier(12);
 /// Son gris (rouge = vert = bleu).
-pub const GRIS: Mesure = mesure("0.45");
+pub const GRIS: Mesure = mesure!("0.45");
 
 /// Un nombre pour un flux de contenu : quatre décimales au plus, sans zéros inutiles.
 pub(crate) fn nb(v: Mesure) -> String {
@@ -200,16 +201,16 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?;
     let em = face.units_per_em() as i64;
     let (asc, desc, ecart) = (
-        Mesure::entier(face.ascender() as i64) / em,
-        Mesure::entier(-(face.descender() as i64)) / em,
-        Mesure::entier(face.line_gap() as i64) / em,
+        Mesure::entier(face.ascender() as i64).divisee_par(em),
+        Mesure::entier(-(face.descender() as i64)).divisee_par(em),
+        Mesure::entier(face.line_gap() as i64).divisee_par(em),
     );
     let taille = sc::MENTION_TAILLE;
     let (marge_x, marge_y) = sc::MENTION_MARGE;
     let hauteur = sc::MENTION_HAUTEUR;
     let page = sc::page();
     let largeur_utile = page.largeur - page.gauche - page.droite;
-    let (x_case, l_case) = (page.gauche + largeur_utile / 2, largeur_utile / 2);
+    let (x_case, l_case) = (page.gauche + largeur_utile * mesure!("0.5"), largeur_utile * mesure!("0.5"));
     let mut caracteres = BTreeSet::new();
     for l in &lignes {
         let mut unites: i64 = 0;
@@ -224,13 +225,13 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             unites += avance as i64;
             caracteres.insert(c);
         }
-        let avance = taille * unites / em;
-        if avance + marge_x * 2 > l_case {
+        let avance = taille.fois_entier(unites).divisee_par(em);
+        if avance + marge_x.fois_entier(2) > l_case {
             return refus(format!("la mention de signature ne tient pas dans la case (la ligne « {} » est trop longue)", l));
         }
     }
     let interligne = (asc + desc + ecart) * taille * sc::MENTION_INTERLIGNE;
-    if interligne * lignes.len() as i64 + marge_y > hauteur + mesure("0.01") {
+    if lignes.len() * interligne + marge_y >hauteur + mesure!("0.01") {
         return refus(format!("la mention de signature ne tient pas dans la case ({} lignes)", lignes.len()));
     }
 
@@ -251,7 +252,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             let haut = hauteurs.iter().map(|b| b[3]).fold(Mesure::MIN, Mesure::max);
             // La ligne occupe son pas, le glyphe au milieu ; la case est 3 pt sous son pas.
             let pas = sc::TAILLE_SOUS_LIBELLE * sc::police().interligne;
-            cases.push((id, bas - (pas - (haut - bas)) / 2 - sc::MENTION_ECART));
+            cases.push((id, bas - (pas - (haut - bas)) * mesure!("0.5") - sc::MENTION_ECART));
         }
     }
     if cases.is_empty() {
@@ -265,7 +266,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     let polices_case = crate::formulaire::polices_pour_ajout(&mut neuf, &donnees, &caracteres, &doc)?;
     let (r, v, b) = sc::COULEUR_TEXTE;
     let (fr, fv, fb) = sc::MENTION_FILET;
-    let c255 = |x: u8| nb(Mesure::entier(x as i64) / 255);
+    let c255 = |x: u8| nb(Mesure::entier(x as i64).divisee_par(255));
     let mut par_page: Vec<(ObjectId, Vec<u8>)> = Vec::new();
     for (id, haut) in cases {
         let mut flux = format!(
@@ -280,7 +281,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             flux.push_str(&format!(
                 "BT\n1 0 0 1 {} {} Tm\n",
                 nb(x_case + marge_x),
-                nb(haut - marge_y - interligne * i as i64 - asc * taille)
+                nb(haut - marge_y - i * interligne - asc * taille)
             ));
             // Des morceaux par police : chacun continue où le précédent s'arrête.
             let mut morceaux: Vec<(usize, String)> = Vec::new();

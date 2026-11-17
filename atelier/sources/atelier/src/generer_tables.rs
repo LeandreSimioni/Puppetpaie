@@ -324,10 +324,11 @@ fn nfkd_ascii(u: &Ucd) -> R<String> {
         }
         if let Some(d) = suites.last_mut() {
             if r.len() == 1 && d.2.len() == 1 && d.1 + 1 == cp {
-                let (lettre, t) = (r.as_bytes()[0] as i64, d.2.as_bytes()[0] as i64);
+                // Les points de code des deux lettres (ASCII) : celle-ci avance-t-elle d'un cran par point de code ?
+                let (lettre, t) = (u32::from(r.as_bytes()[0]), u32::from(d.2.as_bytes()[0]));
                 let avance = match d.3 {
-                    Some(a) => Some(a).filter(|&a| lettre == t + a as i64 * (cp - d.0) as i64),
-                    None => Some(lettre - t).filter(|a| *a == 0 || *a == 1).map(|a| a as u32),
+                    Some(a) => Some(a).filter(|&a| Some(lettre) == (cp - d.0).checked_mul(a).and_then(|n| n.checked_add(t))),
+                    None => lettre.checked_sub(t).filter(|a| *a == 0 || *a == 1),
                 };
                 if let Some(a) = avance {
                     d.1 = cp;
@@ -475,11 +476,12 @@ pub fn generer(sources: &Path) -> R<Vec<(&'static str, String)>> {
 }
 
 /// `moteur-atelier generer-tables SOURCES SRC`.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     let [sources, espace] = args else {
         eprintln!("usage : moteur-atelier generer-tables SOURCES ESPACE   (SOURCES : atelier/reference/sources ; ESPACE : atelier/sources)");
-        return 2;
+        return ExitCode::from(2);
     };
     match generer(Path::new(sources)) {
         Ok(fichiers) => {
@@ -487,15 +489,15 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
                 let chemin = Path::new(espace).join(nom);
                 if let Err(e) = std::fs::write(&chemin, contenu) {
                     eprintln!("{} : {}", chemin.display(), e);
-                    return 1;
+                    return ExitCode::FAILURE;
                 }
                 dire!("{}", chemin.display());
             }
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }

@@ -519,7 +519,7 @@ pub fn poses(ctx: &Contexte) -> R<Vec<Pose>> {
 }
 
 /// Le taux AT/MP `t` de l'annee `an`, s'il est pose par le moteur (sa `provenance`).
-fn pose_atmp(an: socle::mois::Annee, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
+fn pose_atmp(an: socle::mois::Annee, t: droit::fiche::TauxAtmp) -> R<Option<Pose>> {
     let d_ou = match (&t.notification, t.provenance) {
         (Some(n), Some(droit::fiche::ProvenanceAtmp::Notification)) => format!(
             "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",

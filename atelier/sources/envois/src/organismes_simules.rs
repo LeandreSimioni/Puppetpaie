@@ -19,7 +19,9 @@ use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
-use socle::num::Decimal;
+use socle::grandeurs::ecrit::norme;
+use droit::pas::TauxDePas;
+use socle::grandeurs::{Coefficient, Effectif, Taux};
 
 use crate::journal::Ligne;
 use crate::retours::{IdDeFlux, NatureDuRetour};
@@ -53,7 +55,15 @@ pub enum Annonce {
 #[serde(deny_unknown_fields)]
 pub struct TauxPasAnnonce {
     pub salarie: droit::contexte::IdSalarie,
-    pub taux: Decimal,
+    /// En pourcentage (`7.50`), lu d'un nombre ou d'un texte, ecrit dans la forme de la norme.
+    #[serde(deserialize_with = "taux_pas_annonce")]
+    pub taux: TauxDePas,
+}
+
+/// Le taux de PAS annonce : un taux, lu d'un nombre ou d'un texte, qui a la forme d'un taux de PAS (`TauxDePas::du_taux`).
+fn taux_pas_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<TauxDePas, D::Error> {
+    let t: Taux = socle::grandeurs::lu::nombre_ou_texte::deserialize(d)?;
+    TauxDePas::du_taux(t).ok_or_else(|| serde::de::Error::custom("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100."))
 }
 
 /// Le code risque annonce, range comme une saisie (`CodeRisqueAt::rangee` : `92.3AD` se lit `923AD`).
@@ -68,7 +78,9 @@ fn code_risque_annonce<'de, D: serde::Deserializer<'de>>(d: D) -> Result<droit::
 pub struct TauxAtmpAnnonce {
     #[serde(deserialize_with = "code_risque_annonce")]
     pub code_risque: droit::bareme::CodeRisqueAt,
-    pub taux: Decimal,
+    /// En pourcentage (`1.60`), lu d'un nombre ou d'un texte, ecrit en texte tel qu'annonce.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    pub taux: Taux,
     pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bureau: Option<String>,
@@ -130,13 +142,6 @@ fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
     socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
-/// Un nombre a deux decimales ecrites, le demi au pair.
-fn deux_decimales(x: Decimal) -> Decimal {
-    let mut q = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointNearestEven);
-    q.rescale(2);
-    q
-}
-
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
 fn dit(v: Option<String>) -> Option<String> {
     v.filter(|t| !t.is_empty())
@@ -168,21 +173,17 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
     };
     match annonce.clone() {
         Annonce::TauxPas(t) => {
-            let n = t.taux;
-            if !(Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&n) {
-                return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
-            }
-            gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: deux_decimales(n) });
+            gardee.taux_pas = Some(t);
         }
         Annonce::TauxAtmp(t) => {
             let code = t.code_risque;
             let n = t.taux;
-            if code.as_str().len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
+            if code.as_str().len() != 5 || n <= Taux::ZERO || n >= Taux::points(20) {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
                 code_risque: code,
-                taux: deux_decimales(n),
+                taux: n,
                 date_effet: t.date_effet,
                 bureau: dit(t.bureau),
                 code_ctn: dit(t.code_ctn),
@@ -212,13 +213,15 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 /// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
 /// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
 /// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
-fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
-    let n = mois.jours();
+fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Effectif> {
     let le_mois = Periode::du_mois(mois);
-    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Decimal>> = BTreeMap::new();
+    let n = le_mois.jours().count();
+    // La part de chaque jour ou une personne est employee : entiere a temps plein, le rapport de ses quotites a temps
+    // partiel.
+    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Coefficient>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
-            let Some(qui) = d.individus[k.individu].identifiant() else {
+            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
                 return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
             };
             let jours = par_jour.entry(qui).or_default();
@@ -238,40 +241,41 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
                 // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif (un
                 // nombre, ou l'effectif se compte encore).
                 match quotite.rapport(reference)? {
-                    Some(r) => r.decimal().min(Decimal::ONE),
-                    None => Decimal::ONE,
+                    Some(r) => r.min(Coefficient::UN),
+                    None => Coefficient::UN,
                 }
             } else {
-                Decimal::ONE
+                Coefficient::UN
             };
             for j in presence.jours() {
-                let p = jours.entry(j).or_insert(Decimal::ZERO);
+                let p = jours.entry(j).or_insert(Coefficient::ZERO);
                 *p = (*p).max(poids);
             }
         }
     }
-    Ok(par_jour.values().map(|jours| socle::num::div(jours.values().sum::<Decimal>(), Decimal::from(n))).sum())
+    let une_personne = Effectif::personnes(1);
+    Ok(par_jour.values().map(|jours| (une_personne * jours.values().copied().sum::<Coefficient>()).reparti_sur(n)).sum())
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
 /// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale,
 /// `atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la fraction
 /// d'effectif au-delà de la deuxième décimale ») : un effectif, pas un montant. `None` quand aucun mois n'a de salarie.
-fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Decimal>> {
-    let mut mois: Vec<Decimal> = Vec::new();
+fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Effectif>> {
+    let mut mois: Vec<Effectif> = Vec::new();
     for (m, d) in dsn_par_mois {
         let e = effectif_du_mois(*m, d)?;
-        if e > Decimal::ZERO {
+        if e > Effectif::ZERO {
             mois.push(e);
         }
     }
     if mois.is_empty() {
         return Ok(None);
     }
-    let moyenne = socle::num::div(mois.iter().sum::<Decimal>(), Decimal::from(mois.len() as i64));
+    let moyenne = mois.iter().copied().sum::<Effectif>().reparti_sur(mois.len());
     // Le milliardieme ajoute avant de tronquer : un quotient qui tombe juste sur un centieme (un tiers fois trois)
     // s'ecrit en decimal une unite du dernier chiffre en dessous, et ne doit pas perdre ce centieme.
-    Ok(Some((moyenne + Decimal::new(1, 9)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToNegativeInfinity)))
+    Ok(Some((moyenne + Effectif::UN_MILLIARDIEME).tronque_au_centieme()))
 }
 
 // ------------------------------------------------------------------ ce que le simulateur rend
@@ -385,9 +389,11 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
 /// LE TAUX DE SIMULATION d'un salarie dont le scenario n'annonce aucun taux : la DGFiP simulee le connait comme la vraie
 /// connait celui de tout contribuable identifie. Il ne vient d'aucun texte ni d'aucun avis d'imposition : c'est un
 /// nombre tire du NIR (FNV-1a), stable d'un compte rendu a l'autre, de 0,00 % a 12,00 % par dixieme.
-fn taux_de_simulation(nir: &droit::fiche::Nir) -> Decimal {
+fn taux_de_simulation(nir: &droit::fiche::Nir) -> R<TauxDePas> {
     let h = nir.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
-    deux_decimales(Decimal::new((h % 121) as i64, 1))
+    // (h % 121) dixiemes de point, en centiemes de point.
+    let t = Taux::centiemes_de_point((h % 121) as u32 * 10);
+    TauxDePas::du_taux(t).ok_or_else(|| erreur(Classe::CalculImpossible,format!("taux de simulation hors de la forme d'un taux de PAS : {}", socle::grandeurs::ecrit::texte::dit(t))))
 }
 
 /// Le compte rendu DGFiP de nature 94 d'une DSN mensuelle ou d'un signalement d'amorcage reels : le taux est « mis à
@@ -400,7 +406,7 @@ fn taux_de_simulation(nir: &droit::fiche::Nir) -> Decimal {
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
 fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
-    let mut taux: BTreeMap<droit::contexte::IdSalarie, Decimal> = BTreeMap::new();
+    let mut taux: BTreeMap<droit::contexte::IdSalarie, TauxDePas> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
         if a.le <= depot {
@@ -409,7 +415,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
     }
     let mut salaries = String::new();
     let mut vus: BTreeSet<droit::fiche::Nir> = BTreeSet::new();
-    for (ind, nir) in d.individus.iter().filter_map(|i| i.nir.clone().map(|n| (i, n))) {
+    for (ind, nir) in d.individus.iter().filter_map(|i| i.identite.nir.clone().map(|n| (i, n))) {
         let Some((cle, nir_de_la_fiche)) = ctx.salaries.iter().find_map(|(k, s)| s.nir.dite().filter(|n| **n == nir).map(|n| (k, n))) else { continue };
         if !vus.insert(nir.clone()) {
             continue;
@@ -417,7 +423,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
         // Le taux annonce ; sans annonce, celui de la simulation.
         let t = match taux.get(cle) {
             Some(t) => *t,
-            None => taux_de_simulation(nir_de_la_fiche),
+            None => taux_de_simulation(nir_de_la_fiche)?,
         };
         salaries.push_str(&format!(
             "<salarie><NIR>{}</NIR><matricule>{}</matricule><taux_imposition_PAS>{}</taux_imposition_PAS></salarie>",
@@ -471,7 +477,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
             facultatif(&t.section, "section"),
             echappe(t.code_risque.as_str()),
             facultatif(&t.bureau, "temoin_bureau"),
-            t.taux,
+            norme::taux(t.taux, 2),
             t.date_effet.aaaammjj(),
             calcul
         ));
@@ -527,7 +533,7 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: Annee) -> R<BTreeMap<Mois
 /// `RO.B004` de type 04, `RO.B008` ; dates AAAA-MM-JJ, date de calcul AAAA-MM-JJThh:mm:ss). La date d'effet et la date de
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
-fn crm_effectif(an: Annee, valeur: Decimal, flux: &IdDeFlux, publication: Moment) -> Piece {
+fn crm_effectif(an: Annee, valeur: Effectif, flux: &IdDeFlux, publication: Moment) -> Piece {
     let calcule_le = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
@@ -537,7 +543,7 @@ fn crm_effectif(an: Annee, valeur: Decimal, flux: &IdDeFlux, publication: Moment
          <RO_B008_R006>{}</RO_B008_R006></RO_B008></RO_B004></RO_B001></RO>",
         echappe(flux.texte()),
         NatureDuRetour::Effectifs,
-        deux_decimales(valeur),
+        norme::quantite(valeur),
         an,
         an,
         calcule_le
@@ -627,10 +633,11 @@ mod tests {
     #[test]
     fn l_effectif_annuel_se_compte_comme_r_130_1_le_dit() {
         let mut par_mois: BTreeMap<Mois, Vec<DsnLue>> = BTreeMap::new();
+        let mois = |ecrit: &str| -> Mois { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le mois du test").unwrap() };
         // Janvier (31 jours) : un CDI a temps plein tout le mois (1), un mi-temps (75,84 h sur 151,67 : 0,5) du 16 au 31
         // (16 jours : 0,258...), un CDDU de deux jours (2/31), un CDD de remplacement (ecarte).
         par_mois.insert(
-            Mois::constante(2025, 1),
+            mois("2025-01"),
             vec![dsn(&[
                 ("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")]),
                 ("2800101999992", &[("16012025", "", "20", "151.67", "75.84", "")]),
@@ -639,9 +646,9 @@ mod tests {
             ])],
         );
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
-        par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
+        par_mois.insert(mois("2025-02"), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
         // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
-        assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(Decimal::new(116, 2)));
+        assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(socle::grandeurs::lu::en_texte::<Effectif>("1.16").unwrap()));
         assert_eq!(effectif_annuel(&BTreeMap::new()).unwrap(), None);
     }
 
@@ -655,12 +662,14 @@ mod tests {
         std::fs::create_dir_all(racine.join(crate::retours::RETOURS)).unwrap();
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
-        let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
-        let (a2025, a2026) = (Annee::constante(2025), Annee::constante(2026));
+        let j = |ecrit: &str| -> socle::date::Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
+        let annee = |ecrit: &str| -> Annee { socle::forme::lire_texte(ecrit, "l'annee du test").unwrap() };
+        let (a2025, a2026) = (annee("2025"), annee("2026"));
         let personnes = socle::grandeurs::Effectif::personnes;
-        assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j(2027, 1, 5)).unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j(2027, 1, 5)).unwrap());
-        let p = crm_effectif(a2026,Decimal::new(1142, 2), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), 10, 0, 0).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j("2027-01-05")).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j("2027-01-05")).unwrap());
+        let le: Moment = socle::piece::Zone::lue("2027-02-15T10:00:00", socle::piece::format::InstantIso).valeur().unwrap();
+        let p = crm_effectif(a2026, socle::grandeurs::lu::en_texte("11.42").unwrap(), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), le);
         let chemin = crate::releve_retours::archiver_retour(&racine, crate::releve_retours::CanalDesRetours::Dsn, &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
@@ -668,7 +677,7 @@ mod tests {
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
         assert_eq!(e.annees.get(&a2026), socle::grandeurs::lu::norme("11.42").as_ref());
         assert_eq!(e.annees.get(&a2025), Some(&personnes(2)));
-        assert!(!crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j(2027, 3, 1)).unwrap());
+        assert!(!crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j("2027-03-01")).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

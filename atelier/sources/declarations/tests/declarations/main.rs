@@ -2,6 +2,7 @@
 //! norme, la nationalite, les options sante, la FCTU et l'amorcage, la
 //! DFS. Les oracles sont dans `declarations/tests/donnees/` (`PUPPETPAIE_REECRIRE_ORACLES=1` les reecrit). Un fichier
 //! seul : `cargo nextest run --cargo-profile essais -p declarations -E 'test(/^<fichier>::/)'`.
+#![forbid(unsafe_code)]
 
 #[path = "../outils/mod.rs"]
 mod outils;

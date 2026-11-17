@@ -14,9 +14,8 @@ use socle::fichiers::{forme_en_cache, CheminRelatif, FormeGardee};
 
 /// Les minima conventionnels livres, sous `donnees/`.
 pub const BASE: CheminRelatif = CheminRelatif::du_moteur("minima-conventionnels.json");
-use socle::forme::{Court, Nombre};
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, MontantUnitaire, Taux};
 
 use crate::forme_bareme::OrganisationPatronale;
 
@@ -47,6 +46,11 @@ forme_notee! {
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
         pub etendu_le: Option<Jour>,
+        /// Les heures d'un mois a temps plein sur lesquelles ses grilles mensuelles se ramenent a l'heure (2642, 3090,
+        /// 3097) : la duree legale, 35 h par semaine (C. trav. L. 3121-27), 35 x 52 / 12 = 151,67 h, que la grille
+        /// administrative de la 3090 nomme (« pour 151,67 h », KALIARTI000053721751). Les heures d'un mois, comme la
+        /// quotite de reference d'une nature (`natures::Nature::quotite_reference_defaut`).
+        pub heures_mensuelles: Option<Heures>,
         /// Les organisations d'employeurs signataires de l'accord, ecrites par leur cle du bareme
         /// (`par_organisation_patronale`) ; le nom que l'accord leur donne est dans sa source.
         pub signataires: Option<Vec<OrganisationPatronale>>,
@@ -61,11 +65,11 @@ forme_notee! {
         /// 2642 : le minimum d'un CDDU a la semaine de 35 h, par fonction.
         pub cddu_semaine_35h: Option<BTreeMap<CleDeGrille, Cddu2642>>,
         /// 2642 : le mensuel pour 35 h d'un permanent, par fonction.
-        pub permanents_mensuel_35h: Option<BTreeMap<CleDeGrille, Nombre>>,
+        pub permanents_mensuel_35h: Option<BTreeMap<CleDeGrille, MontantUnitaire>>,
         /// 3097 : la semaine de 39 h d'un technicien, par fonction.
-        pub techniciens_semaine_39h: Option<BTreeMap<CleDeGrille, Nombre>>,
+        pub techniciens_semaine_39h: Option<BTreeMap<CleDeGrille, MontantUnitaire>>,
         /// 3097 : les heures que la semaine de 39 h paie au taux de base (35 h + 4 h a 125 %).
-        pub heures_payees_de_la_semaine: Option<Nombre>,
+        pub heures_payees_de_la_semaine: Option<HeuresParUnite>,
         pub avant_2026_05: Option<Avant2026>,
         pub annexe_iii: Option<AnnexeIii>,
         pub artistes: Option<Artistes3097>,
@@ -80,15 +84,15 @@ forme_notee! {
         pub libelle: String,
         pub cachets: Option<BTreeMap<CleDeGrille, GrilleDeCachets>>,
         pub repetition: Option<RepetitionDeLAnnexe>,
-        pub techniciens: Option<ParNiveau<Nombre>>,
+        pub techniciens: Option<ParNiveau<MontantUnitaire>>,
     }
 }
 
 forme_notee! {
     /// Les clauses communes de la 3090 : le taux horaire des techniciens, la grille mensuelle des administratifs.
     pub struct ClausesCommunes {
-        pub techniciens: ParNiveau<Nombre>,
-        pub administratifs_mensuel_echelons: ParNiveau<Vec<Court>>,
+        pub techniciens: ParNiveau<MontantUnitaire>,
+        pub administratifs_mensuel_echelons: ParNiveau<Vec<MontantUnitaire>>,
     }
 }
 
@@ -140,36 +144,34 @@ forme_notee! {
         pub periode: Option<CleDeGrille>,
         pub jauge: Option<CleDeGrille>,
         pub paliers: Vec<Palier>,
-        pub autres_jauges: Option<BTreeMap<CleDeGrille, Vec<Nombre>>>,
+        pub autres_jauges: Option<BTreeMap<CleDeGrille, Vec<MontantUnitaire>>>,
     }
 }
 
-/// Un palier : le montant jusqu'a `jusqu_a` representations (`None` : au-dela).
+/// Un palier : le cachet jusqu'a `jusqu_a` representations, des cachets (`None` : au-dela).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Palier {
-    pub jusqu_a: Option<i64>,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub montant: Decimal,
+    pub jusqu_a: Option<Cachets>,
+    pub montant: MontantUnitaire,
 }
 
 forme_notee! {
     /// La repetition d'une annexe de la 3090 : le cachet de repetition, le taux horaire, le service d'un musicien, le
     /// service isole.
     pub struct RepetitionDeLAnnexe {
-        pub cachet: Option<Nombre>,
+        pub cachet: Option<MontantUnitaire>,
         pub cachet_libelle: Option<String>,
-        pub heure: Option<Nombre>,
-        pub service_musicien: Option<Nombre>,
-        pub service_isole: Option<Nombre>,
+        pub heure: Option<MontantUnitaire>,
+        pub service_musicien: Option<MontantUnitaire>,
+        pub service_isole: Option<MontantUnitaire>,
     }
 }
 
 forme_notee! {
     /// Le service de repetition de la 1285, et celui de chaque grille d'artiste qui en a un propre.
     pub struct RepetitionParService {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub service: Decimal,
+        pub service: MontantUnitaire,
         pub service_libelle: String,
         /// Par ligne de minima d'un metier de la 1285 (`emplois-base.json`, `minima.1285`).
         pub par_categorie: Option<BTreeMap<CleDeGrille, ServiceDeCategorie>>,
@@ -180,17 +182,16 @@ forme_notee! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServiceDeCategorie {
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub service: Decimal,
+    pub service: MontantUnitaire,
     pub libelle: String,
 }
 
 forme_notee! {
     /// Les emplois autres qu'artistiques de la 1285 : le mensuel de chaque echelon, par groupe, pour `heures_mensuelles`.
     pub struct EmploisAutres {
-        #[serde(deserialize_with = "socle::forme::court")]
-        pub heures_mensuelles: Decimal,
-        pub groupes: BTreeMap<CleDeGrille, Vec<Court>>,
+        #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
+        pub heures_mensuelles: Heures,
+        pub groupes: BTreeMap<CleDeGrille, Vec<MontantUnitaire>>,
     }
 }
 
@@ -200,32 +201,30 @@ forme_notee! {
 pub struct Cddu2642 {
     pub filiere: CleDeGrille,
     pub niveau: CleDeGrille,
-    pub fiction: Option<Nombre>,
-    pub flux: Option<Nombre>,
-    pub autre: Option<Nombre>,
+    pub fiction: Option<MontantUnitaire>,
+    pub flux: Option<MontantUnitaire>,
+    pub autre: Option<MontantUnitaire>,
 }
 
 impl Cddu2642 {
     /// Les genres que la fonction connait, dans l'ordre fiction, flux, autre, avec leur minimum.
-    pub fn genres(&self) -> Vec<(&'static str, Decimal)> {
-        [("fiction", self.fiction), ("flux", self.flux), ("autre", self.autre)].into_iter().filter_map(|(g, m)| m.map(|m| (g, m.0))).collect()
+    pub fn genres(&self) -> Vec<(&'static str, MontantUnitaire)> {
+        [("fiction", self.fiction), ("flux", self.flux), ("autre", self.autre)].into_iter().filter_map(|(g, m)| m.map(|m| (g, m))).collect()
     }
 }
 
 forme_notee! {
     /// 3097 : les deux fonctions reevaluees au 01/05/2026, a leur montant d'avant.
     pub struct Avant2026 {
-        pub montants: BTreeMap<CleDeGrille, Nombre>,
+        pub montants: BTreeMap<CleDeGrille, MontantUnitaire>,
     }
 }
 
 forme_notee! {
-    /// 3097, titre II, annexe III : le socle de la semaine et la part payee au-dela.
+    /// 3097, titre II, annexe III : le socle de la semaine et la part payee au-dela, un pourcentage.
     pub struct AnnexeIii {
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub socle: Decimal,
-        #[serde(deserialize_with = "socle::forme::decimal")]
-        pub part_au_dela: Decimal,
+        pub socle: MontantUnitaire,
+        pub part_au_dela: Taux,
         pub depuis: Jour,
     }
 }
@@ -243,16 +242,13 @@ forme_notee! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Engagement3097 {
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub journee: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub semaine_5j: Decimal,
-    #[serde(deserialize_with = "socle::forme::decimal")]
-    pub semaine_6j: Decimal,
-    pub repetition_service_4h: Option<Nombre>,
-    pub repetition_2_services_4h: Option<Nombre>,
-    pub repetition_service_3h_danse_chant_musique: Option<Nombre>,
-    pub repetition_2_services_3h_danse_chant_musique: Option<Nombre>,
+    pub journee: MontantUnitaire,
+    pub semaine_5j: MontantUnitaire,
+    pub semaine_6j: MontantUnitaire,
+    pub repetition_service_4h: Option<MontantUnitaire>,
+    pub repetition_2_services_4h: Option<MontantUnitaire>,
+    pub repetition_service_3h_danse_chant_musique: Option<MontantUnitaire>,
+    pub repetition_2_services_3h_danse_chant_musique: Option<MontantUnitaire>,
 }
 
 forme_notee! {
@@ -284,7 +280,7 @@ impl Complement3097 {
 forme_notee! {
     /// 3097, titre IV : le mensuel de base des permanents par niveau, et le niveau de chaque emploi repere.
     pub struct Permanents3097 {
-        pub niveaux: BTreeMap<CleDeGrille, Nombre>,
+        pub niveaux: BTreeMap<CleDeGrille, MontantUnitaire>,
         pub emplois_reperes: BTreeMap<CleDeGrille, CleDeGrille>,
     }
 }
@@ -304,7 +300,12 @@ forme_notee! {
         /// la meme notion (`catalogue::Unite`). Une unite hors de sa liste refuse le fichier a la lecture, au chemin de la
         /// grille.
         pub unite: crate::catalogue::Unite,
-        pub heures: Option<Nombre>,
+        /// Les heures du mois que la valeur d'une grille au mois paie (151,67 h), comme `Convention.heures_mensuelles` :
+        /// dites, la grille se ramene a l'heure. Une grille d'une autre unite ne les dit pas (`table`).
+        pub heures_du_mois: Option<Heures>,
+        /// Les heures de l'unite que la valeur d'une grille a la semaine, a la journee ou a l'heure paie (une semaine de
+        /// 35 h, une journee de 8 h) : dites, la grille se ramene a l'heure. Une grille au mois ne les dit pas (`table`).
+        pub heures_par_unite: Option<HeuresParUnite>,
         /// Les lignes de minima des metiers qu'elle vise (`emplois-base.json`, `minima.<idcc>`).
         pub categories: Option<Vec<CleDeGrille>>,
         pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
@@ -317,11 +318,12 @@ forme_notee! {
         /// Les grilles qu'elle remplace, par leur `nom`.
         pub remplace: Option<Vec<String>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub valeurs: Vec<(String, Nombre)>,
+        pub valeurs: Vec<(String, MontantUnitaire)>,
         pub majorations: Option<Vec<Majoration>>,
-        pub abattement_max: Option<Nombre>,
+        /// L'abattement que la valeur peut subir au plus, un pourcentage.
+        pub abattement_max: Option<Taux>,
         pub abattement_motif: Option<String>,
-        pub facteur: Option<Nombre>,
+        pub facteur: Option<Coefficient>,
         pub facteur_motif: Option<String>,
     }
 }
@@ -341,7 +343,7 @@ forme_notee! {
         #[serde(default, deserialize_with = "Duree::en_jours_opt")]
         pub duree_contrat_max_jours: Option<Duree<EnJours>>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub par_cle: Vec<(String, Nombre)>,
+        pub par_cle: Vec<(String, MontantUnitaire)>,
     }
 }
 
@@ -496,10 +498,34 @@ impl Majoration {
 
 const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne se lisent pas : le signaler au développeur.";
 
-/// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
+/// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme, et les heures de chaque grille dans la grandeur de son
+/// unite.
 pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
-    forme_en_cache(&CACHE, &BASE, ILLISIBLE, Ok)
+    forme_en_cache(&CACHE, &BASE, ILLISIBLE, |t: Table| {
+        for (idcc, c) in &t.conventions {
+            heures_dans_leur_unite(c, &format!("conventions.{}", idcc))?;
+        }
+        Ok(t)
+    })
+}
+
+/// Une grille au mois dit ses heures du mois, une autre les heures de son unite, jamais l'inverse : une cle hors de son
+/// unite refuse la table (`ou` : la convention, ou l'accord, qui la porte).
+fn heures_dans_leur_unite(c: &Convention, ou: &str) -> R<()> {
+    for g in c.grilles.iter().chain(&c.grilles_complementaires).flatten() {
+        let hors = match g.unite {
+            crate::catalogue::Unite::Mois => g.heures_par_unite.map(|_| "heures_par_unite"),
+            _ => g.heures_du_mois.map(|_| "heures_du_mois"),
+        };
+        if let Some(cle) = hors {
+            return Err(socle::echec::livree_dite(&BASE, cle, format!("{}, la grille {} paie {}", ou, g.nom, g.unite)));
+        }
+    }
+    for (i, a) in c.accords.iter().flatten().enumerate() {
+        heures_dans_leur_unite(a, &format!("{}.accords.{}", ou, i))?;
+    }
+    Ok(())
 }
 
 // ------------------------------------------------------------ les lectures
@@ -548,8 +574,8 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
 
 /// Le plus bas des candidats selon `valeur` (le premier a egalite) : un minimum prend, quand la paie ne dit pas tout,
 /// l'hypothese la plus basse.
-pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
-    let mut mini: Option<(Decimal, T)> = None;
+pub fn plus_bas<T, K: Ord>(v: Vec<T>, valeur: impl Fn(&T) -> K) -> Option<T> {
+    let mut mini: Option<(K, T)> = None;
     for x in v {
         let k = valeur(&x);
         if mini.as_ref().is_none_or(|(m, _)| k < *m) {
@@ -559,20 +585,21 @@ pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
     mini.map(|(_, x)| x)
 }
 
-/// Un minimum : le montant, d'ou il vient, et s'il se compare a l'unite.
+/// Un minimum : le prix d'une unite (l'heure, le cachet, le service, la journee, la semaine, le mois), d'ou il vient,
+/// et s'il se compare a l'unite.
 pub struct Plancher {
-    pub montant: Decimal,
+    pub montant: MontantUnitaire,
     pub quoi: String,
     pub unite: bool,
 }
 
 /// Un plancher qui se compare a la ligne entiere.
-pub fn plancher(montant: Decimal, quoi: String) -> Option<Plancher> {
+pub fn plancher(montant: MontantUnitaire, quoi: String) -> Option<Plancher> {
     Some(Plancher { montant, quoi, unite: false })
 }
 
-/// Le montant du palier ou tombe `nombre` de representations.
-pub fn palier(paliers: &[Palier], nombre: i64) -> Option<Decimal> {
+/// Le cachet du palier ou tombent `nombre` cachets de representations.
+pub fn palier(paliers: &[Palier], nombre: Cachets) -> Option<MontantUnitaire> {
     paliers.iter().find(|p| p.jusqu_a.is_none_or(|j| nombre <= j)).map(|p| p.montant)
 }
 
@@ -681,7 +708,8 @@ pub enum Par {
 /// vient, ce qu'il compare. `service_3090` : le service de repetition d'un artiste de la 3090 (sa phrase est a part).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Minimum {
-    pub montant: Decimal,
+    /// Le prix d'une unite de ce qu'il compare (`par`).
+    pub montant: MontantUnitaire,
     pub quoi: String,
     pub par: Par,
     pub service_3090: bool,

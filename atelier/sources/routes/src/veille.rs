@@ -14,7 +14,9 @@ pub struct EtatDeLaVeille {
     pub en_cours: bool,
     pub sauvegarde_en_cours: bool,
     pub etape: Option<String>,
-    pub minutes: u64,
+    /// Le temps entre deux passages de la boucle, en minutes ; zero : aucune boucle.
+    #[serde(serialize_with = "socle::temps::ecrit::minutes::serialize")]
+    pub minutes: std::time::Duration,
     pub dernier: Option<Trace>,
     pub erreur: Option<String>,
 }
@@ -22,12 +24,12 @@ pub struct EtatDeLaVeille {
 /// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage, au jour de l'horloge de
 /// Paris (celle d'une fictive au banc comprise).
 fn heure_du_passage(quand: socle::paris::Moment) -> String {
-    let (jour, s) = (quand.jour_de_paris(), quand.seconde_du_jour_de_paris());
-    let heure = format!("{:02}:{:02}", s / 3_600, s / 60 % 60);
+    let jour = quand.jour_de_paris();
+    let heure = socle::paris::ecrit::heure_minute(quand, ":");
     if socle::temps::secondes().a_la_seconde().jour_de_paris() == jour {
         format!("à {}", heure)
     } else {
-        format!("le {:02}/{:02} à {}", jour.jour, jour.mois, heure)
+        format!("le {} à {}", jour.jj_mm(), heure)
     }
 }
 
@@ -58,7 +60,8 @@ pub struct DitDuBandeau {
     termine: &'static str,
 }
 
-pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<u64>, fictive: bool) -> DitDuBandeau {
+pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
+    let dans = dans.map(socle::temps::ecrit::minutes_commencees_dites);
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
         Some(t) => heure_du_passage(t.quand),

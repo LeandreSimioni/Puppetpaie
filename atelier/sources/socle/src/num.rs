@@ -4,6 +4,7 @@
 use rust_decimal::prelude::*;
 use crate::d28::P;
 use crate::echec::{refus_avec, Lieu, R};
+use crate::forme::illisible;
 pub use rust_decimal::Decimal;
 
 /// Le decimal d'un nombre ecrit en texte (`"12.5"`, `" 1e3 "`), blancs autour ignores.
@@ -12,14 +13,9 @@ pub fn dec_texte(s: &str) -> R<Decimal> {
     match Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())) { Ok(d) => Ok(d), Err(e) => Err(refus_avec(illisible(s), Lieu { detail: Some(e.to_string()), ..Default::default() })) }
 }
 
-/// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
-pub fn illisible(t: &str) -> String {
-    format!("nombre illisible : {}", crate::fichiers::repr(t))
-}
-
 /// UN ENTIER ECRIT EN CHIFFRES SEULS, de un a dix-huit : sa valeur, comptee chiffre a chiffre ; tout autre texte (vide, un
 /// autre caractere, plus long) n'est pas un entier ainsi ecrit, et rend `None`.
-pub fn entier_de_chiffres(t: &str) -> Option<i64> {
+pub(crate) fn entier_de_chiffres(t: &str) -> Option<i64> {
     let b = t.as_bytes();
     if b.is_empty() || b.len() > 18 || !b.iter().all(u8::is_ascii_digit) {
         return None;
@@ -29,7 +25,7 @@ pub fn entier_de_chiffres(t: &str) -> Option<i64> {
 
 /// UN ENTIER SIGNE ECRIT EN CHIFFRES : un signe `+` ou `-` facultatif, puis un entier de chiffres seuls
 /// (`entier_de_chiffres`) ; tout autre texte rend `None`.
-pub fn entier_signe(t: &str) -> Option<i64> {
+pub(crate) fn entier_signe(t: &str) -> Option<i64> {
     match (t.strip_prefix('-'), t.strip_prefix('+')) {
         (Some(c), _) => entier_de_chiffres(c).map(|n| -n),
         (None, Some(c)) => entier_de_chiffres(c),
@@ -46,11 +42,6 @@ pub fn court(x: Decimal) -> Decimal {
         c.rescale(1);
     }
     c
-}
-
-/// Une somme de montants, à deux décimales au moins.
-pub fn somme<I: IntoIterator<Item = Decimal>>(it: I) -> Decimal {
-    it.into_iter().fold(crate::grandeurs::Montant::ZERO.decimal(), add)
 }
 
 /// Un `P` (28 chiffres significatifs, exposant libre) en `Decimal`. Au-dela
@@ -112,7 +103,7 @@ pub fn nombre(x: Decimal) -> String {
 
 /// Un entier ecrit en texte : le signe, les chiffres, un tiret bas entre deux chiffres, les blancs autour.
 /// Un entier trop long pour `i128` se rend au plus grand.
-pub fn entier_lu(t: &str) -> Option<i128> {
+pub(crate) fn entier_lu(t: &str) -> Option<i128> {
     let t = t.trim_matches(crate::texte::blanc);
     let (neg, reste) = match (t.strip_prefix('-'), t.strip_prefix('+')) {
         (Some(r), _) => (true, r),
@@ -143,11 +134,6 @@ pub fn quotient(n: u128, d: u128, chiffres: u32) -> Option<String> {
     Some(format!("{}.{:0width$}", q / echelle, q % echelle, width = chiffres as usize))
 }
 
-/// Une duree en secondes, au dixieme, la moitie loin de zero : un nombre a virgule qu'une reponse rend (« 1.2 »).
-pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
-    let ns = Decimal::from_i128_with_scale(d.as_nanos() as i128, 9);
-    ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
-}
 
 /// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs
 /// (l'espace, l'insecable, l'insecable fine) separent les milliers et ne comptent pas ; avec une virgule, elle est la

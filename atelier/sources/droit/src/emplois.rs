@@ -625,7 +625,7 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -
     jours.dedup();
     let mut out = Vec::new();
     for j in jours {
-        let (avant, apres) = (brute.au(&j.plus_jours(-1)?), brute.au(&j));
+        let (avant, apres) = (brute.au(&j.avant(socle::date::Duree::jours(1))?), brute.au(&j));
         if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS) {
             out.push(j);
         }
@@ -633,12 +633,13 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -
     Ok(out)
 }
 
-/// Ce que `emploi_de` lit d'un engagement.
-#[derive(Debug, Clone, Default)]
-pub struct EmploiEngagement {
+/// L'EMPLOI ECRIT : les six champs de l'emploi qu'une carte ecrit a la main, ou qu'un bulletin importe imprime, chacun
+/// seulement quand il est dit. Un emploi qui ne dit rien n'est pas ecrit : sa case est vide (`EmploiEcrit::dit`). Son
+/// libelle lisible n'en est pas un champ : l'engagement le resout (`EmploiEngagement`).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmploiEcrit {
     pub emploi: Option<String>,
-    /// Le libelle lisible que l'engagement a resolu.
-    pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<CodePcsEse>,
     pub code_emploi_ft: Option<CodeEmploiFt>,
     pub statut: Option<Statut>,
@@ -646,13 +647,62 @@ pub struct EmploiEngagement {
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
 }
 
+impl EmploiEcrit {
+    /// La case d'un emploi ecrit, lue (`deserialize_with`) : `null`, absente, ou un objet qui ne dit aucun champ, elle
+    /// est vide.
+    pub fn dit<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<EmploiEcrit>, D::Error> {
+        Ok(Option::<EmploiEcrit>::deserialize(d)?.filter(|e| *e != EmploiEcrit::default()))
+    }
+}
+
+/// L'EMPLOI D'UN ENGAGEMENT : ce qu'il dit de l'emploi qu'il fait declarer, le metier de sa carte resolu (`resoudre`)
+/// sous ce que la carte ecrit a la main (`engagement::engagements`), ou ce qu'un bulletin importe imprime (`ecrit`) ; et
+/// le libelle lisible de son metier, que l'engagement resout (`emploi_affichage`). Chaque champ seulement quand il est
+/// dit, le reste vient de la fiche du salarie (`emploi_de`). Ce n'est pas un metier du catalogue (`Metier`). Il s'ecrit
+/// en un objet a plat, dans la paie ecrite et ce dont un engagement se fabrique (`EmploiEngagementEcrit`).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(from = "EmploiEngagementEcrit", into = "EmploiEngagementEcrit")]
+pub struct EmploiEngagement {
+    pub ecrit: EmploiEcrit,
+    /// Le libelle lisible que l'engagement a resolu.
+    pub emploi_affichage: Option<String>,
+}
+
+/// La forme ecrite d'un `EmploiEngagement` : ses sept champs a plat.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmploiEngagementEcrit {
+    emploi: Option<String>,
+    emploi_affichage: Option<String>,
+    pcs_ese: Option<CodePcsEse>,
+    code_emploi_ft: Option<CodeEmploiFt>,
+    statut: Option<Statut>,
+    statut_conventionnel: Option<StatutConventionnel>,
+    statut_categoriel_rc: Option<StatutCategorielRc>,
+}
+
+impl From<EmploiEngagementEcrit> for EmploiEngagement {
+    fn from(e: EmploiEngagementEcrit) -> EmploiEngagement {
+        let EmploiEngagementEcrit { emploi, emploi_affichage, pcs_ese, code_emploi_ft, statut, statut_conventionnel, statut_categoriel_rc } = e;
+        EmploiEngagement { ecrit: EmploiEcrit { emploi, pcs_ese, code_emploi_ft, statut, statut_conventionnel, statut_categoriel_rc }, emploi_affichage }
+    }
+}
+
+impl From<EmploiEngagement> for EmploiEngagementEcrit {
+    fn from(e: EmploiEngagement) -> EmploiEngagementEcrit {
+        let EmploiEngagement { ecrit: EmploiEcrit { emploi, pcs_ese, code_emploi_ft, statut, statut_conventionnel, statut_categoriel_rc }, emploi_affichage } = e;
+        EmploiEngagementEcrit { emploi, emploi_affichage, pcs_ese, code_emploi_ft, statut, statut_conventionnel, statut_categoriel_rc }
+    }
+}
+
 /// La fiche salarie `sal` (lue a la date de la periode) telle qu'elle vaut POUR CET ENGAGEMENT : ce que l'engagement
 /// dit l'emporte ; le reste vient de la fiche.
-pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
+pub fn emploi_de(sal: &FicheSalarie, emploi: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
+    let eng = &emploi.ecrit;
     let pcs_ese = eng.pcs_ese.clone();
-    let affichage = dit(&eng.emploi_affichage);
+    let affichage = dit(&emploi.emploi_affichage);
     let statuts_dits = eng.statut.is_some() || eng.statut_conventionnel.is_some() || eng.statut_categoriel_rc.is_some();
     if dit(&eng.emploi).is_none() && eng.code_emploi_ft.is_none() && pcs_ese.is_none() && !statuts_dits && affichage.is_none() {
         return Ok(out);

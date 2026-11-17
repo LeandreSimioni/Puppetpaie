@@ -36,6 +36,54 @@ const MOIS_TITRE: [&str; 12] = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "J
 const MOIS_MINUSCULE: [&str; 12] = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 const MOIS_ACCENTUE: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
+/// UNE ANNEE OU UN MOIS QU'UN TEXTE DEPOSE FIXE, ecrit dans le code : `socle::annee!("2026")`, `socle::mois!("2026-03")`.
+/// Le texte est une constante (`TEXTE`), lue a la compilation : aucun texte lu a l'execution ne devient une annee ou un
+/// mois par ce chemin.
+pub trait DateEcrite {
+    const TEXTE: &'static str;
+    const ANNEE: Annee = Annee::constante(Self::TEXTE);
+    const MOIS: Mois = Mois::constante(Self::TEXTE);
+}
+
+/// L'annee ecrite `AAAA` dans le code, lue a la compilation (`DateEcrite`).
+#[macro_export]
+macro_rules! annee {
+    ($texte:literal) => {{
+        enum Ecrite {}
+        impl $crate::mois::DateEcrite for Ecrite {
+            const TEXTE: &'static str = $texte;
+        }
+        const LUE: $crate::mois::Annee = <Ecrite as $crate::mois::DateEcrite>::ANNEE;
+        LUE
+    }};
+}
+
+/// Le mois ecrit `AAAA-MM` dans le code, lu a la compilation (`DateEcrite`).
+#[macro_export]
+macro_rules! mois {
+    ($texte:literal) => {{
+        enum Ecrit {}
+        impl $crate::mois::DateEcrite for Ecrit {
+            const TEXTE: &'static str = $texte;
+        }
+        const LU: $crate::mois::Mois = <Ecrit as $crate::mois::DateEcrite>::MOIS;
+        LU
+    }};
+}
+
+/// Le nombre que les `n` chiffres de `o` ecrivent a partir de `de`, a la compilation (`DateEcrite`) : un octet qui
+/// n'est pas un chiffre ne compile pas.
+const fn chiffres_constants(o: &[u8], de: usize, n: usize) -> u32 {
+    let mut v = 0;
+    let mut i = de;
+    while i < de + n {
+        assert!(o[i].is_ascii_digit(), "une date constante s'écrit en chiffres");
+        v = v * 10 + (o[i] - b'0') as u32;
+        i += 1;
+    }
+    v
+}
+
 /// Le refus d'un numero de mois hors de 1 a 12 : « 00 » n'est pas decembre, « 13 » n'est pas janvier.
 pub fn mois_impossible(mois: impl std::fmt::Display) -> String {
     format!("mois impossible : {}", mois)
@@ -43,7 +91,7 @@ pub fn mois_impossible(mois: impl std::fmt::Display) -> String {
 
 impl Mois {
     /// Le mois `numero` (1 a 12) de l'annee `an` (1 a 9999) ; refus sinon.
-    pub fn nouveau(an: i32, numero: u32) -> R<Mois> {
+    pub(crate) fn nouveau(an: i32, numero: u32) -> R<Mois> {
         if !(1..=9999).contains(&an) {
             return Err(refus(crate::date::annee_impossible(an)));
         }
@@ -53,10 +101,14 @@ impl Mois {
         Ok(Mois { an, numero })
     }
 
-    /// Le mois qu'un texte depose fixe, ecrit en constante (`const`) : hors du calendrier, le code ne compile pas.
-    pub const fn constante(an: i32, numero: u32) -> Mois {
+    /// Le mois ecrit `AAAA-MM` dans le code (`DateEcrite::MOIS`) : une autre ecriture, ou un mois hors du calendrier,
+    /// arrete la compilation.
+    const fn constante(texte: &str) -> Mois {
+        let o = texte.as_bytes();
+        assert!(o.len() == 7 && o[4] == b'-', "un mois constant s'ecrit AAAA-MM");
+        let (an, numero) = (chiffres_constants(o, 0, 4), chiffres_constants(o, 5, 2));
         assert!(1 <= an && an <= 9999 && 1 <= numero && numero <= 12, "mois hors du calendrier");
-        Mois { an, numero }
+        Mois { an: an as i32, numero }
     }
 
     /// Un mois ecrit `AAAA-MM` ; toute autre forme se refuse.
@@ -123,6 +175,16 @@ impl Mois {
     /// « octobre 2026 », dans la graphie `g`.
     pub fn libelle(self, g: Graphie) -> String {
         format!("{} {:04}", self.nom(g), self.an)
+    }
+
+    /// `MM`, son numero sur deux chiffres (« 05 »).
+    pub fn mm(self) -> String {
+        format!("{:02}", self.numero)
+    }
+
+    /// `MM/AAAA` (« 05/2026 »).
+    pub fn mm_aaaa(self) -> String {
+        format!("{:02}/{:04}", self.numero, self.an)
     }
 
     /// L'etiquette du mois dans le nom d'un fichier : « Aout2026 » (le nom en titre, sans accent).
@@ -267,7 +329,7 @@ pub struct Annee(i32);
 
 impl Annee {
     /// L'annee `an` (1 a 9999) ; refus sinon.
-    pub fn nouvelle(an: i64) -> R<Annee> {
+    pub(crate) fn nouvelle(an: i64) -> R<Annee> {
         if !(1..=9999).contains(&an) {
             return Err(refus(crate::date::annee_impossible(an)));
         }
@@ -280,10 +342,14 @@ impl Annee {
         Annee(m.an)
     }
 
-    /// L'annee `an` qu'un texte depose fixe, ecrite en constante (`const`) : hors de 1 a 9999, le code ne compile pas.
-    pub const fn constante(an: i32) -> Annee {
+    /// L'annee ecrite `AAAA` dans le code (`DateEcrite::ANNEE`) : une autre ecriture, ou une annee hors de 1 a 9999,
+    /// arrete la compilation.
+    const fn constante(texte: &str) -> Annee {
+        let o = texte.as_bytes();
+        assert!(o.len() == 4, "une année constante s'écrit AAAA");
+        let an = chiffres_constants(o, 0, 4);
         assert!(1 <= an && an <= 9999, "année hors du calendrier");
-        Annee(an)
+        Annee(an as i32)
     }
 
     /// Son millesime, au calcul du calendrier (`feries`) et aux ecritures du socle.
@@ -348,9 +414,14 @@ impl Annee {
         Mois { an: self.0, numero: 12 }
     }
 
-    /// Le 1er janvier.
-    pub fn premier_jour(self) -> Jour {
-        self.janvier().premier_jour()
+    /// Le 1er janvier ; ecrit en constante, le premier jour d'une annee qu'un texte fixe.
+    pub const fn premier_jour(self) -> Jour {
+        Jour { an: self.0, mois: 1, jour: 1 }
+    }
+
+    /// `AA`, ses deux derniers chiffres (« 26 »).
+    pub fn aa(self) -> String {
+        format!("{:02}", self.0 % 100)
     }
 
     /// Le 31 decembre.
@@ -376,10 +447,46 @@ impl serde::Serialize for Annee {
     }
 }
 
-/// La lecture de serde, un nombre (une cle d'objet, son texte), dont le refus se dit dans le sien.
+/// La lecture de serde, un nombre (une cle d'objet, son texte), dont le refus se dit dans le sien ; dans la charge d'une
+/// route (`forme::lire_saisie`), aussi l'annee qu'une personne a tapee (`grandeurs::lu::entier`, « 2026 »).
 impl<'de> serde::Deserialize<'de> for Annee {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Annee, D::Error> {
-        Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom)
+        match crate::forme::en_saisie() {
+            true => {
+                let n = crate::grandeurs::lu::entier(d, "une année")?;
+                let an = i64::try_from(n).map_err(serde::de::Error::custom)?;
+                Annee::nouvelle(an).map_err(|e| serde::de::Error::custom(e.phrase))
+            }
+            false => Annee::nouvelle(<i64 as serde::Deserialize>::deserialize(d)?).map_err(serde::de::Error::custom),
+        }
+    }
+}
+
+/// LE RANG D'UN NUMERO DANS LA SUITE DE SON ANNEE : celui d'un numero de contrat (`FA1.26.16` : 16) ou d'un numero de
+/// bulletin (`12/2026` : 12). La suite commence au premier (`PREMIER`) et chaque rang donne le suivant ; il se lit d'une
+/// zone ecrite en chiffres (`piece::format::Rang`) et s'ecrit par `Display` (qui suit la largeur demandee : `{:02}`).
+/// L'ordre est celui de la suite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RangDansLAnnee(u32);
+
+impl RangDansLAnnee {
+    /// Le premier de l'annee.
+    pub const PREMIER: RangDansLAnnee = RangDansLAnnee(1);
+
+    /// Le rang ecrit `n` (une zone lue, `piece::format::Rang`).
+    pub(crate) fn lu(n: u32) -> RangDansLAnnee {
+        RangDansLAnnee(n)
+    }
+
+    /// Le rang qui le suit.
+    pub fn suivant(self) -> RangDansLAnnee {
+        RangDansLAnnee(self.0 + 1)
+    }
+}
+
+impl std::fmt::Display for RangDansLAnnee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
     }
 }
 

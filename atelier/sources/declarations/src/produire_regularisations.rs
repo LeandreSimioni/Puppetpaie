@@ -58,7 +58,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?.veille();
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?.veille()?;
     Ok(ctx.aujourdhui > limite)
 }
 

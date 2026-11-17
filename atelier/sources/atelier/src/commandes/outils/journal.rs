@@ -6,25 +6,26 @@
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec { commande: "journal", positionnels: &[], options: &[Opt::drapeau("dpae"), Opt::drapeau("ecrire")] };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     if !args.drapeau("dpae") {
         dire!("journal --dpae [--ecrire] : la reprise des DPAE attestees. Les DSN : la route journal-reprise.");
-        return 2;
+        return ExitCode::from(2);
     }
     super::code(faire(cadre, args.drapeau("ecrire")))
 }
 
-fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
+fn faire(cadre: &Cadre, ecrire: bool) -> Result<ExitCode, Echec> {
     let d = envois::reprise_journal::reprise_dpae(&cadre.ctx, ecrire, "atelier")?;
     for x in &d.inconnus {
         dire!("Non rattache : {}", x);
     }
     if d.trouves.is_empty() {
         dire!("Aucun certificat de DPAE (nature 41) dans retours/dpae/ : rien a reprendre.");
-        return Ok(0);
+        return Ok(ExitCode::SUCCESS);
     }
     dire!("DPAE attestees par les certificats de l'Urssaf : {}\n", d.trouves.len());
     for v in &d.trouves {
@@ -48,5 +49,5 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
     } else {
         dire!("\n{} ligne(s) SERAIENT ajoutees. Rien n'a ete ecrit : --ecrire les pose.", d.ajoutes.len());
     }
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }

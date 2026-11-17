@@ -35,7 +35,7 @@
 //!    d'exigibilite des cotisations » (cahier d'aide a la codification Agirc-Arrco CT2026, p. 47,
 //!    `atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt`, l. 2401-2405) :
 //!    le dernier jour ouvre du mois qui suit la fin de periode (S21.G00.20.007). « Ouvre » : ni samedi, ni dimanche, ni
-//!    fete legale (`echeance_dsn::non_ouvre`).
+//!    fete legale (`socle::date::JoursOuvres`, sur les fetes legales).
 //! 6. Tout autre organisme sans S21.G00.20.011 : aucun texte depose ne dit son jour. Le logiciel le dit.
 //!
 //! LE TROP-VERSE : un ordre n'est jamais negatif ; quand une correction a la baisse laisse un credit, l'ordre
@@ -71,13 +71,11 @@ fn periode_lisible(p: &Periode) -> String {
     }
 }
 
-/// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin`.
+/// Le dernier jour ouvre (ni samedi, ni dimanche, ni fete legale) du mois qui suit `fin` : le premier jour ouvre avant
+/// le lendemain de son dernier jour.
 fn dernier_ouvre_du_mois_suivant(fin: &Jour) -> R<Jour> {
-    let mut j = fin.mois_civil().suivant().dernier_jour();
-    while crate::echeance_dsn::non_ouvre(&j)?.is_some() {
-        j = j.plus_jours(-1)?;
-    }
-    Ok(j)
+    let lendemain = fin.mois_civil().suivant().dernier_jour().apres(socle::date::Duree::jours(1))?;
+    socle::date::JoursOuvres::de(1).avant(lendemain, socle::feries::feries)
 }
 
 /// Le `jour` du mois qui suit le mois declare `mois`.
@@ -97,7 +95,7 @@ fn est_agirc_arrco(v: Option<&Versement>) -> bool {
 /// `date` (ISO, ou `null` quand aucun texte ne la dit), `quand` (la phrase de la page), `source` (d'ou vient la date) et
 /// `credit` (le trop-verse que l'ordre ne reprend pas ou reprend, et ce que la compagnie en fait ; `null` sans
 /// trop-verse). `jour_echeance` : 5 ou 15 (`Contexte::echeance_dsn`).
-pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
+pub fn decrire(ordres: &[crate::dsn::OrdreDePaiement], mois: Mois, jour_echeance: u32) -> R<Vec<OrdreEnClair>> {
     let base = droit::organismes::base()?;
     let mut out = Vec::new();
     for o in ordres {
@@ -147,8 +145,6 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
         } else {
             (None, "date non dite par la DSN".to_string(), SOURCE_AUCUNE)
         };
-        let credit = bordereau::credit(o.destinataire, &organisme, o.reste, o.deduit)
-            .map(|c| CreditEnClair { reste: c.reste.au_centime(), deduit: c.deduit.au_centime(), titre: c.titre, que_faire: c.que_faire, source: c.source });
         out.push(OrdreEnClair {
             organisme,
             identifiant: o.organisme.clone(),
@@ -158,7 +154,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             date,
             quand_dit,
             source,
-            credit,
+            credit: o.credit.clone(),
         });
     }
     Ok(out)
@@ -178,20 +174,9 @@ pub struct OrdreEnClair {
     #[serde(rename = "quand")]
     pub quand_dit: String,
     pub source: &'static str,
-    pub credit: Option<CreditEnClair>,
-}
-
-/// Le trop-verse d'un ordre (`bordereau::credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie en
-/// fait.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CreditEnClair {
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
-    pub reste: Montant,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
-    pub deduit: Montant,
-    pub titre: String,
-    pub que_faire: String,
-    pub source: &'static str,
+    /// Le trop-verse de l'ordre (`dsn::OrdreDePaiement.credit`) : ce qu'il ne reprend pas, ce qu'il reprend, et ce que la compagnie
+    /// en fait.
+    pub credit: Option<bordereau::Credit>,
 }
 
 /// Le jour du mois suivant ou l'organisme `identifiant` (S21.G00.20.001) preleve, quand la base livree le dit

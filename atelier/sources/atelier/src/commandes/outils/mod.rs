@@ -17,12 +17,12 @@ pub mod pas;
 pub mod retours;
 
 /// Le code de sortie d'un outil : le sien, ou, a l'erreur, sa phrase et le code 2.
-pub(crate) fn code(r: Result<i32, socle::echec::Echec>) -> i32 {
+pub(crate) fn code(r: Result<std::process::ExitCode, socle::echec::Echec>) -> std::process::ExitCode {
     match r {
         Ok(c) => c,
         Err(e) => {
             dire!("! {}", e.en_lignes());
-            2
+            std::process::ExitCode::from(2)
         }
     }
 }

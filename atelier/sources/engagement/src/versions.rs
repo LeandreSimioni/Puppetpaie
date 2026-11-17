@@ -4,9 +4,7 @@
 //! parti sur elle. Un engagement jamais modifie apres un envoi n'a pas de frise.
 
 use serde::Serialize;
-use socle::forme::NombreLu;
 use crate::LignePaie;
-use socle::num::Decimal;
 use crate::ligne::TauxDeLigne;
 
 use crate::departs::{Depart, Departs, Envoi};
@@ -19,7 +17,6 @@ use socle::date::{Jour, PeriodeOuverte};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 use socle::texte::euros;
-use socle::grandeurs::Montant;
 
 
 /// Ce qui change dans les jours d'une ligne, et seulement cela : « Jours : + 16/11 », « Jours : − 14/11 »,
@@ -92,32 +89,37 @@ const CLAUSES: [(Champ, &str); 13] = [
 
 /// Une valeur en mots : en euros (`euros`), un nombre a la virgule, un oui-non, un texte ; « — » sans valeur.
 fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
-    let nombre = |n: &NombreLu| socle::num::decimal_lu(&n.to_string());
     match v {
         None => "—".into(),
         Some(Valeur::Oui(b)) => if *b { "oui" } else { "non" }.into(),
-        Some(Valeur::Nombre(n)) => match (nombre(n), en_euros) {
-            (Some(x), true) => euros(Montant::du_decimal(x)),
-            (Some(x), false) => socle::texte::nombre_dit(x),
-            (None, _) => n.to_string(),
-        },
+        Some(Valeur::Coefficient(c)) => socle::texte::virgule(*c),
         Some(Valeur::Heures(h)) => socle::texte::virgule(*h),
         Some(Valeur::Montant(m)) => euros(*m),
-        Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
-            Some(x) => euros(Montant::du_decimal(x)),
-            None => t.clone(),
-        },
+        Some(Valeur::MontantUnitaire(m)) if en_euros => euros(*m),
+        Some(Valeur::MontantUnitaire(m)) => socle::texte::virgule(*m),
+        Some(Valeur::Jours(j)) => socle::texte::virgule(*j),
+        Some(Valeur::Duree(d)) => d.jours_a_ecrire().to_string(),
         Some(Valeur::Texte(t)) => t.clone(),
         Some(Valeur::Nature(n)) => n.to_string(),
     }
 }
 
-/// Un nombre d'une ligne de paie, en mots : en euros, ou a la virgule ; « — » quand il n'est pas dit.
-fn nombre_en_mots(x: Option<Decimal>, en_euros: bool) -> String {
-    match x {
+/// La quantite d'une ligne de paie (`unite` : celle de sa rubrique), ou la base d'une ligne en pourcentage, en mots, a
+/// la virgule et sans son unite (« 151,67 ») ; « — » quand elle n'est pas dite.
+fn quantite_en_mots(l: &LignePaie, unite: droit::catalogue::Unite) -> String {
+    use socle::texte::virgule;
+    match (l.quantite(unite), l.base(unite)) {
+        (Some(q), _) => q.dit(),
+        (None, Some(b)) => virgule(b),
+        (None, None) => "—".into(),
+    }
+}
+
+/// Le taux d'une ligne de paie, en mots (`TauxDeLigne::dit` : « 120,00 € », « 10,00 % ») ; « — » quand il n'est pas dit.
+fn taux_en_mots(t: Option<TauxDeLigne>) -> String {
+    match t {
         None => "—".into(),
-        Some(x) if en_euros => euros(Montant::du_decimal(x)),
-        Some(x) => socle::texte::nombre_dit(x),
+        Some(t) => t.dit(),
     }
 }
 
@@ -272,13 +274,12 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         for k in 0..xs.len().max(ys.len()) {
             match (xs.get(k), ys.get(k)) {
                 (Some(_), None) => out.push(format!("{} : retiré", lib)),
-                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, nombre_en_mots(y.quantite_ecrite(), false))),
+                (None, Some(y)) => out.push(format!("{} : ajouté ({})", lib, quantite_en_mots(y, unite))),
                 (Some(x), Some(y)) => {
-                    let (qx, qy) = (x.quantite_ecrite(), y.quantite_ecrite());
-                    if qx != qy {
-                        out.push(format!("{} : {} → {}", au_pluriel(&lib), nombre_en_mots(qx, false), nombre_en_mots(qy, false)));
+                    if (x.quantite(unite), x.base(unite)) != (y.quantite(unite), y.base(unite)) {
+                        out.push(format!("{} : {} → {}", au_pluriel(&lib), quantite_en_mots(x, unite), quantite_en_mots(y, unite)));
                     }
-                    let (tx, ty) = (nombre_en_mots(x.taux().map(TauxDeLigne::decimal), true), nombre_en_mots(y.taux().map(TauxDeLigne::decimal), true));
+                    let (tx, ty) = (taux_en_mots(x.taux()), taux_en_mots(y.taux()));
                     if tx != ty {
                         out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }

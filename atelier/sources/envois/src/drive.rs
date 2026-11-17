@@ -213,7 +213,7 @@ pub const DRIVE_TELEVERSEMENT: Url = Url::du_moteur("https://www.googleapis.com/
 pub const DOSSIER_DRIVE: &str = "application/vnd.google-apps.folder";
 
 /// `urlopen(..., timeout=120)` des appels Drive.
-const DELAI_APPEL: u64 = 120;
+const DELAI_APPEL: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// LES NOUVELLES TENTATIVES (un « HTTP 500 : Internal Error » passager ne doit pas remonter a la personne). Google le dit pour l'API Drive
 /// (`atelier/reference/sources/google-drive-api/`, LISEZ-MOI.md) : sur 500, 502, 503, 504 et 429, « use exponential backoff to
@@ -236,7 +236,9 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
         let m = e.echec.phrase.to_lowercase();
         m.contains("rate limit") || m.contains("ratelimitexceeded")
     };
-    matches!(e.statut, Some(500 | 502 | 503 | 504 | 429)) || (e.statut == Some(403) && limite())
+    use ureq::http::StatusCode;
+    let passagers = [StatusCode::INTERNAL_SERVER_ERROR, StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::GATEWAY_TIMEOUT, StatusCode::TOO_MANY_REQUESTS];
+    e.statut.is_some_and(|s| passagers.contains(&s)) || (e.statut == Some(StatusCode::FORBIDDEN) && limite())
 }
 
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;
@@ -246,7 +248,7 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
 pub struct ErreurGoogle {
     pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
-    pub statut: Option<u16>,
+    pub statut: Option<ureq::http::StatusCode>,
 }
 
 impl ErreurGoogle {
@@ -281,7 +283,7 @@ pub struct Distant {
     /// `md5Checksum`, calcule par Google ; absent pour un fichier Google Docs.
     pub md5: Option<EmpreinteMd5>,
     /// Sa taille ; absente pour un fichier Google Docs.
-    pub octets: Option<u64>,
+    pub octets: Option<socle::grandeurs::Octets>,
 }
 
 /// Ce que Drive rend d'un depot (`{id, name, webViewLink}`), plus `remplace`.
@@ -382,7 +384,7 @@ impl Client {
                 "Compte Google pas encore lie : Configuration > Mots de passe > Lier le Drive.",
             ));
         };
-        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(60))??;
+        let acces = jeton_par_rafraichissement(&self.adresses.jetons, &self.application, &rafraichissement, DELAI_APPEL.min(std::time::Duration::from_secs(60)))??;
         self.acces = Some(acces.clone());
         Ok(acces)
     }
@@ -404,7 +406,7 @@ impl Client {
         let mut tentative = 0;
         loop {
             let r = match self.appel_une_fois(url, donnees, content_type, methode) {
-                Err(e) if e.statut == Some(401) => {
+                Err(e) if e.statut == Some(ureq::http::StatusCode::UNAUTHORIZED) => {
                     self.acces = None;
                     self.appel_une_fois(url, donnees, content_type, methode)
                 }
@@ -475,8 +477,8 @@ fn echapper(nom: &str) -> String {
 }
 
 /// La taille d'un fichier (`size`, que Drive ecrit en texte).
-fn octets_de(t: &str) -> Result<u64, ErreurGoogle> {
-    t.trim().parse::<u64>().map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::Lieu { detail: Some(format!("{} : {}", t, e)), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))
+fn octets_de(t: &str) -> Result<socle::grandeurs::Octets, ErreurGoogle> {
+    t.trim().parse::<u64>().map(socle::grandeurs::Octets::lue).map_err(|e| ErreurGoogle::from(socle::echec::refus_avec("Google Drive a rendu une taille illisible.", socle::echec::Lieu { detail: Some(format!("{} : {}", t, e)), ..socle::echec::Lieu::default() }).reclasser(Classe::Illisible)))
 }
 
 /// Des aleas du systeme ; un systeme qui n'en donne pas refuse.

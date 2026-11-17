@@ -854,9 +854,9 @@ passent à zéro et la correction en déclare l'annulation des montants.
   "engagements": [
     { "salarie": "Celi", "spectacle": "aaah zerbinette",
       "lignes": [
-        { "rubrique": "cachet", "quantite": 1, "taux": 130,
+        { "rubrique": "cachet", "quantite": { "cachets": 1 }, "taux": 130,
           "lieu": "Théâtre de la Ville", "dates": ["2026-10-12"] },
-        { "rubrique": "cachet", "quantite": 4, "taux": 130,
+        { "rubrique": "cachet", "quantite": { "cachets": 4 }, "taux": 130,
           "lieu": "Théâtre 71",
           "dates": ["2026-10-14", "2026-10-15", "2026-10-17", "2026-10-18"] }
       ] }
@@ -1017,7 +1017,7 @@ d'usage du spectacle — l'intermittent.
 { "salarie": "Camille", "nature": "cdi",
   "debut": "2026-01-05", "numero": "AD1.26.1",
   "quotite_contrat": 151.67,
-  "lignes": [ { "rubrique": "mois", "quantite": 1,
+  "lignes": [ { "rubrique": "mois", "quantite": { "part_du_mois": 1 },
                 "taux": 2200.00, "heures": 151.67 } ] }
 ```
 
@@ -1158,7 +1158,7 @@ demande « vous êtes en train de créer un contrat sur plusieurs mois.
 Valider ? » :
 
 ```json
-{ "rubrique": "cachet", "quantite": 3, "taux": 130, "lieu": "Avallon",
+{ "rubrique": "cachet", "quantite": { "cachets": 3 }, "taux": 130, "lieu": "Avallon",
   "dates": ["2026-05-12", "2026-05-24", "2026-05-26"],
   "planning": ["2026-06-05", "2026-06-06"] }
 ```

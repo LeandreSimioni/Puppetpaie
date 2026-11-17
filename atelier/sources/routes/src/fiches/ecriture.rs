@@ -517,7 +517,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
         // Le matricule d'une fiche neuve : le suivant. Un matricule saisi est garde tel quel. L'ANCIENNETE PART DE
         // L'EMBAUCHE, pas du jour de la fiche : la validation du premier engagement la pose (`poser_anciennete_a_l_embauche`).
         if plate.code_salarie.remplie().map(str::trim).is_none_or(str::is_empty) {
-            plate.code_salarie = Some(droit::fiche::Matricule::lire(&matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?.to_string())?);
+            plate.code_salarie = Some(matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?);
         }
         Ok(())
     }
@@ -624,13 +624,8 @@ fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()
 
 /// Le prochain matricule (S21.G00.30.019, que l'employeur choisit : `norme-dsn/texte-2027/bloc-S21.G00.30.txt`) : le
 /// plus grand code salarie numerique que le fichier ait jamais porte, plus un. Chaque valeur datee compte.
-fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<i64> {
-    let codes = salaries.fiches.values().flat_map(|s| s.code_salarie.iter().flatten()).filter_map(|e| e.valeur.portee().map(str::trim));
-    let numeriques: Vec<i64> = codes
-        .filter(|c| !c.is_empty() && c.chars().all(|x| x.is_ascii_digit()))
-        .map(|c| c.parse::<i64>().map_err(|e| refus(format!("Matricule illisible : {} ({}).", c, e))))
-        .collect::<R<_>>()?;
-    Ok(numeriques.into_iter().fold(0, i64::max) + 1)
+fn matricule_suivant(salaries: &droit::fiche::Salaries) -> R<droit::fiche::Matricule> {
+    droit::fiche::Matricule::suivant(salaries.fiches.values().flat_map(|s| s.code_salarie.iter().flatten()).filter_map(|e| e.valeur.portee()))
 }
 
 // ------------------------------------------------------------------ la saisie
@@ -817,39 +812,11 @@ fn deriver_etablissements(p: &mut ChampsEntreprise) -> R<Vec<FauteDeCase>> {
                 Err(e) => faute(Some(e.phrase)),
             }
         }
-        // Les taux d'une ligne arrivent de la page en texte (« 0.5 », « 1,5 % ») : ils s'ecrivent en nombre, comme la
-        // fiche les porte deja, sinon une ligne renvoyee telle quelle se dirait changee et s'ecrirait en texte.
-        if let Some(t) = o.taux_atmp.as_mut() {
-            faute(montant_saisi(&mut t.valeur, "Taux AT/MP"));
-        }
-        if let Some(vm) = o.versement_mobilite.as_mut() {
-            faute(montant_saisi(&mut vm.taux, "Taux du versement mobilité"));
-        }
         if o.versement_mobilite.as_ref().is_some_and(droit::fiche::VersementMobilite::est_vide) {
             o.versement_mobilite = None;
         }
     }
     Ok(fautes)
-}
-
-/// UN MONTANT SAISI EN TEXTE (`12,5`, `1.5 %`) S'ECRIT EN NOMBRE, dans sa forme la plus courte, comme un nombre lu du
-/// fichier ; un texte blanc ne dit rien. Rend la faute d'un texte qui n'est pas un nombre.
-fn montant_saisi(m: &mut Option<droit::fiche::NombreDeFiche>, quoi: &str) -> Option<String> {
-    let Some(droit::fiche::NombreDeFiche::Texte(brut)) = m.as_ref() else { return None };
-    let brut = brut.replace('%', "");
-    let brut = brut.trim();
-    if brut.is_empty() {
-        *m = None;
-        return None;
-    }
-    let Some(d) = socle::num::decimal_a_virgule(brut) else { return Some(format!("{} illisible : {}.", quoi, brut)) };
-    match socle::forme::lire_texte::<droit::fiche::NombreDeFiche>(&socle::num::court(d).to_string(), "Le nombre ne se lit pas.") {
-        Ok(lu) => {
-            *m = Some(lu);
-            None
-        }
-        Err(e) => Some(format!("{} illisible : {} ({}).", quoi, brut, e.phrase)),
-    }
 }
 
 // ------------------------------------------------------------------ ce qui change
@@ -898,9 +865,9 @@ fn meme(a: &ValeurDeCase, b: &ValeurDeCase, lisibles: &[CaseDeFiche]) -> bool {
     let simple = |v: &ValeurDeCase| matches!(v.ecrite(), MotEcrit::Mot(_) | MotEcrit::Nombre(_) | MotEcrit::OuiNon(_));
     simple(a)
         && simple(b)
-        && match (a.nombre(), b.nombre()) {
-            (Some(x), Some(y)) => x == y,
-            _ => a.ecrite().mot().is_some() && a.ecrite() == b.ecrite(),
+        && match a.meme_nombre(b) {
+            Some(meme) => meme,
+            None => a.ecrite().mot().is_some() && a.ecrite() == b.ecrite(),
         }
 }
 
@@ -1097,7 +1064,7 @@ fn fiche_refusee(nom: NomDeFiche, anomalies: &[Anomalie]) -> R<Echec> {
     let mut phrases = Vec::new();
     for a in anomalies.iter().filter(|a| a.gravite == Gravite::Erreur) {
         phrases.push(match champs::champ(nom, a.champ)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
-            Some(l) => format!("« {} » : {}", l, a.message),
+            Some(l) => socle::forme::case_refusee(&l, &a.message),
             None => a.message.clone(),
         });
     }
@@ -1375,12 +1342,12 @@ pub(crate) enum ChargeEnregistrer {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub(crate) enum FicheEnregistree<K> {
-    Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<K>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
+    Avertie { avertissement: Avertissement, phrase: socle::texte::Phrase, phrases: Vec<String> },
+    Ecrite { cle: Option<K>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: socle::texte::Phrase },
 }
 
 impl<K: Serialize> crate::enveloppe::Dite for FicheEnregistree<K> {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         match self {
             FicheEnregistree::Avertie { phrase, .. } | FicheEnregistree::Ecrite { phrase, .. } => phrase,
         }
@@ -1422,7 +1389,7 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     if let Some(a) = avertissement(ctx, &p)? {
         if confirme != Some(true) {
             let phrase = if a.depuis.is_some() { "Ce qui change se date : rien n'est écrit." } else { "À confirmer : rien n'est écrit." };
-            return Ok(FicheEnregistree::Avertie { phrases: avertissement_en_phrases(&a), avertissement: a, phrase: phrase.to_string() });
+            return Ok(FicheEnregistree::Avertie { phrases: avertissement_en_phrases(&a), avertissement: a, phrase: socle::texte::Phrase::fixe(phrase) });
         }
         depuis = depuis.or(a.depuis);
     }
@@ -1439,12 +1406,9 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     };
     // « enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
     let enregistre_a = e.ecrit.then(|| socle::temps::secondes().a_la_seconde());
-    let enregistre_dit = enregistre_a.map(|a| {
-        let s = a.seconde_du_jour_de_paris();
-        format!("enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60)
-    });
+    let enregistre_dit = enregistre_a.map(|a| format!("enregistré à {}", socle::paris::ecrit::heure_minute(a, ":")));
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };
-    let phrase = std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" ");
+    let phrase = socle::phrase!("{}", std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" "));
     Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase })
 }
 
@@ -1461,7 +1425,7 @@ struct Suggestion {
 /// le moteur proposerait pour les cases vides.
 #[derive(Serialize)]
 pub(crate) struct FicheVerifiee {
-    phrase: String,
+    phrase: socle::texte::Phrase,
     phrases: Vec<String>,
     anomalies: Vec<Anomalie>,
     declare: Apercu,
@@ -1469,7 +1433,7 @@ pub(crate) struct FicheVerifiee {
 }
 
 impl crate::enveloppe::Dite for FicheVerifiee {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &socle::texte::Phrase {
         &self.phrase
     }
 }
@@ -1495,7 +1459,7 @@ fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerif
     let mut anomalies = champs::verifier_fiche(F::a_juger(&derivee))?;
     anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);
     let phrases: Vec<String> = anomalies.iter().map(|a| format!("{} : {}", a.champ, a.message)).collect();
-    let phrase = if phrases.is_empty() { "La fiche est juste.".to_string() } else { format!("Anomalies de la fiche : {}.", phrases.len()) };
+    let phrase = if phrases.is_empty() { socle::texte::Phrase::fixe("La fiche est juste.") } else { socle::phrase!("Anomalies de la fiche : {}.", phrases.len()) };
     Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
 }
 

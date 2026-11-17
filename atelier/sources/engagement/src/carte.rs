@@ -21,9 +21,8 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
-use socle::date::Jour;
-use socle::forme::NombreLu;
-use socle::grandeurs::{Heures, Montant};
+use socle::date::{Duree, EnJours, Jour};
+use socle::grandeurs::{Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
@@ -141,7 +140,8 @@ pub enum Exige {
 /// UNE NATURE DE CONTRAT ET SES CASES, declarees une fois : la structure (chaque case obligatoire une valeur, chaque case
 /// facultative un `Option` present), la liste de ses cases (`CASES`), et sa lecture depuis la carte du mois, case par
 /// case de meme nom. Ce que porte un motif de recours (`du_motif`, `DU_MOTIF`) est facultatif, et le motif dit s'il le
-/// porte (`Proprietes::motif_de_remplacement`).
+/// porte (`Proprietes::motif_de_remplacement`). Une case faite de plusieurs champs de la carte (l'emploi) les nomme
+/// chacun (`emploi: … = Emploi + PcsEse + …`).
 ///
 /// Elle declare aussi SON BROUILLON (`$brouillon`) : les memes cases, chacune un `Option` lu present (une case pas encore
 /// remplie s'ecrit `null`).
@@ -150,23 +150,23 @@ macro_rules! nature {
         $(#[$a:meta])*
         $nom:ident / $brouillon:ident {
             obligatoire { $( $o:ident : $to:ty = $co:ident $( ecrite($eo:literal, $eoo:literal) )? ),* $(,)? }
-            facultatif { $( $f:ident : $tf:ty = $cf:ident $( ecrite($ef:literal) )? ),* $(,)? }
+            facultatif { $( $f:ident : $tf:ty = $cf:ident $( + $cfx:ident )* $( ecrite($ef:literal) )? $( lue($lf:literal) )? ),* $(,)? }
             du_motif { $( $m:ident : $tm:ty = $cm:ident ),* $(,)? }
         }
     ) => {
         /// LE BROUILLON de cette nature : chacune de ses cases, remplie ou non. Une case qui dit son ecriture
-        /// (`ecrite(..)` : une grandeur) s'ecrit par elle.
+        /// (`ecrite(..)` : une grandeur, une duree) s'ecrit par elle, et se lit par sa lecture quand elle la dit (`lue(..)`).
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $brouillon {
             $( $( #[serde(serialize_with = $eoo)] )? pub $o: Option<$to>, )*
-            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $ef)] )? $( #[serde(default, deserialize_with = $lf)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
         impl $brouillon {
             /// Ses cases, dans l'ordre de la structure.
-            pub const CASES: &'static [Champ] = &[ $( Champ::$co, )* $( Champ::$cf, )* $( Champ::$cm, )* ];
+            pub const CASES: &'static [Champ] = &[ $( Champ::$co, )* $( Champ::$cf, $( Champ::$cfx, )* )* $( Champ::$cm, )* ];
 
             /// Aucune case remplie.
             fn vide() -> $brouillon {
@@ -191,13 +191,13 @@ macro_rules! nature {
         #[serde(deny_unknown_fields)]
         pub struct $nom {
             $( $( #[serde(serialize_with = $eo)] )? pub $o: $to, )*
-            $( $( #[serde(serialize_with = $ef)] )? pub $f: Option<$tf>, )*
+            $( $( #[serde(serialize_with = $ef)] )? $( #[serde(default, deserialize_with = $lf)] )? pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
 
         impl $nom {
             /// Ses cases, dans l'ordre de la structure.
-            pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), )* ];
+            pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), $( (Champ::$cfx, Exige::Facultatif), )* )* ];
 
             /// Les cases qu'un motif de recours porte en plus des siennes.
             pub const DU_MOTIF: &'static [Champ] = &[ $( Champ::$cm, )* ];
@@ -231,19 +231,14 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: NombreLu = PeriodeEssaiJours,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
             primes: Vec<Prime> = Primes,
             date_paiement: Jour = DatePaiement,
-            jours: NombreLu = Jours,
-            taux_cachet: NombreLu = TauxCachet,
+            jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            taux_cachet: MontantUnitaire = TauxCachet ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
@@ -255,7 +250,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -269,7 +264,7 @@ nature! {
         obligatoire {
             salarie: IdSalarie = Salarie,
             debut: Jour = Debut,
-            salaire_mensuel: NombreLu = SalaireMensuel,
+            salaire_mensuel: MontantUnitaire = SalaireMensuel ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
             quotite_contrat: Heures = QuotiteContrat ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
         }
         facultatif {
@@ -281,13 +276,8 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: NombreLu = PeriodeEssaiJours,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -295,10 +285,10 @@ nature! {
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
             date_paiement: Jour = DatePaiement,
-            jours: NombreLu = Jours,
-            heures_supplementaires: NombreLu = HeuresSupplementaires,
-            heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
-            heures_complementaires: NombreLu = HeuresComplementaires,
+            jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
@@ -310,7 +300,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -327,7 +317,7 @@ nature! {
             debut: Jour = Debut,
             fin: Jour = Fin,
             motif_recours: MotifDeRecours = MotifRecours,
-            salaire_mensuel: NombreLu = SalaireMensuel,
+            salaire_mensuel: MontantUnitaire = SalaireMensuel ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
             quotite_contrat: Heures = QuotiteContrat ecrite("socle::grandeurs::ecrit::nombre_json::serialize", "socle::grandeurs::ecrit::nombre_json::option::serialize"),
         }
         facultatif {
@@ -338,13 +328,8 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
-            periode_essai_jours: NombreLu = PeriodeEssaiJours,
+            emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit"),
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -352,10 +337,10 @@ nature! {
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
             date_paiement: Jour = DatePaiement,
-            jours: NombreLu = Jours,
-            heures_supplementaires: NombreLu = HeuresSupplementaires,
-            heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
-            heures_complementaires: NombreLu = HeuresComplementaires,
+            jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
+            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             faute_grave: bool = FauteGrave,
             motif_rupture: MotifDeRupture = MotifRupture,
@@ -367,7 +352,7 @@ nature! {
             dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
-            preavis_mois: NombreLu = PreavisMois,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             precarite_due: bool = PrecariteDue,
             precarite_pourquoi: String = PrecaritePourquoi,
         }
@@ -724,25 +709,24 @@ changements! {
     QuotiteContrat(Heures) = "quotite_contrat" => quotite_contrat,
     QuotiteReference(Heures) = "quotite_reference" => quotite_reference,
     ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
-    SalaireMensuel(NombreLu) = "salaire_mensuel" => salaire_mensuel,
-    Emploi(String) = "emploi" => emploi,
-    PcsEse(droit::fiche::CodePcsEse) = "pcs_ese" => pcs_ese,
-    CodeEmploiFt(droit::fiche::CodeEmploiFt) = "code_emploi_ft" => code_emploi_ft,
-    Statut(droit::fiche::Statut) = "statut" => statut,
-    StatutConventionnel(droit::fiche::StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
-    StatutCategorielRc(droit::fiche::StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
-    PeriodeEssaiJours(NombreLu) = "periode_essai_jours" => periode_essai_jours,
+    SalaireMensuel(MontantUnitaire) ="salaire_mensuel" => salaire_mensuel,
+    /// L'emploi entier, chacun de ses sous-champs dit ou non (`droit::emplois::EmploiEcrit`) ; un objet qui n'en dit
+    /// aucun vide la case.
+    #[serde(deserialize_with = "droit::emplois::EmploiEcrit::dit")]
+    Emploi(droit::emplois::EmploiEcrit) = "emploi" => emploi,
+    #[serde(deserialize_with = "socle::date::Duree::en_jours_opt")]
+    PeriodeEssaiJours(Duree<EnJours>) ="periode_essai_jours" => periode_essai_jours,
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
     DatePaiement(Jour) = "date_paiement" => date_paiement,
-    Jours(NombreLu) = "jours" => jours,
-    TauxCachet(NombreLu) = "taux_cachet" => taux_cachet,
-    HeuresSupplementaires(NombreLu) = "heures_supplementaires" => heures_supplementaires,
-    HeuresSupplementairesA50(NombreLu) = "heures_supplementaires_a_50" => heures_supplementaires_a_50,
-    HeuresComplementaires(NombreLu) = "heures_complementaires" => heures_complementaires,
+    Jours(Jours) = "jours" => jours,
+    TauxCachet(MontantUnitaire) = "taux_cachet" => taux_cachet,
+    HeuresSupplementaires(Heures) = "heures_supplementaires" => heures_supplementaires,
+    HeuresSupplementairesA50(Heures) = "heures_supplementaires_a_50" => heures_supplementaires_a_50,
+    HeuresComplementaires(Heures) ="heures_complementaires" => heures_complementaires,
     IndemniteLicenciement(Montant) = "indemnite_licenciement" => indemnite_licenciement,
     FauteGrave(bool) = "faute_grave" => faute_grave,
     MotifRupture(MotifDeRupture) = "motif_rupture" => motif_rupture,
@@ -754,26 +738,18 @@ changements! {
     DernierJourPaye(Jour) = "dernier_jour_paye" => dernier_jour_paye,
     EnDroitALaRetraite(bool) = "en_droit_a_la_retraite" => en_droit_a_la_retraite,
     PreavisNonEffectue(bool) = "preavis_non_effectue" => preavis_non_effectue,
-    PreavisMois(NombreLu) = "preavis_mois" => preavis_mois,
+    PreavisMois(Coefficient) = "preavis_mois" => preavis_mois,
     PrecariteDue(bool) = "precarite_due" => precarite_due,
     PrecaritePourquoi(String) = "precarite_pourquoi" => precarite_pourquoi,
 }
 
-/// LES CHANGEMENTS D'UN APPEL (`changements` des routes `enregistrer-saisie` et `modifier-engagement`) : au moins un,
-/// appliques dans l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus
-/// souvent) ; un appelant en ligne de commande, toutes les cases d'une carte d'un coup.
-#[derive(Debug, Clone, PartialEq)]
+/// LES CHANGEMENTS D'UN APPEL (`changements` des routes `enregistrer-saisie` et `modifier-engagement`), appliques dans
+/// l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus souvent) ; un
+/// appelant en ligne de commande, toutes les cases d'une carte d'un coup. Aucun : la carte s'enregistre telle qu'elle est
+/// (Leandre, 16/11 : « on peut appuyer sur enregistrer comme on veut »).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(transparent)]
 pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
-
-impl<'de> Deserialize<'de> for Changements {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Changements, D::Error> {
-        let v = Vec::<Changement<LigneDonnee, String, String, String>>::deserialize(d)?;
-        if v.is_empty() {
-            return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
-        }
-        Ok(Changements(v))
-    }
-}
 
 impl Changements {
     /// CHAQUE CHANGEMENT APPLIQUE AU BROUILLON `b` d'une carte de `mois`, dans l'ordre (`Brouillon::changer`), tout ou
@@ -820,6 +796,11 @@ fn guillemets(noms: &[&str]) -> String {
         [seul] => seul.clone(),
         [reste @ .., dernier] => format!("{} et {}", reste.join(", "), dernier),
     }
+}
+
+/// Le libelle de la case de la carte dont la cle est `cle` (`Champ::nom`) ; aucun pour une cle qui n'en est pas une.
+pub fn libelle_de_la_case(cle: &str) -> Option<&'static str> {
+    Champ::TOUS.iter().find(|c| c.nom() == cle).map(|c| libelle(*c))
 }
 
 /// LE LIBELLE D'UNE CASE DE LA CARTE, tel que l'ecran l'ecrit.

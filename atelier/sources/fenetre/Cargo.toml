@@ -19,10 +19,13 @@ warnings = { level = "deny", priority = -1 }
 unused = { level = "deny", priority = -1 }
 dead_code = "forbid"
 deprecated = "forbid"
-unused_imports = "forbid"
+# `deny`, pas `forbid` : le `tauri::generate_context!` porte son `allow(unused_imports)` (`tauri-codegen`), qu'un
+# `forbid` refuse (la fenetre ne compilait plus pour Windows). Aucun `allow` de notre code.
+unused_imports = "deny"
 unused_variables = "forbid"
 unused_assignments = "forbid"
-unused_mut = "forbid"
+# `deny`, pas `forbid` : le `thread_local!` de la bibliotheque standard porte son `allow(unused_mut)` sous Windows.
+unused_mut = "deny"
 unused_must_use = "forbid"
 unused_macros = "forbid"
 unused_unsafe = "forbid"
@@ -34,6 +37,9 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe`, ni dans le binaire ni dans son script de construction (les appels au noyau de Windows sont dans
+# `socle::systeme`).
+unsafe_code = "forbid"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

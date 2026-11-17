@@ -18,13 +18,13 @@ fn une_journee_de_plus_de_24_heures_se_refuse_et_plus_de_10_heures_se_dit() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-02";
-    let spectacle = saisie(&c, crate::outils::le_mois(2026, 11))["engagements"].as_array().unwrap().iter().find(|e| e["salarie"] == "FULLER").unwrap()["spectacle"].clone();
-    let regie = |heures: i64| json!({"salarie": "FULLER", "nature": "cddu_spectacle", "spectacle": spectacle, "lignes": [{"rubrique": "heure", "quantite": heures, "taux": 19, "lieu": null, "dates": ["2026-11-28"], "planning": []}]});
-    let id = reussi(&saisir(&c, "2026-11", None, &regie(25), jour))["engagement"].clone();
+    let spectacle = saisie(&c, crate::outils::le_mois("2026-11"))["engagements"].as_array().unwrap().iter().find(|e| e["salarie"] == "FULLER").unwrap()["spectacle"].clone();
+    let regie = |heures: Value| json!({"salarie": "FULLER", "nature": "cddu_spectacle", "spectacle": spectacle, "lignes": [{"rubrique": "heure", "quantite": {"heures": heures}, "taux": 19, "lieu": null, "dates": ["2026-11-28"], "planning": []}]});
+    let id = reussi(&saisir(&c, "2026-11", None, &regie(json!(25)), jour))["engagement"].clone();
     let (_, r) = refus(&route(&c, "valider-engagement", json!({"mois": "2026-11", "engagement": id}), jour));
     assert!(r.contains("25 h") && r.contains("24 heures"), "{}", r);
 
-    let id = reussi(&saisir(&c, "2026-11", Some(&id), &regie(11), jour))["engagement"].clone();
+    let id = reussi(&saisir(&c, "2026-11", Some(&id), &regie(json!(11)), jour))["engagement"].clone();
     let a = route(&c, "apercu", json!({"mois": "2026-11", "modifications": []}), jour);
     let dits: Vec<Value> = reussi(&a)["paies"].as_array().unwrap().iter().filter(|p| p["bornes"]["du"] == "2026-11-28").flat_map(|p| p["avertissements"].as_array().cloned().unwrap_or_default()).collect();
     assert!(dits.iter().any(|t| t.as_str().is_some_and(|t| t.contains("11 h le 28/11") && t.contains("L. 3121-18"))), "{:?}", dits);

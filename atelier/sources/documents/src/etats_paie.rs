@@ -24,14 +24,13 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::date::Jour;
 use socle::mois::{Annee, Mois};
-use socle::grandeurs::{Cachets, Heures, Montant};
-use socle::num::Decimal;
-use engagement::ligne::{QuantiteDeLigne, TauxDeLigne};
+use socle::grandeurs::{nulle, Grandeur, Montant};
+use engagement::ligne::PaiementDeLigne;
 use crate::prelevement::Prelevement;
 use crate::plan_comptable::{EtatDExport, FormatDExport, LogicielComptable, RegroupementDEtat};
-use engagement::etats::PaieDuMois;
+use engagement::etats::{PaieDuMois, RemunerationDuMois};
 use crate::tableaux_export::{
-    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, qui, refus, sans_mois, section_du_mois, sections_de, totaliser, ColonneDEtat as C, Ligne,
+    ecrire as ecrire_tableau, format_possible, jj, libelle_mois, qui, refus, sans_mois, section_du_mois, sections_de, totaliser, colonne as C, ColonneDEtat, ColonneDeMontant, ColonneDeTexte, Ligne,
     Section, Tableau, FORMATS_TABLEAU, R, TOTAL_GENERAL,
 };
 
@@ -306,17 +305,117 @@ fn nat_libelle(p: &PaieDuMois) -> R<String> {
 
 // ------------------------------------------------------------------ le livre de paie
 
-/// Les colonnes qui se totalisent au livre de paie, sous lesquelles elles se comptent quand elles manquent, et ce que
-/// chaque ligne en dit.
-const CUMULABLES: [(C, fn(&LigneLivre) -> Option<Montant>); 7] = [
-    (C::Brut, |l| l.brut),
-    (C::CotisationsSalariales, |l| l.cotisations_salariales),
-    (C::CotisationsPatronales, |l| l.cotisations_patronales),
-    (C::NetImposable, |l| l.net_imposable),
-    (C::NetAPayer, |l| l.net_a_payer),
-    (C::Pas, |l| l.pas),
-    (C::CoutEmployeur, |l| l.cout_employeur),
+/// Les montants du livre de paie, dans son ordre : la colonne sous laquelle chacun s'ecrit et se compte quand il manque,
+/// ce que chaque ligne en dit, et sa somme dans un cumul.
+const CUMULABLES: [(ColonneDeMontant, fn(&LigneLivre) -> Option<Montant>, fn(&CumulDuLivre) -> SommeDuLivre); 7] = [
+    (C::Brut, |l| l.brut, |c| c.brut),
+    (C::CotisationsSalariales, |l| l.cotisations_salariales, |c| c.cotisations_salariales),
+    (C::CotisationsPatronales, |l| l.cotisations_patronales, |c| c.cotisations_patronales),
+    (C::NetImposable, |l| l.net_imposable, |c| c.net_imposable),
+    (C::NetAPayer, |l| l.net_a_payer, |c| c.net_a_payer),
+    (C::Pas, |l| l.pas, |c| c.pas),
+    (C::CoutEmployeur, |l| l.cout_employeur, |c| c.cout_employeur),
 ];
+
+/// LA SOMME D'UN MONTANT DU LIVRE SUR DES LIGNES : ce que portent celles qui le disent, et combien le disent (les pieces
+/// d'une paie importee peuvent le taire ; une somme que nulle ligne ne dit est zero, dite par aucune).
+#[derive(Clone, Copy, Debug)]
+pub struct SommeDuLivre {
+    pub montant: Montant,
+    pub dite: usize,
+}
+
+impl SommeDuLivre {
+    const RIEN: SommeDuLivre = SommeDuLivre { montant: Montant::ZERO, dite: 0 };
+
+    fn ajouter(&mut self, m: Option<Montant>) {
+        if let Some(m) = m {
+            self.montant += m;
+            self.dite += 1;
+        }
+    }
+
+    /// La somme, quand une ligne au moins la dit.
+    pub fn si_dite(self) -> Option<Montant> {
+        (self.dite > 0).then_some(self.montant)
+    }
+}
+
+/// LE CUMUL DE LIGNES DU LIVRE DE PAIE : combien de bulletins, et la somme de chacun de ses montants (`CUMULABLES`). Le
+/// seul cumul des etats : le livre, le recapitulatif annuel, la masse salariale, le cout par spectacle, le cout de
+/// l'annee d'une fiche, la masse des contributions de branche, le taux patronal reel ; ce qui les distingue (la cle,
+/// les lignes retenues) se dit a leur porte.
+#[derive(Clone, Debug)]
+pub struct CumulDuLivre {
+    pub bulletins: usize,
+    pub brut: SommeDuLivre,
+    pub cotisations_salariales: SommeDuLivre,
+    pub cotisations_patronales: SommeDuLivre,
+    pub net_imposable: SommeDuLivre,
+    pub net_a_payer: SommeDuLivre,
+    pub pas: SommeDuLivre,
+    pub cout_employeur: SommeDuLivre,
+}
+
+impl CumulDuLivre {
+    /// Le cumul d'aucune ligne.
+    pub const VIDE: CumulDuLivre = CumulDuLivre {
+        bulletins: 0,
+        brut: SommeDuLivre::RIEN,
+        cotisations_salariales: SommeDuLivre::RIEN,
+        cotisations_patronales: SommeDuLivre::RIEN,
+        net_imposable: SommeDuLivre::RIEN,
+        net_a_payer: SommeDuLivre::RIEN,
+        pas: SommeDuLivre::RIEN,
+        cout_employeur: SommeDuLivre::RIEN,
+    };
+
+    fn ajouter(&mut self, l: &LigneLivre) {
+        self.bulletins += 1;
+        self.brut.ajouter(l.brut);
+        self.cotisations_salariales.ajouter(l.cotisations_salariales);
+        self.cotisations_patronales.ajouter(l.cotisations_patronales);
+        self.net_imposable.ajouter(l.net_imposable);
+        self.net_a_payer.ajouter(l.net_a_payer);
+        self.pas.ajouter(l.pas);
+        self.cout_employeur.ajouter(l.cout_employeur);
+    }
+
+    /// Le cumul des `lignes`.
+    pub fn des<'l>(lignes: impl IntoIterator<Item = &'l LigneLivre>) -> CumulDuLivre {
+        let mut c = CumulDuLivre::VIDE;
+        for l in lignes {
+            c.ajouter(l);
+        }
+        c
+    }
+}
+
+/// Le cumul des `lignes` sous chaque cle que `cle` leur donne, dans l'ordre ou les lignes les rencontrent ; une ligne sans
+/// cle (`None`) n'entre dans aucun.
+pub fn cumuls_par<'l, K: PartialEq>(lignes: impl IntoIterator<Item = &'l LigneLivre>, cle: impl Fn(&LigneLivre) -> Option<K>) -> Vec<(K, CumulDuLivre)> {
+    let mut out: Vec<(K, CumulDuLivre)> = Vec::new();
+    for l in lignes {
+        let Some(k) = cle(l) else { continue };
+        match out.iter_mut().find(|(x, _)| *x == k) {
+            Some((_, c)) => c.ajouter(l),
+            None => {
+                let mut c = CumulDuLivre::VIDE;
+                c.ajouter(l);
+                out.push((k, c));
+            }
+        }
+    }
+    out
+}
+
+/// Le cumul sous la cle `k` parmi `cumuls` ; celui d'aucune ligne quand aucune ne la porte.
+pub fn cumul_de<K: PartialEq>(cumuls: &[(K, CumulDuLivre)], k: &K) -> CumulDuLivre {
+    match cumuls.iter().find(|(x, _)| x == k) {
+        Some((_, c)) => c.clone(),
+        None => CumulDuLivre::VIDE,
+    }
+}
 
 /// `LigneLivre` : un bulletin, vu du livre de paie, tel que la route le rend.
 #[derive(Clone, Debug, Serialize)]
@@ -352,28 +451,42 @@ pub struct LigneLivre {
     pub adresse: Option<String>,
 }
 
-/// `Totaux`, rendus dans leur forme (`TotauxRendus`).
+/// LES TOTAUX D'UN GROUPE DU LIVRE, rendus dans leur forme (`TotauxRendus`) : le cumul de ses lignes, et les colonnes
+/// que des lignes taisent, dans l'ordre ou on l'a vu.
 #[derive(Clone, Debug, Serialize)]
 #[serde(into = "TotauxRendus")]
 pub struct Totaux {
-    pub bulletins: i64,
-    pub sommes: Vec<(C, Montant)>,
-    /// Combien de lignes ne declarent pas telle colonne, dans l'ordre ou on l'a vu.
-    pub inconnus: Vec<(C, i64)>,
+    cumul: CumulDuLivre,
+    taisent: Vec<(ColonneDeMontant, fn(&CumulDuLivre) -> SommeDuLivre)>,
 }
 
 impl Totaux {
-    /// La somme de ce que les lignes declarent de la colonne `champ` (une des `CUMULABLES`).
-    pub fn somme(&self, champ: C) -> Option<Montant> {
-        self.sommes.iter().find(|(c, _)| *c == champ).map(|(_, v)| *v)
+    /// Les totaux des `lignes`.
+    fn des(lignes: &[&LigneLivre]) -> Totaux {
+        let mut taisent: Vec<(ColonneDeMontant, fn(&CumulDuLivre) -> SommeDuLivre)> = Vec::new();
+        for l in lignes {
+            for (c, montant, somme) in CUMULABLES {
+                if montant(l).is_none() && !taisent.iter().any(|(k, _)| *k == c) {
+                    taisent.push((c, somme));
+                }
+            }
+        }
+        Totaux { cumul: CumulDuLivre::des(lignes.iter().copied()), taisent }
     }
 
-    /// Le total d'une colonne, ou `None` quand AUCUNE ligne ne la declare.
-    fn total(&self, champ: C) -> Option<Montant> {
-        match self.inconnus.iter().find(|(c, _)| *c == champ) {
-            Some((_, manque)) if *manque >= self.bulletins => None,
-            _ => self.somme(champ),
-        }
+    /// Combien de bulletins.
+    pub fn bulletins(&self) -> usize {
+        self.cumul.bulletins
+    }
+
+    /// Combien de lignes taisent chaque colonne qu'une ligne au moins tait, dans l'ordre ou on l'a vu.
+    pub fn inconnus(&self) -> Vec<(ColonneDEtat, usize)> {
+        self.taisent.iter().map(|(c, somme)| ((*c).into(), self.cumul.bulletins - somme(&self.cumul).dite)).collect()
+    }
+
+    /// Le total de la somme `s` de ce cumul, ou `None` quand AUCUNE de ses lignes ne la dit.
+    fn total(&self, s: SommeDuLivre) -> Option<Montant> {
+        (s.dite > 0 || self.cumul.bulletins == 0).then_some(s.montant)
     }
 }
 
@@ -381,44 +494,24 @@ impl Totaux {
 /// son nom), et ce que combien de lignes ne declarent pas.
 #[derive(Serialize)]
 struct TotauxRendus {
-    bulletins: i64,
+    bulletins: usize,
     bulletins_dit: String,
     #[serde(flatten, serialize_with = "socle::ecriture::en_ordre")]
-    sommes: Vec<(C, String)>,
+    sommes: Vec<(ColonneDeMontant, String)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
-    inconnus: Vec<(C, i64)>,
+    inconnus: Vec<(ColonneDEtat, usize)>,
 }
 
 impl From<Totaux> for TotauxRendus {
     fn from(t: Totaux) -> TotauxRendus {
+        let bulletins = t.bulletins();
         TotauxRendus {
-            bulletins: t.bulletins,
-            bulletins_dit: format!("{} {}", t.bulletins, if t.bulletins == 1 { "bulletin" } else { "bulletins" }),
-            sommes: t.sommes.iter().map(|(c, v)| (*c, v.decimal().to_string())).collect(),
-            inconnus: t.inconnus,
+            bulletins,
+            bulletins_dit: format!("{} {}", bulletins, if bulletins == 1 { "bulletin" } else { "bulletins" }),
+            sommes: CUMULABLES.iter().map(|(c, _, somme)| (*c, socle::grandeurs::ecrit::texte::dit(somme(&t.cumul).montant))).collect(),
+            inconnus: t.inconnus(),
         }
     }
-}
-
-/// La somme de ce qui est DECLARE, colonne par colonne, et le compte de ce qui ne l'est pas.
-fn totaliser_lignes(lignes: &[&LigneLivre]) -> Totaux {
-    let mut t = Totaux { bulletins: lignes.len() as i64, sommes: CUMULABLES.iter().map(|(c, _)| (*c, Montant::ZERO)).collect(), inconnus: Vec::new() };
-    for l in lignes {
-        for (champ, montant) in CUMULABLES {
-            match montant(l) {
-                None => match t.inconnus.iter_mut().find(|(c, _)| *c == champ) {
-                    Some(x) => x.1 += 1,
-                    None => t.inconnus.push((champ, 1)),
-                },
-                Some(v) => {
-                    if let Some(x) = t.sommes.iter_mut().find(|(c, _)| *c == champ) {
-                        x.1 += v;
-                    }
-                }
-            }
-        }
-    }
-    t
 }
 
 /// Un groupe tel que la route le rend : son libelle, celui de son sous-total (`total_dit`), ses lignes, ses totaux.
@@ -560,7 +653,7 @@ fn grouper(lignes: &[LigneLivre], regroupement: RegroupementDEtat) -> R<Vec<Grou
     for ((m, k), mut v) in paquets {
         v.sort_by_cached_key(|l| dedans(l));
         let refs: Vec<&LigneLivre> = v.iter().collect();
-        let totaux = totaliser_lignes(&refs);
+        let totaux = Totaux::des(&refs);
         // Groupe par mois : il se nomme par son mois ; sinon par sa cle (le salarie, le spectacle).
         let libelle = match m {
             Some(m) => libelle_mois(m),
@@ -624,7 +717,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
         mois: p.mois.clone(),
         regroupement,
         groupes,
-        totaux: totaliser_lignes(&refs),
+        totaux: Totaux::des(&refs),
         coordonnees: d.coordonnees,
         format,
         fichier: None,
@@ -713,7 +806,7 @@ fn cellules(l: &LigneLivre, coordonnees: bool) -> Vec<CelL> {
         c.extend([o(&l.nir.as_ref().map(ToString::to_string)),o(&l.date_naissance.map(|j| j.iso())), o(&l.adresse)]);
     }
     c.extend([o(&l.contrat.as_ref().map(ToString::to_string)), t(&l.libelle_nature), t(&l.spectacle)]);
-    c.extend(CUMULABLES.iter().map(|(_, montant)| CelL::M(montant(l))));
+    c.extend(CUMULABLES.iter().map(|(_, montant, _)| CelL::M(montant(l))));
     c
 }
 
@@ -723,8 +816,8 @@ fn cellules_totaux(tot: &Totaux, libelle: &str, coordonnees: bool) -> Vec<CelL> 
     if coordonnees {
         c.extend([t(""), t(""), t("")]);
     }
-    c.extend([CelL::T(format!("{} bulletin(s)", tot.bulletins)), t(""), t("")]);
-    c.extend(CUMULABLES.iter().map(|(ch, _)| CelL::M(tot.total(*ch))));
+    c.extend([CelL::T(format!("{} bulletin(s)", tot.bulletins())), t(""), t("")]);
+    c.extend(CUMULABLES.iter().map(|(_, _, somme)| CelL::M(tot.total(somme(&tot.cumul)))));
     c
 }
 
@@ -753,7 +846,7 @@ pub fn csv_livre(livre: &LivreDePaie) -> Vec<u8> {
         match c {
             CelL::T(t) => t.clone(),
             CelL::Vide | CelL::M(None) => String::new(),
-            CelL::M(Some(d)) => d.decimal().to_string().replace('.', ","),
+            CelL::M(Some(d)) => socle::texte::a_virgule(*d),
         }
     };
     ligne(&mut s, &[titre_livre(livre)]);
@@ -796,7 +889,7 @@ pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
                 CelL::Vide | CelL::M(None) => {}
                 CelL::M(Some(d)) => {
                     let style = Style { format: MONTANTS.contains(&cl[i]).then_some("# ##0.00 \u{20ac}"), ..style };
-                    ws.nombre(ligne, i as u16, d.decimal(), &style);
+                    ws.nombre(ligne, i as u16, *d, &style);
                 }
             }
         }
@@ -830,7 +923,7 @@ pub fn pdf_livre(ctx: &Contexte, livre: &LivreDePaie) -> R<Vec<u8>> {
             CelL::T(t) => t.clone(),
             CelL::Vide => String::new(),
             CelL::M(None) => "—".to_string(),
-            CelL::M(Some(d)) => d.decimal().to_string().replace('.', ","),
+            CelL::M(Some(d)) => socle::texte::a_virgule(*d),
         }
     };
     let rangs: Vec<(Vec<String>, Rangee)> = rangees_livre(livre).iter().map(|(c, g)| (c.iter().map(cel).collect(), *g)).collect();
@@ -867,7 +960,7 @@ pub fn pdf_livre(ctx: &Contexte, livre: &LivreDePaie) -> R<Vec<u8>> {
 /// de la periode (celui d'`exports/` sans periode).
 pub fn finir(ctx: &Contexte, t: &mut Tableau, p: Option<&Periode>, nom: &str, format: Option<FormatDExport>, ecrire: bool) -> R<()> {
     t.format = format_possible(format, &FORMATS_TABLEAU)?;
-    totaliser(t, TOTAL_GENERAL)?;
+    totaliser(t, TOTAL_GENERAL);
     if ecrire {
         ecrire_fini(ctx, t, p, nom)?;
     }
@@ -882,16 +975,6 @@ pub fn ecrire_fini(ctx: &Contexte, t: &mut Tableau, p: Option<&Periode>, nom: &s
     };
     ecrire_tableau(t, &dossier, &fichier, ctx)?;
     Ok(())
-}
-
-/// Ajoute `v` a la case `champ` de la ligne (la pose si elle est vide).
-/// Le montant `v` ajoute a la case `champ` de la ligne d'un tableau, qui garde son nombre (la porte du tableau).
-fn cumuler(ligne: &mut Ligne, champ: C, v: Montant) {
-    let total = match ligne.decimal(champ) {
-        Some(avant) => socle::num::add(avant, v.decimal()),
-        None => v.decimal(),
-    };
-    ligne.d(champ, total);
 }
 
 /// Les lignes du livre de paie, et ses avertissements -- les etats de synthese se
@@ -915,13 +998,21 @@ pub fn lignes_livre(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, depart
     Ok(livre.groupes.into_iter().flat_map(|g| g.lignes).collect())
 }
 
+/// Le salarie tel que le dit la premiere des `lignes` d'un cumul (celles que `du_cumul` retient).
+fn premier_nom(lignes: &[LigneLivre], du_cumul: impl Fn(&LigneLivre) -> bool) -> R<String> {
+    match lignes.iter().find(|l| du_cumul(l)) {
+        Some(l) => Ok(l.salarie.clone()),
+        None => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un cumul du livre de paie n'a aucune ligne.")),
+    }
+}
+
 /// L'annee du mois, sur quatre chiffres.
 fn annee_de(m: Mois) -> String {
     format!("{:04}", m.annee())
 }
 
 /// Les cles tri : un tuple de textes.
-fn cle_tri(l: &Ligne, cles: &[C]) -> Vec<String> {
+fn cle_tri(l: &Ligne, cles: &[ColonneDeTexte]) -> Vec<String> {
     cles.iter().map(|c| l.texte(*c)).collect()
 }
 
@@ -949,24 +1040,38 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             };
             let mut lignes = Vec::new();
             for r in paie.remuneration() {
+                // Une ligne rattachee a sa rubrique : son code et son libelle au catalogue ; une ligne d'un bulletin
+                // importe qui ne l'est pas : ce qu'il imprime. Ce qu'elle paie, quand elle le dit (une ligne calculee le
+                // dit toujours ; une ligne importee, quand le bulletin l'imprime).
+                let (code, libelle, paiement, montant) = match r {
+                    RemunerationDuMois::Calculee(r) => (Some(r.code.clone()), r.libelle.clone(), Some(r.paiement), Some(r.montant)),
+                    RemunerationDuMois::Rattachee(r) => (Some(r.code.clone()), r.libelle.clone(), r.paiement, Some(r.montant)),
+                    RemunerationDuMois::Imprimee(i) => (None, i.libelle.clone(), None, i.montant),
+                };
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Rémunération");
-                l.ot(C::Code, r.code).t(C::Libelle, r.libelle).od(C::Base, r.quantite.map(QuantiteDeLigne::decimal)).od(C::TauxSal, r.taux.map(TauxDeLigne::decimal)).od(C::Gain, r.montant.map(|x| x.au_centime().decimal()));
+                l.ot(C::Code, code).t(C::Libelle, libelle);
+                // La colonne « Base ou quantité » : la base en euros d'une ligne en pourcentage, la quantité d'une autre.
+                match paiement {
+                    Some(PaiementDeLigne::Base(b, _)) => l.om(C::Base, Some(b)),
+                    p => l.grandeur_ou_rien(C::Base, p.and_then(PaiementDeLigne::quantite)),
+                };
+                l.grandeur_ou_rien(C::TauxSal, paiement.map(PaiementDeLigne::taux)).om(C::Gain, montant.map(Montant::au_centime));
                 lignes.push(l);
             }
             for c in paie.cotisations() {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Cotisation");
-                l.ot(C::Code, c.id.as_ref().map(|i| i.as_str().to_string()));
-                l.t(C::Libelle, c.libelle).base(C::Base, c.base.map(|x| x.au_centime()));
-                l.taux(C::TauxSal, c.taux_sal).om(C::PartSal, c.montant_sal.map(Montant::au_centime));
-                l.taux(C::TauxPat, c.taux_pat).om(C::PartPat, c.montant_pat.map(Montant::au_centime));
+                l.ot(C::Code, c.cotisation().map(|i| i.as_str().to_string()));
+                l.t(C::Libelle, c.libelle()).base(C::Base, c.base().map(|x| x.au_centime()));
+                l.taux(C::TauxSal, c.taux_salarie()).om(C::PartSal, c.montant_salarie().map(Montant::au_centime));
+                l.taux(C::TauxPat, c.taux_employeur()).om(C::PartPat, c.montant_employeur().map(Montant::au_centime));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable()), ("Net à payer avant impôt", paie.net_a_payer())] {
                 let mut l = Ligne::nouvelle();
                 socle(&mut l, "Résultat");
-                l.t(C::Libelle, lib).od(C::Net, v.map(|x| x.au_centime().decimal()));
+                l.t(C::Libelle, lib).om(C::NetDuBulletin, v.map(Montant::au_centime));
                 lignes.push(l);
             }
             let sec = format!("{} — {}{}", nom, libelle_mois(m), titre.filter(|t| !t.is_empty()).map(|t| format!(" — {}", t)).into_iter().collect::<String>());
@@ -990,19 +1095,11 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         C::PartSal.colonne(),
         C::TauxPat.colonne(),
         C::PartPat.colonne(),
-        C::Net.colonne(),
+        C::NetDuBulletin.colonne(),
     ];
     t.sources = vec!["le bulletin de paie tel que PuppetPaie le calcule et l'imprime (art. R3243-1 du Code du travail pour ses mentions)".to_string()];
-    // Le total general du Net additionnerait net imposable et net a payer : il n'a pas de sens, il est retire apres coup.
+    // Le total du Net additionnerait net imposable et net a payer : sa colonne n'en a pas (`NetDuBulletin`).
     finir(ctx, &mut t, Some(&p), "livre-de-paie-detaille", d.format,false)?;
-    if let Some(tot) = t.total.as_mut() {
-        tot.rien(C::Net);
-    }
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            tot.rien(C::Net);
-        }
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "livre-de-paie-detaille")?;
     }
@@ -1019,39 +1116,31 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let lignes = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
-    let mut ordre: Vec<(String, droit::contexte::IdSalarie)> = Vec::new();
-    let mut par: HashMap<(String, droit::contexte::IdSalarie), (Ligne, i64)> = HashMap::new();
-    for l in &lignes {
-        let cle = (annee_de(l.mois), l.cle_salarie.clone());
-        if !par.contains_key(&cle) {
-            ordre.push(cle.clone());
-            let mut n = Ligne::nouvelle();
-            n.t(C::Annee, cle.0.clone()).t(C::Salarie, l.salarie.clone()).t(C::CleSalarie, cle.1.to_string()).n(C::Bulletins, 0);
-            par.insert(cle.clone(), (n, 0));
-        }
-        let (ligne, n) = par.get_mut(&cle).expect("insere");
-        *n += 1;
-        ligne.n(C::Bulletins, *n);
-        // Le brut du mois : ce que les bulletins du mois en declarent ; un mois sans brut declare reste vide.
-        if let Some(brut) = l.brut {
-            cumuler(ligne, C::DuMois(l.mois.de_l_annee()), brut);
-        }
-        for (champ, v) in [
-            (C::Brut, l.brut),
-            (C::NetImposable, l.net_imposable),
-            (C::NetAPayer, l.net_a_payer),
-            (C::Pas, l.pas),
-            (C::CotisationsPatronales, l.cotisations_patronales),
-            (C::CoutEmployeur, l.cout_employeur),
-        ] {
-            if let Some(v) = v {
-                cumuler(ligne, champ, v);
+    // Le cumul de chaque salarie par annee, et celui de chacun de ses mois.
+    let par_mois = cumuls_par(&lignes, |l| Some((annee_de(l.mois), l.cle_salarie.clone(), l.mois.de_l_annee())));
+    let mut a_trier = Vec::new();
+    for ((annee, cle), c) in cumuls_par(&lignes, |l| Some((annee_de(l.mois), l.cle_salarie.clone()))) {
+        let mut ligne = Ligne::nouvelle();
+        ligne.t(C::Annee, annee.clone()).t(C::Salarie, premier_nom(&lignes, |l| annee_de(l.mois) == annee && l.cle_salarie == cle)?).t(C::CleSalarie, cle.to_string()).compte(C::Bulletins, c.bulletins);
+        // Le brut de chaque mois : ce que les bulletins du mois en disent ; un mois sans brut dit reste vide.
+        for m in socle::mois::MoisDeLAnnee::TOUS {
+            if let Some(brut) = cumul_de(&par_mois, &(annee.clone(), cle.clone(), m)).brut.si_dite() {
+                ligne.montant(C::DuMois(m), brut);
             }
         }
-    }
-    let mut a_trier = Vec::new();
-    for cle in ordre {
-        let (ligne, _) = par.remove(&cle).expect("present");
+        // Une somme qu'aucun bulletin ne dit reste vide.
+        for (champ, s) in [
+            (C::Brut, c.brut),
+            (C::NetImposable, c.net_imposable),
+            (C::NetAPayer, c.net_a_payer),
+            (C::Pas, c.pas),
+            (C::CotisationsPatronales, c.cotisations_patronales),
+            (C::CoutEmployeur, c.cout_employeur),
+        ] {
+            if let Some(v) = s.si_dite() {
+                ligne.montant(champ, v);
+            }
+        }
         a_trier.push(ligne);
     }
     let mut cols = vec![C::Salarie.colonne()];
@@ -1081,29 +1170,20 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 pub fn masse_salariale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut ordre: Vec<Mois> = Vec::new();
-    let mut par: HashMap<Mois, (Ligne, BTreeSet<droit::contexte::IdSalarie>, i64)> = HashMap::new();
-    for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        if !par.contains_key(&l.mois) {
-            ordre.push(l.mois);
-            let mut n = Ligne::nouvelle();
-            n.m(C::Mois, l.mois).t(C::Libelle, libelle_mois(l.mois)).n(C::Bulletins, 0);
-            par.insert(l.mois, (n, BTreeSet::new(), 0));
-        }
-        let (ligne, salaries, n) = par.get_mut(&l.mois).expect("insere");
-        salaries.insert(l.cle_salarie.clone());
-        *n += 1;
-        ligne.n(C::Bulletins, *n);
-        for (champ, montant) in CUMULABLES {
-            if let Some(v) = montant(&l) {
-                cumuler(ligne, champ, v);
+    let lignes = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
+    let mut a_trier = Vec::new();
+    for (m, c) in cumuls_par(&lignes, |l| Some(l.mois)) {
+        let mut ligne = Ligne::nouvelle();
+        ligne.m(C::Mois, m).t(C::Libelle, libelle_mois(m)).compte(C::Bulletins, c.bulletins);
+        // Une somme qu'aucun bulletin du mois ne dit reste vide.
+        for (champ, _, somme) in CUMULABLES {
+            if let Some(v) = somme(&c).si_dite() {
+                ligne.montant(champ, v);
             }
         }
-    }
-    let mut a_trier = Vec::new();
-    for m in ordre {
-        let (mut ligne, salaries, _) = par.remove(&m).expect("present");
-        ligne.n(C::Salaries, salaries.len() as i64);
+        // Les salaries distincts du mois : un compte, pas une somme.
+        let salaries: BTreeSet<&droit::contexte::IdSalarie> = lignes.iter().filter(|l| l.mois == m).map(|l| &l.cle_salarie).collect();
+        ligne.compte(C::Salaries, salaries.len());
         a_trier.push(ligne);
     }
     let mut t = Tableau::nouveau(EtatDExport::MasseSalariale, "Masse salariale par mois", p.libelle.clone());
@@ -1124,15 +1204,6 @@ pub fn masse_salariale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     ];
     t.sources = vec!["cumuls des bulletins du mois".to_string()];
     finir(ctx, &mut t, Some(&p), "masse-salariale", d.format,false)?;
-    // Des salaries distincts ne s'additionnent pas d'un mois a l'autre.
-    for s in t.sections.iter_mut() {
-        if let Some(tot) = s.total.as_mut() {
-            tot.rien(C::Salaries);
-        }
-    }
-    if let Some(tot) = t.total.as_mut() {
-        tot.rien(C::Salaries);
-    }
     if d.ecrire {
         ecrire_fini(ctx, &mut t, Some(&p), "masse-salariale")?;
     }
@@ -1240,12 +1311,12 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 // ================================================ 9. la reduction generale
 
-/// `Decimal(str(x or 0))` d'un montant de la reduction generale : un zero se lit `0`.
-fn ou_zero(x: Decimal) -> Decimal {
-    if x.is_zero() {
-        Decimal::ZERO
+/// Une grandeur de la reduction generale, un zero ecrit `0` (son echelle nulle).
+fn ou_zero<G: Grandeur + PartialEq>(g: G) -> G {
+    if g == nulle() {
+        nulle()
     } else {
-        x
+        g
     }
 }
 
@@ -1261,9 +1332,8 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(&paie.salarie)?).ot(C::Contrat, paie.engagement.numero.clone());
             // Les cases du tableau : leur porte.
-            l.d(C::Brut, paie.brut.au_centime().decimal()).d(C::Heures, ou_zero(rg.heures.decimal())).d(C::Smic, rg.smic_reference.au_centime().decimal()).d(C::Coefficient, ou_zero(rg.coefficient.decimal()));
-            let euros = |x: Montant| x.au_centime().decimal();
-            l.d(C::Montant, euros(rg.montant)).d(C::Urssaf, euros(rg.urssaf)).d(C::Chomage, euros(rg.chomage)).d(C::Retraite, euros(rg.agirc_arrco));
+            l.montant(C::Brut, paie.brut.au_centime()).grandeur(C::Heures, ou_zero(rg.heures)).montant(C::Smic, rg.smic_reference.au_centime()).grandeur(C::Coefficient, ou_zero(rg.coefficient));
+            l.montant(C::Montant, rg.montant.au_centime()).montant(C::Urssaf, rg.urssaf.au_centime()).montant(C::Chomage, rg.chomage.au_centime()).montant(C::Retraite, rg.agirc_arrco.au_centime());
             lignes.push(l);
         }
     }
@@ -1325,13 +1395,13 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         for paie in lecture.paies(m)?.iter() {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).ot(C::Contrat, paie.engagement().numero.clone());
-            l.od(C::Plafond, paie.plafond().map(|x| x.au_centime().decimal()));
+            l.om(C::Plafond, paie.plafond().map(Montant::au_centime));
             for (k, v) in paie.bases() {
-                l.d(C::DeLAssiette(*k), v.au_centime().decimal());
+                l.assiette(*k, Some(v.au_centime()))?;
                 vues.insert(*k);
             }
             if !paie.bases().contains_key(&Assiette::Csg) {
-                l.od(C::DeLAssiette(Assiette::Csg), paie.base_csg()?.map(|x| x.au_centime().decimal()));
+                l.assiette(Assiette::Csg, paie.base_csg()?.map(|m| engagement::calcul::BaseDeCotisation::Montant(m.au_centime())))?;
                 vues.insert(Assiette::Csg);
             }
             lignes.push(l);
@@ -1373,21 +1443,10 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
             let e = paie.engagement();
-            // Les cachets et les heures que disent les lignes rattachees a une rubrique ; une paie importee dont aucune ligne
-            // ne l'est ne les dit pas : ils restent vides.
-            let remuneration = paie.remuneration();
-            let dites: Vec<_> = remuneration.iter().filter(|r| r.unite.is_some()).collect();
-            let (cachets, heures) = match dites.is_empty() && paie.importee().is_some() {
-                true => (None, None),
-                false => (
-                    Some(dites.iter().fold(Cachets::ZERO, |a, r| match r.quantite {
-                        Some(QuantiteDeLigne::Cachets(c)) => a + c,
-                        _ => a,
-                    })),
-                    Some(dites.iter().filter_map(|r| r.heures_annexes).fold(Heures::ZERO, |a, h| a + h)),
-                ),
-            };
-            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
+            // Les cachets et les heures que la paie compte ; une paie importee dont aucune ligne n'est rattachee a une
+            // rubrique ne les dit pas : ils restent vides.
+            let (cachets, heures) = (paie.cachets(), paie.heures_annexes());
+            let emploi = e.emploi.ecrit.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
             let debut = e.contrat().debut().iso();
             // La fin du contrat, sinon son dernier jour travaille.
             let fin = match e.contrat().fin() {
@@ -1397,7 +1456,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).t(C::CleSalarie, paie.salarie().id.to_string());
             l.ot(C::Contrat, e.numero.clone()).ot(C::Spectacle, titre_spectacle(paie)).ot(C::Emploi, emploi).t(C::Debut, jj(&debut)).ot(C::Fin, fin.as_deref().map(jj));
-            l.od(C::Cachets, cachets.map(Cachets::decimal)).od(C::Heures, heures.map(Heures::decimal)).n(C::Jours, e.dates_travail.len() as i64).od(C::Brut, paie.brut().map(|x| x.au_centime().decimal()));
+            l.grandeur_ou_rien(C::Cachets, cachets).grandeur_ou_rien(C::Heures, heures).compte(C::Jours, e.dates_travail.len()).om(C::Brut, paie.brut().map(Montant::au_centime));
             lignes.push(l);
         }
     }
@@ -1434,29 +1493,19 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 pub fn cout_par_spectacle(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut ordre: Vec<(String, droit::contexte::IdSalarie)> = Vec::new();
-    let mut par: HashMap<(String, droit::contexte::IdSalarie), (Ligne, i64)> = HashMap::new();
-    for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
-        let sp = if l.spectacle.is_empty() { "(sans spectacle)".to_string() } else { l.spectacle.clone() };
-        let cle = (sp.clone(), l.cle_salarie.clone());
-        if !par.contains_key(&cle) {
-            ordre.push(cle.clone());
-            let mut n = Ligne::nouvelle();
-            n.t(C::Spectacle, sp).t(C::Salarie, l.salarie.clone()).t(C::CleSalarie, l.cle_salarie.to_string()).n(C::Bulletins, 0);
-            par.insert(cle.clone(), (n, 0));
-        }
-        let (ligne, n) = par.get_mut(&cle).expect("insere");
-        *n += 1;
-        ligne.n(C::Bulletins, *n);
-        for (champ, v) in [(C::Brut, l.brut), (C::CotisationsPatronales, l.cotisations_patronales), (C::CoutEmployeur, l.cout_employeur), (C::NetAPayer, l.net_a_payer)] {
-            if let Some(v) = v {
-                cumuler(ligne, champ, v);
+    let lignes = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
+    let spectacle_de = |l: &LigneLivre| if l.spectacle.is_empty() { "(sans spectacle)".to_string() } else { l.spectacle.clone() };
+    let mut a_trier = Vec::new();
+    for ((sp, cle), c) in cumuls_par(&lignes, |l| Some((spectacle_de(l), l.cle_salarie.clone()))) {
+        let mut ligne = Ligne::nouvelle();
+        let nom = premier_nom(&lignes, |l| spectacle_de(l) == sp && l.cle_salarie == cle)?;
+        ligne.t(C::Spectacle, sp).t(C::Salarie, nom).t(C::CleSalarie, cle.to_string()).compte(C::Bulletins, c.bulletins);
+        // Une somme qu'aucun bulletin ne dit reste vide.
+        for (champ, s) in [(C::Brut, c.brut), (C::CotisationsPatronales, c.cotisations_patronales), (C::CoutEmployeur, c.cout_employeur), (C::NetAPayer, c.net_a_payer)] {
+            if let Some(v) = s.si_dite() {
+                ligne.montant(champ, v);
             }
         }
-    }
-    let mut a_trier = Vec::new();
-    for cle in ordre {
-        let (ligne, _) = par.remove(&cle).expect("present");
         a_trier.push(ligne);
     }
     let mut t = Tableau::nouveau(EtatDExport::CoutParSpectacle, "Coût employeur par spectacle", p.libelle.clone());

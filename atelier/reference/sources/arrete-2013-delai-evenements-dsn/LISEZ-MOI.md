@@ -23,7 +23,7 @@ LEGI l'a confirmé (`xml/1.xml`).
 
 ## Où le moteur s'en sert
 
-`atelier/sources/paie/src/obligations.rs` (`de_l_arret`, `de_la_fin`, `Calendrier::jours_ouvres_apres`) et
+`atelier/sources/paie/src/obligations.rs` (`de_l_arret`, `de_la_fin`, `socle::date::JoursOuvres::apres`) et
 `logiciel/donnees/obligations-base.json` (`signalement_arret`, `signalement_reprise`, `signalement_fin_contrat`) : la date
 butoir des signalements DSN d'arrêt, de reprise et de fin de contrat, rendue par les routes `arrets` et `fins-de-contrat` et par
 le rappel de l'accueil (`routes_ouverture.rs`, `rappels_fin_de_contrat`).

@@ -1,5 +1,6 @@
 //! Identifie le commit des sources : `PAIE_COMMIT`. La marque des sources que l'etat garde de l'ouverture porte est
 //! celle des routes (`routes/build.rs`).
+#![forbid(unsafe_code)]
 
 fn main() {
     // LE COMMIT DES SOURCES, que la fenetre de l'atelier montre a la place d'une version publiee : `logiciel/VERSION`

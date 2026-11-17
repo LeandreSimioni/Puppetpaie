@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use socle::forme::NombreLu;
+use socle::grandeurs::{Jours, MontantUnitaire};
 use socle::fichiers::{EmpreinteDeSaisie, NomDeFichier, ValeurLue};
 
 use droit::contexte::{Contexte, IdSalarie};
@@ -67,7 +67,8 @@ impl Dossier {
 #[serde(deny_unknown_fields)]
 pub struct FichierDuMois {
     pub mois: Mois,
-    pub taux_cachet: Option<NombreLu>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub taux_cachet: Option<MontantUnitaire>,
     pub engagements: Vec<Ecrit>,
 }
 
@@ -577,7 +578,7 @@ impl Objet {
             if v.debut.is_none() {
                 v.debut = crate::debut_brut(&self.brut);
             }
-            v.jours_contrat = Some(NombreLu::from(premiere.jours_du_contrat() as u64));
+            v.jours_contrat = Some(Jours::de_dates(premiere.jours_du_contrat()));
         }
         Ok(Some(v))
     }
@@ -615,10 +616,10 @@ impl Objet {
     fn avenant_du_mois(&self, v: &mut Carte, mois: Mois) -> R<()> {
         let Some(j) = self.avenants().iter().map(|a| a.depuis).filter(|j| mois.contient(j)).max() else { return Ok(()) };
         v.date_modification = Some(j);
-        if j.jour == 1 {
+        if j.premier_du_mois() {
             return Ok(());
         }
-        let a = self.termes_a(&j.plus_jours(-1)?);
+        let a = self.termes_a(&j.avant(socle::date::Duree::jours(1))?);
         let quotite = |x: &Carte| -> R<Option<socle::grandeurs::Heures>> {
             Ok(match x.quotite_contrat {
                 Some(q) => Some(q),
@@ -899,7 +900,8 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> Empr
     #[derive(Serialize)]
     struct Tete<'a> {
         mois: &'a Mois,
-        taux_cachet: &'a Option<NombreLu>,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        taux_cachet: &'a Option<MontantUnitaire>,
     }
     let engagements: Vec<Carte> = vue
         .engagements
@@ -1064,14 +1066,14 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
 /// partir du `jour` de ce mois quand il est dit, du 1er sinon. Refus : un engagement valide, un jour qui n'est pas un
 /// jour du contrat dans ce mois, ou des bornes qui laisseraient hors du contrat un mois ou il a des jours payes ; rien
 /// n'est ecrit.
-pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<u32>) -> R<()> {
+pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie: &Carte, jour: Option<socle::date::Jour>) -> R<()> {
     let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang))?;
     if o.est_valide() {
         return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang));
     }
     let le = match jour {
         None => None,
-        Some(n) => {
+        Some(j) => {
             let qui = crate::salarie_nomme(ctx, o.carte().salarie.as_ref());
             // AU PREMIER MOIS DE L'ENGAGEMENT, ses termes valent de son debut : un jour n'a rien a dater.
             if mois == o.fichier {
@@ -1082,7 +1084,6 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: RangDansLeMois, saisie:
                     mois.libelle(Graphie::Accentuee)
                 ));
             }
-            let j = mois.jour(n).ok_or_else(|| socle::refus!("{} : « le {} {} » n'est pas un jour de ce mois. Rien n'est écrit.", qui, n, mois.libelle(Graphie::Accentuee)))?;
             let debut = o.carte().debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
             let fin = o.carte().fin;
             if j < debut || fin.is_some_and(|f| j > f) {
@@ -1266,7 +1267,7 @@ fn dater(o: &mut Objet, terme: Champ, mois: Mois, depuis: Jour, saisie: &Carte) 
         }
         s.avenants.retain(|a| !a.vide());
     }
-    let veille = o.termes_a(&depuis.plus_jours(-1)?);
+    let veille = o.termes_a(&depuis.avant(socle::date::Duree::jours(1))?);
     if veille.comparable_du(terme) == saisie.comparable_du(terme) {
         return Ok(());
     }

@@ -9,16 +9,14 @@ use std::collections::BTreeMap;
 use droit::assiette::Assiette;
 use droit::fiche::Lue;
 
-use socle::forme::NombreLu;
 
 use crate::calcul::{ligne_de_reduction, pile_de_la_paie, BaseDeCotisation, LigneCotisation, Paie, ReductionGenerale};
 use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
 use socle::date::{Jour, Periode};
-use crate::{Avis, Chiffre, Engagement, LignePaie};
+use crate::{Avis, Engagement, LignePaie};
 use socle::echec::{refus, R};
 use socle::grandeurs::{Heures, Montant};
-use socle::num::{court, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
@@ -53,8 +51,9 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<Periode>> {
 /// d'anciennete ou un solde de tout compte se rattachent a une periode, ou a l'autre, ou aux deux, et rien ne le dit
 /// encore ; le logiciel ne choisit pas.
 pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[Periode]) -> R<Vec<Engagement>> {
-    let ligne = match eng.lignes.as_slice() {
-        [l] if *l.rubrique() == crate::conges::MOIS_PAYE => l,
+    // Le salaire mensuel, seule ligne de la paie : la part du mois, a son salaire (`conges::lignes_du_mois`).
+    let salaire_apres = match eng.lignes.as_slice() {
+        [LignePaie::Composee(crate::ligne::Composee { rubrique, paiement: crate::ligne::PaiementDeLigne::PartDuMois(_, salaire), .. })] if *rubrique == crate::conges::MOIS_PAYE => *salaire,
         _ => {
             let autres: Vec<String> = eng.lignes.iter().filter(|l| *l.rubrique() != crate::conges::MOIS_PAYE).map(|l| l.rubrique().to_string()).collect();
             return Err(socle::refus!(
@@ -68,13 +67,14 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
             ));
         }
     };
-    let salaire_apres = ligne.taux().ok_or_else(|| socle::fichiers::absent("taux"))?.decimal();
     let quotite_apres = eng.quotite()?.heures("La durée du contrat d'un salarié au mois")?;
     let avenant = jour_de_l_avenant(eng)?;
-    let terme = |x: &Option<NombreLu>, cle: &str| x.clone().map(Chiffre::Nombre).ok_or_else(|| socle::fichiers::absent(cle)).and_then(|c| c.dec());
+    fn terme<G: Copy>(x: &Option<G>, cle: &str) -> R<G> {
+        x.ok_or_else(|| socle::fichiers::absent(cle))
+    }
     let (salaire_avant, quotite_avant) = match &eng.avant {
-        // Les termes d'avant l'avenant : le salaire, un nombre de la saisie (sa porte) ; la duree, en heures.
-        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, a.quotite_contrat.ok_or_else(|| socle::fichiers::absent("quotite_contrat"))?),
+        // Les termes d'avant l'avenant : le salaire ; la duree, en heures.
+        Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
         None => (salaire_apres, quotite_apres),
     };
     let mois = eng.mois;
@@ -94,17 +94,16 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let h = quotite.par_mois();
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: crate::conges::MOIS_PAYE,
-            quantite: socle::forme::Nombre(q.decimal()),
-            taux: socle::grandeurs::MontantUnitaire::du_decimal(court(salaire)),
+            paiement: crate::ligne::PaiementDeLigne::PartDuMois(q, socle::grandeurs::courte(salaire)),
             heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
-        // periode, comme `Engagement::nouveau` les tire des lignes du mois.
+        // periode, comme `Engagement::nouveau` les tire des lignes du mois (`cachets_et_heures`).
         let par_unite = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures_par_unite(Some(h));
-        let heures = crate::ligne::QuantiteDeLigne::PartDuMois(q).heures(par_unite)?;
-        e.heures = if !heures.est_nul() { Some(heures) } else { None };
+        let quantite = crate::ligne::QuantiteDeLigne::PartDuMois(q);
+        (_, e.heures) = crate::cachets_et_heures([(Some(quantite), quantite.heures(par_unite))], true);
         out.push(e);
     }
     Ok(out)
@@ -190,7 +189,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     // La reduction generale du mois, puis sa part dans chaque periode.
     let brut_mois = parts.iter().fold(Montant::ZERO, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Heures::ZERO, |a, p| a + p.heures_travaillees);
-    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| b.decimal() > Decimal::ZERO));
+    let brut_cs = parts.iter().filter_map(|p| p.bases.get(&Assiette::BrutCs)).map(|b| b.en_euros(Assiette::BrutCs)).collect::<R<Vec<Montant>>>()?;
+    let caisse = brut_cs.iter().any(|b| *b > Montant::ZERO);
     let pile = pile_de_la_paie(ctx, derniere)?;
     let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
@@ -206,8 +206,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).map(Heures::decimal).sum();
-    e.heures = if !heures.is_zero() { Some(Heures::du_decimal(court(heures))) } else { None };
+    // Les heures du mois, celles de ses periodes (`cachets_et_heures`).
+    (_, e.heures) = crate::cachets_et_heures(parts.iter().filter_map(|p| p.engagement.heures).map(|h| (None, h)), true);
     let mut paie = Paie::nouveau(
         e,
         derniere.salarie.clone(),
@@ -302,7 +302,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 b.fin().jj_mm_aaaa(),
                 cadre,
                 socle::grandeurs::ecrit::sans_zero::dit(p.engagement.quotite()?.heures("La durée d'une période élémentaire")?),
-                p.brut.decimal()
+                socle::grandeurs::ecrit::texte::dit(p.brut)
             ))
         })
         .collect::<R<_>>()?;

@@ -26,6 +26,7 @@ use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
 use socle::mois::Annee;
 use envois::transport::{envoyer, Panne, Requete};
+use ureq::http::StatusCode;
 
 use crate::incidents::{CleDIncident, NumeroDePoste};
 
@@ -43,20 +44,20 @@ pub const REDEMANDER_IDENTITE: &str = "Le serveur ne reconnait plus ce poste : r
 pub const SERVEUR_PAR_DEFAUT: Url = Url::du_moteur("https://filet.puppetpaie.fr");
 
 /// Le filet ne doit jamais faire attendre une paie.
-pub const DELAI: u64 = 15;
+pub const DELAI: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Une erreur du filet, que les appelants rattrapent (le passage suivant reessaie), ou une autre panne, un refus qui
 /// remonte.
 #[derive(Debug)]
 pub enum ErreurFilet {
-    /// Le serveur ne repond pas, ou refuse : ce qu'il en dit, et son statut HTTP (0 sans reponse).
-    Filet { message: String, statut: u16 },
+    /// Le serveur ne repond pas, ou refuse : ce qu'il en dit, et son statut HTTP quand il a repondu.
+    Filet { message: String, statut: Option<StatusCode> },
     /// Une autre panne, sous sa classe.
     Autre(Echec),
 }
 
 impl ErreurFilet {
-    pub(crate) fn filet(message: String, statut: u16) -> ErreurFilet {
+    pub(crate) fn filet(message: String, statut: Option<StatusCode>) -> ErreurFilet {
         ErreurFilet::Filet { message, statut }
     }
 
@@ -158,6 +159,18 @@ impl From<NumeroDeRetour> for String {
     }
 }
 
+/// LE NUMERO DU TICKET qui suit un retour chez l'editeur, que le serveur du filet rend avec son adresse (`ticket_numero`) :
+/// un entier, ecrit et lu tel quel, dit « ticket n° 12 ».
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NumeroDeTicket(u64);
+
+impl std::fmt::Display for NumeroDeTicket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (le
 /// serveur ecrit `""` sinon : aucune ; son numero absent).
 #[derive(Debug, Deserialize)]
@@ -166,7 +179,7 @@ pub struct Retour {
     pub numero: NumeroDeRetour,
     #[serde(deserialize_with = "socle::forme::absent_si_vide")]
     pub ticket: Option<Url>,
-    pub ticket_numero: Option<i64>,
+    pub ticket_numero: Option<NumeroDeTicket>,
 }
 
 /// `POST /reponses` : les reponses aux retours de ce poste.
@@ -244,81 +257,78 @@ fn edition_bridee(quoi: &str) -> String {
 }
 
 /// Un code de réponse HTTP en mots : son code, et sa phrase quand le code en a une.
-fn statut_dit(code: u16) -> String {
-    match phrase(code) {
-        Some(p) => format!("HTTP Error {}: {}", code, p),
-        None => format!("HTTP Error {}", code),
+fn statut_dit(code: StatusCode) -> String {
+    match PHRASES.iter().find(|(statut, _)| *statut == code) {
+        Some((_, p)) => format!("HTTP Error {}: {}", code.as_str(), p),
+        None => format!("HTTP Error {}", code.as_str()),
     }
 }
 
-/// La phrase HTTP d'un code de réponse, s'il en a une.
-fn phrase(code: u16) -> Option<&'static str> {
-    Some(match code {
-        100 => "Continue",
-        101 => "Switching Protocols",
-        102 => "Processing",
-        103 => "Early Hints",
-        200 => "OK",
-        201 => "Created",
-        202 => "Accepted",
-        203 => "Non-Authoritative Information",
-        204 => "No Content",
-        205 => "Reset Content",
-        206 => "Partial Content",
-        207 => "Multi-Status",
-        208 => "Already Reported",
-        226 => "IM Used",
-        300 => "Multiple Choices",
-        301 => "Moved Permanently",
-        302 => "Found",
-        303 => "See Other",
-        304 => "Not Modified",
-        305 => "Use Proxy",
-        307 => "Temporary Redirect",
-        308 => "Permanent Redirect",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        402 => "Payment Required",
-        403 => "Forbidden",
-        404 => "Not Found",
-        405 => "Method Not Allowed",
-        406 => "Not Acceptable",
-        407 => "Proxy Authentication Required",
-        408 => "Request Timeout",
-        409 => "Conflict",
-        410 => "Gone",
-        411 => "Length Required",
-        412 => "Precondition Failed",
-        413 => "Request Entity Too Large",
-        414 => "Request-URI Too Long",
-        415 => "Unsupported Media Type",
-        416 => "Requested Range Not Satisfiable",
-        417 => "Expectation Failed",
-        418 => "I'm a Teapot",
-        421 => "Misdirected Request",
-        422 => "Unprocessable Entity",
-        423 => "Locked",
-        424 => "Failed Dependency",
-        425 => "Too Early",
-        426 => "Upgrade Required",
-        428 => "Precondition Required",
-        429 => "Too Many Requests",
-        431 => "Request Header Fields Too Large",
-        451 => "Unavailable For Legal Reasons",
-        500 => "Internal Server Error",
-        501 => "Not Implemented",
-        502 => "Bad Gateway",
-        503 => "Service Unavailable",
-        504 => "Gateway Timeout",
-        505 => "HTTP Version Not Supported",
-        506 => "Variant Also Negotiates",
-        507 => "Insufficient Storage",
-        508 => "Loop Detected",
-        510 => "Not Extended",
-        511 => "Network Authentication Required",
-        _sans_phrase => return None,
-    })
-}
+/// La phrase HTTP de chaque statut qui en a une.
+const PHRASES: [(StatusCode, &str); 62] = [
+    (StatusCode::CONTINUE, "Continue"),
+    (StatusCode::SWITCHING_PROTOCOLS, "Switching Protocols"),
+    (StatusCode::PROCESSING, "Processing"),
+    (StatusCode::EARLY_HINTS, "Early Hints"),
+    (StatusCode::OK, "OK"),
+    (StatusCode::CREATED, "Created"),
+    (StatusCode::ACCEPTED, "Accepted"),
+    (StatusCode::NON_AUTHORITATIVE_INFORMATION, "Non-Authoritative Information"),
+    (StatusCode::NO_CONTENT, "No Content"),
+    (StatusCode::RESET_CONTENT, "Reset Content"),
+    (StatusCode::PARTIAL_CONTENT, "Partial Content"),
+    (StatusCode::MULTI_STATUS, "Multi-Status"),
+    (StatusCode::ALREADY_REPORTED, "Already Reported"),
+    (StatusCode::IM_USED, "IM Used"),
+    (StatusCode::MULTIPLE_CHOICES, "Multiple Choices"),
+    (StatusCode::MOVED_PERMANENTLY, "Moved Permanently"),
+    (StatusCode::FOUND, "Found"),
+    (StatusCode::SEE_OTHER, "See Other"),
+    (StatusCode::NOT_MODIFIED, "Not Modified"),
+    (StatusCode::USE_PROXY, "Use Proxy"),
+    (StatusCode::TEMPORARY_REDIRECT, "Temporary Redirect"),
+    (StatusCode::PERMANENT_REDIRECT, "Permanent Redirect"),
+    (StatusCode::BAD_REQUEST, "Bad Request"),
+    (StatusCode::UNAUTHORIZED, "Unauthorized"),
+    (StatusCode::PAYMENT_REQUIRED, "Payment Required"),
+    (StatusCode::FORBIDDEN, "Forbidden"),
+    (StatusCode::NOT_FOUND, "Not Found"),
+    (StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed"),
+    (StatusCode::NOT_ACCEPTABLE, "Not Acceptable"),
+    (StatusCode::PROXY_AUTHENTICATION_REQUIRED, "Proxy Authentication Required"),
+    (StatusCode::REQUEST_TIMEOUT, "Request Timeout"),
+    (StatusCode::CONFLICT, "Conflict"),
+    (StatusCode::GONE, "Gone"),
+    (StatusCode::LENGTH_REQUIRED, "Length Required"),
+    (StatusCode::PRECONDITION_FAILED, "Precondition Failed"),
+    (StatusCode::PAYLOAD_TOO_LARGE, "Request Entity Too Large"),
+    (StatusCode::URI_TOO_LONG, "Request-URI Too Long"),
+    (StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported Media Type"),
+    (StatusCode::RANGE_NOT_SATISFIABLE, "Requested Range Not Satisfiable"),
+    (StatusCode::EXPECTATION_FAILED, "Expectation Failed"),
+    (StatusCode::IM_A_TEAPOT, "I'm a Teapot"),
+    (StatusCode::MISDIRECTED_REQUEST, "Misdirected Request"),
+    (StatusCode::UNPROCESSABLE_ENTITY, "Unprocessable Entity"),
+    (StatusCode::LOCKED, "Locked"),
+    (StatusCode::FAILED_DEPENDENCY, "Failed Dependency"),
+    (StatusCode::TOO_EARLY, "Too Early"),
+    (StatusCode::UPGRADE_REQUIRED, "Upgrade Required"),
+    (StatusCode::PRECONDITION_REQUIRED, "Precondition Required"),
+    (StatusCode::TOO_MANY_REQUESTS, "Too Many Requests"),
+    (StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE, "Request Header Fields Too Large"),
+    (StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS, "Unavailable For Legal Reasons"),
+    (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"),
+    (StatusCode::NOT_IMPLEMENTED, "Not Implemented"),
+    (StatusCode::BAD_GATEWAY, "Bad Gateway"),
+    (StatusCode::SERVICE_UNAVAILABLE, "Service Unavailable"),
+    (StatusCode::GATEWAY_TIMEOUT, "Gateway Timeout"),
+    (StatusCode::HTTP_VERSION_NOT_SUPPORTED, "HTTP Version Not Supported"),
+    (StatusCode::VARIANT_ALSO_NEGOTIATES, "Variant Also Negotiates"),
+    (StatusCode::INSUFFICIENT_STORAGE, "Insufficient Storage"),
+    (StatusCode::LOOP_DETECTED, "Loop Detected"),
+    (StatusCode::NOT_EXTENDED, "Not Extended"),
+    (StatusCode::NETWORK_AUTHENTICATION_REQUIRED, "Network Authentication Required"),
+];
 
 /// Une panne du transport, en mots.
 fn panne_dite(p: &Panne) -> String {
@@ -331,7 +341,7 @@ fn panne_dite(p: &Panne) -> String {
 
 /// Ce que le serveur dit d'un refus : son `erreur` ; un corps vide ou qui n'a pas cette forme laisse le statut seul le
 /// dire, et dit pourquoi.
-fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
+fn refus_dit(code: StatusCode, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
     let propre = statut_dit(code);
     match corps {
         Err(p) => format!("{} (corps de la réponse non lu : {})", propre, panne_dite(p)),
@@ -348,7 +358,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
 }
 
 /// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
-pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
+pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action: &str, corps: &C, entetes: &[(&str, &str)], delai: std::time::Duration) -> Result<T, ErreurFilet> {
     if crate::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
         return Err(ErreurFilet::Autre(socle::echec::erreur(Classe::EditionBridee, edition_bridee(action))));
     }
@@ -370,17 +380,17 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
             // Une reponse qui ne se lit pas se range avec les pannes de reseau : le passage suivant reessaie.
             let texte = match std::str::from_utf8(&brut) {
                 Ok(t) => t.trim_start_matches('\u{feff}'),
-                Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
+                Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), None)),
             };
             socle::forme::lire_texte::<T>(texte, "réponse illisible")
-                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
+                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), None))
         }
-        Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), code)),
-        Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),
+        Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), Some(code))),
+        Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), None)),
         Err(Panne::Brute(e)) => match e.classe {
             // Une connexion rompue ou qui ne répond plus : le filet est injoignable.
             Some(Classe::DelaiDepasse | Classe::Reseau) => {
-                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
+                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), None))
             }
             _ => Err(ErreurFilet::Autre(e)),
         },
@@ -408,10 +418,12 @@ impl Client {
     /// Une action du poste : le numero dans le corps, la cle dans l'en-tete. Un 401
     /// du serveur (poste inconnu, revoque, ou cle fausse : il ne dit pas lequel) se
     /// complete de ce qu'il y a a faire.
-    fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: u64) -> Result<T, ErreurFilet> {
+    fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: std::time::Duration) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
         match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.devoiler())], delai) {
-            Err(ErreurFilet::Filet { message, statut: 401 }) => Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), 401)),
+            Err(ErreurFilet::Filet { message, statut: Some(StatusCode::UNAUTHORIZED) }) => {
+                Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), Some(StatusCode::UNAUTHORIZED)))
+            }
             r => r,
         }
     }
@@ -429,7 +441,7 @@ impl Client {
 
     /// Un message au developpeur (`problemes::Corps`) : un texte, des incidents et des captures ; le delai est plus long.
     pub fn signaler<C: Serialize>(&self, corps: &C) -> Result<Retour, ErreurFilet> {
-        self.post_du_poste("retour", corps, 60)
+        self.post_du_poste("retour", corps, std::time::Duration::from_secs(60))
     }
 
     /// `POST /reponses` : les reponses aux messages `numeros`.

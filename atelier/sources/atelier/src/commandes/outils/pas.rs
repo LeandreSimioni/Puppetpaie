@@ -7,6 +7,7 @@ use super::dit;
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
+use std::process::ExitCode;
 
 pub static SPEC: Spec = Spec {
     commande: "pas",
@@ -22,7 +23,7 @@ pub static SPEC: Spec = Spec {
     ],
 };
 
-pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
+pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
     super::code(if args.drapeau("demander") {
         demander(cadre, args)
     } else if args.drapeau("amorcer") {
@@ -33,12 +34,12 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 /// `--amorcer` : l'etat courant pose depuis la derniere DSN deposee de chaque salarie (celles de l'import).
-fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
+fn amorcer(cadre: &Cadre) -> Result<ExitCode, Echec> {
     let ctx = &cadre.ctx;
     let export = routes::fiches::pieces_importees(ctx);
     if !export.exists() {
         dire!("Dossier introuvable : {}", export.display());
-        return Ok(1);
+        return Ok(ExitCode::FAILURE);
     }
     let lus = compagnie::taux_pas::derniers_taux_des_dsn(ctx, &export)?;
     let chgts = routes::gestes::taux_pas::enregistrer(ctx, &compagnie::taux_pas::TauxDUneDsn::transmis(&lus),&format!("amorcage depuis les DSN deposees ({})", super::nom(&export)))?;
@@ -55,11 +56,11 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
         dire!("  rien a changer.");
     }
     dire!("\nCes valeurs sont celles REELLEMENT DECLAREES dans les dernieres DSN, pas des valeurs calculees. Elles tiennent jusqu'au\nprochain compte-rendu DGFiP (la releve des retours, route `ouverture`).");
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Les taux recus (la fiche de chaque salarie, `droit::pas::recus`), et ce qu'il faudrait demander a la DGFiP.
-fn lire(cadre: &Cadre) -> Result<i32, Echec> {
+fn lire(cadre: &Cadre) -> Result<ExitCode, Echec> {
     let ctx = &cadre.ctx;
     let diag = droit::pas::diagnostic(ctx, None, None, None)?;
     dire!("Taux de prelevement a la source recus\n{}", "-".repeat(62));
@@ -76,7 +77,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
             None => "None",
         };
         dire!("  {:<12} taux {:<6} type {} ({})", cle, e.taux.to_string(), ecrit(e.r#type.map(|t| t.to_string())), libelle);
-        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_ref().map(droit::pas::IdentifiantDuTauxPas::as_str)), ecrit(e.mis_a_disposition.map(socle::paris::ecrit::compacte::texte)));
+        dire!("  {:<12} identifiant {}, mis a disposition {}", "", e.identifiant.as_str(), socle::paris::ecrit::compacte::texte(e.mis_a_disposition));
         match s.valable_jusqu_a {
             Some(j) => dire!("  {:<12} {}, jusqu'au {}\n", "", s.libelle, j.jj_mm_aaaa()),
             None => dire!("  {:<12} {}\n", "", s.libelle),
@@ -96,12 +97,12 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
     for s in diag.iter().filter(|s| s.situation == droit::pas::SituationDuTaux::SansNir) {
         dire!("  {:<12} {} -- rien a demander, c'est le bareme.", s.salarie, s.libelle);
     }
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }
 
 /// `--demander` : ecrire les signalements d'amorcage (nature 08), un fichier par individu. RIEN N'EST DEPOSE : le depot est la
 /// route `deposer` (avec `fichier`), sa preuve et son mot de passe.
-fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
+fn demander(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
     let mois = match args.tape("mois") {
@@ -109,14 +110,14 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             Ok(m) => m,
             Err(e) => {
                 dire!("--mois attend AAAA-MM, recu {} : {}", socle::fichiers::repr(m.texte()), e.phrase);
-                return Ok(1);
+                return Ok(ExitCode::FAILURE);
             }
         },
         None => match engagement::stock::mois_saisis(&ctx.racine)?.into_iter().last() {
             Some(m) => m,
             None => {
                 dire!("Aucun mois saisi : un signalement d'amorcage declare un contrat (bloc 40), et il n'y en a aucun.");
-                return Ok(1);
+                return Ok(ExitCode::FAILURE);
             }
         },
     };
@@ -124,14 +125,14 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let paies = declarations::dsn::contrats_du_mois(ctx, mois, &departs)?;
     if paies.is_empty() {
         dire!("Aucun engagement valide ne touche {} : rien n'est ecrit.", mois);
-        return Ok(1);
+        return Ok(ExitCode::FAILURE);
     }
     let salaries: Vec<droit::contexte::IdSalarie> =
         args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(str::trim).filter(|s| !s.is_empty()).map(droit::contexte::IdSalarie::lire).collect::<Result<_, Echec>>()?;
     let motif = super::avec_defaut(args, "motif")?;
     let Some(motif) = droit::nature_declaration::NatureDEvenementDeclencheur::du_code(motif) else {
         dire!("--motif attend une nature d'evenement declencheur (S20.G00.05.011, de 01 a 07), recu {}", socle::fichiers::repr(motif));
-        return Ok(1);
+        return Ok(ExitCode::FAILURE);
     };
     // `--test` : les fichiers d'essai (S10.G00.00.005 = 01).
     let mode = match args.drapeau("test") {
@@ -162,5 +163,5 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     if mode == socle::mode::Mode::Test {
         dire!("Ces fichiers sont des ESSAIS (S10.G00.00.005 = 01) : ils ne demandent rien.");
     }
-    Ok(0)
+    Ok(ExitCode::SUCCESS)
 }

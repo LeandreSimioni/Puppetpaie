@@ -1,0 +1,551 @@
+   → Les cotisations Urssaf (/app/answers/list
+   search/p/2143)
+   → Les cotisations Agirc Arrco (/app/answers/list-
+   search/p/2144)
+   → Les cotisations des Organismes Complémentaires
+   (/app/answers/list-search/p/2145)
+
+Date de modification : 13/11/2025 03:07 PM
+
+
+
+  Quelles sont les spécificités du contrat et des rémunérations à déclarer en DSN pour les intermittents du
+  spectacle?
+
+          Le contexte :
+
+
+  Est considéré intermittent du spectacle au sens de l'assurance chômage :
+          Un artiste du spectacle
+          Et un ouvrier ou un technicien travaillant dans le domaine de l'édition d'enregistrement sonore, de la production cinématographique et
+          audiovisuelle, de la radio, de la diffusion et du spectacle)
+          En contrat à durée déterminée
+          Et dont l'employeur relève du champ d'application défini réglementairement pour l'Assurance chômage,
+
+  France Travail opère le recouvrement des contributions d'Assurance chômage et des cotisations AGS dues via la DSN depuis 2022 (un numéro de doss
+  de recouvrement doit être préalablement octroyé par France Travail services).
+  En juillet 2025, une phase d'expérimentation a été lancée afin de remplacer progressivement l'attestation employeur mensuelle par la DSN.
+
+
+          Déclarer les éléments de contrat et de rémunération des intermittents du spectacle :
+
+
+  Point d'attention préalable :
+  Le code de convention collective en bloc établissement - S21.G00.11 est indispensable pour déterminer si l'activité relève du champ d'application de
+  l'annexe au règlement général de l'Assurance chômage relative aux ouvriers ou techniciens.
+
+  Déclaration des versements de cotisations aux organismes de protection sociale
+
+
+
+
+  La déclaration du paiement des cotisations au niveau du bloc "Versement organisme de protection sociale - S21.G00.20" se fait comme suit :
+          Rubrique "Identifiant Organisme de Protection Sociale - S21.G00.20.001" : renseigner l'organisme receveur du paiement.
+
+  Pour les cotisations dont le recouvrement est opéré par l'Urssaf :
+          Rubrique "Entité d'affectation des opérations - S21.G00.20.002" : à renseigner du "pseudo siret film" lorsque les films sont gérés sous pseudo
+          siret pour l'Urssaf.
+
+  Pour déclarer les versements de cotisations et contributions à destination de France Travail :
+          Renseigner la rubrique "Identifiant Organisme de Protection Sociale - S21.G00.20.001" comme suit :
+
+
+    S21.G00.20 - Versement organisme de protection sociale
+
+
+
+
+         Code                       Rubrique                                                         Valorisation
+
+                        Identifiant Organisme de
+    S21.G00.20.001                                       SIRET de France Travail : 1300548100010
+                        Protection Sociale
+
+                        Entité d'affectation des         Renseigner l'identifiant attribué par le centre de recouvrement Spectacle (CS suivi de 8
+    S21.G00.20.002
+                        opérations                       caractères numériques) de France Travail pour cette production
+
+
+
+
+  Les autres champs du bloc "Versement organisme de protection sociale - S21.G00.20" doivent être renseignés selon les règles habituelles.
+  La fiche consigne "Versements et cotisations à destination de France Travail pour les expatriés et intermittents" apporte des précisions supplémentaire
+  notamment sur les éléments attendus en DSN au niveau des cotisations individuelles à l'attention de France Travail.
+
+  Déclarer à la maille nominative
+
+
+
+
+  Spécificités déclaratives du contrat de travail d'un intermittent du spectacle
+
+  Le bloc "Contrat (contrat de travail, convention, mandat) - S21.G00.40" doit porter la nature applicable au contrat de travail des intermittents du
+  spectacle.
+  Voici la liste des rubriques à renseigner avec une attention particulière pour la population des intermittents du spectacle :
+
+                Rubrique                                                                    Valorisation
+
+
+
+
+                                                                                            04 - autres cadres au sens de la convention collective (ou du
+                                                                                            statut pour les régimes spéciaux)
+                                                                                            05 - profession intermédiaire (technicien, contremaître, agent
+    Statut du salarié                                                                       de maîtrise, clergé)
+    (conventionnel) -                  A renseigner avec l'une des valeurs                  06 - employé administratif d'entreprise, de commerce, agent
+    S21.G00.40.002
+                                                                                            de service
+                                                                                            07 - ouvriers qualifiés et non qualifiés y compris ouvriers
+                                                                                            agricoles
+Code profession et catégorie       Permet d'identifier l'intitulé et la
+socioprofessionnelle (PCS-         profession exacte de l'individu grâce à       Exemples : 353b, 353c, 354b, 354c, 354e, 354f, 465b ou 637c...
+ESE) - S21.G00.40.004              l'une des valeurs
+
+                                   A renseigner avec une des valeurs de la
+Code complément PCS - ESE
+                                   table des codes détaillés des professions     Exemples de valeurs attendues issues de la table ART :
+(pour la fonction publique :
+                                   du spectacle "ART" disponible sur le site     "ACC010", "ART160", ...
+référentiels NEH, NET et grade
+                                   net entreprise au niveau du référentiel       Sauf 999 SPT
+de la NNE) - S21.G00.40.005
+                                   des tables de nomenclatures DSN
+
+Libellé de l'emploi -              A renseigner avec la fonction qu'exerce
+                                                                                 Exemples : Artiste dramatique , accessoiriste
+S21.G00.40.006                     l'intermittent du spectacle (champ libre)
+
+Nature du contrat -                A renseigner avec une des deux valeurs :      "02 - Contrat de travail à durée déterminée de droit privé"
+S21.G00.40.007                     (y compris pour les contrats d'usage)         "10 - Contrat de travail à durée déterminée de droit public"
+
+Dispositif de politique
+                                   A renseigner avec la valeur ci-après en
+publique et conventionnel -                                                      "99 - Non concerné"
+                                   l'absence d'une valeur appropriée
+S21.G00.40.008
+
+
+
+
+                                   Cas général : A renseigner
+                                   obligatoirement en cas de CDD. Cette
+                                   date ne doit pas être modifiée lors de la
+Date de fin prévisionnelle du      fin de contrat de travail.
+contrat - S21.G00.40.010           Cas particulier : pour les contrats à durée
+                                   déterminée sans terme précis,
+                                   renseigner le dernier jour travaillé du
+                                   mois principal déclaré dans chaque DSN.
+
+Unité de mesure de la quotité      A renseigner avec la valeur ci-après en
+                                                                                 "99 - salarié non concerné"
+de travail - S21.G00.40.011        l'absence d'une valeur plus appropriée
+
+Modalité d'exercice du temps       A renseigner obligatoirement avec la
+                                                                                 "99 - salarié non concerné"
+de travail - S21.G00.40.014        valeur ci-après
+
+Complément de base au
+                                   A reneigner avec la valeur ci-après en
+régime obligatoire -                                                             "99 - salarié non concerné"
+                                   l'absence d'une valeur plus appropriée
+S21.G00.40.016
+
+
+
+
+                                   A renseigner obligatoirement le coee
+Code convention collective
+                                   convention collective applicable à la
+applicable - S21.G00.40.017
+                                   prestation
+
+                                   Les intermittents du spectacle
+Code régime de base risque         dépendant du régime général de
+                                                                                 "200 - régime général (CNAM)"
+maladie S21.G00.40.018             l'assurance maladie, la valeur ci-après
+                                   doit être renseignée
+
+                                   Cas général : Renseigner avec le Siret
+Identifiant du lieu de travail -
+                                   Cas particulier : Renseigner lorsque le       Siret ou "pseudo Siret film"
+S21.G00.40.019
+                                   film est géré avec un pseudo SIRET
+
+                                   Les intermittents du spectacle
+Code régime de base risque         dépendant du régime général de
+                                                                                 "200 - régimé général (CNAV)"
+vieillesse - S21.G00.40.020        l'assurance vieillesse, la valeur ci-après
+                                   doit être renseignée
+
+Motif de recours -
+                                   A renseigner                                  Par exemple : "05 - Contrat d'usage"
+S21.G00.40.021
+
+
+
+
+                                   A renseigner avec la valeur ci-après si les
+Code caisse professionnelle de                                                   Indiquer "97", le numéro d'affiliation et la clé, dans le cas de la Caisse d
+                                   indemnités de congés payés ne sont pas
+congés payés - S21.G00.40.022                                                    congés spectacles
+                                   versées par l'employeur
+
+Travailleur à l'étranger au sens   A renseigner avec la valeur ci-après si
+du code de la Sécurité Sociale     aucune autre des valeurs de cettre            "99 - non concerné"
+- S21.G00.40.024                   rubrique n'est appropriée
+
+
+                                                                                         05 - Contrat de travail faisant l'objet d'une attestion employeu
+                                   A renseigner avec l'une des valeurs ci-               mensuelle (AEM) pour un ouvrier ou technicien de l'édition
+                                   contre.                                               d'enregistrement sonore, de la production cinématographique
+Motif d'exclusion DSN -
+                                   Ces valeurs ne seront plus à renseigner               et audiovisuelle, de la radio, de la diffusion et du spectacle
+S21.G00.40.025
+                                   par les employeurs dès lors que France
+                                                                                         06 - Contrat de travail faisant l'objet d'une attestation
+                                   Travail leur en donnera l'autorisation.               employeur mensuelle (AEM) pour un artiste du spectacle
+                                     A renseigner avec la valeur ci-après si
+ Statut d'emploi du salarié -
+                                     aucune autre des valeurs n'est plus             "99 - Non concerné"
+ S21.G00.40.026
+                                     appropriéez
+
+                                     Il s'agit du numéro de récépissé de
+                                     déclaration d'activité d'entrepreneur de
+
+                                     spectacles
+
+
+                                             En cas d'activité principale dans
+                                             la production ou la diffusion de
+                                             spectacles ou l'exploitation de
+ Numéro de licence
+                                             lieux de spectacles : A
+                                             renseigner
+ entrepreneur spectacle -                                                            Le numéro de récépissé
+ S21.G00.40.049                              En cas d'activité secondaire
+                                             dans la production ou la
+                                             diffusion de spectacles ou
+                                             l'exploitation de lieux de
+                                             spectacles mais avec au moins 7
+                                             spectacles organisés
+                                             annuellement : à renseigner
+
+
+                                                                                     Il s'agit du numéro unique constitué de 12 caractères alphanumériques
+                                                                                     qui est attribué par France Travail pour chaque spectacle ou chaque
+                                                                                     production et qui permet d'identifier toutes les personnes ayant
+ Numéro objet spectacle -
+                                     A renseigner                                    travaillé sur un spectacle ou une production (aussi bien les salariés que
+ S21.G00.40.050
+                                                                                     les intermittents du spectacle). Un même numéro d'objet peut être
+                                                                                     attribué à différents établissements ayant participé à un même
+                                                                                     spectacle ou production
+
+                                                                                     01 - Organisateur occasionnel de spectacles vivants (maximum 6
+ Statut organisateur spectacle -                                                     spectacles vivants annuels)
+                                     A renseigner
+ S21.G00.40.051                                                                      02 - Entrepreneur de spectacles vivants professionnel (plus de 6
+                                                                                     spectacles vivants annuels)
+
+
+Spécificités déclaratives des éléments de rémunération pour un intermittent du spectacle
+
+Le type "002 - Salaire brut servant aux calculs des droits de l'Assurance chômage" du bloc "Rémunération - S21.G00.51" est à renseigner avec les
+montants de rémunérations des intermittents du spectacle.
+
+
+                                          Les rémunérations doivent être complétées par les montants versés au titre des :
+ Montant                   A
+                                          captations d'un spectacle en live et/ou des cachets non exécutés garantis contractuellement seulement si ce
+ S21.G00.51.013            renseigner
+                                          n'est pas du fait du salarié
+
+
+Points d'attention :
+    - Les droits de doublage et de rediffusion des intermittents du spectacle
+La fiche consigne "Comment déclarer les droits de doublage et de rediffusion pour les intermittents du spectacle?" précise les modalités déclaratives d
+droits de doublage et de rediffusion. Ces montants :
+        Ne sont pas à intégrer dans le "002 - Salaire brut servant aux calculs des droits de l'Assurance chômage"
+        Sont à intégrer dans la "001 - Rémunération brute non plafonnée"
+
+     - L'intéressement des intermittents du spectacle (annexe III de la convention collective nationale de la production cinématographique)
+L'intéressement aux recettes d'exploitation consiste à différer le versement d'une partie du salaire.
+
+Cette rémunération différée est assortie d'une majoration destinée à compenser son caractère aléatoire. Elle est considérée comme une prime liée à
+l'activité, et donc comme un élément du salaire. En norme DSN, cet intéressement est à renseigner avec la valeur "026 - Prime exceptionnelle liée à
+l'activité avec période de rattachement spécifique" en bloc "Prime, gratification et indemnité - S21.G00.52".
+L'intéressement au sens de l'annexe III de la convention nationale de la production cinématographique doit être distingué de l'intéressement prévu pa
+code du travail.
+
+Spécificités déclaratives de l'activité d'un intermittent du spectacle
+
+Le bloc "Activité - S21.G00.53" permet de déclarer le type et le volume d'activité.
+Important : le bloc "Activité - S21.G00.53" est dupliqué autant de fois qu'il est demandé d'unité de mesure pour la Caisse des congés spectacles Audien
+et l'Assurance chômage.
+
+
+                                                                               "01 - travail rémunéré"
+                             A renseigner lorsqu'il s'agit de
+ Type - S21.G00.53.001
+                             déclarer une activité                                     "02 - Durée d'absence partiellement ou pas du tout rémunérée"
+
+
+ Mesure -                    A renseigner du volume d'activité
+ S21.G00.53.002              réalisée
+                                                                    Pour un bloc "Activité - S21.G00.53" de type "01 - travail rémunéré", seules les valeurs
+                                                                    suivantes sont autorisés
+                                                                            "12 - journée"
+                                                                            "36 - cachets groupés"
+                                                                            "37 - cachets isolés"
+                              A minima, est attendu plusieurs               "35 - heures Intermittents du spectacle"
+ Unité de mesure -            blocs "Activité - S21.G00.53"                 39 - cachet"
+ S21.G00.53.003               Cf. le point d'attention ci-dessous
+                              pour plus de précisions               Pour un bloc "Activité - S21.G00.53" de type "02 - Durée d'absence partiellement ou
+                                                                    pas du tout rémunérée", seules les valeurs suivantes sont autorisés :
+                                                                            10 - heure
+
+                                                                    Ou
+                                                                            12 - journée
+
+
+
+Point d'attention :
+
+Un bloc "Activité - S21.G00.53" portant la valeur "12- journée" doit systématiquement être déclaré pour chaque contrat d'un intermittent du spectacle.
+Aussi, en fonction de l'activité réalisée durant le contrat et dans le cas où ces données ne sont pas nulles, d'autres blocs "Activité - S21.G00.53" sont à
+déclarer :
+- Pour les techniciens ou les ouvriers, un bloc "Activité - S21.G00.53" doit être saisi pour renseigner le nombre d'heures avec la valeur "35 - heures
+intermittents du spectacle"
+- Pour les artistes et les réalisateurs, il convient de renseigner :
+     - Le nombre d'heure (et non pas la conversion en heures des cachets) sous un bloc "Activité - S21.G00.53" avec la valeur "35 - heures intermittents
+du spectacle"
+     - et le nombre de cachets sous un bloc "Activité - S21.G00.53" avec les valeurs "36 - cachets groupés", "37- cachets isolés" ou "39 - cachet"
+
+Spécificités déclaratives des autres éléments de revenu brut pour un intermittent du spectacle
+
+Le bloc "Autre élément de revenu brut - S21.G00.54" comprend la rémunération sur les droits de doublage et de rediffusion. A noter que celle-ci fait
+l'objet d'une fiche consigne spécifique : "Comment déclarer les droits de doublage et de rediffusion pour les intermittents du spectacle?".
+
+
+        Déclarer un artiste du spectacle :
+
+
+Un artiste du spectacle en contrat à durée déterminé d'usage (du 1er juillet 2025 au 31 décembre 2025) perçoit une rémunération versée au titre de 6
+spectacles en direct qu'il a réalisé au cours du mois de juillet 2025.
+NB : L'exemple ne détaillant pas l'ensemble des rubriques devant être renseignées pour chaque organisme récepteur des déclarations, les valeurs
+présentées sont donc destinées à servir d'exemple.
+
+Déclaration des versements de cotisations aux organismes de protection sociale pour le mois de juillet 2025
+
+
+
+
+ Versement organisme de protection sociale - S21.G00.20
+
+
+
+
+       Code                  Rubrique                                                           Valorisation
+
+                      Identifiant Organisme
+ S21.G00.20.001                                13000548100010 (pour France Travail)
+                      de Protection Sociale
+
+                      Entité d'affectation     Renseigner l'identifiant attribué par le centre de recouvrement Spectacle (CS suivi de 8 caractères
+ S21.G00.20.002
+                      des opérations           numériques) de France Travail pour cette production
+
+ S21.G00.20.003       BIC                      Coordonnées bancaires au format BIC
+
+ S21.G00.20.004       IBAN                     Coordonnées bancaires au format IBAN
+
+                      Montant du               Pour France Travail, indiquer le montant de cotisation réglée (contributions AC et cotisations AGS)
+ S21.G00.20.005
+                      versement                Pour Congés spectacles (Audiens), indiquer le montant de cotisation réglée.
+
+                      Date de début de
+                                               Renseigner ici le début de la période au titre de laquelle ont été établies les cotisations dont
+ S21.G00.20.006       période de
+                                               l'établissement s'acquitte.
+                      rattachement
+
+                      Date de fin de
+                                               Renseigner ici la fin de période au titre de laquelle ont été établies les cotisations dont l'établissement
+ S21.G00.20.007       période de
+                                               s'acquitte.
+                      rattachement
+
+                                               05 - prélèvement SEPA Pour France Travail la rubrique aurait également pu être renseignée avec la valeur
+                                               "01 - chèque", "02 - virement" ou "06 - versement réalisé par un autre établissement". Et pour Congés
+ S21.G00.20.010       Mode de paiement
+                                               spectacles (Audiens) elle peut être renseignée avec la valeur "05 - prélèvement SEPA" ou "06 - versement
+                                               réalisé par un autre établissement"
+
+                                               Renseigner ici la date à prendre en compte par l'organisme dans le cas d'un prélèvement SEPA.
+                                               Pour France Travail, renseigner la date prévisionnelle dans le cas d'un paiement par chèque ou par
+ S21.G00.20.011       Date de paiement
+                                               virement.
+                                               Congés spectacles (AUDIENS) n'est pas concernée par cette rubrique.
+Déclaration pour le mois de juillet 2025
+
+
+
+
+Déclaration des éléments pour le contrat de travail :
+
+
+ S21.G00.40 - Contrat (contrat de travail, convention, mandat)
+
+
+
+
+      Code                                   Rubrique                                                           Valorisation
+
+ S21.G00.40.001     Date de début de contrat                                  01072025 La date de début du contrat est un des identifiants du contrat.
+
+                                                                              05 - profession intermédiaire (technicien, contremaître, agent de maîtrise
+ S21.G00.40.002     Statut du salarié (conventionnel)
+                                                                              clergé)
+
+                    Code statut catégoriel Retraite Complémentaire
+ S21.G00.40.003                                                               04 - non cadre
+                    obligatoire
+
+                    Code profession et catégorie socioprofessionnelle
+ S21.G00.40.004                                                               354b
+                    (PCS-ESE)
+
+                    Code complément PCS-ESE (pour la fonction
+ S21.G00.40.005                                                               ART160
+                    publique : référentiels NEH,NET et grade de la NNE)
+
+ S21.G00.40.006     Libellé de l'emploi                                       Artiste lyrique
+
+ S21.G00.40.007     Nature du contrat                                         02 - Contrat de travail à durée déterminée de droit privé
+
+ S21.G00.40.008     Dispositif de politique publique et conventionnel         99 - Non concerné
+
+ S21.G00.40.009     Numéro de contrat                                         A0001a Le numéro de contrat est un des identifiants du contrat
+
+ S21.G00.40.010     Date de fin prévisionnelle du contrat de travail          31122025
+
+ S21.G00.40.011     Unité de mesure de la quotité de travail                  99 - salarié non concerné
+
+ S21.G00.40.014     Modalité d'exercice du temps de travail                   99 - salarié non concerné
+
+ S21.G00.40.016     Complément de base au régime obligatoire                  99 - non applicable
+
+ S21.G00.40.017     Code convention collective applicable                     3090
+
+ S21.G00.40.018     Code régime de base risque maladie                        200 - régime général (CNAM)
+
+ S21.G00.40.019     Identifiant du lieu de travail                            Siret
+
+ S21.G00.40.020     Code régime de base risque vieillesse                     200 - régime général (CNAM)
+
+ S21.G00.40.021     Motif de recours                                          05 - Contrat d'usage
+
+                                                                              Indiquer "97", le numéro d'affiliation et la clé
+ S21.G00.40.022     Code caisse professionnelle de congés payés
+                                                                              Exemple : 970000000001A
+
+                    Travailleur à l'étranger au sens du code de la Sécurité
+ S21.G00.40.024                                                               99 - Non concerné
+                    Sociale
+
+                                                                              06 - Contrat de travail faisant l'objet d'une attestation employeur
+                                                                              mensuelle (AEM) pour un artiste du spectacle
+ S21.G00.40.025     Motif d'exclusion DSN
+                                                                              Ces valeurs ne seront plus à renseigner par les employeurs dès lors que
+                                                                              France Travail leur en donnera l'autorisation.
+
+ S21.G00.40.026     Statut d'emploi du salarié                                99 - Non concerné
+
+ S21.G00.40.049     Numéro de licence entrepreneur spectacle                  De type PLATESV-R-2020-000001 ou 3-000001
+
+                                                                              Renseigner ici le numéro unique constitué de 12 caractères
+ S21.G00.40.050     Numéro objet spectacle                                    alphanumériques qui est attribué par le CNCS pour chaque spectacle ou
+                                                                              chaque production.
+
+ S21.G00.40.051     Statut organisateur spectacle                             A renseigner
+
+
+Déclaration des éléments de rémunération :
+
+
+ S21.G00.51 - Rémunération
+
+
+
+
+        Code                              Rubrique                                                        Valorisation
+ S21.G00.51.001          Date de début de période de paie           01072025
+
+ S21.G00.51.002          Date de fin de période de paie             31072025
+
+ S21.G00.51.011          Type                                       002 - Salaire brut servant aux calculs des droits de l'Assurance chômage
+
+ S21.G00.51.013          Montant                                    A renseigner
+
+
+Déclaration de l'activité :
+
+
+ S21.G00.53 - Activité
+
+
+
+
+                     Code                                          Rubrique                                                Valorisation
+
+ S21.G00.53.001                                 Type                                               01 - Travail rémunéré
+
+ S21.G00.53.002                                 Mesure                                             6
+
+ S21.G00.53.003                                 Unité de mesure                                    12 - journée
+
+
+
+ S21.G00.53 - Activité
+
+
+
+
+        Code                    Rubrique                                                      Valorisation
+
+ S21.G00.53.001          Type                  01 - Travail rémunéré
+
+ S21.G00.53.002          Mesure                Renseigner le nombre d'heures effectuées (et non pas la conversion en heures des cachets)
+
+ S21.G00.53.003          Unité de mesure       35 - heures intermittents du spectacle
+
+
+
+ S21.G00.53 - Activité
+
+
+
+
+                     Code                                         Rubrique                                                 Valorisation
+
+ S21.G00.53.001                                Type                                            01 - Travail rémunéré
+
+ S21.G00.53.002                                Mesure                                          6
+
+                                                                                               36 - cachets groupés
+ S21.G00.53.003                                Unité de mesure                                 Ou 37 - cachets isolés
+                                                                                               Ou 39 - cachets
+
+
+        La réglementation :
+
+
+L'annexe 8 et l'annexe 10 au réglement général de l'Assurance chômage du 15 novembre 2024 déterminent les conditions et les modalités
+d'indemnisation pour les intermittents du spectacle.
+
+
+
+Date de création : 13/11/2025 03:05 PM
+N° de la fiche : 3344
+

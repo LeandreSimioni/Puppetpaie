@@ -93,7 +93,7 @@ fn texte_d_un_paragraphe_long_une_ligne_par_ligne_du_pdf() {
         "format": 1,
         "page": {"largeur": 200, "hauteur": 300,
                  "marges": {"haut": 20, "droite": 20, "bas": 20, "gauche": 20}},
-        "police": {"taille": 10, "interligne": fabrique_pdf::mesure::mesure("1.25"), "couleur": "#000000"},
+        "police": {"taille": 10, "interligne": fabrique_pdf::mesure!("1.25"), "couleur": "#000000"},
         "documents": [{"blocs": [{"type": "paragraphe", "alignement": "gauche", "majuscules": false,
             "espace_avant": 0, "espace_apres": 0, "retrait": 0, "morceaux": [{"gras": false, "italique": false, "texte":
             "Un paragraphe assez long pour passer à la ligne plusieurs fois dans une page étroite, sans rien perdre."}]}]}]

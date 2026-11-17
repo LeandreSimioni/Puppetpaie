@@ -478,7 +478,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let debut = toutes.len().saturating_sub(50);
     let mut doublon = None;
     for (i, l) in toutes.iter().enumerate().skip(debut).rev() {
-        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && quand.depuis(l.derniere).is_some_and(|d| d.as_secs() < DOUBLON_SECONDES as u64) {
+        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && quand.depuis(l.derniere).is_some_and(|d| d < DOUBLON) {
             doublon = Some(i);
             break;
         }
@@ -534,7 +534,7 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
 }
 
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).
-const DOUBLON_SECONDES: i64 = 600;
+const DOUBLON: std::time::Duration = std::time::Duration::from_secs(600);
 /// Les dernieres lignes du fil qu'un incident emporte.
 const FIL_PAR_INCIDENT: usize = 100;
 /// Les dernieres ecritures (charges entieres) de la page qu'un incident emporte : de quoi le rejouer.
@@ -1089,7 +1089,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
                 Err(e) => return Ok(Err(e)),
             };
             if !cle_de_poste(&r.cle) {
-                return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), 0)));
+                return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), None)));
             }
             c.poste = Some(r.poste.clone());
             c.cle = Some(r.cle.clone());

@@ -4,7 +4,7 @@
 
 pub mod base64;
 pub mod csv;
-pub mod d28;
+pub(crate) mod d28;
 pub mod date;
 pub mod echec;
 pub mod ecran;
@@ -13,6 +13,7 @@ pub mod feries;
 pub mod fichiers;
 pub mod fil_de_fond;
 pub mod forme;
+pub(crate) mod fraction;
 pub mod garde_reseau;
 pub mod grandeurs;
 pub mod html;
@@ -24,16 +25,26 @@ pub mod memoire;
 pub mod mode;
 pub mod mois;
 pub mod nfkc;
-pub mod num;
+pub(crate) mod num;
 pub mod paris;
 pub mod pays;
 pub mod piece;
 pub mod secret;
 pub mod nfkd_ascii;
+#[cfg(windows)]
+pub mod systeme;
 pub mod tables_nfkc;
 pub mod temps;
 pub mod texte;
 pub mod verrou;
+
+/// UNE PHRASE DITE AUX GENS QUI SE COMPOSE (`format!`) : `texte::Phrase`.
+#[macro_export]
+macro_rules! phrase {
+    ($($arg:tt)*) => {
+        $crate::texte::Phrase::de_format(format_args!($($arg)*))
+    };
+}
 
 /// UN REFUS ORDINAIRE DONT LA PHRASE SE COMPOSE (`format!`) : `echec::refus`, son endroit note la ou il s'ecrit.
 #[macro_export]

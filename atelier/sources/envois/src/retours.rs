@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
 use droit::contexte::TypeDeParametreNeores;
+use declarations::identite::{IdentiteDeclaree, NaissanceDeclaree};
 use droit::fiche::{Nic, Nir, Siren, Siret};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::mode::Mode;
@@ -26,7 +27,8 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
 use socle::garde_reseau::Url;
-use socle::paris::{FuseauXsd, InstantOuJour, Moment};
+use socle::grandeurs::EcartEnOctets;
+use socle::paris::{InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
 use socle::texte::blanc;
@@ -908,7 +910,8 @@ fn controle_expat(s: &str) -> R<()> {
             i = apres(&c, fin, "?>", 2);
         } else if commence_par(&c, i, "<!") {
             // DOCTYPE : son nom se verifie, on saute le reste, crochets et guillemets compris.
-            let (mut profondeur, mut guill) = (0i32, None);
+            // Les crochets ouverts et fermes, deux comptes : le `>` qui finit est celui ou aucun ne reste ouvert.
+            let (mut ouverts, mut fermes, mut guill) = (0usize, 0usize, None);
             i += 2;
             if commence_par(&c, i, "DOCTYPE") {
                 let mut k = i + 7;
@@ -928,12 +931,12 @@ fn controle_expat(s: &str) -> R<()> {
                     (q, Some(g)) if q == g => guill = None,
                     (_, Some(_)) => {}
                     ('"' | '\'', None) => guill = Some(c[i]),
-                    ('[', None) => profondeur += 1,
-                    (']', None) => profondeur -= 1,
+                    ('[', None) => ouverts += 1,
+                    (']', None) => fermes += 1,
                     ('<', None) if commence_par(&c, i, "<!--") => {
                         i = apres(&c, i + 4, "-->", 2);
                     }
-                    ('>', None) if profondeur <= 0 => {
+                    ('>', None) if ouverts <= fermes => {
                         i += 1;
                         break;
                     }
@@ -1314,28 +1317,6 @@ impl Serialize for Reception {
     }
 }
 
-/// L'instant ou le jour d'une date `(jour, fuseau)` et d'une heure `(secondes depuis minuit, fraction nulle, fuseau)` de
-/// XML Schema (`Reception::au_journal`).
-fn au_journal(date: (Jour, Option<FuseauXsd>), heure: Option<(i64, bool, Option<FuseauXsd>)>) -> Option<InstantOuJour> {
-    let (jour, fuseau_date) = date;
-    let Some((seconde, a_la_seconde, fuseau)) = heure else {
-        return fuseau_date.is_none().then_some(InstantOuJour::Jour(jour));
-    };
-    if !a_la_seconde || fuseau_date.is_some_and(|z| fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
-        return None;
-    }
-    let local = (jour.ordinal() - 719_163) * 86_400 + seconde;
-    let instant = match fuseau {
-        None => {
-            // `24:00:00` est le debut du jour suivant.
-            let (jour, seconde) = (Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
-            Moment::a_paris(jour, seconde / 3_600, (seconde % 3_600) / 60, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
-        }
-        Some(z) => Moment::de_secondes(local - z.secondes())?,
-    };
-    Some(InstantOuJour::Instant(instant))
-}
-
 /// La reception que disent les champs `date_reception` et `heure_reception` du rapport (`get`) ; une date ou une heure
 /// qui n'est pas de la forme du schema refuse le rapport.
 fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Reception>> {
@@ -1348,8 +1329,8 @@ fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Recept
         Some(h) => (Some(Zone::lue(&h, format::HeureXsd).valeur().ok_or_else(|| illisible("heure_reception", "heure", &h))?), format!("{}T{}", d, h)),
         None => (None, d.clone()),
     };
-    let hh_mm = heure.map(|(s, _, _)| format!("{:02}:{:02}", s / 3_600, (s % 3_600) / 60));
-    Ok(Some(Reception { jour: date.0, ecrite, hh_mm, au_journal: au_journal(date, heure) }))
+    let hh_mm = heure.map(|h| h.heure_minute());
+    Ok(Some(Reception { jour: date.0, ecrite, hh_mm, au_journal: socle::paris::instant_xsd(date, heure) }))
 }
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
@@ -2205,9 +2186,9 @@ struct Membre {
     crc: u64,
     taille_comp: u64,
     taille: u64,
-    decalage: i128,
+    decalage: EcartEnOctets,
     /// L'octet ou le membre ne peut pas aller plus loin.
-    fin: i128,
+    fin: EcartEnOctets,
 }
 
 fn description_compression(t: usize) -> &'static str {
@@ -2253,8 +2234,8 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> R<()> {
             if m.taille_comp == 0xFFFF_FFFF {
                 m.taille_comp = lire("Compress size")?;
             }
-            if m.decalage == 0xFFFF_FFFF {
-                m.decalage = lire("Header offset")? as i128;
+            if m.decalage == EcartEnOctets::lu(0xFFFF_FFFF) {
+                m.decalage = EcartEnOctets::lu(lire("Header offset")?);
             }
         }
         e = &e[ln + 4..];
@@ -2277,34 +2258,36 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         }
     };
     let rec = &b[pos..pos + 22];
-    let (mut taille_cd, mut decalage_cd) = (u32_le(rec, 12) as i128, u32_le(rec, 16) as i128);
-    let mut location = pos as i128;
-    // `_EndRecData64`
+    let (mut taille_cd, mut decalage_cd) = (EcartEnOctets::lu(u32_le(rec, 12)), EcartEnOctets::lu(u32_le(rec, 16)));
+    let mut location = EcartEnOctets::de_position(pos);
+    // `_EndRecData64` : son localisateur (20 octets), et sa fin de repertoire (56 octets, extensible).
+    let fin64 = EcartEnOctets::lu(56);
     if pos >= 20 && &b[pos - 20..pos - 16] == b"PK\x06\x07" {
         let loc = pos - 20;
-        let (disque, reloff, disques) = (u32_le(b, loc + 4), u64_le(b, loc + 8) as i128, u32_le(b, loc + 16));
+        let (disque, reloff, disques) = (u32_le(b, loc + 4), EcartEnOctets::lu(u64_le(b, loc + 8)), u32_le(b, loc + 16));
         if disque != 0 || disques > 1 {
             return Err(mauvais("archive zip sur plusieurs disques : non lue"));
         }
-        let offset = loc as i128 - 56;
+        let offset = EcartEnOctets::de_position(loc) - fin64;
         if reloff > offset {
             return Err(mauvais("archive zip64 abimee : le reperage de la fin du repertoire"));
         }
-        let lire56 = |de: i128| -> Option<&[u8]> {
-            let de = de as usize;
+        let lire56 = |de: EcartEnOctets| -> Option<&[u8]> {
+            let de = de.au_plus(b.len())?;
             (de.checked_add(56)? <= b.len()).then(|| &b[de..de + 56])
         };
         let mut extrasz = offset - reloff;
         let mut data = lire56(reloff).ok_or_else(pas_un_zip)?;
         if !data.starts_with(b"PK\x06\x06") && reloff != offset {
-            extrasz = 0;
+            extrasz = EcartEnOctets::ZERO;
             data = lire56(offset).ok_or_else(pas_un_zip)?;
         }
         if !data.starts_with(b"PK\x06\x06") {
             return Err(mauvais("archive zip64 sans fin de repertoire"));
         }
-        let (sz, dirsize, diroffset) = (u64_le(data, 4) as i128, u64_le(data, 40) as i128, u64_le(data, 48) as i128);
-        if diroffset + dirsize != reloff || sz + 12 != 56 + extrasz {
+        let (sz, dirsize, diroffset) = (EcartEnOctets::lu(u64_le(data, 4)), EcartEnOctets::lu(u64_le(data, 40)), EcartEnOctets::lu(u64_le(data, 48)));
+        // `sz` ne compte ni la signature ni lui-meme (12 octets).
+        if diroffset + dirsize != reloff || sz + EcartEnOctets::lu(12) != fin64 + extrasz {
             return Err(mauvais("archive zip64 abimee : la fin du repertoire"));
         }
         taille_cd = dirsize;
@@ -2312,14 +2295,16 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         location = offset - extrasz;
     }
     let concat = location - taille_cd - decalage_cd;
-    let debut_cd = decalage_cd + concat;
-    if debut_cd < 0 {
+    let Some(debut_cd) = (decalage_cd + concat).au_plus(b.len()) else {
         return Err(mauvais("archive zip abimee : la position du repertoire"));
-    }
-    let debut_cd = (debut_cd as usize).min(b.len());
-    let cd = &b[debut_cd..(debut_cd as i128 + taille_cd).min(b.len() as i128) as usize];
+    };
+    let fin_cd = match (EcartEnOctets::de_position(debut_cd) + taille_cd).au_plus(b.len()) {
+        Some(f) => f,
+        None => unreachable!("le debut du repertoire et sa taille ne precedent pas le debut du fichier"),
+    };
+    let cd = &b[debut_cd..fin_cd];
     let mut membres = Vec::new();
-    let (mut total, mut p) = (0i128, 0usize);
+    let (mut total, mut p) = (EcartEnOctets::ZERO, 0usize);
     while total < taille_cd {
         if cd.len() < p + 46 {
             return Err(mauvais("archive zip tronquee : le repertoire"));
@@ -2352,8 +2337,8 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
             crc: u32_le(c, 16),
             taille_comp: u32_le(c, 20),
             taille: u32_le(c, 24),
-            decalage: u32_le(c, 42) as i128,
-            fin: 0,
+            decalage: EcartEnOctets::lu(u32_le(c, 42)),
+            fin: EcartEnOctets::ZERO,
         };
         if c[6] > 63 {
             return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {}.{} : non lue", c[6] / 10, c[6] % 10)));
@@ -2361,12 +2346,12 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         extra_zip64(extra, &mut m)?;
         m.decalage += concat;
         membres.push(m);
-        total += (46 + ln_nom + ln_extra + ln_comm) as i128;
+        total += EcartEnOctets::de_position(46 + ln_nom + ln_extra + ln_comm);
     }
     // Chaque membre finit ou le suivant commence (le repertoire pour le dernier).
     let mut ordre: Vec<usize> = (0..membres.len()).collect();
     ordre.sort_by_key(|&i| std::cmp::Reverse(membres[i].decalage));
-    let mut fin = debut_cd as i128;
+    let mut fin = EcartEnOctets::de_position(debut_cd);
     for i in ordre {
         membres[i].fin = fin;
         fin = membres[i].decalage;
@@ -2382,10 +2367,9 @@ fn crc32(o: &[u8]) -> u64 {
 
 /// `ZipFile.read(nom)`.
 fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
-    if m.decalage < 0 {
+    let Some(dec) = m.decalage.au_plus(b.len()) else {
         return Err(echec(Classe::Illisible, format!("negative seek value {}", m.decalage)));
-    }
-    let dec = m.decalage as usize;
+    };
     if dec.saturating_add(30) > b.len() {
         return Err(mauvais("archive zip tronquee : l'en-tete d'un fichier"));
     }
@@ -2407,7 +2391,7 @@ fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
     if nom_en_tete != m.original {
         return Err(mauvais(format!("archive zip abimee : le repertoire nomme « {} », l'en-tete « {} »", m.original, nom_en_tete)));
     }
-    if (debut_donnees as i128).saturating_add(m.taille_comp as i128) > m.fin {
+    if EcartEnOctets::de_position(debut_donnees) + EcartEnOctets::lu(m.taille_comp) > m.fin {
         return Err(mauvais(format!("archive zip abimee : « {} » chevauche un autre fichier", m.original)));
     }
     if m.drapeaux & 1 != 0 {
@@ -2607,7 +2591,7 @@ pub struct TauxAtmpNotifie {
     /// est celui des fonctions support.
     pub code_risque: droit::bareme::CodeRisqueAt,
     /// En pourcentage (1.50 pour 1,50 %).
-    pub taux: socle::num::Decimal,
+    pub taux: socle::grandeurs::Taux,
     pub date_effet: socle::date::Jour,
     pub date_calcul: Option<socle::date::Jour>,
 }
@@ -2657,7 +2641,7 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");
-            let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
+            let taux = socle::grandeurs::lu::texte::<socle::grandeurs::Taux>(&brut).filter(|v| *v > socle::grandeurs::Taux::ZERO && *v < socle::grandeurs::Taux::CENT_POUR_CENT);
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
             let Some(date_effet) = jour_notifie(&effet) else { return Err(illisible("date d'effet", &effet)) };
@@ -3005,11 +2989,11 @@ fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
 /// `rubrique_de`, un montant signe (RO.B005.R004, CSL 00 : `0\.00|[+-](0|[1-9]\d*)\.\d{2}`, cahier technique NEOReS
 /// 2027.1.0, `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`) : « + » un
 /// credit, « - » un debit ; une autre forme se refuse.
-fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::num::Decimal>> {
+fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::grandeurs::Montant>> {
     rubrique_de(a, e, nom)
         .map(|t| {
             let forme = t == "0.00" || (t.starts_with(['+', '-']) && t.len() >= 5 && t.as_bytes()[t.len() - 3] == b'.');
-            forme.then(|| socle::num::decimal_lu(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
+            forme.then(|| socle::grandeurs::lu::norme(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
         })
         .transpose()
 }
@@ -3034,9 +3018,10 @@ fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::M
 /// UN INDIVIDU D'UN COMPTE RENDU NEOReS (`RO.B006`, `RO.B012`) : nom, prenom, matricule, debut et numero du contrat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IndividuNeores {
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    pub matricule: Option<String>,
+    /// Le nom (R003) et le prenom (R004).
+    pub identite: IdentiteDeclaree,
+    /// R005.
+    pub matricule: Option<droit::fiche::Matricule>,
     pub debut_contrat: Option<socle::date::Jour>,
     pub contrat: Option<String>,
 }
@@ -3061,7 +3046,8 @@ pub struct DetailNeores {
     pub atypie: Option<String>,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub montant: Option<socle::num::Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<socle::grandeurs::Montant>,
     pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,
@@ -3108,16 +3094,29 @@ pub struct ParametreNeores {
 /// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` l. 2752-2798).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IdentiteNeores {
-    pub nir_declare: Option<Nir>,
-    pub ntt_declare: Option<declarations::ntt::Ntt>,
-    pub nir_reference: Option<Nir>,
-    pub nom_declare: Option<String>,
-    pub nom_reference: Option<String>,
-    pub prenom_declare: Option<String>,
-    pub prenom_reference: Option<String>,
-    pub naissance_declaree: Option<String>,
-    pub naissance_reference: Option<String>,
-    pub matricule: Option<String>,
+    /// Le NIR (R001) ou le NTT (R002), le nom (R004), le prenom (R006) et la naissance (R008) declares.
+    pub declaree: IdentiteDeclaree,
+    /// Le NIR (R003), le nom (R005), le prenom (R007) et la naissance (R009, aucune quand le SNGI ne la connait pas) de
+    /// reference.
+    pub reference: IdentiteDeclaree,
+    /// R010.
+    pub matricule: Option<droit::fiche::Matricule>,
+}
+
+/// Une date de naissance d'un compte rendu NEOReS (RO.B009.R008, R009), `AAAA-MM-JJ` (`NaissanceDeclaree::lire_iso`) :
+/// un retour de la norme se lit strictement, une autre forme le refuse.
+fn naissance_du_retour(t: &str) -> R<NaissanceDeclaree> {
+    NaissanceDeclaree::lire_iso(t).ok_or_else(|| socle::refus!("« {} » n'est pas une date de naissance AAAA-MM-JJ (RO.B009.R008, R009).", t))
+}
+
+/// La date de naissance de reference (RO.B009.R009), celle que le SNGI enregistre ; aucune quand il ne la connait pas :
+/// « Si date de naissance inconnue : 0000-00-00 » (meme cahier, l. 2899, et son CSL 00, l. 2906-2908). La declaree
+/// (R008) n'admet pas cette forme : son annee est obligatoire.
+fn naissance_de_reference(t: &str) -> R<Option<NaissanceDeclaree>> {
+    match t {
+        "0000-00-00" => Ok(None),
+        _ => naissance_du_retour(t).map(Some),
+    }
 }
 
 /// Une information (`RO.B011`) et ses individus (`RO.B012`).
@@ -3194,9 +3193,12 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let type_de_retour = forme_du_retour(r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
     let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
         Ok(IndividuNeores {
-            nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
-            prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
-            matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
+            identite: IdentiteDeclaree {
+                nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
+                prenoms: rubrique_texte(&a, b, &format!("{}_R004", p)),
+                ..IdentiteDeclaree::default()
+            },
+            matricule: forme_du_retour(rubrique_de(&a, b, &format!("{}_R005", p)), droit::fiche::Matricule::lire)?,
             debut_contrat: rubrique_jour(&a, b, &format!("{}_R006", p))?,
             contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
         })
@@ -3274,16 +3276,21 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
             Ok(IdentiteNeores {
-                nir_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
-                ntt_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
-                nir_reference: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
-                nom_declare: x("RO_B009_R004"),
-                nom_reference: x("RO_B009_R005"),
-                prenom_declare: x("RO_B009_R006"),
-                prenom_reference: x("RO_B009_R007"),
-                naissance_declaree: x("RO_B009_R008"),
-                naissance_reference: x("RO_B009_R009"),
-                matricule: x("RO_B009_R010"),
+                declaree: IdentiteDeclaree {
+                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
+                    ntt: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
+                    nom: x("RO_B009_R004"),
+                    prenoms: x("RO_B009_R006"),
+                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R008"), naissance_du_retour)?,
+                },
+                reference: IdentiteDeclaree {
+                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
+                    ntt: None,
+                    nom: x("RO_B009_R005"),
+                    prenoms: x("RO_B009_R007"),
+                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R009"), naissance_de_reference)?.flatten(),
+                },
+                matricule: forme_du_retour(rubrique_de(&a, b, "RO_B009_R010"), droit::fiche::Matricule::lire)?,
             })
         })
         .collect::<R<_>>()?;
@@ -3398,6 +3405,23 @@ fn illisible_crm_oc(attribut: &str, valeur: &str) -> Echec {
     socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {} vaut {}, pas JJMMAAAA.", attribut, socle::date::repr_texte(valeur)), attribut).reclasser(Classe::Illisible)
 }
 
+/// Le BIC d'un mandat SEPA a creer ; aucun quand l'organisme ne le connait pas : le schema admet onze soulignes « pour
+/// prendre en compte les cas possibles de BIC inconnu » (`atelier/reference/sources/gip-mds-api-dsn/
+/// ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` l. 79-80 ; `ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd` l. 33, 78).
+fn bic_du_mandat(t: &str) -> R<Option<droit::fiche::Bic>> {
+    match t {
+        "___________" => Ok(None),
+        _ => droit::fiche::Bic::lire(t).map(Some),
+    }
+}
+
+/// Un attribut d'un CRM OC lu dans sa forme (`lire`) ; hors d'elle, le CRM ne se lit pas.
+fn attribut_du_crm<T>(texte: Option<String>, attribut: &str, lire: fn(&str) -> R<T>) -> R<Option<T>> {
+    texte
+        .map(|t| lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), attribut).reclasser(Classe::Illisible)))
+        .transpose()
+}
+
 pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
@@ -3415,9 +3439,14 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             .enfants(d)
             .filter(|x| matches!(local(&x.tag), "MandatNetE" | "MandatProp"))
             .map(|m| -> R<MandatOc> {
-                // L'adresse du mandat ; hors de la forme d'une adresse, le CRM ne se lit pas.
-                let url = at(m, "URLMandatProp").map(|t| Url::lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), "URLMandatProp").reclasser(Classe::Illisible))).transpose()?;
-                Ok(MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url })
+                // L'adresse, l'IBAN et le BIC du mandat ; hors de leur forme, le CRM ne se lit pas.
+                Ok(MandatOc {
+                    net_entreprises: local(&m.tag) == "MandatNetE",
+                    iban: attribut_du_crm(at(m, "IBAN"), "IBAN", droit::fiche::Iban::lire)?,
+                    bic: attribut_du_crm(at(m, "BIC"), "BIC", bic_du_mandat)?.flatten(),
+                    ics: at(m, "ICS"),
+                    url: attribut_du_crm(at(m, "URLMandatProp"), "URLMandatProp", Url::lire)?,
+                })
             })
             .collect::<R<Vec<MandatOc>>>()?;
         let mut retours = Vec::new();
@@ -3515,8 +3544,9 @@ pub struct DeclarationOc {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MandatOc {
     pub net_entreprises: bool,
-    pub iban: Option<String>,
-    pub bic: Option<String>,
+    pub iban: Option<droit::fiche::Iban>,
+    /// Aucun : l'organisme ne connait pas le BIC (`bic_du_mandat`).
+    pub bic: Option<droit::fiche::Bic>,
     pub ics: Option<String>,
     pub url: Option<Url>,
 }

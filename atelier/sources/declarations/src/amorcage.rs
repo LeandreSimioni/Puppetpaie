@@ -12,7 +12,7 @@ use engagement::calcul::Paie;
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::{Anciennete, Duree, Jour};
 use crate::dsn::{
-    affiliations, bloc_anciennete, bloc_contrat, usage_admet, Fichier, LOGICIEL, VERSION,
+    affiliations, bloc_anciennete, bloc_contrat, usage_admet, Fichier, RangDuContrat, LOGICIEL, VERSION,
 };
 use crate::fctu::Echec;
 use socle::fichiers::repr;
@@ -166,7 +166,6 @@ un manque du logiciel.",
 /// La pile d'une declaration qui ne declare aucun taux (le taux AT/MP est interdit en nature 08) : l'annee, et aucune
 /// valeur ni aucune cotisation. Aucun calcul ne la lit.
 fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
-    use socle::num::Decimal;
     use std::collections::BTreeMap;
     droit::forme_bareme::Pile {
         annee,
@@ -181,9 +180,9 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         pas_taux_par_defaut: None,
         plafond_securite_sociale: None,
         sante_obligatoire: None,
-        abattement_csg: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
-        majoration_conges_115: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
-        majoration_conges_110: socle::grandeurs::Coefficient::du_decimal(Decimal::ZERO),
+        abattement_csg: socle::grandeurs::Coefficient::ZERO,
+        majoration_conges_115: socle::grandeurs::Coefficient::ZERO,
+        majoration_conges_110: socle::grandeurs::Coefficient::ZERO,
         plafond_journalier: None,
         t2_multiple: None,
         apec_multiple: None,
@@ -212,6 +211,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         contributions_dsn: None,
         secteurs: None,
         taux_atmp: None,
+        taux_atmp_manque: None,
         etablissement: None,
         source: None,
         note: None,
@@ -332,7 +332,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         // Les emplois multiples (`40.036`) : les autres contrats du salarie dans le mois de l'embauche.
         let du_mois = crate::dsn::contrats_du_mois(ctx, e.periode_payee()?.debut().mois_civil(), departs)?;
         let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
-        bloc_contrat(&mut f, paie, &etab, &orgs, 1, &bar, false, &[], NATURE, emplois)?;
+        bloc_contrat(&mut f, paie, &etab, &orgs, RangDuContrat::PREMIER, &bar, false, &[], NATURE, emplois)?;
         // L'anciennete, due des qu'une adhesion prevoyance est declaree.
         // Elle part de `date_anciennete` de la fiche, que la validation du premier engagement pose (comme le FCTU).
         let depuis = *s.date_anciennete.exigee("date_anciennete")?;

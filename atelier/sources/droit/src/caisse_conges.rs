@@ -40,7 +40,7 @@ fn douze_mois_apres(debut: &Jour) -> R<Jour> {
 
 /// Le `contrat`, du debut au terme signes, dure-t-il douze mois ou plus ?
 pub fn douze_mois_ou_plus(contrat: &Periode) -> R<bool> {
-    Ok(contrat.fin().plus_jours(1)? >= douze_mois_apres(&contrat.debut())?)
+    Ok(contrat.fin().apres(socle::date::Duree::jours(1))? >= douze_mois_apres(&contrat.debut())?)
 }
 
 /// LE CONTRAT D'UN INTERMITTENT. Un CDD d'usage (la nature payee a l'activite) l'est toujours ; un CDI jamais ; un CDD

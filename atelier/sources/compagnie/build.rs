@@ -2,6 +2,7 @@
 //! dont elle depend, et du verrou de l'espace : `../empreinte.rs`), que la machine du diagnostic porte
 //! (`diagnostic::machine`). La marque de l'etat garde de l'ouverture est celle de `routes/build.rs`, qui couvre aussi
 //! les routes : celle-ci ne lit rien au-dessus de la compagnie, qu'une retouche du haut ne recompile pas.
+#![forbid(unsafe_code)]
 
 include!("../empreinte.rs");
 

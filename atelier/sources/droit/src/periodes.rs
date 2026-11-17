@@ -34,11 +34,10 @@ use crate::conges::JoursTravailles;
 use socle::echec::R;
 use socle::grandeurs::ecrit::sans_zero::dit;
 use socle::grandeurs::{Coefficient, HeuresParUnite, Jours};
-use socle::num::Decimal;
 
 /// Les jours ouvres d'un mois de la CCN 1285, art. X.3 : « 1/21 du montant du salaire mensuel »
 /// (`atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, l. 20).
-const JOURS_DU_MOIS_CCNEAC: Jours = Jours::du_decimal(Decimal::from_parts(21, 0, 0, false, 0));
+const JOURS_DU_MOIS_CCNEAC: Jours = Jours::fixes(21);
 
 /// Ce que `avant` (les termes du contrat avant un avenant en cours de mois) peut dire.
 pub const TERMES_D_AVANT: [&str; 2] = ["salaire_mensuel", "quotite_contrat"];
@@ -89,7 +88,7 @@ pub fn decouper(p: Periode, mut jours: Vec<Jour>) -> R<Vec<Periode>> {
     let mut out = Vec::new();
     let mut d = p.debut();
     for j in jours {
-        out.push(Periode::du_au(d, j.plus_jours(-1)?)?);
+        out.push(Periode::du_au(d, j.avant(socle::date::Duree::jours(1))?)?);
         d = j;
     }
     out.push(Periode::du_au(d, p.fin())?);
@@ -149,7 +148,7 @@ impl DecompteDuMois {
     /// Ce que la ligne du bulletin dit de la part payee, pour un contrat de `heures_par_jour` heures par jour travaille ;
     /// `None` pour un mois entier.
     pub fn sur_le_bulletin(&self, heures_par_jour: HeuresParUnite) -> Option<String> {
-        if self.fraction.decimal() == Decimal::ONE {
+        if self.fraction == Coefficient::UN {
             return None;
         }
         let part = match self.regle {
@@ -186,7 +185,7 @@ art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
                 self.jours_travailles.en_mots()
             ),
         };
-        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction.decimal() > Decimal::ONE {
+        if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction > Coefficient::UN {
             dit.push_str(
                 ". C'est plus que le salaire mensuel : l'article X.3 ne borne pas le mois incomplet, le logiciel non plus",
             );
@@ -253,5 +252,5 @@ pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, 
         true => Coefficient::UN,
         false => jours.rapport(jours_du_mois).ok_or_else(|| socle::refus!("L'horaire du salarié ne compte aucun jour travaillé dans le mois : la part du salaire ne se dit pas."))?,
     };
-    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours, feries_non_payes })
+    Ok(DecompteDuMois { fraction, jours, jours_du_mois, regle, jours_travailles: horaire.jours.clone(), feries_non_payes })
 }

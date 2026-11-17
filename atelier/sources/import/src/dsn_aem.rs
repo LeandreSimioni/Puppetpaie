@@ -16,7 +16,6 @@ use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
 use socle::grandeurs::{Cachets, Heures, Jours};
 use socle::mois::{Graphie, Mois};
-use socle::num::Decimal;
 use socle::piece::format::Aaaammjj;
 use socle::piece::Zone;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
@@ -25,8 +24,7 @@ use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 /// Ce qu'une DSN dit d'un salarie.
 pub struct SalarieDeclare {
-    /// Aucun pour un individu que la DSN declare sans NIR.
-    pub nir: Option<Nir>,
+    /// Son identite : aucun NIR pour un individu que la DSN declare sans lui.
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
@@ -41,12 +39,19 @@ impl SalarieDeclare {
     pub fn fiche(&self) -> socle::echec::R<(ChampsSalarie, Vec<FauteDeCase>)> {
         #[derive(Serialize)]
         struct Fiche<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            nom: Option<&'a String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            prenom: Option<&'a String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            date_naissance: Option<&'a declarations::identite::NaissanceDeclaree>,
             #[serde(flatten)]
             individu: &'a IndividuDeclare,
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de(&Fiche { individu: &self.individu, emploi: &self.emploi })
+        let identite = &self.individu.identite;
+        crate::proposee::de(&Fiche { nom: identite.nom.as_ref(), prenom: identite.prenoms.as_ref(), date_naissance: identite.naissance.as_ref(), individu: &self.individu, emploi: &self.emploi })
     }
 }
 
@@ -61,7 +66,7 @@ pub struct ObjetDeclare {
     pub numero: droit::fiche::NumeroObjetSpectacle,
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
-    pub contrats: i64,
+    pub contrats: usize,
     /// La piece qui le declare.
     pub source: crate::reponse::Source,
 }
@@ -96,7 +101,7 @@ pub struct LectureDsn {
     pub paies: BTreeMap<(Mois, Option<Nir>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<socle::mois::Annee, (Mois, droit::bareme::CodeRisqueAt, Option<Decimal>)>,
+    pub atmp: BTreeMap<socle::mois::Annee, (Mois, droit::bareme::CodeRisqueAt, Option<socle::grandeurs::Taux>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -216,7 +221,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         // Le code risque de la DSN : un seul pour tous ses contrats, sinon rien (on ne choisit pas).
-        let risques: BTreeSet<(droit::bareme::CodeRisqueAt, Option<Decimal>)> =
+        let risques: BTreeSet<(droit::bareme::CodeRisqueAt, Option<socle::grandeurs::Taux>)> =
             info.contrats.iter().filter_map(|c| c.code_risque.clone().map(|r| (r, c.taux_at))).collect();
         if risques.len() == 1 {
             if let Some((code, taux)) = risques.into_iter().next() {
@@ -250,7 +255,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
-            let nir = ind.nir.clone();
+            let nir = ind.identite.nir.clone();
             let c = dernier_contrat.get(&nir.as_ref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
@@ -258,7 +263,6 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
             let premier = info.contrats.iter().filter(|x| x.nir == nir).map(|x| x.periode.debut()).chain(avant).min();
             let decl = SalarieDeclare {
-                nir: nir.clone(),
                 individu: ind.clone(),
                 emploi: c.map(|c| c.emploi.du_salarie()).transpose()?,
                 mois,
@@ -302,7 +306,7 @@ pub struct ContratAtteste {
     pub(crate) cachets: Cachets,
     pub(crate) jours: Jours,
     /// Le brut en euros, deux décimales.
-    pub(crate) brut: socle::num::Decimal,
+    pub(crate) brut: socle::grandeurs::Montant,
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
     pub(crate) numero_attestation: String,
     pub(crate) date_attestation: Option<socle::date::Jour>,
@@ -332,7 +336,6 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
 pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec<String>), socle::echec::Echec> {
     use socle::grandeurs::ecrit::sans_zero::dit;
     use socle::grandeurs::lu::texte_entier;
-    use socle::num::decimal_lu;
     let mut vus: Vec<(Vec<String>, ContratAtteste)> = Vec::new();
     let mut connus: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
     let mut illisibles = Vec::new();
@@ -403,10 +406,10 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                 continue;
             };
             let brut_texte = champ(&l, 659, 668);
-            let Some(brut_cts) = decimal_lu(&brut_texte) else {
-                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::num::illisible(&brut_texte), a_part: None });
+            // La zone ecrit le brut en centimes, un entier : il se lit en euros a sa porte.
+            let Some(brut) = socle::grandeurs::lu::en_centimes(&brut_texte) else {
+                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::forme::illisible(&brut_texte), a_part: None });
             };
-            let brut = socle::grandeurs::Montant::du_decimal(brut_cts / socle::num::Decimal::from(100)).au_centime().decimal();
             let cle = vec![
                 nir_ecrit,
                 debut.iso(),
@@ -415,7 +418,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
                 dit(heures),
                 dit(c1 + c2),
                 dit(jours),
-                brut.to_string(),
+                socle::grandeurs::ecrit::norme::montant(brut),
             ];
             if connus.insert(cle.clone()) {
                 vus.push((cle, ContratAtteste {
@@ -447,7 +450,9 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>, Vec
 /// cle de Luhn ; sinon l'AEM passe, avec un avertissement nomme (`AEM_SANS_SIRET`) -- on ne refuse pas au hasard.
 pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 
-/// Ce qu'une piece (DSN, AEM) dit de son employeur.
+/// LES SIREN QU'UNE PIECE (DSN, AEM) PORTE, pour trier ce qui est de la compagnie (`siren_de_reference`) : ni sa raison
+/// sociale ni son SIRET entier (l'employeur lu d'une piece, `declarations::identite::EmployeurLu`, est une autre
+/// lecture).
 #[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).
@@ -558,7 +563,8 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.map(|c| c.as_str())), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&socle::mois::Annee::constante(2025)), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::num::decimal_lu("1.65"))));
+        let a2025: socle::mois::Annee = socle::forme::lire_texte("2025", "l'annee du test").unwrap();
+        assert_eq!(lu.atmp.get(&a2025), Some(&(a2025.decembre(),droit::bareme::CodeRisqueAt::lire("923AD").unwrap(), socle::grandeurs::lu::norme::<socle::grandeurs::Taux>("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }

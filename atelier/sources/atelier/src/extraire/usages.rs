@@ -34,7 +34,8 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::{case, date_du_releve, en_transcription, propre, remplie, sha256, EnOrdre, Rang, Releve, Transcription};
-use fabrique_pdf::mesure::{mesure, Mesure};
+use fabrique_pdf::mesure;
+use fabrique_pdf::mesure::Mesure;
 use import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
@@ -89,14 +90,14 @@ struct Usage {
 pub const FEUILLE_USAGES: &str = "1 - Tableau des usages";
 
 /// Un filet est un trait de moins de 1,2 pt d'epaisseur et d'au moins 20 pt de long.
-const EPAISSEUR_MAX: Mesure = mesure("1.2");
-const LONGUEUR_MIN: Mesure = Mesure::entier(20);
+const EPAISSEUR_MAX: Mesure = mesure!("1.2");
+const LONGUEUR_MIN: Mesure = mesure!("20");
 /// Deux filets dont les centres different de moins de 1 pt sont le meme.
 const TOLERANCE: Mesure = Mesure::UN;
 /// Une frontiere de colonne : ses filets couvrent au moins 40 % de ceux de la colonne la mieux tracee ; une frontiere de
 /// ligne : au moins 150 pt de filet (les sept colonnes de natures, a elles seules, en font 170).
-const PART_COLONNE: Mesure = mesure("0.4");
-const COUVERTURE_LIGNE: Mesure = Mesure::entier(150);
+const PART_COLONNE: Mesure = mesure!("0.4");
+const COUVERTURE_LIGNE: Mesure = mesure!("150");
 
 fn rubrique() -> Regex {
     Regex::new(r"\AS\d\d\.G00\.\d\d\.\d\d\d\z").expect("motif")
@@ -106,11 +107,12 @@ fn rubrique() -> Regex {
 fn a_l_endroit(page: &PageRelevee, b: [Mesure; 4]) -> [Mesure; 4] {
     let (largeur, hauteur) = (page.largeur, page.hauteur);
     let [x0, y0, x1, y1] = b;
-    match page.rotation.rem_euclid(360) {
-        90 => [largeur - y1, x0, largeur - y0, x1],
-        180 => [largeur - x1, hauteur - y1, largeur - x0, hauteur - y0],
-        270 => [y0, hauteur - x1, y1, hauteur - x0],
-        _ => [x0, y0, x1, y1],
+    use fabrique_pdf::inspection::Rotation;
+    match page.rotation {
+        Rotation::QuartDeTour => [largeur - y1, x0, largeur - y0, x1],
+        Rotation::DemiTour => [largeur - x1, hauteur - y1, largeur - x0, hauteur - y0],
+        Rotation::TroisQuartsDeTour => [y0, hauteur - x1, y1, hauteur - x0],
+        Rotation::Aucune => [x0, y0, x1, y1],
     }
 }
 
@@ -124,11 +126,10 @@ fn regrouper(mut filets: Vec<(Mesure, Mesure)>) -> Vec<(Mesure, Mesure)> {
             _ => groupes.push(vec![(centre, longueur)]),
         }
     }
+    // Chaque groupe a au moins un filet : sa moyenne existe.
     groupes
         .iter()
-        .map(|g| {
-            (g.iter().map(|x| x.0).sum::<Mesure>() / g.len() as i64, g.iter().map(|x| x.1).sum::<Mesure>())
-        })
+        .filter_map(|g| Some((g.iter().map(|x| x.0).sum::<Mesure>().part_sur(g.len())?, g.iter().map(|x| x.1).sum::<Mesure>())))
         .collect()
 }
 
@@ -139,9 +140,9 @@ fn cases(page: &PageRelevee) -> (Vec<Mesure>, Vec<Mesure>) {
     for t in &page.traits {
         let [x0, y0, x1, y1] = a_l_endroit(page, *t);
         if x1 - x0 <= EPAISSEUR_MAX && y1 - y0 >= LONGUEUR_MIN {
-            verticaux.push(((x0 + x1) / 2, y1 - y0));
+            verticaux.push(((x0 + x1) * mesure!("0.5"), y1 - y0));
         } else if y1 - y0 <= EPAISSEUR_MAX && x1 - x0 >= LONGUEUR_MIN {
-            horizontaux.push(((y0 + y1) / 2, x1 - x0));
+            horizontaux.push(((y0 + y1) * mesure!("0.5"), x1 - x0));
         }
     }
     let colonnes = regrouper(verticaux);
@@ -170,7 +171,7 @@ fn lignes_du_tableau(page: &PageRelevee) -> Vec<Rang> {
     let mut cellules: HashMap<(usize, usize), Vec<&str>> = HashMap::new();
     for mot in &page.mots {
         let [x0, y0, x1, y1] = a_l_endroit(page, mot.rect.connue());
-        if let (Some(i), Some(j)) = (place((y0 + y1) / 2, &lignes), place((x0 + x1) / 2, &colonnes)) {
+        if let (Some(i), Some(j)) = (place((y0 + y1) * mesure!("0.5"), &lignes), place((x0 + x1) * mesure!("0.5"), &colonnes)) {
             cellules.entry((i, j)).or_default().push(&mot.texte);
         }
     }

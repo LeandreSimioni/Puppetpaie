@@ -72,7 +72,7 @@ async function dessinerIdentite(cible) {
   cible.innerHTML = `
     <p class="intro">${echapper(lu.intro)}</p>
     <div class="champ"><label>Poids visé en Ko
-      <input type="number" min="1" step="1" id="identite-poids" value="${echapper(String(poidsVise ?? lu.poids_vise_ko))}"></label></div>
+      <input type="text" inputmode="decimal" id="identite-poids" value="${echapper(String(poidsVise ?? lu.poids_vise_ko))}"></label></div>
     <div class="rangs">
       ${rang("signature")}
       ${rang("cachet")}

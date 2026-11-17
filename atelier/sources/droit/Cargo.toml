@@ -11,6 +11,5 @@ publish = false
 
 [dependencies]
 socle = { path = "../socle" }
-rust_decimal = { workspace = true }
 serde = { workspace = true }
 indexmap = { workspace = true }

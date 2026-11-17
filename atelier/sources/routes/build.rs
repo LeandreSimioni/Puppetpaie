@@ -1,6 +1,7 @@
 //! Identifie les sources des routes : `PAIE_SOURCES` (l'empreinte des sources des routes et de chaque crate dont elles
 //! dependent, et du verrou de l'espace : `../empreinte.rs`). L'etat garde de l'ouverture (`etat_garde`) porte cette
 //! marque : un autre moteur ne reprend pas un resultat qu'il n'a pas calcule.
+#![forbid(unsafe_code)]
 
 include!("../empreinte.rs");
 

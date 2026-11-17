@@ -58,7 +58,7 @@ pub const MNATA_ASSOCIATIONS: MotifNonAssujettissement = MotifNonAssujettissemen
 /// `atelier/reference/sources/code-du-travail/xml/L6241-1.xml`). La redaction precedente (16/02/2025 - 21/02/2026,
 /// `code-du-travail/xml-anterieur/L6241-1-v20250216.xml`) ne les nommait pas. Le millesime 2026 couvre des salaires d'avant
 /// le 21/02/2026 : l'association y est redevable pour le reste de l'annee, elle declare 001 (INFERENCE).
-pub const MILLESIME_ASSOCIATIONS_REDEVABLES: Annee = Annee::constante(2026);
+pub const MILLESIME_ASSOCIATIONS_REDEVABLES: Annee = socle::annee!("2026");
 /// La premiere periode d'emploi ou une association a activites non lucratives paie la taxe d'apprentissage : mars 2026.
 /// Guide Urssaf des contributions de formation et d'apprentissage, version du 12/03/2026
 /// (`atelier/reference/sources/majoration-caisses-conges/urssaf-guide-contributions-formation-apprentissage-20260312.txt`,
@@ -66,7 +66,7 @@ pub const MILLESIME_ASSOCIATIONS_REDEVABLES: Annee = Annee::constante(2026);
 /// de la loi n° 2026-103 du 19 février 2026 de finances pour 2026 modifiant l'article L6241-1 du code du travail, la taxe
 /// d'apprentissage est également due par les associations [...] à activités non lucratives ». Les salaires de
 /// janvier et fevrier 2026 n'en portent pas ; le millesime 2026 la porte de mars a decembre, et se declare 001.
-pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: Mois = Mois::constante(2026, 3);
+pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: Mois = socle::mois!("2026-03");
 
 /// La table MNATA livree : (code, libelle).
 pub fn motifs_mnata() -> R<Vec<(MotifNonAssujettissement, String)>> {

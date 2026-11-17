@@ -23,7 +23,8 @@ deprecated = "forbid"
 unused_imports = "forbid"
 unused_variables = "forbid"
 unused_assignments = "forbid"
-unused_mut = "forbid"
+# `deny`, pas `forbid` : le `thread_local!` de la bibliotheque standard porte son `allow(unused_mut)` sous Windows.
+unused_mut = "deny"
 unused_must_use = "forbid"
 unused_macros = "forbid"
 unused_unsafe = "forbid"
@@ -35,6 +36,8 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe`, dans aucune cible de la fabrique (sa bibliotheque, son binaire, ses essais, son script de construction).
+unsafe_code = "forbid"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

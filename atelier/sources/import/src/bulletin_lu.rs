@@ -1,5 +1,5 @@
 //! Le lecteur de bulletins : une page de PDF devient un `BulletinLu`, TEL QU'IL EST, quel que soit le logiciel qui
-//! l'a fait. Le bulletin fait foi : rien ne se recalcule, chaque montant est un `Decimal` lu sur la page
+//! l'a fait. Le bulletin fait foi : rien ne se recalcule, chaque montant est un `Montant` lu sur la page
 //! (« 1 421,13 » -> 1421.13).
 //!
 //! La page se lit par `fabrique_pdf::inspection::inspecter` : chaque mot et sa boite. Le texte dans l'ordre du flux
@@ -47,83 +47,81 @@
 //! et le bulletin l'emporte sur ce qu'il compte lui-meme.
 
 use std::path::Path;
+use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, Periode};
-use socle::echec::R;
-use socle::num::Decimal;
-use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours};
-use fabrique_pdf::mesure::mesure;
+use socle::echec::{Echec, R};
+use socle::forme::Nombre as Imprime;
+use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours, Montant, Taux};
+use fabrique_pdf::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
 use droit::forme_bareme::FamilleDeCotisation;
+use engagement::ecarts::RegroupementDeComparaison;
 use engagement::importe::LogicielDUnBulletin;
 
-/// `n` points.
-const fn pt(n: i64) -> Mesure {
-    Mesure::entier(n)
-}
 
 /// La table de lecture, dans `logiciel/donnees/`.
 pub const FICHIER_TABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("bulletins-lecture-base.json");
 
 /// Deux mots dont le milieu vertical s'ecarte de moins que cela sont sur un meme rang (en points).
-const TOLERANCE: Mesure = mesure("3.5");
+const TOLERANCE: Mesure = mesure!("3.5");
 
 /// Un mot plus loin que cela du precedent ne continue pas un libelle.
-const ECART_MOTS: Mesure = pt(15);
+const ECART_MOTS: Mesure = mesure!("15");
 
 /// Deux morceaux d'un nombre (« 1 » et « 421,13 ») separes de moins que cela forment un seul nombre (l'espace des
 /// milliers grandit avec le corps du texte : 2 points en 9, 4 en 14).
-const ECART_MILLIERS: Mesure = pt(5);
+const ECART_MILLIERS: Mesure = mesure!("5");
 
 /// Un montant « sous » son libelle : au plus a cette distance verticale.
-const DESSOUS_MAX: Mesure = pt(40);
+const DESSOUS_MAX: Mesure = mesure!("40");
 
 /// Les rangs d'une grille du pied : au plus a cette distance sous son en-tete.
-const GRILLE_HAUTEUR: Mesure = pt(60);
+const GRILLE_HAUTEUR: Mesure = mesure!("60");
 
-/// Une periode de dates travaillees plus longue que cela n'est pas depliee en jours.
-const INTERVALLE_MAX: i64 = 366;
+/// Une periode de dates travaillees plus longue que cela (ses deux bornes comprises) n'est pas depliee en jours.
+const INTERVALLE_MAX: socle::date::Duree<socle::date::EnJours> = socle::date::Duree::jours(367);
 
 /// Sur un rang de l'en-tete, deux mots separes de plus que cela sont deux morceaux (un libelle et sa valeur, deux
 /// colonnes d'adresses) ; « 99999 » et sa commune, ecrits en deux, restent un.
-const ECART_SEGMENT: Mesure = pt(40);
+const ECART_SEGMENT: Mesure = mesure!("40");
 
 /// La valeur d'une mention commence au plus a cette distance de son libelle, sur son rang.
-const VALEUR_LOIN: Mesure = pt(180);
+const VALEUR_LOIN: Mesure = mesure!("180");
 
 /// Les mots d'une valeur se suivent a moins de cet ecart.
-const VALEUR_SUITE: Mesure = pt(40);
+const VALEUR_SUITE: Mesure = mesure!("40");
 
 /// Une valeur sur plusieurs rangs : chaque rang au plus a cette distance du precedent.
-const VALEUR_RANG: Mesure = pt(14);
+const VALEUR_RANG: Mesure = mesure!("14");
 
 /// Les rangs d'un bloc d'adresse se suivent a moins de cet ecart vertical.
-const BLOC_ECART: Mesure = pt(30);
+const BLOC_ECART: Mesure = mesure!("30");
 
 /// Ce qui suit un bloc d'adresse dans sa colonne (le Siret de l'employeur) : au plus a cet ecart vertical.
-const BLOC_SUIVANT: Mesure = pt(35);
+const BLOC_SUIVANT: Mesure = mesure!("35");
 
 /// Deux morceaux de l'en-tete commencent dans la meme colonne a moins de cela.
-const MEME_COLONNE: Mesure = mesure("2.5");
+const MEME_COLONNE: Mesure = mesure!("2.5");
 
 /// Les rangs d'en-tetes du tableau : au plus a cet ecart vertical du « Libellé ».
-const ENTETE_HAUTEUR: Mesure = pt(12);
+const ENTETE_HAUTEUR: Mesure = mesure!("12");
 
 /// Les mots d'un meme en-tete de colonne, sur un rang (« Part Employeur ») : au plus cet ecart.
-const ENTETE_MOTS: Mesure = pt(4);
+const ENTETE_MOTS: Mesure = mesure!("4");
 
 /// Un en-tete precise celui du dessus (« Taux » sous « Part employeur ») si son milieu tombe a moins de cela de lui.
-const SOUS_ENTETE: Mesure = pt(25);
+const SOUS_ENTETE: Mesure = mesure!("25");
 
 /// Un en-tete aligne a droite sous un en-tete de part (« Montant » sous « Part employeur ») en depasse le bord droit
 /// d'au plus cela.
-const GROUPE_MARGE: Mesure = pt(10);
+const GROUPE_MARGE: Mesure = mesure!("10");
 
 /// Un nombre aligne a droite depasse le bord droit de l'en-tete de sa colonne d'au plus cela.
-const COLONNE_MARGE: Mesure = pt(20);
+const COLONNE_MARGE: Mesure = mesure!("20");
 
 /// Le libelle d'un rang finit au moins a cette distance avant la premiere colonne.
-const LIBELLE_MARGE: Mesure = pt(15);
+const LIBELLE_MARGE: Mesure = mesure!("15");
 
 // --------------------------------------------------------------------------------------------- le texte
 
@@ -147,12 +145,13 @@ fn canon(texte: &str) -> String {
 }
 
 /// Un nombre ecrit sur un bulletin : virgule decimale (les points et espaces sont alors des milliers), ou point
-/// decimal s'il n'y a pas de virgule (« 0.000 % »). Le signe moins en tete.
-pub fn lire_nombre(texte: &str) -> Option<Decimal> {
-    let t = texte.trim();
-    let (negatif, t) = match t.strip_prefix('-') {
-        Some(r) => (true, r),
-        None => (false, t),
+/// decimal s'il n'y a pas de virgule (« 0.000 % »). Le signe moins en tete. La porte d'un nombre de la page : il est un
+/// nombre lu (`socle::forme::Nombre`), que sa place lit dans sa grandeur (`Imprime::grandeur`, `Imprime::cachets`).
+pub fn lire_nombre(texte: &str) -> Option<Imprime> {
+    let ecrit = texte.trim();
+    let t = match ecrit.strip_prefix('-') {
+        Some(r) => r,
+        None => ecrit,
     };
     if !t.starts_with(|c: char| c.is_ascii_digit()) || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '.' | ' ')) {
         return None;
@@ -160,7 +159,7 @@ pub fn lire_nombre(texte: &str) -> Option<Decimal> {
     if t.ends_with([',', '.']) {
         return None;
     }
-    socle::num::decimal_a_virgule(t).map(|d| if negatif { -d } else { d })
+    Imprime::a_virgule(ecrit)
 }
 
 /// Le texte sans son signe moins de tete.
@@ -169,11 +168,6 @@ fn sans_signe(t: &str) -> &str {
         Some(r) => r,
         None => t,
     }
-}
-
-/// La valeur de chiffres deja verifies (quatre au plus).
-fn chiffres(t: &str) -> u32 {
-    t.bytes().fold(0u32, |n, c| n * 10 + u32::from(c - b'0'))
 }
 
 fn ressemble_nombre(t: &str) -> bool {
@@ -189,15 +183,43 @@ pub fn lire_date(texte: &str) -> Option<Jour> {
     if p.len() != 3 || p.iter().any(|x| x.is_empty() || !x.chars().all(|c| c.is_ascii_digit())) {
         return None;
     }
+    // L'annee, le mois et le jour, chacun lu par sa zone (`socle::piece`).
+    use socle::piece::{format, Zone};
     let an = match p[2].len() {
-        4 => chiffres(p[2]) as i32,
-        2 => 2000 + chiffres(p[2]) as i32,
+        4 => Zone::lue(p[2], format::AnneeEnChiffres).valeur()?.ok()?,
+        2 => Zone::lue(p[2], format::Aa).valeur()?,
         _ => return None,
     };
     if p[0].len() > 2 || p[1].len() > 2 {
         return None;
     }
-    Jour::nouveau(an, chiffres(p[1]), chiffres(p[0]))
+    let mois = Zone::lue(p[1], format::MoisEnChiffres).valeur()?;
+    Zone::lue(p[0], format::JourDuMois(an.mois(mois))).valeur()
+}
+
+/// LE NIR IMPRIME (`texte`, ses blancs retires, en capitales) : 13 caracteres, ou 15 avec la cle, alors verifiee ; ou ce
+/// qui le refuse.
+fn nir_imprime(texte: &str) -> R<(droit::fiche::Nir, Option<droit::fiche::CleNir>)> {
+    use droit::fiche::{CleNir, Nir};
+    let n: String = texte.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
+    match Nir::et_sa_cle(&n) {
+        Some((nir, None)) => Ok((Nir::lire(nir)?, None)),
+        Some((nir, Some(cle))) => {
+            let nir = Nir::lire(nir)?;
+            match CleNir::du_nir(&nir).filter(|c| **c == *cle) {
+                Some(c) => Ok((nir, Some(c))),
+                None => Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro")),
+            }
+        }
+        None => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
+    }
+}
+
+/// LE SIRET IMPRIME, ses chiffres (« 999 999 999 00017 »), lu par sa lecture de piece (`Siret::d_une_piece`), ou ce qui
+/// le refuse.
+fn siret_imprime(texte: &str) -> R<droit::fiche::Siret> {
+    let s: String = texte.chars().filter(char::is_ascii_digit).collect();
+    droit::fiche::Siret::d_une_piece(&s)
 }
 
 /// Un mot qui n'est que ponctuation (« — », « · », « : », « - », « | ») : il borne une valeur, il n'en est pas.
@@ -219,7 +241,7 @@ struct Mot {
 
 impl Mot {
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1) / 2
+        (self.y0 + self.y1) * mesure!("0.5")
     }
 }
 
@@ -243,17 +265,17 @@ impl Boite {
         Boite { x0: self.x0.min(b.x0), y0: self.y0.min(b.y0), x1: self.x1.max(b.x1), y1: self.y1.max(b.y1) }
     }
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1) / 2
+        (self.y0 + self.y1) * mesure!("0.5")
     }
     fn cx(&self) -> Mesure {
-        (self.x0 + self.x1) / 2
+        (self.x0 + self.x1) * mesure!("0.5")
     }
 }
 
 /// Un nombre de la page : ses morceaux recolles (« 1 » + « 421,13 »).
 #[derive(Clone, Debug)]
 struct Nombre {
-    valeur: Decimal,
+    valeur: Imprime,
     boite: Boite,
 }
 
@@ -272,7 +294,7 @@ impl Page {
             .map(|i| {
                 let m = &mots[i];
                 (0..mots.len())
-                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - pt(1) && mots[j].x0 - m.x1 <= ECART_MOTS)
+                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - mesure!("1") && mots[j].x0 - m.x1 <= ECART_MOTS)
                     .min_by(|&a, &b| mots[a].x0.cmp(&mots[b].x0))
             })
             .collect();
@@ -320,7 +342,7 @@ impl Page {
     fn dans_un_nombre(&self, m: &Mot, limite: Mesure) -> bool {
         self.nombres.iter().any(|n| {
             let b = n.boite;
-            b.x1 > limite && m.x0 >= b.x0 - mesure("0.01") && m.x1 <= b.x1 + mesure("0.01") && (m.cy() - b.cy()).abs() < pt(1)
+            b.x1 > limite && m.x0 >= b.x0 - mesure!("0.01") && m.x1 <= b.x1 + mesure!("0.01") && (m.cy() - b.cy()).abs() < mesure!("1")
         })
     }
 
@@ -357,7 +379,7 @@ fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
                 Some((s, _)) => s,
                 None => m.texte.as_str(),
             };
-            let colle = (m.cy() - boite.cy()).abs() <= mesure("1.5") && m.x0 >= boite.x1 - mesure("0.5") && m.x0 - boite.x1 < ECART_MILLIERS;
+            let colle = (m.cy() - boite.cy()).abs() <= mesure!("1.5") && m.x0 >= boite.x1 - mesure!("0.5") && m.x0 - boite.x1 < ECART_MILLIERS;
             if colle && tete(texte) && milliers(suite) {
                 texte.push(' ');
                 texte.push_str(&m.texte);
@@ -388,7 +410,7 @@ fn en_rangs<'a>(mut mots: Vec<&'a Mot>) -> Vec<Vec<&'a Mot>> {
 
 /// Une ligne de paie qui ecrit son taux dans son libelle (« Cachets à 150,00 ») : le libelle sans lui, et le taux.
 /// Sans « à <nombre> » en fin de libelle, le libelle tel quel.
-fn taux_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
+fn taux_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     let mots: Vec<&str> = libelle.split_whitespace().collect();
     // Le dernier « à » suivi d'un nombre seul, milliers compris (« à 2 950,00 »).
     for k in (1..mots.len().saturating_sub(1)).rev() {
@@ -404,7 +426,7 @@ fn taux_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
 
 /// La quantite qu'un libelle dit apres lui, dans son unite (« Indemnité compensatrice de congés payés (4,92 jours) ») :
 /// le libelle sans elle, et elle.
-fn quantite_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
+fn quantite_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     let lu = libelle.trim_end().strip_suffix(')').and_then(|t| t.rsplit_once(" (")).and_then(|(tete, dedans)| {
         let (n, unite) = dedans.split_once(' ')?;
         let unite = unite.trim_end_matches('s');
@@ -428,7 +450,12 @@ fn texte_de(mots: &[&Mot]) -> String {
 }
 
 fn milieu(rang: &[&Mot]) -> Mesure {
-    rang.iter().map(|m| m.cy()).sum::<Mesure>() / rang.len().max(1) as i64
+    let somme = rang.iter().map(|m| m.cy()).sum::<Mesure>();
+    // Un rang vide n'a pas de milieu : sa somme, nulle.
+    match somme.part_sur(rang.len()) {
+        Some(m) => m,
+        None => somme,
+    }
 }
 
 // --------------------------------------------------------------------------------------------- la table
@@ -470,6 +497,7 @@ const MENTIONS: [(&str, Sorte, Section, usize, bool); 23] = [
     ("code", Sorte::Texte, Section::Entete, 1, false),
     ("emploi", Sorte::Texte, Section::Entete, 1, false),
     ("statut", Sorte::Texte, Section::Entete, 1, false),
+    // L'abattement imprime : aucun calcul ne le lit ; sa mention borne celles qui l'entourent.
     ("abattement", Sorte::Nombre, Section::Entete, 1, false),
     ("conges_spectacles", Sorte::Compact, Section::Entete, 1, false),
     ("periode", Sorte::Periode, Section::Entete, 1, false),
@@ -591,7 +619,7 @@ pub struct Table {
     /// (famille, titres canoniques).
     familles: Vec<(FamilleDeCotisation, Vec<String>)>,
     /// (cotisation, libelles canoniques) : la cotisation qu'une ligne imprimee est.
-    cotisations: Vec<(String, Vec<String>)>,
+    cotisations: Vec<(RegroupementDeComparaison, Vec<String>)>,
     /// (cumul, libelles canoniques).
     cumuls: Vec<(NomDeCumul, Vec<String>)>,
     /// (nom, signature : les libelles qui doivent tous se trouver).
@@ -616,7 +644,7 @@ struct TableEcrite {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     familles: Vec<(FamilleDeCotisation, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    cotisations: Vec<(String, Libelles)>,
+    cotisations: Vec<(RegroupementDeComparaison, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     cumuls: Vec<(NomDeCumul, Libelles)>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -810,9 +838,9 @@ impl Table {
 
     /// La cotisation que la ligne de cotisation imprimee `libelle` est (`cotisations` de la table) ; `None` : un libelle
     /// que la table ne connait pas.
-    pub fn cotisation(&self, libelle: &str) -> Option<&str> {
+    pub fn cotisation(&self, libelle: &str) -> Option<&RegroupementDeComparaison> {
         let c = canon(libelle);
-        self.cotisations.iter().find(|(_, l)| l.iter().any(|x| *x == c)).map(|(k, _)| k.as_str())
+        self.cotisations.iter().find(|(_, l)| l.iter().any(|x| *x == c)).map(|(k, _)| k)
     }
 
     /// La famille (`familles` de la table) que le titre imprime `libelle` nomme ; `None` : un titre qu'elle ne connait pas.
@@ -861,43 +889,64 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
 
 // --------------------------------------------------------------------------------------------- le bulletin lu
 
+/// La faute d'une case imprimee, ecrite par sa phrase.
+fn faute_ecrite<S: serde::Serializer>(f: &Option<Echec>, s: S) -> Result<S::Ok, S::Error> {
+    match f {
+        Some(e) => s.collect_str(e),
+        None => s.serialize_none(),
+    }
+}
+
 /// CE QU'UNE PAGE LUE DIT, telle qu'elle s'ecrit : les montants en textes exacts (`"1421.13"`), les dates en ISO,
 /// l'absent en `null`.
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Entreprise {
-    pub nom: Option<String>,
+    /// La raison sociale (premier rang de son adresse) et le SIRET imprime, lu a la porte (`siret_imprime`).
+    #[serde(flatten)]
+    pub employeur: EmployeurLu,
+    /// Ce qui refuse le SIRET imprime ; aucun : il ne l'est pas, ou il se lit.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "faute_ecrite")]
+    pub faute_siret: Option<Echec>,
     pub adresse: Vec<String>,
-    pub siret: Option<String>,
     pub naf: Option<String>,
     pub urssaf: Option<String>,
     pub convention: Option<String>,
     pub licence: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Salarie {
     /// Le nom tel qu'il est ecrit (premier rang de son adresse).
     pub nom_complet: Option<String>,
-    pub nom: Option<String>,
-    pub prenom: Option<String>,
-    pub nir: Option<String>,
-    pub naissance: Option<Jour>,
+    /// Le nom et les prenoms (`separer_nom`), la date de naissance, le NIR imprime, lu a la porte (`nir_imprime`).
+    #[serde(flatten)]
+    pub identite: IdentiteDeclaree,
+    /// La cle du NIR, quand il l'imprime (alors verifiee).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cle_nir: Option<droit::fiche::CleNir>,
+    /// Ce qui refuse le NIR imprime ; aucun : il ne l'est pas, ou il se lit.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "faute_ecrite")]
+    pub faute_nir: Option<Echec>,
     pub adresse: Vec<String>,
     pub code: Option<String>,
     pub emploi: Option<String>,
     pub statut: Option<String>,
-    pub abattement: Option<Decimal>,
     pub conges_spectacles: Option<String>,
 }
 
 /// Une ligne de paie : soumise (imprimee avant le brut, d'une rubrique dans l'assiette) ou non (un defraiement, apres
 /// les cotisations ou au-dessus du brut).
+/// Sa quantite et son taux sont des nombres lus : leur unite est celle de la rubrique a laquelle l'import la rattache
+/// (`engagement::ligne::PaiementDeLigne::imprime`).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct LignePaie {
-    pub quantite: Option<Decimal>,
+    #[serde(serialize_with = "nombre_lu")]
+    pub quantite: Option<socle::forme::Nombre>,
     pub libelle: String,
-    pub taux: Option<Decimal>,
-    pub montant: Option<Decimal>,
+    #[serde(serialize_with = "nombre_lu")]
+    pub taux: Option<socle::forme::Nombre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<Montant>,
     pub soumis: bool,
     /// La rubrique du catalogue que la table donne a ce libelle ; `None` : libelle connu sans rubrique sure, ou absent
     /// de la table (alors signale).
@@ -916,33 +965,43 @@ pub struct Cotisation {
     /// LA COTISATION QUE LA LIGNE EST, dans les mots du moteur (`cotisations` de la table, par son libelle : l'identifiant
     /// du bareme, ou le grain auquel le modele de l'arrete du 25/02/2016 regroupe plusieurs lignes) ; `None` : un libelle
     /// que la table ne connait pas, garde tel quel et non qualifie.
-    pub cotisation: Option<String>,
-    pub base: Option<Decimal>,
-    pub taux_employeur: Option<Decimal>,
-    pub montant_employeur: Option<Decimal>,
-    pub taux_salarie: Option<Decimal>,
-    pub montant_salarie: Option<Decimal>,
+    pub cotisation: Option<RegroupementDeComparaison>,
+    /// La base imprimee, un nombre lu : des euros, ou des heures (la deduction des heures supplementaires), ce que sa
+    /// cotisation dit (`engagement::calcul::BaseDeCotisation::imprimee`).
+    #[serde(serialize_with = "nombre_lu")]
+    pub base: Option<socle::forme::Nombre>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub taux_employeur: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub taux_salarie: Option<Taux>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant_salarie: Option<Montant>,
     /// Ecrite apres le total des cotisations (une famille facultative) : hors de ce total.
     pub hors_total: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Pas {
-    pub base: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub base: Option<Montant>,
     pub taux: Option<droit::pas::TauxDePas>,
-    pub montant: Option<Decimal>,
-    pub cumul: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub montant: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cumul: Option<Montant>,
 }
 
 /// LE TAUX DE PAS QU'UN BULLETIN IMPRIME (« 5,500 », « 5,5 ») : le taux de la norme qu'il dit, ses deux decimales ecrites
 /// (`TauxDePas::du_taux`) ; `None` : un nombre qui n'en est pas un (plus de deux chiffres, des decimales non nulles au-dela
 /// du centieme), que `avertissements` signale : la case ne se lit pas, on le dit (AGENTS, regle 1).
-fn taux_de_pas(lu: Decimal, avertissements: &mut Vec<Avertissement>) -> Option<droit::pas::TauxDePas> {
-    let taux = droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(socle::grandeurs::Taux::du_decimal(lu)));
+fn taux_de_pas(lu: Taux, avertissements: &mut Vec<Avertissement>) -> Option<droit::pas::TauxDePas> {
+    let taux = droit::pas::TauxDePas::du_taux(socle::grandeurs::courte(lu));
     if taux.is_none() {
         avertissements.push(Avertissement::Lecture(format!(
             "taux de PAS « {} » : un taux de PAS a un ou deux chiffres et deux décimales au plus (S21.G00.50.006), il n'est pas repris",
-            lu
+            tel_que_lu(lu)
         )));
     }
     taux
@@ -1003,26 +1062,32 @@ pub struct Colonnes<G: Grandeur> {
 /// Les deux colonnes d'un rang de cumul en euros.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct ColonnesEnEuros {
-    pub periode: Option<Decimal>,
-    pub cumul: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub periode: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cumul: Option<Montant>,
 }
 
 impl Cumul {
     /// Le rang `nom` de la table, ses colonnes `periode` et `cumul` telles que la page les imprime : la porte de leur
-    /// lecture, ou chaque nombre prend sa grandeur.
-    fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Cumul {
-        match nom {
-            NomDeCumul::Cachets => Cumul::Cachets(Colonnes { periode: periode.map(Cachets::du_decimal), cumul: cumul.map(Cachets::du_decimal) }),
-            NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
-            NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
-            NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
-                Cumul::Euros(ColonnesEnEuros { periode, cumul })
+    /// lecture, ou chaque nombre prend sa grandeur. Des cachets a virgule ne sont pas un nombre de cachets : la page ne se
+    /// lit pas, et le refus le dit (`socle::forme::Nombre::cachets`).
+    fn lu(nom: NomDeCumul, periode: Option<Imprime>, cumul: Option<Imprime>) -> Result<Cumul, Refus> {
+        Ok(match nom {
+            NomDeCumul::Cachets => {
+                let [periode, cumul] = [periode, cumul].map(|n| n.map(Imprime::cachets).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e))));
+                Cumul::Cachets(Colonnes { periode: periode?, cumul: cumul? })
             }
-        }
+            NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Imprime::grandeur), cumul: cumul.map(Imprime::grandeur) }),
+            NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Imprime::grandeur), cumul: cumul.map(Imprime::grandeur) }),
+            NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
+                Cumul::Euros(ColonnesEnEuros { periode: periode.map(en_euros), cumul: cumul.map(en_euros) })
+            }
+        })
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct BulletinLu {
     /// Le logiciel que sa signature nomme (`logiciels` de la table) ; `None` : un autre.
     pub logiciel: Option<LogicielDUnBulletin>,
@@ -1043,17 +1108,25 @@ pub struct BulletinLu {
     /// Les memes, jour par jour.
     pub jours_travailles: Vec<Jour>,
     pub lignes: Vec<LignePaie>,
-    pub brut: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub brut: Montant,
     pub cotisations: Vec<Cotisation>,
-    pub total_employeur: Option<Decimal>,
-    pub total_salarie: Option<Decimal>,
-    pub net_social: Option<Decimal>,
-    pub net_avant_impot: Option<Decimal>,
-    pub net_imposable: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub total_employeur: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub total_salarie: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_social: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_avant_impot: Option<Montant>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub net_imposable: Option<Montant>,
     pub pas: Option<Pas>,
-    pub net_a_payer: Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub net_a_payer: Montant,
     /// « Total verse par l'employeur ».
-    pub cout_employeur: Option<Decimal>,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cout_employeur: Option<Montant>,
     pub regle_le: Option<Jour>,
     pub mode_reglement: Option<String>,
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
@@ -1193,7 +1266,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         }
         let [x0, y0, x1, y1] = m.rect.connue();
         // Un meme mot ecrit deux fois au meme endroit (des cumuls imprimes en double) ne compte qu'une fois.
-        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure("0.05") && (x.y0 - y0).abs() < mesure("0.05"));
+        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure!("0.05") && (x.y0 - y0).abs() < mesure!("0.05"));
         if !double {
             mots.push(Mot { jetons: jetons(&texte), texte, x0, y0, x1, y1 });
         }
@@ -1230,7 +1303,7 @@ enum Valeur {
     Date(Jour),
     Periode(Periode),
     Intervalles(Vec<Periode>),
-    Nombre(Decimal),
+    Nombre(Imprime),
 }
 
 /// Une colonne de tableau : ce que son en-tete annonce, et sa boite.
@@ -1365,19 +1438,55 @@ struct Lecteur<'a> {
 struct RangCorps {
     libelle: String,
     /// La quantite en tete du libelle, et le libelle sans elle (une ligne de paie : « 2 Cachets isolés »).
-    quantite: Option<(Decimal, String)>,
-    nombres: Vec<(Option<(Genre, Option<Part>)>, Decimal)>,
+    quantite: Option<(Imprime, String)>,
+    nombres: Vec<(Option<(Genre, Option<Part>)>, Imprime)>,
     cy: Mesure,
 }
 
 impl RangCorps {
-    fn colonne(&self, g: Genre, p: Option<Part>) -> Option<Decimal> {
+    fn colonne(&self, g: Genre, p: Option<Part>) -> Option<Imprime> {
         self.nombres.iter().find(|(c, _)| *c == Some((g, p))).map(|(_, v)| *v)
     }
     /// Le dernier nombre du rang : la valeur d'un resume, le montant d'une ligne.
-    fn dernier(&self) -> Option<Decimal> {
-        self.nombres.last().map(|(_, v)| *v)
+    fn dernier(&self) -> Option<Montant> {
+        self.nombres.last().map(|(_, v)| en_euros(*v))
     }
+    /// Le montant de la colonne `g`, `p` (la porte de sa lecture : `en_euros`).
+    fn montant(&self, g: Genre, p: Option<Part>) -> Option<Montant> {
+        self.colonne(g, p).map(en_euros)
+    }
+    /// Le taux de la colonne des taux de la part `p` : la porte de sa lecture.
+    fn taux(&self, p: Option<Part>) -> Option<Taux> {
+        self.colonne(Genre::Taux, p).map(en_taux)
+    }
+}
+
+/// Un nombre lu sur la page, ecrit en texte, son echelle gardee (`12.50`) ; `null` sans nombre.
+fn nombre_lu<S: serde::Serializer>(n: &Option<socle::forme::Nombre>, s: S) -> Result<S::Ok, S::Error> {
+    match n {
+        Some(n) => s.collect_str(n),
+        None => s.serialize_none(),
+    }
+}
+
+/// Une grandeur lue, telle qu'une phrase du compte rendu la cite : son texte, son echelle gardee.
+fn tel_que_lu<G: Grandeur>(g: G) -> String {
+    socle::grandeurs::ecrit::texte::dit(g)
+}
+
+/// Un montant ecrit sur une piece (`lire_nombre`), en euros.
+pub(crate) fn lire_montant(texte: &str) -> Option<Montant> {
+    lire_nombre(texte).map(en_euros)
+}
+
+/// UN MONTANT QUE LA PAGE IMPRIME (`lire_nombre`, la porte de la page) : en euros, des qu'il sort de sa ligne lue.
+fn en_euros(lu: Imprime) -> Montant {
+    lu.grandeur()
+}
+
+/// Un taux que la page imprime, en pourcent (« 6,900 % ») : un taux, des qu'il sort de sa ligne lue.
+fn en_taux(lu: Imprime) -> Taux {
+    lu.grandeur()
 }
 
 impl<'a> Lecteur<'a> {
@@ -1425,17 +1534,25 @@ impl<'a> Lecteur<'a> {
             None => (None, None),
         };
         let nir = texte(&valeurs, "nir");
+        let (nir_lu, cle_nir, faute_nir) = match nir.as_deref().map(nir_imprime) {
+            Some(Ok((n, cle))) => (Some(n), cle, None),
+            Some(Err(e)) => (None, None, Some(e)),
+            None => (None, None, None),
+        };
+        let (siret_lu, faute_siret) = match texte(&valeurs, "siret").map(|s| siret_imprime(&s)) {
+            Some(Ok(s)) => (Some(s), None),
+            Some(Err(e)) => (None, Some(e)),
+            None => (None, None),
+        };
         let salarie = Salarie {
             nom_complet: nom_s.clone(),
-            nom,
-            prenom,
-            nir: nir.clone(),
-            naissance: date(&valeurs, "naissance"),
+            identite: IdentiteDeclaree { nom, prenoms: prenom, naissance: date(&valeurs, "naissance").map(NaissanceDeclaree::du_jour), nir: nir_lu, ntt: None },
+            cle_nir,
+            faute_nir,
             adresse: adresse_s,
             code: texte(&valeurs, "code"),
             emploi: texte(&valeurs, "emploi"),
             statut: texte(&valeurs, "statut"),
-            abattement: nombre(&valeurs, "abattement"),
             conges_spectacles: texte(&valeurs, "conges_spectacles"),
         };
         let Some(tableau) = tableau? else {
@@ -1457,7 +1574,7 @@ impl<'a> Lecteur<'a> {
             }
         }
         let mut pas: Option<Pas> = None;
-        let mut net_imposable: Option<Decimal> = None;
+        let mut net_imposable: Option<Montant> = None;
         let mut cumuls: Vec<(NomDeCumul, Cumul)> = Vec::new();
         if let Some(p) = pied {
             self.grilles(p, &mut pas, &mut net_imposable, &mut cumuls)?;
@@ -1473,7 +1590,7 @@ impl<'a> Lecteur<'a> {
             .collect::<Vec<_>>();
         let mut jours_travailles = Vec::new();
         for p in &dates_travaillees {
-            if p.fin().moins(&p.debut()) > INTERVALLE_MAX {
+            if p.duree() > INTERVALLE_MAX {
                 self.avertissements.push(Avertissement::Lecture(format!("dates travaillées du {} au {} : intervalle non déplié", p.debut().iso(), p.fin().iso())));
                 continue;
             }
@@ -1488,12 +1605,13 @@ impl<'a> Lecteur<'a> {
         // La somme recue (10°) est le net avant impot moins l'impot preleve (R. 3243-1, 9° et 10° ; le modele de
         // l'arrete du 25/02/2016 les imprime l'un sous l'autre) : un bulletin qui imprime les deux termes sans la
         // somme (un impot nul) la dit par cette identite, et le compte rendu dit qu'elle a ete lue ainsi.
-        let net_a_payer = match (nombre(&valeurs, "net_a_payer"), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
+        let net_a_payer = match (nombre(&valeurs, "net_a_payer").map(en_euros), corps.lu.net_avant_impot, pas.as_ref().and_then(|p| p.montant)) {
             (Some(n), _, _) => n,
             (None, Some(avant), Some(impot)) => {
                 self.avertissements.push(Avertissement::Lecture(format!(
                     "le net à payer n'est pas imprimé : lu comme le net avant impôt ({}) moins l'impôt prélevé ({}), imprimés",
-                    avant, impot
+                    tel_que_lu(avant),
+                    tel_que_lu(impot)
                 )));
                 avant - impot
             }
@@ -1514,9 +1632,9 @@ impl<'a> Lecteur<'a> {
             logiciel,
             numero: texte(&valeurs, "numero"),
             entreprise: Entreprise {
-                nom: entreprise.as_ref().and_then(|e| e.lignes.first().cloned()),
+                employeur: EmployeurLu { raison_sociale: entreprise.as_ref().and_then(|e| e.lignes.first().cloned()), siret: siret_lu },
+                faute_siret,
                 adresse: entreprise.into_iter().flat_map(|e| e.lignes.into_iter().skip(1)).collect(),
-                siret: texte(&valeurs, "siret"),
                 naf: texte(&valeurs, "naf"),
                 urssaf: texte(&valeurs, "urssaf"),
                 convention: texte(&valeurs, "convention"),
@@ -1540,7 +1658,7 @@ impl<'a> Lecteur<'a> {
             net_imposable,
             pas,
             net_a_payer,
-            cout_employeur: nombre(&valeurs, "cout_employeur"),
+            cout_employeur: nombre(&valeurs, "cout_employeur").map(en_euros),
             regle_le: date(&valeurs, "regle_le"),
             mode_reglement,
             cumuls,
@@ -1598,8 +1716,8 @@ impl<'a> Lecteur<'a> {
             let v = if m.sorte == Sorte::Nombre && m.section == Section::Pied {
                 let lu = self.montant_de(&rep, dernier);
                 let pres = match &lu {
-                    Some((_, b)) => self.inconnu_dans(apres, pt(0)).or_else(|| self.inconnu_dans(*b, ECART_MOTS)),
-                    None => self.inconnu_dans(apres, pt(0)),
+                    Some((_, b)) => self.inconnu_dans(apres, Mesure::ZERO).or_else(|| self.inconnu_dans(*b, ECART_MOTS)),
+                    None => self.inconnu_dans(apres, Mesure::ZERO),
                 };
                 if let Some(u) = pres {
                     return Err(self.refus_inconnu(u, &self.libelle_de(m.nom)));
@@ -1608,10 +1726,10 @@ impl<'a> Lecteur<'a> {
             } else {
                 let mots = self.valeur(k, &rep, dernier, m.rangs);
                 let pres = match mots.is_empty() {
-                    true => self.inconnu_dans(apres, pt(0)),
+                    true => self.inconnu_dans(apres, Mesure::ZERO),
                     false => {
                         let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
-                        self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0))
+                        self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, Mesure::ZERO)
                     }
                 };
                 if let Some(u) = pres {
@@ -1659,13 +1777,13 @@ impl<'a> Lecteur<'a> {
             }
             pris
         };
-        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - mesure("0.5"), VALEUR_LOIN);
+        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - mesure!("0.5"), VALEUR_LOIN);
         // La valeur commence a son premier mot qui n'est pas une ponctuation ; sans lui, au libelle.
         let x_valeur = match mots.iter().find(|&&i| !ponctuation(&p.mots[i].texte)) {
             Some(&i) => p.mots[i].x0,
             None => rep.x0,
         };
-        let x_suite = x_valeur.min(rep.x0) - pt(3);
+        let x_suite = x_valeur.min(rep.x0) - mesure!("3");
         let mut cy = rep.cy();
         let mut n = 1;
         while n < rangs && !mots.is_empty() {
@@ -1682,12 +1800,12 @@ impl<'a> Lecteur<'a> {
                 Some(i) => i,
                 None => h,
             };
-            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= pt(3) || (p.mots[premier].x0 - rep.x0).abs() <= pt(3);
+            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= mesure!("3") || (p.mots[premier].x0 - rep.x0).abs() <= mesure!("3");
             if self.debuts[premier].is_some() || !aligne {
                 break;
             }
             let mut rang = vec![premier];
-            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - mesure("0.5"), VALEUR_SUITE));
+            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - mesure!("0.5"), VALEUR_SUITE));
             cy = p.mots[h].cy();
             mots.extend(rang);
             n += 1;
@@ -1778,7 +1896,7 @@ impl<'a> Lecteur<'a> {
         }
         let fenetre = |n: &&Nombre| {
             let b = n.boite;
-            b.cy() > rep.cy() + pt(2) && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - pt(20) && b.cx() <= rep.x1 + pt(80)
+            b.cy() > rep.cy() + mesure!("2") && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - mesure!("20") && b.cx() <= rep.x1 + mesure!("80")
         };
         let dist = |n: &Nombre| (n.boite.cx() - rep.cx()).hypot(n.boite.cy() - rep.cy());
         p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| (Valeur::Nombre(n.valeur), n.boite))
@@ -1797,7 +1915,7 @@ impl<'a> Lecteur<'a> {
                 continue;
             }
             let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
-            if let Some(u) = self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0)) {
+            if let Some(u) = self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, Mesure::ZERO) {
                 return Err(self.refus_inconnu(u, "mode de règlement"));
             }
             let apres: Vec<&str> = textes.iter().skip_while(|x| canon(x) != "par").skip(1).copied().collect();
@@ -2054,7 +2172,7 @@ impl<'a> Lecteur<'a> {
             sous = None;
         }
         let nombres: Vec<Nombre> = p.nombres.iter().filter(|n| n.boite.x1 > seuil && n.boite.cy() > haut && n.boite.cy() <= bas).cloned().collect();
-        let mut places: Vec<Vec<(Mesure, Option<(Genre, Option<Part>)>, Decimal)>> = vec![Vec::new(); sortie.len()];
+        let mut places: Vec<Vec<(Mesure, Option<(Genre, Option<Part>)>, Imprime)>> = vec![Vec::new(); sortie.len()];
         for n in nombres {
             let cols: &[Colonne] = match &sous {
                 Some((y, c)) if n.boite.cy() > *y => c,
@@ -2108,7 +2226,7 @@ impl<'a> Lecteur<'a> {
         let mut fin: Option<Mesure> = None;
         // Une ligne de paie : sa quantite en tete, son montant au dernier nombre, son taux a l'avant-dernier ou dans son
         // libelle (« Cachets à 150,00 »).
-        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
+        let ligne = |libelle: &str, quantite: Option<Imprime>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
             let (libelle, quantite) = match quantite {
                 Some(q) => (libelle, Some(q)),
@@ -2181,8 +2299,8 @@ impl<'a> Lecteur<'a> {
                 }
                 Phase::Cotisations | Phase::ApresTotal => {
                     if phase == Phase::Cotisations && est(&cl, &r_.total) {
-                        lu.total_employeur = r.colonne(Genre::Montant, Some(Part::Employeur));
-                        lu.total_salarie = r.colonne(Genre::Montant, Some(Part::Salarie));
+                        lu.total_employeur = r.montant(Genre::Montant, Some(Part::Employeur));
+                        lu.total_salarie = r.montant(Genre::Montant, Some(Part::Salarie));
                         phase = Phase::ApresTotal;
                         if let Some((_, ecrit)) = titre_en_cours.take() {
                             avertissements.push(Avertissement::Lecture(format!("rang sans montant : « {} »", ecrit)));
@@ -2245,7 +2363,7 @@ impl<'a> Lecteur<'a> {
 
     /// Les grilles du pied, chacune sous son rang d'en-tetes : l'impot preleve et le net imposable (« base »,
     /// « taux », « montant »), les cumuls (« Période », « Cumul »).
-    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(NomDeCumul, Cumul)>) -> Result<(), Refus> {
+    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Montant>, cumuls: &mut Vec<(NomDeCumul, Cumul)>) -> Result<(), Refus> {
         let p = &self.page;
         let t = self.t;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2274,12 +2392,12 @@ impl<'a> Lecteur<'a> {
                 None => *y + GRILLE_HAUTEUR,
             };
             let seuil = cols.iter().map(|c| c.boite.x0).fold(Mesure::MAX, Mesure::min) - LIBELLE_MARGE;
-            let dans = |cy: Mesure| cy > *y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { pt(0) };
+            let dans = |cy: Mesure| cy > *y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { Mesure::ZERO };
             let libelles: Vec<&Mot> = p.mots.iter().filter(|m| dans(m.cy()) && m.x1 <= seuil && !p.dans_un_nombre(m, seuil)).collect();
             let rangs: Vec<(String, Mesure)> = en_rangs(libelles).iter().map(|r| (canon(&texte_de(r)), milieu(r))).collect();
             let nombres: Vec<&Nombre> = p.nombres.iter().filter(|n| dans(n.boite.cy()) && n.boite.x1 > seuil).collect();
-            let valeurs_du_rang = |cy: Mesure| -> Vec<(Genre, Decimal)> {
-                let mut v: Vec<(Genre, Decimal)> = Vec::new();
+            let valeurs_du_rang = |cy: Mesure| -> Vec<(Genre, Imprime)> {
+                let mut v: Vec<(Genre, Imprime)> = Vec::new();
                 for n in &nombres {
                     // Le rang le plus proche de ce nombre doit etre celui-ci.
                     let ecart = (n.boite.cy() - cy).abs();
@@ -2308,16 +2426,18 @@ impl<'a> Lecteur<'a> {
                 if *cumul {
                     if let Some((nom, _)) = t.cumuls.iter().find(|(_, l)| l.contains(libelle)) {
                         if !cumuls.iter().any(|(x, _)| x == nom) {
-                            cumuls.push((*nom, Cumul::lu(*nom, col(Genre::Periode), col(Genre::Cumul))));
+                            cumuls.push((*nom, Cumul::lu(*nom, col(Genre::Periode), col(Genre::Cumul))?));
                         }
                     }
                     if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
-                        *net_imposable = col(Genre::Periode);
+                        *net_imposable = col(Genre::Periode).map(en_euros);
                     }
                 } else if pas.is_none() && t.resumes.pas.contains(libelle) {
-                    *pas = Some(Pas { base: col(Genre::Base), taux: col(Genre::Taux).and_then(|lu| taux_de_pas(lu, &mut self.avertissements)),montant: col(Genre::Montant), cumul: col(Genre::Cumul) });
+                    let euros = |g: Genre| col(g).map(en_euros);
+                    let taux = col(Genre::Taux).map(en_taux).and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
+                    *pas = Some(Pas { base: euros(Genre::Base), taux, montant: euros(Genre::Montant), cumul: euros(Genre::Cumul) });
                 } else if net_imposable.is_none() && t.resumes.net_imposable.contains(libelle) {
-                    *net_imposable = col(Genre::Montant);
+                    *net_imposable = col(Genre::Montant).map(en_euros);
                 }
             }
         }
@@ -2329,7 +2449,7 @@ impl Lecteur<'_> {
     /// L'impot preleve et le net imposable ecrits sans grille, sur un rang du pied : « Net imposable 435,55 »,
     /// « Impôt sur le revenu prélevé à la source (taux 4,300 %) 18,73 ». Le montant est le dernier nombre du rang ; le
     /// taux, celui qui suit le mot « taux ».
-    fn sans_grille(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) -> Result<(), Refus> {
+    fn sans_grille(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Montant>) -> Result<(), Refus> {
         let p = &self.page;
         let r_ = &self.t.resumes;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2343,7 +2463,7 @@ impl Lecteur<'_> {
                 return Err(self.refus_inconnu(u, &texte_de(&libelle)));
             }
             if net_imposable.is_none() && r_.net_imposable.iter().any(|x| *x == cl) {
-                *net_imposable = Some(dernier.valeur);
+                *net_imposable = Some(en_euros(dernier.valeur));
             }
             if pas.is_none() && r_.pas.iter().any(|x| cl.starts_with(x.as_str())) {
                 let taux = rang
@@ -2351,8 +2471,8 @@ impl Lecteur<'_> {
                     .position(|m| canon(&m.texte).trim_start_matches('(') == "taux")
                     .and_then(|k| rang.get(k + 1))
                     .and_then(|m| lire_nombre(m.texte.trim_end_matches([')', '%'])))
-                    .and_then(|lu| taux_de_pas(lu, &mut self.avertissements));
-                *pas = Some(Pas { base: None, taux, montant: Some(dernier.valeur), cumul: None });
+                    .and_then(|lu| taux_de_pas(en_taux(lu), &mut self.avertissements));
+                *pas = Some(Pas { base: None, taux, montant: Some(en_euros(dernier.valeur)), cumul: None });
             }
         }
         Ok(())
@@ -2362,12 +2482,12 @@ impl Lecteur<'_> {
 #[derive(Default)]
 struct Corps {
     lignes: Vec<LignePaie>,
-    brut: Option<Decimal>,
+    brut: Option<Montant>,
     cotisations: Vec<Cotisation>,
-    total_employeur: Option<Decimal>,
-    total_salarie: Option<Decimal>,
-    net_social: Option<Decimal>,
-    net_avant_impot: Option<Decimal>,
+    total_employeur: Option<Montant>,
+    total_salarie: Option<Montant>,
+    net_social: Option<Montant>,
+    net_avant_impot: Option<Montant>,
 }
 
 /// Le corps lu, et le milieu du rang qui le ferme (le net avant impot) : le pied commence sous lui.
@@ -2386,13 +2506,13 @@ impl Corps {
 fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: String, r: &RangCorps) -> Cotisation {
     Cotisation {
         famille: famille.clone(),
-        cotisation: table.cotisation(&libelle).map(str::to_string),
+        cotisation: table.cotisation(&libelle).cloned(),
         libelle,
         base: r.colonne(Genre::Base, None),
-        taux_employeur: r.colonne(Genre::Taux, Some(Part::Employeur)),
-        montant_employeur: r.colonne(Genre::Montant, Some(Part::Employeur)),
-        taux_salarie: r.colonne(Genre::Taux, Some(Part::Salarie)),
-        montant_salarie: r.colonne(Genre::Montant, Some(Part::Salarie)),
+        taux_employeur: r.taux(Some(Part::Employeur)),
+        montant_employeur: r.montant(Genre::Montant, Some(Part::Employeur)),
+        taux_salarie: r.taux(Some(Part::Salarie)),
+        montant_salarie: r.montant(Genre::Montant, Some(Part::Salarie)),
         hors_total: false,
     }
 }
@@ -2403,19 +2523,20 @@ fn controler(b: &mut BulletinLu) {
     if soumises.iter().any(|l| l.montant.is_none()) {
         b.avertissements.push(Avertissement::Lecture("une ligne soumise n'a pas de montant : le brut ne se contrôle pas".into()));
     } else if !soumises.is_empty() {
-        let somme: Decimal = soumises.iter().filter_map(|l| l.montant).sum();
+        let somme: Montant = soumises.iter().filter_map(|l| l.montant).sum();
         if somme != b.brut {
-            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", b.brut, somme)));
+            b.avertissements.push(Avertissement::Incoherence(format!("le brut lu ({}) n'est pas la somme des lignes soumises ({})", tel_que_lu(b.brut), tel_que_lu(somme))));
         }
     }
     if let (Some(avant), Some(salarie)) = (b.net_avant_impot, b.total_salarie) {
-        let non_soumis: Decimal = b.lignes.iter().filter(|l| !l.soumis).filter_map(|l| l.montant).sum();
-        let hors_total: Decimal = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
+        let non_soumis: Montant = b.lignes.iter().filter(|l| !l.soumis).filter_map(|l| l.montant).sum();
+        let hors_total: Montant = b.cotisations.iter().filter(|c| c.hors_total).filter_map(|c| c.montant_salarie).sum();
         let attendu = b.brut - salarie - hors_total + non_soumis;
         if attendu != avant {
             b.avertissements.push(Avertissement::Incoherence(format!(
                 "le net avant impôt lu ({}) n'est pas brut - cotisations salariales + lignes non soumises ({})",
-                avant, attendu
+                tel_que_lu(avant),
+                tel_que_lu(attendu)
             )));
         }
     }
@@ -2424,8 +2545,8 @@ fn controler(b: &mut BulletinLu) {
             if avant - impot != b.net_a_payer {
                 b.avertissements.push(Avertissement::Incoherence(format!(
                     "le net à payer lu ({}) n'est pas le net avant impôt moins l'impôt prélevé ({})",
-                    b.net_a_payer,
-                    avant - impot
+                    tel_que_lu(b.net_a_payer),
+                    tel_que_lu(avant - impot)
                 )));
             }
         }
@@ -2508,13 +2629,15 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         };
         // La quantite de la ligne prend l'unite de sa rubrique : la porte de sa lecture.
         use engagement::ligne::QuantiteDeLigne as Q;
-        let h = match (Q::de_l_unite(r.unite, q), par_unite) {
-            (Q::Cachets(c), _) => {
+        let imprimee = Q::imprimee(r.unite, q).map_err(|e| socle::refus!("« {} » : {}", l.libelle, e))?;
+        let h = match (imprimee, par_unite) {
+            (Some(Q::Cachets(c)), _) => {
                 cachets = cachets.map(|x| x + c);
                 continue;
             }
-            (q, Some(u)) => q.fois(u).ok_or_else(|| socle::refus!("« {} » : une ligne en pourcentage ne compte pas d'heures par unité", l.libelle))?,
-            (Q::Heures(h), None) => h,
+            (Some(q), Some(u)) => q.fois(u),
+            (None, Some(_)) => return Err(socle::refus!("« {} » : une ligne en pourcentage ne compte pas d'heures par unité", l.libelle)),
+            (Some(Q::Heures(h)), None) => h,
             // Ni cachet, ni heures par unite, ni heure : la ligne est passee plus haut.
             (_, None) => continue,
         };

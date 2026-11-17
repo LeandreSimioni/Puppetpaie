@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::fiches::{creer_dossier, ecrire, refus};
 use compagnie::avant::sauver_avant;
 use droit::contexte::Contexte;
@@ -60,13 +60,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for MetiersDuCatalogue {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for EmploisRendus {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -185,7 +185,7 @@ struct MetierDeLOnglet {
 /// Ce que rend `metiers-catalogue`.
 #[derive(Debug, Serialize)]
 struct MetiersDuCatalogue {
-    phrase: String,
+    phrase: Phrase,
     metiers: Vec<MetierDeLOnglet>,
     familles: Vec<FamilleDeMetier>,
 }
@@ -206,7 +206,7 @@ fn metiers_catalogue(ctx: &Contexte) -> R<MetiersDuCatalogue> {
         })
         .collect::<R<_>>()?;
     metiers.sort_by_cached_key(|m| (ordre.get(&m.metier.famille).copied(), m.metier.libelle.to_lowercase()));
-    let phrase = format!(
+    let phrase = socle::phrase!(
         "Métiers du catalogue : {}. Ceux qui sont cochés se proposent dans la fiche d'un salarié et dans un engagement ; ceux de votre convention le sont d'office.",
         metiers.len()
     );
@@ -226,7 +226,7 @@ struct MetierARetenir {
 /// Ce que rend `metier-retenu` : les metiers proposes et ceux des autres conventions.
 #[derive(Debug, Serialize)]
 struct EmploisRendus {
-    phrase: String,
+    phrase: Phrase,
     emplois: Vec<MetierDuDeroulant>,
     emplois_autres: Vec<MetierAutre>,
 }
@@ -249,5 +249,5 @@ fn metier_retenu(ctx: &Contexte, c: MetierARetenir) -> R<EmploisRendus> {
     }
     retenus.ecrire(ctx)?;
     let emplois = metiers(ctx)?;
-    Ok(EmploisRendus { phrase: format!("Métiers retenus par la compagnie : {}.", emplois.len()), emplois, emplois_autres: metiers_autres_conventions(ctx)? })
+    Ok(EmploisRendus { phrase: socle::phrase!("Métiers retenus par la compagnie : {}.", emplois.len()), emplois, emplois_autres: metiers_autres_conventions(ctx)? })
 }

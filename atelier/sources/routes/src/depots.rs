@@ -26,6 +26,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{dossier_du_code, NomDeFichier};
 use socle::mode::Mode;
 use socle::mois::{Graphie, Mois};
+use socle::texte::Phrase;
 use serde::{Deserialize, Serialize};
 use envois::depot_acte::DepotFait;
 use envois::etats::Repetition;
@@ -229,10 +230,10 @@ pub(crate) struct ChargeSuivre {
 /// phrase, son titre, ses encarts, et les phrases pour `moteur route --texte`.
 #[derive(Debug, Serialize)]
 pub(crate) struct Dit<A> {
-    phrase: String,
+    phrase: Phrase,
     titre: &'static str,
     encarts: Vec<Encart>,
-    phrases: Vec<String>,
+    phrases: Vec<Phrase>,
     avertissements: Vec<String>,
     informations: Vec<String>,
     #[serde(flatten)]
@@ -251,7 +252,7 @@ pub(crate) enum DepotApercu {
 /// salaries.
 #[derive(Debug, Serialize)]
 pub(crate) struct Deposee {
-    phrase: String,
+    phrase: Phrase,
     #[serde(flatten)]
     fait: DepotFait,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -266,7 +267,7 @@ pub(crate) struct Suivi {
     passe: bool,
     refuse: bool,
     incident: String,
-    phrase: String,
+    phrase: Phrase,
     couleur: &'static str,
 }
 
@@ -291,7 +292,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for DepotApercu {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         match self {
             DepotApercu::Dsn(d) => &d.phrase,
             DepotApercu::Dpae(d) => &d.phrase,
@@ -300,19 +301,19 @@ impl Dite for DepotApercu {
 }
 
 impl Dite for Deposee {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for Suivi {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for BilanDuTest {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.repetition.phrase
     }
 }
@@ -437,8 +438,7 @@ fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel ecrit maintenant.
 fn marque_a_la_minute() -> String {
     let maintenant = socle::temps::secondes().a_la_seconde();
-    let (j, s) = (maintenant.jour_de_paris(), maintenant.seconde_du_jour_de_paris());
-    format!("_{}-{:02}{:02}", j.aaaammjj(), s / 3_600, s / 60 % 60)
+    format!("_{}-{}", maintenant.jour_de_paris().aaaammjj(), socle::paris::ecrit::heure_minute(maintenant, ""))
 }
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel, suivie de `-2`, `-3`... tant que `DPAE_<etiq><marque>.txt` existe deja.
@@ -634,7 +634,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let n = retenues.len();
     Ok(Dpae::Ecrite(DpaeEcrite {
         chemin: f,
-        phrase: format!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
+        phrase: socle::phrase!("DPAE {} écrite : {} embauche{}.", socle::texte::de(&le_mois.libelle(Graphie::Accentuee)), n, if n > 1 { "s" } else { "" }),
     }))
 }
 
@@ -650,7 +650,7 @@ pub(crate) enum Dpae {
 /// dit combien d'embauches elle declare.
 pub(crate) struct DpaeEcrite {
     pub(crate) chemin: PathBuf,
-    pub(crate) phrase: String,
+    pub(crate) phrase: Phrase,
 }
 
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
@@ -678,7 +678,7 @@ mod tests_dpae_partielles {
     use super::*;
 
     fn dossier() -> PathBuf {
-        let r = documents::DossierDuMois::Sorties.dans(&crate::horloge::racine_d_essai(false), socle::mois::Mois::nouveau(2026, 10).unwrap());
+        let r = documents::DossierDuMois::Sorties.dans(&crate::horloge::racine_d_essai(false), socle::forme::lire_texte("\"2026-10\"", "le mois du test").unwrap());
         std::fs::create_dir_all(&r).unwrap();
         r
     }
@@ -709,7 +709,7 @@ mod tests_dpae_partielles {
 /// ou la phrase de la DPAE ecrite.
 #[derive(Debug, Default)]
 pub struct DitALEcriture {
-    phrase: Option<String>,
+    phrase: Option<Phrase>,
     avertissements: Vec<String>,
     informations: Vec<String>,
 }
@@ -810,13 +810,13 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&socle::secret::
     // dans le geste) ; puis ses suites.
     let tranche = if mode == Mode::Test {
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
-        format!("{} {}", b.titre, b.phrase)
+        socle::phrase!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
         suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
-        "Dépôt réel effectué — ses retours sont attendus.".to_string()
+        Phrase::fixe("Dépôt réel effectué — ses retours sont attendus.")
     };
-    let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
+    let phrase = socle::phrase!("{}{}", tranche, fait.suites.iter().map(|s| format!(" {}", s)).collect::<String>());
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
     let avis = (mode == Mode::Reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, None)?.individus.is_empty())
         .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
@@ -874,11 +874,11 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.
     let nom = if dpae { "La DPAE" } else { "La DSN" };
     let (phrase, etat) = if passe {
-        (format!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
+        (socle::phrase!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
     } else if refuse {
-        (format!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
+        (socle::phrase!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
     } else {
-        (format!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
+        (socle::phrase!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
     };
     Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
@@ -973,15 +973,6 @@ pub(crate) fn lire_octets(chemin: &Path) -> R<Vec<u8>> {
     std::fs::read(chemin).map_err(|e| erreur_io(&e, chemin))
 }
 
-/// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
-struct IdentiteDeFiche {
-    cle: IdSalarie,
-    nir: Option<droit::fiche::Nir>,
-    nom: Option<String>,
-    prenom: Option<String>,
-    naissance: Option<Jour>,
-}
-
 /// UNE EMBAUCHE QUE LE FICHIER DPAE DECLARE : le salarie (`?` s'il n'est pas de la configuration), son nom, son contrat
 /// (numero, bornes, nature), si elle est deja declaree, et sa pastille.
 #[derive(Debug, Clone, Serialize)]
@@ -1006,7 +997,7 @@ pub(crate) struct ApercuDpae {
     pub(crate) fichier: PathBuf,
     pub(crate) nom: NomDeFichier,
     pub(crate) enregistrements: usize,
-    pub(crate) octets: usize,
+    pub(crate) octets: socle::grandeurs::Octets,
     /// Le mode que l'indicateur dit (`120` reel, `TST` test), aucun pour un autre.
     pub(crate) mode: Option<Mode>,
     pub(crate) indicateur: String,
@@ -1025,19 +1016,6 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     let m = crate::etapes::Moteur::nouveau(ctx);
     let lignes_journal = m.lignes()?;
     let faites = etats::embauches_par_depot(&lignes_journal);
-    // L'IDENTITE DE CHAQUE FICHE, telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et
-    // sa date de naissance (`JJMMAAAA`).
-    let fiches: Vec<IdentiteDeFiche> = ctx
-        .salaries
-        .iter()
-        .map(|(k, f)| IdentiteDeFiche {
-            cle: k.clone(),
-            nir: f.champs.nir.dite().cloned(),
-            nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
-            prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
-            naissance: f.champs.date_naissance.dite().copied(),
-        })
-        .collect();
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
     // qui relie la DPAE, partie ou refusee, a son engagement.
     let departs = m.departs()?;
@@ -1067,19 +1045,36 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     for e in &enrs {
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let trouve: Option<&IdentiteDeFiche> = match &e.nir {
-            Some(nir) => fiches.iter().find(|f| f.nir.as_ref() == Some(nir)),
-            None => {
-                let (nom, prenom) = (e.nom.as_deref(), e.prenom.as_deref());
-                fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance == e.date_naissance)
-            }
-        };
+        let e_id = &e.identite;
+        // La fiche se compare telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et sa
+        // date de naissance.
+        fn en_capitales<T: AsRef<str>>(t: &Option<T>) -> Option<String> {
+            t.as_ref().map(|t| t.as_ref().trim().to_uppercase())
+        }
+        let trouve: Option<&IdSalarie> = ctx
+            .salaries
+            .iter()
+            .find(|(_, f)| {
+                let c = &f.champs;
+                match &e_id.nir {
+                    Some(nir) => c.nir.as_ref() == Some(nir),
+                    None => {
+                        let meme_naissance = match (c.date_naissance, e_id.naissance) {
+                            (None, None) => true,
+                            (Some(j), Some(n)) => n.jour() == Some(j),
+                            _ => false,
+                        };
+                        c.nom.is_some() && en_capitales(&c.nom) == e_id.nom && en_capitales(&c.prenom) == e_id.prenoms && meme_naissance
+                    }
+                }
+            })
+            .map(|(k, _)| k);
         let debut = e
             .date_embauche
             .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
         jours.push(debut);
-        let id = trouve.map(|f| (f.cle.clone(), Some(debut)));
-        let nom = match trouve.and_then(|f| ctx.salaries.get(&f.cle)).and_then(|f| f.champs.nomme()) {
+        let id = trouve.map(|k| (k.clone(), Some(debut)));
+        let nom = match trouve.and_then(|k| ctx.salaries.get(k)).and_then(|f| f.champs.nomme()) {
             Some(n) => n,
             None => "salarié inconnu de la configuration".to_string(),
         };
@@ -1090,9 +1085,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
             (None, None) => None,
         };
         let numero = id.as_ref().and_then(|k| numeros.get(k)).cloned();
-        let deja = trouve.zip(numero.as_ref()).is_some_and(|(f, n)| faites.contains_key(&(f.cle.clone(), Some(n.clone()))));
+        let deja = trouve.zip(numero.as_ref()).is_some_and(|(k, n)| faites.contains_key(&(k.clone(), Some(n.clone()))));
         lignes.push(EmbaucheDuFichier {
-            salarie: trouve.map(|f| f.cle.clone()),
+            salarie: trouve.cloned(),
             nom,
             contrat: PeriodeOuverte::du(debut, e.date_fin).map_err(|x| x.reclasser(Classe::Illisible))?,
             numero,
@@ -1109,12 +1104,13 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
     poser_les_pastilles(&mut deja_depose);
     let mut repetition = etats::repetition(&lignes_journal, Quoi::Dpae.acte(), &empreinte, &nom_fichier);
     pastilles_du_test(&mut repetition);
+    let octets = socle::grandeurs::Octets::de(&contenu);
     Ok(ApercuDpae {
-        description: format!("{} — {} enregistrement{}, {} octets, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, contenu.len(), envois::depot::indicateur(&contenu)),
+        description: format!("{} — {} enregistrement{}, {}, indicateur {}.", nom_fichier, enrs.len(), if enrs.len() > 1 { "s" } else { "" }, octets, envois::depot::indicateur(&contenu)),
         fichier: PathBuf::from(chemin),
         nom: nom_fichier,
         enregistrements: enrs.len(),
-        octets: contenu.len(),
+        octets,
         mode: envois::depot::mode_dpae(&contenu),
         indicateur: envois::depot::indicateur(&contenu),
         mois,
@@ -1142,7 +1138,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             // Une DSN se dit par sa nature, son mois et ses salaries quand rien d'autre n'est a dire.
             let phrase = match ecrite {
                 Some(p) => p,
-                None => format!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
+                None => socle::phrase!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
             DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
@@ -1152,34 +1148,36 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             let embauches = socle::ecran::compte(a.embauches.len(), "embauche", "embauches");
             let phrase = match (ecrite, a.mois) {
                 (Some(p), _) => p,
-                (None, Some(m)) => format!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
-                (None, None) => format!("DPAE : {}.", embauches),
+                (None, Some(m)) => socle::phrase!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
+                (None, None) => socle::phrase!("DPAE : {}.", embauches),
             };
             DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
     };
-    // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne.
+    // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne. Celles de ses
+    // parties, de ses encarts et ses avertissements sont encore des textes (#419, le dernier chantier) : chacun entre
+    // dans sa phrase ici.
     let encarts = encarts_du_depot(&a);
-    let mut lignes: Vec<String> = match &a {
+    let mut lignes: Vec<Phrase> = match &a {
         DepotApercu::Dsn(Dit { apercu: x, .. }) => {
             let recap = match &x.recapitulatif {
-                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(r.phrase.clone()),
+                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(socle::phrase!("{}", r.phrase)),
                 _ => None,
             };
-            [x.remplacement.as_ref().map(|r| r.etat.phrase.clone()), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
+            [x.remplacement.as_ref().map(|r| socle::phrase!("{}", r.etat.phrase)), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
         }
         DepotApercu::Dpae(Dit { apercu: x, .. }) => vec![x.repetition.phrase.clone()],
     };
-    lignes.retain(|p| !p.is_empty());
-    lignes.extend(encarts.iter().map(Encart::en_ligne));
+    lignes.retain(|p| !p.est_vide());
+    lignes.extend(encarts.iter().map(|e| socle::phrase!("{}", e.en_ligne())));
     match &mut a {
         DepotApercu::Dsn(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned());
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned());
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }

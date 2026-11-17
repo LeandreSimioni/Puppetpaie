@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, FORME, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
 use documents::bulletin::jeux_et_description;
 use droit::fiche::ModeleBulletin;
@@ -73,20 +73,20 @@ fn apercu(c: ChargeModele) -> R<ApercuModele> {
     let modele = c.modele;
     let pdf = apercu_pdf(modele).map_err(|e| e.reclasser(Classe::Refuse))?;
     Ok(ApercuModele {
-        phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele),
+        phrase: socle::phrase!("Bulletin d'exemple dans le modèle {}, en PDF.", modele),
         modele,
         pdf: socle::base64::ecrire(&pdf),
     })
 }
 
 impl Dite for ApercuModele {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for ModelesDuBulletin {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
@@ -106,7 +106,7 @@ pub struct ChargeModele {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ApercuModele {
-    phrase: String,
+    phrase: Phrase,
     modele: ModeleBulletin,
     pub pdf: String,
 }
@@ -150,7 +150,7 @@ struct EcranDesModeles {
 /// choisi et s'il est celui du logiciel, les modeles connus, les salaries qui en ont un autre, et ce que l'onglet en dit.
 #[derive(Debug, Clone, serde::Serialize)]
 struct ModelesDuBulletin {
-    phrase: String,
+    phrase: Phrase,
     choisi: ModeleBulletin,
     par_defaut: bool,
     modeles: Vec<ModeleDit>,
@@ -187,7 +187,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
         .collect();
     let dits: Vec<String> = autrement.iter().map(|s| format!("{} ({})", s.nom, s.modele)).collect();
     Ok(ModelesDuBulletin {
-        phrase: format!("Modèle de bulletin : {}{}.", modele, if choisi.is_none() { " (celui du logiciel)" } else { "" }),
+        phrase: socle::phrase!("Modèle de bulletin : {}{}.", modele, if choisi.is_none() { " (celui du logiciel)" } else { "" }),
         choisi: modele,
         par_defaut: choisi.is_none(),
         modeles: liste,
@@ -250,6 +250,6 @@ fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ModeleBulletin(Some(charge.modele)), Some(ctx.aujourdhui))?;
     let neuf = Contexte::nouveau(&ctx.racine, None).map_err(|e| e.reclasser(Classe::Refuse))?;
     let mut v = modeles(&neuf)?;
-    v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);
+    v.phrase = socle::phrase!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);
     Ok(v)
 }

@@ -2,13 +2,12 @@
 //! « Accident du travail » (`atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`, l. 579-590).
 
 use droit::maintien::{conventionnel, Base, Droit, DureeDUneTranche, Origine, Tranche};
-use rust_decimal::Decimal;
 use socle::date::{Anciennete, Duree};
 use socle::grandeurs::Taux;
 
 fn tranches(mois: u32) -> Vec<Tranche> {
     let duree = DureeDUneTranche::Mois(Duree::mois(mois));
-    vec![Tranche { duree: duree.clone(), taux: Taux::du_decimal(Decimal::from(100)) }, Tranche { duree, taux: Taux::du_decimal(Decimal::from(75)) }]
+    vec![Tranche { duree: duree.clone(), taux: Taux::points(100) }, Tranche { duree, taux: Taux::points(75) }]
 }
 
 /// « à partir de 6 mois et jusqu'à 1 an d'ancienneté : 1 mois à 100 % et 1 mois à 75 % ; au-delà de 1 an d'ancienneté :
@@ -16,17 +15,20 @@ fn tranches(mois: u32) -> Vec<Tranche> {
 #[test]
 fn la_1285_maintient_le_brut_selon_l_anciennete() {
     let idcc = Some(&droit::clauses::IDCC_CCNEAC);
-    let regime = |mois: i64, o: Origine| conventionnel(idcc, Anciennete::de_mois(Decimal::from(mois)), o).unwrap().unwrap();
+    // `mois` mois revolus, du 1er janvier 2020 au meme quantieme.
+    let entree = crate::outils::le_jour("2020-01-01");
+    let anciennete = |mois: u32| Anciennete::revolue(&entree, &entree.apres(Duree::mois(mois)).unwrap());
+    let regime = |mois: u32, o: Origine| conventionnel(idcc, anciennete(mois), o).unwrap().unwrap();
     assert!(matches!(regime(5, Origine::Maladie), Droit::PasDu(_)), "rien avant six mois");
     for (anciennete, duree) in [(6, 1), (11, 1), (12, 3), (42, 3)] {
         let Droit::Du(r) = regime(anciennete, Origine::Maladie) else { panic!("{} mois : un maintien", anciennete) };
-        assert_eq!((r.tranches, r.base, r.carence, r.subrogation), (tranches(duree), Base::Brut, Duree::jours(0), true), "{} mois", anciennete);
+        assert_eq!((r.tranches, r.base, r.carence, r.subrogation), (tranches(duree), Base::Brut, Duree::jours(0), Some(droit::clauses::Subrogation::ToutSalarie)), "{} mois", anciennete);
     }
     // X.4.7 : l'accident du travail et l'accident de trajet, le salaire brut garanti pendant les indemnités, sans
     // ancienneté ; la maladie professionnelle, que X.4.7 ne nomme pas, suit X.4.6.
     for o in [Origine::AccidentDuTravail, Origine::Trajet] {
         let Droit::Du(r) = regime(2, o) else { panic!("{:?} : un maintien", o) };
-        assert_eq!(r.tranches, vec![Tranche { duree: DureeDUneTranche::PendantLesIndemnites, taux: Taux::du_decimal(Decimal::from(100)) }]);
+        assert_eq!(r.tranches, vec![Tranche { duree: DureeDUneTranche::PendantLesIndemnites, taux: Taux::points(100) }]);
     }
     assert!(matches!(regime(2, Origine::MaladieProfessionnelle), Droit::PasDu(_)));
 }

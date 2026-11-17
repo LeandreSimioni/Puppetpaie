@@ -68,7 +68,9 @@ deprecated = "forbid"
 unused_imports = "forbid"
 unused_variables = "forbid"
 unused_assignments = "forbid"
-unused_mut = "forbid"
+# `deny`, pas `forbid` : sous Windows, le `thread_local!` de la bibliotheque standard porte son propre
+# `allow(unused_mut)`, qu'un `forbid` refuse (la cible Windows ne compilait plus). Aucun `allow` de notre code.
+unused_mut = "deny"
 unused_must_use = "forbid"
 unused_macros = "forbid"
 unused_unsafe = "forbid"
@@ -80,6 +82,10 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
+# Aucun `unsafe` : les traits scelles du socle (`grandeurs`, `texte`, `piece`, `date`) exigent un jeton que seul leur
+# module fabrique, et `unsafe` le fabriquerait (`std::mem::zeroed`). Un seul module le leve, `socle::systeme` (les appels
+# au noyau de Windows) ; chaque autre crate le refuse a sa racine (`#![forbid(unsafe_code)]`), qu'aucun `allow` ne leve.
+unsafe_code = "deny"
 
 [workspace.dependencies]
 # Arithmetique decimale : ROUND_HALF_UP = MidpointAwayFromZero. `serde` : un montant d'un fichier se lit en decimal,

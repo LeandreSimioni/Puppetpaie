@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
-use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
+use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use crate::etapes::{ChargeMois, Moteur};
 use compagnie::INTERFACE;
 use socle::ecran::Pastille;
@@ -108,26 +108,26 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 impl Dite for ApercuEnvoi {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for DocumentsEnvoyes {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for DocumentsImprimes {
-    fn phrase(&self) -> &str {
+    fn phrase(&self) -> &Phrase {
         &self.phrase
     }
 }
 
 impl Dite for PiecePartie {
-    fn phrase(&self) -> &str {
-        self.phrase
+    fn phrase(&self) -> &Phrase {
+        &self.phrase
     }
 }
 
@@ -146,7 +146,7 @@ pub(crate) struct ChargeDocumentsImprimer {
 /// a dit (aussi en `phrases`).
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsImprimes {
-    phrase: String,
+    phrase: Phrase,
     impression: String,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     chemin: std::path::PathBuf,
@@ -159,7 +159,7 @@ pub(crate) struct DocumentsImprimes {
 /// boite qui envoie.
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsEnvoyes {
-    phrase: String,
+    phrase: Phrase,
     partis: Vec<droit::fiche::Courriel>,
     avertissements: Vec<String>,
 }
@@ -177,7 +177,7 @@ struct ChargePiecePartie {
 /// Ce que rend `piece-partie` : le chemin de la piece, relatif a la compagnie.
 #[derive(Debug, Serialize)]
 struct PiecePartie {
-    phrase: &'static str,
+    phrase: Phrase,
     chemin: CheminRelatif,
 }
 
@@ -206,7 +206,7 @@ struct DejaPartis {
 /// Ce que rend `envoi-apercu`.
 #[derive(Debug, Serialize)]
 struct ApercuEnvoi {
-    phrase: String,
+    phrase: Phrase,
     expediteur: String,
     expediteur_dit: String,
     avertissements: Vec<String>,
@@ -229,7 +229,7 @@ fn piece_partie(ctx: &Contexte, c: ChargePiecePartie) -> R<PiecePartie> {
         let lieu = socle::echec::Lieu { detail: Some(e.phrase), ..Default::default() };
         Echec { a_part: Some(lieu.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la pièce partie n'est pas dans le dossier de la compagnie.") }
     })?;
-    Ok(PiecePartie { phrase: "La pièce partie, telle qu'elle est partie.", chemin })
+    Ok(PiecePartie { phrase: Phrase::fixe("La pièce partie, telle qu'elle est partie."), chemin })
 }
 
 // ------------------------------------------------------------------ les outils
@@ -342,7 +342,7 @@ fn paies_de_la_periode(ctx: &Contexte, periode: Mois) -> R<Vec<engagement::calcu
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). `None` : la
 /// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
 /// ne se lisent pas refusent la comparaison.
-fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<documents::aer::PaieAer>>> {
+fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<engagement::calcul::Paie>>> {
     if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
         return Ok(None);
     }
@@ -434,7 +434,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             imprime.extend(documents::aer::lire_quantites(&champs)?);
         }
         if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle)? {
-            let ecarts = documents::aer::ecarts(&imprime, &attendues);
+            let ecarts = documents::aer::ecarts(&imprime, &attendues)?;
             if !ecarts.is_empty() && !forcer {
                 // Une seule fausse et rien ne part.
                 fait.refusees.push((cle, periode, ecarts));
@@ -658,7 +658,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .collect();
     phrases.extend(prets.empechements.iter().chain(&avertissements).chain(&prets.informations).cloned());
     Ok(ApercuEnvoi {
-        phrase: format!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
+        phrase: socle::phrase!("Documents à envoyer par courriel, de {} : {}.", expediteur, socle::ecran::compte(messages.len(), "message", "messages")),
         expediteur_dit: format!("Courriels depuis {}", expediteur),
         expediteur,
         avertissements,
@@ -670,6 +670,11 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         boite_liee: prets.boite_liee,
         phrases,
     })
+}
+
+/// Le resume de la paie de `cle` que `choisir` a fait pour chaque salarie servi, a garder au journal avec l'envoi.
+fn resume_choisi(choix: &Choix, cle: &IdSalarie) -> R<envoi::ResumeDePaie> {
+    choix.resumes.get(cle).cloned().ok_or_else(|| socle::refus!("La paie de {} n'a pas de résumé : ses documents ne se servent pas.", cle))
 }
 
 /// Ce que l'ecran dit d'un renvoi : chaque ligne de ce qui a change, ou que le resume de la paie n'a pas bouge.
@@ -802,7 +807,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
             pieces: siennes.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-            resume: choix.resumes.get(cle).cloned(),
+            resume: resume_choisi(&choix, cle)?,
             renvoi: choix.renvois.contains_key(cle),
         });
         pieces.extend(siennes);
@@ -820,7 +825,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     noter(ctx, journal::Ligne::Documents(par_courriel(Some(c.mois), qui, true, "", &reponse, detail, Some(versions))))?;
     let qui_les_recoit: Vec<String> = cles.iter().filter_map(|cle| noms.get(cle).map(|nom| nom_a_l_ecran(ctx, cle, nom))).collect();
     Ok(DocumentsImprimes {
-        phrase: format!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
+        phrase: socle::phrase!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
         impression: nom_impression.into(),
         chemin: impression,
         salaries: cles,
@@ -855,8 +860,8 @@ pub(crate) struct EnvoiPrepare {
     client: Box<dyn Courriel>,
     /// La preuve deja verifiee avant la fabrique (`preparer_envoi` avec une preuve) : l.expedition ne la redemande pas.
     preuve: Option<Preuve>,
-    /// La duree de la preparation (lecture du mois, messages, boite), en millisecondes : le journal la garde.
-    preparation_ms: u128,
+    /// La duree de la preparation (lecture du mois, messages, boite) : le journal la garde.
+    preparation: std::time::Duration,
 }
 /// A QUI LES DOCUMENTS DU MOIS PARTENT. Chaque salarie du mois est dans l'un de trois cas, lus dans le journal
 /// (`crate::etapes::documents_partis` : ce que l'engagement sait de ce qui est parti) et dans ses engagements :
@@ -937,7 +942,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
             continue;
         }
         let siennes: Vec<&engagement::calcul::Paie> = paies.iter().zip(&cles).filter(|(_, c)| *c == cle).map(|(p, _)| p).collect();
-        resumes.insert(cle.clone(), envoi::resume_de(&siennes)?);
+        resumes.insert(cle.clone(), envoi::resume_de(&siennes));
     }
     let changes = bulletins_a_refaire(ctx, mois)?;
     let mut choix = Choix { resumes, ..Choix::default() };
@@ -1052,12 +1057,12 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             expediteur, signataire
         ));
     }
-    Ok(EnvoiPrepare { messages, expediteur, avertissements, choix, documents, client, preuve, preparation_ms: socle::temps::duree(debut).as_millis() })
+    Ok(EnvoiPrepare { messages, expediteur, avertissements, choix, documents, client, preuve, preparation: socle::temps::duree(debut) })
 }
 
 /// Ce qui suit la preparation : la PREUVE (le mot de passe du logiciel), l'envoi, le journal. `qui` : la ligne du journal.
 pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, preuve: &Preuve, qui: &str) -> R<DocumentsEnvoyes> {
-    let EnvoiPrepare { messages, expediteur, avertissements, choix, documents, mut client, preuve: verifiee, preparation_ms } = prepare;
+    let EnvoiPrepare { messages, expediteur, avertissements, choix, documents, mut client, preuve: verifiee, preparation } = prepare;
     let preuve = match &verifiee {
         Some(p) => p,
         None => preuve,
@@ -1075,7 +1080,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
             Ok(journal::Servi {
                 nom: Some(m.nom.clone()),
                 pieces: m.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-                resume: choix.resumes.get(&m.pour).cloned(),
+                resume: resume_choisi(&choix, &m.pour)?,
                 renvoi: choix.renvois.contains_key(&m.pour),
                 cle: m.pour.clone(),
             })
@@ -1085,11 +1090,10 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?;
-    let preuve_ms = socle::temps::duree(t_preuve).as_millis();
+    let mot_de_passe = socle::temps::duree(t_preuve);
     let t_envoi = std::time::Instant::now();
     let envoye = envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None);
-    let envoi_ms = socle::temps::duree(t_envoi).as_millis();
-    let durees = journal::Durees { preparation: preparation_ms as u64, mot_de_passe: preuve_ms as u64, envoi: envoi_ms as u64 };
+    let durees = journal::Durees { preparation, mot_de_passe, envoi: socle::temps::duree(t_envoi) };
     let le_mois = Some(mois);
     let detail = |servis: &[journal::Servi]| journal::DetailDocuments {
         salaries: servis.to_vec(),
@@ -1122,7 +1126,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let reponse = format!("{} message(s) envoye(s)", partis.len());
     noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &en_liste(&partis, ", "), &reponse, detail(&recus), Some(versions))))?;
     Ok(DocumentsEnvoyes {
-        phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
+        phrase: socle::phrase!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
         partis,
         avertissements,
     })

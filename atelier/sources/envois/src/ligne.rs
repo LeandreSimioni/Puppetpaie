@@ -18,7 +18,6 @@ use engagement::numeros::{NumeroContrat, NumeroDAvenant};
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mode::Mode;
 use socle::mois::Mois;
-use socle::num::Decimal;
 
 use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
@@ -265,27 +264,27 @@ pub struct Ouverture {
 /// cette seule forme (un texte que l'ecriture ne redonnerait pas se refuse).
 mod versements_en_texte {
     use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
+    use socle::grandeurs::Montant;
 
     /// Un montant ecrit par `ecrit::texte`.
-    struct EnTexte<'a>(&'a Decimal);
+    struct EnTexte<'a>(&'a Montant);
 
     impl Serialize for EnTexte<'_> {
         fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-            socle::grandeurs::ecrit::texte::serialize(&socle::grandeurs::Montant::du_decimal(*self.0), s)
+            socle::grandeurs::ecrit::texte::serialize(self.0, s)
         }
     }
 
-    pub fn serialize<S: serde::Serializer>(v: &Option<Vec<Decimal>>, s: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: serde::Serializer>(v: &Option<Vec<Montant>>, s: S) -> Result<S::Ok, S::Error> {
         v.as_ref().map(|l| l.iter().map(EnTexte).collect::<Vec<_>>()).serialize(s)
     }
 
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Decimal>>, D::Error> {
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Montant>>, D::Error> {
         let Some(textes) = Option::<Vec<String>>::deserialize(d)? else { return Ok(None) };
         let mut out = Vec::with_capacity(textes.len());
         for t in textes {
-            let m = socle::num::dec_texte(&t).map_err(|e| serde::de::Error::custom(e.phrase))?;
-            if m.to_string() != t {
+            let m = socle::grandeurs::lu::en_texte::<Montant>(&t).map_err(|e| serde::de::Error::custom(e.phrase))?;
+            if socle::grandeurs::ecrit::texte::texte(m).as_ref() != Ok(&t) {
                 return Err(serde::de::Error::custom(format!("versement {} : un montant s'écrit en chiffres, un point avant ses décimales.", socle::fichiers::repr(&t))));
             }
             out.push(m);
@@ -317,7 +316,7 @@ pub struct DetailDsn {
     pub ordre: Option<droit::natures::NumeroDOrdre>,
     /// Les montants versés aux organismes (S21.G00.20.005), écrits en texte (`socle::grandeurs::ecrit::texte`).
     #[serde(default, skip_serializing_if = "Option::is_none", with = "versements_en_texte")]
-    pub versements: Option<Vec<Decimal>>,
+    pub versements: Option<Vec<socle::grandeurs::Montant>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salaries: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -409,8 +408,11 @@ impl DetailDpae {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PersonneCertifiee {
-    pub nom: String,
-    pub prenom: String,
+    /// Le nom et le prenom que le certificat dit ; aucun : sa zone est a blanc.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nom: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prenom: Option<String>,
     /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc.
     pub embauche: Option<socle::date::Jour>,
     pub etat: EtatDeLaDpae,
@@ -515,13 +517,16 @@ impl RetourOrganisme {
 
 // ------------------------------------------------------------------ les envois au salarie
 
-/// Les durees d'un envoi de documents, en millisecondes.
+/// Les durees d'un envoi de documents, ecrites en millisecondes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Durees {
-    pub preparation: u64,
-    pub mot_de_passe: u64,
-    pub envoi: u64,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub preparation: std::time::Duration,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub mot_de_passe: std::time::Duration,
+    #[serde(with = "socle::temps::ecrit::millisecondes")]
+    pub envoi: std::time::Duration,
 }
 
 /// Un salarie que des documents ont servi : ses pieces, le resume de sa paie, et si c'etait un renvoi.
@@ -531,7 +536,7 @@ pub struct Servi {
     pub cle: IdSalarie,
     pub nom: Option<String>,
     pub pieces: Vec<NomDeFichier>,
-    pub resume: Option<crate::envoi::ResumeDePaie>,
+    pub resume: crate::envoi::ResumeDePaie,
     pub renvoi: bool,
 }
 
@@ -755,7 +760,8 @@ pub struct DetailContresigne {
 pub struct AnneeCasc {
     pub annee: socle::mois::Annee,
     pub vire_le: socle::date::Jour,
-    pub montant: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub montant: socle::grandeurs::Montant,
 }
 
 /// LE DETAIL DE LA REGULARISATION CASC-SVP envoyee a Audiens et au CASC-SVP : ses annees, ses mois, son total, les
@@ -765,7 +771,8 @@ pub struct AnneeCasc {
 pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
     pub mois: Vec<Mois>,
-    pub total: rust_decimal::Decimal,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize", deserialize_with = "socle::grandeurs::ecrit::texte::deserialize")]
+    pub total: socle::grandeurs::Montant,
     pub expediteur: Courriel,
     pub eml: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]

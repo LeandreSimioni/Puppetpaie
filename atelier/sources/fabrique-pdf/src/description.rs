@@ -76,7 +76,39 @@ pub fn defaut<T>(message: impl Into<String>) -> Result<T, Refus> {
 /// (FORMAT.md), le 3 les modes de lecture et de retouche de PDF existants (`--pages`, `--texte`,
 /// `--marquer`, `--verrouiller`) et le champ facultatif `largeur_max` de `texte_fixe`. Une
 /// description dit chaque valeur (FORMAT.md) quel que soit son numéro.
-pub const FORMAT: i64 = 3;
+pub const FORMAT: NumeroDuFormat = NumeroDuFormat(3);
+
+/// LE NUMERO DU FORMAT D'UNE DESCRIPTION (FORMAT.md, son champ `format` : celle d'un document, d'un remplissage, d'un
+/// ajout de champs), tel qu'elle l'écrit : un entier JSON, que la fabrique lit (1, 2 ou 3 pour un document ; le sien,
+/// `FORMAT`, pour un remplissage ou un ajout) ou refuse en le citant. Celui que le logiciel écrit est `FORMAT`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NumeroDuFormat(i64);
+
+impl NumeroDuFormat {
+    /// Un format qu'un document de cette fabrique peut porter (1, 2 ou 3).
+    fn d_un_document(self) -> bool {
+        matches!(self.0, 1..=3)
+    }
+
+    /// Un format qui porte les documents « modèle » (2 au moins).
+    fn porte_les_modeles(self) -> bool {
+        self.0 >= 2
+    }
+}
+
+/// Le numéro tel que la description l'écrit (« 3 »).
+impl std::fmt::Display for NumeroDuFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Lu d'un entier JSON, tel qu'il est écrit : la fabrique dit ensuite si elle le lit.
+impl<'de> serde::Deserialize<'de> for NumeroDuFormat {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<NumeroDuFormat, D::Error> {
+        <i64 as serde::Deserialize>::deserialize(d).map(NumeroDuFormat)
+    }
+}
 
 /// Le corps en dessous duquel `largeur_max` ne réduit pas un texte (6 pt : sous
 /// cette taille la case est illisible, et c'est le signe que la donnée ne va pas).
@@ -766,7 +798,7 @@ fn lire_police(p: &Option<f::Police>, style: Option<style_contrat::Variante>) ->
 pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
     // Le 3 est le numéro de la fabrique (`--version`) : une description qui le porte est celle
     // du format 2, avec `largeur_max` en plus. Les trois se lisent de la même façon.
-    if !matches!(d.format, 1..=3) {
+    if !d.format.d_un_document() {
         return refus(format!(
             "format {} non pris en charge : cette fabrique lit les formats 1, 2 et 3",
             d.format
@@ -850,14 +882,14 @@ pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
 /// Un document modèle mis en page selon le style : ses blocs, et son titre (`texte_brut`, sans gras) si `veut_titre`.
 fn lire_modele(
     mb: &f::Modele,
-    format: i64,
+    format: NumeroDuFormat,
     style: Option<style_contrat::Variante>,
     ou: &str,
     prefixe: String,
     veut_titre: bool,
 ) -> Result<(Vec<BlocEtiquete>, Option<String>), Refus> {
     use style_contrat::Variante;
-    if format < 2 {
+    if !format.porte_les_modeles() {
         return refus(format!("{} : \"modele\" demande \"format\": 2", ou));
     }
     let variante = match style {

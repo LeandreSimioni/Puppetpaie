@@ -32,20 +32,21 @@ DGFiP, les relit comme le moteur, les depose datees dans <sources>/dgfip-frais-d
 de <donnees>/missions/. <sources> : atelier/reference/sources ; <donnees> : logiciel/donnees.";
 
 /// La commande.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if args.len() != 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     }
     match relever(Path::new(&args[0]), Path::new(&args[1]), &|url| socle::garde_reseau::Url::lire(url).and_then(|u| crate::sources::telecharger(&u, 120)).map(|(o, _)| o)) {
         Ok(t) => {
             println!("{}", t);
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     }
 }
@@ -88,8 +89,10 @@ fn premier_jour_calculable(donnees: &Path) -> R<socle::date::Jour> {
     for e in lus {
         let nom = e.map_err(|e| socle::echec::du_disque(&dossier, &e))?.file_name();
         if let Some(an) = nom.to_str().and_then(|n| n.strip_suffix(".json")) {
-            let n = an.parse::<i64>().map_err(|e| refus!("{} : {}.json n'est pas un barème d'une année ({}).", dossier.display(), an, e))?;
-            ans.push(socle::mois::Annee::nouvelle(n)?);
+            match socle::piece::Zone::lue(an, socle::piece::format::AnneeEnChiffres).valeur() {
+                Some(annee) => ans.push(annee?),
+                None => return Err(refus!("{} : {}.json n'est pas un barème d'une année.", dossier.display(), an)),
+            }
         }
     }
     let an = ans

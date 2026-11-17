@@ -168,7 +168,9 @@ pub struct EtatSource {
     pub(crate) en_ligne: Option<EnLigne>,
     pub(crate) detail: Option<String>,
     pub(crate) page_de_veille: Option<Url>,
-    pub(crate) age_jours: i64,
+    /// Les jours passes depuis le releve (aucun le jour meme).
+    #[serde(serialize_with = "socle::date::Duree::ecrite_en_jours")]
+    pub(crate) age_jours: socle::date::Duree<socle::date::EnJours>,
     extra: Extra,
     kali: Option<KaliSuivi>,
     evenements: Vec<Evenement>,
@@ -206,7 +208,7 @@ fn etats_lus(installation: &Path, manifeste: &Manifeste, aujourdhui: &Jour) -> R
             en_ligne: None,
             detail: None,
             page_de_veille: s.page_de_veille.clone(),
-            age_jours: aujourdhui.moins(&s.releve_le),
+            age_jours: socle::date::Duree::ecoulee(&s.releve_le, aujourdhui),
             extra: Extra { en_vigueur: s.en_vigueur.clone(), etendu_le: s.etendu_le.clone(), verification_comment: s.verification_comment.clone() },
             kali: s.kali.clone(),
             evenements: Vec::new(),

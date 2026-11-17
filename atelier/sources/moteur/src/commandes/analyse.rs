@@ -221,9 +221,9 @@ pub fn analyser(spec: &Spec, args: &[Argument]) -> Result<Args, Refus> {
 }
 
 /// Analyse `args` ; sur un refus, ecrit `usage` puis la phrase sur la sortie d'erreur et rend le code 2.
-pub fn analyser_ou_sortir(spec: &Spec, args: &[Argument]) -> Result<Args, i32> {
+pub fn analyser_ou_sortir(spec: &Spec, args: &[Argument]) -> Result<Args, std::process::ExitCode> {
     analyser(spec, args).map_err(|Refus(m)| {
         eprintln!("{}\nmoteur {} : {}", usage(spec), spec.commande, m);
-        2
+        std::process::ExitCode::from(2)
     })
 }

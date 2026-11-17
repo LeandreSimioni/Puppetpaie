@@ -289,7 +289,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
             let mut ent: EntrepotKali = Entrepot::neuf(&dossier, etat);
             let t0 = Instant::now();
             let n = passer(&mut dila::tar_gz(source.flux(&format!("{}{}", BASE, glob))?), &mut ent.articles, &mut ent.etat.changes, &conteneurs, None)?;
-            dire(&format!("  {} articles gardes en {}s", n, crate::releve::codes::secondes(t0.elapsed())));
+            dire(&format!("  {} articles gardes en {}s", n, socle::temps::ecrit::secondes_dites(t0.elapsed())));
             ent.sauver(jour)?;
             ent
         }
@@ -438,11 +438,12 @@ pub fn rendre_recherche(ent: &EntrepotKali, idcc: &Idcc, mot: &str) -> String {
 }
 
 /// `moteur-atelier releve-conventions ...` : rend le code de sortie.
-pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
     let args: &[String] = &socle::ligne::textes(args);
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
-        return 2;
+        return ExitCode::from(2);
     }
     let racine = Path::new(&args[1]);
     let sortie = |r: R<String>| match r {
@@ -453,14 +454,14 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
             if let Err(e) = o.write_all(t.as_bytes()).and_then(|_| o.flush()) {
                 if e.kind() != std::io::ErrorKind::BrokenPipe {
                     eprintln!("{}", e);
-                    return 1;
+                    return ExitCode::FAILURE;
                 }
             }
-            0
+            ExitCode::SUCCESS
         }
         Err(m) => {
             eprintln!("{}", m.en_lignes());
-            1
+            ExitCode::FAILURE
         }
     };
     match args[0].as_str() {
@@ -475,7 +476,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
         "chercher" if args.len() >= 4 => sortie(Idcc::lire(&args[2]).and_then(|i| charger(racine).map(|e| rendre_recherche(&e, &i, &args[3])))),
         _ => {
             eprintln!("{}", USAGE);
-            2
+            ExitCode::from(2)
         }
     }
 }

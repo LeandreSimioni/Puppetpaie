@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::description::{illisible, Refus};
 use crate::lecture;
 use crate::mesure::Mesure;
-use crate::texte::{inspecter_page, Boite, Place, Signe};
+use crate::texte::{inspecter_page, Boite, Place, SigneDuTexte};
 
 #[derive(Serialize)]
 struct Chiffrement {
@@ -49,6 +49,27 @@ struct InconnuVu {
     pourquoi: String,
     rect: Rect,
     ligne: usize,
+}
+
+/// LA ROTATION D'UNE PAGE RELEVEE (`/Rotate`, ISO 32000-1, 7.7.3.3 : un multiple de 90 degrés), que le relevé écrit en
+/// degrés (`rotation`) : lue, ramenée à un tour. Un autre angle ne tourne pas la page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    Aucune,
+    QuartDeTour,
+    DemiTour,
+    TroisQuartsDeTour,
+}
+
+impl<'de> serde::Deserialize<'de> for Rotation {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Rotation, D::Error> {
+        Ok(match i64::deserialize(d)?.rem_euclid(360) {
+            90 => Rotation::QuartDeTour,
+            180 => Rotation::DemiTour,
+            270 => Rotation::TroisQuartsDeTour,
+            _ => Rotation::Aucune,
+        })
+    }
 }
 
 #[derive(Serialize)]
@@ -109,7 +130,7 @@ impl Repere {
 
 /// Les mots d'une ligne : les suites de caractères séparées par des espaces ou par un caractère que rien ne dit, avec
 /// leur boîte ; chaque caractère que rien ne dit, avec la sienne.
-fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Place>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
+fn mots_de(ligne: usize, texte: &[SigneDuTexte], boites: &[Option<Place>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
     let mut mot = String::new();
     let mut boite: Option<Place> = None;
     let mut finir = |mot: &mut String, boite: &mut Option<Place>| {
@@ -121,8 +142,8 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Place>], repere: &Rep
     };
     for (s, b) in texte.iter().zip(boites.iter()) {
         let c = match s {
-            Signe::Caractere(c) => *c,
-            Signe::Inconnu(i) => {
+            SigneDuTexte::Caractere(c) => *c,
+            SigneDuTexte::Inconnu(i) => {
                 finir(&mut mot, &mut boite);
                 if let Some(b) = b {
                     inconnus.push(InconnuVu { police: i.police.clone(), code: i.code.clone(), pourquoi: i.pourquoi.clone(), rect: repere.rect(b), ligne });

@@ -19,7 +19,8 @@ const SAISIES = {
   oui_non: (j, v) => `<input type="checkbox" data-j="${j}"${v ? " checked" : ""}>`,
   mois: (j, v) => `<input type="month" data-j="${j}"${valeurDeDepart(v)}>`,
   date: (j, v) => `<input type="date" data-j="${j}"${valeurDeDepart(v)}>`,
-  nombre: (j, v) => `<input type="number" data-j="${j}"${valeurDeDepart(v)}>`,
+  // Un nombre se tape tel quel (« 40,89 ») : la route le convertit, et le refuse en nommant la case.
+  nombre: (j, v) => `<input type="text" inputmode="decimal" data-j="${j}"${valeurDeDepart(v)}>`,
   liste: (j) => `<span data-liste="${j}"><input type="text" data-element></span> <button type="button" class="lien" data-plus="${j}">+</button>`,
 };
 
@@ -60,8 +61,7 @@ function valeurDuChamp(bloc, forme, j) {
   const x = bloc.querySelector(`[data-j="${j}"]`);
   if (forme === "oui_non") return x.checked ? true : undefined;
   const v = x.value.trim();
-  if (!v) return undefined;
-  return forme === "nombre" ? nombreTape(v) : v;
+  return v || undefined;
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */

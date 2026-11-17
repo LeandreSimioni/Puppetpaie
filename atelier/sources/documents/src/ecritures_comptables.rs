@@ -9,8 +9,10 @@ use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
 use droit::forme_bareme::{CHOMAGE, MALADIE, REDUCTION_GENERALE, RETRAITE_T1};
 use engagement::ecarts::RegroupementDeComparaison;
+use engagement::etats::RemunerationDuMois;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
+use socle::grandeurs::ecrit::texte;
 use socle::grandeurs::Montant;
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
@@ -60,10 +62,13 @@ pub struct Ecriture {
     pub auxiliaire: Option<NumeroDeCompte>,
     /// Le libelle du sous-compte : le salarie.
     pub auxiliaire_libelle: Option<String>,
-    /// Posee par les etats des ecritures comptables (« PAIE-AAAA-MM »).
-    pub piece: String,
-    /// Le rang de l'ecriture (une par mois) dans l'etat, a partir de 1.
-    pub numero: i64,
+}
+
+impl Ecriture {
+    /// Sa piece, celle de son mois : une ecriture (une piece) par mois (« PAIE-AAAA-MM »).
+    pub fn piece(&self) -> String {
+        format!("PAIE-{}", self.mois)
+    }
 }
 
 /// La date de l'ecriture d'un mois (son dernier jour) et son libelle (« Decembre 2026 »).
@@ -122,9 +127,20 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         let brut = dit(p.brut(), "le brut")?;
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);
         let mut retenu = zero;
-        for l in p.remuneration().into_iter().filter(|l| !l.soumis) {
-            let Some(code) = &l.code else {
-                return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas sa rubrique : rien ne dit si c'est une retenue, elle n'a pas de compte dans le plan comptable.", l.libelle, qui)));
+        for r in p.remuneration() {
+            let (code, l_libelle, l_montant) = match r {
+                RemunerationDuMois::Calculee(l) if !l.soumis => (&l.code, &l.libelle, l.montant),
+                RemunerationDuMois::Rattachee(l) if !l.soumis => (&l.code, &l.libelle, l.montant),
+                RemunerationDuMois::Calculee(_) | RemunerationDuMois::Rattachee(_) => continue,
+                // Une ligne que l'import n'a pas rattachee : sans rubrique, ou sans montant.
+                RemunerationDuMois::Imprimee(i) if !i.soumis => {
+                    let manque = match i.rubrique {
+                        Some(_) => "son montant : rien ne dit ce qu'elle retient",
+                        None => "sa rubrique : rien ne dit si c'est une retenue",
+                    };
+                    return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas {}, elle n'a pas de compte dans le plan comptable.", i.libelle, qui, manque)));
+                }
+                RemunerationDuMois::Imprimee(_) => continue,
             };
             if catalogue::rubrique(&ctx.racine, code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| m.reclasser(Classe::Refuse))? != HorsAssiette::Mouvement {
                 continue;
@@ -133,7 +149,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 return Err(manque_au_plan(
                     format!(
                         "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les retenues : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
-                        code, l.libelle
+                        code, l_libelle
                     ),
                     format!("retenues.{}", code),
                 ));
@@ -141,9 +157,9 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             // Le libelle du plan, sinon celui de la rubrique.
             let libelle = match &regle.libelle {
                 Some(x) => x.clone(),
-                None => l.libelle.clone(),
+                None => l_libelle.clone(),
             };
-            let montant = dit(l.montant, &format!("le montant de « {} »", l.libelle))?;
+            let montant = l_montant.au_centime();
             *retenues.entry((regle.compte.clone(), libelle, qui.clone())).or_insert(zero) += montant;
             retenu += montant;
         }
@@ -171,9 +187,10 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         compte_de.insert(qui.clone(), compte);
         let reduction_generale = p.validee().and_then(|v| v.reduction_generale.as_ref());
         for l in p.cotisations() {
-            let Some(id) = l.id.as_ref() else {
-                return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
+            let Some(id) = l.cotisation() else {
+                return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle())));
             };
+            let id = &id;
             let Some(regle) = plan.regle(id) else {
                 let parmi = match id {
                     RegroupementDeComparaison::Cotisation(_) => "les lignes",
@@ -182,7 +199,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 return Err(manque_au_plan(
                     format!(
                         "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi {}, avec un compte de charge et un compte de tiers.",
-                        id, l.libelle, parmi
+                        id, l.libelle(), parmi
                     ),
                     crate::plan_comptable::cle_dans_le_plan(id),
                 ));
@@ -190,10 +207,10 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             // Le libelle du plan, sinon celui du bulletin.
             let libelle = match &regle.libelle {
                 Some(x) => x.clone(),
-                None => l.libelle.clone(),
+                None => l.libelle().to_string(),
             };
             // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
-            let (pat, sal) = (l.montant_pat.map(Montant::au_centime), l.montant_sal.map(Montant::au_centime));
+            let (pat, sal) = (l.montant_employeur().map(Montant::au_centime), l.montant_salarie().map(Montant::au_centime));
             if *id == RegroupementDeComparaison::Cotisation(REDUCTION_GENERALE) {
                 if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
@@ -243,8 +260,6 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             mois,
             auxiliaire: auxiliaire.cloned(),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
-            piece: String::new(),
-            numero: 0,
         });
     };
     for (titre, m) in &brut_par_spectacle {
@@ -284,7 +299,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         // manque au plan ou a change de nature. On ne livre pas une ecriture desequilibree.
         return Err(refus(format!(
             "L'écriture de {} n'est pas équilibrée (débit {}, crédit {}) : une ligne de bulletin n'est pas portée comme il faut par le plan comptable.",
-            lib_mois, d.decimal(), c.decimal()
+            lib_mois, texte::dit(d), texte::dit(c)
         )));
     }
     Ok(out)
@@ -314,7 +329,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
             Some(a) => a.to_string(),
             None => e.compte.to_string(),
         };
-        let montant = |m: Montant| (!m.est_nul()).then(|| m.decimal().to_string().replace('.', ","));
+        let montant = |m: Montant| (!m.est_nul()).then(|| socle::texte::a_virgule(m));
         rang(&[Some(e.journal.to_string()), Some(date), Some(compte), Some(e.libelle.clone()), montant(e.debit), montant(e.credit), e.analytique.clone()]);
     }
     t.into_bytes()

@@ -4,6 +4,7 @@
 //! disque, et les tests des différents fichiers se répartissent sur les cœurs. Un fichier seul :
 //! `cargo nextest run --cargo-profile essais -E 'binary(routes) & test(/^<fichier>::/)'` (le nom du fichier est le nom du module).
 //! Aucun de ces fichiers ne change l'environnement du processus (`set_var`) : ceux qui le font restent seuls dans `tests/`.
+#![forbid(unsafe_code)]
 
 // Les aides communes a plusieurs binaires d'essai : publiques, chacun n'en prend que ce qu'il emploie.
 #[path = "../outils/mod.rs"]
@@ -25,6 +26,7 @@ mod duree_du_travail;
 mod arret_prolonge;
 mod signalement_apres_echeance;
 mod cdd_d_artiste;
+mod aer;
 mod dsn_sans_salarie;
 mod une_liste_de_ce_qui_est_du;
 mod frais_de_deplacement;

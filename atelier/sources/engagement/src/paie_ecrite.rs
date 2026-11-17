@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::grandeurs::{Heures, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Heures, Montant, MontantUnitaire};
 
-use crate::calcul::BaseDeCotisation;
+use crate::calcul::{BaseDeCotisation, LigneBrut, LigneCotisation};
 use crate::{Avis, ContratEcrit, LignePaie};
 
 /// UNE PAIE ECRITE.
@@ -87,7 +87,7 @@ pub struct FormeDePaie<A> {
     pub brut: Montant,
     #[serde(with = "nombre")]
     pub cout_employeur: Montant,
-    pub deduction_forfaitaire: Option<FormeDeLaDeduction>,
+    pub deduction_forfaitaire: Option<crate::calcul::DeductionForfaitaire>,
     pub engagement: FormeDEngagement,
     #[serde(with = "nombre")]
     pub heures: Heures,
@@ -95,7 +95,8 @@ pub struct FormeDePaie<A> {
     pub heures_absence: Heures,
     #[serde(with = "nombre")]
     pub heures_travaillees: Heures,
-    pub lignes: Vec<FormeDeCotisation>,
+    #[serde(deserialize_with = "lignes_relues")]
+    pub lignes: Vec<LigneCotisation>,
     #[serde(with = "nombre")]
     pub net_a_payer: Montant,
     #[serde(with = "nombre")]
@@ -104,7 +105,7 @@ pub struct FormeDePaie<A> {
     pub net_social: Montant,
     pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub reduction_generale: Option<droit::reduction::ReductionGenerale>,
-    pub remuneration: Vec<FormeDeRemuneration>,
+    pub remuneration: Vec<LigneBrut>,
     #[serde(with = "nombre")]
     pub salaire_de_base: Montant,
     #[serde(with = "nombre")]
@@ -136,86 +137,14 @@ pub struct Cle<I> {
     pub cle: I,
 }
 
-/// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite. Sa base s'ecrit en nombre, des euros ou des
-/// heures : relue, elle prend la grandeur que sa cotisation dit (`BaseDeCotisation::relue`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FormeDeCotisation {
-    /// La cotisation de la ligne.
-    pub id: droit::forme_bareme::IdDeCotisation,
-    /// Sa famille.
-    pub famille: droit::forme_bareme::FamilleDeCotisation,
-    pub libelle: String,
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub base: socle::forme::Nombre,
-    #[serde(with = "nombre::option")]
-    pub taux_pat: Option<Taux>,
-    #[serde(with = "nombre")]
-    pub montant_pat: Montant,
-    #[serde(with = "nombre::option")]
-    pub taux_sal: Option<Taux>,
-    #[serde(with = "nombre")]
-    pub montant_sal: Montant,
-    pub masquer_base_et_taux: bool,
+/// Les lignes de cotisation d'une paie ecrite, lues sa base en nombre puis relues (`calcul::LigneCotisation::relue`).
+fn lignes_relues<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<LigneCotisation>, D::Error> {
+    <Vec<LigneCotisation<socle::forme::Nombre>> as Deserialize>::deserialize(d).map(|l| l.into_iter().map(LigneCotisation::relue).collect())
 }
 
-/// Un nombre ecrit sans son unite (sa ligne la dit a la relecture), en texte normalise (`socle::num::nombre`) ; il se
-/// relit d'un nombre ou d'un texte (`socle::forme::Nombre`).
-fn nombre_ecrit<S: serde::Serializer>(n: &socle::forme::Nombre, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(&socle::num::nombre(n.0))
-}
-
-/// Une ligne de remuneration (`calcul::LigneBrut`) sous sa forme ecrite, avec sa designation au bulletin.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FormeDeRemuneration {
-    pub code: droit::catalogue::CodeDeRubrique,
-    pub libelle: String,
-    pub unite: droit::catalogue::Unite,
-    /// Sa quantite, sans son unite : relue, elle la prend de `unite` (`calcul::LigneBrut::de_la_forme`).
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub quantite: socle::forme::Nombre,
-    /// Son taux, sans son unite : relu, il la prend de `unite` (`ligne::TauxDeLigne::de_l_unite`).
-    #[serde(serialize_with = "nombre_ecrit")]
-    pub taux: socle::forme::Nombre,
-    #[serde(with = "nombre")]
-    pub montant: Montant,
-    #[serde(with = "nombre")]
-    pub heures_annexes: Heures,
-    pub soumis: bool,
-    pub imposable: bool,
-    pub conges_spectacles: bool,
-    pub salaire_de_base: bool,
-    pub retabli: bool,
-    pub conges_pris: bool,
-    pub dsn_bloc52: Option<droit::type_de_prime::TypeDePrime>,
-    pub arret_de_travail: bool,
-    pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
-    pub precision: Option<String>,
-    pub designation: String,
-}
-
-impl FormeDeRemuneration {
-    /// CE QU'ELLE PAIE, sa quantite et son taux relus dans l'unite de sa rubrique (`PaiementDeLigne::de_l_unite`) : la
-    /// lecture de ses deux nombres.
-    pub fn paiement(&self) -> crate::ligne::PaiementDeLigne {
-        crate::ligne::PaiementDeLigne::de_l_unite(self.unite, self.quantite.0, self.taux.0)
-    }
-}
-
-/// La deduction forfaitaire specifique (`calcul::DeductionForfaitaire`) sous sa forme ecrite.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FormeDeLaDeduction {
-    pub categorie: droit::forme_bareme::CategorieDfs,
-    pub profession: droit::fiche::ProfessionDfs,
-    #[serde(with = "nombre")]
-    pub taux: Taux,
-    pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,
-    #[serde(with = "nombre")]
-    pub montant: Montant,
-    #[serde(with = "nombre")]
-    pub deja: Montant,
+/// La base d'une ligne de cotisation, ecrite sans son unite (`BaseDeCotisation::en_nombre`).
+pub(crate) fn base_en_nombre<B: Copy + Into<BaseDeCotisation>, S: serde::Serializer>(b: &B, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(&(*b).into().en_nombre())
 }
 
 /// UN ENGAGEMENT SOUS SA FORME CANONIQUE (`Engagement::canon`) : ses champs dans l'ordre ou ils s'ecrivent, les nombres
@@ -245,13 +174,7 @@ pub struct FormeDEngagement {
     pub heures: Option<Heures>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
-    pub emploi: Option<String>,
-    pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
-    pub statut: Option<droit::fiche::Statut>,
-    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
-    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
+    pub emploi: droit::emplois::EmploiEngagement,
     pub etablissement: Option<droit::fiche::Nic>,
     pub nature: droit::natures::NatureDeContrat,
     #[serde(with = "nombre::option")]
@@ -269,7 +192,7 @@ pub struct FormeDEngagement {
     /// Sa periode de paie (`Engagement::periode_payee`).
     pub periode: socle::date::Periode,
     /// Sa quotite (`Engagement::quotite`), dans son unite.
-    pub quotite: crate::QuotiteDuContrat,
+    pub quotite: droit::natures::QuotiteDuContrat,
     pub sans_paie: bool,
     pub place: crate::PlaceDuMois,
     pub mois_du_contrat: Vec<Mois>,
@@ -286,11 +209,11 @@ mod bases {
     use std::collections::BTreeMap;
 
     pub fn serialize<S: serde::Serializer>(t: &BTreeMap<Assiette, BaseDeCotisation>, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(t.iter().map(|(a, b)| (a, socle::num::nombre(b.decimal()))))
+        s.collect_map(t.iter().map(|(a, b)| (a, b.en_nombre())))
     }
 
     pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<Assiette, BaseDeCotisation>, D::Error> {
-        <BTreeMap<Assiette, socle::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(a, n)| (a, BaseDeCotisation::de_l_assiette(a, n.0))).collect())
+        <BTreeMap<Assiette, socle::forme::Nombre> as serde::Deserialize>::deserialize(d).map(|t| t.into_iter().map(|(a, n)| (a, BaseDeCotisation::de_l_assiette(a, n))).collect())
     }
 }
 

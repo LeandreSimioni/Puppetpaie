@@ -737,7 +737,6 @@ dependencies = [
  "droit",
  "engagement",
  "flate2",
- "rust_decimal",
  "serde",
  "socle",
 ]
@@ -909,7 +908,6 @@ dependencies = [
  "droit",
  "engagement",
  "fabrique-pdf",
- "rust_decimal",
  "serde",
  "socle",
  "zip",
@@ -944,7 +942,6 @@ name = "droit"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
- "rust_decimal",
  "serde",
  "socle",
 ]
@@ -1045,7 +1042,6 @@ name = "engagement"
 version = "0.1.0"
 dependencies = [
  "droit",
- "rust_decimal",
  "serde",
  "sha2",
  "socle",
@@ -1068,7 +1064,6 @@ dependencies = [
  "md-5",
  "regex",
  "roxmltree 0.20.0",
- "rust_decimal",
  "rustls",
  "rustls-platform-verifier",
  "serde",
@@ -3346,7 +3341,6 @@ dependencies = [
  "import",
  "mailparse",
  "regex",
- "rust_decimal",
  "serde",
  "sha2",
  "socle",
