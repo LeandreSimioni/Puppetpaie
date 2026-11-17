@@ -589,7 +589,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let ferme = ferme_aux_neufs(ctx, mois)?;
     // CE QUE L'ECRAN DIT DE LA SAISIE : pour un mois importe, `ferme_aux_neufs`.
     let phrase = match (&ferme, existe) {
-        (Some(f), _) => Phrase::composee(f.clone()),
+        (Some(f), _) => socle::phrase!("{}", f),
         (None, true) => Phrase::fixe("Saisie chargée. L'enregistrement est automatique."),
         (None, false) => Phrase::fixe("Nouveau mois — l'enregistrement est automatique dès la première saisie."),
     };
@@ -2029,7 +2029,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
         paies.push(PaieDeLApercu { paie, engagement });
     }
     let phrase = match &r.phrase_du_mois {
-        Some(p) => Phrase::composee(p.clone()),
+        Some(p) => socle::phrase!("{}", p),
         None => socle::phrase!("{} : {}.", r.libelle, socle::ecran::compte(paies.len(), "paie", "paies")),
     };
     let mut phrases: Vec<String> = Vec::new();

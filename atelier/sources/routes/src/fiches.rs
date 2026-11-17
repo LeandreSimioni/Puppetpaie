@@ -247,7 +247,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             let r = relever_fiches(ctx, None, "interface")?;
             let phrase = match (r.recues.is_empty(), r.incidents.first()) {
                 (false, _) => socle::phrase!("{}.", r.resume()),
-                (true, Some(i)) => Phrase::composee(i.clone()),
+                (true, Some(i)) => socle::phrase!("{}", i),
                 (true, None) => socle::phrase!("Aucune réponse pour l'instant ; fiches attendues : {}.", r.attendues),
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
@@ -388,7 +388,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
-        pose = Some(format!("Effectif de {} : {}.", an, en_clair(x)));
+        pose = Some(socle::phrase!("Effectif de {} : {}.", an, en_clair(x)));
     }
     let e = ctx.effectif()?;
     let dit = envois::releve_retours::effectif_dit_par_la_compagnie(&ctx.racine, an)?;
@@ -400,7 +400,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         },
     };
     let phrase = match (pose, valeur, source) {
-        (Some(p), _, _) => Phrase::composee(p),
+        (Some(p), _, _) => p,
         (None, Some(v), Some(s)) => socle::phrase!("Effectif de {} : {}, d'après {}.", an, en_clair(v), s),
         (None, _, _) => socle::phrase!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
     };
@@ -638,7 +638,7 @@ pub(crate) struct RegimeDeLaTaxe {
     phrase: Phrase,
     franchise: Franchise,
     champs: Vec<&'static str>,
-    consequence: String,
+    consequence: Phrase,
     complet: bool,
     due: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::sans_zero::option::serialize")]
@@ -669,7 +669,7 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
     use documents::taxe_sur_les_salaires::Decision;
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
-        phrase: Phrase::composee(r.consequence.clone()),
+        phrase: r.consequence.clone(),
         franchise: Franchise {
             aide: q.aide,
             choix: ChoixDeLaFranchise { sous: q.sous, dessus: q.dessus },

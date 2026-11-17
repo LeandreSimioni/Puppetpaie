@@ -171,7 +171,7 @@ un libellé, chacun sa forme.
 
 | notion | son type | aujourd'hui |
 |---|---|---|
-| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore du texte nu ; `Phrase::composee` (un texte quelconque) reste ouvert à toute crate | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
+| phrase dite aux gens (le dernier chantier : ce que le moteur compose pour qu'une personne le lise, la phrase que rend une route, un conseil, un refus, un avis) | `Phrase` (composée par `socle::phrase!`, fixe par `Phrase::fixe` ; un nombre y entre par l'écriture de sa grandeur, `socle::texte` ; écrite telle quelle) ; à unifier (#419) : le refus (`socle::echec`, sa phrase), les avertissements, avis et lignes (`phrases`) des réponses, encore du texte nu, qui entrent dans leur phrase à la frontière par `socle::phrase!("{}", …)` ; une phrase ne se compose que par `socle::phrase!` (sa seule porte, `Phrase::de_format`, ne prend qu'un `format_args!`), et en suit une autre sans se rouvrir par `Phrase::jointes` | `Phrase` dans `socle/src/texte.rs` : la phrase de chaque réponse de route (`routes::enveloppe::Dite` la rend), les conseils ; des `String` ailleurs |
 
 **Le temps**
 

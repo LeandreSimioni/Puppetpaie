@@ -122,7 +122,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
     let nom = installation::nom_de(racine)?;
     let g = match sorte(&inst, racine)? {
         Ok(g) => g,
-        Err(e) => return Ok(Suppression { phrase: Phrase::composee(e.phrase), ..Suppression::de(nom) }),
+        Err(e) => return Ok(Suppression { phrase: socle::phrase!("{}", e.phrase), ..Suppression::de(nom) }),
     };
     let sauvegarde = match g {
         Genre::Reelle => {

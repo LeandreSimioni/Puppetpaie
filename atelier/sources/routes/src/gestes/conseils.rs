@@ -226,14 +226,14 @@ fn banque() -> R<Arc<Banque>> {
 impl Banque {
     /// La reference lisible d'une source : le titre du document, l'article. Un texte que la banque cite sans titre est
     /// une banque mal ecrite.
-    fn reference_de(&self, s: &Source) -> R<String> {
+    fn reference_de(&self, s: &Source) -> R<Phrase> {
         let titre = self.documents.get(&s.fichier).ok_or_else(|| {
             socle::echec::refus_avec(ILLISIBLE, socle::echec::Lieu { cle: Some(format!("documents/{}", s.fichier.texte())), detail: Some("le texte cité n'a pas de titre".to_string()), ..Default::default() })
         })?;
         Ok(match (s.article.as_deref().filter(|a| !a.is_empty()), s.fichier.code()) {
-            (None, _) => titre.clone(),
-            (Some(a), Some(_)) => format!("{}, art. {}", titre, a),
-            (Some(a), None) => format!("{}, {}", titre, a),
+            (None, _) => socle::phrase!("{}", titre),
+            (Some(a), Some(_)) => socle::phrase!("{}, art. {}", titre, a),
+            (Some(a), None) => socle::phrase!("{}, {}", titre, a),
         })
     }
 
@@ -542,35 +542,35 @@ impl Donnees {
 
 /// Le texte d'un conseil, gabarits resolus ; `None` quand l'un d'eux ne se resout pas (le conseil se tait).
 fn rendre(g: &Gabarit, d: &Donnees, vals: &Valeurs) -> R<Option<Phrase>> {
-    let mut out = String::new();
+    let mut morceaux = Vec::new();
     for m in &g.0 {
-        match m {
-            Morceau::Texte(t) => out.push_str(t),
+        morceaux.push(match m {
+            Morceau::Texte(t) => socle::phrase!("{}", t),
             Morceau::Annee => match d.bareme()? {
-                Some(_) => out.push_str(&d.annee.to_string()),
+                Some(_) => socle::phrase!("{}", d.annee),
                 None => return Ok(None),
             },
             Morceau::Donnee(x) => match d.valeur(&x.valeur)? {
-                Some(v) => out.push_str(&x.calculer(v).dite(x.decimales)),
+                Some(v) => socle::phrase!("{}", x.calculer(v).dite(x.decimales)),
                 None => return Ok(None),
             },
             Morceau::Variable { nom, mots, avec_nombre } => {
                 let Some(v) = vals.get(nom) else { return Ok(None) };
                 match mots {
-                    None => out.push_str(&v.texte),
+                    None => socle::phrase!("{}", v.texte),
                     Some((sing, plur)) => {
                         let mot = if v.pluriel { plur } else { sing };
                         if *avec_nombre {
-                            out.push_str(&format!("{} {}", v.texte, mot));
+                            socle::phrase!("{} {}", v.texte, mot)
                         } else {
-                            out.push_str(mot);
+                            socle::phrase!("{}", mot)
                         }
                     }
                 }
             }
-        }
+        });
     }
-    Ok(Some(Phrase::composee(out)))
+    Ok(Some(Phrase::jointes(morceaux, "")))
 }
 
 /// LE CONSEIL RENDU POUR L'ECRAN : son identifiant, son texte (la phrase courte d'un conseil de saisie), son detail
@@ -603,7 +603,7 @@ fn vue(b: &Banque, c: &Conseil, d: &Donnees, vals: &Valeurs, annexes: &[Annexe])
         },
         None => None,
     };
-    Ok(Some(ConseilVu { id: c.id.clone(), texte, reference: Phrase::composee(references.join(" ; ")), detail }))
+    Ok(Some(ConseilVu { id: c.id.clone(), texte, reference: Phrase::jointes(references, " ; "), detail }))
 }
 
 /// Le premier conseil de la banque pour cette condition (`quand`), rendu avec ces valeurs : un conseil dont un gabarit

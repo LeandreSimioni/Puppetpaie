@@ -39,7 +39,7 @@ pub mod verrou;
 #[macro_export]
 macro_rules! phrase {
     ($($arg:tt)*) => {
-        $crate::texte::Phrase::composee(format!($($arg)*))
+        $crate::texte::Phrase::de_format(format_args!($($arg)*))
     };
 }
 

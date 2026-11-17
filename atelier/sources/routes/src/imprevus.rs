@@ -1603,8 +1603,8 @@ plus tôt, c'est une reprise anticipée, qui se saisit comme telle et se signale
     liste[i] = Imprevu::Arret(a.clone());
     ecrire(ctx, &dernier, liste)?;
 
-    let mut avertissements: Vec<String> = Vec::new();
-    avertissements.push(format!(
+    let mut avertissements: Vec<Phrase> = Vec::new();
+    avertissements.push(socle::phrase!(
         "Prolongé jusqu'au {}. Rien ne part : pas de nouveau signalement d'arrêt ; la DSN mensuelle de chaque mois que \
 l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche net-entreprises 1983).",
         f.jj_mm_aaaa()
@@ -1615,7 +1615,7 @@ l'arrêt traverse porte la nouvelle fin prévisionnelle (S21.G00.60.003, fiche n
     let ajoutes = Periode::du_au(fin_avant.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?, f)?;
     for m in ajoutes.mois() {
         if declares.contains(&m) {
-            avertissements.push(format!(
+            avertissements.push(socle::phrase!(
                 "La DSN de {} est déjà partie avec l'ancienne fin (le {}) : la paie de ce mois, où les jours ajoutés \
 tombent, est à corriger.",
                 m.libelle(Graphie::Accentuee),
@@ -1624,13 +1624,12 @@ tombent, est à corriger.",
         }
     }
     if a.periode_de_subrogation != avant.periode_de_subrogation && envoye(ctx, &avant, NatureSignalement::Arret)? {
-        avertissements.push(
+        avertissements.push(Phrase::fixe(
             "Le signalement d'arrêt est déjà parti avec l'ancienne fin de subrogation : un signalement d'arrêt annule et \
-remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). Il paraît dans ce qui est dû."
-                .to_string(),
-        );
+remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). Il paraît dans ce qui est dû.",
+        ));
     }
-    reponse_arret(ctx, &a, Phrase::composee(avertissements.join("  ·  ")))
+    reponse_arret(ctx, &a, Phrase::jointes(avertissements, "  ·  "))
 }
 
 /// L'arret est-il subroge (S21.G00.60.004 = oui) ?

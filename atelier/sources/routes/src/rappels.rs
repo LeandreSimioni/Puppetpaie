@@ -310,7 +310,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            en_json(PourDemarrerVu { phrase: Phrase::composee(d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
+            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -850,10 +850,10 @@ fn echeancier(ctx: &Contexte) -> socle::echec::R<Echeancier> {
     ce_mois.sort_by_cached_key(|e| (ordre(e.etat), e.rang()));
     a_venir.sort_by_key(|e| (e.tombe, e.date));
     let compagnie = ctx.entreprise.nommee().map(str::to_string);
-    let combien = format!("{} ce mois-ci, {} à venir.", socle::ecran::compte(ce_mois.len(), "échéance", "échéances"), a_venir.len());
+    let (ce_mois_dit, a_venir_dit) = (socle::ecran::compte(ce_mois.len(), "échéance", "échéances"), a_venir.len());
     let phrase = match &compagnie {
-        Some(c) => socle::phrase!("{} : {}", c, combien),
-        None => Phrase::composee(combien),
+        Some(c) => socle::phrase!("{} : {} ce mois-ci, {} à venir.", c, ce_mois_dit, a_venir_dit),
+        None => socle::phrase!("{} ce mois-ci, {} à venir.", ce_mois_dit, a_venir_dit),
     };
     let a_faire = ce_mois.iter().filter(|x| !x.due && matches!(x.etat, AFaire | EnRetard)).count();
     let ce_mois: Vec<EcheanceDite> = ce_mois.iter().map(Echeance::dite).collect::<R<_>>()?;

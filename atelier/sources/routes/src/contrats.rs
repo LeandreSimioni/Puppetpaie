@@ -774,7 +774,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     } else {
         format!("envoyé{} à la signature", s)
     };
-    let mut phrase = format!("{} {}.{}{}", quoi, fait, if avertissements.is_empty() { "" } else { " " }, avertissements);
+    let mut phrases = vec![socle::phrase!("{} {}.", quoi, fait), socle::phrase!("{}", avertissements)];
     // LE SIMULATEUR REPOND DANS LE GESTE : les salaries d'une compagnie fictive signent aussitot, et la vraie releve lit
     // leur reponse (`releve_signatures::boite_des_signatures`).
     let mut signatures = None;
@@ -782,12 +782,12 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         let releve = crate::gestes::releve_signatures::relever_signatures(ctx, None, None, INTERFACE)?;
         let resume = releve.resume();
         if !resume.is_empty() {
-            phrase.push_str(&format!(" {}.", resume.trim_end_matches('.')));
+            phrases.push(socle::phrase!("{}.", resume.trim_end_matches('.')));
         }
         signatures = Some(releve.dite());
     }
     let ContratsEnvoyes { partis, contrats, avertissements } = r;
-    Ok(SignaturesDemandees { phrase: Phrase::composee(phrase), partis, contrats, avertissements, signatures })
+    Ok(SignaturesDemandees { phrase: Phrase::jointes(phrases.into_iter().filter(|p| !p.est_vide()), " "), partis, contrats, avertissements, signatures })
 }
 
 /// Les avenants, regroupes par salarie.

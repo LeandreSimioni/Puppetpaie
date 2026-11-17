@@ -452,7 +452,7 @@ fn retirer_engagement(ctx: &Contexte, charge: ChargeRetirer) -> R<Retrait> {
         let parti = !engagement::etats::ce_qui_est_parti(&o, &departs).is_empty();
         return match engagement::etats::supprimer(ctx, &o, &departs) {
             Ok(()) => Ok(Retrait { phrase: Phrase::fixe("Engagement retiré."), avertissement: None }),
-            Err(m) if parti => Ok(Retrait { phrase: Phrase::composee(m.phrase.clone()), avertissement: Some(m.phrase) }),
+            Err(m) if parti => Ok(Retrait { phrase: socle::phrase!("{}", m.phrase), avertissement: Some(m.phrase) }),
             Err(m) => Err(m),
         };
     }

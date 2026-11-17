@@ -5,7 +5,7 @@
 
 use droit::fiche::Lue as _;
 use socle::echec::R;
-use socle::texte::{euros, virgule};
+use socle::texte::{euros, virgule, Phrase};
 use socle::grandeurs::{Coefficient, Montant, Taux};
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
@@ -66,7 +66,7 @@ pub struct RegimeTaxeSalaires {
     /// Les cases de la fiche que l'ecran montre, dans l'ordre : chacune parce que la precedente l'appelle.
     pub champs: Vec<&'static str>,
     /// La consequence, en clair, telle que l'ecran l'affiche sous les cases.
-    pub consequence: String,
+    pub consequence: socle::texte::Phrase,
 }
 
 /// Ce que le moteur conclut de la fiche : la taxe n'est pas due ; elle est due sur `p` % des remunerations (le rapport
@@ -93,7 +93,7 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     };
     let fiche = ent.taxe_sur_les_salaires.dite();
     let mut champs = vec!["tva"];
-    let manque = |champs: Vec<&'static str>, quoi: String, consequence: &str| RegimeTaxeSalaires {
+    let manque = |champs: Vec<&'static str>, quoi: String, consequence: Phrase| RegimeTaxeSalaires {
         decision: Decision::ADire(format!(
             "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN de \
 decembre ne se fait pas.",
@@ -101,13 +101,13 @@ decembre ne se fait pas.",
         )),
         association: false,
         champs,
-        consequence: consequence.to_string(),
+        consequence,
     };
     let non_due = |champs: Vec<&'static str>, pourquoi: &str| RegimeTaxeSalaires {
         decision: Decision::NonDue,
         association: false,
         champs,
-        consequence: format!(
+        consequence: socle::phrase!(
             "La compagnie ne doit pas la taxe sur les salaires : {}. La DSN de décembre le déclare.",
             pourquoi
         ),
@@ -124,7 +124,7 @@ decembre ne se fait pas.",
                         return manque(
                             champs,
                             format!("la part des recettes soumise a la TVA vaut {}, qui n'est pas un pourcentage de 0 a 100", socle::texte::virgule(p)),
-                            "La part des recettes soumise à la TVA est un pourcentage, de 0 à 100.",
+                            Phrase::fixe("La part des recettes soumise à la TVA est un pourcentage, de 0 à 100."),
                         )
                     }
                 },
@@ -133,8 +133,10 @@ decembre ne se fait pas.",
                 return manque(
                     champs,
                     "dire quelle part de ses recettes de l'annee precedente etait soumise a la TVA".to_string(),
-                    "Dites quelle part de vos recettes de l'an dernier était soumise à la TVA : à 90 % ou plus, la \
+                    Phrase::fixe(
+                        "Dites quelle part de vos recettes de l'an dernier était soumise à la TVA : à 90 % ou plus, la \
 compagnie ne doit pas la taxe sur les salaires ; en dessous, elle la doit sur le reste.",
+                    ),
                 );
             };
             if part >= Taux::points(90) {
@@ -153,8 +155,10 @@ des impôts, art. 231)",
             return manque(
                 champs,
                 "dire si la compagnie est assujettie a la TVA ou exoneree".to_string(),
-                "Dites si la compagnie est assujettie à la TVA ou exonérée : le logiciel en déduit si elle doit la taxe \
+                Phrase::fixe(
+                    "Dites si la compagnie est assujettie à la TVA ou exonérée : le logiciel en déduit si elle doit la taxe \
 sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
+                ),
             )
         }
     };
@@ -182,7 +186,7 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
                 "dire si le chiffre d'affaires de l'annee precedente depasse les plafonds de la franchise en base de TVA \
 (art. 293 B)"
                     .to_string(),
-                &format!(
+                socle::phrase!(
                     "La compagnie doit la taxe sur les salaires {}, sauf si ses recettes de l'an dernier sont restées sous \
 {} (code général des impôts, art. 231 et 293 B) : dites-le.",
                     sur, les_plafonds
@@ -196,7 +200,7 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
         decision: Decision::DueSur(part_taxee),
         association,
         champs,
-        consequence: format!(
+        consequence: socle::phrase!(
             "La compagnie doit la taxe sur les salaires, {} (code général des impôts, art. 231). La DSN de décembre en \
 déclare les assiettes ; l'état « Taxe sur les salaires » (Exports) calcule ce qui reste à payer après la franchise et la \
 décote{}.",

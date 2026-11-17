@@ -1154,28 +1154,30 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
             DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
     };
-    // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne.
+    // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne. Celles de ses
+    // parties, de ses encarts et ses avertissements sont encore des textes (#419, le dernier chantier) : chacun entre
+    // dans sa phrase ici.
     let encarts = encarts_du_depot(&a);
     let mut lignes: Vec<Phrase> = match &a {
         DepotApercu::Dsn(Dit { apercu: x, .. }) => {
             let recap = match &x.recapitulatif {
-                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(Phrase::composee(r.phrase.clone())),
+                Some(crate::apercu_dsn::Recapitulatif::Lu(r)) => Some(socle::phrase!("{}", r.phrase)),
                 _ => None,
             };
-            [x.remplacement.as_ref().map(|r| Phrase::composee(r.etat.phrase.clone())), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
+            [x.remplacement.as_ref().map(|r| socle::phrase!("{}", r.etat.phrase)), recap, Some(x.repetition.phrase.clone())].into_iter().flatten().collect()
         }
         DepotApercu::Dpae(Dit { apercu: x, .. }) => vec![x.repetition.phrase.clone()],
     };
     lignes.retain(|p| !p.est_vide());
-    lignes.extend(encarts.iter().map(|e| Phrase::composee(e.en_ligne())));
+    lignes.extend(encarts.iter().map(|e| socle::phrase!("{}", e.en_ligne())));
     match &mut a {
         DepotApercu::Dsn(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned().map(Phrase::composee));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }
         DepotApercu::Dpae(dit) => {
-            lignes.extend(dit.avertissements.iter().cloned().map(Phrase::composee));
+            lignes.extend(dit.avertissements.iter().map(|x| socle::phrase!("{}", x)));
             dit.encarts = encarts;
             dit.phrases = lignes;
         }

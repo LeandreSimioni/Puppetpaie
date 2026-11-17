@@ -366,15 +366,14 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     };
     // Ce que l'ecran dit du geste, et sa couleur : la nature est ecrite, c'est fait ; ce qui reste a dire pour un
     // permanent est une ligne de « Pour demarrer », qui a la sienne.
-    let mut phrase = format!("Nature enregistrée sur {} contrat{} repris.", ecrits, if ecrits > 1 { "s" } else { "" });
+    use socle::texte::Phrase;
+    let mut phrases = vec![socle::phrase!("Nature enregistrée sur {} contrat{} repris.", ecrits, if ecrits > 1 { "s" } else { "" })];
     if permanents_declares {
-        phrase.push_str(" La compagnie emploie donc des salariés au mois : « Pour démarrer » dit ce que cela demande encore.");
+        phrases.push(Phrase::fixe("La compagnie emploie donc des salariés au mois : « Pour démarrer » dit ce que cela demande encore."));
     }
-    for p in &parametrage {
-        phrase.push(' ');
-        phrase.push_str(p);
-    }
-    Ok(NatureDite { phrase: socle::texte::Phrase::composee(phrase), ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
+    // Ce que le parametrage repris dit, encore en texte (#419, le dernier chantier).
+    phrases.extend(parametrage.iter().map(|p| socle::phrase!("{}", p)));
+    Ok(NatureDite { phrase: Phrase::jointes(phrases, " "), ecrits, a_dire: a_dire(&ctx.racine)?, permanents_declares, parametrage, couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::Fait) })
 }
 
 impl crate::enveloppe::Dite for NatureDite {

@@ -1080,20 +1080,19 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         std::fs::write(inst.join(crate::coffre::MARQUEUR_PORTABLE), crate::coffre::CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&inst, &e))?;
     }
     let noms = |l: &[Systeme]| l.iter().map(|s| s.lu()).collect::<Vec<_>>().join(", ");
-    let mut phrase = if ajoutes.is_empty() && absents.is_empty() {
-        "Les trois systèmes sont déjà là.".to_string()
+    use socle::texte::Phrase;
+    let portable = inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file();
+    let ajoutes_dits = if ajoutes.is_empty() && absents.is_empty() {
+        Phrase::fixe("Les trois systèmes sont déjà là.")
     } else if ajoutes.is_empty() {
-        String::new()
+        Phrase::fixe("")
     } else {
-        format!("Ajoutés : {}.", noms(&ajoutes))
+        socle::phrase!("Ajoutés : {}.", noms(&ajoutes))
     };
-    if !absents.is_empty() {
-        phrase.push_str(&format!("{}La {} n'est pas publiée pour {}.", if phrase.is_empty() { "" } else { " " }, version.lue(), noms(&absents)));
-    }
-    if inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
-        phrase.push_str(" Le dossier est portable.");
-    }
-    Ok(PortableComplete { ajoutes, absents, version, portable: inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file(), phrase: socle::texte::Phrase::composee(phrase) })
+    let absents_dits = if absents.is_empty() { Phrase::fixe("") } else { socle::phrase!("La {} n'est pas publiée pour {}.", version.lue(), noms(&absents)) };
+    let portable_dit = Phrase::fixe(if portable { "Le dossier est portable." } else { "" });
+    let phrase = Phrase::jointes([ajoutes_dits, absents_dits, portable_dit].into_iter().filter(|p| !p.est_vide()), " ");
+    Ok(PortableComplete { ajoutes, absents, version, portable, phrase })
 }
 
 /// CE QUE REND `portable-completer` (`completer_le_portable`) : les systemes ajoutes, ceux que la version ne publie pas, la

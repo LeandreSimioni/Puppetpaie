@@ -141,12 +141,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// declare), d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; la periode de chaque contrat.
 fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) -> R<OrganismesDits> {
     let n = lu.lignes.len();
-    let p = if lu.a_saisir {
-        format!("Contrats de la DSN : {} ; il en reste à saisir.", n)
-    } else {
-        format!("Contrats de la DSN : {} ; rien à saisir.", n)
-    };
-    let phrase = if enregistre { socle::phrase!("Enregistré. {}", p) } else { Phrase::composee(p) };
+    let reste = if lu.a_saisir { "il en reste à saisir" } else { "rien à saisir" };
+    let phrase = if enregistre { socle::phrase!("Enregistré. Contrats de la DSN : {} ; {}.", n, reste) } else { socle::phrase!("Contrats de la DSN : {} ; {}.", n, reste) };
     let mois = lu.mois;
     let mut encarts = vec![crate::Encart::de(socle::ecran::EtatDEcran::Information, "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
     encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::Information, "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));

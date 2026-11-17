@@ -12,14 +12,20 @@ impl Phrase {
         Phrase(t.to_string())
     }
 
-    /// Une phrase composee (`socle::phrase!`).
-    pub fn composee(t: String) -> Phrase {
-        Phrase(t)
+    /// Une phrase composee : la porte de `socle::phrase!`, qui seule l'appelle (`format_args!`).
+    #[doc(hidden)]
+    pub fn de_format(a: std::fmt::Arguments<'_>) -> Phrase {
+        Phrase(a.to_string())
     }
 
     /// Ne dit-elle rien (vide, ou des blancs seuls) ?
     pub fn est_vide(&self) -> bool {
         self.0.trim().is_empty()
+    }
+
+    /// LES PHRASES `phrases` MISES BOUT A BOUT, separees par `separateur` : une phrase en suit une autre sans se rouvrir.
+    pub fn jointes(phrases: impl IntoIterator<Item = Phrase>, separateur: &str) -> Phrase {
+        Phrase(phrases.into_iter().map(|p| p.0).collect::<Vec<_>>().join(separateur))
     }
 }
 
