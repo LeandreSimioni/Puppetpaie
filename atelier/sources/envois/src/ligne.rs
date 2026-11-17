@@ -529,14 +529,14 @@ pub struct Durees {
     pub envoi: std::time::Duration,
 }
 
-/// Un salarie que des documents ont servi : ses pieces, le resume de sa paie, et si c'etait un renvoi.
+/// Un salarie que des documents ont servi : ses pieces, et si c'etait un renvoi. La paie qu'ils ont emportee, c'est
+/// l'engagement qui la garde (`engagement::etats::paie_partie`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Servi {
     pub cle: IdSalarie,
     pub nom: Option<String>,
     pub pieces: Vec<NomDeFichier>,
-    pub resume: Option<crate::envoi::ResumeDePaie>,
     pub renvoi: bool,
 }
 

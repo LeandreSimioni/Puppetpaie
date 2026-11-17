@@ -615,9 +615,8 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
             avertissements.push(sans_courriel_dit(&sans.join(", ")));
         }
     }
-    let lignes = m.lignes()?;
     // Ce qui est deja parti : la meme lecture que la case Documents de l'engagement (`etapes::documents_partis`).
-    let partis = crate::etapes::documents_partis(ctx, mois, &m.etats_du_mois(le_mois)?, &lignes)?;
+    let partis = crate::etapes::documents_partis(ctx, mois, &m.etats_du_mois(le_mois)?)?;
     // « Deja envoye » ne se dit que d'un renvoi voulu, a l'identique : tous ont deja leurs documents, et leur paie n'a
     // pas change. Un renvoi de documents corriges ou un premier envoi n'envoie rien une seconde fois.
     let deja = messages
@@ -802,7 +801,6 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
             pieces: siennes.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-            resume: choix.resumes.get(cle).cloned(),
             renvoi: choix.renvois.contains_key(cle),
         });
         pieces.extend(siennes);
@@ -848,7 +846,7 @@ pub(crate) struct EnvoiPrepare {
     pub(crate) messages: Vec<envoi::Message<IdSalarie>>,
     pub(crate) expediteur: droit::fiche::Courriel,
     pub(crate) avertissements: Vec<String>,
-    /// A qui les documents partent, et pourquoi (`choisir`) : le journal en garde l'empreinte et le resume.
+    /// A qui les documents partent, et pourquoi (`choisir`) : le journal en garde l'empreinte.
     pub(crate) choix: Choix,
     /// Les documents fabriques pour ceux a qui ils partent ; leurs numeros s.ecrivent quand ils sont partis.
     documents: crate::gestes::depart::DocumentsFabriques,
@@ -874,8 +872,6 @@ pub(crate) struct Choix {
     pub(crate) renvois: HashMap<IdSalarie, envoi::Renvoi>,
     /// Ceux dont les documents sont partis et dont la paie n'a pas change.
     pub(crate) a_jour: std::collections::HashSet<IdSalarie>,
-    /// Le resume de la paie de chaque salarie du mois, a noter au journal avec l'envoi.
-    pub(crate) resumes: HashMap<IdSalarie, envoi::ResumeDePaie>,
 }
 
 impl Choix {
@@ -928,19 +924,9 @@ pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: Mois) -> R<HashMap<IdSal
 
 /// Le choix, pour le mois `mois`, sur ses paies validees (`crate::documents::charger_le_mois`).
 pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie]) -> R<Choix> {
-    let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
-    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?, &lignes)?;
-    let cles: Vec<IdSalarie> = paies.iter().map(|p| p.salarie.id.clone()).collect();
-    let mut resumes: HashMap<IdSalarie, envoi::ResumeDePaie> = HashMap::new();
-    for cle in &cles {
-        if resumes.contains_key(cle) {
-            continue;
-        }
-        let siennes: Vec<&engagement::calcul::Paie> = paies.iter().zip(&cles).filter(|(_, c)| *c == cle).map(|(p, _)| p).collect();
-        resumes.insert(cle.clone(), envoi::resume_de(&siennes));
-    }
+    let partis = crate::etapes::documents_partis(ctx, mois, &engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?)?;
     let changes = bulletins_a_refaire(ctx, mois)?;
-    let mut choix = Choix { resumes, ..Choix::default() };
+    let mut choix = Choix::default();
     let declaration = declaration_de_la_correction(ctx, mois)?;
     for (cle, parti) in &partis {
         let Some(faits) = changes.get(cle) else {
@@ -948,7 +934,10 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
             continue;
         };
         let envoye_le = parti.quand.jour();
-        let changements = envoi::ce_qui_a_change(faits, parti.resume.as_ref(), choix.resumes.get(cle));
+        // La paie refaite du salarie : ses paies du mois.
+        let siennes: Vec<&engagement::calcul::Paie> = paies.iter().filter(|p| p.salarie.id == *cle).collect();
+        let nouveau = (!siennes.is_empty()).then(|| envoi::resume_de(&siennes));
+        let changements = envoi::ce_qui_a_change(faits, parti.resume.as_ref(), nouveau.as_ref());
         let declaration = declaration.as_ref().map(|d| d(cle)).into_iter().collect();
         choix.renvois.insert(cle.clone(), envoi::Renvoi { envoye_le, changements, declaration });
     }
@@ -1075,7 +1064,6 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
             Ok(journal::Servi {
                 nom: Some(m.nom.clone()),
                 pieces: m.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
-                resume: choix.resumes.get(&m.pour).cloned(),
                 renvoi: choix.renvois.contains_key(&m.pour),
                 cle: m.pour.clone(),
             })

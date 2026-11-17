@@ -464,19 +464,6 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
     out
 }
 
-/// CE QUE LES DOCUMENTS DU MOIS DISAIENT, par salarie : le resume de sa paie (`envoi::resume_de`) dans la derniere ligne
-/// d'envoi de documents qui l'a servi (un envoi coupe en route ne porte que ceux qu'il a servis). Qu'ils soient partis,
-/// c'est l'engagement qui le sait (`journal::departs`) ; ceci n'en dit que le contenu.
-pub fn resumes_des_documents(lignes: &[Ligne], mois: Mois) -> HashMap<IdSalarie, Option<crate::envoi::ResumeDePaie>> {
-    let mut out = HashMap::new();
-    for e in crate::journal::filtrer(lignes, Some(Acte::Documents), Some(mois), None).filter_map(Ligne::documents) {
-        for s in &e.detail.salaries {
-            out.insert(s.cle.clone(), s.resume.clone());
-        }
-    }
-    out
-}
-
 /// Les flux des depots de test, chacun une fois.
 pub fn flux_de_test(lignes: &[Ligne]) -> Vec<IdDeFlux> {
     let mut d: Vec<IdDeFlux> = Vec::new();
