@@ -50,7 +50,7 @@ use std::path::Path;
 use declarations::identite::{EmployeurLu, IdentiteDeclaree, NaissanceDeclaree};
 use socle::date::{Jour, Periode};
 use socle::echec::{Echec, R};
-use socle::num::Decimal;
+use socle::forme::Nombre as Imprime;
 use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours, Montant, Taux};
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
@@ -149,8 +149,9 @@ fn canon(texte: &str) -> String {
 }
 
 /// Un nombre ecrit sur un bulletin : virgule decimale (les points et espaces sont alors des milliers), ou point
-/// decimal s'il n'y a pas de virgule (« 0.000 % »). Le signe moins en tete.
-pub fn lire_nombre(texte: &str) -> Option<Decimal> {
+/// decimal s'il n'y a pas de virgule (« 0.000 % »). Le signe moins en tete. La porte d'un nombre de la page : il est un
+/// nombre lu (`socle::forme::Nombre`), que sa place lit dans sa grandeur (`Imprime::grandeur`, `Imprime::cachets`).
+pub fn lire_nombre(texte: &str) -> Option<Imprime> {
     let t = texte.trim();
     let (negatif, t) = match t.strip_prefix('-') {
         Some(r) => (true, r),
@@ -162,7 +163,7 @@ pub fn lire_nombre(texte: &str) -> Option<Decimal> {
     if t.ends_with([',', '.']) {
         return None;
     }
-    socle::num::decimal_a_virgule(t).map(|d| if negatif { -d } else { d })
+    socle::num::decimal_a_virgule(t).map(|d| Imprime(if negatif { -d } else { d }))
 }
 
 /// Le texte sans son signe moins de tete.
@@ -280,7 +281,7 @@ impl Boite {
 /// Un nombre de la page : ses morceaux recolles (« 1 » + « 421,13 »).
 #[derive(Clone, Debug)]
 struct Nombre {
-    valeur: Decimal,
+    valeur: Imprime,
     boite: Boite,
 }
 
@@ -415,7 +416,7 @@ fn en_rangs<'a>(mut mots: Vec<&'a Mot>) -> Vec<Vec<&'a Mot>> {
 
 /// Une ligne de paie qui ecrit son taux dans son libelle (« Cachets à 150,00 ») : le libelle sans lui, et le taux.
 /// Sans « à <nombre> » en fin de libelle, le libelle tel quel.
-fn taux_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
+fn taux_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     let mots: Vec<&str> = libelle.split_whitespace().collect();
     // Le dernier « à » suivi d'un nombre seul, milliers compris (« à 2 950,00 »).
     for k in (1..mots.len().saturating_sub(1)).rev() {
@@ -431,7 +432,7 @@ fn taux_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
 
 /// La quantite qu'un libelle dit apres lui, dans son unite (« Indemnité compensatrice de congés payés (4,92 jours) ») :
 /// le libelle sans elle, et elle.
-fn quantite_du_libelle(libelle: &str) -> (String, Option<Decimal>) {
+fn quantite_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     let lu = libelle.trim_end().strip_suffix(')').and_then(|t| t.rsplit_once(" (")).and_then(|(tete, dedans)| {
         let (n, unite) = dedans.split_once(' ')?;
         let unite = unite.trim_end_matches('s');
@@ -1072,14 +1073,14 @@ impl Cumul {
     /// Le rang `nom` de la table, ses colonnes `periode` et `cumul` telles que la page les imprime : la porte de leur
     /// lecture, ou chaque nombre prend sa grandeur. Des cachets a virgule ne sont pas un nombre de cachets : la page ne se
     /// lit pas, et le refus le dit (`socle::forme::Nombre::cachets`).
-    fn lu(nom: NomDeCumul, periode: Option<Decimal>, cumul: Option<Decimal>) -> Result<Cumul, Refus> {
+    fn lu(nom: NomDeCumul, periode: Option<Imprime>, cumul: Option<Imprime>) -> Result<Cumul, Refus> {
         Ok(match nom {
             NomDeCumul::Cachets => {
-                let [periode, cumul] = [periode, cumul].map(|d| d.map(|d| socle::forme::Nombre(d).cachets()).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e))));
+                let [periode, cumul] = [periode, cumul].map(|n| n.map(Imprime::cachets).transpose().map_err(|e| Refus::Incomplet(format!("le cumul « {} » ne se lit pas : {}", nom, e))));
                 Cumul::Cachets(Colonnes { periode: periode?, cumul: cumul? })
             }
-            NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Jours::du_decimal), cumul: cumul.map(Jours::du_decimal) }),
-            NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Heures::du_decimal), cumul: cumul.map(Heures::du_decimal) }),
+            NomDeCumul::Jours => Cumul::Jours(Colonnes { periode: periode.map(Imprime::grandeur), cumul: cumul.map(Imprime::grandeur) }),
+            NomDeCumul::Heures => Cumul::Heures(Colonnes { periode: periode.map(Imprime::grandeur), cumul: cumul.map(Imprime::grandeur) }),
             NomDeCumul::Brut | NomDeCumul::Plafond | NomDeCumul::CoutEmployeur | NomDeCumul::NetImposable | NomDeCumul::Pas => {
                 Cumul::Euros(ColonnesEnEuros { periode: periode.map(en_euros), cumul: cumul.map(en_euros) })
             }
@@ -1303,7 +1304,7 @@ enum Valeur {
     Date(Jour),
     Periode(Periode),
     Intervalles(Vec<Periode>),
-    Nombre(Decimal),
+    Nombre(Imprime),
 }
 
 /// Une colonne de tableau : ce que son en-tete annonce, et sa boite.
@@ -1438,13 +1439,13 @@ struct Lecteur<'a> {
 struct RangCorps {
     libelle: String,
     /// La quantite en tete du libelle, et le libelle sans elle (une ligne de paie : « 2 Cachets isolés »).
-    quantite: Option<(Decimal, String)>,
-    nombres: Vec<(Option<(Genre, Option<Part>)>, Decimal)>,
+    quantite: Option<(Imprime, String)>,
+    nombres: Vec<(Option<(Genre, Option<Part>)>, Imprime)>,
     cy: Mesure,
 }
 
 impl RangCorps {
-    fn colonne(&self, g: Genre, p: Option<Part>) -> Option<Decimal> {
+    fn colonne(&self, g: Genre, p: Option<Part>) -> Option<Imprime> {
         self.nombres.iter().find(|(c, _)| *c == Some((g, p))).map(|(_, v)| *v)
     }
     /// Le dernier nombre du rang : la valeur d'un resume, le montant d'une ligne.
@@ -1464,7 +1465,7 @@ impl RangCorps {
 /// Un nombre lu sur la page, ecrit en texte, son echelle gardee (`12.50`) ; `null` sans nombre.
 fn nombre_lu<S: serde::Serializer>(n: &Option<socle::forme::Nombre>, s: S) -> Result<S::Ok, S::Error> {
     match n {
-        Some(n) => s.serialize_str(&n.0.to_string()),
+        Some(n) => s.collect_str(n),
         None => s.serialize_none(),
     }
 }
@@ -1480,13 +1481,13 @@ pub(crate) fn lire_montant(texte: &str) -> Option<Montant> {
 }
 
 /// UN MONTANT QUE LA PAGE IMPRIME (`lire_nombre`, la porte de la page) : en euros, des qu'il sort de sa ligne lue.
-fn en_euros(lu: Decimal) -> Montant {
-    Montant::du_decimal(lu)
+fn en_euros(lu: Imprime) -> Montant {
+    lu.grandeur()
 }
 
 /// Un taux que la page imprime, en pourcent (« 6,900 % ») : un taux, des qu'il sort de sa ligne lue.
-fn en_taux(lu: Decimal) -> Taux {
-    Taux::du_decimal(lu)
+fn en_taux(lu: Imprime) -> Taux {
+    lu.grandeur()
 }
 
 impl<'a> Lecteur<'a> {
@@ -2172,7 +2173,7 @@ impl<'a> Lecteur<'a> {
             sous = None;
         }
         let nombres: Vec<Nombre> = p.nombres.iter().filter(|n| n.boite.x1 > seuil && n.boite.cy() > haut && n.boite.cy() <= bas).cloned().collect();
-        let mut places: Vec<Vec<(Mesure, Option<(Genre, Option<Part>)>, Decimal)>> = vec![Vec::new(); sortie.len()];
+        let mut places: Vec<Vec<(Mesure, Option<(Genre, Option<Part>)>, Imprime)>> = vec![Vec::new(); sortie.len()];
         for n in nombres {
             let cols: &[Colonne] = match &sous {
                 Some((y, c)) if n.boite.cy() > *y => c,
@@ -2226,7 +2227,7 @@ impl<'a> Lecteur<'a> {
         let mut fin: Option<Mesure> = None;
         // Une ligne de paie : sa quantite en tete, son montant au dernier nombre, son taux a l'avant-dernier ou dans son
         // libelle (« Cachets à 150,00 »).
-        let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
+        let ligne = |libelle: &str, quantite: Option<Imprime>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
             let (libelle, quantite) = match quantite {
                 Some(q) => (libelle, Some(q)),
@@ -2243,7 +2244,7 @@ impl<'a> Lecteur<'a> {
             };
             let n = r.nombres.len();
             let taux = if n >= 2 { Some(r.nombres[n - 2].1) } else { taux_ecrit };
-            LignePaie { quantite: quantite.map(socle::forme::Nombre), libelle, taux: taux.map(socle::forme::Nombre), montant: r.dernier(), soumis, rubrique, heures }
+            LignePaie { quantite, libelle, taux, montant: r.dernier(), soumis, rubrique, heures }
         };
         let de_ligne = |r: &RangCorps| match &r.quantite {
             Some((q, reste)) => (reste.clone(), Some(*q)),
@@ -2396,8 +2397,8 @@ impl<'a> Lecteur<'a> {
             let libelles: Vec<&Mot> = p.mots.iter().filter(|m| dans(m.cy()) && m.x1 <= seuil && !p.dans_un_nombre(m, seuil)).collect();
             let rangs: Vec<(String, Mesure)> = en_rangs(libelles).iter().map(|r| (canon(&texte_de(r)), milieu(r))).collect();
             let nombres: Vec<&Nombre> = p.nombres.iter().filter(|n| dans(n.boite.cy()) && n.boite.x1 > seuil).collect();
-            let valeurs_du_rang = |cy: Mesure| -> Vec<(Genre, Decimal)> {
-                let mut v: Vec<(Genre, Decimal)> = Vec::new();
+            let valeurs_du_rang = |cy: Mesure| -> Vec<(Genre, Imprime)> {
+                let mut v: Vec<(Genre, Imprime)> = Vec::new();
                 for n in &nombres {
                     // Le rang le plus proche de ce nombre doit etre celui-ci.
                     let ecart = (n.boite.cy() - cy).abs();
@@ -2508,7 +2509,7 @@ fn cotisation(table: &Table, famille: &Option<FamilleDeCotisation>, libelle: Str
         famille: famille.clone(),
         cotisation: table.cotisation(&libelle).cloned(),
         libelle,
-        base: r.colonne(Genre::Base, None).map(socle::forme::Nombre),
+        base: r.colonne(Genre::Base, None),
         taux_employeur: r.taux(Some(Part::Employeur)),
         montant_employeur: r.montant(Genre::Montant, Some(Part::Employeur)),
         taux_salarie: r.taux(Some(Part::Salarie)),

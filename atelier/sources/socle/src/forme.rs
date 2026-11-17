@@ -688,6 +688,13 @@ impl<'de> serde::Deserialize<'de> for Nombre {
     }
 }
 
+/// Le nombre tel qu'il est lu, son echelle gardee (`12.50`) : ce qu'un avertissement de lecture cite.
+impl std::fmt::Display for Nombre {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// UNE LISTE QU'UNE FORME EXIGE NON VIDE (les paliers d'une regle, dont le dernier vaut au-dela) : lue d'un tableau,
 /// un tableau vide se refuse a la lecture ; son dernier element se lit sans refus.
 #[derive(Debug, Clone, PartialEq)]
