@@ -115,8 +115,9 @@ que par la structure :
     `empreinte.rs` ; seule la cible de Cargo de l'espace (`target/`) n'est pas lue ;
   - `aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe` : le socle et la fabrique calculent en
     entiers dedans, mais aucune fonction publique, aucun type d'une constante publique, aucun champ ni alias public,
-    aucun en-tête d'une implémentation d'un trait (`impl … for …`) de leur bibliothèque ne prend ni ne rend un entier
-    signé : ce qu'ils offrent au reste du logiciel est typé, l'interne s'écrit `pub(crate)` ;
+    aucune variante d'une énumération publique, aucun en-tête d'une implémentation d'un trait (`impl … for …`) de leur
+    bibliothèque ne prend ni ne rend un entier signé, sur une ligne comme sur plusieurs : ce qu'ils offrent au reste
+    du logiciel est typé, l'interne s'écrit `pub(crate)` ;
   - `la_fabrique_n_a_ni_decimal_ni_notion_de_la_paie` : `fabrique-pdf` ne prend ni crate de l'espace ni
     `rust_decimal`, n'écrit pas `Decimal`, et ne déclare aucun type au nom d'un type que ce glossaire déclare hors
     d'elle ;
@@ -249,15 +250,15 @@ un libellé, chacun sa forme.
   changement), il se lit une fois en `Jour` dans le mois que la charge porte (`socle::forme::Objet::jour_du_mois`), et un
   jour qui n'est pas de ce mois se refuse à sa case.
 - **mois** : un mois civil, clé d'une paie ; `Graphie` dit comment s'écrit son nom ; son numéro s'écrit `mm`,
-  `mm_aaaa` (« 05/2026 ») ; un mois qu'un texte fixe s'écrit de son texte, lu à la compilation (`const {
-  Mois::constante("2026-03") }`).
+  `mm_aaaa` (« 05/2026 ») ; un mois qu'un texte fixe s'écrit de son texte, lu à la compilation
+  (`socle::mois!("2026-03")`, par `socle::mois::DateEcrite` : aucun texte lu à l'exécution n'y entre).
 - **mois de l'année** : janvier à décembre, sans année (la colonne d'un mois au récapitulatif annuel) ; il porte la
   table des noms de mois ; un fichier qui l'écrit par son numéro (`echeancier-base.json`) se lit en lui.
 - **mois ou jour** : le mois d'un acte ou le jour d'un événement.
 - **année** : une année civile. Une seule forme : le nombre (`2025`), par sa serde ; clé d'un objet, son texte comme
   toute clé (`"2025"`, la clé de `paies_annuelles`). Elle se calcule par ses
   opérations (`precedente`, `suivante`, `les_precedentes`, `jusqu_a`, ses mois et ses jours), jamais en nombre ; une
-  année qu'un texte fixe s'écrit de son texte, lu à la compilation (`const { Annee::constante("2026") }`) ; un test écrit la
+  année qu'un texte fixe s'écrit de son texte, lu à la compilation (`socle::annee!("2026")`, comme le mois) ; un test écrit la
   sienne en texte (`"2026"`), lue par sa forme. Ses deux derniers chiffres s'écrivent `aa`.
 - **période** : deux jours bornes, l'un et l'autre compris, le premier pas après le second ; elle ne se construit que
   par `Periode::du_au`, qui refuse un début après la fin (`du_jour`, `du_mois` : un jour, un mois civil). Ses bornes

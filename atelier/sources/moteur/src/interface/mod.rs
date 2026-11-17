@@ -1408,10 +1408,16 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     };
     // Les compagnies de l'installation se tiennent a jour en fond, des maintenant, sans rien ouvrir (`prechauffer`).
     f.prechauffer();
-    *tenu(&f.fermer) = Some(Box::new(|| {
-        std::thread::spawn(|| {
+    // Ce qui arrete la fenetre arrive au fil principal, qui rend son code de sortie : « fermer » (la reponse part
+    // d'abord), ou la fin du navigateur a nous.
+    let (signal, signaux) = std::sync::mpsc::channel::<Signal>();
+    let pour_fermer = signal.clone();
+    *tenu(&f.fermer) = Some(Box::new(move || {
+        let pour_fermer = pour_fermer.clone();
+        std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(200));
-            std::process::exit(0);
+            // Le fil principal deja sorti n'attend plus rien.
+            let _ = pour_fermer.send(Signal::Fermer);
         });
     }));
     let url = f.adresse("puppetpaie.localhost", port);
@@ -1419,30 +1425,41 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     dire!("{}", url);
     let navigateur = if options.sans_navigateur { None } else { navigateur::ouvrir(&url, &f.dossier_local().join("navigateur"), &|t| f.ecrire(t)) };
     // Le navigateur a nous : sa fermeture arrete PuppetPaie. Sinon, plus aucune page depuis cinq minutes l'arrete
-    // (la page interroge la veille chaque minute).
+    // (la page interroge la veille chaque minute) ; sans navigateur, seul « fermer ».
+    let mut guetter_le_silence = !options.sans_navigateur;
     if let Some(mut p) = navigateur {
-        let debut = Instant::now();
-        match p.wait() {
-            Ok(_ferme) => {
-                if debut.elapsed() > Duration::from_secs(5) {
-                    return ExitCode::SUCCESS;
-                }
-            }
-            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
-            Err(e) => f.ecrire(&format!("Le navigateur ne se laisse pas attendre ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e)),
-        }
-    }
-    if options.sans_navigateur {
-        loop {
-            std::thread::sleep(Duration::from_secs(3600));
-        }
+        guetter_le_silence = false;
+        std::thread::spawn(move || {
+            let debut = Instant::now();
+            let fin = p.wait().map(|_ferme| debut.elapsed());
+            let _ = signal.send(Signal::NavigateurFini(fin));
+        });
     }
     loop {
-        std::thread::sleep(Duration::from_secs(5));
-        if f.silence() > Duration::from_secs(5 * 60) {
+        match signaux.recv_timeout(Duration::from_secs(5)) {
+            Ok(Signal::Fermer) => return ExitCode::SUCCESS,
+            Ok(Signal::NavigateurFini(Ok(duree))) if duree > Duration::from_secs(5) => return ExitCode::SUCCESS,
+            Ok(Signal::NavigateurFini(Ok(_))) => guetter_le_silence = true,
+            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
+            Ok(Signal::NavigateurFini(Err(e))) => {
+                f.ecrire(&format!("Le navigateur ne se laisse pas attendre ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e));
+                guetter_le_silence = true;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return ExitCode::SUCCESS,
+        }
+        if guetter_le_silence && f.silence() > Duration::from_secs(5 * 60) {
             return ExitCode::SUCCESS;
         }
     }
+}
+
+/// Ce qui arrete la fenetre dans le navigateur, dit au fil principal (`commande`).
+enum Signal {
+    /// La route « fermer ».
+    Fermer,
+    /// Le navigateur a nous s'est ferme (apres combien de temps), ou ne se laisse pas attendre.
+    NavigateurFini(std::io::Result<Duration>),
 }
 
 /// CE QUE LA PAGE DIT QUAND LE MOTEUR NE PEUT PLUS LE DIRE : le serveur qui ne repond plus, une reponse illisible. La

@@ -13,9 +13,10 @@
 use crate::outils::le_jour as jour;
 use documents::aer::{self, Authentification, Echec};
 use fabrique_pdf::formulaire::{ChampLu, ValeurDUnChamp};
-use fabrique_pdf::mesure::{mesure as m, Mesure};
+use fabrique_pdf::mesure as m;
+use fabrique_pdf::mesure::Mesure;
 
-const HAUTEUR: Mesure = m("842");
+const HAUTEUR: Mesure = m!("842");
 
 fn fiche() -> droit::fiche::ChampsEntreprise {
     socle::forme::lire_texte(
@@ -57,30 +58,30 @@ fn champs_aer(cachets: u32, heures: u32) -> Vec<Champ> {
     let contrats = [("01/08/2026", "31/08/2026", "FA1.26.15", cachets, heures), ("05/08/2026", "06/08/2026", "MA2.26.15", 1, 0)];
     for (i, (deb, fin, num, n, h)) in contrats.iter().enumerate() {
         let rang = i + 1;
-        let y = m("100") + rang * m("30");
-        c.push(champ(&format!("SAL_DT_DEB_{:02}", rang), 2, [m("60"), y, m("140"), y + m("14")], Some(deb), 1, None));
-        c.push(champ(&format!("SAL_DT_FIN_{:02}", rang), 2, [m("150"), y, m("230"), y + m("14")], Some(fin), 1, None));
-        c.push(champ(&format!("SAL_NB_CACHET_{:02}", rang), 2, [m("240"), y, m("280"), y + m("14")], Some(&n.to_string()), 1, None));
-        c.push(champ(&format!("SAL_NB_HEURES_{:02}", rang), 2, [m("290"), y, m("330"), y + m("14")], Some(&h.to_string()), 1, None));
-        c.push(champ(&format!("CON_NUMERO_{:02}", rang), 2, [m("340"), y, m("440"), y + m("14")], Some(num), 1, None));
+        let y = m!("100") + rang * m!("30");
+        c.push(champ(&format!("SAL_DT_DEB_{:02}", rang), 2, [m!("60"), y, m!("140"), y + m!("14")], Some(deb), 1, None));
+        c.push(champ(&format!("SAL_DT_FIN_{:02}", rang), 2, [m!("150"), y, m!("230"), y + m!("14")], Some(fin), 1, None));
+        c.push(champ(&format!("SAL_NB_CACHET_{:02}", rang), 2, [m!("240"), y, m!("280"), y + m!("14")], Some(&n.to_string()), 1, None));
+        c.push(champ(&format!("SAL_NB_HEURES_{:02}", rang), 2, [m!("290"), y, m!("330"), y + m!("14")], Some(&h.to_string()), 1, None));
+        c.push(champ(&format!("CON_NUMERO_{:02}", rang), 2, [m!("340"), y, m!("440"), y + m!("14")], Some(num), 1, None));
     }
     let comb = 1 << 24;
     let multiligne = 1 << 12;
-    let mut y = m("541.82");
+    let mut y = m!("541.82");
     for nom in ["EMPLOYEUR_NOM", "EMPLOYEUR_PRENOM", "EMPLOYEUR_QUALITE_LIB", "EMPLOYEUR_LIEU_SIGN", "EMPLOYEUR_CORRES_NOM"] {
-        c.push(champ(nom, 3, [m("131.1"), y, m("569.27"), y + m("16.02")], None, 0, None));
-        y += m("22");
+        c.push(champ(nom, 3, [m!("131.1"), y, m!("569.27"), y + m!("16.02")], None, 0, None));
+        y += m!("22");
     }
     // Chaque case d'un peigne, 14 points.
-    for (nom, n, large) in [("EMPLOYEUR_DATE_SIGN_J", 2, m("28")), ("EMPLOYEUR_DATE_SIGN_M", 2, m("28")), ("EMPLOYEUR_DATE_SIGN_A", 4, m("56"))] {
-        c.push(champ(nom, 3, [m("131.1"), y, m("131.1") + large, y + m("16.02")], None, comb, Some(n)));
-        y += m("22");
+    for (nom, n, large) in [("EMPLOYEUR_DATE_SIGN_J", 2, m!("28")), ("EMPLOYEUR_DATE_SIGN_M", 2, m!("28")), ("EMPLOYEUR_DATE_SIGN_A", 4, m!("56"))] {
+        c.push(champ(nom, 3, [m!("131.1"), y, m!("131.1") + large, y + m!("16.02")], None, comb, Some(n)));
+        y += m!("22");
     }
-    c.push(champ("EMPLOYEUR_CORRES_TEL", 3, [m("131.1"), y, m("131.1") + m("280"), y + m("16.02")], None, comb, Some(20)));
-    y += m("22");
-    c.push(champ("EMPLOYEUR_CORRES_EMAIL", 3, [m("131.1"), y, m("400"), y + m("34")], None, multiligne, None));
-    c.push(champ("EMPLOYEUR_SIGNATURE", 3, [m("35.1"), m("687.4"), m("135.8"), m("735.6")], None, 0, None));
-    c.push(champ("EMPLOYEUR_CACHET", 3, [m("401.4"), m("685.4"), m("562.1"), m("764.7")], None, 0, None));
+    c.push(champ("EMPLOYEUR_CORRES_TEL", 3, [m!("131.1"), y, m!("131.1") + m!("280"), y + m!("16.02")], None, comb, Some(20)));
+    y += m!("22");
+    c.push(champ("EMPLOYEUR_CORRES_EMAIL", 3, [m!("131.1"), y, m!("400"), y + m!("34")], None, multiligne, None));
+    c.push(champ("EMPLOYEUR_SIGNATURE", 3, [m!("35.1"), m!("687.4"), m!("135.8"), m!("735.6")], None, 0, None));
+    c.push(champ("EMPLOYEUR_CACHET", 3, [m!("401.4"), m!("685.4"), m!("562.1"), m!("764.7")], None, 0, None));
     c
 }
 
@@ -183,12 +184,12 @@ fn deux_mois(heures_oct: u32) -> Vec<u8> {
     let colonnes = [("29/09/2026", "30/09/2026", Some("SI2.26.19"), 8), ("01/10/2026", "16/10/2026", None, heures_oct)];
     for (i, (deb, fin, num, h)) in colonnes.iter().enumerate() {
         let rang = i + 1;
-        let x = m("150") + i * m("85");
-        c.push(champ(&format!("SAL_DT_DEB_{:02}", rang), 2, [x, m("218"), x + m("80"), m("233")], Some(deb), 1, None));
-        c.push(champ(&format!("SAL_DT_FIN_{:02}", rang), 2, [x, m("236"), x + m("80"), m("251")], Some(fin), 1, None));
-        c.push(champ(&format!("SAL_NB_HEURES_{:02}", rang), 2, [x, m("258"), x + m("80"), m("273")], Some(&h.to_string()), 1, None));
+        let x = m!("150") + i * m!("85");
+        c.push(champ(&format!("SAL_DT_DEB_{:02}", rang), 2, [x, m!("218"), x + m!("80"), m!("233")], Some(deb), 1, None));
+        c.push(champ(&format!("SAL_DT_FIN_{:02}", rang), 2, [x, m!("236"), x + m!("80"), m!("251")], Some(fin), 1, None));
+        c.push(champ(&format!("SAL_NB_HEURES_{:02}", rang), 2, [x, m!("258"), x + m!("80"), m!("273")], Some(&h.to_string()), 1, None));
         if let Some(n) = num {
-            c.push(champ(&format!("CON_NUMERO_{:02}", rang), 2, [x, m("82"), x + m("80"), m("100")], Some(n), 1, None));
+            c.push(champ(&format!("CON_NUMERO_{:02}", rang), 2, [x, m!("82"), x + m!("80"), m!("100")], Some(n), 1, None));
         }
     }
     formulaire(&c)

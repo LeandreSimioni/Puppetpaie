@@ -18,9 +18,28 @@ const UN: i64 = 1_000_000;
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mesure(i64);
 
-/// Une mesure écrite dans le code, en décimal : `mesure("7.5")`, `mesure("-0.25")` (un signe, des chiffres, au plus
-/// six décimales). Une écriture fausse ne compile pas dans une constante, et arrête le programme ailleurs.
-pub const fn mesure(t: &str) -> Mesure {
+/// Une mesure écrite dans le code, en décimal : `mesure!("7.5")`, `mesure!("-0.25")` (un signe, des chiffres, au plus
+/// six décimales), lue à la compilation (`MesureEcrite::MESURE`) : une écriture fausse ne compile pas.
+#[macro_export]
+macro_rules! mesure {
+    ($texte:literal) => {{
+        enum Ecrite {}
+        impl $crate::mesure::MesureEcrite for Ecrite {
+            const TEXTE: &'static str = $texte;
+        }
+        const LUE: $crate::mesure::Mesure = <Ecrite as $crate::mesure::MesureEcrite>::MESURE;
+        LUE
+    }};
+}
+
+/// Le texte d'une mesure écrite dans le code (`mesure!`), qu'une constante porte : la mesure se lit à la compilation, et
+/// aucun texte lu à l'exécution ne devient une mesure par ce chemin.
+pub trait MesureEcrite {
+    const TEXTE: &'static str;
+    const MESURE: Mesure = ecrite(Self::TEXTE);
+}
+
+const fn ecrite(t: &str) -> Mesure {
     let o = t.as_bytes();
     let (negatif, mut i) = if !o.is_empty() && o[0] == b'-' { (true, 1) } else { (false, 0) };
     let mut v: i64 = 0;
@@ -74,7 +93,7 @@ impl Mesure {
     pub const MIN: Mesure = Mesure(i64::MIN);
 
     /// `n` points (ou `n`, un rapport) : un entier de la norme PDF ou d'une police, dans la fabrique ; hors d'elle, une
-    /// mesure se dit par son texte (`mesure("40")`).
+    /// mesure se dit par son texte (`mesure!("40")`).
     pub(crate) const fn entier(n: i64) -> Mesure {
         Mesure(n * UN)
     }
@@ -151,11 +170,6 @@ impl Mesure {
     /// `self` fois le rapport de deux mesures, `n / d`, en un seul arrondi ; `None` si `d` est nulle.
     pub fn fois_rapport(self, n: Mesure, d: Mesure) -> Option<Mesure> {
         (d.0 != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n.0 as i128, d.0 as i128)))
-    }
-
-    /// Sa moitié, arrondie au millionième, la moitié loin de zéro (un centre, un blanc partagé de part et d'autre).
-    pub fn moitie(self) -> Mesure {
-        self.divisee_par(2)
     }
 
     /// `self` fois l'entier `n` (de la norme PDF, d'une police), bornée aux mesures possibles.

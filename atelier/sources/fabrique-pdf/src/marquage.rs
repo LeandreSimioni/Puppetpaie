@@ -20,7 +20,8 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
 use crate::description::{defaut, illisible, refus, Refus};
 use crate::lecture;
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 
 /// Le corps de la marque, en points.
 pub const CORPS: Mesure = Mesure::entier(6);
@@ -29,7 +30,7 @@ pub const X: Mesure = Mesure::entier(34);
 /// La distance de sa ligne de base au bord bas de la page, en points.
 pub const DISTANCE_DU_BAS: Mesure = Mesure::entier(12);
 /// Son gris (rouge = vert = bleu).
-pub const GRIS: Mesure = mesure("0.45");
+pub const GRIS: Mesure = mesure!("0.45");
 
 /// Un nombre pour un flux de contenu : quatre décimales au plus, sans zéros inutiles.
 pub(crate) fn nb(v: Mesure) -> String {
@@ -209,7 +210,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     let hauteur = sc::MENTION_HAUTEUR;
     let page = sc::page();
     let largeur_utile = page.largeur - page.gauche - page.droite;
-    let (x_case, l_case) = (page.gauche + largeur_utile.moitie(), largeur_utile.moitie());
+    let (x_case, l_case) = (page.gauche + largeur_utile * mesure!("0.5"), largeur_utile * mesure!("0.5"));
     let mut caracteres = BTreeSet::new();
     for l in &lignes {
         let mut unites: i64 = 0;
@@ -230,7 +231,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         }
     }
     let interligne = (asc + desc + ecart) * taille * sc::MENTION_INTERLIGNE;
-    if lignes.len() * interligne + marge_y >hauteur + mesure("0.01") {
+    if lignes.len() * interligne + marge_y >hauteur + mesure!("0.01") {
         return refus(format!("la mention de signature ne tient pas dans la case ({} lignes)", lignes.len()));
     }
 
@@ -251,7 +252,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             let haut = hauteurs.iter().map(|b| b[3]).fold(Mesure::MIN, Mesure::max);
             // La ligne occupe son pas, le glyphe au milieu ; la case est 3 pt sous son pas.
             let pas = sc::TAILLE_SOUS_LIBELLE * sc::police().interligne;
-            cases.push((id, bas - (pas - (haut - bas)).moitie() - sc::MENTION_ECART));
+            cases.push((id, bas - (pas - (haut - bas)) * mesure!("0.5") - sc::MENTION_ECART));
         }
     }
     if cases.is_empty() {

@@ -52,7 +52,7 @@ use socle::date::{Jour, Periode};
 use socle::echec::{Echec, R};
 use socle::forme::Nombre as Imprime;
 use socle::grandeurs::{sans_zero, Cachets, Grandeur, Heures, HeuresParUnite, Jours, Montant, Taux};
-use fabrique_pdf::mesure::mesure;
+use fabrique_pdf::mesure;
 use crate::releve::Mesure;
 use droit::catalogue::CodeDeRubrique;
 use droit::forme_bareme::FamilleDeCotisation;
@@ -64,64 +64,64 @@ use engagement::importe::LogicielDUnBulletin;
 pub const FICHIER_TABLE: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("bulletins-lecture-base.json");
 
 /// Deux mots dont le milieu vertical s'ecarte de moins que cela sont sur un meme rang (en points).
-const TOLERANCE: Mesure = mesure("3.5");
+const TOLERANCE: Mesure = mesure!("3.5");
 
 /// Un mot plus loin que cela du precedent ne continue pas un libelle.
-const ECART_MOTS: Mesure = mesure("15");
+const ECART_MOTS: Mesure = mesure!("15");
 
 /// Deux morceaux d'un nombre (« 1 » et « 421,13 ») separes de moins que cela forment un seul nombre (l'espace des
 /// milliers grandit avec le corps du texte : 2 points en 9, 4 en 14).
-const ECART_MILLIERS: Mesure = mesure("5");
+const ECART_MILLIERS: Mesure = mesure!("5");
 
 /// Un montant « sous » son libelle : au plus a cette distance verticale.
-const DESSOUS_MAX: Mesure = mesure("40");
+const DESSOUS_MAX: Mesure = mesure!("40");
 
 /// Les rangs d'une grille du pied : au plus a cette distance sous son en-tete.
-const GRILLE_HAUTEUR: Mesure = mesure("60");
+const GRILLE_HAUTEUR: Mesure = mesure!("60");
 
 /// Une periode de dates travaillees plus longue que cela (ses deux bornes comprises) n'est pas depliee en jours.
 const INTERVALLE_MAX: socle::date::Duree<socle::date::EnJours> = socle::date::Duree::jours(367);
 
 /// Sur un rang de l'en-tete, deux mots separes de plus que cela sont deux morceaux (un libelle et sa valeur, deux
 /// colonnes d'adresses) ; « 99999 » et sa commune, ecrits en deux, restent un.
-const ECART_SEGMENT: Mesure = mesure("40");
+const ECART_SEGMENT: Mesure = mesure!("40");
 
 /// La valeur d'une mention commence au plus a cette distance de son libelle, sur son rang.
-const VALEUR_LOIN: Mesure = mesure("180");
+const VALEUR_LOIN: Mesure = mesure!("180");
 
 /// Les mots d'une valeur se suivent a moins de cet ecart.
-const VALEUR_SUITE: Mesure = mesure("40");
+const VALEUR_SUITE: Mesure = mesure!("40");
 
 /// Une valeur sur plusieurs rangs : chaque rang au plus a cette distance du precedent.
-const VALEUR_RANG: Mesure = mesure("14");
+const VALEUR_RANG: Mesure = mesure!("14");
 
 /// Les rangs d'un bloc d'adresse se suivent a moins de cet ecart vertical.
-const BLOC_ECART: Mesure = mesure("30");
+const BLOC_ECART: Mesure = mesure!("30");
 
 /// Ce qui suit un bloc d'adresse dans sa colonne (le Siret de l'employeur) : au plus a cet ecart vertical.
-const BLOC_SUIVANT: Mesure = mesure("35");
+const BLOC_SUIVANT: Mesure = mesure!("35");
 
 /// Deux morceaux de l'en-tete commencent dans la meme colonne a moins de cela.
-const MEME_COLONNE: Mesure = mesure("2.5");
+const MEME_COLONNE: Mesure = mesure!("2.5");
 
 /// Les rangs d'en-tetes du tableau : au plus a cet ecart vertical du « Libellé ».
-const ENTETE_HAUTEUR: Mesure = mesure("12");
+const ENTETE_HAUTEUR: Mesure = mesure!("12");
 
 /// Les mots d'un meme en-tete de colonne, sur un rang (« Part Employeur ») : au plus cet ecart.
-const ENTETE_MOTS: Mesure = mesure("4");
+const ENTETE_MOTS: Mesure = mesure!("4");
 
 /// Un en-tete precise celui du dessus (« Taux » sous « Part employeur ») si son milieu tombe a moins de cela de lui.
-const SOUS_ENTETE: Mesure = mesure("25");
+const SOUS_ENTETE: Mesure = mesure!("25");
 
 /// Un en-tete aligne a droite sous un en-tete de part (« Montant » sous « Part employeur ») en depasse le bord droit
 /// d'au plus cela.
-const GROUPE_MARGE: Mesure = mesure("10");
+const GROUPE_MARGE: Mesure = mesure!("10");
 
 /// Un nombre aligne a droite depasse le bord droit de l'en-tete de sa colonne d'au plus cela.
-const COLONNE_MARGE: Mesure = mesure("20");
+const COLONNE_MARGE: Mesure = mesure!("20");
 
 /// Le libelle d'un rang finit au moins a cette distance avant la premiere colonne.
-const LIBELLE_MARGE: Mesure = mesure("15");
+const LIBELLE_MARGE: Mesure = mesure!("15");
 
 // --------------------------------------------------------------------------------------------- le texte
 
@@ -241,7 +241,7 @@ struct Mot {
 
 impl Mot {
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1).moitie()
+        (self.y0 + self.y1) * mesure!("0.5")
     }
 }
 
@@ -265,10 +265,10 @@ impl Boite {
         Boite { x0: self.x0.min(b.x0), y0: self.y0.min(b.y0), x1: self.x1.max(b.x1), y1: self.y1.max(b.y1) }
     }
     fn cy(&self) -> Mesure {
-        (self.y0 + self.y1).moitie()
+        (self.y0 + self.y1) * mesure!("0.5")
     }
     fn cx(&self) -> Mesure {
-        (self.x0 + self.x1).moitie()
+        (self.x0 + self.x1) * mesure!("0.5")
     }
 }
 
@@ -294,7 +294,7 @@ impl Page {
             .map(|i| {
                 let m = &mots[i];
                 (0..mots.len())
-                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - mesure("1") && mots[j].x0 - m.x1 <= ECART_MOTS)
+                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - mesure!("1") && mots[j].x0 - m.x1 <= ECART_MOTS)
                     .min_by(|&a, &b| mots[a].x0.cmp(&mots[b].x0))
             })
             .collect();
@@ -342,7 +342,7 @@ impl Page {
     fn dans_un_nombre(&self, m: &Mot, limite: Mesure) -> bool {
         self.nombres.iter().any(|n| {
             let b = n.boite;
-            b.x1 > limite && m.x0 >= b.x0 - mesure("0.01") && m.x1 <= b.x1 + mesure("0.01") && (m.cy() - b.cy()).abs() < mesure("1")
+            b.x1 > limite && m.x0 >= b.x0 - mesure!("0.01") && m.x1 <= b.x1 + mesure!("0.01") && (m.cy() - b.cy()).abs() < mesure!("1")
         })
     }
 
@@ -379,7 +379,7 @@ fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
                 Some((s, _)) => s,
                 None => m.texte.as_str(),
             };
-            let colle = (m.cy() - boite.cy()).abs() <= mesure("1.5") && m.x0 >= boite.x1 - mesure("0.5") && m.x0 - boite.x1 < ECART_MILLIERS;
+            let colle = (m.cy() - boite.cy()).abs() <= mesure!("1.5") && m.x0 >= boite.x1 - mesure!("0.5") && m.x0 - boite.x1 < ECART_MILLIERS;
             if colle && tete(texte) && milliers(suite) {
                 texte.push(' ');
                 texte.push_str(&m.texte);
@@ -1266,7 +1266,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         }
         let [x0, y0, x1, y1] = m.rect.connue();
         // Un meme mot ecrit deux fois au meme endroit (des cumuls imprimes en double) ne compte qu'une fois.
-        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure("0.05") && (x.y0 - y0).abs() < mesure("0.05"));
+        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure!("0.05") && (x.y0 - y0).abs() < mesure!("0.05"));
         if !double {
             mots.push(Mot { jetons: jetons(&texte), texte, x0, y0, x1, y1 });
         }
@@ -1777,13 +1777,13 @@ impl<'a> Lecteur<'a> {
             }
             pris
         };
-        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - mesure("0.5"), VALEUR_LOIN);
+        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - mesure!("0.5"), VALEUR_LOIN);
         // La valeur commence a son premier mot qui n'est pas une ponctuation ; sans lui, au libelle.
         let x_valeur = match mots.iter().find(|&&i| !ponctuation(&p.mots[i].texte)) {
             Some(&i) => p.mots[i].x0,
             None => rep.x0,
         };
-        let x_suite = x_valeur.min(rep.x0) - mesure("3");
+        let x_suite = x_valeur.min(rep.x0) - mesure!("3");
         let mut cy = rep.cy();
         let mut n = 1;
         while n < rangs && !mots.is_empty() {
@@ -1800,12 +1800,12 @@ impl<'a> Lecteur<'a> {
                 Some(i) => i,
                 None => h,
             };
-            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= mesure("3") || (p.mots[premier].x0 - rep.x0).abs() <= mesure("3");
+            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= mesure!("3") || (p.mots[premier].x0 - rep.x0).abs() <= mesure!("3");
             if self.debuts[premier].is_some() || !aligne {
                 break;
             }
             let mut rang = vec![premier];
-            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - mesure("0.5"), VALEUR_SUITE));
+            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - mesure!("0.5"), VALEUR_SUITE));
             cy = p.mots[h].cy();
             mots.extend(rang);
             n += 1;
@@ -1896,7 +1896,7 @@ impl<'a> Lecteur<'a> {
         }
         let fenetre = |n: &&Nombre| {
             let b = n.boite;
-            b.cy() > rep.cy() + mesure("2") && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - mesure("20") && b.cx() <= rep.x1 + mesure("80")
+            b.cy() > rep.cy() + mesure!("2") && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - mesure!("20") && b.cx() <= rep.x1 + mesure!("80")
         };
         let dist = |n: &Nombre| (n.boite.cx() - rep.cx()).hypot(n.boite.cy() - rep.cy());
         p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| (Valeur::Nombre(n.valeur), n.boite))

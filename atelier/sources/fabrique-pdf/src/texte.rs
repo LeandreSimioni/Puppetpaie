@@ -30,7 +30,8 @@ use crate::description::{defaut, illisible, Classe, Refus};
 use crate::encodages::{self, Code, Encodage};
 use crate::glyphes;
 use crate::lecture;
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 
 type Mat = [Mesure; 6];
 const ID: Mat = [Mesure::UN, Mesure::ZERO, Mesure::ZERO, Mesure::UN, Mesure::ZERO, Mesure::ZERO];
@@ -1326,13 +1327,13 @@ fn mots_postscript(o: &[u8]) -> Vec<String> {
 // PDF (aucun couple mal classé) : un écart se mesure en corps de la police du caractère posé.
 
 /// Au-dessous de cette avance, le caractère suivant colle au précédent.
-const ESPACE_MIN: Mesure = mesure("0.15");
+const ESPACE_MIN: Mesure = mesure!("0.15");
 /// Entre `ESPACE_MIN` et celle-ci, un espace est inséré ; au-delà, c'est une autre ligne. Un recul
 /// de plus que cela (caractère posé avant le bout du précédent) ouvre aussi une ligne.
-const ESPACE_MAX: Mesure = mesure("0.8");
+const ESPACE_MAX: Mesure = mesure!("0.8");
 /// Écart de ligne de base toléré (en corps) pour rester sur la même ligne : les exposants
 /// (« 1er ») et les indices restent dans la ligne.
-const DECALAGE_MAX: Mesure = mesure("0.8");
+const DECALAGE_MAX: Mesure = mesure!("0.8");
 
 struct LigneCourante {
     dir: (Mesure, Mesure),
@@ -1375,7 +1376,7 @@ impl Mise {
         let mut nouvelle = true;
         let mut espace = false;
         if let Some(l) = &self.courante {
-            if (nd.0 - l.dir.0).abs() + (nd.1 - l.dir.1).abs() < mesure("0.05") {
+            if (nd.0 - l.dir.0).abs() + (nd.1 - l.dir.1).abs() < mesure!("0.05") {
                 let d = (p.0 - self.stylo.0, p.1 - self.stylo.1);
                 let le_long = d.0 * l.dir.0 + d.1 * l.dir.1;
                 let en_travers = -d.0 * l.dir.1 + d.1 * l.dir.0;
@@ -1951,7 +1952,7 @@ impl<'a> Interprete<'a> {
         let p = (trm[4], trm[5]);
         let q = (p.0 + w0 * trm[0], p.1 + w0 * trm[1]);
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
-        let (y0, y1) = (p.1.min(q.1) - trm[3].abs() * mesure("0.25"), p.1.max(q.1) + trm[3].abs() * mesure("0.75"));
+        let (y0, y1) = (p.1.min(q.1) - trm[3].abs() * mesure!("0.25"), p.1.max(q.1) + trm[3].abs() * mesure!("0.75"));
         // Une page sans support : rien n'est hors de lui.
         self.cadre.as_ref().is_none_or(|c| !(x1 < c[0] || x0 > c[2] || y1 < c[1] || y0 > c[3]))
     }

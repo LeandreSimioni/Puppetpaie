@@ -36,8 +36,43 @@ const MOIS_TITRE: [&str; 12] = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "J
 const MOIS_MINUSCULE: [&str; 12] = ["janvier", "fevrier", "mars", "avril", "mai", "juin", "juillet", "aout", "septembre", "octobre", "novembre", "decembre"];
 const MOIS_ACCENTUE: [&str; 12] = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 
-/// Le nombre que les `n` chiffres de `o` ecrivent a partir de `de`, a la compilation (`Annee::constante`,
-/// `Mois::constante`) : un octet qui n'est pas un chiffre ne compile pas.
+/// UNE ANNEE OU UN MOIS QU'UN TEXTE DEPOSE FIXE, ecrit dans le code : `socle::annee!("2026")`, `socle::mois!("2026-03")`.
+/// Le texte est une constante (`TEXTE`), lue a la compilation : aucun texte lu a l'execution ne devient une annee ou un
+/// mois par ce chemin.
+pub trait DateEcrite {
+    const TEXTE: &'static str;
+    const ANNEE: Annee = Annee::constante(Self::TEXTE);
+    const MOIS: Mois = Mois::constante(Self::TEXTE);
+}
+
+/// L'annee ecrite `AAAA` dans le code, lue a la compilation (`DateEcrite`).
+#[macro_export]
+macro_rules! annee {
+    ($texte:literal) => {{
+        enum Ecrite {}
+        impl $crate::mois::DateEcrite for Ecrite {
+            const TEXTE: &'static str = $texte;
+        }
+        const LUE: $crate::mois::Annee = <Ecrite as $crate::mois::DateEcrite>::ANNEE;
+        LUE
+    }};
+}
+
+/// Le mois ecrit `AAAA-MM` dans le code, lu a la compilation (`DateEcrite`).
+#[macro_export]
+macro_rules! mois {
+    ($texte:literal) => {{
+        enum Ecrit {}
+        impl $crate::mois::DateEcrite for Ecrit {
+            const TEXTE: &'static str = $texte;
+        }
+        const LU: $crate::mois::Mois = <Ecrit as $crate::mois::DateEcrite>::MOIS;
+        LU
+    }};
+}
+
+/// Le nombre que les `n` chiffres de `o` ecrivent a partir de `de`, a la compilation (`DateEcrite`) : un octet qui
+/// n'est pas un chiffre ne compile pas.
 const fn chiffres_constants(o: &[u8], de: usize, n: usize) -> u32 {
     let mut v = 0;
     let mut i = de;
@@ -66,9 +101,9 @@ impl Mois {
         Ok(Mois { an, numero })
     }
 
-    /// Le mois qu'un texte depose fixe, ecrit `AAAA-MM` dans une constante (`const { Mois::constante("2026-03") }`), lu a
-    /// la compilation : une autre ecriture, ou un mois hors du calendrier, ne compile pas.
-    pub const fn constante(texte: &str) -> Mois {
+    /// Le mois ecrit `AAAA-MM` dans le code (`DateEcrite::MOIS`) : une autre ecriture, ou un mois hors du calendrier,
+    /// arrete la compilation.
+    const fn constante(texte: &str) -> Mois {
         let o = texte.as_bytes();
         assert!(o.len() == 7 && o[4] == b'-', "un mois constant s'ecrit AAAA-MM");
         let (an, numero) = (chiffres_constants(o, 0, 4), chiffres_constants(o, 5, 2));
@@ -307,9 +342,9 @@ impl Annee {
         Annee(m.an)
     }
 
-    /// L'annee qu'un texte depose fixe, ecrite `AAAA` dans une constante (`const { Annee::constante("2026") }`), lue a la
-    /// compilation : une autre ecriture, ou une annee hors de 1 a 9999, ne compile pas.
-    pub const fn constante(texte: &str) -> Annee {
+    /// L'annee ecrite `AAAA` dans le code (`DateEcrite::ANNEE`) : une autre ecriture, ou une annee hors de 1 a 9999,
+    /// arrete la compilation.
+    const fn constante(texte: &str) -> Annee {
         let o = texte.as_bytes();
         assert!(o.len() == 4, "une année constante s'écrit AAAA");
         let an = chiffres_constants(o, 0, 4);

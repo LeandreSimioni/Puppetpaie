@@ -22,7 +22,8 @@ use lopdf::xref::XrefEntry;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
 use crate::description::{illisible, Refus};
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 
 /// Le nombre d'objets d'un flux d'objets : un lecteur décompresse le flux entier pour en lire un.
 const PAR_FLUX: usize = 400;
@@ -279,7 +280,7 @@ fn version(v: &str) -> Result<String, Refus> {
     let Some(n) = Mesure::lue(v) else {
         return illisible(format!("la version du PDF « {} » ne se lit pas", v));
     };
-    Ok(if n < mesure("1.5") { "1.5".into() } else { v.trim().to_string() })
+    Ok(if n < mesure!("1.5") { "1.5".into() } else { v.trim().to_string() })
 }
 
 /// Le plus grand numéro d'objet de `doc`.

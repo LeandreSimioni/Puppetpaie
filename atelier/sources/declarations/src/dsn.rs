@@ -406,7 +406,7 @@ impl Arret {
         if self.couvre(&Periode::du_mois(mois))? {
             return Ok(true);
         }
-        let origine = const { socle::mois::Annee::constante("1900") }.premier_jour();
+        let origine = socle::annee!("1900").premier_jour();
         if !self.couvre(&Periode::du_au(origine, mois.premier_jour().avant(Duree::jours(1))?)?)? {
             return Ok(false);
         }

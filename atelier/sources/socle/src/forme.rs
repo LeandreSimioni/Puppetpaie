@@ -968,6 +968,11 @@ impl NombreLu {
     pub fn as_u64(&self) -> Option<u64> {
         self.0.as_u64()
     }
+
+    /// Un entier lu en chiffres (la case entiere d'un classeur, `lecture_xlsx`), qui s'ecrit tel quel.
+    pub(crate) fn de_l_entier(n: i64) -> NombreLu {
+        NombreLu(n.into())
+    }
 }
 
 impl From<u64> for NombreLu {

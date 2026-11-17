@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use fabrique_pdf::mesure::mesure;
+use fabrique_pdf::mesure;
 use fabrique_pdf::modele::{self, Valeurs};
 use serde_json::{json, Value};
 
@@ -170,12 +170,17 @@ fn description_modele(chemin: &str) -> Value {
     })
 }
 
+/// Un nombre de la description, écrit en décimal (`"6.6"`) : la fabrique le lit en mesure.
+fn nombre(t: &str) -> Value {
+    Value::Number(t.parse().expect("un nombre en décimal"))
+}
+
 /// Un paragraphe ; le corps et les espaces s'écrivent en décimal (`"6.6"`).
 fn para_json(morceaux: Value, taille: Option<&str>, couleur: Option<&str>, align: &str, avant: &str, apres: &str) -> Value {
     let mut b = json!({"type": "paragraphe", "morceaux": morceaux, "alignement": align, "majuscules": false,
-                       "espace_avant": mesure(avant), "espace_apres": mesure(apres), "retrait": 0});
+                       "espace_avant": nombre(avant), "espace_apres": nombre(apres), "retrait": 0});
     if let Some(t) = taille {
-        b["taille"] = json!(mesure(t));
+        b["taille"] = nombre(t);
     }
     if let Some(c) = couleur {
         b["couleur"] = json!(c);
@@ -196,9 +201,9 @@ fn description_a_blocs() -> Value {
         ]
     };
     let mut employeur = case("L'employeur", "Jeanne Martin", "Présidente");
-    employeur.push(json!({"type": "espace", "hauteur": mesure("28.125")}));
+    employeur.push(json!({"type": "espace", "hauteur": mesure!("28.125")}));
     let mut artiste = case("L'artiste", "Paul Dupont", "signature");
-    artiste.push(json!({"type": "espace", "hauteur": mesure("28.125")}));
+    artiste.push(json!({"type": "espace", "hauteur": mesure!("28.125")}));
     let blocs = vec![
         para_json(json!([g("Contrat n° C-1")]), Some("11"), rouge, "gauche", "10", "1"),
         para_json(json!([n("Pour "), g("DUPONT")]), Some("6.8"), Some("#555555"), "justifie", "0", "7"),
@@ -210,15 +215,15 @@ fn description_a_blocs() -> Value {
         para_json(json!([g("Article 2 \u{2014} Durée")]), Some("7.7"), rouge, "gauche", "4.5", "1"),
         para_json(json!([n("Du 01/01/2025.")]), None, None, "justifie", "0", "2.6"),
         para_json(json!([n("Fait à Paris.")]), None, None, "justifie", "6", "2.6"),
-        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure("0.5")},
+        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure!("0.5")},
                "espace_avant": 4, "marge_interne_haut": 5,
-               "colonnes": [{"largeur": mesure("0.5"), "blocs": employeur}, {"largeur": mesure("0.5"), "blocs": artiste}]}),
+               "colonnes": [{"largeur": mesure!("0.5"), "blocs": employeur}, {"largeur": mesure!("0.5"), "blocs": artiste}]}),
     ];
     json!({
         "format": 1,
         "page": {"largeur": 595, "hauteur": 842,
-                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
-        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
+                 "marges": {"haut": 106, "droite": mesure!("59.5"), "bas": 46, "gauche": mesure!("59.5")}},
+        "police": {"taille": mesure!("7.5"), "interligne": mesure!("1.25"), "couleur": "#2C3E50"},
         "titre": "Contrat n° C-1",
         "documents": [{"blocs": blocs}]
     })
@@ -288,7 +293,7 @@ fn refus_du_document_modele() {
     let mut d = bon.clone();
     d.as_object_mut().unwrap().remove("style");
     d["page"] = json!({"largeur": 595, "hauteur": 842, "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}});
-    d["police"] = json!({"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"});
+    d["police"] = json!({"taille": 10, "interligne": mesure!("1.25"), "couleur": "#000000"});
     assert!(refus(&d).contains("demande un \"style\""));
 
     let mut d = bon.clone();
@@ -379,7 +384,7 @@ fn l_avenant_donne_le_pdf_des_blocs_equivalents() {
             para_json(json!([g(libelle)]), Some("6.6"), rouge, "gauche", "0", "0"),
             para_json(json!([n(nom)]), None, None, "gauche", "0", "0"),
             para_json(json!([n(sous)]), Some("7"), Some("#777777"), "gauche", "0", "0"),
-            json!({"type": "espace", "hauteur": mesure("28.125")}),
+            json!({"type": "espace", "hauteur": mesure!("28.125")}),
         ]
     };
     let j = |t: &str| para_json(json!([n(t)]), None, None, "justifie", "0", "2.6");
@@ -403,16 +408,16 @@ fn l_avenant_donne_le_pdf_des_blocs_equivalents() {
         h("Article 3 \u{2014} Autres clauses"),
         j("Le reste ne change pas."),
         para_json(json!([n("Fait à Paris.")]), None, None, "justifie", "6", "2.6"),
-        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure("0.5")},
+        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure!("0.5")},
                "espace_avant": 4, "marge_interne_haut": 5,
-               "colonnes": [{"largeur": mesure("0.5"), "blocs": case("L'employeur", "Jeanne Martin", "Présidente")},
-                            {"largeur": mesure("0.5"), "blocs": case("L'artiste", "Paul Dupont", "signature")}]}),
+               "colonnes": [{"largeur": mesure!("0.5"), "blocs": case("L'employeur", "Jeanne Martin", "Présidente")},
+                            {"largeur": mesure!("0.5"), "blocs": case("L'artiste", "Paul Dupont", "signature")}]}),
     ];
     let b = fabriquer(&json!({
         "format": 2,
         "page": {"largeur": 595, "hauteur": 842,
-                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
-        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
+                 "marges": {"haut": 106, "droite": mesure!("59.5"), "bas": 46, "gauche": mesure!("59.5")}},
+        "police": {"taille": mesure!("7.5"), "interligne": mesure!("1.25"), "couleur": "#2C3E50"},
         "titre": "Avenant n° 2",
         "documents": [{"blocs": blocs}]
     }))
@@ -507,8 +512,8 @@ fn l_attestation_coupe_les_valeurs_multilignes_sans_numeroter_ni_signer() {
     let b = fabriquer(&json!({
         "format": 2,
         "page": {"largeur": 595, "hauteur": 842,
-                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
-        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
+                 "marges": {"haut": 106, "droite": mesure!("59.5"), "bas": 46, "gauche": mesure!("59.5")}},
+        "police": {"taille": mesure!("7.5"), "interligne": mesure!("1.25"), "couleur": "#2C3E50"},
         "titre": "Reçu",
         "documents": [{"blocs": blocs}]
     }))

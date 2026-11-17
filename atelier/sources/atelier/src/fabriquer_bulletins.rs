@@ -748,37 +748,37 @@ fn identite(d: &Description, s: &Salarie) -> R<Identite<String>> {
 fn libelle_a(cle: &str) -> (Option<&'static str>, Mesure, &'static str, &'static str) {
     // (titre de famille sur son propre rang, x du libelle, libelle, famille)
     match cle {
-        "maladie" => (Some("SANTE"), m("33.9"), "Sécurité sociale - Maladie Maternité Invalidité Décès", SANTE),
-        "prevoyance" => (None, m("33.9"), "Complémentaire Incapacité Invalidité Décès", SANTE),
-        "atmp" => (Some("ACCIDENTS DU TRAVAIL - MALADIES"), m("40"), "PROFESSIONNELLES", ATMP),
-        "vieillesse_plafonnee" => (Some("RETRAITE"), m("33.9"), "Sécurité sociale plafonnée", RETRAITE),
-        "vieillesse_deplafonnee" => (None, m("33.9"), "Sécurité sociale déplafonnée", RETRAITE),
-        "complementaire" => (None, m("33.9"), "Complémentaire Tranche 1", RETRAITE),
-        "famille" => (None, m("33.9"), "FAMILLE", FAMILLE),
-        "chomage" => (Some("ASSURANCE CHOMAGE"), m("33.9"), "Chômage", CHOMAGE),
-        "autres" => (Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR"), m("33.9"), "autres contributions dues par l'employeur", AUTRES),
-        "conges_spectacles" => (None, m("33.9"), "CONGES SPECTACLES", CONGES_SPECTACLES),
-        "conventionnelles" => (Some("COTISATIONS STATUTAIRES OU PREVUES PAR LA"), m("40"), "CONVENTION COLLECTIVE", CONVENTIONNELLES),
-        "csg_deductible" => (None, m("33.9"), "CSG déductible à l'impôt sur le revenu", CSG),
-        _ => (None, m("33.9"), "CSG/CRDS non déductible à l'impôt sur le revenu", CSG),
+        "maladie" => (Some("SANTE"), m!("33.9"), "Sécurité sociale - Maladie Maternité Invalidité Décès", SANTE),
+        "prevoyance" => (None, m!("33.9"), "Complémentaire Incapacité Invalidité Décès", SANTE),
+        "atmp" => (Some("ACCIDENTS DU TRAVAIL - MALADIES"), m!("40"), "PROFESSIONNELLES", ATMP),
+        "vieillesse_plafonnee" => (Some("RETRAITE"), m!("33.9"), "Sécurité sociale plafonnée", RETRAITE),
+        "vieillesse_deplafonnee" => (None, m!("33.9"), "Sécurité sociale déplafonnée", RETRAITE),
+        "complementaire" => (None, m!("33.9"), "Complémentaire Tranche 1", RETRAITE),
+        "famille" => (None, m!("33.9"), "FAMILLE", FAMILLE),
+        "chomage" => (Some("ASSURANCE CHOMAGE"), m!("33.9"), "Chômage", CHOMAGE),
+        "autres" => (Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR"), m!("33.9"), "autres contributions dues par l'employeur", AUTRES),
+        "conges_spectacles" => (None, m!("33.9"), "CONGES SPECTACLES", CONGES_SPECTACLES),
+        "conventionnelles" => (Some("COTISATIONS STATUTAIRES OU PREVUES PAR LA"), m!("40"), "CONVENTION COLLECTIVE", CONVENTIONNELLES),
+        "csg_deductible" => (None, m!("33.9"), "CSG déductible à l'impôt sur le revenu", CSG),
+        _ => (None, m!("33.9"), "CSG/CRDS non déductible à l'impôt sur le revenu", CSG),
     }
 }
 
 fn libelle_b(cle: &str) -> (Option<&'static str>, Mesure, &'static str, &'static str) {
     match cle {
-        "maladie" => (Some("Santé"), m("74"), "Sécurité Sociale - Maladie Maternité Invalidité Décès", SANTE),
-        "prevoyance" => (None, m("74"), "Prévoyance, Incapacité, Invalidité, Décès, Autres", SANTE),
-        "atmp" => (None, m("39"), "Accidents du travail & maladies professionnelles", ATMP),
-        "vieillesse_plafonnee" => (Some("Retraite"), m("74"), "Sécurité Sociale Vieillesse plafonnée", RETRAITE),
-        "vieillesse_deplafonnee" => (None, m("74"), "Sécurité Sociale Vieillesse déplafonnée", RETRAITE),
-        "complementaire" => (None, m("74"), "Retraite complémentaire, CEG et CET T1", RETRAITE),
-        "famille" => (None, m("39"), "Famille", FAMILLE),
-        "chomage" => (None, m("39"), "Assurance chômage", CHOMAGE),
-        "autres" => (None, m("39"), "Autres charges dues par l\u{2019}employeur", AUTRES),
-        "conges_spectacles" => (None, m("39"), "Congés Spectacles", CONGES_SPECTACLES),
-        "conventionnelles" => (None, m("39"), "Cotisations statutaires ou prévues par la convention collective", CONVENTIONNELLES),
-        "csg_deductible" => (None, m("39"), "CSG déductible de l'impôt sur le revenu", CSG),
-        _ => (None, m("39"), "CSG/CRDS non déductible de l'impôt sur le revenu", CSG),
+        "maladie" => (Some("Santé"), m!("74"), "Sécurité Sociale - Maladie Maternité Invalidité Décès", SANTE),
+        "prevoyance" => (None, m!("74"), "Prévoyance, Incapacité, Invalidité, Décès, Autres", SANTE),
+        "atmp" => (None, m!("39"), "Accidents du travail & maladies professionnelles", ATMP),
+        "vieillesse_plafonnee" => (Some("Retraite"), m!("74"), "Sécurité Sociale Vieillesse plafonnée", RETRAITE),
+        "vieillesse_deplafonnee" => (None, m!("74"), "Sécurité Sociale Vieillesse déplafonnée", RETRAITE),
+        "complementaire" => (None, m!("74"), "Retraite complémentaire, CEG et CET T1", RETRAITE),
+        "famille" => (None, m!("39"), "Famille", FAMILLE),
+        "chomage" => (None, m!("39"), "Assurance chômage", CHOMAGE),
+        "autres" => (None, m!("39"), "Autres charges dues par l\u{2019}employeur", AUTRES),
+        "conges_spectacles" => (None, m!("39"), "Congés Spectacles", CONGES_SPECTACLES),
+        "conventionnelles" => (None, m!("39"), "Cotisations statutaires ou prévues par la convention collective", CONVENTIONNELLES),
+        "csg_deductible" => (None, m!("39"), "CSG déductible de l'impôt sur le revenu", CSG),
+        _ => (None, m!("39"), "CSG/CRDS non déductible de l'impôt sur le revenu", CSG),
     }
 }
 
@@ -838,12 +838,12 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
         };
         match rendu {
             RenduB::Titre(t) => {
-                out.push((m("39"), t.into(), "", String::new(), String::new(), String::new(), String::new()));
-                out.extend(groupe.iter().map(|c| seule(m("74"), c)));
+                out.push((m!("39"), t.into(), "", String::new(), String::new(), String::new(), String::new()));
+                out.extend(groupe.iter().map(|c| seule(m!("74"), c)));
             }
-            RenduB::Lignes => out.extend(groupe.iter().map(|c| seule(m("39"), c))),
+            RenduB::Lignes => out.extend(groupe.iter().map(|c| seule(m!("39"), c))),
             RenduB::Rang(libelle) if groupe.len() == 1 => {
-                let mut r = seule(m("39"), groupe[0]);
+                let mut r = seule(m!("39"), groupe[0]);
                 r.1 = libelle.into();
                 out.push(r);
             }
@@ -852,7 +852,7 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
                 let base = if bases.len() == 1 { bases.into_iter().flatten().map(fr).collect() } else { String::new() };
                 let s: Montant = groupe.iter().map(|c| c.montant_salarie).sum();
                 let e: Montant = groupe.iter().map(|c| c.montant_employeur).sum();
-                out.push((m("39"), libelle.into(), famille, base, String::new(), montant(s), montant(e)));
+                out.push((m!("39"), libelle.into(), famille, base, String::new(), montant(s), montant(e)));
             }
         }
     }
@@ -886,7 +886,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
     for (cle, base, te, me, ts, ms) in &c.cotisations {
         let (titre, x, libelle, famille) = libelle_a(cle);
         if let Some(t) = titre {
-            cotisations.push((m("33.9"), t.into(), "", vide(), vide(), vide(), vide(), vide()));
+            cotisations.push((m!("33.9"), t.into(), "", vide(), vide(), vide(), vide(), vide()));
         }
         let taux = |t: &Option<Taux>| t.map(taux3).into_iter().collect::<String>();
         let montant = |m: &Option<Montant>| m.map(fr).into_iter().collect::<String>();
@@ -899,8 +899,8 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
     };
     let lignes: Vec<(String, String, String, String)> = b.lignes.iter().map(|l| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant))).collect();
     // La page tient-elle ? Le pied finit a 72 points sous le net a payer, la signature est a 810.
-    let bas = m("308") + (lignes.len() + 1 + cotisations.len()) * m("11.2") + m("14.2") + m("22") + m("20.3") + m("11") + m("11.5") + m("14") + m("8.5") + m("8.5") + m("13") + m("72");
-    if bas > m("800") {
+    let bas = m!("308") + (lignes.len() + 1 + cotisations.len()) * m!("11.2") + m!("14.2") + m!("22") + m!("20.3") + m!("11") + m!("11.5") + m!("14") + m!("8.5") + m!("8.5") + m!("13") + m!("72");
+    if bas > m!("800") {
         return Err(refus!("bulletin {} : trop de lignes pour une page CoolPaie", b.rang));
     }
     let a_ = A {
@@ -926,7 +926,7 @@ fn page_coolpaie(d: &Description, b: &Bulletin, c: &Calcule, numero: String) -> 
         net_imposable: [fr(c.net_imposable), fr(c.annee.net_imposable)],
         net_a_payer: fr(c.net_a_payer),
         regle: dmy(&b.regle_le),
-        mode: b.periode.fin().annee() >= const { socle::mois::Annee::constante("2023") },
+        mode: b.periode.fin().annee() >= socle::annee!("2023"),
         unite: unite.into(),
         cumuls: [
             [p, a],
@@ -946,7 +946,7 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
     for (cle, base, _, me, ts, ms) in &c.cotisations {
         let (titre, x, libelle, famille) = libelle_b(cle);
         if let Some(t) = titre {
-            cotisations.push((m("39"), t.into(), "", vide(), vide(), vide(), vide()));
+            cotisations.push((m!("39"), t.into(), "", vide(), vide(), vide(), vide()));
         }
         let montant = |m: &Option<Montant>| m.map(fr).into_iter().collect::<String>();
         cotisations.push((x, libelle.into(), famille, fr(*base), ts.map(taux3).into_iter().collect(), montant(ms), montant(me)));
@@ -954,9 +954,9 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
     let ligne = |l: &Ligne| (l.quantite.dit(), l.libelle.clone(), fr(l.taux), fr(l.montant));
     let lignes: Vec<_> = b.lignes.iter().map(ligne).collect();
     let non_soumis: Vec<_> = b.non_soumis.iter().map(ligne).collect();
-    let titres = cotisations.iter().filter(|c| c.0 < m("50")).count();
-    let bas = m("308.5") + lignes.len() * m("11") + m("9") + titres * m("13") + (cotisations.len() - titres) * m("10") + m("13") + m("18") + non_soumis.len() * m("18");
-    if bas > m("645") {
+    let titres = cotisations.iter().filter(|c| c.0 < m!("50")).count();
+    let bas = m!("308.5") + lignes.len() * m!("11") + m!("9") + titres * m!("13") + (cotisations.len() - titres) * m!("10") + m!("13") + m!("18") + non_soumis.len() * m!("18");
+    if bas > m!("645") {
         return Err(refus!("bulletin {} : trop de lignes pour une page sPAIEctacle", b.rang));
     }
     let mut cumuls = Vec::new();
@@ -997,10 +997,10 @@ fn page_spaiectacle(d: &Description, b: &Bulletin, c: &Calcule) -> R<Vec<fabriqu
         non_soumis,
         net_social: Some(fr(c.net_social)),
         net_avant_impot: fr(c.net_avant_impot),
-        entete_pas: vec![(m("280.9"), "base"), (m("339"), "taux personnalisé"), (m("442.2"), "montant"), (m("502.7"), "cumul annuel")],
+        entete_pas: vec![(m!("280.9"), "base"), (m!("339"), "taux personnalisé"), (m!("442.2"), "montant"), (m!("502.7"), "cumul annuel")],
         pas: (
             "IMPOT SUR LE REVENU PRELEVE A LA SOURCE".into(),
-            vec![(m("316.1"), fr(c.net_imposable)), (m("412.2"), socle::texte::chiffres_de_taux(b.taux_pas.taux())), (m("487"), fr(c.pas)), (m("563"), fr(c.annee.pas))],
+            vec![(m!("316.1"), fr(c.net_imposable)), (m!("412.2"), socle::texte::chiffres_de_taux(b.taux_pas.taux())), (m!("487"), fr(c.pas)), (m!("563"), fr(c.annee.pas))],
         ),
         net_imposable: Some((fr(c.net_imposable), fr(c.annee.net_imposable))),
         cumuls,

@@ -248,7 +248,7 @@ impl Periode {
         match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Periode::Mois(m)),
             (None, Some(a), false) => {
-                if a < const { socle::mois::Annee::constante("1000") } {
+                if a < socle::annee!("1000") {
                     return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a)));
                 }
                 Ok(Periode::Annee(a))

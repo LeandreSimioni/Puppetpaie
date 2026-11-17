@@ -730,38 +730,49 @@ fn aucun_entier_signe_brut() {
 /// entiers dedans (la date, l'heure de Paris, les nombres ; la norme PDF et les polices), mais ce qu'ils offrent au
 /// reste du logiciel est type. Dans les sources de leur bibliotheque (`src/`), ni une fonction publique (`pub fn`, sa
 /// signature jusqu'a son corps), ni le type d'une constante ou d'une statique publique, ni un champ public (d'une
-/// structure, ou d'une structure en tuple), ni un alias public (`pub type`), ni l'en-tete d'une implementation d'un trait
-/// (`impl … for …`) ne nomment un entier signe (`entier_signe`). Ce qui est interne s'ecrit `pub(crate)` ; `socle::systeme`
-/// est lu dehors (la memoire, le disque, le processus), et ses fonctions publiques rendent des valeurs typees : seules
-/// ses declarations `extern`, privees, nomment l'entier que le noyau de Windows impose.
+/// structure, ou d'une structure en tuple), ni une variante d'une enumeration publique, ni un alias public (`pub type`),
+/// ni l'en-tete d'une implementation d'un trait (`impl … for …`) ne nomment un entier signe (`entier_signe`), que la
+/// declaration tienne sur une ligne ou sur plusieurs. Ce qui est interne s'ecrit `pub(crate)` ; `socle::systeme` est lu
+/// dehors (la memoire, le disque, le processus), et ses fonctions publiques rendent des valeurs typees : seules ses
+/// declarations `extern`, privees, nomment l'entier que le noyau de Windows impose.
 #[test]
 fn aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe() {
     let signe = entier_signe();
+    let attributs = regex::Regex::new(r"^(?:#\[[^\]]*\]\s*)*").unwrap();
     let fonction = regex::Regex::new(r"^pub\s+(?:const\s+|async\s+|unsafe\s+)*fn\s").unwrap();
     let champ = regex::Regex::new(r"^pub\s+[a-z_][a-z0-9_]*\s*:(.*)$").unwrap();
-    let champ_en_tuple = regex::Regex::new(r"[(,]\s*pub\s+([^,()]+)").unwrap();
+    let type_public = regex::Regex::new(r"^pub\s+(struct|enum|union)\s").unwrap();
     let mut fautes = Vec::new();
     for racine in ["socle", "fabrique-pdf"] {
         for p in sources(&espace().join(racine).join("src")) {
             let texte = std::fs::read_to_string(&p).unwrap();
-            let lignes: Vec<&str> = texte.lines().collect();
+            // Les lignes sans leurs commentaires : un commentaire ne se lit pas hors de la crate.
+            let lignes: Vec<&str> = texte.lines().map(|l| match l.find("//") {
+                Some(k) => &l[..k],
+                None => l,
+            }).collect();
             for (i, ligne) in lignes.iter().enumerate() {
-                let l = ligne.trim_start();
+                let l = &ligne.trim_start()[attributs.find(ligne.trim_start()).unwrap().end()..];
                 // La part publique de la ligne, celle qui se lit hors de la crate.
                 let mut parts: Vec<String> = Vec::new();
                 if fonction.is_match(l) {
-                    // Une signature, sur autant de lignes qu'il faut, jusqu'a son corps (`{`) ou sa fin (`;`).
-                    let mut s = String::new();
-                    for x in &lignes[i..] {
-                        match x.find(['{', ';']) {
+                    // Une signature, sur autant de lignes qu'il faut, jusqu'a son corps (`{`) ou sa fin (`;` hors
+                    // des crochets d'un tableau, `[u8; 4]`).
+                    parts.push(declaration(&lignes[i..], true));
+                } else if let Some(genre) = type_public.captures(l) {
+                    // Une enumeration publique : toutes ses variantes ; une structure : son en-tete et ses champs publics.
+                    let d = declaration(&lignes[i..], false);
+                    match &genre[1] {
+                        "enum" => parts.push(d),
+                        _ => match d.find(['{', '(']) {
                             Some(k) => {
-                                s.push_str(&x[..k]);
-                                break;
+                                parts.push(d[..k].to_string());
+                                let corps = &d[k + 1..];
+                                parts.extend(elements(corps).into_iter().map(|e| e.trim()).filter(|e| e.starts_with("pub ")).map(str::to_string));
                             }
-                            None => s.push_str(x),
-                        }
+                            None => parts.push(d),
+                        },
                     }
-                    parts.push(s);
                 } else if let Some(r) = l.strip_prefix("pub const ").or_else(|| l.strip_prefix("pub static ")) {
                     // Son type, entre `:` et `=` ; pas sa valeur, que le socle ou la fabrique calcule.
                     if let Some((_, t)) = r.split_once(':') {
@@ -774,9 +785,6 @@ fn aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe() {
                 } else if l.starts_with("impl") && l.contains(" for ") {
                     parts.push(l.split('{').next().unwrap().to_string());
                 }
-                if l.starts_with("pub struct ") {
-                    parts.extend(champ_en_tuple.captures_iter(l).map(|c| c[1].to_string()));
-                }
                 for s in parts {
                     if let Some(m) = signe.find(&s) {
                         fautes.push(format!("{}:{} : `{}` (`{}`)", p.strip_prefix(espace()).unwrap().display(), i + 1, m.as_str().trim(), l));
@@ -786,6 +794,56 @@ fn aucune_porte_publique_du_socle_ni_de_la_fabrique_n_a_d_entier_signe() {
         }
     }
     assert!(fautes.is_empty(), "une porte publique du socle ou de la fabrique prend ou rend un entier signe : le type de la notion, ou `pub(crate)` :\n{}", fautes.join("\n"));
+}
+
+/// Une declaration a partir de sa premiere ligne, sur autant de lignes qu'il faut : jusqu'a un `;` hors de toute
+/// parenthese, de tout crochet et de toute accolade, ou jusqu'a l'accolade qui ferme son corps ; une signature
+/// (`signature`) s'arrete avant son corps (`{`).
+fn declaration(lignes: &[&str], signature: bool) -> String {
+    let mut s = String::new();
+    let mut profondeur = 0usize;
+    for l in lignes {
+        for c in l.chars() {
+            match c {
+                '{' if signature => return s,
+                ';' if profondeur == 0 => return s,
+                '(' | '[' | '{' => profondeur += 1,
+                ')' | ']' | '}' => {
+                    profondeur = profondeur.saturating_sub(1);
+                    if c == '}' && profondeur == 0 {
+                        s.push(c);
+                        return s;
+                    }
+                }
+                _ => {}
+            }
+            s.push(c);
+        }
+        s.push(' ');
+    }
+    s
+}
+
+/// Les elements d'une liste separes par des virgules hors de toute parenthese, crochet, accolade ou chevron (`->` n'en
+/// ferme pas) : les champs du corps d'une structure.
+fn elements(corps: &str) -> Vec<&str> {
+    let mut v = Vec::new();
+    let (mut profondeur, mut debut, mut avant) = (0usize, 0usize, ' ');
+    for (k, c) in corps.char_indices() {
+        match c {
+            '(' | '[' | '{' | '<' => profondeur += 1,
+            '>' if avant == '-' => {}
+            ')' | ']' | '}' | '>' => profondeur = profondeur.saturating_sub(1),
+            ',' if profondeur == 0 => {
+                v.push(&corps[debut..k]);
+                debut = k + 1;
+            }
+            _ => {}
+        }
+        avant = c;
+    }
+    v.push(&corps[debut..]);
+    v
 }
 
 /// LA FABRIQUE EST UNE PORTE ENTIERE (« Les garde-fous sont dans la structure ») : ses entiers sont ceux de la norme PDF

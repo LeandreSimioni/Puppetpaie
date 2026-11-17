@@ -359,8 +359,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
 fn cle(c: &Cellule) -> R<String> {
     Ok(match c {
         Cellule::Texte(s) => format!("t{}", s),
-        Cellule::Entier(i) => format!("n{}", i),
-        Cellule::AVirgule(n) => match n.entier_ecrit()? {
+        Cellule::Nombre(n) => match n.entier_ecrit()? {
             Some(i) => format!("n{}", i),
             None => format!("f{}", n.ecrit()),
         },
@@ -387,8 +386,7 @@ fn champ_exige<'a>(
 /// texte d'entier ; une longueur negative ne se lit pas.
 fn longueur_de(c: &Cellule) -> R<usize> {
     match c {
-        Cellule::Entier(i) => usize::try_from(*i).map_err(|_| refus!("longueur illisible : {}", i)),
-        Cellule::AVirgule(n) => n.compte_tronque()?.ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
+        Cellule::Nombre(n) => n.compte_tronque()?.ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
         Cellule::Booleen(b) => Ok(usize::from(*b)),
         Cellule::Texte(s) => {
             strip(s).parse::<usize>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))

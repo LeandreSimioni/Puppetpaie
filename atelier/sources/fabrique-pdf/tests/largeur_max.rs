@@ -1,7 +1,8 @@
 //! Tests du champ `largeur_max` de `texte_fixe` (FORMAT.md) : le corps est réduit pour que le texte
 //! tienne : le corps d'origine tant que le texte y tient, sinon `corps × place ÷ largeur`, jamais sous 6 pt.
 
-use fabrique_pdf::mesure::{mesure, Mesure};
+use fabrique_pdf::mesure;
+use fabrique_pdf::mesure::Mesure;
 use lopdf::content::Content;
 use lopdf::Document;
 use serde_json::{json, Value};
@@ -11,7 +12,7 @@ fn description(blocs: Vec<Value>) -> Value {
         "format": 2,
         "page": {"largeur": 400, "hauteur": 500,
                  "marges": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}},
-        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
+        "police": {"taille": 10, "interligne": mesure!("1.25"), "couleur": "#000000"},
         "documents": [{"blocs": blocs}]
     })
 }
@@ -64,8 +65,8 @@ fn corps_qui_tient(fichier: &str, texte: &str, corps: Mesure, place: Mesure) -> 
 }
 
 /// `a` vaut `b` à `tolerance` près.
-fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
-    (a - b).abs() < mesure(tolerance)
+fn proche(a: Mesure, b: Mesure, tolerance: Mesure) -> bool {
+    (a - b).abs() < tolerance
 }
 
 fn fabriquer(blocs: Vec<Value>) -> Vec<u8> {
@@ -80,28 +81,28 @@ fn lue(v: Value) -> Result<Vec<u8>, fabrique_pdf::Refus> {
 #[test]
 fn le_corps_demande_est_gardé_quand_le_texte_tient() {
     let t = "Société Fictive";
-    let corps = mesure("13.92");
+    let corps = mesure!("13.92");
     let l = largeur("LiberationSans-Regular.ttf", t, corps);
     let pdf = fabriquer(vec![
-        texte_fixe(t, corps, json!({"largeur_max": l + mesure("0.5")})),
+        texte_fixe(t, corps, json!({"largeur_max": l + mesure!("0.5")})),
         texte_fixe(t, corps, json!({})),
     ]);
     let c = corps_poses(&pdf);
     assert_eq!(c.len(), 2);
-    assert!(proche(c[0], corps, "0.001") && proche(c[1], corps, "0.001"), "{:?}", c);
+    assert!(proche(c[0], corps, mesure!("0.001")) && proche(c[1], corps, mesure!("0.001")), "{:?}", c);
 }
 
 #[test]
 fn le_corps_est_reduit_au_prorata_de_la_place() {
     let t = "COMPAGNIE FICTIVE DES ESSAIS RÉUNIS";
-    for (place, corps) in [(pt(200), mesure("13.92")), (pt(150), pt(10)), (pt(180), pt(12))] {
+    for (place, corps) in [(pt(200), mesure!("13.92")), (pt(150), pt(10)), (pt(180), pt(12))] {
         let attendu = corps_qui_tient("LiberationSans-Regular.ttf", t, corps, place);
         assert!(attendu < corps && attendu > pt(6), "le cas ne réduit pas : {}", attendu);
         let pdf = fabriquer(vec![texte_fixe(t, corps, json!({"largeur_max": place}))]);
         let c = corps_poses(&pdf);
-        assert!(proche(c[0], attendu, "0.01"), "place {} : corps {} au lieu de {}", place, c[0], attendu);
+        assert!(proche(c[0], attendu, mesure!("0.01")), "place {} : corps {} au lieu de {}", place, c[0], attendu);
         // et le texte réduit tient dans la place
-        assert!(largeur("LiberationSans-Regular.ttf", t, c[0]) <= place + mesure("0.05"));
+        assert!(largeur("LiberationSans-Regular.ttf", t, c[0]) <= place + mesure!("0.05"));
     }
 }
 
@@ -110,11 +111,11 @@ fn le_corps_ne_descend_pas_sous_six_points() {
     let t = "UN TEXTE BIEN TROP LONG POUR UNE PLACE SI ÉTROITE";
     let pdf = fabriquer(vec![texte_fixe(t, pt(12), json!({"largeur_max": 20}))]);
     let c = corps_poses(&pdf);
-    assert!(proche(c[0], pt(6), "0.001"), "{:?}", c);
+    assert!(proche(c[0], pt(6), mesure!("0.001")), "{:?}", c);
     // Comme dans corps_qui_tient : le plancher vaut aussi pour un corps demandé plus petit.
     assert_eq!(corps_qui_tient("LiberationSans-Regular.ttf", t, pt(5), pt(20)), pt(6));
     let pdf = fabriquer(vec![texte_fixe(t, pt(5), json!({"largeur_max": 20}))]);
-    assert!(proche(corps_poses(&pdf)[0], pt(6), "0.001"));
+    assert!(proche(corps_poses(&pdf)[0], pt(6), mesure!("0.001")));
 }
 
 #[test]
@@ -130,7 +131,7 @@ fn la_mesure_suit_la_police_et_le_gras() {
         assert!(attendu < pt(11), "{} : le cas ne réduit pas", fichier);
         let pdf = fabriquer(vec![texte_fixe(t, pt(11), json!({"police": police, "gras": gras, "largeur_max": 90}))]);
         let c = corps_poses(&pdf);
-        assert!(proche(c[0], attendu, "0.01"), "{} : {} au lieu de {}", fichier, c[0], attendu);
+        assert!(proche(c[0], attendu, mesure!("0.01")), "{} : {} au lieu de {}", fichier, c[0], attendu);
     }
 }
 
@@ -144,7 +145,7 @@ fn largeur_max_ne_change_ni_l_alignement_ni_les_autres_blocs() {
     ]);
     let c = corps_poses(&pdf);
     assert_eq!(c.len(), 2);
-    assert!(c[0] < pt(12) && proche(c[1], pt(12), "0.001"), "{:?}", c);
+    assert!(c[0] < pt(12) && proche(c[1], pt(12), mesure!("0.001")), "{:?}", c);
 }
 
 #[test]

@@ -84,13 +84,12 @@ impl NaissanceDeclaree {
 
     /// Le jour, le mois, l'annee, en chiffres.
     fn des_chiffres(jj: &str, mm: &str, aaaa: &str) -> Option<NaissanceDeclaree> {
-        use socle::mois::Annee;
         use socle::piece::{format, Zone};
         let n = |t: &str| t.bytes().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
         let (jour, mois) = (n(jj), n(mm));
         let an = Zone::lue(aaaa, format::AnneeEnChiffres).valeur()?.ok()?;
         let inconnu = |x: u32| x == 0 || x == 99;
-        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (const { Annee::constante("1800") }..=const { Annee::constante("2099") }).contains(&an);
+        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (socle::annee!("1800")..=socle::annee!("2099")).contains(&an);
         if !forme {
             return None;
         }

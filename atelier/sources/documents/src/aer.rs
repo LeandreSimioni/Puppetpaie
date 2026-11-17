@@ -47,7 +47,7 @@ use std::path::Path;
 use std::collections::BTreeMap;
 
 use fabrique_pdf::forme::{ImagePosee, Mesure, Remplissage};
-use fabrique_pdf::mesure::mesure;
+use fabrique_pdf::mesure;
 use fabrique_pdf::formulaire::ChampLu;
 
 use crate::cachet;
@@ -411,8 +411,8 @@ pub fn verifier(donnees: &[u8], paies: &[Paie]) -> R<Vec<String>> {
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
 /// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::SorteDImage::largeur_imprimee`).
-pub const CASE_SIGNATURE: Mesure = mesure("121");
-pub const CASE_CACHET: Mesure = mesure("161");
+pub const CASE_SIGNATURE: Mesure = mesure!("121");
+pub const CASE_CACHET: Mesure = mesure!("161");
 
 /// La signature occupe le haut de la case, sur 80 % de sa largeur.
 ///
@@ -421,9 +421,9 @@ pub const CASE_CACHET: Mesure = mesure("161");
 /// [x0, y0, x1, y1] en points, l'origine en haut a gauche de la page.
 pub fn cadre_signature(rect: [Mesure; 4]) -> [Mesure; 4] {
     let [x0, y0, x1, y1] = rect;
-    let largeur = (x1 - x0) * mesure("0.8");
-    let hauteur = (y1 - y0) * mesure("0.55");
-    let quatre = mesure("4");
+    let largeur = (x1 - x0) * mesure!("0.8");
+    let hauteur = (y1 - y0) * mesure!("0.55");
+    let quatre = mesure!("4");
     [x0 + quatre, y0 + quatre, x0 + quatre + largeur, y0 + quatre + hauteur]
 }
 

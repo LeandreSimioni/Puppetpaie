@@ -33,7 +33,7 @@ use socle::grandeurs::Montant;
 use crate::releve::Mesure;
 
 /// Deux mots sont sur le meme rang quand leurs milieux verticaux sont a moins de cela.
-const TOLERANCE: Mesure = fabrique_pdf::mesure::mesure("4");
+const TOLERANCE: Mesure = fabrique_pdf::mesure!("4");
 
 /// Un mot de la page et sa boite.
 #[derive(Clone, Debug)]
@@ -180,7 +180,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
             continue;
         }
         let [x0, y0, _, y1] = m.rect.connue();
-        mots.push(Mot { texte, x0, cy: (y0 + y1).moitie(), y0 });
+        mots.push(Mot { texte, x0, cy: (y0 + y1) * fabrique_pdf::mesure!("0.5"), y0 });
     }
     mots
 }
@@ -354,7 +354,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     }
     // Une case lue qui porte un caractere que rien ne dit ne se lit pas (ISO 32000-1, 9.10.2) : le bloc d'adresse, ou
     // les rubriques d'un rang.
-    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]).moitie();
+    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]) * fabrique_pdf::mesure!("0.5");
     if let Some(u) = p.inconnus.iter().find(|u| u.rect.connue()[3] < titre_y) {
         fautes.push(u.phrase(page, "nom et adresse du salarié"));
     }

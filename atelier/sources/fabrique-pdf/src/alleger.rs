@@ -8,7 +8,8 @@
 use image::{DynamicImage, GenericImageView};
 
 use crate::description::Refus;
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 
 /// La résolution visée, en points par pouce : ce qu'une imprimante de bureau rend d'une image posée.
 pub const RESOLUTION: Mesure = Mesure::entier(200);
@@ -174,7 +175,7 @@ pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result
         let cible = pixels(largeur_points, resolution);
         let reduite = if image.width() > cible { crate::dessin::reduire_a(image.clone(), cible) } else { image.clone() };
         let (o, f) = ecrire(&reduite, objectif)?;
-        let plus_bas = resolution * mesure("0.85");
+        let plus_bas = resolution * mesure!("0.85");
         if o.len() <= objectif || plus_bas < RESOLUTION_MIN {
             // Une écriture plus lourde que l'image reçue, à la même taille, ne sert à rien.
             if o.len() >= octets.len() && reduite.width() == image.width() {

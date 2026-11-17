@@ -34,7 +34,8 @@ use crate::forme::{AjoutDeChamps, Alignement, Remplissage};
 use crate::lecture;
 use crate::marquage::{flux_existants, q_ouverts};
 use crate::marquage::nb;
-use crate::mesure::{mesure, Mesure};
+use crate::mesure;
+use crate::mesure::Mesure;
 use std::num::NonZeroI64;
 
 
@@ -280,8 +281,8 @@ pub enum ValeurDUnChamp {
     /// Pas de `/V` (ou un objet qu'on ne lit pas).
     Rien,
     Texte(String),
-    Entier(i64),
-    Reel(Mesure),
+    /// Un entier ou un réel du PDF, en mesure (`12`, `0.5`).
+    Nombre(Mesure),
     Booleen(bool),
     Liste(Vec<ValeurDUnChamp>),
 }
@@ -322,9 +323,8 @@ fn valeur_lue(doc: &Document, v: Option<&Object>) -> Result<ValeurDUnChamp, Refu
         None => ValeurDUnChamp::Rien,
         Some(Object::String(s, _)) => ValeurDUnChamp::Texte(crate::encodages::chaine_de_texte(s)?),
         Some(Object::Name(n)) => ValeurDUnChamp::Texte(String::from_utf8_lossy(n).into_owned()),
-        Some(Object::Integer(i)) => ValeurDUnChamp::Entier(*i),
-        Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
-            Some(r) => ValeurDUnChamp::Reel(r),
+        Some(o @ (Object::Integer(_) | Object::Real(_))) => match Mesure::de_l_objet(o) {
+            Some(r) => ValeurDUnChamp::Nombre(r),
             None => return illisible("/V d'un champ est un nombre que la fabrique ne lit pas"),
         },
         Some(Object::Boolean(b)) => ValeurDUnChamp::Booleen(*b),
@@ -424,7 +424,7 @@ const COMB: i64 = 1 << 24;
 const MULTILIGNE: i64 = 1 << 12;
 const MOT_DE_PASSE: i64 = 1 << 13;
 /// L'interligne des champs multilignes, en corps (celui de MuPDF).
-const INTERLIGNE: Mesure = mesure("1.116");
+const INTERLIGNE: Mesure = mesure!("1.116");
 const INTERLIGNE_NON_NULLE: NonZeroI64 = match NonZeroI64::new(INTERLIGNE.en_millioniemes()) {
     Some(n) => n,
     None => panic!("l'interligne n'est pas nul"),
@@ -535,11 +535,11 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
     let mut s = String::new();
     s.push_str("/Tx BMC\nq\n");
     s.push_str(&format!("1 1 {} {} re\nW\nn\nBT\n{}\n/{} {} Tf\n", nb(l - deux), nb(h - deux), couleur, police, nb(corps)));
-    let base_une_ligne = (h - corps).moitie() + corps * mesure("0.2");
+    let base_une_ligne = (h - corps) * mesure!("0.5") + corps * mesure!("0.2");
     if let Some(n) = peigne {
         let case = l.divisee_par(n);
         for (i, ch) in texte.chars().enumerate() {
-            let x = i * case + (case - m.largeur(ch, corps)).moitie();
+            let x = i * case + (case - m.largeur(ch, corps)) * mesure!("0.5");
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(base_une_ligne), hex(&ch.to_string())));
         }
     } else if multiligne {
@@ -562,7 +562,7 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
 fn aligner(q: i64, largeur: Mesure, l: Mesure) -> Result<Mesure, Refus> {
     match q {
         0 => Ok(Mesure::entier(2)),
-        1 => Ok((l - largeur).moitie()),
+        1 => Ok((l - largeur) * mesure!("0.5")),
         2 => Ok(l - Mesure::entier(2) - largeur),
         autre => illisible(format!("/Q vaut {}, la norme ne connaît que 0, 1 et 2", autre)),
     }
@@ -841,7 +841,7 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
         let largeur: Mesure = l.morceaux.iter().map(|m| avance(m)).sum();
         let mut x = match l.ancre {
             usvg::TextAnchor::Start => l.x,
-            usvg::TextAnchor::Middle => l.x - largeur.moitie(),
+            usvg::TextAnchor::Middle => l.x - largeur * mesure!("0.5"),
             usvg::TextAnchor::End => l.x - largeur,
         };
         let m = l.matrice;
@@ -1201,8 +1201,8 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
             (false, Some(dl), _) => (dl, ch),
             _ => return illisible(format!("l'image {} n'a pas de taille", p.nom)),
         };
-        let x = c[0] + dedans[0] + (cl - dl).moitie();
-        let haut = dedans[1] + (ch - dh).moitie();
+        let x = c[0] + dedans[0] + (cl - dl) * mesure!("0.5");
+        let haut = dedans[1] + (ch - dh) * mesure!("0.5");
         let y = c[3] - haut - dh;
         par_page.entry(p.page).or_default().push((image.xobjet, [dl, Z, Z, dh, x, y]));
     }

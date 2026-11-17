@@ -35,7 +35,8 @@
 //! significatifs (`format_g`).
 
 use droit::fiche::Lue;
-use fabrique_pdf::mesure::{mesure, Mesure};
+use fabrique_pdf::mesure;
+use fabrique_pdf::mesure::Mesure;
 
 /// Une coordonnee du dessin, ecrite a six chiffres significatifs (au pair a egalite), sans zero inutile : `12.3457`,
 /// `300`, `0`. Le dessin reste entre 1e-4 et 1e6 : la notation positionnelle suffit.
@@ -47,10 +48,10 @@ fn format_g(x: Mesure) -> String {
 /// d'un tampon rectangulaire courant ; il tient dans la case cachet de l'AER
 /// (160 x 79 points) sans rogner.
 pub const ENCRE: &str = "#1a2e73";
-pub const LARGEUR: Mesure = mesure("300");
-pub const HAUTEUR: Mesure = mesure("150");
+pub const LARGEUR: Mesure = mesure!("300");
+pub const HAUTEUR: Mesure = mesure!("150");
 /// Le tampon ne touche pas le bord de la case.
-pub const MARGE: Mesure = mesure("3");
+pub const MARGE: Mesure = mesure!("3");
 
 /// Ce que le cachet porte : le nom, le lieu, les numeros.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,7 +113,7 @@ fn corps_qui_tient(texte: &str, large: Mesure, depart: Mesure, etroit: Mesure) -
         Some(t) => t,
         None => unreachable!("un caractere a une largeur"),
     };
-    depart.min(tient).max(mesure("5"))
+    depart.min(tient).max(mesure!("5"))
 }
 
 /// `&`, `<` et `>`, et rien d'autre.
@@ -132,9 +133,9 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
         return None;
     }
 
-    let dedans = mesure("16");
+    let dedans = mesure!("16");
     let utile = LARGEUR - 2 * dedans;
-    let milieu = LARGEUR.moitie();
+    let milieu = LARGEUR * mesure!("0.5");
     // Le filet sous le nom : deux tiers de la largeur utile, centre.
     let tiers = match utile.part_sur(3) {
         Some(t) => t,
@@ -154,16 +155,16 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
     // ou vers le bas se voit tout de suite.
     let mut items: Vec<(Option<String>, Mesure, u32, Mesure)> = Vec::new();
     if let Some(nom) = &t.nom {
-        items.push((Some(nom.to_uppercase()), corps_qui_tient(nom, utile, mesure("22"), mesure("0.62")), 700, Mesure::ZERO));
-        items.push((None, Mesure::ZERO, 0, mesure("9"))); // le filet
+        items.push((Some(nom.to_uppercase()), corps_qui_tient(nom, utile, mesure!("22"), mesure!("0.62")), 700, Mesure::ZERO));
+        items.push((None, Mesure::ZERO, 0, mesure!("9"))); // le filet
     }
     for (i, ligne) in t.lieu.iter().enumerate() {
-        let blanc = if i == 0 { mesure("7") } else { mesure("3") };
-        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, mesure("11.5"), mesure("0.52")), 400, blanc));
+        let blanc = if i == 0 { mesure!("7") } else { mesure!("3") };
+        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, mesure!("11.5"), mesure!("0.52")), 400, blanc));
     }
     for (i, ligne) in t.numeros.iter().enumerate() {
-        let blanc = if i == 0 { mesure("6") } else { mesure("2.5") };
-        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, mesure("10"), mesure("0.52")), 400, blanc));
+        let blanc = if i == 0 { mesure!("6") } else { mesure!("2.5") };
+        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, mesure!("10"), mesure!("0.52")), 400, blanc));
     }
 
     let haut_utile = HAUTEUR - 2 * dedans;
@@ -189,18 +190,18 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
         ),
         format!(
             "<rect x=\"4\" y=\"4\" width=\"{}\" height=\"{}\" rx=\"12\" fill=\"none\" stroke=\"{}\" stroke-width=\"4\"/>",
-            format_g(LARGEUR - mesure("8")),
-            format_g(HAUTEUR - mesure("8")),
+            format_g(LARGEUR - mesure!("8")),
+            format_g(HAUTEUR - mesure!("8")),
             ENCRE
         ),
         format!(
             "<rect x=\"11\" y=\"11\" width=\"{}\" height=\"{}\" rx=\"7\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.2\"/>",
-            format_g(LARGEUR - mesure("22")),
-            format_g(HAUTEUR - mesure("22")),
+            format_g(LARGEUR - mesure!("22")),
+            format_g(HAUTEUR - mesure!("22")),
             ENCRE
         ),
     ];
-    let mut y = dedans + (haut_utile - total).moitie();
+    let mut y = dedans + (haut_utile - total) * mesure!("0.5");
     for (texte, corps, gras, blanc) in &items {
         y += *blanc + *corps;
         match texte {

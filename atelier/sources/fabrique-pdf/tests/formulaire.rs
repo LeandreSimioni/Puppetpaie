@@ -7,7 +7,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use fabrique_pdf::mesure::{mesure, Mesure};
+use fabrique_pdf::mesure;
+use fabrique_pdf::mesure::Mesure;
 use lopdf::{Document, Object, ObjectId};
 use serde_json::{json, Value};
 
@@ -28,7 +29,7 @@ const WIDGET_ENFANT: ObjectId = (16, 0);
 
 const CONTENU_PAGE1: &str = "q 1 0 0 1 0 0 cm\nBT /F1 12 Tf 50 780 Td (Page un) Tj ET\n";
 const CONTENU_PAGE2: &str = "BT /F1 12 Tf 50 780 Td (Page deux) Tj ET\n";
-const HAUTEUR: Mesure = mesure("842");
+const HAUTEUR: Mesure = mesure!("842");
 
 /// `n` points : `n` fois un point.
 fn pt(n: usize) -> Mesure {
@@ -101,7 +102,7 @@ fn num(o: &Object) -> Mesure {
 }
 
 fn proche(a: Mesure, b: Mesure) -> bool {
-    (a - b).abs() < mesure("0.011")
+    (a - b).abs() < mesure!("0.011")
 }
 
 /// Les champs, tels que `--champs` les écrit.
@@ -395,20 +396,20 @@ fn remplir_peigne_un_tm_par_caractere_centre_dans_sa_case() {
     assert_eq!(flux.matches(" Tm\n").count(), 2, "{}", flux);
     let l = lignes(&flux);
     assert_eq!(l.len(), 2);
-    let case = pt(40).moitie();
+    let case = pt(40) * mesure!("0.5");
     for (i, (x, y, t)) in l.iter().enumerate() {
         let c = "AB".chars().nth(i).unwrap();
         assert_eq!(t, &c.to_string());
         // centré : le milieu du caractère est le milieu de sa case
-        let milieu = *x + largeur(t, pt(7)).moitie();
-        assert!(proche(milieu, i * case + case.moitie()), "caractère {} : milieu {}", i, milieu);
-        assert!(proche(*y, (pt(16) - pt(7)).moitie() + mesure("0.2") * pt(7)), "y = {}", y);
+        let milieu = *x + largeur(t, pt(7)) * mesure!("0.5");
+        assert!(proche(milieu, i * case + case * mesure!("0.5")), "caractère {} : milieu {}", i, milieu);
+        assert!(proche(*y, (pt(16) - pt(7)) * mesure!("0.5") + mesure!("0.2") * pt(7)), "y = {}", y);
     }
     // un seul caractère : il va dans la première case
     let un = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"PEIGNE": "A"}}));
     let l = lignes(&apparence(&charge(&un), PEIGNE).0);
     assert_eq!(l.len(), 1);
-    assert!(proche(l[0].0 + largeur("A", pt(7)).moitie(), pt(10)));
+    assert!(proche(l[0].0 + largeur("A", pt(7)) * mesure!("0.5"), pt(10)));
 }
 
 #[test]
@@ -424,9 +425,9 @@ fn remplir_multiligne_coupe_la_valeur_longue_sur_plusieurs_lignes() {
     for (i, (x, y, t)) in l.iter().enumerate() {
         assert!(proche(*x, pt(2)), "x = {}", x);
         // depuis le haut, lignes de 1,116 × corps
-        assert!(proche(*y, pt(60 - 2) - (i + 1) * (mesure("1.116") * pt(7))), "ligne {} : y = {}", i, y);
+        assert!(proche(*y, pt(60 - 2) - (i + 1) * (mesure!("1.116") * pt(7))), "ligne {} : y = {}", i, y);
         // chaque ligne tient à 2 pt des bords
-        assert!(largeur(t, pt(7)) <= mesure("96.01"), "{:?} : {}", t, largeur(t, pt(7)));
+        assert!(largeur(t, pt(7)) <= mesure!("96.01"), "{:?} : {}", t, largeur(t, pt(7)));
     }
     // un saut de ligne de la valeur fait une ligne
     let sauts = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"NOTE": "ab\ncd"}}));
@@ -438,7 +439,7 @@ fn remplir_multiligne_coupe_la_valeur_longue_sur_plusieurs_lignes() {
 fn remplir_centre_selon_q() {
     let sortie = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"CENTRE": "AB"}}));
     let l = lignes(&apparence(&charge(&sortie), CENTRE).0);
-    let attendu = (pt(100) - largeur("AB", pt(7))).moitie();
+    let attendu = (pt(100) - largeur("AB", pt(7))) * mesure!("0.5");
     assert!(proche(l[0].0, attendu), "x = {}, attendu {}", l[0].0, attendu);
 }
 
@@ -577,8 +578,8 @@ fn attendu_cm(rect: [usize; 4], marge: usize, l: usize, h: usize) -> [Mesure; 6]
     let (l, h) = (pt(l), pt(h));
     // La plus grande taille aux proportions l × h : la largeur limite si cl / l ≤ ch / h.
     let (dl, dh) = if cl * h <= ch * l { (cl, cl.fois_rapport(h, l).unwrap()) } else { (ch.fois_rapport(l, h).unwrap(), ch) };
-    let x = x0 + (cl - dl).moitie();
-    let haut = y0 + (ch - dh).moitie();
+    let x = x0 + (cl - dl) * mesure!("0.5");
+    let haut = y0 + (ch - dh) * mesure!("0.5");
     [dl, pt(0), pt(0), dh, x, HAUTEUR - haut - dh]
 }
 
@@ -662,7 +663,7 @@ fn image_png_avec_transparence_a_un_smask() {
     assert_eq!(p.len(), 1);
     assert_eq!(p[0].1, "PPImage1");
     verifie_cm(p[0].0, attendu_cm(rect, 5, 40, 20));
-    verifie_cm(p[0].0, [pt(90), pt(0), pt(0), pt(45), pt(105), mesure("679.5")]);
+    verifie_cm(p[0].0, [pt(90), pt(0), pt(0), pt(45), pt(105), mesure!("679.5")]);
 }
 
 #[test]
@@ -773,7 +774,7 @@ fn image_les_proportions_sont_gardees_dans_les_deux_sens() {
     let p = poses(&charge(&sortie), PAGE1);
     verifie_cm(p[0].0, attendu_cm([10, 10, 110, 90], 0, 60, 10));
     let sixieme = pt(100).part_sur(6).unwrap();
-    verifie_cm(p[0].0, [pt(100), pt(0), pt(0), sixieme, pt(10), pt(842 - 10) - (pt(80) - sixieme).moitie() - sixieme]);
+    verifie_cm(p[0].0, [pt(100), pt(0), pt(0), sixieme, pt(10), pt(842 - 10) - (pt(80) - sixieme) * mesure!("0.5") - sixieme]);
     verifie_cm(p[1].0, attendu_cm([10, 100, 110, 180], 0, 10, 60));
     // le rapport largeur / hauteur de la pose est celui de l'image
     assert!(proche(p[0].0[0].sur(p[0].0[3]).unwrap(), pt(6)) && proche(p[1].0[0].sur(p[1].0[3]).unwrap(), pt(1).part_sur(6).unwrap()));

@@ -76,7 +76,7 @@ fn main() -> std::process::ExitCode {
 
     if let Err(e) = compagnie::installation::fixer_le_code() {
         eprintln!("La fenetre ne demarre pas : {}", e.en_lignes());
-        std::process::exit(1);
+        return std::process::ExitCode::FAILURE;
     }
     // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
@@ -86,7 +86,7 @@ fn main() -> std::process::ExitCode {
         Ok(compagnie::instance::Instance::Devant) => return std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
-            std::process::exit(1);
+            return std::process::ExitCode::FAILURE;
         }
     };
     // Une livraison de fictives prete se pose (`compagnie::maj::poser_les_fictives_pretes`), et le reste d'une
@@ -103,7 +103,7 @@ fn main() -> std::process::ExitCode {
         Ok(x) => x,
         Err(e) => {
             eprintln!("La fenetre ne demarre pas : {}.", e);
-            std::process::exit(1);
+            return std::process::ExitCode::FAILURE;
         }
     };
     // Les compagnies de l'installation se tiennent a jour en fond des maintenant, sans rien ouvrir (calcul local seulement).
