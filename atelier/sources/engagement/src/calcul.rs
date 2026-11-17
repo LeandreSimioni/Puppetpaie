@@ -399,9 +399,9 @@ impl LigneCotisation<socle::forme::Nombre> {
             id: self.id,
             famille: self.famille,
             libelle: self.libelle,
-            taux_pat: self.taux_pat,
+            taux_pat: self.taux_pat.map(socle::grandeurs::courte),
             montant_pat: self.montant_pat,
-            taux_sal: self.taux_sal,
+            taux_sal: self.taux_sal.map(socle::grandeurs::courte),
             montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
         }
