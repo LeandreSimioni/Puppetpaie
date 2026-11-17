@@ -367,10 +367,9 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
     if let Some(n) = &d.nets {
-        (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
-        // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
-        (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
+        x.nets = n.clone();
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x

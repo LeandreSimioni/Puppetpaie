@@ -19,6 +19,7 @@ use droit::pas::TauxDePas;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
+use engagement::importe::Nets;
 use engagement::numeros::NumeroContrat;
 
 use crate::identite::{IdentiteDeclaree, NaissanceDeclaree};
@@ -496,19 +497,6 @@ impl VersementLu {
         }
         v
     }
-}
-
-/// Ce que le bloc 50 dit du versement : ses nets (.002, .004) et son prelevement a la source (.006 a .008 : le taux, son
-/// type et son identifiant ; .009 : l'impot preleve). Le bloc n'a pas de numero de contrat (`bloc-S21.G00.50.txt`) : ces montants ne sont ceux d'un contrat que si le versement ne paie
-/// que lui, et lui seul (`PaieDuContrat::nets`).
-#[derive(Clone, Debug, Default)]
-pub struct Nets {
-    pub net_imposable: Option<Montant>,
-    pub net_verse: Option<Montant>,
-    pub taux_pas: Option<TauxDePas>,
-    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
-    pub pas: Option<Montant>,
 }
 
 /// CE QUE LA DSN ATTRIBUE A UN CONTRAT POUR LE MOIS, de tout ce que ses versements portent : ce que la norme rattache au

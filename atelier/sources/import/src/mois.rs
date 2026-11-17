@@ -392,10 +392,10 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
     let lus: [(&str, fn(&PaieVersee) -> Option<Montant>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Montant>, &'a mut Option<Source>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
-        ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
+        ("net_imposable", |p| p.nets.net_imposable,|m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
-        ("pas", |p| p.pas, |m, s| (&mut m.pas, &mut s.pas)),
-        ("net_verse", |p| p.net_verse, |m, s| (&mut m.net_verse, &mut s.net_verse)),
+        ("pas", |p| p.nets.pas,|m, s| (&mut m.pas, &mut s.pas)),
+        ("net_verse", |p| p.nets.net_verse,|m, s| (&mut m.net_verse, &mut s.net_verse)),
         ("cotisations_salariales", |p| p.cotisations_salariales, |m, s| (&mut m.cotisations_salariales, &mut s.cotisations_salariales)),
         ("cotisations_patronales", |p| p.cotisations_patronales, |m, s| (&mut m.cotisations_patronales, &mut s.cotisations_patronales)),
         ("cout_employeur", |p| p.cout_employeur, |m, s| (&mut m.cout_employeur, &mut s.cout_employeur)),

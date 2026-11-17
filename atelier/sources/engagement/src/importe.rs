@@ -183,11 +183,8 @@ pub struct PaieVersee {
     pub quotite: Option<droit::natures::QuotiteDuContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
-    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
-    pub net_imposable: Option<Montant>,
-    /// Le net verse de la DSN (50.004), qui n'est pas le net a payer.
-    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
-    pub net_verse: Option<Montant>,
+    /// Ses nets et son prelevement a la source, que la DSN deposee (bloc 50) ou son bulletin disent.
+    pub nets: Nets,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub net_a_payer: Option<Montant>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -200,11 +197,6 @@ pub struct PaieVersee {
     pub cotisations_patronales: Option<Montant>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub cout_employeur: Option<Montant>,
-    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
-    pub pas: Option<Montant>,
-    pub taux_pas: Option<droit::pas::TauxDePas>,
-    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
-    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
     pub depose_le: Option<Jour>,
@@ -231,6 +223,26 @@ pub struct PaieVersee {
     pub emploi_imprime: Option<droit::emplois::EmploiEngagement>,
     pub bulletin: Option<BulletinSource>,
     pub importe_le: Option<Jour>,
+}
+
+/// LES NETS D'UNE PAIE VERSEE ET SON PRELEVEMENT A LA SOURCE, tels que le bloc 50 d'une DSN les dit du versement : ses
+/// nets (.002, .004) et son prelevement (.006 a .008 : le taux, son type et son identifiant ; .009 : l'impot preleve).
+/// Le bloc n'a pas de numero de contrat (`bloc-S21.G00.50.txt`) : ces montants ne sont ceux d'un contrat que si le
+/// versement ne paie que lui, et lui seul (`declarations::dsn_lue::PaieDuContrat::nets`). Une paie versee les porte
+/// (`PaieVersee::nets`), son bulletin completant ce que la DSN tait. Ce qu'une piece tait est vide.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Nets {
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_imposable: Option<Montant>,
+    /// Le net verse (50.004), qui n'est pas le net a payer.
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub net_verse: Option<Montant>,
+    pub taux_pas: Option<droit::pas::TauxDePas>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
+    pub identifiant_pas: Option<droit::pas::IdentifiantDuTauxPas>,
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    pub pas: Option<Montant>,
 }
 
 /// Une ligne de remuneration que le bulletin imprime ; `rubrique` : celle du catalogue a laquelle l'import l'a rattachee,
@@ -426,18 +438,13 @@ impl PaieVersee {
             periode: None,
             quotite: None,
             brut: None,
-            net_imposable: None,
-            net_verse: None,
+            nets: Nets::default(),
             net_a_payer: None,
             net_avant_impot: None,
             net_social: None,
             cotisations_salariales: None,
             cotisations_patronales: None,
             cout_employeur: None,
-            pas: None,
-            taux_pas: None,
-            type_pas: None,
-            identifiant_pas: None,
             verse_le: None,
             depose_le: None,
             fichier: None,
@@ -853,7 +860,8 @@ impl Importe {
         let plafonnee = [Assiette::BrutPlafonne, Assiette::T1Mensuelle].into_iter().find_map(|k| bases.get(&k).map(|t| t.en_euros(k))).transpose()?;
         let plafond = brut.zip(plafonnee).and_then(|(b, t)| (t < b).then_some(t));
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
-        let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
+        let n = &p.nets;
+        let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(n.net_verse).zip(n.pas).map(|(net, pas)| net + pas));
 
         Ok(PaieImportee {
             le: self.le(),
@@ -870,13 +878,13 @@ impl Importe {
             total_pat: p.cotisations_patronales,
             net_a_payer,
             net_social: p.net_social,
-            net_imposable: p.net_imposable,
+            net_imposable: n.net_imposable,
             cout_employeur: p.cout_employeur,
             numero_bulletin: p.bulletin.as_ref().and_then(|b| b.numero.clone()).filter(|n| !n.is_empty()),
-            pas: p.pas.map(|prelevement| PasImporte {
-                taux: p.taux_pas,
-                type_taux: p.type_pas,
-                identifiant: p.identifiant_pas.clone(),
+            pas: n.pas.map(|prelevement| PasImporte {
+                taux: n.taux_pas,
+                type_taux: n.type_pas,
+                identifiant: n.identifiant_pas.clone(),
                 prelevement,
             }),
         })

@@ -127,7 +127,7 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
             l.clone_from(b);
         }
     }
-    for (l, x) in [(&mut ligne.brut, &b.brut), (&mut ligne.net_imposable, &b.net_imposable), (&mut ligne.net_a_payer, &b.net_a_payer), (&mut ligne.pas, &b.pas)] {
+    for (l, x) in [(&mut ligne.brut, &b.brut), (&mut ligne.nets.net_imposable, &b.nets.net_imposable), (&mut ligne.net_a_payer, &b.net_a_payer), (&mut ligne.nets.pas, &b.nets.pas)] {
         gagne(l, x);
     }
     if ligne.numero_objet.is_none() {

@@ -2024,9 +2024,9 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
     let pas = b.pas.as_ref().and_then(|p| p.montant);
     for (champ, place, v) in [
         ("brut", &mut ligne.brut, Some(b.brut)),
-        ("net_imposable", &mut ligne.net_imposable, b.net_imposable),
+        ("net_imposable", &mut ligne.nets.net_imposable, b.net_imposable),
         ("net_a_payer", &mut ligne.net_a_payer, Some(b.net_a_payer)),
-        ("pas", &mut ligne.pas, pas),
+        ("pas", &mut ligne.nets.pas, pas),
     ] {
         let Some(v) = v else { continue };
         if let Some(avant) = place.filter(|a| *a != v) {
@@ -2042,8 +2042,8 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, copie: &NomDeFichier, page:
         _ => {}
     }
     // Le taux du prelevement que le bulletin imprime, quand la DSN ne l'a pas declare.
-    if ligne.taux_pas.is_none() {
-        ligne.taux_pas = b.pas.as_ref().and_then(|p| p.taux);
+    if ligne.nets.taux_pas.is_none() {
+        ligne.nets.taux_pas = b.pas.as_ref().and_then(|p| p.taux);
     }
     if ligne.verse_le.is_none() {
         ligne.verse_le = b.regle_le;

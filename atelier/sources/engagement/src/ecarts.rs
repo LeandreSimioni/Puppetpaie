@@ -640,7 +640,7 @@ fn comparer_une(
         (TotalDuBulletin::CotisationsSalariales, paie.total_sal - hors(&|l| l.montant_sal), p.cotisations_salariales),
         (TotalDuBulletin::CotisationsPatronales, paie.total_pat - hors(&|l| l.montant_pat), p.cotisations_patronales),
         (TotalDuBulletin::NetSocial, paie.net_social, p.net_social),
-        (TotalDuBulletin::NetImposable, paie.net_imposable, p.net_imposable),
+        (TotalDuBulletin::NetImposable, paie.net_imposable, p.nets.net_imposable),
     ] {
         let Some(leur) = leur else { continue };
         if (leur - notre).abs() > UN_CENTIME {
