@@ -21,8 +21,7 @@ use socle::date::{Jour, Periode};
 use socle::echec::{erreur, Classe, R};
 use socle::grandeurs::ecrit::norme;
 use droit::pas::TauxDePas;
-use socle::grandeurs::Taux;
-use socle::num::Decimal;
+use socle::grandeurs::{Coefficient, Effectif, Taux};
 
 use crate::journal::Ligne;
 use crate::retours::{IdDeFlux, NatureDuRetour};
@@ -143,13 +142,6 @@ fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
     socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
-/// L'effectif annuel (`effectif_annuel`, deja tronque au centieme) a deux decimales ecrites, le demi au pair.
-fn deux_decimales(x: Decimal) -> Decimal {
-    let mut q = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointNearestEven);
-    q.rescale(2);
-    q
-}
-
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
 fn dit(v: Option<String>) -> Option<String> {
     v.filter(|t| !t.is_empty())
@@ -221,10 +213,12 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 /// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
 /// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
 /// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
-fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
-    let n = mois.jours();
+fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Effectif> {
     let le_mois = Periode::du_mois(mois);
-    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Decimal>> = BTreeMap::new();
+    let n = le_mois.jours().count();
+    // La part de chaque jour ou une personne est employee : entiere a temps plein, le rapport de ses quotites a temps
+    // partiel.
+    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Coefficient>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
             let Some(qui) = d.individus[k.individu].identifiant() else {
@@ -247,40 +241,41 @@ fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Decimal> {
                 // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif (un
                 // nombre, ou l'effectif se compte encore).
                 match quotite.rapport(reference)? {
-                    Some(r) => r.decimal().min(Decimal::ONE),
-                    None => Decimal::ONE,
+                    Some(r) => r.min(Coefficient::UN),
+                    None => Coefficient::UN,
                 }
             } else {
-                Decimal::ONE
+                Coefficient::UN
             };
             for j in presence.jours() {
-                let p = jours.entry(j).or_insert(Decimal::ZERO);
+                let p = jours.entry(j).or_insert(Coefficient::ZERO);
                 *p = (*p).max(poids);
             }
         }
     }
-    Ok(par_jour.values().map(|jours| socle::num::div(jours.values().sum::<Decimal>(), Decimal::from(n))).sum())
+    let une_personne = Effectif::personnes(1);
+    Ok(par_jour.values().map(|jours| (une_personne * jours.values().copied().sum::<Coefficient>()).reparti_sur(n)).sum())
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
 /// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale,
 /// `atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la fraction
 /// d'effectif au-delà de la deuxième décimale ») : un effectif, pas un montant. `None` quand aucun mois n'a de salarie.
-fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Decimal>> {
-    let mut mois: Vec<Decimal> = Vec::new();
+fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Effectif>> {
+    let mut mois: Vec<Effectif> = Vec::new();
     for (m, d) in dsn_par_mois {
         let e = effectif_du_mois(*m, d)?;
-        if e > Decimal::ZERO {
+        if e > Effectif::ZERO {
             mois.push(e);
         }
     }
     if mois.is_empty() {
         return Ok(None);
     }
-    let moyenne = socle::num::div(mois.iter().sum::<Decimal>(), Decimal::from(mois.len() as i64));
+    let moyenne = mois.iter().copied().sum::<Effectif>().reparti_sur(mois.len());
     // Le milliardieme ajoute avant de tronquer : un quotient qui tombe juste sur un centieme (un tiers fois trois)
     // s'ecrit en decimal une unite du dernier chiffre en dessous, et ne doit pas perdre ce centieme.
-    Ok(Some((moyenne + Decimal::new(1, 9)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToNegativeInfinity)))
+    Ok(Some((moyenne + Effectif::UN_MILLIARDIEME).tronque_au_centieme()))
 }
 
 // ------------------------------------------------------------------ ce que le simulateur rend
@@ -538,7 +533,7 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: Annee) -> R<BTreeMap<Mois
 /// `RO.B004` de type 04, `RO.B008` ; dates AAAA-MM-JJ, date de calcul AAAA-MM-JJThh:mm:ss). La date d'effet et la date de
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
-fn crm_effectif(an: Annee, valeur: Decimal, flux: &IdDeFlux, publication: Moment) -> Piece {
+fn crm_effectif(an: Annee, valeur: Effectif, flux: &IdDeFlux, publication: Moment) -> Piece {
     let calcule_le = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
@@ -548,7 +543,7 @@ fn crm_effectif(an: Annee, valeur: Decimal, flux: &IdDeFlux, publication: Moment
          <RO_B008_R006>{}</RO_B008_R006></RO_B008></RO_B004></RO_B001></RO>",
         echappe(flux.texte()),
         NatureDuRetour::Effectifs,
-        deux_decimales(valeur),
+        norme::quantite(valeur),
         an,
         an,
         calcule_le
@@ -652,7 +647,7 @@ mod tests {
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
         par_mois.insert(Mois::constante(2025, 2), vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
         // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
-        assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(Decimal::new(116, 2)));
+        assert_eq!(effectif_annuel(&par_mois).unwrap(), Some(socle::grandeurs::lu::en_texte::<Effectif>("1.16").unwrap()));
         assert_eq!(effectif_annuel(&BTreeMap::new()).unwrap(), None);
     }
 
@@ -671,7 +666,7 @@ mod tests {
         let personnes = socle::grandeurs::Effectif::personnes;
         assert!(crate::releve_retours::poser_effectif(&racine, a2026, personnes(3), j(2027, 1, 5)).unwrap());
         assert!(crate::releve_retours::poser_effectif(&racine, a2025, personnes(2), j(2027, 1, 5)).unwrap());
-        let p = crm_effectif(a2026,Decimal::new(1142, 2), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap());
+        let p = crm_effectif(a2026, socle::grandeurs::lu::en_texte("11.42").unwrap(), &IdDeFlux::lire("FICTIF-000000000001").unwrap(), Moment::a_paris(j(2027, 2, 15), const { socle::paris::HeureDuJour::a(10, 0) }).unwrap());
         let chemin = crate::releve_retours::archiver_retour(&racine, crate::releve_retours::CanalDesRetours::Dsn, &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();

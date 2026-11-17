@@ -400,6 +400,12 @@ impl Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 1))
     }
 
+    /// Un coefficient qu'un texte fixe, en dix-milliemes (`9825` : 0,9825, la part du brut soumise a la CSG apres
+    /// l'abattement de 1,75 % pour frais professionnels).
+    pub const fn dix_milliemes(n: u32) -> Coefficient {
+        Coefficient(Decimal::from_parts(n, 0, 0, false, 4))
+    }
+
     /// Un coefficient qu'un texte fixe, en centiemes (`130` : 130 %, la limite de la reduction generale sous deduction
     /// forfaitaire specifique).
     pub const fn centiemes(n: u32) -> Coefficient {
@@ -507,6 +513,11 @@ impl Taux {
     /// Un taux qu'un texte fixe, en centiemes de point (`40` : 0,40 %).
     pub const fn centiemes_de_point(n: u32) -> Taux {
         Taux(Decimal::from_parts(n, 0, 0, false, 2))
+    }
+
+    /// Un taux ecrit en milliemes de point (`2836` : 2,836 %), ses trois decimales ecrites.
+    pub const fn milliemes_de_point(n: u32) -> Taux {
+        Taux(Decimal::from_parts(n, 0, 0, false, 3))
     }
 
     /// Au centieme de point, la moitie vers zero (sans zero ajoute : `3.9` reste `3.9`) : la part salariale de la
@@ -842,6 +853,17 @@ impl Effectif {
     /// Personne.
     pub const ZERO: Effectif = Effectif(Decimal::ZERO);
 
+    /// Un milliardieme de personne (`0.000000001`) : l'ecart qu'une moyenne d'effectifs laisse sous un centieme qu'elle
+    /// atteint juste (un tiers fois trois).
+    pub const UN_MILLIARDIEME: Effectif = Effectif(Decimal::from_parts(1, 0, 0, false, 9));
+
+    /// Cet effectif reparti egalement sur `n` (les jours d'un mois, les mois d'une annee : une moyenne) : effectif / compte
+    /// = effectif. Un compte n'est pas une grandeur (« Le glossaire ») : il vient d'un `len()`, jamais nul (l'appelant le
+    /// refuse).
+    pub fn reparti_sur(self, n: usize) -> Effectif {
+        Effectif(num::div(self.0, Decimal::from(n)))
+    }
+
     /// Un effectif qu'un texte fixe, en personnes (`250` : le seuil de la contribution supplementaire a l'apprentissage).
     pub const fn personnes(n: u32) -> Effectif {
         Effectif(Decimal::from_parts(n, 0, 0, false, 0))
@@ -878,6 +900,15 @@ impl Effectif {
     /// = coefficient ; `None` quand `o` est nul.
     pub fn rapport(self, o: Effectif) -> Option<Coefficient> {
         (!o.0.is_zero()).then(|| Coefficient(num::div(self.0, o.0)))
+    }
+}
+
+/// Effectif x coefficient = effectif (une personne a due proportion de ses jours ou de sa duree contractuelle, CSS
+/// R. 130-1, II).
+impl std::ops::Mul<Coefficient> for Effectif {
+    type Output = Effectif;
+    fn mul(self, c: Coefficient) -> Effectif {
+        Effectif(num::mul(self.0, c.0))
     }
 }
 
