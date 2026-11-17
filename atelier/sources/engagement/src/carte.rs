@@ -140,7 +140,8 @@ pub enum Exige {
 /// UNE NATURE DE CONTRAT ET SES CASES, declarees une fois : la structure (chaque case obligatoire une valeur, chaque case
 /// facultative un `Option` present), la liste de ses cases (`CASES`), et sa lecture depuis la carte du mois, case par
 /// case de meme nom. Ce que porte un motif de recours (`du_motif`, `DU_MOTIF`) est facultatif, et le motif dit s'il le
-/// porte (`Proprietes::motif_de_remplacement`).
+/// porte (`Proprietes::motif_de_remplacement`). Une case faite de plusieurs champs de la carte (l'emploi) les nomme
+/// chacun (`emploi: … = Emploi + PcsEse + …`).
 ///
 /// Elle declare aussi SON BROUILLON (`$brouillon`) : les memes cases, chacune un `Option` lu present (une case pas encore
 /// remplie s'ecrit `null`).
@@ -149,7 +150,7 @@ macro_rules! nature {
         $(#[$a:meta])*
         $nom:ident / $brouillon:ident {
             obligatoire { $( $o:ident : $to:ty = $co:ident $( ecrite($eo:literal, $eoo:literal) )? ),* $(,)? }
-            facultatif { $( $f:ident : $tf:ty = $cf:ident $( ecrite($ef:literal) )? $( lue($lf:literal) )? ),* $(,)? }
+            facultatif { $( $f:ident : $tf:ty = $cf:ident $( + $cfx:ident )* $( ecrite($ef:literal) )? $( lue($lf:literal) )? ),* $(,)? }
             du_motif { $( $m:ident : $tm:ty = $cm:ident ),* $(,)? }
         }
     ) => {
@@ -165,7 +166,7 @@ macro_rules! nature {
 
         impl $brouillon {
             /// Ses cases, dans l'ordre de la structure.
-            pub const CASES: &'static [Champ] = &[ $( Champ::$co, )* $( Champ::$cf, )* $( Champ::$cm, )* ];
+            pub const CASES: &'static [Champ] = &[ $( Champ::$co, )* $( Champ::$cf, $( Champ::$cfx, )* )* $( Champ::$cm, )* ];
 
             /// Aucune case remplie.
             fn vide() -> $brouillon {
@@ -196,7 +197,7 @@ macro_rules! nature {
 
         impl $nom {
             /// Ses cases, dans l'ordre de la structure.
-            pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), )* ];
+            pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), $( (Champ::$cfx, Exige::Facultatif), )* )* ];
 
             /// Les cases qu'un motif de recours porte en plus des siennes.
             pub const DU_MOTIF: &'static [Champ] = &[ $( Champ::$cm, )* ];
@@ -230,12 +231,7 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
+            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: IdDeModele = ModeleContrat,
@@ -280,12 +276,7 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
+            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -337,12 +328,7 @@ nature! {
             lieu: String = Lieu,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize"),
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
-            emploi: String = Emploi,
-            pcs_ese: droit::fiche::CodePcsEse = PcsEse,
-            code_emploi_ft: droit::fiche::CodeEmploiFt = CodeEmploiFt,
-            statut: droit::fiche::Statut = Statut,
-            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
-            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
+            emploi: droit::emplois::EmploiEngagement = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt"),
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -724,12 +710,8 @@ changements! {
     QuotiteReference(Heures) = "quotite_reference" => quotite_reference,
     ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
     SalaireMensuel(MontantUnitaire) ="salaire_mensuel" => salaire_mensuel,
-    Emploi(String) = "emploi" => emploi,
-    PcsEse(droit::fiche::CodePcsEse) = "pcs_ese" => pcs_ese,
-    CodeEmploiFt(droit::fiche::CodeEmploiFt) = "code_emploi_ft" => code_emploi_ft,
-    Statut(droit::fiche::Statut) = "statut" => statut,
-    StatutConventionnel(droit::fiche::StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
-    StatutCategorielRc(droit::fiche::StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
+    /// L'emploi entier, chacun de ses sous-champs dit ou non (`droit::emplois::EmploiEngagement`).
+    Emploi(droit::emplois::EmploiEngagement) = "emploi" => emploi,
     #[serde(deserialize_with = "socle::date::Duree::en_jours_opt")]
     PeriodeEssaiJours(Duree<EnJours>) ="periode_essai_jours" => periode_essai_jours,
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,

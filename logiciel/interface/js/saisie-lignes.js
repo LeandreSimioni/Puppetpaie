@@ -639,12 +639,13 @@ const CHAMPS_RARES = [
   { cle: "lieu", libelle: "Lieu du contrat", type: "text" },
   { cle: "taux_cachet", libelle: "Cachet du contrat", type: "number" },
   { cle: "jours", libelle: "Jours travaillés déclarés", type: "number" },
-  { cle: "emploi", libelle: "Emploi déclaré", type: "text" },
-  { cle: "pcs_ese", libelle: "PCS-ESE", type: "text" },
-  { cle: "code_emploi_ft", libelle: "Code emploi France Travail", type: "text" },
-  { cle: "statut", libelle: "Statut", type: "text" },
-  { cle: "statut_conventionnel", libelle: "Statut conventionnel", type: "text" },
-  { cle: "statut_categoriel_rc", libelle: "Statut catégoriel (retraite complémentaire)", type: "text" },
+  // L'emploi est une case de la carte faite de six champs (`emploi`, `droit::emplois::EmploiEngagement`).
+  { cle: "emploi", dans: "emploi", libelle: "Emploi déclaré", type: "text" },
+  { cle: "pcs_ese", dans: "emploi", libelle: "PCS-ESE", type: "text" },
+  { cle: "code_emploi_ft", dans: "emploi", libelle: "Code emploi France Travail", type: "text" },
+  { cle: "statut", dans: "emploi", libelle: "Statut", type: "text" },
+  { cle: "statut_conventionnel", dans: "emploi", libelle: "Statut conventionnel", type: "text" },
+  { cle: "statut_categoriel_rc", dans: "emploi", libelle: "Statut catégoriel (retraite complémentaire)", type: "text" },
   { cle: "quotite_reference", libelle: "Quotité de référence", type: "number" },
   { cle: "modalite_temps_travail", libelle: "Modalité temps de travail", type: "text" },
   { cle: "indemnite_licenciement", libelle: "Indemnité de licenciement", type: "number" },
@@ -653,18 +654,23 @@ const CHAMPS_RARES = [
 
 const aUneValeur = (v) => v !== undefined && v !== null && v !== "" && v !== false;
 
+/** La valeur d'un champ rare sur l'engagement : à sa clé, ou dans la case qui le porte (`dans`). */
+function valeurRare(e, c) {
+  return c.dans ? (e[c.dans] || {})[c.cle] : e[c.cle];
+}
+
 /** Les champs rares que l'engagement porte, posés dans le formulaire. */
 function poserRares(div, e) {
   const paye = div.querySelector(".e-paye-le");
   paye.value = texteDeLaCase(e.date_paiement);
   paye.onchange = rafraichirApercu;
   const cible = div.querySelector(".e-rares");
-  cible.innerHTML = CHAMPS_RARES.filter((c) => aUneValeur(e[c.cle])).map((c) => c.type === "checkbox"
+  cible.innerHTML = CHAMPS_RARES.filter((c) => aUneValeur(valeurRare(e, c))).map((c) => c.type === "checkbox"
     ? `<label class="coche" title="${aideDe(c.cle)}"><input type="checkbox" class="e-rare"
          data-cle="${c.cle}" data-type="checkbox" checked> ${echapper(c.libelle)}</label>`
     : `<label title="${aideDe(c.cle)}">${echapper(c.libelle)}
-         <input class="e-rare" data-cle="${c.cle}" data-type="${c.type}" type="text"
-           ${c.type === "number" ? `inputmode="decimal"` : ""} value="${echapper(String(e[c.cle]))}"></label>`).join("");
+         <input class="e-rare" data-cle="${c.cle}" ${c.dans ? `data-dans="${c.dans}"` : ""} data-type="${c.type}" type="text"
+           ${c.type === "number" ? `inputmode="decimal"` : ""} value="${echapper(String(valeurRare(e, c)))}"></label>`).join("");
   cible.hidden = !cible.children.length;
   cible.querySelectorAll(".e-rare").forEach((c) => { c.onchange = rafraichirApercu; c.oninput = rafraichirApercu; });
 }
@@ -675,7 +681,9 @@ function raresDuBloc(div, e) {
     if (c.dataset.type === "checkbox") { if (c.checked) e[c.dataset.cle] = true; return; }
     // Un nombre part tel qu'il est tapé : la route le convertit (`enregistrer-saisie`).
     const v = c.value.trim();
-    if (v !== "") e[c.dataset.cle] = v;
+    if (v === "") return;
+    if (c.dataset.dans) (e[c.dataset.dans] = e[c.dataset.dans] || {})[c.dataset.cle] = v;
+    else e[c.dataset.cle] = v;
   });
 }
 

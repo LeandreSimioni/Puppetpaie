@@ -96,7 +96,7 @@ fn profil(ctx: &Contexte, e: &Carte) -> R<clauses::Profil> {
 /// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
 pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.emploi.as_ref().and_then(|x| x.statut), metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age du salarie de `e` au dernier jour ecrit du contrat (ou aujourd'hui), en annees revolues ; `None` quand sa
