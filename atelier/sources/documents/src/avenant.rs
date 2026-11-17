@@ -216,8 +216,9 @@ fn marqueurs(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalarie, sp: &d
     poser(Marqueur::ContratFin, e.contrat().fin().ok_or_else(|| refus("contrat sans fin"))?.jj_mm_aaaa());
     poser(Marqueur::ContratDatesTravail, dates_travail(e)?);
     poser(Marqueur::ContratLieu, lieu_du_contrat(e));
-    // Le jour du versement de la paie (`engagement::Engagement::date_du_versement`).
-    poser(Marqueur::ContratDatePaiement, e.date_du_versement()?.jj_mm_aaaa());
+    // Le jour du versement que la paie dit (`engagement::Engagement::versement_dit`, que sa forme ecrite porte).
+    let paiement = e.versement_dit()?.ok_or_else(|| socle::echec::cle("Un engagement ne se relit pas : le revalider.", "date_paiement"))?;
+    poser(Marqueur::ContratDatePaiement, paiement.jj_mm_aaaa());
     poser(Marqueur::RemunerationDetail, remuneration_detaillee(remuneration, e)?);
     if let Some(p) = periode_remuneration(e)? {
         poser(Marqueur::RemunerationPeriode, p);
@@ -378,8 +379,8 @@ pub fn ent_du_mois(ctx: &Contexte, mois: Mois) -> droit::contexte::EntrepriseDuD
     ctx.pour_un_modele(&ent)
 }
 
-/// `contrat.marqueurs(p, ent)` pour une paie, celle du mois ou une paie relue d'une version partie
-/// (`engagement::etats::paie_de_la_version`). `numero` : le numero de contrat que la paie porte VRAIMENT (lu dans
+/// `contrat.marqueurs(p, ent)` pour une paie, celle du mois ou celle qu'une version partie a ecrite
+/// (`engagement::etats::paie_ecrite_relue`). `numero` : le numero de contrat que la paie porte VRAIMENT (lu dans
 /// l'archive), quand il differe de celui de son engagement. Le contrat d'un spectacle lit ses dates, ses cachets et son
 /// spectacle ; celui d'un permanent son salaire au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ;
 /// tous deux les mentions que la loi exige de tout contrat ecrit (`contrat_ecrit::poser_les_mentions`).

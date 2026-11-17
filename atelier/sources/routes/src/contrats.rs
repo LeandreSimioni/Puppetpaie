@@ -1290,7 +1290,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
             mois.retain(|m| *m <= mois_compare);
             let mut trouvee = None;
             for m in mois.iter().rev() {
-                if let Some(p) = engagement::etats::paie_de_la_version(ctx, o, x, *m)? {
+                if let Some(p) = engagement::etats::paie_ecrite_relue(ctx, o, x, *m)? {
                     trouvee = Some(p);
                     break;
                 }

@@ -1971,13 +1971,23 @@ pub fn paie_ecrite_de_la_version(o: &Objet, version: stock::Version, mois: Mois)
 /// La paie de `mois` que la version `version` de `o` a ecrite, relue (`relire`) sur la saisie de cette version, la fiche
 /// du salarie et la saisie du mois telles que son calcul les a lues (`fiches`, `MOIS_LU`) ; `None` si cette version n'a
 /// pas de paie pour ce mois. Elle porte le numero de son bulletin quand ses documents sont partis.
-pub fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
+fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
     let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
     let Some(vue) = vue_de_la_version(o, version, mois)? else { return Ok(None) };
     let data = crate::saisie::VueDuMois { mois, taux_cachet: ecrite.saisie_du_mois.taux_cachet.clone(), engagements: vec![vue] };
     let eng = relire::engagements_ecrits(ctx, &data, &[&ecrite.paie])?.pop().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paie"))?;
     let lue = relire::paie_sur_ses_fiches(ctx, eng, &ecrite.paie, &ecrite.fiches)?;
     Ok(Some(paie_sur_son_ecrite(lue, &ecrite)))
+}
+
+/// LA PAIE DE `mois` QUE LA VERSION `version` DE `o` A ECRITE, relue de ce qu'elle a ecrit et de lui seul : son
+/// engagement compris (`Engagement::de_sa_forme`), sur les fiches que son calcul a lues ; `None` si cette version n'a
+/// pas de paie pour ce mois. C'est ce que le contrat disait sur cette version (l'ancien texte d'un avenant) : rien ne s'y
+/// recalcule, rien ne s'y relit d'aujourd'hui (ni la saisie, ni le jour du versement, ni l'emploi).
+pub fn paie_ecrite_relue(ctx: &Contexte, o: &Objet, version: stock::Version, mois: Mois) -> R<Option<Paie>> {
+    let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
+    let eng = crate::Engagement::de_sa_forme(&ecrite.paie.engagement, crate::qui_de(&ecrite.fiches.paie.fiche.champs)?);
+    relire::paie_sur_ses_fiches(ctx, eng, &ecrite.paie, &ecrite.fiches).map(Some)
 }
 
 /// LA PAIE DECLAREE de `mois` : celle que la version sur laquelle la derniere DSN qui a declare ce mois est partie a

@@ -859,6 +859,62 @@ impl Engagement {
             mois_du_contrat: self.mois_du_contrat()?,
         })
     }
+
+    /// L'ENGAGEMENT QU'UNE PAIE ECRITE PORTE, relu de sa forme (`canon`, ecrite par la validation : `relire::ecrire`) et
+    /// d'elle seule : rien ne s'y recalcule, rien ne s'y relit d'aujourd'hui (le jour du versement que la paie a dit,
+    /// `Paie::forme`, l'emploi qu'elle a resolu, ses cachets et ses heures). `nom` : le salarie tel qu'un refus le nomme.
+    /// La forme ne garde pas ce que seule la DSN lit de la saisie (le dernier jour paye, la date et les termes d'avant
+    /// d'un avenant) : il n'y est pas. C'est ce que le contrat disait sur cette version (`etats::paie_ecrite_relue`).
+    pub(crate) fn de_sa_forme(f: &paie_ecrite::FormeDEngagement, nom: String) -> Engagement {
+        Engagement {
+            salarie: f.salarie.clone(),
+            nom,
+            spectacle: f.spectacle.clone(),
+            dates_travail: f.dates_travail.clone(),
+            lignes: f.lignes.clone(),
+            contrat: f.contrat,
+            numero: f.numero.clone(),
+            mois: f.mois,
+            planning: f.planning.clone(),
+            planning_lieux: f.planning_lieux.clone(),
+            jours: f.jours,
+            jours_contrat: f.jours_contrat,
+            date_paiement: f.date_paiement,
+            versement: None,
+            taux_cachet: f.taux_cachet,
+            cachets: f.cachets,
+            heures: f.heures,
+            lieu: f.lieu.clone(),
+            lieux: f.lieux.clone(),
+            emploi: f.emploi.clone(),
+            emploi_affichage: f.emploi_affichage.clone(),
+            pcs_ese: f.pcs_ese.clone(),
+            code_emploi_ft: f.code_emploi_ft.clone(),
+            statut: f.statut,
+            statut_conventionnel: f.statut_conventionnel,
+            statut_categoriel_rc: f.statut_categoriel_rc,
+            etablissement: f.etablissement.clone(),
+            nature: f.nature,
+            quotite_contrat: f.quotite_contrat,
+            quotite_reference_saisie: f.quotite_reference_saisie,
+            modalite_temps_travail_saisie: f.modalite_temps_travail_saisie,
+            motif_recours: f.motif_recours,
+            motif_rupture: f.motif_rupture,
+            notification_rupture: f.notification_rupture,
+            preavis: f.preavis.clone(),
+            dernier_jour_paye: None,
+            date_modification: None,
+            transaction: f.transaction.clone(),
+            suspensions: f.suspensions.clone(),
+            avant: None,
+            periode: None,
+            // `canon` ne l'ecrit que dit : absent, rien n'etait dit.
+            ecrit: match &f.contrat_ecrit {
+                Some(c) => c.clone(),
+                None => ContratEcrit::default(),
+            },
+        }
+    }
 }
 
 // ------------------------------------------------------- depuis un fichier
