@@ -356,7 +356,7 @@ async function dessinerImportation(cible) {
     <div class="carte">
       <div id="import-etat">${vueEtatImportation(e)}</div>
       <div id="import-demarrage"></div>
-      <div id="import-guide">${deja ? `<details class="relire"><summary>Ce qu'on met dans le dossier</summary>${guide}</details>` : guide}</div>
+      <div id="import-guide">${deja ? `<details class="relire"><summary>${echapper(e.guide.replie)}</summary>${guide}</details>` : guide}</div>
       <p class="note">${echapper(e.guide.rejouer)}</p>
       <div class="e-contrat-champs">
         <label style="flex:1">Le dossier
@@ -370,7 +370,7 @@ async function dessinerImportation(cible) {
       </div>
       <p><button class="primaire" id="import-tout">Importer</button></p>
       <details><summary>Avancé</summary>
-        <button type="button" class="lien" id="import-apercu">Aperçu, sans rien écrire</button></details>
+        <button type="button" class="lien" id="import-apercu">${echapper(e.guide.apercu)}</button></details>
       <div id="import-resultat"></div>
     </div>`;
   document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
@@ -397,7 +397,7 @@ function vueGuideImport(g) {
   const piece = (p) => `<div class="guide-piece">
       <b>${echapper(p.quoi)}</b>
       <div class="note">${echapper(p.ou)}</div>
-      ${p.lu.length ? `<details><summary>Ce qui s'en lit</summary><ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul></details>` : ""}
+      ${p.lu.length ? `<details><summary>${echapper(g.ce_qui_s_en_lit)}</summary><ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul></details>` : ""}
     </div>`;
   return `<h3>Reprendre votre passé</h3>
     <ul>${g.essentiel.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>
@@ -414,8 +414,11 @@ function vueGuideImport(g) {
    qui reste à dire (la nature des contrats repris, `importation-etat` ; ce
    qu'une DSN donnerait et ce qui se saisit, `pour-demarrer`) — et, dessous,
    ce qui a été repris. */
-async function importerDepuisLeGuide() {
-  IMPORT_DOSSIER = document.getElementById("import-dossier").value.trim();
+async function importerDepuisLeGuide(dossier) {
+  // `dossier` : celui que l'aperçu a lu (« Reprendre » reprend ce qu'il a montré) ; sinon, celui de la case.
+  const champ = document.getElementById("import-dossier");
+  if (dossier !== undefined) champ.value = dossier;
+  IMPORT_DOSSIER = champ.value.trim();
   const rendre = occupe(document.getElementById("import-tout"), "Import…");
   await ecrireImportation();
   rendre();
@@ -424,7 +427,7 @@ async function importerDepuisLeGuide() {
   try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
   if (!(etat.reprises.length || etat.contrats)) return;
   const guide = document.getElementById("import-guide");
-  if (guide) guide.innerHTML = `<details class="relire"><summary>Ce qu'on met dans le dossier</summary>${vueGuideImport(etat.guide)}</details>`;
+  if (guide) guide.innerHTML = `<details class="relire"><summary>${echapper(etat.guide.replie)}</summary>${vueGuideImport(etat.guide)}</details>`;
   const demarrage = document.getElementById("import-demarrage");
   if (demarrage) await peindreDemarrage(demarrage);
   document.getElementById("import-etat").scrollIntoView({ block: "start" });
@@ -685,10 +688,10 @@ function vueImportation(r) {
     ${bouton}`;
 }
 
-function brancherImportation() {
+function brancherImportation(dossier) {
   const b = document.getElementById("import-ecrire");
-  // « Reprendre », sous l'aperçu, est le même geste qu'« Importer ».
-  if (b) b.onclick = () => importerDepuisLeGuide();
+  // « Reprendre », sous l'aperçu, est le même geste qu'« Importer », sur le dossier que l'aperçu a lu.
+  if (b) b.onclick = () => importerDepuisLeGuide(dossier);
 }
 
 async function apercuImportation() {
@@ -699,9 +702,10 @@ async function apercuImportation() {
   cible.innerHTML = `<p class="discret">Lecture…</p>`;
   try {
     // Un dossier vide part absent : la boîte import/ de la compagnie.
-    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER || null });
+    const lu = IMPORT_DOSSIER;
+    const r = await api("importation-apercu", { dossier: lu || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(lu);
   } catch (e) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
   } finally {
@@ -716,7 +720,7 @@ async function ecrireImportation() {
   try {
     const r = await api("importer", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(IMPORT_DOSSIER);
     // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
     // dans les déroulants de la saisie, sans recharger la page.
     await relireEtat();

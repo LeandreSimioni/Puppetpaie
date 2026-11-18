@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), reste (ce qu'une DSN donnerait, ce qui se saisit), guide, editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -106,7 +106,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ImportationApercu => en_json(crate::importation::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
-            en_json(etat_importation(ctx)?)
+            en_json(etat_importation(&ctx.racine)?)
         }
         Route::Importer => en_json(crate::importation::ecrite::importer(ctx, &charge.lire()?)?),
         // La nature des contrats repris qu'aucun bulletin ne dit.
@@ -696,8 +696,7 @@ pub(crate) fn apercu_lu(
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
 ///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
 ///   refuse.
-fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
-    let racine = ctx.racine.as_path();
+fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
@@ -748,8 +747,6 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
         (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans un dossier, choisissez-le, puis importez."),
     };
-    let a_dire = crate::importation::nature::a_dire(racine)?;
-    let reste = reste_de_l_import(ctx, &a_dire)?;
     Ok(EtatImportation {
         phrase,
         contrats: contrats.len(),
@@ -763,48 +760,11 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
         attend_editeur,
-        a_dire,
-        reste,
+        a_dire: crate::importation::nature::a_dire(racine)?,
         guide: import::guide::guide(),
         repris_dit,
         repris_titre,
     })
-}
-
-/// CE QUI RESTE A DIRE APRES L'IMPORT, range en deux : ce qu'une DSN deposee donnerait, quand l'import n'en a repris
-/// aucune (« Pour démarrer » le range, `declarations::demarrage::route` ; la nature des contrats repris d'un permanent,
-/// qu'une DSN declare, `nature::ADire::piece`), et ce qui se saisit. Chaque ligne en phrase entiere, ou elle se dit.
-fn reste_de_l_import(ctx: &Contexte, a_dire: &[crate::importation::nature::ADire]) -> R<ResteDeLImport> {
-    use declarations::demarrage::CeQueLImportARepris;
-    use declarations::dsn_lue::PieceQuiLaPorte;
-    let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
-    let (d, _) = crate::rappels::pour_demarrer(ctx, repris)?;
-    let mut a_saisir: Vec<String> = d.manques.iter().flat_map(|l| l.phrase.clone()).collect();
-    let mut par_une_dsn: Vec<String> = d.dsn.iter().flat_map(|x| x.manques.iter().flat_map(|l| l.phrase.clone())).collect();
-    for x in a_dire {
-        let phrase = format!("Configuration › Reprendre l'historique › {} : la nature de son contrat repris (CDI ou CDD).", x.nom);
-        match (repris, x.piece) {
-            (CeQueLImportARepris::SansDsn, PieceQuiLaPorte::Dsn) => par_une_dsn.push(phrase),
-            _ => a_saisir.push(phrase),
-        }
-    }
-    let dsn = (!par_une_dsn.is_empty()).then(|| ResteParUneDsn { phrase: declarations::demarrage::AJOUTEZ_UNE_DSN, lignes: par_une_dsn });
-    Ok(ResteDeLImport { dsn, a_saisir })
-}
-
-/// `reste` d'`importation-etat` : ce qu'une DSN donnerait (`dsn`), ce qui se saisit (`a_saisir`), en phrases.
-#[derive(Debug, Serialize)]
-struct ResteDeLImport {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    dsn: Option<ResteParUneDsn>,
-    a_saisir: Vec<String>,
-}
-
-/// Ce qu'une DSN donnerait : la phrase qui dit de l'ajouter et de relancer l'import, et chaque ligne qu'elle remplirait.
-#[derive(Debug, Serialize)]
-struct ResteParUneDsn {
-    phrase: &'static str,
-    lignes: Vec<String>,
 }
 
 /// `importation-etat` : ce qui a deja ete repris, et ce que la page en dit.
@@ -826,8 +786,6 @@ struct EtatImportation {
     attend_editeur: usize,
     /// Les contrats repris dont la nature reste a dire, par salarie.
     a_dire: Vec<crate::importation::nature::ADire>,
-    /// Ce qui reste a dire, range : ce qu'une DSN donnerait, ce qui se saisit (`reste_de_l_import`).
-    reste: ResteDeLImport,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: import::guide::Guide,
     repris_dit: Option<String>,

@@ -1152,7 +1152,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
-| ce que l'import a repris (rien, des pièces sans DSN, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
+| ce que l'import a repris (rien, des pièces sans DSN, une DSN au moins, ou ce qui ne se lit pas), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
@@ -2376,14 +2376,16 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
   l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
-- **Ce qu'une DSN donnerait** : chaque ligne de « Pour démarrer » dit la pièce qui la porterait
-  (`declarations::dsn_lue::PieceQuiLaPorte`) : une DSN quand sa lecture remplit la case (chaque forme lue de la DSN
-  nomme ses cases champ par champ, `EntrepriseDeclaree`, `IndividuDeclare`, `EmploiDeclare`, et ce que l'import en
-  tire à côté : le Siret, le taux AT/MP, les contrats des organismes), aucune sinon ; la nature d'un contrat repris
-  aussi (`importation::nature::ADire`). Quand l'import a repris des pièces sans aucune DSN
-  (`declarations::demarrage::CeQueLImportARepris`, `importation::parametrage::ce_que_l_import_a_repris`), ce qu'une DSN
-  donnerait se dit à part (`pour-demarrer`, `dsn` ; `importation-etat`, `reste`), sous la phrase qui dit de l'ajouter
-  au dossier et de relancer l'import ; avec une DSN reprise, ce qui manque encore se saisit.
+- **Ce qu'une DSN pourrait donner** : chaque ligne de « Pour démarrer » dit la pièce qui la porterait
+  (`declarations::dsn_lue::PieceQuiLaPorte`), jugée sur la case déclarée, pas sur sa forme lisible : une DSN quand
+  l'import la remplit de toute DSN mensuelle (chaque forme lue range chacun de ses champs, `EntrepriseDeclaree`,
+  `IndividuDeclare`, `EmploiDeclare` : un champ que la norme ne rend pas obligatoire, ou que la lecture ne garde que
+  sous condition, n'y est pas), aucune sinon ; un salarié sans NIR ne se rattache à aucune DSN, rien de lui n'y est.
+  Quand l'import a repris des pièces sans aucune DSN (`declarations::demarrage::CeQueLImportARepris`,
+  `importation::parametrage::ce_que_l_import_a_repris`), ce qu'une DSN pourrait donner se dit à part, au seul endroit
+  que la page lit (`pour-demarrer`, `dsn`), sous la phrase qui dit de l'ajouter au dossier et de relancer l'import ;
+  avec une DSN reprise, ce qui manque encore se saisit. Ce qui a été repris qui ne se lit pas ne ferme rien : la liste
+  se rend entière, et la panne se dit à la place (`import_illisible`).
 - **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
   demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Ce que la dernière DSN reprise déclare du
   contrat ne se demande pas ; son salaire mensuel, seulement d'un mois que sa paie couvre entier : une seule ligne de

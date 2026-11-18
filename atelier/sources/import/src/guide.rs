@@ -18,7 +18,7 @@
 //!
 //! Ce qui restera a dire : ce qu'aucune de ces lectures ne donne -- la nature d'un contrat de permanent
 //! (`nature`), et ce que « Pour demarrer » demande encore (les conges d'un permanent repris compris)
-//! (`declarations::demarrage`), que la page montre apres l'import ; ce qu'une DSN donnerait s'y dit a part
+//! (`declarations::demarrage`), que la page montre apres l'import ; ce qu'une DSN pourrait donner s'y dit a part
 //! (`declarations::demarrage::ParUneDsn`). Un document ajoute ensuite se reprend en relancant l'import (`rejouer`).
 
 use std::path::Path;
@@ -39,6 +39,12 @@ pub struct Guide {
     /// Le meme chemin apres une premiere reprise : ajouter au dossier, relancer l'import.
     pub rejouer: &'static str,
     pub rien_n_est_perdu: &'static str,
+    /// Le titre du guide replie, une fois un historique repris.
+    pub replie: &'static str,
+    /// Le titre de ce qui se lit d'une piece (`Piece::lu`).
+    pub ce_qui_s_en_lit: &'static str,
+    /// Le geste de l'apercu (`importation-apercu`), sous « Avancé ».
+    pub apercu: &'static str,
 }
 
 /// Une sorte de piece : ce que c'est, ou la trouver, ce qui s'en lit.
@@ -70,9 +76,9 @@ pub fn guide() -> Guide {
             },
             Piece {
                 quoi: "Les DSN déposées",
-                ou: "Les fichiers que votre ancien logiciel a déposés chaque mois sur net-entreprises, s'il vous les a laissés. Mettez-les avec les bulletins : ils portent ce que les bulletins n'impriment pas toujours (le compte bancaire, le numéro Congés Spectacles, la licence, le contact des organismes, le code risque des accidents du travail, les contrats de prévoyance).",
+                ou: "Les fichiers que votre ancien logiciel a déposés chaque mois sur net-entreprises, s'il vous les a laissés. Mettez-les avec les bulletins : ils portent ce que les bulletins n'impriment pas toujours (le numéro Congés Spectacles, la licence, le contact des organismes, le code risque des accidents du travail, les contrats de prévoyance).",
                 lu: &[
-                    "la compagnie : son Siret, son adresse, son code APE, sa convention, sa licence, son numéro d'adhérent Congés Spectacles, le compte qui paie les cotisations, la personne que les organismes contactent",
+                    "la compagnie : son Siret, son adresse, son code APE, sa convention, sa licence, son numéro d'adhérent Congés Spectacles, la personne que les organismes contactent ; le compte qui paie les cotisations quand elles sont prélevées d'un seul compte",
                     "ses accidents du travail : le code risque et le taux de chaque année déclarée",
                     "ses organismes et ses contrats de prévoyance et de santé",
                     "chaque salarié : son identité entière, naissance comprise",
@@ -122,9 +128,12 @@ pub fn guide() -> Guide {
             },
         ],
         accepte: crate::tri::ACCEPTE,
-        reste: "Après l'import, ce qu'une DSN donnerait se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
+        reste: "Après l'import, ce qu'une DSN pourrait donner se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
         rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris : rien ne se double, et les fiches ne reçoivent que ce qui leur manque.",
         rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
+        replie: "Ce qu'on met dans le dossier",
+        ce_qui_s_en_lit: "Ce qui s'en lit",
+        apercu: "Aperçu, sans rien écrire",
     }
 }
 

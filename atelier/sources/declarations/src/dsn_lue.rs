@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseSalarie, CaseSpectacle, NomDeFiche};
+use droit::fiche::{CaseDeFiche, CaseDeclarantDsn, CaseEntreprise, CaseSalarie, NomDeCase, NomDeFiche};
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
@@ -805,104 +805,108 @@ impl EntrepriseDeclaree {
         prendre(&mut self.medecine_travail, &r.medecine_travail);
     }
 
-    /// Les cases de la fiche Entreprise que ces champs remplissent, un par un (`import::dsn_aem::fiche_entreprise` les
-    /// y passe sous leurs cles ; la licence, datee a part, `licence_spectacle`).
-    fn cases() -> Vec<CaseEntreprise> {
-        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
-        let _chaque_champ_a_sa_case = |e: &EntrepriseDeclaree| {
+    /// LES CASES DE LA FICHE ENTREPRISE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE D'UN EMPLOYEUR DU SPECTACLE
+    /// REMPLIT, sans autre condition (`import::dsn_aem::fiche_entreprise` les passe a la fiche, `routes::import::
+    /// fiche_entreprise` y ajoute le Siret et la licence ; une fiche qui existe les recoit si elles y sont vides,
+    /// `routes::importation::completer`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas : un champ de
+    /// plus ne compile pas ici tant qu'il n'est pas range. Le contact (`declarant_dsn`) se juge case par case
+    /// (`PieceQuiLaPorte::de_la_case`).
+    fn cases_remplies() -> Vec<CaseEntreprise> {
+        let _chaque_champ_est_range = |e: &EntrepriseDeclaree| {
             let EntrepriseDeclaree {
-                siren: _,
                 naf: _,
-                nic: _,
                 adresse: _,
                 code_postal: _,
                 commune: _,
                 idcc: _,
+                // « 97 puis le numero d'adherent » (S21.G00.40.022), que la norme impose a la caisse Conges Spectacles
+                // (CRE-11) ; « Pour demarrer » ne le demande qu'a une compagnie qui engage des intermittents.
                 adherent_conges_spectacles: _,
+                // Celle de l'emetteur (S10.G00.01.003, obligatoire), quand l'emetteur est l'entreprise : la DSN que
+                // la compagnie depose elle-meme ; celle qu'un cabinet depose porte le nom du cabinet, que la lecture ne
+                // prend pas.
                 raison_sociale: _,
-                banque: _,
-                france_travail_dossier_recouvrement: _,
-                declarant_dsn: _,
-                medecine_travail: _,
+                // S21.G00.40.049, que la DSN porte quand la licence est exigee (`demarrage::licence_exigee`).
                 licence: _,
+                // Le Siren et le NIC : « Pour demarrer » demande le Siret qu'ils font (`Siret` ci-dessous).
+                siren: _,
+                nic: _,
+                // Le compte qui paie : la DSN ne le porte que pour un prelevement (« Si la rubrique "Mode de paiement -
+                // S21.G00.20.010" est renseignée avec la valeur "05 - prélèvement SEPA", alors la rubrique "IBAN -
+                // S21.G00.20.004" est obligatoire », CCH-12, `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`
+                // l. 425-426), et la lecture ne le garde que si tous les versements disent le meme : pas de toute DSN.
+                banque: _,
+                // La medecine du travail : la lecture ne garde que la medecine interne (« MT01 », S21.G00.11.025) ; un
+                // service externe ne se reprend pas.
+                medecine_travail: _,
+                // Rien de « Pour demarrer » ne le demande.
+                france_travail_dossier_recouvrement: _,
+                // Le contact (S20.G00.07, obligatoire) : case par case, sa civilite exceptee (`de_la_case`).
+                declarant_dsn: _,
             } = e;
         };
         use CaseEntreprise::*;
-        vec![
-            Siren,
-            Naf,
-            Nic,
-            Adresse,
-            CodePostal,
-            Commune,
-            Idcc,
-            CongesspectaclesAdherent,
-            RaisonSociale,
-            Banque,
-            FranceTravailDossierRecouvrement,
-            DeclarantDsn,
-            MedecineTravail,
-            LicenceSpectacle,
-        ]
+        // Le taux AT/MP de l'annee : S21.G00.40.043, obligatoire hors du code risque 999ZZ (SIG-11,
+        // `bloc-S21.G00.40.txt` l. 1311-1313), pose par `routes::importation::parametrage::poser_atmp` pour l'annee de la
+        // DSN quand tous ses contrats disent le meme.
+        vec![Naf, Adresse, CodePostal, Commune, Idcc, CongesspectaclesAdherent, RaisonSociale, LicenceSpectacle, Siret, TauxAtmp]
     }
 }
 
 impl IndividuDeclare {
-    /// Les cases de la fiche d'un salarie que ces champs remplissent (`import::dsn_aem::SalarieDeclare::fiche` les y
-    /// passe sous leurs cles ; de l'identite, le nom, les prenoms, la naissance et le NIR -- le NTT n'a pas de case).
-    fn cases() -> Vec<CaseSalarie> {
-        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
-        let _chaque_champ_a_sa_case = |i: &IndividuDeclare| {
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE REMPLIT
+    /// (`import::dsn_aem::SalarieDeclare::fiche`, `routes::import::fiche_salarie`), pour un salarie que l'import rattache
+    /// a sa DSN : par son NIR (`routes::import`, « Les salaries, par NIR ») ; une fiche sans NIR ne recoit rien d'une DSN
+    /// (`demarrage::manques`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |i: &IndividuDeclare| {
             let IndividuDeclare {
+                // Le nom, les prenoms, la naissance : obligatoires (S21.G00.30.002, .004, .006) ; le NIR rattache, il
+                // ne se remplit pas (une fiche qui le porte ne le demande pas) ; le NTT n'a pas de case.
                 identite: IdentiteDeclaree { nom: _, prenoms: _, naissance: _, nir: _, ntt: _ },
-                sexe: _,
+                // Le lieu, obligatoire pour un salarie ne en France (CCH-11 de S21.G00.30.007) ; le departement, le pays
+                // et la nationalite, obligatoires (.013 a .015, `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`).
                 lieu_naissance: _,
+                departement_naissance: _,
+                pays_naissance: _,
+                code_nationalite_dsn: _,
                 adresse: _,
                 code_postal: _,
                 commune: _,
-                code_nationalite_dsn: _,
-                departement_naissance: _,
-                pays_naissance: _,
+                // « Il est à renseigner si différent du sexe porté par le NIR ou si le NIR est absent » (S21.G00.30.005,
+                // `bloc-S21.G00.30.txt`) : la fiche ne le demande que sans NIR, et une fiche sans NIR ne se rattache pas.
+                sexe: _,
+                // « Le renseignement de cette rubrique est conditionné à l'accord explicite » du salarie (S21.G00.30.018).
                 email: _,
+                // Rien de « Pour demarrer » ne le demande.
                 code_salarie: _,
             } = i;
         };
         use CaseSalarie::*;
-        vec![
-            Nom,
-            Prenom,
-            DateNaissance,
-            Nir,
-            Sexe,
-            LieuNaissance,
-            Adresse,
-            CodePostal,
-            Commune,
-            CodeNationaliteDsn,
-            DepartementNaissance,
-            PaysNaissance,
-            Email,
-            CodeSalarie,
-        ]
+        vec![Nom, Prenom, DateNaissance, LieuNaissance, DepartementNaissance, PaysNaissance, CodeNationaliteDsn, Adresse, CodePostal, Commune]
     }
 }
 
 impl EmploiDeclare {
-    /// Les cases de la fiche d'un salarie que l'emploi d'un contrat remplit (S21.G00.40.002 a .006).
-    fn cases() -> Vec<CaseSalarie> {
-        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
-        let _chaque_champ_a_sa_case = |e: &EmploiDeclare| {
-            let EmploiDeclare { statut_conventionnel: _, statut_categoriel_rc: _, pcs_ese: _, code_emploi_ft: _, emploi: _ } = e;
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE L'EMPLOI D'UN CONTRAT REMPLIT : le libelle
+    /// et le code PCS-ESE (S21.G00.40.006, .004, obligatoires), le code emploi (.005, celui de la nomenclature des
+    /// emplois du spectacle pour un intermittent, CCH-18). Le motif nomme chaque champ.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |e: &EmploiDeclare| {
+            // Les statuts (.002, .003) : rien de « Pour demarrer » ne les demande.
+            let EmploiDeclare { emploi: _, pcs_ese: _, code_emploi_ft: _, statut_conventionnel: _, statut_categoriel_rc: _ } = e;
         };
         use CaseSalarie::*;
-        vec![StatutConventionnel, StatutCategorielRc, PcsEse, CodeEmploiFt, Emploi]
+        vec![Emploi, PcsEse, CodeEmploiFt]
     }
 }
 
 // ------------------------------------------------------------------ ce qu'une DSN donne a la configuration
 
 /// LA PIECE QUI PORTERAIT CE QUI MANQUE A LA CONFIGURATION : une DSN deposee, que l'import reprend et dont il pose ce
-/// qu'elle dit (`Dsn`), ou aucune piece (`Aucune`) : cela se saisit. Ecrit `dsn`, `aucune`.
+/// qu'elle dit (`Dsn`), ou aucune piece (`Aucune`) : cela se saisit. Ecrit `dsn`, `aucune`. Ce n'est pas
+/// `import::reponse::Source`, la piece d'ou une valeur reprise EST venue : celle-ci dit ce qu'une piece pourrait encore
+/// donner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PieceQuiLaPorte {
@@ -911,29 +915,21 @@ pub enum PieceQuiLaPorte {
 }
 
 impl PieceQuiLaPorte {
-    /// LA PIECE QUI PORTE la case `case` de la fiche `fiche` : une DSN quand sa lecture la remplit, aucune sinon. Ce que la
-    /// lecture remplit, chaque forme lue le dit d'elle-meme (`EntrepriseDeclaree::cases`, `IndividuDeclare::cases`,
-    /// `EmploiDeclare::cases`) ; s'y ajoute ce que l'import en tire a cote : le Siret (le Siren et le NIC,
-    /// `routes::import::fiche_entreprise`), le taux AT/MP de chaque annee (S21.G00.40.040, .043 :
-    /// `routes::importation::parametrage`), la cle du NIR, les initiales, l'anciennete (le premier contrat), le statut et
-    /// l'emploi en clair (son code emploi : `routes::import::fiche_salarie`), et le numero d'objet d'un spectacle
-    /// (S21.G00.40.050, la fiche que l'import cree de chaque numero declare).
-    pub fn de_la_case(fiche: NomDeFiche, case: CaseDeFiche) -> PieceQuiLaPorte {
-        let cases: Vec<CaseDeFiche> = match fiche {
-            NomDeFiche::Entreprise => {
-                let mut v = EntrepriseDeclaree::cases();
-                v.extend([CaseEntreprise::Siret, CaseEntreprise::TauxAtmp]);
-                v.into_iter().map(CaseDeFiche::from).collect()
-            }
-            NomDeFiche::Salarie => {
-                let mut v = IndividuDeclare::cases();
-                v.extend(EmploiDeclare::cases());
-                v.extend([CaseSalarie::NirCle, CaseSalarie::InitialesContrat, CaseSalarie::DateAnciennete, CaseSalarie::Statut, CaseSalarie::EmploiAffichage]);
-                v.into_iter().map(CaseDeFiche::from).collect()
-            }
-            NomDeFiche::Spectacle => vec![CaseSpectacle::NumeroObjet.into()],
+    /// LA PIECE QUI PORTE la case declaree `chemin` de la fiche `fiche` (la case que les listes nomment, pas sa forme
+    /// lisible) : une DSN quand l'import la remplit de toute DSN mensuelle (`EntrepriseDeclaree::cases_remplies`,
+    /// `IndividuDeclare::cases_remplies`, `EmploiDeclare::cases_remplies`), aucune sinon. Du contact DSN, la civilite
+    /// n'est lue que par inference (celle du contact de l'emetteur quand il est l'entreprise et porte le meme nom) :
+    /// aucune. Un spectacle : aucune, l'import cree la fiche d'un numero d'objet declare, il ne complete jamais un
+    /// spectacle qui existe sans numero.
+    pub fn de_la_case(fiche: NomDeFiche, chemin: &crate::champs::CheminDeFiche) -> PieceQuiLaPorte {
+        let remplies: Vec<CaseDeFiche> = match fiche {
+            NomDeFiche::Entreprise => EntrepriseDeclaree::cases_remplies().into_iter().map(CaseDeFiche::from).collect(),
+            NomDeFiche::Salarie => IndividuDeclare::cases_remplies().into_iter().chain(EmploiDeclare::cases_remplies()).map(CaseDeFiche::from).collect(),
+            NomDeFiche::Spectacle => Vec::new(),
         };
-        if cases.contains(&case) {
+        let contact = chemin.champ == CaseDeFiche::from(CaseEntreprise::DeclarantDsn)
+            && chemin.dans.as_ref().is_none_or(|d| d.nom != NomDeCase::from(CaseDeclarantDsn::Civilite));
+        if (fiche == NomDeFiche::Entreprise && contact) || remplies.contains(&chemin.champ) {
             PieceQuiLaPorte::Dsn
         } else {
             PieceQuiLaPorte::Aucune
@@ -957,11 +953,26 @@ pub fn est_une_dsn(tete: &[u8]) -> bool {
 /// (`est_une_dsn`), dans l'ordre des noms. Un dossier qui n'existe pas n'en a aucune ; un disque qui refuse se dit.
 pub fn fichiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut out = Vec::new();
-    parcourir(dossier, &mut out)?;
+    parcourir(dossier, &mut out, Combien::Toutes)?;
     Ok(out)
 }
 
-fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> R<()> {
+/// La premiere DSN de ce dossier et de ses sous-dossiers, dans le meme ordre que `fichiers`, sans ouvrir les fichiers
+/// qui la suivent ; aucune s'il n'en a pas.
+pub fn premiere(dossier: &Path) -> R<Option<PathBuf>> {
+    let mut out = Vec::new();
+    parcourir(dossier, &mut out, Combien::LaPremiere)?;
+    Ok(out.into_iter().next())
+}
+
+/// Ce que le parcours d'un dossier cherche : toutes ses DSN, ou la premiere.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Combien {
+    Toutes,
+    LaPremiere,
+}
+
+fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>, combien: Combien) -> R<()> {
     let panne = |e: std::io::Error, p: &Path| refus(socle::fichiers::panne_fichier(&e, p));
     let entrees = match std::fs::read_dir(dossier) {
         Ok(e) => e,
@@ -971,9 +982,12 @@ fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> R<()> {
     let mut entrees: Vec<std::fs::DirEntry> = entrees.collect::<Result<_, _>>().map_err(|e| panne(e, dossier))?;
     entrees.sort_by_key(|e| e.file_name());
     for e in entrees {
+        if combien == Combien::LaPremiere && !out.is_empty() {
+            return Ok(());
+        }
         let chemin = e.path();
         if e.file_type().map_err(|x| panne(x, &chemin))?.is_dir() {
-            parcourir(&chemin, out)?;
+            parcourir(&chemin, out, combien)?;
         } else if chemin.is_file() && est_une_dsn(&tete(&chemin).map_err(|x| panne(x, &chemin))?) {
             out.push(chemin);
         }

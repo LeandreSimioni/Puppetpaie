@@ -32,8 +32,9 @@ async function montrerRappels(lu = api) {
   // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle s'ouvrait
   // aussi une fois par jour quand rien n'attendait : elle n'apparaît
   // que s'il y a quelque chose à faire.
-  if (!liste.length && !(ech && ech.a_faire) && !manques.length && !DEMARRAGE.dsn) return;
-  RAPPELS_MONTRES = { liste, ech, manques };
+  if (!liste.length && !(ech && ech.a_faire) && !manques.length && !DEMARRAGE.dsn && !DEMARRAGE.import_illisible) return;
+  // Ce qu'une DSN pourrait donner compte dans ce que la boîte a montré : qu'il change, et elle se rouvre.
+  RAPPELS_MONTRES = { liste, ech, manques, dsn: DEMARRAGE.dsn, import_illisible: DEMARRAGE.import_illisible };
   if (dejaMontres(RAPPELS_MONTRES)) return;
   boiteRappels(liste, ech, manques, r.fermer_dit);
 }
@@ -80,7 +81,7 @@ function htmlPoses() {
  * « Enregistrer » écrit tout ce qui a changé (`enregistrer-fiche`, une
  * écriture par fiche), et la liste se relit. La page ne fait que la mise en
  * page. */
-let DEMARRAGE = { titre: "", note: "", manques: [], dsn: null };
+let DEMARRAGE = { titre: "", note: "", manques: [], dsn: null, import_illisible: null };
 
 /* La case qu'une ligne propose, telle que sa fiche la décrit : `{nom, fiche,
  * c}`, ou null quand elle ne se remplit pas ici (un organisme, le barème, le
@@ -119,7 +120,7 @@ function caseDemarrageHtml(k) {
 }
 
 function htmlDemarrage(manques) {
-  if (!manques.length && !DEMARRAGE.dsn) return htmlPoses();
+  if (!manques.length && !DEMARRAGE.dsn && !DEMARRAGE.import_illisible) return htmlPoses();
   const n = ++DEMARRAGE_LISTES;
   // CHAQUE CHOSE MÈNE À SA PLACE : `ou` est un lien qui y conduit (la fiche,
   // l'onglet), sous la case ; la fiche d'un salarié ou d'un spectacle, quand la ligne en nomme un.
@@ -152,10 +153,12 @@ function htmlDemarrage(manques) {
       <ul class="rappel-liste">${DEMARRAGE.dsn.manques.map((m) => `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b>${m.qui ? ` <span class="discret">— ${echapper(m.qui)}</span>` : ""} ${lien(m)}</li>`).join("")}</ul>
     </div>` : "";
+  // À sa place, la panne qui empêche de le dire (`import_illisible`, du moteur) : le reste de la liste se montre.
+  const illisible = DEMARRAGE.import_illisible ? `<div class="encart erreur">${echapper(DEMARRAGE.import_illisible)}</div>` : "";
   return `
     <div class="rappel demarrage demarrage-liste" data-demarrage-liste="${n}">
       ${DEMARRAGE.titre ? `<h3>${echapper(DEMARRAGE.titre)}</h3>` : ""}
-      ${dsn}
+      ${dsn}${illisible}
       ${DEMARRAGE.note ? `<p class="note">${echapper(DEMARRAGE.note)}</p>` : ""}
       ${entreprise.length ? `<ul class="rappel-liste">${entreprise.map(ligne).join("")}</ul>` : ""}
       ${lesQui.map((q) => `<h4>${echapper(q)}</h4>
@@ -302,7 +305,7 @@ document.addEventListener("click", async (e) => {
 /* `pour-demarrer`, lu : la liste et ce que le moteur a posé. */
 async function lireDemarrage(lu) {
   const pd = await lu("pour-demarrer");
-  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn };
+  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn, import_illisible: pd.import_illisible || null };
   POSES_DEMARRAGE = pd.poses;
   return DEMARRAGE.manques;
 }

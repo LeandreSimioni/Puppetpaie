@@ -120,7 +120,7 @@ const AIDES: &[(&str, &str)] = &[
     ("revue_spectacles", "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet."),
     ("mot_de_passe", "Le mot de passe du logiciel ne sert qu'à prouver que quelqu'un est là. Les mots de passe des organismes et de la boîte restent dans le coffre."),
     ("import_dossier", "Vide : le dossier d'import de la compagnie."),
-    ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; une DSN déposée le dit. Sans elle, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
+    ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
     ("import_numero", "Le numéro du contrat : la rubrique S21.G00.40.009 de sa dernière DSN."),
     ("import_quotite", "La durée du travail, en heures par mois : la rubrique S21.G00.40.013 de la DSN."),
     ("import_ecarts", "Le bulletin fait foi : c'est son montant qui s'écrit, l'écart reste noté ici."),

@@ -201,18 +201,23 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 
 /// CE QUE L'IMPORT A REPRIS, pour ranger ce qui manque a la configuration (`declarations::demarrage::route`) : rien
 /// (aucun contrat ni aucune paie importes, `engagement::importe`), des pieces sans DSN, ou une DSN au moins parmi les
-/// copies que l'import garde (`historique/bulletins/`, celles que `parametrer` lit). Un dossier qui ne se lit pas se
-/// refuse.
-pub(crate) fn ce_que_l_import_a_repris(ctx: &Contexte) -> socle::echec::R<declarations::demarrage::CeQueLImportARepris> {
+/// copies que l'import garde (`historique/bulletins/`, celles que `parametrer` lit). Le stock se lit une fois, la
+/// recherche s'arrete a la premiere DSN trouvee (`dsn_lue::premiere`). Ce qui ne se lit pas (le stock, le dossier des
+/// copies) ne ferme rien : c'est une panne, que « Pour demarrer » dit a sa place (`NeSeLitPas`).
+pub(crate) fn ce_que_l_import_a_repris(ctx: &Contexte) -> declarations::demarrage::CeQueLImportARepris {
     use declarations::demarrage::CeQueLImportARepris;
-    if engagement::importe::contrats_lus(&ctx.racine)?.is_empty() && engagement::importe::paies_lues(&ctx.racine)?.is_empty() {
-        return Ok(CeQueLImportARepris::Rien);
+    let rien = match engagement::importe::tous(&ctx.racine) {
+        Ok(importes) => importes.is_empty(),
+        Err(e) => return CeQueLImportARepris::NeSeLitPas(e.phrase),
+    };
+    if rien {
+        return CeQueLImportARepris::Rien;
     }
-    Ok(if declarations::dsn_lue::fichiers(&import::mois::dossier_des_bulletins(&ctx.racine))?.is_empty() {
-        CeQueLImportARepris::SansDsn
-    } else {
-        CeQueLImportARepris::AvecDsn
-    })
+    match declarations::dsn_lue::premiere(&import::mois::dossier_des_bulletins(&ctx.racine)) {
+        Ok(None) => CeQueLImportARepris::SansDsn,
+        Ok(Some(_)) => CeQueLImportARepris::AvecDsn,
+        Err(e) => CeQueLImportARepris::NeSeLitPas(e.phrase),
+    }
 }
 
 /// LE TAUX DE PRELEVEMENT A LA SOURCE que la DGFiP a transmis a la compagnie et que ses DSN reprises appliquent
