@@ -1070,15 +1070,15 @@ fn cle_de_poste(cle: &socle::secret::Secret) -> bool {
 
 /// LE NUMERO DU POSTE DE L'EDITEUR, que lit le binaire de l'atelier (`identite_de_l_atelier`).
 #[cfg(feature = "atelier")]
-pub const VARIABLE_POSTE: &str = "PUPPETPAIE_ATELIER_POSTE";
+pub(crate) const VARIABLE_POSTE: &str = "PUPPETPAIE_ATELIER_POSTE";
 /// LA CLE DU POSTE DE L'EDITEUR, que lit le binaire de l'atelier (`identite_de_l_atelier`). Un secret : elle ne se
 /// montre ni ne s'ecrit nulle part.
 #[cfg(feature = "atelier")]
-pub const VARIABLE_CLE_POSTE: &str = "PUPPETPAIE_ATELIER_CLE_POSTE";
+pub(crate) const VARIABLE_CLE_POSTE: &str = "PUPPETPAIE_ATELIER_CLE_POSTE";
 
 /// Ce que dit le binaire de l'atelier quand le serveur ne reconnait pas l'identite de l'environnement (un 401).
 #[cfg(feature = "atelier")]
-pub fn identite_de_l_atelier_refusee() -> String {
+pub(crate) fn identite_de_l_atelier_refusee() -> String {
     format!(
         "Le serveur ne reconnaît pas le poste de {} et {} : les reposer dans les réglages de l'environnement, tels que config/diagnostic.json du poste de l'éditeur les porte.",
         VARIABLE_POSTE, VARIABLE_CLE_POSTE
@@ -1086,7 +1086,7 @@ pub fn identite_de_l_atelier_refusee() -> String {
 }
 
 /// L'IDENTITE DU POSTE DE L'EDITEUR, dans le binaire de l'atelier (le nuage, jamais livre) : le numero et la cle de ce
-/// poste, poses comme secrets de l'environnement (`VARIABLE_POSTE`, `VARIABLE_CLE_POSTE`). Le serveur ne plafonne pas
+/// poste, poses par l'editeur dans l'environnement (`VARIABLE_POSTE`, `VARIABLE_CLE_POSTE`). Le serveur ne plafonne pas
 /// ce poste (`FILET_POSTE_EDITEUR` du serveur) : une fictive rejouee dans le nuage parle au filet sans demander une
 /// identite neuve (`POST /poste`, au plus 50 par jour pour tous). `None` : aucune des deux n'est posee. Une seule
 /// posee, ou l'une mal formee : refus, qui nomme la variable et jamais sa valeur -- jamais `POST /poste` a la place.

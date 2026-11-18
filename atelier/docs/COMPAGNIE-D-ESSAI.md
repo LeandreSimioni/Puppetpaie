@@ -137,8 +137,10 @@ change. Le banc d'essai (`outils/banc/banc.js`) les retire de sa fenêtre, qui n
 **Les poser** : sur le poste de l'éditeur, le numéro et la clé sont les clés `poste` et `cle` de
 `prive\config\diagnostic.json` (dans le dossier de PuppetPaie) ; les copier de là, sans les coller dans une
 conversation, dans les réglages de l'environnement du nuage (variables d'environnement). Elles y sont en clair, lisibles
-par toute séance de cet environnement. Vérifier sur le serveur que `FILET_POSTE_EDITEUR` du service `puppetpaie-filet`
-vaut ce même numéro. Une nouvelle séance les prend.
+par toute séance de cet environnement. Les copier sans espace ni retour à la ligne : une valeur mal formée
+est refusée. Vérifier sur le serveur que `FILET_POSTE_EDITEUR` vaut ce même numéro :
+`sudo grep '^FILET_POSTE_EDITEUR=' /etc/puppetpaie-filet.env` (cette ligne seule : le reste du fichier porte des
+secrets). Une nouvelle séance les prend.
 
 **Deux machines, un numéro** : les incidents du nuage et ceux du poste de l'éditeur partent sous le même `poste`. Ils
 se distinguent par leur machine : `systeme` et `os` (Linux dans le nuage, Windows sur le poste) et `chemin` (un dossier
