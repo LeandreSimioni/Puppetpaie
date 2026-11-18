@@ -10,7 +10,7 @@
 //! - la route `importation-identite` `{"nir", "salarie", "reponse": "meme" | "autre"}` y repond : « la meme personne »,
 //!   la fiche recoit le NIR que la DSN declare (`importation::fiches::completer_fiche` : une case vide se complete), et
 //!   l'import rejoue la reconnait comme tout salarie rattache ; « une autre », la reponse se garde
-//!   (`journal/import-identites.json`, `PasLaMemePersonne`) et l'import rejoue cree sa fiche comme aujourd'hui. Une
+//!   (`config/import-identites.json`, `PasLaMemePersonne`) et l'import rejoue cree sa fiche comme aujourd'hui. Une
 //!   reponse ne se redemande pas : la fiche a le NIR, ou la paire est gardee.
 //!
 //! « Ressemble » ne sert qu'a poser la question, jamais a decider.
@@ -26,11 +26,30 @@ use import::reponse::QuestionDIdentite;
 use socle::echec::{erreur, Classe, R};
 use socle::texte::Phrase;
 
-use crate::catalogue::Route;
+use crate::catalogue::{Affiche, Route};
 
-/// Les reponses « une autre personne » de la compagnie.
+/// LES REPONSES « UNE AUTRE PERSONNE » DE LA COMPAGNIE, sous sa racine : ce qu'elle dit, avec sa configuration (comme
+/// `config/casc-svp.json`), pas au journal, qui tient ce qui est parti.
+pub(crate) const IDENTITES: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("config/import-identites.json");
+
+/// Ce que dit le fichier (sa note `quoi`).
+const QUOI: &str = "Les personnes que les DSN reprises déclarent et que la compagnie a dites autres que le salarié d'une fiche sans numéro de sécurité sociale.";
+
+/// `config/import-identites.json` : sa note, et les reponses dans l'ordre ou elles ont ete donnees.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReponsesDIdentite {
+    quoi: String,
+    autres: Vec<PasLaMemePersonne>,
+}
+
 fn fichier(racine: &Path) -> PathBuf {
-    racine.join(envois::journal::JOURNAL).join("import-identites.json")
+    IDENTITES.dans(racine)
+}
+
+/// Ecrit les reponses gardees.
+fn garder(racine: &Path, autres: &[PasLaMemePersonne]) -> R<()> {
+    socle::ecriture::ecrire_json(&fichier(racine), &ReponsesDIdentite { quoi: QUOI.to_string(), autres: autres.to_vec() }, 0)
 }
 
 /// UNE REPONSE « CE N'EST PAS LA MEME PERSONNE », gardee : l'individu que les DSN declarent sous le NIR `nir` n'est pas
@@ -49,7 +68,8 @@ fn pas_la_meme(racine: &Path) -> R<Vec<PasLaMemePersonne>> {
     if !socle::fichiers::existe_lu(&p)? {
         return Ok(Vec::new());
     }
-    socle::forme::lire_fichier(&p, "Les réponses aux questions d'identité de l'import ne se lisent pas : le signaler au développeur.")
+    let lues: ReponsesDIdentite = socle::forme::lire_fichier(&p, "Les réponses aux questions d'identité de l'import ne se lisent pas : le signaler au développeur.")?;
+    Ok(lues.autres)
 }
 
 /// LA FICHE SANS NIR RESSEMBLE-T-ELLE A L'INDIVIDU QUE LA DSN DECLARE ? Ce que les deux portent en commun : le meme nom
@@ -176,32 +196,23 @@ fn declare_et_ressemble(ctx: &Contexte, nir: &Nir, fiche: &ChampsSalarie) -> R<b
 pub(crate) struct IdentiteADire {
     #[serde(flatten)]
     question: QuestionDIdentite,
-    gestes: Vec<GesteDIdentite>,
+    gestes: Vec<crate::imprevus::GesteDeRoute<ChargeIdentite>>,
 }
+
+// Les libelles des deux gestes, en constantes : un texte fautif ne compile pas (`Affiche::new`).
+const LA_MEME: Affiche = Affiche::new("C'est la même personne");
+const UNE_AUTRE: Affiche = Affiche::new("Ce n'est pas la même personne");
 
 impl IdentiteADire {
+    /// La question et ses deux gestes, qui ne font rien saisir : ils partent avec leur charge.
     fn de(question: QuestionDIdentite) -> IdentiteADire {
-        let geste = |reponse: ReponseDIdentite, libelle: &'static str| GesteDIdentite {
-            route: Route::ImportationIdentite,
-            charge: ChargeIdentite { nir: question.nir.clone(), salarie: question.salarie.clone(), reponse },
-            libelle,
-            cases: Vec::new(),
-            phrases: Vec::new(),
+        let geste = |reponse: ReponseDIdentite, libelle: Affiche| {
+            let charge = ChargeIdentite { nir: question.nir.clone(), salarie: question.salarie.clone(), reponse };
+            crate::imprevus::GesteDeRoute::sans_cases(Route::ImportationIdentite, charge, libelle)
         };
-        let gestes = vec![geste(ReponseDIdentite::Meme, "C'est la même personne"), geste(ReponseDIdentite::Autre, "Ce n'est pas la même personne")];
+        let gestes = vec![geste(ReponseDIdentite::Meme, LA_MEME), geste(ReponseDIdentite::Autre, UNE_AUTRE)];
         IdentiteADire { question, gestes }
     }
-}
-
-/// UN GESTE D'UNE QUESTION D'IDENTITE, que la page dessine en bouton (`js/avance.js`) : sa route, sa charge, son libelle ;
-/// il ne fait rien saisir (`cases`, `phrases` vides).
-#[derive(Debug, serde::Serialize)]
-struct GesteDIdentite {
-    route: Route,
-    charge: ChargeIdentite,
-    libelle: &'static str,
-    cases: Vec<&'static str>,
-    phrases: Vec<String>,
 }
 
 /// LA REPONSE A UNE QUESTION D'IDENTITE : l'individu que la DSN declare est le salarie de la fiche (`meme`), ou une autre
@@ -281,7 +292,7 @@ pub(crate) fn repondre(ctx: &Contexte, charge: &ChargeIdentite) -> R<IdentiteRep
                 } else {
                     if repondues.contains(&paire) {
                         repondues.retain(|r| *r != paire);
-                        socle::ecriture::ecrire_json(&fichier(&ctx.racine), &repondues, 0)?;
+                        garder(&ctx.racine, &repondues)?;
                     }
                     socle::phrase!("La fiche de {} reçoit le numéro de sécurité sociale que la DSN déclare. Relancez l'import : il reprend ce que la DSN déclare de lui.", qui)
                 }
@@ -293,7 +304,7 @@ pub(crate) fn repondre(ctx: &Contexte, charge: &ChargeIdentite) -> R<IdentiteRep
             }
             if !repondues.contains(&paire) {
                 repondues.push(paire);
-                socle::ecriture::ecrire_json(&fichier(&ctx.racine), &repondues, 0)?;
+                garder(&ctx.racine, &repondues)?;
             }
             socle::phrase!("Noté : la personne que la DSN déclare n'est pas {}. Relancez l'import : il lui crée sa fiche.", qui)
         }

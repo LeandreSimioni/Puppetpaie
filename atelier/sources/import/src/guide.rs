@@ -131,7 +131,7 @@ pub fn guide() -> Guide {
         ],
         accepte: crate::tri::ACCEPTE,
         reste: "Après l'import, ce qu'une DSN pourrait donner se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
-        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris, et les fiches ne reçoivent que ce qui leur manque. Si une DSN ajoutée ensuite déclare quelqu'un qui ressemble à un salarié repris sans numéro de sécurité sociale, l'import demande si c'est la même personne, et ne reprend rien de lui avant votre réponse.",
+        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris, et les fiches ne reçoivent que ce qui leur manque. Si une DSN déclare quelqu'un qui ressemble à une fiche sans numéro de sécurité sociale, l'import demande si c'est la même personne et ne reprend rien de lui avant votre réponse : laissez la DSN dans le dossier, répondez, puis relancez l'import.",
         rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
         replie: "Ce qu'on met dans le dossier",
         ce_qui_s_en_lit: "Ce qui s'en lit",

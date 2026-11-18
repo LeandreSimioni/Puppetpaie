@@ -1163,6 +1163,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
 | réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
 | réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
+| les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
+| questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
 | valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDeclaree` | `import/src/reponse.rs` |
 | sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici) | `SortDeLaValeur` | `import/src/reponse.rs` |
 | ce que l'import en dit (le salarié, la valeur, son sort, sa phrase) | `ValeurDeLaDsn` | `import/src/reponse.rs` |
@@ -2386,7 +2389,8 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   l'import le met de côté (ni fiche, ni contrat, ni paie) et demande si c'est la même personne
   (`QuestionDIdentite`, dans la réponse d'`importer` et dans `importation-etat`, avec ses gestes) ; la ressemblance
   pose la question, elle ne décide rien. `importation-identite` y répond : la même, la fiche reçoit le NIR et l'import
-  rejoué la complète ; une autre, la réponse se garde (`journal/import-identites.json`) et l'import rejoué crée sa fiche.
+  rejoué la complète ; une autre, la réponse se garde avec la configuration (`config/import-identites.json`) et
+  l'import rejoué crée sa fiche.
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
   l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
