@@ -596,20 +596,18 @@ fn refaire<'a>(
 /// LE SALAIRE MENSUEL ET LES HEURES PAR MOIS QU'IMPRIME LA LIGNE DE SALAIRE `l` du bulletin d'un contrat paye au mois
 /// (une ligne de la rubrique `heure` ou `mois`). Le bulletin imprime « le nombre d'heures de travail auxquels se rapporte
 /// le salaire » (C. trav. R. 3243-1, 5°, `atelier/reference/sources/code-du-travail/articles-20261028.md`) : sur une
-/// ligne en heures (« Heures », « Heure de travail »), ses heures, et le salaire est son montant ; sur une ligne
-/// « Salaire mensuel de base » (`rubriques-base.json`, `mois` : sa quantite est la part du mois, son taux le salaire
-/// mensuel, ses heures celles du mois), le salaire d'un mois entier et les heures par mois que la ligne dit. Elle ne dit
-/// que le mois qu'elle paie : `contrat_au_mois` exige un mois paye entier. Ce que la ligne n'imprime pas ne se devine
-/// pas : la paie ne se refait pas, et le refus dit ce qui manque au bulletin.
+/// ligne en heures (« Heures », « Heure de travail »), ses heures, et le salaire est son montant. Que ces heures soient
+/// celles du contrat est une inference, qui ne vaut que pour un mois paye entier : `contrat_au_mois` l'exige. Une ligne
+/// « Salaire mensuel de base » (`rubriques-base.json`, `mois`) n'imprime pas ses heures : la paie ne se refait pas. Ce
+/// que la ligne n'imprime pas ne se devine pas, ni ne se prend dans la table de lecture : le refus dit ce qui manque au
+/// bulletin.
 fn salaire_imprime(l: &crate::importe::LigneImprimee) -> R<(MontantUnitaire, Heures)> {
     use crate::ligne::PaiementDeLigne;
     let libelle = &l.libelle;
     let montant = l.montant.ok_or_else(|| socle::refus!("le bulletin imprime « {} » sans son montant : le salaire mensuel du contrat ne s'y lit pas", libelle))?;
-    match (l.paiement, l.heures) {
-        (Some(PaiementDeLigne::Heures(heures, _)), _) => Ok((montant.pour_une_unite(), heures)),
-        (Some(PaiementDeLigne::PartDuMois(part, salaire)), Some(h)) if part == Coefficient::UN => Ok((salaire, Coefficient::UN * h)),
-        (None, Some(h)) => Ok((montant.pour_une_unite(), Coefficient::UN * h)),
-        (Some(PaiementDeLigne::PartDuMois(part, _)), _) if part != Coefficient::UN => {
+    match l.paiement {
+        Some(PaiementDeLigne::Heures(heures, _)) => Ok((montant.pour_une_unite(), heures)),
+        Some(PaiementDeLigne::PartDuMois(part, _)) if part != Coefficient::UN => {
             Err(socle::refus!("le bulletin imprime « {} » avec une quantité qui n'est pas un mois entier : le salaire mensuel du contrat ne s'y lit pas", libelle))
         }
         _ => Err(socle::refus!(
