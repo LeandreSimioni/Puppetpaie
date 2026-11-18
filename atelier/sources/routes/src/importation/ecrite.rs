@@ -452,8 +452,8 @@ impl Ecrit {
 fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricules: &crate::importation::matricules::Matricules) -> R<Ecrit> {
     // LES MATRICULES QUE LA DSN QUI ARRIVE DECLARE, en une fois, avant les fiches neuves : celle que la DSN cree avec le
     // matricule qu'une fiche cede le trouve libre (`importation::matricules`). Les fiches s'ecrivent face a ce qui est
-    // alors sur le disque.
-    matricules.poser_les_neuves(&mut imp.a_creer);
+    // alors sur le disque ; chaque fiche neuve recoit le matricule que `prevoir` lui a decide.
+    let d_office = matricules.poser(&mut imp.a_creer)?;
     let relu;
     let ctx = if matricules.ecrit() {
         matricules.ecrire(ctx, note)?;
@@ -467,8 +467,8 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     // Les fiches, comme celles de l'ecran (`forcer` : une fiche importee avec des anomalies est ecrite quand meme).
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
-    for a in &imp.a_creer {
-        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note)?;
+    for (a, d_office) in imp.a_creer.iter().zip(d_office) {
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note, d_office)?;
         let emplacement = match (a.donnees.nom(), a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
@@ -730,16 +730,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // n'est parti d'ici.
     reponse.dsn_fait_foi = crate::importation::nature::la_dsn_fait_foi(&ctx.racine, &e.arrivees, &departs)?;
     let compte = |s: import::reponse::SortDeLaValeur| reponse.dsn_fait_foi.iter().filter(|v| v.sort == s).count();
-    // Les matricules (`importation::matricules`) : celui que la fiche a pris de la DSN n'est plus un ecart ; les fiches
-    // neuves dont le matricule ne s'est pas pose se disent.
     let matricules_dits = matricules.dire(true);
-    let pris: Vec<&IdSalarie> = matricules.pris_de_la_dsn().collect();
-    for f in &mut reponse.salaries {
-        if matches!(f.fiche.nommee(), Some(FicheNommee::Salarie(cle)) if pris.contains(&cle)) {
-            f.ecarts.retain(|x| x.champ != droit::fiche::CaseSalarie::CodeSalarie.into());
-        }
-    }
-    reponse.avertissements.extend(matricules.neuves.iter().cloned());
     let remplacees = match compte(import::reponse::SortDeLaValeur::Remplacee) {
         0 => String::new(),
         1 => " La DSN reprise fait foi : une valeur d'un contrat repris est remplacée par ce qu'elle déclare.".to_string(),
@@ -751,7 +742,8 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         n => format!(" {} valeurs que la DSN reprise déclare autrement sont gardées : leurs engagements sont déjà validés ou déclarés d'ici.", n),
     };
     let remplacees = remplacees + &gardees + &matricules_dits;
-    reponse.dsn_fait_foi.extend(matricules.dits.iter().cloned());
+    // Les matricules (`importation::matricules`), tels que l'import les a poses.
+    matricules.montrer(&mut reponse, &imp.a_creer);
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
     let ecrite = |f: &import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);

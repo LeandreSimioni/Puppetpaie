@@ -28,7 +28,7 @@
 use std::collections::HashSet;
 
 use droit::contexte::{Contexte, IdSalarie};
-use droit::fiche::{ChangementSalarie, FicheDatee as _, FicheSalarieDatee, Matricule};
+use droit::fiche::{ChangementSalarie, FicheDatee as _, FicheSalarieDatee, Matricule, Nir};
 use engagement::departs::{Departs, Envoi};
 use engagement::numeros::NumeroContrat;
 use import::proposee::FicheProposee;
@@ -43,16 +43,23 @@ struct Change {
     d_office: bool,
 }
 
-/// CE QUE L'IMPORT FAIT DES MATRICULES (`prevoir`) : ce qu'il ecrit (`ecrire`), les matricules que les fiches neuves ne
-/// prennent pas (`poser_les_neuves`), et ce qu'il en dit (`dire`).
+/// LE MATRICULE D'UNE FICHE NEUVE, decide sur l'etat final : celui que ses pieces lui donnent, ou le suivant, d'office
+/// (`d_office`). La fiche se reconnait a son NIR (`ACreer::nir`), dans l'ordre des fiches a creer.
+struct Neuve {
+    nir: Option<Nir>,
+    matricule: Matricule,
+    d_office: bool,
+}
+
+/// CE QUE L'IMPORT FAIT DES MATRICULES (`prevoir`) : ce qu'il ecrit dans les fiches qui existent (`ecrire`), le matricule
+/// de chaque fiche neuve (`poser`), et ce qu'il en dit (`dire`).
 pub(crate) struct Matricules {
     changes: Vec<Change>,
-    /// Les matricules que des fiches neuves portent et qui ne se posent pas : elles les recoivent d'office.
-    ecartes: Vec<Matricule>,
+    neuves: Vec<Neuve>,
     /// Ce que l'import dit de chaque fiche qui existe dont la DSN declare autrement le matricule.
     pub(crate) dits: Vec<ValeurDeLaDsn>,
     /// Ce qu'il dit des fiches neuves dont le matricule ne se pose pas.
-    pub(crate) neuves: Vec<String>,
+    pub(crate) avertissements: Vec<String>,
 }
 
 /// CE QUI, FAIT D'ICI, A ENGAGE LE MATRICULE D'UN SALARIE : il ne se remplace ni ne se cede.
@@ -122,8 +129,8 @@ fn declare_d_ici(departs: &Departs, cle: &IdSalarie) -> bool {
 enum Qui {
     /// Une fiche qui existe (son rang parmi les porteurs), dont le matricule est libre.
     Fiche(usize),
-    /// Une fiche neuve, par le nom que l'apercu lui donne.
-    Neuve(String),
+    /// Une fiche neuve : son rang parmi les fiches a creer de l'apercu, et le nom que l'apercu lui donne.
+    Neuve(usize, String),
 }
 
 /// Une demande, et ce qui l'empeche.
@@ -145,7 +152,7 @@ impl Demande {
     fn nom(&self, porteurs: &[Porteur]) -> String {
         match &self.qui {
             Qui::Fiche(i) => porteurs[*i].nom.clone(),
-            Qui::Neuve(n) => n.clone(),
+            Qui::Neuve(_, n) => n.clone(),
         }
     }
 }
@@ -244,13 +251,10 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
         }
     }
     // 2. Les fiches neuves que les pieces creent avec un matricule, nommees comme l'apercu les nomme.
-    for a in &ap.a_creer {
+    for (k, a) in ap.a_creer.iter().enumerate() {
         let FicheProposee::Salarie(s) = &a.donnees else { continue };
         let Some(m) = s.code_salarie.clone().filter(|m| !m.trim().is_empty()) else { continue };
-        let nom = a.rang.and_then(|i| ap.reponse.salaries.get(i)).map(|f| f.libelle.clone()).ok_or_else(|| {
-            erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une fiche de salarié à créer n'a pas sa place dans l'aperçu de l'import.")
-        })?;
-        demandes.push(Demande { qui: Qui::Neuve(nom), matricule: m, empeche: None });
+        demandes.push(Demande { qui: Qui::Neuve(k, nom_de_la_neuve(ap, a)?), matricule: m, empeche: None });
     }
     // 3. Ce qui empeche une demande : une fiche fixe qui porte ou a porte le matricule, ou une autre demande du meme.
     let noms: Vec<String> = demandes.iter().map(|d| d.nom(&porteurs)).collect();
@@ -315,20 +319,56 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
             (None, None) => {}
         }
     }
-    // 5. Les fiches neuves dont le matricule ne se pose pas : elles le recoivent d'office, et l'import le dit.
-    let mut ecartes: Vec<Matricule> = Vec::new();
-    let mut neuves = Vec::new();
-    for d in &demandes {
-        let (Qui::Neuve(nom), Some(e)) = (&d.qui, &d.empeche) else { continue };
-        if !ecartes.iter().any(|m| meme(m, &d.matricule)) {
-            ecartes.push(d.matricule.clone());
+    // 5. Le matricule de chaque fiche neuve, dans l'ordre ou elles se creent : celui que ses pieces lui donnent, s'il se
+    // pose ; sinon le suivant de ce que portent alors les fiches (celles qui existent, leurs matricules ecrits, les
+    // fiches neuves d'avant elle), d'office, que ne prend aucune demande accordee. Une fiche neuve dont le matricule ne
+    // se pose pas le dit, avec celui qu'elle recoit.
+    let mut portes: Vec<Matricule> = porteurs
+        .iter()
+        .flat_map(|p| match changes.iter().find(|c| c.salarie == p.cle) {
+            Some(c) => vec![c.matricule.clone()],
+            None => p.historique.clone(),
+        })
+        .collect();
+    let reserves: Vec<&Matricule> = accordes.iter().map(|(d, _)| &d.matricule).collect();
+    let mut neuves: Vec<Neuve> = Vec::new();
+    let mut avertissements = Vec::new();
+    for (k, a) in ap.a_creer.iter().enumerate() {
+        if !matches!(a.donnees, FicheProposee::Salarie(_)) {
+            continue;
         }
-        neuves.push(format!(
-            "{} : les pièces reprises lui donnent le matricule {}, {} ; sa fiche reçoit le suivant, d'office. Changez-le dans sa fiche si vous savez lequel est le sien.",
-            nom, d.matricule, e.dit(&porteurs)
-        ));
+        let demande = demandes.iter().find(|d| matches!(d.qui, Qui::Neuve(r, _) if r == k));
+        let (matricule, d_office) = match demande {
+            Some(d) if d.empeche.is_none() => (d.matricule.clone(), false),
+            _ => {
+                let mut sautes: Vec<Matricule> = Vec::new();
+                let donne = loop {
+                    let m = Matricule::suivant(portes.iter().chain(&sautes).map(|m| &**m))?;
+                    if !reserves.iter().any(|r| meme(r, &m)) {
+                        break m;
+                    }
+                    sautes.push(m);
+                };
+                if let Some(Demande { qui: Qui::Neuve(_, nom), matricule, empeche: Some(e) }) = demande {
+                    avertissements.push(format!(
+                        "{} : les pièces reprises lui donnent le matricule {}, {} ; sa fiche reçoit le {}, d'office. Changez-le dans sa fiche si vous savez lequel est le sien.",
+                        nom, matricule, e.dit(&porteurs), donne
+                    ));
+                }
+                (donne, true)
+            }
+        };
+        portes.push(matricule.clone());
+        neuves.push(Neuve { nir: a.nir().cloned(), matricule, d_office });
     }
-    Ok(Matricules { changes, ecartes, dits, neuves })
+    Ok(Matricules { changes, neuves, dits, avertissements })
+}
+
+/// Le nom que l'apercu `ap` donne a la fiche neuve `a` d'un salarie : toute fiche de salarie a creer y a sa place.
+fn nom_de_la_neuve(ap: &crate::import::Apercu, a: &crate::import::ACreer) -> R<String> {
+    a.rang.and_then(|i| ap.reponse.salaries.get(i)).map(|f| f.libelle.clone()).ok_or_else(|| {
+        erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une fiche de salarié à créer n'a pas sa place dans l'aperçu de l'import.")
+    })
 }
 
 impl Matricules {
@@ -342,16 +382,47 @@ impl Matricules {
         self.changes.iter().filter(|c| !c.d_office).map(|c| &c.salarie)
     }
 
-    /// LES FICHES NEUVES DONT LE MATRICULE NE SE POSE PAS (`ecartes`) le recoivent d'office (`completer_neuve`) : leur
-    /// case reste vide.
-    pub(crate) fn poser_les_neuves(&self, a_creer: &mut [crate::import::ACreer]) {
+    /// LE MATRICULE DE CHAQUE FICHE NEUVE, tel que `prevoir` l'a decide, pose dans sa fiche a creer : rend, par fiche a
+    /// creer, celui qu'elle recoit d'office (que sa fiche datee garde, `matricule_d_office`). Chaque fiche neuve d'un
+    /// salarie a sa decision, reconnue a son NIR dans l'ordre : `prevoir` a lu les memes pieces.
+    pub(crate) fn poser(&self, a_creer: &mut [crate::import::ACreer]) -> R<Vec<Option<Matricule>>> {
+        let mut vues = vec![false; self.neuves.len()];
+        let mut d_office = Vec::with_capacity(a_creer.len());
+        for a in a_creer.iter_mut() {
+            let nir = a.nir().cloned();
+            let FicheProposee::Salarie(s) = &mut a.donnees else {
+                d_office.push(None);
+                continue;
+            };
+            let k = (0..self.neuves.len()).find(|&k| !vues[k] && self.neuves[k].nir == nir).ok_or_else(|| {
+                erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : l'import crée une fiche de salarié dont il n'a pas décidé le matricule.")
+            })?;
+            vues[k] = true;
+            let n = &self.neuves[k];
+            s.code_salarie = Some(n.matricule.clone());
+            d_office.push(n.d_office.then(|| n.matricule.clone()));
+        }
+        Ok(d_office)
+    }
+
+    /// CE QUE LA REPONSE MONTRE DES MATRICULES, ce que l'import fait (ou ferait, l'apercu) : chaque fiche neuve avec le
+    /// matricule qu'elle recoit (`a_creer`, apres `poser`), sans l'ecart du matricule que la fiche prend de la DSN, chaque
+    /// ligne (`dsn_fait_foi`) et ce qui se dit des fiches neuves.
+    pub(crate) fn montrer(&self, reponse: &mut import::reponse::Importation, a_creer: &[crate::import::ACreer]) {
         for a in a_creer {
-            if let FicheProposee::Salarie(s) = &mut a.donnees {
-                if s.code_salarie.as_ref().is_some_and(|m| self.ecartes.iter().any(|e| meme(e, m))) {
-                    s.code_salarie = None;
-                }
+            let (FicheProposee::Salarie(posee), Some(i)) = (&a.donnees, a.rang) else { continue };
+            if let Some(FicheProposee::Salarie(s)) = reponse.salaries.get_mut(i).map(|f| &mut f.donnees) {
+                s.code_salarie = posee.code_salarie.clone();
             }
         }
+        let pris: Vec<&IdSalarie> = self.pris_de_la_dsn().collect();
+        for f in &mut reponse.salaries {
+            if matches!(f.fiche.nommee(), Some(droit::fiche::FicheNommee::Salarie(cle)) if pris.contains(&cle)) {
+                f.ecarts.retain(|x| x.champ != droit::fiche::CaseSalarie::CodeSalarie.into());
+            }
+        }
+        reponse.dsn_fait_foi.extend(self.dits.iter().cloned());
+        reponse.avertissements.extend(self.avertissements.iter().cloned());
     }
 
     /// CE QUE L'IMPORT DIT DES MATRICULES, en phrases qui suivent la sienne (chacune commence par une espace) ; `fait` :
@@ -379,10 +450,10 @@ impl Matricules {
                 socle::ecran::compte(gardes, "matricule", "matricules")
             ));
         }
-        if !self.neuves.is_empty() {
+        if !self.avertissements.is_empty() {
             out.push_str(&format!(
                 " {} d'office : la liste dit pourquoi.",
-                socle::ecran::compte(self.neuves.len(), if fait { "fiche neuve a reçu son matricule" } else { "fiche neuve recevrait son matricule" }, if fait { "fiches neuves ont reçu leur matricule" } else { "fiches neuves recevraient leur matricule" })
+                socle::ecran::compte(self.avertissements.len(), if fait { "fiche neuve a reçu son matricule" } else { "fiche neuve recevrait son matricule" }, if fait { "fiches neuves ont reçu leur matricule" } else { "fiches neuves recevraient leur matricule" })
             ));
         }
         out

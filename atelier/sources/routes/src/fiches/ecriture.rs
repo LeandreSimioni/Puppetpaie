@@ -1114,6 +1114,14 @@ pub(crate) struct Preparee<F: SorteDeFiche> {
     memoire: F::Memoire,
 }
 
+impl<F: SorteDeFiche> Preparee<F> {
+    /// LA MEMOIRE QUE L'IMPORT A DECIDEE pour une fiche neuve (`importation::matricules` donne le matricule de chaque
+    /// fiche neuve sur l'etat final, et sa fiche l'a deja : `completer_neuve` n'y donne rien) : elle remplace la sienne.
+    pub(crate) fn memoire_de_l_import(self, memoire: F::Memoire) -> Preparee<F> {
+        Preparee { memoire, ..self }
+    }
+}
+
 /// PREPARER L'ECRITURE de la fiche `cle` (`None` : une fiche neuve, ou l'entreprise) : la fiche telle que l'ecran l'a
 /// montree, ce que `changer` y pose (il rend les cases qu'il nomme), ce que la fiche refuse quoi qu'on force, puis la
 /// derivation des formes declarees de ce que ces cases disent.
