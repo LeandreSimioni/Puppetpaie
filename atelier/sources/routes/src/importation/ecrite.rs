@@ -261,11 +261,19 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 groupes[*i].periode = dates;
             }
         }
-        // LE MOIS D'UN CONTRAT DE PERMANENT : la paie d'un bulletin va au contrat de permanent du salarie qui couvre sa
-        // periode.
+        // LE MOIS D'UN CONTRAT DE PERMANENT : la paie va au contrat de permanent du salarie qui couvre ce qu'elle paie.
+        // Une paie de bulletin paie sa periode ; une paie declaree porte le contrat entier (S21.G00.40.001 et .010,
+        // `norme-dsn/texte/bloc-S21.G00.40.txt`) et paie ce qu'il a de son mois. Le contrat de permanent que des bulletins
+        // deja repris attestent commence au premier d'entre eux, que la DSN ajoutee ensuite peut preceder : c'est le mois
+        // paye qu'il couvre, comme les bulletins de ce contrat lus avec elle (plus haut, le contrat a cheval).
         if candidats.is_empty() {
+            let payee: Option<PeriodeOuverte> = if declaree_par_bulletin(&p) {
+                dates
+            } else {
+                dates.and_then(|d| d.croise(&socle::date::Periode::du_mois(p.mois))).map(PeriodeOuverte::from)
+            };
             // Le contrat couvre la paie : il commence au plus tard avec elle, et finit au plus tot avec elle ou ne finit pas.
-            let couvre = |contrat: Option<PeriodeOuverte>| match (contrat, dates) {
+            let couvre = |contrat: Option<PeriodeOuverte>| match (contrat, payee) {
                 (None, _) => true,
                 (Some(_), None) => false,
                 (Some(c), Some(x)) => {
