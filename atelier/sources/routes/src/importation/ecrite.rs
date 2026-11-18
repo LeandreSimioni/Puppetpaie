@@ -266,7 +266,10 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         // `norme-dsn/texte/bloc-S21.G00.40.txt`) et paie ce qu'il a de son mois. Le contrat de permanent que des bulletins
         // deja repris attestent commence au premier d'entre eux, que la DSN ajoutee ensuite peut preceder : c'est le mois
         // paye qu'il couvre, comme les bulletins de ce contrat lus avec elle (plus haut, le contrat a cheval).
-        if candidats.is_empty() {
+        // Une paie declaree qui porte un numero d'objet est celle d'un contrat d'usage (regle 6 : le numero d'objet n'existe
+        // que sur les natures 02 et 10) : elle ne va pas au contrat d'un permanent, meme si elle paie un de ses mois.
+        let d_usage_declaree = !declaree_par_bulletin(&p) && o.is_some();
+        if candidats.is_empty() && !d_usage_declaree {
             let payee: Option<PeriodeOuverte> = if declaree_par_bulletin(&p) {
                 dates
             } else {
