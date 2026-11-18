@@ -157,15 +157,19 @@ pub(crate) fn en_attente(ctx: &Contexte) -> R<IdentitesEnAttente> {
     if !socle::fichiers::existe_lu(&dossier)? {
         return Ok(aucune);
     }
-    let relues = import::dsn_aem::lire_dsn(&dossier).and_then(|lecture| questions(ctx, &lecture.salaries, &HashSet::new()));
-    match relues {
-        Ok(q) => Ok(IdentitesEnAttente { questions: q.into_iter().map(IdentiteADire::de).collect(), non_relues: None }),
-        Err(e) if e.dit_un_manque() => Ok(IdentitesEnAttente {
-            questions: Vec::new(),
-            non_relues: Some(socle::phrase!("Les questions d'identité des DSN reprises ne se relisent pas : {}", e.phrase)),
-        }),
-        Err(e) => Err(e),
-    }
+    // Seule la DSN reprise qui ne se relit plus est un manque ; nos reponses gardees qui ne se lisent pas sont une panne.
+    let lecture = match import::dsn_aem::lire_dsn(&dossier) {
+        Ok(l) => l,
+        Err(e) if e.dit_un_manque() => {
+            return Ok(IdentitesEnAttente {
+                questions: Vec::new(),
+                non_relues: Some(socle::phrase!("Les questions d'identité des DSN reprises ne se relisent pas : {}", e.phrase)),
+            })
+        }
+        Err(e) => return Err(e),
+    };
+    let q = questions(ctx, &lecture.salaries, &HashSet::new())?;
+    Ok(IdentitesEnAttente { questions: q.into_iter().map(IdentiteADire::de).collect(), non_relues: None })
 }
 
 /// Les questions d'identite qui attendent la compagnie, et ce qui n'a pas pu se relire pour les poser.
@@ -285,17 +289,16 @@ pub(crate) fn repondre(ctx: &Contexte, charge: &ChargeIdentite) -> R<IdentiteRep
                 // qui s'est ecrit.
                 let ecrit = crate::importation::fiches::completer_fiche(ctx, &FicheNommee::Salarie(cle.clone()), &FicheProposee::Salarie(champs))?;
                 if !matches!(&ecrit, FicheProposee::Salarie(c) if c.nir.is_some()) {
-                    socle::phrase!(
-                        "La fiche de {} a déjà une valeur dans sa case du numéro de sécurité sociale, à une autre date : rien n'a été écrit. Dites son numéro dans sa fiche, puis relancez l'import.",
+                    return Err(refus(format!(
+                        "La case du numéro de sécurité sociale de la fiche de {} n'est pas vide : rien n'a été écrit. Dites son numéro dans sa fiche, puis relancez l'import.",
                         qui
-                    )
-                } else {
-                    if repondues.contains(&paire) {
-                        repondues.retain(|r| *r != paire);
-                        garder(&ctx.racine, &repondues)?;
-                    }
-                    socle::phrase!("La fiche de {} reçoit le numéro de sécurité sociale que la DSN déclare. Relancez l'import : il reprend ce que la DSN déclare de lui.", qui)
+                    )));
                 }
+                if repondues.contains(&paire) {
+                    repondues.retain(|r| *r != paire);
+                    garder(&ctx.racine, &repondues)?;
+                }
+                socle::phrase!("La fiche de {} reçoit le numéro de sécurité sociale que la DSN déclare. Relancez l'import : il reprend ce que la DSN déclare de lui.", qui)
             }
         }
         ReponseDIdentite::Autre => {

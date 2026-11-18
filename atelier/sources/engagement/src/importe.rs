@@ -1213,7 +1213,7 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
 /// changer, et ses pieces) ; un engagement valide a ete dit et arrete : sa carte ne se change plus ici. SEULE LA CARTE
 /// CHANGE : sa saisie d'ici (avenants, faits des mois), ses versions, son numero donne restent ; un engagement dont la
 /// carte ne change pas ne se reecrit pas. Celui dont le mois d'entree change avec sa carte (`mois_d_entree`) passe dans
-/// le fichier de ce mois, apres ceux qui y sont. Rend combien ont change.
+/// le fichier de ce mois, a la place de son mois d'origine parmi les importes. Rend combien ont change.
 pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -> bool) -> R<usize> {
     let tous = tous(racine)?;
     let dernier = tous.iter().flat_map(|i| i.paies().keys().copied()).max();
@@ -1226,6 +1226,11 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
         }
         let mois = mois_d_entree(&carte, i.pieces(), dernier)?;
         let mut ecrit = (*i.objet.brut).clone();
+        // Un numero que la carte recoit n'est plus celui que le moteur avait donne (`numero_pour`) : il se lit, il ne se
+        // reforme pas (regle 4).
+        if carte.numero != i.carte().numero {
+            ecrit.numero_pour = None;
+        }
         ecrit.saisie.carte = carte;
         changes.push((i.objet.fichier, i.objet.rang, mois, ecrit));
     }
@@ -1255,7 +1260,14 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
         for rang in partent {
             contenu.engagements.remove(rang);
         }
-        contenu.engagements.extend(changes.iter().filter(|(de, _, vers, _)| *de != f && *vers == f).map(|(_, _, _, e)| e.clone()));
+        // L'ordre des engagements importes d'un fichier est celui de leur mois d'origine, puis de leur rang : ceux qui
+        // viennent d'un mois d'avant se placent devant les importes deja la, ceux d'un mois d'apres, derriere. L'ordre ne
+        // depend pas de celui ou la compagnie a repondu.
+        let arrivent = |avant: bool| changes.iter().filter(move |(de, _, vers, _)| *vers == f && if avant { *de < f } else { *de > f }).map(|(_, _, _, e)| e.clone());
+        let premier_importe = contenu.engagements.iter().take_while(|e| e.importe.is_none()).count();
+        let derriere: Vec<stock::Ecrit> = arrivent(false).collect();
+        contenu.engagements.splice(premier_importe..premier_importe, arrivent(true));
+        contenu.engagements.extend(derriere);
         if contenu.engagements.is_empty() && contenu.taux_cachet.is_none() {
             stock::retirer(racine, f)?;
         } else {

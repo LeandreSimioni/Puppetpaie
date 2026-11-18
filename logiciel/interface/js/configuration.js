@@ -707,7 +707,7 @@ function vueImportation(r) {
         ${pose}${remplace}
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
-      ? (questions || `<div class="encart ${couleur}">${aideDe("import_rien")}</div>`)
+      ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
       : `${questions}<p><button class="primaire" id="import-ecrire">Reprendre</button>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
