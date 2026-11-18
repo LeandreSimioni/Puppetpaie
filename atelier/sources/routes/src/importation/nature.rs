@@ -386,7 +386,8 @@ impl crate::enveloppe::Dite for NatureDite {
 /// (`a_dire`), le contrat que sa derniere DSN reprise declare la donne (S21.G00.40.007, la nature du contrat ;
 /// `norme-dsn/texte/bloc-S21.G00.40.txt`), avec ce que `demande` exige d'un contrat qui court encore : le debut (.001),
 /// le numero (.009), la duree du travail (.013), la fin s'il a un terme (.010) et le salaire du contrat, « la remuneration
-/// brute habituelle du salarie » (S21.G00.51, type 010 ; `bloc-S21.G00.51.txt`). Tout y est : la nature se dit comme a
+/// brute habituelle du salarie » (S21.G00.51, type 010 ; `bloc-S21.G00.51.txt`), d'un mois que la paie et le contrat
+/// couvrent entier (`Mesures::salaire_habituel_du_mois`, `couvre_le_mois`). Tout y est : la nature se dit comme a
 /// l'ecran (`dire`). Il en manque, ou la nature declaree n'est pas d'un permanent : rien ne se choisit, l'ecran le
 /// demande. Rend ce que chaque nature dite a fait, en phrases ; une nature lue que l'ecriture refuse se dit aussi.
 pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>> {
@@ -398,7 +399,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let ctx = Contexte::nouveau(racine, Some(*quand))?;
         let Some(nir) = ctx.salaries.get(&salarie).and_then(|f| f.nir.dite().cloned()) else { continue };
         // Sa derniere paie declaree : le contrat tel que la derniere DSN le dit.
-        let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_ref() == Some(&nir)).last() else { continue };
+        let Some(((mois, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_ref() == Some(&nir)).last() else { continue };
         let c = p.contrat.as_ref();
         let Some(code) = c.and_then(|c| c.nature_dsn.clone()) else { continue };
         let Some(nat) = permises.iter().find(|n| n.code(droit::rubrique!("S21.G00.40.007")).as_deref() == Some(code.as_str())) else { continue };
@@ -408,8 +409,9 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         for champ in demande(nat, en_cours) {
             let pose = match champ {
                 Demande::Numero => Some(charge.numero = Some(numero.clone())),
-                Demande::Salaire => match p.paie.mesures.salaire_habituel {
-                    // Le salaire de base d'un mois : le montant d'une unite, le mois.
+                // Le salaire de base d'un mois que la paie couvre entier, sous un contrat qui le couvre entier : le
+                // montant d'une unite, le mois. D'une partie du mois, il n'en est que la part : il se demande.
+                Demande::Salaire => match p.paie.mesures.salaire_habituel_du_mois(*mois).filter(|_| c.is_some_and(|c| couvre_le_mois(c, *mois))) {
                     Some(m) => Some(charge.salaire = Some(m.pour_une_unite())),
                     None => None,
                 },
@@ -433,4 +435,11 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         }
     }
     Ok(faits)
+}
+
+/// Le contrat que la DSN declare (`c` : ses dates, S21.G00.40.001 et .010, et la fin que son bloc 62 declare) couvre-t-il
+/// le mois `mois` entier ?
+fn couvre_le_mois(c: &declarations::dsn_lue::ContratDeclare, mois: socle::mois::Mois) -> bool {
+    let du_mois = Periode::du_mois(mois);
+    c.periode.croise(&du_mois) == Some(du_mois) && c.fin_declaree.is_none_or(|f| f >= mois.dernier_jour())
 }

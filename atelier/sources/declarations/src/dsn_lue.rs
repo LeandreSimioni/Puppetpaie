@@ -132,6 +132,7 @@ const S21_50_006: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.006");
 const S21_50_008: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.008");
 const S21_50_009: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.009");
 const S21_51_001: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.001");
+const S21_51_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.002");
 const S21_51_010: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.010");
 const S21_51_011: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.011");
 const S21_51_013: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.013");
@@ -365,12 +366,14 @@ pub struct Activite {
 }
 
 /// UNE REMUNERATION (bloc S21.G00.51), « contrepartie de l'activite de l'individu dans le cadre du contrat »
-/// (`norme-dsn/texte/bloc-S21.G00.51.txt` l. 22) : sa periode de paie (.001, « date de debut de periode a laquelle la
-/// remuneration est rattachee », l. 38-40), LE CONTRAT QU'ELLE PAIE (.010, « identique a la valeur renseignee dans une
-/// rubrique Numéro du contrat - S21.G00.40.009 », CCH-11, l. 91-98), son type (.011), son montant (.013), ses activites.
+/// (`norme-dsn/texte/bloc-S21.G00.51.txt` l. 22) : sa periode de paie (.001 et .002, « date de debut [de fin] de
+/// periode a laquelle la remuneration est rattachee », l. 38-44), LE CONTRAT QU'ELLE PAIE (.010, « identique a la
+/// valeur renseignee dans une rubrique Numéro du contrat - S21.G00.40.009 », CCH-11, l. 91-98), son type (.011), son
+/// montant (.013), ses activites.
 #[derive(Clone, Debug, Default)]
 pub struct Remuneration {
     pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
     pub contrat: Option<NumeroContrat>,
     pub genre: Option<TypeDeRemuneration>,
     pub montant: Option<Montant>,
@@ -528,16 +531,34 @@ pub struct Adhesion {
 }
 
 /// Ce qu'un contrat declare pour des periodes de paie : son brut (51 de type 001, « remuneration brute non plafonnee » ;
-/// `None` : aucun), son salaire habituel (51 de type 010, « la remuneration brute habituelle du salarie »,
-/// `bloc-S21.G00.51.txt` : le salaire du contrat d'un permanent) et son activite (53 de type 01).
+/// `None` : aucun), ses lignes de salaire de base (51 de type 010, « la remuneration brute habituelle du salarie »,
+/// `bloc-S21.G00.51.txt` : le salaire du contrat d'un permanent ; `salaire_habituel_du_mois`) et son activite (53 de
+/// type 01).
 #[derive(Clone, Debug)]
 pub struct Mesures {
     pub brut: Option<Montant>,
-    pub salaire_habituel: Option<Montant>,
+    /// Les remunerations de type 010 qui disent leur montant, chacune avec sa periode (51.001, .002).
+    salaires_de_base: Vec<Remuneration>,
     pub jours: Jours,
     pub cachets: Cachets,
     pub heures: Heures,
     pub remunere: bool,
+}
+
+impl Mesures {
+    /// LE SALAIRE HABITUEL DU CONTRAT, D'UN MOIS QUE SA PAIE COUVRE ENTIER : le montant de sa ligne de salaire de base
+    /// (51 de type 010), quand il n'en a qu'une et que sa periode (51.001, .002) est le mois `mois` entier. Les elements
+    /// du bloc Remuneration « sont declares par periode elementaire de paie », sous-partie de la periode de paie qu'un
+    /// changement des parametres du calcul decoupe, et une paie infra-mensuelle en a plusieurs dans le mois
+    /// (`norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 500-512, § 2.1.3.3 l. 543-546) : plusieurs lignes
+    /// 010 sont chacune le salaire d'une partie du mois, et une ligne d'une partie du mois (une embauche, un depart)
+    /// n'est que la part qu'elle paie. Ni l'une ni l'autre ne dit le salaire mensuel du contrat : `None`.
+    pub fn salaire_habituel_du_mois(&self, mois: Mois) -> Option<Montant> {
+        match self.salaires_de_base.as_slice() {
+            [r] if r.debut == Some(mois.premier_jour()) && r.fin == Some(mois.dernier_jour()) => r.montant,
+            _ => None,
+        }
+    }
 }
 
 /// CE QUE DECLARE UNE DSN DEPOSEE.
@@ -657,12 +678,12 @@ impl DsnLue {
     }
 
     /// CE QUE LE CONTRAT `numero` DE L'INDIVIDU `nir` DECLARE, pour le mois (`rappel` faux) ou en rappel d'un mois deja
-    /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, le salaire
-    /// habituel de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en jours, 12 ;
-    /// en cachets, 37).
+    /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, les lignes de
+    /// salaire de base de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en
+    /// jours, 12 ; en cachets, 37).
     pub fn mesures(&self, nir: Option<&Nir>, numero: &NumeroContrat, rappel: bool) -> Mesures {
         // Les sommes du contrat, a zero avant sa premiere remuneration.
-        let mut m = Mesures { brut: None, salaire_habituel: None, jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
+        let mut m = Mesures { brut: None, salaires_de_base: Vec::new(), jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
         for r in self.versements_de(nir).flat_map(|v| v.remunerations.iter()) {
             if r.contrat.as_ref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
                 continue;
@@ -671,7 +692,7 @@ impl DsnLue {
                 m.remunere = true;
                 match r.genre {
                     Some(TypeDeRemuneration::Brute) => m.brut = Some(m.brut.into_iter().sum::<Montant>() + montant),
-                    Some(TypeDeRemuneration::SalaireDeBase) => m.salaire_habituel = Some(montant),
+                    Some(TypeDeRemuneration::SalaireDeBase) => m.salaires_de_base.push(r.clone()),
                     _ => {}
                 }
             }
@@ -1291,9 +1312,10 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let debut = fautes.jour(rub, &v);
                 x.remunerations.push(Remuneration { debut, ..Remuneration::default() });
             }
-            S21_51_010 | S21_51_011 | S21_51_013 => {
+            S21_51_002 | S21_51_010 | S21_51_011 | S21_51_013 => {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 match rub {
+                    S21_51_002 => r.fin = fautes.jour(rub, &v),
                     S21_51_010 => r.contrat = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire),
                     S21_51_011 => r.genre = TypeDeRemuneration::du_code(&v),
                     _ => r.montant = fautes.euros(rub, &v),
