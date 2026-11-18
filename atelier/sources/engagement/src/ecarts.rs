@@ -604,7 +604,10 @@ fn refaire<'a>(
 /// une ligne en heures (« Heures », « Heure de travail »), ses heures ; sous une ligne « Salaire mensuel de base »
 /// (`rubriques-base.json`, `mois`), qui ne les imprime pas, la duree du travail de l'en-tete (« Durée du travail »,
 /// `PaieVersee::duree_du_travail`). Que les heures imprimees soient celles du contrat est une inference, qui ne vaut que
-/// d'un mois paye entier, et seulement sans DSN.
+/// d'un mois paye entier, et seulement sans DSN. Que la quotite de la DSN compte des heures PAR MOIS est une INFERENCE
+/// aussi : la norme ne fixe pas sa periode (elle en donne l'unite, S21.G00.40.011, et la quotite de reference de
+/// l'entreprise, S21.G00.40.012). Un logiciel qui y declare la duree de la semaine fait dire « non comparee » a une paie
+/// qui pourrait se comparer ; aucune paie n'en est faussee.
 ///
 /// LE SALAIRE MENSUEL : le montant de la ligne, d'un mois paye entier. Une ligne « Salaire mensuel de base » paie le mois
 /// entier quand sa quantite, si elle en imprime une, est un mois. Une ligne en heures paie les heures du mois : quand la
