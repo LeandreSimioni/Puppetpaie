@@ -1083,11 +1083,14 @@ ne se connaît pas. Rien n'est calculé.",
             continue;
         }
         for p in paies {
+            // Datee sur ou avant le mois d'une paie que l'ancien logiciel a faite, la reprise ne dit pas encore tout ce
+            // qu'il a cumule, ou le compterait deux fois : c'est sa date qui est en cause, que la paie reprise dise ou
+            // non la grandeur lue.
+            let reprise = matches!(p, PaieAnterieure::Reprise(_));
             match (de(p).map_err(|e| illisible(*m, e))?, depuis) {
-                (Some(x), _) => total = total + x,
-                // Datee sur ou avant le mois d'une paie que l'ancien logiciel a faite, la reprise ne dit pas encore tout ce
-                // qu'il a cumule : c'est sa date qui est en cause, pas le cumul qu'elle dit.
-                (None, Some(date)) => {
+                (Some(x), None) => total = total + x,
+                (Some(x), Some(_)) if !reprise => total = total + x,
+                (_, Some(date)) => {
                     return Err(socle::echec::cle(
                         format!(
                             "{} de {} : la reprise des cumuls de l'année est datée du {}, et l'ancien logiciel a encore payé \

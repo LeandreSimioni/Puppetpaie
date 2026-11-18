@@ -2952,13 +2952,16 @@ décident. Les articles sont relevés et datés dans
   d'inventer ;
 - **indemnité de licenciement** : huit mois d'ancienneté (L1234-9), un quart
   puis un tiers de mois (R1234-2), salaire de référence le plus favorable des
-  deux formules (R1234-4), sur les mois du service du salarié dans
-  l'entreprise (R1234-1 ; depuis son ancienneté, `calcul::DebutDeLAnciennete`,
-  douze au plus : inférence). Un mois de service ou du contrat sans paie connue
+  deux formules (R1234-4), sur les mois du service du salarié, douze au
+  plus, depuis le début du contrat de la carte, comme l'ancienneté de
+  l'indemnité elle-même : inférence, le texte ne dit pas si un contrat
+  antérieur dans l'entreprise y entre. Un mois du contrat sans paie connue
   n'est pas un zéro : le salaire de référence et la précarité refusent en le
   nommant, et lisent leurs mois par un seul chemin
-  (`solde::brut_d_un_mois_de_service`), celui de la validation : les mois d'un
-  engagement en saisie s'y calculent comme sa validation les calculera. Un montant **supra-légal est refusé** : son régime
+  (`solde::brut_d_un_mois_de_service`) : les mois de l'engagement lui-même,
+  encore en saisie, s'y calculent comme sa validation les calculera ; un autre
+  engagement du même salarié encore en saisie se lit à l'écran et pas à la
+  validation. Un montant **supra-légal est refusé** : son régime
   social est autre, et le moteur ne sait pas l'assujettir ;
 - **les trois autres fins d'un CDI** — et c'est le
   **motif de rupture** qui choisit, jamais la ressemblance :
