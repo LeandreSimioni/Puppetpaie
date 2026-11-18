@@ -364,6 +364,8 @@ struct Refaite<'a> {
     cotisations: &'a [CotisationImprimee],
 }
 
+/// LA SAISIE REFAITE de la paie importee `p` (l'en-tete du module), calculee comme la validation la calculerait ; `c`
+/// note ce qu'elle lit du statut, de la qualite de cadre et du taux AT/MP, et si un refus du calcul la fera refaire.
 fn refaire<'a>(
     racine: &Path,
     brut: &crate::saisie::Carte,
