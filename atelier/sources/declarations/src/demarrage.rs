@@ -111,7 +111,7 @@ pub enum CeQueLImportARepris {
 
 /// LA PHRASE DE CE QU'UNE DSN DONNERAIT, quand l'import n'en a repris aucune.
 pub const AJOUTEZ_UNE_DSN: &str =
-    "Il nous manque encore quelques informations : une DSN déposée les donne. Ajoutez-en une au dossier de l'import et relancez l'import, elles se rempliront.";
+    "Il nous manque encore quelques informations : une DSN déposée les donne. Ajoutez-en une au dossier de l'import et relancez l'import : il les remplit.";
 
 /// CE QU'UNE DSN DONNERAIT, quand l'import n'en a repris aucune : la phrase, et chaque ligne qu'elle remplirait.
 #[derive(Debug, Clone, Serialize)]
