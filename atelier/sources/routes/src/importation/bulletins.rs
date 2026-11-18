@@ -2073,6 +2073,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, lignes: Vec<engagement::imp
     }
     ligne.lignes = lignes;
     ligne.dates = b.dates_travaillees.clone();
+    ligne.duree_du_travail = b.duree_du_travail;
     ligne.cotisations = Some(
         b.cotisations
             .iter()

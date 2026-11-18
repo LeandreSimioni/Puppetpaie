@@ -468,6 +468,8 @@ enum Sorte {
     Periode,
     Intervalles,
     Nombre,
+    /// Un nombre d'heures, suivi ou non de son unite (« 151,67 h »).
+    Heures,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -482,7 +484,7 @@ enum Section {
 /// Chaque mention : son type, ou elle se cherche, combien de rangs sa valeur peut couvrir, et si elle dit
 /// l'employeur (elle suit alors son adresse). Le type est fixe ici : la table dit comment la mention s'annonce, pas ce
 /// qu'elle est.
-const MENTIONS: [(&str, Sorte, Section, usize, bool); 23] = [
+const MENTIONS: [(&str, Sorte, Section, usize, bool); 24] = [
     ("numero", Sorte::Texte, Section::Entete, 1, false),
     ("numero_objet", Sorte::Compact, Section::Entete, 1, false),
     ("spectacle", Sorte::Texte, Section::Entete, 1, false),
@@ -502,6 +504,8 @@ const MENTIONS: [(&str, Sorte, Section, usize, bool); 23] = [
     ("conges_spectacles", Sorte::Compact, Section::Entete, 1, false),
     ("periode", Sorte::Periode, Section::Entete, 1, false),
     ("dates_travaillees", Sorte::Intervalles, Section::Entete, 12, false),
+    // Le nombre d'heures de travail auquel le salaire se rapporte (R. 3243-1, 5°), quand l'en-tete l'imprime.
+    ("duree_du_travail", Sorte::Heures, Section::Entete, 1, false),
     ("regle_le", Sorte::Date, Section::Page, 1, false),
     ("mode_reglement", Sorte::Texte, Section::Page, 1, false),
     ("contrat", Sorte::Texte, Section::Page, 1, false),
@@ -1107,6 +1111,10 @@ pub struct BulletinLu {
     pub dates_travaillees: Vec<Periode>,
     /// Les memes, jour par jour.
     pub jours_travailles: Vec<Jour>,
+    /// Le nombre d'heures de travail auquel le salaire se rapporte (R. 3243-1, 5°), quand l'en-tete l'imprime
+    /// (« Durée du travail : 151,67 h ») ; une ligne en heures imprime les siennes dans le tableau.
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub duree_du_travail: Option<Heures>,
     pub lignes: Vec<LignePaie>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
     pub brut: Montant,
@@ -1648,6 +1656,7 @@ impl<'a> Lecteur<'a> {
             periode,
             dates_travaillees,
             jours_travailles,
+            duree_du_travail: nombre(&valeurs, "duree_du_travail").map(|n| n.grandeur()),
             lignes: corps.lu.lignes,
             brut,
             cotisations: corps.lu.cotisations,
@@ -1828,6 +1837,14 @@ impl<'a> Lecteur<'a> {
             Sorte::Nombre => {
                 let chiffres: Vec<&str> = textes.iter().copied().filter(|x| !matches!(*x, "%" | "€")).collect();
                 lire_nombre(&chiffres.join(" ")).map(Valeur::Nombre)
+            }
+            Sorte::Heures => {
+                let chiffres: Vec<&str> = textes.iter().copied().filter(|x| !matches!(canon(x).as_str(), "h" | "heure" | "heures")).collect();
+                let lu = lire_nombre(&chiffres.join(" ")).map(Valeur::Nombre);
+                if lu.is_none() {
+                    self.avertissements.push(Avertissement::Lecture(format!("{} : « {} » n'est pas un nombre d'heures", m.nom, textes.join(" "))));
+                }
+                lu
             }
             Sorte::Periode => {
                 let dates: Vec<Jour> = textes.iter().filter_map(|x| lire_date(x)).collect();

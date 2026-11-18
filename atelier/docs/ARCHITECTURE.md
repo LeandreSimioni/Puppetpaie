@@ -367,6 +367,7 @@ un libellé, chacun sa forme.
 | effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; le banc le compte des DSN déposées, `envois::organismes_simules`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
 | quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon ; le plafond de 40.012 et 40.013 d'une nature en est une, lu une fois dans l'unité de 40.011 ; l'unité d'un contrat, la seule source, est celle de sa nature, `Nature::selon_l_unite` ; dite dans une phrase par `QuotiteDuContrat::dite`) | `droit/src/natures.rs` |
+| durée du travail imprimée (l'en-tête d'un bulletin, « Durée du travail : 151,67 h » : le nombre d'heures de travail auquel le salaire se rapporte, C. trav. R. 3243-1, 5° ; la quotité d'un salarié au mois telle que son bulletin la dit, en heures) | `Heures` (lue par la table de lecture, `import::bulletin_lu::BulletinLu.duree_du_travail`, gardée dans la paie importée, `engagement::importe::PaieVersee.duree_du_travail`) | `socle/src/grandeurs.rs` |
 | quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
@@ -2345,7 +2346,11 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage.
 - **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
-  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit.
+  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Ce que la dernière DSN reprise déclare du
+  contrat ne se demande pas ; son salaire mensuel, seulement d'un mois que sa paie couvre entier : une seule ligne de
+  salaire de base (51 de type 010) dont la période est le mois, sous un contrat qui le couvre
+  (`dsn_lue::Mesures::salaire_habituel_du_mois`) ; plusieurs lignes 010 sont chacune le salaire d'une période
+  élémentaire de paie (norme, chapitre 2, § 2.1.3.3), et le salaire se demande.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
@@ -2364,12 +2369,20 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
   sans couche, une ligne sans rubrique). La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
-  (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), et son salaire mensuel et ses heures par
-  mois dans les cases de sa carte, lus sur sa ligne de salaire en heures (« Heures », « Heure de travail » : les heures
-  auxquelles le salaire se rapporte, C. trav. R. 3243-1, 5°) d'un mois payé entier (`ecarts::salaire_imprime`) ; un
-  bulletin qui ne les imprime pas (une ligne « Salaire mensuel de base », qui ne dit pas ses heures), un mois partiel, le mois où le contrat finit ou une
-  autre ligne que ses repas et ses nuitées (ses congés, ses absences, ses primes, qui se disent en cases) ne se
-  comparent pas, et la raison dit ce qui manque au bulletin. Les bulletins des fictives disent ce que le moteur calcule de leur paie
+  (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
+  déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
+  carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le
+  salaire mensuel est le montant de sa ligne de salaire. Les heures par mois sont la quotité que la DSN déclare pour le
+  contrat (S21.G00.40.013, « la durée contractuelle de travail ») quand elle la déclare (Léandre, 18/11/2026) ; sinon
+  celles que le bulletin imprime (« le nombre d'heures de travail auxquels se rapporte le salaire », C. trav. R. 3243-1,
+  5°) : sur une ligne en heures (« Heures », « Heure de travail »), ou en en-tête (« Durée du travail », une mention
+  de la table de lecture gardée dans la paie importée, `PaieVersee::duree_du_travail`) sous une ligne « Salaire mensuel
+  de base » qui ne les dit pas. Le mois payé entier : une paie qu'un bulletin seul déclare a la période de ce bulletin,
+  qui couvre le mois ; une paie que la DSN déclare a les dates du contrat, et le mois qu'elle paie se lit sur sa ligne
+  (des heures égales à la quotité déclarée, ou le mois). Un bulletin qui n'imprime ses heures nulle part sans DSN qui
+  les déclare, une ligne en heures qui n'en paie pas la quotité déclarée (une absence, des congés), un mois partiel, le
+  mois où le contrat finit ou une autre ligne que ses repas et ses nuitées (ses congés, ses absences, ses primes, qui se
+  disent en cases) ne se comparent pas, et la raison dit ce qui manque. Les bulletins des fictives disent ce que le moteur calcule de leur paie
   (`moteur-atelier remplir-bulletins`, par `engagement::ecarts::calculee`, le même chemin) : leur rejeu exige que
   chaque paie importée se compare, la compagnie complète, sans écart, au taux AT/MP de la compagnie (celui que la DSN
   reprise déclare) (`moteur/tests/rejeu.rs`) ; un écart y est une régression du calcul.

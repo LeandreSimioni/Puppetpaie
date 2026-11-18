@@ -210,6 +210,16 @@ pub struct PaieVersee {
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub heures: Option<Heures>,
+    /// LA DUREE DU TRAVAIL QUE LE BULLETIN IMPRIME en en-tete (« Durée du travail : 151,67 h ») : le nombre d'heures de
+    /// travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°), quand il ne l'imprime pas sur sa ligne de
+    /// salaire (« Salaire mensuel de base »).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "socle::grandeurs::ecrit::texte::option::serialize",
+        deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
+    )]
+    pub duree_du_travail: Option<Heures>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub cachets: Option<Cachets>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
@@ -454,6 +464,7 @@ impl PaieVersee {
             fichier: None,
             bases: BTreeMap::new(),
             heures: None,
+            duree_du_travail: None,
             cachets: None,
             jours: None,
             spectacle: None,

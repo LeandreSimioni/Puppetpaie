@@ -21,6 +21,7 @@
     "conges_spectacles": ["N° de Congés Spectacles", "N° Congés Spectacles", "N° Congés Sp."],
     "periode": ["Périodes", "Période", "Période du"],
     "dates_travaillees": ["Dates travaillées"],
+    "duree_du_travail": ["Durée du travail"],
     "regle_le": ["Réglement le", "Règlement le", "Règlement", "Payé le", "Date de paiement"],
     "mode_reglement": ["mode de règlement", "Mode de paiement"],
     "contrat": ["Contrat n°"],
