@@ -95,7 +95,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::ImportationIdentite,
-        geste: "Dire si la personne qu'une DSN déclare est le salarié d'une fiche sans numéro de sécurité sociale.",
+        geste: "Dire si la personne d'une DSN est le salarié d'une fiche sans numéro (NIR).",
         charge: &[
             Champ { nom: "nir", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "le numéro de sécurité sociale que la DSN déclare, sans sa clé", avance: false },
             SALARIE,
