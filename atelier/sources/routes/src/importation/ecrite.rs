@@ -719,8 +719,8 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     };
     let gardees = match compte(import::reponse::SortDeLaValeur::DejaDeclaree) {
         0 => String::new(),
-        1 => " Une valeur qu'elle déclare autrement est gardée : l'engagement est déjà validé ou déclaré d'ici.".to_string(),
-        n => format!(" {} valeurs qu'elle déclare autrement sont gardées : leurs engagements sont déjà validés ou déclarés d'ici.", n),
+        1 => " Une valeur que la DSN reprise déclare autrement est gardée : l'engagement est déjà validé ou déclaré d'ici.".to_string(),
+        n => format!(" {} valeurs que la DSN reprise déclare autrement sont gardées : leurs engagements sont déjà validés ou déclarés d'ici.", n),
     };
     let remplacees = remplacees + &gardees;
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
