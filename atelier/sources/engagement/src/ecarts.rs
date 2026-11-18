@@ -6,8 +6,11 @@
 //! LA SAISIE REFAITE : le salarie (sa fiche, a la date de la periode ; le statut, la qualite de cadre et l'emploi que
 //! le bulletin imprime passent devant les siens), le spectacle que le bulletin nomme, la nature du contrat importe (`importe::Importe::nature`), les lignes de remuneration que le
 //! bulletin imprime, par leur rubrique du catalogue (quantite, taux, heures), aux jours qu'il dit travailles (a defaut,
-//! autant de jours de sa periode qu'il en compte : `comparer_une`), payee le
-//! jour du versement. Elle se calcule comme la validation la calculerait (`charger_donnees`), avec les baremes et la
+//! autant de jours de sa periode qu'il en compte : `refaire`), payee le
+//! jour du versement. UN CONTRAT PAYE AU MOIS a ses dates (`Importe::contrat_de_la_paie`), et son salaire mensuel et ses
+//! heures par mois dans les cases de sa carte, tels que sa ligne de salaire les imprime (`salaire_imprime`, d'un mois
+//! paye entier : `contrat_au_mois`) ; ses autres lignes, hors repas et nuitees, ne se lisent pas sur un bulletin, et sa
+//! paie ne se refait pas. Elle se calcule comme la validation la calculerait (`charger_donnees`), avec les baremes et la
 //! configuration a la date de la periode ; une compagnie qui n'a pas encore pose son taux AT/MP de l'annee lit celui que
 //! le bulletin applique (`Contexte::avec_le_taux_atmp_lu`).
 //!
@@ -44,7 +47,7 @@ use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
-use socle::grandeurs::{Coefficient, Montant, Taux};
+use socle::grandeurs::{Coefficient, Heures, Montant, MontantUnitaire, Taux};
 
 /// Ce que l'on compare d'une ligne, et qui differe (`MesureDeLEcart::ce_qui_differe`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -304,7 +307,6 @@ const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
-    let brut = imp.objet().carte();
     saisies_refaites(imp)
         .into_iter()
         .filter_map(|(mois, p, nature, jours_comptes)| {
@@ -314,7 +316,7 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
-            let ecarts = refaire(racine, brut, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
+            let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
             let Suivi { statut, cadre, taux_atmp, a_refaire, non_rattachees } = suivi;
             Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees })
         })
@@ -330,7 +332,7 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
             false => socle::refus!("l'engagement importé n'a pas de paie en {}", mois),
         });
     };
-    refaire(racine, imp.objet().carte(), mois, p, nature, jours_comptes, &mut Suivi::default()).map(|r| r.paie)
+    refaire(racine, imp, mois, p, nature, jours_comptes, &mut Suivi::default()).map(|r| r.paie)
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
@@ -368,7 +370,7 @@ struct Refaite<'a> {
 /// note ce qu'elle lit du statut, de la qualite de cadre et du taux AT/MP, et si un refus du calcul la fera refaire.
 fn refaire<'a>(
     racine: &Path,
-    brut: &crate::saisie::Carte,
+    imp: &Importe,
     mois: Mois,
     p: &'a PaieVersee,
     nature: NatureDeContrat,
@@ -391,6 +393,7 @@ fn refaire<'a>(
         c.a_refaire = true;
         return Err(refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche"));
     }
+    let brut = imp.objet().carte();
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;
     let fiche = ctx.fiche_de(salarie).map_err(|m| a_refaire(c, m))?;
     // LE STATUT ET L'EMPLOI DE CETTE PAIE sont ceux que son bulletin imprime (`emploi_imprime`) ; ce qu'il ne dit pas
@@ -456,6 +459,8 @@ fn refaire<'a>(
             }
         }
     }
+    // Le salaire mensuel et les heures par mois d'un contrat paye au mois, que sa ligne de salaire imprime.
+    let mut au_mois: Option<(MontantUnitaire, Heures)> = None;
     let mut saisies = Vec::new();
     for l in &p.lignes {
         let libelle = &l.libelle;
@@ -465,9 +470,24 @@ fn refaire<'a>(
             }
             return Err(socle::refus!("la ligne de rémunération « {} » ne se rattache à aucune rubrique du catalogue", libelle));
         };
-        let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         use crate::ligne::{self, Cle, FormeSaisie, LigneDonnee, LignePaie, PaiementDeLigne, TauxDeLigne};
         let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
+        // UN CONTRAT PAYE AU MOIS ne porte en ligne que ses repas et ses nuitees (`crate::a_une_limite`) : son salaire se
+        // dit dans les cases de sa carte (`conges::lignes_du_mois` le compose), lues sur sa ligne de salaire.
+        if mensuelle && !crate::a_une_limite(&lue.code) {
+            if lue.code != droit::catalogue::HEURE && lue.code != crate::conges::MOIS_PAYE {
+                return Err(socle::refus!(
+                    "le bulletin d'un contrat payé au mois imprime « {} » : la comparaison n'en lit que la ligne de son salaire mensuel, ses repas et ses nuitées",
+                    libelle
+                ));
+            }
+            if au_mois.is_some() {
+                return Err(socle::refus!("le bulletin d'un contrat payé au mois imprime une seconde ligne de salaire (« {} ») : son salaire mensuel ne s'y lit pas", libelle));
+            }
+            au_mois = Some(salaire_imprime(l)?);
+            continue;
+        }
+        let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = FormeSaisie::de(&lue)? else {
             saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, paiement, heures: l.heures, precision: None, dates: jours.clone() }));
@@ -507,12 +527,26 @@ fn refaire<'a>(
         (false, Some(titre)) => Some(ctx.spectacle(&titre).map_err(|m| a_refaire(c, m))?.cle),
         (false, None) => p.numero_objet.as_ref().and_then(|n| ctx.spectacles.iter().find(|(_, f)| f.numero_objet.dite() == Some(n)).map(|(k, _)| k.clone())),
     };
+    // LE CONTRAT : celui d'un contrat d'usage, la periode de la paie ; celui d'un contrat paye au mois, ses dates
+    // (`Importe::contrat_de_la_paie` : sa fin, dite ou declaree, n'est jamais celle du mois que paie un bulletin), son
+    // salaire et ses heures (`contrat_au_mois`).
+    let (debut, fin_du_contrat, salaire_mensuel, quotite_contrat) = match mensuelle {
+        false => (p.periode.map(|o| o.debut()), p.periode.and_then(|o| o.fin()), None, None),
+        true => {
+            let (contrat, salaire, heures) = contrat_au_mois(imp, p, mois, au_mois)?;
+            (Some(contrat.debut()), contrat.fin(), Some(salaire), Some(heures))
+        }
+    };
     let e = crate::saisie::Carte {
         salarie: Some(salarie.clone()),
         spectacle,
         nature: Some(nature),
-        debut: p.periode.map(|o| o.debut()),
-        fin: p.periode.and_then(|o| o.fin()),
+        debut,
+        fin: fin_du_contrat,
+        salaire_mensuel,
+        quotite_contrat,
+        // Le motif d'un CDD, que l'engagement importe dit s'il le dit.
+        motif_recours: brut.motif_recours.filter(|_| mensuelle),
         // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
         emploi: p.emploi_imprime.as_ref().map(|i| droit::emplois::EmploiEcrit { emploi: dit(&i.ecrit.emploi), ..i.ecrit.clone() }).filter(|e| *e != droit::emplois::EmploiEcrit::default()),
         lignes: Some(saisies),
@@ -521,6 +555,21 @@ fn refaire<'a>(
         importe: Some(true),
         ..Default::default()
     };
+    // Une case que la nature d'un contrat paye au mois exige, et que ni son bulletin ni l'engagement importe ne disent :
+    // la paie ne se refait pas (un CDD, son motif de recours).
+    if mensuelle {
+        let manquent: Vec<String> = crate::carte::CarteValide::cases_de(nature)
+            .iter()
+            .filter(|(k, x)| *x == crate::carte::Exige::Obligatoire && !e.dit(*k))
+            .map(|(k, _)| format!("« {} »", crate::carte::libelle(*k)))
+            .collect();
+        if !manquent.is_empty() {
+            return Err(socle::refus!(
+                "ni le bulletin ni l'engagement importé ne disent {} de ce contrat payé au mois : sa paie ne se refait pas",
+                manquent.join(", ")
+            ));
+        }
+    }
     let data = crate::saisie::VueDuMois { mois, taux_cachet: None, engagements: vec![e] };
     let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
     if let Some((taux, montant, base)) = atmp_imprime {
@@ -542,6 +591,55 @@ fn refaire<'a>(
     let paie = saisie.paies.into_iter().next().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
     let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie)?;
     Ok(Refaite { paie, garanties, atmp_lu, cotisations })
+}
+
+/// LE SALAIRE MENSUEL ET LES HEURES PAR MOIS QU'IMPRIME LA LIGNE DE SALAIRE `l` du bulletin d'un contrat paye au mois
+/// (une ligne de la rubrique `heure` ou `mois`). Le bulletin imprime « le nombre d'heures de travail auxquels se rapporte
+/// le salaire » (C. trav. R. 3243-1, 5°, `atelier/reference/sources/code-du-travail/articles-20261028.md`) : sur une
+/// ligne en heures (« Heures », « Heure de travail »), ses heures, et le salaire est son montant ; sur une ligne
+/// « Salaire mensuel de base » (`rubriques-base.json`, `mois` : sa quantite est la part du mois, son taux le salaire
+/// mensuel, ses heures celles du mois), le salaire d'un mois entier et les heures par mois que la ligne dit. Elle ne dit
+/// que le mois qu'elle paie : `contrat_au_mois` exige un mois paye entier. Ce que la ligne n'imprime pas ne se devine
+/// pas : la paie ne se refait pas, et le refus dit ce qui manque au bulletin.
+fn salaire_imprime(l: &crate::importe::LigneImprimee) -> R<(MontantUnitaire, Heures)> {
+    use crate::ligne::PaiementDeLigne;
+    let libelle = &l.libelle;
+    let montant = l.montant.ok_or_else(|| socle::refus!("le bulletin imprime « {} » sans son montant : le salaire mensuel du contrat ne s'y lit pas", libelle))?;
+    match (l.paiement, l.heures) {
+        (Some(PaiementDeLigne::Heures(heures, _)), _) => Ok((montant.pour_une_unite(), heures)),
+        (Some(PaiementDeLigne::PartDuMois(part, salaire)), Some(h)) if part == Coefficient::UN => Ok((salaire, Coefficient::UN * h)),
+        (None, Some(h)) => Ok((montant.pour_une_unite(), Coefficient::UN * h)),
+        (Some(PaiementDeLigne::PartDuMois(part, _)), _) if part != Coefficient::UN => {
+            Err(socle::refus!("le bulletin imprime « {} » avec une quantité qui n'est pas un mois entier : le salaire mensuel du contrat ne s'y lit pas", libelle))
+        }
+        _ => Err(socle::refus!(
+            "le bulletin imprime « {} » sans le nombre d'heures de travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°) : les heures par mois du contrat ne s'y lisent pas",
+            libelle
+        )),
+    }
+}
+
+/// LE CONTRAT PAYE AU MOIS QUE PAIE `p`, le mois `mois` : ses dates (`Importe::contrat_de_la_paie`), et le salaire mensuel
+/// et les heures par mois que sa ligne de salaire imprime (`salaire_imprime`, lus en chemin : `au_mois`). Une ligne de
+/// salaire ne dit que le mois qu'elle paie : le bulletin paie le mois entier, du contrat qui le couvre entier. Le mois ou
+/// le contrat finit, son solde de tout compte se compose de cases (le motif de la rupture, le preavis) qu'aucun bulletin
+/// n'imprime : la paie ne se refait pas.
+fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, au_mois: Option<(MontantUnitaire, Heures)>) -> R<(socle::date::PeriodeOuverte, MontantUnitaire, Heures)> {
+    let Some((salaire, heures)) = au_mois else {
+        return Err(refus("le bulletin d'un contrat payé au mois n'imprime pas la ligne de son salaire mensuel"));
+    };
+    let Some(contrat) = imp.contrat_de_la_paie(p)? else {
+        return Err(refus("ni l'engagement importé ni le bulletin ne disent le début du contrat"));
+    };
+    let du_mois = socle::date::Periode::du_mois(mois);
+    if contrat.fin().is_some_and(|f| du_mois.contient(&f)) {
+        return Err(refus("le contrat payé au mois finit ce mois-ci : son solde de tout compte se dit en cases (le motif de la rupture, le préavis) qu'un bulletin n'imprime pas"));
+    }
+    let entier = |o: Option<socle::date::PeriodeOuverte>| o.and_then(|o| o.croise(&du_mois)) == Some(du_mois);
+    if !entier(p.periode) || !entier(Some(contrat)) {
+        return Err(refus("le bulletin paie une partie du mois : le salaire mensuel du contrat ne s'y lit pas"));
+    }
+    Ok((contrat, socle::grandeurs::courte(salaire), socle::grandeurs::courte(heures)))
 }
 
 /// Les ecarts de la paie refaite `r` a ce que le bulletin de la paie importee `p` imprime ; `c` note les lignes de
