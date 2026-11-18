@@ -450,6 +450,12 @@ impl CodePcsEse {
     /// Aucun pour tout autre code : 353b (on y range un « Producteur réalisateur », `353b.txt` l. 54) et 353c (« Cadres
     /// artistiques et technico-artistiques », le réalisateur et le régisseur général ensemble, `353c.txt` l. 51-52) ne se
     /// tranchent pas par leur code ; les autres fiches ne sont pas déposées. Le statut se dit alors sur la fiche.
+    ///
+    /// INFERENCE : une fiche Insee classe une profession, elle ne dit pas le statut d'artiste du spectacle ni celui de
+    /// technicien. Ranger tout un code d'un cote se lit dans l'intitule et la definition de la rubrique, que certains de
+    /// ses metiers ne suivent pas : 354b compte un « Accordeur » (`354b.txt` l. 54) ; 354f, un « Mannequin », un
+    /// « Présentateur », un « Animateur (radio, télévision » (`354f.txt` l. 47, 56, 59) ; 465b, des « tâches
+    /// technico-administratives » (`465b.txt` l. 35). Le statut ainsi pose se corrige sur la fiche.
     pub fn statut_de_sa_fiche(&self) -> Option<Statut> {
         match self.0.as_str() {
             "354b" | "354c" | "354e" | "354f" => Some(Statut::Artiste),
