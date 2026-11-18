@@ -1582,7 +1582,6 @@ fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
     }
 }
 
-/// Le rang dans `a_creer` de la fiche `nom` que l'import cree pour le NIR `nir` ; sans NIR, la premiere de ce nom.
 /// La piece `piece` donne-t-elle son matricule a la fiche neuve du salarie `nir` ? La premiere qui le porte le garde
 /// (`Apercu::matricules_lus_dans`).
 fn noter_le_matricule(a_creer: &[ACreer], lus_dans: &mut HashMap<Option<Nir>, Source>, nir: &Nir, piece: Source) {
@@ -1594,6 +1593,7 @@ fn noter_le_matricule(a_creer: &[ACreer], lus_dans: &mut HashMap<Option<Nir>, So
     }
 }
 
+/// Le rang dans `a_creer` de la fiche `nom` que l'import cree pour le NIR `nir` ; sans NIR, la premiere de ce nom.
 fn rang_a_creer(a_creer: &[ACreer], nom: NomDeFiche, nir: Option<&Nir>) -> Option<usize> {
     a_creer.iter().enumerate().filter(|(_, a)| a.donnees.nom() == nom).find(|(_, a)| nir.is_none() || a.nir() == nir).map(|(i, _)| i)
 }

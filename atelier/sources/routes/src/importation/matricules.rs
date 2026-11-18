@@ -192,7 +192,7 @@ impl Empeche {
     fn dit(&self, porteurs: &[Porteur]) -> String {
         match self {
             Empeche::Porte(j, true) => format!("qui est celui de {}, {}", porteurs[*j].nom, porteurs[*j].pourquoi()),
-            Empeche::Porte(j, false) => format!("qui a été celui de {}, {}", porteurs[*j].nom, porteurs[*j].pourquoi()),
+            Empeche::Porte(j, false) => format!("qui a été celui de {} : une fiche garde tout matricule qu'elle a porté", porteurs[*j].nom),
             Empeche::EnDouble(autres) => format!(
                 "que d'autres pièces reprises donnent aussi à {} : un matricule désigne un salarié et un seul, aucun ne le prend",
                 autres.join(" et ")
@@ -406,7 +406,9 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
             None => p.historique.clone(),
         })
         .collect();
-    let reserves: Vec<&Matricule> = accordes.iter().map(|(d, _)| &d.matricule).collect();
+    // Un matricule qu'une piece demande, accorde ou non, ne se donne d'office a personne : un matricule dispute ne va
+    // a aucun de ceux qui se le disputent.
+    let reserves: Vec<&Matricule> = demandes.iter().map(|d| &d.matricule).collect();
     let mut neuves: Vec<Neuve> = Vec::new();
     let mut ecartees: Vec<String> = Vec::new();
     for (k, a) in ap.a_creer.iter().enumerate() {

@@ -664,16 +664,14 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // rien : leurs lignes ne portent aucune version d'engagement (`envois::reprise_journal`), et rien n'est parti d'eux
     // pour un engagement (`envois::journal::departs_des_lignes`).
     let departs = envois::journal::lu(&ctx.racine)?.departs;
-    // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), ce que l'import fera des matricules, et la copie de
-    // ce qu'il reprend.
-    let (tri, copie, noms, deposes, matricules) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |lu| {
-        let matricules = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs)?;
+    // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
+    let (tri, copie, noms, deposes) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |lu| {
         let (copie, noms) = copier_repris(ctx, &lu)?;
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = lu.ap.reponse.tri;
         // La copie se relit sous le nom du fichier depose.
         let deposes: HashMap<CheminRelatif, CheminRelatif> = lu.copies.iter().map(|(i, nom)| (CheminRelatif::from(nom.clone()), lu.tri.fichiers[*i].chemin.clone())).collect();
-        Ok((tri, copie, noms, deposes, matricules))
+        Ok((tri, copie, noms, deposes))
     })?;
 
     // 2. D'ABORD LA COPIE, ENSUITE LA LECTURE : l'apercu relu dans les copies de ce dossier (et d'elles seules), prises
@@ -703,6 +701,9 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     imp.reponse.tri = tri;
     imp.reponse.source = dossier.display().to_string();
     let note = format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa());
+    // Ce que l'import fera des matricules se decide sur ce qui s'ecrit : l'apercu relu des copies, pas le dossier depose
+    // (une piece que la copie ecarte n'y est plus).
+    let matricules = crate::importation::matricules::prevoir(ctx, &imp, &departs)?;
     let e = ecrire(ctx, &mut imp, &note, &matricules)?;
     let mut reponse = imp.reponse;
     reponse.avertissements.extend(e.avertissements.iter().cloned());
