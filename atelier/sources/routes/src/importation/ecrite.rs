@@ -48,36 +48,43 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 
 // ------------------------------------------------------------------ l'alerte CASC-SVP
 
-/// La DSN qu'un mois importe a deposee hors de PuppetPaie : le fichier que l'import a retenu pour ce mois (la paie
-/// versee qu'une DSN declare, d'un engagement importe ; celle d'un bulletin seul nomme son PDF), sa copie sous
-/// `historique/bulletins/`, ou qu'est la compagnie. `None` : un mois que l'import n'a pas retenu ; un fichier retenu
-/// introuvable refuse.
-pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
-    let fichiers: Vec<socle::fichiers::NomDeFichier> = engagement::importe::paies_lues(&ctx.racine)?
+/// LES DSN QU'UN MOIS IMPORTE A DEPOSEES HORS DE PUPPETPAIE, celles qui font foi, chacune avec son texte : les fichiers
+/// que l'import a retenus pour ce mois (ceux des paies versees qu'une DSN declare, d'un engagement importe ; une paie
+/// d'un bulletin seul nomme son PDF), chacun une fois, lus dans leur copie sous `historique/bulletins/`, ou qu'est la
+/// compagnie. Un mois en a une par etablissement et par fraction, et l'import garde l'original d'une DSN avec son
+/// annule-et-remplace quand des paies de l'un et de l'autre lui restent : `declarations::dsn_lue::qui_font_foi` garde
+/// celles qui font foi (un refus du metier, `Refuse`, quand elles ne se departagent pas). Aucune : un mois que l'import
+/// n'a pas retenu. Un fichier retenu qui n'est plus dans l'historique est une erreur technique (`FichierAbsent`).
+pub(crate) fn dsn_importees(ctx: &Contexte, mois: Mois) -> R<Vec<(String, declarations::dsn_lue::DsnLue)>> {
+    let mut noms: Vec<socle::fichiers::NomDeFichier> = engagement::importe::paies_lues(&ctx.racine)?
         .into_iter()
         .filter(|x| x.mois == mois && !x.paie.contrat.d_un_bulletin())
         .filter_map(|x| x.paie.fichier)
         .collect();
-    let Some(nom) = fichiers.last() else { return Ok(None) };
-    let chemin = dossier_bulletins(ctx).join(nom);
-    if chemin.exists() {
-        return Ok(Some(chemin));
+    noms.sort();
+    noms.dedup();
+    let mut lues = Vec::new();
+    for nom in noms {
+        let chemin = dossier_bulletins(ctx).join(&nom);
+        let octets = match std::fs::read(&chemin) {
+            Ok(o) => o,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let a_part = socle::echec::Lieu { fichier: Some(nom.clone().into()), ..Default::default() };
+                let phrase = format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois.libelle(socle::mois::Graphie::Accentuee));
+                return Err(socle::echec::refus_avec(phrase, a_part).reclasser(Classe::FichierAbsent));
+            }
+            Err(e) => return Err(en_os(&e, &chemin)),
+        };
+        let lue = declarations::dsn_lue::lire(&octets, Some(&nom))?;
+        lues.push((socle::texte::texte_latin1(&octets), lue));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.clone().into()), ..Default::default() };
-    Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
+    declarations::dsn_lue::qui_font_foi(lues)
 }
 
-/// `lire_dsn_casc` : si la DSN deposee porte la CASC-SVP (un contrat rattache, S21.G00.70.013, a l'adhesion que la
-/// DSN nomme `contrat` en bloc 15). `None` : illisible.
-pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::ReferenceDeContrat) -> R<Option<bool>> {
-    let Some(d) = declarations::dsn_lue::lire_une_dsn(chemin)? else { return Ok(None) };
-    let porte = d
-        .adhesions
-        .iter()
-        .filter(|a| a.libelle == contrat.as_str())
-        .filter_map(|a| a.reference.as_ref())
-        .any(|r| d.rattachements.contains(r));
-    Ok(Some(porte))
+/// SI LA DSN DEPOSEE `d` PORTE LA CASC-SVP : un contrat rattache (S21.G00.70.013) a l'adhesion que la DSN nomme
+/// `contrat` en bloc 15.
+pub(crate) fn porte_la_casc(d: &declarations::dsn_lue::DsnLue, contrat: &droit::organismes::ReferenceDeContrat) -> bool {
+    d.adhesions.iter().filter(|a| a.libelle == contrat.as_str()).filter_map(|a| a.reference.as_ref()).any(|r| d.rattachements.contains(r))
 }
 
 /// L'alerte apres l'import, lue avec ce que l'import a ecrit (`ctx`) : une compagnie de la 3090 qui arrive d'un autre

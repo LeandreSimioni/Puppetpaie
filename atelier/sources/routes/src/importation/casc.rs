@@ -4,7 +4,7 @@
 //!
 //! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees (le brut que la DSN deposee ou
 //! le bulletin dit), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). Un mois dont la
-//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), ou deja regularise
+//! DSN importees qui font foi portent deja la CASC-SVP (`importation::ecrite::porte_la_casc`), ou deja regularise
 //! (`config/casc-svp.json`), n'y entre pas.
 //!
 //! Le classeur du CASC-SVP se recree avec les colonnes du modele (`donnees/modeles/casc-svp-liste-nominative.xlsx`) :
@@ -322,9 +322,21 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
         if paies.is_empty() {
             continue;
         }
-        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
-        // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
-        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|porte| porte);
+        // Les DSN du mois qui font foi (une par etablissement et par fraction) ; un mois sans DSN importee ne la porte pas.
+        let dsn = crate::importation::ecrite::dsn_importees(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
+        let portent: Vec<bool> = dsn.iter().map(|(_, d)| crate::importation::ecrite::porte_la_casc(d, &contrat_casc)).collect();
+        // Le dossier regularise un mois entier : des DSN du mois qui la portent pour une part de ses salaries et pas pour
+        // l'autre ne se regularisent pas par mois.
+        if portent.contains(&true) && portent.contains(&false) {
+            return Err(socle::echec::erreur(
+                Classe::Refuse,
+                format!(
+                    "les DSN de {} que l'ancien logiciel a déposées portent la CASC-SVP pour un établissement ou une fraction, et pas pour l'autre : la régularisation, qui se fait par mois, ne se prépare pas",
+                    m.libelle(socle::mois::Graphie::Accentuee)
+                ),
+            ));
+        }
+        let porte = portent.contains(&true);
         if porte {
             portees.push(m);
             continue;

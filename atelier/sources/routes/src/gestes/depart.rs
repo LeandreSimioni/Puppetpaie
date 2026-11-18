@@ -428,50 +428,63 @@ pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>) -> R<Op
 }
 
 /// CE QU'UN MOIS REPRIS D'UN ANCIEN LOGICIEL A FAIT VERSER, pour l'etablissement `nic` (#335, Leandre le 18/11/2026) :
-/// - la DSN que l'ancien logiciel a deposee, quand l'import l'a gardee (`importation::ecrite::dsn_importee`) et qu'elle
-///   est celle de cet etablissement (S21.G00.11.001) : ses versements et son bordereau se lisent tels qu'elle les
-///   declare (`dsn_lue::DsnLue::ordres`, `bordereaux`) -- une piece propre se prend telle quelle (regle 1) ;
-/// - sinon, la DSN que la fonction qui ecrit la DSN (`declarations::dsn::fabriquer`, le seul chemin) fait des paies
-///   importees du mois, chacune refaite de son bulletin comme le calcul la ferait (`engagement::ecarts::calculee`). Elle
-///   ne s'ecrit nulle part et ne part jamais (regle 4 : la DSN de ce mois est celle de l'ancien logiciel) ; l'etat n'en
-///   lit que les versements et le bordereau. Une paie qui ne se refait pas refuse le mois en le disant : rien ne se
-///   compte a sa place.
+/// - les DSN que l'ancien logiciel a deposees pour cet etablissement (S21.G00.11.001), quand l'import les a gardees :
+///   celles qui font foi (l'annule-et-remplace plutot que ce qu'il remplace), toutes ses fractions
+///   (`importation::ecrite::dsn_importees`, `declarations::dsn_lue::de_l_etablissement`) ; leurs versements et leurs
+///   bordereaux se lisent tels qu'elles les declarent, fraction apres fraction (`DsnLue::ordres`, `bordereaux`) -- une
+///   piece propre se prend telle quelle (regle 1) ;
+/// - sinon, la DSN que la fonction qui ecrit la DSN (`declarations::dsn::fabriquer`, le seul chemin) fait des paies de
+///   cet etablissement que les seuls bulletins ont reprises, chacune refaite de son bulletin comme le calcul la ferait
+///   (`engagement::ecarts::calculee`). Une paie qu'une DSN deposee declare est de l'etablissement de cette DSN, qui se
+///   lit : elle ne se refait pas. Une paie de bulletin est de l'etablissement que son engagement dit, le principal sinon
+///   (`droit::bareme::etablissement_de`), lu avant de la refaire : un etablissement ne depend que de ses paies. La DSN
+///   refaite ne s'ecrit nulle part et ne part jamais (regle 4 : la DSN de ce mois est celle de l'ancien logiciel) ;
+///   l'etat n'en lit que les versements et le bordereau.
+///
+/// Une paie qui ne se refait pas (un refus du calcul : `exercice_ecrit::est_une_erreur_d_operation`), un numero de
+/// contrat qu'aucune piece ne dit (il se lit, il ne s'invente pas : regle 4), une DSN deposee qui ne se lit pas : le
+/// mois n'est pas dans l'etat pour cet etablissement, et le refus du metier (`Refuse`) le dit ; rien ne se compte a sa
+/// place. Une erreur technique (le disque, le journal des envois, une donnee livree) remonte telle quelle.
 fn dsn_d_un_mois_importe(ctx: &Contexte, mois: Mois, nic: &Nic) -> R<Option<(declarations::dsn::Fabriquee, OrigineDeLaDsn)>> {
-    if let Some(chemin) = crate::importation::ecrite::dsn_importee(ctx, mois)? {
-        let octets = std::fs::read(&chemin).map_err(|e| os(&chemin, e))?;
-        let lue = declarations::dsn_lue::lire(&octets, None)?;
-        match lue.etablissement() {
-            Some(n) if n == nic => {
-                let f = declarations::dsn::Fabriquee { texte: socle::texte::texte_latin1(&octets), ordres: lue.ordres()?, bordereaux: lue.bordereaux()? };
-                return Ok(Some((f, OrigineDeLaDsn::DeLAncienLogiciel)));
-            }
-            // La DSN d'un autre etablissement : celui-ci se refait.
-            Some(_) => {}
-            None => {
-                return Err(erreur(
-                    Classe::Refuse,
-                    format!("la DSN de {} que l'ancien logiciel a déposée ne déclare pas son établissement (S21.G00.11.001) : ses versements ne se lisent pas", mois.libelle(Graphie::Accentuee)),
-                ))
-            }
+    let font_foi = crate::importation::ecrite::dsn_importees(ctx, mois)?;
+    if let Some(siennes) = declarations::dsn_lue::de_l_etablissement(font_foi, nic)? {
+        let mut f = declarations::dsn::Fabriquee { texte: String::new(), ordres: Vec::new(), bordereaux: Vec::new() };
+        for (texte, lue) in siennes {
+            f.ordres.extend(lue.ordres()?);
+            f.bordereaux.extend(lue.bordereaux()?);
+            f.texte.push_str(&texte);
         }
+        return Ok(Some((f, OrigineDeLaDsn::DeLAncienLogiciel)));
     }
+    let metier = crate::gestes::exercice_ecrit::est_une_erreur_d_operation;
     let mut paies: Vec<Paie> = Vec::new();
     let mut ne_se_refont_pas: Vec<String> = Vec::new();
     for imp in engagement::importe::du_mois(&ctx.racine, mois)? {
-        if !imp.paies().contains_key(&mois) {
+        let Some(versee) = imp.paies().get(&mois) else { continue };
+        if !versee.contrat.d_un_bulletin() {
             continue;
         }
-        match engagement::ecarts::calculee(&ctx.racine, &imp, mois) {
-            Ok(p) => {
-                if droit::bareme::etablissement_de(&ctx.entreprise, &p.salarie)? == *nic {
-                    paies.push(p);
-                }
+        let carte = imp.objet().carte();
+        // Le salarie que l'engagement nomme ; sans lui, le refus le dit deja.
+        let de_lui = |phrase: String| match &carte.salarie {
+            Some(s) => format!("{}, {}", s, phrase),
+            None => phrase,
+        };
+        // L'etablissement de la paie, avant de la refaire ; un engagement qui ne nomme pas son salarie ne se range dans
+        // aucun, et son refus (`calculee`) vaut pour chacun.
+        if let Some(cle) = &carte.salarie {
+            let sal = droit::fiche::SalarieDuContrat { etablissement: carte.etablissement.clone(), ..droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle)?) };
+            if droit::bareme::etablissement_de(&ctx.entreprise, &sal)? != *nic {
+                continue;
             }
-            // Le salarie que l'engagement nomme ; sans lui, le refus le dit deja.
-            Err(e) => ne_se_refont_pas.push(match &imp.objet().carte().salarie {
-                Some(s) => format!("{}, {}", s, e.phrase),
-                None => e.phrase,
-            }),
+        }
+        match engagement::ecarts::calculee(&ctx.racine, &imp, mois) {
+            Ok(p) if p.engagement.numero.is_none() => ne_se_refont_pas.push(de_lui(
+                "le numéro de son contrat n'est pas repris (il se lit sur une DSN déposée ou sur le bulletin, il ne s'invente pas) : la DSN du mois ne se refait pas sans lui".to_string(),
+            )),
+            Ok(p) => paies.push(p),
+            Err(e) if metier(&e) => ne_se_refont_pas.push(de_lui(e.phrase)),
+            Err(e) => return Err(e),
         }
     }
     if !ne_se_refont_pas.is_empty() {
@@ -489,8 +502,11 @@ fn dsn_d_un_mois_importe(ctx: &Contexte, mois: Mois, nic: &Nic) -> R<Option<(dec
     }
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     let o = declarations::dsn::Options { date_constitution: Some(ctx.aujourdhui), mode: Mode::Test, etablissement: Some(nic.clone()), ..declarations::dsn::Options::normale() };
-    let f = declarations::dsn::fabriquer(ctx, &paies, mois, &[], &[], &o, &departs)?;
-    Ok(Some((f, OrigineDeLaDsn::RefaiteDesPaiesImportees)))
+    match declarations::dsn::fabriquer(ctx, &paies, mois, &[], &[], &o, &departs) {
+        Ok(f) => Ok(Some((f, OrigineDeLaDsn::RefaiteDesPaiesImportees))),
+        Err(e) if metier(&e) => Err(erreur(Classe::Refuse, format!("la DSN que ses paies reprises refont ne se fait pas : {}", e.phrase))),
+        Err(e) => Err(e),
+    }
 }
 
 /// La DSN du mois, telle que le depot la prend.

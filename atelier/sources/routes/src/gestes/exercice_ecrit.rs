@@ -43,7 +43,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 
 /// Une erreur d'operation, que l'appelant rattrape : celles que le moteur nomme, et
 /// les refus du calcul (sans classe, `SaisieIncomplete`), qui en sont.
-fn est_une_erreur_d_operation(e: &Echec) -> bool {
+pub(crate) fn est_une_erreur_d_operation(e: &Echec) -> bool {
     matches!(e.classe, None | Some(Classe::Refuse) | Some(Classe::SaisieIncomplete))
 }
 

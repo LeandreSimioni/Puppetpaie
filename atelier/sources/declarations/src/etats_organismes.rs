@@ -325,15 +325,18 @@ pub type DsnDuMois<'a> = &'a dyn Fn(&Contexte, Mois, Option<&droit::fiche::Nic>)
 
 /// LA DSN DE CHAQUE MOIS DE LA PERIODE, par etablissement (le principal d'abord), et d'ou elle vient (`dsn_du_mois`) :
 /// `(mois, nic, la DSN, son origine)`. Un mois sans DSN est dit. UN MOIS REPRIS D'UN ANCIEN LOGICIEL dont la DSN ne se
-/// lit pas, ou dont une paie ne se refait pas, n'est pas dans l'etat, et l'avertissement dit pourquoi : rien ne se
-/// compte a la place de ce qui manque.
+/// lit pas, ou dont une paie ne se refait pas, n'est pas dans l'etat pour cet etablissement, et l'avertissement dit
+/// pourquoi : rien ne se compte a la place de ce qui manque. Seul ce refus du metier (sa classe, `Refuse`, que
+/// `dsn_du_mois` lui donne) devient un avertissement ; une erreur technique (un disque, le journal des envois, une
+/// donnee livree) refuse l'etat, comme d'un autre mois.
 fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_mois: DsnDuMois) -> R<Vec<(Mois, droit::fiche::Nic, crate::dsn::Fabriquee, OrigineDeLaDsn)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
     let importes = p.importes();
     let principal = ctx.entreprise.nic_principal();
+    let nics = ctx.entreprise.nics().map_err(|e| e.reclasser(Classe::Refuse))?;
     for &m in &p.mois {
         let mut une = false;
-        for nic in ctx.entreprise.nics().map_err(|e| e.reclasser(Classe::Refuse))? {
+        for nic in nics.iter().cloned() {
             let etablissement = if Some(&nic) == principal { None } else { Some(&nic) };
             match dsn_du_mois(ctx, m, etablissement) {
                 Ok(Some((f, origine))) => {
@@ -341,8 +344,9 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
                     une = true;
                 }
                 Ok(None) => {}
-                Err(e) if importes.contains(&m) => {
-                    avert.push(format!("{} (repris d'un ancien logiciel) n'est pas dans l'état : {}", libelle_mois(m), e.phrase));
+                Err(e) if importes.contains(&m) && e.classe == Some(Classe::Refuse) => {
+                    let de = if nics.len() > 1 { format!(", établissement {},", nic) } else { String::new() };
+                    avert.push(format!("{} (repris d'un ancien logiciel){} n'est pas dans l'état : {}", libelle_mois(m), de, e.phrase));
                     une = true;
                 }
                 Err(e) => return Err(e.reclasser(Classe::Refuse)),
@@ -429,7 +433,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
         C::Fichier.titree("DSN"),
     ];
     t.sources = vec![
-        "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lu dans la DSN que l'ancien logiciel a déposée, ou, sans elle, tiré de la DSN que la même fonction refait des paies reprises, recalculées de leurs bulletins ; libellés : donnees/organismes-base.json".to_string(),
+        "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lu dans les DSN que l'ancien logiciel a déposées pour l'établissement (celles qui font foi, chaque fraction), ou, sans elles, tiré de la DSN que la même fonction refait des paies reprises de ses bulletins, recalculées ; libellés : donnees/organismes-base.json".to_string(),
     ];
     finir(ctx, &mut t, Some(&p), "versements-organismes", d.format,d.ecrire)?;
     Ok(t)
@@ -480,7 +484,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
         C::Total.colonne(),
     ];
     t.sources = vec![
-        "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lus dans la DSN que l'ancien logiciel a déposée, ou, sans elle, tirés de la DSN que la même fonction refait des paies reprises, recalculées de leurs bulletins".to_string(),
+        "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lus dans les DSN que l'ancien logiciel a déposées pour l'établissement (celles qui font foi, chaque fraction), ou, sans elles, tirés de la DSN que la même fonction refait des paies reprises de ses bulletins, recalculées".to_string(),
         "libellés : table des codes types de personnel, open.urssaf.fr (histocodestypescsv), relevée le 18/09/2026".to_string(),
     ];
     finir(ctx, &mut t, Some(&p), "bordereau-urssaf", d.format,d.ecrire)?;

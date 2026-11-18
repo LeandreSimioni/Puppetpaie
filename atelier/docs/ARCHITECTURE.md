@@ -2381,13 +2381,19 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
 - **Les versements et le bordereau d'un mois importé** (`routes::gestes::depart::dsn_d_un_mois_importe`, Léandre le
-  18/11/2026, #335) : les états « Versements aux organismes » et « Bordereau Urssaf » les lisent dans la DSN que
-  l'ancien logiciel a déposée quand l'import l'a gardée (`dsn_lue::DsnLue::ordres`, `bordereaux` : une pièce propre se
-  prend telle quelle) ; sinon dans la DSN que le seul chemin (`declarations::dsn::fabriquer`) fait des paies importées
-  du mois, chacune refaite de son bulletin (`engagement::ecarts::calculee`, avec le numéro de contrat déclaré), qui ne
-  s'écrit nulle part et ne part jamais (règle 4). Une paie qui ne se refait pas met le mois hors de l'état, et
-  l'avertissement le dit : rien ne se compte à sa place. L'état nomme d'où vient chaque DSN
-  (`declarations::etats_organismes::OrigineDeLaDsn`).
+  18/11/2026, #335), établissement par établissement : les états « Versements aux organismes » et « Bordereau Urssaf »
+  les lisent dans les DSN que l'ancien logiciel a déposées pour cet établissement quand l'import les a gardées
+  (`dsn_lue::DsnLue::ordres`, `bordereaux` : une pièce propre se prend telle quelle). Le mois en a une par
+  établissement et par fraction ; celle qui fait foi est celle qu'aucune autre ne dit annuler et remplacer
+  (S20.G00.05.006, `dsn_lue::qui_font_foi`), et toutes les fractions annoncées se lisent, ou aucune
+  (`dsn_lue::de_l_etablissement`, cahier technique, § 1.4.3.2, 1.4.3.3, 1.4.3.5). Sans elles, ils se lisent dans la
+  DSN que le seul chemin (`declarations::dsn::fabriquer`) fait des paies de l'établissement que les seuls bulletins ont
+  reprises, chacune refaite de son bulletin (`engagement::ecarts::calculee`, avec le numéro de contrat que les pièces
+  disent), qui ne s'écrit nulle part et ne part jamais (règle 4) ; une paie qu'une DSN déposée déclare est de
+  l'établissement de cette DSN. Une paie qui ne se refait pas, un numéro de contrat qu'aucune pièce ne dit, une DSN
+  qui ne se lit pas mettent le mois hors de l'état pour cet établissement, et l'avertissement le dit : rien ne se
+  compte à sa place. Seul ce refus du métier (`Refuse`) devient un avertissement ; une erreur technique refuse l'état.
+  L'état nomme d'où vient chaque DSN (`declarations::etats_organismes::OrigineDeLaDsn`).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien

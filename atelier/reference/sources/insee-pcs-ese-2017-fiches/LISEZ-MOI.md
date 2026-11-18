@@ -13,5 +13,10 @@ Les fiches de huit rubriques de la PCS-ESE 2017 de l'Insee, le texte de leur pag
   l. 35) et 637c (« il ne leur est pas reconnu une activité de création », l. 36). 353b et 353c ne fondent ni l'un ni
   l'autre : 353b range un « Producteur réalisateur » (l. 54), 353c le réalisateur et le régisseur général ensemble
   (l. 51-52). Un code sans fiche déposée ne fonde rien.
+- **INFERENCE** : une fiche classe une profession ; elle ne dit pas le statut d'artiste du spectacle, ni celui de
+  technicien. Ranger tout un code d'un côté se lit dans l'intitulé et la définition de la rubrique, que certains de ses
+  métiers ne suivent pas : 354b compte un « Accordeur » (l. 54) ; 354f un « Mannequin », un « Présentateur », un
+  « Animateur (radio, télévision » (l. 47, 56, 59) ; 465b des « tâches technico-administratives » (l. 35). Le statut
+  ainsi posé se corrige sur la fiche du salarié.
 - L'import le lit pour une fiche neuve dont la DSN ne nomme aucun métier (`routes::import`, `fiche_salarie`) : hors de
   ces six codes, le statut reste vide et le calcul le demande.
