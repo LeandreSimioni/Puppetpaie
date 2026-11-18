@@ -1132,17 +1132,29 @@ pub struct Neuf {
 
 /// LE CONTRAT DE PERMANENT QUI CONTINUE ICI : sa nature est dite et payee au mois, il a ete verse le dernier mois repris
 /// (`dernier`), et il ne finit pas avant le mois qui suit.
-fn continue_ici(e: &Neuf, dernier: Mois) -> R<bool> {
-    let mensuel = e.carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
+fn continue_ici(carte: &Carte, pieces: &Pieces, dernier: Mois) -> R<bool> {
+    let mensuel = carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
     let premier_jour_suivant = dernier.suivant().premier_jour();
-    Ok(mensuel && e.pieces.paies.contains_key(&dernier) && e.carte.fin.is_none_or(|f| f >= premier_jour_suivant))
+    Ok(mensuel && pieces.paies.contains_key(&dernier) && carte.fin.is_none_or(|f| f >= premier_jour_suivant))
+}
+
+/// LE MOIS D'ENTREE D'UN ENGAGEMENT IMPORTE, le fichier qui le porte (`ecrire_tous`), `dernier` etant le dernier mois
+/// repris.
+fn mois_d_entree(carte: &Carte, pieces: &Pieces, dernier: Option<Mois>) -> R<Mois> {
+    Ok(match (dernier, carte.debut) {
+        (Some(d), _) if continue_ici(carte, pieces, d)? => d.suivant(),
+        (_, Some(premier)) => premier.mois_civil(),
+        _ => pieces.paies.keys().next().copied().ok_or_else(|| socle::echec::refus("un engagement importe sans debut ni paie"))?,
+    })
 }
 
 /// ECRIT LES ENGAGEMENTS IMPORTES, tous : chacun dans le fichier de son mois d'entree -- le mois ou il commence (son
 /// `debut`, sinon le premier mois ou il a ete verse), ou, pour le contrat de permanent qui continue ici (`continue_ici`),
 /// le mois qui suit le dernier mois repris : son premier mois neuf. Ils vont apres les engagements de la saisie. Ceux qui
 /// y etaient s'en vont ; rien d'autre ne change. LE MEME CONTRAT DEJA ECRIT (meme salarie, un mois verse en commun) garde
-/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent. Rend les fichiers ecrits.
+/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent (ce qu'une DSN qui arrive
+/// declare autrement se remplace ensuite, et se dit : `routes::importation::nature::la_dsn_fait_foi`). Rend les fichiers
+/// ecrits.
 pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
     let existants = tous(racine)?;
     let dernier = importes.iter().flat_map(|e| e.pieces.paies.keys().copied()).max();
@@ -1163,11 +1175,7 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
                 e.carte = ecrit.saisie.carte.clone();
             }
         }
-        let mois = match (dernier, e.carte.debut) {
-            (Some(d), _) if continue_ici(&e, d)? => d.suivant(),
-            (_, Some(premier)) => premier.mois_civil(),
-            _ => e.pieces.paies.keys().next().copied().ok_or_else(|| socle::echec::refus("un engagement importe sans debut ni paie"))?,
-        };
+        let mois = mois_d_entree(&e.carte, &e.pieces, dernier)?;
         ecrit.importe = Some(e.pieces);
         par_mois.entry(mois).or_default().push(ecrit);
     }
@@ -1201,18 +1209,70 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
 }
 
 /// CE QUE L'IMPORT COMPLETE DE LUI-MEME : ce que les pieces ne disaient pas et que la personne dit apres l'import (la
-/// nature d'un contrat de permanent, son numero). `completer` recoit chaque engagement importe (sa carte, a changer, et
-/// ses pieces) et dit s'il l'a changee ; ceux-la se reecrivent. Rend combien ont change.
+/// nature d'un contrat de permanent, son numero). `completer` recoit chaque engagement importe NON VALIDE (sa carte, a
+/// changer, et ses pieces) ; un engagement valide a ete dit et arrete : sa carte ne se change plus ici. SEULE LA CARTE
+/// CHANGE : sa saisie d'ici (avenants, faits des mois), ses versions, son numero donne restent ; un engagement dont la
+/// carte ne change pas ne se reecrit pas. Celui dont le mois d'entree change avec sa carte (`mois_d_entree`) passe dans
+/// le fichier de ce mois, a la place de son mois d'origine parmi les importes. Rend combien ont change.
 pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -> bool) -> R<usize> {
-    let mut tous: Vec<Neuf> = tous(racine)?.into_iter().map(|i| Neuf { carte: i.carte().clone(), pieces: i.pieces().clone() }).collect();
-    let mut changes = 0usize;
-    for e in tous.iter_mut() {
-        if completer(&mut e.carte, &e.pieces) {
-            changes += 1;
+    let tous = tous(racine)?;
+    let dernier = tous.iter().flat_map(|i| i.paies().keys().copied()).max();
+    // (fichier, rang, mois d'entree, l'engagement tel qu'il s'ecrit)
+    let mut changes: Vec<(Mois, usize, Mois, stock::Ecrit)> = Vec::new();
+    for i in tous.iter().filter(|i| !i.objet.est_valide()) {
+        let mut carte = i.carte().clone();
+        if !completer(&mut carte, i.pieces()) || carte == *i.carte() {
+            continue;
+        }
+        let mois = mois_d_entree(&carte, i.pieces(), dernier)?;
+        let mut ecrit = (*i.objet.brut).clone();
+        // Un numero que la carte recoit n'est plus celui que le moteur avait donne (`numero_pour`) : il se lit, il ne se
+        // reforme pas (regle 4).
+        if carte.numero != i.carte().numero {
+            ecrit.numero_pour = None;
+        }
+        ecrit.saisie.carte = carte;
+        changes.push((i.objet.fichier, i.objet.rang, mois, ecrit));
+    }
+    let mut fichiers: Vec<Mois> = changes.iter().flat_map(|(f, _, m, _)| [*f, *m]).collect();
+    fichiers.sort();
+    fichiers.dedup();
+    for f in fichiers {
+        let mut contenu = match stock::lire_fichier(racine, f)? {
+            Some(c) => c,
+            None => stock::FichierDuMois { mois: f, taux_cachet: None, engagements: Vec::new() },
+        };
+        // Ceux qui restent dans ce fichier se remplacent a leur rang ; ceux qui en partent s'en vont (du dernier rang au
+        // premier, pour que les rangs lus tiennent) ; ceux qui y arrivent vont apres.
+        let mut partent: Vec<usize> = Vec::new();
+        for (de, rang, vers, ecrit) in &changes {
+            if *de != f {
+                continue;
+            }
+            let place = contenu.engagements.get_mut(*rang).ok_or_else(|| socle::refus!("{} : l'engagement {} a disparu", f, rang + 1))?;
+            if *vers == f {
+                *place = ecrit.clone();
+            } else {
+                partent.push(*rang);
+            }
+        }
+        partent.sort_unstable_by(|a, b| b.cmp(a));
+        for rang in partent {
+            contenu.engagements.remove(rang);
+        }
+        // L'ordre des engagements importes d'un fichier est celui de leur mois d'origine, puis de leur rang : ceux qui
+        // viennent d'un mois d'avant se placent devant les importes deja la, ceux d'un mois d'apres, derriere. L'ordre ne
+        // depend pas de celui ou la compagnie a repondu.
+        let arrivent = |avant: bool| changes.iter().filter(move |(de, _, vers, _)| *vers == f && if avant { *de < f } else { *de > f }).map(|(_, _, _, e)| e.clone());
+        let premier_importe = contenu.engagements.iter().take_while(|e| e.importe.is_none()).count();
+        let derriere: Vec<stock::Ecrit> = arrivent(false).collect();
+        contenu.engagements.splice(premier_importe..premier_importe, arrivent(true));
+        contenu.engagements.extend(derriere);
+        if contenu.engagements.is_empty() && contenu.taux_cachet.is_none() {
+            stock::retirer(racine, f)?;
+        } else {
+            stock::poser(racine, &contenu)?;
         }
     }
-    if changes > 0 {
-        ecrire_tous(racine, tous)?;
-    }
-    Ok(changes)
+    Ok(changes.len())
 }

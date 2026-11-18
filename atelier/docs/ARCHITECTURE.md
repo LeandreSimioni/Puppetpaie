@@ -1160,6 +1160,15 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
+| question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
+| réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
+| réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
+| les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
+| questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDeclaree` | `import/src/reponse.rs` |
+| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici) | `SortDeLaValeur` | `import/src/reponse.rs` |
+| ce que l'import en dit (le salarié, la valeur, son sort, sa phrase) | `ValeurDeLaDsn` | `import/src/reponse.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
@@ -2376,6 +2385,14 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
+- **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
+  par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
+  fiche sans NIR (même nom, même premier prénom, même date de naissance quand les deux la disent), ne se crée pas :
+  l'import le met de côté (ni fiche, ni contrat, ni paie) et demande si c'est la même personne
+  (`QuestionDIdentite`, dans la réponse d'`importer` et dans `importation-etat`, avec ses gestes) ; la ressemblance
+  pose la question, elle ne décide rien. `importation-identite` y répond : la même, la fiche reçoit le NIR et l'import
+  rejoué la complète ; une autre, la réponse se garde avec la configuration (`config/import-identites.json`) et
+  l'import rejoué crée sa fiche.
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
   l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
@@ -2398,7 +2415,12 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   contrat ne se demande pas ; son salaire mensuel, seulement d'un mois que sa paie couvre entier : une seule ligne de
   salaire de base (51 de type 010) dont la période est le mois, sous un contrat qui le couvre
   (`dsn_lue::Mesures::salaire_habituel_du_mois`) ; plusieurs lignes 010 sont chacune le salaire d'une période
-  élémentaire de paie (norme, chapitre 2, § 2.1.3.3), et le salaire se demande.
+  élémentaire de paie (norme, chapitre 2, § 2.1.3.3), et le salaire se demande. **La DSN fait foi** (Léandre,
+  18/11/2026) : quand une DSN qui arrive avec un import déclare le début, la fin, le numéro ou la nature d'un contrat de
+  permanent autrement que sa carte, la carte prend les valeurs déclarées et l'import dit chacune (`ValeurDeLaDsn`,
+  `nature::la_dsn_fait_foi`) ; seule la carte change (`engagement::importe::completer`). Un engagement validé, ou dont
+  quelque chose est parti d'ici, garde sa carte (règle 4 : son numéro déclaré ne se recalcule pas) et l'import dit
+  l'écart. Un import rejoué sur le même dossier n'apporte aucune paie déclarée neuve, et ne remplace rien de nouveau.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des

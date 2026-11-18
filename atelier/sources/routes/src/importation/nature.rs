@@ -443,6 +443,151 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     Ok(faits)
 }
 
+/// LA DSN FAIT FOI (Léandre, 18/11/2026 : « DSN fait foi » ; « qu'il dise ce qu'il a remplacé »). Un contrat de
+/// permanent repris dont la nature a ete dite (`importation-nature`, a la main ou d'une DSN reprise avant) garde sa carte
+/// d'un import a l'autre (`engagement::importe::ecrire_tous`) ; quand une DSN QUI ARRIVE avec cet import (`arrivees` :
+/// les paies declarees que l'historique n'avait pas, par mois, salarie et numero) declare une de ses paies, la derniere
+/// d'entre elles dit le contrat tel que la DSN le declare : son debut (S21.G00.40.001), sa fin s'il en a une (.010), son
+/// numero (.009), sa nature (.007, celle d'un permanent qui porte ce code, s'il n'y en a qu'une ;
+/// `norme-dsn/texte/bloc-S21.G00.40.txt`). Chaque valeur declaree que la carte porte autrement se pose sur elle et se
+/// dit (`ValeurDeLaDsn`) ; une valeur identique, ou que la DSN ne declare pas, ne change pas et ne se dit pas. Un import
+/// rejoue sur le meme dossier n'apporte aucune paie declaree : rien ne se remplace de nouveau.
+///
+/// TANT QUE RIEN N'EST PARTI D'ICI. Un engagement valide, ou dont quelque chose est parti (`departs`, ce que le journal
+/// dit : `engagement::etats::ce_qui_est_parti`), a dit son contrat sous ce que porte sa carte : son numero ne se
+/// recalcule pas (regle 4), et le debut et la nature, qui le designent avec lui dans la DSN, non plus ; rien ne s'y
+/// remplace, l'ecart se dit (`SortDeLaValeur::DejaDeclaree`).
+pub(crate) fn la_dsn_fait_foi(
+    racine: &Path,
+    arrivees: &std::collections::HashSet<(socle::mois::Mois, IdSalarie, engagement::numeros::NumeroContrat)>,
+    departs: &engagement::departs::Departs,
+) -> R<Vec<import::reponse::ValeurDeLaDsn>> {
+    use import::reponse::{SortDeLaValeur, ValeurDeLaDsn, ValeurDeclaree};
+    if arrivees.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Les engagements que la DSN qui arrive declare autrement : (salarie, mois et numero de sa derniere paie arrivee, ce
+    // qui differe, et ce qui est deja parti de lui ou sa validation, qui garde sa carte).
+    struct ARemplacer {
+        salarie: IdSalarie,
+        mois: socle::mois::Mois,
+        numero: engagement::numeros::NumeroContrat,
+        valeurs: Vec<ValeurDeclaree>,
+        deja: Option<String>,
+    }
+    let mut a_remplacer: Vec<ARemplacer> = Vec::new();
+    let mut lecture: Option<import::dsn_aem::LectureDsn> = None;
+    let permises = natures_permanentes()?;
+    for i in importes(racine)? {
+        let carte = i.objet().carte();
+        let (Some(salarie), Some(nature)) = (carte.salarie.clone(), carte.nature) else { continue };
+        // Une nature dite, pas attestee par une piece (une AEM, un certificat, un bulletin du spectacle).
+        if !i.permanent() || i.contrat().is_some_and(|c| c.nature.is_some()) {
+            continue;
+        }
+        let arrivee = i.paies().iter().rev().find_map(|(m, p)| {
+            let n = p.contrat.numero_declare()?;
+            arrivees.contains(&(*m, salarie.clone(), n.clone())).then(|| (*m, n.clone(), p.clone()))
+        });
+        let Some((mois, numero, paie)) = arrivee else { continue };
+        let mut valeurs = Vec::new();
+        if let Some(debut) = paie.periode.map(|o| o.debut()).filter(|d| carte.debut != Some(*d)) {
+            valeurs.push(ValeurDeclaree::Debut { avant: carte.debut, declaree: debut });
+        }
+        if let Some(fin) = paie.periode.and_then(|o| o.fin()).filter(|f| carte.fin != Some(*f)) {
+            valeurs.push(ValeurDeclaree::Fin { avant: carte.fin, declaree: fin });
+        }
+        if carte.numero.as_ref() != Some(&numero) {
+            valeurs.push(ValeurDeclaree::Numero { avant: carte.numero.clone(), declaree: numero.clone() });
+        }
+        // La nature : le code que la DSN declare pour ce contrat, lu dans les DSN reprises (une fois pour l'import).
+        if lecture.is_none() {
+            lecture = Some(import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(racine))?);
+        }
+        let code = lecture.as_ref().and_then(|l| l.paies.get(&(mois, paie.nir.clone(), numero.clone()))).and_then(|d| d.contrat.as_ref()).and_then(|c| c.nature_dsn.clone());
+        let code_de = |n: &droit::natures::Nature| n.code(droit::rubrique!("S21.G00.40.007"));
+        if let Some(code) = code {
+            let dite = permises.iter().find(|n| n.cle == nature);
+            let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = permises.iter().filter(|n| code_de(n).as_deref() == Some(code.as_str())).collect();
+            // La nature dite porte deja le code declare : la DSN ne dit rien d'autre.
+            let meme_code = dite.is_some_and(|n| code_de(n).as_deref() == Some(code.as_str()));
+            if let (false, [declaree]) = (meme_code, du_code.as_slice()) {
+                valeurs.push(ValeurDeclaree::Nature { avant: nature, declaree: declaree.cle });
+            }
+        }
+        if valeurs.is_empty() {
+            continue;
+        }
+        let partis = engagement::etats::ce_qui_est_parti(i.objet(), departs);
+        let deja = match (partis.is_empty(), i.objet().est_valide()) {
+            (false, _) => Some(format!("déjà parti ({})", partis.join(" ; "))),
+            (true, true) => Some("validé".to_string()),
+            (true, false) => None,
+        };
+        a_remplacer.push(ARemplacer { salarie, mois, numero, valeurs, deja });
+    }
+    if a_remplacer.is_empty() {
+        return Ok(Vec::new());
+    }
+    // La carte prend les valeurs declarees : celle de l'engagement dont la paie arrivee est la sienne, s'il n'a rien dit
+    // d'ici.
+    if a_remplacer.iter().any(|x| x.deja.is_none()) {
+        engagement::importe::completer(racine, |e, pieces| {
+            let Some(x) = a_remplacer.iter().filter(|x| x.deja.is_none()).find(|x| {
+                e.salarie.as_ref() == Some(&x.salarie) && pieces.paies.get(&x.mois).is_some_and(|p| p.contrat.numero_declare() == Some(&x.numero))
+            }) else {
+                return false;
+            };
+            for v in &x.valeurs {
+                match v {
+                    ValeurDeclaree::Nature { declaree, .. } => e.nature = Some(*declaree),
+                    ValeurDeclaree::Debut { declaree, .. } => e.debut = Some(*declaree),
+                    ValeurDeclaree::Fin { declaree, .. } => e.fin = Some(*declaree),
+                    ValeurDeclaree::Numero { declaree, .. } => e.numero = Some(declaree.clone()),
+                }
+            }
+            true
+        })?;
+    }
+    let mut out = Vec::new();
+    for x in a_remplacer {
+        let nom = nom_du_salarie(racine, &x.salarie)?;
+        for valeur in x.valeurs {
+            let (quoi, avant, declaree): (&str, Option<String>, String) = match &valeur {
+                ValeurDeclaree::Nature { avant, declaree } => ("la nature du contrat", Some(avant.proprietes()?.libelle.clone()), declaree.proprietes()?.libelle.clone()),
+                ValeurDeclaree::Debut { avant, declaree } => ("le début du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
+                ValeurDeclaree::Fin { avant, declaree } => ("la fin du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
+                ValeurDeclaree::Numero { avant, declaree } => ("le numéro du contrat", avant.as_ref().map(ToString::to_string), declaree.to_string()),
+            };
+            // La carte ne portait rien : elle se complete. Elle portait autre chose : elle le remplace, ou, deja dit
+            // d'ici, le garde, et l'ecart se dit.
+            let (sort, phrase) = match (&x.deja, avant) {
+                (None, None) => (SortDeLaValeur::Completee, socle::phrase!("{} : {} devient « {} », ce que la DSN reprise déclare.", nom, quoi, declaree)),
+                (None, Some(avant)) => (
+                    SortDeLaValeur::Remplacee,
+                    socle::phrase!("{} : {} était « {} » ; la DSN reprise déclare « {} », qui le remplace.", nom, quoi, avant, declaree),
+                ),
+                (Some(deja), avant) => (
+                    SortDeLaValeur::DejaDeclaree,
+                    socle::phrase!(
+                        "{} : la DSN reprise déclare {} « {} », l'engagement porte {} ; il est {} : rien n'est remplacé.",
+                        nom,
+                        quoi,
+                        declaree,
+                        match avant {
+                            Some(a) => format!("« {} »", a),
+                            None => "rien".to_string(),
+                        },
+                        deja
+                    ),
+                ),
+            };
+            out.push(ValeurDeLaDsn { salarie: x.salarie.clone(), nom: nom.clone(), valeur, sort, phrase });
+        }
+    }
+    Ok(out)
+}
+
 /// Le contrat que la DSN declare (`c` : ses dates, S21.G00.40.001 et .010, et la fin que son bloc 62 declare) couvre-t-il
 /// le mois `mois` entier ?
 fn couvre_le_mois(c: &declarations::dsn_lue::ContratDeclare, mois: socle::mois::Mois) -> bool {

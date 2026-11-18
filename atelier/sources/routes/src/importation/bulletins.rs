@@ -580,6 +580,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // Le sort des DSN et des AEM, avant que les bulletins ne completent les paies.
     let mut sorts_export: BTreeMap<usize, (Sort, String)> = BTreeMap::new();
+    // Les personnes mises de cote (`importation::identite`) : rien d'elles ne se reprend avant la reponse.
+    let en_question: HashSet<Nir> = ap.reponse.identites.iter().map(|q| q.nir.clone()).collect();
     for (i, nom) in &noms {
         let f = &tri.fichiers[*i];
         if f.sorte == Sorte::Dsn {
@@ -596,15 +598,27 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 Some(m) => format!("DSN de {}", m),
                 None => "DSN".to_string(),
             };
+            // Les versements d'une personne mise de cote attendent la reponse a sa question d'identite.
+            let attente = match ap.paies_en_question.get(nom.as_str()).copied() {
+                Some(k) if k > 0 => format!(" ; {} versement(s) d'une personne qui ressemble à une fiche sans numéro de sécurité sociale, repris après votre réponse", k),
+                _ => String::new(),
+            };
             sorts_export.insert(*i, match (n, nouveaux) {
+                (0, _) if !attente.is_empty() => (Sort::Repris, format!("{} : aucun versement à reprendre maintenant{}", dsn, attente)),
                 (0, _) => (Sort::Repris, format!("{} : aucun versement à reprendre (DSN sans versement, ou remplacée par une DSN du même mois déposée après)", dsn)),
-                (n, 0) => (Sort::DejaRepris, format!("{} : ses {} versement(s) sont déjà dans l'historique", dsn, n)),
-                (n, k) => (Sort::Repris, format!("{} : {} versement(s), dont {} à reprendre", dsn, n, k)),
+                (n, 0) if attente.is_empty() => (Sort::DejaRepris, format!("{} : ses {} versement(s) sont déjà dans l'historique", dsn, n)),
+                (n, k) => (Sort::Repris, format!("{} : {} versement(s), dont {} à reprendre{}", dsn, n, k, attente)),
             });
         } else {
-            let (mut n, mut nouveaux, mut sans) = (0usize, 0usize, 0usize);
+            let (mut n, mut nouveaux, mut sans, mut attendent) = (0usize, 0usize, 0usize, 0usize);
             for c in ap.contrats.iter().filter(|c| c.fichier.texte() == nom) {
                 n += 1;
+                // Le contrat d'une personne mise de cote attend la reponse a sa question d'identite : il n'est pas
+                // « sans fiche ».
+                if en_question.contains(&c.nir) {
+                    attendent += 1;
+                    continue;
+                }
                 if !par_nir.contains_key(&c.nir) && !nirs_dsn.contains(&c.nir) && !a_venir.contains(&c.nir) {
                     sans += 1;
                     continue;
@@ -614,7 +628,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     nouveaux += 1;
                 }
             }
-            let sans_txt = if sans > 0 { format!(" ; {} sans fiche (NIR qu'aucune DSN ni aucun bulletin ne déclare)", sans) } else { String::new() };
+            let mut sans_txt = if sans > 0 { format!(" ; {} sans fiche (NIR qu'aucune DSN ni aucun bulletin ne déclare)", sans) } else { String::new() };
+            if attendent > 0 {
+                sans_txt.push_str(&format!(" ; {} d'une personne qui ressemble à une fiche sans numéro de sécurité sociale, repris après votre réponse", attendent));
+            }
             // `importation::lire_aem` garde un contrat une fois : un fichier qui ne rend rien a ete lu ailleurs, sauf
             // s'il est dans ses illisibles.
             let illisible =
@@ -622,7 +639,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             sorts_export.insert(*i, match (n, nouveaux) {
                 (0, _) if illisible => (Sort::NonReconnu, "AEM dont les enregistrements ne se lisent pas".to_string()),
                 (0, _) => (Sort::DejaRepris, "AEM : ses contrats attestés sont déjà dans un autre fichier du dossier".to_string()),
-                (n, 0) if sans == 0 => (Sort::DejaRepris, format!("AEM : ses {} contrat(s) attesté(s) sont déjà dans l'historique", n)),
+                (n, 0) if sans == 0 && attendent == 0 => (Sort::DejaRepris, format!("AEM : ses {} contrat(s) attesté(s) sont déjà dans l'historique", n)),
                 (n, k) => (Sort::Repris, format!("AEM : {} contrat(s) attesté(s), dont {} nouveau(x){}", n, k, sans_txt)),
             });
         }

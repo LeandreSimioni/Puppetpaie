@@ -121,6 +121,7 @@ routes! {
         ImportationApercu = "importation-apercu",
         Importer = "importer",
         ImportationNature = "importation-nature",
+        ImportationIdentite = "importation-identite",
         DossierFormes = "dossier-formes",
         ExportsPeriodes = "exports-periodes",
         RetenirLogiciel = "retenir-logiciel",

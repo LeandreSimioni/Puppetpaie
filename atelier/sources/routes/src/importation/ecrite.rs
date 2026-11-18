@@ -437,6 +437,8 @@ struct Ecrit {
     /// Les fiches existantes completees.
     completees: usize,
     avertissements: Vec<String>,
+    /// Les paies declarees que cet import apporte : (mois, salarie, numero declare).
+    arrivees: HashSet<(Mois, IdSalarie, NumeroContrat)>,
 }
 
 impl Ecrit {
@@ -551,6 +553,10 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         }
         par_cle.insert(k, x);
     }
+    // LES PAIES QU'UNE DSN DECLARE ET QUE CET IMPORT APPORTE : celles d'une DSN qui arrive (`nature::la_dsn_fait_foi`) ;
+    // l'import rejoue sur le meme dossier n'en apporte aucune.
+    let arrivees: HashSet<(Mois, IdSalarie, NumeroContrat)> =
+        par_cle.keys().filter(|k| !avant.contains_key(*k)).filter_map(|(m, s, c)| Some((*m, s.clone()?, c.numero_declare()?.clone()))).collect();
     let ambigues = rapprocher(&mut par_cle);
     if ambigues > 0 {
         avertissements.push(format!(
@@ -570,7 +576,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             fichiers.push(p);
         }
     }
-    Ok(Ecrit { fichiers, contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf, paies: neuves, restent_a_creer, completees, avertissements })
+    Ok(Ecrit { fichiers, contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf, paies: neuves, restent_a_creer, completees, avertissements, arrivees })
 }
 
 // ------------------------------------------------------------------ la route
@@ -701,6 +707,22 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
     reponse.parametrage = faits;
+    // Ce qu'une DSN qui arrive declare d'un contrat de permanent autrement que sa carte : elle fait foi, tant que rien
+    // n'est parti d'ici (ce que le journal dit, lu une fois).
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    reponse.dsn_fait_foi = crate::importation::nature::la_dsn_fait_foi(&ctx.racine, &e.arrivees, &departs)?;
+    let compte = |s: import::reponse::SortDeLaValeur| reponse.dsn_fait_foi.iter().filter(|v| v.sort == s).count();
+    let remplacees = match compte(import::reponse::SortDeLaValeur::Remplacee) {
+        0 => String::new(),
+        1 => " La DSN reprise fait foi : une valeur d'un contrat repris est remplacée par ce qu'elle déclare.".to_string(),
+        n => format!(" La DSN reprise fait foi : {} valeurs de contrats repris sont remplacées par ce qu'elle déclare.", n),
+    };
+    let gardees = match compte(import::reponse::SortDeLaValeur::DejaDeclaree) {
+        0 => String::new(),
+        1 => " Une valeur qu'elle déclare autrement est gardée : l'engagement est déjà validé ou déclaré d'ici.".to_string(),
+        n => format!(" {} valeurs qu'elle déclare autrement sont gardées : leurs engagements sont déjà validés ou déclarés d'ici.", n),
+    };
+    let remplacees = remplacees + &gardees;
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
     let ecrite = |f: &import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);
@@ -738,14 +760,19 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         (0, s) => format!(" Titre à dire pour {} spectacle(s) : les pièces ne portent que le numéro d'objet (Pour démarrer).", s),
         (p, s) => format!(" Titre à dire pour {} spectacle(s), dont {} proposé(s) d'après les bulletins (Pour démarrer).", p + s, p),
     };
+    // LES INDIVIDUS MIS DE COTE (`importation::identite`) : rien d'eux n'est repris, la phrase le dit, et chacun sa
+    // question.
+    let en_question = reponse.dire_les_identites();
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
-        "Repris : {}, {} ; fiches écrites : {}.{}",
+        "Repris : {}, {} ; fiches écrites : {}.{}{}{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
-        titres
+        titres,
+        en_question,
+        remplacees
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;

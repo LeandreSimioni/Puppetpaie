@@ -9,7 +9,7 @@
 //! `Refuse` (la page les montre tels quels) ; un refus n'ecrit rien.
 //!
 //! CE QUI S'Y SAISIT, ET CE QUI L'APPELLE (rien de remplissable s'il n'y a pas a le remplir). Le moteur dit, sur chaque
-//! imprevu resume (`resume`), ce que ses faits ouvrent : ses `gestes` (`GesteDImprevu`), ceux seulement que l'imprevu
+//! imprevu resume (`resume`), ce que ses faits ouvrent : ses `gestes` (`GesteDeRoute<Designe>`), ceux seulement que l'imprevu
 //! ouvre, chacun sa route, sa charge, son libelle et les cases que sa boite fait saisir ; et `a_dire`, ce qu'un arret
 //! ecrit appelle encore (ses indemnites journalieres, quand il ouvre le maintien de salaire, par la loi ou la
 //! convention). La page les dessine et les branche, sans choisir ni nommer de route.
@@ -68,7 +68,7 @@ const MODE: Champ = Champ { nom: "mode", libelle: Affiche::new("Test ou réel"),
 /// Ou ces routes se voient a l'ecran (une place par module) : sur le chemin simple, ou hors de lui.
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 const AVANCE: Ecran = Ecran::DessineAvance(Place::Paie);
-/// Les routes qu'un imprevu offre en gestes (`GesteDImprevu`) : la page les atteint par le geste, dans une boite tiree
+/// Les routes qu'un imprevu offre en gestes (`GesteDeRoute<Designe>`) : la page les atteint par le geste, dans une boite tiree
 /// de leur fiche.
 const GESTE: Ecran = Ecran::Geste(Place::Paie);
 const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
@@ -866,10 +866,10 @@ pub(crate) struct ResumeDArret {
     origine: Option<droit::maintien::Origine>,
     cachets: Vec<Cachet>,
     prolongations: Vec<Prolongation>,
-    gestes: Vec<GesteDImprevu>,
+    gestes: Vec<GesteDeRoute<Designe>>,
     /// Ce que l'arret ecrit appelle encore : ses indemnites journalieres, quand il ouvre le maintien (le meme geste que
     /// dans `gestes`).
-    a_dire: Option<GesteDImprevu>,
+    a_dire: Option<GesteDeRoute<Designe>>,
     #[serde(flatten)]
     dit: Dit,
     /// Ses obligations, une fois posees (`Resume::poser_obligations`) ; aucune avant.
@@ -924,21 +924,22 @@ pub(crate) struct ResumeDeSuspension {
     saisi_le: socle::paris::Moment,
     reporte_par_dit: Vec<String>,
     cachets: Vec<Cachet>,
-    gestes: Vec<GesteDImprevu>,
+    gestes: Vec<GesteDeRoute<Designe>>,
     #[serde(flatten)]
     dit: Dit,
     /// Ce qui en est parti, une fois dit (`Resume::dire_ce_qui_est_parti`) ; rien avant.
     parti: Vec<Parti>,
 }
 
-/// UN GESTE D'UN IMPREVU, que la page dessine en bouton et branche : sa route, sa charge (ce qui designe l'imprevu), son
-/// libelle, et ce que sa boite fait saisir : les cases de la fiche de sa route qu'elle montre (`cases` ; aucune : le geste
-/// part tel quel), ce qu'elles montrent d'abord (`valeurs`), les choix d'une case qui se choisit (`choix`) et ce que la
-/// boite dit au-dessus (`phrases`). Le moteur ne rend que ceux que l'imprevu ouvre.
+/// UN GESTE QU'UNE ROUTE REND, que la page dessine en bouton et branche (`js/avance.js`, `brancherLesGestes`) : sa
+/// route, sa charge (`C` : ce qui designe un imprevu, une question d'identite de l'import...), son libelle, et ce que sa
+/// boite fait saisir : les cases de la fiche de sa route qu'elle montre (`cases` ; aucune : le geste part tel quel), ce
+/// qu'elles montrent d'abord (`valeurs`), les choix d'une case qui se choisit (`choix`) et ce que la boite dit au-dessus
+/// (`phrases`). Le moteur ne rend que ceux qu'il ouvre.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct GesteDImprevu {
+pub(crate) struct GesteDeRoute<C> {
     route: Route,
-    charge: Designe,
+    charge: C,
     libelle: &'static str,
     cases: Vec<&'static str>,
     valeurs: ValeursDeDepart,
@@ -999,12 +1000,12 @@ const INDEMNITES_A_DIRE: Affiche = Affiche::new("Indemnités journalières…");
 const CHANGER_LA_FIN: Affiche = Affiche::new("Changer la fin");
 const RETIRER: Affiche = Affiche::new("Retirer");
 
-impl Designe {
+impl<C> GesteDeRoute<C> {
     /// Le geste, sans case a saisir : il part avec sa charge.
-    fn geste(&self, route: Route, libelle: Affiche) -> GesteDImprevu {
-        GesteDImprevu {
+    pub(crate) fn sans_cases(route: Route, charge: C, libelle: Affiche) -> GesteDeRoute<C> {
+        GesteDeRoute {
             route,
-            charge: self.clone(),
+            charge,
             libelle: libelle.texte(),
             cases: Vec::new(),
             valeurs: ValeursDeDepart::default(),
@@ -1014,10 +1015,17 @@ impl Designe {
     }
 }
 
+impl Designe {
+    /// Le geste, sans case a saisir : il part avec sa charge.
+    fn geste(&self, route: Route, libelle: Affiche) -> GesteDeRoute<Designe> {
+        GesteDeRoute::sans_cases(route, self.clone(), libelle)
+    }
+}
+
 /// La reprise d'un arret, a saisir : son jour et son motif, ceux que l'arret dit deja.
-fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -> GesteDImprevu {
+fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -> GesteDeRoute<Designe> {
     let motifs = n.motifs_reprise.saisissables().into_iter().map(|m| Choisi { code: m.code, libelle: m.libelle }).collect();
-    GesteDImprevu {
+    GesteDeRoute {
         cases: vec![REPRISE.nom, MOTIF_REPRISE.nom],
         valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif, ..ValeursDeDepart::default() },
         choix: ChoixDesCases { motif_reprise: Some(motifs) },
@@ -1028,7 +1036,7 @@ fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -
 /// LES INDEMNITES JOURNALIERES D'UN ARRET QUI OUVRE LE MAINTIEN, a dire : les cases que le moteur attend (les majorees,
 /// pour un accident du travail au-dela du vingt-huitieme jour, CSS R433-3), remplies de ce que l'arret dit, sinon du montant de principe
 /// (`engagement::maintien::ij_de_principe`), que la personne garde ou corrige ; sinon, la phrase dit ou le lire.
-fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bool) -> R<GesteDImprevu> {
+fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bool) -> R<GesteDeRoute<Designe>> {
     let mut propose = ValeursDeDepart::default();
     let mut dit = None;
     if !a.ij_brute.is_some_and(|x| !x.est_nul()) {
@@ -1064,18 +1072,18 @@ fn geste_des_indemnites(ctx: &Contexte, d: &Designe, a: &ArretSaisi, majoree: bo
         phrases.push(dit);
     }
     phrases.push(crate::ouverture::aide("jours_deja_indemnises")?.to_string());
-    Ok(GesteDImprevu { cases, valeurs, phrases, ..d.geste(Route::ArretIndemnites, libelle) })
+    Ok(GesteDeRoute { cases, valeurs, phrases, ..d.geste(Route::ArretIndemnites, libelle) })
 }
 
 /// CE QU'UN ARRET OUVRE (rien de remplissable s'il n'y a pas a le remplir) : en cours, il se prolonge ou se reprend plus
 /// tot ; une reprise saisie se corrige tant que son signalement n'est pas parti ; ses indemnites journalieres se disent
 /// s'il ouvre le maintien (`indemnites`) ; il se retire tant que rien n'en est parti (ni signalement, ni DSN qui le
 /// reporte). Une reprise a la date prevue ne se saisit pas : la DSN la porte.
-fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool, reprise_corrigeable: bool, indemnites: Option<&GesteDImprevu>) -> R<Vec<GesteDImprevu>> {
+fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool, reprise_corrigeable: bool, indemnites: Option<&GesteDeRoute<Designe>>) -> R<Vec<GesteDeRoute<Designe>>> {
     let d = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille.clone() };
     let mut g = Vec::new();
     if cours {
-        g.push(GesteDImprevu {
+        g.push(GesteDeRoute {
             cases: vec![FIN_PRESCRITE.nom],
             phrases: vec![crate::ouverture::aide("prolongation")?.to_string()],
             ..d.geste(Route::ArretProlonger, PROLONGER)
@@ -1093,9 +1101,9 @@ fn gestes_d_un_arret(n: &Bloc60, a: &ArretSaisi, base: &ArretResume, cours: bool
 }
 
 /// Ce qu'une absence ouvre : sa fin change ; elle se retire tant qu'aucune DSN ne l'a reportee.
-fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[Mois]) -> Vec<GesteDImprevu> {
+fn gestes_d_une_absence(s: &SuspensionSaisie, reportee: &[Mois]) -> Vec<GesteDeRoute<Designe>> {
     let d = Designe::Absence { salarie: s.salarie.clone(), debut: s.debut.clone() };
-    let mut g = vec![GesteDImprevu {
+    let mut g = vec![GesteDeRoute {
         cases: vec![NOUVELLE_FIN.nom],
         valeurs: ValeursDeDepart { fin: Some(s.fin.clone()), ..ValeursDeDepart::default() },
         ..d.geste(Route::SuspensionModifier, CHANGER_LA_FIN)

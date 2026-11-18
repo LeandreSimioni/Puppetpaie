@@ -785,6 +785,63 @@ pub struct Importation {
     /// La couleur de la phrase (`importer`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub couleur: Option<&'static str>,
+    /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
+    /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
+    pub identites: Vec<QuestionDIdentite>,
+    /// Ce qu'une DSN reprise par cet import declare d'un contrat repris autrement que sa carte, et ce qu'il en advient
+    /// (`ValeurDeLaDsn`).
+    pub dsn_fait_foi: Vec<ValeurDeLaDsn>,
+}
+
+/// CE QU'UNE DSN REPRISE DECLARE D'UN CONTRAT DE PERMANENT REPRIS, ET QUE SA CARTE PORTE AUTREMENT : sa nature, son
+/// debut, sa fin ou son numero ; ce que la carte porte (`avant`, vide si rien n'etait dit) et ce que la DSN declare
+/// (`declaree`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "quoi", rename_all = "lowercase")]
+pub enum ValeurDeclaree {
+    Nature { avant: droit::natures::NatureDeContrat, declaree: droit::natures::NatureDeContrat },
+    Debut { avant: Option<Jour>, declaree: Jour },
+    Fin { avant: Option<Jour>, declaree: Jour },
+    Numero { avant: Option<engagement::numeros::NumeroContrat>, declaree: engagement::numeros::NumeroContrat },
+}
+
+/// CE QU'IL ADVIENT D'UNE VALEUR QUE LA DSN DECLARE AUTREMENT. La DSN fait foi (Léandre, 18/11/2026) tant que rien
+/// n'est parti d'ici : la carte prend la valeur declaree (`Completee` si elle n'en portait pas, `Remplacee` sinon). Un
+/// engagement valide, ou dont quelque chose est parti, a deja dit ce contrat aux organismes sous ce qu'il porte : un
+/// numero deja declare ne se recalcule pas (regle 4), et le debut, la fin, la nature declares avec lui non plus ; rien
+/// ne se remplace et l'ecart se dit (`DejaDeclaree`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortDeLaValeur {
+    Completee,
+    Remplacee,
+    DejaDeclaree,
+}
+
+/// Une valeur d'un contrat repris que la DSN reprise declare autrement : le salarie, la valeur, son sort, et ce que
+/// l'ecran en dit.
+#[derive(Debug, Clone, Serialize)]
+pub struct ValeurDeLaDsn {
+    pub salarie: droit::contexte::IdSalarie,
+    pub nom: String,
+    #[serde(flatten)]
+    pub valeur: ValeurDeclaree,
+    pub sort: SortDeLaValeur,
+    pub phrase: socle::texte::Phrase,
+}
+
+/// UNE QUESTION D'IDENTITE DE L'IMPORT : un individu qu'une DSN declare sous un NIR qu'aucune fiche ne porte (`nir`,
+/// `qui`, tel que la DSN le nomme) ressemble au salarie d'une fiche qui n'a pas de NIR (`salarie`, `nom`). Un salarie ne
+/// se rattache a sa DSN que par son NIR ; rapprocher par le nom serait deviner (regle 1), creer une seconde fiche en
+/// silence doublerait la personne : l'import demande (`question`), et n'ecrit rien de cet individu tant que la
+/// compagnie n'a pas repondu (`routes::importation::identite`).
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestionDIdentite {
+    pub nir: droit::fiche::Nir,
+    pub qui: String,
+    pub salarie: droit::contexte::IdSalarie,
+    pub nom: String,
+    pub question: socle::texte::Phrase,
 }
 
 /// « 3 bulletins » : `n` et le mot, au pluriel quand il le faut ; rien pour zero.
@@ -916,14 +973,26 @@ impl Importation {
         let b = &self.bulletins;
         let periode: String = b.periode.map(|p| format!(" (du {} au {})", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
         self.phrase = socle::phrase!(
-            "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
+            "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.{}",
             b.lus,
             periode,
             b.repris,
             b.fiches_a_creer,
             self.dsn,
-            self.aem
+            self.aem,
+            self.dire_les_identites()
         );
+    }
+
+    /// LES PERSONNES MISES DE COTE (`identites`), comptees une fois chacune : rien d'elles ne se reprend avant la
+    /// reponse a leur question. Rien quand il n'y en a pas ; sinon la phrase commence par une espace.
+    pub fn dire_les_identites(&self) -> String {
+        let personnes: std::collections::HashSet<&droit::fiche::Nir> = self.identites.iter().map(|q| &q.nir).collect();
+        match personnes.len() {
+            0 => String::new(),
+            1 => " Une personne déclarée dans la DSN ressemble à une fiche sans numéro de sécurité sociale : rien d'elle n'est repris avant votre réponse.".to_string(),
+            n => format!(" {} personnes déclarées dans la DSN ressemblent à une fiche sans numéro de sécurité sociale : rien d'elles n'est repris avant votre réponse.", n),
+        }
     }
 
     /// La couleur de la phrase d'un import fait.

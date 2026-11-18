@@ -374,6 +374,7 @@ async function dessinerImportation(cible) {
       <div id="import-resultat"></div>
     </div>`;
   document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
+  brancherIdentites(document.getElementById("import-etat"), e);
   // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
   if (deja) peindreDemarrage(document.getElementById("import-demarrage"));
   document.getElementById("import-apercu").onclick = () => apercuImportation();
@@ -449,8 +450,35 @@ function vueEtatImportation(e) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
-  return repris + vueNaturesADire(e.a_dire)
+  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e.a_dire)
     + (editeur ? `<h3>Ce qui attend l'éditeur</h3>${editeur}` : "");
+}
+
+/* LA PERSONNE QU'UNE DSN DÉCLARE ET QUI RESSEMBLE À UNE FICHE SANS NUMÉRO
+   DE SÉCURITÉ SOCIALE (`import::identite`) : le moteur pose la question
+   (`identites.questions`), la page la montre avec ses deux gestes (`gestes`,
+   dessinés depuis la fiche de leur route : `js/avance.js`) ; ce qui ne s'est
+   pas relu pour les poser se dit (`identites.non_relues`). */
+function vueIdentitesADire(identites) {
+  const liste = identites.questions;
+  const non = identites.non_relues ? `<p class="note">${echapper(identites.non_relues)}</p>` : "";
+  if (!liste.length) return non;
+  return `<h3>Est-ce la même personne ?</h3>${non}${liste.map((q, k) => `<div class="rang">
+      <div class="rang-infos"><b class="rang-nom">${echapper(q.qui)}</b>${echapper(q.question)}</div>
+      <div class="rang-etat" data-identite="${k}">${boutonsDesGestes(q.gestes)}</div>
+    </div>`).join("")}`;
+}
+
+/* Les gestes des questions d'identité de `e`, dessinés dans `cible` ; après la réponse, l'état se relit. */
+function brancherIdentites(cible, e) {
+  cible.querySelectorAll("[data-identite]").forEach((b) => {
+    const q = e.identites.questions[+b.dataset.identite];
+    brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, async () => {
+      await relireEtat();
+      rafraichirReferentiels();
+      await rafraichirEtatImportation();
+    });
+  });
 }
 
 /* LA NATURE DES CONTRATS REPRIS QU'AUCUN BULLETIN NE DIT
@@ -651,7 +679,11 @@ function vueNonRepris(nr, pastilles) {
 async function rafraichirEtatImportation() {
   const cible = document.getElementById("import-etat");
   if (!cible) return;
-  try { cible.innerHTML = vueEtatImportation(await api("importation-etat")); } catch (e) { dire(e.message, "erreur"); }
+  try {
+    const e = await api("importation-etat");
+    cible.innerHTML = vueEtatImportation(e);
+    brancherIdentites(cible, e);
+  } catch (e) { dire(e.message, "erreur"); }
 }
 
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les
@@ -663,13 +695,20 @@ function vueImportation(r) {
   const couleur = r.encart ? ENCART_DE_COULEUR[r.encart.couleur] : "";
   const pose = r.parametrage.length
     ? `<p class="note">Posé dans la configuration</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
+  // Ce que la DSN reprise déclare d'un contrat repris autrement que sa carte (`dsn_fait_foi`, du moteur, phrases comprises).
+  const remplace = r.dsn_fait_foi.length
+    ? `<p class="note">La DSN fait foi</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
+  // Les personnes mises de côté, chacune sa question (`identites`, du moteur) :
+  // elles se répondent dans l'état de l'import.
+  const questions = r.identites.length
+    ? `<div class="encart attention"><b>Est-ce la même personne ?</b><ul>${r.identites.map((q) => `<li>${echapper(q.question)}</li>`).join("")}</ul></div>` : "";
   const bouton = r.ecrit
     ? `<div class="encart ${couleur}"><b>Repris</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
-        ${pose}
+        ${pose}${remplace}
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
-      ? `<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
-      : `<p><button class="primaire" id="import-ecrire">Reprendre</button>
+      ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
+      : `${questions}<p><button class="primaire" id="import-ecrire">Reprendre</button>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
   return `${vueNonRepris(r.tri.non_repris, r.pastilles)}
