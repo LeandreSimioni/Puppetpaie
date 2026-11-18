@@ -57,7 +57,7 @@ serde_json = { workspace = true }
 # Les gardes de structure (`tests/fichiers/structure.rs`, `sources.rs`) cherchent des motifs dans les sources.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Le verrou des sources (`tests/fichiers/sources.rs`) lit les livraisons gzip de LEGI.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 # Les essais des declarations et de l'import passent par les routes et lisent ce qu'elles ecrivent.
 declarations = { path = "../declarations" }
 import = { path = "../import" }

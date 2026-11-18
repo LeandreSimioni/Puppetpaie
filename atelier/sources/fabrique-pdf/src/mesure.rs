@@ -81,6 +81,28 @@ fn quotient_arrondi(n: i128, d: i128) -> i128 {
     }
 }
 
+/// `quotient_arrondi` en 64 bits : le même quotient, ou `None` quand un pas du calcul déborde d'un `i64` (`n / d` pour
+/// `i64::MIN / -1`, l'arrondi qui passe `i64::MAX`), ou que `d` est nul. `2|r| >= |d|` s'écrit `|r| >= |d| - |r|` en non
+/// signé : `|r| < |d|`, la différence ne déborde pas.
+fn quotient_arrondi_64(n: i64, d: i64) -> Option<i64> {
+    let (q, r) = (n.checked_div(d)?, n.checked_rem(d)?);
+    if r.unsigned_abs() >= d.unsigned_abs() - r.unsigned_abs() {
+        q.checked_add(if (n < 0) == (d < 0) { 1 } else { -1 })
+    } else {
+        Some(q)
+    }
+}
+
+/// `a × b / d`, arrondi au plus proche, la moitié loin de zéro : en 64 bits quand le produit et le quotient y tiennent,
+/// sinon en 128 bits ; le même nombre dans les deux cas (la division tronquée et son reste sont ceux des 128 bits quand
+/// les opérandes tiennent en 64).
+fn produit_sur(a: i64, b: i64, d: i64) -> i128 {
+    match a.checked_mul(b).and_then(|p| quotient_arrondi_64(p, d)) {
+        Some(q) => q as i128,
+        None => quotient_arrondi(a as i128 * b as i128, d as i128),
+    }
+}
+
 /// Un `i128` ramené à une mesure, borné aux mesures possibles.
 fn borne(n: i128) -> Mesure {
     Mesure(n.clamp(i64::MIN as i128, i64::MAX as i128) as i64)
@@ -115,7 +137,7 @@ impl Mesure {
 
     /// Le nombre entier le plus proche, la moitié loin de zéro.
     pub(crate) fn arrondi(self) -> i64 {
-        quotient_arrondi(self.0 as i128, UN as i128) as i64
+        produit_sur(self.0, 1, UN) as i64
     }
 
     /// Le plus petit entier qui n'est pas en dessous.
@@ -129,8 +151,8 @@ impl Mesure {
     }
     /// Arrondie à `chiffres` décimales (au plus six), la moitié loin de zéro.
     pub fn arrondie(self, chiffres: u32) -> Mesure {
-        let pas = 10i128.pow(6 - chiffres.min(6));
-        Mesure((quotient_arrondi(self.0 as i128, pas) * pas) as i64)
+        let pas = 10i64.pow(6 - chiffres.min(6));
+        Mesure((produit_sur(self.0, 1, pas) * pas as i128) as i64)
     }
 
     /// A six chiffres significatifs, la moitié au pair (`12.345678` : `12.3457`) : une coordonnée d'un dessin SVG,
@@ -158,33 +180,41 @@ impl Mesure {
 
     /// `self` sur `autre`, arrondi au millionième ; `None` si `autre` est nul.
     pub fn sur(self, autre: Mesure) -> Option<Mesure> {
-        (autre.0 != 0).then(|| borne(quotient_arrondi(self.0 as i128 * UN as i128, autre.0 as i128)))
+        (autre.0 != 0).then(|| borne(produit_sur(self.0, UN, autre.0)))
     }
 
     /// La part de `self` sur un compte de `n` (une moyenne, une colonne parmi `n`), arrondie au millionième ; `None` si
     /// `n` est nul.
     pub fn part_sur(self, n: usize) -> Option<Mesure> {
-        (n != 0).then(|| borne(quotient_arrondi(self.0 as i128, n as i128)))
+        (n != 0).then(|| {
+            borne(match i64::try_from(n) {
+                Ok(n) => produit_sur(self.0, 1, n),
+                Err(_) => quotient_arrondi(self.0 as i128, n as i128),
+            })
+        })
     }
 
     /// `self` fois le rapport de deux mesures, `n / d`, en un seul arrondi ; `None` si `d` est nulle.
     pub fn fois_rapport(self, n: Mesure, d: Mesure) -> Option<Mesure> {
-        (d.0 != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n.0 as i128, d.0 as i128)))
+        (d.0 != 0).then(|| borne(produit_sur(self.0, n.0, d.0)))
     }
 
     /// `self` fois l'entier `n` (de la norme PDF, d'une police), bornée aux mesures possibles.
     pub(crate) fn fois_entier(self, n: i64) -> Mesure {
-        borne(self.0 as i128 * n as i128)
+        match self.0.checked_mul(n) {
+            Some(p) => Mesure(p),
+            None => borne(self.0 as i128 * n as i128),
+        }
     }
 
     /// Le quotient par l'entier non nul `n` (de la norme PDF, d'une police), arrondi au millionième.
     pub(crate) fn divisee_par(self, n: i64) -> Mesure {
-        borne(quotient_arrondi(self.0 as i128, n as i128))
+        borne(produit_sur(self.0, 1, n))
     }
 
     /// `self` fois `n / d` en un seul arrondi, `d` non nul par son type.
     pub(crate) fn fois(self, n: i64, d: std::num::NonZeroI64) -> Mesure {
-        borne(quotient_arrondi(self.0 as i128 * n as i128, d.get() as i128))
+        borne(produit_sur(self.0, n, d.get()))
     }
 
     /// La racine carrée (d'une mesure positive ou nulle ; une mesure négative n'en a pas : `None`), arrondie au
@@ -194,6 +224,9 @@ impl Mesure {
             return None;
         }
         // La racine de `self.0 / UN`, en millionièmes : la racine entière de `self.0 * UN`.
+        if let Some(n) = (self.0 as u64).checked_mul(UN as u64) {
+            return Some(Mesure(racine_arrondie_64(n) as i64));
+        }
         let n = self.0 as u128 * UN as u128;
         let mut r = racine_entiere(n);
         // `r` est la racine par défaut ; on arrondit au plus proche : r + 1/2 au carré, soit r² + r + 1/4, comparé à n.
@@ -235,7 +268,11 @@ impl Mesure {
 
     /// La longueur du vecteur (`self`, `autre`) : la racine de la somme des carrés, au millionième le plus proche.
     pub fn hypot(self, autre: Mesure) -> Mesure {
-        let (a, b) = (self.0.unsigned_abs() as u128, autre.0.unsigned_abs() as u128);
+        let (a, b) = (self.0.unsigned_abs(), autre.0.unsigned_abs());
+        if let Some(n) = a.checked_mul(a).zip(b.checked_mul(b)).and_then(|(a2, b2)| a2.checked_add(b2)) {
+            return Mesure(racine_arrondie_64(n).min(i64::MAX as u64) as i64);
+        }
+        let (a, b) = (a as u128, b as u128);
         let n = a * a + b * b;
         let mut r = racine_entiere(n);
         if n > r * r + r {
@@ -320,6 +357,17 @@ fn exposant(t: &str) -> Option<i32> {
     }
     let n = entier_de(chiffres) as i32;
     Some(if negatif { -n } else { n })
+}
+
+/// La racine carrée de `n`, arrondie à l'entier le plus proche, quand `n` tient en 64 bits : `isqrt` rend la racine par
+/// défaut, la même que `racine_entiere` ; `r ≤ 2³² - 1`, donc `r² + r` ne déborde pas.
+fn racine_arrondie_64(n: u64) -> u64 {
+    let r = n.isqrt();
+    if n > r * r + r {
+        r + 1
+    } else {
+        r
+    }
 }
 
 /// La racine carrée entière de `n` (par défaut), par la méthode de Newton, partie d'au-dessus de la racine.
@@ -411,7 +459,7 @@ impl Neg for Mesure {
 impl Mul for Mesure {
     type Output = Mesure;
     fn mul(self, o: Mesure) -> Mesure {
-        borne(quotient_arrondi(self.0 as i128 * o.0 as i128, UN as i128))
+        borne(produit_sur(self.0, o.0, UN))
     }
 }
 
@@ -420,7 +468,10 @@ impl Mul for Mesure {
 impl Mul<Mesure> for usize {
     type Output = Mesure;
     fn mul(self, m: Mesure) -> Mesure {
-        borne(m.0 as i128 * self as i128)
+        match i64::try_from(self).ok().and_then(|n| m.0.checked_mul(n)) {
+            Some(p) => Mesure(p),
+            None => borne(m.0 as i128 * self as i128),
+        }
     }
 }
 
