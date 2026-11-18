@@ -586,12 +586,10 @@ const IJ_AU_RELEVE: &str = "Le montant d'un jour se lit sur le relevé de la CPA
 const IJ_A_VERIFIER: &str = "quand le relevé CPAM arrive, vérifiez le montant et corrigez-le s'il diffère.";
 
 /// `AuReleve(phrase)` quand aucun montant ne se propose : un accident survenu avant le plafond depose (R433-2), un mois sans
-/// paie du salarie, une paie reprise de l'ancien logiciel qui ne dit pas son brut, un bareme absent.
+/// paie validee du salarie, un bareme absent.
 /// Une maladie : la moitie (CSS R323-5) de 1/91,25 des trois dernieres paies des mois civils anterieurs a l'interruption
 /// (R323-4, 1°), chacune dans la limite de 1,4 SMIC du mois, au SMIC en vigueur le dernier jour du mois civil precedant
-/// l'interruption, sur la duree legale (R323-4, al. 5) ; le brut des paies, sans abattement (meme alinea), validees ou
-/// reprises de l'ancien logiciel (`conges::brut_verse` : R323-4 compte les paies, quel que soit le logiciel qui les a
-/// faites).
+/// l'interruption, sur la duree legale (R323-4, al. 5) ; le brut des paies validees, sans abattement (meme alinea).
 /// Un accident du travail, de trajet ou une maladie professionnelle (la date de sa premiere constatation medicale, ou une
 /// date posterieure, vaut date de l'accident, L461-1) : 60 %, puis 80 % (R433-1, R433-3), du salaire journalier, 1/30,42 de la paie du
 /// mois civil anterieur (R433-4, 1°), pris dans la limite de 0,226 % du plafond annuel (L433-2, R433-2) ; l'indemnite au
@@ -604,15 +602,9 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
     let veille = premier.mois_civil().premier_jour().avant(Duree::jours(1))?;
     let salarie = imp.salarie.clone();
-    // Le brut que l'employeur a verse au salarie un mois, ses paies validees et importees (`conges::brut_verse`) ; sans
-    // paie, ou d'une paie reprise qui ne dit pas son brut, rien ne se propose.
-    let paie = |mois: Mois| -> R<Result<Montant, IjDePrincipe>> {
-        Ok(match crate::conges::brut_verse(ctx, mois, &salarie)? {
-            Some(brut) if brut > Montant::ZERO => Ok(brut),
-            Some(_) => Err(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : aucune paie en {}.", mois.libelle(Graphie::Accentuee)))),
-            None => Err(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}.", crate::conges::brut_non_dit(mois)))),
-        })
-    };
+    // La paie validee d'un mois du salarie ; sans elle, rien ne se propose.
+    let paie = |mois: Mois| -> R<Option<Montant>> { Ok(Some(crate::conges::remuneration_du_mois(ctx, mois, &salarie)?).filter(|brut| *brut > Montant::ZERO)) };
+    let sans_paie = |mois: Mois| AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : aucune paie validée en {}.", mois.libelle(Graphie::Accentuee)));
     match origine(imp)? {
         Some(Origine::Maladie) => {
             let p = &regles.principe;
@@ -626,8 +618,8 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
             for _ in 0..combien {
                 let mois = jour.mois_civil();
                 match paie(mois)? {
-                    Ok(b) => bruts.push(b),
-                    Err(au_releve) => return Ok(au_releve),
+                    Some(b) => bruts.push(b),
+                    None => return Ok(sans_paie(mois)),
                 }
                 jour = mois.premier_jour().avant(Duree::jours(1))?;
             }
@@ -653,10 +645,7 @@ pub fn ij_de_principe(ctx: &Contexte, imp: &ArretSaisi) -> R<IjDePrincipe> {
                 Err(pourquoi) => return Ok(AuReleve(format!("Le montant d'un jour se lit sur le relevé de la CPAM : {}", pourquoi.phrase))),
             };
             let mois = veille.mois_civil();
-            let brut = match paie(mois)? {
-                Ok(b) => b,
-                Err(au_releve) => return Ok(au_releve),
-            };
+            let Some(brut) = paie(mois)? else { return Ok(sans_paie(mois)) };
             let (brute, majoree) = montants_d_accident(brut, mensuel.fois(12), p)?;
             Ok(IjDePrincipe::Calculee(IjCalculee {
                 brute,

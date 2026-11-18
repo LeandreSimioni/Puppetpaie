@@ -18,7 +18,6 @@ use std::path::Path;
 
 
 use crate::calcul::Paie;
-use crate::etats::PaieDuMois;
 use crate::saisie::{Carte, CongePris};
 use droit::catalogue::rubrique;
 use droit::clauses;
@@ -211,15 +210,21 @@ pub(crate) fn jours_dits(j: Jours) -> String {
     socle::grandeurs::ecrit::sans_zero::dit(j.au_demi_superieur())
 }
 
-/// Ce qu'une paie validee apporte au compteur de conges : pas une copie de la paie, ce que le compteur en garde (`lue`),
-/// une fois par mois et par salarie.
+/// Ce qu'une paie validee apporte au compteur de conges et a la deduction forfaitaire de l'annee : pas une copie de la
+/// paie, ce qu'un calcul de l'annee en garde (`lue`), une fois par mois et par salarie.
 #[derive(Debug, Clone)]
 struct ApportDUnePaie {
     brut: Montant,
+    /// La deduction forfaitaire specifique retenue, s'il y en a une.
+    dfs: Option<Montant>,
     /// Un contrat paye au mois : sa presence dans le mois, et ce qu'il en decompte.
     mensuel: Option<MoisPaye>,
     /// Le compteur avant le mois que la paie a ecrit (`etats::CONGES_AVANT`).
     avant: Option<Avant>,
+    /// Les heures supplementaires payees (`heures_en_plus::HEURE_SUPPLEMENTAIRE`) et le montant net des heures en plus
+    /// exonere d'impot (`Assiette::HeuresEnPlusExonere`), s'il y en a un.
+    heures_supplementaires: Heures,
+    exonere: Option<Montant>,
 }
 
 #[derive(Debug, Clone)]
@@ -253,18 +258,19 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<ApportDUnePaie> {
     } else {
         None
     };
-    Ok(ApportDUnePaie { brut: p.brut, mensuel, avant: p.conges_avant.clone() })
+    let dfs = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
+    let heures_supplementaires = crate::heures_en_plus::supplementaires_payees(&p.remuneration)?;
+    let exonere = p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere).map(|x| x.en_euros(droit::assiette::Assiette::HeuresEnPlusExonere)).transpose()?;
+    Ok(ApportDUnePaie { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
 }
 
-// Le memo d'une derivation : la profondeur des derivations ouvertes ; ce que les paies validees de chaque (racine, mois,
-// salarie) ont deja apporte au compteur (`ApportDUnePaie`), et ce qui lui a ete verse (`paies_versees`), ou le refus
-// d'un mois qui ne se lit pas.
+// Le memo d'une derivation : la profondeur des derivations ouvertes, et ce que les paies de chaque (racine, mois,
+// salarie) ont deja apporte (`ApportDUnePaie`), ou le refus d'un mois qui ne se lit pas.
 type PaiesDuMois = R<Vec<ApportDUnePaie>>;
-type Versees = R<Vec<crate::etats::PaieDuMois>>;
 
 thread_local! {
-    static MEMO: RefCell<(u32, HashMap<(String, String), PaiesDuMois>, HashMap<(String, String), Versees>)> =
-        RefCell::new((0, HashMap::new(), HashMap::new()));
+    static MEMO: RefCell<(u32, HashMap<(String, String), PaiesDuMois>)> =
+        RefCell::new((0, HashMap::new()));
 }
 
 /// Une derivation ouverte : chaque mois s'y lit une fois ; le memo se vide quand la derniere se ferme.
@@ -284,7 +290,6 @@ impl Drop for Derivation {
             m.0 -= 1;
             if m.0 == 0 {
                 m.1.clear();
-                m.2.clear();
             }
         });
     }
@@ -835,134 +840,51 @@ fn cle_de_fiche(ctx: &Contexte, cle: &IdSalarie) -> R<IdSalarie> {
     Ok(ctx.fiche_de(cle)?.id)
 }
 
-/// CE QUE L'EMPLOYEUR A VERSE AU SALARIE `cle` EN `mois`, ses paies validees et importees (`etats::paies_du_salarie`),
-/// lu une fois par derivation : le seul lecteur du salaire d'un autre mois.
-pub(crate) fn paies_versees(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<PaieDuMois>> {
-    let cle = cle_de_fiche(ctx, cle)?;
-    let reference = cle_du_memo(ctx, mois, &cle);
-    let memo = MEMO.with(|m| {
-        let m = m.borrow();
-        if m.0 > 0 { m.2.get(&reference).cloned() } else { None }
-    });
-    if let Some(p) = memo {
-        return p;
-    }
-    let p = crate::etats::paies_du_salarie(ctx, mois, &cle);
-    MEMO.with(|m| {
-        let mut m = m.borrow_mut();
-        if m.0 > 0 {
-            m.2.insert(reference, p.clone());
-        }
-    });
-    p
-}
-
-/// LE BRUT VERSE AU SALARIE `cle` EN `mois` : la somme des bruts de ses paies validees et importees (`paies_versees`) ;
-/// `None` : une paie importee de ce mois ne dit pas son brut (`PaieImportee::brut`), et rien ne le remplace.
-pub(crate) fn brut_verse(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Option<Montant>> {
-    Ok(paies_versees(ctx, mois, cle)?.iter().map(PaieDuMois::brut).sum())
-}
-
-/// Ce que dit un calcul qui lit le brut d'un mois qu'une paie importee ne dit pas (`brut_verse`).
-pub(crate) fn brut_non_dit(mois: Mois) -> String {
-    format!(
-        "la paie reprise de l'ancien logiciel en {} ne dit pas son brut : importer le bulletin de ce mois-là",
-        mois.libelle(socle::mois::Graphie::Accentuee)
-    )
+/// Le brut d'un salarie sur un mois anterieur -- l'assiette du dixieme -- tel que ses paies validees le portent.
+pub(crate) fn remuneration_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
+    Ok(paies_du_mois(ctx, mois, &cle_de_fiche(ctx, cle)?)?.iter().fold(Montant::ZERO, |a, p| a + p.brut))
 }
 
 /// La deduction forfaitaire specifique deja retenue pour un salarie dans les mois de la meme annee civile, strictement
-/// avant `mois` (AAAA-MM) (`calcul::dfs_deja_deduite` ; arrete du 4 septembre 2025, art. 9 : << dans la limite de 7 600
-/// euros par annee civile >>, `atelier/reference/sources/dfs/`) : celle de chaque paie validee ; une paie importee ne la
-/// porte pas (l'import n'en garde rien, `importe::PaieVersee`), et le cumul refuse.
+/// avant `mois` (AAAA-MM), telle que ses paies validees la portent (`calcul::dfs_deja_deduite` ; arrete du 4 septembre
+/// 2025, art. 9 : << dans la limite de 7 600 euros par annee civile >>). Une paie validee qui ne se lit pas refuse : le
+/// cumul de l'annee ne se devine pas.
 pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
     let regle = "Le plafond de 7 600 € par année civile (arrêté du 4 septembre 2025, art. 9)";
-    let de = |p: &PaieDuMois| -> R<Option<Montant>> {
-        Ok(match p {
-            PaieDuMois::Validee(p) => Some(p.deduction_forfaitaire.iter().fold(Montant::ZERO, |a, d| a + d.montant)),
-            PaieDuMois::Importee(_) => None,
-        })
-    };
-    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, de, "la déduction forfaitaire spécifique qu'elle a retenue", "Déduction forfaitaire spécifique", regle)
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.dfs.into_iter().fold(a, |a, d| a + d), "Déduction forfaitaire spécifique", regle)
 }
 
 /// Les heures supplementaires payees au salarie `cle` dans les mois de la meme annee civile, strictement avant `mois` :
-/// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`). Une
-/// paie importee les dit quand chacune de ses lignes de remuneration est rattachee a sa rubrique
-/// (`importe::LigneImprimee::rattachee`) et que celles des heures supplementaires disent leurs heures ; une ligne
-/// qu'elle ne rattache pas peut en payer : le cumul refuse.
+/// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`).
 pub(crate) fn heures_supplementaires_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Heures> {
-    let de = |p: &PaieDuMois| -> R<Option<Heures>> {
-        let p = match p {
-            PaieDuMois::Validee(p) => return crate::heures_en_plus::supplementaires_payees(&p.remuneration).map(Some),
-            PaieDuMois::Importee(p) => p,
-        };
-        let mut total = Heures::ZERO;
-        for (_, rattachee) in &p.remuneration {
-            let Some(r) = rattachee else { return Ok(None) };
-            if r.code != crate::heures_en_plus::HEURE_SUPPLEMENTAIRE {
-                continue;
-            }
-            match r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
-                Some(crate::ligne::QuantiteDeLigne::Heures(h)) => total = total + h,
-                _ => return Ok(None),
-            }
-        }
-        Ok(Some(total))
-    };
-    cumul_de_l_annee(ctx, mois, cle, Heures::ZERO, de, "les heures supplémentaires qu'elle a payées", "Heures supplémentaires", "Le contingent annuel et ses paliers")
+    cumul_de_l_annee(ctx, mois, cle, Heures::ZERO, |a, p| a + p.heures_supplementaires, "Heures supplémentaires", "Le contingent annuel et ses paliers")
 }
 
 /// Le montant net des heures en plus deja exonere d'impot pour le salarie `cle` dans l'annee civile, avant `mois` : la
-/// limite annuelle de CGI 81 quater le compte (`heures_en_plus`). Une paie validee le porte dans sa base
-/// `Assiette::HeuresEnPlusExonere` quand elle paie des heures en plus (sans elle, rien n'est exonere) ; une paie
-/// importee, seulement si ses pieces la disent : sinon le cumul refuse.
+/// limite annuelle de CGI 81 quater le compte (`heures_en_plus`).
 pub(crate) fn exonere_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
-    use droit::assiette::Assiette::HeuresEnPlusExonere;
     let regle = "La limite annuelle de 7 500 € (CGI 81 quater)";
-    let de = |p: &PaieDuMois| -> R<Option<Montant>> {
-        let dite = p.bases().get(&HeuresEnPlusExonere).map(|x| x.en_euros(HeuresEnPlusExonere)).transpose()?;
-        Ok(match p {
-            PaieDuMois::Validee(_) => Some(dite.into_iter().fold(Montant::ZERO, |a, x| a + x)),
-            PaieDuMois::Importee(_) => dite,
-        })
-    };
-    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, de, "le montant net des heures en plus exonéré d'impôt", "Exonération d'impôt des heures en plus", regle)
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.exonere.into_iter().fold(a, |a, x| a + x), "Exonération d'impôt des heures en plus", regle)
 }
 
-/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `de` lit de chaque paie versee au salarie `cle`,
-/// validee ou importee (`paies_versees`), depuis `zero`. Le cumul de l'annee ne se devine pas : un mois qui ne se lit
-/// pas refuse, et une paie importee qui ne dit pas ce que `de` lit (`None`) refuse en nommant son mois et ce qui lui
-/// manque (`manque`).
-fn cumul_de_l_annee<T: Copy + std::ops::Add<Output = T>>(
-    ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, de: impl Fn(&PaieDuMois) -> R<Option<T>>, manque: &str, qui: &str, regle: &str,
-) -> R<T> {
+/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `plus` ajoute, depuis `zero`, de chaque paie validee
+/// du salarie `cle`. Une paie validee qui ne se lit pas refuse : le cumul de l'annee ne se devine pas.
+fn cumul_de_l_annee<T: Copy>(ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, plus: impl Fn(T, &ApportDUnePaie) -> T, qui: &str, regle: &str) -> R<T> {
     let _derivation = Derivation::ouvrir();
+    let cle_fiche = cle_de_fiche(ctx, cle)?;
     let mut total = zero;
-    for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        let paies = paies_versees(ctx, m, cle).map_err(|e| {
+    for m in crate::stock::mois_saisis(&ctx.racine)? {
+        if m.annee() != mois.annee() || m >= mois {
+            continue;
+        }
+        let paies = paies_du_mois(ctx, m, &cle_fiche).map_err(|e| {
             e.reformuler(|e| format!(
-                "{} de {} : les paies de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
+                "{} de {} : les paies validées de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
 ne se connaît pas. Rien n'est calculé.",
                 qui, cle, m, e, regle
             ))
         })?;
-        for p in &paies {
-            match de(p)? {
-                Some(x) => total = total + x,
-                None => {
-                    return Err(socle::refus!(
-                        "{} de {} : la paie reprise de l'ancien logiciel en {} ne dit pas {}. {} se suit sur toute l'année : \
-sans ce mois, le cumul ne se connaît pas. Rien n'est calculé.",
-                        qui,
-                        cle,
-                        m.libelle(socle::mois::Graphie::Accentuee),
-                        manque,
-                        regle
-                    ))
-                }
-            }
-        }
+        total = paies.iter().fold(total, &plus);
     }
     Ok(total)
 }

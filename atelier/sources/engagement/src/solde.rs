@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, brut_non_dit, brut_verse, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, qui,
+    avertir, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, qui, remuneration_du_mois,
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -1327,35 +1327,20 @@ fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &
     Ok(r)
 }
 
-/// Les bruts mensuels des douze et des trois derniers mois (R1234-4 : « la rémunération », que l'employeur l'ait payée
-/// ici ou dans l'ancien logiciel), ceux des mois saisis ou importes, chacun le brut verse au salarie
-/// (`conges::brut_verse`, ses paies validees et importees) : aucun mois, aucun brut, et
-/// `permanents::salaire_de_reference` refuse en disant quoi produire ; une paie importee qui ne dit pas son brut refuse
-/// en nommant son mois.
+/// Les bruts mensuels des douze et des trois derniers mois (R1234-4), ceux des mois produits ou importes : aucun mois,
+/// aucun brut, et `permanents::salaire_de_reference` refuse en disant quoi produire.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Montant>, Vec<Montant>)> {
     let salarie = salarie_de(e)?;
     let mut bruts = Vec::new();
     for i in 1..=12 {
         let m = mois.avant(socle::date::Duree::mois(i))?;
-        if !crate::stock::a_une_saisie(&ctx.racine, m)? && !a_des_paies_importees(ctx, m)? {
+        if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }
-        bruts.push(brut_verse(ctx, m, salarie)?.ok_or_else(|| {
-            socle::refus!(
-                "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des douze et des trois \
-                 derniers mois : {}, puis refaire la fin du contrat.",
-                brut_non_dit(m)
-            )
-        })?);
+        bruts.push(remuneration_du_mois(ctx, m, salarie)?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
-}
-
-/// Le mois `mois` a-t-il des paies reprises de l'ancien logiciel (`importe::Importe::paies`) ? Un mois tenu dans l'ancien
-/// logiciel compte comme un mois saisi.
-fn a_des_paies_importees(ctx: &Contexte, mois: Mois) -> R<bool> {
-    Ok(crate::importe::du_mois(&ctx.racine, mois)?.iter().any(|i| i.paies().contains_key(&mois)))
 }
 
 /// Le brut que portent des lignes deja construites, sans les charger : la
@@ -1372,18 +1357,16 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
     Ok(total)
 }
 
-/// La remuneration totale brute versee pendant le contrat (L1243-8, « la rémunération totale brute versée au salarié »,
-/// que l'employeur l'ait payee ici ou dans l'ancien logiciel) : le brut verse chaque mois d'avant depuis son debut
-/// (`conges::brut_verse`, ses paies validees et importees), plus le mois courant, dont le brut arrive tout calcule. Une
-/// paie importee qui ne dit pas son brut refuse en nommant son mois.
+/// La remuneration totale brute versee pendant le contrat (L1243-8) : les mois
+/// produits, plus le mois courant, dont le brut arrive tout calcule.
 fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Montant) -> R<Montant> {
     let salarie = salarie_de(e)?;
     let mut total = ce_mois;
     let debut = debut_de(e)?;
-    for m in debut.mois_civil().jusqu_a(mois).into_iter().filter(|m| *m != mois) {
-        total += brut_verse(ctx, m, salarie)?.ok_or_else(|| {
-            socle::refus!("L'indemnité de fin de contrat (L1243-8) se calcule sur la rémunération totale brute du contrat : {}, puis refaire la fin du contrat.", brut_non_dit(m))
-        })?;
+    for m in debut.mois_civil().jusqu_a(mois) {
+        if m != mois && crate::stock::a_une_saisie(&ctx.racine, m)? {
+            total += remuneration_du_mois(ctx, m, salarie)?;
+        }
     }
     Ok(total)
 }
