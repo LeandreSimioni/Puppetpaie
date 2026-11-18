@@ -4330,8 +4330,7 @@ fn citee_par_la_base(a: &Option<IdentifiantDAffiliation>) -> String {
 
 /// UN ORDRE DE PAIEMENT (bloc S21.G00.20) tel que la DSN l'ecrit : a qui (20.001), combien (20.005), pour quelle periode
 /// (20.006, 20.007), pour quand (20.011), et le credit que la somme due laisse (`bordereau::credit` : ce que la compagnie
-/// a verse en trop et que l'ordre ne reprend pas, ce qu'il reprend deja, l'Urssaf seulement ; `None` sans credit). Un
-/// ordre lu dans une DSN deposee (`dsn_lue::DsnLue::ordres`) ne dit pas de credit : la DSN ne l'ecrit pas.
+/// a verse en trop et que l'ordre ne reprend pas, ce qu'il reprend deja, l'Urssaf seulement ; `None` sans credit).
 #[derive(Clone, Debug)]
 pub struct OrdreDePaiement {
     pub organisme: IdentifiantDOrganisme,
