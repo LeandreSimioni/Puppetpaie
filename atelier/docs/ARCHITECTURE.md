@@ -547,6 +547,7 @@ un libellé, chacun sa forme.
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
+| titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
 | clé de dépôt du banc | `routes::scenario::CleDeDepot` | `routes/src/scenario.rs` |
 | fichier d'une pièce du banc | `routes::scenario::FichierDeLaPiece` | `routes/src/scenario.rs` |
 | empreinte | `Empreinte` | `socle/src/fichiers.rs` |
@@ -2391,7 +2392,11 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique
   DSN restent ; toute autre lettre devient `X`, tout chiffre `9`), jamais le fichier. Un scan et un fichier qui n'est
-  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident.
+  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident. Un contrat que
+  PuppetPaie a fait se dit « contrat, non lu », sans incident : aucun texte ne fixe la forme d'un contrat, il ne se lit
+  pas, et ne se reconnaît qu'à la marque de la fabrique dans ses propriétés (`/Producer` : `fabrique_pdf::PRODUCTEUR`)
+  avec le titre d'un modèle de base de contrat ou d'avenant (`documents::contrat_ecrit::titres_des_contrats`,
+  `import::tri::Sorte::Contrat`). Un contrat d'un autre logiciel reste un document non lu.
 
 ## La DSN
 

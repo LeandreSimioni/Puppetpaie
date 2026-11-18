@@ -36,6 +36,7 @@ use std::path::PathBuf;
 /// | `sans_entetes` | le rang d'en-tetes de son tableau (« Libellé », « Base », les parts) ne se trouve pas : non repris |
 /// | `ambigu` | la page se lit de deux facons (deux en-tetes, une colonne sans sa part, deux adresses de salarie) : non repris |
 /// | `annexe` | l'annexe d'un bulletin, qui en detaille les cotisations : rien a reprendre |
+/// | `contrat` | un contrat que PuppetPaie a fait (`tri::Sorte::Contrat`) : l'import ne lit pas les contrats |
 /// | `non_reconnu` | ni DSN, ni AEM, ni PDF lisible, ni archive |
 /// | `doublon` | la copie exacte d'un autre fichier du dossier |
 /// | `archive` | un zip, ouvert : son contenu a son propre sort |
@@ -52,6 +53,7 @@ pub enum Sort {
     SansEntetes,
     Ambigu,
     Annexe,
+    Contrat,
     NonReconnu,
     Doublon,
     Archive,
@@ -79,7 +81,7 @@ impl Sort {
 
     /// L'etat d'un sort (sa couleur) et ses mots, tels qu'on les lit : sur la pastille et dans le resume d'un PDF. Repris,
     /// fait ; repris sous reserve (un libelle que la table ne connait pas), a voir ; non repris parce que quelque chose
-    /// manque ou se contredit (`non_repris`), refuse ; laisse expres (deja saisi, annexe, doublon, archive ouverte), une
+    /// manque ou se contredit (`non_repris`), refuse ; laisse expres (deja saisi, annexe, contrat, doublon, archive ouverte), une
     /// information.
     pub fn en_mots(self) -> (EtatDEcran, &'static str) {
         match self {
@@ -93,6 +95,7 @@ impl Sort {
             Sort::SansEntetes => (EtatDEcran::Refuse, "tableau introuvable"),
             Sort::Ambigu => (EtatDEcran::Refuse, "ambigu"),
             Sort::Annexe => (EtatDEcran::Information, "annexe"),
+            Sort::Contrat => (EtatDEcran::Information, "contrat, non lu"),
             Sort::NonReconnu => (EtatDEcran::Refuse, "non reconnu"),
             Sort::Doublon => (EtatDEcran::Information, "doublon"),
             Sort::Archive => (EtatDEcran::Information, "archive"),
@@ -113,6 +116,7 @@ pub struct ParSort<T> {
     pub sans_entetes: T,
     pub ambigu: T,
     pub annexe: T,
+    pub contrat: T,
     pub non_reconnu: T,
     pub doublon: T,
     pub archive: T,
@@ -131,6 +135,7 @@ impl<T> ParSort<T> {
             Sort::SansEntetes => &mut self.sans_entetes,
             Sort::Ambigu => &mut self.ambigu,
             Sort::Annexe => &mut self.annexe,
+            Sort::Contrat => &mut self.contrat,
             Sort::NonReconnu => &mut self.non_reconnu,
             Sort::Doublon => &mut self.doublon,
             Sort::Archive => &mut self.archive,
@@ -141,7 +146,7 @@ impl<T> ParSort<T> {
 impl ParSort<usize> {
     /// Aucun fichier compte, de chaque sort.
     pub fn a_zero() -> Self {
-        ParSort { repris: 0, deja_repris: 0, libelle_inconnu: 0, deja_saisi: 0, incoherent: 0, incomplet: 0, sans_texte: 0, sans_entetes: 0, ambigu: 0, annexe: 0, non_reconnu: 0, doublon: 0, archive: 0 }
+        ParSort { repris: 0, deja_repris: 0, libelle_inconnu: 0, deja_saisi: 0, incoherent: 0, incomplet: 0, sans_texte: 0, sans_entetes: 0, ambigu: 0, annexe: 0, contrat: 0, non_reconnu: 0, doublon: 0, archive: 0 }
     }
 }
 
@@ -159,6 +164,7 @@ pub fn pastilles_des_sorts() -> ParSort<Pastille> {
         sans_entetes: p(Sort::SansEntetes),
         ambigu: p(Sort::Ambigu),
         annexe: p(Sort::Annexe),
+        contrat: p(Sort::Contrat),
         non_reconnu: p(Sort::NonReconnu),
         doublon: p(Sort::Doublon),
         archive: p(Sort::Archive),

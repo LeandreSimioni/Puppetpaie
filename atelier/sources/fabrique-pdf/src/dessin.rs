@@ -710,8 +710,8 @@ impl Dessin {
         if let Some(titre) = titre {
             info.set("Title", Object::String(crate::encodages::vers_utf16be(titre), StringFormat::Literal));
         }
-        info.set("Creator", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));
-        info.set("Producer", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));
+        info.set("Creator", Object::String(PRODUCTEUR.as_bytes().to_vec(), StringFormat::Literal));
+        info.set("Producer", Object::String(PRODUCTEUR.as_bytes().to_vec(), StringFormat::Literal));
         info.set("CreationDate", date());
         info.set("ModDate", date());
         let info = doc.add_object(Object::Dictionary(info));
@@ -724,6 +724,9 @@ impl Dessin {
         crate::ecriture::compact(&doc)
     }
 }
+
+/// Le logiciel qu'un PDF de la fabrique nomme dans ses propriétés (`/Creator`, `/Producer` de `/Info`).
+pub const PRODUCTEUR: &str = "PuppetPaie";
 
 /// L'identifiant fixe écrit dans la queue du fichier (le même document donne les mêmes octets).
 const IDENTIFIANT: &str = "50757070657450616965000000000001";
