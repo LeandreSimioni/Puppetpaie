@@ -204,31 +204,38 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 
 // ------------------------------------------------------------------ l'effectif
 
-/// LES CONTRATS DES DSN D'UN MOIS (une par etablissement), tels que l'effectif les compte (`droit::effectif`) : la
-/// personne (son NIR, sinon son NTT), les dates du contrat (la fin que le bloc 62 declare passe avant la sienne), son
-/// motif de recours (S21.G00.40.021), et son temps de travail : a temps partiel (S21.G00.40.014 = 20), sa quotite
-/// (S21.G00.40.013) sur celle de reference (S21.G00.40.012), dans l'unite de 40.011 ; entier sinon.
-fn contrats_du_mois(dsn: &[DsnLue]) -> R<Vec<droit::effectif::ContratDansLEffectif<declarations::ntt::IdentifiantDIndividu>>> {
+/// LES CONTRATS DES DSN DU MOIS `mois` (une par etablissement), tels que l'effectif les compte (`droit::effectif`) :
+/// ceux qui touchent le mois, chacun sa personne (son NIR, sinon son NTT), ses dates (la fin que le bloc 62 declare
+/// passe avant la sienne), son motif de recours (S21.G00.40.021) et son dispositif de politique publique
+/// (S21.G00.40.008), qui l'excluent du decompte avant que son temps de travail se lise ; puis son temps de travail : a
+/// temps partiel (S21.G00.40.014 = 20), sa quotite (S21.G00.40.013) sur celle de reference (S21.G00.40.012), dans
+/// l'unite de 40.011 ; entier sinon.
+fn contrats_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Vec<droit::effectif::ContratDansLEffectif<declarations::ntt::IdentifiantDIndividu>>> {
     use droit::effectif::{ContratDansLEffectif, TempsDansLEffectif};
+    let le_mois = socle::date::Periode::du_mois(mois);
     let mut out = Vec::new();
     for d in dsn {
         for k in &d.contrats {
-            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
-                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
-            };
             let periode = match k.fin_declaree {
                 Some(f) => k.periode.sans_fin().fermee_au(f)?.into(),
                 None => k.periode,
             };
-            let temps = if k.modalite == Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
+            if periode.croise(&le_mois).is_none() {
+                continue;
+            }
+            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
+                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
+            };
+            let temps = || {
+                if k.modalite != Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
+                    return Ok(TempsDansLEffectif::PLEIN);
+                }
                 let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
-                TempsDansLEffectif::Partiel { quotite, reference }
-            } else {
-                TempsDansLEffectif::Plein
+                TempsDansLEffectif::partiel(quotite, reference)
             };
-            out.push(ContratDansLEffectif { qui, periode, motif_recours: k.motif_recours, temps });
+            out.push(ContratDansLEffectif::de(qui, periode, k.motif_recours, k.dispositif, temps)?);
         }
     }
     Ok(out)
@@ -237,9 +244,9 @@ fn contrats_du_mois(dsn: &[DsnLue]) -> R<Vec<droit::effectif::ContratDansLEffect
 /// L'effectif salarie annuel d'apres les DSN de l'annee, mois par mois (L. 130-1, I, et R. 130-1 du code de la
 /// securite sociale : `droit::effectif`). `None` quand aucun mois n'a de salarie.
 fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Effectif>> {
-    let mut mois: Vec<Effectif> = Vec::new();
+    let mut mois: Vec<Option<Effectif>> = Vec::new();
     for (m, d) in dsn_par_mois {
-        mois.push(droit::effectif::effectif_du_mois(*m, &contrats_du_mois(d)?)?);
+        mois.push(droit::effectif::effectif_du_mois(*m, &contrats_du_mois(*m, d)?));
     }
     Ok(droit::effectif::effectif_annuel(mois))
 }

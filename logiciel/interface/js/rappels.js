@@ -130,13 +130,10 @@ function htmlDemarrage(manques) {
   const lien = (m) => `<button type="button" class="lien"${attributChamp(m.champ)}
         data-manque-onglet="${echapper(m.onglet)}"${qui(m)}>${echapper(m.ou)}</button>`;
   const pour = (m) => (m.pour ? `<div class="note">${echapper(m.pour)}</div>` : "");
-  // L'EFFECTIF QUE LES PAIES REPRISES DONNENT (`effectifs`, du moteur), année par année : sa phrase, et le geste qui
-  // le confirme (`gestes` : la route et sa charge, que le moteur rend).
-  const effectifs = (m, i) => (m.effectifs || []).map((e) => {
-    const j = (m.gestes || []).findIndex((g) => g.charge.annee === e.annee);
-    const bouton = j < 0 ? "" : ` <button type="button" class="petit" data-demarrage-geste="${i}" data-demarrage-rang="${j}">${echapper(m.gestes[j].libelle)}</button>`;
-    return `<p class="note">${echapper(e.phrase)}${bouton}</p>`;
-  }).join("");
+  // L'EFFECTIF DE CHAQUE ANNÉE QUE LA LIGNE DEMANDE (`effectifs`, du moteur) : ce que les paies reprises en donnent
+  // (sa phrase), et ses gestes, que le moteur rend et qu'`avance.js` dessine.
+  const effectifs = (m, i) => (m.effectifs || []).map((e, k) => `<div class="note" data-demarrage-effectif="${i}" data-demarrage-rang="${k}">
+      ${e.phrase ? `<p>${echapper(e.phrase)}</p>` : ""}${boutonsDesGestes(e.gestes)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
     const k = caseDuManque(m);
@@ -187,6 +184,21 @@ function brancherDemarrage(conteneur) {
     const sel = `[data-demarrage-liste="${li.closest(".demarrage-liste").dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"]`;
     brancherAide(sel);
     brancherTaxeSalaires(sel);
+  });
+  // LES GESTES DE L'EFFECTIF D'UNE ANNÉE (`effectifs[].gestes`, du moteur) : comme les autres sorties de la liste, ils
+  // demandent d'abord ce qu'il faut faire de ce qui est tapé et pas enregistré (`quitterDemarrage`) ; puis la
+  // liste se relit.
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage-effectif]").forEach((bloc) => {
+    const m = DEMARRAGE.manques[+bloc.dataset.demarrageEffectif];
+    const e = m && m.effectifs && m.effectifs[+bloc.dataset.demarrageRang];
+    if (!e) return;
+    bloc.querySelectorAll("[data-geste]").forEach((b) => {
+      const g = e.gestes[+b.dataset.geste];
+      b.onclick = async () => {
+        if (!(await quitterDemarrage())) return;
+        await faireLeGeste(g, { pardessus: true }, async () => { await relireEtat(); await repeindreDemarrage(); });
+      };
+    });
   });
 }
 
@@ -265,27 +277,6 @@ async function enregistrerDemarrage(liste) {
 document.addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest("[data-demarrage-enregistrer]");
   if (b) enregistrerDemarrage(b.closest(".demarrage-liste"));
-});
-
-/* LE GESTE D'UNE LIGNE (`gestes`, du moteur : confirmer l'effectif que les paies reprises donnent) : la route et la
- * charge qu'il porte, puis la liste se relit. */
-document.addEventListener("click", async (e) => {
-  const b = e.target.closest && e.target.closest("[data-demarrage-geste]");
-  if (!b) return;
-  const m = DEMARRAGE.manques[+b.dataset.demarrageGeste];
-  const g = m && m.gestes && m.gestes[+b.dataset.demarrageRang];
-  if (!g) return;
-  b.disabled = true;
-  try {
-    const r = await api(g.route, g.charge);
-    dire(r.phrase);
-  } catch (err) {
-    b.disabled = false;
-    dire(err.message, "erreur");
-    return;
-  }
-  await relireEtat();
-  await repeindreDemarrage();
 });
 
 /* QUITTER « POUR DÉMARRER » avec des cases remplies et pas enregistrées : la

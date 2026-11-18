@@ -479,6 +479,38 @@ Les heures supplémentaires déjà payées dans l'année par un ancien logiciel,
 `engagement::conges::heures_supplementaires_des_mois_anterieurs`). INFÉRENCE, écrite comme telle : L3121-30 dit le
 contingent « annuel » sans dire l'année, que l'accord définit (L3121-33) ; le moteur le compte sur l'année civile.
 
+## Ceux que l'effectif ne compte pas : L1111-3 (relevé par Léandre sur Légifrance le 18/11/2026, #489)
+
+`legifrance-code-du-travail-L1111-3-20261118.pdf` : l'article tel que Légifrance l'imprime, « en vigueur au 18/11/2026 »
+(`LEGIARTI000031565369`, en vigueur depuis le 01/01/2016, ordonnance n° 2015-1578 ; l'URL de la page n'est pas dans le
+PDF) ; sa transcription, `legifrance-code-du-travail-L1111-3-20261118.txt` (`pdftotext -layout`). **Il n'est pas relevé
+par l'outil** : l'article est dans l'entrepôt LEGI (`../legi-entrepot/`, même identifiant, depuis le 2016-01-01), mais `moteur-atelier releve-codes` ne relève que la liste
+compilée dans son binaire, que l'exécutant de ce lot ne refait pas. Il est ajouté à la liste (domaine `effectif_cse` de
+`atelier/src/releve/codes/textes.rs`) : le prochain `moissonner`, puis `rapport`, avec le binaire de l'atelier refait,
+l'écrira dans `articles-*.md` et `xml/L1111-3.xml`.
+
+« Ne sont pas pris en compte dans le calcul des effectifs de l'entreprise : 1° Les apprentis ; 2° Les titulaires d'un
+contrat initiative-emploi, pendant la durée d'attribution de l'aide financière mentionnée à l'article L. 5134-72 ; […]
+4° Les titulaires d'un contrat d'accompagnement dans l'emploi pendant la durée d'attribution de l'aide financière
+mentionnée à l'article L. 5134-30 ; […] 6° Les titulaires d'un contrat de professionnalisation jusqu'au terme prévu par le
+contrat lorsque celui-ci est à durée déterminée ou jusqu'à la fin de l'action de professionnalisation lorsque le contrat
+est à durée indéterminée. » R. 130-1, III du code de la sécurité sociale y renvoie (1°, 2°, 4° et 6°) pour l'effectif
+de L. 130-1 (`../code-de-la-securite-sociale/LISEZ-MOI.md`).
+
+**Ce qu'une pièce en porte** : la DSN déclare le dispositif de politique publique du contrat (S21.G00.40.008,
+`atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`) : 64, 65 et 81, l'apprentissage ; 21, le CUI-CIE ; 41,
+« Parcours Emploi Compétences / CUI - CAE » ; 61, la professionnalisation. Le 42 (contrat d'accès à l'emploi des DOM)
+n'est pas un contrat que L1111-3 nomme. Une paie reprise d'un ancien logiciel n'en garde rien (l'import ne lit pas
+40.008), et la nature d'un contrat repris (CDI, CDD, CDDU) ne le dit pas. **INFÉRENCE** : la DSN ne déclare ni la durée
+de l'aide (2°, 4°) ni la fin de l'action de professionnalisation d'un CDI (6°) ; un contrat qui porte le dispositif est
+tenu exclu tout entier.
+
+**Où le moteur s'en sert** : `atelier/sources/droit/src/effectif.rs` (`exclu_par_l_1111_3`, appelé par
+`ContratDansLEffectif::de`) ; l'Urssaf simulée le lit dans les DSN déposées (`envois/src/organismes_simules.rs`,
+`contrats_du_mois`, 40.008 lu par `declarations/src/dsn_lue.rs`, `ContratDeclare::dispositif`) ; l'effectif proposé
+d'après les paies reprises (`engagement/src/effectif_repris.rs`) ne peut pas l'appliquer et le dit dans sa phrase
+(`SANS_L_1111_3`), puisque la compagnie confirme la valeur.
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
@@ -498,6 +530,8 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `articles-20261102.md` : `f6c01912b3f4ddb46598cf72eeba29b46779e7901fd8714e95a93caa1369d656`
 - `articles-20261103.md` : `c8b8f90709205c049ad1e8185506d087d770172d9ac9639719e86b63c62be066`
 - `articles-20261110.md` : `da26ce0e65042c9cccfac66b206ea04a07db366907647054f6aac1f43bc819c9`
+- `legifrance-code-du-travail-L1111-3-20261118.pdf` : `6f877dd1a86df1c3c5aefe77b97ad0509e577321d701c52e32874258db68ad88`
+- `legifrance-code-du-travail-L1111-3-20261118.txt` : `781049694678fefbeb8db30c7d356d3bf5fac544344df05bec8934b23128f8b8`
 - `oeth-articles-20260925.md` : `b7c3fbab2052b29d6bd6f100635d754528af097d9dc3a323b38f89eb29e1b829`
 - `permanents-articles-20260918.md` : `9fc9b957ab2332934faa6ce422d93f3d563b874a156378d4a4ef73f72cee60a6`
 - `releve.json` : `9681a53bd35246612dff819cfd13262b914829f234f87760f5d5d94f26075fd8`

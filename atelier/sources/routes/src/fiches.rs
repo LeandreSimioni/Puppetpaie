@@ -183,7 +183,9 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[OPERATION, FORME, ILLISIBLE],
         acte: Acte::Ecrit,
         phrase: 300,
-        ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire ou poser l'effectif")),
+        // « Pour démarrer » (`pour-demarrer`, `routes::rappels::ManqueVu`) la rend en geste, une annee a la fois, sur la
+        // ligne qui demande l'effectif, dans Configuration › Entreprise.
+        ecran: Ecran::Geste(Place::Fiches),
     },
     Fiche {
         route: Route::Couts,
@@ -408,12 +410,14 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 }
 
 /// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
-#[derive(Debug, serde::Deserialize)]
+/// Le geste de « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa boite la fait saisir.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeEffectif {
+pub(crate) struct ChargeEffectif {
     #[serde(default)]
-    annee: Option<Annee>,
-    valeur: Option<Effectif>,
+    pub(crate) annee: Option<Annee>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub(crate) valeur: Option<Effectif>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les

@@ -645,6 +645,13 @@ fn salaire_et_heures(l: &crate::importe::LigneImprimee, p: &PaieVersee) -> R<(Mo
     Ok((montant.pour_une_unite(), heures))
 }
 
+/// Les dates `o` couvrent-elles le mois `mois` entier ? Le mois paye entier se juge ainsi, sur le contrat et sur la
+/// paie (`contrat_au_mois`, `effectif_repris`).
+pub(crate) fn couvre_le_mois(o: Option<socle::date::PeriodeOuverte>, mois: Mois) -> bool {
+    let du_mois = socle::date::Periode::du_mois(mois);
+    o.and_then(|o| o.croise(&du_mois)) == Some(du_mois)
+}
+
 /// LE CONTRAT PAYE AU MOIS QUE PAIE `p`, le mois `mois` : ses dates (`Importe::contrat_de_la_paie`), et le salaire mensuel
 /// et les heures par mois que sa ligne de salaire `ligne` et sa DSN disent (`salaire_et_heures`). Le mois ou le contrat
 /// finit, son solde de tout compte se compose de cases (le motif de la rupture, le preavis) qu'aucun bulletin n'imprime :
@@ -665,11 +672,10 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&cra
     if contrat.fin().is_some_and(|f| du_mois.contient(&f)) {
         return Err(refus("le contrat payé au mois finit ce mois-ci : son solde de tout compte se dit en cases (le motif de la rupture, le préavis) qu'un bulletin n'imprime pas"));
     }
-    let entier = |o: Option<socle::date::PeriodeOuverte>| o.and_then(|o| o.croise(&du_mois)) == Some(du_mois);
-    if !entier(Some(contrat)) {
+    if !couvre_le_mois(Some(contrat), mois) {
         return Err(refus("le contrat ne couvre qu'une partie du mois : le salaire mensuel du contrat ne s'y lit pas"));
     }
-    if p.contrat.d_un_bulletin() && !entier(p.periode) {
+    if p.contrat.d_un_bulletin() && !couvre_le_mois(p.periode, mois) {
         return Err(refus("le bulletin paie une partie du mois : le salaire mensuel du contrat ne s'y lit pas"));
     }
     let (salaire, heures) = salaire_et_heures(l, p)?;

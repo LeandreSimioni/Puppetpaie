@@ -78,7 +78,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui ; la ligne de l'effectif, l'effectif que les paies reprises donnent par année, effectifs, et le geste qui le confirme, gestes), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui ; la ligne de l'effectif, effectifs : chaque année qu'elle demande, ce que les paies reprises en donnent, valeur et phrase, et ses gestes, la route effectif, pour confirmer la valeur ou dire l'effectif), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -1622,28 +1622,94 @@ struct PoseVue {
     pastille: Pastille,
 }
 
-/// UNE LIGNE DE « POUR DEMARRER », AVEC SES GESTES : l'effectif que les paies reprises donnent pour une annee
-/// (`Manque::effectifs`) se confirme par la route `effectif`, un geste par annee calculee.
+/// UNE LIGNE DE « POUR DEMARRER », AVEC L'EFFECTIF DE CHAQUE ANNEE QU'ELLE DEMANDE (`Manque::annees_d_effectif`) et ses
+/// gestes, que la page dessine depuis la fiche de leur route (`js/avance.js`).
 #[derive(Debug, Serialize)]
 struct ManqueVu {
     #[serde(flatten)]
     manque: Manque,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    gestes: Vec<crate::etapes::Action>,
+    effectifs: Vec<EffectifVu>,
 }
 
+/// L'EFFECTIF D'UNE ANNEE QUE LA LIGNE DEMANDE : l'annee, ce que les paies reprises en donnent (`valeur`, et la `phrase`
+/// qui dit d'ou il vient ou pourquoi il ne se propose pas ; rien quand aucune paie de l'annee n'est reprise), et ses
+/// gestes, chacun avec sa route, `effectif`.
+#[derive(Debug, Serialize)]
+struct EffectifVu {
+    annee: Annee,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    valeur: Option<socle::grandeurs::Effectif>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phrase: Option<String>,
+    gestes: Vec<GesteDEffectif>,
+}
+
+/// UN GESTE DE L'EFFECTIF D'UNE ANNEE, dans la forme que la page dessine (`js/avance.js`, `faireLeGeste`) : la route
+/// `effectif`, sa charge, son libelle, les cases de sa fiche que sa boite fait saisir (`cases` ; aucune : il part tel
+/// quel), ce qu'elles montrent d'abord (`valeurs`), leurs choix (aucun) et ce que la boite dit (`phrases`).
+#[derive(Debug, Serialize)]
+struct GesteDEffectif {
+    route: Route,
+    charge: crate::fiches::ChargeEffectif,
+    libelle: String,
+    cases: Vec<&'static str>,
+    valeurs: EffectifDeDepart,
+    choix: SansChoix,
+    phrases: Vec<String>,
+}
+
+/// Ce que la case de l'effectif montre d'abord : l'effectif que les paies reprises donnent, s'il se propose.
+#[derive(Debug, Serialize)]
+struct EffectifDeDepart {
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    valeur: Option<socle::grandeurs::Effectif>,
+}
+
+/// Aucune case de l'effectif ne se choisit dans une liste.
+#[derive(Debug, Serialize)]
+struct SansChoix {}
+
 impl ManqueVu {
-    fn de(manque: Manque) -> ManqueVu {
-        let gestes = manque
-            .effectifs
+    /// Chaque annee que la ligne demande : la proposition, quand les paies reprises la donnent, se confirme d'un clic
+    /// (« Confirmer 3,65 pour 2025 ») ; l'effectif se dit aussi, l'annee a la fois, dans la boite du geste
+    /// (« Dire l'effectif de 2025 »), la proposition d'abord.
+    fn de(mut manque: Manque) -> ManqueVu {
+        let repris = std::mem::take(&mut manque.effectifs);
+        let effectifs = manque
+            .annees_d_effectif
             .iter()
-            .filter_map(|e| e.valeur.map(|valeur| (e.annee, valeur)))
-            .map(|(annee, valeur)| {
-                let libelle = format!("Confirmer {} pour {}", socle::texte::virgule(valeur.a_deux_decimales()), annee);
-                crate::etapes::action(Route::Effectif, crate::etapes::ChargeEffectifConfirme { annee, valeur }, None, libelle)
+            .map(|annee| {
+                let r = repris.iter().find(|e| e.annee == *annee);
+                let valeur = r.and_then(|e| e.valeur);
+                let mut gestes = Vec::new();
+                if let Some(v) = valeur {
+                    gestes.push(GesteDEffectif {
+                        route: Route::Effectif,
+                        charge: crate::fiches::ChargeEffectif { annee: Some(*annee), valeur: Some(v) },
+                        libelle: format!("Confirmer {} pour {}", socle::texte::virgule(v.a_deux_decimales()), annee),
+                        cases: Vec::new(),
+                        valeurs: EffectifDeDepart { valeur: None },
+                        choix: SansChoix {},
+                        phrases: Vec::new(),
+                    });
+                }
+                gestes.push(GesteDEffectif {
+                    route: Route::Effectif,
+                    charge: crate::fiches::ChargeEffectif { annee: Some(*annee), valeur: None },
+                    libelle: format!("Dire l'effectif de {}", annee),
+                    cases: vec!["valeur"],
+                    valeurs: EffectifDeDepart { valeur },
+                    choix: SansChoix {},
+                    phrases: vec![format!(
+                        "L'effectif annuel moyen de {}, tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118, reçu au début de l'année suivante), au centième.",
+                        annee
+                    )],
+                });
+                EffectifVu { annee: *annee, valeur, phrase: r.map(|e| e.phrase.clone()), gestes }
             })
             .collect();
-        ManqueVu { manque, gestes }
+        ManqueVu { manque, effectifs }
     }
 }
 
