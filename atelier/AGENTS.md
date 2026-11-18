@@ -254,7 +254,10 @@ journal des incidents. `PUPPETPAIE_INCIDENTS=<dossier>` déplace le journal des 
 dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
 lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans `moteur`, le binaire concerné :
 `-p moteur --test routes`, `--test rejeu`…). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"` (les dossiers de travail
-des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
+des tests, ~3 Go). **Avant chaque PR aussi, la cible Windows se vérifie**, celle que les compagnies reçoivent :
+`cargo check --locked --target x86_64-pc-windows-gnu --manifest-path moteur/Cargo.toml`, puis celui de
+`fenetre/Cargo.toml` (dans un conteneur neuf : `rustup target add x86_64-pc-windows-gnu` et le paquet
+`gcc-mingw-w64-x86-64`) ; le flux « Tests » le fait aussi, lancé à la main (son passage `windows`). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
 (Léandre : « en tant qu'orchestrateur, il faut que tu sois disponible ») : il attend leur fin en parlant avec Léandre.
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,
