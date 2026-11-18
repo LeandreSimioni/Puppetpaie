@@ -453,6 +453,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     // LES MATRICULES QUE LA DSN QUI ARRIVE DECLARE, en une fois, avant les fiches neuves : celle que la DSN cree avec le
     // matricule qu'une fiche cede le trouve libre (`importation::matricules`). Les fiches s'ecrivent face a ce qui est
     // alors sur le disque.
+    matricules.poser_les_neuves(&mut imp.a_creer);
     let relu;
     let ctx = if matricules.ecrit() {
         matricules.ecrire(ctx, note)?;
@@ -658,12 +659,15 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
 pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) -> R<Importation> {
     let aujourdhui = ctx.date;
     let dossier = crate::import::dossier_import(ctx, charge)?;
-    // Ce qui est parti d'ici, que le journal dit : il garde les matricules qu'il a declares.
-    let departs_avant = envois::journal::lu(&ctx.racine)?.departs;
-    // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), ce que l'import fera des matricules (un refus n'ecrit
-    // rien, pas meme la copie), et la copie de ce qu'il reprend.
+    // CE QUI EST PARTI D'ICI, que le journal dit, lu une fois pour le geste : il garde les matricules et les valeurs des
+    // contrats qu'il a declares. Les depots que l'import reprend au journal (`depots_attestes_au_journal`) n'y changent
+    // rien : leurs lignes ne portent aucune version d'engagement (`envois::reprise_journal`), et rien n'est parti d'eux
+    // pour un engagement (`envois::journal::departs_des_lignes`).
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), ce que l'import fera des matricules, et la copie de
+    // ce qu'il reprend.
     let (tri, copie, noms, deposes, matricules) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |lu| {
-        let matricules = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs_avant)?;
+        let matricules = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs)?;
         let (copie, noms) = copier_repris(ctx, &lu)?;
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
         let tri = lu.ap.reponse.tri;
@@ -723,26 +727,19 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
     reponse.parametrage = faits;
     // Ce qu'une DSN qui arrive declare d'un contrat de permanent autrement que sa carte : elle fait foi, tant que rien
-    // n'est parti d'ici (ce que le journal dit, lu une fois).
-    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    // n'est parti d'ici.
     reponse.dsn_fait_foi = crate::importation::nature::la_dsn_fait_foi(&ctx.racine, &e.arrivees, &departs)?;
     let compte = |s: import::reponse::SortDeLaValeur| reponse.dsn_fait_foi.iter().filter(|v| v.sort == s).count();
-    // Les matricules : ceux que la DSN qui arrive remplace, et ceux qui restent (`importation::matricules`).
-    let du_matricule = |s: import::reponse::SortDeLaValeur| matricules.dits.iter().filter(|v| v.sort == s).count();
-    let remplaces = du_matricule(import::reponse::SortDeLaValeur::Remplacee);
-    let mut matricules_dits = String::new();
-    if remplaces > 0 {
-        matricules_dits.push_str(&format!(
-            " La DSN reprise fait foi : {} par ce qu'elle déclare.",
-            socle::ecran::compte(remplaces, "matricule donné d'office est remplacé", "matricules donnés d'office sont remplacés")
-        ));
+    // Les matricules (`importation::matricules`) : celui que la fiche a pris de la DSN n'est plus un ecart ; les fiches
+    // neuves dont le matricule ne s'est pas pose se disent.
+    let matricules_dits = matricules.dire(true);
+    let pris: Vec<&IdSalarie> = matricules.pris_de_la_dsn().collect();
+    for f in &mut reponse.salaries {
+        if matches!(f.fiche.nommee(), Some(FicheNommee::Salarie(cle)) if pris.contains(&cle)) {
+            f.ecarts.retain(|x| x.champ != droit::fiche::CaseSalarie::CodeSalarie.into());
+        }
     }
-    if matricules.dits.len() > remplaces {
-        matricules_dits.push_str(&format!(
-            " La DSN reprise déclare autrement {} : la fiche garde le sien, la liste dit pourquoi.",
-            socle::ecran::compte(matricules.dits.len() - remplaces, "matricule", "matricules")
-        ));
-    }
+    reponse.avertissements.extend(matricules.neuves.iter().cloned());
     let remplacees = match compte(import::reponse::SortDeLaValeur::Remplacee) {
         0 => String::new(),
         1 => " La DSN reprise fait foi : une valeur d'un contrat repris est remplacée par ce qu'elle déclare.".to_string(),

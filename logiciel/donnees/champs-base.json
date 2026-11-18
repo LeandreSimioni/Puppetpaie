@@ -1221,7 +1221,7 @@
    "avance": "toujours_remplie",
    "libelle": "Matricule",
    "forme": "chiffres",
-   "aide": "Le numéro du salarié dans la compagnie. Il se donne tout seul à la création (le suivant), ou vient de la DSN reprise, et ne se change plus : il identifie la personne dans la DSN.",
+   "aide": "Le numéro du salarié dans la compagnie, qui l'identifie dans la DSN. Il se donne tout seul à la création (le suivant), ou vient des pièces reprises.",
    "longueur": null,
    "exemple": "",
    "choix": [],
@@ -1232,23 +1232,6 @@
    "si_etablissements": false,
    "si_entreprise": null,
    "ecran": true
-  },
-  {
-   "note": "LE MATRICULE DONNE D'OFFICE : celui que le moteur a donne a la fiche neuve dont personne n'avait dit le matricule (le suivant, `routes::fiches::ecriture`, `completer_neuve`). Le matricule de la fiche est d'office tant qu'il est celui-ci, de tout temps ; une DSN reprise qui arrive le remplace par celui qu'elle declare, tant que rien n'est parti d'ici (`routes::importation::matricules`). Un matricule que la compagnie saisit n'est pas celui-ci : il ne se remplace pas.",
-   "cle": "matricule_d_office",
-   "libelle": "Matricule donné d'office",
-   "forme": "texte",
-   "aide": "",
-   "longueur": null,
-   "exemple": "",
-   "choix": [],
-   "declare": false,
-   "derive_de": null,
-   "rubrique": null,
-   "si": null,
-   "si_etablissements": false,
-   "si_entreprise": null,
-   "ecran": false
   },
   {
    "note": "LES INITIALES SE DEDUISENT (23/09/2026) : les deux premieres lettres du\nnom declare, c'est ce que portent toutes les fiches de la compagnie\n(PU, SI, PE). `deriver` les pose quand elles manquent.",

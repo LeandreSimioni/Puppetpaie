@@ -130,8 +130,18 @@ pub(crate) struct DossierLu {
 
 /// `importation-apercu` avec `{"dossier": ...}`.
 pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
-    let mut r = lire_dossier(ctx, dossier, &HashMap::new(), |lu| Ok(lu.ap))?.reponse;
+    // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
+    // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let (ap, matricules) = lire_dossier(ctx, dossier, &HashMap::new(), |lu| {
+        let m = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs)?;
+        Ok((lu.ap, m))
+    })?;
+    let mut r = ap.reponse;
+    r.dsn_fait_foi.extend(matricules.dits.iter().cloned());
+    r.avertissements.extend(matricules.neuves.iter().cloned());
     r.dire_l_apercu();
+    r.phrase = socle::phrase!("{}{}", r.phrase, matricules.dire(false));
     Ok(r)
 }
 

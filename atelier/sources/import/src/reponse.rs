@@ -828,20 +828,22 @@ pub enum ValeurDuMatricule {
 
 /// CE QU'IL ADVIENT D'UNE VALEUR QUE LA DSN DECLARE AUTREMENT. La DSN fait foi (Léandre, 18/11/2026) tant que rien
 /// n'est parti d'ici : la carte prend la valeur declaree (`Completee` si elle n'en portait pas, `Remplacee` sinon), la
-/// fiche le matricule declare a la place de celui qu'elle avait recu d'office (`Remplacee`). Un engagement valide, ou
-/// dont quelque chose est parti, a deja dit ce contrat aux organismes sous ce qu'il porte : un numero deja declare ne se
-/// recalcule pas (regle 4), et le debut, la fin, la nature declares avec lui non plus ; une DSN partie d'ici a declare
-/// le matricule du salarie : rien ne se remplace et l'ecart se dit (`DejaDeclaree`). Un matricule que la compagnie a
-/// dit (saisi, ou lu d'une piece) n'a pas ete donne d'office : il reste (`DiteParLaCompagnie`). Un matricule declare
-/// qu'une autre fiche porte, et qu'elle ne cede pas, ne se pose pas (`DejaPorte`).
+/// fiche le matricule declare a la place de celui qu'elle avait recu d'office, ou le suivant quand la DSN declare le sien
+/// pour un autre salarie (`Remplacee`). Un engagement valide, ou dont quelque chose est parti, a deja dit ce contrat aux
+/// organismes sous ce qu'il porte : un numero deja declare ne se recalcule pas (regle 4), et le debut, la fin, la nature
+/// declares avec lui non plus ; une DSN partie d'ici a declare le matricule du salarie, ou le moteur a forme avec lui un
+/// numero de contrat : rien ne se remplace et l'ecart se dit (`DejaDeclaree`). Un matricule qui n'a pas ete donne
+/// d'office (saisi, lu d'une piece, deja remplace par une DSN) reste (`PasDOffice`). Un matricule declare qu'une de ces
+/// fiches porte ne se pose pas (`DejaPorte`), ni celui que les pieces reprises donnent a plus d'un salarie (`EnDouble`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortDeLaValeur {
     Completee,
     Remplacee,
     DejaDeclaree,
-    DiteParLaCompagnie,
+    PasDOffice,
     DejaPorte,
+    EnDouble,
 }
 
 /// Une valeur d'un contrat repris ou un matricule que la DSN reprise declare autrement : le salarie, la valeur, son
