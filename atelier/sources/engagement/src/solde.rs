@@ -1351,17 +1351,7 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Montant>, V
         if m < debut {
             break;
         }
-        let paies = paies_versees(ctx, m, salarie)?;
-        if paies.is_empty() {
-            return Err(refus(format!(
-                "{} est sous contrat en {}, et aucune paie de ce mois n'est connue ; produire la paie de ce mois ici, ou importer \
-                 celle de l'ancien logiciel",
-                qui(ctx, e),
-                m.libelle(socle::mois::Graphie::Accentuee)
-            )));
-        }
-        let brut: Option<Montant> = paies.iter().map(crate::etats::PaieAnterieure::brut).sum();
-        bruts.push(brut.ok_or_else(|| refus(brut_non_dit(m)))?);
+        bruts.push(brut_d_un_mois_du_contrat(ctx, e, salarie, m)?.map_err(refus)?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
@@ -1383,8 +1373,8 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
 
 /// La remuneration totale brute versee pendant le contrat (L1243-8, « la rémunération totale brute versée au salarié »,
 /// que l'employeur l'ait payee ici ou dans l'ancien logiciel) : le brut verse chaque mois d'avant depuis son debut
-/// (`conges::brut_verse`, ses paies validees et importees), plus le mois courant, dont le brut arrive tout calcule. Une
-/// paie importee qui ne dit pas son brut refuse en nommant son mois.
+/// (`conges::brut_verse`, ses paies validees et reprises ; un mois sans paie validee ni reprise compte zero), plus le
+/// mois courant, dont le brut arrive tout calcule. Une paie reprise qui ne dit pas son brut refuse en nommant son mois.
 fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Montant) -> R<Montant> {
     let salarie = salarie_de(e)?;
     let mut total = ce_mois;
@@ -1395,4 +1385,21 @@ fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Monta
         })?;
     }
     Ok(total)
+}
+
+/// LE BRUT VERSE AU SALARIE `salarie` DE LA CARTE `e` EN `m`, UN MOIS DE SON CONTRAT : la somme des bruts de ses paies
+/// validees et reprises (`conges::paies_versees`). `Err(pourquoi)` : aucune paie de ce mois n'est connue (une absence
+/// n'est pas un zero), ou une paie reprise ne dit pas son brut ; le calcul qui le lit refuse avec ce pourquoi.
+fn brut_d_un_mois_du_contrat(ctx: &Contexte, e: &Carte, salarie: &droit::contexte::IdSalarie, m: Mois) -> R<Result<Montant, String>> {
+    let paies = paies_versees(ctx, m, salarie)?;
+    if paies.is_empty() {
+        return Ok(Err(format!(
+            "{} est sous contrat en {}, et aucune paie de ce mois n'est validée ici ni reprise de l'ancien logiciel ; valider \
+             ce mois-là, ou importer sa paie de l'ancien logiciel",
+            qui(ctx, e),
+            m.libelle(socle::mois::Graphie::Accentuee)
+        )));
+    }
+    let brut: Option<Montant> = paies.iter().map(crate::etats::PaieAnterieure::brut).sum();
+    Ok(brut.ok_or_else(|| brut_non_dit(m)))
 }
