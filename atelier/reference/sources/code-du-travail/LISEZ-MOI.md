@@ -304,7 +304,11 @@ l'arrêté du 25 février 2016 (`../montant-net-social/legi-arrete-20160225-bull
 `atelier/sources/import/src/bulletin_lu.rs`, le lecteur des bulletins importés : il trouve ces mentions par leurs
 libellés (`logiciel/donnees/bulletins-lecture-base.json`, `mentions`), refuse une page où le salarié, la période, le brut
 ou la somme reçue ne se trouvent pas, et lit un taux de colonne qui ne dit pas sa part comme celui du salarié, le seul que
-le 8°, a, exige (**inférence**). Tests : `moteur/tests/fichiers/bulletin_lu.rs`. Le 1° dit aussi « le cas échéant, la
+le 8°, a, exige (**inférence**). Tests : `moteur/tests/fichiers/bulletin_lu.rs`. Le 5° dit aussi « le nombre d'heures
+de travail auxquels se rapporte le salaire » : une ligne en heures l'imprime, un bulletin de salarié au mois peut
+l'imprimer en en-tête (« Durée du travail : … h », la mention `duree_du_travail`) ; la comparaison d'une paie importée
+d'un permanent y lit ses heures par mois quand aucune DSN ne déclare la quotité du contrat
+(`atelier/sources/engagement/src/ecarts.rs`, `salaire_et_heures`). Le 1° dit aussi « le cas échéant, la
 désignation de l'établissement dont dépend le salarié », et le 2° le code APE « de l'établissement d'emploi » :
 `atelier/sources/documents/src/bulletin.rs` (`blocs_un`) imprime, pour un contrat d'un autre établissement que le siège,
 « Établissement : » et le SIRET de cet établissement dans le cadre EMPLOYEUR (`droit::bareme::entreprise_du_salarie`).

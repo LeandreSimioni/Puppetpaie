@@ -7,10 +7,11 @@
 //! le bulletin imprime passent devant les siens), le spectacle que le bulletin nomme, la nature du contrat importe (`importe::Importe::nature`), les lignes de remuneration que le
 //! bulletin imprime, par leur rubrique du catalogue (quantite, taux, heures), aux jours qu'il dit travailles (a defaut,
 //! autant de jours de sa periode qu'il en compte : `refaire`), payee le
-//! jour du versement. UN CONTRAT PAYE AU MOIS a ses dates (`Importe::contrat_de_la_paie`), et son salaire mensuel et ses
-//! heures par mois dans les cases de sa carte, tels que sa ligne de salaire les imprime (`salaire_imprime`, d'un mois
-//! paye entier : `contrat_au_mois`) ; ses autres lignes, hors repas et nuitees, ne se lisent pas sur un bulletin, et sa
-//! paie ne se refait pas. Elle se calcule comme la validation la calculerait (`charger_donnees`), avec les baremes et la
+//! jour du versement. UN CONTRAT PAYE AU MOIS a ses dates (`Importe::contrat_de_la_paie`), son motif de recours
+//! (`Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa carte : le salaire que
+//! sa ligne de salaire imprime, les heures que la DSN declare pour le contrat, sinon celles que le bulletin imprime
+//! (`salaire_et_heures`, d'un mois paye entier : `contrat_au_mois`) ; ses autres lignes, hors repas et nuitees, ne se
+//! lisent pas sur un bulletin, et sa paie ne se refait pas. Elle se calcule comme la validation la calculerait (`charger_donnees`), avec les baremes et la
 //! configuration a la date de la periode ; une compagnie qui n'a pas encore pose son taux AT/MP de l'annee lit celui que
 //! le bulletin applique (`Contexte::avec_le_taux_atmp_lu`).
 //!
@@ -459,8 +460,8 @@ fn refaire<'a>(
             }
         }
     }
-    // Le salaire mensuel et les heures par mois d'un contrat paye au mois, que sa ligne de salaire imprime.
-    let mut au_mois: Option<(MontantUnitaire, Heures)> = None;
+    // La ligne de salaire d'un contrat paye au mois (`contrat_au_mois` en lit son salaire mensuel et ses heures par mois).
+    let mut au_mois: Option<&crate::importe::LigneImprimee> = None;
     let mut saisies = Vec::new();
     for l in &p.lignes {
         let libelle = &l.libelle;
@@ -484,7 +485,7 @@ fn refaire<'a>(
             if au_mois.is_some() {
                 return Err(socle::refus!("le bulletin d'un contrat payé au mois imprime une seconde ligne de salaire (« {} ») : son salaire mensuel ne s'y lit pas", libelle));
             }
-            au_mois = Some(salaire_imprime(l)?);
+            au_mois = Some(l);
             continue;
         }
         let paiement = l.paiement.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas sa quantité et son taux", libelle))?;
@@ -545,8 +546,8 @@ fn refaire<'a>(
         fin: fin_du_contrat,
         salaire_mensuel,
         quotite_contrat,
-        // Le motif d'un CDD, que l'engagement importe dit s'il le dit.
-        motif_recours: brut.motif_recours.filter(|_| mensuelle),
+        // Le motif d'un CDD, que l'engagement importe dit ou que sa DSN declare (`Importe::motif_recours`).
+        motif_recours: imp.motif_recours().filter(|_| mensuelle),
         // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
         emploi: p.emploi_imprime.as_ref().map(|i| droit::emplois::EmploiEcrit { emploi: dit(&i.ecrit.emploi), ..i.ecrit.clone() }).filter(|e| *e != droit::emplois::EmploiEcrit::default()),
         lignes: Some(saisies),
@@ -593,37 +594,65 @@ fn refaire<'a>(
     Ok(Refaite { paie, garanties, atmp_lu, cotisations })
 }
 
-/// LE SALAIRE MENSUEL ET LES HEURES PAR MOIS QU'IMPRIME LA LIGNE DE SALAIRE `l` du bulletin d'un contrat paye au mois
-/// (une ligne de la rubrique `heure` ou `mois`). Le bulletin imprime « le nombre d'heures de travail auxquels se rapporte
-/// le salaire » (C. trav. R. 3243-1, 5°, `atelier/reference/sources/code-du-travail/articles-20261028.md`) : sur une
-/// ligne en heures (« Heures », « Heure de travail »), ses heures, et le salaire est son montant. Que ces heures soient
-/// celles du contrat est une inference, qui ne vaut que pour un mois paye entier : `contrat_au_mois` l'exige. Une ligne
-/// « Salaire mensuel de base » (`rubriques-base.json`, `mois`) n'imprime pas ses heures : la paie ne se refait pas. Ce
-/// que la ligne n'imprime pas ne se devine pas, ni ne se prend dans la table de lecture : le refus dit ce qui manque au
-/// bulletin.
-fn salaire_imprime(l: &crate::importe::LigneImprimee) -> R<(MontantUnitaire, Heures)> {
+/// LE SALAIRE MENSUEL ET LES HEURES PAR MOIS DU CONTRAT, lus sur la ligne de salaire `l` (de la rubrique `heure` ou
+/// `mois`) de la paie importee `p`, d'un mois que le contrat et la paie couvrent entier (`contrat_au_mois`).
+///
+/// LES HEURES PAR MOIS : la quotite que la DSN deposee declare pour le contrat quand elle la declare (S21.G00.40.013,
+/// « la duree contractuelle de travail applicable au salarie », `norme-dsn/texte/bloc-S21.G00.40.txt` l. 595-597 :
+/// `PaieVersee::quotite`) ; sinon celles que le bulletin imprime, « le nombre d'heures de travail auxquels se rapporte le
+/// salaire » (C. trav. R. 3243-1, 5°, `atelier/reference/sources/code-du-travail/articles-20261028.md` l. 442) : sur
+/// une ligne en heures (« Heures », « Heure de travail »), ses heures ; sous une ligne « Salaire mensuel de base »
+/// (`rubriques-base.json`, `mois`), qui ne les imprime pas, la duree du travail de l'en-tete (« Durée du travail »,
+/// `PaieVersee::duree_du_travail`). Que les heures imprimees soient celles du contrat est une inference, qui ne vaut que
+/// d'un mois paye entier, et seulement sans DSN.
+///
+/// LE SALAIRE MENSUEL : le montant de la ligne, d'un mois paye entier. Une ligne « Salaire mensuel de base » paie le mois
+/// entier quand sa quantite, si elle en imprime une, est un mois. Une ligne en heures paie les heures du mois : quand la
+/// DSN declare une autre quotite, le bulletin ne paie pas le mois entier du contrat (une absence, des conges, qui se
+/// disent en cases), et son montant n'est pas le salaire mensuel. Ce que le bulletin n'imprime pas ne se devine pas, ni
+/// ne se prend dans la table de lecture : le refus dit ce qui manque.
+fn salaire_et_heures(l: &crate::importe::LigneImprimee, p: &PaieVersee) -> R<(MontantUnitaire, Heures)> {
     use crate::ligne::PaiementDeLigne;
     let libelle = &l.libelle;
     let montant = l.montant.ok_or_else(|| socle::refus!("le bulletin imprime « {} » sans son montant : le salaire mensuel du contrat ne s'y lit pas", libelle))?;
-    match l.paiement {
-        Some(PaiementDeLigne::Heures(heures, _)) => Ok((montant.pour_une_unite(), heures)),
-        Some(PaiementDeLigne::PartDuMois(part, _)) if part != Coefficient::UN => {
-            Err(socle::refus!("le bulletin imprime « {} » avec une quantité qui n'est pas un mois entier : le salaire mensuel du contrat ne s'y lit pas", libelle))
+    let declarees = p.quotite.map(|q| q.heures("la quotité que la DSN déclare pour le contrat (S21.G00.40.013)")).transpose()?;
+    let dit = socle::grandeurs::ecrit::sans_zero::dit;
+    let heures = match (l.paiement, declarees) {
+        (Some(PaiementDeLigne::Heures(imprimees, _)), Some(contrat)) if imprimees != contrat => {
+            return Err(socle::refus!(
+                "le bulletin imprime « {} » pour {} h, et la DSN déclare un contrat de {} h par mois (S21.G00.40.013) : il ne paie pas le mois entier du contrat, son salaire mensuel ne s'y lit pas",
+                libelle,
+                dit(imprimees),
+                dit(contrat)
+            ));
         }
-        _ => Err(socle::refus!(
-            "le bulletin imprime « {} » sans le nombre d'heures de travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°) : les heures par mois du contrat ne s'y lisent pas",
-            libelle
-        )),
-    }
+        (Some(PaiementDeLigne::Heures(imprimees, _)), _) => imprimees,
+        (Some(PaiementDeLigne::PartDuMois(part, _)), _) if part != Coefficient::UN => {
+            return Err(socle::refus!("le bulletin imprime « {} » avec une quantité qui n'est pas un mois entier : le salaire mensuel du contrat ne s'y lit pas", libelle));
+        }
+        (Some(PaiementDeLigne::PartDuMois(..)) | None, Some(contrat)) => contrat,
+        (Some(PaiementDeLigne::PartDuMois(..)) | None, None) => p.duree_du_travail.ok_or_else(|| {
+            socle::refus!(
+                "le bulletin imprime « {} » sans le nombre d'heures de travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°), ni sur la ligne ni en en-tête (« Durée du travail »), et aucune DSN ne déclare la quotité du contrat : les heures par mois du contrat ne se lisent pas",
+                libelle
+            )
+        })?,
+        (Some(_), _) => return Err(socle::refus!("le bulletin imprime « {} » dans une autre unité que des heures ou le mois : le salaire mensuel du contrat ne s'y lit pas", libelle)),
+    };
+    Ok((montant.pour_une_unite(), heures))
 }
 
 /// LE CONTRAT PAYE AU MOIS QUE PAIE `p`, le mois `mois` : ses dates (`Importe::contrat_de_la_paie`), et le salaire mensuel
-/// et les heures par mois que sa ligne de salaire imprime (`salaire_imprime`, lus en chemin : `au_mois`). Une ligne de
-/// salaire ne dit que le mois qu'elle paie : le bulletin paie le mois entier, du contrat qui le couvre entier. Le mois ou
-/// le contrat finit, son solde de tout compte se compose de cases (le motif de la rupture, le preavis) qu'aucun bulletin
-/// n'imprime : la paie ne se refait pas.
-fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, au_mois: Option<(MontantUnitaire, Heures)>) -> R<(socle::date::PeriodeOuverte, MontantUnitaire, Heures)> {
-    let Some((salaire, heures)) = au_mois else {
+/// et les heures par mois que sa ligne de salaire `ligne` et sa DSN disent (`salaire_et_heures`). Le mois ou le contrat
+/// finit, son solde de tout compte se compose de cases (le motif de la rupture, le preavis) qu'aucun bulletin n'imprime :
+/// la paie ne se refait pas.
+///
+/// LE MOIS PAYE ENTIER : le contrat le couvre entier ; et la paie aussi. Une paie qu'un bulletin seul declare a la periode
+/// de ce bulletin (`routes::importation::bulletins`) : elle couvre le mois entier. Une paie que la DSN declare a les dates
+/// du contrat, que la DSN porte, et non celles du bulletin : le mois qu'elle paie se lit sur sa ligne de salaire, des
+/// heures que la DSN declare pour le contrat, ou le mois (`salaire_et_heures`).
+fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, ligne: Option<&crate::importe::LigneImprimee>) -> R<(socle::date::PeriodeOuverte, MontantUnitaire, Heures)> {
+    let Some(l) = ligne else {
         return Err(refus("le bulletin d'un contrat payé au mois n'imprime pas la ligne de son salaire mensuel"));
     };
     let Some(contrat) = imp.contrat_de_la_paie(p)? else {
@@ -634,9 +663,13 @@ fn contrat_au_mois(imp: &Importe, p: &PaieVersee, mois: Mois, au_mois: Option<(M
         return Err(refus("le contrat payé au mois finit ce mois-ci : son solde de tout compte se dit en cases (le motif de la rupture, le préavis) qu'un bulletin n'imprime pas"));
     }
     let entier = |o: Option<socle::date::PeriodeOuverte>| o.and_then(|o| o.croise(&du_mois)) == Some(du_mois);
-    if !entier(p.periode) || !entier(Some(contrat)) {
+    if !entier(Some(contrat)) {
+        return Err(refus("le contrat ne couvre qu'une partie du mois : le salaire mensuel du contrat ne s'y lit pas"));
+    }
+    if p.contrat.d_un_bulletin() && !entier(p.periode) {
         return Err(refus("le bulletin paie une partie du mois : le salaire mensuel du contrat ne s'y lit pas"));
     }
+    let (salaire, heures) = salaire_et_heures(l, p)?;
     Ok((contrat, socle::grandeurs::courte(salaire), socle::grandeurs::courte(heures)))
 }
 
