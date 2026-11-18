@@ -661,17 +661,23 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         None => ctx.entreprise.clone(),
     };
     // LES PLAFONDS DE LA FRANCHISE, CHIFFRES : ceux du bareme de l'annee des salaires -- `annee` dans la
-    // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants.
+    // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants ;
+    // de meme tant que le bareme attend ce que la compagnie n'a pas encore dit (son effectif, son taux AT/MP).
     let annee = match charge.annee {
         None => ctx.aujourdhui.annee(),
         Some(a) if (socle::annee!("1900")..=socle::annee!("2999")).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
     let bar = match droit::contexte::socle_livre_lu(annee)? {
-        Some(_) => Some(ctx.bareme(&annee.premier_jour())?),
+        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
+        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
+            Ok(b) => Some(b),
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        },
         None => None,
     };
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
     // La conclusion nomme les deux plafonds.
     use documents::taxe_sur_les_salaires::Decision;
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);

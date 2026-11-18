@@ -220,6 +220,30 @@ fn la_nature_d_un_contrat_de_permanent_se_demande_apres_l_import() {
     assert_eq!(reussi(&route(&racine, "importation-etat", json!({})))["a_dire"], json!([]));
 }
 
+/// REGARDER N'EST JAMAIS REFUSE (le bug : une compagnie qui venait d'importer ses bulletins n'avait dit ni son effectif
+/// ni sa premiere embauche ; `etat` refusait `EffectifAbsent`, et la Paie comme la Configuration restaient vides, case
+/// de l'effectif comprise). Juste apres l'import, chaque lecture que la page fait en s'ouvrant repond, et `etat` dit a
+/// part ce qui manque pour payer.
+#[test]
+fn apres_l_import_les_lectures_repondent_sans_l_effectif() {
+    let racine = neuve("lectures");
+    deposer(&racine);
+    reussi(&route(&racine, "importer", json!({})));
+    let etat = reussi(&route(&racine, "etat", json!({}))).clone();
+    let pour_payer = etat["configuration"]["pour_payer"].as_str().unwrap_or_else(|| panic!("ce qui manque pour payer n'est pas dit : {}", etat["configuration"]["pour_payer"]));
+    assert!(!pour_payer.is_empty());
+    for (nom, charge) in [
+        ("configuration", json!({})),
+        ("saisie", json!({"mois": "2026-10"})),
+        ("pour-demarrer", json!({})),
+        ("importation-etat", json!({})),
+        ("taxe-sur-les-salaires-regime", json!({})),
+    ] {
+        let r = route(&racine, nom, charge);
+        assert_eq!(r["ok"], json!(true), "{} : {}", nom, r);
+    }
+}
+
 /// Le contrat d'un permanent paye le dernier mois repris continue : sa nature se dit avec la date de debut et le numero
 /// que la DSN de l'ancien logiciel lui a donnes (S21.G00.40.001 et .009, `norme-dsn/texte/bloc-S21.G00.40.txt` ; un
 /// numero ne se recalcule pas, regle 4). Sans eux, ou avec un debut que les bulletins dementent : refus, rien n'est

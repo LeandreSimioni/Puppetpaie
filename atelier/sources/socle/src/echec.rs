@@ -220,6 +220,14 @@ impl Echec {
         classe_notee(self.classe)
     }
 
+    /// CE REFUS DIT-IL UNE CHOSE QUE LA COMPAGNIE N'A PAS ENCORE DITE (une case d'une fiche, l'effectif, le taux AT/MP,
+    /// une saisie pas finie, un refus ordinaire du metier), et non une panne (le disque, un fichier livre, une valeur
+    /// illisible, un calcul impossible) ? Une route qui lit rend le premier a sa place, dans sa reponse, et laisse
+    /// remonter la seconde : regarder n'est jamais refuse, une panne ne se deguise pas en manque.
+    pub fn dit_un_manque(&self) -> bool {
+        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
+    }
+
     /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a
     /// part restent, l'endroit ou il est ne aussi.
     pub fn reformuler(self, f: impl FnOnce(&str) -> String) -> Echec {

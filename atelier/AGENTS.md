@@ -79,6 +79,11 @@ soient droits.
   un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
   diff à l'arrivée le tient). **Enregistrer sans rien changer n'est jamais une faute** (Léandre : « on peut appuyer sur
   enregistrer comme on veut ») : rien ne change, rien ne se refuse.
+- **Le logiciel est doux** (Léandre, 18/11/2026 : « l'idée, c'est une logique douce du logiciel ») : regarder n'est
+  jamais refusé. Une route qui lit (l'état de la compagnie, un mois, une fiche) répond toujours, avec ce qu'elle sait ;
+  ce qui manque se demande, sur la chose à qui il manque, et ne ferme rien d'autre. Seul refuse le calcul ou l'acte qui
+  a besoin de la valeur, pour lui seul : la case d'un salarié ne ferme pas le mois des autres, l'effectif qui manque ne
+  vide pas la page. Une route de lecture qui refuse en bloc est un bug bloquant, à corriger avant tout le reste.
 - **Reconstruire, c'est renommer et rebrancher** : vérifier une fois à la main sur une fictive, puis supprimer l'ancien
   et ses tests dans le même geste ; un lot finit avec moins de lignes et de tests (sauf une forme qu'on déclare). Rien
   sans l'aval de Léandre ; une pause demandée est une pause.

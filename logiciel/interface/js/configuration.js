@@ -1360,6 +1360,12 @@ function SANTE_HTML() {
       <div class="aide">${echapper(ETAT.sante_hors_fiche)}</div>
     </div>`;
   }
+  // Un barème du jour qui ne se compose pas ne dit aucun niveau (`niveaux_sante` nul) : le moteur dit pourquoi.
+  if (!ETAT.niveaux_sante) {
+    return `<div class="encart" id="config-sante">
+      <div class="aide">${echapper(ETAT.configuration.pour_payer)}</div>
+    </div>`;
+  }
   return `<div class="encart" id="config-sante">
     <label>Complémentaire santé
       <select id="config-sante-niveau">
