@@ -973,14 +973,26 @@ impl Importation {
         let b = &self.bulletins;
         let periode: String = b.periode.map(|p| format!(" (du {} au {})", p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).into_iter().collect();
         self.phrase = socle::phrase!(
-            "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
+            "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.{}",
             b.lus,
             periode,
             b.repris,
             b.fiches_a_creer,
             self.dsn,
-            self.aem
+            self.aem,
+            self.dire_les_identites()
         );
+    }
+
+    /// LES PERSONNES MISES DE COTE (`identites`), comptees une fois chacune : rien d'elles ne se reprend avant la
+    /// reponse a leur question. Rien quand il n'y en a pas ; sinon la phrase commence par une espace.
+    pub fn dire_les_identites(&self) -> String {
+        let personnes: std::collections::HashSet<&droit::fiche::Nir> = self.identites.iter().map(|q| &q.nir).collect();
+        match personnes.len() {
+            0 => String::new(),
+            1 => " Une personne déclarée dans la DSN ressemble à une fiche sans numéro de sécurité sociale : rien d'elle n'est repris avant votre réponse.".to_string(),
+            n => format!(" {} personnes déclarées dans la DSN ressemblent à une fiche sans numéro de sécurité sociale : rien d'elles n'est repris avant votre réponse.", n),
+        }
     }
 
     /// La couleur de la phrase d'un import fait.

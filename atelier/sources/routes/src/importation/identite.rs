@@ -80,12 +80,21 @@ fn nom_de(cle: &IdSalarie, fiche: &ChampsSalarie) -> String {
     }
 }
 
+/// Les fiches sans NIR qui peuvent ressembler a quelqu'un : celles qui disent un nom et un prenom (`ressemble`).
+fn sans_nir(ctx: &Contexte) -> Vec<(&IdSalarie, &ChampsSalarie)> {
+    ctx.salaries
+        .iter()
+        .filter(|(_, s)| s.nir.dite().is_none() && s.champs.nom.remplie().is_some() && s.champs.prenom.remplie().is_some())
+        .map(|(k, s)| (k, &s.champs))
+        .collect()
+}
+
 /// LES QUESTIONS D'IDENTITE que posent les individus que les DSN declarent (`declares`) : sous un NIR qu'aucune fiche ne
 /// porte, ni aucune piece de cet import qui en creera une (`a_venir` : les bulletins, les certificats), ils ressemblent
 /// au salarie d'une fiche sans NIR (`ressemble`), et la compagnie n'a pas dit que ce n'etait pas lui. Une par individu et
 /// par fiche qui lui ressemble. Aucune sans fiche sans NIR.
 pub(crate) fn questions(ctx: &Contexte, declares: &[SalarieDeclare], a_venir: &HashSet<Nir>) -> R<Vec<QuestionDIdentite>> {
-    let sans_nir: Vec<(&IdSalarie, &ChampsSalarie)> = ctx.salaries.iter().filter(|(_, s)| s.nir.dite().is_none()).map(|(k, s)| (k, &s.champs)).collect();
+    let sans_nir = sans_nir(ctx);
     if sans_nir.is_empty() {
         return Ok(Vec::new());
     }
@@ -115,18 +124,51 @@ pub(crate) fn questions(ctx: &Contexte, declares: &[SalarieDeclare], a_venir: &H
 }
 
 /// LES QUESTIONS QUI ATTENDENT LA COMPAGNIE, relues des DSN que l'import a reprises (leurs copies, sous
-/// `historique/bulletins/`), chacune avec ses deux gestes : `importation-etat` les rend. Aucune sans fiche sans NIR, ni
-/// sans DSN reprise.
-pub(crate) fn en_attente(ctx: &Contexte) -> R<Vec<IdentiteADire>> {
-    if ctx.salaries.values().all(|s| s.nir.dite().is_some()) {
-        return Ok(Vec::new());
+/// `historique/bulletins/`), chacune avec ses deux gestes : `importation-etat` les rend. Aucune sans fiche sans NIR qui
+/// dise un nom et un prenom (rien alors ne se relit), ni sans DSN reprise. LA LECTURE REPOND (« Le logiciel est doux ») :
+/// une DSN reprise qui ne se relit plus, ou des reponses gardees qui ne se lisent pas, ne ferment pas l'etat de l'import ;
+/// aucune question ne se dit, et `non_relues` dit pourquoi. Une panne reste une panne.
+pub(crate) fn en_attente(ctx: &Contexte) -> R<IdentitesEnAttente> {
+    let aucune = IdentitesEnAttente { questions: Vec::new(), non_relues: None };
+    if sans_nir(ctx).is_empty() {
+        return Ok(aucune);
     }
     let dossier = import::mois::dossier_des_bulletins(&ctx.racine);
     if !socle::fichiers::existe_lu(&dossier)? {
-        return Ok(Vec::new());
+        return Ok(aucune);
     }
-    let lecture = import::dsn_aem::lire_dsn(&dossier)?;
-    Ok(questions(ctx, &lecture.salaries, &HashSet::new())?.into_iter().map(IdentiteADire::de).collect())
+    let relues = import::dsn_aem::lire_dsn(&dossier).and_then(|lecture| questions(ctx, &lecture.salaries, &HashSet::new()));
+    match relues {
+        Ok(q) => Ok(IdentitesEnAttente { questions: q.into_iter().map(IdentiteADire::de).collect(), non_relues: None }),
+        Err(e) if e.dit_un_manque() => Ok(IdentitesEnAttente {
+            questions: Vec::new(),
+            non_relues: Some(socle::phrase!("Les questions d'identité des DSN reprises ne se relisent pas : {}", e.phrase)),
+        }),
+        Err(e) => Err(e),
+    }
+}
+
+/// Les questions d'identite qui attendent la compagnie, et ce qui n'a pas pu se relire pour les poser.
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct IdentitesEnAttente {
+    questions: Vec<IdentiteADire>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    non_relues: Option<Phrase>,
+}
+
+/// UNE DSN DECLARE-T-ELLE SOUS `nir` UN INDIVIDU QUI RESSEMBLE A `fiche` (`ressemble`) : une DSN reprise (ses copies,
+/// sous `historique/bulletins/`) ou une DSN de la boite de l'import (`import/`) ?
+fn declare_et_ressemble(ctx: &Contexte, nir: &Nir, fiche: &ChampsSalarie) -> R<bool> {
+    for dossier in [import::mois::dossier_des_bulletins(&ctx.racine), ctx.racine.join(import::BOITE_AUX_LETTRES)] {
+        if !socle::fichiers::existe_lu(&dossier)? {
+            continue;
+        }
+        let lecture = import::dsn_aem::lire_dsn(&dossier)?;
+        if lecture.salaries.iter().any(|d| d.individu.identite.nir.as_ref() == Some(nir) && ressemble(fiche, &d.individu)) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Une question d'identite telle que la page la lit : la question, et ses deux gestes (la meme personne, une autre).
@@ -219,13 +261,30 @@ pub(crate) fn repondre(ctx: &Contexte, charge: &ChargeIdentite) -> R<IdentiteRep
                 if let Some((autre, f)) = ctx.salaries.iter().find(|(_, s)| s.nir.dite() == Some(nir)) {
                     return Err(refus(format!("Ce numéro de sécurité sociale est déjà sur la fiche de {} : rien n'a été écrit.", nom_de(autre, &f.champs))));
                 }
-                let champs = ChampsSalarie { nir: Some(nir.clone()), nir_cle: droit::fiche::CleNir::du_nir(nir), ..ChampsSalarie::default() };
-                crate::importation::fiches::completer_fiche(ctx, &FicheNommee::Salarie(cle.clone()), &FicheProposee::Salarie(champs))?;
-                if repondues.contains(&paire) {
-                    repondues.retain(|r| *r != paire);
-                    socle::ecriture::ecrire_json(&fichier(&ctx.racine), &repondues, 0)?;
+                // La reponse repond a une question : le NIR est celui d'un individu qu'une DSN reprise ou a reprendre
+                // declare, et qui ressemble a la fiche.
+                if !declare_et_ressemble(ctx, nir, &fiche.champs)? {
+                    return Err(refus(format!(
+                        "Aucune DSN reprise ni aucune DSN de la boîte de l'import ne déclare, sous ce numéro de sécurité sociale, une personne qui ressemble à {} : rien n'a été écrit.",
+                        qui
+                    )));
                 }
-                socle::phrase!("La fiche de {} reçoit le numéro de sécurité sociale que la DSN déclare. Relancez l'import : il reprend ce que la DSN déclare de lui.", qui)
+                let champs = ChampsSalarie { nir: Some(nir.clone()), nir_cle: droit::fiche::CleNir::du_nir(nir), ..ChampsSalarie::default() };
+                // La fiche ne recoit le NIR que si sa case est vide sur le disque (`completer_fiche`) : la phrase dit ce
+                // qui s'est ecrit.
+                let ecrit = crate::importation::fiches::completer_fiche(ctx, &FicheNommee::Salarie(cle.clone()), &FicheProposee::Salarie(champs))?;
+                if !matches!(&ecrit, FicheProposee::Salarie(c) if c.nir.is_some()) {
+                    socle::phrase!(
+                        "La fiche de {} a déjà une valeur dans sa case du numéro de sécurité sociale, à une autre date : rien n'a été écrit. Dites son numéro dans sa fiche, puis relancez l'import.",
+                        qui
+                    )
+                } else {
+                    if repondues.contains(&paire) {
+                        repondues.retain(|r| *r != paire);
+                        socle::ecriture::ecrire_json(&fichier(&ctx.racine), &repondues, 0)?;
+                    }
+                    socle::phrase!("La fiche de {} reçoit le numéro de sécurité sociale que la DSN déclare. Relancez l'import : il reprend ce que la DSN déclare de lui.", qui)
+                }
             }
         }
         ReponseDIdentite::Autre => {

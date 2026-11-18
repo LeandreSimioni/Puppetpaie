@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), identites (les questions d'identité et leurs gestes), guide, editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -68,7 +68,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre les pièces d'un ancien logiciel : fiches, engagements importés.",
         charge: &[DOSSIER],
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte, et son sort)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
@@ -317,6 +317,8 @@ pub(crate) struct Apercu {
     /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
     /// `declarations::dsn_lue`), la plus recente ; rien si aucune ne la dit.
     pub(crate) convention: Option<droit::fiche::Idcc>,
+    /// Les versements des individus mis de cote (`Importation::identites`), par nom de la DSN qui les declare.
+    pub(crate) paies_en_question: HashMap<String, usize>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -642,6 +644,15 @@ pub(crate) fn apercu_lu(
         contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.periode), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
+    // Les versements d'un individu mis de cote, par DSN : ils attendent la reponse (le sort de leur DSN le dit).
+    let mut paies_en_question: HashMap<String, usize> = HashMap::new();
+    for ((_, nir, _), v) in &lecture.paies {
+        if let (Some(n), Some(f)) = (nir, &v.fichier) {
+            if en_question.contains(n) {
+                *paies_en_question.entry(f.texte().to_string()).or_default() += 1;
+            }
+        }
+    }
     for ((mois, nir, contrat), v) in &lecture.paies {
         if !a_une_fiche(nir) {
             continue;
@@ -710,6 +721,7 @@ pub(crate) fn apercu_lu(
         licences: lecture.licences.clone(),
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
+        paies_en_question,
     })
 }
 
@@ -818,7 +830,7 @@ struct EtatImportation {
     a_dire: Vec<crate::importation::nature::ADire>,
     /// Les individus que les DSN reprises declarent et que l'import met de cote, le temps que la compagnie dise s'ils
     /// sont le salarie d'une fiche sans NIR (`importation::identite`).
-    identites: Vec<crate::importation::identite::IdentiteADire>,
+    identites: crate::importation::identite::IdentitesEnAttente,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: import::guide::Guide,
     repris_dit: Option<String>,

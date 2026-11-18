@@ -762,12 +762,7 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     };
     // LES INDIVIDUS MIS DE COTE (`importation::identite`) : rien d'eux n'est repris, la phrase le dit, et chacun sa
     // question.
-    let personnes: HashSet<&droit::fiche::Nir> = reponse.identites.iter().map(|q| &q.nir).collect();
-    let en_question = match personnes.len() {
-        0 => String::new(),
-        1 => " Une personne déclarée dans la DSN ressemble à une fiche sans numéro de sécurité sociale : rien d'elle n'est repris avant votre réponse.".to_string(),
-        n => format!(" {} personnes déclarées dans la DSN ressemblent à une fiche sans numéro de sécurité sociale : rien d'elles n'est repris avant votre réponse.", n),
-    };
+    let en_question = reponse.dire_les_identites();
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
