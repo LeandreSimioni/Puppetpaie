@@ -111,3 +111,37 @@ civilité, la qualité et l'adresse ne sont pas confrontées au répertoire SIRE
 
 Les retours relevés s'archivent dans la compagnie d'essai et disparaissent avec elle : ils ne remplacent pas le relevé
 du poste de la compagnie.
+
+## Le nuage parle au filet comme le poste de l'éditeur
+
+Indépendant de la compagnie d'essai, et à poser une fois. Une fictive rejouée dans le nuage est une installation neuve :
+sans identité de poste, elle en demande une au serveur de l'éditeur (`POST /poste`), qui n'en donne que 50 par jour
+pour tout le monde, 3 par adresse ; une séance qui rejoue beaucoup les épuise, et un retour écrit sur un vrai poste
+reste « pas encore parti — Trop de demandes ». Le serveur ne plafonne pas le poste de l'éditeur
+(`FILET_POSTE_EDITEUR`, côté serveur) : le nuage porte donc **l'identité du poste de l'éditeur**.
+
+| variable | ce qu'elle porte |
+|---|---|
+| `PUPPETPAIE_ATELIER_POSTE` | le numéro du poste de l'éditeur : 32 chiffres hexadécimaux minuscules |
+| `PUPPETPAIE_ATELIER_CLE_POSTE` | la clé de ce poste, un secret : 64 chiffres hexadécimaux minuscules |
+
+Seul le binaire de l'atelier (`moteur-atelier`, jamais livré) les lit (`compagnie/src/incidents.rs`,
+`identite_de_l_atelier`) ; le moteur que les compagnies reçoivent n'en contient pas même les noms
+(`moteur/tests/atelier.rs`). Posées toutes les deux, il parle avec elles au **seul** serveur de l'éditeur
+(`https://filet.puppetpaie.fr`, `editeur::SERVEUR_PAR_DEFAUT`), ne demande jamais d'identité et ne les écrit dans aucun
+fichier : `config/diagnostic.json` de la fictive n'en reçoit rien. Un autre serveur (le faux serveur local d'un
+essai) ne les reçoit jamais : il garde l'identité qu'il a donnée. Une seule des deux posée, ou l'une mal formée : le
+moteur refuse en nommant la variable, jamais sa valeur, et ne demande pas d'identité à la place. Aucune posée : rien ne
+change. Le banc d'essai (`outils/banc/banc.js`) les retire de sa fenêtre, qui ne sort pas de la machine.
+
+**Les poser** : sur le poste de l'éditeur, le numéro et la clé sont les clés `poste` et `cle` de
+`prive\config\diagnostic.json` (dans le dossier de PuppetPaie) ; les copier de là, sans les coller dans une
+conversation, dans les réglages de l'environnement du nuage (variables d'environnement). Elles y sont en clair, lisibles
+par toute séance de cet environnement. Vérifier sur le serveur que `FILET_POSTE_EDITEUR` du service `puppetpaie-filet`
+vaut ce même numéro. Une nouvelle séance les prend.
+
+**Deux machines, un numéro** : les incidents du nuage et ceux du poste de l'éditeur partent sous le même `poste`. Ils
+se distinguent par leur machine : `systeme` et `os` (Linux dans le nuage, Windows sur le poste) et `chemin` (un dossier
+du conteneur, `/tmp/…` pour une fictive rejouée, contre `C:\…`) ; `compagnie` dit « fictive » pour toute fictive, y
+compris une fictive ouverte sur le poste, et `installation` ne dit « atelier » que d'un moteur lancé dans un dépôt
+(une installation de rejeu n'en est pas un) : seuls, ils ne tranchent pas. `moteur` (l'empreinte des sources) distingue en plus un moteur du jour d'un moteur publié.

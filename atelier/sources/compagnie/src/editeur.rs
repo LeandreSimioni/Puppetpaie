@@ -10,7 +10,9 @@
 //!
 //! UNE CLE PAR POSTE, AUCUN SECRET PARTAGE. Le
 //! serveur donne a chaque poste son numero et sa cle (`POST /poste`) ; les
-//! actions du poste portent le numero dans le corps et la cle dans `X-Filet-Cle`.
+//! actions du poste portent le numero dans le corps et la cle dans `X-Filet-Cle`. Seul le binaire de l'atelier (le
+//! nuage) porte celle du poste de l'editeur, lue dans son environnement (`incidents::identite_de_l_atelier`), que le
+//! serveur ne plafonne pas.
 //!
 //! Jamais le vrai serveur dans les essais : l'adresse vient de la
 //! configuration, et les essais en donnent une locale. Quand la configuration
@@ -397,17 +399,40 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
     }
 }
 
-/// Le serveur et l'identite du poste -- `(numero, cle)` donnee par le serveur.
+/// D'OU VIENT L'IDENTITE DU POSTE que porte un client : ce qu'il y a a faire quand le serveur ne la reconnait plus en
+/// depend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigineDeLIdentite {
+    /// `config/diagnostic.json` de la compagnie qui la porte, ou le serveur l'a donnee (`POST /poste`).
+    Diagnostic,
+    /// L'environnement du binaire de l'atelier : l'identite du poste de l'editeur (`incidents::identite_de_l_atelier`).
+    #[cfg(feature = "atelier")]
+    Atelier,
+}
+
+impl OrigineDeLIdentite {
+    /// Ce qu'il y a a faire quand le serveur ne reconnait plus l'identite (un 401).
+    fn a_refaire(self) -> String {
+        match self {
+            OrigineDeLIdentite::Diagnostic => REDEMANDER_IDENTITE.to_string(),
+            #[cfg(feature = "atelier")]
+            OrigineDeLIdentite::Atelier => crate::incidents::identite_de_l_atelier_refusee(),
+        }
+    }
+}
+
+/// Le serveur et l'identite du poste -- `(numero, cle)` donnee par le serveur -- et d'ou elle vient.
 pub struct Client {
     /// Le serveur, tel que le reglage le dit ; `poster` ote sa barre finale.
     pub serveur: Url,
     pub poste: (NumeroDePoste, socle::secret::Secret),
+    origine: OrigineDeLIdentite,
 }
 
 impl Client {
-    /// Le client des actions de l'editeur, avec l'identite de ce poste.
-    pub fn du_poste(serveur: &Url, numero: &NumeroDePoste, cle_du_poste: &socle::secret::Secret) -> Client {
-        Client { serveur: serveur.clone(), poste: (numero.clone(), cle_du_poste.clone()) }
+    /// Le client des actions de l'editeur, avec l'identite de ce poste et d'ou elle vient.
+    pub fn du_poste(serveur: &Url, numero: &NumeroDePoste, cle_du_poste: &socle::secret::Secret, origine: OrigineDeLIdentite) -> Client {
+        Client { serveur: serveur.clone(), poste: (numero.clone(), cle_du_poste.clone()), origine }
     }
 
     /// `POST /poste` : l'identite que le serveur donne a ce poste, rendue une seule fois (il n'en garde que l'empreinte).
@@ -422,7 +447,7 @@ impl Client {
         let (numero, cle) = &self.poste;
         match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.devoiler())], delai) {
             Err(ErreurFilet::Filet { message, statut: Some(StatusCode::UNAUTHORIZED) }) => {
-                Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), Some(StatusCode::UNAUTHORIZED)))
+                Err(ErreurFilet::filet(format!("{} {}", message, self.origine.a_refaire()), Some(StatusCode::UNAUTHORIZED)))
             }
             r => r,
         }
