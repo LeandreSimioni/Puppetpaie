@@ -437,6 +437,16 @@ impl Fraction {
         }
     }
 
+    /// Son numero, n (de 1 a `nombre`).
+    pub fn numero(self) -> u8 {
+        self.numero
+    }
+
+    /// Le nombre total de fractions de la declaration, d.
+    pub fn nombre(self) -> u8 {
+        self.nombre
+    }
+
     /// La fraction ecrite `texte` ; refus si elle n'en a pas la forme.
     pub fn lire(texte: &str) -> R<Fraction> {
         Fraction::lue(texte).ok_or_else(|| {
