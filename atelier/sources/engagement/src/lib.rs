@@ -2048,7 +2048,8 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     let _derivation = crate::conges::Derivation::ouvrir();
     // Un engagement en saisie se calcule comme sa validation le calculera : ses propres mois d'avant comptent.
     let mois = data.mois;
-    let _comme_a_la_validation = crate::etats::CommeALaValidation::ouvrir(ctx, mois)?;
+    let salaries: Vec<&IdSalarie> = data.engagements.iter().filter_map(|e| e.salarie.as_ref()).collect();
+    let _comme_a_la_validation = crate::etats::CommeALaValidation::ouvrir(ctx, mois, &salaries)?;
     let lignes: LignesPermanent = &crate::conges::lignes_du_mois;
     let (engs, dits) = engagements(ctx, data, lignes)?;
     let mut paies = Vec::new();

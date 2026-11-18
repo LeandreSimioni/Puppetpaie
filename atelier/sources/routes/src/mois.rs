@@ -66,7 +66,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -279,6 +279,9 @@ struct SaisieDuMois {
     saisie: VueDuMois,
     /// L'identite de chaque engagement de `saisie.engagements`, dans son ordre : ce par quoi sa carte le designe.
     identites: Vec<Identite>,
+    /// Ce qui manque a chaque engagement de `saisie.engagements` pour se lire, dans son ordre (`null` : rien) : la case
+    /// de la fiche de son salarie, une saisie pas finie (`avec_les_lignes_calculees_des_permanents`).
+    a_completer: Vec<Option<String>>,
 }
 
 /// Une carte ecrite (`enregistrer-saisie`).
@@ -504,24 +507,33 @@ fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<MontantUnitaire>>
     Ok(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).filter(|t| !t.est_nul()))
 }
 
-/// Les lignes d'un permanent, calculees. Une saisie incomplete (un engagement qui ne dit pas encore tout,
-/// `engagement::saisie_incomplete`) se rend telle qu'elle est ecrite.
-fn avec_les_lignes_calculees_des_permanents(ctx: &Contexte, saisie: VueDuMois) -> R<VueDuMois> {
-    let paies = match engagement::lue_sans_paie(ctx, &saisie) {
-        Ok(p) => p,
-        Err(m) if engagement::saisie_incomplete(&m) => return Ok(saisie),
-        Err(m) => return Err(m),
-    };
+/// LES ENGAGEMENTS DU MOIS TELS QUE L'ECRAN LES OUVRE, chacun lu seul (`engagement::lue_sans_paie` : une paie ne lit
+/// que son engagement et la fiche de son salarie) : ses lignes telles que le moteur les a comprises (`lignes_affichees`),
+/// et, dans le meme ordre, ce qui lui manque pour se lire (`None` : rien). Un engagement qui ne se lit pas encore (une
+/// saisie pas finie, une case de la fiche de son salarie) se rend tel qu'il est ecrit, avec sa phrase : ouvrir le mois
+/// n'est pas payer, et le refus vient au calcul de sa paie (`apercu`, `valider-engagement`), pas aux autres.
+fn avec_les_lignes_calculees_des_permanents(ctx: &Contexte, saisie: VueDuMois) -> R<(VueDuMois, Vec<Option<String>>)> {
+    let sans_engagement = VueDuMois { engagements: Vec::new(), ..saisie.clone() };
     let mut engagements = Vec::new();
-    for (e, p) in saisie.engagements.iter().zip(&paies) {
+    let mut a_completer = Vec::new();
+    for e in &saisie.engagements {
+        let seul = VueDuMois { engagements: vec![e.clone()], ..sans_engagement.clone() };
         let mut resolu = e.clone();
-        // Les lignes d'un permanent sont CALCULEES, pas saisies.
-        if !p.engagement.nat()?.mensuelle() {
-            resolu.lignes = Some(lignes_affichees(p, e.lignes())?);
+        match engagement::lue_sans_paie(ctx, &seul) {
+            Ok(paies) => {
+                for p in &paies {
+                    // Les lignes d'un permanent sont CALCULEES, pas saisies.
+                    if !p.engagement.nat()?.mensuelle() {
+                        resolu.lignes = Some(lignes_affichees(p, e.lignes())?);
+                    }
+                }
+                a_completer.push(None);
+            }
+            Err(m) => a_completer.push(Some(m.phrase)),
         }
         engagements.push(resolu);
     }
-    Ok(VueDuMois { engagements, ..saisie })
+    Ok((VueDuMois { engagements, ..saisie }, a_completer))
 }
 
 /// Ce que dit, a l'ecran, la case d'une ligne de frais (`engagement::ligne::Marques::cases`).
@@ -610,6 +622,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
+    let (saisie, a_completer) = avec_les_lignes_calculees_des_permanents(ctx, saisie)?;
     Ok(SaisieDuMois {
         mois,
         phrase,
@@ -619,8 +632,9 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         ferme_aux_neufs: ferme,
         defauts,
         nouvelle_carte,
-        saisie: avec_les_lignes_calculees_des_permanents(ctx, saisie)?,
+        saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
+        a_completer,
     })
 }
 // ------------------------------------------------------- les jours d'un engagement
