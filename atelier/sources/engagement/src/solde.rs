@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, brut_non_dit, brut_verse, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, qui,
+    avertir, brut_non_dit, brut_verse, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, paies_versees, qui,
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -1327,35 +1327,44 @@ fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &
     Ok(r)
 }
 
-/// Les bruts mensuels des douze et des trois derniers mois (R1234-4 : « la rémunération », que l'employeur l'ait payée
-/// ici ou dans l'ancien logiciel), ceux des mois saisis ou importes, chacun le brut verse au salarie
-/// (`conges::brut_verse`, ses paies validees et importees) : aucun mois, aucun brut, et
-/// `permanents::salaire_de_reference` refuse en disant quoi produire ; une paie importee qui ne dit pas son brut refuse
-/// en nommant son mois.
+/// Les bruts mensuels des douze et des trois derniers mois (R1234-4, `atelier/reference/sources/code-du-travail/
+/// articles-20261110.md` : « la moyenne mensuelle des douze derniers mois précédant le licenciement, ou lorsque la durée
+/// de service du salarié est inférieure à douze mois, la moyenne mensuelle de la rémunération de l'ensemble des mois
+/// précédant le licenciement » ; « le tiers des trois derniers mois »). Les mois qui comptent sont ceux du service du
+/// salarie : du mois ou son contrat commence au mois d'avant `mois`, douze au plus ; un mois d'avant son contrat ne
+/// compte pas, que d'autres salaries y soient payes ou non. Chacun vaut le brut verse au salarie, valide ici ou repris
+/// de l'ancien logiciel (`conges::paies_versees`) ; un mois de son service ou aucune paie n'est connue n'est pas un
+/// zero : le calcul refuse en nommant le mois, comme pour une paie reprise qui ne dit pas son brut.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Montant>, Vec<Montant>)> {
     let salarie = salarie_de(e)?;
+    let debut = debut_de(e)?.mois_civil();
+    let refus = |pourquoi: String| {
+        socle::refus!(
+            "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des douze et des trois \
+             derniers mois : {}, puis refaire la fin du contrat.",
+            pourquoi
+        )
+    };
     let mut bruts = Vec::new();
     for i in 1..=12 {
         let m = mois.avant(socle::date::Duree::mois(i))?;
-        if !crate::stock::a_une_saisie(&ctx.racine, m)? && !a_des_paies_importees(ctx, m)? {
-            continue;
+        if m < debut {
+            break;
         }
-        bruts.push(brut_verse(ctx, m, salarie)?.ok_or_else(|| {
-            socle::refus!(
-                "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des douze et des trois \
-                 derniers mois : {}, puis refaire la fin du contrat.",
-                brut_non_dit(m)
-            )
-        })?);
+        let paies = paies_versees(ctx, m, salarie)?;
+        if paies.is_empty() {
+            return Err(refus(format!(
+                "{} est sous contrat en {}, et aucune paie de ce mois n'est connue ; produire la paie de ce mois ici, ou importer \
+                 celle de l'ancien logiciel",
+                qui(ctx, e),
+                m.libelle(socle::mois::Graphie::Accentuee)
+            )));
+        }
+        let brut: Option<Montant> = paies.iter().map(crate::etats::PaieAnterieure::brut).sum();
+        bruts.push(brut.ok_or_else(|| refus(brut_non_dit(m)))?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
-}
-
-/// Le mois `mois` a-t-il des paies reprises de l'ancien logiciel (`importe::Importe::paies`) ? Un mois tenu dans l'ancien
-/// logiciel compte comme un mois saisi.
-fn a_des_paies_importees(ctx: &Contexte, mois: Mois) -> R<bool> {
-    Ok(crate::importe::du_mois(&ctx.racine, mois)?.iter().any(|i| i.paies().contains_key(&mois)))
 }
 
 /// Le brut que portent des lignes deja construites, sans les charger : la

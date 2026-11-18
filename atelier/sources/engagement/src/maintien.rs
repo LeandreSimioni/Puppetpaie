@@ -586,7 +586,11 @@ const IJ_AU_RELEVE: &str = "Le montant d'un jour se lit sur le relevé de la CPA
 const IJ_A_VERIFIER: &str = "quand le relevé CPAM arrive, vérifiez le montant et corrigez-le s'il diffère.";
 
 /// `AuReleve(phrase)` quand aucun montant ne se propose : un accident survenu avant le plafond depose (R433-2), un mois sans
-/// paie du salarie, une paie reprise de l'ancien logiciel qui ne dit pas son brut, un bareme absent.
+/// paie du salarie, une paie reprise de l'ancien logiciel qui ne dit pas son brut, un bareme absent. Une paie reprise se
+/// lit telle que ses pieces la disent, son brut seul (`etats::PaieAnterieure`) : ni sa nature, ni le bareme ou la
+/// convention de son mois ne la font refuser. Seul remonte ce qui rend les paies du salarie fausses : un fichier qui ne se
+/// lit pas, ou le meme contrat paye le meme mois par l'ancien logiciel et ici (`etats::paies_du_salarie`), que le refus
+/// nomme.
 /// Une maladie : la moitie (CSS R323-5) de 1/91,25 des trois dernieres paies des mois civils anterieurs a l'interruption
 /// (R323-4, 1°), chacune dans la limite de 1,4 SMIC du mois, au SMIC en vigueur le dernier jour du mois civil precedant
 /// l'interruption, sur la duree legale (R323-4, al. 5) ; le brut des paies, sans abattement (meme alinea), validees ou

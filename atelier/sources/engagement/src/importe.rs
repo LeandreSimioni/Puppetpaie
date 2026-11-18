@@ -7,8 +7,8 @@
 //!
 //! Ses mois sont valides et leurs documents sont partis : ce qui en est parti, c'est l'import lui-meme (les pieces de
 //! l'autre logiciel). SES MOIS REPRIS SE LISENT, ILS NE SE MODIFIENT PAS ET NE SE RECALCULENT JAMAIS : ils ne sont
-//! aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul, aucune declaration ni aucun document qui part
-//! ne les prend ; l'ecran ne peut ni les reecrire ni en poser un double (`stock::ecrire_la_carte`). Son numero de
+//! aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul ne les refait, aucune declaration ni aucun
+//! document qui part ne les prend (un calcul d'un autre mois lit ce qu'ils ont verse : `reprises_du_salarie`) ; l'ecran ne peut ni les reecrire ni en poser un double (`stock::ecrire_la_carte`). Son numero de
 //! contrat est celui que la DSN deposee lui a donne (S21.G00.40.009), jamais un numero tire : il compte parmi les
 //! numeros pris (`numeros`).
 //!
@@ -23,8 +23,10 @@
 //! se lit a partir de lui.
 //!
 //! Ce qui le lit : les cumuls des annexes 8 et 10 (`cumul`, par ce que le contrat atteste), le mois tenu avant
-//! PuppetPaie (`contrats_lus`, `paies_lues` : un contrat atteste, une paie versee), et les etats, qui lisent chacune de
-//! ses paies dans les mots du moteur (`Importe::paie`, par `etats::paies_du_mois`). L'import manipule les memes formes,
+//! PuppetPaie (`contrats_lus`, `paies_lues` : un contrat atteste, une paie versee), les etats, qui lisent chacune de
+//! ses paies dans les mots du moteur (`Importe::paie`, par `etats::paies_du_mois`), et les calculs qui lisent le
+//! salaire d'un autre mois, qui lisent ses paies telles que les pieces les disent, sans rien en calculer
+//! (`reprises_du_salarie`, par `etats::paies_du_salarie`). L'import manipule les memes formes,
 //! avec les bornes de leur engagement (`ContratLu`, `PaieLue`), de la lecture des pieces a l'ecriture (`Neuf`).
 
 use std::collections::BTreeMap;
@@ -797,10 +799,7 @@ impl Importe {
             // Ses lignes de remuneration sont celles du bulletin (`remuneration`) : il n'a aucune ligne saisie.
             lignes: Vec::new(),
             contrat,
-            numero: match self.carte().numero.clone() {
-                Some(n) => Some(n),
-                None => p.bulletin.as_ref().and_then(|b| b.contrat.clone()),
-            },
+            numero: self.numero_de_la_paie(p),
             mois,
             planning: Vec::new(),
             planning_lieux: BTreeMap::new(),
@@ -919,6 +918,79 @@ impl Importe {
             }),
         })
     }
+}
+
+impl Importe {
+    /// LE NUMERO DU CONTRAT QUE PAIE `p`, l'une de ses paies : celui de l'engagement, sinon celui que son bulletin
+    /// imprime ; `None` : aucun des deux ne le dit.
+    fn numero_de_la_paie(&self, p: &PaieVersee) -> Option<NumeroContrat> {
+        self.carte().numero.clone().or_else(|| p.bulletin.as_ref().and_then(|b| b.contrat.clone()))
+    }
+}
+
+impl PaieVersee {
+    /// LA CLE DE LA REPRISE DES CUMULS DE L'ANNEE (`droit::fiche::RepriseDesCumuls`) : une paie reprise d'un ancien
+    /// logiciel la donne, et elle seule ; ce que cet ancien logiciel avait cumule dans l'annee, ses pieces ne le disent
+    /// pas, la fiche du salarie le dit (`cumuls_reprise`, lu par `conges::cumul_de_l_annee`).
+    pub fn reprise_des_cumuls(&self) -> droit::fiche::RepriseDesCumuls {
+        droit::fiche::RepriseDesCumuls::d_une_paie_reprise()
+    }
+}
+
+/// UNE PAIE REPRISE DU SALARIE, TELLE QU'UN CALCUL D'UN AUTRE MOIS LA LIT (`reprises_du_salarie`) : ce qui a ete verse,
+/// tel que les pieces le disent (`PaieVersee`), et le numero du contrat qu'elle paie (`Importe::numero_de_la_paie`).
+/// Rien ne s'y range ni ne s'y calcule : ni la nature du contrat, ni le bareme ou la convention de son mois.
+#[derive(Debug, Clone, Serialize)]
+pub struct PaieReprise {
+    pub numero: Option<NumeroContrat>,
+    pub paie: PaieVersee,
+}
+
+/// LES PAIES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` REPRISES D'UN ANCIEN LOGICIEL, une par engagement
+/// importe qui le paie ce mois, telles que leurs pieces les disent (`PaieReprise`). Le calcul qui les lit note leur
+/// empreinte (`reprises <mois> <salarie>`, `empreinte_des_reprises`, par `etats::paies_du_salarie`).
+pub fn reprises_du_salarie(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieReprise>> {
+    let mut out = Vec::new();
+    for i in du_mois(racine, mois)? {
+        let Some(p) = i.paies().get(&mois) else { continue };
+        if i.cle_ecrite()? == *salarie {
+            out.push(PaieReprise { numero: i.numero_de_la_paie(p), paie: p.clone() });
+        }
+    }
+    Ok(out)
+}
+
+/// LA CLE DE LA REPRISE DES CUMULS QUE LA FICHE DU SALARIE `salarie` (la cle de sa fiche) MONTRE
+/// (`routes::fiches::montres`) : une paie reprise de lui, d'une annee civile qu'un engagement d'ici, actif, touche aussi.
+/// Les cumuls de l'annee d'une paie de cet engagement lisent alors cette paie reprise, et la reprise des cumuls de la
+/// fiche quand elle ne dit pas ce qu'ils comptent (`conges::cumul_de_l_annee`). `None` : aucun calcul ne la lit.
+pub fn reprise_des_cumuls_de(racine: &Path, salarie: &IdSalarie) -> R<Option<droit::fiche::RepriseDesCumuls>> {
+    let objets = stock::objets(racine)?;
+    let siens = objets.iter().filter(|o| o.carte().salarie.as_ref() == Some(salarie));
+    let mut reprises: Vec<(socle::mois::Annee, &PaieVersee)> = Vec::new();
+    let mut ici: Vec<(socle::mois::Annee, Option<socle::mois::Annee>)> = Vec::new();
+    for o in siens.filter(|o| !o.est_non_actif()) {
+        if let Some(p) = o.pieces() {
+            reprises.extend(p.paies.iter().map(|(m, paie)| (m.annee(), paie)));
+        }
+        if !o.importe_seul() {
+            ici.push((o.premier_mois().annee(), o.dernier_mois()?.map(Mois::annee)));
+        }
+    }
+    let touchee = |an: socle::mois::Annee| ici.iter().any(|(premier, dernier)| *premier <= an && dernier.is_none_or(|d| an <= d));
+    Ok(reprises.into_iter().find(|(an, _)| touchee(*an)).map(|(_, p)| p.reprise_des_cumuls()))
+}
+
+/// L'empreinte des paies reprises du salarie `salarie` en `mois` telles qu'un calcul les lit (`reprises_du_salarie`) :
+/// un reimport, un bulletin qui complete une paie de DSN, une ligne rattachee la changent, et la paie validee qui les a
+/// lues se recalcule.
+pub fn empreinte_des_reprises(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<socle::fichiers::Empreinte> {
+    Ok(empreinte_de(&reprises_du_salarie(racine, mois, salarie)?))
+}
+
+/// L'empreinte de paies reprises lues (`empreinte_des_reprises`).
+pub fn empreinte_de(reprises: &[PaieReprise]) -> socle::fichiers::Empreinte {
+    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&reprises).as_bytes())
 }
 
 /// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois.

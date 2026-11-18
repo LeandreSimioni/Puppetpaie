@@ -479,7 +479,8 @@ fn permanents_de(entreprise: &ChampsEntreprise) -> bool {
 /// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
-/// page ne montre que ces cases-la.
+/// reprise des cumuls de l'annee, sur la fiche d'un salarie enregistre, par une paie reprise de lui d'une annee qu'un
+/// engagement d'ici touche (`engagement::importe::reprise_des_cumuls_de`). La page ne montre que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, p: &engagement::permanents::Permanents) -> R<Montres> {
     let nom = donnees.nom();
     let au_mois = match nom {
@@ -496,19 +497,24 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     };
     let du_metier = cases_des_metiers(ctx, nom, cle, code_emploi)?;
     let (cse, casc) = if nom == NomDeFiche::Entreprise { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
+    let reprise = match (nom, cle) {
+        (NomDeFiche::Salarie, Some(c)) => engagement::importe::reprise_des_cumuls_de(&ctx.racine, c)?.is_some(),
+        _ => false,
+    };
     let ouverte = |piece: Piece, case: CaseDeFiche| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
         Piece::Metier | Piece::MetierAuMois => du_metier.contains(&case),
         Piece::Cse => cse,
         Piece::Casc => casc,
+        Piece::Reprise => reprise,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
     let cases = champs::fiche(nom)?.iter().filter(|c| donnees.montre(c, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
     // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
     let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
-    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
+    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc), (Piece::Reprise, reprise)]
         .into_iter()
         .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
         .collect();
