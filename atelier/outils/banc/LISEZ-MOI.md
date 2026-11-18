@@ -129,6 +129,21 @@ payer), le net imposable, le PAS au taux donné, et les cumuls de l'année par s
 l'import ne reprendrait pas entier : un libellé de ligne que le gabarit ne connaît pas ou sans rubrique sûre (pas de
 contrat), une ligne non soumise sur CoolPaie, un NIR ou un Siret à clé fausse, des dates hors de la période.
 
+Des cotisations vraisemblables s'écartent de ce que le moteur calcule, et l'import le signale. Une fictive dont la
+paie importée doit être juste (au gabarit sPAIEctacle) porte la paie de chaque bulletin, telle que le moteur la
+calcule : une compagnie qui a importé ces bulletins et dont la configuration est complète (le rejeu de son scénario) la
+donne, et l'outil l'écrit dans la description, qu'il réécrit (rien si un bulletin se refuse) ; puis on refait les PDF :
+
+```bash
+moteur-atelier remplir-bulletins description.json <racine de la compagnie>
+```
+
+Chaque bulletin s'y retrouve par son salarié (le NIR), son mois et sa période, que les dates de la paie importée
+contiennent (celles du contrat d'un permanent, quand la DSN reprise déclare ce mois) ; ses `cotisations` et son
+`net_imposable` sont ceux de la paie que la comparaison de l'import refait de lui (`engagement::ecarts::calculee`), son
+`pas` l'impôt prélevé au taux qu'il imprime. Un bulletin introuvable, ou dont le moteur refuse la paie, refuse le tout en
+le nommant.
+
 Une description minimale (identité inventée, règle 9 a : Siret de la famille `123456…` à clé de Luhn juste, NIR de la
 commune 999 à clé juste ; rien de réel) :
 

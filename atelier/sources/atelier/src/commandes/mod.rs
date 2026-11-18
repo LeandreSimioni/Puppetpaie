@@ -28,6 +28,8 @@ pub fn lancer(nom: &str, args: &[socle::ligne::Argument]) -> Option<std::process
     Some(match nom {
         // Les bulletins fictifs d'un logiciel precedent, pour une compagnie qui s'importe.
         "fabriquer-bulletins" => super::fabriquer_bulletins::commande(args),
+        // La paie de ces bulletins, telle que ce moteur la calcule, ecrite dans leur description.
+        "remplir-bulletins" => super::fabriquer_bulletins::commande_remplir(args),
         "generer-tables" => super::generer_tables::commande(args),
         "extraire" => super::extraire::commande(args),
         // Les codes (LEGI) et les conventions collectives (KALI) releves chez la DILA, dans `atelier/reference/sources`.

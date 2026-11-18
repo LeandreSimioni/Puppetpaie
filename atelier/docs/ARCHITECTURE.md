@@ -2363,7 +2363,16 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
-  sans couche, une ligne sans rubrique).
+  sans couche, une ligne sans rubrique). La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), et son salaire mensuel et ses heures par
+  mois dans les cases de sa carte, lus sur sa ligne de salaire en heures (« Heures », « Heure de travail » : les heures
+  auxquelles le salaire se rapporte, C. trav. R. 3243-1, 5°) d'un mois payé entier (`ecarts::salaire_imprime`) ; un
+  bulletin qui ne les imprime pas (une ligne « Salaire mensuel de base », qui ne dit pas ses heures), un mois partiel, le mois où le contrat finit ou une
+  autre ligne que ses repas et ses nuitées (ses congés, ses absences, ses primes, qui se disent en cases) ne se
+  comparent pas, et la raison dit ce qui manque au bulletin. Les bulletins des fictives disent ce que le moteur calcule de leur paie
+  (`moteur-atelier remplir-bulletins`, par `engagement::ecarts::calculee`, le même chemin) : leur rejeu exige que
+  chaque paie importée se compare, la compagnie complète, sans écart, au taux AT/MP de la compagnie (celui que la DSN
+  reprise déclare) (`moteur/tests/rejeu.rs`) ; un écart y est une régression du calcul.
 - **Le document accepté mais pas lu** (`importation/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique

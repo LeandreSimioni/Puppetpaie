@@ -472,6 +472,21 @@ pub fn du_versement(
         return rubriques_par_defaut(bareme, remuneration_nette_fiscale, le, contrat_court, zone);
     };
     let taux = t.taux;
+    let (soumis, prelevement) = au_taux_transmis(taux, remuneration_nette_fiscale);
+    Ok(Versement {
+        taux,
+        type_taux: t.r#type,
+        identifiant: Some(t.identifiant.clone()),
+        abattement: Montant::ZERO,
+        montant_soumis: soumis,
+        prelevement,
+    })
+}
+
+/// LE PRELEVEMENT D'UN VERSEMENT AU TAUX QUE LA DGFiP A TRANSMIS `taux` : le montant soumis (la remuneration nette fiscale
+/// au centime, sans abattement) et l'impot preleve au centime. Le chemin d'un taux recu (`du_versement`), et celui d'un
+/// taux qu'une paie importee imprime (`engagement::etats::prelevement_au_taux_imprime`).
+pub fn au_taux_transmis(taux: TauxDePas, remuneration_nette_fiscale: Montant) -> (Montant, Montant) {
     // UNE REMUNERATION NETTE FISCALE NEGATIVE N'EST PAS UNE ASSIETTE NEGATIVE. Fiche DSN 1810 « Remuneration nette fiscale
     // negative » (`atelier/reference/sources/suspension-non-remuneree/net-entreprises-fiche1810-rnf-negative-pas-20250322.txt`) :
     // « La rubrique « Montant soumis au PAS - S21.G00.50.013 » ne peut pas etre renseignee avec une valeur negative. Il
@@ -481,14 +496,7 @@ pub fn du_versement(
     // part patronale de sante reste due et se reintegre (CGI 83, 1° quater, meme dossier, `legi-extrait-code-general-des-
     // impots-20261015.md`).
     let soumis = plancher(remuneration_nette_fiscale.au_centime());
-    Ok(Versement {
-        taux,
-        type_taux: t.r#type,
-        identifiant: Some(t.identifiant.clone()),
-        abattement: Montant::ZERO,
-        montant_soumis: soumis,
-        prelevement: taux.prelevement(soumis).au_centime(),
-    })
+    (soumis, taux.prelevement(soumis).au_centime())
 }
 
 /// Le montant `x`, ou zero s'il est negatif (a zero, `x` lui-meme).

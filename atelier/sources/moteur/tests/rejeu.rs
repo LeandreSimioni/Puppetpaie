@@ -483,6 +483,26 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
     let exercices = outils::lire(&racine, "config/exercices.json");
     assert_eq!(exercices["clos"]["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
 
+    // LES PAIES IMPORTEES DE 2025 SONT CELLES QUE CE MOTEUR CALCULE : la compagnie complete, chacune se compare (le
+    // chemin de l'import et de l'ouverture, `engagement::ecarts::comparer`, comme si aucune ne l'etait encore), et aucune
+    // ne s'ecarte de ce qu'il calcule de sa saisie. Leurs bulletins disent ce que le moteur calcule
+    // (`moteur-atelier remplir-bulletins`) : un ecart ici est une regression du calcul. Le taux AT/MP de 2025 est celui
+    // que la DSN de decembre reprise declare (S21.G00.40.043), pose au 1er janvier par l'import : l'AT/MP se compare aussi.
+    let importes = engagement::importe::tous(&racine).unwrap();
+    let paies_importees: usize = importes.iter().map(|i| i.paies().len()).sum();
+    let comparaisons: Vec<engagement::ecarts::Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&racine, i, &|_| false)).collect();
+    assert!(paies_importees > 0 && comparaisons.len() == paies_importees, "{} paie(s) importee(s), {} comparee(s)", paies_importees, comparaisons.len());
+    let de_la_compagnie = Some(engagement::ecarts::OrigineDuTauxAtmp::Compagnie);
+    let ecartees: Vec<String> = comparaisons
+        .iter()
+        .filter(|c| !matches!(&c.ecarts, Ok(e) if e.is_empty()) || !c.non_rattachees.is_empty() || c.taux_atmp != de_la_compagnie)
+        .map(|c| match &c.ecarts {
+            Ok(e) => format!("{} : {:?} ; non rattachees : {:?} ; taux AT/MP : {:?}", c.mois, e, c.non_rattachees, c.taux_atmp),
+            Err(m) => format!("{} : non comparee : {}", c.mois, m.phrase),
+        })
+        .collect();
+    assert!(ecartees.is_empty(), "{} paie(s) importee(s) s'ecartent du calcul :\n{}", ecartees.len(), ecartees.join("\n"));
+
     // LE RELEVE, compare a l'oracle : chaque paie (brut, net, cout, et son PAS : taux, type, prelevement), chaque DSN
     // (chaque individu : contrat, taux et type de PAS, montant preleve ; chaque versement), chaque depot.
     let mut paies = serde_json::Map::new();

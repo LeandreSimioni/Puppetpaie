@@ -572,6 +572,23 @@ impl Importe {
         })
     }
 
+    /// LES DATES DU CONTRAT QUE PAIE `p`, l'une de ses paies : celles de l'engagement, sinon celles de la paie. Le contrat
+    /// d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin ; sans fin dite, un
+    /// autre finit avec la paie. `None` : ni l'engagement ni la paie ne disent son debut. Sa paie dans les mots du moteur
+    /// (`paie`) et la saisie que la comparaison refait (`ecarts`) le lisent.
+    pub(crate) fn contrat_de_la_paie(&self, p: &PaieVersee) -> R<Option<PeriodeOuverte>> {
+        Ok(Some(match (self.carte().contrat()?, p.periode) {
+            (Some(c), _) if c.fin().is_some() || self.permanent() => c,
+            (Some(c), paie) => match paie.and_then(|o| o.fin()) {
+                Some(fin) => c.fermee_au(fin)?.into(),
+                None => c,
+            },
+            (None, Some(o)) if self.permanent() => o.sans_fin(),
+            (None, Some(o)) => o,
+            (None, None) => return Ok(None),
+        }))
+    }
+
     /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
     fn nature_dite(&self) -> Option<NatureDeContrat> {
         self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature))
@@ -734,17 +751,8 @@ impl Importe {
             Some(e) => e.clone(),
             None => droit::emplois::EmploiEngagement::default(),
         };
-        // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
-        // Sans fin dite, un autre finit avec la paie.
-        let contrat = match (self.carte().contrat()?, p.periode) {
-            (Some(c), _) if c.fin().is_some() || self.permanent() => c,
-            (Some(c), paie) => match paie.and_then(|o| o.fin()) {
-                Some(fin) => c.fermee_au(fin)?.into(),
-                None => c,
-            },
-            (None, Some(o)) if self.permanent() => o.sans_fin(),
-            (None, Some(o)) => o,
-            (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
+        let Some(contrat) = self.contrat_de_la_paie(p)? else {
+            return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois));
         };
         let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
         let brut = p.brut;
