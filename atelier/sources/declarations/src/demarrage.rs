@@ -266,12 +266,15 @@ fn ligne(m: crate::champs::Manquant, piece: PieceQuiLaPorte, ou: String, onglet:
 
 /// LA PIECE QUI PORTE LA CASE `cle` DE LA FICHE `f` (`PieceQuiLaPorte::de_la_case`). L'import ne complete une case que
 /// vide (`routes::importation::completer`) : une case d'une structure deja entamee (une de ses cases dite, `dite`) ne
-/// recoit rien d'une DSN, elle se saisit.
-fn piece_de<F: droit::fiche::FicheSaisie>(f: &F, cle: &crate::champs::CheminDeFiche) -> PieceQuiLaPorte {
-    if cle.dans.is_some() && f.dite(cle.champ) {
+/// recoit rien d'une DSN, elle se saisit ; de meme un champ declare dont la forme lisible (`Manquant::ecran`) est deja
+/// dite : il se derive d'elle a l'ecriture, l'import ne le complete pas (`completer::champs_a_completer`).
+fn piece_de<F: droit::fiche::FicheSaisie>(f: &F, m: &crate::champs::Manquant) -> PieceQuiLaPorte {
+    let entamee = m.cle.dans.is_some() && f.dite(m.cle.champ);
+    let derivee = m.ecran.champ != m.cle.champ && f.dite(m.ecran.champ);
+    if entamee || derivee {
         PieceQuiLaPorte::Aucune
     } else {
-        PieceQuiLaPorte::de_la_case(F::NOM, cle)
+        PieceQuiLaPorte::de_la_case(F::NOM, &m.cle)
     }
 }
 
@@ -288,7 +291,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         if m.cle.seul() == Some(documents::conges_spectacles::CLE_ADHERENT.into()) && !intermittents {
             continue;
         }
-        let piece = piece_de(ent, &m.cle);
+        let piece = piece_de(ent, &m);
         out.push(ligne(m, piece, ENTREPRISE.0.to_string(), ENTREPRISE.1, None));
     }
     for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee()) {
@@ -300,7 +303,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         // sans NIR ne recoit rien d'une DSN, ce qui lui manque se saisit.
         let rattache = s.nir.dite().is_some();
         for m in crate::champs::manquants(&s.champs)? {
-            let piece = if rattache { piece_de(&s.champs, &m.cle) } else { PieceQuiLaPorte::Aucune };
+            let piece = if rattache { piece_de(&s.champs, &m) } else { PieceQuiLaPorte::Aucune };
             out.push(ligne(m, piece, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -313,7 +316,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             None => cle.to_string(),
         };
         for m in crate::champs::manquants(sp)? {
-            let piece = piece_de(sp, &m.cle);
+            let piece = piece_de(sp, &m);
             let mut l = ligne(m, piece, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.clone());
@@ -627,7 +630,7 @@ fn pose_atmp(an: socle::mois::Annee, t: droit::fiche::TauxAtmp) -> R<Option<Pose
 fn natures_par_une_dsn(ctx: &Contexte, salaries: &[droit::contexte::IdSalarie]) -> Vec<Manque> {
     let mut out = Vec::new();
     for cle in salaries {
-        let Some(s) = ctx.salaries.get(cle).filter(|s| s.nir.dite().is_some()) else { continue };
+        let Some(s) = ctx.salaries.get(cle).filter(|s| !s.archivee() && s.nir.dite().is_some()) else { continue };
         let nom = match s.nomme() {
             Some(n) => n,
             None => cle.to_string(),

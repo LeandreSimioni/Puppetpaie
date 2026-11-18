@@ -78,7 +78,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "titre, note, manques (chacun sa case, sa phrase, où il vit, la pièce qui la porterait ; une ligne d'un salarié dit qui), dsn (ce qu'une DSN pourrait donner, après un import sans DSN), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         phrase: 0,

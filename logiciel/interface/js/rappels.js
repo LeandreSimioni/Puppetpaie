@@ -302,10 +302,9 @@ document.addEventListener("click", async (e) => {
 });
 
 /* `pour-demarrer`, lu : la liste et ce que le moteur a posé. Une lecture
- * refusée ne garde rien de la précédente. */
+ * refusée laisse ce qui est peint et ce qu'on en sait tels quels : la liste
+ * à l'écran reste celle dont on lit les changements. */
 async function lireDemarrage(lu) {
-  DEMARRAGE = DEMARRAGE_VIDE;
-  POSES_DEMARRAGE = [];
   const pd = await lu("pour-demarrer");
   DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null };
   POSES_DEMARRAGE = pd.poses;
