@@ -54,6 +54,14 @@ pub struct Manque {
     pub qui: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub propose: Option<String>,
+    /// LES ANNEES DONT LA LIGNE DEMANDE L'EFFECTIF (`manques`) : chacune se dit par la route `effectif`, que
+    /// `pour-demarrer` rend en geste avec ce que les paies reprises en donnent (`effectifs`, `routes::rappels`).
+    #[serde(skip)]
+    pub annees_d_effectif: Vec<socle::mois::Annee>,
+    /// L'EFFECTIF QUE LES PAIES REPRISES DONNENT de ces annees (`engagement::effectif_repris`), que `route` calcule une
+    /// fois pour toutes les lignes ; `pour-demarrer` le rend avec ses gestes.
+    #[serde(skip)]
+    pub effectifs: Vec<engagement::effectif_repris::EffectifRepris>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,6 +93,8 @@ impl Manque {
             spectacle: None,
             qui: None,
             propose: None,
+            annees_d_effectif: Vec::new(),
+            effectifs: Vec::new(),
             phrase: None,
             pour: None,
             piece: None,
@@ -258,6 +268,8 @@ fn ligne(m: crate::champs::Manquant, piece: PieceQuiLaPorte, ou: String, onglet:
         spectacle: None,
         qui: salarie.map(|(_, n)| n.to_string()),
         propose: None,
+        annees_d_effectif: Vec::new(),
+        effectifs: Vec::new(),
         phrase: None,
         pour: None,
         piece: Some(piece),
@@ -376,6 +388,9 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.annee();
     let avant = an.precedente()?;
+    // Chaque ligne qui demande l'effectif dit ses annees (`annees_d_effectif`) : chacune se dit d'un geste (route
+    // `effectif`), et ce que les paies reprises en donnent s'y propose (`route`). Ce que l'Urssaf a renvoye et ce que la
+    // compagnie a dit ne se demandent pas : ils ne se proposent pas.
     let effectif = ctx.effectif()?;
     if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
@@ -383,17 +398,21 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", avant),
         };
-        out.push(manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
+        let mut l = manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?;
+        l.annees_d_effectif = effectif.a_dire(an);
+        out.push(l);
     } else if let Some(manquent) = annees_d_avant_a_dire(&effectif, an) {
         let annees = manquent.iter().map(socle::mois::Annee::to_string).collect::<Vec<_>>().join(", ");
-        out.push(Manque::bloquante(
+        let mut l = Manque::bloquante(
             "effectif",
             format!("L'effectif de {}", annees),
             "l'effectif de toute paie (seuils de 11 et 50 salariés)",
             ENTREPRISE,
             None,
-            "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), sous « Avancé », une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
-        ));
+            "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
+        );
+        l.annees_d_effectif = manquent;
+        out.push(l);
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
@@ -414,14 +433,18 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
                 }
                 // Sans la cle, l'effectif d'une des cinq annees d'avant manque : `a_dire` l'a demande plus haut.
                 Some(_) => {}
-                None => out.push(Manque::bloquante(
-                    "effectif",
-                    format!("L'effectif de {}", avant),
-                    "la contribution au FNAS de chaque paie",
-                    ENTREPRISE,
-                    None,
-                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", avant),
-                )),
+                None => {
+                    let mut l = Manque::bloquante(
+                        "effectif",
+                        format!("L'effectif de {}", avant),
+                        "la contribution au FNAS de chaque paie",
+                        ENTREPRISE,
+                        None,
+                        format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118).", avant),
+                    );
+                    l.annees_d_effectif = vec![avant];
+                    out.push(l);
+                }
             }
         }
         Ok(_) => {}
@@ -674,6 +697,17 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         }
         lignes.extend(natures_par_une_dsn(ctx, natures_a_dire));
     }
+    // L'EFFECTIF QUE LES PAIES REPRISES DONNENT (`engagement::effectif_repris`), calcule une fois pour les annees que les
+    // lignes demandent, et rendu a chacune pour les siennes.
+    let mut demandees: Vec<socle::mois::Annee> = lignes.iter().flat_map(|l| l.annees_d_effectif.iter().copied()).collect();
+    demandees.sort();
+    demandees.dedup();
+    if !demandees.is_empty() {
+        let repris = engagement::effectif_repris::effectifs_repris(ctx, &demandees)?;
+        for l in lignes.iter_mut() {
+            l.effectifs = repris.iter().filter(|e| l.annees_d_effectif.contains(&e.annee)).cloned().collect();
+        }
+    }
     for l in lignes.iter_mut() {
         let pour = match (&l.bloque, &l.utile, &l.sinon) {
             (Some(b), _, _) => format!("case exigée pour {}", b),
@@ -682,7 +716,9 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
         let propose: String = l.propose.iter().map(|p| format!(" Proposé : « {} ».", p)).collect();
-        l.phrase = Some(format!("{} › {} : {}.{}", l.ou, l.libelle, pour, propose));
+        // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer.
+        let effectifs: String = l.effectifs.iter().map(|e| format!(" {}", e.phrase)).collect();
+        l.phrase = Some(format!("{} › {} : {}.{}{}", l.ou, l.libelle, pour, propose, effectifs));
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
         l.pour = Some(format!("{}{}.", initiale, c.as_str()));

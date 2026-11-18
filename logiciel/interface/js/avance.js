@@ -140,8 +140,8 @@ function chargeDuGeste(bloc, g) {
 }
 
 /** Branche les boutons des gestes de `cible` : un geste sans case part avec sa charge ; un autre ouvre sa boîte.
- *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous). `apres` : après
- *  la réponse. */
+ *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
+ *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme. `apres` : après la réponse. */
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
@@ -158,6 +158,7 @@ async function faireLeGeste(g, entete, apres) {
     await apres();
   };
   if (!g.cases.length) { await partir(g.charge, false); return; }
+  const rendre = entete.pardessus ? mettreDeCote() : null;
   ouvrirBoite(`
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
     ${entete.dit ? `<p class="discret">${echapper(entete.dit)}</p>` : ""}
@@ -165,7 +166,7 @@ async function faireLeGeste(g, entete, apres) {
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="primaire" id="geste-ok">Enregistrer</button>
-    </div>`);
+    </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesListes(bloc);
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).

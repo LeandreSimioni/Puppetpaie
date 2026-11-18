@@ -325,7 +325,7 @@ impl EffectifsParAnnee {
             "Effectif de l'entreprise pour payer en {} : {}. Le seuil de {} salariés ne se franchit qu'après cinq années civiles \
 consécutives au-dessus (CSS, art. L. 130-1, II) : il manque l'effectif de {}. Une compagnie de moins de cinq ans dit la date \
 de sa première embauche (Configuration › Entreprise) ; une plus ancienne dit l'effectif de chacune de ces années, tel que \
-l'Urssaf l'a calculé (Configuration › Entreprise, Avancé, « Dire ou poser l'effectif », ou la route effectif). Le compte \
+l'Urssaf l'a calculé (Configuration › Entreprise, « Pour démarrer » ou Avancé, « Dire ou poser l'effectif », ou la route effectif). Le compte \
 rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
             annee_paie,
             if connues.is_empty() {

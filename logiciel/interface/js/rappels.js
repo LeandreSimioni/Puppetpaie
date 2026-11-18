@@ -130,6 +130,10 @@ function htmlDemarrage(manques) {
   const lien = (m) => `<button type="button" class="lien"${attributChamp(m.champ)}
         data-manque-onglet="${echapper(m.onglet)}"${qui(m)}>${echapper(m.ou)}</button>`;
   const pour = (m) => (m.pour ? `<div class="note">${echapper(m.pour)}</div>` : "");
+  // L'EFFECTIF DE CHAQUE ANNÉE QUE LA LIGNE DEMANDE (`effectifs`, du moteur) : ce que les paies reprises en donnent
+  // (sa phrase), et ses gestes, que le moteur rend et qu'`avance.js` dessine.
+  const effectifs = (m, i) => (m.effectifs || []).map((e, k) => `<div class="note" data-demarrage-effectif="${i}" data-demarrage-rang="${k}">
+      ${e.phrase ? `<p>${echapper(e.phrase)}</p>` : ""}${boutonsDesGestes(e.gestes)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
     const k = caseDuManque(m);
@@ -137,12 +141,14 @@ function htmlDemarrage(manques) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
+        ${effectifs(m, i)}
         ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
       <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
       ${pour(m)}
+      ${effectifs(m, i)}
       <div class="actions">${lien(m)}</div>
     </li>`;
   };
@@ -178,6 +184,21 @@ function brancherDemarrage(conteneur) {
     const sel = `[data-demarrage-liste="${li.closest(".demarrage-liste").dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"]`;
     brancherAide(sel);
     brancherTaxeSalaires(sel);
+  });
+  // LES GESTES DE L'EFFECTIF D'UNE ANNÉE (`effectifs[].gestes`, du moteur) : comme les autres sorties de la liste, ils
+  // demandent d'abord ce qu'il faut faire de ce qui est tapé et pas enregistré (`quitterDemarrage`) ; puis la
+  // liste se relit.
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage-effectif]").forEach((bloc) => {
+    const m = DEMARRAGE.manques[+bloc.dataset.demarrageEffectif];
+    const e = m && m.effectifs && m.effectifs[+bloc.dataset.demarrageRang];
+    if (!e) return;
+    bloc.querySelectorAll("[data-geste]").forEach((b) => {
+      const g = e.gestes[+b.dataset.geste];
+      b.onclick = async () => {
+        if (!(await quitterDemarrage())) return;
+        await faireLeGeste(g, { pardessus: true }, async () => { await relireEtat(); await repeindreDemarrage(); });
+      };
+    });
   });
 }
 

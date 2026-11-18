@@ -17,11 +17,11 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
-use socle::date::{Jour, Periode};
+use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
 use socle::grandeurs::ecrit::norme;
 use droit::pas::TauxDePas;
-use socle::grandeurs::{Coefficient, Effectif, Taux};
+use socle::grandeurs::{Effectif, Taux};
 
 use crate::journal::Ligne;
 use crate::retours::{IdDeFlux, NatureDuRetour};
@@ -204,78 +204,51 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 
 // ------------------------------------------------------------------ l'effectif
 
-/// L'effectif d'un mois, d'apres les DSN de ce mois (une par etablissement), comme R. 130-1 du code de la securite
-/// sociale le compte (`atelier/reference/sources/code-de-la-securite-sociale/articles-20261029.md`, « L'effectif au sens
-/// de la securite sociale ») : chaque personne titulaire d'un contrat compte a due proportion des jours du mois ou elle
-/// est employee (II, quatrieme alinea) ; a temps plein, entierement ; a temps partiel (S21.G00.40.014 = 20), au rapport
-/// de sa duree contractuelle a la duree de reference (dernier alinea de L. 1111-2 du code du travail : la quotite du
-/// contrat, S21.G00.40.013, sur celle de la categorie, S21.G00.40.012) ; un CDD qui remplace un salarie absent
-/// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
-/// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
-/// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
-fn effectif_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Effectif> {
-    let le_mois = Periode::du_mois(mois);
-    let n = le_mois.jours().count();
-    // La part de chaque jour ou une personne est employee : entiere a temps plein, le rapport de ses quotites a temps
-    // partiel.
-    let mut par_jour: BTreeMap<declarations::ntt::IdentifiantDIndividu, BTreeMap<Jour, Coefficient>> = BTreeMap::new();
+/// LES CONTRATS DES DSN DU MOIS `mois` (une par etablissement), tels que l'effectif les compte (`droit::effectif`) :
+/// ceux qui touchent le mois, chacun sa personne (son NIR, sinon son NTT), ses dates (la fin que le bloc 62 declare
+/// passe avant la sienne), son motif de recours (S21.G00.40.021) et son dispositif de politique publique
+/// (S21.G00.40.008), qui l'excluent du decompte avant que son temps de travail se lise ; puis son temps de travail : a
+/// temps partiel (S21.G00.40.014 = 20), sa quotite (S21.G00.40.013) sur celle de reference (S21.G00.40.012), dans
+/// l'unite de 40.011 ; entier sinon.
+fn contrats_du_mois(mois: Mois, dsn: &[DsnLue]) -> R<Vec<droit::effectif::ContratDansLEffectif<declarations::ntt::IdentifiantDIndividu>>> {
+    use droit::effectif::{ContratDansLEffectif, TempsDansLEffectif};
+    let le_mois = socle::date::Periode::du_mois(mois);
+    let mut out = Vec::new();
     for d in dsn {
         for k in &d.contrats {
-            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
-                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
-            };
-            let jours = par_jour.entry(qui).or_default();
-            if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
-                continue;
-            }
-            // La fin que le bloc 62 declare passe avant celle du contrat.
-            let contrat = match k.fin_declaree {
+            let periode = match k.fin_declaree {
                 Some(f) => k.periode.sans_fin().fermee_au(f)?.into(),
                 None => k.periode,
             };
-            let Some(presence) = contrat.croise(&le_mois) else { continue };
-            let poids = if k.modalite == Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
+            if periode.croise(&le_mois).is_none() {
+                continue;
+            }
+            let Some(qui) = d.individus[k.individu].identite.identifiant() else {
+                return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020"));
+            };
+            let temps = || {
+                if k.modalite != Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
+                    return Ok(TempsDansLEffectif::PLEIN);
+                }
                 let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
-                // 40.012 et 40.013 sont dans l'unite de 40.011 : leur rapport, le poids du contrat dans l'effectif (un
-                // nombre, ou l'effectif se compte encore).
-                match quotite.rapport(reference)? {
-                    Some(r) => r.min(Coefficient::UN),
-                    None => Coefficient::UN,
-                }
-            } else {
-                Coefficient::UN
+                TempsDansLEffectif::partiel(quotite, reference)
             };
-            for j in presence.jours() {
-                let p = jours.entry(j).or_insert(Coefficient::ZERO);
-                *p = (*p).max(poids);
-            }
+            out.push(ContratDansLEffectif::de(qui, periode, k.motif_recours, k.dispositif, temps)?);
         }
     }
-    let une_personne = Effectif::personnes(1);
-    Ok(par_jour.values().map(|jours| (une_personne * jours.values().copied().sum::<Coefficient>()).reparti_sur(n)).sum())
+    Ok(out)
 }
 
-/// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
-/// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale,
-/// `atelier/reference/sources/code-de-la-securite-sociale/xml/R130-1.xml` : « il n'est pas tenu compte de la fraction
-/// d'effectif au-delà de la deuxième décimale ») : un effectif, pas un montant. `None` quand aucun mois n'a de salarie.
+/// L'effectif salarie annuel d'apres les DSN de l'annee, mois par mois (L. 130-1, I, et R. 130-1 du code de la
+/// securite sociale : `droit::effectif`). `None` quand aucun mois n'a de salarie.
 fn effectif_annuel(dsn_par_mois: &BTreeMap<Mois, Vec<DsnLue>>) -> R<Option<Effectif>> {
-    let mut mois: Vec<Effectif> = Vec::new();
+    let mut mois: Vec<Option<Effectif>> = Vec::new();
     for (m, d) in dsn_par_mois {
-        let e = effectif_du_mois(*m, d)?;
-        if e > Effectif::ZERO {
-            mois.push(e);
-        }
+        mois.push(droit::effectif::effectif_du_mois(*m, &contrats_du_mois(*m, d)?));
     }
-    if mois.is_empty() {
-        return Ok(None);
-    }
-    let moyenne = mois.iter().copied().sum::<Effectif>().reparti_sur(mois.len());
-    // Le milliardieme ajoute avant de tronquer : un quotient qui tombe juste sur un centieme (un tiers fois trois)
-    // s'ecrit en decimal une unite du dernier chiffre en dessous, et ne doit pas perdre ce centieme.
-    Ok(Some((moyenne + Effectif::UN_MILLIARDIEME).tronque_au_centieme()))
+    Ok(droit::effectif::effectif_annuel(mois))
 }
 
 // ------------------------------------------------------------------ ce que le simulateur rend

@@ -81,7 +81,9 @@ pub static TEXTES: &[Texte] = &[
             // reste sous onze salaries douze mois consecutifs (L2313-10) :
             // `contexte::EffectifsParAnnee::cse` ouvre la representation du personnel
             // tant qu'un comite peut exister.
-            Domaine { cle: "effectif_cse", titre: "L'effectif qui compte pour le comite social et economique", numeros: &["L1111-2", "L2311-2", "L2313-10", "L2314-33", "L2314-34", "L2315-61"] },
+            // L1111-3 : ceux que l'effectif ne compte pas (apprentis, contrats aides, professionnalisation), auquel
+            // renvoie aussi R130-1, III du code de la securite sociale (`droit::effectif`).
+            Domaine { cle: "effectif_cse", titre: "L'effectif qui compte pour le comite social et economique", numeros: &["L1111-2", "L1111-3", "L2311-2", "L2313-10", "L2314-33", "L2314-34", "L2315-61"] },
             // LES MAJORATIONS DES EMPLOYEURS AFFILIES A UNE CAISSE DE CONGES.
             // L243-1-3 du code de la securite sociale
             // cite ces articles-la : la caisse (L3141-32), les contributions

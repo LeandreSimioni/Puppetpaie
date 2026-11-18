@@ -14,7 +14,7 @@ use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{CaseDeFiche, CaseDeclarantDsn, CaseEntreprise, CaseSalarie, NomDeCase, NomDeFiche};
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
+use droit::natures::{DispositifDePolitiquePublique, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::type_taux_pas::TypeDeTauxPas;
 use droit::pas::TauxDePas;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
@@ -329,6 +329,8 @@ pub struct ContratDeclare {
     pub emploi: EmploiDeclare,
     /// .007, la nature du contrat.
     pub nature_dsn: Option<String>,
+    /// .008, le dispositif de politique publique.
+    pub dispositif: Option<DispositifDePolitiquePublique>,
     /// .009.
     pub numero: Option<NumeroContrat>,
     /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
@@ -461,6 +463,7 @@ impl ContratDeclare {
             periode,
             emploi: EmploiDeclare::default(),
             nature_dsn: None,
+            dispositif: None,
             numero: None,
             unite_quotite: None,
             quotite_reference: None,
@@ -1189,6 +1192,10 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             MotifDeRecours::RUBRIQUE => {
                 let m = fautes.code(rub, &v);
                 contrat.into_iter().for_each(|c| c.motif_recours = m);
+            }
+            DispositifDePolitiquePublique::RUBRIQUE => {
+                let d = fautes.code(rub, &v);
+                contrat.into_iter().for_each(|c| c.dispositif = d);
             }
             S21_60_002 => {
                 let jour = fautes.jour(rub, &v);
