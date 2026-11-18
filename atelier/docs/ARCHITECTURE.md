@@ -2868,11 +2868,12 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   de chaque année demandée dont des paies sont reprises, calculé selon R. 130-1 (`droit::effectif`, la règle même de
   l'Urssaf simulée) depuis les contrats que ces paies paient (`engagement::effectif_repris`) ; la moyenne ne prend que
   les mois dont une paie est reprise, et la phrase nomme les autres. Rien ne se pose sans le geste qui le confirme (la
-  route `effectif`, une fiche `Geste` : `pour-demarrer` rend, pour chaque année que la ligne demande, `effectifs` et
+  route `effectif`, qui reste aussi sous « Avancé » : `pour-demarrer` rend, pour chaque année que la ligne demande, `effectifs` et
   leurs `gestes`, « Confirmer » la valeur proposée ou « Dire l'effectif » dans sa boîte, que `js/avance.js` dessine). Une
   proposition est juste ou ne se fait pas, et sa phrase dit pourquoi : une paie dont le contrat ne se compte pas (sa
-  nature, son motif de recours d'un CDD, les heures d'un permanent, les dates d'un CDDU qu'un bulletin seul atteste : aucune
-  pièce sûre ne les dit) fait taire l'année de sa paie ; une année dont un mois se paie ici, celle de la première embauche
+  nature, son motif de recours d'un CDD, les heures d'un permanent : aucune pièce ne les dit) fait taire l'année de sa
+  paie ; un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime, celle que l'import
+  lui donne partout, et la phrase le dit (trop haut si elle dépasse le contrat, jamais trop bas) ; une année dont un mois se paie ici, celle de la première embauche
   sans paie reprise du mois de l'embauche (L. 130-1, I, troisième alinéa : l'effectif présent le dernier jour de ce mois,
   qui se propose quand ce mois est repris), et, sans date de première embauche, celle de la plus ancienne paie reprise
   (peut-être celle de l'embauche) ne se proposent pas. Ce qu'aucune paie reprise ne distingue (les exclus de L. 1111-3

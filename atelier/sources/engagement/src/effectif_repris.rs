@@ -57,10 +57,12 @@ fn heures_du_contrat(i: &Importe, contrat: PeriodeOuverte, mois: Mois, p: &PaieV
 ///
 /// SES DATES (R. 130-1, II, quatrieme alinea : « à due proportion du nombre de jours du mois pendant lequel elles ont été
 /// employées ») : celles du contrat (`Importe::contrat_de_la_paie`). Le contrat d'un permanent ne se compte que du mois
-/// paye : des mois d'apres, les pieces ne disent rien. Les autres (le CDDU) n'ont leurs dates de facon sure que d'une
-/// DSN deposee (S21.G00.40.001, .010) ou d'une AEM (le contrat imprime, `import::aem_lu`) : un bulletin seul imprime la
-/// periode qu'il paie, qui peut etre le mois entier pour deux jours de cachets, et les jours travailles qu'il imprime ne
-/// sont pas les dates du contrat.
+/// paye : des mois d'apres, les pieces ne disent rien. Les autres (le CDDU) ont leurs dates d'une DSN deposee
+/// (S21.G00.40.001, .010) ou d'une AEM (le contrat imprime, `import::aem_lu`) ; connu par son seul bulletin, le contrat a
+/// les dates que l'import lui donne partout, la periode que le bulletin imprime (`Importe::contrat_de_la_paie`), et le
+/// second terme rendu le dit (`vrai`) : un logiciel qui imprimerait le mois entier pour deux jours de cachets ferait
+/// compter trop, jamais trop peu, et la phrase de la proposition le dit a la compagnie qui confirme (Léandre,
+/// 18/11/2026 : « j'ai donné tous les bulletins de paie, il devrait prendre ça comme acquis »).
 ///
 /// SON TEMPS DE TRAVAIL (troisieme alinea) : temps plein ou partiel au sens de L. 3123-1 du code du travail ; a temps
 /// partiel, ses heures par mois (`heures_du_contrat`) sur la plus courte de la duree de reference et de la duree legale,
@@ -70,7 +72,7 @@ fn heures_du_contrat(i: &Importe, contrat: PeriodeOuverte, mois: Mois, p: &PaieV
 /// compte entier, a due proportion des jours de son contrat.
 ///
 /// Refus, qui nomme le salarie : ce qu'aucune piece ne dit et dont le compte depend.
-fn contrat_repris(ctx: &Contexte, i: &Importe, mois: Mois, p: &PaieVersee) -> R<ContratDansLEffectif<IdSalarie>> {
+fn contrat_repris(ctx: &Contexte, i: &Importe, mois: Mois, p: &PaieVersee) -> R<(ContratDansLEffectif<IdSalarie>, bool)> {
     let cle = i.cle_ecrite()?;
     let qui = ctx.nomme(&cle);
     let Some(nature) = i.nature() else {
@@ -84,14 +86,7 @@ fn contrat_repris(ctx: &Contexte, i: &Importe, mois: Mois, p: &PaieVersee) -> R<
     let Some(contrat) = i.contrat_de_la_paie(p)? else {
         return Err(socle::refus!("ni l'engagement repris ni la paie de {} ne disent le début du contrat de {}", mois.libelle(Graphie::Accentuee), qui));
     };
-    let dates_sures = i.permanent() || p.contrat.numero_declare().is_some() || i.contrat().is_some_and(|c| c.atteste_par == Attestation::Aem);
-    if !dates_sures {
-        return Err(socle::refus!(
-            "le contrat de {} payé en {} n'est connu que par son bulletin, qui imprime la période payée et non les dates du contrat : la DSN déposée les donnerait",
-            qui,
-            mois.libelle(Graphie::Accentuee)
-        ));
-    }
+    let du_bulletin_seul = !(i.permanent() || p.contrat.numero_declare().is_some() || i.contrat().is_some_and(|c| c.atteste_par == Attestation::Aem));
     let periode: PeriodeOuverte = match contrat.fin() {
         Some(_) => contrat,
         None => crate::contrat_dans_le_mois(&contrat, mois, &qui)?.into(),
@@ -116,8 +111,11 @@ fn contrat_repris(ctx: &Contexte, i: &Importe, mois: Mois, p: &PaieVersee) -> R<
         };
         TempsDansLEffectif::partiel(QuotiteDuContrat::Heures(heures), QuotiteDuContrat::Heures(reference)).map_err(|e| e.reformuler(|m| format!("le contrat de {} : {}", qui, m)))
     };
-    ContratDansLEffectif::de(cle, periode, motif_recours, None, temps)
+    Ok((ContratDansLEffectif::de(cle, periode, motif_recours, None, temps)?, du_bulletin_seul))
 }
+
+/// CE QUE LA COMPAGNIE CONFIRME AVEC LA VALEUR quand un contrat d'usage de l'annee n'est connu que par son bulletin.
+const PAR_LE_BULLETIN_SEUL: &str = "Un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime : si elle est plus longue que le contrat, l'effectif est compté trop haut ; une DSN déposée donnerait ses dates.";
 
 /// L'effectif dit dans une phrase : au centieme, la virgule decimale, « salarié » au singulier sous deux.
 fn dit(e: Effectif) -> String {
@@ -161,11 +159,17 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<Vec<EffectifRepri
     let mut contrats: Vec<ContratDansLEffectif<IdSalarie>> = Vec::new();
     let mut manques: Vec<(Annee, String)> = Vec::new();
     let mut repris: BTreeSet<Mois> = BTreeSet::new();
+    let mut par_le_bulletin: BTreeSet<Annee> = BTreeSet::new();
     for i in &importes {
         for (mois, p) in i.paies() {
             repris.insert(*mois);
             match contrat_repris(ctx, i, *mois, p) {
-                Ok(c) => contrats.push(c),
+                Ok((c, du_bulletin_seul)) => {
+                    if du_bulletin_seul {
+                        par_le_bulletin.insert(mois.annee());
+                    }
+                    contrats.push(c);
+                }
                 Err(e) if e.dit_un_manque() => manques.push((mois.annee(), e.phrase)),
                 Err(e) => return Err(e),
             }
@@ -180,6 +184,11 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<Vec<EffectifRepri
             continue;
         }
         let rien = |phrase: String| EffectifRepris { annee: *an, valeur: None, phrase };
+        // Ce que la compagnie confirme avec la valeur.
+        let a_savoir = match par_le_bulletin.contains(an) {
+            true => format!("{} {}", PAR_LE_BULLETIN_SEUL, SANS_L_1111_3),
+            false => SANS_L_1111_3.to_string(),
+        };
         // Les mois que la saisie d'ici touche.
         let mut ici = Vec::new();
         for m in an.les_mois() {
@@ -234,7 +243,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<Vec<EffectifRepri
                         m.libelle(Graphie::Accentuee),
                         dit(e),
                         dernier.jj_mm_aaaa(),
-                        SANS_L_1111_3
+                        a_savoir
                     ),
                 });
                 continue;
@@ -258,7 +267,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<Vec<EffectifRepri
             _ => format!(" Aucune paie reprise en {} : la moyenne ne compte que les mois repris.", mois_dits(&sans_paie)),
         };
         out.push(match droit::effectif::effectif_annuel(par_mois) {
-            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("D'après les paies reprises de {} : {}.{} {}", an, dit(e), manquent, SANS_L_1111_3) },
+            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("D'après les paies reprises de {} : {}.{} {}", an, dit(e), manquent, a_savoir) },
             None => rien(format!("Les paies reprises de {} ne comptent aucun salarié employé.{}", an, manquent)),
         });
     }
