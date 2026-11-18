@@ -305,9 +305,9 @@ function dessinerConfig() {
 }
 
 /* ---------------------------------------------------- reprendre l'historique
-   Deux temps, et jamais un seul : l'aperçu dit ce qui serait créé et ce que
-   les DSN disaient autrement que les fiches ; le bouton n'écrit qu'après.
-   Une fiche existante reçoit seulement ce qui y est vide ou « A COMPLETER »
+   « Importer » reprend d'un geste, et se rejoue ; l'aperçu (sous « Avancé »)
+   dit, sans rien écrire, ce qui serait créé et ce que les DSN disaient
+   autrement que les fiches. Une fiche existante reçoit seulement ce qui y est vide ou « A COMPLETER »
    (`import::completer`) ; tout champ rempli fait foi, l'écart
    est signalé, un changement se date à la main.
 
@@ -334,12 +334,15 @@ const fenetreDuPoste = () => !!window.fenetrePuppetPaie;
 
 /* REPRENDRE L'HISTORIQUE : une
    logique simple : ils mettent tout dans import/, ou ils choisissent un
-   dossier avec tout dedans. La page ne sert qu'une fois : le jour où une
-   compagnie arrive avec l'historique d'un autre logiciel. Un dossier, celui
+   dossier avec tout dedans. Un dossier, celui
    de la compagnie prérempli ; « Parcourir… » pour en prendre un autre ;
-   « Ouvrir le dossier » pour y déposer les fichiers ; puis l'aperçu. Aucun
-   logiciel n'est nommé. Si l'historique est repris, l'état le dit en une
-   ligne, et « Relire un dossier » reste pour ce qui manquait. */
+   « Ouvrir le dossier » pour y déposer les fichiers ; puis « Importer ».
+   Aucun logiciel n'est nommé. UN SEUL CHEMIN, avant comme après une
+   première reprise : on ajoute au dossier et on relance l'import, qui ne
+   reprend que le neuf (`guide.rejouer`, du moteur). Une fois l'historique
+   repris, l'état le dit en une ligne, ce qui reste à dire se peint
+   au-dessus, et le guide se replie. L'aperçu, qui n'écrit rien, est hors
+   du chemin simple (`guide.avance`). */
 async function dessinerImportation(cible) {
   let e;
   try { e = await api("importation-etat"); } catch (err) {
@@ -348,44 +351,31 @@ async function dessinerImportation(cible) {
   }
   if (!IMPORT_DOSSIER) IMPORT_DOSSIER = e.dossier;
   const deja = e.reprises.length || e.contrats;
-  const dossier = `<div class="e-contrat-champs">
-      <label style="flex:1">Le dossier
-        <span style="display:flex;gap:6px">
-          <input type="text" id="import-dossier" style="flex:1" title="${aideDe("import_dossier")}"
-                 value="${echapper(IMPORT_DOSSIER)}">
-          <button type="button" class="secondaire" id="import-parcourir">Parcourir…</button>
-          ${fenetreDuPoste() ? `<button type="button" class="secondaire" id="import-ouvrir">Ouvrir le dossier</button>` : ""}
-        </span>
-      </label>
-      ${deja ? `<button class="secondaire" id="import-apercu">Aperçu</button>` : ""}
-    </div>`;
-  if (deja) {
-    cible.innerHTML = `
-    <div class="carte">
-      <div id="import-etat">${vueEtatImportation(e)}</div>
-      <details class="relire"><summary>Relire un dossier <span class="discret">— ${aideDe("import_relire")}</span></summary>
-          <p class="note">${aideDe("import_relire_note")}</p>
-          <p class="intro">${aideDe("import_relire_intro")}</p>
-          ${dossier}
-          <div id="import-resultat"></div>
-        </details>
-    </div>`;
-  } else {
-    // RIEN N'EST ENCORE REPRIS : le guide (`importation-etat`, `guide`, du moteur), le dossier, et « Importer », qui
-    // reprend tout d'un geste. Ce qui reste à dire (`import-etat`, `import-demarrage`) se peint au-dessus après lui.
-    cible.innerHTML = `
+  const guide = vueGuideImport(e.guide);
+  cible.innerHTML = `
     <div class="carte">
       <div id="import-etat">${vueEtatImportation(e)}</div>
       <div id="import-demarrage"></div>
-      <div id="import-guide">${vueGuideImport(e.guide)}
-        ${dossier}
-        <p><button class="primaire" id="import-tout">Importer</button>
-          <button type="button" class="lien" id="import-apercu">Aperçu d'abord</button></p>
+      <div id="import-guide">${deja ? `<details class="relire"><summary>${echapper(e.guide.replie)}</summary>${guide}</details>` : guide}</div>
+      <p class="note">${echapper(e.guide.rejouer)}</p>
+      <div class="e-contrat-champs">
+        <label style="flex:1">Le dossier
+          <span style="display:flex;gap:6px">
+            <input type="text" id="import-dossier" style="flex:1" title="${aideDe("import_dossier")}"
+                   value="${echapper(IMPORT_DOSSIER)}">
+            <button type="button" class="secondaire" id="import-parcourir">Parcourir…</button>
+            ${fenetreDuPoste() ? `<button type="button" class="secondaire" id="import-ouvrir">Ouvrir le dossier</button>` : ""}
+          </span>
+        </label>
       </div>
+      <p><button class="primaire" id="import-tout">Importer</button></p>
+      <details><summary>${echapper(e.guide.avance)}</summary>
+        <button type="button" class="lien" id="import-apercu">${echapper(e.guide.apercu)}</button></details>
       <div id="import-resultat"></div>
     </div>`;
-    document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
-  }
+  document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
+  // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
+  if (deja) peindreDemarrage(document.getElementById("import-demarrage"));
   document.getElementById("import-apercu").onclick = () => apercuImportation();
   // L'EXPLORATEUR : la boîte du système, ouverte par la fenêtre.
   document.getElementById("import-parcourir").onclick = async () => {
@@ -399,30 +389,36 @@ async function dessinerImportation(cible) {
   if (ouvrir) ouvrir.onclick = () => ouvrirEtDire(document.getElementById("import-dossier").value.trim() || e.dossier, "", true);
 }
 
-/* LE GUIDE DE L'IMPORT (`import::guide`, du moteur) : ce qu'on met dans le
-   dossier, ce que le logiciel lit de chaque pièce, ce qui restera à dire. La
-   page le montre tel quel. */
+/* LE GUIDE DE L'IMPORT (`import::guide`, du moteur) : l'essentiel d'abord
+   (les bulletins, une DSN déposée, un dossier), puis ce qu'on peut mettre si
+   des documents manquent ; ce que le logiciel lit de chaque pièce se déplie.
+   La page le montre tel quel. */
 function vueGuideImport(g) {
-  const pieces = g.pieces.map((p) => `<div class="guide-piece">
+  const piece = (p) => `<div class="guide-piece">
       <b>${echapper(p.quoi)}</b>
       <div class="note">${echapper(p.ou)}</div>
-      ${p.lu.length ? `<ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
-    </div>`).join("");
+      ${p.lu.length ? `<details><summary>${echapper(g.ce_qui_s_en_lit)}</summary><ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul></details>` : ""}
+    </div>`;
   return `<h3>Reprendre votre passé</h3>
-    <p class="intro">${aideDe("import_intro")}</p>
-    ${g.a_quoi_sert.length ? `<ul>${g.a_quoi_sert.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
+    <ul>${g.essentiel.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>
+    <div class="guide-pieces">${g.essentielles.map(piece).join("")}</div>
+    <p class="intro">${echapper(g.si_manquent)}</p>
+    <div class="guide-pieces">${g.autres.map(piece).join("")}</div>
     <p class="note">${echapper(g.accepte)}</p>
-    <div class="guide-pieces">${pieces}</div>
     <p class="note">${echapper(g.reste)}</p>
     <p class="note">${echapper(g.rien_n_est_perdu)}</p>`;
 }
 
-/* « IMPORTER », D'UN GESTE : le moteur reprend tout (`importer`), puis la page
-   montre, au-dessus, ce qui reste à dire — la nature des contrats repris, les
-   congés à reprendre (`importation-etat`) et ce qui manque encore pour
-   démarrer (`pour-demarrer`) — et, dessous, ce qui a été repris. */
-async function importerDepuisLeGuide() {
-  IMPORT_DOSSIER = document.getElementById("import-dossier").value.trim();
+/* « IMPORTER », D'UN GESTE, la première fois comme les suivantes : le moteur
+   reprend le neuf (`importer`), puis la page se redessine — au-dessus, ce
+   qui reste à dire (la nature des contrats repris, `importation-etat` ; ce
+   qu'une DSN donnerait et ce qui se saisit, `pour-demarrer`) — et, dessous,
+   ce qui a été repris. */
+async function importerDepuisLeGuide(dossier) {
+  // `dossier` : celui que l'aperçu a lu (« Reprendre » reprend ce qu'il a montré) ; sinon, celui de la case.
+  const champ = document.getElementById("import-dossier");
+  if (dossier !== undefined) champ.value = dossier;
+  IMPORT_DOSSIER = champ.value.trim();
   const rendre = occupe(document.getElementById("import-tout"), "Import…");
   await ecrireImportation();
   rendre();
@@ -431,7 +427,7 @@ async function importerDepuisLeGuide() {
   try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
   if (!(etat.reprises.length || etat.contrats)) return;
   const guide = document.getElementById("import-guide");
-  if (guide) guide.hidden = true;
+  if (guide) guide.innerHTML = `<details class="relire"><summary>${echapper(etat.guide.replie)}</summary>${vueGuideImport(etat.guide)}</details>`;
   const demarrage = document.getElementById("import-demarrage");
   if (demarrage) await peindreDemarrage(demarrage);
   document.getElementById("import-etat").scrollIntoView({ block: "start" });
@@ -692,9 +688,10 @@ function vueImportation(r) {
     ${bouton}`;
 }
 
-function brancherImportation() {
+function brancherImportation(dossier) {
   const b = document.getElementById("import-ecrire");
-  if (b) b.onclick = () => ecrireImportation();
+  // « Reprendre », sous l'aperçu, est le même geste qu'« Importer », sur le dossier que l'aperçu a lu.
+  if (b) b.onclick = () => importerDepuisLeGuide(dossier);
 }
 
 async function apercuImportation() {
@@ -705,9 +702,10 @@ async function apercuImportation() {
   cible.innerHTML = `<p class="discret">Lecture…</p>`;
   try {
     // Un dossier vide part absent : la boîte import/ de la compagnie.
-    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER || null });
+    const lu = IMPORT_DOSSIER;
+    const r = await api("importation-apercu", { dossier: lu || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(lu);
   } catch (e) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
   } finally {
@@ -722,7 +720,7 @@ async function ecrireImportation() {
   try {
     const r = await api("importer", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(IMPORT_DOSSIER);
     // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
     // dans les déroulants de la saisie, sans recharger la page.
     await relireEtat();

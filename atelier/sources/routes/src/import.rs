@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -60,7 +60,8 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        // Hors du chemin simple : on met les pieces dans le dossier et on importe (`importer` se rejoue).
+        ecran: Ecran::DessineAvance(Place::Import),
     },
     Fiche {
         route: Route::Importer,
@@ -744,7 +745,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
             socle::phrase!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
         (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
-        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent."),
+        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans un dossier, choisissez-le, puis importez."),
     };
     Ok(EtatImportation {
         phrase,

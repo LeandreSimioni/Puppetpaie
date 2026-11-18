@@ -78,7 +78,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "titre, note, manques (chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -295,7 +295,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                 Some((pose, pastille)) => (Some(pose), Some(pastille)),
                 None => (None, None),
             };
-            let d = declarations::demarrage::route(ctx, proposes, simule)?;
+            // Ce qu'une DSN pourrait donner se range a part quand l'import n'en a repris aucune.
+            let repris = crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?;
+            let d = declarations::demarrage::route(ctx, proposes, simule, repris)?;
             // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
             let n = d.poses.len();
             let poses = d
@@ -310,7 +312,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
+            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -1627,6 +1629,9 @@ struct PourDemarrerVu {
     titre: String,
     note: String,
     manques: Vec<Manque>,
+    /// Ce qu'une DSN pourrait donner, quand l'import n'en a repris aucune (`declarations::demarrage::ParUneDsn`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dsn: Option<declarations::demarrage::ParUneDsn>,
     poses: Vec<PoseVue>,
 }
 

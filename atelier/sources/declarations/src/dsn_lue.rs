@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
+use droit::fiche::{CaseDeFiche, CaseDeclarantDsn, CaseEntreprise, CaseSalarie, NomDeCase, NomDeFiche};
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
@@ -802,6 +803,137 @@ impl EntrepriseDeclaree {
         prendre(&mut self.france_travail_dossier_recouvrement, &r.france_travail_dossier_recouvrement);
         prendre(&mut self.declarant_dsn, &r.declarant_dsn);
         prendre(&mut self.medecine_travail, &r.medecine_travail);
+    }
+
+    /// LES CASES DE LA FICHE ENTREPRISE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE D'UN EMPLOYEUR DU SPECTACLE
+    /// REMPLIT, sans autre condition (`import::dsn_aem::fiche_entreprise` les passe a la fiche, `routes::import::
+    /// fiche_entreprise` y ajoute le Siret et la licence ; une fiche qui existe les recoit si elles y sont vides,
+    /// `routes::importation::completer`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas : un champ de
+    /// plus ne compile pas ici tant qu'il n'est pas range. Le contact (`declarant_dsn`) se juge case par case
+    /// (`PieceQuiLaPorte::de_la_case`).
+    fn cases_remplies() -> Vec<CaseEntreprise> {
+        let _chaque_champ_est_range = |e: &EntrepriseDeclaree| {
+            let EntrepriseDeclaree {
+                naf: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                idcc: _,
+                // « 97 puis le numero d'adherent » (S21.G00.40.022), que la norme impose a la caisse Conges Spectacles
+                // (CRE-11) ; « Pour demarrer » ne le demande qu'a une compagnie qui engage des intermittents.
+                adherent_conges_spectacles: _,
+                // Celle de l'emetteur (S10.G00.01.003, obligatoire), quand l'emetteur est l'entreprise : la DSN que
+                // la compagnie depose elle-meme ; celle qu'un cabinet depose porte le nom du cabinet, que la lecture ne
+                // prend pas.
+                raison_sociale: _,
+                // S21.G00.40.049, que la DSN porte quand la licence est exigee (`demarrage::licence_exigee`).
+                licence: _,
+                // Le Siren et le NIC : « Pour demarrer » demande le Siret qu'ils font (`Siret` ci-dessous).
+                siren: _,
+                nic: _,
+                // Le compte qui paie : la DSN ne le porte que pour un prelevement (« Si la rubrique "Mode de paiement -
+                // S21.G00.20.010" est renseignée avec la valeur "05 - prélèvement SEPA", alors la rubrique "IBAN -
+                // S21.G00.20.004" est obligatoire », CCH-12, `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`
+                // l. 425-426), et la lecture ne le garde que si tous les versements disent le meme : pas de toute DSN.
+                banque: _,
+                // La medecine du travail : la lecture ne garde que la medecine interne (« MT01 », S21.G00.11.025) ; un
+                // service externe ne se reprend pas.
+                medecine_travail: _,
+                // Rien de « Pour demarrer » ne le demande.
+                france_travail_dossier_recouvrement: _,
+                // Le contact (S20.G00.07, obligatoire) : case par case, sa civilite exceptee (`de_la_case`).
+                declarant_dsn: _,
+            } = e;
+        };
+        use CaseEntreprise::*;
+        // Le taux AT/MP de l'annee : S21.G00.40.043, obligatoire hors du code risque 999ZZ (SIG-11,
+        // `bloc-S21.G00.40.txt` l. 1311-1313), pose par `routes::importation::parametrage::poser_atmp` pour l'annee de la
+        // DSN quand tous ses contrats disent le meme.
+        vec![Naf, Adresse, CodePostal, Commune, Idcc, CongesspectaclesAdherent, RaisonSociale, LicenceSpectacle, Siret, TauxAtmp]
+    }
+}
+
+impl IndividuDeclare {
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE REMPLIT
+    /// (`import::dsn_aem::SalarieDeclare::fiche`, `routes::import::fiche_salarie`), pour un salarie que l'import rattache
+    /// a sa DSN : par son NIR (`routes::import`, « Les salaries, par NIR ») ; une fiche sans NIR ne recoit rien d'une DSN
+    /// (`demarrage::manques`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |i: &IndividuDeclare| {
+            let IndividuDeclare {
+                // Le nom, les prenoms, la naissance : obligatoires (S21.G00.30.002, .004, .006) ; le NIR rattache, il
+                // ne se remplit pas (une fiche qui le porte ne le demande pas) ; le NTT n'a pas de case.
+                identite: IdentiteDeclaree { nom: _, prenoms: _, naissance: _, nir: _, ntt: _ },
+                // Le lieu, obligatoire pour un salarie ne en France (CCH-11 de S21.G00.30.007) ; le departement, le pays
+                // et la nationalite, obligatoires (.013 a .015, `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`).
+                lieu_naissance: _,
+                departement_naissance: _,
+                pays_naissance: _,
+                code_nationalite_dsn: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                // « Il est à renseigner si différent du sexe porté par le NIR ou si le NIR est absent » (S21.G00.30.005,
+                // `bloc-S21.G00.30.txt`) : la fiche ne le demande que sans NIR, et une fiche sans NIR ne se rattache pas.
+                sexe: _,
+                // « Le renseignement de cette rubrique est conditionné à l'accord explicite » du salarie (S21.G00.30.018).
+                email: _,
+                // Rien de « Pour demarrer » ne le demande.
+                code_salarie: _,
+            } = i;
+        };
+        use CaseSalarie::*;
+        vec![Nom, Prenom, DateNaissance, LieuNaissance, DepartementNaissance, PaysNaissance, CodeNationaliteDsn, Adresse, CodePostal, Commune]
+    }
+}
+
+impl EmploiDeclare {
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE L'EMPLOI D'UN CONTRAT REMPLIT : le libelle
+    /// et le code PCS-ESE (S21.G00.40.006, .004, obligatoires), le code emploi (.005, celui de la nomenclature des
+    /// emplois du spectacle pour un intermittent, CCH-18). Le motif nomme chaque champ.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |e: &EmploiDeclare| {
+            // Les statuts (.002, .003) : rien de « Pour demarrer » ne les demande.
+            let EmploiDeclare { emploi: _, pcs_ese: _, code_emploi_ft: _, statut_conventionnel: _, statut_categoriel_rc: _ } = e;
+        };
+        use CaseSalarie::*;
+        vec![Emploi, PcsEse, CodeEmploiFt]
+    }
+}
+
+// ------------------------------------------------------------------ ce qu'une DSN donne a la configuration
+
+/// LA PIECE QUI PORTERAIT CE QUI MANQUE A LA CONFIGURATION : une DSN deposee, que l'import reprend et dont il pose ce
+/// qu'elle dit (`Dsn`), ou aucune piece (`Aucune`) : cela se saisit. Ecrit `dsn`, `aucune`. Ce n'est pas
+/// `import::reponse::Source`, la piece d'ou une valeur reprise EST venue : celle-ci dit ce qu'une piece pourrait encore
+/// donner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PieceQuiLaPorte {
+    Dsn,
+    Aucune,
+}
+
+impl PieceQuiLaPorte {
+    /// LA PIECE QUI PORTE la case declaree `chemin` de la fiche `fiche` (la case que les listes nomment, pas sa forme
+    /// lisible) : une DSN quand l'import la remplit de toute DSN mensuelle (`EntrepriseDeclaree::cases_remplies`,
+    /// `IndividuDeclare::cases_remplies`, `EmploiDeclare::cases_remplies`), aucune sinon. Du contact DSN, la civilite
+    /// n'est lue que par inference (celle du contact de l'emetteur quand il est l'entreprise et porte le meme nom) :
+    /// aucune. Un spectacle : aucune, l'import cree la fiche d'un numero d'objet declare, il ne complete jamais un
+    /// spectacle qui existe sans numero.
+    pub fn de_la_case(fiche: NomDeFiche, chemin: &crate::champs::CheminDeFiche) -> PieceQuiLaPorte {
+        let remplies: Vec<CaseDeFiche> = match fiche {
+            NomDeFiche::Entreprise => EntrepriseDeclaree::cases_remplies().into_iter().map(CaseDeFiche::from).collect(),
+            NomDeFiche::Salarie => IndividuDeclare::cases_remplies().into_iter().chain(EmploiDeclare::cases_remplies()).map(CaseDeFiche::from).collect(),
+            NomDeFiche::Spectacle => Vec::new(),
+        };
+        let contact = chemin.champ == CaseDeFiche::from(CaseEntreprise::DeclarantDsn)
+            && chemin.dans.as_ref().is_none_or(|d| d.nom != NomDeCase::from(CaseDeclarantDsn::Civilite));
+        if (fiche == NomDeFiche::Entreprise && contact) || remplies.contains(&chemin.champ) {
+            PieceQuiLaPorte::Dsn
+        } else {
+            PieceQuiLaPorte::Aucune
+        }
     }
 }
 

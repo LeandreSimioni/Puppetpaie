@@ -129,6 +129,12 @@ fn a_dire_par_salarie(importes: &[Importe]) -> R<BTreeMap<IdSalarie, ContratsADi
     Ok(par)
 }
 
+/// Les salaries dont des contrats repris (`importes`, le stock deja lu) attendent leur nature, dans l'ordre des cles :
+/// ceux que « Pour demarrer » dit (`declarations::demarrage::CeQueLImportARepris`).
+pub(crate) fn salaries_a_dire(importes: &[Importe]) -> R<Vec<IdSalarie>> {
+    Ok(a_dire_par_salarie(importes)?.into_keys().collect())
+}
+
 /// Les salaries dont des contrats repris attendent leur nature : `[{salarie, nom, contrats, du, au, en_cours, suite,
 /// natures: [{cle, libelle, demande}]}]`, dans l'ordre des cles. `en_cours` : il est paye le dernier mois repris, son
 /// contrat court peut-etre encore (`suite` : le mois qui suit).
