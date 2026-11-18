@@ -953,26 +953,11 @@ pub fn est_une_dsn(tete: &[u8]) -> bool {
 /// (`est_une_dsn`), dans l'ordre des noms. Un dossier qui n'existe pas n'en a aucune ; un disque qui refuse se dit.
 pub fn fichiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut out = Vec::new();
-    parcourir(dossier, &mut out, Combien::Toutes)?;
+    parcourir(dossier, &mut out)?;
     Ok(out)
 }
 
-/// La premiere DSN de ce dossier et de ses sous-dossiers, dans le meme ordre que `fichiers`, sans ouvrir les fichiers
-/// qui la suivent ; aucune s'il n'en a pas.
-pub fn premiere(dossier: &Path) -> R<Option<PathBuf>> {
-    let mut out = Vec::new();
-    parcourir(dossier, &mut out, Combien::LaPremiere)?;
-    Ok(out.into_iter().next())
-}
-
-/// Ce que le parcours d'un dossier cherche : toutes ses DSN, ou la premiere.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Combien {
-    Toutes,
-    LaPremiere,
-}
-
-fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>, combien: Combien) -> R<()> {
+fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> R<()> {
     let panne = |e: std::io::Error, p: &Path| refus(socle::fichiers::panne_fichier(&e, p));
     let entrees = match std::fs::read_dir(dossier) {
         Ok(e) => e,
@@ -982,12 +967,9 @@ fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>, combien: Combien) -> R<()> 
     let mut entrees: Vec<std::fs::DirEntry> = entrees.collect::<Result<_, _>>().map_err(|e| panne(e, dossier))?;
     entrees.sort_by_key(|e| e.file_name());
     for e in entrees {
-        if combien == Combien::LaPremiere && !out.is_empty() {
-            return Ok(());
-        }
         let chemin = e.path();
         if e.file_type().map_err(|x| panne(x, &chemin))?.is_dir() {
-            parcourir(&chemin, out, combien)?;
+            parcourir(&chemin, out)?;
         } else if chemin.is_file() && est_une_dsn(&tete(&chemin).map_err(|x| panne(x, &chemin))?) {
             out.push(chemin);
         }

@@ -43,7 +43,9 @@ pub struct Guide {
     pub replie: &'static str,
     /// Le titre de ce qui se lit d'une piece (`Piece::lu`).
     pub ce_qui_s_en_lit: &'static str,
-    /// Le geste de l'apercu (`importation-apercu`), sous « Avancé ».
+    /// Le titre de ce qui est hors du chemin simple (`avance`), ou est l'apercu.
+    pub avance: &'static str,
+    /// Le geste de l'apercu (`importation-apercu`), sous `avance`.
     pub apercu: &'static str,
 }
 
@@ -87,7 +89,7 @@ pub fn guide() -> Guide {
                 ],
             },
         ],
-        si_manquent: "Si certains documents manquent, vous pouvez aussi mettre :",
+        si_manquent: "Si certains documents manquent, vous pourriez aussi mettre :",
         autres: vec![
             Piece {
                 quoi: "Les certificats d'emploi Congés Spectacles, en PDF",
@@ -129,10 +131,11 @@ pub fn guide() -> Guide {
         ],
         accepte: crate::tri::ACCEPTE,
         reste: "Après l'import, ce qu'une DSN pourrait donner se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
-        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris : rien ne se double, et les fiches ne reçoivent que ce qui leur manque.",
+        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris, et les fiches ne reçoivent que ce qui leur manque. Un salarié repris sans numéro de sécurité sociale n'est pas reconnu par une DSN ajoutée ensuite : elle lui crée une seconde fiche.",
         rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
         replie: "Ce qu'on met dans le dossier",
         ce_qui_s_en_lit: "Ce qui s'en lit",
+        avance: "Avancé",
         apercu: "Aperçu, sans rien écrire",
     }
 }

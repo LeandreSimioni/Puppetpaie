@@ -341,8 +341,8 @@ const fenetreDuPoste = () => !!window.fenetrePuppetPaie;
    première reprise : on ajoute au dossier et on relance l'import, qui ne
    reprend que le neuf (`guide.rejouer`, du moteur). Une fois l'historique
    repris, l'état le dit en une ligne, ce qui reste à dire se peint
-   au-dessus, et le guide se replie. L'aperçu, qui n'écrit rien, est sous
-   « Avancé ». */
+   au-dessus, et le guide se replie. L'aperçu, qui n'écrit rien, est hors
+   du chemin simple (`guide.avance`). */
 async function dessinerImportation(cible) {
   let e;
   try { e = await api("importation-etat"); } catch (err) {
@@ -369,7 +369,7 @@ async function dessinerImportation(cible) {
         </label>
       </div>
       <p><button class="primaire" id="import-tout">Importer</button></p>
-      <details><summary>Avancé</summary>
+      <details><summary>${echapper(e.guide.avance)}</summary>
         <button type="button" class="lien" id="import-apercu">${echapper(e.guide.apercu)}</button></details>
       <div id="import-resultat"></div>
     </div>`;

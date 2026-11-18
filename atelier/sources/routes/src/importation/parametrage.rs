@@ -200,24 +200,24 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
 }
 
 /// CE QUE L'IMPORT A REPRIS, pour ranger ce qui manque a la configuration (`declarations::demarrage::route`) : rien
-/// (aucun contrat ni aucune paie importes, `engagement::importe`), des pieces sans DSN, ou une DSN au moins parmi les
-/// copies que l'import garde (`historique/bulletins/`, celles que `parametrer` lit). Le stock se lit une fois, la
-/// recherche s'arrete a la premiere DSN trouvee (`dsn_lue::premiere`). Ce qui ne se lit pas (le stock, le dossier des
-/// copies) ne ferme rien : c'est une panne, que « Pour demarrer » dit a sa place (`NeSeLitPas`).
-pub(crate) fn ce_que_l_import_a_repris(ctx: &Contexte) -> declarations::demarrage::CeQueLImportARepris {
+/// (aucun engagement importe, `engagement::importe`), une DSN au moins parmi les copies que l'import garde
+/// (`historique/bulletins/`, celles que `parametrer` lit : `bulletins::une_dsn_reprise`, par leur nom), ou des pieces
+/// sans DSN : alors, les annees dont une paie est reprise (une DSN de ces annees-la peut exister) et les salaries dont un
+/// contrat repris attend sa nature (`nature::salaries_a_dire`). Le stock se lit une fois. Ce qui ne se lit pas (le
+/// stock, le dossier des copies) est une panne : elle remonte.
+pub(crate) fn ce_que_l_import_a_repris(ctx: &Contexte) -> socle::echec::R<declarations::demarrage::CeQueLImportARepris> {
     use declarations::demarrage::CeQueLImportARepris;
-    let rien = match engagement::importe::tous(&ctx.racine) {
-        Ok(importes) => importes.is_empty(),
-        Err(e) => return CeQueLImportARepris::NeSeLitPas(e.phrase),
-    };
-    if rien {
-        return CeQueLImportARepris::Rien;
+    let importes = engagement::importe::tous(&ctx.racine)?;
+    if importes.is_empty() {
+        return Ok(CeQueLImportARepris::Rien);
     }
-    match declarations::dsn_lue::premiere(&import::mois::dossier_des_bulletins(&ctx.racine)) {
-        Ok(None) => CeQueLImportARepris::SansDsn,
-        Ok(Some(_)) => CeQueLImportARepris::AvecDsn,
-        Err(e) => CeQueLImportARepris::NeSeLitPas(e.phrase),
+    if crate::importation::bulletins::une_dsn_reprise(&ctx.racine)? {
+        return Ok(CeQueLImportARepris::AvecDsn);
     }
+    Ok(CeQueLImportARepris::SansDsn {
+        annees: importes.iter().flat_map(|i| i.paies().keys().map(|m| m.annee())).collect(),
+        natures_a_dire: crate::importation::nature::salaries_a_dire(&importes)?,
+    })
 }
 
 /// LE TAUX DE PRELEVEMENT A LA SOURCE que la DGFiP a transmis a la compagnie et que ses DSN reprises appliquent

@@ -151,13 +151,33 @@ pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<
 /// se reprend pas.
 pub(crate) fn nom_copie(f: &import::tri::Fichier) -> R<Option<NomDeFichier>> {
     let ext = match f.sorte {
-        Sorte::Dsn => "dsn",
+        Sorte::Dsn => EXTENSION_DSN,
         // `importation::lire_aem` ne lit que les `*.txt`.
         Sorte::Aem => "txt",
         Sorte::PdfTexte => "pdf",
         _ => return Ok(None),
     };
     f.empreinte.as_ref().map(|e| NomDeFichier::lire(&format!("{}.{}", e.courte(), ext))).transpose()
+}
+
+/// L'extension de la copie d'une DSN (`nom_copie`).
+const EXTENSION_DSN: &str = "dsn";
+
+/// L'IMPORT A-T-IL REPRIS UNE DSN ? Sa copie est sous `historique/bulletins/`, nommee par `nom_copie` d'apres la sorte que
+/// le tri a lue dans son contenu (`import::tri`) : son nom le dit, sans ouvrir aucun fichier. Aucune tant que le dossier
+/// n'existe pas ; un disque qui refuse se dit.
+pub(crate) fn une_dsn_reprise(racine: &Path) -> R<bool> {
+    let dossier = import::mois::dossier_des_bulletins(racine);
+    if !socle::fichiers::existe_lu(&dossier)? {
+        return Ok(false);
+    }
+    let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);
+    for e in std::fs::read_dir(&dossier).map_err(disque)? {
+        if e.map_err(disque)?.path().extension().is_some_and(|x| x == EXTENSION_DSN) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// LE NOM DE LA COPIE D'UNE PIECE LUE : une piece lue a ete hachee au tri, elle a donc sa copie ; sans elle, c'est un

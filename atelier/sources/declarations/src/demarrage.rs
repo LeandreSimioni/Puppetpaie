@@ -58,8 +58,11 @@ pub struct Manque {
     pub phrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pour: Option<String>,
-    /// La piece qui la porterait : une DSN deposee, que l'import reprend, ou aucune (elle se saisit).
-    pub piece: PieceQuiLaPorte,
+    /// La piece qui la porterait (une DSN deposee, que l'import reprend, ou aucune : elle se saisit), jugee par `manques`
+    /// pour une case d'une fiche. Elle ne se dit que dans ce qu'une DSN pourrait donner (`route`, `ParUneDsn`) : ailleurs
+    /// elle ne s'ecrit pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piece: Option<PieceQuiLaPorte>,
 }
 
 impl Manque {
@@ -84,7 +87,7 @@ impl Manque {
             propose: None,
             phrase: None,
             pour: None,
-            piece: PieceQuiLaPorte::Aucune,
+            piece: None,
         }
     }
 
@@ -95,21 +98,20 @@ impl Manque {
 
     /// La meme ligne, que `piece` porte.
     fn portee_par(self, piece: PieceQuiLaPorte) -> Manque {
-        Manque { piece, ..self }
+        Manque { piece: Some(piece), ..self }
     }
 }
 
 /// CE QUE L'IMPORT A REPRIS, pour ranger ce qui manque (`route`) : rien (la compagnie n'a rien importe), des pieces sans
 /// aucune DSN, ou une DSN au moins. C'est sans DSN que ce qu'une DSN porterait se dit a part : l'ajouter au dossier et
-/// relancer l'import pourrait le remplir ; avec une DSN reprise, ce qui manque encore se saisit. Ce qui a ete repris
-/// peut ne pas se lire (`NeSeLitPas`, la phrase de la panne) : « Pour demarrer » repond quand meme, tout a saisir, et
-/// dit la panne a la place de ce qu'une DSN donnerait.
+/// relancer l'import pourrait le remplir ; avec une DSN reprise, ce qui manque encore se saisit. Sans DSN, l'import dit
+/// aussi les annees dont il a repris une paie (`annees` : une DSN de ces annees-la peut exister, et declarer leur taux
+/// AT/MP) et les salaries dont un contrat repris attend sa nature (`natures_a_dire`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CeQueLImportARepris {
     Rien,
-    SansDsn,
+    SansDsn { annees: std::collections::BTreeSet<socle::mois::Annee>, natures_a_dire: Vec<droit::contexte::IdSalarie> },
     AvecDsn,
-    NeSeLitPas(String),
 }
 
 /// LA PHRASE DE CE QU'UNE DSN POURRAIT DONNER, quand l'import n'en a repris aucune.
@@ -136,8 +138,7 @@ pub struct Pose {
 }
 
 /// `pour-demarrer` : sa phrase, chaque ligne et chaque pose en phrase entiere (`phrases`), son titre et sa note, les
-/// lignes a saisir (`manques`), ce qu'une DSN pourrait donner (`dsn`, `route`), ou la panne qui empeche de le dire
-/// (`import_illisible`), et ce que le moteur a pose (`poses`).
+/// lignes a saisir (`manques`), ce qu'une DSN pourrait donner (`dsn`, `route`), et ce que le moteur a pose (`poses`).
 #[derive(Debug, Clone, Serialize)]
 pub struct PourDemarrer {
     pub phrase: String,
@@ -145,8 +146,8 @@ pub struct PourDemarrer {
     pub titre: String,
     pub note: String,
     pub manques: Vec<Manque>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dsn: Option<ParUneDsn>,
-    pub import_illisible: Option<String>,
     pub poses: Vec<Pose>,
 }
 
@@ -259,7 +260,18 @@ fn ligne(m: crate::champs::Manquant, piece: PieceQuiLaPorte, ou: String, onglet:
         propose: None,
         phrase: None,
         pour: None,
-        piece,
+        piece: Some(piece),
+    }
+}
+
+/// LA PIECE QUI PORTE LA CASE `cle` DE LA FICHE `f` (`PieceQuiLaPorte::de_la_case`). L'import ne complete une case que
+/// vide (`routes::importation::completer`) : une case d'une structure deja entamee (une de ses cases dite, `dite`) ne
+/// recoit rien d'une DSN, elle se saisit.
+fn piece_de<F: droit::fiche::FicheSaisie>(f: &F, cle: &crate::champs::CheminDeFiche) -> PieceQuiLaPorte {
+    if cle.dans.is_some() && f.dite(cle.champ) {
+        PieceQuiLaPorte::Aucune
+    } else {
+        PieceQuiLaPorte::de_la_case(F::NOM, cle)
     }
 }
 
@@ -276,7 +288,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         if m.cle.seul() == Some(documents::conges_spectacles::CLE_ADHERENT.into()) && !intermittents {
             continue;
         }
-        let piece = PieceQuiLaPorte::de_la_case(NomDeFiche::Entreprise, &m.cle);
+        let piece = piece_de(ent, &m.cle);
         out.push(ligne(m, piece, ENTREPRISE.0.to_string(), ENTREPRISE.1, None));
     }
     for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee()) {
@@ -288,7 +300,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         // sans NIR ne recoit rien d'une DSN, ce qui lui manque se saisit.
         let rattache = s.nir.dite().is_some();
         for m in crate::champs::manquants(&s.champs)? {
-            let piece = if rattache { PieceQuiLaPorte::de_la_case(NomDeFiche::Salarie, &m.cle) } else { PieceQuiLaPorte::Aucune };
+            let piece = if rattache { piece_de(&s.champs, &m.cle) } else { PieceQuiLaPorte::Aucune };
             out.push(ligne(m, piece, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -301,7 +313,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             None => cle.to_string(),
         };
         for m in crate::champs::manquants(sp)? {
-            let piece = PieceQuiLaPorte::de_la_case(NomDeFiche::Spectacle, &m.cle);
+            let piece = piece_de(sp, &m.cle);
             let mut l = ligne(m, piece, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.clone());
@@ -607,6 +619,34 @@ fn pose_atmp(an: socle::mois::Annee, t: droit::fiche::TauxAtmp) -> R<Option<Pose
     }))
 }
 
+/// LA NATURE D'UN CONTRAT DE PERMANENT REPRIS, A DIRE (`routes::importation::nature`) : un bulletin ne dit pas si c'est un
+/// CDI ou un CDD ; la DSN deposee la declare (S21.G00.40.007), et l'import qui la reprend la dit de lui-meme
+/// (`nature::dire_depuis_les_dsn`), pour le salarie qu'elle atteint : celui dont la fiche a un NIR. Ces lignes ne se
+/// disent que dans ce qu'une DSN pourrait donner (`route`) ; la nature reste a dire a sa place, et un salarie sans NIR
+/// n'y est pas.
+fn natures_par_une_dsn(ctx: &Contexte, salaries: &[droit::contexte::IdSalarie]) -> Vec<Manque> {
+    let mut out = Vec::new();
+    for cle in salaries {
+        let Some(s) = ctx.salaries.get(cle).filter(|s| s.nir.dite().is_some()) else { continue };
+        let nom = match s.nomme() {
+            Some(n) => n,
+            None => cle.to_string(),
+        };
+        let mut l = Manque::bloquante(
+            &format!("nature.{}", cle),
+            "Nature du contrat (CDI ou CDD)".into(),
+            "la DSN et les documents de fin de contrat",
+            (&format!("Configuration › Reprendre l'historique, le contrat de {}", nom), "importer"),
+            None,
+            "Un bulletin ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée le déclare.".into(),
+        )
+        .portee_par(PieceQuiLaPorte::Dsn);
+        l.qui = Some(nom);
+        out.push(l);
+    }
+    out
+}
+
 /// `pour-demarrer`. `proposes` : les propositions qui ne se tirent pas des fiches (les acces aux organismes, que le
 /// moteur lit dans le coffre), a la suite ; `pose` : ce qui se dit en information a leur place, apres ce que le moteur a
 /// pose. Une case est EXIGEE POUR un geste (sans elle, il ne se fait pas : `bloque`) ou UTILE POUR un geste (sans elle,
@@ -616,11 +656,21 @@ fn pose_atmp(an: socle::mois::Annee, t: droit::fiche::TauxAtmp) -> R<Option<Pose
 /// CE QU'UNE DSN DONNERAIT SE DIT A PART (`dsn`) quand l'import a repris des pieces sans aucune DSN (`repris`) : chaque
 /// ligne qu'une DSN deposee porte (`Manque::piece`) y passe, sous la phrase qui dit de l'ajouter au dossier et de
 /// relancer l'import ; `manques` ne garde que ce qui se saisit. Sans import, ou avec une DSN reprise, tout se saisit.
-/// Ce qui a ete repris qui ne se lit pas (`NeSeLitPas`) : tout se saisit, et la panne se dit a la place
-/// (`import_illisible`), sans rien fermer d'autre.
+/// Le titre compte toutes les cases exigees, ou qu'elles soient rangees.
 pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: CeQueLImportARepris) -> R<PourDemarrer> {
     let mut lignes = manques(ctx)?;
     lignes.extend(proposes);
+    if let CeQueLImportARepris::SansDsn { annees, natures_a_dire } = &repris {
+        // Le taux AT/MP de l'annee : une DSN ne declare que celui de sa propre annee (`routes::importation::parametrage::
+        // poser_atmp`). Il ne se range sous la DSN que si une DSN de cette annee peut exister : l'import en a repris
+        // une paie. Une compagnie qui change de logiciel en janvier n'a que des DSN de l'annee d'avant.
+        let an = ctx.aujourdhui.annee();
+        let atmp = Some(CaseDeFiche::from(CaseEntreprise::TauxAtmp));
+        for l in lignes.iter_mut().filter(|l| l.qui.is_none() && l.champ == atmp && !annees.contains(&an)) {
+            l.piece = Some(PieceQuiLaPorte::Aucune);
+        }
+        lignes.extend(natures_par_une_dsn(ctx, natures_a_dire));
+    }
     for l in lignes.iter_mut() {
         let pour = match (&l.bloque, &l.utile, &l.sinon) {
             (Some(b), _, _) => format!("case exigée pour {}", b),
@@ -634,20 +684,16 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
         l.pour = Some(format!("{}{}.", initiale, c.as_str()));
     }
-    let (par_une_dsn, lignes, import_illisible): (Vec<Manque>, Vec<Manque>, Option<String>) = match repris {
-        CeQueLImportARepris::SansDsn => {
-            let (dsn, reste) = lignes.into_iter().partition(|l| l.piece == PieceQuiLaPorte::Dsn);
-            (dsn, reste, None)
-        }
-        CeQueLImportARepris::Rien | CeQueLImportARepris::AvecDsn => (Vec::new(), lignes, None),
-        CeQueLImportARepris::NeSeLitPas(panne) => (
-            Vec::new(),
-            lignes,
-            Some(format!("Ce qu'une DSN pourrait donner ne se dit pas à part : ce que l'import a repris ne se lit pas. {}", panne)),
-        ),
+    let (par_une_dsn, mut lignes): (Vec<Manque>, Vec<Manque>) = match repris {
+        CeQueLImportARepris::SansDsn { .. } => lignes.into_iter().partition(|l| l.piece == Some(PieceQuiLaPorte::Dsn)),
+        CeQueLImportARepris::Rien | CeQueLImportARepris::AvecDsn => (Vec::new(), lignes),
     };
+    // La piece ne se dit que dans ce qu'une DSN pourrait donner.
+    for l in lignes.iter_mut() {
+        l.piece = None;
+    }
     let dsn = (!par_une_dsn.is_empty()).then(|| ParUneDsn { phrase: AJOUTEZ_UNE_DSN.to_string(), manques: par_une_dsn });
-    let n = lignes.iter().filter(|l| l.bloque.is_some()).count();
+    let n = lignes.iter().chain(dsn.iter().flat_map(|d| &d.manques)).filter(|l| l.bloque.is_some()).count();
     let (titre, note) = match (n, lignes.is_empty()) {
         (0, true) if dsn.is_some() => ("Pour démarrer : une DSN pourrait donner ce qui manque".to_string(), ""),
         (0, true) => ("Pour démarrer : rien à remplir".to_string(), ""),
@@ -672,9 +718,8 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         phrases.push(d.phrase.clone());
         phrases.extend(d.manques.iter().flat_map(|l| l.phrase.clone()));
     }
-    phrases.extend(import_illisible.clone());
     phrases.extend(poses.iter().map(|p| format!("{} : {}", p.libelle, p.texte)));
-    Ok(PourDemarrer { phrase, phrases, titre, note: note.to_string(), manques: lignes, dsn, import_illisible, poses })
+    Ok(PourDemarrer { phrase, phrases, titre, note: note.to_string(), manques: lignes, dsn, poses })
 }
 
 /// Ce qui suit le refus d'un acte quand la compagnie n'a pas fini de demarrer : toute la liste, d'un coup, sans ce que
