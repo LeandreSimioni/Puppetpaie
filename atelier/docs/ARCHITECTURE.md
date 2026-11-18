@@ -2363,7 +2363,10 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
-  sans couche, une ligne sans rubrique).
+  sans couche, une ligne sans rubrique). Les bulletins des fictives disent ce que le moteur calcule de leur paie
+  (`moteur-atelier remplir-bulletins`, par `engagement::ecarts::calculee`, le même chemin) : leur rejeu exige que
+  chaque paie importée se compare, la compagnie complète, sans écart (`moteur/tests/rejeu.rs`) ; un écart y est une
+  régression du calcul.
 - **Le document accepté mais pas lu** (`importation/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique

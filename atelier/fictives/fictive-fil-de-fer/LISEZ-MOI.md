@@ -10,7 +10,7 @@ l'heure), venue d'un logiciel précédent (sPAIEctacle) fin 2025, une année 202
 |---|---|
 | `gestes.jsonl` | **le parcours de référence** : un scénario (`routes/src/scenario.rs`) écrit comme l'administratrice l'aurait joué, par les routes seulement (celles de l'écran et du LLM) |
 | `papiers-2025/` | ce qu'elle importe : les quinze bulletins de septembre à décembre 2025 et la DSN de décembre 2025 de l'ancien logiciel |
-| `description.json` | la compagnie, ses salariés et ses bulletins de 2025, dont `moteur-atelier fabriquer-bulletins description.json papiers-2025 --gabarit spaiectacle` refait les PDF |
+| `description.json` | la compagnie, ses salariés et ses bulletins de 2025, avec la paie de chacun telle que le moteur la calcule (`moteur-atelier remplir-bulletins description.json <la compagnie rejouée>`), dont `moteur-atelier fabriquer-bulletins description.json papiers-2025 --gabarit spaiectacle` refait les PDF |
 
 La DSN de décembre 2025 est une **donnée** : c'est un fichier que l'ancien logiciel a déposé, fixe, que rien du moteur ne
 fabrique et que l'import relit tel quel.
@@ -19,7 +19,8 @@ fabrique et que l'import relit tel quel.
   (`cargo nextest run --cargo-profile essais -E 'binary(rejeu) & test(fil_de_fer)'`, une dizaine de secondes). La
   fictive se livre au 02/11/2026 comme « Publier » la livre ; aucune route ne refuse ; l'horloge, ce jour-là, ne trouve
   rien à faire ; passée au 31/01/2027, elle seule valide décembre, déclare, envoie et clôt 2026 ; chaque mois a ses
-  étapes faites ; chaque DSN déclare chaque salarié au taux transmis par la DGFiP (type 01) ; les paies, les DSN et les
+  étapes faites ; ses quinze paies importées se comparent sans écart à ce que le moteur calcule ; chaque DSN déclare
+  chaque salarié au taux transmis par la DGFiP (type 01) ; les paies, les DSN et les
   dépôts se comparent à l'oracle `moteur/tests/donnees/fictives/fictive-fil-de-fer.json` (`PUPPETPAIE_REECRIRE_ORACLES=1`).
 - **La fictive livrée** : `moteur maj --marquer-fictives --logiciel logiciel` (le flux « Publier ») la refait dans
   `fictives/fictive-fil-de-fer`, rejouée jusqu'au jour de la publication ; à la main, `moteur-atelier scenario livrer
