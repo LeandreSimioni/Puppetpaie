@@ -453,7 +453,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     // LES MATRICULES QUE LA DSN QUI ARRIVE DECLARE, en une fois, avant les fiches neuves : celle que la DSN cree avec le
     // matricule qu'une fiche cede le trouve libre (`importation::matricules`). Les fiches s'ecrivent face a ce qui est
     // alors sur le disque ; chaque fiche neuve recoit le matricule que `prevoir` lui a decide.
-    let d_office = matricules.poser(&mut imp.a_creer)?;
+    let d_office = matricules.poser(&mut imp.a_creer, &mut imp.a_completer)?;
     let relu;
     let ctx = if matricules.ecrit() {
         matricules.ecrire(ctx, note)?;

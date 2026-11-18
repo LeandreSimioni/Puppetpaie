@@ -198,6 +198,16 @@ impl Source {
             Source::Aem => "AEM",
         }
     }
+
+    /// La piece reprise, telle qu'une phrase la nomme : « la DSN reprise », « le bulletin repris »…
+    pub fn reprise(self) -> &'static str {
+        match self {
+            Source::Dsn => "la DSN reprise",
+            Source::Bulletin => "le bulletin repris",
+            Source::Certificat => "le certificat Congés Spectacles repris",
+            Source::Aem => "l'AEM reprise",
+        }
+    }
 }
 
 /// CE QUI ATTESTE UN CONTRAT, OU LA PAIE QU'UN BULLETIN COMPLETE : une piece de cet import (`Source`), ou l'historique

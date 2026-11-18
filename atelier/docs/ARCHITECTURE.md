@@ -95,7 +95,10 @@ que par la structure :
   pièce qu'aucun engagement ni l'effectif ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
   (`droit::fiche::CaseDePiece`) ; la mécanique de toutes les cases (la table, l'écriture datée) les nomme ensemble
-  (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  (`droit::fiche::CaseDeFiche`). Ce que le moteur garde d'une fiche pour lui seul est une mémoire de sa fiche datée
+  (la section `memoires` de `fiche!`, un champ facultatif de la seule fiche datée) : ni une case ni une note, elle
+  n'est ni dans la fiche à un jour (`au()`), ni dans la plate, ni dans `changer` ni dans `cases()` ; rien de ce qui lit
+  une fiche ne la voit, et une saisie ne la pose pas. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -1205,6 +1208,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
+| mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée (`FicheSalarieDatee`), du type de ce qu'il garde | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
 | ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
@@ -1469,6 +1473,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **note d'une fiche** : un texte qu'une fiche porte et qui n'est pas une case (d'où elle vient, le titre que l'import
   propose à un spectacle), nommée par `fiche!` seul ; que lisent l'import qui complète une fiche (`notes_dites`,
   `prendre_la_note`).
+- **mémoire d'une fiche datée** : ce que le moteur garde d'une fiche pour lui seul, qui n'est ni une case ni une note
+  (la section `memoires` de `fiche!`) : un champ facultatif de la fiche datée, écrit à plat dans son fichier, absent de
+  la fiche à un jour, de la plate, des changements et des cases ; seul le moteur la pose (`SorteDeFiche::memoriser`, à
+  la création, ou l'import), et seul celui qui l'a posée la lit. Aujourd'hui le matricule donné d'office
+  (`matricule_d_office`), que lit `routes::importation::matricules`.
 - **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
   l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
   `avance`, la norme, la longueur).
@@ -2435,8 +2444,12 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   d'office, celui qu'une de ces fiches porte ou a porté, celui
   que les pièces reprises donnent à plus d'un salarié (aucun ne le prend). Tout se décide sur l'état final puis s'écrit
   en une fois, avant les fiches neuves : deux matricules d'office s'échangent sans doublon, et un matricule d'office que
-  la DSN déclare pour un autre salarié se cède (sa fiche prend le suivant). Une fiche a un seul sort. Une fiche neuve
-  dont le matricule ne se pose pas le reçoit d'office, et l'import le dit : rien ne se refuse en bloc (règle 1).
+  la DSN (ou le bulletin qui crée une fiche neuve : c'est le même logiciel qui parle) déclare pour un autre salarié se
+  cède (sa fiche prend le suivant) ; chaque phrase nomme la pièce (`import::reponse::Source`). Une fiche a un seul sort.
+  Le matricule de chaque fiche neuve se décide aussi sur l'état final : celui de ses pièces s'il se pose, sinon le
+  suivant, d'office, qu'aucune autre ne prend ; celle dont le matricule ne se pose pas le dit. Une fiche sans matricule
+  que la pièce complète passe par la même décision (celle dont le matricule ne se pose pas reste sans, et le dit) : rien
+  ne se refuse en bloc (règle 1), et aucun import n'écrit deux fiches au même matricule.
   `importation-apercu` dit ce qu'`importer` ferait.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;

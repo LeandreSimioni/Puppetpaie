@@ -322,6 +322,9 @@ pub(crate) struct Apercu {
     /// LE MATRICULE QUE LA DERNIERE DSN DECLARE POUR LE SALARIE D'UNE FICHE QUI EXISTE (S21.G00.30.019), quand elle en
     /// declare un : `importation::matricules` en fait foi.
     pub(crate) matricules_declares: Vec<(droit::contexte::IdSalarie, droit::fiche::Matricule)>,
+    /// LA PIECE QUI DONNE SON MATRICULE A UNE FICHE NEUVE, par le NIR de la fiche : la premiere qui le porte (la DSN
+    /// passe avant les bulletins, qui completent ce qu'elle cree) ; `importation::matricules` la nomme.
+    pub(crate) matricules_lus_dans: HashMap<Option<Nir>, Source>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -503,6 +506,7 @@ pub(crate) fn apercu_lu(
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
     let mut matricules_declares = Vec::new();
+    let mut matricules_lus_dans: HashMap<Option<Nir>, Source> = HashMap::new();
     for decl in ordre {
         if decl.individu.identite.nir.as_ref().is_some_and(|n| en_question.contains(n)) {
             continue;
@@ -524,6 +528,9 @@ pub(crate) fn apercu_lu(
             continue;
         }
         let (donnees, fautes) = fiche_salarie(decl)?;
+        if donnees.code_salarie.as_ref().is_some_and(|m| !m.trim().is_empty()) {
+            matricules_lus_dans.entry(decl.individu.identite.nir.clone()).or_insert(Source::Dsn);
+        }
         let donnees = FicheProposee::Salarie(donnees);
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(&donnees, &fautes)?;
         salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
@@ -730,6 +737,7 @@ pub(crate) fn apercu_lu(
         convention: lecture.entreprise.idcc.clone(),
         paies_en_question,
         matricules_declares,
+        matricules_lus_dans,
     })
 }
 
