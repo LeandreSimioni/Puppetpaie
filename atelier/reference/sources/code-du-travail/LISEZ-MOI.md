@@ -483,11 +483,10 @@ contingent « annuel » sans dire l'année, que l'accord définit (L3121-33) ; l
 
 `legifrance-code-du-travail-L1111-3-20261118.pdf` : l'article tel que Légifrance l'imprime, « en vigueur au 18/11/2026 »
 (`LEGIARTI000031565369`, en vigueur depuis le 01/01/2016, ordonnance n° 2015-1578 ; l'URL de la page n'est pas dans le
-PDF) ; sa transcription, `legifrance-code-du-travail-L1111-3-20261118.txt` (`pdftotext -layout`). **Il n'est pas relevé
-par l'outil** : l'article est dans l'entrepôt LEGI (`../legi-entrepot/`, même identifiant, depuis le 2016-01-01), mais `moteur-atelier releve-codes` ne relève que la liste
-compilée dans son binaire, que l'exécutant de ce lot ne refait pas. Il est ajouté à la liste (domaine `effectif_cse` de
-`atelier/src/releve/codes/textes.rs`) : le prochain `moissonner`, puis `rapport`, avec le binaire de l'atelier refait,
-l'écrira dans `articles-*.md` et `xml/L1111-3.xml`.
+PDF) ; sa transcription, `legifrance-code-du-travail-L1111-3-20261118.txt` (`pdftotext -layout`). L'article est aussi
+dans l'entrepôt LEGI (`../legi-entrepot/`, même identifiant, depuis le 2016-01-01) et dans la liste des articles voulus
+(domaine `effectif_cse` de `atelier/src/releve/codes/textes.rs`) : `moissonner` puis `rapport` l'écrivent dans
+`articles-*.md` et `xml/L1111-3.xml` ; tant qu'un relevé d'après le 18/11/2026 ne l'y a pas mis, ce PDF est le dépôt.
 
 « Ne sont pas pris en compte dans le calcul des effectifs de l'entreprise : 1° Les apprentis ; 2° Les titulaires d'un
 contrat initiative-emploi, pendant la durée d'attribution de l'aide financière mentionnée à l'article L. 5134-72 ; […]
