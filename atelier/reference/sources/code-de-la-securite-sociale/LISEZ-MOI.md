@@ -101,8 +101,9 @@ en vigueur depuis le 02/01/2020).
   pas une moyenne. INFÉRENCE : le prorata des jours du mois (R. 130-1, II, quatrième alinéa) n'a pas d'objet pour un seul
   jour ; le temps partiel s'y décompte comme ailleurs.
 - **R. 130-1, I** : « les mois au cours desquels aucun salarié n'est employé » ne comptent pas dans la moyenne ;
-  l'effectif se tronque au centième. Le texte tranche le mois où seuls travaillent des salariés exclus du décompte (un
-  CDD de remplacement, un apprenti) : un salarié y est employé, le mois compte, et son effectif est zéro.
+  l'effectif se tronque au centième. INFÉRENCE : le mois où seuls travaillent des salariés exclus du décompte (un
+  CDD de remplacement, un apprenti) compte dans la moyenne, à zéro. Le texte n'écarte que les mois où « aucun salarié
+  n'est employé », et un salarié exclu du décompte est un salarié employé ; il ne dit pas ce cas en toutes lettres.
 - **R. 130-1, II** : comptent les titulaires d'un contrat de travail, sauf les CDD qui remplacent un salarié absent
   (deuxième phrase du 2° de L. 1111-2 du code du travail) ; à temps plein, entièrement ; à temps partiel au sens de
   L. 3123-1, au rapport des horaires du contrat à la durée légale ou conventionnelle (dernier alinéa de L. 1111-2) ; chacun

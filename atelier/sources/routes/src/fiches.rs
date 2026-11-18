@@ -183,9 +183,9 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[OPERATION, FORME, ILLISIBLE],
         acte: Acte::Ecrit,
         phrase: 300,
-        // « Pour démarrer » (`pour-demarrer`, `routes::rappels::ManqueVu`) la rend en geste, une annee a la fois, sur la
-        // ligne qui demande l'effectif, dans Configuration › Entreprise.
-        ecran: Ecran::Geste(Place::Fiches),
+        // Sous « Avancé », d'ou l'effectif d'une annee se dit et se corrige toujours ; « Pour démarrer » (`pour-demarrer`,
+        // `routes::rappels::ManqueVu`) la rend aussi en geste, sur la ligne qui demande l'effectif.
+        ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire ou poser l'effectif")),
     },
     Fiche {
         route: Route::Couts,

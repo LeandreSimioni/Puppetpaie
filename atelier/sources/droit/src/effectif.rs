@@ -104,8 +104,9 @@ fn par_personne<K: Ord + Clone>(periode: &Periode, contrats: &[ContratDansLEffec
 /// jours du mois ou elle est employee (quatrieme alinea), selon son temps de travail (`TempsDansLEffectif`) ; ce qui
 /// est exclu du decompte ne compte pas (`ContratDansLEffectif::de`). Une personne compte au plus une fois par jour, au
 /// plus fort de ses contrats de ce jour. `None` : aucun salarie n'est employe ce mois-la, ni compte ni exclu du decompte
-/// (R. 130-1, I : « les mois au cours desquels aucun salarié n'est employé » ; un mois ou seuls travaillent des salaries
-/// exclus du decompte en a, et compte zero).
+/// (R. 130-1, I : « les mois au cours desquels aucun salarié n'est employé »). INFERENCE : un mois ou seuls travaillent
+/// des salaries exclus du decompte a des salaries employes, et compte zero ; le texte ne dit pas ce cas en toutes
+/// lettres. Les exclus de L. 1111-3 comptent pour la tarification AT/MP (son dernier alinea), que cette regle ne sert pas.
 pub fn effectif_du_mois<K: Ord + Clone>(mois: Mois, contrats: &[ContratDansLEffectif<K>]) -> Option<Effectif> {
     let le_mois = Periode::du_mois(mois);
     let n = le_mois.jours().count();
