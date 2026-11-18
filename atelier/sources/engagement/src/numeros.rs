@@ -260,6 +260,20 @@ pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: Annee, dernier: Option
     NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], rang))
 }
 
+/// LES NUMEROS DE CONTRAT QUE LE MOTEUR A FORMES (`a_la_validation`, `numero_pour`), un par salarie pour qui il l'a
+/// forme : chacun porte les initiales et le matricule que sa fiche avait alors (`former`). Le matricule d'un salarie qui
+/// en a un est engage : le changer donnerait a un autre salarie aux memes initiales un numero deja pris, et le numero
+/// est la cle de ce qui est parti (regle 4).
+pub fn formes(racine: &std::path::Path) -> R<HashMap<IdSalarie, NumeroContrat>> {
+    let mut out = HashMap::new();
+    for o in stock::objets(racine)? {
+        if let (Some(p), Some(n)) = (&o.brut.numero_pour, &o.carte().numero) {
+            out.entry(p.salarie.clone()).or_insert_with(|| n.clone());
+        }
+    }
+    Ok(out)
+}
+
 /// Le dernier numero pris en `annee`, par salarie (la cle de sa fiche) : le plus haut rang des numeros de cette annee
 /// que portent ses engagements, ou sous lesquels quelque chose est parti pour lui (`departs`).
 fn derniers_pris(ctx: &Contexte, annee: Annee, departs: &Departs) -> R<HashMap<IdSalarie, NumeroContrat>> {

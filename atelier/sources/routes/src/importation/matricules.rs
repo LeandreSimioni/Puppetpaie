@@ -9,7 +9,10 @@
 //!
 //! CE QUI NE SE REMPLACE PAS, et se dit (`SortDeLaValeur`) : le matricule d'un salarie qu'une DSN partie d'ici a declare
 //! (une DSN mensuelle ou un signalement l'ecrivent en S21.G00.30.019 : `declarations::dsn`, `declarations::signalement` ;
-//! la DPAE n'en porte pas), lu dans le journal (`engagement::departs`) ; un matricule que la compagnie a dit (saisi, ou
+//! la DPAE n'en porte pas), lu dans le journal (`engagement::departs`) ; le matricule avec lequel le moteur a forme un
+//! numero de contrat (`engagement::numeros::formes` : `<initiales><matricule>.<AA>.<rang>`, le rang compte par salarie ;
+//! le remplacer donnerait les memes numeros a un autre salarie aux memes initiales, et un numero ne se recalcule pas,
+//! regle 4) ; un matricule que la compagnie a dit (saisi, ou
 //! lu d'une piece : il n'est pas celui donne d'office) ; un matricule declare qu'une autre fiche porte sans le ceder.
 //!
 //! L'ECHANGE : les matricules declares peuvent permuter ceux d'office (MARIVAUX 4 → 2 pendant que MOLIERE 2 → 4). Tout se
@@ -66,27 +69,41 @@ fn declare_d_ici(departs: &Departs, cle: &IdSalarie) -> bool {
     departs.engagements().filter(|(c, _)| *c == cle).any(|(c, n)| departs.de(c, n).iter().any(|d| matches!(d.envoi, Envoi::Dsn | Envoi::Signalement)))
 }
 
+/// CE QUI, FAIT D'ICI, A ENGAGE LE MATRICULE D'UN SALARIE : il ne se remplace ni ne se cede.
+enum Engage {
+    /// Une DSN ou un signalement partis d'ici l'ont declare.
+    Declare,
+    /// Le moteur a forme ce numero de contrat avec lui (`engagement::numeros::formes`) : un autre salarie aux memes
+    /// initiales qui prendrait ce matricule recevrait les memes numeros.
+    Numerote(engagement::numeros::NumeroContrat),
+}
+
 /// Une fiche qui existe, telle que l'import la trouve.
 struct Porteur {
     cle: IdSalarie,
     nom: String,
     actuel: Option<Matricule>,
-    /// Son matricule lui a ete donne d'office, et rien d'ici ne l'a declare : il se remplace, ou se cede.
+    /// Son matricule lui a ete donne d'office, et rien d'ici ne l'a engage : il se remplace, ou se cede.
     libre: bool,
-    /// Une DSN partie d'ici a declare son matricule.
-    parti: bool,
+    /// Ce qui, fait d'ici, a engage son matricule.
+    engage: Option<Engage>,
 }
 
 /// CE QUE L'IMPORT `ap` FERA DES MATRICULES, decide sur l'etat final, sans rien ecrire ; `departs` : ce que le journal
 /// dit (lu une fois). Refus, sans rien ecrire, quand une fiche neuve declare le matricule d'une fiche qui ne le cede pas.
 pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Departs) -> R<Matricules> {
     let fichier = crate::fiches::lire_fichier::<FicheSalarieDatee>(ctx)?;
+    let numerotes = engagement::numeros::formes(&ctx.racine)?;
     let porteurs: Vec<Porteur> = fichier
         .fiches
         .iter()
         .map(|(cle, f)| {
             let au = f.au(&ctx.lue_au);
-            let parti = declare_d_ici(departs, cle);
+            let engage = match (declare_d_ici(departs, cle), numerotes.get(cle)) {
+                (true, _) => Some(Engage::Declare),
+                (false, Some(n)) => Some(Engage::Numerote(n.clone())),
+                (false, None) => None,
+            };
             Porteur {
                 cle: cle.clone(),
                 nom: match au.nomme() {
@@ -94,8 +111,8 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
                     None => cle.to_string(),
                 },
                 actuel: au.code_salarie.clone(),
-                libre: d_office(f).is_some() && !parti,
-                parti,
+                libre: d_office(f).is_some() && engage.is_none(),
+                engage,
             }
         })
         .collect();
@@ -130,10 +147,15 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
             continue;
         }
         let valeur = ValeurDuMatricule::Declare { avant: avant.clone(), declaree: declare.clone() };
-        if p.parti {
+        if let Some(Engage::Declare) = &p.engage {
             dits.push(dit(p, valeur, SortDeLaValeur::DejaDeclaree, socle::phrase!(
                 "{} : la DSN reprise déclare le matricule {}, la fiche porte le {} ; une DSN partie d'ici l'a déjà déclaré : rien n'est remplacé.",
                 p.nom, declare, avant
+            )));
+        } else if let Some(Engage::Numerote(n)) = &p.engage {
+            dits.push(dit(p, valeur, SortDeLaValeur::DejaDeclaree, socle::phrase!(
+                "{} : la DSN reprise déclare le matricule {}, la fiche porte le {} ; le contrat {} a été numéroté ici avec lui : rien n'est remplacé.",
+                p.nom, declare, avant, n
             )));
         } else if !p.libre {
             dits.push(dit(p, valeur, SortDeLaValeur::DiteParLaCompagnie, socle::phrase!(
@@ -204,7 +226,11 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
                 m,
                 q.nom,
                 q.cle,
-                if q.parti { "déjà déclaré d'ici" } else { "que la compagnie a dit" },
+                match &q.engage {
+                    Some(Engage::Declare) => "déjà déclaré d'ici".to_string(),
+                    Some(Engage::Numerote(n)) => format!("avec lequel le contrat {} a été numéroté ici", n),
+                    None => "que la compagnie a dit".to_string(),
+                },
                 q.nom
             )));
         }
