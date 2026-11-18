@@ -42,8 +42,9 @@ unsafe_code = "forbid"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Décompression des polices embarquées (voir build.rs), compression des flux et des pixels.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Décompression des polices embarquées (voir build.rs), compression des flux et des pixels. Par `zlib-rs` : du Rust,
+# sans code C ni script de construction, qui comprime plus vite que `miniz_oxide` (#475) ; partout où flate2 est pris.
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 # Le document PDF en objets : la lecture (src/lecture.rs : les formulaires, l'assemblage, le verrou, le marquage) et
 # l'écriture (src/dessin.rs, src/ecriture.rs). Son analyseur `nom_parser` lit un PDF des dizaines de fois plus vite que
 # `pom_parser`.
@@ -66,7 +67,7 @@ pdf-writer = "0.9"
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg"] }
 
 [build-dependencies]
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 
 [profile.release]
 opt-level = "z"

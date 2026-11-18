@@ -32,7 +32,7 @@ fabrique-pdf = { path = "../fabrique-pdf" }
 # (`SSL_CERT_FILE` honore), proxy lu dans l'environnement ; ni gzip (flate2 s'en charge), ni cookies, ni json.
 ureq = { workspace = true }
 # Deflate et CRC-32 : le gzip du transport, les archives de retours.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 # Les motifs des courriels lus (signature, courriels joues, ordre des signalements) ; sans les optimisations par
 # defaut, qui pesent sur le binaire.
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
