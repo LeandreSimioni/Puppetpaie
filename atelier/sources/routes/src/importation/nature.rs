@@ -481,8 +481,10 @@ pub(crate) fn la_dsn_fait_foi(
     for i in importes(racine)? {
         let carte = i.objet().carte();
         let (Some(salarie), Some(nature)) = (carte.salarie.clone(), carte.nature) else { continue };
-        // Une nature dite, pas attestee par une piece (une AEM, un certificat, un bulletin du spectacle).
-        if !i.permanent() || i.contrat().is_some_and(|c| c.nature.is_some()) {
+        // Le contrat d'un permanent : sa nature est dite, aucune piece ne l'atteste (une AEM, un certificat, un bulletin
+        // du spectacle n'attestent qu'un contrat d'usage). La nature dite se recopie sur sa piece a l'import suivant :
+        // elle n'en fait pas une nature attestee.
+        if !i.permanent() {
             continue;
         }
         let arrivee = i.paies().iter().rev().find_map(|(m, p)| {
