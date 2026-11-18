@@ -239,7 +239,9 @@ mot de passe ni le coffre. Si la clé du poste n'ouvre pas le coffre, le dire et
 
 **Un dépôt de test ne conserve rien et c'est le seul validateur du projet** (règle 10). Dans le nuage, un dépôt réel est
 mécaniquement impossible (`PreuveInsuffisante`) ; un dépôt de test passe par la compagnie d'essai si Léandre a posé
-`NET_ENTREPRISES_MOTDEPASSE` : un agent ne la pose, ne la modifie ni ne l'affiche.
+`NET_ENTREPRISES_MOTDEPASSE` : un agent ne la pose, ne la modifie ni ne l'affiche. De même pour l'identité du poste
+de l'éditeur, que le binaire de l'atelier porte au filet (`PUPPETPAIE_ATELIER_POSTE`, `PUPPETPAIE_ATELIER_CLE_POSTE`,
+`docs/COMPAGNIE-D-ESSAI.md`) : un agent ne la pose ni ne l'affiche, et ne lance ni `env`, ni `printenv`, ni `set`.
 
 ## Faire tourner le code dans le conteneur, et les tests
 

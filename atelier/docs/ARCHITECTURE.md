@@ -536,6 +536,7 @@ un libellé, chacun sa forme.
 | canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
 | origine d'un appel | `OrigineDeLAppel` | `compagnie/src/diagnostic.rs` |
 | numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
+| origine de l'identité du poste | `OrigineDeLIdentite` | `compagnie/src/editeur.rs` |
 | secret | `Secret` | `socle/src/secret.rs` |
 | numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
 | identifiant d'un message | `IdDeMessage` | `compagnie/src/problemes.rs` |
@@ -804,6 +805,11 @@ un libellé, chacun sa forme.
 - **numéro de poste** : le numéro que le serveur du filet donne à ce poste (`POST /poste`) ; 32 hexadécimaux minuscules
   (`RE_POSTE` du serveur). Que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce
   qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret.
+- **origine de l'identité du poste** : d'où le client du filet tient le numéro et la clé du poste : `config/diagnostic.json`
+  de la compagnie qui la porte (le serveur l'y a donnée, `POST /poste`), ou, dans le seul binaire de l'atelier,
+  l'environnement du nuage, qui porte l'identité du poste de l'éditeur (`PUPPETPAIE_ATELIER_POSTE`,
+  `PUPPETPAIE_ATELIER_CLE_POSTE`, pour le seul serveur de l'éditeur, écrite nulle part ; `docs/COMPAGNIE-D-ESSAI.md`).
+  Ce qu'il y a à faire quand le serveur ne la reconnaît plus en dépend.
 - **secret** : un mot de passe (du logiciel, d'un organisme, de la boîte, de l'administrateur), un jeton (d'une session
   net-entreprises, de Google, de la fenêtre), une clé (celle du poste chez le serveur du filet, le secret de
   l'application Google, la graine de publication). Opaque ; `{:?}` écrit « [secret] », ni `Display` ni `Serialize` ; il
