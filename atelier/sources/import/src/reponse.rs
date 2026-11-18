@@ -788,6 +788,31 @@ pub struct Importation {
     /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
     /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
     pub identites: Vec<QuestionDIdentite>,
+    /// Ce qu'une DSN reprise par cet import a remplace de ce qui avait ete dit a la main d'un contrat repris
+    /// (`RemplaceeParLaDsn`).
+    pub remplacees: Vec<RemplaceeParLaDsn>,
+}
+
+/// CE QU'UNE DSN REPRISE DECLARE D'UN CONTRAT DE PERMANENT DIT A LA MAIN, ET QUI DIFFERE : sa nature, son debut, sa fin
+/// ou son numero, ce qu'il y avait (`avant`), ce que la DSN declare. La DSN fait foi (Léandre, 18/11/2026) : la carte
+/// prend la valeur declaree, et l'import le dit (`RemplaceeParLaDsn`) ; rien ne change en silence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "quoi", rename_all = "lowercase")]
+pub enum ValeurRemplacee {
+    Nature { avant: droit::natures::NatureDeContrat, declaree: droit::natures::NatureDeContrat },
+    Debut { avant: Option<Jour>, declare: Jour },
+    Fin { avant: Option<Jour>, declaree: Jour },
+    Numero { avant: Option<engagement::numeros::NumeroContrat>, declare: engagement::numeros::NumeroContrat },
+}
+
+/// Une valeur d'un contrat repris que la DSN reprise a remplacee : le salarie, ce qui a change, et ce que l'ecran en dit.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemplaceeParLaDsn {
+    pub salarie: droit::contexte::IdSalarie,
+    pub nom: String,
+    #[serde(flatten)]
+    pub valeur: ValeurRemplacee,
+    pub phrase: socle::texte::Phrase,
 }
 
 /// UNE QUESTION D'IDENTITE DE L'IMPORT : un individu qu'une DSN declare sous un NIR qu'aucune fiche ne porte (`nir`,

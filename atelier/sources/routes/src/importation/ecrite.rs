@@ -437,6 +437,8 @@ struct Ecrit {
     /// Les fiches existantes completees.
     completees: usize,
     avertissements: Vec<String>,
+    /// Les paies declarees que cet import apporte : (mois, salarie, numero declare).
+    arrivees: HashSet<(Mois, IdSalarie, NumeroContrat)>,
 }
 
 impl Ecrit {
@@ -551,6 +553,10 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         }
         par_cle.insert(k, x);
     }
+    // LES PAIES QU'UNE DSN DECLARE ET QUE CET IMPORT APPORTE : celles d'une DSN qui arrive (`nature::la_dsn_fait_foi`) ;
+    // l'import rejoue sur le meme dossier n'en apporte aucune.
+    let arrivees: HashSet<(Mois, IdSalarie, NumeroContrat)> =
+        par_cle.keys().filter(|k| !avant.contains_key(*k)).filter_map(|(m, s, c)| Some((*m, s.clone()?, c.numero_declare()?.clone()))).collect();
     let ambigues = rapprocher(&mut par_cle);
     if ambigues > 0 {
         avertissements.push(format!(
@@ -570,7 +576,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
             fichiers.push(p);
         }
     }
-    Ok(Ecrit { fichiers, contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf, paies: neuves, restent_a_creer, completees, avertissements })
+    Ok(Ecrit { fichiers, contrats_aem, contrats_bulletins, contrats_certificats, contrats_aem_pdf, paies: neuves, restent_a_creer, completees, avertissements, arrivees })
 }
 
 // ------------------------------------------------------------------ la route
@@ -701,6 +707,13 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
     reponse.parametrage = faits;
+    // Ce qu'une DSN qui arrive declare d'un contrat de permanent deja dit a la main, et qui differe : elle fait foi.
+    reponse.remplacees = crate::importation::nature::la_dsn_fait_foi(&ctx.racine, &e.arrivees)?;
+    let remplacees = match reponse.remplacees.len() {
+        0 => String::new(),
+        1 => " La DSN reprise fait foi : une valeur dite à la main d'un contrat repris est remplacée par ce qu'elle déclare.".to_string(),
+        n => format!(" La DSN reprise fait foi : {} valeurs dites à la main de contrats repris sont remplacées par ce qu'elle déclare.", n),
+    };
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
     let ecrite = |f: &import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);
@@ -749,12 +762,13 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
-        "Repris : {}, {} ; fiches écrites : {}.{}{}",
+        "Repris : {}, {} ; fiches écrites : {}.{}{}{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
         titres,
-        en_question
+        en_question,
+        remplacees
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;

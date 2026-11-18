@@ -1142,7 +1142,9 @@ fn continue_ici(e: &Neuf, dernier: Mois) -> R<bool> {
 /// `debut`, sinon le premier mois ou il a ete verse), ou, pour le contrat de permanent qui continue ici (`continue_ici`),
 /// le mois qui suit le dernier mois repris : son premier mois neuf. Ils vont apres les engagements de la saisie. Ceux qui
 /// y etaient s'en vont ; rien d'autre ne change. LE MEME CONTRAT DEJA ECRIT (meme salarie, un mois verse en commun) garde
-/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent. Rend les fichiers ecrits.
+/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent (ce qu'une DSN qui arrive
+/// declare autrement se remplace ensuite, et se dit : `routes::importation::nature::la_dsn_fait_foi`). Rend les fichiers
+/// ecrits.
 pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
     let existants = tous(racine)?;
     let dernier = importes.iter().flat_map(|e| e.pieces.paies.keys().copied()).max();
