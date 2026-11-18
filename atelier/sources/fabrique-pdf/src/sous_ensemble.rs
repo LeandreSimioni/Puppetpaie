@@ -8,8 +8,7 @@
 //!   (`ABCDEF+NomPostScript`) est tiré d'une empreinte du nom de la police et des caractères :
 //!   même texte, mêmes octets.
 
-use std::collections::{BTreeSet, HashMap};
-use std::sync::{LazyLock, Mutex};
+use std::collections::BTreeSet;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
@@ -259,17 +258,6 @@ pub fn elargir(pdf: &mut Document, type0: ObjectId, donnees: &[u8], caracteres: 
     Ok(())
 }
 
-/// Les flux de police déjà comprimés dans le processus : leurs octets en clair, et ce que `Stream::compress` en a fait
-/// (`Some` : les octets comprimés, qu'il a posés sous `/FlateDecode` ; `None` : il les a laissés en clair, la
-/// compression n'y gagnait pas). La compression ne dépend que des octets en clair : la même police coupée aux mêmes
-/// caractères (chaque document d'une même compagnie, souvent) redonne les mêmes octets sans les recomprimer.
-static FLUX_COMPRIMES: LazyLock<Mutex<HashMap<Vec<u8>, Option<Vec<u8>>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// Au-delà, la table se vide avant de prendre un flux de plus : un processus qui dure (l'interface) ne la fait pas
-/// grossir sans fin ; quelques dizaines de flux (de quelques dizaines de kilo-octets) suffisent aux documents d'une
-/// séance.
-const FLUX_COMPRIMES_AU_PLUS: usize = 64;
-
 fn comprimer_police(pdf: &mut Document, objets: &ObjetsDePolice) -> Result<(), Refus> {
     let gid = match dictionnaire(pdf, objets.type0) {
         Some(t) => match descendante(pdf, t) {
@@ -278,30 +266,9 @@ fn comprimer_police(pdf: &mut Document, objets: &ObjetsDePolice) -> Result<(), R
         },
         None => None,
     };
-    let mut deja = FLUX_COMPRIMES.lock().map_err(|_| interne("la table des flux de police comprimés est empoisonnée".to_string()))?;
     for id in [Some(objets.fichier), Some(objets.tounicode), gid].iter().flatten() {
         if let Some(Object::Stream(s)) = pdf.objects.get_mut(id) {
-            // `Stream::compress` ne touche pas un flux qui a déjà son filtre.
-            if s.dict.get(b"Filter").is_ok() {
-                continue;
-            }
-            match deja.get(&s.content) {
-                // Ce que `Stream::compress` fait d'octets qu'il comprime : le filtre, puis les octets et leur longueur.
-                Some(Some(comprime)) => {
-                    s.dict.set("Filter", "FlateDecode");
-                    s.set_content(comprime.clone());
-                }
-                Some(None) => {}
-                None => {
-                    let clair = s.content.clone();
-                    s.compress().map_err(|e| interne(format!("un flux de police ne se comprime pas ({})", e)))?;
-                    let comprime = s.dict.get(b"Filter").is_ok().then(|| s.content.clone());
-                    if deja.len() >= FLUX_COMPRIMES_AU_PLUS {
-                        deja.clear();
-                    }
-                    deja.insert(clair, comprime);
-                }
-            }
+            s.compress().map_err(|e| interne(format!("un flux de police ne se comprime pas ({})", e)))?;
         }
     }
     Ok(())
