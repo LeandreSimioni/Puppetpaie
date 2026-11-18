@@ -83,11 +83,15 @@ que par la structure :
   `AuMois` ensemble (`ChampsEntreprise::metier`). La représentation du personnel ne s'ouvre que par
   `droit::contexte::UnCsePossible`, que seul l'effectif donne quand un comité peut exister (`EffectifsParAnnee::cse`) ;
   l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
-  (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. Ce que la fiche
+  (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. La reprise des cumuls de l'année (`ChampsSalarie::reprise`)
+  ne s'ouvre que par `droit::fiche::RepriseDesCumuls`, que seule une paie reprise d'un ancien logiciel donne
+  (`engagement::importe::PaieVersee::reprise_des_cumuls`) : la paie reprise vit au-dessus de `droit`, et la clé y a un
+  constructeur public que seul l'engagement importé appelle. Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
-  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
-  ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
+  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; la reprise des cumuls, par une paie reprise
+  du salarié d'une année qu'un de ses engagements d'ici touche (`engagement::importe::reprise_des_cumuls_de`) ; une
+  pièce qu'aucun engagement ni l'effectif ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
   (`droit::fiche::CaseDePiece`) ; la mécanique de toutes les cases (la table, l'écriture datée) les nomme ensemble
   (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
@@ -1126,6 +1130,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
+| paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
+| cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
 | contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
@@ -1866,10 +1873,24 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   en saisie) ; aucun ne recalcule. Deux états de plus, à part :
   - **importé** (`engagement/src/importe.rs`, la clé `importe`) : tiré par l'import des pièces d'un autre logiciel,
     validé et documents partis (ce qui en est parti, c'est l'import lui-même). Il se lit, ne se modifie pas et ne se
-    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul, aucune
-    déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
+    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul ne le refait,
+    aucune déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
     contrat est celui que la DSN déposée lui a donné (S21.G00.40.009). Il compte dans les cumuls des annexes 8 et 10
-    (`engagement/src/cumul.rs`) et dans les numéros pris.
+    (`engagement/src/cumul.rs`) et dans les numéros pris. Ce qu'il a versé compte comme ce que versent les paies
+    validées pour les calculs qui lisent le salaire d'un autre mois, par un seul lecteur (`etats::paies_du_salarie`,
+    `conges::paies_versees`, qui rendent `etats::PaieAnterieure`) : le salaire des indemnités journalières d'un arrêt,
+    le salaire de référence et la rémunération du contrat du solde de tout compte, les cumuls de l'année civile
+    (déduction forfaitaire spécifique, heures supplémentaires, exonération des heures en plus). Ce lecteur prend ses
+    paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
+    nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
+    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées) : un
+    réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a
+    lues. Une paie reprise et une paie validée du même contrat le même mois refusent, en nommant le mois et le contrat :
+    une paie ne se compte pas deux fois. Une grandeur que ses pièces ne disent pas (son brut, la déduction qu'il a
+    retenue) ne se devine pas : le calcul refuse en nommant le mois ; pour les cumuls de l'année, la fiche du salarié
+    dit ce que l'ancien logiciel avait cumulé à la reprise (`cumuls_reprise`, `droit::fiche::CumulsReprise`), qui vaut
+    pour les mois d'avant sa date. Le compteur de congés ne le lit pas : la fiche reprend celui de l'ancien logiciel
+    (`conges_reprise`).
   - **non actif** (`etats::NonActif`, la clé `non_actif`) : un engagement dont quelque chose est parti ne se supprime
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois
@@ -2914,7 +2935,9 @@ décident. Les articles sont relevés et datés dans
   d'inventer ;
 - **indemnité de licenciement** : huit mois d'ancienneté (L1234-9), un quart
   puis un tiers de mois (R1234-2), salaire de référence le plus favorable des
-  deux formules (R1234-4). Un montant **supra-légal est refusé** : son régime
+  deux formules (R1234-4), sur les mois du service du salarié (du mois où son
+  contrat commence, douze au plus) : un mois sans paie connue n'est pas un
+  zéro, le moteur refuse en le nommant (`solde::bruts_precedents`). Un montant **supra-légal est refusé** : son régime
   social est autre, et le moteur ne sait pas l'assujettir ;
 - **les trois autres fins d'un CDI** — et c'est le
   **motif de rupture** qui choisit, jamais la ressemblance :

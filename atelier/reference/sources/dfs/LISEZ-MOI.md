@@ -31,7 +31,8 @@ Les codes sont relevés à leur place : CSS R. 242-1, L. 241-13 et D. 241-7 (`..
 - I, al. 1 : « les professions, prévues à l'article 5 de l'annexe IV du code général des impôts dans sa rédaction en
   vigueur au 31 décembre 2000 […] peuvent bénéficier d'une déduction forfaitaire spécifique. Cette déduction est, dans la
   limite de **7 600 euros par année civile**, calculée en fonction des taux prévus à l'article 5 […] ». → le plafond
-  annuel, suivi par salarié (`dfs_deja_deduite`, `conges::dfs_des_mois_anterieurs`).
+  annuel, suivi par salarié (`dfs_deja_deduite`, `conges::dfs_des_mois_anterieurs`, et la reprise des cumuls de la
+  fiche, `cumuls_reprise`).
 - I, al. 2 : « L'employeur peut opter […] lorsqu'une convention ou un accord collectif l'a explicitement prévu ou lorsque
   le comité d'entreprise, le comité social et économique ou les délégués du personnel ont donné leur accord. » → fiche
   entreprise `deduction_forfaitaire_option` : `accord_collectif`, `accord_cse`.
@@ -173,8 +174,11 @@ au régime AGIRC-ARRCO »).
    l'assiette « dès le 1er euro », et aucun texte déposé ne dit ce qu'une autre indemnité hors assiette devient sous DFS.
    Le catalogue livré n'a aucune indemnité conventionnelle de ce genre pour un contrat d'usage. Réintégrer toucherait l'assiette du chômage (les annexes disent
    « avant abattement », pas « sans les frais ») et la DSN (bloc 54 de type 35, `bloc-S21.G00.54.txt` l. 39-43).
-5. **Le cumul d'avant le logiciel** : une compagnie qui arrive en cours d'année avec une DFS déjà déduite ailleurs n'a
-   pas de case pour la reprendre ; le plafond de 7 600 € compterait de zéro.
+5. **Le cumul d'avant le logiciel** : une compagnie qui arrive en cours d'année avec une DFS déjà déduite ailleurs la
+   dit sur la fiche du salarié (`cumuls_reprise.deduction_forfaitaire`, `droit::fiche::CumulsReprise`), case que seule
+   une paie reprise de l'année montre ; sans elle, une paie reprise de l'année fait refuser le plafond
+   (`conges::cumul_de_l_annee`). Un ancien logiciel dont rien n'a été importé n'ouvre pas la case : le plafond compte
+   alors de zéro, faute de savoir qu'une année a commencé ailleurs.
 6. **Les paies 2025 d'avant le 07/09/2025** : l'arrêté de 2002 en vigueur (art. 9, version 2005, `historique/`) ne portait
    aucun calendrier de baisse ; le barème 2025 suivait la doctrine (18 / 21 %). Rien n'est refait (règle 4).
 7. **D7, à moitié levé (lot T1, 13/10/2026)** : voir « Lot T1 » plus bas. Restent sans texte : les bases **23 et 43** (Agirc-Arrco)

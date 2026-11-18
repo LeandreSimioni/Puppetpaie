@@ -907,7 +907,8 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
 }
 
 /// Ce que l'annee civile a deja deduit pour ce salarie avant ce contrat : les mois anterieurs de la meme annee
-/// (`conges::dfs_du_mois`, recalcules depuis leurs saisies) et les contrats precedents du meme mois (`precedentes`).
+/// (`conges::dfs_des_mois_anterieurs` : leurs paies validees, et pour les mois d'un ancien logiciel la reprise des
+/// cumuls de la fiche) et les contrats precedents du meme mois (`precedentes`).
 /// Arrete du 4 septembre 2025, art. 9, I, al. 1 : << dans la limite de 7 600 euros par annee civile >>. INFERENCE, ecrite comme
 /// telle : l'annee est celle de la periode de paie, et les contrats d'un mois se suivent dans l'ordre de la saisie.
 fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Montant> {

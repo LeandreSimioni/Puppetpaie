@@ -19,7 +19,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
 use socle::ecriture::{CaseEcrite, EcritureDeCase};
-use socle::grandeurs::{Cachets, HeuresParUnite, Jours, Montant, Taux};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, Taux};
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -1612,6 +1612,7 @@ impl FormeDeCase for Taux {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for Jours {}
 impl FormeDeCase for HeuresParUnite {}
+impl FormeDeCase for Heures {}
 impl FormeDeCase for Cachets {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
@@ -1764,6 +1765,24 @@ pub enum Piece {
     /// L'exemption de la CASC-SVP : seule une compagnie d'au moins cinquante salaries dotee d'un comite l'ouvre
     /// (`ExemptionCasc`).
     Casc,
+    /// Les cumuls de l'annee qu'un ancien logiciel avait faits : seule une paie que la compagnie a reprise de lui
+    /// l'ouvre (`RepriseDesCumuls`).
+    Reprise,
+}
+
+/// LA CLE DE LA REPRISE DES CUMULS DE L'ANNEE (`ChampsSalarie::reprise`) : ce que l'ancien logiciel avait cumule dans
+/// l'annee civile et que ses pieces ne disent pas (la deduction forfaitaire specifique deja pratiquee, les heures
+/// supplementaires du contingent, le net des heures en plus deja exonere d'impot). Seule une paie reprise d'un ancien
+/// logiciel la donne (`engagement::importe`, la paie versee d'un engagement importe) : la paie d'ici ne la donne pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepriseDesCumuls(());
+
+impl RepriseDesCumuls {
+    /// La cle que donne une paie reprise d'un ancien logiciel ; seul l'engagement importe l'appelle
+    /// (`engagement::importe::PaieVersee::reprise_des_cumuls`) : la paie reprise vit au-dessus de `droit`.
+    pub fn d_une_paie_reprise() -> RepriseDesCumuls {
+        RepriseDesCumuls(())
+    }
 }
 
 /// LA CLE DE L'EXEMPTION DE LA CASC-SVP (`ChampsEntreprise::exemption_casc`) : « les entreprises d'au moins 50 salariés
@@ -2737,6 +2756,27 @@ cases! {
     }
 }
 
+cases! {
+    /// LES CUMULS DE L'ANNEE CIVILE A LA REPRISE : ce que l'ancien logiciel avait cumule pour le salarie dans l'annee de
+    /// `date`, avant elle (le premier jour du premier mois que PuppetPaie paie), et que ses pieces ne disent pas. Chaque
+    /// cumul a son texte, qui le compte par an : la deduction forfaitaire specifique deja pratiquee, en euros (arrete du
+    /// 4 septembre 2025, art. 9, I : « dans la limite de 7 600 euros par année civile », `atelier/reference/sources/dfs/`) ;
+    /// les heures supplementaires deja payees, que le contingent annuel et les paliers annuels d'une convention comptent
+    /// (C. trav. L3121-30 et L3121-33, `atelier/reference/sources/code-du-travail/articles-20261110.md`) ; le montant net
+    /// des heures en plus deja exonere d'impot sur le revenu (CGI 81 quater : « une limite annuelle égale à 7 500 € »,
+    /// `atelier/reference/sources/code-general-des-impots/articles-20261110.md`). Vide n'est pas zero : un cumul qu'un
+    /// calcul lit et que la reprise tait se refuse (`engagement::conges`).
+    pub struct CumulsReprise {
+        date: Jour,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        deduction_forfaitaire: Montant,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        heures_supplementaires: Heures,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        heures_en_plus_exonerees: Montant,
+    }
+}
+
 impl FormeDeCase for crate::pas::TauxRecu {
     fn cases() -> Vec<Declaree> {
         vec![
@@ -2955,6 +2995,11 @@ fiche! {
             PosteDepuis(Jour) = "poste_depuis" => poste_depuis,
             StagiaireCcneac(StagiaireCcneac) = "stagiaire_ccneac" => stagiaire_ccneac,
             Experimente3241(bool) = "experimente_3241" => experimente_3241,
+        }
+        /// LA REPRISE DES CUMULS DE L'ANNEE : ce que seuls les cumuls de l'annee civile lisent, quand une paie de
+        /// l'annee a ete reprise d'un ancien logiciel. Seule une paie reprise l'ouvre (`RepriseDesCumuls`).
+        reprise: Reprise, CasesDeLaReprise, RepriseDesCumuls {
+            CumulsReprise(CumulsReprise) = "cumuls_reprise" => cumuls_reprise,
         }
     }
 }

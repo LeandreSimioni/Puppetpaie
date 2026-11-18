@@ -2219,6 +2219,29 @@
    "ecran": true
   },
   {
+   "note": "LES CUMULS DE L'ANNEE A LA REPRISE. Trois plafonds se comptent sur\nl'annee civile : la deduction forfaitaire specifique (7 600 EUR, arrete\ndu 4 septembre 2025, art. 9), le contingent d'heures supplementaires\n(C. trav. L3121-30) et l'exoneration d'impot des heures en plus (CGI\n81 quater, 7 500 EUR). Les pieces de l'ancien logiciel ne les disent\npas : ce qu'il avait cumule dans l'annee se lit sur son dernier\nbulletin, et se saisit une fois. Ne se montre que pour un salarie dont\nune paie de l'annee a ete reprise.",
+   "cle": "cumuls_reprise",
+   "champs": [
+    {"cle": "date", "libelle": "PuppetPaie paie à partir du", "forme": "date", "ecran": true, "aide": "Le premier jour du premier mois payé par PuppetPaie dans l'année. Ce qui suit vaut pour l'année de cette date, avant elle."},
+    {"cle": "deduction_forfaitaire", "libelle": "Déduction forfaitaire déjà pratiquée (€)", "forme": "texte", "ecran": true, "aide": "Le total de la déduction forfaitaire spécifique pour frais professionnels appliquée depuis le 1er janvier. 0 s'il n'y en a pas."},
+    {"cle": "heures_supplementaires", "libelle": "Heures supplémentaires déjà payées", "forme": "texte", "ecran": true, "aide": "Le nombre d'heures supplémentaires payées depuis le 1er janvier : le contingent annuel les compte. 0 s'il n'y en a pas."},
+    {"cle": "heures_en_plus_exonerees", "libelle": "Heures en plus déjà exonérées d'impôt (€)", "forme": "texte", "ecran": true, "aide": "Le montant net des heures supplémentaires et complémentaires exonéré d'impôt depuis le 1er janvier (limite de 7 500 € par an). 0 s'il n'y en a pas."}
+   ],
+   "libelle": "Cumuls de l'année à la reprise",
+   "forme": "structure",
+   "aide": "Pour un salarié dont une paie de l'année vient de l'ancien logiciel. Recopier ses cumuls de l'année sur son dernier bulletin : le logiciel en a besoin pour les plafonds de l'année, que les pièces reprises ne disent pas.",
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si": null,
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "ecran": true
+  },
+  {
    "cle": "date_anciennete",
    "avance": "toujours_remplie",
    "libelle": "Dans la compagnie depuis",
