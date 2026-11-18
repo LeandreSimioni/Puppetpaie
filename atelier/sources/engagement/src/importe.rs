@@ -948,12 +948,15 @@ pub struct PaieReprise {
 
 /// LES PAIES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` REPRISES D'UN ANCIEN LOGICIEL, une par engagement
 /// importe qui le paie ce mois, telles que leurs pieces les disent (`PaieReprise`). Le calcul qui les lit note leur
-/// empreinte (`reprises <mois> <salarie>`, `empreinte_des_reprises`, par `etats::paies_du_salarie`).
+/// empreinte (`reprises <mois> <salarie>`, `empreinte_des_reprises`, par `etats::paies_du_salarie`). Un engagement
+/// importe non actif (un contrat repris qui a continue ici, puis retire apres un envoi : `etats::desactiver`) y est
+/// comme les autres : ce que l'ancien logiciel a verse l'a ete. Un engagement importe qui ne dit pas son salarie n'est
+/// celui de personne : il ne fait pas refuser les calculs des autres salaries (ce qui lit ses paies et son contrat pour
+/// eux-memes le refuse, `cle_ecrite`).
 pub fn reprises_du_salarie(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieReprise>> {
     let mut out = Vec::new();
-    for i in du_mois(racine, mois)? {
-        let Some(p) = i.paies().get(&mois) else { continue };
-        if i.cle_ecrite()? == *salarie {
+    for i in du_mois(racine, mois)?.into_iter().filter(|i| i.objet.carte().salarie.as_ref() == Some(salarie)) {
+        if let Some(p) = i.paies().get(&mois) {
             out.push(PaieReprise { numero: i.numero_de_la_paie(p), paie: p.clone() });
         }
     }
@@ -961,19 +964,21 @@ pub fn reprises_du_salarie(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<
 }
 
 /// LA CLE DE LA REPRISE DES CUMULS QUE LA FICHE DU SALARIE `salarie` (la cle de sa fiche) MONTRE
-/// (`routes::fiches::montres`) : une paie reprise de lui, d'une annee civile qu'un engagement d'ici, actif, touche aussi.
-/// Les cumuls de l'annee d'une paie de cet engagement lisent alors cette paie reprise, et la reprise des cumuls de la
-/// fiche quand elle ne dit pas ce qu'ils comptent (`conges::cumul_de_l_annee`). `None` : aucun calcul ne la lit.
+/// (`routes::fiches::montres`) : une paie reprise de lui (celles que les calculs lisent, `reprises_du_salarie` : d'un
+/// engagement importe actif ou non), d'une annee civile qu'un engagement d'ici, actif, touche aussi. Les cumuls de
+/// l'annee d'une paie de cet engagement lisent alors cette paie reprise, et la reprise des cumuls de la fiche quand elle
+/// ne dit pas ce qu'ils comptent (`conges::cumul_de_l_annee`). `None` : aucun calcul ne la lit.
 pub fn reprise_des_cumuls_de(racine: &Path, salarie: &IdSalarie) -> R<Option<droit::fiche::RepriseDesCumuls>> {
     let objets = stock::objets(racine)?;
     let siens = objets.iter().filter(|o| o.carte().salarie.as_ref() == Some(salarie));
     let mut reprises: Vec<(socle::mois::Annee, &PaieVersee)> = Vec::new();
     let mut ici: Vec<(socle::mois::Annee, Option<socle::mois::Annee>)> = Vec::new();
-    for o in siens.filter(|o| !o.est_non_actif()) {
+    for o in siens {
         if let Some(p) = o.pieces() {
             reprises.extend(p.paies.iter().map(|(m, paie)| (m.annee(), paie)));
         }
-        if !o.importe_seul() {
+        // Un engagement non actif ne touche plus aucun mois d'ici (`stock::Objet::couvre`).
+        if !o.importe_seul() && !o.est_non_actif() {
             ici.push((o.premier_mois().annee(), o.dernier_mois()?.map(Mois::annee)));
         }
     }

@@ -1002,15 +1002,18 @@ fn cumul_de_l_annee<T: Copy + std::ops::Add<Output = T>>(
 ) -> R<T> {
     let _derivation = Derivation::ouvrir();
     let Cumul { qui, regle, manque, cumule, case } = cumul;
+    // Une paie d'un mois de l'annee qui ne se lit pas, ou dont ce cumul ne se lit pas : sans ce mois, le cumul ne se
+    // connait pas.
+    let illisible = |m: Mois, e: socle::echec::Echec| {
+        e.reformuler(|e| format!(
+            "{} de {} : les paies de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
+ne se connaît pas. Rien n'est calculé.",
+            qui, cle, m, e, regle
+        ))
+    };
     let mut lues = Vec::new();
     for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        let paies = paies_versees(ctx, m, cle).map_err(|e| {
-            e.reformuler(|e| format!(
-                "{} de {} : les paies de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
-ne se connaît pas. Rien n'est calculé.",
-                qui, cle, m, e, regle
-            ))
-        })?;
+        let paies = paies_versees(ctx, m, cle).map_err(|e| illisible(m, e))?;
         lues.push((m, paies));
     }
     // La reprise des cumuls : seule une paie reprise de l'annee l'ouvre ; datee d'une autre annee, elle n'en dit rien.
@@ -1080,9 +1083,25 @@ ne se connaît pas. Rien n'est calculé.",
             continue;
         }
         for p in paies {
-            match de(p)? {
-                Some(x) => total = total + x,
-                None => {
+            match (de(p).map_err(|e| illisible(*m, e))?, depuis) {
+                (Some(x), _) => total = total + x,
+                // Datee sur ou avant le mois d'une paie que l'ancien logiciel a faite, la reprise ne dit pas encore tout ce
+                // qu'il a cumule : c'est sa date qui est en cause, pas le cumul qu'elle dit.
+                (None, Some(date)) => {
+                    return Err(socle::echec::cle(
+                        format!(
+                            "{} de {} : la reprise des cumuls de l'année est datée du {}, et l'ancien logiciel a encore payé \
+                             {} : sa date est le premier jour du premier mois que PuppetPaie paie, après le dernier que \
+                             l'ancien logiciel a payé. Corriger sa date sur la fiche du salarié. Rien n'est calculé.",
+                            qui,
+                            cle,
+                            date.jj_mm_aaaa(),
+                            m.libelle(socle::mois::Graphie::Accentuee)
+                        ),
+                        &format!("{}.date", CUMULS_REPRISE),
+                    ));
+                }
+                (None, None) => {
                     return Err(socle::echec::cle(
                         format!(
                             "{} de {} : la paie reprise de l'ancien logiciel en {} ne dit pas {}. {} se suit sur toute \

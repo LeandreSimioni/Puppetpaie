@@ -85,8 +85,9 @@ que par la structure :
   l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
   (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. La reprise des cumuls de l'année (`ChampsSalarie::reprise`)
   ne s'ouvre que par `droit::fiche::RepriseDesCumuls`, que seule une paie reprise d'un ancien logiciel donne
-  (`engagement::importe::PaieVersee::reprise_des_cumuls`) : la paie reprise vit au-dessus de `droit`, et la clé y a un
-  constructeur public que seul l'engagement importé appelle. Ce que la fiche
+  (`engagement::importe::PaieVersee::reprise_des_cumuls`). Cette clé-là n'est pas tenue par la structure : la paie
+  reprise vit au-dessus de `droit`, la clé y a un constructeur public, et toute crate au-dessus de `droit` peut l'appeler ;
+  c'est la relecture du diff qui le tient. Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
   du métier de chacun de ses engagements ; celles de l'effectif, par lui ; la reprise des cumuls, par une paie reprise
@@ -2944,15 +2945,20 @@ décident. Les articles sont relevés et datés dans
   de la rupture** (L3141-28). Le compteur se **dérive des saisies**, jamais
   stocké — même règle que les 507 heures d'un intermittent ;
 - **précarité** : 10 % (L1243-8), **pas due pour un contrat d'usage**
-  (L1243-10 1°, qui renvoie au 3° de L1242-2) ;
+  (L1243-10 1°, qui renvoie au 3° de L1242-2), sur la rémunération de chaque
+  mois du contrat ;
 - **préavis** : L1234-1, et **rien sous six mois d'ancienneté** — la loi y
   renvoie à la convention ou aux usages, et le moteur demande plutôt que
   d'inventer ;
 - **indemnité de licenciement** : huit mois d'ancienneté (L1234-9), un quart
   puis un tiers de mois (R1234-2), salaire de référence le plus favorable des
-  deux formules (R1234-4), sur les mois du service du salarié (du mois où son
-  contrat commence, douze au plus) : un mois sans paie connue n'est pas un
-  zéro, le moteur refuse en le nommant (`solde::bruts_precedents`). Un montant **supra-légal est refusé** : son régime
+  deux formules (R1234-4), sur les mois du service du salarié dans
+  l'entreprise (R1234-1 ; depuis son ancienneté, `calcul::DebutDeLAnciennete`,
+  douze au plus : inférence). Un mois de service ou du contrat sans paie connue
+  n'est pas un zéro : le salaire de référence et la précarité refusent en le
+  nommant, et lisent leurs mois par un seul chemin
+  (`solde::brut_d_un_mois_de_service`), celui de la validation : les mois d'un
+  engagement en saisie s'y calculent comme sa validation les calculera. Un montant **supra-légal est refusé** : son régime
   social est autre, et le moteur ne sait pas l'assujettir ;
 - **les trois autres fins d'un CDI** — et c'est le
   **motif de rupture** qui choisit, jamais la ressemblance :

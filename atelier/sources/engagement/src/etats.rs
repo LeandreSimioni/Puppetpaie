@@ -847,9 +847,9 @@ pub fn paies_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Ve
     for r in reprises {
         if let Some(n) = r.numero.as_ref().filter(|n| validees.iter().any(|p| p.numero() == Some(*n))) {
             return Err(socle::refus!(
-                "Le contrat {} de {} est payé en {} deux fois : par l'ancien logiciel (une paie reprise) et par une paie validée \
-                 ici. Une paie ne se compte pas deux fois : signaler au développeur ce que l'import a repris de ce mois. Rien \
-                 n'est calculé.",
+                "Le contrat {} de {} est payé en {} deux fois : par l'ancien logiciel, dont la paie de ce mois est reprise, et \
+                 par une paie validée ici. Un mois que l'ancien logiciel a payé ne se paie pas ici : modifier l'engagement \
+                 d'ici pour qu'il commence après ce mois. Rien n'est calculé.",
                 n,
                 salarie,
                 mois.libelle(socle::mois::Graphie::Accentuee)
