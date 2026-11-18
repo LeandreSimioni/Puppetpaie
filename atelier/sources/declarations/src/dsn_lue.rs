@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
+use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseSalarie, CaseSpectacle, NomDeFiche};
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
@@ -802,6 +803,141 @@ impl EntrepriseDeclaree {
         prendre(&mut self.france_travail_dossier_recouvrement, &r.france_travail_dossier_recouvrement);
         prendre(&mut self.declarant_dsn, &r.declarant_dsn);
         prendre(&mut self.medecine_travail, &r.medecine_travail);
+    }
+
+    /// Les cases de la fiche Entreprise que ces champs remplissent, un par un (`import::dsn_aem::fiche_entreprise` les
+    /// y passe sous leurs cles ; la licence, datee a part, `licence_spectacle`).
+    fn cases() -> Vec<CaseEntreprise> {
+        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
+        let _chaque_champ_a_sa_case = |e: &EntrepriseDeclaree| {
+            let EntrepriseDeclaree {
+                siren: _,
+                naf: _,
+                nic: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                idcc: _,
+                adherent_conges_spectacles: _,
+                raison_sociale: _,
+                banque: _,
+                france_travail_dossier_recouvrement: _,
+                declarant_dsn: _,
+                medecine_travail: _,
+                licence: _,
+            } = e;
+        };
+        use CaseEntreprise::*;
+        vec![
+            Siren,
+            Naf,
+            Nic,
+            Adresse,
+            CodePostal,
+            Commune,
+            Idcc,
+            CongesspectaclesAdherent,
+            RaisonSociale,
+            Banque,
+            FranceTravailDossierRecouvrement,
+            DeclarantDsn,
+            MedecineTravail,
+            LicenceSpectacle,
+        ]
+    }
+}
+
+impl IndividuDeclare {
+    /// Les cases de la fiche d'un salarie que ces champs remplissent (`import::dsn_aem::SalarieDeclare::fiche` les y
+    /// passe sous leurs cles ; de l'identite, le nom, les prenoms, la naissance et le NIR -- le NTT n'a pas de case).
+    fn cases() -> Vec<CaseSalarie> {
+        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
+        let _chaque_champ_a_sa_case = |i: &IndividuDeclare| {
+            let IndividuDeclare {
+                identite: IdentiteDeclaree { nom: _, prenoms: _, naissance: _, nir: _, ntt: _ },
+                sexe: _,
+                lieu_naissance: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                code_nationalite_dsn: _,
+                departement_naissance: _,
+                pays_naissance: _,
+                email: _,
+                code_salarie: _,
+            } = i;
+        };
+        use CaseSalarie::*;
+        vec![
+            Nom,
+            Prenom,
+            DateNaissance,
+            Nir,
+            Sexe,
+            LieuNaissance,
+            Adresse,
+            CodePostal,
+            Commune,
+            CodeNationaliteDsn,
+            DepartementNaissance,
+            PaysNaissance,
+            Email,
+            CodeSalarie,
+        ]
+    }
+}
+
+impl EmploiDeclare {
+    /// Les cases de la fiche d'un salarie que l'emploi d'un contrat remplit (S21.G00.40.002 a .006).
+    fn cases() -> Vec<CaseSalarie> {
+        // Le motif nomme chaque champ : un champ de plus ne compile pas ici tant qu'il n'a pas sa case.
+        let _chaque_champ_a_sa_case = |e: &EmploiDeclare| {
+            let EmploiDeclare { statut_conventionnel: _, statut_categoriel_rc: _, pcs_ese: _, code_emploi_ft: _, emploi: _ } = e;
+        };
+        use CaseSalarie::*;
+        vec![StatutConventionnel, StatutCategorielRc, PcsEse, CodeEmploiFt, Emploi]
+    }
+}
+
+// ------------------------------------------------------------------ ce qu'une DSN donne a la configuration
+
+/// LA PIECE QUI PORTERAIT CE QUI MANQUE A LA CONFIGURATION : une DSN deposee, que l'import reprend et dont il pose ce
+/// qu'elle dit (`Dsn`), ou aucune piece (`Aucune`) : cela se saisit. Ecrit `dsn`, `aucune`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PieceQuiLaPorte {
+    Dsn,
+    Aucune,
+}
+
+impl PieceQuiLaPorte {
+    /// LA PIECE QUI PORTE la case `case` de la fiche `fiche` : une DSN quand sa lecture la remplit, aucune sinon. Ce que la
+    /// lecture remplit, chaque forme lue le dit d'elle-meme (`EntrepriseDeclaree::cases`, `IndividuDeclare::cases`,
+    /// `EmploiDeclare::cases`) ; s'y ajoute ce que l'import en tire a cote : le Siret (le Siren et le NIC,
+    /// `routes::import::fiche_entreprise`), le taux AT/MP de chaque annee (S21.G00.40.040, .043 :
+    /// `routes::importation::parametrage`), la cle du NIR, les initiales, l'anciennete (le premier contrat), le statut et
+    /// l'emploi en clair (son code emploi : `routes::import::fiche_salarie`), et le numero d'objet d'un spectacle
+    /// (S21.G00.40.050, la fiche que l'import cree de chaque numero declare).
+    pub fn de_la_case(fiche: NomDeFiche, case: CaseDeFiche) -> PieceQuiLaPorte {
+        let cases: Vec<CaseDeFiche> = match fiche {
+            NomDeFiche::Entreprise => {
+                let mut v = EntrepriseDeclaree::cases();
+                v.extend([CaseEntreprise::Siret, CaseEntreprise::TauxAtmp]);
+                v.into_iter().map(CaseDeFiche::from).collect()
+            }
+            NomDeFiche::Salarie => {
+                let mut v = IndividuDeclare::cases();
+                v.extend(EmploiDeclare::cases());
+                v.extend([CaseSalarie::NirCle, CaseSalarie::InitialesContrat, CaseSalarie::DateAnciennete, CaseSalarie::Statut, CaseSalarie::EmploiAffichage]);
+                v.into_iter().map(CaseDeFiche::from).collect()
+            }
+            NomDeFiche::Spectacle => vec![CaseSpectacle::NumeroObjet.into()],
+        };
+        if cases.contains(&case) {
+            PieceQuiLaPorte::Dsn
+        } else {
+            PieceQuiLaPorte::Aucune
+        }
     }
 }
 

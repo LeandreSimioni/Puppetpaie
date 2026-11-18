@@ -290,12 +290,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // (gris) ; les acces aux organismes et le Drive se proposent (`acces_proposes`).
         Route::PourDemarrer => {
             let SansCharge {} = charge.lire()?;
-            let (proposes, simules) = acces_proposes(ctx)?;
-            let (simule, pastille_simulee) = match simules {
-                Some((pose, pastille)) => (Some(pose), Some(pastille)),
-                None => (None, None),
-            };
-            let d = declarations::demarrage::route(ctx, proposes, simule)?;
+            let (d, pastille_simulee) = pour_demarrer(ctx, crate::importation::parametrage::ce_que_l_import_a_repris(ctx)?)?;
             // Chaque pose a sa pastille : celle de la compagnie dont rien ne part (la derniere), « posé pour vous » sinon.
             let n = d.poses.len();
             let poses = d
@@ -310,7 +305,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, poses })
+            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -1605,6 +1600,21 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose,
     Ok((out, None))
 }
 
+/// « POUR DEMARRER », tel que `pour-demarrer` le rend et que `importation-etat` le range : les lignes des fiches, les
+/// acces proposes (`acces_proposes`), et ce qu'une DSN donnerait quand l'import n'en a repris aucune (`repris`,
+/// `importation::parametrage::ce_que_l_import_a_repris`) ; avec la pastille de la pose simulee, s'il y en a une.
+pub(crate) fn pour_demarrer(
+    ctx: &Contexte,
+    repris: declarations::demarrage::CeQueLImportARepris,
+) -> R<(declarations::demarrage::PourDemarrer, Option<Pastille>)> {
+    let (proposes, simules) = acces_proposes(ctx)?;
+    let (simule, pastille_simulee) = match simules {
+        Some((pose, pastille)) => (Some(pose), Some(pastille)),
+        None => (None, None),
+    };
+    Ok((declarations::demarrage::route(ctx, proposes, simule, repris)?, pastille_simulee))
+}
+
 /// UN ACCES PROPOSE, une ligne de « Pour demarrer » (`declarations::demarrage::route`, qui y ajoute sa phrase) : ce qu'il
 /// permet (`utile`), ce qui se fait sans lui (`sinon`), ou il se pose (l'onglet du coffre, aucune case).
 fn acces_propose(cle: String, libelle: String, utile: String, sinon: &str) -> Manque {
@@ -1627,6 +1637,8 @@ struct PourDemarrerVu {
     titre: String,
     note: String,
     manques: Vec<Manque>,
+    /// Ce qu'une DSN donnerait, quand l'import n'en a repris aucune (`declarations::demarrage::ParUneDsn`).
+    dsn: Option<declarations::demarrage::ParUneDsn>,
     poses: Vec<PoseVue>,
 }
 

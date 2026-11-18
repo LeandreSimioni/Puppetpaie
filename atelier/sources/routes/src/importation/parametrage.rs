@@ -199,6 +199,22 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
     faits
 }
 
+/// CE QUE L'IMPORT A REPRIS, pour ranger ce qui manque a la configuration (`declarations::demarrage::route`) : rien
+/// (aucun contrat ni aucune paie importes, `engagement::importe`), des pieces sans DSN, ou une DSN au moins parmi les
+/// copies que l'import garde (`historique/bulletins/`, celles que `parametrer` lit). Un dossier qui ne se lit pas se
+/// refuse.
+pub(crate) fn ce_que_l_import_a_repris(ctx: &Contexte) -> socle::echec::R<declarations::demarrage::CeQueLImportARepris> {
+    use declarations::demarrage::CeQueLImportARepris;
+    if engagement::importe::contrats_lus(&ctx.racine)?.is_empty() && engagement::importe::paies_lues(&ctx.racine)?.is_empty() {
+        return Ok(CeQueLImportARepris::Rien);
+    }
+    Ok(if declarations::dsn_lue::fichiers(&import::mois::dossier_des_bulletins(&ctx.racine))?.is_empty() {
+        CeQueLImportARepris::SansDsn
+    } else {
+        CeQueLImportARepris::AvecDsn
+    })
+}
+
 /// LE TAUX DE PRELEVEMENT A LA SOURCE que la DGFiP a transmis a la compagnie et que ses DSN reprises appliquent
 /// (S21.G00.50.006 a .008) : au magasin du PAS, comme un taux recu, date du jour du versement qui
 /// l'applique (`compagnie::taux_pas::derniers_taux_des_dsn`, une inference). La validite se lit ensuite comme pour tout taux recu (`droit::pas`).

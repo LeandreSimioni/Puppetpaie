@@ -12,19 +12,32 @@
 //! - les AER Cinéma Spectacle : `aem_lu::lire_aer` (par les champs du formulaire, une `Aem` par periode) ;
 //! - les archives : `tri` (un zip s'ouvre, son contenu se trie comme le reste ; un PDF sans texte ne se lit pas).
 //!
+//! L'ESSENTIEL D'ABORD (`essentiel`, `essentielles`) : les bulletins refont l'historique, une DSN deposee pre-remplit la
+//! configuration (`routes::importation::parametrage`), tout dans un dossier qu'on choisit ; puis, a part, ce qu'on peut
+//! mettre si certains documents manquent (`si_manquent`, `autres`).
+//!
 //! Ce qui restera a dire : ce qu'aucune de ces lectures ne donne -- la nature d'un contrat de permanent
 //! (`nature`), et ce que « Pour demarrer » demande encore (les conges d'un permanent repris compris)
-//! (`declarations::demarrage`), que la page montre apres l'import.
+//! (`declarations::demarrage`), que la page montre apres l'import ; ce qu'une DSN donnerait s'y dit a part
+//! (`declarations::demarrage::ParUneDsn`). Un document ajoute ensuite se reprend en relancant l'import (`rejouer`).
 
 use std::path::Path;
 
 /// Le guide, tel que la page le montre.
 #[derive(Debug, serde::Serialize)]
 pub struct Guide {
-    pub a_quoi_sert: &'static [&'static str],
+    /// L'essentiel, en quelques phrases.
+    pub essentiel: &'static [&'static str],
+    /// Les deux pieces de l'essentiel, les bulletins et une DSN deposee : ce qui s'en lit.
+    pub essentielles: Vec<Piece>,
+    /// La phrase qui ouvre les autres pieces.
+    pub si_manquent: &'static str,
+    /// Ce qu'on peut mettre aussi, si certains documents manquent.
+    pub autres: Vec<Piece>,
     pub accepte: &'static str,
-    pub pieces: Vec<Piece>,
     pub reste: &'static str,
+    /// Le meme chemin apres une premiere reprise : ajouter au dossier, relancer l'import.
+    pub rejouer: &'static str,
     pub rien_n_est_perdu: &'static str,
 }
 
@@ -39,13 +52,12 @@ pub struct Piece {
 /// Le guide, tel que la page le montre.
 pub fn guide() -> Guide {
     Guide {
-        a_quoi_sert: &[
-            "Les bulletins de paie complets suffisent : ils recréent votre historique dans le logiciel.",
-            "Une AEM ou une AER Cinéma Spectacle remplace un bulletin qui manque.",
-            "Au moins une DSN déposée pré-remplit la configuration de la compagnie.",
+        essentiel: &[
+            "Pour un import de bonne qualité, reprenez toutes vos fiches de paie : elles refont votre historique.",
+            "Ajoutez une DSN déposée : elle pré-remplit la configuration de la compagnie.",
+            "Mettez le tout dans un dossier sur l'ordinateur, puis choisissez ce dossier et importez.",
         ],
-        accepte: crate::tri::ACCEPTE,
-        pieces: vec![
+        essentielles: vec![
             Piece {
                 quoi: "Les bulletins de paie, en PDF",
                 ou: "Ceux que votre ancien logiciel imprime ou exporte : un bulletin par fichier, ou plusieurs dans un même fichier. Pas une photo ni un scan : le logiciel lit le texte du PDF.",
@@ -68,6 +80,9 @@ pub fn guide() -> Guide {
                     "chaque mois : ce qui a été versé et déclaré",
                 ],
             },
+        ],
+        si_manquent: "Si certains documents manquent, vous pouvez aussi mettre :",
+        autres: vec![
             Piece {
                 quoi: "Les certificats d'emploi Congés Spectacles, en PDF",
                 ou: "Ceux que votre ancien logiciel a édités pour chaque intermittent, à la mise en page d'Audiens. Avec les bulletins, ils complètent sans rien reprendre deux fois ; seuls, ils suffisent à créer les intermittents et leurs contrats.",
@@ -106,8 +121,10 @@ pub fn guide() -> Guide {
                 lu: &[],
             },
         ],
-        reste: "Ce qu'aucune pièce ne porte se demande ensuite, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, la date de la première embauche de la compagnie, ou, pour un salarié payé au mois, si son contrat est un CDI ou un CDD, ce qu'un bulletin n'imprime pas.",
-        rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste, et l'import se rejoue sans rien effacer ni doubler. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
+        accepte: crate::tri::ACCEPTE,
+        reste: "Après l'import, ce qu'une DSN donnerait se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
+        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris : rien ne se double, et les fiches ne reçoivent que ce qui leur manque.",
+        rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
     }
 }
 

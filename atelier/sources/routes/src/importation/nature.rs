@@ -179,6 +179,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
             natures,
             dit,
             en_cours_dit,
+            piece: declarations::dsn_lue::PieceQuiLaPorte::Dsn,
         });
     }
     Ok(out)
@@ -203,6 +204,10 @@ pub(crate) struct ADire {
     pub(crate) dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) en_cours_dit: Option<String>,
+    /// La piece qui porte ce qui se demande ici : une DSN deposee, qui declare la nature du contrat (S21.G00.40.007), son
+    /// debut, son numero, son salaire et sa duree (`declarations::dsn_lue::ContratDeclare`), et que l'import reprend
+    /// sans rien demander.
+    pub(crate) piece: declarations::dsn_lue::PieceQuiLaPorte,
 }
 
 /// Une nature de permanent qui peut se dire, et ce qu'elle demande d'un contrat qui court encore.
