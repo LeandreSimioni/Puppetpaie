@@ -374,6 +374,7 @@ async function dessinerImportation(cible) {
       <div id="import-resultat"></div>
     </div>`;
   document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
+  brancherIdentites(document.getElementById("import-etat"), e);
   // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
   if (deja) peindreDemarrage(document.getElementById("import-demarrage"));
   document.getElementById("import-apercu").onclick = () => apercuImportation();
@@ -449,8 +450,32 @@ function vueEtatImportation(e) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
-  return repris + vueNaturesADire(e.a_dire)
+  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e.a_dire)
     + (editeur ? `<h3>Ce qui attend l'éditeur</h3>${editeur}` : "");
+}
+
+/* LA PERSONNE QU'UNE DSN DÉCLARE ET QUI RESSEMBLE À UNE FICHE SANS NUMÉRO
+   DE SÉCURITÉ SOCIALE (`import::identite`) : le moteur pose la question
+   (`identites`), la page la montre avec ses deux gestes (`gestes`, dessinés
+   depuis la fiche de leur route : `js/avance.js`). */
+function vueIdentitesADire(liste) {
+  if (!liste.length) return "";
+  return `<h3>Est-ce la même personne ?</h3>${liste.map((q, k) => `<div class="rang">
+      <div class="rang-infos"><b class="rang-nom">${echapper(q.qui)}</b>${echapper(q.question)}</div>
+      <div class="rang-etat" data-identite="${k}">${boutonsDesGestes(q.gestes)}</div>
+    </div>`).join("")}`;
+}
+
+/* Les gestes des questions d'identité de `e`, dessinés dans `cible` ; après la réponse, l'état se relit. */
+function brancherIdentites(cible, e) {
+  cible.querySelectorAll("[data-identite]").forEach((b) => {
+    const q = e.identites[+b.dataset.identite];
+    brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, async () => {
+      await relireEtat();
+      rafraichirReferentiels();
+      await rafraichirEtatImportation();
+    });
+  });
 }
 
 /* LA NATURE DES CONTRATS REPRIS QU'AUCUN BULLETIN NE DIT
@@ -651,7 +676,11 @@ function vueNonRepris(nr, pastilles) {
 async function rafraichirEtatImportation() {
   const cible = document.getElementById("import-etat");
   if (!cible) return;
-  try { cible.innerHTML = vueEtatImportation(await api("importation-etat")); } catch (e) { dire(e.message, "erreur"); }
+  try {
+    const e = await api("importation-etat");
+    cible.innerHTML = vueEtatImportation(e);
+    brancherIdentites(cible, e);
+  } catch (e) { dire(e.message, "erreur"); }
 }
 
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les

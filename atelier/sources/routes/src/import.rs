@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), guide, editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), identites (les questions d'identité et leurs gestes), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -93,6 +93,21 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 0,
         ecran: ECRAN,
     },
+    Fiche {
+        route: Route::ImportationIdentite,
+        geste: "Dire si la personne qu'une DSN déclare est le salarié d'une fiche sans numéro de sécurité sociale.",
+        charge: &[
+            Champ { nom: "nir", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "le numéro de sécurité sociale que la DSN déclare, sans sa clé", avance: false },
+            SALARIE,
+            Champ { nom: "reponse", libelle: Affiche::new("Réponse"), forme: Forme::Texte, sens: "meme : c'est le salarié de la fiche ; autre : une autre personne", avance: false },
+        ],
+        exemple: r#"{"nir":"2850799999124","salarie":"TARTEMPION","reponse":"autre"}"#,
+        rend: "phrase",
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié ou la réponse que la phrase nomme ; rien n'est écrit" }, FORME],
+        acte: Acte::Ecrit,
+        phrase: 0,
+        ecran: Ecran::Geste(Place::Import),
+    },
 ];
 
 /// Une route de ce module.
@@ -106,11 +121,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ImportationApercu => en_json(crate::importation::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
-            en_json(etat_importation(&ctx.racine)?)
+            en_json(etat_importation(ctx)?)
         }
         Route::Importer => en_json(crate::importation::ecrite::importer(ctx, &charge.lire()?)?),
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
+        // La reponse a une question d'identite (`importation::identite`).
+        Route::ImportationIdentite => en_json(crate::importation::identite::repondre(ctx, &charge.lire()?)?),
         autre => Err(enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -470,12 +487,20 @@ pub(crate) fn apercu_lu(
             par_nir.insert(n.clone(), cle.clone());
         }
     }
+    // UN INDIVIDU QUI RESSEMBLE AU SALARIE D'UNE FICHE SANS NIR ne se cree pas : l'import demande si c'est la meme
+    // personne, et n'ecrit rien de lui (ni fiche, ni contrat, ni paie) tant que la compagnie n'a pas repondu
+    // (`importation::identite`).
+    let identites = crate::importation::identite::questions(ctx, &lecture.salaries, a_venir)?;
+    let en_question: HashSet<Nir> = identites.iter().map(|q| q.nir.clone()).collect();
     let mut ordre: Vec<&SalarieDeclare> = lecture.salaries.iter().collect();
     ordre.sort_by(|a, b| a.mois.cmp(&b.mois));
     let mut salaries = Vec::new();
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
     for decl in ordre {
+        if decl.individu.identite.nir.as_ref().is_some_and(|n| en_question.contains(n)) {
+            continue;
+        }
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = &ctx.salaries[cle].champs;
@@ -585,7 +610,8 @@ pub(crate) fn apercu_lu(
 
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
-    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone()))).count();
+    // Ceux d'un individu mis de cote (une question d'identite) attendent la reponse : ils ne sont pas « sans fiche ».
+    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone())) && !en_question.contains(&c.nir)).count();
     let contrats_du = contrats.iter().map(|c| c.periode.debut()).min();
     let contrats_au = contrats.iter().map(|c| c.periode.fin()).max();
     if sans_fiche > 0 {
@@ -670,6 +696,7 @@ pub(crate) fn apercu_lu(
         pastilles: import::reponse::pastilles_des_sorts(),
         encart: None,
         couleur: None,
+        identites,
     };
     Ok(Apercu {
         reponse,
@@ -696,7 +723,8 @@ pub(crate) fn apercu_lu(
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
 ///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
 ///   refuse.
-fn etat_importation(racine: &Path) -> R<EtatImportation> {
+fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
+    let racine = &ctx.racine;
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
@@ -761,6 +789,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
         attend_editeur,
         a_dire: crate::importation::nature::a_dire(racine)?,
+        identites: crate::importation::identite::en_attente(ctx)?,
         guide: import::guide::guide(),
         repris_dit,
         repris_titre,
@@ -786,6 +815,9 @@ struct EtatImportation {
     attend_editeur: usize,
     /// Les contrats repris dont la nature reste a dire, par salarie.
     a_dire: Vec<crate::importation::nature::ADire>,
+    /// Les individus que les DSN reprises declarent et que l'import met de cote, le temps que la compagnie dise s'ils
+    /// sont le salarie d'une fiche sans NIR (`importation::identite`).
+    identites: Vec<crate::importation::identite::IdentiteADire>,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: import::guide::Guide,
     repris_dit: Option<String>,

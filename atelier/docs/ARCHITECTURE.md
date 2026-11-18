@@ -1160,6 +1160,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
+| question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
+| réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
+| réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
@@ -2374,6 +2377,13 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
+- **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
+  par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
+  fiche sans NIR (même nom, même premier prénom, même date de naissance quand les deux la disent), ne se crée pas :
+  l'import le met de côté (ni fiche, ni contrat, ni paie) et demande si c'est la même personne
+  (`QuestionDIdentite`, dans la réponse d'`importer` et dans `importation-etat`, avec ses gestes) ; la ressemblance
+  pose la question, elle ne décide rien. `importation-identite` y répond : la même, la fiche reçoit le NIR et l'import
+  rejoué la complète ; une autre, la réponse se garde (`journal/import-identites.json`) et l'import rejoué crée sa fiche.
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
   l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.

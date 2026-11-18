@@ -738,14 +738,23 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         (0, s) => format!(" Titre à dire pour {} spectacle(s) : les pièces ne portent que le numéro d'objet (Pour démarrer).", s),
         (p, s) => format!(" Titre à dire pour {} spectacle(s), dont {} proposé(s) d'après les bulletins (Pour démarrer).", p + s, p),
     };
+    // LES INDIVIDUS MIS DE COTE (`importation::identite`) : rien d'eux n'est repris, la phrase le dit, et chacun sa
+    // question.
+    let personnes: HashSet<&droit::fiche::Nir> = reponse.identites.iter().map(|q| &q.nir).collect();
+    let en_question = match personnes.len() {
+        0 => String::new(),
+        1 => " Une personne déclarée dans la DSN ressemble à une fiche sans numéro de sécurité sociale : rien d'elle n'est repris avant votre réponse.".to_string(),
+        n => format!(" {} personnes déclarées dans la DSN ressemblent à une fiche sans numéro de sécurité sociale : rien d'elles n'est repris avant votre réponse.", n),
+    };
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
-        "Repris : {}, {} ; fiches écrites : {}.{}",
+        "Repris : {}, {} ; fiches écrites : {}.{}{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
-        titres
+        titres,
+        en_question
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;

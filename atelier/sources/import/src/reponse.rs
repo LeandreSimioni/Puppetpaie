@@ -785,6 +785,23 @@ pub struct Importation {
     /// La couleur de la phrase (`importer`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub couleur: Option<&'static str>,
+    /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
+    /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
+    pub identites: Vec<QuestionDIdentite>,
+}
+
+/// UNE QUESTION D'IDENTITE DE L'IMPORT : un individu qu'une DSN declare sous un NIR qu'aucune fiche ne porte (`nir`,
+/// `qui`, tel que la DSN le nomme) ressemble au salarie d'une fiche qui n'a pas de NIR (`salarie`, `nom`). Un salarie ne
+/// se rattache a sa DSN que par son NIR ; rapprocher par le nom serait deviner (regle 1), creer une seconde fiche en
+/// silence doublerait la personne : l'import demande (`question`), et n'ecrit rien de cet individu tant que la
+/// compagnie n'a pas repondu (`routes::importation::identite`).
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestionDIdentite {
+    pub nir: droit::fiche::Nir,
+    pub qui: String,
+    pub salarie: droit::contexte::IdSalarie,
+    pub nom: String,
+    pub question: socle::texte::Phrase,
 }
 
 /// « 3 bulletins » : `n` et le mot, au pluriel quand il le faut ; rien pour zero.
