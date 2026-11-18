@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, brut_non_dit, brut_verse, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, paies_versees, qui,
+    avertir, brut_non_dit, compteur_conges, debut_de, info, jours_dits, jours_ouvrables_de, paies_versees, qui,
     salarie_de, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -414,10 +414,8 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                     // Une indemnite nulle ne s'ecrit pas : la norme refuse `0.00`.
                     stc.avertissements.push(avertir(format!(
                         "{} : indemnité de fin de contrat NULLE -- la \
-                         rémunération totale du contrat est de {}. Si le \
-                         contrat a payé quelque chose, ce sont ses mois \
-                         précédents dont la saisie manque : l'assiette de \
-                         L1243-8 est la rémunération de TOUT le contrat.",
+                         rémunération totale du contrat, chacun de ses mois \
+                         payé, est de {} (L1243-8).",
                         qui, euros(total)
                     )));
                 }
@@ -1331,13 +1329,17 @@ fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &
 /// articles-20261110.md` : « la moyenne mensuelle des douze derniers mois précédant le licenciement, ou lorsque la durée
 /// de service du salarié est inférieure à douze mois, la moyenne mensuelle de la rémunération de l'ensemble des mois
 /// précédant le licenciement » ; « le tiers des trois derniers mois »). Les mois qui comptent sont ceux du service du
-/// salarie : du mois ou son contrat commence au mois d'avant `mois`, douze au plus ; un mois d'avant son contrat ne
-/// compte pas, que d'autres salaries y soient payes ou non. Chacun vaut le brut verse au salarie, valide ici ou repris
-/// de l'ancien logiciel (`conges::paies_versees`) ; un mois de son service ou aucune paie n'est connue n'est pas un
-/// zero : le calcul refuse en nommant le mois, comme pour une paie reprise qui ne dit pas son brut.
+/// salarie, douze au plus avant `mois`. Sa « duree de service » se compte dans l'entreprise : R1234-1, que ce salaire
+/// sert, dit « par annee de service dans l'entreprise et tenant compte des mois de service accomplis » (meme fichier).
+/// INFERENCE : la duree de service de R1234-4 est celle de R1234-1, et elle part du jour d'ou part l'anciennete dans
+/// l'entreprise, que tout le moteur lit par un seul chemin (`calcul::DebutDeLAnciennete` : la case « Dans la compagnie
+/// depuis », ou l'embauche que ce contrat est) ; un CDD suivi d'un CDI compte les mois des deux contrats quand la fiche
+/// le dit. Un mois d'avant ce jour ne compte pas, que d'autres salaries y soient payes ou non. Chaque mois se lit par
+/// `brut_d_un_mois_de_service`.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Montant>, Vec<Montant>)> {
     let salarie = salarie_de(e)?;
-    let debut = debut_de(e)?.mois_civil();
+    let fiche = ctx.fiche_de(salarie)?;
+    let depuis = crate::calcul::DebutDeLAnciennete::de(&ctx.racine, &fiche, salarie, debut_de(e)?)?.jour()?;
     let refus = |pourquoi: String| {
         socle::refus!(
             "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des douze et des trois \
@@ -1348,10 +1350,10 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Montant>, V
     let mut bruts = Vec::new();
     for i in 1..=12 {
         let m = mois.avant(socle::date::Duree::mois(i))?;
-        if m < debut {
+        if m < depuis.mois_civil() {
             break;
         }
-        bruts.push(brut_d_un_mois_du_contrat(ctx, e, salarie, m)?.map_err(refus)?);
+        bruts.push(brut_d_un_mois_de_service(ctx, e, salarie, m, (DepuisLe::Anciennete, depuis))?.map_err(refus)?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
@@ -1372,32 +1374,67 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Montant> {
 }
 
 /// La remuneration totale brute versee pendant le contrat (L1243-8, « la rémunération totale brute versée au salarié »,
-/// que l'employeur l'ait payee ici ou dans l'ancien logiciel) : le brut verse chaque mois d'avant depuis son debut
-/// (`conges::brut_verse`, ses paies validees et reprises ; un mois sans paie validee ni reprise compte zero), plus le
-/// mois courant, dont le brut arrive tout calcule. Une paie reprise qui ne dit pas son brut refuse en nommant son mois.
+/// que l'employeur l'ait payee ici ou dans l'ancien logiciel) : le brut verse chaque mois d'avant depuis le debut du
+/// contrat (`brut_d_un_mois_de_service`), plus le mois courant, dont le brut arrive tout calcule.
 fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Montant) -> R<Montant> {
     let salarie = salarie_de(e)?;
     let mut total = ce_mois;
     let debut = debut_de(e)?;
+    let refus = |pourquoi: String| {
+        socle::refus!("L'indemnité de fin de contrat (L1243-8) se calcule sur la rémunération totale brute du contrat : {}, puis refaire la fin du contrat.", pourquoi)
+    };
     for m in debut.mois_civil().jusqu_a(mois).into_iter().filter(|m| *m != mois) {
-        total += brut_verse(ctx, m, salarie)?.ok_or_else(|| {
-            socle::refus!("L'indemnité de fin de contrat (L1243-8) se calcule sur la rémunération totale brute du contrat : {}, puis refaire la fin du contrat.", brut_non_dit(m))
-        })?;
+        total += brut_d_un_mois_de_service(ctx, e, salarie, m, (DepuisLe::Contrat, debut))?.map_err(refus)?;
     }
     Ok(total)
 }
 
-/// LE BRUT VERSE AU SALARIE `salarie` DE LA CARTE `e` EN `m`, UN MOIS DE SON CONTRAT : la somme des bruts de ses paies
-/// validees et reprises (`conges::paies_versees`). `Err(pourquoi)` : aucune paie de ce mois n'est connue (une absence
-/// n'est pas un zero), ou une paie reprise ne dit pas son brut ; le calcul qui le lit refuse avec ce pourquoi.
-fn brut_d_un_mois_du_contrat(ctx: &Contexte, e: &Carte, salarie: &droit::contexte::IdSalarie, m: Mois) -> R<Result<Montant, String>> {
+/// LE JOUR QUI FAIT COMPTER UN MOIS DANS UN CALCUL DU SOLDE, tel que son refus le nomme : le debut du contrat
+/// (L1243-8), ou celui de l'anciennete dans l'entreprise (R1234-4, `calcul::DebutDeLAnciennete`).
+#[derive(Clone, Copy)]
+enum DepuisLe {
+    Contrat,
+    Anciennete,
+}
+
+impl DepuisLe {
+    /// La date a corriger quand elle fait compter un mois que personne n'a paye.
+    fn a_corriger(self) -> &'static str {
+        match self {
+            DepuisLe::Contrat => "le début du contrat",
+            DepuisLe::Anciennete => "« Dans la compagnie depuis », sur sa fiche",
+        }
+    }
+}
+
+/// LE BRUT VERSE AU SALARIE `salarie` DE LA CARTE `e` EN `m`, UN MOIS QUE `depuis` FAIT COMPTER : la somme des bruts de
+/// ses paies telles qu'un calcul d'un autre mois les lit (`conges::paies_versees`, le seul chemin) -- validees ici, ou
+/// calculees comme leur validation les calculera pour un engagement en saisie (`etats::CommeALaValidation`, ouvert par
+/// `charger_donnees`) ou en cours de validation (ses mois deja calcules), et reprises de l'ancien logiciel. Le salaire de
+/// reference et la remuneration du contrat le lisent, et lui seul.
+///
+/// `Err(pourquoi)`, que le calcul qui le lit refuse avec sa raison : aucune paie de ce mois n'est connue (une absence
+/// n'est pas un zero), et le refus dit les trois gestes qui la font connaitre (valider l'engagement d'ici qui le paie,
+/// importer la paie de l'ancien logiciel, ou corriger la date qui fait compter le mois) ; ou une paie reprise ne dit pas
+/// son brut.
+fn brut_d_un_mois_de_service(
+    ctx: &Contexte,
+    e: &Carte,
+    salarie: &droit::contexte::IdSalarie,
+    m: Mois,
+    (depuis, le): (DepuisLe, socle::date::Jour),
+) -> R<Result<Montant, String>> {
     let paies = paies_versees(ctx, m, salarie)?;
     if paies.is_empty() {
         return Ok(Err(format!(
-            "{} est sous contrat en {}, et aucune paie de ce mois n'est validée ici ni reprise de l'ancien logiciel ; valider \
-             ce mois-là, ou importer sa paie de l'ancien logiciel",
+            "{} compte pour {} ({} : le {}), et aucune paie de ce mois n'est connue, ni validée ici ni reprise de \
+             l'ancien logiciel ; si un engagement d'ici le paie, le valider ; si l'ancien logiciel l'a payé, importer \
+             cette paie ; sinon, corriger {}",
+            m.libelle(socle::mois::Graphie::Accentuee),
             qui(ctx, e),
-            m.libelle(socle::mois::Graphie::Accentuee)
+            depuis.a_corriger(),
+            le.jj_mm_aaaa(),
+            depuis.a_corriger()
         )));
     }
     let brut: Option<Montant> = paies.iter().map(crate::etats::PaieAnterieure::brut).sum();
