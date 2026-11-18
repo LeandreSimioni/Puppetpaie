@@ -1125,7 +1125,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | origine du retour d'un contrat | `envois::ligne::OrigineDuRetourDeContrat` | `envois/src/ligne.rs` |
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
-| paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| paie du mois qu'un état, ou un calcul d'un autre mois, lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
 | contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
@@ -1866,10 +1866,16 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   en saisie) ; aucun ne recalcule. Deux états de plus, à part :
   - **importé** (`engagement/src/importe.rs`, la clé `importe`) : tiré par l'import des pièces d'un autre logiciel,
     validé et documents partis (ce qui en est parti, c'est l'import lui-même). Il se lit, ne se modifie pas et ne se
-    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul, aucune
-    déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
+    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul ne le refait,
+    aucune déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
     contrat est celui que la DSN déposée lui a donné (S21.G00.40.009). Il compte dans les cumuls des annexes 8 et 10
-    (`engagement/src/cumul.rs`) et dans les numéros pris.
+    (`engagement/src/cumul.rs`) et dans les numéros pris. Ce qu'il a versé compte comme ce que versent les paies
+    validées pour les calculs qui lisent le salaire d'un autre mois, par un seul lecteur (`etats::paies_du_salarie`,
+    `conges::paies_versees`) : le salaire des indemnités journalières d'un arrêt, le salaire de référence et la
+    rémunération du contrat du solde de tout compte, les cumuls de l'année civile (déduction forfaitaire spécifique,
+    heures supplémentaires, exonération des heures en plus). Une grandeur que ses pièces ne disent pas (son brut, la
+    déduction qu'il a retenue) ne se devine pas : le calcul refuse en nommant le mois. Le compteur de congés ne le lit
+    pas : la fiche reprend celui de l'ancien logiciel (`conges_reprise`).
   - **non actif** (`etats::NonActif`, la clé `non_actif`) : un engagement dont quelque chose est parti ne se supprime
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois

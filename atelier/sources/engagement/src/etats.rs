@@ -540,7 +540,8 @@ pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Vec<Pai
     Ok(paies)
 }
 
-/// UNE PAIE DU MOIS, CE QUE LIT UN ETAT : la paie ecrite d'un engagement valide, ou celle d'un engagement importe, que
+/// UNE PAIE DU MOIS, CE QUE LIT UN ETAT (et un calcul d'un autre mois, `paies_du_salarie`) : la paie ecrite d'un
+/// engagement valide, ou celle d'un engagement importe, que
 /// ses pieces disent (`importe::PaieImportee` : un montant qu'elles taisent est vide). Ce qu'elles ont en commun se lit
 /// par les memes noms ; un montant se lit `Option` : toujours dit pour une paie validee, dit ou non pour une importee.
 #[derive(Debug, Clone)]
@@ -765,8 +766,8 @@ impl PaieDuMois {
     }
 }
 
-/// LES PAIES VALIDEES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` QU'UN CALCUL LIT (le compteur de conges, le
-/// brut de sa periode, la remuneration du contrat, la deduction forfaitaire de l'annee) : la paie de chacun de ses
+/// LES PAIES VALIDEES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` QU'UN CALCUL LIT (le compteur de conges, et
+/// ce que l'employeur lui a verse, `paies_du_salarie`) : la paie de chacun de ses
 /// engagements valides du mois, dans l'ordre de l'ecran -- ecrite, ou calculee sans s'ecrire quand son mois ne l'a pas
 /// encore ecrite (`valides_lues`). Un engagement en saisie n'y est pas : ce qui n'est pas valide n'est pas paye. Rien ne
 /// se reecrit. Pendant une validation, les mois que son engagement a deja calcules s'y lisent comme ecrits
@@ -784,6 +785,24 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<
         valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
     };
     Ok(stock::vue_et_empreinte(&ctx.racine, mois)?.map(lire).transpose()?.into_iter().flatten().collect())
+}
+
+/// CE QUE L'EMPLOYEUR A VERSE AU SALARIE `salarie` (la cle de sa fiche) EN `mois`, TEL QU'UN CALCUL D'UN AUTRE MOIS LE
+/// LIT : ses paies validees (`paies_validees`), puis celle de chacun de ses engagements importes paye ce mois, dans les
+/// mots du moteur (`importe::Importe::paie` : ce que ses pieces taisent est vide). Les textes que ces calculs appliquent
+/// parlent de la remuneration versee, quel que soit le logiciel qui l'a calculee : les paies de l'ancien logiciel y
+/// comptent comme les siennes. Le lisent, par `conges::paies_versees` : le salaire des indemnites journalieres
+/// (`maintien::ij_de_principe`), le salaire de reference et la remuneration du contrat du solde de tout compte
+/// (`solde`), les cumuls de l'annee civile (`conges::cumul_de_l_annee`). Le compteur de conges ne lit que les validees :
+/// ce que l'ancien logiciel en avait, la fiche le reprend (`conges_reprise`).
+pub fn paies_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieDuMois>> {
+    let mut paies: Vec<PaieDuMois> = paies_validees(ctx, mois, salarie)?.into_iter().map(PaieDuMois::Validee).collect();
+    for i in crate::importe::du_mois(&ctx.racine, mois)? {
+        if i.paies().contains_key(&mois) && i.cle_ecrite()? == *salarie {
+            paies.push(PaieDuMois::Importee(i.paie(ctx, mois)?));
+        }
+    }
+    Ok(paies)
 }
 
 /// L'empreinte des paies validees de `mois` telles qu'un calcul les lit (`paies_validees`) : celles du salarie `salarie`
