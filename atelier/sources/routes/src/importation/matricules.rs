@@ -11,8 +11,8 @@
 //! celui qu'une DSN ou un signalement partis d'ici ont declare (ils l'ecrivent en S21.G00.30.019 : `declarations::dsn`,
 //! `declarations::signalement` ; la DPAE n'en porte pas), lu dans le journal (`engagement::departs`), et celui avec
 //! lequel le moteur a forme un numero de contrat (`engagement::numeros::formes` : `<initiales><matricule>.<AA>.<rang>`,
-//! le rang compte par salarie ; le remplacer donnerait les memes numeros a un autre salarie aux memes initiales, et un
-//! numero ne se recalcule pas, regle 4) ; un matricule qui n'a pas ete donne d'office (saisi, lu d'une piece, ou deja
+//! le numero dit le matricule de son salarie, et il ne se recalcule pas, regle 4 ; `former` ne redonne jamais un numero
+//! pris) ; un matricule qui n'a pas ete donne d'office (saisi, lu d'une piece, ou deja
 //! remplace par une DSN) ; un matricule declare qu'une de ces fiches porte ; un matricule que les pieces reprises donnent
 //! a plus d'un salarie (un matricule designe un salarie et un seul : aucun ne le prend).
 //!
@@ -77,6 +77,9 @@ struct Porteur {
     cle: IdSalarie,
     nom: String,
     actuel: Option<Matricule>,
+    /// Chaque matricule que la fiche a porte, de tout temps : une fiche fixe les garde tous (un numero de contrat forme
+    /// avec l'un d'eux reste le sien, `engagement::numeros::former`).
+    historique: Vec<Matricule>,
     etat: Etat,
 }
 
@@ -132,8 +135,8 @@ struct Demande {
 
 /// CE QUI EMPECHE UNE DEMANDE.
 enum Empeche {
-    /// Une fiche fixe porte ce matricule (son rang).
-    Porte(usize),
+    /// Une fiche fixe porte ce matricule (son rang ; `true`), ou l'a porte (`false`).
+    Porte(usize, bool),
     /// D'autres le demandent aussi (leurs noms).
     EnDouble(Vec<String>),
 }
@@ -151,7 +154,8 @@ impl Empeche {
     /// Ce qui empeche, en fin de phrase : « qui est celui de X, … », « que d'autres pieces reprises donnent aussi a X ».
     fn dit(&self, porteurs: &[Porteur]) -> String {
         match self {
-            Empeche::Porte(j) => format!("qui est celui de {}, {}", porteurs[*j].nom, porteurs[*j].pourquoi()),
+            Empeche::Porte(j, true) => format!("qui est celui de {}, {}", porteurs[*j].nom, porteurs[*j].pourquoi()),
+            Empeche::Porte(j, false) => format!("qui a été celui de {}, {}", porteurs[*j].nom, porteurs[*j].pourquoi()),
             Empeche::EnDouble(autres) => format!(
                 "que d'autres pièces reprises donnent aussi à {} : un matricule désigne un salarié et un seul, aucun ne le prend",
                 autres.join(" et ")
@@ -162,7 +166,7 @@ impl Empeche {
     /// Le sort du matricule d'une fiche qui garde le sien.
     fn sort(&self) -> SortDeLaValeur {
         match self {
-            Empeche::Porte(_) => SortDeLaValeur::DejaPorte,
+            Empeche::Porte(..) => SortDeLaValeur::DejaPorte,
             Empeche::EnDouble(_) => SortDeLaValeur::EnDouble,
         }
     }
@@ -191,6 +195,7 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
                     None => cle.to_string(),
                 },
                 actuel: au.code_salarie.clone(),
+                historique: f.code_salarie.iter().flatten().filter_map(|e| e.valeur.clone()).collect(),
                 etat,
             }
         })
@@ -247,14 +252,14 @@ pub(crate) fn prevoir(ctx: &Contexte, ap: &crate::import::Apercu, departs: &Depa
         })?;
         demandes.push(Demande { qui: Qui::Neuve(nom), matricule: m, empeche: None });
     }
-    // 3. Ce qui empeche une demande : une fiche fixe qui porte le matricule, ou une autre demande du meme.
+    // 3. Ce qui empeche une demande : une fiche fixe qui porte ou a porte le matricule, ou une autre demande du meme.
     let noms: Vec<String> = demandes.iter().map(|d| d.nom(&porteurs)).collect();
     for k in 0..demandes.len() {
         let m = &demandes[k].matricule;
         let autres: Vec<String> = (0..demandes.len()).filter(|&l| l != k && meme(&demandes[l].matricule, m)).map(|l| noms[l].clone()).collect();
-        let porte = (0..porteurs.len()).find(|&j| porteurs[j].fixe() && porteurs[j].actuel.as_ref().is_some_and(|a| meme(a, m)));
+        let porte = (0..porteurs.len()).find(|&j| porteurs[j].fixe() && porteurs[j].historique.iter().any(|a| meme(a, m)));
         demandes[k].empeche = match porte {
-            Some(j) => Some(Empeche::Porte(j)),
+            Some(j) => Some(Empeche::Porte(j, porteurs[j].actuel.as_ref().is_some_and(|a| meme(a, m)))),
             None if !autres.is_empty() => Some(Empeche::EnDouble(autres)),
             None => None,
         };

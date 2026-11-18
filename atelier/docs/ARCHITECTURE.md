@@ -485,6 +485,7 @@ un libellé, chacun sa forme.
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
 | numéro de contrat | `NumeroContrat` | `engagement/src/numeros.rs` |
+| numéros de contrat déjà pris d'une année (le plus haut de chaque salarié, et tous ceux que portent les engagements, d'ici ou repris, que l'ancien logiciel a déclarés ou sous lesquels quelque chose est parti : `former` n'en redonne aucun) | `engagement::numeros::Pris` | `engagement/src/numeros.rs` |
 | clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
 | numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
 | numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
@@ -2430,8 +2431,8 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   DSN, de tout temps, et l'import le dit (`ValeurDuMatricule`) : les bulletins puis la DSN donnent les matricules de
   l'import en une fois. Ne se remplacent pas, et se disent : le matricule que ce qui est fait d'ici a engagé (une DSN ou
   un signalement partis, que dit le journal ; un numéro de contrat que le moteur a formé avec lui,
-  `engagement::numeros::formes` : le rang se compte par salarié, et un autre salarié aux mêmes initiales qui le
-  prendrait recevrait les mêmes numéros), celui qui n'a pas été donné d'office, celui qu'une de ces fiches porte, celui
+  `engagement::numeros::formes` : le numéro dit le matricule, et ne se recalcule pas), celui qui n'a pas été donné
+  d'office, celui qu'une de ces fiches porte ou a porté, celui
   que les pièces reprises donnent à plus d'un salarié (aucun ne le prend). Tout se décide sur l'état final puis s'écrit
   en une fois, avant les fiches neuves : deux matricules d'office s'échangent sans doublon, et un matricule d'office que
   la DSN déclare pour un autre salarié se cède (sa fiche prend le suivant). Une fiche a un seul sort. Une fiche neuve
