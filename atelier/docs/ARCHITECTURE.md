@@ -85,8 +85,9 @@ que par la structure :
   l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
   (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. La reprise des cumuls de l'année (`ChampsSalarie::reprise`)
   ne s'ouvre que par `droit::fiche::RepriseDesCumuls`, que seule une paie reprise d'un ancien logiciel donne
-  (`engagement::importe::PaieVersee::reprise_des_cumuls`) : la paie reprise vit au-dessus de `droit`, et la clé y a un
-  constructeur public que seul l'engagement importé appelle. Ce que la fiche
+  (`engagement::importe::PaieVersee::reprise_des_cumuls`). Cette clé-là n'est pas tenue par la structure : la paie
+  reprise vit au-dessus de `droit`, la clé y a un constructeur public, et toute crate au-dessus de `droit` peut l'appeler ;
+  c'est la relecture du diff qui le tient. Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
   du métier de chacun de ses engagements ; celles de l'effectif, par lui ; la reprise des cumuls, par une paie reprise

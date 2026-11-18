@@ -1785,12 +1785,15 @@ pub enum Piece {
 /// l'annee civile et que ses pieces ne disent pas (la deduction forfaitaire specifique deja pratiquee, les heures
 /// supplementaires du contingent, le net des heures en plus deja exonere d'impot). Seule une paie reprise d'un ancien
 /// logiciel la donne (`engagement::importe`, la paie versee d'un engagement importe) : la paie d'ici ne la donne pas.
+///
+/// A la difference des autres cles, qui naissent ici d'un fait que `droit` tient, son constructeur est public : la paie
+/// reprise vit au-dessus de `droit` (`engagement::importe::PaieVersee`), et rien dans la structure ne reserve l'appel a
+/// celui qui la lit. L'appelle `engagement::importe::PaieVersee::reprise_des_cumuls`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepriseDesCumuls(());
 
 impl RepriseDesCumuls {
-    /// La cle que donne une paie reprise d'un ancien logiciel ; seul l'engagement importe l'appelle
-    /// (`engagement::importe::PaieVersee::reprise_des_cumuls`) : la paie reprise vit au-dessus de `droit`.
+    /// La cle que donne une paie reprise d'un ancien logiciel.
     pub fn d_une_paie_reprise() -> RepriseDesCumuls {
         RepriseDesCumuls(())
     }
