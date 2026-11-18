@@ -76,7 +76,9 @@ l'engagement (`Engagement::date_du_versement` : sa date de paiement, sinon la fi
 annuelle de 7 500 €. Leur montant net sort de la rémunération nette fiscale et se déclare en S21.G00.58.003 = 01 (fiche
 net-entreprises 2066, `../net-entreprises-base-connaissances/`). Texte dans `articles-20261102.md`. **Où le moteur s'en
 sert** : `logiciel/donnees/permanents-base.json` (`heures_en_plus.exoneration_impot`), `atelier/sources/engagement/src/
-heures_en_plus.rs` (le net exonéré, la limite de l'année), `atelier/sources/declarations/src/dsn.rs` (`net_social`).
+heures_en_plus.rs` (le net exonéré, la limite de l'année), `atelier/sources/declarations/src/dsn.rs` (`net_social`) ;
+le net déjà exonéré dans l'année par un ancien logiciel, la case `cumuls_reprise.heures_en_plus_exonerees` de la fiche
+du salarié (`droit::fiche::CumulsReprise`, lue par `engagement::conges::exonere_des_mois_anterieurs`).
 
 ## Les indemnités journalières subrogées et le prélèvement à la source (relevé du 02/11/2026)
 

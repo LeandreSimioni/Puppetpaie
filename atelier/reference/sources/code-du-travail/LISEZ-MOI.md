@@ -474,6 +474,10 @@ du contrat, 25 % jusqu'au tiers) ; avec, déjà relevés, L3121-28, L3123-20, L3
 `atelier/sources/droit/src/heures_en_plus.rs` ; la convention l'emporte quand elle fixe un taux
 (`clauses-conventionnelles-base.json` : 1285, VI.9, VI.12 et VI.13 bis ; 3090, 8.6), `kali-1285-titre-vi-duree-du-travail-
 20261102.md` et `kali-3090-titre-viii-duree-du-travail-20261102.md`, relevés le même jour par `moteur-atelier releve-conventions`.
+Les heures supplémentaires déjà payées dans l'année par un ancien logiciel, que le contingent annuel compte : la case
+`cumuls_reprise.heures_supplementaires` de la fiche du salarié (`droit::fiche::CumulsReprise`, lue par
+`engagement::conges::heures_supplementaires_des_mois_anterieurs`). INFÉRENCE, écrite comme telle : L3121-30 dit le
+contingent « annuel » sans dire l'année, que l'accord définit (L3121-33) ; le moteur le compte sur l'année civile.
 
 ## Empreintes
 
