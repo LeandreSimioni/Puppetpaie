@@ -1116,7 +1116,7 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
 
 /// LA DESCRIPTION `d`, LA PAIE DE CHACUN DE SES BULLETINS REMPLIE de ce que ce moteur calcule : `compagnie` a importe
 /// ces bulletins (le rejeu de son scenario), sa configuration est complete. Chaque bulletin se retrouve parmi ses paies
-/// importees par son salarie (le NIR), son mois et sa periode ; ses `cotisations` et son `net_imposable` sont ceux de la
+/// importees par son salarie (le NIR), son mois et sa periode, que les dates de la paie contiennent ; ses `cotisations` et son `net_imposable` sont ceux de la
 /// paie que la comparaison de l'import refait de lui (`engagement::ecarts::calculee`), son `pas` l'impot preleve sur elle
 /// au taux qu'il imprime (`engagement::etats::prelevement_au_taux_imprime`). Le reste de la description ne change pas.
 /// Un bulletin qui ne se retrouve pas, ou dont le moteur refuse la paie, refuse le tout, en le nommant.
@@ -1138,11 +1138,12 @@ pub fn remplir(mut d: DescriptionLue, compagnie: &Path) -> R<DescriptionLue> {
         let ou = format!("bulletin {} (salarié {}, du {} au {})", k + 1, b.salarie, b.debut.iso(), b.fin.iso());
         let nir = *nirs.get(b.salarie.as_str()).ok_or_else(|| refus!("{} : aucun salarié de ce code", ou))?;
         let mois = b.fin.mois_civil();
+        // La paie dont les dates contiennent la periode du bulletin : celles du contrat d'un mois que la DSN declare (un
+        // permanent, de son debut et sans fin : `routes::importation::bulletins`), celles du bulletin sinon.
+        let periode = socle::date::Periode::du_au(b.debut, b.fin).map_err(|m| m.reformuler(|p| format!("{} : {}", ou, p)))?;
         let siennes: Vec<&engagement::importe::Importe> = importes
             .iter()
-            .filter(|i| {
-                i.paies().get(&mois).is_some_and(|p| p.nir.as_deref() == Some(nir) && p.periode.is_some_and(|o| o.debut() == b.debut && o.fin() == Some(b.fin)))
-            })
+            .filter(|i| i.paies().get(&mois).is_some_and(|p| p.nir.as_deref() == Some(nir) && p.periode.and_then(|o| o.croise(&periode)) == Some(periode)))
             .collect();
         let [imp] = siennes.as_slice() else {
             return Err(refus!("{} : {} paie(s) importée(s) de ce salarié, de ce mois et de cette période dans {}, il en faut une", ou, siennes.len(), compagnie.display()));

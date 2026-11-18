@@ -138,7 +138,8 @@ donne, et l'outil l'écrit dans la description, qu'il réécrit (rien si un bull
 moteur-atelier remplir-bulletins description.json <racine de la compagnie>
 ```
 
-Chaque bulletin s'y retrouve par son salarié (le NIR), son mois et sa période ; ses `cotisations` et son
+Chaque bulletin s'y retrouve par son salarié (le NIR), son mois et sa période, que les dates de la paie importée
+contiennent (celles du contrat d'un permanent, quand la DSN reprise déclare ce mois) ; ses `cotisations` et son
 `net_imposable` sont ceux de la paie que la comparaison de l'import refait de lui (`engagement::ecarts::calculee`), son
 `pas` l'impôt prélevé au taux qu'il imprime. Un bulletin introuvable, ou dont le moteur refuse la paie, refuse le tout en
 le nommant.
