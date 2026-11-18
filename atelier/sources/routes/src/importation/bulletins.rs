@@ -130,8 +130,18 @@ pub(crate) struct DossierLu {
 
 /// `importation-apercu` avec `{"dossier": ...}`.
 pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
-    let mut r = lire_dossier(ctx, dossier, &HashMap::new(), |lu| Ok(lu.ap))?.reponse;
+    // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
+    // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let (mut ap, matricules) = lire_dossier(ctx, dossier, &HashMap::new(), |lu| {
+        let m = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs)?;
+        Ok((lu.ap, m))
+    })?;
+    matricules.poser(&mut ap.a_creer, &mut ap.a_completer)?;
+    let mut r = ap.reponse;
+    matricules.montrer(&mut r, &ap.a_creer);
     r.dire_l_apercu();
+    r.phrase = socle::phrase!("{}{}", r.phrase, matricules.dire(false));
     Ok(r)
 }
 
@@ -689,6 +699,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // LA DSN LA CREE, LE BULLETIN LA COMPLETE : ce que la DSN ne porte pas (le n° Congés Spectacles,
             // une adresse qu'elle n'a pas) vient du bulletin ; ce que la DSN donne reste.
             completer_a_creer::<FicheSalarieDatee>(&mut ap.a_creer, &mut reponse, Some(nir), &proposees, fautes)?;
+            noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, Source::Bulletin);
             continue;
         }
         let libelle = libelle_propose(&proposees);
@@ -696,6 +707,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let anomalies = verifier_comme_a_l_ecriture(&proposees, &fautes)?;
         reponse.salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
         ap.a_creer.push(ACreer { rang: Some(reponse.salaries.len() - 1), donnees: proposees, fautes });
+        noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, Source::Bulletin);
         nouvelles_fiches += 1;
     }
 
@@ -729,6 +741,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         if rang_a_creer(&ap.a_creer, NomDeFiche::Salarie, Some(nir)).is_some() {
             completer_a_creer::<FicheSalarieDatee>(&mut ap.a_creer, &mut reponse, Some(nir), &proposees, fautes)?;
+            noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, dernier.piece());
             continue;
         }
         let libelle = libelle_propose(&proposees);
@@ -738,6 +751,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         entree.lu_dans = Some(origine_cert(dernier));
         reponse.salaries.push(entree);
         ap.a_creer.push(ACreer { rang: Some(reponse.salaries.len() - 1), donnees: proposees, fautes });
+        noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, dernier.piece());
         nouvelles_fiches += 1;
         *fiches_certificats.entry(dernier.piece()).or_default() += 1;
         *salaries_certificats.entry(dernier.piece()).or_default() += 1;
@@ -1565,6 +1579,17 @@ fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
         periode: Some(l.b.periode),
         mois: Some(l.mois),
         ..InfosPage::default()
+    }
+}
+
+/// La piece `piece` donne-t-elle son matricule a la fiche neuve du salarie `nir` ? La premiere qui le porte le garde
+/// (`Apercu::matricules_lus_dans`).
+fn noter_le_matricule(a_creer: &[ACreer], lus_dans: &mut HashMap<Option<Nir>, Source>, nir: &Nir, piece: Source) {
+    let porte = rang_a_creer(a_creer, NomDeFiche::Salarie, Some(nir))
+        .and_then(|i| a_creer[i].donnees.salarie())
+        .is_some_and(|s| s.code_salarie.as_ref().is_some_and(|m| !m.trim().is_empty()));
+    if porte {
+        lus_dans.entry(Some(nir.clone())).or_insert(piece);
     }
 }
 

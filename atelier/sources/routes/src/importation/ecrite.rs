@@ -449,14 +449,26 @@ impl Ecrit {
 
 /// Ecrit ce que l'apercu `imp` annonce : les fiches (et leur place dans `reponse`), puis les engagements importes
 /// (`engagements_importes` : les contrats des AEM et des bulletins, les paies versees).
-fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecrit> {
+fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricules: &crate::importation::matricules::Matricules) -> R<Ecrit> {
+    // LES MATRICULES QUE LA DSN QUI ARRIVE DECLARE, en une fois, avant les fiches neuves : celle que la DSN cree avec le
+    // matricule qu'une fiche cede le trouve libre (`importation::matricules`). Les fiches s'ecrivent face a ce qui est
+    // alors sur le disque ; chaque fiche neuve recoit le matricule que `prevoir` lui a decide.
+    let d_office = matricules.poser(&mut imp.a_creer, &mut imp.a_completer)?;
+    let relu;
+    let ctx = if matricules.ecrit() {
+        matricules.ecrire(ctx, note)?;
+        relu = Contexte::nouveau(&ctx.racine, Some(ctx.date))?.au(&ctx.lue_au)?;
+        &relu
+    } else {
+        ctx
+    };
     let aujourdhui = ctx.date;
     let reponse = &mut imp.reponse;
     // Les fiches, comme celles de l'ecran (`forcer` : une fiche importee avec des anomalies est ecrite quand meme).
     let mut ecrits: BTreeSet<PathBuf> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
-    for a in &imp.a_creer {
-        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note)?;
+    for (a, d_office) in imp.a_creer.iter().zip(d_office) {
+        let (fiche, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, &a.donnees, &a.fautes, note, d_office)?;
         let emplacement = match (a.donnees.nom(), a.rang) {
             (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
             (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
@@ -647,6 +659,11 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
 pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) -> R<Importation> {
     let aujourdhui = ctx.date;
     let dossier = crate::import::dossier_import(ctx, charge)?;
+    // CE QUI EST PARTI D'ICI, que le journal dit, lu une fois pour le geste : il garde les matricules et les valeurs des
+    // contrats qu'il a declares. Les depots que l'import reprend au journal (`depots_attestes_au_journal`) n'y changent
+    // rien : leurs lignes ne portent aucune version d'engagement (`envois::reprise_journal`), et rien n'est parti d'eux
+    // pour un engagement (`envois::journal::departs_des_lignes`).
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
     // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
     let (tri, copie, noms, deposes) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |lu| {
         let (copie, noms) = copier_repris(ctx, &lu)?;
@@ -684,7 +701,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     imp.reponse.tri = tri;
     imp.reponse.source = dossier.display().to_string();
     let note = format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa());
-    let e = ecrire(ctx, &mut imp, &note)?;
+    // Ce que l'import fera des matricules se decide sur ce qui s'ecrit : l'apercu relu des copies, pas le dossier depose
+    // (une piece que la copie ecarte n'y est plus).
+    let matricules = crate::importation::matricules::prevoir(ctx, &imp, &departs)?;
+    let e = ecrire(ctx, &mut imp, &note, &matricules)?;
     let mut reponse = imp.reponse;
     reponse.avertissements.extend(e.avertissements.iter().cloned());
     reponse.contrats_nouveaux = e.contrats_aem;
@@ -708,10 +728,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
     reponse.parametrage = faits;
     // Ce qu'une DSN qui arrive declare d'un contrat de permanent autrement que sa carte : elle fait foi, tant que rien
-    // n'est parti d'ici (ce que le journal dit, lu une fois).
-    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    // n'est parti d'ici.
     reponse.dsn_fait_foi = crate::importation::nature::la_dsn_fait_foi(&ctx.racine, &e.arrivees, &departs)?;
     let compte = |s: import::reponse::SortDeLaValeur| reponse.dsn_fait_foi.iter().filter(|v| v.sort == s).count();
+    let matricules_dits = matricules.dire(true);
     let remplacees = match compte(import::reponse::SortDeLaValeur::Remplacee) {
         0 => String::new(),
         1 => " La DSN reprise fait foi : une valeur d'un contrat repris est remplacée par ce qu'elle déclare.".to_string(),
@@ -722,7 +742,9 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         1 => " Une valeur que la DSN reprise déclare autrement est gardée : l'engagement est déjà validé ou déclaré d'ici.".to_string(),
         n => format!(" {} valeurs que la DSN reprise déclare autrement sont gardées : leurs engagements sont déjà validés ou déclarés d'ici.", n),
     };
-    let remplacees = remplacees + &gardees;
+    let remplacees = remplacees + &gardees + &matricules_dits;
+    // Les matricules (`importation::matricules`), tels que l'import les a poses.
+    matricules.montrer(&mut reponse, &imp.a_creer);
     // Ce que l'ecran dit de l'import fait, et sa couleur : l'ecriture a eu lieu, c'est fait (ce qui reste a dire a ses
     // propres lignes : la nature des contrats repris, « Pour demarrer »).
     let ecrite = |f: &import::reponse::FicheImportee| matches!(f.etat, EtatFiche::Creee | EtatFiche::Completee);

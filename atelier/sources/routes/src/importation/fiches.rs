@@ -56,18 +56,23 @@ pub(crate) fn redemandees<P: FicheSaisie>(fiche: &P, fautes: &[FauteDeCase]) -> 
 /// UNE FICHE QUE L'IMPORT CREE, ecrite comme celles de l'ecran (`fiches::ecrire_fiche`, `forcer` : une fiche importee
 /// avec des anomalies est ecrite quand meme). Rend la fiche ecrite (nommee par sa cle ; l'entreprise, qui n'en a pas,
 /// reste la fiche a creer qu'elle etait) et ses anomalies, chacune avec le libelle de sa case : celles de l'ecriture,
-/// puis les fautes des pieces (`fautes`) dont la case reste vide, qui se redemandent comme a une fiche qui existe.
-pub(crate) fn ecrire_fiche(ctx: &Contexte, donnees: &FicheProposee, fautes: &[FauteDeCase], note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
-    match donnees {
-        FicheProposee::Entreprise(p) => ecrire::<FicheEntrepriseDatee>(ctx, p.clone(), fautes, note),
-        FicheProposee::Salarie(p) => ecrire::<FicheSalarieDatee>(ctx, p.clone(), fautes, note),
-        FicheProposee::Spectacle(p) => ecrire::<FicheSpectacleDatee>(ctx, p.clone(), fautes, note),
+/// puis les fautes des pieces (`fautes`) dont la case reste vide, qui se redemandent comme a une fiche qui existe. Le
+/// matricule d'une fiche de salarie est celui que l'import a decide (`importation::matricules`) ; `d_office` : celui
+/// qu'elle a recu d'office, que sa fiche datee garde. Seule une fiche de salarie en recoit un.
+pub(crate) fn ecrire_fiche(ctx: &Contexte, donnees: &FicheProposee, fautes: &[FauteDeCase], note: &str, d_office: Option<droit::fiche::Matricule>) -> R<(FicheVisee, Vec<Anomalie>)> {
+    match (donnees, d_office) {
+        (FicheProposee::Salarie(p), m) => ecrire::<FicheSalarieDatee>(ctx, p.clone(), fautes, note, m),
+        (FicheProposee::Entreprise(p), None) => ecrire::<FicheEntrepriseDatee>(ctx, p.clone(), fautes, note, ()),
+        (FicheProposee::Spectacle(p), None) => ecrire::<FicheSpectacleDatee>(ctx, p.clone(), fautes, note, ()),
+        (FicheProposee::Entreprise(_) | FicheProposee::Spectacle(_), Some(_)) => {
+            Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : l'import donne un matricule à une fiche qui n'est pas celle d'un salarié."))
+        }
     }
 }
 
-fn ecrire<F: SorteDeFiche>(ctx: &Contexte, lue: F::Plate, fautes: &[FauteDeCase], note: &str) -> R<(FicheVisee, Vec<Anomalie>)> {
+fn ecrire<F: SorteDeFiche>(ctx: &Contexte, lue: F::Plate, fautes: &[FauteDeCase], note: &str, memoire: F::Memoire) -> R<(FicheVisee, Vec<Anomalie>)> {
     let restees = restent_vides(&lue, fautes);
-    let p = fiches::preparer::<F>(ctx, None, |plate| poser_les_cases::<F>(plate, lue))?;
+    let p = fiches::preparer::<F>(ctx, None, |plate| poser_les_cases::<F>(plate, lue))?.memoire_de_l_import(memoire);
     let e = fiches::ecrire_fiche::<F>(ctx, p, Forcer::Tout, None, Some(note))?;
     let mut anomalies = e.anomalies;
     anomalies.extend(champs::des_fautes(F::NOM, &restees)?);

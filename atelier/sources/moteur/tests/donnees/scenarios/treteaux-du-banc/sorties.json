@@ -665,16 +665,6 @@
             "valeur": "04"
           }
         ],
-        "experimente_3241": [
-          {
-            "valeur": true
-          }
-        ],
-        "forfait_jours": [
-          {
-            "valeur": true
-          }
-        ],
         "date_anciennete": [
           {
             "valeur": "2026-11-02"
@@ -710,7 +700,18 @@
             },
             "note": "CRM DGFiP nature 94"
           }
-        ]
+        ],
+        "forfait_jours": [
+          {
+            "valeur": true
+          }
+        ],
+        "experimente_3241": [
+          {
+            "valeur": true
+          }
+        ],
+        "matricule_d_office": "1"
       }
     },
     "config/spectacles.json": {

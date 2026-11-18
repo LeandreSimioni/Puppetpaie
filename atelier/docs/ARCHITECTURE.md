@@ -95,7 +95,10 @@ que par la structure :
   pièce qu'aucun engagement ni l'effectif ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
   (`droit::fiche::CaseDePiece`) ; la mécanique de toutes les cases (la table, l'écriture datée) les nomme ensemble
-  (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  (`droit::fiche::CaseDeFiche`). Ce que le moteur garde d'une fiche pour lui seul est une mémoire de sa fiche datée
+  (la section `memoires` de `fiche!`, un champ facultatif de la seule fiche datée) : ni une case ni une note, elle
+  n'est ni dans la fiche à un jour (`au()`), ni dans la plate, ni dans `changer` ni dans `cases()` ; rien de ce qui lit
+  une fiche ne la voit, et une saisie ne la pose pas. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -485,6 +488,7 @@ un libellé, chacun sa forme.
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
 | numéro de contrat | `NumeroContrat` | `engagement/src/numeros.rs` |
+| numéros de contrat déjà pris d'une année (le plus haut de chaque salarié, et tous ceux que portent les engagements, d'ici ou repris, que l'ancien logiciel a déclarés ou sous lesquels quelque chose est parti : `former` n'en redonne aucun) | `engagement::numeros::Pris` | `engagement/src/numeros.rs` |
 | clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
 | numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
 | numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
@@ -509,7 +513,7 @@ un libellé, chacun sa forme.
 | couleur d'une compagnie | `CouleurDeCompagnie` | `compagnie/src/installation.rs` |
 | PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
 | code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
-| matricule | `Matricule` | `droit/src/fiche.rs` |
+| matricule ; celui que le moteur a donné d'office à une fiche neuve, que la fiche datée garde (`matricule_d_office`, une de ses mémoires : ni case ni note, hors de la fiche à un jour) | `Matricule` | `droit/src/fiche.rs` |
 | licence | du texte : la norme ne lui donne qu'une longueur | — |
 | nationalité déclarée | `CodeNationalite` | `droit/src/fiche.rs` |
 | code NAF, code postal | `CodeNaf`, `CodePostal` | `droit/src/fiche.rs` |
@@ -1172,8 +1176,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
-| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDeclaree` | `import/src/reponse.rs` |
-| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici) | `SortDeLaValeur` | `import/src/reponse.rs` |
+| ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
+| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
+| matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
+| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici, le matricule est engagé d'ici ou n'a pas été donné d'office, une de ces fiches le porte, ou les pièces le donnent à plus d'un salarié) | `SortDeLaValeur` | `import/src/reponse.rs` |
 | ce que l'import en dit (le salarié, la valeur, son sort, sa phrase) | `ValeurDeLaDsn` | `import/src/reponse.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
@@ -1208,6 +1214,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
+| mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
 | ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
@@ -1472,6 +1479,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **note d'une fiche** : un texte qu'une fiche porte et qui n'est pas une case (d'où elle vient, le titre que l'import
   propose à un spectacle), nommée par `fiche!` seul ; que lisent l'import qui complète une fiche (`notes_dites`,
   `prendre_la_note`).
+- **mémoire d'une fiche datée** : ce que le moteur garde d'une fiche pour lui seul, qui n'est ni une case ni une note
+  (la section `memoires` de `fiche!`) : un champ facultatif de la fiche datée, écrit à plat dans son fichier, absent de
+  la fiche à un jour, de la plate, des changements et des cases ; seul le moteur la pose (`SorteDeFiche::memoriser`, à
+  la création, ou l'import), et seul celui qui l'a posée la lit. Aujourd'hui le matricule donné d'office
+  (`matricule_d_office`), que lit `routes::importation::matricules`.
 - **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
   l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
   `avance`, la norme, la longueur).
@@ -2427,6 +2439,24 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `nature::la_dsn_fait_foi`) ; seule la carte change (`engagement::importe::completer`). Un engagement validé, ou dont
   quelque chose est parti d'ici, garde sa carte (règle 4 : son numéro déclaré ne se recalcule pas) et l'import dit
   l'écart. Un import rejoué sur le même dossier n'apporte aucune paie déclarée neuve, et ne remplace rien de nouveau.
+- **Le matricule que déclare une DSN qui arrive** (`importation/matricules.rs` ; Léandre, 18/11/2026) : une fiche neuve
+  dont personne n'a dit le matricule reçoit le suivant, et sa fiche datée le garde comme donné d'office
+  (`matricule_d_office`, une mémoire du moteur : ni case ni note, rien de ce qui lit une fiche ne la voit). Quand une DSN
+  qui arrive avec un import déclare pour son salarié un autre matricule (S21.G00.30.019), la fiche prend celui de la
+  DSN, de tout temps, et l'import le dit (`ValeurDuMatricule`) : les bulletins puis la DSN donnent les matricules de
+  l'import en une fois. Ne se remplacent pas, et se disent : le matricule que ce qui est fait d'ici a engagé (une DSN ou
+  un signalement partis, que dit le journal ; un numéro de contrat que le moteur a formé avec lui,
+  `engagement::numeros::formes` : le numéro dit le matricule, et ne se recalcule pas), celui qui n'a pas été donné
+  d'office, celui qu'une de ces fiches porte ou a porté, celui
+  que les pièces reprises donnent à plus d'un salarié (aucun ne le prend). Tout se décide sur l'état final puis s'écrit
+  en une fois, avant les fiches neuves : deux matricules d'office s'échangent sans doublon, et un matricule d'office que
+  la DSN (ou le bulletin qui crée une fiche neuve : c'est le même logiciel qui parle) déclare pour un autre salarié se
+  cède (sa fiche prend le suivant) ; chaque phrase nomme la pièce (`import::reponse::Source`). Une fiche a un seul sort.
+  Le matricule de chaque fiche neuve se décide aussi sur l'état final : celui de ses pièces s'il se pose, sinon le
+  suivant, d'office, qu'aucune autre ne prend ; celle dont le matricule ne se pose pas le dit. Une fiche sans matricule
+  que la pièce complète passe par la même décision (celle dont le matricule ne se pose pas reste sans, et le dit) : rien
+  ne se refuse en bloc (règle 1), et aucun import n'écrit deux fiches au même matricule.
+  `importation-apercu` dit ce qu'`importer` ferait.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des

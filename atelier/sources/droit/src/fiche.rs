@@ -1879,7 +1879,8 @@ impl<C: std::fmt::Debug, K> std::fmt::Debug for PieceFermee<C, K> {
 macro_rules! fiche {
     ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident, cles $cles:ident { $( $(#[$fm:meta])* $var:ident ( $t:ty ) = $ecrit:literal => $champ:ident ),* $(,)? }
      pieces $pcles:ident { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $ouvre:ty { $( $(#[$pfm:meta])* $pvar:ident ( $pt:ty ) = $pecrit:literal => $pchamp:ident ),* $(,)? } )* }
-     $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
+     $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?
+     $( memoires { $( $(#[$mm:meta])* $memoire:ident : $mt:ty = $mecrit:literal ),* $(,)? } )?) => {
         $( cases! { @ecrites $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt = $pecrit ),* } } )*
 
         cles! { $cles { $( $var = $ecrit, )* } }
@@ -2125,12 +2126,16 @@ macro_rules! fiche {
         }
 
         /// La fiche telle qu'ecrite : chaque champ une liste datee ; absente ou nulle, la fiche ne dit rien de ce champ.
+        /// Ses MEMOIRES (`memoires`) sont ce que le moteur garde de la fiche pour lui seul : ni des cases ni des notes, elles
+        /// ne sont pas de la fiche a un jour (`au`), et rien de ce qui lit une fiche (le calcul, la paie gardee, les
+        /// documents, les declarations, l'ecran) ne les voit.
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $datee {
             $( #[serde(rename = $ecrit, skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
             $( $( #[serde(rename = $pecrit, skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
+            $( $( $(#[$mm])* #[serde(rename = $mecrit, skip_serializing_if = "Option::is_none")] pub $memoire: Option<$mt>, )* )?
         }
 
         impl $datee {
@@ -2168,7 +2173,7 @@ macro_rules! fiche {
                 out
             }
 
-            /// Les listes et les notes que `autre` porte remplacent les siennes, entieres ; les autres restent.
+            /// Les listes, les notes et les memoires que `autre` porte remplacent les siennes, entieres ; les autres restent.
             pub fn par_dessus(&mut self, autre: &$datee) {
                 $( if autre.$champ.is_some() {
                     self.$champ = autre.$champ.clone();
@@ -2178,6 +2183,9 @@ macro_rules! fiche {
                 } )* )*
                 $( $( if autre.$note.is_some() {
                     self.$note = autre.$note.clone();
+                } )* )?
+                $( $( if autre.$memoire.is_some() {
+                    self.$memoire = autre.$memoire.clone();
                 } )* )?
             }
         }
@@ -3021,6 +3029,13 @@ fiche! {
         reprise: Reprise, CasesDeLaReprise, RepriseDesCumuls {
             CumulsReprise(CumulsReprise) = "cumuls_reprise" => cumuls_reprise,
         }
+    }
+    memoires {
+        /// LE MATRICULE DONNE D'OFFICE : celui que le moteur a donne a la fiche neuve dont personne n'avait dit le
+        /// matricule (le suivant, `routes::fiches::ecriture`, `completer_neuve`). Le matricule de la fiche est d'office
+        /// tant qu'il est celui-ci, de tout temps ; une DSN reprise qui arrive le remplace par celui qu'elle declare,
+        /// tant que rien d'ici ne l'a engage (`routes::importation::matricules`).
+        matricule_d_office: Matricule = "matricule_d_office",
     }
 }
 

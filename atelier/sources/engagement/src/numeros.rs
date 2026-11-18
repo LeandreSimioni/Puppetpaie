@@ -5,13 +5,14 @@
 //! Il s'ecrit dans l'engagement a sa validation (`a_la_validation`, que seule `etats::valider` appelle), puis tout ce qui
 //! part -- le contrat a la signature ou imprime, la DPAE, la DSN, le bulletin -- le lit la. Le numero donne est le suivant
 //! du plus haut que portent, pour le meme salarie et la meme annee, les engagements et ce qui est parti (`departs`)
-//! (`derniers_pris`) : un engagement supprime avant tout envoi rend le sien.
+//! (`derniers_pris`) : un engagement supprime avant tout envoi rend le sien. Il n'est jamais celui d'un autre salarie
+//! (`former`, `Pris`) : le numero est la cle de ce qui est parti.
 //!
 //! Une revalidation garde le numero. Tant que rien n'est parti sous lui, un engagement dont le salarie ou le debut a
 //! change en recoit un nouveau ; des qu'un envoi l'a porte, il ne change plus. Un numero venu avec la saisie (un contrat
 //! repris d'un autre logiciel) reste le sien, sauf sur la copie d'un engagement plus ancien qui le porte deja.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
@@ -246,44 +247,87 @@ pub fn le_contrat(numero: Option<&NumeroContrat>, salarie: &IdSalarie) -> String
     numero_dit(numero, "le contrat ", &format!(" de {}", salarie), &format!("le contrat de {}", salarie))
 }
 
-/// Le numero de l'annee `annee` qui suit `dernier` (le plus haut que le salarie a pris cette annee, `derniers_pris`),
-/// le premier sans aucun, pour le salarie de cette fiche : `<initiales><code>.<AA>.<rang>`. Le seul qui fabrique un
-/// numero de contrat (regle 4), et le seul calcul du rang suivant ; des initiales ou un code qui le sortiraient de la
-/// forme de la norme le font refuser (`NumeroContrat::lire`).
-pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: Annee, dernier: Option<&NumeroContrat>) -> R<NumeroContrat> {
+/// LES NUMEROS DEJA PRIS d'une annee (`pris`) : le plus haut que chaque salarie a pris cette annee (la cle de sa fiche),
+/// et tous ceux que portent les engagements, d'ici ou repris, ou sous lesquels quelque chose est parti, de qui que ce
+/// soit -- ce que `former` ne redonne jamais.
+pub struct Pris {
+    annee: Annee,
+    derniers: HashMap<IdSalarie, NumeroContrat>,
+    tous: HashSet<NumeroContrat>,
+}
+
+/// Le numero de l'annee `pris.annee` pour le salarie `cle` de cette fiche : `<initiales><code>.<AA>.<rang>`, le rang
+/// suivant le plus haut qu'il a pris cette annee (le premier sans aucun). Le seul qui fabrique un numero de contrat
+/// (regle 4), et le seul calcul du rang suivant ; des initiales ou un code qui le sortiraient de la forme de la norme le
+/// font refuser (`NumeroContrat::lire`). LE NUMERO FORME N'EST CELUI D'AUCUN AUTRE : les initiales et le matricule
+/// d'aujourd'hui ont pu former, sous un autre salarie, un numero deja pris (un matricule change puis redonne, un numero
+/// repris de l'ancien logiciel de la meme forme) ; le numero est la cle de ce qui est parti (regle 4), et le rang passe
+/// alors au suivant que personne ne porte. Le numero donne entre dans `pris`.
+pub fn former(fiche: &droit::fiche::ChampsSalarie, cle: &IdSalarie, pris: &mut Pris) -> R<NumeroContrat> {
     use droit::fiche::Lue;
-    let rang = match dernier {
+    let annee = pris.annee;
+    let mut rang = match pris.derniers.get(cle) {
         Some(d) => d.rang_en(annee).ok_or_else(|| socle::refus!("Défaut du logiciel : le contrat n° {} n'est pas un numéro de {} donné par le logiciel ; aucun numéro ne le suit.", d, annee))?.suivant(),
         None => RangDansLAnnee::PREMIER,
     };
     let an = annee.to_string();
-    NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], rang))
+    let tete = format!("{}{}.{}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..]);
+    let mut numero = NumeroContrat::lire(&format!("{}.{:02}", tete, rang))?;
+    while pris.tous.contains(&numero) {
+        rang = rang.suivant();
+        numero = NumeroContrat::lire(&format!("{}.{:02}", tete, rang))?;
+    }
+    pris.derniers.insert(cle.clone(), numero.clone());
+    pris.tous.insert(numero.clone());
+    Ok(numero)
 }
 
-/// Le dernier numero pris en `annee`, par salarie (la cle de sa fiche) : le plus haut rang des numeros de cette annee
-/// que portent ses engagements, ou sous lesquels quelque chose est parti pour lui (`departs`).
-fn derniers_pris(ctx: &Contexte, annee: Annee, departs: &Departs) -> R<HashMap<IdSalarie, NumeroContrat>> {
+/// LES NUMEROS DE CONTRAT QUE LE MOTEUR A FORMES (`a_la_validation`, `numero_pour`), un par salarie pour qui il l'a
+/// forme : chacun porte les initiales et le matricule que sa fiche avait alors (`former`). Le matricule d'un salarie qui
+/// en a un est engage : le numero le dit, et il ne se recalcule pas (regle 4).
+pub fn formes(racine: &std::path::Path) -> R<HashMap<IdSalarie, NumeroContrat>> {
+    let mut out = HashMap::new();
+    for o in stock::objets(racine)? {
+        if let (Some(p), Some(n)) = (&o.brut.numero_pour, &o.carte().numero) {
+            out.entry(p.salarie.clone()).or_insert_with(|| n.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// Les numeros pris en `annee` (`Pris`) : par salarie (la cle de sa fiche), le plus haut rang des numeros de cette annee
+/// que portent ses engagements, ou sous lesquels quelque chose est parti pour lui (`departs`) ; et tous les numeros que
+/// portent les engagements, ceux qu'une DSN de l'ancien logiciel a declares pour un contrat repris, et ceux sous lesquels
+/// quelque chose est parti.
+fn derniers_pris(ctx: &Contexte, annee: Annee, departs: &Departs) -> R<Pris> {
     derniers_pris_sauf(ctx, annee, None, departs)
 }
 
 /// La meme, sans l'engagement `sauf` (son fichier et son rang) : celui qui recoit un nouveau numero.
-fn derniers_pris_sauf(ctx: &Contexte, annee: Annee, sauf: Option<(socle::mois::Mois, usize)>, departs: &Departs) -> R<HashMap<IdSalarie, NumeroContrat>> {
-    let mut pris: HashMap<IdSalarie, NumeroContrat> = HashMap::new();
-    let mut noter = |cle: IdSalarie, numero: &NumeroContrat| {
-        let Some(rang) = numero.rang_en(annee) else { return };
-        if pris.get(&cle).and_then(|p| p.rang_en(annee)).is_none_or(|haut| rang > haut) {
-            pris.insert(cle, numero.clone());
+fn derniers_pris_sauf(ctx: &Contexte, annee: Annee, sauf: Option<(socle::mois::Mois, usize)>, departs: &Departs) -> R<Pris> {
+    let mut pris = Pris { annee, derniers: HashMap::new(), tous: HashSet::new() };
+    let mut noter = |cle: Option<IdSalarie>, numero: &NumeroContrat| {
+        pris.tous.insert(numero.clone());
+        let (Some(cle), Some(rang)) = (cle, numero.rang_en(annee)) else { return };
+        if pris.derniers.get(&cle).and_then(|p| p.rang_en(annee)).is_none_or(|haut| rang > haut) {
+            pris.derniers.insert(cle, numero.clone());
         }
     };
     for o in stock::objets(&ctx.racine)? {
         if sauf == Some((o.fichier, o.rang)) {
             continue;
         }
-        let (Some(cle), Some(n)) = (o.carte().salarie.clone(), o.carte().numero.clone()) else { continue };
-        noter(cle, &n);
+        if let Some(n) = &o.carte().numero {
+            noter(o.carte().salarie.clone(), n);
+        }
+        for p in o.pieces().into_iter().flat_map(|p| p.paies.values()) {
+            if let Some(n) = p.contrat.numero_declare() {
+                noter(None, n);
+            }
+        }
     }
     for (cle, n) in departs.engagements() {
-        noter(cle.clone(), n);
+        noter(Some(cle.clone()), n);
     }
     Ok(pris)
 }
@@ -371,8 +415,8 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
         }
     }
     let annee = debut.annee();
-    let pris = derniers_pris_sauf(ctx, annee, Some((o.fichier, o.rang)), departs)?;
-    let numero = former(&fiche, annee, pris.get(&cle))?;
+    let mut pris = derniers_pris_sauf(ctx, annee, Some((o.fichier, o.rang)), departs)?;
+    let numero = former(&fiche, &cle, &mut pris)?;
     let e = o.brut_mut();
     e.saisie.carte.numero = Some(numero);
     e.numero_pour = Some(NumeroPour { salarie: cle.clone(), debut, le });
@@ -382,14 +426,13 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
 /// Le numero de contrat que la paie `p`, sans numero, porterait : la suite des numeros `pris` pour son salarie dans
 /// l'annee du debut du contrat (`derniers_pris`, lus une fois par annee), en memoire -- celui que sa validation lui
 /// donnerait (`a_la_validation`).
-fn proposer(ctx: &Contexte, p: &mut crate::calcul::Contenu, pris: &mut HashMap<Annee, HashMap<IdSalarie, NumeroContrat>>, departs: &Departs) -> R<()> {
+fn proposer(ctx: &Contexte, p: &mut crate::calcul::Contenu, pris: &mut HashMap<Annee, Pris>, departs: &Departs) -> R<()> {
     let annee = p.engagement.contrat().debut().annee();
     let pris = match pris.entry(annee) {
         std::collections::hash_map::Entry::Occupied(x) => x.into_mut(),
         std::collections::hash_map::Entry::Vacant(x) => x.insert(derniers_pris(ctx, annee, departs)?),
     };
-    let numero = former(&p.salarie, annee, pris.get(&p.engagement.salarie))?;
-    pris.insert(p.engagement.salarie.clone(), numero.clone());
+    let numero = former(&p.salarie, &p.engagement.salarie, pris)?;
     p.engagement.numero = Some(numero);
     Ok(())
 }
@@ -450,8 +493,17 @@ mod tests {
             socle::forme::lire_texte(&format!(r#"{{"initiales_contrat": "{}", "code_salarie": "1"}}"#, initiales), "fiche").unwrap()
         };
         let an: Annee = socle::forme::lire_texte("2026", "l'annee du test").unwrap();
-        assert_eq!(former(&fiche("FA"), an, None).ok().map(String::from), Some("FA1.26.01".to_string()));
-        assert_eq!(former(&fiche("FA"), an, Some(&n)).ok().map(String::from), Some("FA1.26.14".to_string()));
-        assert!(former(&fiche("F#"), an, None).is_err());
+        let cle: IdSalarie = socle::forme::lire_texte(r#""FAVART""#, "la cle du test").unwrap();
+        let autre: IdSalarie = socle::forme::lire_texte(r#""FAGOTIN""#, "la cle du test").unwrap();
+        let vide = || Pris { annee: an, derniers: HashMap::new(), tous: HashSet::new() };
+        assert_eq!(former(&fiche("FA"), &cle, &mut vide()).ok().map(String::from), Some("FA1.26.01".to_string()));
+        let mut pris = vide();
+        pris.derniers.insert(cle.clone(), n.clone());
+        assert_eq!(former(&fiche("FA"), &cle, &mut pris).ok().map(String::from), Some("FA1.26.14".to_string()));
+        // Les numeros qu'un autre salarie porte deja ne se redonnent pas : le rang passe au suivant que personne ne porte.
+        let mut pris = vide();
+        pris.tous.extend(["FA1.26.01", "FA1.26.02"].map(|t| NumeroContrat::lire(t).unwrap()));
+        assert_eq!(former(&fiche("FA"), &autre, &mut pris).ok().map(String::from), Some("FA1.26.03".to_string()));
+        assert!(former(&fiche("F#"), &cle, &mut vide()).is_err());
     }
 }

@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &[DOSSIER],
         exemple: r#"{}"#,
-        rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles",
+        rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -68,7 +68,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre les pièces d'un ancien logiciel : fiches, engagements importés.",
         charge: &[DOSSIER],
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte, et son sort)",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
@@ -319,6 +319,12 @@ pub(crate) struct Apercu {
     pub(crate) convention: Option<droit::fiche::Idcc>,
     /// Les versements des individus mis de cote (`Importation::identites`), par nom de la DSN qui les declare.
     pub(crate) paies_en_question: HashMap<String, usize>,
+    /// LE MATRICULE QUE LA DERNIERE DSN DECLARE POUR LE SALARIE D'UNE FICHE QUI EXISTE (S21.G00.30.019), quand elle en
+    /// declare un : `importation::matricules` en fait foi.
+    pub(crate) matricules_declares: Vec<(droit::contexte::IdSalarie, droit::fiche::Matricule)>,
+    /// LA PIECE QUI DONNE SON MATRICULE A UNE FICHE NEUVE, par le NIR de la fiche : la premiere qui le porte (la DSN
+    /// passe avant les bulletins, qui completent ce qu'elle cree) ; `importation::matricules` la nomme.
+    pub(crate) matricules_lus_dans: HashMap<Option<Nir>, Source>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -499,12 +505,17 @@ pub(crate) fn apercu_lu(
     let mut salaries = Vec::new();
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
+    let mut matricules_declares = Vec::new();
+    let mut matricules_lus_dans: HashMap<Option<Nir>, Source> = HashMap::new();
     for decl in ordre {
         if decl.individu.identite.nir.as_ref().is_some_and(|n| en_question.contains(n)) {
             continue;
         }
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
+            if let Some(m) = &decl.individu.code_salarie {
+                matricules_declares.push((cle.clone(), m.clone()));
+            }
             let fiche = &ctx.salaries[cle].champs;
             let ec = ecarts(fiche, &decl.fiche()?.0, decl.mois)?;
             let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &FicheProposee::vide(NomDeFiche::Salarie));
@@ -517,6 +528,9 @@ pub(crate) fn apercu_lu(
             continue;
         }
         let (donnees, fautes) = fiche_salarie(decl)?;
+        if donnees.code_salarie.as_ref().is_some_and(|m| !m.trim().is_empty()) {
+            matricules_lus_dans.entry(decl.individu.identite.nir.clone()).or_insert(Source::Dsn);
+        }
         let donnees = FicheProposee::Salarie(donnees);
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(&donnees, &fautes)?;
         salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
@@ -722,6 +736,8 @@ pub(crate) fn apercu_lu(
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
         paies_en_question,
+        matricules_declares,
+        matricules_lus_dans,
     })
 }
 

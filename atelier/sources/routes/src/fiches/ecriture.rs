@@ -60,6 +60,9 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     /// La cle d'une fiche dans son fichier : `IdSalarie`, `IdSpectacle` ; l'entreprise, le fichier entier, n'en a pas
     /// (`()`).
     type Cle: Clone + PartialEq + std::fmt::Debug + Serialize + serde::de::DeserializeOwned;
+    /// Ce que le moteur garde d'une fiche neuve pour lui seul, hors de ses cases (`completer_neuve`, `memoriser`) : le
+    /// matricule donne d'office d'un salarie ; rien pour les autres (`()`).
+    type Memoire: Default;
 
     /// La cle telle qu'une phrase la dit.
     fn cle_dite(cle: &Self::Cle) -> String;
@@ -101,10 +104,13 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn refuser(_ctx: &Contexte, _cle: Option<&Self::Cle>, _avant: &Self::Plate, _apres: &Self::Plate) -> R<()> {
         Ok(())
     }
-    /// Ce qu'une fiche neuve recoit du moteur (le matricule suivant).
-    fn completer_neuve(_ctx: &Contexte, _plate: &mut Self::Plate) -> R<()> {
-        Ok(())
+    /// Ce qu'une fiche neuve recoit du moteur (le matricule suivant), et ce que la fiche datee en garde pour le moteur
+    /// seul (ses memoires, `memoriser`).
+    fn completer_neuve(_ctx: &Contexte, _plate: &mut Self::Plate) -> R<Self::Memoire> {
+        Ok(Self::Memoire::default())
     }
+    /// Ce que `completer_neuve` a donne, garde dans la fiche datee neuve `brute` hors de ses cases.
+    fn memoriser(_brute: &mut Self, _memoire: Self::Memoire) {}
     /// La phrase a confirmer avant d'ecrire, sans date (le jour fixe du versement des intermittents).
     fn usage(_ctx: &Contexte, _avant: &Self::Plate, _apres: &Self::Plate) -> R<Option<String>> {
         Ok(None)
@@ -129,6 +135,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::ENTREPRISE;
     type Fichier = FicheEntrepriseDatee;
     type Cle = ();
+    type Memoire = ();
 
     fn a_part() -> Vec<CaseDeFiche> {
         vec![CaseEntreprise::Etablissements.into(), CaseEntreprise::TauxAtmp.into()]
@@ -372,6 +379,8 @@ impl SorteDeFiche for FicheSalarieDatee {
     const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
     type Cle = IdSalarie;
+    /// Le matricule que `completer_neuve` donne d'office (`matricule_d_office`) ; aucun quand il est dit.
+    type Memoire = Option<droit::fiche::Matricule>;
 
     fn cle_dite(cle: &IdSalarie) -> String {
         cle.to_string()
@@ -513,13 +522,20 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
         }
         Ok(())
     }
-    fn completer_neuve(ctx: &Contexte, plate: &mut ChampsSalarie) -> R<()> {
-        // Le matricule d'une fiche neuve : le suivant. Un matricule saisi est garde tel quel. L'ANCIENNETE PART DE
-        // L'EMBAUCHE, pas du jour de la fiche : la validation du premier engagement la pose (`poser_anciennete_a_l_embauche`).
+    fn completer_neuve(ctx: &Contexte, plate: &mut ChampsSalarie) -> R<Option<droit::fiche::Matricule>> {
+        // Le matricule d'une fiche neuve : le suivant, que la fiche garde comme donne d'office (`matricule_d_office` : une
+        // DSN reprise qui arrive le remplace, `importation::matricules`). Un matricule saisi ou lu est garde tel quel, et
+        // n'est pas d'office. L'ANCIENNETE PART DE L'EMBAUCHE, pas du jour de la fiche : la validation du premier
+        // engagement la pose (`poser_anciennete_a_l_embauche`).
         if plate.code_salarie.remplie().map(str::trim).is_none_or(str::is_empty) {
-            plate.code_salarie = Some(matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?);
+            let m = matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?;
+            plate.code_salarie = Some(m.clone());
+            return Ok(Some(m));
         }
-        Ok(())
+        Ok(None)
+    }
+    fn memoriser(brute: &mut FicheSalarieDatee, memoire: Option<droit::fiche::Matricule>) {
+        brute.matricule_d_office = memoire;
     }
 }
 
@@ -528,6 +544,7 @@ impl SorteDeFiche for FicheSpectacleDatee {
     const FICHIER: socle::fichiers::CheminRelatif = droit::contexte::SPECTACLES;
     type Fichier = droit::fiche::Spectacles;
     type Cle = IdSpectacle;
+    type Memoire = ();
 
     fn cle_dite(cle: &IdSpectacle) -> String {
         cle.to_string()
@@ -616,7 +633,7 @@ pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
-fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
+pub(crate) fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
     let chemin = F::FICHIER.dans(&ctx.racine);
     sauver_avant(&chemin)?;
     ecrire(&chemin, fichier)
@@ -1093,6 +1110,16 @@ pub(crate) struct Preparee<F: SorteDeFiche> {
     cle: Option<F::Cle>,
     avant: F::Plate,
     apres: F::Plate,
+    /// Ce que `completer_neuve` a donne a une fiche neuve, que sa fiche datee garde (`SorteDeFiche::memoriser`).
+    memoire: F::Memoire,
+}
+
+impl<F: SorteDeFiche> Preparee<F> {
+    /// LA MEMOIRE QUE L'IMPORT A DECIDEE pour une fiche neuve (`importation::matricules` donne le matricule de chaque
+    /// fiche neuve sur l'etat final, et sa fiche l'a deja : `completer_neuve` n'y donne rien) : elle remplace la sienne.
+    pub(crate) fn memoire_de_l_import(self, memoire: F::Memoire) -> Preparee<F> {
+        Preparee { memoire, ..self }
+    }
 }
 
 /// PREPARER L'ECRITURE de la fiche `cle` (`None` : une fiche neuve, ou l'entreprise) : la fiche telle que l'ecran l'a
@@ -1108,15 +1135,16 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     F::ajuster(&avant, &mut apres);
     let mut fautes = F::reconnaitre(ctx, &avant, &mut apres)?;
     F::refuser(ctx, cle, &avant, &apres)?;
-    if cle.is_none() {
-        F::completer_neuve(ctx, &mut apres)?;
-    }
+    let memoire = match cle {
+        None => F::completer_neuve(ctx, &mut apres)?,
+        Some(_) => F::Memoire::default(),
+    };
     // Ce que le type d'une forme declaree refuse refuse la fiche, quoi qu'on force : elle ne se relirait pas.
     fautes.extend(F::deriver(&mut apres, true, &|c| nommees.contains(&c))?);
     if !fautes.is_empty() {
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
-    Ok(Preparee { cle: cle.cloned(), avant, apres })
+    Ok(Preparee { cle: cle.cloned(), avant, apres, memoire })
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, si le
@@ -1137,6 +1165,7 @@ pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forc
     }
     let mut contenu = lire_fichier::<F>(ctx)?;
     let avant_fichier = contenu.clone();
+    let neuve = p.cle.is_none();
     let cle = match p.cle {
         // UNE FICHE NEUVE : la cle se fabrique ici et nulle part ailleurs.
         None => F::nommer_neuve(&p.apres, &contenu)?,
@@ -1144,6 +1173,9 @@ pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forc
     };
     let brute = F::ou_neuve(&mut contenu, cle.as_ref())?;
     let mut champs = ecrire_datee::<F>(brute, &p.avant, &p.apres, false, depuis, note, &ctx.lue_au)?;
+    if neuve {
+        F::memoriser(brute, p.memoire);
+    }
     if F::a_part().iter().any(|k| F::differentes(&p.avant, &p.apres).contains(k)) && F::ecrire_a_part(ctx, brute, &p.apres, depuis, note)? {
         champs.extend(F::a_part());
     }

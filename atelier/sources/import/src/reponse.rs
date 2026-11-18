@@ -198,6 +198,16 @@ impl Source {
             Source::Aem => "AEM",
         }
     }
+
+    /// La piece reprise, telle qu'une phrase la nomme : « la DSN reprise », « le bulletin repris »…
+    pub fn reprise(self) -> &'static str {
+        match self {
+            Source::Dsn => "la DSN reprise",
+            Source::Bulletin => "le bulletin repris",
+            Source::Certificat => "le certificat Congés Spectacles repris",
+            Source::Aem => "l'AEM reprise",
+        }
+    }
 }
 
 /// CE QUI ATTESTE UN CONTRAT, OU LA PAIE QU'UN BULLETIN COMPLETE : une piece de cet import (`Source`), ou l'historique
@@ -788,9 +798,17 @@ pub struct Importation {
     /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
     /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
     pub identites: Vec<QuestionDIdentite>,
-    /// Ce qu'une DSN reprise par cet import declare d'un contrat repris autrement que sa carte, et ce qu'il en advient
-    /// (`ValeurDeLaDsn`).
+    /// Ce qu'une DSN reprise par cet import declare d'un contrat repris ou d'un matricule autrement que la carte ou la
+    /// fiche, et ce qu'il en advient (`ValeurDeLaDsn`).
     pub dsn_fait_foi: Vec<ValeurDeLaDsn>,
+}
+
+/// CE QU'UNE DSN REPRISE DECLARE AUTREMENT QUE LE LOGICIEL : une valeur d'un contrat repris, ou un matricule.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ValeurDeclaree {
+    Contrat(ValeurDuContrat),
+    Matricule(ValeurDuMatricule),
 }
 
 /// CE QU'UNE DSN REPRISE DECLARE D'UN CONTRAT DE PERMANENT REPRIS, ET QUE SA CARTE PORTE AUTREMENT : sa nature, son
@@ -798,28 +816,48 @@ pub struct Importation {
 /// (`declaree`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "quoi", rename_all = "lowercase")]
-pub enum ValeurDeclaree {
+pub enum ValeurDuContrat {
     Nature { avant: droit::natures::NatureDeContrat, declaree: droit::natures::NatureDeContrat },
     Debut { avant: Option<Jour>, declaree: Jour },
     Fin { avant: Option<Jour>, declaree: Jour },
     Numero { avant: Option<engagement::numeros::NumeroContrat>, declaree: engagement::numeros::NumeroContrat },
 }
 
+/// LE MATRICULE D'UNE FICHE QU'UNE DSN QUI ARRIVE DECLARE AUTREMENT (S21.G00.30.019 ;
+/// `routes::importation::matricules`) : celui que la fiche porte (`avant`) et celui que la DSN declare (`declaree`) ;
+/// ou le matricule donne d'office qu'une fiche cede a celui que la DSN declare pour un autre salarie (`pour`), et le
+/// suivant qu'elle prend (`suivant`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "quoi")]
+pub enum ValeurDuMatricule {
+    #[serde(rename = "matricule")]
+    Declare { avant: droit::fiche::Matricule, declaree: droit::fiche::Matricule },
+    #[serde(rename = "matricule_cede")]
+    Cede { avant: droit::fiche::Matricule, suivant: droit::fiche::Matricule, pour: String },
+}
+
 /// CE QU'IL ADVIENT D'UNE VALEUR QUE LA DSN DECLARE AUTREMENT. La DSN fait foi (Léandre, 18/11/2026) tant que rien
-/// n'est parti d'ici : la carte prend la valeur declaree (`Completee` si elle n'en portait pas, `Remplacee` sinon). Un
-/// engagement valide, ou dont quelque chose est parti, a deja dit ce contrat aux organismes sous ce qu'il porte : un
-/// numero deja declare ne se recalcule pas (regle 4), et le debut, la fin, la nature declares avec lui non plus ; rien
-/// ne se remplace et l'ecart se dit (`DejaDeclaree`).
+/// n'est parti d'ici : la carte prend la valeur declaree (`Completee` si elle n'en portait pas, `Remplacee` sinon), la
+/// fiche le matricule declare a la place de celui qu'elle avait recu d'office, ou le suivant quand la DSN declare le sien
+/// pour un autre salarie (`Remplacee`). Un engagement valide, ou dont quelque chose est parti, a deja dit ce contrat aux
+/// organismes sous ce qu'il porte : un numero deja declare ne se recalcule pas (regle 4), et le debut, la fin, la nature
+/// declares avec lui non plus ; une DSN partie d'ici a declare le matricule du salarie, ou le moteur a forme avec lui un
+/// numero de contrat : rien ne se remplace et l'ecart se dit (`DejaDeclaree`). Un matricule qui n'a pas ete donne
+/// d'office (saisi, lu d'une piece, deja remplace par une DSN) reste (`PasDOffice`). Un matricule declare qu'une de ces
+/// fiches porte ne se pose pas (`DejaPorte`), ni celui que les pieces reprises donnent a plus d'un salarie (`EnDouble`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SortDeLaValeur {
     Completee,
     Remplacee,
     DejaDeclaree,
+    PasDOffice,
+    DejaPorte,
+    EnDouble,
 }
 
-/// Une valeur d'un contrat repris que la DSN reprise declare autrement : le salarie, la valeur, son sort, et ce que
-/// l'ecran en dit.
+/// Une valeur d'un contrat repris ou un matricule que la DSN reprise declare autrement : le salarie, la valeur, son
+/// sort, et ce que l'ecran en dit.
 #[derive(Debug, Clone, Serialize)]
 pub struct ValeurDeLaDsn {
     pub salarie: droit::contexte::IdSalarie,
