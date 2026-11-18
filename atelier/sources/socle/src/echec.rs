@@ -450,10 +450,7 @@ pub struct Lieu {
 
 /// UN FICHIER QUE LE DISQUE REFUSE (absent, interdit, illisible, mal forme) : la phrase dit ce qui arrive, en mots ; le
 /// chemin et la raison du systeme vont a part (`chemin`, `detail`). Un refus du moteur sur ce que le fichier porte (une
-/// phrase, `String`) garde sa phrase, et le chemin va a part. CE QUE LE SYSTEME REFUSE (une `std::io::Error`) est de
-/// la classe `Disque`, quelle que soit sa sorte : une erreur technique, que l'appelant distingue d'un refus du metier
-/// par sa classe, jamais par sa phrase. Un fichier absent qui n'est pas une erreur, l'appelant le traite avant (son
-/// `ErrorKind`) ou le reclasse (`FichierAbsent`).
+/// phrase, `String`) garde sa phrase, et le chemin va a part.
 #[track_caller]
 pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E) -> Echec {
     let a_part = |detail: Option<String>| Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail, ..Lieu::default() };
@@ -461,14 +458,14 @@ pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E
     if let Some(phrase) = e_.downcast_ref::<String>() {
         return refus_avec(phrase.as_str(), a_part(None));
     }
-    let (phrase, classe) = match e_.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
-        Some(std::io::ErrorKind::NotFound) => ("Un fichier de la compagnie manque.", Some(Classe::Disque)),
-        Some(std::io::ErrorKind::PermissionDenied) => ("Le poste refuse l'accès à un fichier de la compagnie : un autre programme le tient peut-être ouvert.", Some(Classe::Disque)),
-        Some(std::io::ErrorKind::StorageFull) => ("Le disque est plein : un fichier de la compagnie ne s'écrit pas.", Some(Classe::Disque)),
-        Some(_) => ("Le disque refuse un fichier de la compagnie.", Some(Classe::Disque)),
-        None => ("Un fichier de la compagnie ne se lit pas : il est abîmé.", None),
+    let phrase = match e_.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
+        Some(std::io::ErrorKind::NotFound) => "Un fichier de la compagnie manque.",
+        Some(std::io::ErrorKind::PermissionDenied) => "Le poste refuse l'accès à un fichier de la compagnie : un autre programme le tient peut-être ouvert.",
+        Some(std::io::ErrorKind::StorageFull) => "Le disque est plein : un fichier de la compagnie ne s'écrit pas.",
+        Some(_) => "Le disque refuse un fichier de la compagnie.",
+        None => "Un fichier de la compagnie ne se lit pas : il est abîmé.",
     };
-    Echec { a_part: Some(a_part(Some(e.to_string())).into()), ..noter_et(classe, phrase) }
+    refus_avec(phrase, a_part(Some(e.to_string())))
 }
 
 /// UNE DONNEE QUI NE SE LIT PAS LA OU ELLE DEVRAIT : `quoi` la dit en mots (« Une paie écrite ne se relit pas. ») ; la cle
@@ -480,18 +477,17 @@ pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> Echec 
 }
 
 /// UNE DONNEE LIVREE AVEC LE LOGICIEL QUI MANQUE OU NE SE LIT PAS (un referentiel de `donnees/`) : rien que la compagnie
-/// puisse corriger, un defaut du logiciel (`DefautDuLogiciel`, ce que dit `LIVREE`) ; le fichier et la cle vont a part.
+/// puisse corriger ; le fichier et la cle vont a part.
 #[track_caller]
 pub fn livree(fichier: &crate::fichiers::CheminRelatif, cle: &str) -> Echec {
-    Echec { a_part: Some(Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), ..Lieu::default() }.into()), ..noter_et(Some(Classe::DefautDuLogiciel), LIVREE) }
+    refus_avec(LIVREE, Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), ..Lieu::default() })
 }
 
 /// La meme donnee livree, et ce qui la situe en mots, qui n'est pas un chemin (`detail` : la convention et l'article,
 /// la table qu'elle est).
 #[track_caller]
 pub fn livree_dite(fichier: &crate::fichiers::CheminRelatif, cle: &str, detail: impl std::fmt::Display) -> Echec {
-    let lieu = Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Lieu::default() };
-    Echec { a_part: Some(lieu.into()), ..noter_et(Some(Classe::DefautDuLogiciel), LIVREE) }
+    refus_avec(LIVREE, Lieu { fichier: Some(fichier.clone()), cle: Some(cle.to_string()), detail: Some(detail.to_string()), ..Lieu::default() })
 }
 
 /// La phrase du refus d'une donnee livree (`livree`).

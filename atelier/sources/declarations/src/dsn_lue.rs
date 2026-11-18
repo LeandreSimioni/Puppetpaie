@@ -723,7 +723,7 @@ impl DsnLue {
                 Destinataire::Autre
             }
         };
-        let manque = |n: usize, quoi: &str| erreur(Classe::Refuse, format!("le versement à un organisme n° {} (bloc S21.G00.20) ne déclare pas {} : ses versements ne se lisent pas", n, quoi));
+        let manque = |n: usize, quoi: &str| socle::refus!("le versement à un organisme n° {} (bloc S21.G00.20) ne déclare pas {} : ses versements ne se lisent pas", n, quoi);
         let mut out = Vec::new();
         for (i, b) in self.blocs20.iter().enumerate() {
             let n = i + 1;
@@ -756,12 +756,12 @@ impl DsnLue {
         let mut out = Vec::new();
         for (i, b) in self.blocs22.iter().enumerate() {
             let n = i + 1;
-            let manque = |quoi: &str| erreur(Classe::Refuse, format!("le bordereau Urssaf n° {} (bloc S21.G00.22) ne déclare pas {} : il ne se lit pas", n, quoi));
+            let manque = |quoi: &str| socle::refus!("le bordereau Urssaf n° {} (bloc S21.G00.22) ne déclare pas {} : il ne se lit pas", n, quoi);
             let (Some(debut), Some(fin)) = (b.debut, b.fin) else { return Err(manque("sa période (.003, .004)")) };
             let total = b.total.ok_or_else(|| manque("son total (.005)"))?;
             let mut lignes = Vec::new();
             for (k, l) in b.lignes.iter().enumerate() {
-                let dit = |quoi: &str| erreur(Classe::Refuse, format!("la cotisation agrégée n° {} du bordereau Urssaf n° {} (bloc S21.G00.23) ne déclare pas {} : le bordereau ne se lit pas", k + 1, n, quoi));
+                let dit = |quoi: &str| socle::refus!("la cotisation agrégée n° {} du bordereau Urssaf n° {} (bloc S21.G00.23) ne déclare pas {} : le bordereau ne se lit pas", k + 1, n, quoi);
                 let code = l.code.clone().ok_or_else(|| dit("son code (.001)"))?;
                 let qualifiant = l.qualifiant.ok_or_else(|| dit("son qualifiant d'assiette (.002)"))?;
                 let taux_at = l.taux.map(|t| match l.commune {
@@ -882,104 +882,6 @@ impl DsnLue {
     pub fn declare(&self, rubrique: RubriqueDeLaNorme, valeur: &str) -> bool {
         self.rubriques.contains(&(rubrique, valeur.to_string()))
     }
-
-    /// SON IDENTIFIANT, celui qu'une declaration qui l'annule et la remplace porte (S20.G00.05.006) : « une
-    /// concaténation de la date de constitution du fichier (S20.G00.05.007) et du numéro d'ordre de la déclaration
-    /// (S20.G00.05.004) » (`atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` l. 136-141). `None` : elle ne dit
-    /// pas l'un des deux.
-    pub fn identifiant(&self) -> Option<IdentifiantDeDeclaration> {
-        Some(IdentifiantDeDeclaration { constitue_le: self.depot?, ordre: self.ordre? })
-    }
-}
-
-// ------------------------------------------------------------------ les DSN d'un mois qui font foi
-
-/// LES DSN MENSUELLES D'UN MOIS QUI FONT FOI parmi `lues` (toutes du meme mois principal, chacune avec ce que
-/// l'appelant garde d'elle, `T`), une par etablissement (S21.G00.11.001) et par fraction (S20.G00.05.003) : « Quand une
-/// déclaration mensuelle de type "normal" a été acceptée pour un mois principal déclaré, un SIRET employeur et une
-/// fraction donnée, il n'est pas possible d'émettre une deuxième déclaration de type "normal" » ; une erreur se corrige
-/// « par l'envoi d'une DSN de type « annule et remplace intégral » » (cahier technique DSN 2026.1, chapitre 1,
-/// § 1.4.3.2 et 1.4.3.3, `atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt` l. 302-334), qui porte
-/// l'identifiant de « la dernière déclaration [...] validée par le point de dépôt » qu'elle remplace (S20.G00.05.006,
-/// `bloc-S20.G00.05.txt` l. 136-141). Une DSN qu'une autre du meme etablissement et de la meme fraction remplace ne fait
-/// plus foi. Deux qui restent pour le meme etablissement et la meme fraction, aucune ne remplacant l'autre, ne se
-/// departagent pas : le refus le dit. Une DSN qui ne dit pas son etablissement ou sa fraction refuse : on ne sait ni a
-/// quoi elle s'ajoute ni ce qu'elle remplace. Les refus sont ceux d'une piece (`Refuse`).
-pub fn qui_font_foi<T>(lues: Vec<(T, DsnLue)>) -> R<Vec<(T, DsnLue)>> {
-    let mut cles: Vec<(Nic, Fraction)> = Vec::new();
-    for (_, l) in &lues {
-        let Some(nic) = l.etablissement() else {
-            return Err(erreur(Classe::Refuse, "une DSN que l'ancien logiciel a déposée ne déclare pas son établissement (S21.G00.11.001) : ses versements ne se lisent pas"));
-        };
-        let Some(fraction) = l.fraction else {
-            return Err(erreur(Classe::Refuse, "une DSN que l'ancien logiciel a déposée ne déclare pas son numéro de fraction (S20.G00.05.003) : ses versements ne se lisent pas"));
-        };
-        cles.push((nic.clone(), fraction));
-    }
-    // Celles qu'une autre DSN du meme etablissement et de la meme fraction remplace.
-    let remplacee = |i: usize| {
-        let id = lues[i].1.identifiant();
-        (0..lues.len()).any(|k| k != i && cles[k] == cles[i] && id.is_some() && lues[k].1.remplace == id)
-    };
-    let gardees: Vec<bool> = (0..lues.len()).map(|i| !remplacee(i)).collect();
-    for i in 0..lues.len() {
-        let memes = (0..lues.len()).filter(|&k| gardees[k] && cles[k] == cles[i]).count();
-        if gardees[i] && memes > 1 {
-            let (nic, fraction) = &cles[i];
-            return Err(erreur(
-                Classe::Refuse,
-                format!(
-                    "l'ancien logiciel a déposé {} DSN pour l'établissement {} (fraction {}/{}) dont aucune ne dit remplacer l'autre (S20.G00.05.006) : celle qui fait foi ne se lit pas, ni ses versements",
-                    memes,
-                    nic,
-                    fraction.numero(),
-                    fraction.nombre()
-                ),
-            ));
-        }
-    }
-    Ok(lues.into_iter().zip(gardees).filter(|(_, g)| *g).map(|(x, _)| x).collect())
-}
-
-/// LES DSN DE L'ETABLISSEMENT `nic` parmi celles qui font foi (`qui_font_foi`), une par fraction, dans l'ordre de leur
-/// numero ; `None` : aucune. « Le fractionnement n'est valable que si toutes les fractions ont été reçues » et « Pour un
-/// même établissement le nombre d (nombre total de fractions) doit rester constant » (chapitre 1, § 1.4.3.5, l. 427-429 ;
-/// `bloc-S20.G00.05.txt` l. 93-98) : des fractions qui ne disent pas le meme nombre, ou une fraction annoncee que l'import
-/// n'a pas, refusent (`Refuse`) ; rien ne se compte a la place de ce qui manque.
-pub fn de_l_etablissement<T>(font_foi: Vec<(T, DsnLue)>, nic: &Nic) -> R<Option<Vec<(T, DsnLue)>>> {
-    let mut siennes: Vec<(Fraction, (T, DsnLue))> = Vec::new();
-    for x in font_foi {
-        if x.1.etablissement() == Some(nic) {
-            if let Some(f) = x.1.fraction {
-                siennes.push((f, x));
-            }
-        }
-    }
-    if siennes.is_empty() {
-        return Ok(None);
-    }
-    siennes.sort_by_key(|(f, _)| *f);
-    let nombres: BTreeSet<u8> = siennes.iter().map(|(f, _)| f.nombre()).collect();
-    if nombres.len() > 1 {
-        return Err(erreur(
-            Classe::Refuse,
-            format!("les DSN de l'établissement {} ne disent pas le même nombre de fractions (S20.G00.05.003) : ses versements ne se lisent pas", nic),
-        ));
-    }
-    let nombre = siennes[0].0.nombre();
-    let manquent: Vec<String> = (1..=nombre).filter(|n| !siennes.iter().any(|(f, _)| f.numero() == *n)).map(|n| format!("{}/{}", n, nombre)).collect();
-    if !manquent.is_empty() {
-        return Err(erreur(
-            Classe::Refuse,
-            format!(
-                "la DSN de l'établissement {} est déposée en {} fractions (S20.G00.05.003) et l'import n'a pas la fraction {} : ses versements ne se comptent pas sans elle",
-                nic,
-                nombre,
-                manquent.join(", ")
-            ),
-        ));
-    }
-    Ok(Some(siennes.into_iter().map(|(_, x)| x).collect()))
 }
 
 impl EntrepriseDeclaree {
