@@ -692,9 +692,9 @@ function vueImportation(r) {
   const couleur = r.encart ? ENCART_DE_COULEUR[r.encart.couleur] : "";
   const pose = r.parametrage.length
     ? `<p class="note">Posé dans la configuration</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
-  // Ce que la DSN reprise a remplacé de ce qui avait été dit d'un contrat repris (`remplacees`, du moteur).
-  const remplace = r.remplacees.length
-    ? `<p class="note">La DSN fait foi</p><ul>${r.remplacees.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
+  // Ce que la DSN reprise déclare d'un contrat repris autrement que sa carte (`dsn_fait_foi`, du moteur, phrases comprises).
+  const remplace = r.dsn_fait_foi.length
+    ? `<p class="note">La DSN fait foi</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
   const bouton = r.ecrit
     ? `<div class="encart ${couleur}"><b>Repris</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
         ${pose}${remplace}

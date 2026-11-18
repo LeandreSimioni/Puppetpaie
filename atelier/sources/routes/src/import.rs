@@ -697,7 +697,7 @@ pub(crate) fn apercu_lu(
         encart: None,
         couleur: None,
         identites,
-        remplacees: Vec::new(),
+        dsn_fait_foi: Vec::new(),
     };
     Ok(Apercu {
         reponse,

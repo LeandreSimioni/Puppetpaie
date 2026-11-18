@@ -788,30 +788,45 @@ pub struct Importation {
     /// Les individus que les DSN declarent et que l'import met de cote, le temps que la compagnie dise s'ils sont le
     /// salarie d'une fiche sans NIR (`QuestionDIdentite`).
     pub identites: Vec<QuestionDIdentite>,
-    /// Ce qu'une DSN reprise par cet import a remplace de ce qui avait ete dit a la main d'un contrat repris
-    /// (`RemplaceeParLaDsn`).
-    pub remplacees: Vec<RemplaceeParLaDsn>,
+    /// Ce qu'une DSN reprise par cet import declare d'un contrat repris autrement que sa carte, et ce qu'il en advient
+    /// (`ValeurDeLaDsn`).
+    pub dsn_fait_foi: Vec<ValeurDeLaDsn>,
 }
 
-/// CE QU'UNE DSN REPRISE DECLARE D'UN CONTRAT DE PERMANENT DIT A LA MAIN, ET QUI DIFFERE : sa nature, son debut, sa fin
-/// ou son numero, ce qu'il y avait (`avant`), ce que la DSN declare. La DSN fait foi (Léandre, 18/11/2026) : la carte
-/// prend la valeur declaree, et l'import le dit (`RemplaceeParLaDsn`) ; rien ne change en silence.
+/// CE QU'UNE DSN REPRISE DECLARE D'UN CONTRAT DE PERMANENT REPRIS, ET QUE SA CARTE PORTE AUTREMENT : sa nature, son
+/// debut, sa fin ou son numero ; ce que la carte porte (`avant`, vide si rien n'etait dit) et ce que la DSN declare
+/// (`declaree`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "quoi", rename_all = "lowercase")]
-pub enum ValeurRemplacee {
+pub enum ValeurDeclaree {
     Nature { avant: droit::natures::NatureDeContrat, declaree: droit::natures::NatureDeContrat },
-    Debut { avant: Option<Jour>, declare: Jour },
+    Debut { avant: Option<Jour>, declaree: Jour },
     Fin { avant: Option<Jour>, declaree: Jour },
-    Numero { avant: Option<engagement::numeros::NumeroContrat>, declare: engagement::numeros::NumeroContrat },
+    Numero { avant: Option<engagement::numeros::NumeroContrat>, declaree: engagement::numeros::NumeroContrat },
 }
 
-/// Une valeur d'un contrat repris que la DSN reprise a remplacee : le salarie, ce qui a change, et ce que l'ecran en dit.
+/// CE QU'IL ADVIENT D'UNE VALEUR QUE LA DSN DECLARE AUTREMENT. La DSN fait foi (Léandre, 18/11/2026) tant que rien
+/// n'est parti d'ici : la carte prend la valeur declaree (`Completee` si elle n'en portait pas, `Remplacee` sinon). Un
+/// engagement valide, ou dont quelque chose est parti, a deja dit ce contrat aux organismes sous ce qu'il porte : un
+/// numero deja declare ne se recalcule pas (regle 4), et le debut, la fin, la nature declares avec lui non plus ; rien
+/// ne se remplace et l'ecart se dit (`DejaDeclaree`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortDeLaValeur {
+    Completee,
+    Remplacee,
+    DejaDeclaree,
+}
+
+/// Une valeur d'un contrat repris que la DSN reprise declare autrement : le salarie, la valeur, son sort, et ce que
+/// l'ecran en dit.
 #[derive(Debug, Clone, Serialize)]
-pub struct RemplaceeParLaDsn {
+pub struct ValeurDeLaDsn {
     pub salarie: droit::contexte::IdSalarie,
     pub nom: String,
     #[serde(flatten)]
-    pub valeur: ValeurRemplacee,
+    pub valeur: ValeurDeclaree,
+    pub sort: SortDeLaValeur,
     pub phrase: socle::texte::Phrase,
 }
 
