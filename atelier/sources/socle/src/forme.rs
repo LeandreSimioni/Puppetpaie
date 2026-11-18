@@ -720,8 +720,9 @@ impl<'de> serde::Deserialize<'de> for Nombre {
     }
 }
 
-/// Il se reecrit en nombre JSON, son echelle gardee : un entier tel quel (`3`), sinon a virgule (`86.67`,
-/// `ecrire_a_virgule`) ; une donnee relue puis reecrite (une description de l'atelier) garde ses nombres.
+/// Il se reecrit en nombre JSON, sa valeur gardee : un entier tel quel (`3`), sinon a virgule dans sa forme la plus
+/// courte (`86.67` ; `12.50` s'ecrit `12.5` : `ecrire_a_virgule`) ; une donnee relue puis reecrite (une description de
+/// l'atelier) garde la valeur de ses nombres, pas leurs zeros de fin.
 impl serde::Serialize for Nombre {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match (self.0.scale(), i64::try_from(self.0.mantissa())) {
