@@ -923,7 +923,7 @@ impl Importe {
 impl Importe {
     /// LE NUMERO DU CONTRAT QUE PAIE `p`, l'une de ses paies : celui de l'engagement, sinon celui que son bulletin
     /// imprime ; `None` : aucun des deux ne le dit.
-    fn numero_de_la_paie(&self, p: &PaieVersee) -> Option<NumeroContrat> {
+    pub(crate) fn numero_de_la_paie(&self, p: &PaieVersee) -> Option<NumeroContrat> {
         self.carte().numero.clone().or_else(|| p.bulletin.as_ref().and_then(|b| b.contrat.clone()))
     }
 }
