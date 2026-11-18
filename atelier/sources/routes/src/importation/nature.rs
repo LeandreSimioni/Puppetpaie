@@ -462,7 +462,7 @@ pub(crate) fn la_dsn_fait_foi(
     arrivees: &std::collections::HashSet<(socle::mois::Mois, IdSalarie, engagement::numeros::NumeroContrat)>,
     departs: &engagement::departs::Departs,
 ) -> R<Vec<import::reponse::ValeurDeLaDsn>> {
-    use import::reponse::{SortDeLaValeur, ValeurDeLaDsn, ValeurDeclaree};
+    use import::reponse::{SortDeLaValeur, ValeurDeLaDsn, ValeurDeclaree, ValeurDuContrat};
     if arrivees.is_empty() {
         return Ok(Vec::new());
     }
@@ -472,7 +472,7 @@ pub(crate) fn la_dsn_fait_foi(
         salarie: IdSalarie,
         mois: socle::mois::Mois,
         numero: engagement::numeros::NumeroContrat,
-        valeurs: Vec<ValeurDeclaree>,
+        valeurs: Vec<ValeurDuContrat>,
         deja: Option<String>,
     }
     let mut a_remplacer: Vec<ARemplacer> = Vec::new();
@@ -494,13 +494,13 @@ pub(crate) fn la_dsn_fait_foi(
         let Some((mois, numero, paie)) = arrivee else { continue };
         let mut valeurs = Vec::new();
         if let Some(debut) = paie.periode.map(|o| o.debut()).filter(|d| carte.debut != Some(*d)) {
-            valeurs.push(ValeurDeclaree::Debut { avant: carte.debut, declaree: debut });
+            valeurs.push(ValeurDuContrat::Debut { avant: carte.debut, declaree: debut });
         }
         if let Some(fin) = paie.periode.and_then(|o| o.fin()).filter(|f| carte.fin != Some(*f)) {
-            valeurs.push(ValeurDeclaree::Fin { avant: carte.fin, declaree: fin });
+            valeurs.push(ValeurDuContrat::Fin { avant: carte.fin, declaree: fin });
         }
         if carte.numero.as_ref() != Some(&numero) {
-            valeurs.push(ValeurDeclaree::Numero { avant: carte.numero.clone(), declaree: numero.clone() });
+            valeurs.push(ValeurDuContrat::Numero { avant: carte.numero.clone(), declaree: numero.clone() });
         }
         // La nature : le code que la DSN declare pour ce contrat, lu dans les DSN reprises (une fois pour l'import).
         if lecture.is_none() {
@@ -514,7 +514,7 @@ pub(crate) fn la_dsn_fait_foi(
             // La nature dite porte deja le code declare : la DSN ne dit rien d'autre.
             let meme_code = dite.is_some_and(|n| code_de(n).as_deref() == Some(code.as_str()));
             if let (false, [declaree]) = (meme_code, du_code.as_slice()) {
-                valeurs.push(ValeurDeclaree::Nature { avant: nature, declaree: declaree.cle });
+                valeurs.push(ValeurDuContrat::Nature { avant: nature, declaree: declaree.cle });
             }
         }
         if valeurs.is_empty() {
@@ -542,10 +542,10 @@ pub(crate) fn la_dsn_fait_foi(
             };
             for v in &x.valeurs {
                 match v {
-                    ValeurDeclaree::Nature { declaree, .. } => e.nature = Some(*declaree),
-                    ValeurDeclaree::Debut { declaree, .. } => e.debut = Some(*declaree),
-                    ValeurDeclaree::Fin { declaree, .. } => e.fin = Some(*declaree),
-                    ValeurDeclaree::Numero { declaree, .. } => e.numero = Some(declaree.clone()),
+                    ValeurDuContrat::Nature { declaree, .. } => e.nature = Some(*declaree),
+                    ValeurDuContrat::Debut { declaree, .. } => e.debut = Some(*declaree),
+                    ValeurDuContrat::Fin { declaree, .. } => e.fin = Some(*declaree),
+                    ValeurDuContrat::Numero { declaree, .. } => e.numero = Some(declaree.clone()),
                 }
             }
             true
@@ -556,10 +556,10 @@ pub(crate) fn la_dsn_fait_foi(
         let nom = nom_du_salarie(racine, &x.salarie)?;
         for valeur in x.valeurs {
             let (quoi, avant, declaree): (&str, Option<String>, String) = match &valeur {
-                ValeurDeclaree::Nature { avant, declaree } => ("la nature du contrat", Some(avant.proprietes()?.libelle.clone()), declaree.proprietes()?.libelle.clone()),
-                ValeurDeclaree::Debut { avant, declaree } => ("le début du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
-                ValeurDeclaree::Fin { avant, declaree } => ("la fin du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
-                ValeurDeclaree::Numero { avant, declaree } => ("le numéro du contrat", avant.as_ref().map(ToString::to_string), declaree.to_string()),
+                ValeurDuContrat::Nature { avant, declaree } => ("la nature du contrat", Some(avant.proprietes()?.libelle.clone()), declaree.proprietes()?.libelle.clone()),
+                ValeurDuContrat::Debut { avant, declaree } => ("le début du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
+                ValeurDuContrat::Fin { avant, declaree } => ("la fin du contrat", avant.map(|j| j.jj_mm_aaaa()), declaree.jj_mm_aaaa()),
+                ValeurDuContrat::Numero { avant, declaree } => ("le numéro du contrat", avant.as_ref().map(ToString::to_string), declaree.to_string()),
             };
             // La carte ne portait rien : elle se complete. Elle portait autre chose : elle le remplace, ou, deja dit
             // d'ici, le garde, et l'ecart se dit.
@@ -584,7 +584,7 @@ pub(crate) fn la_dsn_fait_foi(
                     ),
                 ),
             };
-            out.push(ValeurDeLaDsn { salarie: x.salarie.clone(), nom: nom.clone(), valeur, sort, phrase });
+            out.push(ValeurDeLaDsn { salarie: x.salarie.clone(), nom: nom.clone(), valeur: ValeurDeclaree::Contrat(valeur), sort, phrase });
         }
     }
     Ok(out)

@@ -2951,6 +2951,7 @@ fiche! {
     /// LA FICHE D'UN SALARIE a un jour.
     pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie, cles CaseSalarie {
         CodeSalarie(Matricule) = "code_salarie" => code_salarie,
+        MatriculeDOffice(Matricule) = "matricule_d_office" => matricule_d_office,
         InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         Nom(NomDeclare) = "nom" => nom,

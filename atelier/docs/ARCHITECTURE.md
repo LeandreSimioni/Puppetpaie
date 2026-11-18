@@ -509,7 +509,7 @@ un libellé, chacun sa forme.
 | couleur d'une compagnie | `CouleurDeCompagnie` | `compagnie/src/installation.rs` |
 | PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
 | code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
-| matricule | `Matricule` | `droit/src/fiche.rs` |
+| matricule ; celui que le moteur a donné d'office à une fiche neuve, que la fiche garde (`matricule_d_office`, hors de l'écran) | `Matricule` | `droit/src/fiche.rs` |
 | licence | du texte : la norme ne lui donne qu'une longueur | — |
 | nationalité déclarée | `CodeNationalite` | `droit/src/fiche.rs` |
 | code NAF, code postal | `CodeNaf`, `CodePostal` | `droit/src/fiche.rs` |
@@ -1166,8 +1166,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
-| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDeclaree` | `import/src/reponse.rs` |
-| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici) | `SortDeLaValeur` | `import/src/reponse.rs` |
+| ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
+| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
+| matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
+| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici, le matricule a été dit par la compagnie, ou une autre fiche le porte) | `SortDeLaValeur` | `import/src/reponse.rs` |
 | ce que l'import en dit (le salarié, la valeur, son sort, sa phrase) | `ValeurDeLaDsn` | `import/src/reponse.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
@@ -2421,6 +2423,16 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `nature::la_dsn_fait_foi`) ; seule la carte change (`engagement::importe::completer`). Un engagement validé, ou dont
   quelque chose est parti d'ici, garde sa carte (règle 4 : son numéro déclaré ne se recalcule pas) et l'import dit
   l'écart. Un import rejoué sur le même dossier n'apporte aucune paie déclarée neuve, et ne remplace rien de nouveau.
+- **Le matricule que déclare une DSN qui arrive** (`importation/matricules.rs` ; Léandre, 18/11/2026) : une fiche neuve
+  dont personne n'a dit le matricule reçoit le suivant, et le garde comme donné d'office (`matricule_d_office`, que seul
+  le moteur écrit). Quand une DSN qui arrive avec un import déclare pour son salarié un autre matricule (S21.G00.30.019),
+  la fiche prend celui de la DSN, de tout temps, et l'import le dit (`ValeurDuMatricule`) : les bulletins puis la DSN
+  donnent les matricules de l'import en une fois. Ne se remplacent pas, et se disent : le matricule qu'une DSN ou un
+  signalement partis d'ici ont déclaré (le journal), celui que la compagnie a dit, celui qu'une autre fiche porte sans
+  le céder. Tout se décide sur l'état final puis s'écrit en une fois, avant les fiches neuves : deux matricules d'office
+  s'échangent sans doublon, et un matricule d'office que la DSN déclare pour un autre salarié se cède (sa fiche prend le
+  suivant). Une fiche neuve dont le matricule déclaré est celui d'une fiche qui ne le cède pas refuse l'import avant
+  toute écriture, copie comprise.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des

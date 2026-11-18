@@ -469,6 +469,11 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn retenue(p: ChampsSalarie) -> ChampsSalarie {
         ChampsSalarie { actif: Some(!p.archivee()), ..p }
     }
+    /// LE MATRICULE DONNE D'OFFICE, seul le moteur l'ecrit (`completer_neuve`, `importation::matricules`) : une saisie
+    /// ne le pose ni ne le change.
+    fn ajuster(avant: &ChampsSalarie, apres: &mut ChampsSalarie) {
+        apres.matricule_d_office.clone_from(&avant.matricule_d_office);
+    }
     fn refuser(ctx: &Contexte, cle: Option<&IdSalarie>, avant: &ChampsSalarie, apres: &ChampsSalarie) -> R<()> {
         // LE MATRICULE D'UN SALARIE SANS NIR NE SE CHANGE PAS : il finit son numero technique temporaire.
         if let (Some(_), Some(a), Some(b)) = (cle, avant.code_salarie.remplie(), apres.code_salarie.remplie()) {
@@ -514,10 +519,15 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
         Ok(())
     }
     fn completer_neuve(ctx: &Contexte, plate: &mut ChampsSalarie) -> R<()> {
-        // Le matricule d'une fiche neuve : le suivant. Un matricule saisi est garde tel quel. L'ANCIENNETE PART DE
-        // L'EMBAUCHE, pas du jour de la fiche : la validation du premier engagement la pose (`poser_anciennete_a_l_embauche`).
+        // Le matricule d'une fiche neuve : le suivant, que la fiche garde comme donne d'office (`matricule_d_office` : une
+        // DSN reprise qui arrive le remplace, `importation::matricules`). Un matricule saisi ou lu est garde tel quel, et
+        // n'est pas d'office. L'ANCIENNETE PART DE L'EMBAUCHE, pas du jour de la fiche : la validation du premier
+        // engagement la pose (`poser_anciennete_a_l_embauche`).
+        plate.matricule_d_office = None;
         if plate.code_salarie.remplie().map(str::trim).is_none_or(str::is_empty) {
-            plate.code_salarie = Some(matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?);
+            let m = matricule_suivant(&lire_fichier::<FicheSalarieDatee>(ctx)?)?;
+            plate.code_salarie = Some(m.clone());
+            plate.matricule_d_office = Some(m);
         }
         Ok(())
     }
@@ -616,7 +626,7 @@ pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
-fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
+pub(crate) fn ecrire_fichier<F: SorteDeFiche>(ctx: &Contexte, fichier: &F::Fichier) -> R<()> {
     let chemin = F::FICHIER.dans(&ctx.racine);
     sauver_avant(&chemin)?;
     ecrire(&chemin, fichier)

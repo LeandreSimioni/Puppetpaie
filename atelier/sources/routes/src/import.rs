@@ -319,6 +319,9 @@ pub(crate) struct Apercu {
     pub(crate) convention: Option<droit::fiche::Idcc>,
     /// Les versements des individus mis de cote (`Importation::identites`), par nom de la DSN qui les declare.
     pub(crate) paies_en_question: HashMap<String, usize>,
+    /// LE MATRICULE QUE LA DERNIERE DSN DECLARE POUR LE SALARIE D'UNE FICHE QUI EXISTE (S21.G00.30.019), quand elle en
+    /// declare un : `importation::matricules` en fait foi.
+    pub(crate) matricules_declares: Vec<(droit::contexte::IdSalarie, droit::fiche::Matricule)>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -499,12 +502,16 @@ pub(crate) fn apercu_lu(
     let mut salaries = Vec::new();
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
+    let mut matricules_declares = Vec::new();
     for decl in ordre {
         if decl.individu.identite.nir.as_ref().is_some_and(|n| en_question.contains(n)) {
             continue;
         }
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
+            if let Some(m) = &decl.individu.code_salarie {
+                matricules_declares.push((cle.clone(), m.clone()));
+            }
             let fiche = &ctx.salaries[cle].champs;
             let ec = ecarts(fiche, &decl.fiche()?.0, decl.mois)?;
             let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &FicheProposee::vide(NomDeFiche::Salarie));
@@ -722,6 +729,7 @@ pub(crate) fn apercu_lu(
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
         paies_en_question,
+        matricules_declares,
     })
 }
 
