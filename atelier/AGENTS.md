@@ -120,12 +120,21 @@ par son nom dans le JS : on lit sa fiche.
   qu'il cite existe.
 - Le rejeu des fictives (`cargo test --profile essais -p moteur --test rejeu`) suit chaque lot qui touche au calcul ou
   aux déclarations ; avant, un lot n'est pas « fini ».
-- **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause.
+- **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause. **Une lenteur se juge au geste, pas à
+  la durée d'un rejeu** : le rejeu d'une fictive joue une année de gestes par les vraies routes (l'Hôtel de Bourgogne,
+  503 routes en 18,6 s au binaire optimisé le 18/11/2026 : 37 ms par geste ; le Fil de Fer, 160 routes en 3 s).
 
 ## Une séance, par tickets
 
 - **Un ticket** : le reproduire, corriger dans le public, prouver, le **commenter** (quoi, où, comment le voir) et le
   **fermer** dès que c'est sur la branche : « ce sera réglé dans la nouvelle version ». Ce qu'il demande se fait entier.
+- **Un incident du filet se lit par sa machine** : `version` est le numéro de la dernière publication
+  (`logiciel/VERSION`), que porte aussi un binaire compilé des sources du jour : elle ne date pas le code. C'est
+  `moteur`, l'empreinte des sources compilées, qui distingue deux moteurs ; `installation`, `chemin` et `compagnie`
+  disent d'où il vient (un worktree, une fictive livrée dans `/tmp`, un poste). **Les incidents d'une fictive rejouée dans
+  le nuage partent au filet quand il se joint, et c'est voulu** : on voit le problème avant une compagnie (Léandre,
+  18/11/2026). Un incident
+  fermé qui revient ouvre un ticket neuf.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
   ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.
@@ -231,7 +240,15 @@ mécaniquement impossible (`PreuveInsuffisante`) ; un dépôt de test passe par 
 
 **Pour reproduire, on ne compile pas** : `echo '{"route":"…","charge":{…}}' | PUPPETPAIE_CODE=logiciel/donnees
 atelier/sources/moteur/bin/linux/moteur route --racine <copie d'une fictive>` (ce binaire est celui de la dernière
-publication : il peut retarder sur les sources).
+publication : il peut retarder sur les sources). Le binaire de l'atelier (`atelier/sources/atelier/bin/linux/
+moteur-atelier`) sert les mêmes routes (`moteur-atelier route --racine R --date AAAA-MM-JJ`) et date du dernier lot qui
+l'a refait (`git log` de ce fichier le dit).
+
+**Rejouer une fictive sans rien compiler** : `moteur-atelier scenario rejouer <dossier de la fictive> <installation
+neuve> [--jusqu-au AAAA-MM-JJ]` (le dossier, pas son `gestes.jsonl`) ; la compagnie rejouée est dans
+`<installation>/fictives/ajoutee-…`, avec son journal. `scenario livrer` rend la fictive telle qu'elle se publie : sans
+journal des incidents. `PUPPETPAIE_INCIDENTS=<dossier>` déplace le journal des incidents dans
+`<dossier>/incidents.json`.
 
 **Une PR dont la suite est rouge ne se fusionne pas.** La suite complète (`cargo test --profile essais --no-fail-fast`,
 dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
@@ -247,6 +264,13 @@ des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancen
   fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Les tests
   éprouvent des fonctionnements d'ensemble, ils ne rattrapent pas les erreurs des agents. Un test monte sa
   propre compagnie (`outils::dossier_de_test`).
+- **Le calcul de paie s'éprouve à l'import, sur les bulletins des compagnies** (Léandre, 18/11/2026 : « je compte sur
+  le fait que chaque compagnie qui arrive m'amène un nouveau bulletin ») : chaque paie importée d'un autre logiciel se
+  compare à ce que le moteur calcule, et chaque écart arrive chez l'éditeur en incident `ecarts_import`
+  (`docs/ARCHITECTURE.md`, « L'import », « Les écarts de calcul »). Le petit nombre de tests du calcul est voulu : on
+  ne le juge pas au compte des tests. Une paie « non comparée » (une case manque à la compagnie) n'a rien éprouvé.
+  La comparaison se fait à la fin d'un import, puis à la route `ouverture` ; un scénario qui ne joue pas `ouverture`
+  ne recompare rien.
 - **Aucun test ne sort de la machine** : gardé par `moteur/tests/fichiers/garde_reseau.rs`.
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
   outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la
