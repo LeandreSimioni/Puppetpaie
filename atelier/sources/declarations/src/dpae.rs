@@ -161,6 +161,12 @@ pub fn normaliser(v: &str, jeu: &Jeu) -> String {
         .collect()
 }
 
+/// LE NOM OU LE PRENOM TEL QUE LA DPAE LE DECLARE, et tel que `relire` le rend : dans le jeu de sa zone (`IDENTITE`),
+/// sans ses blancs de bord ; vide, rien. La fiche se compare a une DPAE relue par cette ecriture, la seule.
+pub fn identite_declaree(texte: &str) -> Option<String> {
+    Some(normaliser(texte, &IDENTITE).trim_matches(socle::texte::blanc).to_string()).filter(|v| !v.is_empty())
+}
+
 /// `texte` entier s'il tient dans `largeur` ; plus long, ce que son type refuse (`faute`) : rien ne se coupe.
 fn entiere(texte: &str, largeur: usize, faute: fn(&str) -> Option<String>) -> R<String> {
     let n = texte.chars().count();

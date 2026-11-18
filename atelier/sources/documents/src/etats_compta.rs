@@ -1604,7 +1604,9 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Err(e) => return Err(e),
         };
         for pa in &paies {
-            if pa.sans_paie() {
+            // Un engagement valide sans ligne ne paie rien. Une paie importee dont aucune ligne n'est rattachee a une
+            // rubrique a pourtant son brut : elle entre dans l'assiette, ou la taxe se refuse en la nommant.
+            if pa.importee().is_none() && pa.sans_paie() {
                 continue;
             }
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
