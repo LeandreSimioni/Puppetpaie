@@ -438,13 +438,24 @@ texte_borne! {
 }
 
 impl CodePcsEse {
-    /// UN EMPLOI D'ARTISTE DU SPECTACLE : un code du groupe 354. Les rubriques deposees de ce groupe sont des artistes
-    /// « dans le cadre d'un spectacle vivant ou audiovisuel » (Insee, PCS-ESE 2017,
-    /// `atelier/reference/sources/insee-pcs-ese-2017-fiches/354b.txt`, `354c.txt`, `354e.txt`, l. 34-35), et les
-    /// « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34). INFERENCE : le groupe entier se lit ainsi ;
-    /// ses autres rubriques ne sont pas deposees.
-    pub fn est_un_artiste_du_spectacle(&self) -> bool {
-        self.0.starts_with("354")
+    /// LE STATUT QUE LA FICHE DEPOSEE DE CE CODE FONDE (Insee, PCS-ESE 2017, `atelier/reference/sources/
+    /// insee-pcs-ese-2017-fiches/`), et lui seul :
+    /// - artiste : 354b « Artistes de la musique et du chant », 354c « Artistes dramatiques », 354e « Artistes de la
+    ///   danse », chacun « dans le cadre d'un spectacle vivant ou audiovisuel » (`354b.txt`, `354c.txt`, `354e.txt`,
+    ///   l. 34-35), et 354f « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34-35) ;
+    /// - technicien : 465b « Assistants techniques de la réalisation des spectacles vivants et audiovisuels », « une
+    ///   activité d'ordre technique » (`465b.txt`, l. 34-35), et 637c « Ouvriers et techniciens des spectacles vivants
+    ///   et audiovisuels », à qui « il ne leur est pas reconnu une activité de création » (`637c.txt`, l. 34-36).
+    ///
+    /// Aucun pour tout autre code : 353b (on y range un « Producteur réalisateur », `353b.txt` l. 54) et 353c (« Cadres
+    /// artistiques et technico-artistiques », le réalisateur et le régisseur général ensemble, `353c.txt` l. 51-52) ne se
+    /// tranchent pas par leur code ; les autres fiches ne sont pas déposées. Le statut se dit alors sur la fiche.
+    pub fn statut_de_sa_fiche(&self) -> Option<Statut> {
+        match self.0.as_str() {
+            "354b" | "354c" | "354e" | "354f" => Some(Statut::Artiste),
+            "465b" | "637c" => Some(Statut::Technicien),
+            _ => None,
+        }
     }
 }
 

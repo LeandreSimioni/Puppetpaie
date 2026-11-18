@@ -1403,7 +1403,7 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
 /// sur la fiche du salarie telle que l'engagement la voit (`fiche_de_l_engagement`).
 fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &ChampsSalarie) -> R<()> {
     let Some(jours) = eng.ecrit.periode_essai_jours else { return Ok(()) };
-    let artiste = sal.statut.dite() == Some(&Statut::Artiste);
+    let artiste = statut_de(sal)? == Statut::Artiste;
     let plafond = droit::essai::plafond(nat, &eng.contrat(), sal.statut_conventionnel.dite().copied(), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
 }

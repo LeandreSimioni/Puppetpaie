@@ -235,8 +235,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
     // retraite complementaire (S21.G00.40.003), sinon le statut du spectacle (artiste, technicien).
-    let artiste = sal.statut.dite() == Some(&droit::fiche::Statut::Artiste);
-    let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, artiste)).transpose()?.flatten() {
+    let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, sal.statut.dite().copied())).transpose()?.flatten() {
         Some(c) => c,
         None => match sal.statut_categoriel_rc.dite() {
             Some(droit::fiche::StatutCategorielRc::Cadre | droit::fiche::StatutCategorielRc::Extension) => "cadre".to_string(),

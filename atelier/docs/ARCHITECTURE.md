@@ -719,8 +719,9 @@ un libellé, chacun sa forme.
   couleur d'une pastille (`socle::ecran`) est une autre notion.
 - **PCS-ESE** : la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de
   l'Insee. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un
-  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le
-  contrat de la liste nominative d'une régularisation CASC-SVP.
+  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`). Il
+  ne fonde un statut (artiste, technicien) que pour un code dont la fiche de l'Insee est déposée et le dit
+  (`CodePcsEse::statut_de_sa_fiche`).
 - **code emploi déclaré** : le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code
   de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne
   nomme pas toujours un métier. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un
