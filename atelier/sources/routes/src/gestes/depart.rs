@@ -480,7 +480,7 @@ fn dsn_d_un_mois_importe(ctx: &Contexte, mois: Mois, nic: &Nic) -> R<Option<(dec
         }
         match engagement::ecarts::calculee(&ctx.racine, &imp, mois) {
             Ok(p) if p.engagement.numero.is_none() => ne_se_refont_pas.push(de_lui(
-                "ni une DSN déposée par l'ancien logiciel ni son bulletin ne disent le numéro de son contrat, que la DSN déclare et qui ne s'invente pas".to_string(),
+                "le numéro de son contrat n'est pas repris (il se lit sur une DSN déposée ou sur le bulletin, il ne s'invente pas) : la DSN du mois ne se refait pas sans lui".to_string(),
             )),
             Ok(p) => paies.push(p),
             Err(e) if metier(&e) => ne_se_refont_pas.push(de_lui(e.phrase)),
