@@ -529,7 +529,9 @@ fn avec_les_lignes_calculees_des_permanents(ctx: &Contexte, saisie: VueDuMois) -
                 }
                 a_completer.push(None);
             }
-            Err(m) => a_completer.push(Some(m.phrase)),
+            Err(m) if m.dit_un_manque() => a_completer.push(Some(m.phrase)),
+            // Une panne (le disque, un fichier livre) n'est pas un manque de l'engagement : elle remonte.
+            Err(m) => return Err(m),
         }
         engagements.push(resolu);
     }

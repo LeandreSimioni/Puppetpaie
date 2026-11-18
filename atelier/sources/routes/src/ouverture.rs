@@ -140,7 +140,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels (niveaux_sante : null tant que le barème ne se compose pas), auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -151,7 +151,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les fiches de la compagnie, vérifiées.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases",
+        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -914,7 +914,9 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let versement_mobilite_des_etablissements = versement_mobilite_des_etablissements(ctx);
     let pour_payer = match ctx.bareme(&jour) {
         Ok(_) => None,
-        Err(e) => Some(e.phrase),
+        Err(e) if e.dit_un_manque() => Some(e.phrase),
+        // Une panne (le disque, le socle livre) n'est pas ce qui manque pour payer : elle remonte.
+        Err(e) => return Err(e),
     };
     Ok(ConfigurationDeLaPage {
         ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
@@ -1485,15 +1487,16 @@ struct NiveauDeSante {
 /// porte, l'effectif n'y change rien). Vide quand le bareme n'en porte pas ; `None` quand il ne se compose pas (le taux
 /// AT/MP, la convention, la surcouche) : pourquoi, la configuration le dit (`ConfigurationDeLaPage::pour_payer`, que le
 /// meme empilement refuse).
-fn niveaux_sante(ctx: &Contexte) -> Option<Vec<NiveauDeSante>> {
+fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
     let pile = match ctx.bareme_fondu(&ctx.aujourdhui) {
         Ok(p) => p,
-        Err(_) => return None,
+        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) => return Err(e),
     };
     // La complementaire sante est celle des permanents : la couche de leur nature.
     let releve = pile.par_nature.get(&droit::natures::Paie::Mensuelle).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
-    Some(releve
+    Ok(Some(releve
         .into_iter()
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
@@ -1503,7 +1506,7 @@ fn niveaux_sante(ctx: &Contexte) -> Option<Vec<NiveauDeSante>> {
             enfant: t.enfant,
             libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
         })
-        .collect())
+        .collect()))
 }
 
 /// Une convention collective que le bareme sait servir : son IDCC, son libelle, si sa couche de taux est RELEVEE
@@ -1599,7 +1602,7 @@ pub(crate) struct EtatDeLaPage {
 pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let mut m = Moteur::nouveau(ctx);
     let configuration = configuration(ctx)?;
-    let niveaux_sante = niveaux_sante(ctx);
+    let niveaux_sante = niveaux_sante(ctx)?;
     let (historique, historique_incomplet) = historique(&mut m, ctx)?;
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
