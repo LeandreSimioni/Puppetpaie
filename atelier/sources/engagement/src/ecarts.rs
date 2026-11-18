@@ -1,7 +1,7 @@
 //! LES ECARTS DE CALCUL D'UN ENGAGEMENT IMPORTE : ce que ce moteur aurait calcule de la saisie qu'un autre logiciel a
 //! payee, compare ligne a ligne a ce que son bulletin imprime. Le but est de voir ou deux logiciels lisent les textes
 //! autrement ; l'engagement importe ne change pas (il se lit, il ne se recalcule pas : `importe`), et la paie calculee
-//! ici ne s'ecrit nulle part.
+//! ici ne s'ecrit nulle part dans la compagnie (l'atelier la lit, `calculee`, pour les bulletins d'une fictive).
 //!
 //! LA SAISIE REFAITE : le salarie (sa fiche, a la date de la periode ; le statut, la qualite de cadre et l'emploi que
 //! le bulletin imprime passent devant les siens), le spectacle que le bulletin nomme, la nature du contrat importe (`importe::Importe::nature`), les lignes de remuneration que le
@@ -305,50 +305,74 @@ const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 /// deja comparee, elle ne se compare pas deux fois.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     let brut = imp.objet().carte();
-    let contrat = imp.contrat();
-    // UN CONTRAT DONT LA NATURE RESTE A DIRE (sans `nature`, celui d'un permanent : `import::nature`) ne se compare
-    // pas encore : une nature ne se devine pas (regle 6). Il se compare une fois sa nature dite.
-    let paies = imp.paies();
-    // Le nombre de jours travailles que le bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le
-    // mois d'un permanent), sinon celui du contrat quand il n'a qu'une paie.
-    let du_contrat = contrat.and_then(|c| c.jours).filter(|_| paies.len() == 1);
-    imp.nature()
+    saisies_refaites(imp)
         .into_iter()
-        .flat_map(|nature| paies.iter().map(move |paie| (nature, paie)))
-        .filter_map(|(nature, (&mois, p))| {
+        .filter_map(|(mois, p, nature, jours_comptes)| {
             let empreinte = empreinte(imp, mois, p);
             if deja(&empreinte) {
                 return None;
             }
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
-            let mut c = Comparaison {
-                empreinte,
-                mois,
-                logiciel,
-                nature,
-                statut: None,
-                cadre: None,
-                taux_atmp: None,
-                ecarts: Ok(Vec::new()),
-                a_refaire: false,
-                non_rattachees: Vec::new(),
-            };
-            let jours_comptes = p.jours.or(du_contrat);
-            c.ecarts = comparer_une(racine, brut, mois, p, nature, jours_comptes, &mut c);
-            Some(c)
+            let mut suivi = Suivi::default();
+            let ecarts = refaire(racine, brut, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
+            let Suivi { statut, cadre, taux_atmp, a_refaire, non_rattachees } = suivi;
+            Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees })
         })
         .collect()
 }
 
-fn comparer_une(
+/// LA PAIE QUE CE MOTEUR CALCULE de la paie importee du mois `mois` de l'engagement importe `imp` : la saisie que la
+/// comparaison refait (`comparer`), calculee par le meme chemin. Un refus dit pourquoi elle ne se calcule pas.
+pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Paie> {
+    let Some((_, p, nature, jours_comptes)) = saisies_refaites(imp).into_iter().find(|(m, ..)| *m == mois) else {
+        return Err(match imp.paies().contains_key(&mois) {
+            true => refus("la nature de son contrat reste à dire : la paie ne se refait pas avant (règle 6)"),
+            false => socle::refus!("l'engagement importé n'a pas de paie en {}", mois),
+        });
+    };
+    refaire(racine, imp.objet().carte(), mois, p, nature, jours_comptes, &mut Suivi::default()).map(|r| r.paie)
+}
+
+/// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
+/// nombre de jours travailles que son bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le mois
+/// d'un permanent), sinon celui du contrat quand il n'a qu'une paie. UN CONTRAT DONT LA NATURE RESTE A DIRE (sans
+/// `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses paies
+/// se refont une fois sa nature dite.
+fn saisies_refaites(imp: &Importe) -> Vec<(Mois, &PaieVersee, NatureDeContrat, Option<socle::grandeurs::Jours>)> {
+    let paies = imp.paies();
+    let du_contrat = imp.contrat().and_then(|c| c.jours).filter(|_| paies.len() == 1);
+    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, p.jours.or(du_contrat)))).collect()
+}
+
+/// Ce que la saisie refaite dit de la paie, et ce que la comparaison note en chemin (`Comparaison`).
+#[derive(Default)]
+struct Suivi {
+    statut: Option<droit::fiche::Statut>,
+    cadre: Option<bool>,
+    taux_atmp: Option<OrigineDuTauxAtmp>,
+    a_refaire: bool,
+    non_rattachees: Vec<String>,
+}
+
+/// La paie refaite (`refaire`), et ce que la comparaison en lit.
+struct Refaite<'a> {
+    paie: crate::calcul::Paie,
+    garanties: Vec<IdDeCotisation>,
+    /// Le taux AT/MP du calcul est celui que le bulletin applique : l'AT/MP ne se compare pas.
+    atmp_lu: bool,
+    /// Les lignes de cotisation que le bulletin imprime.
+    cotisations: &'a [CotisationImprimee],
+}
+
+fn refaire<'a>(
     racine: &Path,
     brut: &crate::saisie::Carte,
     mois: Mois,
-    p: &PaieVersee,
+    p: &'a PaieVersee,
     nature: NatureDeContrat,
     jours_comptes: Option<socle::grandeurs::Jours>,
-    c: &mut Comparaison,
-) -> R<Vec<Ecart>> {
+    c: &mut Suivi,
+) -> R<Refaite<'a>> {
     let jours_comptes = match jours_comptes.map(socle::grandeurs::entiere) {
         None => None,
         Some(Some(n)) => Some(n),
@@ -513,9 +537,15 @@ fn comparer_une(
             saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
         }
     }
-    let paie = saisie.paies.first().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
-    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, paie)?;
+    let paie = saisie.paies.into_iter().next().ok_or_else(|| refus("le calcul ne rend aucune paie"))?;
+    let garanties = crate::calcul::garanties_de_prevoyance(&ctx, &paie)?;
+    Ok(Refaite { paie, garanties, atmp_lu, cotisations })
+}
 
+/// Les ecarts de la paie refaite `r` a ce que le bulletin de la paie importee `p` imprime ; `c` note les lignes de
+/// cotisation que la table ne rattache a aucune cotisation.
+fn confronter(r: &Refaite, p: &PaieVersee, c: &mut Suivi) -> Vec<Ecart> {
+    let (paie, garanties, atmp_lu, cotisations) = (&r.paie, &r.garanties, r.atmp_lu, r.cotisations);
     // Les deux cotes, par cotisation.
     let mut leurs: BTreeMap<RegroupementDeComparaison, Vec<&CotisationImprimee>> = BTreeMap::new();
     // Les cotisations que le bulletin imprime apres son total (les facultatives, les exonerations) : hors de ce total.
@@ -636,7 +666,7 @@ fn comparer_une(
             ecarts.push(Ecart { cotisation: RegroupementDeComparaison::Total(cle), libelles: Vec::new(), mesure });
         }
     }
-    Ok(ecarts)
+    ecarts
 }
 
 /// (leur - notre) / notre, a 4 decimales ; `None` quand le notre est nul.
@@ -645,7 +675,7 @@ fn relatif(leur: Montant, notre: Montant) -> Option<Coefficient> {
 }
 
 /// Une raison de non-comparaison venue du calcul : la paie se comparera de nouveau.
-fn a_refaire(c: &mut Comparaison, raison: Echec) -> Echec {
+fn a_refaire(c: &mut Suivi, raison: Echec) -> Echec {
     c.a_refaire = true;
     raison
 }

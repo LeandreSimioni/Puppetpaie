@@ -966,13 +966,24 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     let taux = droit::pas::taux_dgfip(ctx, cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&fin.mois_civil().premier_jour())?;
     let court = droit::natures::contrat_court(&*e.nat()?, &e.contrat(), fin)?;
-    // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
-    // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
-    // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
-    // Sans subrogation, aucune avance.
+    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette_du_pas(p)?, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
+}
+
+/// L'ASSIETTE DU PRELEVEMENT A LA SOURCE de la paie `p` : son net imposable, plus l'avance des indemnites journalieres
+/// subrogees. « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le
+/// montant de l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013,
+/// `norme-dsn/texte/bloc-S21.G00.50.txt`) ; cette avance-la, ce que le BOFiP en soumet (`maintien`,
+/// `Assiette::IjSubrogeesAssiettePas`). Sans subrogation, aucune avance.
+fn assiette_du_pas(p: &Paie) -> R<Montant> {
     let avance = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).map(|b| b.en_euros(droit::assiette::Assiette::IjSubrogeesAssiettePas)).transpose()?;
-    let assiette = avance.into_iter().fold(p.net_imposable, |a, m| a + m);
-    Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, assiette, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
+    Ok(avance.into_iter().fold(p.net_imposable, |a, m| a + m))
+}
+
+/// L'IMPOT PRELEVE SUR LA PAIE `p` AU TAUX `taux` que son bulletin imprime (une paie importee, que ce moteur refait :
+/// `ecarts::calculee`) : le taux transmis par la DGFiP s'applique tel quel a l'assiette de la paie
+/// (`droit::pas::au_taux_transmis`), comme celui d'une paie validee.
+pub fn prelevement_au_taux_imprime(p: &Paie, taux: droit::pas::TauxDePas) -> R<Montant> {
+    Ok(droit::pas::au_taux_transmis(taux, assiette_du_pas(p)?).1)
 }
 
 /// Le prelevement a la source du versement d'une correction, verse avec le mois `mois_du_versement` : la difference de
