@@ -1232,7 +1232,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
 | ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants, lus une fois de `sante_svp`, `droit::bareme::ayants_droit`, que la cotisation santé compte et que la DSN déclare en 70.008, 70.011) | `AyantsDroit` | `droit/src/bareme.rs` |
-| ordre de paiement (bloc S21.G00.20 : à qui, combien, pour quelle période, pour quand, et le crédit que sa somme due laisse, `documents::bordereau::Credit`. Ce qu'une somme due fait verser et laisse en crédit est un calcul, `documents::bordereau::AVerser` ; l'ordre en clair que la boîte du dépôt montre, `declarations::ordres_paiement::OrdreEnClair`, une réponse) | `OrdreDePaiement` | `declarations/src/dsn.rs` |
+| ordre de paiement (bloc S21.G00.20 : à qui, combien, pour quelle période, pour quand, et le crédit que sa somme due laisse, `documents::bordereau::Credit`. Ce qu'une somme due fait verser et laisse en crédit est un calcul, `documents::bordereau::AVerser` ; l'ordre en clair que la boîte du dépôt montre, `declarations::ordres_paiement::OrdreEnClair`, une réponse ; celui qu'une DSN déposée déclare se lit dans le même type, sans crédit, `declarations::dsn_lue::DsnLue::ordres`, comme son bordereau, `BordereauEcrit`) | `OrdreDePaiement` | `declarations/src/dsn.rs` |
+| origine de la DSN d'un mois dans un état des organismes (partie, à déposer, déposée par l'ancien logiciel, refaite des paies importées et jamais déposée) | `declarations::etats_organismes::OrigineDeLaDsn` | `declarations/src/etats_organismes.rs` |
 | versement déclaré (ce qu'une DSN partie a déclaré pour un contrat : ses rubriques écrites, ses nets, son brut, ses frais, son taux de PAS ; ce qu'une correction annule ; avec la paie et le bulletin qu'il annule, `DernierDeclare`. Ses formes : ce que la mensuelle écrit, `declarations::dsn::VersementEcrit` ; le bloc 50 d'une DSN lue, `declarations::dsn_lue::VersementLu`, et ce qu'il dit des nets et du prélèvement, `engagement::importe::Nets`, que la paie d'un contrat qu'il paie seul reprend, et que porte la paie versée d'un engagement importé, `PaieVersee.nets`) | `VersementDeclare` | `declarations/src/versement_declare.rs` |
 | numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
 | rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
@@ -2357,6 +2358,14 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
+- **Les versements et le bordereau d'un mois importé** (`routes::gestes::depart::dsn_d_un_mois_importe`, Léandre le
+  18/11/2026, #335) : les états « Versements aux organismes » et « Bordereau Urssaf » les lisent dans la DSN que
+  l'ancien logiciel a déposée quand l'import l'a gardée (`dsn_lue::DsnLue::ordres`, `bordereaux` : une pièce propre se
+  prend telle quelle) ; sinon dans la DSN que le seul chemin (`declarations::dsn::fabriquer`) fait des paies importées
+  du mois, chacune refaite de son bulletin (`engagement::ecarts::calculee`, avec le numéro de contrat déclaré), qui ne
+  s'écrit nulle part et ne part jamais (règle 4). Une paie qui ne se refait pas met le mois hors de l'état, et
+  l'avertissement le dit : rien ne se compte à sa place. L'état nomme d'où vient chaque DSN
+  (`declarations::etats_organismes::OrigineDeLaDsn`).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien

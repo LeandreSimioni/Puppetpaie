@@ -542,6 +542,9 @@ fn refaire<'a>(
         salarie: Some(salarie.clone()),
         spectacle,
         nature: Some(nature),
+        // Le numero du contrat que l'ancien logiciel a declare (regle 4 : il se lit) ; la DSN qu'un etat refait des
+        // paies importees le declare (`declarations::etats_organismes::OrigineDeLaDsn`).
+        numero: brut.numero.clone(),
         debut,
         fin: fin_du_contrat,
         salaire_mensuel,

@@ -95,6 +95,19 @@ const S21_20_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.002");
 const S21_20_003: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.003");
 const S21_20_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.004");
 const S21_20_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.005");
+const S21_20_006: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.006");
+const S21_20_007: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.007");
+const S21_20_011: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.011");
+const S21_22_001: RubriqueDeLaNorme = droit::rubrique!("S21.G00.22.001");
+const S21_22_003: RubriqueDeLaNorme = droit::rubrique!("S21.G00.22.003");
+const S21_22_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.22.004");
+const S21_22_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.22.005");
+const S21_23_001: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.001");
+const S21_23_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.002");
+const S21_23_003: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.003");
+const S21_23_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.004");
+const S21_23_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.005");
+const S21_23_006: RubriqueDeLaNorme = droit::rubrique!("S21.G00.23.006");
 const S21_30_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.002");
 const S21_30_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.004");
 const S21_30_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.005");
@@ -155,12 +168,43 @@ pub struct Banque {
 }
 
 /// Un versement a un organisme (bloc S21.G00.20) tel que la lecture le garde : l'identifiant de l'organisme (.001),
-/// l'entite d'affectation (.002), le BIC et l'IBAN du compte preleve (.003, .004).
+/// l'entite d'affectation (.002), le BIC et l'IBAN du compte preleve (.003, .004), le montant (.005), la periode
+/// (.006, .007) et la date de paiement (.011). Il devient un ordre de paiement (`DsnLue::ordres`).
+#[derive(Clone, Debug)]
 struct Bloc20 {
     organisme: Option<IdentifiantDOrganisme>,
     affectation: String,
     bic: Option<Bic>,
     iban: Option<Iban>,
+    montant: Option<Montant>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
+    date_paiement: Option<Jour>,
+}
+
+/// Un bordereau de cotisation due (bloc S21.G00.22) tel que la lecture le garde : la periode qu'il couvre (.003, .004),
+/// son total (.005) et ses cotisations agregees (blocs S21.G00.23, qui le suivent). Il devient un bordereau
+/// (`DsnLue::bordereaux`).
+#[derive(Clone, Debug)]
+struct Bloc22 {
+    /// L'Urssaf (22.001).
+    organisme: Option<IdentifiantDOrganisme>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
+    total: Option<Montant>,
+    lignes: Vec<Bloc23>,
+}
+
+/// Une cotisation agregee (bloc S21.G00.23) : le CTP (.001), le qualifiant d'assiette (.002), le taux (.003), l'assiette
+/// (.004), le montant (.005) et la commune du versement mobilite (.006).
+#[derive(Clone, Debug, Default)]
+struct Bloc23 {
+    code: Option<droit::organismes::CodeCtp>,
+    qualifiant: Option<droit::organismes::QualifiantDAssiette>,
+    taux: Option<Taux>,
+    assiette: Option<Montant>,
+    montant: Option<Montant>,
+    commune: Option<droit::fiche::CodeInsee>,
 }
 
 /// Un contact chez le declare (S20.G00.07 : « nom et prenom » en une rubrique, .001 ; telephone .002 ; courriel .003 ;
@@ -599,6 +643,10 @@ pub struct DsnLue {
     pub rattachements: Vec<String>,
     /// Chaque rubrique lue et la valeur qu'elle declare (`declare`).
     rubriques: BTreeSet<(RubriqueDeLaNorme, String)>,
+    /// Les versements aux organismes (blocs S21.G00.20), dans l'ordre du fichier (`ordres`).
+    blocs20: Vec<Bloc20>,
+    /// Les bordereaux Urssaf (blocs S21.G00.22 et 23), dans l'ordre du fichier (`bordereaux`).
+    blocs22: Vec<Bloc22>,
 }
 
 /// La nature d'une DSN mensuelle (S20.G00.05.001).
@@ -655,6 +703,76 @@ impl DsnLue {
         } else {
             self.mois_declare().map(MoisOuJour::Mois).ok_or_else(|| refuse(SANS_MOIS))
         }
+    }
+
+    /// LES ORDRES DE PAIEMENT QUE LA DSN PORTE (blocs S21.G00.20), dans l'ordre du fichier : l'organisme (.001),
+    /// l'entite d'affectation (.002), le montant (.005), la periode (.006, .007), la date de paiement (.011). Un bloc
+    /// qui ne dit pas son organisme, son montant ou sa periode se refuse en le nommant : rien ne s'invente a sa place.
+    /// Une DSN ne dit pas de credit. A qui il va, la DSN le dit : la DGFiP (`dsn::DGFIP`), l'Urssaf de son bordereau
+    /// (22.001), un organisme complementaire de ses adhesions (15.002), un autre sinon.
+    pub fn ordres(&self) -> R<Vec<crate::dsn::OrdreDePaiement>> {
+        use documents::bordereau::Destinataire;
+        let destinataire = |o: &IdentifiantDOrganisme| {
+            if *o == crate::dsn::DGFIP {
+                Destinataire::Dgfip
+            } else if self.blocs22.iter().any(|b| b.organisme.as_ref() == Some(o)) {
+                Destinataire::Urssaf
+            } else if self.adhesions.iter().any(|a| a.organisme.as_ref() == Some(o)) {
+                Destinataire::Complementaire
+            } else {
+                Destinataire::Autre
+            }
+        };
+        let manque = |n: usize, quoi: &str| socle::refus!("le versement à un organisme n° {} (bloc S21.G00.20) ne déclare pas {} : ses versements ne se lisent pas", n, quoi);
+        let mut out = Vec::new();
+        for (i, b) in self.blocs20.iter().enumerate() {
+            let n = i + 1;
+            let organisme = b.organisme.clone().ok_or_else(|| manque(n, "son organisme (.001)"))?;
+            let montant = b.montant.ok_or_else(|| manque(n, "son montant (.005)"))?;
+            let (Some(debut), Some(fin)) = (b.debut, b.fin) else { return Err(manque(n, "sa période (.006, .007)")) };
+            out.push(crate::dsn::OrdreDePaiement {
+                destinataire: destinataire(&organisme),
+                organisme,
+                reference: Some(b.affectation.clone()).filter(|a| !a.is_empty()),
+                montant,
+                periode: socle::date::Periode::du_au(debut, fin)?,
+                date_paiement: b.date_paiement,
+                credit: None,
+            });
+        }
+        Ok(out)
+    }
+
+    /// LES BORDEREAUX URSSAF QUE LA DSN PORTE (blocs S21.G00.22 et 23), dans l'ordre du fichier : la periode (22.003,
+    /// 22.004), le total (22.005), et chaque cotisation agregee (23.001 a 23.006). Un bordereau sans sa periode ou son
+    /// total, une ligne sans son CTP ou son qualifiant, se refusent en le nommant.
+    /// LE TAUX D'UNE LIGNE (23.003) : seuls ceux de l'accident du travail, du versement mobilite et du bonus-malus se
+    /// declarent, et le code INSEE de la commune (23.006) « permet de valoriser l'assujettissement au versement
+    /// mobilite » (guide Urssaf v5.2, `atelier/reference/sources/editeur-dsn/guide-urssaf-regularisation-v5.2-20261019.txt`
+    /// l. 132-149) : une ligne qui porte une commune porte le taux du versement mobilite, une autre le taux AT/MP.
+    /// INFERENCE : le taux d'un bonus-malus se range avec ceux de l'AT/MP, que le logiciel n'ecrit pas.
+    pub fn bordereaux(&self) -> R<Vec<crate::dsn::BordereauEcrit>> {
+        use documents::bordereau::{LigneBordereau, TauxDeLaLigne};
+        let mut out = Vec::new();
+        for (i, b) in self.blocs22.iter().enumerate() {
+            let n = i + 1;
+            let manque = |quoi: &str| socle::refus!("le bordereau Urssaf n° {} (bloc S21.G00.22) ne déclare pas {} : il ne se lit pas", n, quoi);
+            let (Some(debut), Some(fin)) = (b.debut, b.fin) else { return Err(manque("sa période (.003, .004)")) };
+            let total = b.total.ok_or_else(|| manque("son total (.005)"))?;
+            let mut lignes = Vec::new();
+            for (k, l) in b.lignes.iter().enumerate() {
+                let dit = |quoi: &str| socle::refus!("la cotisation agrégée n° {} du bordereau Urssaf n° {} (bloc S21.G00.23) ne déclare pas {} : le bordereau ne se lit pas", k + 1, n, quoi);
+                let code = l.code.clone().ok_or_else(|| dit("son code (.001)"))?;
+                let qualifiant = l.qualifiant.ok_or_else(|| dit("son qualifiant d'assiette (.002)"))?;
+                let taux_at = l.taux.map(|t| match l.commune {
+                    Some(_) => TauxDeLaLigne::Mobilite(t),
+                    None => TauxDeLaLigne::AtMp(t),
+                });
+                lignes.push(LigneBordereau { code, qualifiant, taux_at, assiette: l.assiette, montant: l.montant, commune: l.commune.clone() });
+            }
+            out.push(crate::dsn::BordereauEcrit { periode: socle::date::Periode::du_au(debut, fin)?, total, lignes });
+        }
+        Ok(out)
     }
 
     /// Les versements dont le prelevement a la source est declare (S21.G00.50.007), et ceux preleves sur la grille (un
@@ -997,6 +1115,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let mut etablissements: Vec<Nic> = Vec::new();
     // Les versements aux organismes (bloc 20) : identifiant, entite d'affectation, BIC, IBAN.
     let mut blocs20: Vec<Bloc20> = Vec::new();
+    // Les bordereaux Urssaf (bloc 22) et leurs cotisations agregees (bloc 23).
+    let mut blocs22: Vec<Bloc22> = Vec::new();
     let mut contacts: Vec<Contact> = Vec::new();
     let mut adhesions: Vec<Adhesion> = Vec::new();
     let mut rattachements: Vec<String> = Vec::new();
@@ -1039,7 +1159,76 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             S20_05_003 => premier(&mut fraction, &Fraction::lue(&v)),
             S20_05_006 => premier(&mut remplace, &IdentifiantDeDeclaration::lu(&v)),
-            S21_20_005 => versements_organismes.extend(fautes.euros(rub, &v)),
+            S21_20_005 => {
+                let m = fautes.euros(rub, &v);
+                versements_organismes.extend(m);
+                if let Some(b) = blocs20.last_mut() {
+                    b.montant = m;
+                }
+            }
+            S21_20_006 | S21_20_007 | S21_20_011 => {
+                let j = fautes.jour(rub, &v);
+                if let Some(b) = blocs20.last_mut() {
+                    match rub {
+                        S21_20_006 => b.debut = j,
+                        S21_20_007 => b.fin = j,
+                        _ => b.date_paiement = j,
+                    }
+                }
+            }
+            // Un bordereau commence a son organisme (22.001) ; ses cotisations agregees le suivent.
+            S21_22_001 => {
+                let organisme = fautes.lue(rub, &v, ORGANISME, IdentifiantDOrganisme::lire);
+                blocs22.push(Bloc22 { organisme, debut: None, fin: None, total: None, lignes: Vec::new() })
+            }
+            S21_22_003 | S21_22_004 => {
+                let j = fautes.jour(rub, &v);
+                if let Some(b) = blocs22.last_mut() {
+                    match rub {
+                        S21_22_003 => b.debut = j,
+                        _ => b.fin = j,
+                    }
+                }
+            }
+            S21_22_005 => {
+                let m = fautes.euros(rub, &v);
+                if let Some(b) = blocs22.last_mut() {
+                    b.total = m;
+                }
+            }
+            S21_23_001 => {
+                let code = fautes.lue(rub, &v, "un code type de personnel (3 caractères)", droit::organismes::CodeCtp::lire);
+                if let Some(b) = blocs22.last_mut() {
+                    b.lignes.push(Bloc23 { code, ..Bloc23::default() });
+                }
+            }
+            S21_23_002 => {
+                let q = fautes.valeur(rub, &v, "un qualifiant d'assiette (920, 921)", droit::organismes::QualifiantDAssiette::du_code(&v));
+                if let Some(l) = blocs22.last_mut().and_then(|b| b.lignes.last_mut()) {
+                    l.qualifiant = q;
+                }
+            }
+            S21_23_003 => {
+                let t = fautes.nombre::<Taux>(rub, &v);
+                if let Some(l) = blocs22.last_mut().and_then(|b| b.lignes.last_mut()) {
+                    l.taux = t;
+                }
+            }
+            S21_23_004 | S21_23_005 => {
+                let m = fautes.euros(rub, &v);
+                if let Some(l) = blocs22.last_mut().and_then(|b| b.lignes.last_mut()) {
+                    match rub {
+                        S21_23_004 => l.assiette = m,
+                        _ => l.montant = m,
+                    }
+                }
+            }
+            S21_23_006 => {
+                let c = fautes.lue(rub, &v, "un code INSEE de commune (5 caractères)", droit::fiche::CodeInsee::lire);
+                if let Some(l) = blocs22.last_mut().and_then(|b| b.lignes.last_mut()) {
+                    l.commune = c;
+                }
+            }
             crate::ntt::RUBRIQUE => {
                 if let Some(i) = individu {
                     individus[i].identite.ntt = crate::ntt::Ntt::lu(&v)?;
@@ -1119,7 +1308,7 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
             }
             S21_20_001 => {
                 let organisme = fautes.lue(rub, &v, ORGANISME, IdentifiantDOrganisme::lire);
-                blocs20.push(Bloc20 { organisme, affectation: String::new(), bic: None, iban: None })
+                blocs20.push(Bloc20 { organisme, affectation: String::new(), bic: None, iban: None, montant: None, debut: None, fin: None, date_paiement: None })
             }
             S21_20_002 => {
                 if let Some(b) = blocs20.last_mut() {
@@ -1427,6 +1616,8 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
         adhesions,
         rattachements,
         rubriques,
+        blocs20,
+        blocs22,
     })
 }
 

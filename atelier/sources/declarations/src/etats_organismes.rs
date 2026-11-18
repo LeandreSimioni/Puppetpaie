@@ -4,7 +4,11 @@
 //!
 //! L'ARGENT QUI A BOUGE se tire de chaque DSN telle qu'elle est partie (`depart::dsn_du_mois` : ses paies et les
 //! corrections d'autres mois qu'elle portait, des versions qu'elle a emportees, par la fonction qui l'a fabriquee), ou
-//! telle qu'elle partirait : les versements (bloc 20) et le bordereau Urssaf (blocs 22 et 23). CE QUE LE MOIS COUTE se
+//! telle qu'elle partirait : les versements (bloc 20) et le bordereau Urssaf (blocs 22 et 23). D'un mois repris d'un
+//! ancien logiciel, ils se lisent dans la DSN qu'il a deposee quand l'import l'a gardee (une piece propre se prend telle
+//! quelle, regle 1) ; sans elle, ils se tirent de la DSN que la meme fonction refait des paies importees du mois, chacune
+//! recalculee de son bulletin (`engagement::ecarts::calculee`), qui ne s'ecrit ni ne part jamais (`OrigineDeLaDsn`).
+//! CE QUE LE MOIS COUTE se
 //! tire des paies de chaque mois (`engagement::etats::paies_du_mois`, ecrites ou importees) : la tranche A
 //! (`dsn::base_declaree`).
 //! Les montants annuels hors DSN (FCAP-SVP, Afdas, paritarisme) se calculent sur le brut du livre de paie ou sur la
@@ -302,33 +306,46 @@ fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs:
     Ok(out)
 }
 
-/// La DSN d'un mois et d'un etablissement (`None` : le principal) : celle qui est partie, telle qu'elle est partie, ou
-/// celle qui partirait, et si elle est partie. La fournit qui lit le journal des envois (`routes::gestes::depart::dsn_du_mois`).
-pub type DsnDuMois<'a> = &'a dyn Fn(&Contexte, Mois, Option<&droit::fiche::Nic>) -> socle::echec::R<Option<(crate::dsn::Fabriquee, bool)>>;
+/// D'OU VIENT LA DSN D'UN MOIS DANS UN ETAT DES ORGANISMES (`DsnDuMois`) : partie de ce logiciel, telle qu'elle est
+/// partie ; a deposer, telle qu'elle partirait ; deposee par l'ancien logiciel, telle que l'import l'a gardee (un mois
+/// importe) ; ou refaite des paies importees du mois, que le moteur recalcule de leurs bulletins (un mois importe sans
+/// sa DSN : `engagement::ecarts::calculee`). Une DSN refaite ne s'ecrit ni ne part jamais (regle 4) : l'etat n'en lit
+/// que les versements et le bordereau.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrigineDeLaDsn {
+    Partie,
+    ADeposer,
+    DeLAncienLogiciel,
+    RefaiteDesPaiesImportees,
+}
 
-/// LA DSN DE CHAQUE MOIS DE LA PERIODE, par etablissement (le principal d'abord) : celle qui est partie telle qu'elle est
-/// partie, ou celle qui partirait (`dsn_du_mois`) : `(mois, nic, la DSN, partie)`. Un mois sans DSN est dit.
-fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_mois: DsnDuMois) -> R<Vec<(Mois, droit::fiche::Nic, crate::dsn::Fabriquee, bool)>> {
+/// La DSN d'un mois et d'un etablissement (`None` : le principal) et d'ou elle vient (`OrigineDeLaDsn`). La fournit qui
+/// lit le journal des envois et l'import (`routes::gestes::depart::dsn_du_mois`).
+pub type DsnDuMois<'a> = &'a dyn Fn(&Contexte, Mois, Option<&droit::fiche::Nic>) -> socle::echec::R<Option<(crate::dsn::Fabriquee, OrigineDeLaDsn)>>;
+
+/// LA DSN DE CHAQUE MOIS DE LA PERIODE, par etablissement (le principal d'abord), et d'ou elle vient (`dsn_du_mois`) :
+/// `(mois, nic, la DSN, son origine)`. Un mois sans DSN est dit. UN MOIS REPRIS D'UN ANCIEN LOGICIEL dont la DSN ne se
+/// lit pas, ou dont une paie ne se refait pas, n'est pas dans l'etat, et l'avertissement dit pourquoi : rien ne se
+/// compte a la place de ce qui manque.
+fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_mois: DsnDuMois) -> R<Vec<(Mois, droit::fiche::Nic, crate::dsn::Fabriquee, OrigineDeLaDsn)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
-    // UN MOIS REPRIS D'UN ANCIEN LOGICIEL n'a pas de DSN de ce logiciel : ses versements se composent sur les bases du
-    // calcul de chaque paie (`engagement::calcul`, les bases globales : assiettes majorees de 15 et 10 %, plafonnees,
-    // abattues), que ses bulletins n'impriment pas.
     let importes = p.importes();
-    if !importes.is_empty() {
-        let quand = if importes.len() == p.mois.len() { format!("Les paies de {}", p.libelle) } else { format!("Les paies de {}", importes.iter().map(|m| m.libelle(Graphie::Accentuee)).collect::<Vec<_>>().join(", ")) };
-        avert.push(format!(
-            "{} sont reprises d'un ancien logiciel : leurs versements ne se composent pas ici. La DSN se compose sur les assiettes que ce logiciel calcule (majorées, plafonnées), et leurs bulletins ne les impriment pas.",
-            quand
-        ));
-    }
     let principal = ctx.entreprise.nic_principal();
-    for &m in p.mois.iter().filter(|m| !importes.contains(m)) {
+    for &m in &p.mois {
         let mut une = false;
         for nic in ctx.entreprise.nics().map_err(|e| e.reclasser(Classe::Refuse))? {
             let etablissement = if Some(&nic) == principal { None } else { Some(&nic) };
-            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| e.reclasser(Classe::Refuse))? {
-                out.push((m, nic, f, partie));
-                une = true;
+            match dsn_du_mois(ctx, m, etablissement) {
+                Ok(Some((f, origine))) => {
+                    out.push((m, nic, f, origine));
+                    une = true;
+                }
+                Ok(None) => {}
+                Err(e) if importes.contains(&m) => {
+                    avert.push(format!("{} (repris d'un ancien logiciel) n'est pas dans l'état : {}", libelle_mois(m), e.phrase));
+                    une = true;
+                }
+                Err(e) => return Err(e.reclasser(Classe::Refuse)),
             }
         }
         if !une {
@@ -339,20 +356,24 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
         avert.push(format!("Aucune DSN partie ni paie validée pour {} : ces mois ne sont pas dans l'état.", sans.join(", ")));
     }
     if out.is_empty() {
-        // Seuls des mois repris : la raison qu'ils n'y sont pas est la reponse.
-        if sans.is_empty() {
-            if let Some(repris) = avert.pop() {
-                return Err(refus(repris));
-            }
+        // Seuls des mois repris qui ne se lisent pas : les raisons qu'ils n'y sont pas sont la reponse.
+        if sans.is_empty() && !avert.is_empty() {
+            return Err(refus(avert.join(" ")));
         }
         return Err(refus(format!("Aucune DSN partie ni paie validée sur la période ({}) : il n'y a rien à lire.", p.libelle)));
     }
     Ok(out)
 }
 
-/// Le nom de la DSN d'un mois dans un etat : partie, ou a deposer.
-fn nom_de_la_dsn(m: Mois, partie: bool) -> String {
-    format!("DSN de {}{}", libelle_mois(m), if partie { "" } else { " (à déposer)" })
+/// Le nom de la DSN d'un mois dans un etat, et d'ou elle vient.
+fn nom_de_la_dsn(m: Mois, origine: OrigineDeLaDsn) -> String {
+    let d = match origine {
+        OrigineDeLaDsn::Partie => "",
+        OrigineDeLaDsn::ADeposer => " (à déposer)",
+        OrigineDeLaDsn::DeLAncienLogiciel => " (déposée par l'ancien logiciel)",
+        OrigineDeLaDsn::RefaiteDesPaiesImportees => " (refaite des bulletins repris, jamais déposée)",
+    };
+    format!("DSN de {}{}", libelle_mois(m), d)
 }
 
 /// SIRET -> libelle, lu dans les organismes de la compagnie (`Contexte::organismes`).
@@ -374,7 +395,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
     let mut avert = Vec::new();
     let noms = libelles_organismes(ctx)?;
     let mut lignes = Vec::new();
-    for (m, _nic, f, partie) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
+    for (m, _nic, f, origine) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
         for o in &f.ordres {
             let organisme = match noms.iter().find(|(k, _)| *k == o.organisme).map(|(_, v)| v.clone()).filter(|v| !v.is_empty()) {
                 Some(n) => n,
@@ -384,7 +405,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
             l.m(C::Mois, m).t(C::Organisme, organisme).t(C::Identifiant, o.organisme.to_string()).ot(C::Reference, o.reference.clone());
             l.t(C::Du, o.periode.debut().jj_mm_aaaa()).t(C::Au, o.periode.fin().jj_mm_aaaa()).montant(C::Montant, o.montant);
             l.t(C::Mode, "prélèvement SEPA");
-            l.ot(C::Date, o.date_paiement.map(|j| j.jj_mm_aaaa())).t(C::Fichier, nom_de_la_dsn(m, partie));
+            l.ot(C::Date, o.date_paiement.map(|j| j.jj_mm_aaaa())).t(C::Fichier, nom_de_la_dsn(m, origine));
             lignes.push(l);
         }
     }
@@ -408,7 +429,7 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
         C::Fichier.titree("DSN"),
     ];
     t.sources = vec![
-        "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; libellés : donnees/organismes-base.json".to_string(),
+        "bloc S21.G00.20 « Versement organisme de protection sociale » (cahier technique DSN 2026.1), tiré de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lu dans la DSN que l'ancien logiciel a déposée, ou, sans elle, tiré de la DSN que la même fonction refait des paies reprises, recalculées de leurs bulletins ; libellés : donnees/organismes-base.json".to_string(),
     ];
     finir(ctx, &mut t, Some(&p), "versements-organismes", d.format,d.ecrire)?;
     Ok(t)
@@ -422,10 +443,10 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let mut lignes = Vec::new();
-    for (m, _nic, f, partie) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
+    for (m, _nic, f, origine) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
         for bordereau in f.bordereaux {
             let mut l = Ligne::nouvelle();
-            l.m(C::Mois, m).t(C::Ctp, "").t(C::Libelle, format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(m, partie)));
+            l.m(C::Mois, m).t(C::Ctp, "").t(C::Libelle, format!("Total dû à l'Urssaf (bloc 22), {}", nom_de_la_dsn(m, origine)));
             l.t(C::Periode, format!("{} au {}", bordereau.periode.debut().jj_mm_aaaa(), bordereau.periode.fin().jj_mm_aaaa())).montant(C::Total, bordereau.total);
             lignes.push(l);
             for b in bordereau.lignes {
@@ -459,7 +480,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
         C::Total.colonne(),
     ];
     t.sources = vec![
-        "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN".to_string(),
+        "blocs S21.G00.22 « Bordereau de cotisation due » et S21.G00.23 « Cotisation agrégée » (cahier technique DSN 2026.1), tirés de chaque DSN partie (des versions qu'elle a emportées) ou à déposer, par la fonction qui écrit la DSN ; d'un mois repris, lus dans la DSN que l'ancien logiciel a déposée, ou, sans elle, tirés de la DSN que la même fonction refait des paies reprises, recalculées de leurs bulletins".to_string(),
         "libellés : table des codes types de personnel, open.urssaf.fr (histocodestypescsv), relevée le 18/09/2026".to_string(),
     ];
     finir(ctx, &mut t, Some(&p), "bordereau-urssaf", d.format,d.ecrire)?;

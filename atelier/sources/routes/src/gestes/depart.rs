@@ -40,6 +40,7 @@ use socle::echec::Echec;
 use socle::echec::R;
 use documents::ecrire_documents::Reserves;
 use documents::SorteDePieceProduite;
+use declarations::etats_organismes::OrigineDeLaDsn;
 
 fn info(texte: impl Into<String>) -> Avis {
     Avis { info: true, texte: texte.into() }
@@ -401,24 +402,95 @@ fn dsn_parties(ctx: &Contexte, m: &mut Moteur, mois: Mois, nic: Option<&Nic>) ->
 
 /// CE QU'UNE DSN DE `mois` FAIT VERSER, pour l'etablissement `nic` (le principal sans lui) : la derniere DSN mensuelle
 /// partie du mois, telle qu'elle est partie (ses paies et les corrections d'autres mois qu'elle portait, `dsn_parties`) ;
-/// si aucune n'est partie, celle qui partirait aujourd'hui (`fabriquer_du_present`). Rend aussi si elle est partie.
+/// si aucune n'est partie, celle qui partirait aujourd'hui (`fabriquer_du_present`) ; d'un mois que seuls des engagements importes touchent, `dsn_d_un_mois_importe`. Rend aussi
+/// d'ou elle vient (`OrigineDeLaDsn`).
 /// `None` : rien n'est parti et rien n'est a declarer pour cet etablissement (ni paie validee, ni correction).
-pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>) -> R<Option<(declarations::dsn::Fabriquee, bool)>> {
-    let mut m = Moteur::nouveau(ctx);
+pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&Nic>) -> R<Option<(declarations::dsn::Fabriquee, OrigineDeLaDsn)>> {
     let plusieurs = !ctx.entreprise_du_mois(mois).secondaires().is_empty();
     let nic = match nic {
         Some(n) => n.clone(),
         None => ctx.entreprise.nic.exigee("nic").map_err(|e| e.reclasser(Classe::Illisible))?.clone(),
     };
+    // Un mois que seuls des engagements importes touchent (`import::mois::mois_importes`) : rien n'en part d'ici.
+    if !engagement::importe::du_mois(&ctx.racine, mois)?.is_empty() && !engagement::stock::a_une_saisie(&ctx.racine, mois)? {
+        return dsn_d_un_mois_importe(ctx, mois, &nic);
+    }
+    let mut m = Moteur::nouveau(ctx);
     if let Some(f) = dsn_parties(ctx, &mut m, mois, plusieurs.then_some(&nic))?.pop() {
-        return Ok(Some((f, true)));
+        return Ok(Some((f, OrigineDeLaDsn::Partie)));
     }
     let forme = Forme { type_dsn: TypeDeLaDeclaration::Normale, ordre: NumeroDOrdre::PREMIER, etablissement: plusieurs.then_some(nic), constitution: ctx.aujourdhui, remplacee_versait_pas: None };
     let present = Lu::du_mois(ctx, mois)?.present(ctx, mois, &forme)?;
     if present.vide() {
         return Ok(None);
     }
-    Ok(Some((present.fabriquer(ctx, mois, &forme)?, false)))
+    Ok(Some((present.fabriquer(ctx, mois, &forme)?, OrigineDeLaDsn::ADeposer)))
+}
+
+/// CE QU'UN MOIS REPRIS D'UN ANCIEN LOGICIEL A FAIT VERSER, pour l'etablissement `nic` (#335, Leandre le 18/11/2026) :
+/// - la DSN que l'ancien logiciel a deposee, quand l'import l'a gardee (`importation::ecrite::dsn_importee`) et qu'elle
+///   est celle de cet etablissement (S21.G00.11.001) : ses versements et son bordereau se lisent tels qu'elle les
+///   declare (`dsn_lue::DsnLue::ordres`, `bordereaux`) -- une piece propre se prend telle quelle (regle 1) ;
+/// - sinon, la DSN que la fonction qui ecrit la DSN (`declarations::dsn::fabriquer`, le seul chemin) fait des paies
+///   importees du mois, chacune refaite de son bulletin comme le calcul la ferait (`engagement::ecarts::calculee`). Elle
+///   ne s'ecrit nulle part et ne part jamais (regle 4 : la DSN de ce mois est celle de l'ancien logiciel) ; l'etat n'en
+///   lit que les versements et le bordereau. Une paie qui ne se refait pas refuse le mois en le disant : rien ne se
+///   compte a sa place.
+fn dsn_d_un_mois_importe(ctx: &Contexte, mois: Mois, nic: &Nic) -> R<Option<(declarations::dsn::Fabriquee, OrigineDeLaDsn)>> {
+    if let Some(chemin) = crate::importation::ecrite::dsn_importee(ctx, mois)? {
+        let octets = std::fs::read(&chemin).map_err(|e| os(&chemin, e))?;
+        let lue = declarations::dsn_lue::lire(&octets, None)?;
+        match lue.etablissement() {
+            Some(n) if n == nic => {
+                let f = declarations::dsn::Fabriquee { texte: socle::texte::texte_latin1(&octets), ordres: lue.ordres()?, bordereaux: lue.bordereaux()? };
+                return Ok(Some((f, OrigineDeLaDsn::DeLAncienLogiciel)));
+            }
+            // La DSN d'un autre etablissement : celui-ci se refait.
+            Some(_) => {}
+            None => {
+                return Err(erreur(
+                    Classe::Refuse,
+                    format!("la DSN de {} que l'ancien logiciel a déposée ne déclare pas son établissement (S21.G00.11.001) : ses versements ne se lisent pas", mois.libelle(Graphie::Accentuee)),
+                ))
+            }
+        }
+    }
+    let mut paies: Vec<Paie> = Vec::new();
+    let mut ne_se_refont_pas: Vec<String> = Vec::new();
+    for imp in engagement::importe::du_mois(&ctx.racine, mois)? {
+        if !imp.paies().contains_key(&mois) {
+            continue;
+        }
+        match engagement::ecarts::calculee(&ctx.racine, &imp, mois) {
+            Ok(p) => {
+                if droit::bareme::etablissement_de(&ctx.entreprise, &p.salarie)? == *nic {
+                    paies.push(p);
+                }
+            }
+            // Le salarie que l'engagement nomme ; sans lui, le refus le dit deja.
+            Err(e) => ne_se_refont_pas.push(match &imp.objet().carte().salarie {
+                Some(s) => format!("{}, {}", s, e.phrase),
+                None => e.phrase,
+            }),
+        }
+    }
+    if !ne_se_refont_pas.is_empty() {
+        return Err(erreur(
+            Classe::Refuse,
+            format!(
+                "ses versements se composent des paies reprises, et {} de son bulletin : {}",
+                if ne_se_refont_pas.len() == 1 { "une paie ne se refait pas" } else { "des paies ne se refont pas" },
+                ne_se_refont_pas.join(" ; ")
+            ),
+        ));
+    }
+    if paies.is_empty() {
+        return Ok(None);
+    }
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let o = declarations::dsn::Options { date_constitution: Some(ctx.aujourdhui), mode: Mode::Test, etablissement: Some(nic.clone()), ..declarations::dsn::Options::normale() };
+    let f = declarations::dsn::fabriquer(ctx, &paies, mois, &[], &[], &o, &departs)?;
+    Ok(Some((f, OrigineDeLaDsn::RefaiteDesPaiesImportees)))
 }
 
 /// La DSN du mois, telle que le depot la prend.
