@@ -76,6 +76,7 @@ pub mod cumul;
 pub mod cpf_cdd;
 pub mod contexte;
 pub mod echeances;
+pub mod effectif;
 pub mod emplois;
 pub mod essai;
 pub mod fiche;

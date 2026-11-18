@@ -54,6 +54,10 @@ pub struct Manque {
     pub qui: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub propose: Option<String>,
+    /// L'EFFECTIF QUE LES PAIES REPRISES DONNENT, pour les annees que la ligne de l'effectif demande
+    /// (`engagement::effectif_repris`) : chacun se confirme par la route `effectif`, que `pour-demarrer` rend en geste.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub effectifs: Vec<engagement::effectif_repris::EffectifRepris>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,6 +89,7 @@ impl Manque {
             spectacle: None,
             qui: None,
             propose: None,
+            effectifs: Vec::new(),
             phrase: None,
             pour: None,
             piece: None,
@@ -258,6 +263,7 @@ fn ligne(m: crate::champs::Manquant, piece: PieceQuiLaPorte, ou: String, onglet:
         spectacle: None,
         qui: salarie.map(|(_, n)| n.to_string()),
         propose: None,
+        effectifs: Vec::new(),
         phrase: None,
         pour: None,
         piece: Some(piece),
@@ -376,6 +382,9 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.annee();
     let avant = an.precedente()?;
+    // L'EFFECTIF QUE LES PAIES REPRISES DONNENT (`engagement::effectif_repris`) se propose sur la ligne qui le demande,
+    // pour chaque annee qu'elle demande : la compagnie le confirme d'un geste (route `effectif`), rien ne se pose sans lui.
+    // Ce que l'Urssaf a renvoye et ce que la compagnie a dit ne se demandent pas : ils ne se proposent pas.
     let effectif = ctx.effectif()?;
     if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
         let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
@@ -383,17 +392,21 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", avant),
         };
-        out.push(manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
+        let mut l = manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?;
+        l.effectifs = engagement::effectif_repris::effectifs_repris(ctx, &effectif.a_dire(an))?;
+        out.push(l);
     } else if let Some(manquent) = annees_d_avant_a_dire(&effectif, an) {
         let annees = manquent.iter().map(socle::mois::Annee::to_string).collect::<Vec<_>>().join(", ");
-        out.push(Manque::bloquante(
+        let mut l = Manque::bloquante(
             "effectif",
             format!("L'effectif de {}", annees),
             "l'effectif de toute paie (seuils de 11 et 50 salariés)",
             ENTREPRISE,
             None,
             "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), sous « Avancé », une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
-        ));
+        );
+        l.effectifs = engagement::effectif_repris::effectifs_repris(ctx, &manquent)?;
+        out.push(l);
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
@@ -414,14 +427,18 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
                 }
                 // Sans la cle, l'effectif d'une des cinq annees d'avant manque : `a_dire` l'a demande plus haut.
                 Some(_) => {}
-                None => out.push(Manque::bloquante(
-                    "effectif",
-                    format!("L'effectif de {}", avant),
-                    "la contribution au FNAS de chaque paie",
-                    ENTREPRISE,
-                    None,
-                    format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", avant),
-                )),
+                None => {
+                    let mut l = Manque::bloquante(
+                        "effectif",
+                        format!("L'effectif de {}", avant),
+                        "la contribution au FNAS de chaque paie",
+                        ENTREPRISE,
+                        None,
+                        format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", avant),
+                    );
+                    l.effectifs = engagement::effectif_repris::effectifs_repris(ctx, &[avant])?;
+                    out.push(l);
+                }
             }
         }
         Ok(_) => {}
@@ -682,7 +699,9 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
         let propose: String = l.propose.iter().map(|p| format!(" Proposé : « {} ».", p)).collect();
-        l.phrase = Some(format!("{} › {} : {}.{}", l.ou, l.libelle, pour, propose));
+        // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer.
+        let effectifs: String = l.effectifs.iter().map(|e| format!(" {}", e.phrase)).collect();
+        l.phrase = Some(format!("{} › {} : {}.{}{}", l.ou, l.libelle, pour, propose, effectifs));
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
         l.pour = Some(format!("{}{}.", initiale, c.as_str()));

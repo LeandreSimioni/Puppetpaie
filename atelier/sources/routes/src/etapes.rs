@@ -166,6 +166,7 @@ pub(crate) enum ChargeDuGeste {
     ObligationDArret(ChargeObligationDArret),
     Annee(ChargeAnnee),
     Revue(crate::rappels::ChargeRevue),
+    Effectif(ChargeEffectifConfirme),
 }
 
 /// La charge du geste d'une obligation d'un arret (`accident-declare`, `attestation-declare`) : le salarie et son dernier
@@ -180,6 +181,15 @@ pub(crate) struct ChargeObligationDArret {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChargeAnnee {
     pub(crate) annee: socle::mois::Annee,
+}
+
+/// La charge du geste qui confirme l'effectif d'une annee que les paies reprises donnent (`effectif`,
+/// `engagement::effectif_repris`) : l'annee, et cet effectif.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ChargeEffectifConfirme {
+    pub(crate) annee: socle::mois::Annee,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
+    pub(crate) valeur: socle::grandeurs::Effectif,
 }
 
 macro_rules! charge_du_geste {
@@ -202,6 +212,7 @@ charge_du_geste! {
     ChargeObligationDArret => ObligationDArret,
     ChargeAnnee => Annee,
     crate::rappels::ChargeRevue => Revue,
+    ChargeEffectifConfirme => Effectif,
 }
 
 /// L'`Action` de `route` sur `charge`, la charge de la route en sa forme.

@@ -78,7 +78,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce que la compagnie peut remplir d'avance pour ses premiers actes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
+        rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; une ligne d'un salarié dit qui ; la ligne de l'effectif, l'effectif que les paies reprises donnent par année, effectifs, et le geste qui le confirme, gestes), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -312,7 +312,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques: d.manques, dsn: d.dsn, poses })
+            let manques = d.manques.into_iter().map(ManqueVu::de).collect();
+            en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
     }
@@ -1621,14 +1622,40 @@ struct PoseVue {
     pastille: Pastille,
 }
 
-/// `pour-demarrer` (`declarations::demarrage::PourDemarrer`), chaque pose avec sa pastille.
+/// UNE LIGNE DE « POUR DEMARRER », AVEC SES GESTES : l'effectif que les paies reprises donnent pour une annee
+/// (`Manque::effectifs`) se confirme par la route `effectif`, un geste par annee calculee.
+#[derive(Debug, Serialize)]
+struct ManqueVu {
+    #[serde(flatten)]
+    manque: Manque,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    gestes: Vec<crate::etapes::Action>,
+}
+
+impl ManqueVu {
+    fn de(manque: Manque) -> ManqueVu {
+        let gestes = manque
+            .effectifs
+            .iter()
+            .filter_map(|e| e.valeur.map(|valeur| (e.annee, valeur)))
+            .map(|(annee, valeur)| {
+                let libelle = format!("Confirmer {} pour {}", socle::texte::virgule(valeur.a_deux_decimales()), annee);
+                crate::etapes::action(Route::Effectif, crate::etapes::ChargeEffectifConfirme { annee, valeur }, None, libelle)
+            })
+            .collect();
+        ManqueVu { manque, gestes }
+    }
+}
+
+/// `pour-demarrer` (`declarations::demarrage::PourDemarrer`), chaque ligne avec ses gestes, chaque pose avec sa
+/// pastille.
 #[derive(Debug, Serialize)]
 struct PourDemarrerVu {
     phrase: Phrase,
     phrases: Vec<String>,
     titre: String,
     note: String,
-    manques: Vec<Manque>,
+    manques: Vec<ManqueVu>,
     /// Ce qu'une DSN pourrait donner, quand l'import n'en a repris aucune (`declarations::demarrage::ParUneDsn`).
     #[serde(skip_serializing_if = "Option::is_none")]
     dsn: Option<declarations::demarrage::ParUneDsn>,
