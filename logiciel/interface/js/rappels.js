@@ -232,8 +232,20 @@ function changementsDemarrage(liste) {
   });
   return [...parFiche.values()].map(({ donnees, ...f }) => ({ ...f, ...casesDeLaCharge(donnees) }));
 }
+/* UNE LISTE OÙ L'ON A TAPÉ : une valeur que le moteur propose remplit sa case sans que personne n'y touche ; elle part
+ * avec « Enregistrer », mais ce n'est pas un changement qu'on perdrait en quittant. Seule une liste où l'on a tapé
+ * (`touchee`, posé à la première frappe, perdu quand la liste se relit) fait demander avant de partir. */
+document.addEventListener("input", (e) => {
+  const l = e.target.closest && e.target.closest(".demarrage-liste");
+  if (l) l.dataset.touchee = "1";
+});
+document.addEventListener("change", (e) => {
+  const l = e.target.closest && e.target.closest(".demarrage-liste");
+  if (l) l.dataset.touchee = "1";
+});
+const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")].find((l) => l.dataset.touchee && changementsDemarrage(l).length);
 function demarrageModifie() {
-  return [...document.querySelectorAll(".demarrage-liste")].some((l) => changementsDemarrage(l).length);
+  return !!listeDemarrageModifiee();
 }
 
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
@@ -283,7 +295,7 @@ document.addEventListener("click", (e) => {
  * même boîte que la fiche (`demanderSiEnregistrer`). Rend vrai si l'on peut
  * partir. */
 async function quitterDemarrage() {
-  const liste = [...document.querySelectorAll(".demarrage-liste")].find((l) => changementsDemarrage(l).length);
+  const liste = listeDemarrageModifiee();
   if (!liste) return true;
   const choix = await demanderSiEnregistrer();
   if (choix === "rester") return false;
