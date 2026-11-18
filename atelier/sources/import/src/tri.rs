@@ -11,6 +11,7 @@
 //! | `aem` | chaque enregistrement fait 1000 caracteres, commence par `AEMEDIC2` et porte ses dates aux positions que `importation::lire_aem` lit |
 //! | `pdf_texte` | un PDF (`%PDF-`) que la fabrique ouvre, et dont au moins une page a des mots |
 //! | `pdf_sans_texte` | un PDF que la fabrique ouvre, sans un seul mot (lettres en traces, ou page scannee : pas d'OCR) |
+//! | `contrat` | un PDF a texte que la fabrique de PuppetPaie a fait (son `/Producer`), au titre d'un de ses contrats ou avenants (`documents::contrat_ecrit::titres_des_contrats`) : il ne se lit pas |
 //! | `archive` | un zip, ouvert dans le dossier de travail ; son contenu est trie comme le reste |
 //! | `doublon` | la meme empreinte SHA-256 qu'un fichier deja trie (`doublon_de` dit lequel) |
 //! | `illisible` | un PDF que la fabrique n'ouvre pas, un zip qui ne s'ouvre pas, ce qui commence comme une DSN ou une AEM sans en avoir la forme |
@@ -46,12 +47,16 @@ pub const ACCEPTE: &str = "L'import accepte les PDF de bulletins de paie, d'AEM,
 /// La raison d'un PDF sans texte : une image ne se lit pas.
 pub const IMAGE: &str = "ce document est une image ; déposez le PDF d'origine";
 
+/// La raison d'un contrat que PuppetPaie a fait : l'import ne lit pas les contrats.
+pub const CONTRAT: &str = "un contrat fait par PuppetPaie : l'import ne lit pas les contrats, seulement les DSN, les AEM, les bulletins et les certificats";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sorte {
     Dsn,
     Aem,
     PdfTexte,
     PdfSansTexte,
+    Contrat,
     Archive,
     Doublon,
     Illisible,
@@ -65,6 +70,7 @@ impl Sorte {
             Sorte::Aem => "aem",
             Sorte::PdfTexte => "pdf_texte",
             Sorte::PdfSansTexte => "pdf_sans_texte",
+            Sorte::Contrat => "contrat",
             Sorte::Archive => "archive",
             Sorte::Doublon => "doublon",
             Sorte::Illisible => "illisible",
@@ -173,7 +179,8 @@ pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     }
     std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;
     let travail_canon = std::fs::canonicalize(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
-    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new(), mises_de_cote: Vec::new() };
+    let contrats = documents::contrat_ecrit::titres_des_contrats()?;
+    let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new(), mises_de_cote: Vec::new(), contrats };
     t.parcourir(dossier, None, None, 0)?;
     Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers, mises_de_cote: t.mises_de_cote })
 }
@@ -185,6 +192,8 @@ struct Trieur {
     vus: HashMap<Empreinte, CheminRelatif>,
     fichiers: Vec<Fichier>,
     mises_de_cote: Vec<MiseDeCote>,
+    /// Les titres des contrats que PuppetPaie fabrique (`documents::contrat_ecrit::titres_des_contrats`).
+    contrats: Vec<documents::contrat_ecrit::TitreDeContrat>,
 }
 
 impl Trieur {
@@ -303,7 +312,7 @@ impl Trieur {
             return self.ouvrir_archive(f, &octets, &empreinte, profondeur);
         }
         if est_un_pdf(&octets) {
-            lire_pdf(&mut f);
+            lire_pdf(&mut f, &self.contrats);
         } else if declarations::dsn_lue::est_une_dsn(&octets) {
             match declarations::dsn_lue::lire_une_dsn(&f.disque) {
                 Ok(Some(declarations::dsn_lue::DsnLue { mois: Some(m), .. })) => {
@@ -446,8 +455,10 @@ fn est_un_pdf(o: &[u8]) -> bool {
     o[..o.len().min(1024)].windows(5).any(|w| w == b"%PDF-")
 }
 
-/// Un PDF : la fabrique l'ouvre (dans le meme processus) et releve chaque page.
-fn lire_pdf(f: &mut Fichier) {
+/// Un PDF : la fabrique l'ouvre (dans le meme processus) et releve chaque page. Un PDF a texte que la fabrique de
+/// PuppetPaie a fait (`/Producer` de ses proprietes : `fabrique_pdf::PRODUCTEUR`) et dont le titre est celui d'un de
+/// ses contrats (`contrats`) est un contrat : il ne se lit pas.
+fn lire_pdf(f: &mut Fichier, contrats: &[documents::contrat_ecrit::TitreDeContrat]) {
     let r = match crate::releve::du_pdf(&f.disque) {
         Ok(r) => r,
         Err(crate::releve::Refus::Fabrique(r)) => {
@@ -482,6 +493,9 @@ fn lire_pdf(f: &mut Fichier) {
     } else if avec == 0 {
         f.sorte = Sorte::PdfSansTexte;
         raisons.push(IMAGE.into());
+    } else if est_un_contrat(&r.releve.metadonnees, contrats) {
+        f.sorte = Sorte::Contrat;
+        raisons.push(CONTRAT.into());
     } else {
         f.sorte = Sorte::PdfTexte;
         if avec < total {
@@ -494,6 +508,13 @@ fn lire_pdf(f: &mut Fichier) {
     if !raisons.is_empty() {
         f.raison = Some(raisons.join(" ; "));
     }
+}
+
+/// Les proprietes d'un PDF disent-elles un contrat que PuppetPaie a fait : la fabrique pour producteur, et pour titre
+/// celui d'un de ses contrats ? Aucun texte ne fixe la forme d'un contrat : il ne se reconnait qu'a cette marque.
+fn est_un_contrat(metadonnees: &std::collections::BTreeMap<String, String>, contrats: &[documents::contrat_ecrit::TitreDeContrat]) -> bool {
+    metadonnees.get("Producer").map(String::as_str) == Some(fabrique_pdf::PRODUCTEUR)
+        && metadonnees.get("Title").is_some_and(|t| contrats.iter().any(|c| c.est(t)))
 }
 
 /// Une AEM : chaque enregistrement (ligne non vide) a la forme que `importation::lire_aem` lit -- 1000

@@ -551,6 +551,7 @@ un libellé, chacun sa forme.
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
+| titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
 | clé de dépôt du banc | `routes::scenario::CleDeDepot` | `routes/src/scenario.rs` |
 | fichier d'une pièce du banc | `routes::scenario::FichierDeLaPiece` | `routes/src/scenario.rs` |
 | empreinte | `Empreinte` | `socle/src/fichiers.rs` |
@@ -723,8 +724,9 @@ un libellé, chacun sa forme.
   couleur d'une pastille (`socle::ecran`) est une autre notion.
 - **PCS-ESE** : la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de
   l'Insee. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un
-  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le
-  contrat de la liste nominative d'une régularisation CASC-SVP.
+  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`). Il
+  ne fonde un statut (artiste, technicien) que pour un code dont la fiche de l'Insee est déposée et le dit
+  (`CodePcsEse::statut_de_sa_fiche`).
 - **code emploi déclaré** : le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code
   de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne
   nomme pas toujours un métier. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un
@@ -1237,7 +1239,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | identifiant d'une affiliation | `IdentifiantDAffiliation` | `droit/src/code_cotisation.rs` |
 | place d'une affiliation dans le versement d'un individu | `PlaceDAffiliation` | `declarations/src/dsn.rs` |
 | ayants droit d'une affiliation (le conjoint couvert ou non, le nombre d'enfants, lus une fois de `sante_svp`, `droit::bareme::ayants_droit`, que la cotisation santé compte et que la DSN déclare en 70.008, 70.011) | `AyantsDroit` | `droit/src/bareme.rs` |
-| ordre de paiement (bloc S21.G00.20 : à qui, combien, pour quelle période, pour quand, et le crédit que sa somme due laisse, `documents::bordereau::Credit`. Ce qu'une somme due fait verser et laisse en crédit est un calcul, `documents::bordereau::AVerser` ; l'ordre en clair que la boîte du dépôt montre, `declarations::ordres_paiement::OrdreEnClair`, une réponse) | `OrdreDePaiement` | `declarations/src/dsn.rs` |
+| ordre de paiement (bloc S21.G00.20 : à qui, combien, pour quelle période, pour quand, et le crédit que sa somme due laisse, `documents::bordereau::Credit`. Ce qu'une somme due fait verser et laisse en crédit est un calcul, `documents::bordereau::AVerser` ; l'ordre en clair que la boîte du dépôt montre, `declarations::ordres_paiement::OrdreEnClair`, une réponse ; celui qu'une DSN déposée déclare se lit dans le même type, sans crédit, `declarations::dsn_lue::DsnLue::ordres`, comme son bordereau, `BordereauEcrit`) | `OrdreDePaiement` | `declarations/src/dsn.rs` |
+| origine de la DSN d'un mois dans un état des organismes (partie, à déposer, déposée par l'ancien logiciel, refaite des paies importées et jamais déposée) | `declarations::etats_organismes::OrigineDeLaDsn` | `declarations/src/etats_organismes.rs` |
 | versement déclaré (ce qu'une DSN partie a déclaré pour un contrat : ses rubriques écrites, ses nets, son brut, ses frais, son taux de PAS ; ce qu'une correction annule ; avec la paie et le bulletin qu'il annule, `DernierDeclare`. Ses formes : ce que la mensuelle écrit, `declarations::dsn::VersementEcrit` ; le bloc 50 d'une DSN lue, `declarations::dsn_lue::VersementLu`, et ce qu'il dit des nets et du prélèvement, `engagement::importe::Nets`, que la paie d'un contrat qu'il paie seul reprend, et que porte la paie versée d'un engagement importé, `PaieVersee.nets`) | `VersementDeclare` | `declarations/src/versement_declare.rs` |
 | numéro d'un versement d'un individu dans une DSN | `NumeroDeVersement` | `declarations/src/dsn.rs` |
 | rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
@@ -2376,6 +2379,14 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
+- **Les versements et le bordereau d'un mois importé** (`routes::gestes::depart::dsn_d_un_mois_importe`, Léandre le
+  18/11/2026, #335) : les états « Versements aux organismes » et « Bordereau Urssaf » les lisent dans la DSN que
+  l'ancien logiciel a déposée quand l'import l'a gardée (`dsn_lue::DsnLue::ordres`, `bordereaux` : une pièce propre se
+  prend telle quelle) ; sinon dans la DSN que le seul chemin (`declarations::dsn::fabriquer`) fait des paies importées
+  du mois, chacune refaite de son bulletin (`engagement::ecarts::calculee`, avec le numéro de contrat déclaré), qui ne
+  s'écrit nulle part et ne part jamais (règle 4). Une paie qui ne se refait pas met le mois hors de l'état, et
+  l'avertissement le dit : rien ne se compte à sa place. L'état nomme d'où vient chaque DSN
+  (`declarations::etats_organismes::OrigineDeLaDsn`).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
@@ -2411,7 +2422,11 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique
   DSN restent ; toute autre lettre devient `X`, tout chiffre `9`), jamais le fichier. Un scan et un fichier qui n'est
-  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident.
+  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident. Un contrat que
+  PuppetPaie a fait se dit « contrat, non lu », sans incident : aucun texte ne fixe la forme d'un contrat, il ne se lit
+  pas, et ne se reconnaît qu'à la marque de la fabrique dans ses propriétés (`/Producer` : `fabrique_pdf::PRODUCTEUR`)
+  avec le titre d'un modèle de base de contrat ou d'avenant (`documents::contrat_ecrit::titres_des_contrats`,
+  `import::tri::Sorte::Contrat`). Un contrat d'un autre logiciel reste un document non lu.
 
 ## La DSN
 

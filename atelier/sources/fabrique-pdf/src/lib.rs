@@ -28,6 +28,7 @@ pub mod style_contrat;
 pub mod texte;
 
 pub use assemblage::assembler;
+pub use dessin::PRODUCTEUR;
 pub use description::{Classe, Refus, FORMAT};
 pub use forme::Description;
 pub use mise_en_page::fabriquer;

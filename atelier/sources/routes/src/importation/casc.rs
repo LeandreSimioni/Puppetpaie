@@ -40,6 +40,8 @@ struct Versee {
     periode: Option<PeriodeOuverte>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
     activite: Activite,
+    /// Artiste ou technicien : ce que le bulletin de la paie imprime, sinon la fiche ; `None` : rien ne le dit.
+    statut: Option<droit::fiche::Statut>,
 }
 
 /// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que son contrat atteste, ceux
@@ -82,7 +84,8 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
             }
         }
         let numero = p.paie.contrat.numero_declare().cloned();
-        out.push(Versee { salarie, brut, numero, periode, activite });
+        let statut = p.paie.emploi_imprime.as_ref().and_then(|e| e.ecrit.statut).or_else(|| salarie.champs.statut.dite().copied());
+        out.push(Versee { salarie, brut, numero, periode, activite, statut });
     }
     Ok(out)
 }
@@ -153,8 +156,7 @@ pub struct ContratReg {
     pub numero: Option<engagement::numeros::NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periode: Option<PeriodeOuverte>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
+    pub statut: droit::fiche::Statut,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emploi: Option<String>,
 }
@@ -392,7 +394,14 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
                 }
             };
             par_salarie[pos].1.masse += brut;
-            let contrat = ContratReg { numero: p.numero.clone(), periode: p.periode, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: dit(f.emploi.portee()) };
+            // La colonne « A » ou « T » de la liste nominative : un statut que rien ne dit se demande.
+            let statut = p.statut.ok_or_else(|| {
+                socle::echec::cle(
+                    format!("{} : la fiche du salarié « {} » ne dit pas son statut, artiste ou technicien ; la liste nominative de la régularisation le demande : le dire sur sa fiche.", m, p.salarie.id),
+                    "statut",
+                )
+            })?;
+            let contrat = ContratReg { numero: p.numero.clone(), periode: p.periode, statut, emploi: dit(f.emploi.portee()) };
             emplois.push(EmploiReg {
                 annee: an,
                 mois: *m,
@@ -682,7 +691,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
-        let artiste = c.pcs_ese.as_ref().is_some_and(droit::fiche::CodePcsEse::est_un_artiste_du_spectacle);
+        let artiste = c.statut == droit::fiche::Statut::Artiste;
         let cle = (x.annee, i.nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {
             Some((_, t)) => {

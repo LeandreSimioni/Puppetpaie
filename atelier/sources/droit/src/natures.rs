@@ -1827,11 +1827,21 @@ fn lu() -> R<Arc<Contrats>> {
 /// La categorie d'emploi d'un classement conventionnel (S21.G00.40.002), telle que le contrat ecrit l'imprime
 /// (`categories_d_emploi` de `contrats-base.json`, libelles de la norme ; R1221-34, 3°). L'`artiste` qui n'est pas cadre
 /// (03, 04) : « non-cadre », la categorie de sa convention (3090, art. 6.3 ; 1285, art. XI.2.1), pas le libelle du 05.
-pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, artiste: bool) -> R<Option<String>> {
+/// Un classement qui n'est pas cadre, d'un salarie dont le `statut` n'est pas dit, se refuse : la categorie en depend.
+pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, statut: Option<crate::fiche::Statut>) -> R<Option<String>> {
     use crate::fiche::StatutConventionnel;
     let c = &lu()?.categories;
-    if artiste && !matches!(classement, StatutConventionnel::Cadre03 | StatutConventionnel::Cadre04) {
-        return Ok(Some(c.artiste_non_cadre.libelle.clone()));
+    if !matches!(classement, StatutConventionnel::Cadre03 | StatutConventionnel::Cadre04) {
+        match statut {
+            Some(crate::fiche::Statut::Artiste) => return Ok(Some(c.artiste_non_cadre.libelle.clone())),
+            Some(crate::fiche::Statut::Technicien) => {}
+            None => {
+                return Err(socle::echec::cle(
+                    "La fiche du salarié ne dit pas son statut, artiste ou technicien : la catégorie d'emploi que le contrat écrit porte en dépend. Le dire sur sa fiche.",
+                    "statut",
+                ))
+            }
+        }
     }
     Ok(c.par_classement.get(&classement).cloned())
 }

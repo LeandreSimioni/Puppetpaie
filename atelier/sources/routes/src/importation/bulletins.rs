@@ -1358,6 +1358,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 None => (Sort::NonReconnu, format!("{} que l'import n'a pas lue", f.sorte.nom())),
             },
             Sorte::PdfSansTexte => (Sort::SansTexte, tri_raison),
+            Sorte::Contrat => (Sort::Contrat, tri_raison),
             Sorte::Archive => (Sort::Archive, tri_raison),
             Sorte::Doublon => (Sort::Doublon, tri_raison),
             Sorte::Illisible | Sorte::Autre => (Sort::NonReconnu, tri_raison),
@@ -1392,7 +1393,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let repris = match f.sorte {
             Sorte::Dsn | Sorte::Aem => matches!(sort, Sort::Repris | Sort::DejaRepris),
             Sorte::PdfTexte => ps.iter().any(|p| matches!(p.sort, Sort::Repris | Sort::LibelleInconnu | Sort::DejaRepris)),
-            Sorte::PdfSansTexte | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
+            Sorte::PdfSansTexte | Sorte::Contrat | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
         };
         let copie = nom_copie(f)?.filter(|_| repris);
         if let Some(c) = &copie {

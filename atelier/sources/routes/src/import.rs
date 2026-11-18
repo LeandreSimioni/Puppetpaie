@@ -188,16 +188,15 @@ fn ecarts<P: FicheSaisie>(fiche: &P, declare: &P, mois: socle::mois::Mois) -> R<
 /// Ce qu'une fiche neuve recoit d'une DSN, et la faute de chaque case que la DSN porte hors de son type.
 fn fiche_salarie(decl: &SalarieDeclare) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let emploi = decl.emploi.as_ref();
-    // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes ; une autre PCS :
-    // technicien) ; sans l'un ni l'autre, rien ne le dit.
+    // Le statut de bareme se lit au metier du code emploi France Travail, a defaut au code PCS dont la fiche deposee le
+    // fonde (`CodePcsEse::statut_de_sa_fiche`) ; sinon rien ne le dit, la case reste vide et le calcul la demande.
     let m = match emploi.and_then(|e| e.code_emploi_ft.as_ref()) {
         Some(code) => droit::emplois::metier(code)?,
         None => None,
     };
     let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_ref())) {
         (Some(m), _) => Some(m.statut()),
-        (None, Some(pcs)) if pcs.est_un_artiste_du_spectacle() => Some(droit::fiche::Statut::Artiste),
-        (None, Some(_)) => Some(droit::fiche::Statut::Technicien),
+        (None, Some(pcs)) => pcs.statut_de_sa_fiche(),
         (None, None) => None,
     };
     // L'EMPLOI EN CLAIR d'un metier : son libelle, au feminin pour une salariee (le sexe que porte son NIR), comme quand

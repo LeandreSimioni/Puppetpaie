@@ -4,7 +4,8 @@
 //!
 //! CE QUI EST ACCEPTE SANS ETRE LU : un PDF qui a du texte (`tri::Sorte::PdfTexte`) dont le compte rendu dit qu'il n'est
 //! pas repris (`bulletins::non_repris`). Un scan (`PdfSansTexte`) et un fichier qui n'est ni PDF, ni DSN, ni AEM sont
-//! refuses a l'ecran avec leur raison (`tri`) : ils ne font pas d'incident.
+//! refuses a l'ecran avec leur raison (`tri`) : ils ne font pas d'incident. Un contrat que PuppetPaie a fait
+//! (`tri::Sorte::Contrat`) se dit tel a l'ecran, sans incident : un contrat n'apprend rien a la table de lecture.
 //!
 //! UNE FAMILLE, UN INCIDENT : les documents d'un meme producteur et d'une meme mise en page portent les memes mots du
 //! vocabulaire, dans le meme ordre, sur leur premiere page ; cette suite, avec le logiciel reconnu, fait la famille.

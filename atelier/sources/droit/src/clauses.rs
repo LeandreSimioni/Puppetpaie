@@ -1190,14 +1190,19 @@ pub fn prime_anciennete(
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let m = e.metier_lu(fiche)?;
-    // Artiste : l'engagement le dit, sinon la fiche.
-    let artiste = match e.statut {
-        Some(s) => s == Statut::Artiste,
-        None => fiche.statut.dite() == Some(&Statut::Artiste),
-    };
     let Some(m) = m.as_ref() else { return Ok(None) };
     let code = &m.code;
     let Some(c3090) = grille_technique(m) else { return Ok(None) };
+    // Artiste : l'engagement le dit, sinon la fiche ; rien ne le dit, la prime ne se juge pas.
+    let artiste = match e.statut.or_else(|| fiche.statut.dite().copied()) {
+        Some(s) => s == Statut::Artiste,
+        None => {
+            return Err(socle::echec::cle(
+                "La prime d'ancienneté ne vaut que pour un technicien : la fiche du salarié ne dit pas son statut, artiste ou technicien. Le dire sur sa fiche.",
+                "statut",
+            ))
+        }
+    };
     if artiste {
         return Ok(None);
     }
