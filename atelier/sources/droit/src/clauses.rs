@@ -1193,16 +1193,8 @@ pub fn prime_anciennete(
     let Some(m) = m.as_ref() else { return Ok(None) };
     let code = &m.code;
     let Some(c3090) = grille_technique(m) else { return Ok(None) };
-    // Artiste : l'engagement le dit, sinon la fiche ; rien ne le dit, la prime ne se juge pas.
-    let artiste = match e.statut.or_else(|| fiche.statut.dite().copied()) {
-        Some(s) => s == Statut::Artiste,
-        None => {
-            return Err(socle::echec::cle(
-                "La prime d'ancienneté ne vaut que pour un technicien : la fiche du salarié ne dit pas son statut, artiste ou technicien. Le dire sur sa fiche.",
-                "statut",
-            ))
-        }
-    };
+    // Artiste : l'engagement le dit, sinon la fiche, sinon son metier, qui est ici d'une grille technique (`m.statut()`).
+    let artiste = e.statut.or_else(|| fiche.statut.dite().copied()).unwrap_or_else(|| m.statut()) == Statut::Artiste;
     if artiste {
         return Ok(None);
     }
