@@ -17,7 +17,8 @@ fn usage() -> std::process::ExitCode {
          \x20       moteur-atelier extraire naf|usages|formats|urssaf SOURCES... SORTIE.json [--remplacer]   (les referentiels : moteur-atelier extraire --aide)\n\
          \x20       moteur-atelier releve-codes ... | moteur-atelier releve-conventions ...   (les textes LEGI et KALI de la DILA : --aide)\n\
          \x20       moteur-atelier releve-missions SOURCES DONNEES   (les tables des missions a l'etranger de la DGFiP, avant de publier)\n\
-         \x20       moteur-atelier fabriquer-bulletins DESCRIPTION.json DOSSIER [--gabarit coolpaie|spaiectacle]   (des bulletins fictifs)"
+         \x20       moteur-atelier fabriquer-bulletins DESCRIPTION.json DOSSIER [--gabarit coolpaie|spaiectacle]   (des bulletins fictifs)\n\
+         \x20       moteur-atelier remplir-bulletins DESCRIPTION.json COMPAGNIE   (leur paie, telle que le moteur la calcule de la compagnie qui les a importes)"
     );
     std::process::ExitCode::from(2)
 }
