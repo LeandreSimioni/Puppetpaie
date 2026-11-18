@@ -558,7 +558,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
         match envois::journal::lu(&ctx.racine) {
             Ok(j) => etats::flux_de_test(&j.lignes),
             Err(e) => {
-                r.incidents.push(format!("Journal : {}", e.phrase));
+                r.incidents.push(format!("Journal : {}", nomme(&ctx.racine, &e)));
                 Vec::new()
             }
         }
@@ -610,7 +610,7 @@ fn souci_de_la_sauvegarde(ctx: &Contexte, r: &mut Ouverture) -> Option<String> {
     match sauvegarde::souci(&ctx.racine) {
         Ok(s) => s,
         Err(e) => {
-            r.incidents.push(format!("Sauvegarde : {}", e.echec.phrase));
+            r.incidents.push(format!("Sauvegarde : {}", nomme(&ctx.racine, &e.echec)));
             None
         }
     }
@@ -651,6 +651,28 @@ struct VersionDuCalcul {
 }
 
 // ------------------------------------------------------------------ outils
+
+/// UN REFUS DIT DANS LES INCIDENTS DE L'OUVERTURE : sa phrase, puis ce qu'il porte a part (`socle::echec::Lieu`) -- le
+/// fichier, relatif a la compagnie `racine` quand il y est, et la donnee : une panne nomme ce qui la fait, sans quoi
+/// « Un fichier de la compagnie manque. » ne dit pas lequel.
+fn nomme(racine: &Path, e: &socle::echec::Echec) -> String {
+    let Some(lieu) = e.a_part.as_ref().and_then(socle::echec::APart::lieu) else { return e.phrase.clone() };
+    let chemin = lieu.chemin.as_deref().map(|c| match Path::new(c).strip_prefix(racine) {
+        Ok(relatif) => relatif.display().to_string(),
+        Err(_) => c.to_string(),
+    });
+    let fichier = match (&lieu.fichier, chemin) {
+        (Some(f), _) => Some(f.texte().to_string()),
+        (None, c) => c,
+    };
+    let cle = lieu.cle.as_deref().filter(|c| !c.is_empty());
+    match (fichier, cle) {
+        (Some(f), Some(c)) => format!("{} (fichier {}, donnée « {} »)", e.phrase, f, c),
+        (Some(f), None) => format!("{} (fichier {})", e.phrase, f),
+        (None, Some(c)) => format!("{} (donnée « {} »)", e.phrase, c),
+        (None, None) => e.phrase.clone(),
+    }
+}
 
 /// La compagnie est une copie de developpement (`MARQUEUR_COPIE`).
 fn est_copie(racine: &Path) -> bool {
@@ -753,7 +775,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let precedente = match derniere_ouverture(&ctx.racine) {
         Ok(p) => p,
         Err(e) => {
-            r.incidents.push(format!("Trace de l'ouverture : {}", e.phrase));
+            r.incidents.push(format!("Trace de l'ouverture : {}", nomme(&ctx.racine, &e)));
             None
         }
     };
@@ -782,7 +804,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let (branchement, fictive) = match compagnie::bridage::branchement(&ctx.racine).and_then(|b| Ok((b, compagnie::installation::est_fictive(&ctx.racine)?))) {
         Ok(x) => x,
         Err(e) => {
-            r.incidents.push(e.phrase);
+            r.incidents.push(nomme(&ctx.racine, &e));
             return Ok(r);
         }
     };
@@ -793,7 +815,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
 
     // UNE VERSION QUI CALCULE AUTREMENT passe une fois sur les mois finis, avant le present.
     if let Err(e) = passer_la_version(ctx) {
-        r.incidents.push(format!("Mois finis : {}", e.phrase));
+        r.incidents.push(format!("Mois finis : {}", nomme(&ctx.racine, &e)));
     }
 
     // LA COMPAGNIE FICTIVE : les retours des depots joues et les signatures demandees arrivent d'ici, sans coffre ni reseau --
@@ -804,7 +826,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         let jouee = crate::horloge::rattraper(&ctx.racine, None, true).and_then(|fait| if fait.is_empty() { crate::horloge::dernier_rattrapage(&ctx.racine, None) } else { Ok(fait) });
         match jouee {
             Ok(fait) => r.horloge = fait,
-            Err(e) => r.incidents.push(format!("Horloge de la compagnie fictive : {}", e.phrase)),
+            Err(e) => r.incidents.push(format!("Horloge de la compagnie fictive : {}", nomme(&ctx.racine, &e))),
         }
         if retours {
             dire_l_etape(ctx, "Compagnie fictive : retours des dépôts joués…")?;
@@ -812,19 +834,19 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
             match crate::gestes::releve::rattacher_simulation(ctx) {
                 Ok((n, a_faire)) => (releve.rattaches, releve.a_faire) = (n, a_faire),
                 // L'ouverture ne doit pas tomber.
-                Err(e) => r.incidents.push(format!("Retours : {}", e.phrase)),
+                Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
             }
             r.releve = Some(releve);
         }
         dire_l_etape(ctx, "Compagnie fictive : signatures et fiches des salariés…")?;
         // Le resultat de la relève jouee n'est pas gardé.
         if let Err(e) = releve_signatures::relever_signatures_fictive(ctx) {
-            r.incidents.push(format!("Signatures : {}", e.phrase));
+            r.incidents.push(format!("Signatures : {}", nomme(&ctx.racine, &e)));
         }
         match crate::fiches::relever_fiches(ctx, reborrow_courriel(&mut clients.courriel), crate::horloge::QUI_HORLOGE) {
             // Les incidents de la relève des fiches jouée ne sont pas repris.
             Ok(f) => r.fiches = Some(f),
-            Err(e) => r.incidents.push(format!("Fiches salariés : {}", e.phrase)),
+            Err(e) => r.incidents.push(format!("Fiches salariés : {}", nomme(&ctx.racine, &e))),
         }
         retours = false;
         signatures = false;
@@ -843,7 +865,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
                 r.incidents.extend(s.incidents.iter().cloned());
                 r.signatures = Some(s);
             }
-            Err(e) => r.incidents.push(format!("Signatures : {}", e.phrase)),
+            Err(e) => r.incidents.push(format!("Signatures : {}", nomme(&ctx.racine, &e))),
         }
         // Les fiches demandees aux salaries : la meme boite, le meme passage, la meme regle.
         dire_l_etape(ctx, "Boîte courriel : fiches des salariés…")?;
@@ -852,14 +874,14 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
                 r.incidents.extend(f.incidents.iter().cloned());
                 r.fiches = Some(f);
             }
-            Err(e) => r.incidents.push(format!("Fiches salariés : {}", e.phrase)),
+            Err(e) => r.incidents.push(format!("Fiches salariés : {}", nomme(&ctx.racine, &e))),
         }
     }
 
     // LES ECARTS DE CALCUL DES PAIES IMPORTEES qui ne sont pas encore comparees (`import::ecarts::noter`) : une
     // compagnie completee depuis l'import compare celles que le calcul refusait. Ils partent avec les autres incidents.
     if let Err(e) = import::ecarts::noter(ctx) {
-        r.incidents.push(format!("Écarts de calcul de l'import : {}", e.phrase));
+        r.incidents.push(format!("Écarts de calcul de l'import : {}", nomme(&ctx.racine, &e)));
     }
 
     // LE TAUX COLLECTIF DE L'ARRETE pour un risque « TC », au 1er janvier de l'annee en cours et, des que son bareme est
@@ -867,7 +889,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     let an = ctx.aujourdhui.annee();
     for an in an.jusqu_a(an.suivante()?) {
         if let Err(e) = crate::atmp::inscrire_l_arrete(ctx, an) {
-            r.incidents.push(format!("Taux AT/MP {} : {}", an, e.phrase));
+            r.incidents.push(format!("Taux AT/MP {} : {}", an, nomme(&ctx.racine, &e)));
         }
     }
 
@@ -892,7 +914,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
             r.incidents.push(format!("Messages à l'éditeur : {}", e));
         }
         if let Err(e) = compagnie::problemes::relever_reponses(&ctx.racine) {
-            r.incidents.push(format!("Réponses de l'éditeur : {}", e.phrase));
+            r.incidents.push(format!("Réponses de l'éditeur : {}", nomme(&ctx.racine, &e)));
         }
     }
 
@@ -915,7 +937,7 @@ fn sauvegarder_seulement(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>
     let joue = match compagnie::bridage::branchement(&ctx.racine) {
         Ok(b) => b.joue(),
         Err(e) => {
-            r.incidents.push(e.phrase);
+            r.incidents.push(nomme(&ctx.racine, &e));
             return Ok(r);
         }
     };
@@ -945,7 +967,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             Ok(b) => Some(b),
             Err(m) => {
                 // Une erreur du coffre : l'ouverture ne tombe pas.
-                r.incidents.push(format!("Retours : {}", m.phrase));
+                r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &m)));
                 None
             }
         },
@@ -966,7 +988,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.manquants.extend(rel.a_faire.iter().cloned());
                     r.releve = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours : {}", e.phrase)),
+                Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
             }
         }
         None => {}
@@ -980,7 +1002,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         None => match coffre_dispo(ctx, "urssaf") {
             Ok(b) => Some(b),
             Err(m) => {
-                r.incidents.push(format!("Retours DPAE : {}", m.phrase));
+                r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &m)));
                 None
             }
         },
@@ -1004,7 +1026,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.releve_dpae = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours DPAE : {}", e.phrase)),
+                Err(e) => r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &e))),
             }
         }
         None => {}
@@ -1029,7 +1051,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
             Ok(true) => return Ok(()),
             Ok(false) => {}
             Err(e) => {
-                r.incidents.push(format!("Sauvegarde : {}", e.echec.phrase));
+                r.incidents.push(format!("Sauvegarde : {}", nomme(&ctx.racine, &e.echec)));
                 return Ok(());
             }
         }
@@ -1044,7 +1066,7 @@ fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'
         // deja retente par le client) repart au passage suivant, en silence. Ce qui persiste se dit dans la ligne de la
         // sauvegarde (`sauvegarde::souci`, la trace `sauvegarde_souci`), pas dans les incidents du releve.
         Ok(s) => r.sauvegarde = Some(s),
-        Err(e) => r.incidents.push(format!("Sauvegarde : {}", e.echec.phrase)),
+        Err(e) => r.incidents.push(format!("Sauvegarde : {}", nomme(&ctx.racine, &e.echec))),
     }
     Ok(())
 }

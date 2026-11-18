@@ -140,7 +140,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels (niveaux_sante : null tant que le barème ne se compose pas), auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -151,7 +151,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les fiches de la compagnie, vérifiées.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases",
+        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -509,11 +509,11 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// Les lignes des autres etablissements demandent-elles leur versement mobilite ? Oui quand le siege en paie un : le
 /// controle des etablissements l'exige alors de chacun (`droit::contexte::controler_etablissements`). Un bareme du jour qui
 /// ne se compose pas ne le demande pas : la configuration s'ouvre quand meme (c'est la qu'on la corrige), et dit pourquoi
-/// (`ConfigurationDeLaPage::bareme`).
-fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String>) {
+/// (`ConfigurationDeLaPage::pour_payer`, que le meme empilement refuse).
+fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
-        Ok(b) => (droit::bareme::versement_mobilite(&b).is_some(), None),
-        Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", e.phrase))),
+        Ok(b) => droit::bareme::versement_mobilite(&b).is_some(),
+        Err(_) => false,
     }
 }
 
@@ -800,8 +800,10 @@ pub(crate) struct ConfigurationDeLaPage {
     /// Ce que la liste des etablissements commande.
     etablissements: Option<Vec<ChoixEtablissement>>,
     versement_mobilite_des_etablissements: bool,
-    /// Pourquoi le bareme du jour ne se compose pas, s'il ne se compose pas.
-    bareme: Option<String>,
+    /// CE QUI MANQUE POUR PAYER AUJOURD'HUI : le refus du bareme du jour, controle (`Contexte::bareme` : l'effectif, le
+    /// taux AT/MP...), que le bandeau montre ; « Pour démarrer » demande la case (`declarations::demarrage`). Lire
+    /// l'etat de la compagnie n'est pas payer : la paie refuse a son calcul.
+    pour_payer: Option<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
     invitation: Invitation,
@@ -909,7 +911,13 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let fiches_attendues = fiches_attendues(ctx)?;
     let liste = |un: &str, les: &str| MotsDeLaListe { nouvelle: format!("+ un {}", un), aucun: format!("Aucun {} actif", un), archives: format!("Afficher les {} archivés", les) };
     let boite_liee = boite_liee(ctx)?;
-    let (versement_mobilite_des_etablissements, bareme) = versement_mobilite_des_etablissements(ctx);
+    let versement_mobilite_des_etablissements = versement_mobilite_des_etablissements(ctx);
+    let pour_payer = match ctx.bareme(&jour) {
+        Ok(_) => None,
+        Err(e) if e.dit_un_manque() => Some(e.phrase),
+        // Une panne (le disque, le socle livre) n'est pas ce qui manque pour payer : elle remonte.
+        Err(e) => return Err(e),
+    };
     Ok(ConfigurationDeLaPage {
         ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
         fiches_attendues_titre: format!("{} fiche(s) en attente", fiches_attendues.len()),
@@ -924,7 +932,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         description: Descriptions { entreprise: description_entreprise, salarie: champs::description(NomDeFiche::Salarie)?, spectacle: champs::description(NomDeFiche::Spectacle)? },
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
-        bareme,
+        pour_payer,
         identite: identite(ctx, &ctx.gabarits())?,
         invitation: Invitation {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
@@ -1475,17 +1483,20 @@ struct NiveauDeSante {
 }
 
 /// Les niveaux de garantie que le bareme connait, pour la fiche salarie (`releve_svp_sante` de la rubrique `mutuelle` des
-/// permanents). Vide quand le bareme n'en porte pas, ou quand il ne se compose pas encore (une fiche entreprise
-/// incomplete : la configuration le dit, `ConfigurationDeLaPage::bareme`).
-fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
-    if !compose {
-        return Ok(Vec::new());
-    }
-    let pile = ctx.bareme(&ctx.aujourdhui)?;
+/// permanents), lus dans le bareme du jour avant son controle (`Contexte::bareme_fondu` : la couche de la convention les
+/// porte, l'effectif n'y change rien). Vide quand le bareme n'en porte pas ; `None` quand il ne se compose pas (le taux
+/// AT/MP, la convention, la surcouche) : pourquoi, la configuration le dit (`ConfigurationDeLaPage::pour_payer`, que le
+/// meme empilement refuse).
+fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
+    let pile = match ctx.bareme_fondu(&ctx.aujourdhui) {
+        Ok(p) => p,
+        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) => return Err(e),
+    };
     // La complementaire sante est celle des permanents : la couche de leur nature.
     let releve = pile.par_nature.get(&droit::natures::Paie::Mensuelle).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
-    Ok(releve
+    Ok(Some(releve
         .into_iter()
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
@@ -1495,7 +1506,7 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
             enfant: t.enfant,
             libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
         })
-        .collect())
+        .collect()))
 }
 
 /// Une convention collective que le bareme sait servir : son IDCC, son libelle, si sa couche de taux est RELEVEE
@@ -1575,7 +1586,7 @@ pub(crate) struct EtatDeLaPage {
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
     transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
-    niveaux_sante: Vec<NiveauDeSante>,
+    niveaux_sante: Option<Vec<NiveauDeSante>>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
     conventions: Vec<ConventionServie>,
@@ -1591,7 +1602,7 @@ pub(crate) struct EtatDeLaPage {
 pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let mut m = Moteur::nouveau(ctx);
     let configuration = configuration(ctx)?;
-    let niveaux_sante = niveaux_sante(ctx, configuration.bareme.is_none())?;
+    let niveaux_sante = niveaux_sante(ctx)?;
     let (historique, historique_incomplet) = historique(&mut m, ctx)?;
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive

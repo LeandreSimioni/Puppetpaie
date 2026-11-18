@@ -66,13 +66,13 @@ pub(crate) fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
 
 /// Les salaries de la compagnie fictive signent, et la VRAIE releve lit leur reponse. Rien
 /// ne se joue dans une compagnie qui n'est pas une compagnie fictive (la garde de l'horloge) : la releve rendue est alors
-/// vide.
+/// vide. La boite qui repond ne s'ouvre que si une signature est attendue (`boite_de_la_releve`) : une compagnie qui n'a
+/// rien fait signer n'a rien a relever, et sa fiche n'a pas encore a dire l'adresse du signataire.
 pub(crate) fn relever_signatures_fictive(ctx: &Contexte) -> R<ReleveSignatures> {
     if HorlogeFictive::verifier(&ctx.racine)?.is_none() {
         return Ok(ReleveSignatures::nouvelle());
     }
-    let mut boite = boite_des_signatures(ctx)?;
-    relever_signatures(ctx, Some(&mut boite), None, QUI_HORLOGE)
+    relever_signatures(ctx, None, None, QUI_HORLOGE)
 }
 
 

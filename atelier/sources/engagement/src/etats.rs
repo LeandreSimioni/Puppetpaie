@@ -920,13 +920,16 @@ pub(crate) struct CommeALaValidation {
 }
 
 impl CommeALaValidation {
-    pub(crate) fn ouvrir(ctx: &Contexte, mois: Mois) -> R<CommeALaValidation> {
+    pub(crate) fn ouvrir(ctx: &Contexte, mois: Mois, salaries: &[&IdSalarie]) -> R<CommeALaValidation> {
         if EN_VALIDATION.with(|e| e.borrow().is_some()) {
             return Ok(CommeALaValidation { _garde: None });
         }
         let objets = stock::objets_du_mois(&ctx.racine, mois)?;
         let present = mois_present(ctx);
-        let a_calculer: Vec<Objet> = objets.into_iter().filter(|o| o.fichier < mois && (!o.est_valide() || mois > present)).collect();
+        // Une paie ne lit que les paies de son salarie (`valides_lues`) : seuls les engagements des salaries `salaries`
+        // (ceux que le calcul en cours paie) se calculent ; un autre salarie du mois ne leur fait rien refuser.
+        let du_calcul = |o: &Objet| o.carte().salarie.as_ref().is_some_and(|s| salaries.contains(&s));
+        let a_calculer: Vec<Objet> = objets.into_iter().filter(|o| o.fichier < mois && (!o.est_valide() || mois > present) && du_calcul(o)).collect();
         if a_calculer.is_empty() {
             return Ok(CommeALaValidation { _garde: None });
         }
