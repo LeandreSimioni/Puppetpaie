@@ -181,6 +181,9 @@ pub struct PaieVersee {
     pub periode: Option<socle::date::PeriodeOuverte>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013), dans l'unite de 40.011.
     pub quotite: Option<droit::natures::QuotiteDuContrat>,
+    /// Le motif de recours que la DSN deposee declare pour le contrat (S21.G00.40.021).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     /// Ses nets et son prelevement a la source, que la DSN deposee (bloc 50) ou son bulletin disent.
@@ -437,6 +440,7 @@ impl PaieVersee {
             numero_objet: None,
             periode: None,
             quotite: None,
+            motif_recours: None,
             brut: None,
             nets: Nets::default(),
             net_a_payer: None,
@@ -587,6 +591,13 @@ impl Importe {
             (None, Some(o)) => o,
             (None, None) => return Ok(None),
         }))
+    }
+
+    /// LE MOTIF DE RECOURS DU CONTRAT : celui que l'engagement dit, sinon celui que la derniere DSN deposee qui declare
+    /// une de ses paies declare pour lui (S21.G00.40.021, `PaieVersee::motif_recours`) : une piece propre se prend telle
+    /// quelle (regle 1). `None` : personne ne le dit.
+    pub fn motif_recours(&self) -> Option<droit::natures::MotifDeRecours> {
+        self.carte().motif_recours.or_else(|| self.paies().values().rev().find_map(|p| p.motif_recours))
     }
 
     /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
@@ -797,7 +808,7 @@ impl Importe {
             quotite_contrat: quotite,
             quotite_reference_saisie: None,
             modalite_temps_travail_saisie: None,
-            motif_recours: None,
+            motif_recours: self.motif_recours(),
             motif_rupture: None,
             notification_rupture: None,
             preavis: None,

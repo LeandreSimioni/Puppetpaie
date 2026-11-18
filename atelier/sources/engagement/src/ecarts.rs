@@ -545,8 +545,8 @@ fn refaire<'a>(
         fin: fin_du_contrat,
         salaire_mensuel,
         quotite_contrat,
-        // Le motif d'un CDD, que l'engagement importe dit s'il le dit.
-        motif_recours: brut.motif_recours.filter(|_| mensuelle),
+        // Le motif d'un CDD, que l'engagement importe dit ou que sa DSN declare (`Importe::motif_recours`).
+        motif_recours: imp.motif_recours().filter(|_| mensuelle),
         // L'emploi que le bulletin imprime, tel quel ; son libelle lisible, l'engagement le resout de son metier.
         emploi: p.emploi_imprime.as_ref().map(|i| droit::emplois::EmploiEcrit { emploi: dit(&i.ecrit.emploi), ..i.ecrit.clone() }).filter(|e| *e != droit::emplois::EmploiEcrit::default()),
         lignes: Some(saisies),
