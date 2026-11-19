@@ -792,35 +792,6 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &IdSalarie, debut: &Jour
     par_premier_jour(out)
 }
 
-/// LES JOURS DE LA PERIODE `periode` OU LE CONTRAT DE `e` EST SUSPENDU SANS REMUNERATION, qui reduisent le plafond de sa
-/// paie (`droit::plafond::JoursSansRemuneration` ; CSS R. 242-2, I, al. 4 ; BOSS, assiette generale, § 820-900) : chaque
-/// jour d'une suspension que `permanents-base.json` ne dit pas remuneree (fiche DSN 3272 : « l'absence totale du salarie
-/// sans maintien de sa remuneration normale par son employeur ») ; chaque jour d'un arret que l'employeur ne maintient
-/// pas (`maintien::jours_maintenus` : la carence, les jours hors des tranches, un arret sans droit au maintien ou d'un
-/// motif sans maintien). Une suspension remuneree (637, L3142-2) ne reduit rien (§ 820).
-pub fn jours_sans_remuneration(ctx: &Contexte, e: &crate::Engagement, periode: &Periode) -> R<droit::plafond::JoursSansRemuneration> {
-    let mut jours = std::collections::BTreeSet::new();
-    let debut = e.contrat().debut();
-    let qui = ctx.nomme(&e.salarie);
-    for mois in periode.mois() {
-        for imp in du_contrat_dans_le_mois(ctx, &e.salarie, &debut, e.numero.as_ref(), mois)? {
-            let Some(absence) = absence(&imp)?.and_then(|a| a.croise(periode)) else { continue };
-            match &imp {
-                Imprevu::Suspension(s) => {
-                    if !verifier_motif_de_suspension(s.motif, &qui)?.remunere {
-                        jours.extend(absence.jours());
-                    }
-                }
-                Imprevu::Arret(a) => {
-                    let maintenus = crate::maintien::jours_maintenus(ctx, a, &*e.nat()?)?;
-                    jours.extend(absence.jours().filter(|j| !maintenus.contains(j)));
-                }
-            }
-        }
-    }
-    Ok(droit::plafond::JoursSansRemuneration::de(jours))
-}
-
 /// LES LIGNES QU'UN IMPREVU DONNE AU MOIS D'UN PERMANENT -- le seul endroit qui les tire. Chaque imprevu du contrat
 /// retire le salaire de ses heures d'absence dans le mois (bornees par le contrat) ; un arret le retire sous
 /// la rubrique de son motif (`arrets-base.json`, `rubrique` ; le catalogue la marque `arret_de_travail`), une suspension non remuneree sous
@@ -845,9 +816,20 @@ pub fn jours_sans_remuneration(ctx: &Contexte, e: &crate::Engagement, periode: &
 ///
 /// Rend aussi les jours travailles que les absences retirees ote du mois (un arret, une suspension non remuneree) :
 /// `conges::lignes_du_mois` en tire les jours travailles du mois.
-pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, Jours)> {
+///
+/// Et les jours d'absence que l'employeur ne remunere pas (CSS R. 242-2, I, al. 4, dernier tiret : le plafond est reduit
+/// « pour tenir compte de periodes d'absence n'ayant pas donne lieu a remuneration » ; BOSS, assiette generale, § 840,
+/// `boss/boss-assiette-generale-20260801.txt` l. 1160-1161), de date a date (§ 900) : chaque jour d'une suspension que
+/// `permanents-base.json` ne dit pas remuneree (fiche DSN 3272 : « l'absence totale du salarie sans maintien de sa
+/// remuneration normale par son employeur ») ; chaque jour d'un arret ou le maintien ne verse aucun complement
+/// (`maintien::DuMois::jours_maintenus`, ce que `maintien::ajouter` a verse). Une suspension remuneree (637, L3142-2)
+/// n'en donne aucun (§ 820). Ce que la paie verse d'autre pendant ces jours, `conges::lignes_du_mois` le regarde.
+pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &MoisDuContrat, au: &droit::natures::AuMois) -> R<(Vec<crate::LignePaie>, Vec<Avis>, Jours, std::collections::BTreeSet<Jour>)> {
     let qui = crate::conges::qui(ctx, e);
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), Jours::ZERO);
+    // Les jours d'absence sans remuneration : ceux des suspensions non remunerees, puis ceux des arrets (`arrets`), dont
+    // les jours maintenus sortent une fois tous les arrets du mois passes.
+    let (mut sans_remuneration, mut arrets) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
     let nat = e.nature_lue()?;
     // Les sommes du mois, a zero avant le premier arret.
     let mut maintien = crate::maintien::DuMois::vide();
@@ -864,10 +846,12 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         .collect();
     for imp in imprevus {
         let (premier, dernier) = (premier_jour(&imp)?, dernier_jour(&imp)?);
-        let jours = match absence(&imp)?.and_then(|a| a.croise(&m.presence)) {
-            Some(absence) => droit::periodes::part_du_mois(&absence, m.mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours,
+        let dans_le_mois = absence(&imp)?.and_then(|a| a.croise(&m.presence));
+        let jours = match &dans_le_mois {
+            Some(absence) => droit::periodes::part_du_mois(absence, m.mois, droit::periodes::RegleDuMoisIncomplet::HoraireReel, m.horaire)?.jours,
             None => Jours::ZERO,
         };
+        let jours_d_absence = dans_le_mois.iter().flat_map(|a| a.jours()).collect::<Vec<Jour>>();
         let heures = (jours * m.heures_par_jour).au_centieme();
         // Les heures retirees et leur taux, quand le mois en retire.
         let retenue = || -> R<Option<(Heures, MontantUnitaire)>> {
@@ -904,6 +888,7 @@ nomme cette absence. Rien n'est calcule.",
                 lignes.push(crate::LignePaie::RetenueArret(crate::ligne::RetenueArret { rubrique, paiement }));
             }
             absents += jours;
+            arrets.extend(jours_d_absence);
             avert.push(info(format!(
                 "{} : arrêt de travail ({}) du {} au {} : {} ; la DSN de chaque mois qu'il traverse le déclare.",
                 qui,
@@ -933,6 +918,7 @@ nomme cette absence. Rien n'est calcule.",
                     lignes.push(crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, paiement));
                 }
                 absents += jours;
+                sans_remuneration.extend(jours_d_absence);
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
                     qui,
@@ -945,8 +931,9 @@ nomme cette absence. Rien n'est calcule.",
         }
     }
     lignes.extend(crate::maintien::lignes(&maintien, mois, au));
+    sans_remuneration.extend(arrets.into_iter().filter(|j| !maintien.jours_maintenus.contains(j)));
     avert.extend(maintien.avis);
-    Ok((lignes, avert, absents))
+    Ok((lignes, avert, absents, sans_remuneration))
 }
 
 // ------------------------------------------------------------- les jours payes

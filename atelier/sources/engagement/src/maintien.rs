@@ -218,26 +218,6 @@ pub fn deja_indemnises(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature, t: Texte)
     Ok(total)
 }
 
-/// LES JOURS D'ABSENCE D'UN ARRET QUE L'EMPLOYEUR MAINTIENT : ceux qu'un texte du maintien (la loi, la convention)
-/// indemnise, a un pourcentage non nul (`taux_des_jours`), le salarie y ayant droit (`droits`). C'est ce que le plafond
-/// d'une paie lit (`imprevus::jours_sans_remuneration`) : BOSS, assiette generale, § 820, une absence « partiellement ou
-/// totalement remuneree par l'employeur, sous forme de versement visant au maintien de salaire » ne reduit pas le
-/// plafond ; § 850, il se reduit quand l'employeur « ne verse au salarie, par subrogation, que les indemnites journalieres »
-/// (la carence, les jours au-dela des tranches, un arret sans droit au maintien). INFERENCE, ecrite comme telle : un jour
-/// qu'un texte indemnise est un jour maintenu meme si les indemnites journalieres a deduire egalent la garantie (aucun
-/// texte depose ne dit d'un jour dont le complement calcule est nul qu'il est sans maintien).
-pub fn jours_maintenus(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<std::collections::BTreeSet<Jour>> {
-    let mut maintenus = std::collections::BTreeSet::new();
-    let Some(dr) = droits(ctx, imp, nat)? else { return Ok(maintenus) };
-    let Some(arret) = crate::imprevus::absence_d_arret(imp)? else { return Ok(maintenus) };
-    for t in [Texte::Loi, Texte::Convention] {
-        let Some(r) = dr.regime(t) else { continue };
-        let taux = taux_des_jours(r, &arret, deja_indemnises(ctx, imp, nat, t)?)?;
-        maintenus.extend(arret.jours().zip(&taux).filter(|(_, x)| **x > Coefficient::ZERO).map(|(j, _)| j));
-    }
-    Ok(maintenus)
-}
-
 // ------------------------------------------------------------------ la subrogation
 
 /// La periode de la subrogation d'un arret, ou `None`. Elle vient avec le maintien : la convention qui la donne a tout
@@ -283,6 +263,15 @@ pub struct DuMois {
     pub assiette_pas: Montant,
     /// Les heures d'absence que le maintien couvre (la quantite de sa ligne).
     pub heures: Heures,
+    /// LES JOURS D'ABSENCE OU L'EMPLOYEUR VERSE UN COMPLEMENT (`ajouter`) : ceux d'une suite de jours dont le complement,
+    /// la garantie moins les indemnites journalieres brutes, est positif. Ce sont les seuls jours d'un arret qui ne
+    /// reduisent pas le plafond de la paie (`imprevus::lignes_du_mois`) : BOSS, assiette generale, § 820
+    /// (`boss/boss-assiette-generale-20260801.txt`, l. 1142-1144), une absence « partiellement ou totalement remuneree par
+    /// l'employeur, sous forme de versement visant au maintien de salaire [...] et soumis a cotisations » ne le reduit
+    /// pas ; § 850 (l. 1163-1165), il se reduit « lorsque l'employeur ne verse au salarie, par subrogation, que les
+    /// indemnites journalieres de securite sociale non soumises a cotisations » : un complement nul est ce cas, comme la
+    /// carence, les jours au-dela des tranches et l'arret sans droit au maintien.
+    pub jours_maintenus: std::collections::BTreeSet<Jour>,
     pub avis: Vec<Avis>,
 }
 
@@ -298,6 +287,7 @@ impl DuMois {
             ij_subrogees_jours: nulle(),
             assiette_pas: nulle(),
             heures: Heures::ZERO,
+            jours_maintenus: std::collections::BTreeSet::new(),
             avis: Vec::new(),
         }
     }
@@ -453,6 +443,13 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                 let gs = x * f;
                 garantie += gs;
                 deduit += ib;
+                // Les jours d'une suite dont le complement est positif sont maintenus (`DuMois::jours_maintenus`).
+                // INFERENCE, ecrite comme telle : une garantie en net se reconstitue sur le mois (`au_net`), pas suite
+                // par suite ; le signe du complement d'une suite est celui de sa garantie brute moins ses indemnites
+                // brutes.
+                if gs - ib > nulle() {
+                    out.jours_maintenus.extend(s.jours());
+                }
                 complement += (gs - ib).max(nulle());
                 heures += h;
             } else {

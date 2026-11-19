@@ -30,11 +30,15 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
         }
     }
     let appel = Cell::new(0usize);
-    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: socle::mois::Mois| -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
+    // Le plafond d'une paie ecrite se lit (`paie_lue`) : ses jours sans remuneration ne se deduisent pas.
+    let lignes = |_: &Contexte,
+                  _: &crate::saisie::Carte,
+                  _: socle::mois::Mois|
+     -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>, Option<droit::plafond::JoursSansRemuneration>)> {
         let rang = *mensuels.get(appel.get()).ok_or_else(|| socle::echec::refus("rang d'engagement inconnu"))?;
         appel.set(appel.get() + 1);
         let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "lignes"))?.engagement;
-        Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours)))
+        Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours), None))
     };
     let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {

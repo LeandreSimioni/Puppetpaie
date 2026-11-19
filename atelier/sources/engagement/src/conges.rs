@@ -1215,7 +1215,9 @@ pub(crate) fn conges_pris_de_la_paie(racine: &Path, paie: &Paie) -> R<Jours> {
 /// L'ordre des lignes est celui du bulletin : le salaire de base, les
 /// absences, les indemnites, les primes, le solde de tout compte, puis les repas et les nuitees que la carte porte en
 /// lignes, aux limites de tout salarie (`crate::frais_au_dela`). Et les jours travailles du mois.
-pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
+pub(crate) fn lignes_du_mois(
+    ctx: &Contexte, e: &Carte, mois: Mois,
+) -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>, Option<droit::plafond::JoursSansRemuneration>)> {
     let nat = e.nature_lue()?;
     let Some(au) = nat.au_mois() else {
         return Err(socle::refus!("{} n'est pas un contrat paye au mois : ses lignes se saisissent.", nat.libelle));
@@ -1327,7 +1329,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     }
 
     // --- les imprevus : un arret de travail, une suspension, saisis une fois sur le salarie (`imprevus`)
-    let (l, a, absents) = crate::imprevus::lignes_du_mois(
+    let (l, a, absents, sans_remuneration) = crate::imprevus::lignes_du_mois(
         ctx,
         e,
         mois,
@@ -1347,9 +1349,12 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let jours_travailles = (reel.jours - absents).max(socle::grandeurs::Jours::ZERO);
 
     // --- les primes
+    // Une prime versee ce mois (`plafond_du_mois` : BOSS, assiette generale, § 860 et 920).
+    let mut prime_versee = false;
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
         let montant = socle::grandeurs::courte(pr.montant);
+        prime_versee |= montant > Montant::ZERO;
         let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
@@ -1406,6 +1411,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = legale;
         let base = base_conv.prorata(quotite, reference).au_centime();
         let montant = base.fois_taux(pourcentage).au_centime();
+        prime_versee |= montant > Montant::ZERO;
         // Une prime se paie en une fois, dans l'unite de sa rubrique.
         let unite = droit::catalogue::rubrique(&ctx.racine, &clauses::RUBRIQUE_PRIME_ANCIENNETE, &fin_mois)?.unite;
         lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::une_fois(unite, socle::grandeurs::courte(montant))));
@@ -1440,7 +1446,41 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         lignes.extend(l);
         avert.extend(a);
     }
-    Ok((lignes, avert, Some(jours_travailles)))
+    let sans_remuneration = plafond_du_mois(sans_remuneration, &presence, &lignes, prime_versee);
+    Ok((lignes, avert, Some(jours_travailles), Some(sans_remuneration)))
+}
+
+/// LES JOURS DU MOIS QUI REDUISENT LE PLAFOND DE LA PAIE (`droit::plafond::JoursSansRemuneration`) : les jours d'absence
+/// sans remuneration que les imprevus disent (`imprevus::lignes_du_mois` : CSS R. 242-2, I, al. 4, dernier tiret ; BOSS,
+/// assiette generale, § 820-850), sauf ce que la paie du mois verse d'autre pendant eux (`boss/boss-assiette-generale-
+/// 20260801.txt`) :
+/// - un avantage en nature : § 830 (l. 1146-1149), « Sont assimilees a une absence remuneree par l'employeur : [...] le
+///   maintien d'un avantage en nature par l'employeur » ; l. 1153-1154, « L'absence avec maintien d'un avantage en nature
+///   par l'employeur est assimilee a une absence remuneree par l'employeur. Le plafond ne peut donc pas etre reduit. »
+///   INFERENCE, ecrite comme telle : la ligne ne date pas l'avantage ; porte sur la paie du mois, il est maintenu pendant
+///   chacune de ses absences ;
+/// - une prime, dans un mois sans aucun jour travaille ni remunere : § 860 (l. 1171-1176), « En cas d'absence de maintien
+///   de salaire mais de versement, durant un mois ne comportant aucune periode travaillee, d'autres elements de
+///   remuneration, notamment des primes, [...] si les conditions de ce versement sont prevues par la reglementation, un
+///   accord collectif ou le contrat de travail, le plafond du mois lors duquel le versement est prevu ne peut etre
+///   reduit » ; § 920 (l. 1208-1210), « un plafond mensuel entier s'applique, eventuellement proratise si le salarie est
+///   habituellement a temps partiel », et son exemple (l. 1224-1228) : la prime « versee en application d'une
+///   convention ou d'un accord collectif ou encore du contrat de travail » se rattache a la periode de versement, « un
+///   plafond mensuel entier s'applique ». Les primes de la carte et la prime d'anciennete de la convention sont de
+///   celles-la. Un rappel de salaire, que le § 920 rattache a la periode qu'il corrige (l. 1229-1231, « aucun plafond
+///   n'est applicable »), ne se saisit pas comme tel : la carte n'a pas de case qui le dise.
+///
+/// Le prorata du contrat (R. 242-2, I, al. 3) et la correction du temps partiel (§ 910) s'appliquent ensuite
+/// (`droit::plafond::plafond_permanent`).
+fn plafond_du_mois(
+    sans_remuneration: std::collections::BTreeSet<socle::date::Jour>, presence: &Periode, lignes: &[LignePaie], prime_versee: bool,
+) -> droit::plafond::JoursSansRemuneration {
+    let avantage_en_nature = lignes.iter().any(|l| matches!(l, LignePaie::AvantageEnNature(a) if a.montant.is_some_and(|m| m > Montant::ZERO)));
+    let aucun_jour_remunere = presence.jours().all(|j| sans_remuneration.contains(&j));
+    if avantage_en_nature || (prime_versee && aucun_jour_remunere) {
+        return droit::plafond::JoursSansRemuneration::aucun();
+    }
+    droit::plafond::JoursSansRemuneration::de(sans_remuneration)
 }
 
 /// Ce que le moteur a retire du decompte des jours ouvrables, et ce qu'il n'a

@@ -200,8 +200,8 @@ pub fn plafond_permanent(
 /// Un jour y entre quand l'absence de ce jour « ne donne pas lieu a un maintien de la remuneration par l'employeur »
 /// (§ 840) ; une absence « partiellement ou totalement remuneree par l'employeur, sous forme de versement visant au
 /// maintien de salaire » n'y entre pas (§ 820). Seules les journees d'absence totale comptent (§ 890), de date a date, les
-/// jours de repos et feries compris (§ 900). Qui sont ces jours, l'engagement le dit (`engagement::imprevus`) ; ce type ne
-/// fait que les porter.
+/// jours de repos et feries compris (§ 900). Qui sont ces jours, la deduction du mois d'un permanent le dit
+/// (`engagement::conges::lignes_du_mois`, avec les § 830, 860 et 920) ; ce type ne fait que les porter.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JoursSansRemuneration(BTreeSet<Jour>);
 

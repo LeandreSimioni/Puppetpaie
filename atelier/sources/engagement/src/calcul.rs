@@ -2010,10 +2010,10 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(ctx, e)?),
             _ => None,
         };
-        // Les jours d'absence que l'employeur ne remunere pas reduisent le plafond (CSS R. 242-2, I, al. 4 ; BOSS § 840-880).
-        let periode = e.periode_payee()?;
-        let sans_remuneration = crate::imprevus::jours_sans_remuneration(ctx, e, &periode)?;
-        return plafond_permanent(&periode, &sans_remuneration, tp, &pss_du_contexte(ctx));
+        // Les jours d'absence que l'employeur ne remunere pas reduisent le plafond (CSS R. 242-2, I, al. 4 ; BOSS § 820-920) :
+        // ceux que la deduction du mois a dits (`conges::lignes_du_mois`).
+        let sans_remuneration = e.sans_remuneration.as_ref().ok_or_else(|| socle::fichiers::absent("sans_remuneration"))?;
+        return plafond_permanent(&e.periode_payee()?, sans_remuneration, tp, &pss_du_contexte(ctx));
     }
     // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
     // CSS).
