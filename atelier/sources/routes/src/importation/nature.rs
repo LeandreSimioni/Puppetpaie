@@ -583,14 +583,14 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
                 let jour = (if champ == Demande::Debut { charge.debut } else { charge.fin }).ok_or_else(manque)?;
                 if champ == Demande::Debut && jour > du {
                     return Err(refus(format!(
-                        "Le contrat de {} ne peut pas commencer le {} : un bulletin le paie dès le {}. Rien n'a été écrit.",
+                        "Le contrat de {} ne peut pas commencer le {} : ses paies reprises le paient dès le {}. Rien n'a été écrit.",
                         qui,
                         jour.iso(),
                         du.iso()
                     )));
                 }
                 if champ == Demande::Fin && jour < au {
-                    return Err(refus(format!("Le contrat de {} ne peut pas finir le {} : un bulletin le paie jusqu'au {}. Rien n'a été écrit.", qui, jour.iso(), au.iso())));
+                    return Err(refus(format!("Le contrat de {} ne peut pas finir le {} : ses paies reprises le paient jusqu'au {}. Rien n'a été écrit.", qui, jour.iso(), au.iso())));
                 }
                 if champ == Demande::Debut {
                     debut_dit = Some(jour);
