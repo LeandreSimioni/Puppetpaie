@@ -483,7 +483,7 @@ un libellé, chacun sa forme.
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
 | date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
 | employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
-| nom déclaré, prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
+| nom déclaré (de famille ou d'usage), prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |

@@ -553,8 +553,9 @@ texte_borne! {
 }
 
 texte_borne! {
-    /// LE NOM DECLARE d'un salarie : 32 caracteres au plus. La DPAE en ecrit 32 (L_NOM_PATRO_SAL, positions 284-315 :
-    /// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 293-300) ; la DSN, 80 (S21.G00.30.002, X [1,80] :
+    /// LE NOM DECLARE d'un salarie, de famille (`nom`) ou d'usage (`nom_usage`) : 32 caracteres au plus. La DPAE en ecrit
+    /// 32 (L_NOM_PATRO_SAL, positions 284-315 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 293-300 ; le
+    /// « Nom d'époux » L_NOM_EPX_SAL, 699-730, l. 409-413, aussi) ; la DSN, 80 (S21.G00.30.002 et .003, X [1,80] :
     /// `logiciel/donnees/formats-dsn-base.json`).
     pub struct NomDeclare : AuPlus 32 "caractères" par caracteres,
         "« {texte} » a {n} caractères : un nom déclaré en a {max} au plus, ce que la DPAE écrit (norme DPAE v5.3, \
@@ -2962,6 +2963,7 @@ fiche! {
         InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         Nom(NomDeclare) = "nom" => nom,
+        NomUsage(NomDeclare) = "nom_usage" => nom_usage,
         PrenomAffichage(String) = "prenom_affichage" => prenom_affichage,
         Prenom(PrenomDeclare) = "prenom" => prenom,
         Pseudonyme(String) = "pseudonyme" => pseudonyme,

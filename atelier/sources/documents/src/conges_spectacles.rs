@@ -536,8 +536,13 @@ fn valeurs(c: &Certificat, p: &ContratDuCertificat, ent: &ChampsEntreprise) -> R
     }
     out.push(("raison_sociale", texte_requis(&ent.raison_sociale, "raison_sociale")?));
     out.push(("nom_naissance", texte_requis(&s.nom, "nom")?));
-    // Le nom d'usage : le nom declare, comme le modele du certificat de la caisse le repete quand il n'y en a pas d'autre.
-    out.push(("nom_usage", texte_requis(&s.nom, "nom")?));
+    // Le nom d'usage de la fiche quand elle le dit (celui que la DSN declare, S21.G00.30.003) ; sinon le nom declare, que
+    // le modele du certificat de la caisse repete quand il n'y en a pas d'autre.
+    let usage = match s.nom_usage.remplie() {
+        Some(u) => u.to_string(),
+        None => texte_requis(&s.nom, "nom")?,
+    };
+    out.push(("nom_usage", usage));
     out.push(("emploi", texte_requis(&s.emploi, "emploi")?));
     // Le modele du certificat de la caisse porte la zone « cadre » ; la lire comme le statut de retraite complementaire
     // (S21.G00.40.003 cadre, `bareme::est_cadre`) est une INFERENCE : la seule notion de cadre des textes deposes (fiche

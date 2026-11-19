@@ -97,6 +97,7 @@ const S21_20_003: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.003");
 const S21_20_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.004");
 const S21_20_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.20.005");
 const S21_30_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.002");
+const S21_30_003: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.003");
 const S21_30_004: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.004");
 const S21_30_005: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.005");
 const S21_30_006: RubriqueDeLaNorme = droit::rubrique!("S21.G00.30.006");
@@ -274,8 +275,8 @@ impl EmploiDeclare {
 /// UN INDIVIDU (bloc S21.G00.30), sous les cles de la fiche salarie. Le sexe (30.005, « 01 - masculin », « 02 -
 /// féminin ») devient le « 1 » ou « 2 » de la fiche (`sexe_de_la_fiche`) : la norme ne le fait porter que s'il differe
 /// de celui du NIR ou si le NIR manque (cahier technique 2026.1, p. 171, `atelier/reference/norme-dsn/texte/
-/// bloc-S21.G00.30.txt`, l. 154-163). Le nom d'usage (30.003, meme bloc, l. 138-144) n'a pas de case dans la fiche
-/// salarie (`champs-base.json`) : il n'est pas lu. La date de naissance n'est pas un jour : la norme admet un jour ou un
+/// bloc-S21.G00.30.txt`, l. 154-163). Le nom d'usage (30.003, meme bloc, l. 138-144) va a la case `nom_usage`. La date
+/// de naissance n'est pas un jour : la norme admet un jour ou un
 /// mois inconnu (« 00MMAAAA ou 99MMAAAA », « JJ00AAAA ou JJ99AAAA », p. 172, l. 175-177) ; elle passe a la fiche en
 /// AAAA-MM-JJ, que la fiche controle. Son identite (30.001, .002, .004, .006, .020) passe a la fiche par la porte qui la
 /// propose (`import::dsn_aem::SalarieDeclare::fiche`).
@@ -285,6 +286,9 @@ pub struct IndividuDeclare {
     /// `Nir::d_une_piece`), le nom (.002), les prenoms (.004), la date de naissance (.006), le NTT (.020).
     #[serde(skip)]
     pub identite: IdentiteDeclaree,
+    /// .003, le nom d'usage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nom_usage: Option<String>,
     /// .005.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sexe: Option<Sexe>,
@@ -441,6 +445,7 @@ impl IndividuDeclare {
     fn de(nir: Option<Nir>) -> IndividuDeclare {
         IndividuDeclare {
             identite: IdentiteDeclaree { nir, ..IdentiteDeclaree::default() },
+            nom_usage: None,
             sexe: None,
             lieu_naissance: None,
             adresse: None,
@@ -872,6 +877,8 @@ impl IndividuDeclare {
                 // Le nom, les prenoms, la naissance : obligatoires (S21.G00.30.002, .004, .006) ; le NIR rattache, il
                 // ne se remplit pas (une fiche qui le porte ne le demande pas) ; le NTT n'a pas de case.
                 identite: IdentiteDeclaree { nom: _, prenoms: _, naissance: _, nir: _, ntt: _ },
+                // Conditionnel (S21.G00.30.003, usage C) : seulement pour qui porte un autre nom ; rien ne le demande.
+                nom_usage: _,
                 // Le lieu, obligatoire pour un salarie ne en France (CCH-11 de S21.G00.30.007) ; le departement, le pays
                 // et la nationalite, obligatoires (.013 a .015, `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`).
                 lieu_naissance: _,
@@ -1296,11 +1303,12 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     Err(_) => None,
                 };
             }
-            S21_30_002 | S21_30_004 | S21_30_007 | S21_30_008 | S21_30_010 => {
+            S21_30_002 | S21_30_003 | S21_30_004 | S21_30_007 | S21_30_008 | S21_30_010 => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match rub {
                     S21_30_002 => &mut s.identite.nom,
+                    S21_30_003 => &mut s.nom_usage,
                     S21_30_004 => &mut s.identite.prenoms,
                     S21_30_007 => &mut s.lieu_naissance,
                     S21_30_008 => &mut s.adresse,

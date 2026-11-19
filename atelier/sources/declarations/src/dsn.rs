@@ -359,6 +359,11 @@ pub fn emplois_multiples(p: &Paie, autres: &[&Paie]) -> &'static str {
 pub fn bloc_individu(f: &mut Fichier, s: &droit::fiche::ChampsSalarie, courriel: bool) -> R<()> {
     crate::ntt::poser_nir(f, s)?;
     f.add_case(droit::rubrique!("S21.G00.30.002"), &s.nom, "nom")?;
+    // Le nom d'usage, rubrique conditionnelle (usage C : `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`,
+    // l. 169), quand la fiche le dit.
+    if let Some(usage) = s.nom_usage.remplie() {
+        f.add(droit::rubrique!("S21.G00.30.003"), usage);
+    }
     f.add_case(droit::rubrique!("S21.G00.30.004"), &s.prenom, "prenom")?;
     f.add(droit::rubrique!("S21.G00.30.006"), s.date_naissance.exigee("date_naissance")?.jjmmaaaa());
     f.add_case(droit::rubrique!("S21.G00.30.007"), &s.lieu_naissance, "lieu_naissance")?;
