@@ -341,11 +341,13 @@ pub struct CarteImportee {
     fin: Option<Jour>,
     periode: String,
     dates: Vec<Jour>,
+    /// L'activite du mois (`engagement::importe::activite_du_mois`) : des cachets entiers ; des heures et des jours tels
+    /// que la DSN les declare (`151.67`), en nombre JSON, entier quand ils le sont.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     heures: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     jours: Option<Jours>,
     montants: Montants,
     sources: Sources,
@@ -376,12 +378,14 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     };
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
-    // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
-    let (cachets, heures, jours) = (
-        p.and_then(|p| p.cachets).or_else(|| c.and_then(|c| c.cachets)),
-        p.and_then(|p| p.heures).or_else(|| c.and_then(|c| c.heures)),
-        p.and_then(|p| p.jours).or_else(|| c.and_then(|c| c.jours)),
-    );
+    // L'activite du mois que les pieces disent (`engagement::importe::activite_du_mois`) ; quand elles n'en disent rien
+    // pour le mois, ce que la piece du contrat entier atteste.
+    let bornes = contrat.and_then(|x| x.periode);
+    let du_mois = engagement::importe::activite_du_mois(mois, p, c, bornes.map(|o| o.debut()), bornes.and_then(|o| o.fin()));
+    let (cachets, heures, jours) = match du_mois.est_muette() {
+        true => (c.and_then(|c| c.cachets), c.and_then(|c| c.heures), c.and_then(|c| c.jours)),
+        false => (du_mois.cachets, du_mois.heures, du_mois.jours),
+    };
     let bulletin = p.and_then(|p| p.bulletin.clone());
     // La piece qui declare la paie : sa cle le dit (`CleDePaieVersee`).
     let declaree_par = |p: &PaieVersee| if p.contrat.d_un_bulletin() { Source::Bulletin } else { Source::Dsn };

@@ -337,14 +337,13 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
-/// nombre de jours travailles que son bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le mois
-/// d'un permanent), sinon celui du contrat quand il n'a qu'une paie. UN CONTRAT DONT LA NATURE RESTE A DIRE (sans
-/// `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses paies
-/// se refont une fois sa nature dite.
+/// nombre de jours travailles que les pieces comptent pour le mois (`Importe::activite_du_mois` : le contrat atteste qui
+/// tient dans le mois, sinon la paie du mois, que son bulletin ou sa DSN dit). UN CONTRAT DONT LA NATURE RESTE A DIRE
+/// (sans `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses
+/// paies se refont une fois sa nature dite.
 fn saisies_refaites(imp: &Importe) -> Vec<(Mois, &PaieVersee, NatureDeContrat, Option<socle::grandeurs::Jours>)> {
     let paies = imp.paies();
-    let du_contrat = imp.contrat().and_then(|c| c.jours).filter(|_| paies.len() == 1);
-    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, p.jours.or(du_contrat)))).collect()
+    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, imp.activite_du_mois(mois).jours))).collect()
 }
 
 /// Ce que la saisie refaite dit de la paie, et ce que la comparaison note en chemin (`Comparaison`).

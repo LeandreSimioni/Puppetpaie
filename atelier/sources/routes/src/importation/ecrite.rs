@@ -268,8 +268,9 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         // deja repris attestent commence au premier d'entre eux, que la DSN ajoutee ensuite peut preceder : c'est le mois
         // paye qu'il couvre, comme les bulletins de ce contrat lus avec elle (plus haut, le contrat a cheval).
         // Une paie declaree qui porte un numero d'objet est celle d'un contrat d'usage (regle 6 : le numero d'objet n'existe
-        // que sur les natures 02 et 10) : elle ne va pas au contrat d'un permanent, meme si elle paie un de ses mois.
-        let d_usage_declaree = !declaree_par_bulletin(&p) && o.is_some();
+        // que sur les natures 02 et 10) ; celle dont la DSN declare le contrat d'usage aussi (`PaieVersee::nature`) : elle
+        // ne va pas au contrat d'un permanent, meme si elle paie un de ses mois.
+        let d_usage_declaree = !declaree_par_bulletin(&p) && (o.is_some() || p.paie.nature.is_some());
         if candidats.is_empty() && !d_usage_declaree {
             let payee: Option<PeriodeOuverte> = if declaree_par_bulletin(&p) {
                 dates
