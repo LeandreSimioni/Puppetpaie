@@ -25,7 +25,7 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure};
+use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RemunerationDeChaquePaie, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure};
 use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
@@ -2192,14 +2192,14 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe)
     let (debut, fin) = (periode.debut(), periode.fin());
     let e = &p.engagement;
     let nat = e.nat()?;
-    for &t in nat.types_remuneration() {
-        let montant = match t {
-            TypeDeRemuneration::Brute => brut_du_51(p)?,
-            TypeDeRemuneration::AssietteChomage => p.assiette_chomage,
-            TypeDeRemuneration::SalaireRetabli => p.salaire_retabli,
-            TypeDeRemuneration::SalaireDeBase => p.salaire_de_base,
-            autre => return Err(socle::refus!("contrats-base.json fait déclarer à chaque paie le type de rémunération {}, que le moteur ne calcule pas : le signaler au développeur.", autre)),
+    for &r in nat.types_remuneration() {
+        let montant = match r {
+            RemunerationDeChaquePaie::Brute => brut_du_51(p)?,
+            RemunerationDeChaquePaie::AssietteChomage => p.assiette_chomage,
+            RemunerationDeChaquePaie::SalaireRetabli => p.salaire_retabli,
+            RemunerationDeChaquePaie::SalaireDeBase => p.salaire_de_base,
         };
+        let t = r.type_de_remuneration();
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
         f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;

@@ -1091,7 +1091,8 @@ mode d'un envoi (`socle::mode::Mode`), dont `droit/src/nature_declaration.rs` d�
 l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur` (même fichier). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
 son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
 de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), la liste entière : ceux que nos natures
-déclarent à chaque paie (`contrats-base.json`, 001, 002, 003, 010), les heures en plus (017) et l'absence (028, 029)
+déclarent à chaque paie, fermés aux quatre que le moteur calcule (`RemunerationDeChaquePaie`, même fichier, lu de
+`contrats-base.json` : 001, 002, 003, 010 ; un autre code ne se lit pas), les heures en plus (017) et l'absence (028, 029)
 que `dsn::remunerations` écrit, celui que le `dsn_type` d'une rubrique nomme ; une DSN lue d'un code hors de la
 liste laisse la case vide. La période d'affectation d'un composant de versement
 (55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le

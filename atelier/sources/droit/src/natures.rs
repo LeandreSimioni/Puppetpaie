@@ -1428,15 +1428,41 @@ struct Remunerations {
     _quoi: String,
     #[serde(rename = "note")]
     _note: Option<String>,
-    types: Vec<TypeDeRemuneration>,
+    types: Vec<RemunerationDeChaquePaie>,
     /// Les quatre blocs 51 valent-ils tous le brut ? (vrai sur un CDDU)
     toutes_au_brut: bool,
+}
+
+/// UN TYPE DE REMUNERATION QU'UNE NATURE DECLARE A CHAQUE PAIE (S21.G00.51.011), ferme aux types que le moteur calcule
+/// (cahier technique § 2.1.3.3 : 001, 002, 003, 010) : `contrats-base.json` qui en nommerait un autre ne se lit pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum RemunerationDeChaquePaie {
+    #[serde(rename = "001")]
+    Brute,
+    #[serde(rename = "002")]
+    AssietteChomage,
+    #[serde(rename = "003")]
+    SalaireRetabli,
+    #[serde(rename = "010")]
+    SalaireDeBase,
+}
+
+impl RemunerationDeChaquePaie {
+    /// Son type dans la liste de la norme.
+    pub fn type_de_remuneration(self) -> TypeDeRemuneration {
+        match self {
+            RemunerationDeChaquePaie::Brute => TypeDeRemuneration::Brute,
+            RemunerationDeChaquePaie::AssietteChomage => TypeDeRemuneration::AssietteChomage,
+            RemunerationDeChaquePaie::SalaireRetabli => TypeDeRemuneration::SalaireRetabli,
+            RemunerationDeChaquePaie::SalaireDeBase => TypeDeRemuneration::SalaireDeBase,
+        }
+    }
 }
 
 codes_fermes! {
     /// UN TYPE DE REMUNERATION (S21.G00.51.011), la liste entiere de la norme (les valeurs de `formats-dsn-base.json` et
     /// de `formats-dsn-p27v01-base.json`). Ceux qu'une nature declare a chaque paie, `contrats-base.json` le dit
-    /// (`Nature::types_remuneration` : 001, 002, 003, 010, cahier technique § 2.1.3.3) ; les heures en plus (017) et
+    /// (`Nature::types_remuneration`, `RemunerationDeChaquePaie`) ; les heures en plus (017) et
     /// l'absence (028, 029), `dsn::remunerations`.
     TypeDeRemuneration, "Type de rémunération", "S21.G00.51.011" {
         /// 001 - Rémunération brute non plafonnée.
@@ -1778,7 +1804,7 @@ impl Proprietes {
         self.dpae.date_fin.obligatoire
     }
 
-    pub fn types_remuneration(&self) -> &[TypeDeRemuneration] {
+    pub fn types_remuneration(&self) -> &[RemunerationDeChaquePaie] {
         &self.remunerations.types
     }
 
