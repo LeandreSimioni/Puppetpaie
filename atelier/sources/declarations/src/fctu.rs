@@ -62,7 +62,7 @@ impl Echec {
 }
 
 /// `fctu-base.json`, lu par sa forme (`droit::preavis::base`).
-fn nomenclatures() -> R<droit::preavis::BaseFctu> {
+fn nomenclatures() -> R<std::sync::Arc<droit::preavis::BaseFctu>> {
     droit::preavis::base()
 }
 
@@ -208,7 +208,8 @@ pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: TypeDeLaDe
             ADMIS.iter().map(|t| format!("{} - {}", t.code(), t.libelle())).collect::<Vec<_>>().join(", ")
         )));
     }
-    let types = nomenclatures()?.types_preavis;
+    let nomenclatures = nomenclatures()?;
+    let types = &nomenclatures.types_preavis;
     let preavis = match types.du_code(fin.type_preavis) {
         Some(p) => p,
         None => {

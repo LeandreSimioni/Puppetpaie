@@ -1569,8 +1569,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // LA FIN D'UN CONTRAT, telle qu'elle se saisit. Les types de preavis
     // SAISISSABLES seulement.
     let fctu = droit::preavis::base()?;
-    let types_preavis: Vec<droit::preavis::TypePreavis> = fctu.types_preavis.codes.into_iter().filter(|c| c.saisissable).collect();
-    let transaction = fctu.transaction.codes;
+    let types_preavis: Vec<droit::preavis::TypePreavis> = fctu.types_preavis.codes.iter().filter(|c| c.saisissable).cloned().collect();
+    let transaction = fctu.transaction.codes.clone();
 
     // Les organismes de recouvrement, pour que le code Urssaf de la DPAE se
     // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
