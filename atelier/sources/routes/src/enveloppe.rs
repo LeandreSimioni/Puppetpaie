@@ -9,8 +9,9 @@
 //! - rendue : `{"ok": true, "ecrit": …, "resultat": {"phrase": "…", …}}` ;
 //! - refusee : `{"ok": false, "ecrit": …, "refus": {"classe": "Manque", "phrase": "…", "corriger": "…", "a_part": {…}}}`.
 //!
-//! `ecrit` dit que la route ecrit ou engage (l'acte de sa fiche) : l'ecran oublie alors ce qu'il a lu, meme apres un
-//! refus. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
+//! `ecrit` dit que la route a ecrit ou engage : une route dont la fiche ecrit ou engage, qui a rendu ; un refus n'ecrit
+//! rien, sauf un envoi coupe en route, dont les premiers courriels sont partis (`Classe::CourrielAvecAvertissement` : ce
+//! qui est parti s'est ecrit). L'ecran oublie alors ce qu'il a lu. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
 //! `corriger`, ce que la fiche de la route dit de corriger pour cette classe, quand elle le dit ; `a_part`, ce que le
 //! refus porte hors de sa phrase (un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche : `socle::echec::APart`).
 //!
@@ -429,7 +430,7 @@ impl Refus {
 
 // ------------------------------------------------------------------------------------------------- la reponse
 
-/// LA REPONSE D'UNE ROUTE, la meme pour l'ecran et le LLM : son rendu ou son refus, et si la route ecrit.
+/// LA REPONSE D'UNE ROUTE, la meme pour l'ecran et le LLM : son rendu ou son refus, et si la route a ecrit.
 #[derive(Clone, Debug)]
 pub struct Reponse {
     ecrit: bool,
@@ -479,7 +480,18 @@ impl<'de> Deserialize<'de> for Reponse {
 impl Reponse {
     /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus.
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
-        Reponse { ecrit: super::est_une_ecriture(route), issue: rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)) }
+        Reponse::issue_de(route, rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)))
+    }
+
+    /// L'issue `issue` de la route `route`, et si elle a ecrit : une route qui ecrit ou engage, qui a rendu ; un refus
+    /// n'ecrit rien, sauf celui d'un envoi coupe en route, dont les premiers courriels sont partis et notes.
+    fn issue_de(route: Route, issue: Result<Objet, Refus>) -> Reponse {
+        let ecrit = super::est_une_ecriture(route)
+            && match &issue {
+                Ok(_) => true,
+                Err(r) => r.classe == Some(Classe::CourrielAvecAvertissement),
+            };
+        Reponse { ecrit, issue }
     }
 
     /// Le refus d'une demande qui n'a pas atteint de route (illisible, mal formee, une route inconnue) : rien ne s'est
@@ -490,7 +502,7 @@ impl Reponse {
 
     /// Le refus `refus` de la route `route`, deja dit (la fenetre autour de la route, un refus qu'elle rend tel quel).
     pub fn refusee_par(route: Route, refus: Refus) -> Reponse {
-        Reponse { ecrit: super::est_une_ecriture(route), issue: Err(refus) }
+        Reponse::issue_de(route, Err(refus))
     }
 
     /// La route a-t-elle rendu (et non refuse) ?
