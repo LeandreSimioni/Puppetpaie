@@ -88,7 +88,10 @@ La base d'essai de net-entreprises garde les essais **par SIRET**, y compris ceu
 journal de la compagnie d'essai, neuf, ne les connaît pas (et les bilans ne disent pas le mois d'une déclaration : le
 moteur ne peut pas le lire sur la plate-forme). Chaque nouvel essai du même mois part à un ordre plus grand que le
 précédent (le journal compte ses essais) : si le bilan refuse l'ordre (B1-208-11, « dernier ordre accepté AAAAMMnn »),
-redéposer jusqu'à le passer.
+redéposer jusqu'à le passer. **Dans une compagnie d'essai neuve, relever les retours une fois (`ouverture`) avant le
+premier dépôt** : le moteur lit dans les bilans relevés les essais déjà faits ailleurs sous ce SIRET et part de
+lui-même en annule-et-remplace à l'ordre suivant (prouvé le 19/11/2026 : type 03, ordre 2, conforme) ; sans ce relevé,
+le premier essai part en normale à l'ordre 1 et revient « B1-208-10 Il existe déjà une déclaration normale ».
 
 Une DSN copiée de la fictive (écrite avant le montage, sous son SIREN) est refusée : déposer la DSN par son mois, qui
 la fabrique sous votre identité.
