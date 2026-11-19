@@ -1610,13 +1610,18 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
-            // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base)) = (pa.brut(), crate::taxe_sur_les_salaires::assiette_d_une_paie_du_mois(pa, &bar)?) else {
-                return Err(refus(format!(
-                    "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
+            // taisent ne s'invente pas : cette paie ne se compte pas, l'etat la nomme avec ce qui lui manque et rend les
+            // autres (« Le logiciel est doux »).
+            let (brut, base) = (pa.brut(), crate::taxe_sur_les_salaires::assiette_d_une_paie_du_mois(pa, &bar)?);
+            let (Some(brut), Some(base)) = (brut, base) else {
+                let manque = if brut.is_none() { "son brut" } else { "son assiette de CSG" };
+                avert.push(format!(
+                    "{}, {} : les pièces importées ne disent pas {} ; cette paie n'est pas comptée ci-dessous.",
                     crate::tableaux_export::qui_souple(pa.salarie()),
-                    m
-                )));
+                    m,
+                    manque
+                ));
+                continue;
             };
             let cle = pa.salarie().id.to_string();
             if !par.contains_key(&cle) {
