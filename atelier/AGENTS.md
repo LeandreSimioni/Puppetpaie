@@ -220,6 +220,12 @@ Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le
   pas de conflit entre deux pièces : « A priori, ça n'existe pas. C'est là-dessus qu'on part. » On n'invente donc
   pas de problèmes et on ne construit rien pour les trancher. Ce qui est déclaré (la DSN) est ce qui vaut pour
   France Travail ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait.
+- **On part de l'idée que tout est juste, et on regarde ce qui casse** : « Il faut présupposer que tout est juste et
+  voir les problèmes. Pas présupposer qu'il va y avoir des problèmes pour recréer des problèmes par-dessus. Sinon
+  on ne s'en sort jamais. » Il y a quatre sortes de pièces (bulletin, DSN, AEM, certificat) ; chacune dit ce
+  qu'elle dit : un bulletin la période de sa paie, une DSN et une AEM le contrat.
+- **Deux pièces justes ne s'effacent jamais l'une l'autre.** C'est le seul vrai danger de l'import : une règle de
+  rapprochement qui fond deux contrats distincts, ou fait perdre ce qu'une pièce atteste, est fausse.
 - **Ce qui ne rentre pas fait un incident, et on avise.** « Les gens vont mettre leurs pièces. S'il y a des choses
   qui ne rentrent pas dans notre logiciel, on a un incident, on pourra le traiter petit à petit. » Comme pour un
   écart de calcul : l'éditeur le reçoit, améliore le lecteur, et comme la pièce est restée dans `import/`, le
