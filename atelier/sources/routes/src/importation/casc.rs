@@ -39,14 +39,14 @@ struct Versee {
     brut: Montant,
     numero: Option<engagement::numeros::NumeroContrat>,
     periode: Option<PeriodeOuverte>,
-    /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
+    /// Les cachets, heures et jours que les pieces disent du mois (`engagement::importe::activite_du_mois`).
     activite: Activite,
     /// Artiste ou technicien : ce que le bulletin de la paie imprime, sinon la fiche ; `None` : rien ne le dit.
     statut: Option<droit::fiche::Statut>,
 }
 
-/// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que son contrat atteste, ceux
-/// qu'il dit et qui ne sont pas nuls.
+/// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que les pieces disent du mois (le
+/// contrat atteste qui tient dans le mois, sinon la DSN ou le bulletin du mois), ceux qui ne sont pas nuls.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Activite {
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
@@ -75,16 +75,10 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let periode = p.paie.periode;
-        let mut activite = Activite::default();
-        if let Some(c) = i.contrat_lu()? {
-            if c.periode.and_then(|o| o.fermee()).is_some_and(|p| p.mois() == [mois]) {
-                activite = Activite {
-                    cachets: c.contrat.cachets.filter(|n| !n.est_nul()),
-                    heures: c.contrat.heures.filter(|n| !n.est_nul()),
-                    jours: c.contrat.jours.filter(|n| !n.est_nul()),
-                };
-            }
-        }
+        // L'activite du mois que les pieces disent (`Importe::activite_du_mois`) : le contrat atteste qui tient dans le
+        // mois, sinon ce que la paie du mois declare (la DSN, ou le bulletin d'un permanent).
+        let (cachets, heures, jours) = i.activite_du_mois(mois);
+        let activite = Activite { cachets: cachets.filter(|n| !n.est_nul()), heures: heures.filter(|n| !n.est_nul()), jours: jours.filter(|n| !n.est_nul()) };
         let numero = p.paie.contrat.numero_declare().cloned();
         let statut = p.paie.emploi_imprime.as_ref().and_then(|e| e.ecrit.statut).or_else(|| salarie.champs.statut.dite().copied());
         out.push(Versee { salarie, brut, numero, periode, activite, statut });
