@@ -625,13 +625,14 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut cpnef = Montant::ZERO;
         if let Some(c) = &hb.cpnef_dialogue_social {
             let brut_cpnef = masse.fois_taux(c.taux).au_centime();
-            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::manque(cle));
+            // Le socle livre (`hors_bulletin`) qui ne porte pas sa borne : un defaut du logiciel, rien que la compagnie dise.
+            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::DefautDuLogiciel));
             cpnef = plus_grand(borne(c.plancher, "plancher")?, plus_petit(borne(c.plafond, "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
-            .ok_or_else(|| socle::fichiers::manque("contribution_conventionnelle_permanents"))?
+            .ok_or_else(|| socle::fichiers::absent("contribution_conventionnelle_permanents").reclasser(Classe::DefautDuLogiciel))?
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
@@ -640,7 +641,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 tranches
                     .iter()
                     .find(|x| x.jusqu_a.is_none_or(|j| eff <= j))
-                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches"))?
+                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::DefautDuLogiciel))?
                     .taux,
             ),
             None if masse_permanents.est_nul() => None,
