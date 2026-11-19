@@ -114,45 +114,6 @@ pub struct ContratAtteste {
     pub fichier: Option<NomDeFichier>,
     pub page: Option<u64>,
     pub importe_le: Option<Jour>,
-    /// La piece que la compagnie a choisi de garder, quand ce bulletin, repris avant la DSN, dit le contrat autrement
-    /// qu'elle (`la_dsn_prime`) ; `None` : elle n'a rien choisi.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gardee: Option<PieceGardee>,
-}
-
-/// LA PIECE QUE LA COMPAGNIE GARDE quand un bulletin repris avant la DSN et la DSN disent autrement le meme contrat (ses
-/// dates, son activite, sa nature) : `routes::importation::desaccord` (Léandre, 19/11/2026).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PieceGardee {
-    Bulletin,
-    Dsn,
-}
-
-/// LA DSN PRIME-T-ELLE sur ce que la piece du contrat (`contrat`) en atteste, pour la paie `paie` ? (Léandre,
-/// 19/11/2026 : « Il y a déjà une DSN et on rajoute une AEM par-dessus : c'est la DSN qui prime. Pareil si on ajoute un
-/// bulletin par-dessus. Par contre, si on a déjà un bulletin et qu'on ajoute une DSN, […] c'est à l'utilisateur de
-/// trancher. ») Une paie qu'un bulletin seul declare n'est pas la DSN : non. Sinon oui, sauf pour le bulletin repris
-/// avant elle (`bulletin_avant_la_dsn`) : le choix de la compagnie (`ContratAtteste::gardee`), et tant qu'elle n'a rien
-/// choisi, ce qui etait la. La seule regle, que lisent les dates de l'engagement (`routes::importation::ecrite`), son
-/// activite (`activite_du_mois`) et sa nature (`nature_de`).
-pub fn la_dsn_prime(contrat: Option<&ContratAtteste>, paie: &PaieVersee) -> bool {
-    if paie.contrat.d_un_bulletin() {
-        return false;
-    }
-    match contrat {
-        None => true,
-        Some(c) => match c.gardee {
-            Some(g) => g == PieceGardee::Dsn,
-            None => !bulletin_avant_la_dsn(c, paie),
-        },
-    }
-}
-
-/// Le contrat qu'un bulletin atteste a-t-il ete repris avant la paie `paie` que la DSN declare (le jour de leur
-/// import) ?
-pub fn bulletin_avant_la_dsn(contrat: &ContratAtteste, paie: &PaieVersee) -> bool {
-    contrat.atteste_par == Attestation::Bulletin && !paie.contrat.d_un_bulletin() && matches!((contrat.importe_le, paie.importe_le), (Some(a), Some(b)) if a < b)
 }
 
 /// CE QUI RECONNAIT UNE PAIE VERSEE D'UN IMPORT A L'AUTRE, ET CE QUI L'A DECLAREE : le numero du contrat que la DSN
@@ -260,8 +221,8 @@ pub struct PaieVersee {
     /// « valorise par periode de paie » et « rattache a un et un seul contrat » ; lu par `declarations::dsn_lue::Mesures`,
     /// le rappel d'une periode anterieure hors du compte), tel qu'elle l'ecrit, au centieme pres : des heures en unites
     /// 10 (« heure ») et 35 (« heures intermittents du spectacle »), des jours en unite 12 (« journee »), des cachets en
-    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par ce
-    /// qu'il imprime (il fait foi sur ce qu'il imprime : `routes::importation::bulletins`). Ce que l'AEM, le bulletin ou
+    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois n'y remplit que ce que la DSN
+    /// tait (`routes::importation::ecrite`). Ce que l'AEM, le bulletin ou
     /// le certificat d'un contrat d'usage atteste est au contrat entier (`ContratAtteste`) ; lequel l'emporte pour un
     /// mois, `activite_du_mois` le dit.
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -564,13 +525,14 @@ impl ActiviteDuMois {
 
 /// L'ACTIVITE QUE LES PIECES DISENT D'UN CONTRAT REPRIS POUR `mois` (`ActiviteDuMois`), chacune vide quand elles la
 /// taisent. Une seule regle, pour ce qui lit l'activite d'un mois repris :
-/// - ce que la DSN declare pour le mois (`PaieVersee::heures`, `cachets`, `jours`), quand elle prime (`la_dsn_prime`) ;
+/// - ce que la DSN declare pour le mois (`PaieVersee::heures`, `cachets`, `jours`) : quand deux pieces disent le meme
+///   contrat, la DSN vaut (Léandre, 19/11/2026 : « ce qu'on déclare, c'est ce qui est valable pour France Travail ») ;
 ///   la piece du contrat n'y ajoute que ce qu'elle tait. La DSN valorise l'activite « par periode de paie »
 ///   (`bloc-S21.G00.53.txt`) ;
-/// - sinon, le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en
+/// - sans DSN, le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en
 ///   dit quelque chose : la piece du contrat compte le contrat entier, qui est ici celui du mois ;
-/// - sinon, la paie du mois (`paie`) : le bulletin du mois d'un permanent, ou ce que la DSN declare pour le mois. Un
-///   contrat qui deborde du mois ne dit pas ce qui est de ce mois : la paie le dit.
+/// - sinon, le bulletin du mois (`paie`). Un contrat qui deborde du mois ne dit pas ce qui est de ce mois : la paie le
+///   dit.
 ///
 /// `debut` et `fin` : les bornes de l'engagement qui porte le contrat (`Importe::activite_du_mois` les lit sur lui).
 pub fn activite_du_mois(
@@ -578,16 +540,10 @@ pub fn activite_du_mois(
 ) -> ActiviteDuMois {
     let tient = [debut, fin].iter().all(|j| j.is_some_and(|j| j.mois_civil() == mois));
     let atteste = contrat.filter(|_| tient).map(|c| ActiviteDuMois { cachets: c.cachets, heures: c.heures, jours: c.jours }).filter(|a| !a.est_muette());
-    if let Some(p) = paie.filter(|p| la_dsn_prime(contrat, p)) {
-        let declaree = ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours };
-        return match atteste {
-            Some(a) => ActiviteDuMois { cachets: declaree.cachets.or(a.cachets), heures: declaree.heures.or(a.heures), jours: declaree.jours.or(a.jours) },
-            None => declaree,
-        };
-    }
-    match (atteste, paie) {
-        (Some(a), _) => a,
-        (None, Some(p)) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
+    match (paie, atteste) {
+        (Some(p), Some(a)) if !p.contrat.d_un_bulletin() => ActiviteDuMois { cachets: p.cachets.or(a.cachets), heures: p.heures.or(a.heures), jours: p.jours.or(a.jours) },
+        (_, Some(a)) => a,
+        (Some(p), None) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
         (None, None) => ActiviteDuMois::default(),
     }
 }
@@ -613,23 +569,16 @@ impl ContratAtteste {
             fichier: None,
             page: None,
             importe_le: None,
-            gardee: None,
         }
     }
 }
 
 /// LA NATURE D'UN ENGAGEMENT IMPORTE, sur sa carte et ses pieces : celle qui a ete dite (la carte), sinon le contrat
-/// d'usage que la derniere DSN deposee qui declare une de ses paies declare (`PaieVersee::nature`) quand elle prime
-/// (`la_dsn_prime`), sinon celle que la piece du contrat atteste, sinon celle de la DSN ; `None` : elle reste a dire. La
-/// seule regle, que lisent `Importe::nature` et ce qui ecrit la nature dite (`routes::importation::nature`).
+/// d'usage que la derniere DSN deposee qui declare une de ses paies declare (`PaieVersee::nature` : la DSN vaut), sinon
+/// celle que la piece du contrat atteste ; `None` : elle reste a dire. La seule regle, que lisent `Importe::nature` et ce
+/// qui ecrit la nature dite (`routes::importation::nature`).
 pub fn nature_de(carte: &Carte, pieces: &Pieces) -> Option<NatureDeContrat> {
-    let contrat = pieces.contrat.as_ref();
-    let atteste = contrat.and_then(|c| c.nature);
-    carte.nature.or_else(|| match pieces.paies.values().rev().find_map(|p| p.nature.map(|n| (n, p))) {
-        Some((n, p)) if la_dsn_prime(contrat, p) => Some(n),
-        Some((n, _)) => atteste.or(Some(n)),
-        None => atteste,
-    })
+    carte.nature.or_else(|| pieces.paies.values().rev().find_map(|p| p.nature)).or_else(|| pieces.contrat.as_ref().and_then(|c| c.nature))
 }
 
 // ------------------------------------------------------------------ l'engagement importe
@@ -1390,23 +1339,22 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
 }
 
 /// CE QUE L'IMPORT COMPLETE DE LUI-MEME : ce que les pieces ne disaient pas et que la personne dit apres l'import (la
-/// nature d'un contrat de permanent, son numero, la piece qu'elle garde quand un bulletin et la DSN disent autrement le
-/// contrat : `ContratAtteste::gardee`). `completer` recoit chaque engagement importe NON VALIDE (sa carte et ses pieces,
-/// a changer) ; un engagement valide a ete dit et arrete : il ne se change plus ici. SEULES LA CARTE ET LA PIECE GARDEE
-/// CHANGENT : sa saisie d'ici (avenants, faits des mois), ses versions, son numero donne restent ; un engagement dont rien
-/// ne change ne se reecrit pas. Celui dont le mois d'entree change avec sa carte (`mois_d_entree`) passe dans le fichier
-/// de ce mois, a la place de son mois d'origine parmi les importes. Rend combien ont change.
-pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &mut Pieces) -> bool) -> R<usize> {
+/// nature d'un contrat de permanent, son numero). `completer` recoit chaque engagement importe NON VALIDE (sa carte, a
+/// changer, et ses pieces) ; un engagement valide a ete dit et arrete : sa carte ne se change plus ici. SEULE LA CARTE
+/// CHANGE : sa saisie d'ici (avenants, faits des mois), ses versions, son numero donne restent ; un engagement dont la
+/// carte ne change pas ne se reecrit pas. Celui dont le mois d'entree change avec sa carte (`mois_d_entree`) passe dans
+/// le fichier de ce mois, a la place de son mois d'origine parmi les importes. Rend combien ont change.
+pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -> bool) -> R<usize> {
     let tous = tous(racine)?;
     let dernier = tous.iter().flat_map(|i| i.paies().keys().copied()).max();
     // (fichier, rang, mois d'entree, l'engagement tel qu'il s'ecrit)
     let mut changes: Vec<(Mois, usize, Mois, stock::Ecrit)> = Vec::new();
     for i in tous.iter().filter(|i| !i.objet.est_valide()) {
-        let (mut carte, mut pieces) = (i.carte().clone(), i.pieces().clone());
-        if !completer(&mut carte, &mut pieces) || (carte == *i.carte() && pieces == *i.pieces()) {
+        let mut carte = i.carte().clone();
+        if !completer(&mut carte, i.pieces()) || carte == *i.carte() {
             continue;
         }
-        let mois = mois_d_entree(&carte, &pieces, dernier)?;
+        let mois = mois_d_entree(&carte, i.pieces(), dernier)?;
         let mut ecrit = (*i.objet.brut).clone();
         // Un numero que la carte recoit n'est plus celui que le moteur avait donne (`numero_pour`) : il se lit, il ne se
         // reforme pas (regle 4).
@@ -1414,7 +1362,6 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &mut Piece
             ecrit.numero_pour = None;
         }
         ecrit.saisie.carte = carte;
-        ecrit.importe = Some(pieces);
         changes.push((i.objet.fichier, i.objet.rang, mois, ecrit));
     }
     let mut fichiers: Vec<Mois> = changes.iter().flat_map(|(f, _, m, _)| [*f, *m]).collect();

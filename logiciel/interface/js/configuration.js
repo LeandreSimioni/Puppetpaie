@@ -450,7 +450,7 @@ function vueEtatImportation(e) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
-  return repris + vueIdentitesADire(e.identites) + vueDesaccords(e.desaccords) + vueNaturesADire(e.a_dire)
+  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e.a_dire)
     + (editeur ? `<h3>Ce qui attend l'éditeur</h3>${editeur}` : "");
 }
 
@@ -469,33 +469,15 @@ function vueIdentitesADire(identites) {
     </div>`).join("")}`;
 }
 
-/* UN BULLETIN DÉJÀ REPRIS ET LA DSN AJOUTÉE ENSUITE QUI DISENT AUTREMENT UN
-   CONTRAT (`import::desaccord`) : le moteur dit ce qui diffère (`dit`), la
-   page le montre avec ses deux gestes (garder le bulletin, garder la DSN),
-   dessinés depuis la fiche de leur route. */
-function vueDesaccords(liste) {
-  if (!liste.length) return "";
-  return `<h3>Bulletin ou DSN ?</h3>${liste.map((d, k) => `<div class="rang">
-      <div class="rang-infos"><b class="rang-nom">${echapper(d.nom)}</b>${echapper(d.dit)}</div>
-      <div class="rang-etat" data-desaccord="${k}">${boutonsDesGestes(d.gestes)}</div>
-    </div>`).join("")}`;
-}
-
-/* Les gestes des questions d'identité et des désaccords de `e`, dessinés
-   dans `cible` ; après la réponse, l'état se relit. */
+/* Les gestes des questions d'identité de `e`, dessinés dans `cible` ; après la réponse, l'état se relit. */
 function brancherIdentites(cible, e) {
-  const relire = async () => {
-    await relireEtat();
-    rafraichirReferentiels();
-    await rafraichirEtatImportation();
-  };
   cible.querySelectorAll("[data-identite]").forEach((b) => {
     const q = e.identites.questions[+b.dataset.identite];
-    brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, relire);
-  });
-  cible.querySelectorAll("[data-desaccord]").forEach((b) => {
-    const d = e.desaccords[+b.dataset.desaccord];
-    brancherLesGestes(b, d.gestes, { titre: d.nom, dit: d.dit }, relire);
+    brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, async () => {
+      await relireEtat();
+      rafraichirReferentiels();
+      await rafraichirEtatImportation();
+    });
   });
 }
 

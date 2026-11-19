@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), desaccords (ce qu'un bulletin repris et la DSN ajoutée ensuite disent autrement d'un contrat, et leurs gestes), guide, editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -108,21 +108,6 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 0,
         ecran: Ecran::Geste(Place::Import),
     },
-    Fiche {
-        route: Route::ImportationDesaccord,
-        geste: "Garder le bulletin ou la DSN quand ils disent autrement un contrat repris.",
-        charge: &[
-            SALARIE,
-            Champ { nom: "debut", libelle: Affiche::new("Début"), forme: Forme::Date, sens: "le début du contrat repris du bulletin", avance: false },
-            Champ { nom: "garder", libelle: Affiche::new("Pièce gardée"), forme: Forme::Texte, sens: "bulletin ou dsn", avance: false },
-        ],
-        exemple: r#"{"salarie":"BRIOCHE","debut":"2026-01-14","garder":"bulletin"}"#,
-        rend: "phrase",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié ou le début que la phrase nomme ; rien n'est écrit" }, FORME],
-        acte: Acte::Ecrit,
-        phrase: 0,
-        ecran: Ecran::Geste(Place::Import),
-    },
 ];
 
 /// Une route de ce module.
@@ -143,8 +128,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
         // La reponse a une question d'identite (`importation::identite`).
         Route::ImportationIdentite => en_json(crate::importation::identite::repondre(ctx, &charge.lire()?)?),
-        // La piece gardee quand un bulletin repris et la DSN ajoutee ensuite disent autrement un contrat.
-        Route::ImportationDesaccord => en_json(crate::importation::desaccord::trancher(ctx, &charge.lire()?)?),
         autre => Err(enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -842,7 +825,6 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
         attend_editeur,
         a_dire: crate::importation::nature::a_dire(ctx)?,
         identites: crate::importation::identite::en_attente(ctx)?,
-        desaccords: crate::importation::desaccord::en_attente(ctx)?,
         guide: import::guide::guide(),
         repris_dit,
         repris_titre,
@@ -871,9 +853,6 @@ struct EtatImportation {
     /// Les individus que les DSN reprises declarent et que l'import met de cote, le temps que la compagnie dise s'ils
     /// sont le salarie d'une fiche sans NIR (`importation::identite`).
     identites: crate::importation::identite::IdentitesEnAttente,
-    /// Les contrats qu'un bulletin repris et la DSN ajoutee ensuite disent autrement, chacun avec ses deux gestes
-    /// (`importation::desaccord`).
-    desaccords: Vec<crate::importation::desaccord::DesaccordADire>,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: import::guide::Guide,
     repris_dit: Option<String>,
