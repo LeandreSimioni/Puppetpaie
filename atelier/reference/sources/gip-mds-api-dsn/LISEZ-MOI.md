@@ -43,7 +43,12 @@ brut de ce que l'archive ne contient pas (la fiche 692, deux pages de net-entrep
   téléchargement ont une période de rétention de 3 mois par le SI DSN. Au-delà, les retours sont purgés et ne sont pas
   archivés par le SI DSN. »
 - §8.3 « Contraintes de polling » (p. 93-94) : l'intervalle entre deux recherches (en-tête `Expires`) et l'étendue
-  d'une plage (en-tête `Accept-Ranges`) ; 429 quand on ne les respecte pas (§9.1.1, p. 95).
+  d'une plage (en-tête `Accept-Ranges`) ; 429 quand on ne les respecte pas (§9.1.1, p. 95). Le relevé des retours
+  découpe sa plage selon l'`Accept-Ranges: minutes=<min>-<max>` de chaque réponse (`envois::transport::etendue_annoncee`,
+  v6.9 l. 5155-5164), sa première tranche d'une journée, l'étendue que §3.3.1 fixe à la consultation des dépôts
+  (« La plage de recherche est limitée à 24h », v6.9 l. 1393 : `envois::releve_retours::tranches`).
+- §9.1.5 « Codes HTTP » (v6.9 l. 5413-5416) : « 410 : Gone […] la ressource n'est plus disponible ». Un retour dont le
+  téléchargement rend 410 se note vu et chez l'éditeur (`compagnie::incidents::noter_retour_retire`).
 
 **La spécification du schéma des bilans (VT2.2, 18/11/2020).** Une déclaration d'un bilan porte son identification
 (rang, nature S20.G00.05.001, type .002, fraction .003, ordre .004, mois .005, id_annulation .006, SIREN, NIC du siège,

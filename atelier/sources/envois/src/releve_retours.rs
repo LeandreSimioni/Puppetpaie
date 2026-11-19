@@ -253,23 +253,26 @@ impl Client {
         Ok(crate::transport::appeler(url, self.jeton.as_ref())?)
     }
 
-    /// La consultation d'une plage.
-    fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
+    /// La consultation d'une plage : le corps et les en-tetes.
+    fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
         self.assurer_session()?;
         Ok(crate::transport::consulter(base, self.jeton.as_ref(), debut, fin)?)
     }
 
-    pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Annonce>, Panne> {
+    /// Les retours publies sur une plage, et l'etendue maximum d'une plage que le service annonce dans sa reponse
+    /// (`transport::etendue_annoncee`), s'il l'annonce.
+    pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<(Vec<Annonce>, Option<std::time::Duration>), Panne> {
         let base = self.adresses.retours.clone();
-        let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
+        let (brut, entetes) = self.consulter(&base, debut, Some(fin))?;
+        let etendue = crate::transport::etendue_annoncee(&entetes).map_err(de_lecture)?;
+        Ok((crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)?, etendue))
     }
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
     pub fn lister_depots(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Depot>, Panne> {
         let base = Url::lire(&self.adresses.retours.texte().replace("lister-retours-declarant", "lister-depots"))?;
-        let brut = self.consulter(&base, debut, Some(fin))?;
+        let (brut, _) = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
@@ -487,21 +490,29 @@ fn en_echec(p: Panne) -> Echec {
     p.en_echec()
 }
 
-/// Une journee de recherche : vingt-quatre heures.
+/// Une journee de recherche : vingt-quatre heures. La plage de la consultation des depots « est limitée à 24h » (guide de
+/// l'API DSN v6.9, § 3.3.1, `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`,
+/// l. 1393) ; celle des retours suit l'etendue que le service annonce (`transport::etendue_annoncee`) et ne prend la
+/// journee que pour sa premiere tranche.
 const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
 
-/// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
+/// La fin de la tranche qui commence a `t` : `etendue` plus loin, sans depasser `fin`.
+fn fin_de_tranche(t: Moment, fin: Moment, etendue: std::time::Duration) -> R<Moment> {
+    if fin.depuis(t).is_some_and(|d| d > etendue) {
+        t.plus_duree(etendue).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))
+    } else {
+        Ok(fin)
+    }
+}
+
+/// La plage de la consultation des depots, decoupee par journee (`UNE_JOURNEE`).
 pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     // La requete ecrit ses bornes a la seconde : une fraction ne fait pas une tranche de plus.
     let (debut, fin) = (debut.a_la_seconde(), fin.a_la_seconde());
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        let suivant = if fin.depuis(t).is_some_and(|d| d > UNE_JOURNEE) {
-            t.plus_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
-        } else {
-            fin
-        };
+        let suivant = fin_de_tranche(t, fin, UNE_JOURNEE)?;
         v.push((t, suivant));
         t = suivant;
     }
@@ -673,11 +684,21 @@ pub fn relever_retours(
         Err(p) => return Err(en_echec(p)),
     }
     let connus = deja_vus(ctx, canal)?;
+    // LA PLAGE SE DEMANDE PAR TRANCHES DE L'ETENDUE QUE LE SERVICE ANNONCE dans chaque reponse (guide de l'API DSN v6.9,
+    // § 8.3.2 : `transport::etendue_annoncee`) ; la premiere fait une journee (`UNE_JOURNEE`). La requete ecrit ses bornes
+    // a la seconde : une fraction ne fait pas une tranche de plus.
     // UN 404 SUR UNE TRANCHE VEUT DIRE << RIEN SUR CETTE TRANCHE >> ; tout autre code arrete : un 401 ne
     // s'ameliorera pas au jour suivant.
-    for (t0, t1) in tranches(debut, fin)? {
+    let (debut, fin) = (debut.a_la_seconde(), fin.a_la_seconde());
+    let mut etendue = UNE_JOURNEE;
+    let mut t0 = debut;
+    while t0 < fin {
+        let t1 = fin_de_tranche(t0, fin, etendue)?;
         match client.lister_retours(t0, t1) {
-            Ok(trouves) => {
+            Ok((trouves, annoncee)) => {
+                if let Some(e) = annoncee {
+                    etendue = e;
+                }
                 for r in trouves.into_iter().filter(|r| nature.is_none_or(|n| r.nature_retour == n)) {
                     if !est_connu(&connus, &r) {
                         releve.nouveaux.push(r.clone());
@@ -685,26 +706,39 @@ pub fn relever_retours(
                     releve.trouves.push(r);
                 }
             }
+            Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::NOT_FOUND) => {}
             Err(p) if p.est_api() => {
-                if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
-                    continue;
-                }
                 releve.plateforme_non_lue.push(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
         }
+        t0 = t1;
     }
     // La liste n'a pas pu se lire, et rien n'est trouve : il n'y a rien a telecharger ni a ranger.
     if !releve.plateforme_non_lue.is_empty() && releve.trouves.is_empty() {
         return Ok(releve);
     }
 
-    // UN RETOUR RATE N'EST PAS UN RETOUR VU : un echec reste NEUF, et se retente au releve suivant.
+    // UN RETOUR RATE N'EST PAS UN RETOUR VU : un echec reste NEUF, et se retente au releve suivant. Sauf un retour que
+    // l'organisme a retire : HTTP 410, « la ressource n'est plus disponible » (guide de l'API DSN v6.9, § 9.1.5,
+    // l. 5413-5416) ; il ne reviendra pas, il se note vu, et l'editeur le sait (`Suites::retires`).
+    // UN HOTE QUI NE REPOND PAS (aucun statut HTTP) n'est plus appele dans ce releve : les autres retours qu'il sert
+    // restent neufs, et se tentent au releve suivant ; un bilan parmi eux n'est pas lu, et cela se dit comme pour le
+    // premier.
     let mut rates: Vec<Annonce> = Vec::new();
+    let mut muets: Vec<(String, String)> = Vec::new();
     let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
     for r in a_telecharger {
         let Some(url) = r.url.clone() else { continue };
+        let hote = socle::garde_reseau::hote_de(url.texte());
+        if let Some((_, phrase)) = muets.iter().find(|(h, _)| *h == hote) {
+            if r.nature_retour == NatureDuRetour::CertificatDeConformite && !releve.plateforme_non_lue.contains(phrase) {
+                releve.plateforme_non_lue.push(phrase.clone());
+            }
+            rates.push(r);
+            continue;
+        }
         match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
@@ -729,8 +763,12 @@ pub fn relever_retours(
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
+            Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::GONE) => suites.retires.push((r, p.echec)),
             Err(p) if p.est_api() => {
                 let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
+                if p.code.is_none() {
+                    muets.push((hote, phrase.clone()));
+                }
                 match r.nature_retour {
                     NatureDuRetour::CertificatDeConformite => releve.plateforme_non_lue.push(phrase),
                     _ => suites.dit.incidents.push(phrase),
@@ -833,6 +871,8 @@ pub fn relever_retours_dpae(
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), CanalDesRetours::Dpae)?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
+            // Un retour retire (HTTP 410) ne reviendra pas : l'editeur le sait, comme par la plage.
+            Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::GONE) => suites.retires.push((x, p.echec)),
             Err(p) if p.est_api() => suites.dit.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }

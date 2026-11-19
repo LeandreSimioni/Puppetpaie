@@ -12,7 +12,8 @@ use socle::echec::R;
 /// Fait les suites d'un envoi, et rend tout ce qu'il a a dire : ce que l'envoi en dit deja (`Suites::dit`), puis ce que
 /// les suites laissent a faire ou n'ont pas pu faire. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit
 /// pas est un refus. Une piece de retour que son lecteur ne lit pas, quelle que soit sa nature, se note chez l'editeur
-/// (`compagnie::incidents::noter_retour_illisible`) ; les autres se rangent.
+/// (`compagnie::incidents::noter_retour_illisible`), comme un retour que l'organisme a retire
+/// (`compagnie::incidents::noter_retour_retire`) ; les autres se rangent.
 pub fn faire(ctx: &Contexte, s: Suites) -> R<ADire> {
     let mut faites = s.dit;
     let mut illisibles = s.illisibles;
@@ -52,6 +53,11 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<ADire> {
                 illisibles.extend(pieces);
             }
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
+        }
+    }
+    for (retour, echec) in &s.retires {
+        if let Err(n) = compagnie::incidents::noter_retour_retire(&ctx.racine, retour, echec) {
+            faites.incidents.push(format!("Retour de nature {} retiré par l'organisme : l'incident ne s'est pas noté au journal des incidents : {}", retour.nature_retour, n.phrase));
         }
     }
     for p in &illisibles {

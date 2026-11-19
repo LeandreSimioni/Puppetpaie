@@ -637,14 +637,35 @@ pub fn appeler(url: &Url, jeton: Option<&socle::secret::Secret>) -> Result<(Vec<
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
-/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
-pub fn consulter(base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
+/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris). Rend le
+/// corps et les en-tetes (l'etendue que le service annonce : `etendue_annoncee`).
+pub fn consulter(base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let mut suite = horodatage(debut);
     if let Some(fin) = fin {
         suite.push('/');
         suite.push_str(&horodatage(fin));
     }
-    appeler(&base.joindre(&suite), jeton).map(|(corps, _)| corps)
+    appeler(&base.joindre(&suite), jeton)
+}
+
+/// L'ETENDUE MAXIMUM D'UNE PLAGE DE RECHERCHE que le service annonce. Guide d'implementation de l'API DSN v6.9, § 8.3.2
+/// « Etendue de la plage de recherche » (`atelier/reference/sources/gip-mds-api-dsn/
+/// gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`, l. 5155-5164) : « Avec chaque réponse des services de
+/// recherche par plage horaire, l'en-tête HTTP suivant est renseigné dans la réponse : Accept-Ranges: minutes=0-60, ou 0
+/// et 60 sont l'étendue minimum et maximum, en minutes, de la plage de recherche. » Aucune quand la reponse n'a pas
+/// d'en-tete `Accept-Ranges` en minutes (un `Accept-Ranges` d'une autre unite, `bytes`, est celui de HTTP et ne dit rien de
+/// la plage) ; un en-tete en minutes qui ne se lit pas, ou dont le maximum est nul, se refuse.
+pub fn etendue_annoncee(e: &Entetes) -> Result<Option<Duration>, Echec> {
+    let Some(v) = entete(e, "Accept-Ranges") else { return Ok(None) };
+    let Some(bornes) = v.trim().strip_prefix("minutes=") else { return Ok(None) };
+    let illisible = || socle::echec::erreur(Classe::Illisible, format!("L'en-tête Accept-Ranges de la consultation ne se lit pas : « {} » (le guide de l'API DSN, § 8.3.2, l'écrit minutes=<minimum>-<maximum>).", v));
+    let (minimum, maximum) = bornes.split_once('-').ok_or_else(illisible)?;
+    minimum.trim().parse::<u64>().map_err(|_| illisible())?;
+    let maximum = maximum.trim().parse::<u64>().map_err(|_| illisible())?;
+    if maximum == 0 {
+        return Err(illisible());
+    }
+    Ok(Some(Duration::from_secs(maximum.checked_mul(60).ok_or_else(illisible)?)))
 }
 
 /// LE DECLARANT QUI S'AUTHENTIFIE : le SIRET, le nom et le prenom du compte ouvert pour le service (vides : la fiche ne
