@@ -494,10 +494,11 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
 fn piece_du_retour(racine: &Path, canal: CanalDesRetours, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
-    let mut dossier = racine.join(envois::retours::RETOURS);
-    if let Some(d) = canal.dossier() {
-        dossier = dossier.join(d);
-    }
+    piece_dans(canal.chemin(racine), flux, nature, publication)
+}
+
+/// La piece d'un retour dans `dossier` (celui de son canal, ou celui de ses illisibles), comme `piece_du_retour`.
+fn piece_dans(dossier: PathBuf, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
     let flux: String = match flux {
         Some(f) => f.texte().chars().take(24).collect(),
         None => "sansflux".into(),
@@ -971,10 +972,12 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
     l
 }
 
-/// La piece archivee d'un retour : aucune, illisible (le disque le dit), ou lue.
+/// La piece archivee d'un retour : aucune, illisible (le disque le dit), mise a part parce que son lecteur ne la lit
+/// pas (`retours::PieceIllisible`, elle ne se relit pas : ce qu'on en dit, et son chemin), ou lue.
 enum PieceDuRetour {
     Aucune,
     Illisible(String),
+    MiseAPart(PathBuf, String),
     Lue(PathBuf, Lecture),
 }
 
@@ -993,8 +996,16 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         Some(l) => l.to_string(),
         None => nature.libelle_dit(),
     };
-    let piece = match (flux, publication) {
-        (None, None) => PieceDuRetour::Aucune,
+    let mise_a_part = match (flux, publication) {
+        (None, None) => None,
+        _ => piece_dans(canal.illisibles(racine), flux, nature, publication)?,
+    };
+    let piece = match (flux, publication, mise_a_part) {
+        (None, None, _) => PieceDuRetour::Aucune,
+        (_, _, Some(p)) => {
+            let dit = retours::recu_illisible(nature, canal, &NomDeFichier::du(&p)?);
+            PieceDuRetour::MiseAPart(p, dit)
+        }
         _ => match piece_du_retour(racine, canal, flux, nature, publication) {
             Ok(None) => PieceDuRetour::Aucune,
             Ok(Some(p)) => match std::fs::read(&p) {
@@ -1033,6 +1044,11 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         PieceDuRetour::Lue(p, l) => {
             phrases.extend(l.phrases);
             (Some(l.titre), l.anomalies, l.traduite, l.organisme, Some(p))
+        }
+        // Mise a part : ce qu'on n'en sait pas, et ou elle est ; elle s'ouvre telle quelle.
+        PieceDuRetour::MiseAPart(p, dit) => {
+            phrases.push(dit);
+            (None, Vec::new(), false, None, Some(p))
         }
         sans => {
             // Sans piece lue : ce que le releve en a lu quand il l'a rattachee (`journal.rattacher_retours`), et rien d'autre.

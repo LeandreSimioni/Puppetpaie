@@ -962,7 +962,8 @@ un libellé, chacun sa forme.
   dit (la catégorie de l'anomalie, « pris en compte » ou « attendu »).
 - **canal des retours** : le canal d'un retour d'organisme (règle 5) : la DSN sur net-entreprises, la DPAE sur l'Urssaf,
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
-  fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
+  fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/` ; `illisibles()` : celles que leur lecteur ne lit
+  pas, mises à part une fois (`illisibles/` sous le dossier du canal), qu'aucun relevé ne relit. Que portent la relève, l'archive d'une pièce, le
   journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
 - **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
   plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :

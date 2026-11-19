@@ -87,7 +87,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         let lus = match envois::retours::taux_pas_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxPas, chemin, e)?);
+                illisibles.push(envois::retours::PieceIllisible::mettre_de_cote(&ctx.racine, envois::releve_retours::CanalDesRetours::Dsn, envois::retours::NatureDuRetour::TauxPas, chemin, e)?);
                 continue;
             }
         };
@@ -142,7 +142,7 @@ fn appliquer_taux_atmp(
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxAtMp, chemin, e)?);
+                illisibles.push(envois::retours::PieceIllisible::mettre_de_cote(&ctx.racine, envois::releve_retours::CanalDesRetours::Dsn, envois::retours::NatureDuRetour::TauxAtMp, chemin, e)?);
                 a_faire.push(format!("{} : rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source));
                 continue;
             }
@@ -182,7 +182,7 @@ fn appliquer_taux_atmp(
 /// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : ce que la compagnie lit
 /// (`PieceIllisible::phrase`), l'incident chez l'editeur (`compagnie::incidents::noter_retour_illisible`), et, s'il ne
 /// s'est pas note, ce qui l'en a empeche.
-fn dire_et_noter(ctx: &Contexte, p: &envois::retours::PieceIllisible) -> Vec<String> {
+pub(crate) fn dire_et_noter(ctx: &Contexte, p: &envois::retours::PieceIllisible) -> Vec<String> {
     let mut dit = vec![p.phrase()];
     if let Err(n) = compagnie::incidents::noter_retour_illisible(&ctx.racine, p.nature, p.archive.texte(), &p.echec) {
         dit.push(format!("Archive {} : l'incident ne s'est pas noté au journal des incidents : {}", p.archive, n.phrase));

@@ -95,6 +95,9 @@ pub struct EtatDsnDuMois {
     pub refusee: bool,
     pub anomalies: Vec<String>,
     pub aer_recue: bool,
+    /// Ni passee ni refusee, parce qu'un retour qui en decide (l'accuse 10, le bilan 11) est arrive et ne se lit pas :
+    /// ce que l'etat en dit (`RetourOrganisme::dit_illisible`).
+    pub illisible: Option<String>,
 }
 
 pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&Nic>, principal: Option<&Nic>) -> Option<EtatDsnDuMois> {
@@ -112,10 +115,12 @@ pub fn etat_dsn_du_mois(lignes: &[Ligne], mois: Mois, nic: Option<&Nic>, princip
     }
     // UN DEPOT REPRIS DES RETOURS (`reprise_journal`) : sa piece EST le bilan de la plate-forme, et la ligne
     // en garde le verdict (`detail.etat_declaration`) -- tant qu'aucun bilan n'est range en face, c'est lui qui dit.
-    let sans_bilan = !e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
+    let sans_bilan = !e.retours.iter().any(|r| r.de_nature(NatureDuRetour::CertificatDeConformite));
     let repris_ok = sans_bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ok);
     let refusee = refuse_par_un_retour(l);
-    Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee: (bilan_ok || repris_ok) && !refusee, refusee, anomalies, aer_recue: aer })
+    let passee = (bilan_ok || repris_ok) && !refusee;
+    let illisible = if passee || refusee { None } else { e.retours.iter().find_map(|r| r.dit_illisible(crate::releve_retours::CanalDesRetours::Dsn)) };
+    Some(EtatDsnDuMois { quand: e.quand.clone(), fichier: e.fichier.clone(), flux: e.flux.clone(), passee, refusee, anomalies, aer_recue: aer, illisible })
 }
 
 /// Deux graphies du meme nom (la cle d'une fiche, le nom d'un certificat) : leurs lettres et chiffres, en capitales.
@@ -130,12 +135,12 @@ pub fn lettre_ou_chiffre(c: char) -> bool {
     socle::texte::dans_les_plages(ALNUM, c)
 }
 
-/// Ce que les retours d'une DPAE partie en disent : `(passee, refusee)`. Passee : le certificat (nature 41) ou un bilan OK ;
-/// refusee : un retour KO, sans certificat ni bilan OK.
+/// Ce que les retours d'une DPAE partie en disent : `(passee, refusee)`. Passee : le certificat (nature 41) lu, ou un bilan
+/// OK ; refusee : un retour KO, sans certificat ni bilan OK. Un certificat qui ne se lit pas ne dit ni l'un ni l'autre.
 fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
     let (mut passee, mut ko) = (false, false);
     for r in retours {
-        passee |= r.nature_retour == NatureDuRetour::CertificatDpae || (r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok));
+        passee |= r.de_nature(NatureDuRetour::CertificatDpae) || (r.nature_retour == NatureDuRetour::CertificatDeConformite && r.verdict() == Some(Verdict::Ok));
         ko |= r.ko();
     }
     (passee, ko && !passee)
@@ -154,6 +159,9 @@ pub struct EtatEmbauche {
     pub retours: Vec<RetourOrganisme>,
     /// Ce que le certificat dit de sa personne ; aucun sans certificat.
     pub certifiee: Option<declarations::dpae::EtatDeLaDpae>,
+    /// Ni passee ni refusee, parce que le certificat (ou un bilan) est arrive et ne se lit pas : ce que l'etat en dit
+    /// (`RetourOrganisme::dit_illisible`).
+    pub illisible: Option<String>,
 }
 
 /// Ce que chaque DPAE reelle partie est devenue, par (salarie, numero du contrat).
@@ -162,8 +170,9 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
     for l in lignes {
         let Some(e) = l.dpae().filter(|e| e.mode == Mode::Reel && e.accepte) else { continue };
         let (passee, refusee) = verdict_dpae(&e.retours);
+        let illisible = if passee || refusee { None } else { e.retours.iter().find_map(|r| r.dit_illisible(crate::releve_retours::CanalDesRetours::Dpae)) };
         let anomalies: Vec<String> = e.retours.iter().filter(|r| r.ko()).flat_map(|r| r.anomalies().into_iter().flatten().cloned()).collect();
-        let certifiees: Vec<&PersonneCertifiee> = e.retours.iter().filter(|r| r.nature_retour == NatureDuRetour::CertificatDpae).flat_map(|r| r.personnes().into_iter().flatten()).collect();
+        let certifiees: Vec<&PersonneCertifiee> = e.retours.iter().filter(|r| r.de_nature(NatureDuRetour::CertificatDpae)).flat_map(|r| r.personnes().into_iter().flatten()).collect();
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
@@ -179,6 +188,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
                     anomalies: anomalies.clone(),
                     retours: e.retours.clone(),
                     certifiee: cert.map(|c| c.etat.clone()),
+                    illisible: illisible.clone(),
                 },
             );
         }
@@ -564,17 +574,17 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
         Ligne::DossierSalarie(_) => format!("{} — pas encore de retour", prefixe),
         Ligne::FicheDemande(e) if e.retours.is_empty() => format!("{} — pas encore de retour", prefixe),
         Ligne::FicheDemande(_) => format!("{} — retour reçu", prefixe),
-        Ligne::Dsn(e) => resume_des_retours(&prefixe, &le, &e.retours),
-        Ligne::Dpae(e) => resume_des_retours(&prefixe, &le, &e.retours),
+        Ligne::Dsn(e) => resume_des_retours(&prefixe, &le, &e.retours, crate::releve_retours::CanalDesRetours::Dsn),
+        Ligne::Dpae(e) => resume_des_retours(&prefixe, &le, &e.retours, crate::releve_retours::CanalDesRetours::Dpae),
     }
 }
 
 /// Ce que les comptes rendus d'une DSN ou d'une DPAE disent, a la suite de `prefixe` (`le_dit` : quand elle est partie,
 /// en mots).
-fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) -> String {
+fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme], canal: crate::releve_retours::CanalDesRetours) -> String {
     let Some(dernier) = retours.last() else { return format!("{} — pas encore de retour", prefixe) };
     let refus: Vec<&RetourOrganisme> = retours.iter().filter(|r| r.ko()).collect();
-    let certificat = retours.iter().rev().find(|r| r.nature_retour == NatureDuRetour::CertificatDpae);
+    let certificat = retours.iter().rev().find(|r| r.de_nature(NatureDuRetour::CertificatDpae));
     if !refus.is_empty() && certificat.is_none() {
         let mut motifs: Vec<&str> = Vec::new();
         for a in refus.iter().flat_map(|r| r.anomalies().into_iter().flatten()) {
@@ -608,6 +618,10 @@ fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) 
         let suite = if apres > 0 { format!(" ; {} compte{}-rendu{} d'organismes reçu{}", apres, pluriel(apres), pluriel(apres), pluriel(apres)) } else { String::new() };
         return format!("{} — bilan OK, aucune anomalie{}", prefixe, suite);
     }
+    // Un retour qui en aurait decide est arrive, et ne se lit pas : ni attendu, ni accepte.
+    if let Some(dit) = retours.iter().find_map(|r| r.dit_illisible(canal)) {
+        return format!("{} — {}", prefixe, dit);
+    }
     // Le retour se dit par son libelle, sinon sa nature.
     let choix = match dernier.libelle.as_str() {
         "" => dernier.nature_retour.code(),
@@ -630,7 +644,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
             if e.retours.iter().any(RetourOrganisme::ko) {
                 return true;
             }
-            let bilan = e.retours.iter().any(|r| r.nature_retour == NatureDuRetour::CertificatDeConformite);
+            let bilan = e.retours.iter().any(|r| r.de_nature(NatureDuRetour::CertificatDeConformite));
             !bilan && e.detail.reconstruit && e.detail.etat_declaration == Some(Verdict::Ko)
         }
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
@@ -1030,7 +1044,12 @@ pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
 /// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
 /// `sansflux` quand le retour ne dit pas son flux (`releve_retours::archiver_retour`).
 fn archive_du_retour(racine: &Path, r: &Annonce, quoi: Acte) -> R<Option<PathBuf>> {
-    let dossier = crate::releve_retours::CanalDesRetours::de_l_acte(quoi).chemin(racine);
+    archive_dans(&crate::releve_retours::CanalDesRetours::de_l_acte(quoi).chemin(racine), r)
+}
+
+/// La piece du retour `r` dans `dossier`, par son nom.
+fn archive_dans(dossier: &Path, r: &Annonce) -> R<Option<PathBuf>> {
+    let dossier = dossier.to_path_buf();
     if !dossier.is_dir() {
         return Ok(None);
     }
@@ -1096,27 +1115,49 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     Ok(Some(VerdictDeLaPiece { verdict: if vus.is_empty() { Verdict::Ok } else { Verdict::Ko }, anomalies: vus, dpae: Some(personnes) }))
 }
 
+/// Ce que la piece d'un retour en dit (`verdict_du_retour`).
+enum LectureDeLaPiece {
+    /// Lue : son verdict, s'il y en a un.
+    Lue(Option<VerdictDeLaPiece>),
+    /// Elle ne se lit pas : son archive, mise a part, et la piece si elle vient de l'etre (a dire et a noter, une fois).
+    Illisible(NomDeFichier, Option<retours::PieceIllisible>),
+}
+
 /// Ce que la piece du retour `r` d'un envoi `quoi` en dit : le bilan (nature 10 ou 11) ou le certificat d'une DPAE
-/// (nature 41) ; rien pour une autre nature, ou une piece absente. Une piece que son lecteur ne lit pas se met de cote
-/// (`PieceIllisible`, l'archive que `releve_retours::archiver` a posee avant le rattachement) ; le disque remonte.
-fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Result<Option<VerdictDeLaPiece>, retours::PieceIllisible>> {
+/// (nature 41) ; rien pour une autre nature, ou une piece absente. Une piece que son lecteur ne lit pas se met a part
+/// (`PieceIllisible::mettre_de_cote`, l'archive que `releve_retours::archiver` a posee avant le rattachement) ; une piece
+/// deja mise a part ne se relit pas. Le disque remonte.
+fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<LectureDeLaPiece> {
     let nature = r.nature_retour;
     if !matches!(nature, NatureDuRetour::AccuseDEnregistrement | NatureDuRetour::CertificatDeConformite) && !(quoi == Acte::Dpae && nature == NatureDuRetour::CertificatDpae) {
-        return Ok(Ok(None));
+        return Ok(LectureDeLaPiece::Lue(None));
     }
-    let octets = match contenu {
-        Some(c) => c.to_vec(),
-        None => match archive_du_retour(racine, r, quoi)? {
-            None => return Ok(Ok(None)),
-            Some(f) => lire_archive(&f)?,
-        },
+    let canal = crate::releve_retours::CanalDesRetours::de_l_acte(quoi);
+    let mise_a_part = || -> R<Option<NomDeFichier>> { archive_dans(&canal.illisibles(racine), r)?.map(|f| NomDeFichier::du(&f)).transpose() };
+    let archive = archive_dans(&canal.chemin(racine), r)?;
+    let octets = match (contenu, &archive) {
+        (Some(c), _) => c.to_vec(),
+        (None, Some(f)) => lire_archive(f)?,
+        (None, None) => {
+            return Ok(match mise_a_part()? {
+                Some(a) => LectureDeLaPiece::Illisible(a, None),
+                None => LectureDeLaPiece::Lue(None),
+            })
+        }
     };
     match lire_le_verdict(nature, &octets) {
-        Ok(v) => Ok(Ok(v)),
-        Err(e) => {
-            let archive = archive_du_retour(racine, r, quoi)?.ok_or_else(|| socle::echec::refus(format!("Le retour de nature {} lu n'est pas archivé : {}", nature, e.phrase)))?;
-            Ok(Err(retours::PieceIllisible::de(nature, &archive, e)?))
-        }
+        Ok(v) => Ok(LectureDeLaPiece::Lue(v)),
+        Err(e) => match archive {
+            Some(f) => {
+                let p = retours::PieceIllisible::mettre_de_cote(racine, canal, nature, &f, e)?;
+                Ok(LectureDeLaPiece::Illisible(p.archive.clone(), Some(p)))
+            }
+            // Mise a part plus tot dans le meme geste (le bilan lu a son telechargement, `releve_retours`).
+            None => match mise_a_part()? {
+                Some(a) => Ok(LectureDeLaPiece::Illisible(a, None)),
+                None => Err(socle::echec::refus(format!("Le retour de nature {} lu n'est pas archivé : {}", nature, e.phrase))),
+            },
+        },
     }
 }
 
@@ -1223,8 +1264,9 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
 
 /// Le nombre ajoute ; les incidents a noter (dans
 /// l'ordre) s'ajoutent a `incidents`, que l'appelant ecrit dans le journal des
-/// incidents, meme quand le rattachement s'arrete sur une erreur. Un retour dont la piece ne se lit pas se range sans
-/// verdict (un rattachement suivant le completera), et sa piece va dans `illisibles` : les autres se rangent.
+/// incidents, meme quand le rattachement s'arrete sur une erreur. Un retour dont la piece ne se lit pas se range
+/// illisible (`RetourOrganisme::illisible`), sa piece mise a part et, la premiere fois, dans `illisibles` : les autres se
+/// rangent.
 fn rattacher_retours(
     racine: &Path,
     retours: &[Annonce],
@@ -1251,39 +1293,62 @@ fn rattacher_retours(
         };
         for &li in siennes {
             let quoi = lignes[li].acte();
-            let verdict = match verdict_du_retour(racine, r, quoi, contenus.get(&cle_du_contenu(r)).map(Vec::as_slice))? {
-                Ok(v) => v,
-                Err(piece) => {
-                    if !illisibles.iter().any(|x| x.archive == piece.archive) {
-                        illisibles.push(piece);
-                    }
-                    None
-                }
-            };
             let ligne = lignes[li].clone();
             let connus = match &mut lignes[li] {
                 Ligne::Dsn(e) => &mut e.retours,
                 Ligne::Dpae(e) => &mut e.retours,
                 _ => continue,
             };
-            let neuf = RetourOrganisme { nature_retour: r.nature_retour, verdict: None, anomalies: None, dpae: None, libelle: r.nature_retour.libelle_du_canal(quoi), statut: r.statut.clone(), publication: r.publication.clone() };
-            if let Some(x) = connus.iter_mut().find(|x| x.meme(&neuf)) {
-                if let Some(v) = verdict.filter(|_| x.verdict.is_none()) {
-                    x.poser(v.clone());
-                    rangements.push((li, Rangement::Complement { nature_retour: x.nature_retour, publication: x.publication.clone(), verdict: v.clone() }));
-                    ajoutes += 1;
-                    incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
-                }
+            let neuf = RetourOrganisme {
+                nature_retour: r.nature_retour,
+                verdict: None,
+                anomalies: None,
+                dpae: None,
+                libelle: r.nature_retour.libelle_du_canal(quoi),
+                statut: r.statut.clone(),
+                publication: r.publication.clone(),
+                illisible: None,
+            };
+            let deja = connus.iter().position(|x| x.meme(&neuf));
+            // Un retour range dont la piece a dit son verdict, ou ne se lit pas, ne se relit pas.
+            if deja.is_some_and(|k| connus[k].verdict.is_some() || connus[k].illisible.is_some()) {
                 continue;
             }
-            let mut neuf = neuf;
-            if let Some(v) = verdict {
-                incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
-                neuf.poser(v);
+            let (verdict, mise_a_part) = match verdict_du_retour(racine, r, quoi, contenus.get(&cle_du_contenu(r)).map(Vec::as_slice))? {
+                LectureDeLaPiece::Lue(v) => (v, None),
+                LectureDeLaPiece::Illisible(archive, vue) => {
+                    if let Some(piece) = vue.filter(|p| !illisibles.iter().any(|x| x.archive == p.archive)) {
+                        illisibles.push(piece);
+                    }
+                    (None, Some(archive))
+                }
+            };
+            match deja {
+                Some(k) => {
+                    let x = &mut connus[k];
+                    if let Some(v) = verdict {
+                        x.poser(v.clone());
+                        rangements.push((li, Rangement::Complement { nature_retour: x.nature_retour, publication: x.publication.clone(), verdict: v.clone() }));
+                        ajoutes += 1;
+                        incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
+                    } else if let Some(archive) = mise_a_part {
+                        x.illisible = Some(archive.clone());
+                        rangements.push((li, Rangement::Illisible { nature_retour: x.nature_retour, publication: x.publication.clone(), archive }));
+                        ajoutes += 1;
+                    }
+                }
+                None => {
+                    let mut neuf = neuf;
+                    if let Some(v) = verdict {
+                        incidents.extend(incident(racine, &ligne, r, &v, contenus)?);
+                        neuf.poser(v);
+                    }
+                    neuf.illisible = mise_a_part;
+                    connus.push(neuf.clone());
+                    rangements.push((li, Rangement::Retour(neuf)));
+                    ajoutes += 1;
+                }
             }
-            connus.push(neuf.clone());
-            rangements.push((li, Rangement::Retour(neuf)));
-            ajoutes += 1;
         }
     }
     crate::journal::ranger(racine, rangements).map_err(|m| m.reclasser(socle::echec::Classe::Disque))?;
@@ -1448,7 +1513,7 @@ mod tests {
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, &ea).unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, &eb).is_none());
-        let r = |verdict: Verdict| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        let r = |verdict: Verdict| RetourOrganisme { nature_retour: NatureDuRetour::CertificatDeConformite, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None, illisible: None };
         assert_eq!(compte_rendu_du_depot(&[r(Verdict::Ok), r(Verdict::Ko)]), CompteRenduDuTest::Ko);
         assert_eq!(compte_rendu_du_depot(&[]), CompteRenduDuTest::Attendu);
     }

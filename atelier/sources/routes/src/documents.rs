@@ -285,7 +285,8 @@ struct AttestationsArchivees {
 
 /// (periode, qui) -> les attestations du DERNIER retour qui le porte, lues
 /// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode. Une archive que
-/// `retours::aer_spectacle` ne lit pas se met de cote, les autres se lisent ; le disque remonte.
+/// `retours::aer_spectacle` ne lit pas se met a part (`PieceIllisible::mettre_de_cote`), les autres se lisent ; le
+/// disque remonte.
 fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<&[std::path::PathBuf]>) -> R<AttestationsArchivees> {
     let dossier = ctx.racine.join(envois::retours::RETOURS);
     // `fichiers` : seulement ces archives (la releve range ce qu'elle vient de telecharger).
@@ -304,7 +305,13 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
         let liste = match envois::retours::aer_spectacle(&octets) {
             Ok(l) => l,
             Err(e) => {
-                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::AerSpectacle, &chemin, e)?);
+                illisibles.push(envois::retours::PieceIllisible::mettre_de_cote(
+                    &ctx.racine,
+                    envois::releve_retours::CanalDesRetours::Dsn,
+                    envois::retours::NatureDuRetour::AerSpectacle,
+                    &chemin,
+                    e,
+                )?);
                 continue;
             }
         };
@@ -345,6 +352,41 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<(Vec<String>, Vec<envois::ret
     }
     out.sort();
     Ok((out, archivees.illisibles))
+}
+
+/// CE QU'ON NE SAIT PAS DE L'AER : France Travail a renvoye, pour la DSN du mois, une archive d'attestations (nature 46)
+/// qui ne se lit pas (mise a part, `PieceIllisible::mettre_de_cote`). Les salaries a qui une AER est due (`dues_a_part`),
+/// qui n'ont pas la leur dans les sorties du mois et qu'aucune archive lue ne nomme (`manquent`), l'ont peut-etre
+/// dedans : ils se nomment, et rien ne dit qu'ils partent sans elle. Aucune phrase sans archive mise a part.
+fn aer_peut_etre_illisibles(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie], manquent: &[String]) -> R<Option<String>> {
+    let lignes = envois::journal::lu(&ctx.racine)?.lignes;
+    let Some(flux) = envois::etats::etat_dsn_du_mois(&lignes, mois, None, ctx.entreprise.nic_principal()).and_then(|e| e.flux) else { return Ok(None) };
+    let canal = envois::releve_retours::CanalDesRetours::Dsn;
+    let motif = format!("_nature{}_{}", envois::retours::NatureDuRetour::AerSpectacle, flux.texte());
+    let archives: Vec<String> =
+        envois::retours::archives_mises_de_cote(&canal.illisibles(&ctx.racine), envois::retours::NatureDuRetour::AerSpectacle)?.into_iter().map(String::from).filter(|n| n.contains(&motif)).collect();
+    if archives.is_empty() {
+        return Ok(None);
+    }
+    let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
+    let etiquette = mois.etiquette();
+    let mut qui: Vec<String> = dues_a_part(paies)?
+        .into_iter()
+        .filter(|(cle, dues)| dues.contains(&"aer") && !envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sorties, cle, &etiquette).exists())
+        .map(|(cle, _)| cle.to_string())
+        .filter(|nom| !manquent.contains(nom))
+        .collect();
+    if qui.is_empty() {
+        return Ok(None);
+    }
+    qui.sort();
+    Ok(Some(format!(
+        "L'attestation employeur (AER) de {} n'est pas rangée, et on ne sait pas si elle est revenue : France Travail a renvoyé pour la DSN de ce mois {} {}, qui ne se lit pas (mise à part dans « {} ») et la porte peut-être. La redemander à France Travail, ou le signaler.",
+        qui.join(", "),
+        if archives.len() > 1 { "les archives" } else { "l'archive" },
+        archives.join(", "),
+        canal.illisibles_dit()
+    )))
 }
 
 /// Les paies de `periode`, sous les numeros de contrat que la DSN a DECLARES (regle 4 : un numero se lit --
@@ -532,8 +574,11 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
         );
     }
     let (manquent, illisibles) = aer_manquantes(ctx, mois)?;
-    // Une archive d'attestations qui ne se lit pas se dit ici, chaque fois : elle reste dans `retours/`.
-    informations.extend(illisibles.iter().map(envois::retours::PieceIllisible::phrase));
+    // Une archive d'attestations qui ne se lit pas et que ce geste vient de mettre a part se dit et se note, une fois.
+    for p in &illisibles {
+        informations.extend(crate::gestes::suites::dire_et_noter(ctx, p));
+    }
+    informations.extend(aer_peut_etre_illisibles(ctx, mois, paies, &manquent)?);
     if !manquent.is_empty() {
         informations.push(format!(
             "L'attestation employeur (AER) est revenue de France Travail, mais elle n'est pas signee pour {} : la paie ne confirme pas ce qu'elle affiche, ou le nom n'est pas reconnu. Voir les messages de l'ouverture.",

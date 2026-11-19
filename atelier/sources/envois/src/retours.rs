@@ -13,6 +13,7 @@
 //! lit pas est un refus `XmlIllisible` (la phrase est celle de `roxmltree`).
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
@@ -215,34 +216,79 @@ socle::noms_fermes! {
     }
 }
 
-/// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : elle se met de cote (les autres pieces se
-/// lisent et se rangent), se dit a la compagnie (`phrase`) et se note chez l'editeur
-/// (`compagnie::incidents::noter_retour_illisible`). Une erreur du disque n'en est pas une : elle remonte.
+/// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : elle se met a part au moment ou elle est
+/// vue (`mettre_de_cote` : le dossier des illisibles de son canal, `CanalDesRetours::illisibles`), ou aucun releve ne la
+/// relit ; les autres pieces se lisent et se rangent. Elle se dit a la compagnie (`phrase`) et se note chez l'editeur
+/// (`compagnie::incidents::noter_retour_illisible`), une fois. Une erreur du disque n'en est pas une : elle remonte.
 #[derive(Debug, Clone)]
 pub struct PieceIllisible {
     pub nature: NatureDuRetour,
-    /// Son archive, dans `retours/` (`retours/dpae/` pour le canal DPAE).
+    pub canal: crate::releve_retours::CanalDesRetours,
+    /// Son archive, desormais dans le dossier des illisibles de son canal.
     pub archive: socle::fichiers::NomDeFichier,
     /// Ce que son lecteur en a dit.
     pub echec: Echec,
 }
 
 impl PieceIllisible {
-    /// La piece de l'archive `chemin`, que son lecteur n'a pas lue (`echec`).
-    pub fn de(nature: NatureDuRetour, chemin: &std::path::Path, echec: Echec) -> R<PieceIllisible> {
-        Ok(PieceIllisible { nature, archive: socle::fichiers::NomDeFichier::du(chemin)?, echec })
+    /// La piece de l'archive `chemin` (dans le dossier de son canal), que son lecteur n'a pas lue (`echec`) : elle passe
+    /// dans le dossier des illisibles du canal. Une piece qui y est deja (vue plus tot dans le meme geste) y reste.
+    pub fn mettre_de_cote(racine: &Path, canal: crate::releve_retours::CanalDesRetours, nature: NatureDuRetour, chemin: &Path, echec: Echec) -> R<PieceIllisible> {
+        let archive = socle::fichiers::NomDeFichier::du(chemin)?;
+        let dossier = canal.illisibles(racine);
+        std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+        let dest = dossier.join(archive.texte());
+        if chemin.exists() || !dest.exists() {
+            std::fs::rename(chemin, &dest).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::du_disque(&e)))?;
+        }
+        Ok(PieceIllisible { nature, canal, archive, echec })
     }
 
-    /// Ce que la compagnie lit : la piece, son archive, ce qui ne va pas, et qu'elle est mise de cote.
+    /// Ce que la compagnie lit : la piece, son archive, ce qui ne va pas, ce qui en est fait et ce qu'il reste a faire.
     pub fn phrase(&self) -> String {
+        let pourquoi = self.echec.phrase.trim_end();
+        let point = if pourquoi.ends_with('.') { "" } else { "." };
         format!(
-            "{} (retour de nature {}, archive {}) ne se lit pas : {} Elle est mise de côté.",
-            self.nature.libelle_dit(),
+            "La pièce « {} » (retour de nature {}, archive {}) ne se lit pas : {}{} Elle est mise à part dans « {} » et ne se relit plus : la redemander à l'organisme qui l'a rendue, ou la signaler.",
+            self.nature.libelle_du_canal(self.canal.acte()),
             self.nature,
             self.archive,
-            self.echec.phrase.trim_end()
+            pourquoi,
+            point,
+            self.canal.illisibles_dit()
         )
     }
+}
+
+/// UN RETOUR RECU DONT LA PIECE NE SE LIT PAS (`ligne::RetourOrganisme::illisible`), tel que les routes qui disent l'etat
+/// de son depot le disent : ni attendu, ni accepte, ni refuse.
+pub fn recu_illisible(nature: NatureDuRetour, canal: crate::releve_retours::CanalDesRetours, archive: &socle::fichiers::NomDeFichier) -> String {
+    format!(
+        "« {} » reçu, qui ne se lit pas (archive {}, mise à part dans « {} ») : ce qu'il dit n'est pas connu. Le redemander à l'organisme qui l'a rendu, ou le signaler.",
+        nature.libelle_du_canal(canal.acte()),
+        archive,
+        canal.illisibles_dit()
+    )
+}
+
+/// Les archives de nature `nature` mises a part dans `dossier` (le dossier des illisibles d'un canal), par nom, triees ;
+/// aucune sans dossier. Leurs noms seulement : elles ne se relisent pas.
+pub fn archives_mises_de_cote(dossier: &Path, nature: NatureDuRetour) -> R<Vec<socle::fichiers::NomDeFichier>> {
+    let lecture = match std::fs::read_dir(dossier) {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
+    };
+    let mut noms = Vec::new();
+    for e in lecture {
+        let e = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?;
+        let nom = socle::fichiers::NomDeFichier::du(&e.path())?;
+        if archive_de_nature(nom.texte(), nature) && e.path().is_file() {
+            noms.push(nom);
+        }
+    }
+    noms.sort();
+    Ok(noms)
 }
 
 impl NatureDuRetour {

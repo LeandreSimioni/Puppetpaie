@@ -379,7 +379,32 @@ impl CanalDesRetours {
             None => p,
         }
     }
+
+    /// LE DOSSIER DES PIECES QUI NE SE LISENT PAS (`retours::PieceIllisible::mettre_de_cote`), sous celui du canal : aucun
+    /// releve ne lit ce qui y est.
+    pub fn illisibles(self, racine: &Path) -> PathBuf {
+        self.chemin(racine).join(ILLISIBLES)
+    }
+
+    /// Le dossier des illisibles, tel que la compagnie le lit.
+    pub fn illisibles_dit(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "retours/illisibles",
+            CanalDesRetours::Dpae => "retours/dpae/illisibles",
+        }
+    }
+
+    /// L'envoi dont ce canal rend les retours, pour en dire le libelle (`NatureDuRetour::libelle_du_canal`).
+    pub fn acte(self) -> Acte {
+        match self {
+            CanalDesRetours::Dsn => Acte::Dsn,
+            CanalDesRetours::Dpae => Acte::Dpae,
+        }
+    }
 }
+
+/// Le nom du dossier des illisibles d'un canal.
+const ILLISIBLES: &str = "illisibles";
 
 /// `retours/` (la DSN) ou `retours/dpae/` (la DPAE), cree.
 fn dossier_archive(racine: &Path, canal: CanalDesRetours) -> R<PathBuf> {
@@ -518,6 +543,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
                 libelle: libelle.into(),
                 statut: Some(StatutDuRetour::Ok),
                 publication: Some(pub_),
+                illisible: None,
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
@@ -698,7 +724,7 @@ pub fn relever_retours(
                                 releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                             }
                         }
-                        Err(e) => suites.mettre_de_cote([crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?]),
+                        Err(e) => suites.mettre_de_cote([crate::retours::PieceIllisible::mettre_de_cote(&ctx.racine, canal, r.nature_retour, &chemin, e)?]),
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
@@ -872,8 +898,14 @@ fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
 
 /// Relit tous les 118 archives et reecrit `config/effectifs.json`. Pour chaque annee
 /// et chaque code, le calcul le plus RECENT l'emporte ; l'effectif qu'une annee sans 118 a recu de la compagnie reste.
-/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se saute et se rend (les autres
+/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se met a part et se rend (les autres
 /// comptent) ; le disque remonte.
+///
+/// UN 118 QUI NE SE LIT PAS PEUT AVOIR RECALCULE N'IMPORTE QUELLE ANNEE : on ne sait pas laquelle. L'effectif d'une annee
+/// fait les taux a seuil des cinq annees qui suivent (`EffectifsParAnnee::atteint`, L. 130-1, II, CSS) : la valeur d'un
+/// 118 publie avant lui (le nom de l'archive commence par l'instant de sa publication) n'est donc plus sure, et ne
+/// s'ecrit pas (regle 1 : rien ne se devine). L'annee manque, et ce qui en a besoin la demande a la compagnie, qui
+/// peut la dire (`poser_effectif`) ; un 118 publie apres lui reste sur.
 pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllisible>> {
     let dossier = racine.join(crate::retours::RETOURS);
     let mut illisibles = Vec::new();
@@ -883,6 +915,8 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllis
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(illisibles),
         Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
+    let mis_a_part: Vec<String> =
+        crate::retours::archives_mises_de_cote(&CanalDesRetours::Dsn.illisibles(racine), NatureDuRetour::Effectifs)?.into_iter().map(String::from).collect();
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
         let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
@@ -892,27 +926,52 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllis
     }
     noms.sort();
     let mut annees: BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>> = BTreeMap::new();
+    // L'archive d'ou vient chaque valeur gardee.
+    let mut d_ou: BTreeMap<(Annee, TypeDeParametreNeores), String> = BTreeMap::new();
+    let mut lus: Vec<&String> = Vec::new();
+    let mut illisible_le_plus_recent: Option<String> = None;
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let mesures = match lire_crm118(&octets) {
             Ok(Some(m)) => m,
-            Ok(None) => continue,
+            Ok(None) => {
+                lus.push(nom);
+                continue;
+            }
             Err(e) => {
-                illisibles.push(crate::retours::PieceIllisible::de(NatureDuRetour::Effectifs, &p, e)?);
+                illisibles.push(crate::retours::PieceIllisible::mettre_de_cote(racine, CanalDesRetours::Dsn, NatureDuRetour::Effectifs, &p, e)?);
+                illisible_le_plus_recent = illisible_le_plus_recent.max(Some(nom.clone()));
                 continue;
             }
         };
+        lus.push(nom);
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
-            let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
+            let an = Annee::du_mois(ref_an.mois_civil());
+            let codes = annees.entry(an).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }
+            d_ou.insert((an, m.code), nom.clone());
             codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(CheminRelatif::sous(racine, &p)?), dit_le: None });
         }
     }
-    if annees.is_empty() {
+    // Les 118 mis a part plus tot comptent aussi, sauf celui qu'une nouvelle releve a rapporte lisible sous le meme nom.
+    for nom in mis_a_part.into_iter().filter(|n| !lus.contains(&n)) {
+        illisible_le_plus_recent = illisible_le_plus_recent.max(Some(nom));
+    }
+    if let Some(borne) = &illisible_le_plus_recent {
+        for ((an, code), nom) in &d_ou {
+            if nom < borne {
+                if let Some(codes) = annees.get_mut(an) {
+                    codes.remove(code);
+                }
+            }
+        }
+        annees.retain(|_, codes| !codes.is_empty());
+    }
+    if annees.is_empty() && illisible_le_plus_recent.is_none() {
         return Ok(illisibles);
     }
     let existant = effectifs_lus(racine)?;

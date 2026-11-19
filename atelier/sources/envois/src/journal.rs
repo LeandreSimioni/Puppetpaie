@@ -112,7 +112,8 @@ impl From<IdDEnvoi> for String {
 }
 
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
-/// `publication`, `complete`). Le retour se lit dans la forme de la sorte de son envoi (`Tenu::replier`).
+/// `publication`, et `complete` : le verdict de sa piece, ou `illisible` : l'archive mise a part de sa piece qui ne se
+/// lit pas). Le retour se lit dans la forme de la sorte de son envoi (`Tenu::replier`).
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enregistrement {
@@ -130,6 +131,8 @@ struct Enregistrement {
     publication: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     complete: Option<VerdictDeLaPiece>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    illisible: Option<NomDeFichier>,
 }
 
 /// CE QUI REVIENT D'UN ENVOI, dans la forme de sa sorte : un compte rendu d'organisme (une DSN, une DPAE), un contrat
@@ -207,7 +210,7 @@ impl Tenu {
     fn replier(&mut self, e: Enregistrement, n: usize, p: &Path) -> R<()> {
         let illisible = |quoi: &str| abime_a(p, n, quoi);
         match e {
-            Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature_retour: None, publication: None, complete: None } => {
+            Enregistrement { id: Some(id), ligne: Some(ligne), a: None, retour: None, nature_retour: None, publication: None, complete: None, illisible: None } => {
                 if self.index.contains_key(&id) {
                     // Le meme envoi (son `id` est l'empreinte du texte qu'il a note), lu dans deux journaux reunis, ne compte
                     // qu'une fois ; ce qui lui est revenu sur chaque poste s'est range a la suite.
@@ -219,11 +222,17 @@ impl Tenu {
                 Arc::make_mut(&mut self.journal.lignes).push(ligne);
                 Ok(())
             }
-            Enregistrement { id: None, ligne: None, a: Some(a), retour, nature_retour: nature, publication, complete } => {
+            Enregistrement { id: None, ligne: None, a: Some(a), retour, nature_retour: nature, publication, complete, illisible: mise_a_part } => {
                 let i = *self.index.get(&a).ok_or_else(|| illisible("ce qui revient d'un envoi que le journal ne porte pas"))?;
                 let lignes = Arc::make_mut(&mut self.journal.lignes);
                 let avant = depend_de_ses_retours(&lignes[i]);
-                match (retour, nature, complete) {
+                let complement = match (complete, mise_a_part) {
+                    (None, None) => None,
+                    (Some(v), None) => Some(Ok(v)),
+                    (None, Some(archive)) => Some(Err(archive)),
+                    (Some(_), Some(_)) => return Err(illisible("le complément d'un retour qui dit à la fois son verdict et que sa pièce ne se lit pas")),
+                };
+                match (retour, nature, complement) {
                     (Some(r), None, None) if publication.is_none() => match (&mut lignes[i], r) {
                         // LE MEME RETOUR, RANGE SUR DEUX POSTES, NE COMPTE QU'UNE FOIS. Un compte rendu d'organisme se
                         // reconnait a sa nature et a sa publication (`etats::rattacher_retours` n'en range qu'un par envoi) :
@@ -245,7 +254,11 @@ impl Tenu {
                             .iter_mut()
                             .find(|r| r.nature_retour == nature && r.publication == publication)
                             .ok_or_else(|| illisible("le complément d'un retour que l'envoi ne porte pas"))?;
-                        r.poser(v);
+                        match v {
+                            Ok(v) => r.poser(v),
+                            Err(archive) if r.verdict.is_none() => r.illisible = Some(archive),
+                            Err(_) => {}
+                        }
                     }
                     _ => return Err(illisible("ce qui revient d'un envoi n'y est ni un retour ni son complément")),
                 }
@@ -582,6 +595,8 @@ pub enum Rangement {
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
     Complement { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, verdict: VerdictDeLaPiece },
+    /// La piece du compte rendu de cette nature et de cette publication ne se lit pas : son archive mise a part.
+    Illisible { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, archive: NomDeFichier },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -594,6 +609,7 @@ pub fn ranger(racine: &Path, rangements: Vec<(usize, Rangement)>) -> R<()> {
                 Ok(match r {
                     Rangement::Retour(retour) => Enregistrement { a, retour: Some(Retour::Organisme(retour)), ..Default::default() },
                     Rangement::Complement { nature_retour, publication, verdict } => Enregistrement { a, nature_retour: Some(nature_retour), publication, complete: Some(verdict), ..Default::default() },
+                    Rangement::Illisible { nature_retour, publication, archive } => Enregistrement { a, nature_retour: Some(nature_retour), publication, illisible: Some(archive), ..Default::default() },
                 })
             })
             .collect()
@@ -736,7 +752,7 @@ mod tests {
     fn une_declaration_refusee_au_bilan_n_est_pas_partie() {
         use crate::retours::NatureDuRetour::{AccuseDEnregistrement, CertificatDeConformite};
         use crate::retours::Verdict;
-        let retour = |nature: crate::retours::NatureDuRetour, verdict: Verdict| RetourOrganisme { nature_retour: nature, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        let retour = |nature: crate::retours::NatureDuRetour, verdict: Verdict| RetourOrganisme { nature_retour: nature, verdict: Some(verdict), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None, illisible: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(socle::forme::lire_texte("\"2026-06\"", "le mois du test").unwrap());

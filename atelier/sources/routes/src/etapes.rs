@@ -1103,6 +1103,8 @@ struct EtatDpae {
     anomalies: Option<Vec<String>>,
     /// Ce que le certificat dit de sa personne (`envois::etats::EtatEmbauche::certifiee`).
     certifiee: Option<declarations::dpae::EtatDeLaDpae>,
+    /// Le certificat est arrive et ne se lit pas (`envois::etats::EtatEmbauche::illisible`).
+    illisible: Option<String>,
 }
 
 /// Un CDI en cours, d'un mois d'apres son embauche : le mois de sa signature.
@@ -1158,7 +1160,7 @@ impl Etats {
     /// Ceux d'un engagement auquel il manque un fait : rien n'est a declarer, rien n'est parti.
     fn sans_envoi() -> Etats {
         Etats {
-            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, certifiee: None },
+            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, certifiee: None, illisible: None },
             signature: Signature { fait: None, par: None, recu: None, caduc: false, pourquoi: "", avenant: None, avenant_attendu: false, cdi_en_cours: None },
             documents: EtatDocuments { fait: None, caduc: false, pourquoi: "" },
         }
@@ -1676,6 +1678,7 @@ impl<'a> Moteur<'a> {
                 refusee,
                 anomalies: dpae_v.map(|d| d.anomalies.clone()),
                 certifiee: dpae_v.and_then(|d| d.certifiee.clone()),
+                illisible: dpae_v.and_then(|d| d.illisible.clone()),
             };
             let avenant = refaire.iter().any(|a| matches!(a, ARefaire::Avenant { .. }));
             let mut signature = etat_signature(
@@ -2353,6 +2356,10 @@ impl<'a> Moteur<'a> {
         if e.refusee() {
             return Ok(Groupe::de(EtatCase::Refuse, None, String::new(), "refusée · l'éditeur est prévenu".into(), Some(au_depot), Some(historique(le_mois))));
         }
+        // Le bilan est arrive et ne se lit pas : ni passee ni refusee ; l'Historique dit l'archive et quoi faire.
+        if e.etat == compagnie::etat_dsn::Etat::Illisible {
+            return Ok(Groupe::de(EtatCase::AFaire, None, String::new(), "bilan reçu, qui ne se lit pas · voir l'historique".into(), Some(au_depot), Some(historique(le_mois))));
+        }
         // Partie : faite, tant qu'aucun retour ne revient KO. Ce qui la rouvre : une paie modifiee depuis.
         let r = self.etat_remplacement(le_mois, nic)?;
         let libelle = format!("Refaire la DSN (annule-et-remplace, ordre {})…", r.prochain_ordre);
@@ -2600,6 +2607,10 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         (PointDpae::RienADeclarer, _) => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
         (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::Avant) => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
         (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::CeMois) if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
+        (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::CeMois) if d.illisible.is_some() => {
+            let dit: String = d.illisible.iter().map(String::as_str).collect();
+            (EtatCase::AFaire, format!("DPAE déposée {} : {}", le_jour_de(d.fait.map(InstantOuJour::jour))?, dit), route(historique(mois)))
+        }
         (PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider, DebutDansLeMois::CeMois) => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
     };
     let pieces = Pieces { vide: Some("Aucune DPAE déposée pour cette embauche.".into()), encart: None, gestes: Vec::new() };

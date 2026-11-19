@@ -542,7 +542,7 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
 /// l'endroit `retour-<nature>` ; la compagnie, par la phrase de qui l'a lu. La seule facon de le noter, quelle que soit
 /// la nature.
 pub fn noter_retour_illisible(racine: &Path, nature: envois::retours::NatureDuRetour, archive: &str, echec: &socle::echec::Echec) -> R<()> {
-    /// Ce que l'incident porte : l'archive du retour, dans `retours/`.
+    /// Ce que l'incident porte : l'archive du retour, mise a part dans le dossier des illisibles de son canal.
     #[derive(Serialize)]
     struct RetourIllisible<'a> {
         archive: &'a str,
