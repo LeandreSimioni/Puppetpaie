@@ -47,7 +47,7 @@ const INVENTE: [&str; 3] = ["999", "123456", "000"];
 ///
 /// Y ajouter une valeur est un acte visible, relu comme le reste du code. N'y mettre QUE des valeurs inventées : cette
 /// liste est publiée avec le dépôt.
-pub const FICTIVES: [(&str, &str); 10] = [
+pub const FICTIVES: [(&str, &str); 11] = [
     ("2930899999999", "NIR féminin fabriqué (clé 47)"),
     ("1850375999999", "NIR masculin fabriqué (clé 87)"),
     // Les deux ci-dessus finissent par six « 9 », ce que la norme n'admet pas (CCH-16) : ils servent d'exemples dans des
@@ -72,6 +72,11 @@ pub const FICTIVES: [(&str, &str); 10] = [
     // La fictive de référence de l'Hôtel de Bourgogne (`atelier/fictives/fictive-hotel-de-bourgogne/LISEZ-MOI.md` : « tout
     // ce qui suit est inventé ») : le compte de la compagnie, clé juste, banque « 12345 ».
     ("FR7612345678900007778880147", "IBAN de la fictive Compagnie de l'Hôtel de Bourgogne"),
+    // Le compte des dépôts de test (`atelier/docs/COMPAGNIE-D-ESSAI.md`, « Ce qu'il faut pour qu'un dépôt de test
+    // revienne « OK » ») : la plate-forme refuse un code banque ou un code guichet qu'elle ne connaît pas, donc le
+    // couple banque et guichet existe (30001, 00064) ; le numéro de compte est fait de onze zéros et ne désigne aucun
+    // compte ; clé RIB 40, clé de l'IBAN 76.
+    ("FR7630001000640000000000040", "IBAN des dépôts de test : vrai couple banque et guichet, compte fait de zéros"),
 ];
 
 /// Les motifs génériques (une forme), par opposition aux valeurs réelles lues.
