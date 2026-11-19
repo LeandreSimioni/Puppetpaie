@@ -111,14 +111,23 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931107"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"FERRAND","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"heure","quantite":{"heures":18},"taux":20,"lieu":"Parc des Expositions, 71000 Mâcon","dates":["2026-06-12","2026-06-13","2026-06-14"],"planning":[]},{"rubrique":"repas","taux":null,"territoire":null,"cases":[],"quantite":{"unites":3},"lieu":"Parc des Expositions, 71000 Mâcon","dates":["2026-06-12","2026-06-13","2026-06-14"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"FERRAND","debut":"2026-06-12","rang":0}}}
+{"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"ALBARET"}]}}
+{"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"ALBARET","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00931108"},{"case":"fin","valeur":"2026-07-03"}]}}
+{"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"ALBARET","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":2},"taux":140,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-06-28","2026-06-30"],"planning":[]}]}]}}
+{"route":"enregistrer-saisie","charge":{"mois":"2026-07","carte":{"ecrite":{"salarie":"ALBARET","debut":"2026-06-28","rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":2},"taux":140,"lieu":"Théâtre des Feuillants, 21000 Dijon","dates":["2026-07-01","2026-07-03"],"planning":[]}]}]}}
+{"route":"valider-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"ALBARET","debut":"2026-06-28","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06","mode":"reel"}}
-{"route":"demander-signature","charge":{"mois":"2026-06","contrats":[{"salarie":"MARCHETOT","debut":"2026-06-12"},{"salarie":"FERRAND","debut":"2026-06-12"}]}}
+{"route":"demander-signature","charge":{"mois":"2026-06","contrats":[{"salarie":"MARCHETOT","debut":"2026-06-12"},{"salarie":"FERRAND","debut":"2026-06-12"},{"salarie":"ALBARET","debut":"2026-06-28"}]}}
 {"heure":"2026-07-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-06"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-06","mode":"reel"}}
 {"route":"envoyer-documents","charge":{"mois":"2026-06"}}
+{"heure":"2026-07-06T10:00:00","route":"fin-contrat-signaler","charge":{"mois":"2026-07","salarie":"ALBARET"}}
+{"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_ALBARET_20260703.dsn"}}
+{"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_ALBARET_20260703.dsn","mode":"reel"}}
 {"heure":"2026-08-04T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-07"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-07","mode":"reel"}}
+{"route":"envoyer-documents","charge":{"mois":"2026-07"}}
 {"heure":"2026-09-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-08"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-08","mode":"reel"}}
 {"heure":"2026-09-08T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MARCHETOT"}]}}
