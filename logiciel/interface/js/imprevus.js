@@ -183,8 +183,9 @@ function brancherObligation(r, a, o) {
 
 /* LA FIN D'UN CONTRAT QUI SE SIGNALE (nature 07), sous la même
    forme. Un CDI ou un CDD ordinaire qui se termine fait un signalement à
-   part ; un CDD d'usage à son terme (031) n'en fait pas — sa fin part dans la
-   mensuelle ; rompu avant (036, 037…), il se signale (fiche 2062). C'est le
+   part ; un CDD d'usage contenu dans le mois, à son terme (031), n'en fait pas —
+   sa fin part dans la mensuelle ; rompu avant (036, 037…), ou déjà déclaré le
+   mois d'avant, il se signale (fiche 2062). C'est le
    moteur qui tranche (`Nature::signalement_fctu`, route `fins-de-contrat`).
    Ce qui manque au signalement se tape dans la carte, sous « Contrat » :
    proposer un bouton qui refuse serait pire que ne rien proposer. Le

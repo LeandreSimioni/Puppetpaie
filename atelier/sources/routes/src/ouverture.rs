@@ -1399,10 +1399,6 @@ struct NatureDeLaPage {
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
     /// et 10 (CCH-11).
     spectacle: bool,
-    /// La fin se signale-t-elle (`Nature::signalement_fctu`) : au motif par defaut, et motif par motif -- un CDDU a son
-    /// terme (031) part dans la mensuelle, rompu avant (036, 037...) il se signale. La page ne decide rien.
-    signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<MotifDeRupture, bool>,
     motifs_rupture: Vec<natures::RuptureOfferte>,
     faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
     motif_rupture_defaut: Option<MotifDeRupture>,
@@ -1410,10 +1406,9 @@ struct NatureDeLaPage {
     motif_recours_exige: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     quotite_defaut: Option<socle::grandeurs::Heures>,
-    /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
-    /// signale pas : le CDDU a son terme).
+    /// Le bouton qui propose la duree d'un temps plein. Si la fin se signale, et le choix vide des motifs de fin, c'est
+    /// le contrat qui le dit, pas sa nature (`mois::Rupture`).
     temps_plein_dit: Option<String>,
-    motif_rupture_vide_dit: String,
     unite_quotite: natures::UniteDeQuotite,
 }
 
@@ -1427,10 +1422,9 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
     let mut sortie = Vec::new();
     for n in toutes.iter() {
         let motifs = n.motifs_rupture();
-        let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
+        let mut faits = BTreeMap::new();
         for m in motifs {
             faits.insert(m.code, faits_de_rupture(n, m.code)?);
-            signales.insert(m.code, n.signalement_fctu(Some(m.code)));
         }
         let carte = cartes
             .iter()
@@ -1445,8 +1439,6 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
-            signalement_fctu: n.signalement_fctu(None),
-            signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),
             faits_de_rupture: faits,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
@@ -1454,10 +1446,6 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
             temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
-            motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
-                Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
-                _ => "— à choisir —".to_string(),
-            },
             unite_quotite: n.unite_quotite(),
         });
     }

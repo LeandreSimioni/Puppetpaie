@@ -1946,8 +1946,9 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add(droit::rubrique!("S21.G00.62.006"), crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
-        // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
-        for (rub, val) in nat.codes_fin(Some(motif)) {
+        // 62.017 d'un CDDU : 01 (circuit derogatoire) pour le 031 d'un contrat infra DSN mensuelle, 02 sinon -- un
+        // contrat qu'une DSN precedente a declare suit le droit commun (CCH-12, `Nature::codes_fin`, `ConnuDeLaDsn`).
+        for (rub, val) in nat.codes_fin(Some(motif), e.connu_de_la_dsn()) {
             f.add(rub, val);
         }
     }

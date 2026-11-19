@@ -24,12 +24,13 @@ function carteFermee(div) {
 }
 
 /** La fin de ce contrat se signale-t-elle (nature 07), pour ce motif ? Le
- *  moteur le dit (`Nature::signalement_fctu`, par `natures`) ; la page ne
- *  fait que le lire. Sans motif choisi, c'est le motif par défaut. */
-function finSeSignale(nat, motif) {
-  if (motif && nat.signalement_par_motif && motif in nat.signalement_par_motif)
-    return !!nat.signalement_par_motif[motif];
-  return !!nat.signalement_fctu;
+ *  moteur le dit pour CE contrat (`contrat.rupture`, `Nature::signalement_fctu` :
+ *  un CDDU déjà déclaré par la DSN d'un mois précédent se signale) ; la page
+ *  ne fait que le lire. Sans motif choisi, c'est le motif par défaut. */
+function finSeSignale(rupture, motif) {
+  if (!rupture) return false;
+  if (motif && motif in rupture.signalement_par_motif) return !!rupture.signalement_par_motif[motif];
+  return !!rupture.signalement_fctu;
 }
 
 /** Ce que la fin du contrat déclarera : le motif, pour toute nature qui en a
@@ -39,13 +40,14 @@ function finSeSignale(nat, motif) {
 function ruptureDuBloc(div, nat, fin, e) {
   // Un contrat aux cachets n'écrit pas sa fin : le moteur la donne (`contrat.rupture`, son dernier jour travaillé).
   if (!(fin || (div._rupture && div._rupture.fin))) return;
-  if (!nat.motifs_rupture.length && !nat.signalement_fctu) return;
+  if (!nat.motifs_rupture.length) return;
   const dans = (s) => div.querySelector(s).value;
   if (dans(".e-motif-rupture")) e.motif_rupture = dans(".e-motif-rupture");
   // Le reste ne part que si cette fin SE SIGNALE : le moteur le dit, motif
-  // par motif (`signalement_par_motif`). Un CDDU à son terme (031) part
-  // dans la DSN du mois ; rompu avant, il se signale (fiche 2062).
-  if (!finSeSignale(nat, e.motif_rupture)) return;
+  // par motif (`contrat.rupture.signalement_par_motif`). Un CDDU infra DSN à
+  // son terme (031) part dans la DSN du mois ; rompu avant, ou déjà déclaré
+  // le mois d'avant, il se signale (fiche 2062).
+  if (!finSeSignale(div._rupture, e.motif_rupture)) return;
   // Les faits du motif, seulement ceux que le moteur a demandés.
   // Un motif que le moteur ne nomme pas ne demande aucun fait.
   const faits = e.motif_rupture in nat.faits_de_rupture ? nat.faits_de_rupture[e.motif_rupture] : [];

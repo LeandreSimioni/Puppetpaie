@@ -85,6 +85,25 @@ cahier) suit 40.025, vide depuis le courriel du 28/05/2026 (inférence
 écrite). Le moteur écrit donc 02 et range cette fin parmi celles qui se
 signalent (`contrats-base.json`, `cddu_spectacle.fin_de_contrat.circuit_derogatoire`).
 
+**Repris le 19/11/2026 (#282).** Les points 1 et 2 ne valent plus pour un
+CDDU **qu'une DSN précédente a déclaré** (commencé un mois d'avant). Le
+point 1 s'appuyait sur la dérogation « (AEM) » du § 5.2 ; elle vise les
+contrats sous AEM, que le motif d'exclusion 40.025 désigne, et ce motif
+« doit rester vide » depuis le courriel du 28/05/2026 (c'est l'inférence que
+le lot C1 a déjà écrite). Reste la dérogation CDDU-D, que trois textes
+bornent au contrat infra DSN mensuelle : la rubrique 62.017 (« ne peut être
+utilisé que pour un contrat d'usage qui n'a pas encore fait l'objet d'une
+déclaration dans une précédente DSN mensuelle validée », 2026.1 et 2027), le
+§ 2.5.3 (« Dans les autres cas, le déclarant doit procéder selon la procédure
+de droit commun (signalement) ») et la fiche 2062 (« la dérogation n'est
+applicable en DSN que pour les contrats CDDU infra-DSN » ; fiche 1741 pour
+la définition). Qu'aucun contrôle ne vérifie l'infra-mensualité ne la rend
+pas facultative. Le moteur écrit donc 62.017 = 02 au dernier mois d'un CDDU à
+cheval et range sa fin parmi celles qui se signalent dans les cinq jours
+ouvrés (`droit::natures::ConnuDeLaDsn`). Le point 3 (l'AER CS) et le point 4
+restent ouverts : aucun texte déposé ne dit quelle attestation revient d'un
+FCTU d'intermittent.
+
 ## Dans le dépôt public (15/10/2026)
 
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats donnés plus haut sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/francetravail-100-dsn/`).

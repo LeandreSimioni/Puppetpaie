@@ -112,7 +112,8 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
-/// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme : `Nature::signalement_fctu`)
+/// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme ou deja declare par une DSN
+/// precedente : `Nature::signalement_fctu`)
 /// dans le mois : France Travail en edite l'attestation employeur rematerialisee (AER) en retour du signalement FCTU
 /// (nature 44 : « AER » en PDF quand le signalement passe, compte rendu metier quand il est refuse -- guide
 /// d'implementation de l'API DSN v6.8, §5.7.4 a 5.7.6 et tableau des formats,
@@ -123,7 +124,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
 pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture) {
+    if !nat.signalement_fctu(e.motif_rupture, e.connu_de_la_dsn()) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))

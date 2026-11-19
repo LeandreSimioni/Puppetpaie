@@ -2468,11 +2468,12 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         }
         let e = carte;
         let nat = nature_de(e)?;
-        // La regle est celle de la nature et du motif (`Nature::signalement_fctu`) : un CDDU rompu avant son terme se signale.
-        if !nat.signalement_fctu(e.motif_rupture) {
+        let Some(contrat) = contrat_fini(e)?.filter(|c| c.fin().mois_civil() == mois) else { continue };
+        // La regle est celle de la nature, du motif et de ce que la DSN sait du contrat (`Nature::signalement_fctu`) : un
+        // CDDU rompu avant son terme, ou deja declare par la DSN d'un mois precedent, se signale.
+        if !nat.signalement_fctu(e.motif_rupture, droit::natures::ConnuDeLaDsn::du_contrat(contrat.debut(), mois)) {
             continue;
         }
-        let Some(contrat) = contrat_fini(e)?.filter(|c| c.fin().mois_civil() == mois) else { continue };
         let salarie = e.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie").reclasser(Classe::Manque))?;
         let a_saisir = ce_qui_manque(ctx, e, &contrat)?;
         // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).

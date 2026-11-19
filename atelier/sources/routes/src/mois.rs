@@ -23,7 +23,7 @@
 use droit::fiche::Lue as _;
 use droit::fiche::NumeroObjetSpectacle;
 use engagement::numeros::NumeroContrat;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -1423,11 +1423,17 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
 }
 
 /// LA RUPTURE d'un engagement, telle que la page la propose (« Un imprévu… ») : le libelle de la porte et la fin du
-/// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets).
+/// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets) ; si cette fin se signale, au motif
+/// par defaut et motif par motif (`Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un CDDU a son terme
+/// part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja declare) ; et le
+/// choix vide des motifs (le defaut d'une fin qui ne se signale pas). La page ne decide rien.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Rupture {
     porte: &'static str,
     fin: Option<Jour>,
+    signalement_fctu: bool,
+    signalement_par_motif: BTreeMap<droit::natures::MotifDeRupture, bool>,
+    motif_vide_dit: String,
 }
 
 /// LA RUPTURE de cet engagement : `None` quand elle n'a pas de sens ici -- une nature sans motif de rupture
@@ -1438,19 +1444,27 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
         return Ok(None);
     }
     let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
+    let connu = e.connu_de_la_dsn();
+    let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
+    let signalement_fctu = nat.signalement_fctu(None, connu);
+    let motif_vide_dit = match nat.motif_rupture_par_defaut() {
+        Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
+        _ => "— à choisir —".to_string(),
+    };
+    let rupture = |fin| Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit };
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(Rupture { porte, fin: e.contrat().fin() }));
+        return Ok(Some(rupture(e.contrat().fin())));
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
     if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois()? {
         return Ok(None);
     }
-    Ok(Some(Rupture { porte, fin: Some(match e.contrat().fin() {
+    Ok(Some(rupture(Some(match e.contrat().fin() {
         Some(f) => f,
         None => e.periode_payee()?.fin(),
-    }) }))
+    }))))
 }
 
 

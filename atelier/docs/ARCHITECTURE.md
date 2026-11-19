@@ -1212,6 +1212,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un envoi au journal des envois | `documents::Acte` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
+| ce que la DSN sait d'un contrat (infra DSN mensuelle, ou déjà déclaré) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
@@ -1546,6 +1547,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   la DPAE ; le dernier, le bloc 62 et le certificat Congés Spectacles ; hors du seul mois, le contrat est « à cheval ».
   Écrite `seul`, `premier`, `dernier`, `milieu` (`place`), dans la forme canonique d'un engagement et ce que rendent la
   paie d'un mois et la carte d'un engagement.
+- **ce que la DSN sait d'un contrat** : rien encore (« infra DSN mensuelle », fiche net-entreprises 1741 : il commence
+  dans le mois déclaré) ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté), dit par
+  `ConnuDeLaDsn::du_contrat` (son début et le mois) et nulle part ailleurs. Seul le premier ouvre le circuit dérogatoire
+  d'un CDDU (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
   Écrit `ce_mois`, `avant` (`debut`), dans la carte d'un engagement à compléter.
@@ -3183,14 +3188,25 @@ l'identifiant technique d'affiliation (`70.012`) et le bloc 71 — et à
 l'inverse, elle **exige** le code APET (`11.002`), que le signalement d'arrêt
 interdit — en P26V01 : la norme P27V01 le retire.
 
-**Un CDDU du spectacle n'a pas besoin de FCTU** : la même page donne une
-dérogation aux artistes et techniciens du spectacle, et la fin d'un contrat
-d'usage part dans la **DSN mensuelle** avec le circuit dérogatoire
-`S21.G00.62.017 = '01'` — une rubrique justement **interdite** dans un FCTU.
-Le moteur en émet un quand même si le salarié le demande (la norme le permet,
-p. 68 et p. 107), en le disant par un avertissement (`fctu.rs`, « La
-dérogation du spectacle ») ; la mensuelle qui suit écrit alors encore
-62.017 = 01.
+**Un CDDU contenu dans une seule DSN n'a pas besoin de FCTU** : à son terme
+(031), la fin d'un contrat d'usage **infra DSN mensuelle** part dans la **DSN
+mensuelle** avec le circuit dérogatoire `S21.G00.62.017 = '01'` — une
+rubrique justement **interdite** dans un FCTU. Le moteur en émet un quand même
+si le salarié le demande (la norme le permet, p. 68 et p. 107), en le disant
+par un avertissement (`fctu.rs`) ; la mensuelle qui suit écrit alors encore
+62.017 = 01 (fiche 1902). **Un CDDU qu'une DSN précédente a déclaré** (il a
+commencé un mois d'avant, `droit::natures::ConnuDeLaDsn`) n'a pas cette
+dérogation : « le circuit dérogatoire ne peut être utilisé que pour un contrat
+d'usage qui n'a pas encore fait l'objet d'une déclaration dans une précédente
+DSN mensuelle validée » (bloc 62, 62.017 ; § 2.5.3 : « Dans les autres cas, le
+déclarant doit procéder selon la procédure de droit commun (signalement) » ;
+fiche 2062 : « la dérogation n'est applicable en DSN que pour les contrats CDDU
+infra-DSN »). Sa fin se signale dans les cinq jours ouvrés, et la mensuelle
+écrit 62.017 = 02. La dérogation « AEM » du § 5.2 suit le motif d'exclusion
+40.025, que le logiciel n'écrit plus (`contrats-base.json`, sa note). Une seule
+règle (`Nature::signalement_fctu`, `Nature::codes_fin`), que lisent la
+mensuelle, le FCTU, les fins à signaler et leurs rappels, l'attestation et la
+carte d'un engagement (`contrat.rupture`).
 
 **Ce que l'arborescence tranche, et que le tableau des usages ne dit pas.**
 Le tableau dit qu'une rubrique a le droit d'être là ; il ne dit pas si son

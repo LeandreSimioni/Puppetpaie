@@ -336,9 +336,10 @@ signalement sans elle. Rien n'est ecrit.",
         return Err(Echec::impossible(refus));
     }
 
-    // La derogation du CDDU (circuit derogatoire, motif 031 seul : fiche 2062) : le moteur le DIT plutot que de refuser,
-    // car le salarie peut demander le signalement (fiche 1902). Rompu avant son terme, le CDDU se signale.
-    if !nat.signalement_fctu(Some(fin.motif)) {
+    // La derogation du CDDU (circuit derogatoire, motif 031 d'un contrat infra DSN mensuelle : fiche 2062) : le moteur le
+    // DIT plutot que de refuser, car le salarie peut demander le signalement (fiche 1902). Rompu avant son terme, ou deja
+    // declare par une DSN precedente, le CDDU se signale.
+    if !nat.signalement_fctu(Some(fin.motif), e.connu_de_la_dsn()) {
         avertissements.push(format!(
             "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
 DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
