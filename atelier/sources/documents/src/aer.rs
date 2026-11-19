@@ -117,8 +117,9 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// ecrit 62.017 = 02. Ce qui s'y oppose : cette phrase de la fiche 1902 vise un CDDU-D corrige, pas un contrat a cheval ;
 /// les pages relevees disent l'AE CS « éditée à la fin du dernier mois concerné par le contrat » sans distinguer le
 /// circuit ; et aucun texte depose ne dit quelle attestation revient d'un FCTU d'intermittent
-/// (`francetravail-100-dsn/LISEZMOI.md`). Tout autre contrat suit la regle d'avant : l'intermittent dont le contrat finit
-/// dans le mois a son AER, qu'il soit rompu ou qu'il soit un CDD d'artiste.
+/// (`francetravail-100-dsn/LISEZMOI.md`). Tout autre contrat d'intermittent qui finit dans le mois a son AER, qu'il soit
+/// rompu ou qu'il soit un CDD d'artiste : « 1 AE CS éditée à la fin du dernier mois concerné par le contrat »
+/// (`movinmotion-fin-des-aem-20260601.txt`, plus haut).
 pub fn due(p: &engagement::calcul::Paie, connu: droit::natures::ConnuDeLaDsn) -> socle::echec::R<bool> {
     let e = &p.engagement;
     let nat = e.nat()?;
