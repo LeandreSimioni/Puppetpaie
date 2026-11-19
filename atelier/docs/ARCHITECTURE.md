@@ -2571,6 +2571,12 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
+- **L'activité d'un mois repris** (`engagement::importe::activite_du_mois`) : la DSN déposée déclare, pour chaque
+  contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
+  l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Le bulletin du
+  mois d'un permanent les remplace par ce qu'il imprime ; le contrat qu'une AEM, un bulletin ou un certificat atteste
+  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle, que lisent la carte
+  du mois importé, la comparaison et la CASC-SVP.
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien

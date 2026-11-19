@@ -381,9 +381,8 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
 /// (`dsn_aem::PaieDeclaree`), tel qu'elle l'ecrit (`declarations::dsn_lue::lire`, qui refuse une DSN dont un montant ou
-/// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
-/// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
-/// bulletin) ; la DSN les declare en decimal.
+/// une date ne se lit pas). Son activite du mois (S21.G00.53 de type 01, hors rappel : `dsn_lue::Mesures`) y passe telle
+/// qu'elle est declaree, au centieme pres (`PaieVersee::heures`) ; une mesure nulle ne dit rien.
 fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
     use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
@@ -392,6 +391,8 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite, x.motif_recours) = (periode, d.verse_le, c.and_then(|c| c.quotite), c.and_then(|c| c.motif_recours));
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    let m = &d.mesures;
+    (x.heures, x.cachets, x.jours) = (Some(m.heures).filter(|h| !h.est_nul()), Some(m.cachets).filter(|c| !c.est_nul()), Some(m.jours).filter(|j| !j.est_nul()));
     // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
     if let Some(n) = &d.nets {
         x.nets = n.clone();
