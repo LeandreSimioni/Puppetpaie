@@ -139,9 +139,9 @@ pub struct Reprise {
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les
 /// incidents que le rattachement des retours a releves (`moteur` les note).
 pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str) -> AvecIncidents<Reprise> {
-    let mut incidents = Vec::new();
-    let resultat = reprise_et_incidents(ctx, ecrire, qui, &mut incidents);
-    AvecIncidents { resultat, incidents }
+    let (mut incidents, mut illisibles) = (Vec::new(), Vec::new());
+    let resultat = reprise_et_incidents(ctx, ecrire, qui, &mut incidents, &mut illisibles);
+    AvecIncidents { resultat, incidents, illisibles }
 }
 
 /// L'heure qu'une ligne reprise d'un bilan porte : la date et l'heure de reception que le bilan dit (`Bilan::recu_le`),
@@ -159,7 +159,13 @@ fn mode_du_bilan(essai_reel: Option<Mode>) -> Mode {
     }
 }
 
-fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
+fn reprise_et_incidents(
+    ctx: &Contexte,
+    ecrire: bool,
+    qui: &str,
+    incidents: &mut Vec<crate::etats::IncidentDeRetour>,
+    pieces_illisibles: &mut Vec<crate::retours::PieceIllisible>,
+) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
     let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
     let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
@@ -233,6 +239,8 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))?;
         let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
+        rapport.illisibles.extend(r.illisibles.iter().map(crate::retours::PieceIllisible::phrase));
+        pieces_illisibles.extend(r.illisibles);
         rapport.rattaches = r.resultat?;
     }
     Ok(rapport)
@@ -243,7 +251,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
 /// ajoutees. Idempotente (par le flux).
 pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
     let r = reprise(ctx, true, qui);
-    AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents }
+    AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents, illisibles: r.illisibles }
 }
 
 // ------------------------------------------------------------- la reprise du canal DPAE

@@ -215,6 +215,36 @@ socle::noms_fermes! {
     }
 }
 
+/// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : elle se met de cote (les autres pieces se
+/// lisent et se rangent), se dit a la compagnie (`phrase`) et se note chez l'editeur
+/// (`compagnie::incidents::noter_retour_illisible`). Une erreur du disque n'en est pas une : elle remonte.
+#[derive(Debug, Clone)]
+pub struct PieceIllisible {
+    pub nature: NatureDuRetour,
+    /// Son archive, dans `retours/` (`retours/dpae/` pour le canal DPAE).
+    pub archive: socle::fichiers::NomDeFichier,
+    /// Ce que son lecteur en a dit.
+    pub echec: Echec,
+}
+
+impl PieceIllisible {
+    /// La piece de l'archive `chemin`, que son lecteur n'a pas lue (`echec`).
+    pub fn de(nature: NatureDuRetour, chemin: &std::path::Path, echec: Echec) -> R<PieceIllisible> {
+        Ok(PieceIllisible { nature, archive: socle::fichiers::NomDeFichier::du(chemin)?, echec })
+    }
+
+    /// Ce que la compagnie lit : la piece, son archive, ce qui ne va pas, et qu'elle est mise de cote.
+    pub fn phrase(&self) -> String {
+        format!(
+            "{} (retour de nature {}, archive {}) ne se lit pas : {} Elle est mise de côté.",
+            self.nature.libelle_dit(),
+            self.nature,
+            self.archive,
+            self.echec.phrase.trim_end()
+        )
+    }
+}
+
 impl NatureDuRetour {
     /// SA LIGNE de la liste des retours (guide v6.8, l. 573-788), pour les natures qu'une compagnie du spectacle recoit :
     /// son libelle (celui que le journal des envois ecrit, `RetourOrganisme.libelle`), l'organisme qui le rend (la

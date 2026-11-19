@@ -521,7 +521,8 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
 }
 
 /// Note les incidents qu'un rattachement des retours a releves (`envois::etats::AvecIncidents`), meme quand il s'est
-/// arrete sur une erreur, puis rend son resultat. Un incident qui ne s'ecrit pas se refuse.
+/// arrete sur une erreur, et les pieces qu'il n'a pas lues (`noter_retour_illisible`), puis rend son resultat. Un incident
+/// qui ne s'ecrit pas se refuse.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
         let canal = match i.canal {
@@ -529,6 +530,9 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
             envois::releve_retours::CanalDesRetours::Dpae => DPAE,
         };
         noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
+    }
+    for p in &r.illisibles {
+        noter_retour_illisible(racine, p.nature, p.archive.texte(), &p.echec)?;
     }
     r.resultat
 }

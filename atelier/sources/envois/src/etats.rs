@@ -1097,26 +1097,38 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
 }
 
 /// Ce que la piece du retour `r` d'un envoi `quoi` en dit : le bilan (nature 10 ou 11) ou le certificat d'une DPAE
-/// (nature 41) ; rien pour une autre nature, ou une piece absente ou illisible.
-fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Option<VerdictDeLaPiece>> {
+/// (nature 41) ; rien pour une autre nature, ou une piece absente. Une piece que son lecteur ne lit pas se met de cote
+/// (`PieceIllisible`, l'archive que `releve_retours::archiver` a posee avant le rattachement) ; le disque remonte.
+fn verdict_du_retour(racine: &Path, r: &Annonce, quoi: Acte, contenu: Option<&[u8]>) -> R<Result<Option<VerdictDeLaPiece>, retours::PieceIllisible>> {
     let nature = r.nature_retour;
     if !matches!(nature, NatureDuRetour::AccuseDEnregistrement | NatureDuRetour::CertificatDeConformite) && !(quoi == Acte::Dpae && nature == NatureDuRetour::CertificatDpae) {
-        return Ok(None);
+        return Ok(Ok(None));
     }
     let octets = match contenu {
         Some(c) => c.to_vec(),
         None => match archive_du_retour(racine, r, quoi)? {
-            None => return Ok(None),
+            None => return Ok(Ok(None)),
             Some(f) => lire_archive(&f)?,
         },
     };
+    match lire_le_verdict(nature, &octets) {
+        Ok(v) => Ok(Ok(v)),
+        Err(e) => {
+            let archive = archive_du_retour(racine, r, quoi)?.ok_or_else(|| socle::echec::refus(format!("Le retour de nature {} lu n'est pas archivé : {}", nature, e.phrase)))?;
+            Ok(Err(retours::PieceIllisible::de(nature, &archive, e)?))
+        }
+    }
+}
+
+/// Le verdict que dit la piece `octets` de nature `nature` (10, 11 ou 41).
+fn lire_le_verdict(nature: NatureDuRetour, octets: &[u8]) -> R<Option<VerdictDeLaPiece>> {
     if nature == NatureDuRetour::CertificatDpae {
-        return verdict_du_certificat(&octets);
+        return verdict_du_certificat(octets);
     }
     // Une piece sans bilan (ce n'est pas un rapport de depot), ou un bilan qui ne dit ni l'etat de la declaration ni
     // celui de l'envoi, ne donne pas de verdict.
-    let Some(verdict) = retours::bilan_si_xml(&octets)?.and_then(|b| b.verdict()) else { return Ok(None) };
-    let anomalies = retours::anomalies_lisibles_d_octets(&octets)?;
+    let Some(verdict) = retours::bilan_si_xml(octets)?.and_then(|b| b.verdict()) else { return Ok(None) };
+    let anomalies = retours::anomalies_lisibles_d_octets(octets)?;
     Ok(Some(VerdictDeLaPiece { verdict, anomalies, dpae: None }))
 }
 
@@ -1211,8 +1223,15 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
 
 /// Le nombre ajoute ; les incidents a noter (dans
 /// l'ordre) s'ajoutent a `incidents`, que l'appelant ecrit dans le journal des
-/// incidents, meme quand le rattachement s'arrete sur une erreur.
-fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleDuContenu, Vec<u8>>, incidents: &mut Vec<IncidentDeRetour>) -> R<usize> {
+/// incidents, meme quand le rattachement s'arrete sur une erreur. Un retour dont la piece ne se lit pas se range sans
+/// verdict (un rattachement suivant le completera), et sa piece va dans `illisibles` : les autres se rangent.
+fn rattacher_retours(
+    racine: &Path,
+    retours: &[Annonce],
+    contenus: &HashMap<CleDuContenu, Vec<u8>>,
+    incidents: &mut Vec<IncidentDeRetour>,
+    illisibles: &mut Vec<retours::PieceIllisible>,
+) -> R<usize> {
     if !chemin(racine).exists() {
         return Ok(0);
     }
@@ -1232,7 +1251,15 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
         };
         for &li in siennes {
             let quoi = lignes[li].acte();
-            let verdict = verdict_du_retour(racine, r, quoi, contenus.get(&cle_du_contenu(r)).map(Vec::as_slice))?;
+            let verdict = match verdict_du_retour(racine, r, quoi, contenus.get(&cle_du_contenu(r)).map(Vec::as_slice))? {
+                Ok(v) => v,
+                Err(piece) => {
+                    if !illisibles.iter().any(|x| x.archive == piece.archive) {
+                        illisibles.push(piece);
+                    }
+                    None
+                }
+            };
             let ligne = lignes[li].clone();
             let connus = match &mut lignes[li] {
                 Ligne::Dsn(e) => &mut e.retours,
@@ -1263,21 +1290,23 @@ fn rattacher_retours(racine: &Path, retours: &[Annonce], contenus: &HashMap<CleD
     Ok(ajoutes)
 }
 
-/// Ce qu'un rattachement rend : le nombre de retours ranges (ou l'erreur qui l'a arrete), et les incidents qu'il a
-/// releves, que `moteur` note au journal des incidents, meme quand le rattachement s'est arrete sur une erreur.
+/// Ce qu'un rattachement rend : le nombre de retours ranges (ou l'erreur qui l'a arrete), les incidents qu'il a
+/// releves et les pieces qu'il n'a pas lues, que `moteur` note au journal des incidents, meme quand le rattachement
+/// s'est arrete sur une erreur.
 pub struct AvecIncidents<T> {
     pub resultat: R<T>,
     /// Dans l'ordre.
     pub incidents: Vec<IncidentDeRetour>,
+    pub illisibles: Vec<retours::PieceIllisible>,
 }
 
 /// Range les retours `retours` (la liste des retours) en face des lignes du journal qu'ils concernent (par le flux).
 /// `contenus` donne, pour chaque `(flux, nature, publication)` telecharge, les octets du retour : le verdict se lit dedans.
 pub fn rattacher_retours_avec_contenus(racine: &Path, retours: &[Annonce], contenus: &[(CleDuContenu, Vec<u8>)]) -> AvecIncidents<usize> {
-    let mut incidents = Vec::new();
+    let (mut incidents, mut illisibles) = (Vec::new(), Vec::new());
     let dico: HashMap<CleDuContenu, Vec<u8>> = contenus.iter().cloned().collect();
-    let resultat = rattacher_retours(racine, retours, &dico, &mut incidents);
-    AvecIncidents { resultat, incidents }
+    let resultat = rattacher_retours(racine, retours, &dico, &mut incidents, &mut illisibles);
+    AvecIncidents { resultat, incidents, illisibles }
 }
 
 /// `rattacher_retours_avec_contenus` sans contenus : les retours deja archives.
@@ -1455,7 +1484,7 @@ mod tests {
         let mut contenus = HashMap::new();
         contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());
         let mut inc = Vec::new();
-        assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut inc).unwrap(), 2);
+        assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut inc, &mut Vec::new()).unwrap(), 2);
         assert_eq!(inc.len(), 1);
         assert_eq!((inc[0].canal, inc[0].ou.as_str(), inc[0].quoi.as_str()), (crate::releve_retours::CanalDesRetours::Dsn, "retour-dsn", "CST-04"));
         assert_eq!(inc[0].resume, "CST-04 : Code URSSAF invalide");
@@ -1470,7 +1499,7 @@ mod tests {
         assert_eq!(pose.libelle, "Certificat de conformite / bilan d'anomalies");
         assert_eq!(fichier[1].retours_organisme()[0].libelle, "bilan d'identification des salaries");
         // un second passage ne rajoute rien
-        assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut Vec::new()).unwrap(), 0);
+        assert_eq!(rattacher_retours(&r, &retours, &contenus, &mut Vec::new(), &mut Vec::new()).unwrap(), 0);
         std::fs::remove_dir_all(&r).unwrap();
     }
 }

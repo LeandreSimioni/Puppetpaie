@@ -276,9 +276,17 @@ struct Attestation {
 /// Une attestation d'un retour, par sa periode (`None` : le retour ne la dit pas) et le nom qu'elle porte.
 type CleAttestation = (Option<Mois>, String);
 
+/// Les attestations archivees (`attestations_archivees`), et les archives de nature 46 que leur lecteur ne lit pas,
+/// mises de cote.
+struct AttestationsArchivees {
+    vues: HashMap<CleAttestation, Vec<Attestation>>,
+    illisibles: Vec<envois::retours::PieceIllisible>,
+}
+
 /// (periode, qui) -> les attestations du DERNIER retour qui le porte, lues
-/// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode.
-fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<&[std::path::PathBuf]>) -> R<HashMap<CleAttestation, Vec<Attestation>>> {
+/// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode. Une archive que
+/// `retours::aer_spectacle` ne lit pas se met de cote, les autres se lisent ; le disque remonte.
+fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<&[std::path::PathBuf]>) -> R<AttestationsArchivees> {
     let dossier = ctx.racine.join(envois::retours::RETOURS);
     // `fichiers` : seulement ces archives (la releve range ce qu'elle vient de telecharger).
     let mut fichiers: Vec<String> = match seulement {
@@ -289,10 +297,17 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
     let index: Vec<(droit::contexte::IdSalarie, String)> =
         ctx.salaries.iter().map(|(cle, v)| (cle.clone(),[v.nom.portee(), v.prenom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" "))).collect();
     let mut vues: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
+    let mut illisibles = Vec::new();
     for nom in fichiers {
         let chemin = dossier.join(&nom);
         let octets = crate::depots::lire_octets(&chemin)?;
-        let liste = envois::retours::aer_spectacle(&octets)?;
+        let liste = match envois::retours::aer_spectacle(&octets) {
+            Ok(l) => l,
+            Err(e) => {
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::AerSpectacle, &chemin, e)?);
+                continue;
+            }
+        };
         let cles = envois::retours::rattacher(&liste.iter().map(|a| a.qui.as_str()).collect::<Vec<_>>(), &index);
         let mut de_ce_retour: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
         for (a, cle) in liste.into_iter().zip(cles) {
@@ -305,16 +320,17 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
         }
         vues.extend(de_ce_retour);
     }
-    Ok(vues)
+    Ok(AttestationsArchivees { vues, illisibles })
 }
 
 /// `aer_manquantes` : les salaries dont France Travail a renvoye l'AER du mois, mais dont le PDF signe
-/// n'est pas dans `sorties/<mois>/envoi/`.
-fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
+/// n'est pas dans `sorties/<mois>/envoi/` ; et les archives d'attestations qui ne se lisent pas.
+fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<(Vec<String>, Vec<envois::retours::PieceIllisible>)> {
     let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let etiquette = mois.etiquette();
     let mut out: Vec<String> = Vec::new();
-    for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
+    let archivees = attestations_archivees(ctx, Some(mois), None)?;
+    for groupe in archivees.vues.values() {
         let Some(att) = groupe.first() else { continue };
         if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sorties, cle, &etiquette).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
@@ -328,7 +344,7 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
         }
     }
     out.sort();
-    Ok(out)
+    Ok((out, archivees.illisibles))
 }
 
 /// Les paies de `periode`, sous les numeros de contrat que la DSN a DECLARES (regle 4 : un numero se lit --
@@ -380,17 +396,18 @@ fn cachet_pose(gabarits: &Path) -> Option<String> {
 }
 
 /// `RangementAer` : ce que le rangement des AER a fait -- les PDF ecrits `(periode, cle, chemin)`, les attestations sans salarie
-/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`.
+/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`, les archives qui ne se lisent pas.
 #[derive(Default)]
 pub struct RangementAer {
     pub ecrits: Vec<(Mois, droit::contexte::IdSalarie, std::path::PathBuf)>,
     pub a_ranger: Vec<(String, std::path::PathBuf)>,
     pub refusees: Vec<(droit::contexte::IdSalarie, Mois, Vec<String>)>,
+    pub illisibles: Vec<envois::retours::PieceIllisible>,
 }
 
-/// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la releve
-/// et l'ouverture (qui ne signent jamais malgre un ecart).
-pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>) -> R<Vec<String>> {
+/// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la
+/// releve (qui ne signe jamais malgre un ecart) ; et les archives qui ne se lisent pas, que la releve dit et note.
+pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>) -> R<(Vec<String>, Vec<envois::retours::PieceIllisible>)> {
     let fait = ranger_aer_detail(ctx, mois, fichiers, false)?;
     let mut phrases: Vec<String> = Vec::new();
     // `RangementAer.a_faire()` : d'abord les attestations sans salarie, puis les refusees (la paie ne les confirme pas).
@@ -400,20 +417,20 @@ pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
     for (cle, periode, ecarts) in &fait.refusees {
         phrases.push(format!("Attestation France Travail de {} ({}) NON SIGNEE : elle ne dit pas ce que la paie dit ({}). La correction se fait sur la DSN, pas sur le PDF.", cle, periode, ecarts.join("; ")));
     }
-    Ok(phrases)
+    Ok((phrases, fait.illisibles))
 }
 
 /// Le rangement des AER revenues et ce qu'il a laisse. `forcer` : signer malgre un ecart (`aer --forcer`).
 pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>, forcer: bool) -> R<RangementAer> {
     use documents::aer::{authentifier, Authentification, Echec as AerEchec};
-    let vues = attestations_archivees(ctx, mois, fichiers)?;
+    let AttestationsArchivees { vues, illisibles } = attestations_archivees(ctx, mois, fichiers)?;
     let mut par_mois: HashMap<Mois, Vec<engagement::calcul::Paie>> = HashMap::new();
     // Ce qui est parti, lu une fois pour toutes les attestations.
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     let mut cles: Vec<&CleAttestation> = vues.keys().collect();
     cles.sort();
     // `RangementAer.a_faire()` : d'abord les attestations sans salarie, puis les refusees (la paie ne les confirme pas).
-    let mut fait = RangementAer::default();
+    let mut fait = RangementAer { illisibles, ..RangementAer::default() };
     for k in cles {
         let groupe = &vues[k];
         let (Some(periode), Some(cle)) = (k.0, groupe[0].cle.clone()) else {
@@ -514,7 +531,9 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
                 .to_string(),
         );
     }
-    let manquent = aer_manquantes(ctx, mois)?;
+    let (manquent, illisibles) = aer_manquantes(ctx, mois)?;
+    // Une archive d'attestations qui ne se lit pas se dit ici, chaque fois : elle reste dans `retours/`.
+    informations.extend(illisibles.iter().map(envois::retours::PieceIllisible::phrase));
     if !manquent.is_empty() {
         informations.push(format!(
             "L'attestation employeur (AER) est revenue de France Travail, mais elle n'est pas signee pour {} : la paie ne confirme pas ce qu'elle affiche, ou le nom n'est pas reconnu. Voir les messages de l'ouverture.",

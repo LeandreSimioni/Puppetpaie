@@ -588,7 +588,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
         }
         suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &decrits, &contenus))?;
         // L'EFFECTIF S'ECRIT SEUL, comme a la releve reelle.
-        reconstruire_effectifs(&ctx.racine)?;
+        suites.mettre_de_cote(reconstruire_effectifs(&ctx.racine)?);
     }
     Ok(faits)
 }
@@ -692,8 +692,13 @@ pub fn relever_retours(
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
                 if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
-                    for d in crate::retours::declarations_du_bilan(&contenu)? {
-                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                    match crate::retours::declarations_du_bilan(&contenu) {
+                        Ok(ds) => {
+                            for d in ds {
+                                releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                            }
+                        }
+                        Err(e) => suites.mettre_de_cote([crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?]),
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
@@ -712,7 +717,7 @@ pub fn relever_retours(
 
     if canal == CanalDesRetours::Dsn {
         // L'EFFECTIF S'ECRIT SEUL : `config/effectifs.json` se refait depuis les archives.
-        reconstruire_effectifs(&ctx.racine)?;
+        suites.mettre_de_cote(reconstruire_effectifs(&ctx.racine)?);
     }
 
     if !releve.trouves.is_empty() {
@@ -867,13 +872,15 @@ fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
 
 /// Relit tous les 118 archives et reecrit `config/effectifs.json`. Pour chaque annee
 /// et chaque code, le calcul le plus RECENT l'emporte ; l'effectif qu'une annee sans 118 a recu de la compagnie reste.
-/// Ne touche pas au fichier s'il n'y a aucun 118.
-pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
+/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se saute et se rend (les autres
+/// comptent) ; le disque remonte.
+pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllisible>> {
     let dossier = racine.join(crate::retours::RETOURS);
+    let mut illisibles = Vec::new();
     // Sans dossier des retours, aucun 118 n'est arrive.
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(illisibles),
         Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
     let mut noms: Vec<String> = Vec::new();
@@ -888,7 +895,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
-        let Some(mesures) = lire_crm118(&octets)? else { continue };
+        let mesures = match lire_crm118(&octets) {
+            Ok(Some(m)) => m,
+            Ok(None) => continue,
+            Err(e) => {
+                illisibles.push(crate::retours::PieceIllisible::de(NatureDuRetour::Effectifs, &p, e)?);
+                continue;
+            }
+        };
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
             let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
@@ -899,13 +913,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     if annees.is_empty() {
-        return Ok(());
+        return Ok(illisibles);
     }
     let existant = effectifs_lus(racine)?;
     for (an, dit) in dits(existant.as_ref()) {
         annees.entry(an).or_default().entry(TypeDeParametreNeores::EffectifMoyen).or_insert(dit);
     }
-    ecrire_effectifs(racine, existant.as_ref(), annees)
+    ecrire_effectifs(racine, existant.as_ref(), annees)?;
+    Ok(illisibles)
 }
 
 /// L'EFFECTIF QUE LA COMPAGNIE DIT POUR L'ANNEE `an` (l'effectif annuel moyen de l'annee civile, L. 130-1, I, CSS ;
