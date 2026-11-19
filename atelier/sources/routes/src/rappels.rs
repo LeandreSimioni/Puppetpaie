@@ -1439,14 +1439,13 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui)?);
     }
     for f in fins.into_iter().filter_map(FinASignaler::lue) {
-        let (cle, contrat) = (f.salarie.clone(), f.contrat);
-        if contrat.fin() > st.aujourdhui {
+        if f.contrat.fin() > st.aujourdhui {
             continue; // il n'a pas encore pris fin
         }
         if !du(&f.obligation) {
             continue;
         }
-        let salarie = cle.to_string();
+        let salarie = f.salarie.to_string();
         let numero = match &f.numero {
             Some(n) => format!("Le contrat {}", n),
             None => "Le contrat sans numéro".to_string(),
@@ -1454,13 +1453,13 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         let a_saisir: Vec<String> = f.a_saisir.iter().map(crate::imprevus::phrase_du_manque).collect();
         let mut r = rappel_d_obligation(
             &f.obligation,
-            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: cle.clone(), jour: contrat.fin() },
+            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: f.salarie.clone(), jour: f.contrat.fin() },
             format!("Signaler la fin du contrat de {}", salarie),
-            format!("{} s'est terminé le {}.", numero, contrat.fin().jj_mm_aaaa()),
+            format!("{} s'est terminé le {}.", numero, f.contrat.fin().jj_mm_aaaa()),
             Objet::Fin(Box::new(f.clone())),
         )?;
         r.mois = Some(f.mois);
-        r.salarie = Some(cle);
+        r.salarie = Some(f.salarie.clone());
         r.etape = Some(if a_saisir.is_empty() { EtapeDEcheance::AProduire } else { EtapeDEcheance::ASaisir });
         if !a_saisir.is_empty() {
             r.detail.push_str(&format!(" À saisir d'abord, dans la carte du contrat : {}", a_saisir.join(" ")));
