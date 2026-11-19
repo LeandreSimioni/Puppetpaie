@@ -219,29 +219,54 @@ const NOIR: &str = "#000000";
 
 // ----------------------------------------------------- decoupage au 31 mars
 
-/// LE CONTRAT QU'UN CERTIFICAT COUVRE : l'engagement du contrat entier (celui de son seul mois, ou recompose sur tous ses
-/// mois : `routes::dossier_salarie::paie_du_contrat_entier`), le brut de tout le contrat, la fiche du salarie, et, pour un
-/// contrat paye au mois, chacun de ses mois payes (`MoisPaye`), dans l'ordre (vide pour un contrat a l'activite).
+/// LE CONTRAT QU'UN CERTIFICAT COUVRE, lu dans les paies validees de chacun de ses mois, sans recalcul. « Le certificat
+/// d'emploi est remis au salarié à l'issue de son contrat de travail », et son salaire est « la rémunération brute versée
+/// au salarié au titre du contrat de travail effectué » (Audiens, « Congés et spectacles employeur - Mode d'emploi »,
+/// article 4 du reglement du regime, `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-
+/// employeur-20261030.txt`, l. 187-192) : un certificat pour le contrat entier (deux s'il passe le 31 mars), qui somme
+/// ses mois. `engagement` : celui de son dernier mois (ses bornes, son numero, sa nature, son taux de cachet) ;
+/// `mois_payes` : chacun de ses mois payes, dans l'ordre (`routes::dossier_salarie::paie_du_contrat_entier`).
 #[derive(Debug, Clone)]
 pub struct ContratDuCertificat {
     pub engagement: Engagement,
-    pub brut: Montant,
     pub salarie: droit::fiche::ChampsSalarie,
     pub mois_payes: Vec<MoisPaye>,
 }
 
-/// Un mois paye d'un contrat paye au mois : son dernier jour, ses jours travailles et son brut.
+/// Un mois paye d'un contrat, tel que sa paie validee le porte : son dernier jour, ses dates travaillees, ses cachets,
+/// ses jours, ses heures et son brut.
 #[derive(Debug, Clone)]
 pub struct MoisPaye {
     pub fin: Jour,
+    pub dates_travail: Vec<Jour>,
+    pub cachets: Cachets,
     pub jours: Jours,
+    pub heures: Option<Heures>,
     pub brut: Montant,
+}
+
+impl MoisPaye {
+    /// Le mois que l'engagement `e` paie, au brut `brut` de sa paie : ce que la paie porte, rien ne se recalcule.
+    pub fn de(e: &Engagement, brut: Montant) -> MoisPaye {
+        MoisPaye { fin: e.fin_mois(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: brut.au_centime() }
+    }
+
+    /// Le mois d'une paie validee, telle qu'elle est ecrite dans le fichier de son mois (`PaieEcrite::paie`).
+    pub fn de_la_paie_ecrite<A>(p: &engagement::paie_ecrite::FormeDePaie<A>) -> MoisPaye {
+        let e = &p.engagement;
+        MoisPaye { fin: e.mois.dernier_jour(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: p.brut.au_centime() }
+    }
 }
 
 impl ContratDuCertificat {
     /// Ses dates, du debut a la fin : un contrat sans fin n'a pas de certificat.
     fn periode(&self) -> R<Periode> {
         self.engagement.contrat().fermee().ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))
+    }
+
+    /// Le brut du contrat entier : la somme du brut de ses mois.
+    pub fn brut(&self) -> Montant {
+        self.mois_payes.iter().fold(Montant::ZERO, |a, m| a + m.brut)
     }
 }
 
@@ -299,11 +324,18 @@ impl NombreDuCertificat {
 /// nombre.
 pub fn decouper(c: &ContratDuCertificat) -> R<Vec<(Periode, Vec<Jour>, NombreDuCertificat)>> {
     let periode = c.periode()?;
-    if !c.mois_payes.is_empty() {
+    if c.engagement.nat()?.mensuelle() {
         return Ok(periodes_au_mois(periode, &c.mois_payes)?.into_iter().map(|(p, _)| p).collect());
     }
-    let e = &c.engagement;
-    au_31_mars(periode, &e.dates_travail, e.cachets, e.jours, e.heures, e.numero.as_ref())
+    // Les cachets, les jours et les heures du contrat entier sont la somme de ceux de chacun de ses mois.
+    let mois = &c.mois_payes;
+    let mut dates: Vec<Jour> = mois.iter().flat_map(|m| m.dates_travail.iter().copied()).collect();
+    dates.sort();
+    dates.dedup();
+    let cachets = mois.iter().map(|m| m.cachets).sum::<Cachets>();
+    let jours = mois.iter().map(|m| m.jours).sum::<Jours>();
+    let heures = mois.iter().filter_map(|m| m.heures).reduce(|a, b| a + b);
+    au_31_mars(periode, &dates, cachets, jours, heures, c.engagement.numero.as_ref())
 }
 
 /// Le contrat a l'activite de `periode`, aux dates travaillees `dates`, qui compte `cachets`, `jours` et `heures`, coupe
@@ -366,7 +398,7 @@ pub struct Certificat {
 /// `certificats` : les certificats dus au titre d'une paie, dans l'ordre des periodes.
 pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertificat) -> R<Vec<Certificat>> {
     let e = &paie.engagement;
-    if !paie.mois_payes.is_empty() {
+    if e.nat()?.mensuelle() {
         let mut out = Vec::new();
         for (numero, ((periode, _dates, nb), brut)) in premier_numero.suite().zip(periodes_au_mois(paie.periode()?, &paie.mois_payes)?) {
             out.push(Certificat {
@@ -381,10 +413,11 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
         return Ok(out);
     }
     let parts = decouper(paie)?;
+    let brut_du_contrat = paie.brut();
     let mut out = Vec::new();
     for (numero, (periode, dates, nb)) in premier_numero.suite().zip(&parts) {
         let brut = if parts.len() == 1 {
-            paie.brut
+            brut_du_contrat
         } else {
             match e.taux_cachet {
                 // Un contrat a cheval sur le 31 mars : un cachet par date travaillee de la periode (`decouper`).
@@ -416,7 +449,7 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
     }
     if parts.len() > 1 {
         let total = out.iter().fold(Montant::ZERO, |a, c| a + c.brut);
-        if total != paie.brut {
+        if total != brut_du_contrat {
             let qui = match &e.numero {
                 Some(n) => n.to_string(),
                 None => texte_requis(&paie.salarie.nom, "nom")?,
@@ -425,7 +458,7 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
                 Classe::Illisible,
                 format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
-                    qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
+                    qui, socle::texte::euros(total), socle::texte::euros(brut_du_contrat)
                 ),
             ));
         }

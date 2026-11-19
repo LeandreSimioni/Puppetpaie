@@ -1149,7 +1149,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
 | cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
-| contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
+| contrat qu'un certificat Congés Spectacles couvre (l'engagement de son dernier mois, la fiche du salarié, et chacun de ses mois payés, lus dans leurs paies validées, sans recalcul ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
+| mois payé d'un contrat, tel que sa paie validée le porte (dernier jour, dates travaillées, cachets, jours, heures, brut), que le certificat Congés Spectacles somme | `documents::conges_spectacles::MoisPaye` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
 | ligne de rémunération (ce qu'une ligne de paie paie, sa rubrique et son montant. Celle que le calcul rend dit toujours ce qu'elle paie, `LigneBrut` (son paiement obligatoire) ; celle d'un bulletin importé que l'import a rattachée à sa rubrique garde son montant lu, et ce qu'elle paie quand il l'imprime, `LigneRattachee` (la même ligne, son paiement facultatif : un forfait imprimé à son seul montant) ; un seul rattachement, `importe::LigneImprimee::rattachee` : une rubrique et un montant ; elle n'est pas une ligne de paie (`LignePaie`). Ses formes : la paie écrite, la ligne du calcul elle-même (son paiement écrit sans zéro, `EcritSansZero`) ; la zone `importe`, `LigneImprimee`, qu'une ligne non rattachée garde. Un état la lit d'une paie du mois sans recopie, `etats::RemunerationDuMois` : la ligne calculée, la ligne rattachée, ou ce que le bulletin importé imprime) | `engagement::calcul::LigneBrut`, `engagement::calcul::LigneRattachee` | `engagement/src/calcul.rs` |
@@ -2681,11 +2682,11 @@ et `debut_periode`/`fin_periode` (le contrat borné au mois). La DSN en tire :
 lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
 défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
-mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
-certificat CS (`paie_du_contrat_entier`) est le même engagement sur les
-lignes de tous ses mois (`Engagement::sur_tout_le_contrat` : ses termes, sa
-nature, ses bornes) ; il retire le planning des lignes : chaque mois a payé
-le sien.
+mois suivant (`lignes_du_planning`). Le certificat CS d'un contrat sur
+plusieurs mois (`paie_du_contrat_entier`) ne recalcule rien : il lit la paie
+validée de chacun de ses mois (`conges_spectacles::MoisPaye` : dates
+travaillées, cachets, jours, heures, brut) et en fait la somme ; le planning
+n'y compte pas : chaque mois a payé le sien.
 
 Le barème et le SMIC (`engagement::calcul`) sont ceux de `fin_periode`, pas de
 `fin` : un contrat de décembre à février se paie en décembre au barème de
