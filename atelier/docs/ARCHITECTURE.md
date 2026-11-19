@@ -2192,8 +2192,10 @@ l'année, `conges::plafonds_des_mois_anterieurs`, puis les contrats précédents
 mois) : la vieillesse plafonnée, le FNAL, les tranches de la retraite
 complémentaire et de la prévoyance, et la part que la CSG abat
 (`part_abattue_csg`, un champ de la paie, pas une assiette : rien ne s'y
-assoit, la DSN ne la déclare pas ; une paie écrite avant qu'il s'écrive a
-abattu tout son brut soumis, `FormeDePaie::part_abattue_csg`). Une tranche
+assoit, la DSN ne la déclare pas ; une paie qui ne l'écrit pas a abattu
+toutes ses rubriques soumises, ce que dit sa base de CSG, son brut soumis
+abattu plus la prévoyance patronale : sa part abattue est son brut,
+`FormeDePaie::part_abattue_csg`). Une tranche
 régularisée peut être négative, la DSN la déclare signée. L'artiste et le
 technicien intermittent gardent le plafond de chaque paie ; les paies reprises
 d'un ancien logiciel n'entrent pas dans le cumul (la régularisation commence

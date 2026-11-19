@@ -123,8 +123,8 @@ pub struct FormeDePaie<A> {
     pub plafond: Montant,
     #[serde(with = "nombre")]
     pub plafond_urssaf: Montant,
-    /// La part du brut que l'abattement de la CSG a abattue (`calcul::Contenu::part_abattue_csg`), toujours ecrite ; une
-    /// paie ecrite avant qu'elle le soit ne la porte pas, et elle se lit par `part_abattue_csg()`, nulle part ailleurs.
+    /// La part du brut que l'abattement de la CSG a abattue (`calcul::Contenu::part_abattue_csg`), toujours ecrite par le
+    /// calcul ; absente, la paie a abattu tout son brut soumis. Elle se lit par `part_abattue_csg()`, nulle part ailleurs.
     #[serde(default, with = "nombre::option")]
     pub part_abattue_csg: Option<Montant>,
     /// Un mois decoupe : ses periodes elementaires, chacune une paie. Vide pour un mois d'un seul tenant.
@@ -135,11 +135,11 @@ pub struct FormeDePaie<A> {
 }
 
 impl<A> FormeDePaie<A> {
-    /// LA PART DU BRUT QUE L'ABATTEMENT DE LA CSG A ABATTUE DANS CETTE PAIE, telle qu'elle l'ecrit ; une paie ecrite avant
-    /// que le calcul l'ecrive ne la porte pas, et ce qu'elle a fait se lit dans ses chiffres : le calcul d'alors abattait
-    /// de 1,75 % chaque rubrique soumise, sans limite (`montant * abattement_csg` pour chacune, l'assiette de la CSG etant
-    /// le brut abattu plus la prevoyance patronale), soit tout son brut soumis (`brut`, la somme de ces rubriques). Ce
-    /// n'est pas un repli : c'est le fait de cette paie, le seul endroit ou il se dit.
+    /// LA PART DU BRUT QUE L'ABATTEMENT DE LA CSG A ABATTUE DANS CETTE PAIE, telle qu'elle l'ecrit. Une paie qui ne
+    /// l'ecrit pas a abattu de 1,75 % chacune de ses rubriques soumises, sans limite : sa part abattue est son brut
+    /// soumis (`brut`, la somme de ces rubriques). Ce qui le fonde est dans ses chiffres : sa base de CSG (`base_csg`)
+    /// est ce brut abattu, plus la prevoyance patronale (CSS L. 136-1-1, `calcul`, 7.4). Ce n'est pas un repli : c'est
+    /// le fait de cette paie, et le seul endroit ou il se dit.
     pub fn part_abattue_csg(&self) -> Montant {
         match self.part_abattue_csg {
             Some(m) => m,
