@@ -283,25 +283,30 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ===================================== 7. les versements aux organismes (bloc 20)
 
 /// Les paies de chaque mois de la periode (`engagement::etats::paies_du_mois` : ecrites ou importees), tous
-/// etablissements. Un mois sans paie est dit.
-fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>> {
-    let (mut out, mut sans) = (Vec::new(), Vec::new());
+/// etablissements, et celles qui ne se rangent pas (`engagement::importe::NatureADire`, dites dans `avert`). Un mois sans
+/// paie est dit ; un mois dont les paies ne se rangent pas encore n'en est pas un. L'etat repond tant qu'une paie existe,
+/// rangee ou non.
+fn paies_des_mois(
+    ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs,
+) -> R<(Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>, Vec<engagement::importe::NatureADire>)> {
+    let (mut out, mut sans, mut non_rangees) = (Vec::new(), Vec::new(), Vec::new());
     for &m in &p.mois {
         let (paies, a_dire) = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
         avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
-        if paies.is_empty() {
-            sans.push(m.to_string());
-        } else {
-            out.push((m, paies));
+        match (paies.is_empty(), a_dire.is_empty()) {
+            (true, true) => sans.push(m.to_string()),
+            (true, false) => {}
+            (false, _) => out.push((m, paies)),
         }
+        non_rangees.extend(a_dire);
     }
     if !sans.is_empty() {
         avert.push(format!("Aucune paie pour {} : ces mois ne sont pas dans l'état.", sans.join(", ")));
     }
-    if out.is_empty() {
+    if out.is_empty() && non_rangees.is_empty() {
         return Err(refus(format!("Aucune paie sur la période ({}) : il n'y a rien à lire.", p.libelle)));
     }
-    Ok(out)
+    Ok((out, non_rangees))
 }
 
 /// La DSN d'un mois et d'un etablissement (`None` : le principal) : celle qui est partie, telle qu'elle est partie, ou
@@ -510,7 +515,17 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let (taux, plancher, plafond) = (fp.taux, fp.plancher, fp.plafond);
     let mut par_an: Vec<(Annee, usize, Montant)> = Vec::new();
     let orgs = ctx.organismes().map_err(|e| e.reclasser(Classe::Refuse))?;
-    for (m, paies) in paies_des_mois(ctx, &p, &mut avert, &d.departs)? {
+    let (des_mois, non_rangees) = paies_des_mois(ctx, &p, &mut avert, &d.departs)?;
+    // UNE ANNEE DONT UNE PAIE REPRISE NE SE RANGE PAS (sa nature reste a dire) : sa tranche A ne se somme pas sans elle ;
+    // sa contribution ne se calcule pas, et se dit. Les autres annees se calculent.
+    let incompletes: BTreeSet<Annee> = non_rangees.iter().map(|a| a.mois.annee()).collect();
+    for an in &incompletes {
+        avert.push(format!(
+            "{} : une paie reprise de cette année n'est pas comptée (la nature de son contrat reste à dire) : sa tranche A ne se somme pas sans elle, sa contribution ne se calcule pas.",
+            an
+        ));
+    }
+    for (m, paies) in des_mois.into_iter().filter(|(m, _)| !incompletes.contains(&m.annee())) {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
         let mut ta = Montant::ZERO;
         for q in &paies {

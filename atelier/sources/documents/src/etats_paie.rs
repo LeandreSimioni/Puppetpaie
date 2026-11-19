@@ -1376,6 +1376,8 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if lignes.is_empty() {
         avert.push("Aucun bulletin de la période ne porte la réduction générale (elle ne s'applique pas aux artistes du spectacle).".to_string());
     }
+    // Les paies reprises qui ne se rangent pas : l'etat ne les lit pas, et le dit.
+    avert.extend(lecture.avertissements());
     let mut t = Tableau::nouveau(EtatDExport::ReductionGenerale, "Réduction générale des cotisations", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
@@ -1498,7 +1500,8 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             lignes.push(l);
         }
     }
-    if lignes.is_empty() {
+    // Des paies que l'etat ne compte pas encore (`NatureADire`) : il repond, vide s'il le faut, et dit pourquoi.
+    if lignes.is_empty() && lecture.avertissements().is_empty() {
         return Err(refus(format!("Aucun contrat validé sur la période ({}).", p.libelle)));
     }
     let mut t = Tableau::nouveau(EtatDExport::HeuresEtCachets, "Heures et cachets (annexes 8 et 10)", p.libelle.clone());
