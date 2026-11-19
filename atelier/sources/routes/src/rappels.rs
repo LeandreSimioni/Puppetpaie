@@ -1434,9 +1434,10 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
     // deja declaree par le circuit derogatoire.
     let mois = st.aujourdhui.mois_civil();
     let precedent = mois.precedent();
-    let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui)?;
+    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&st.ctx.racine);
+    let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui, &lues)?;
     for m in [precedent, mois] {
-        fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui)?);
+        fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui, &lues)?);
     }
     for f in fins {
         if f.contrat.fin() > st.aujourdhui {

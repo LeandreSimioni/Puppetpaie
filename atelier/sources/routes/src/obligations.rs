@@ -1205,32 +1205,13 @@ pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[
     m.dire_le_butoir()
 }
 
-/// LA FIN DEJA PARTIE PAR LE CIRCUIT DEROGATOIRE : la DSN mensuelle REELLE du mois de la fin, acceptee et non refusee au
-/// bilan, la derniere partie qui porte ce contrat (`versions` de sa ligne : la cle du salarie et le numero du contrat),
-/// relue la ou le depot l'a prise (`documents::fichier_depose`), declare-t-elle sa fin au `fin` avec la modalite
-/// S21.G00.62.017 = « 01 - Application du circuit dérogatoire » ? Alors la fin est declaree : « Aucun signalement de
-/// type FCTU n'est attendu quand la dérogation est appliquée, sauf demande expresse du salarié » (fiche 2062,
-/// `net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt`), et ce qui est parti ne se refait pas
-/// (regle 4). Ce qui est parti se lit, il ne se deduit pas d'une date. Un fichier depose qui n'est plus la ne dit rien.
-pub(crate) fn fin_partie_au_circuit_derogatoire(racine: &std::path::Path, journal: &[envois::journal::Ligne], cle: &IdSalarie, numero: &engagement::numeros::NumeroContrat, fin: Jour) -> R<bool> {
-    let mois = fin.mois_civil();
-    let porte = |l: &&envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.mois.is_none() && &x.salarie == cle && &x.numero == numero));
-    let derniere = envois::journal::filtrer(journal, Some(documents::Acte::Dsn), Some(mois), Some(socle::mode::Mode::Reel))
-        .filter(|l| !l.signalement() && l.accepte() && !envois::etats::refuse_par_un_retour(l))
-        .filter(porte)
-        .max_by_key(|l| l.quand());
-    let Some(fichier) = derniere.and_then(|l| l.fichier()) else { return Ok(false) };
-    let chemin = documents::fichier_depose(racine, mois, fichier.texte());
-    let octets = match std::fs::read(&chemin) {
-        Ok(o) => o,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(socle::echec::du_disque(&chemin, &e)),
-    };
-    let dsn = declarations::dsn_lue::lire(&octets, Some(fichier))?;
-    Ok(dsn
-        .contrats
-        .iter()
-        .any(|c| c.numero.as_ref() == Some(numero) && c.fin_declaree == Some(fin) && c.modalite_fin == Some(droit::natures::ModaliteDeDeclarationDeFin::CircuitDerogatoire)))
+/// Le signalement de fin d'un contrat dont on ne sait pas s'il est du : une DSN mensuelle reelle et acceptee de son mois
+/// l'a porte, mais son fichier depose manque ou ne se relit pas (`declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible`).
+/// L'obligation est indeterminee et dit pourquoi : ni « en retard », ni un acte propose.
+pub(crate) fn de_la_fin_illisible(mois: Mois) -> R<Obligation> {
+    let n = base()?.obligations;
+    let o = &n.signalement_fin_contrat;
+    Obligation::squelette(CleDObligation::SignalementFinContrat, o).indeterminee(&declarations::fin_a_la_dsn::FinALaDsn::phrase_illisible(mois)).dire_le_butoir()
 }
 
 /// Le jour ou le signalement de fin de ce contrat est parti (`fctu_depose`), s'il l'est.

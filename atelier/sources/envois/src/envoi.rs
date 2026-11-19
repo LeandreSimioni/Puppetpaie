@@ -107,13 +107,14 @@ pub const PIECES: [Piece; 3] = [
 /// Quand l'AER DUE ce mois-ci (un intermittent dont le contrat finit dans le mois) n'est pas jointe. On le
 /// DIT, plutot que d'envoyer un message qui laisse croire que le dossier est complet ; on ne promet rien de la suite.
 /// Un salarie a qui aucune AER Cinema Spectacle n'est due (un permanent, un contrat d'usage qui continue le mois
-/// suivant, une fin qui se signale : `aer::due`) n'a pas cette phrase.
+/// suivant, un contrat d'usage deja declare arrive a son terme : `aer::due`) n'a pas cette phrase.
 pub const NOTE_SANS_AER: &str = "Ton attestation employeur France Travail (AER Cinéma Spectacle) de ce mois n'est pas \
     jointe : France Travail l'édite à partir de notre déclaration, et elle n'était pas encore revenue au moment de cet envoi.";
 
 /// Quand le contrat finit ce mois-ci et que sa fin se signale (`aer::attestation_fctu` : CDD, CDI, CDDU rompu avant son
 /// terme ou qu'une DSN mensuelle precedente a deja declare) : l'attestation employeur revient de France Travail apres le
-/// signalement, a part de la paie, et c'est la seule attendue (`aer::due` ne l'est pas alors : fiche 1902).
+/// signalement, a part de la paie ; pour le contrat d'usage deja declare arrive a son terme, c'est la seule attendue
+/// (`aer::due`, une inference ecrite la).
 /// Le courriel le dit, pour que son absence ne laisse pas croire le dossier complet ; il ne promet rien.
 pub const NOTE_SANS_ATTESTATION_FCTU: &str = "Ton contrat se termine ce mois-ci : ton attestation employeur pour France \
     Travail n'est pas jointe à ce courriel. France Travail l'édite à partir du signalement de fin de contrat.";

@@ -659,11 +659,6 @@ impl Engagement {
         })
     }
 
-    /// Ce que la DSN de ce mois sait du contrat : infra DSN mensuelle, ou deja declare (`droit::natures::ConnuDeLaDsn`).
-    pub fn connu_de_la_dsn(&self) -> droit::natures::ConnuDeLaDsn {
-        droit::natures::ConnuDeLaDsn::du_contrat(self.contrat().debut(), self.mois)
-    }
-
     /// La periode de paie : le contrat borne au mois, ou la periode elementaire quand ce calcul en est une (`periode`).
     /// Refus : un contrat qui ne touche pas ce mois.
     pub fn periode_payee(&self) -> R<Periode> {

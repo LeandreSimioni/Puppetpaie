@@ -70,6 +70,18 @@ fn cinema_spectacle(c: &ContratDeclare) -> bool {
         && c.emploi.code_emploi_ft.as_ref().is_some_and(|e| !e.est_permanent())
 }
 
+/// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME, tel que la DSN le declare : sa fin au motif du circuit derogatoire
+/// (`Nature::circuit_ouvert_au_motif`, le 031 d'un CDDU) mais ecrite « 02 - Non application du circuit dérogatoire »
+/// (S21.G00.62.017). Le France Travail simule n'en fabrique pas l'attestation depuis la mensuelle : la meme regle que
+/// `documents::aer::due` (une INFERENCE, ecrite la), qui attend pour lui l'attestation du signalement. 62.017 ne
+/// s'ecrit que pour un contrat d'usage (CCH-11) : c'est la nature CDDU qui dit les motifs du circuit.
+fn a_son_terme_hors_du_circuit(c: &ContratDeclare) -> R<bool> {
+    if c.modalite_fin != Some(droit::natures::ModaliteDeDeclarationDeFin::SansCircuitDerogatoire) {
+        return Ok(false);
+    }
+    Ok(droit::natures::NatureDeContrat::CdduSpectacle.proprietes()?.circuit_ouvert_au_motif(c.motif_fin))
+}
+
 // ------------------------------------------------------------------ les periodes
 
 /// Une colonne du cadre 4 : une periode d'emploi d'un contrat, dans un mois ; `contrat` n'est porte que par la colonne
@@ -545,7 +557,12 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let idcc = ent.idcc.dite();
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
-        let mut finis: Vec<&ContratDeclare> = d.contrats_de(ind.identite.nir.as_ref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
+        let mut finis: Vec<&ContratDeclare> = Vec::new();
+        for c in d.contrats_de(ind.identite.nir.as_ref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()) {
+            if !a_son_terme_hors_du_circuit(c)? {
+                finis.push(c);
+            }
+        }
         finis.sort_by_key(|c| c.periode);
         let Some(dernier) = finis.last() else { continue };
         let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;

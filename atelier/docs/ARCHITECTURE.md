@@ -1212,7 +1212,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un envoi au journal des envois | `documents::Acte` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
-| ce que la DSN sait d'un contrat (infra DSN mensuelle, ou déjà déclaré) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
+| ce que la DSN sait d'un contrat (infra DSN mensuelle, déjà déclaré, ou sa fin déjà partie par le circuit dérogatoire) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
+| ce que la DSN sait de la fin, ou le fichier déposé qui ne se relit pas | `declarations::fin_a_la_dsn::FinALaDsn` | `declarations/src/fin_a_la_dsn.rs` |
+| les DSN déposées relues pendant un geste (chacune une fois) | `declarations::fin_a_la_dsn::DsnDeposees` | `declarations/src/fin_a_la_dsn.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
@@ -1548,9 +1550,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   Écrite `seul`, `premier`, `dernier`, `milieu` (`place`), dans la forme canonique d'un engagement et ce que rendent la
   paie d'un mois et la carte d'un engagement.
 - **ce que la DSN sait d'un contrat** : rien encore (« infra DSN mensuelle », fiche net-entreprises 1741 : il commence
-  dans le mois déclaré) ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté), dit par
-  `ConnuDeLaDsn::du_contrat` (son début et le mois) et nulle part ailleurs. Seul le premier ouvre le circuit dérogatoire
-  d'un CDDU (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
+  dans le mois déclaré : une hypothèse, la paie du moteur se fermant au mois civil, que la fiche 1741 ne dit pas
+  « calendaire ») ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté) ; ou sa fin déjà partie
+  par le circuit dérogatoire (la DSN déposée du mois de la fin écrit 62.017 = 01). Décidé une fois, par
+  `declarations::fin_a_la_dsn` (le calendrier, `ConnuDeLaDsn::du_contrat`, puis ce qui est parti : `Departs::de` et le
+  fichier déposé, relu une fois par geste, `DsnDeposees`) ; un fichier déposé qui manque ou ne se relit pas se dit
+  (`FinALaDsn::FichierIllisible`). Le premier et le dernier ouvrent le circuit dérogatoire d'un CDDU
+  (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
   Écrit `ce_mois`, `avant` (`debut`), dans la carte d'un engagement à compléter.
@@ -3213,7 +3219,8 @@ DSN mensuelle validée » (bloc 62, 62.017 ; § 2.5.3 : « Dans les autres cas, 
 déclarant doit procéder selon la procédure de droit commun (signalement) » ;
 fiche 2062 : « la dérogation n'est applicable en DSN que pour les contrats CDDU
 infra-DSN »). Sa fin se signale, et la mensuelle écrit 62.017 = 02. Une seule
-règle (`Nature::signalement_fctu`, `Nature::codes_fin`), que lisent la
+règle (`Nature::signalement_fctu`, `Nature::codes_fin`, avec ce que la DSN sait
+de la fin, décidé par `declarations::fin_a_la_dsn`), que lisent la
 mensuelle, le FCTU, les fins à signaler et leurs rappels, l'attestation et la
 carte d'un engagement (`contrat.rupture`).
 
@@ -3228,13 +3235,17 @@ dérogatoire. Signaler sous cinq jours ouvrés est juste dans les deux lectures 
 `obligations-base.json`, `signalement_fin_contrat`, `inferences`, dit ce qui
 reste ouvert (la lettre du décret, plus large). **Une fin déjà
 partie n'est plus due** : la DSN mensuelle déposée de son mois qui l'a déclarée
-par le circuit dérogatoire (62.017 = 01) se relit
-(`obligations::fin_partie_au_circuit_derogatoire`), et rien ne se refait sur
-elle (règle 4). **Une seule attestation est attendue** : l'AER de l'archive de
-la mensuelle pour une fin au circuit dérogatoire (`aer::due`), l'attestation
-du signalement sinon (`aer::attestation_fctu`) — fiche 1902 : pour un contrat
-qui n'est plus infra-DSN, « il n'y aura pas d'AER [...] dans l'archive des AER
-de la DSN mensuelle suivante ».
+par le circuit dérogatoire (62.017 = 01) se relit (`declarations::fin_a_la_dsn`),
+et tous la lisent : la liste des fins et ses rappels, le bloc 62 d'une mensuelle
+qui la redéclare (le choix « précédemment transmis » se reporte, fiche 1902),
+le FCTU, les attestations attendues, la carte. Son fichier manque : la fin reste
+listée, seule, avec une obligation indéterminée qui le dit. **L'attestation
+attendue** reste l'AER de la mensuelle pour tout intermittent dont le contrat
+finit (`aer::due`), sauf pour le contrat d'usage déjà déclaré arrivé à son
+terme, qui attend celle du signalement (`aer::attestation_fctu`) : une
+INFÉRENCE, écrite sur `aer::due` (la phrase de la fiche 1902 vise un CDDU-D
+corrigé, et aucun texte déposé ne dit quelle attestation revient d'un FCTU
+d'intermittent).
 
 **INFÉRENCE : la dérogation « AEM » du § 5.2 ne joue plus.** Le § 5.2 compte
 parmi les dérogations au signalement les artistes, ouvriers et techniciens du

@@ -1558,6 +1558,8 @@ impl<'a> Moteur<'a> {
         let ids = engagement::stock::identites(&etats_eng.iter().map(|e| e.objet().clone()).collect::<Vec<_>>());
         let g = self.globales()?;
         let departs = self.departs()?;
+        // Ce que la DSN sait de la fin de chaque contrat (`declarations::fin_a_la_dsn`) : chaque DSN deposee, relue une fois.
+        let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&self.ctx.racine);
         // Ce qui est a refaire de chacun, compare une fois : la liste des DPAE, la ligne et la DSN du mois le lisent.
         for e in &etats_eng {
             self.a_refaire_du_mois(mois, e, &departs)?;
@@ -1638,7 +1640,7 @@ impl<'a> Moteur<'a> {
             if matches!(place, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && p.declaree_a_la_caisse_des_conges()? {
                 pieces.push("certificat_cs");
             }
-            if documents::aer::due(p)? {
+            if documents::aer::due(p, declarations::fin_a_la_dsn::de_l_engagement(&lues, &departs, &p.engagement)?.connue()?)? {
                 pieces.push("aer");
             }
             // LA DPAE DE CET ENGAGEMENT : partie (`departs`), et ce qui en est revenu (la ligne qui la porte, par le numero du

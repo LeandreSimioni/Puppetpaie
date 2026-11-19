@@ -17,6 +17,7 @@ pub mod dsn_lue;
 pub mod echeance_dsn;
 pub mod etats_organismes;
 pub mod fctu;
+pub mod fin_a_la_dsn;
 pub mod formats;
 pub mod identite;
 pub mod naf;

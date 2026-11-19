@@ -1261,7 +1261,8 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         (Some(a), Some((b, p))) => (a, b, p),
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
-    let vue = vue_paie(ctx, paie, apres, &v.saisie)?;
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let vue = vue_paie(ctx, paie, apres, &v.saisie, &departs, &declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine))?;
     let atteint = v.atteint.au_centime();
     let change = ce_qui_a_change(avant, apres, i);
     // Le taux qu'il faudrait : chaque ligne qui change, puis le salaire du mois s'il change.
@@ -1438,12 +1439,17 @@ pub(crate) struct Rupture {
 
 /// LA RUPTURE de cet engagement : `None` quand elle n'a pas de sens ici -- une nature sans motif de rupture
 /// (S21.G00.62.002, CCH-11 : `Nature::motifs_rupture`), ou un contrat a terme qui ne finit pas ce mois-ci. Les motifs et
-/// ce que chacun demande viennent de `natures`.
-fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Option<Rupture>> {
+/// ce que chacun demande viennent de `natures`. Ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`, au motif par
+/// defaut : il dit si la DSN deposee l'a deja declaree par le circuit) se decide une fois, avec ce qui est parti
+/// (`departs`, `lues`).
+fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature, departs: &engagement::departs::Departs, lues: &declarations::fin_a_la_dsn::DsnDeposees) -> R<Option<Rupture>> {
     if nat.motifs_rupture().is_empty() {
         return Ok(None);
     }
-    let connu = e.connu_de_la_dsn();
+    let fin = e.contrat().fin();
+    let Some(connu) = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, Some(&e.salarie), e.numero.as_ref(), nat, None, e.contrat().debut(), fin, e.mois)?) else {
+        return Ok(None);
+    };
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
         return Ok(Some(rupture_pour(nat, connu, e.contrat().fin())));
@@ -1465,19 +1471,31 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
 /// ou il se demande. La meme que `rupture_de`, depuis ce que la carte dit : sa nature, son debut lu et sa fin lue
 /// (`Carte::debut_lu`, `Carte::fin_lue`). `None` sans nature ni debut (rien ne dit encore le contrat), pour une nature
 /// sans motif de rupture, ou pour un contrat aux cachets qui finit apres ce mois.
-fn rupture_en_saisie(e: &SaisieCarte, mois: Mois) -> R<Option<Rupture>> {
+fn rupture_en_saisie(e: &SaisieCarte, mois: Mois, departs: &engagement::departs::Departs, lues: &declarations::fin_a_la_dsn::DsnDeposees) -> R<Option<Rupture>> {
     let (Some(_), Some(debut)) = (e.nature, e.debut_lu()) else { return Ok(None) };
     let nat = e.nature_lue()?;
     if nat.motifs_rupture().is_empty() {
         return Ok(None);
     }
-    let connu = droit::natures::ConnuDeLaDsn::du_contrat(debut, mois);
+    let Some(connu) = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, e.salarie.as_ref(), e.numero.as_ref(), &nat, None, debut, e.fin_lue(), mois)?) else {
+        return Ok(None);
+    };
     if nat.duree_indeterminee || nat.mensuelle() {
         return Ok(Some(rupture_pour(&nat, connu, e.fin)));
     }
     match e.fin_lue() {
         Some(f) if f.mois_civil() > mois => Ok(None),
         fin => Ok(Some(rupture_pour(&nat, connu, fin))),
+    }
+}
+
+/// Ce que la DSN sait de la fin, pour la carte : `None` quand le fichier depose de la DSN du mois manque ou ne se relit
+/// pas -- on ne sait pas si la fin est deja partie, et le bloc de fin ne se dessine pas ; la liste des fins a signaler
+/// le dit, sur cette fin seule (`imprevus::fins_a_signaler`, obligation indeterminee).
+fn connu_pour_la_carte(f: declarations::fin_a_la_dsn::FinALaDsn) -> Option<droit::natures::ConnuDeLaDsn> {
+    match f {
+        declarations::fin_a_la_dsn::FinALaDsn::Connue(c) => Some(c),
+        declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible { .. } => None,
     }
 }
 
@@ -1708,8 +1726,9 @@ pub(crate) struct VuePaie {
     a_dire: Option<[declarations::demarrage::Manque; 1]>,
 }
 
-/// Une paie pour l'ecran. `brut` : la carte de l'engagement ; `data` : la saisie du mois (son `taux_cachet`).
-pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueDuMois) -> R<VuePaie> {
+/// Une paie pour l'ecran. `brut` : la carte de l'engagement ; `data` : la saisie du mois (son `taux_cachet`) ;
+/// `departs`, `lues` : ce qui est parti, pour ce que la DSN sait de sa fin (`rupture_de`).
+pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueDuMois, departs: &engagement::departs::Departs, lues: &declarations::fin_a_la_dsn::DsnDeposees) -> R<VuePaie> {
     let e = &p.engagement;
     let nat = e.nat()?;
     let s = &p.salarie;
@@ -1820,7 +1839,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             periode: e.periode_payee()?,
             ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
             modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
-            rupture: rupture_de(e, &nat)?,
+            rupture: rupture_de(e, &nat, departs, lues)?,
         },
         dates_travail: e.dates_travail.clone(),
         cachets: e.cachets,
@@ -2216,6 +2235,8 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     let mut calculees = std::mem::take(&mut r.paies).into_iter();
     let mut calcules = std::mem::take(&mut r.blocs).into_iter();
     let mois = data.mois;
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
     for (e, m) in tous.iter().zip(&manques) {
         match m {
             None => {
@@ -2233,7 +2254,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     contrat: EcritsSeuls {
                         ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?,
                         modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() },
-                        rupture: rupture_en_saisie(e, mois)?,
+                        rupture: rupture_en_saisie(e, mois, &departs, &lues)?,
                     },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
@@ -2264,13 +2285,15 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     let lu = data.mois;
     let montrees = paies_de_l_ecran(ctx, data, mois)?;
     let mut paies: Vec<Paie> = montrees.iter().map(|m| m.paie.clone()).collect();
-    documents::ecrire_documents::numeroter(ctx, &mut paies, lu.annee(), &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
+    documents::ecrire_documents::numeroter(ctx, &mut paies, lu.annee(), &departs)?;
+    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
     let tous = &data.engagements;
     // Chaque paie de l'apercu est celle d'une carte de la saisie, au meme rang.
     let carte = |i: usize| tous.get(i).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une paie de l'aperçu n'a pas sa carte."));
     let mut vues = Vec::new();
     for (i, p) in paies.iter().enumerate() {
-        vues.push(vue_paie(ctx, p, carte(i)?, data)?);
+        vues.push(vue_paie(ctx, p, carte(i)?, data, &departs, &lues)?);
     }
     // LES CONSEILS DE SAISIE : au plus un par carte, quand l'option de la compagnie est cochee, pour un
     // engagement en saisie seulement. Ils ne vivent qu'ici, dans la vue de l'ecran : ni dans les avertissements de la

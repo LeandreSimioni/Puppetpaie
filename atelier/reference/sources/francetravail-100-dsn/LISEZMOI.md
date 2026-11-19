@@ -100,9 +100,12 @@ applicable en DSN que pour les contrats CDDU infra-DSN » ; fiche 1741 pour
 la définition). Qu'aucun contrôle ne vérifie l'infra-mensualité ne la rend
 pas facultative. Le moteur écrit donc 62.017 = 02 au dernier mois d'un CDDU à
 cheval et range sa fin parmi celles qui se signalent dans les cinq jours
-ouvrés (`droit::natures::ConnuDeLaDsn`). Le point 3 (l'AER CS) et le point 4
-restent ouverts : aucun texte déposé ne dit quelle attestation revient d'un
-FCTU d'intermittent.
+ouvrés (`droit::natures::ConnuDeLaDsn`), le délai de toute fin qui se
+signale. Le point 3 (l'AER CS) et le point 4 restent ouverts : aucun texte
+déposé ne dit quelle attestation revient d'un FCTU d'intermittent. Le moteur
+attend, pour ce seul contrat, l'attestation du signalement et pas l'AER CS de
+la mensuelle (`documents::aer::due`, INFÉRENCE écrite là, avec ce qui s'y
+oppose) ; tout autre intermittent garde l'AER CS de la mensuelle.
 
 ## Dans le dépôt public (15/10/2026)
 

@@ -14,6 +14,8 @@ use crate::dsn::{
     autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
     remunerations, usage_admet, Arret, Fichier, RangDuContrat, LOGICIEL, VERSION,
 };
+use crate::fin_a_la_dsn::FinALaDsn;
+use droit::natures::ConnuDeLaDsn;
 use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::grandeurs::Signe;
@@ -208,8 +210,9 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
 
 // ------------------------------------------------------------- les controles
 
-/// `verifier` : refuse ce que la norme refuse ; rend les avertissements.
-pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: TypeDeLaDeclaration) -> Result<Vec<String>, Echec> {
+/// `verifier` : refuse ce que la norme refuse ; rend les avertissements. `connu` : ce que la DSN sait de cette fin
+/// (`fin_a_la_dsn::de_l_engagement`).
+pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: TypeDeLaDeclaration, connu: FinALaDsn) -> Result<Vec<String>, Echec> {
     let mut avertissements = Vec::new();
     if !ADMIS.contains(&type_declaration) {
         return Err(Echec::impossible(format!(
@@ -338,14 +341,23 @@ signalement sans elle. Rien n'est ecrit.",
 
     // La derogation du CDDU (circuit derogatoire, motif 031 d'un contrat infra DSN mensuelle : fiche 2062) : le moteur le
     // DIT plutot que de refuser, car le salarie peut demander le signalement (fiche 1902). Rompu avant son terme, ou deja
-    // declare par une DSN precedente, le CDDU se signale.
-    if !nat.signalement_fctu(Some(fin.motif), e.connu_de_la_dsn()) {
-        avertissements.push(format!(
+    // declare par une DSN precedente, le CDDU se signale ; sa fin deja partie par le circuit (`fin_a_la_dsn`) ne se doit
+    // plus. Ce que la DSN sait de la fin se decide une fois (`connu`).
+    match connu {
+        FinALaDsn::Connue(ConnuDeLaDsn::FinPartieAuCircuitDerogatoire) => avertissements.push(format!(
+            "Contrat {} : sa fin est déjà partie dans la DSN mensuelle de {}, par le circuit dérogatoire ; aucun signalement \
+n'est attendu. Ce signalement ne se fait que si le salarié le demande.",
+            e.numero_declare()?,
+            fin.fin.mois_civil().libelle(socle::mois::Graphie::Accentuee)
+        )),
+        FinALaDsn::Connue(c) if !nat.signalement_fctu(Some(fin.motif), c) => avertissements.push(format!(
             "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
 DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
             e.numero_declare()?,
             nat.libelle
-        ));
+        )),
+        FinALaDsn::Connue(_) => {}
+        FinALaDsn::FichierIllisible { mois } => avertissements.push(FinALaDsn::phrase_illisible(mois)),
     }
     avertissements.push(format!(
         "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent (cahier technique p. 107).",
@@ -409,9 +421,10 @@ impl Options {
 }
 
 /// Le fichier d'un FCTU, pret a deposer : les suspensions de l'engagement de la paie (bloc 65) ;
-/// `arrets` : les arrets a reporter (bloc 60) ; `departs` : ce qui est parti, pour lire les engagements valides du mois.
+/// `arrets` : les arrets a reporter (bloc 60) ; `departs` : ce qui est parti, pour lire les engagements valides du mois ;
+/// `connu` : ce que la DSN sait de cette fin (`fin_a_la_dsn::de_l_engagement`, pour `verifier`).
 pub fn generer(
-    ctx: &Contexte, paie: &engagement::calcul::Paie, fin: &FinDeContrat, o: &Options, arrets: &[Arret], departs: &engagement::departs::Departs,
+    ctx: &Contexte, paie: &engagement::calcul::Paie, fin: &FinDeContrat, o: &Options, arrets: &[Arret], departs: &engagement::departs::Departs, connu: FinALaDsn,
 ) -> Result<String, Echec> {
     let type_declaration = o.type_declaration;
     let remplace = o.remplace;
@@ -428,7 +441,7 @@ plate-forme rend B1-208-08.",
 ou un annule.",
         ));
     }
-    verifier(fin, &paie.engagement, type_declaration)?;
+    verifier(fin, &paie.engagement, type_declaration, connu)?;
     // Le type de preavis (63.001) et l'indemnite que la paie du solde verse (52.001) disent la meme chose.
     if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(fin.type_preavis,&indemnites_de_preavis_versees(paie)?)? {
         return Err(Echec::impossible(format!(
@@ -538,7 +551,7 @@ ou un annule.",
     // Les emplois multiples (`40.036`) : les autres contrats du salarie dans la periode de paie du signalement.
     let du_mois = crate::dsn::contrats_du_mois(ctx, payee.debut().mois_civil(), departs)?;
     let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
-    bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, RangDuContrat::PREMIER, &bar, true, &siens, NATURE, Some(fin), emplois)?;
+    bloc_contrat_fctu(&mut f, paie, &ent_l, &orgs, RangDuContrat::PREMIER, &bar, None, &siens, NATURE, Some(fin), emplois)?;
 
     // ------------------------------------------------------------ S21 versement
     // La date de versement : la fin de la periode de paie.

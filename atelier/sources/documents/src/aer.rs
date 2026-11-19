@@ -105,17 +105,24 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
 ///
-/// UNE SEULE ATTESTATION EST ATTENDUE, LA BONNE : l'archive des AER de la DSN mensuelle ne porte que les contrats d'usage
-/// declares par le circuit derogatoire (fiche 1902 : « cette DSN mensuelle donne lieu à une archive de l'ensemble des AER
-/// correspondant aux CDD d'usage en circuit dérogatoire » ; « il n'y aura pas d'AER pour ce contrat [...] dans l'archive
-/// des AER de la DSN mensuelle suivante (le contrat n'est plus infra-DSN) »,
-/// `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`). Une fin qui
-/// se signale (`Nature::signalement_fctu` : rompue avant son terme, ou d'un contrat deja declare) a son attestation en
-/// retour du signalement (`attestation_fctu`), et celle-la seule.
-pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
+/// `connu` : ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`, la decision prise une fois).
+///
+/// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME (`Nature::a_son_terme_hors_du_circuit` : 031, commence un mois
+/// d'avant, sa fin pas partie par le circuit) n'attend pas cette AER : une attestation attendue, celle du signalement
+/// (`attestation_fctu`). C'est une INFERENCE. Ce qui la porte : l'archive des AER de la mensuelle est celle des contrats
+/// en circuit derogatoire (fiche 1902 : « cette DSN mensuelle donne lieu à une archive de l'ensemble des AER
+/// correspondant aux CDD d'usage en circuit dérogatoire » ; « il n'y aura pas d'AER pour ce contrat d'usage en circuit
+/// dérogatoire corrigé dans l'archive des AER de la DSN mensuelle suivante (le contrat n'est plus infra-DSN) »,
+/// `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`), et ce contrat
+/// ecrit 62.017 = 02. Ce qui s'y oppose : cette phrase de la fiche 1902 vise un CDDU-D corrige, pas un contrat a cheval ;
+/// les pages relevees disent l'AE CS « éditée à la fin du dernier mois concerné par le contrat » sans distinguer le
+/// circuit ; et aucun texte depose ne dit quelle attestation revient d'un FCTU d'intermittent
+/// (`francetravail-100-dsn/LISEZMOI.md`). Tout autre contrat suit la regle d'avant : l'intermittent dont le contrat finit
+/// dans le mois a son AER, qu'il soit rompu ou qu'il soit un CDD d'artiste.
+pub fn due(p: &engagement::calcul::Paie, connu: droit::natures::ConnuDeLaDsn) -> socle::echec::R<bool> {
     let e = &p.engagement;
     let nat = e.nat()?;
-    if !droit::caisse_conges::intermittent(&nat, &p.salarie)? || nat.signalement_fctu(e.motif_rupture, e.connu_de_la_dsn()) {
+    if !droit::caisse_conges::intermittent(&nat, &p.salarie)? || nat.a_son_terme_hors_du_circuit(e.motif_rupture, connu) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
@@ -131,9 +138,11 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
 /// `net-entreprises-base-connaissances/net-entreprises-fiche3037-attestation-employeur-aed-fctu-20250323.txt`). Le moteur
 /// ne la range pas pour l'envoi : la forme de ce PDF (ses champs, son cadre d'authentification) n'est relevee sur
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
-pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
+/// `connu` : ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`) ; une fin deja partie par le circuit ne se
+/// signale pas, et son attestation est celle de la mensuelle (`due`).
+pub fn attestation_fctu(e: &engagement::Engagement, connu: droit::natures::ConnuDeLaDsn) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture, e.connu_de_la_dsn()) {
+    if !nat.signalement_fctu(e.motif_rupture, connu) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
@@ -522,12 +531,13 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 }
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
-/// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<Paie>) -> socle::echec::R<Vec<Paie>> {
+/// mois-ci (`due`, avec ce que la DSN sait de sa fin : `connu_de`), mois par mois depuis son debut, chacun lu dans la
+/// paie de son mois (`paies_du_mois`).
+pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<Paie>, connu_de: &dyn Fn(&Paie) -> socle::echec::R<droit::natures::ConnuDeLaDsn>) -> socle::echec::R<Vec<Paie>> {
     let de_lui = |p: &Paie| p.salarie.id == *cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).into_iter().filter(|p| de_lui(p)) {
-        if !due(&p)? {
+        if !due(&p, connu_de(&p)?)? {
             continue;
         }
         let numero = numero_de(&p)?.clone();

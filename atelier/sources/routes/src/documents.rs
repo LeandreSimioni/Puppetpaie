@@ -364,7 +364,11 @@ fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagemen
                 }
             }
         };
-        documents::aer::periodes_attendues(periode, cle, &mut du_mois)
+        // Ce que la DSN sait de la fin de chaque paie (`declarations::fin_a_la_dsn`), decide une fois.
+        let departs = envois::journal::lu(&ctx.racine)?.departs;
+        let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
+        let connu_de = |p: &engagement::calcul::Paie| declarations::fin_a_la_dsn::de_l_engagement(&lues, &departs, &p.engagement)?.connue();
+        documents::aer::periodes_attendues(periode, cle, &mut du_mois, &connu_de)
     };
     if let Some(e) = faute {
         return Err(e);
@@ -473,15 +477,19 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
 
 /// Ce qui est du a chaque salarie du mois et ne se fabrique pas ici : l'AER Cinema Spectacle (`aer::due`), que France
 /// Travail publie apres la DSN (retour 46), et l'attestation employeur de droit commun (`aer::attestation_fctu`), qu'elle
-/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent.
-fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<IdSalarie, Vec<&'static str>>> {
+/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent. L'une ou l'autre, selon ce
+/// que la DSN sait de la fin (`declarations::fin_a_la_dsn`, la decision prise une fois).
+fn dues_a_part(ctx: &Contexte, paies: &[engagement::calcul::Paie]) -> R<HashMap<IdSalarie, Vec<&'static str>>> {
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
     let mut out: HashMap<IdSalarie, Vec<&'static str>> = HashMap::new();
     for p in paies {
+        let connu = declarations::fin_a_la_dsn::de_l_engagement(&lues, &departs, &p.engagement)?.connue()?;
         let siennes = out.entry(p.salarie.id.clone()).or_default();
-        if documents::aer::due(p)? && !siennes.contains(&"aer") {
+        if documents::aer::due(p, connu)? && !siennes.contains(&"aer") {
             siennes.push("aer");
         }
-        if documents::aer::attestation_fctu(&p.engagement)? && !siennes.contains(&"attestation_fctu") {
+        if documents::aer::attestation_fctu(&p.engagement, connu)? && !siennes.contains(&"attestation_fctu") {
             siennes.push("attestation_fctu");
         }
     }
@@ -504,7 +512,7 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
     }
     // L'AER NE SE FABRIQUE PAS : France Travail la renvoie apres la DSN, et elle part avec les documents quand elle est la.
     let mut informations: Vec<String> = Vec::new();
-    if compagnie::etat_dsn::du_mois(ctx, mois, None)?.aer_attendue() && dues_a_part(paies)?.values().any(|v| v.contains(&"aer")) {
+    if compagnie::etat_dsn::du_mois(ctx, mois, None)?.aer_attendue() && dues_a_part(ctx, paies)?.values().any(|v| v.contains(&"aer")) {
         informations.push(
             "L'attestation employeur (AER) de France Travail n'est pas encore revenue : France Travail l'édite à partir de la DSN, et chaque relevé des retours la cherche. Elle partira avec un envoi suivant."
                 .to_string(),
@@ -1043,7 +1051,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &sorties, &choix.renvois, &dues_a_part(&paies_servies)?)?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &sorties, &choix.renvois, &dues_a_part(ctx, &paies_servies)?)?;
     // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
     let messages: Vec<envoi::Message<IdSalarie>> = messages.into_iter().filter(|m| cles.contains(&m.pour)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
