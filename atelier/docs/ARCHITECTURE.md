@@ -578,6 +578,7 @@ un libellé, chacun sa forme.
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
 | jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
+| étape d'une ouverture et ce qu'elle a duré (la trace de l'ouverture les porte, dans l'ordre) | `EtapeMesuree` | `routes/src/gestes/ouverture.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire ; chaque route qui relève le rend en entier) | `ADire` | `envois/src/suites.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |

@@ -61,6 +61,10 @@ brut de ce que l'archive ne contient pas (la fiche 692, deux pages de net-entrep
 - §9.1.7 « Codes HTTP standard » (v6.9 l. 5413-5416) : « 410 : Gone […] la ressource n'est plus disponible ». Un retour
   dont le téléchargement rend 410 se note vu et chez l'éditeur (`compagnie::incidents::noter_retour_retire`). Pour la
   DPAE, aucun texte de l'Urssaf ne dit le 410 : le moteur le traite de même, par inférence.
+- La liste des retours (v6.9 l. 615-764, colonne « Format phase 3 ») et §5.17.1 « Mandats SEPA à acquitter » (v6.9
+  l. 4383-4392) : une nature au format « Aucun » n'a pas de document, et le mandat à acquitter (nature 90, l. 715-719)
+  porte une URL qui est « celle d'acquittement du mandat », une page pour le déclarant. Le relevé ne télécharge ni l'une
+  ni l'autre ; leur annonce va au journal des vus (`envois::releve_retours::piece_a_telecharger`).
 
 **La spécification du schéma des bilans (VT2.2, 18/11/2020).** Une déclaration d'un bilan porte son identification
 (rang, nature S20.G00.05.001, type .002, fraction .003, ordre .004, mois .005, id_annulation .006, SIREN, NIC du siège,

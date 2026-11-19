@@ -585,6 +585,19 @@ fn piece_deja_la(racine: &Path, canal: CanalDesRetours, retour: &Annonce) -> R<O
     }
 }
 
+/// L'ADRESSE DE LA PIECE D'UN RETOUR, quand il a une piece a telecharger. Une nature au format « Aucun » de la liste des
+/// retours (guide de l'API DSN v6.9, l. 615-764, `FormatDuRetour::Aucun`) n'a pas de document, et son annonce entiere va
+/// au journal des vus. Le mandat a acquitter (nature 90) porte pourtant une adresse : « En mode API,
+/// l'URL renseignée dans le retour est celle d'acquittement du mandat » (§ 5.17.1, l. 4389-4392) ; c'est la page ou le
+/// declarant acquitte le mandat, pas une piece, et elle ne s'appelle pas. Cette liste est celle de la DSN : sur le canal
+/// DPAE, tout retour qui porte une adresse se telecharge.
+fn piece_a_telecharger(r: &Annonce, canal: CanalDesRetours) -> Option<Url> {
+    match (canal, r.nature_retour.format()) {
+        (CanalDesRetours::Dsn, Some(crate::retours::FormatDuRetour::Aucun)) => None,
+        _ => r.url.clone(),
+    }
+}
+
 /// Telecharge la piece d'un retour et l'archive : son contenu, son archive.
 fn telecharger_et_archiver(ctx: &Contexte, client: &mut Client, canal: CanalDesRetours, retour: &Annonce, url: &Url) -> Result<(Vec<u8>, PathBuf), Panne> {
     let (contenu, ctype) = client.telecharger(url)?;
@@ -915,7 +928,7 @@ pub fn relever_retours(
     let mut rates: Vec<Annonce> = Vec::new();
     let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.trouves.iter().filter(|r| !est_connu(&connus, r)).cloned().collect() };
     for r in a_telecharger {
-        let Some(url) = r.url.clone() else { continue };
+        let Some(url) = piece_a_telecharger(&r, canal) else { continue };
         let (contenu, chemin) = match piece_deja_la(&ctx.racine, canal, &r)? {
             Some(piece) => piece,
             None => {
@@ -1077,7 +1090,7 @@ pub fn relever_retours_dpae(
     // Un telechargement rate (hors 410) n'est pas vu : la consultation par plage le reprend.
     let mut rates: Vec<Annonce> = Vec::new();
     for x in r.trouves.clone() {
-        let Some(url) = x.url.clone() else { continue };
+        let Some(url) = piece_a_telecharger(&x, CanalDesRetours::Dpae) else { continue };
         let piece = match piece_deja_la(&ctx.racine, CanalDesRetours::Dpae, &x)? {
             Some(piece) => Ok(piece),
             None => telecharger_et_archiver(ctx, &mut client, CanalDesRetours::Dpae, &x, &url),
