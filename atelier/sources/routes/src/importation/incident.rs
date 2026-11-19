@@ -178,41 +178,43 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
     Ok(notes)
 }
 
-/// UN CONTRAT QU'UNE AEM, UN BULLETIN OU UN CERTIFICAT ET LA DSN DISENT AUTREMENT : ses dates (celles de la piece ne
-/// tiennent pas dans le contrat que la DSN declare) ou sa nature. La DSN vaut (`importation::ecrite::meme_contrat`), rien
-/// ne se demande a la compagnie (Léandre, 19/11/2026 : « a priori, ça n'existe pas […] ce qu'il faut, c'est juste qu'on
-/// ait des retours ») : la sorte et la piece partent chez l'editeur, rien d'autre.
+/// UN CONTRAT QU'UNE AEM, UN BULLETIN OU UN CERTIFICAT ET LA DSN DATENT AUTREMENT : un bulletin dont la periode ne tient
+/// pas dans le contrat que la DSN declare, une AEM ou un certificat qui ressemble a un contrat declare sans en avoir les
+/// dates (`importation::ecrite::engagements_importes`). La DSN vaut, rien ne se demande a la compagnie (Léandre,
+/// 19/11/2026 : « a priori, ça n'existe pas […] ce qu'il faut, c'est juste qu'on ait des retours ») : la piece part chez
+/// l'editeur, rien d'autre.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ContratDitAutrement {
-    Dates(engagement::importe::Attestation),
-    Nature(engagement::importe::Attestation),
+pub(crate) struct ContratDitAutrement {
+    pub(crate) piece: engagement::importe::Attestation,
 }
 
-/// A l'ecriture d'un import : chaque sorte de contrat dit autrement (`dits`), une fois au journal des incidents, puis
-/// l'envoi ordinaire. Une sorte deja au journal ne se note plus. Rend le nombre d'incidents notes.
-pub(crate) fn noter_les_contrats_dits_autrement(ctx: &Contexte, dits: &[ContratDitAutrement]) -> socle::echec::R<usize> {
+/// A l'ecriture d'un import : chaque piece qui date autrement un contrat (`dits`), une fois au journal des incidents,
+/// puis l'envoi ordinaire. Une sorte deja au journal ne se note plus. Rien ne refuse l'import : un journal qui ne se lit
+/// pas, ou un incident qui ne s'ecrit pas, se dit et l'import continue. Rend le nombre d'incidents notes.
+pub(crate) fn noter_les_contrats_dits_autrement(ctx: &Contexte, dits: &[ContratDitAutrement]) -> usize {
     use engagement::importe::Attestation;
     if dits.is_empty() {
-        return Ok(0);
+        return 0;
     }
-    let deja: BTreeSet<incidents::CleDIncident> = incidents::lire(&ctx.racine, None, false)?.iter().map(|l| l.empreinte.clone()).collect();
+    let deja: BTreeSet<incidents::CleDIncident> = match incidents::lire(&ctx.racine, None, false) {
+        Ok(lignes) => lignes.iter().map(|l| l.empreinte.clone()).collect(),
+        Err(e) => {
+            eprintln!("Le journal des incidents ne se lit pas : un contrat daté autrement ne s'y note pas : {}", e.en_lignes());
+            return 0;
+        }
+    };
     let mut notes = 0;
     for d in dits {
-        let (quoi, piece) = match d {
-            ContratDitAutrement::Dates(p) => ("ses dates", p),
-            ContratDitAutrement::Nature(p) => ("sa nature", p),
-        };
-        let piece = match piece {
+        let piece = match d.piece {
             Attestation::Aem => "une AEM",
             Attestation::Bulletin => "un bulletin",
             Attestation::Certificat => "un certificat Congés Spectacles",
         };
-        let genre = format!("contrat dit autrement : {} ({})", quoi, piece);
+        let genre = format!("contrat dit autrement : ses dates ({})", piece);
         if deja.contains(&incidents::empreinte(incidents::LOGICIEL, OU, &genre)) {
             continue;
         }
-        let resume = format!("Import : {} et la DSN disent autrement {} d'un même contrat ; la DSN vaut.", piece, quoi);
+        let resume = format!("Import : {} et la DSN datent autrement un même contrat ; la DSN vaut.", piece);
         let note = incidents::Note { nature: incidents::LOGICIEL, resume: &resume, ou: OU, quoi: &genre, detail: d, trace: None, sans_contexte: true };
         match incidents::noter(&ctx.racine, &note) {
             Ok(Some(_)) => notes += 1,
@@ -223,7 +225,7 @@ pub(crate) fn noter_les_contrats_dits_autrement(ctx: &Contexte, dits: &[ContratD
     if notes > 0 && incidents::envoi_actif(&ctx.racine) {
         incidents::envoyer(&ctx.racine);
     }
-    Ok(notes)
+    notes
 }
 
 /// Ce que l'incident dit d'un document non lu : son sort, le logiciel reconnu, ses pages, sa forme page par page et la

@@ -13,10 +13,11 @@
 //! `historique/` : le dossier du salarie montre les pages des bulletins, l'alerte CASC-SVP relit les DSN.
 //!
 //! UNE PAIE, DEUX SOURCES, UNE LIGNE (les deux chemins) : une ligne de DSN qui arrive sur une ligne que des bulletins
-//! ont deja completee garde ce que le bulletin a ecrit (le bulletin fait foi) ; une ligne qu'un bulletin seul declare
-//! s'efface devant la ligne de DSN du meme contrat, qu'elle complete (`rapprocher`). DEUX PIECES, LE MEME CONTRAT
-//! (`meme_contrat`) : la DSN vaut, quel que soit l'ordre des imports ; l'AEM ou le bulletin n'ajoutent que ce qu'elle
-//! tait, et ce qu'ils en disent autrement (ses dates, sa nature) part chez l'editeur (`incident::ContratDitAutrement`).
+//! ont deja completee garde ce que le bulletin a ecrit (ses montants, ses lignes) ; une ligne qu'un bulletin seul
+//! declare s'efface devant la ligne de DSN du meme contrat, qu'elle complete (`rapprocher`). DEUX PIECES, LE MEME
+//! CONTRAT (`meme_contrat`) : la DSN vaut sur ses dates et son activite, quel que soit l'ordre des imports ; l'AEM ou le
+//! bulletin n'ajoutent que ce qu'elle tait, et la piece qui la date autrement part chez l'editeur
+//! (`incident::ContratDitAutrement`).
 
 use crate::importation::incident::ContratDitAutrement;
 use droit::fiche::Lue as _;
@@ -169,29 +170,40 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
 
 // ------------------------------------------------------------------ le meme contrat
 
-/// CE QU'UNE PIECE DIT D'UN CONTRAT POUR LE RECONNAITRE : ses dates, le numero du contrat, le numero d'objet.
+/// CE QU'UNE PIECE DIT D'UN CONTRAT POUR LE RECONNAITRE : ses dates, le numero du contrat, le numero d'objet, sa nature,
+/// et si ses dates sont la periode de sa paie (un bulletin) ou le contrat entier (une AEM, un certificat, la DSN). Les
+/// arguments de `meme_contrat`, rien d'autre : pas une notion du glossaire.
 #[derive(Clone, Copy)]
 pub(crate) struct Reperes<'a> {
     pub(crate) dates: Option<PeriodeOuverte>,
     pub(crate) numero: Option<&'a NumeroContrat>,
     pub(crate) objet: Option<&'a NumeroObjetSpectacle>,
+    pub(crate) nature: Option<droit::natures::NatureDeContrat>,
+    pub(crate) periode_de_paie: bool,
 }
 
 impl<'a> Reperes<'a> {
-    /// Ceux d'une paie : les dates du contrat qu'elle paie, le numero de contrat que la DSN declare ou que son bulletin
-    /// imprime.
+    /// Ceux d'une paie : les dates du contrat qu'elle paie (celle d'un bulletin seul : la periode de sa paie), le numero
+    /// de contrat que la DSN declare ou que son bulletin imprime, la nature que la DSN declare.
     pub(crate) fn de_la_paie(x: &'a PaieLue) -> Reperes<'a> {
         let numero = x.paie.contrat.numero_declare().or_else(|| x.paie.bulletin.as_ref().and_then(|b| b.contrat.as_ref()));
-        Reperes { dates: x.paie.periode, numero, objet: x.paie.numero_objet.as_ref() }
+        Reperes { dates: x.paie.periode, numero, objet: x.paie.numero_objet.as_ref(), nature: x.paie.nature, periode_de_paie: declaree_par_bulletin(x) }
     }
 
     /// Ceux du contrat qu'une AEM, un bulletin ou un certificat atteste, aux dates `dates`.
     fn du_contrat(c: &'a ContratLu, dates: Option<PeriodeOuverte>) -> Reperes<'a> {
-        Reperes { dates, numero: c.contrat.numero_contrat.as_ref(), objet: c.contrat.numero_objet.as_ref() }
+        Reperes {
+            dates,
+            numero: c.contrat.numero_contrat.as_ref(),
+            objet: c.contrat.numero_objet.as_ref(),
+            nature: c.contrat.nature,
+            periode_de_paie: c.contrat.atteste_par == engagement::importe::Attestation::Bulletin,
+        }
     }
 }
 
-/// A quel point deux pieces disent le meme contrat, de la plus sure a la moins sure (`meme_contrat`).
+/// A quel point deux pieces disent le meme contrat, de la plus sure a la moins sure (`meme_contrat`). Le rang que
+/// `meme_contrat` rend, lu par `les_plus_proches` et `engagements_importes` : pas une notion du glossaire.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Proximite {
     MemesDates,
@@ -201,15 +213,24 @@ pub(crate) enum Proximite {
     Dedans,
 }
 
+impl Proximite {
+    /// Les memes dates ou le meme numero : la piece dit le contrat lui-meme.
+    fn sure(self) -> bool {
+        matches!(self, Proximite::MemesDates | Proximite::MemeNumero)
+    }
+}
+
 /// LE MEME CONTRAT (Léandre, 19/11/2026 : « il faut faire simple ») : deux pieces du meme salarie disent le meme contrat
-/// quand elles ont les memes dates ; sinon quand elles portent le meme numero de contrat, le meme debut, ou quand les
-/// dates de la piece tiennent dans le contrat que la DSN declare (`declare`) : le bulletin imprime la periode de sa
-/// paie, la DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`). Deux numeros d'objet
-/// differents : deux contrats. La seule regle, que lisent l'apercu (la paie que complete une page de bulletin :
-/// `importation::bulletins`), `rapprocher` (la paie d'un mois) et `engagements_importes` (l'engagement) ; la plus sure
-/// l'emporte (`les_plus_proches`). Que l'apercu et l'ecriture lisent la meme fait qu'un import rejoue ne trouve rien.
+/// quand elles ont les memes dates, ou portent le meme numero de contrat. Un bulletin imprime la periode de sa paie, la
+/// DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`) : un bulletin (`piece`, sa
+/// `periode_de_paie`) est aussi du contrat que la DSN declare (`declare`) quand il commence le meme jour, ou que sa
+/// periode y tient. Une AEM ou un certificat attestent le contrat entier : les memes dates ou le meme numero seulement.
+/// Deux numeros d'objet, ou deux natures, differents : deux contrats. La seule regle, que lisent l'apercu (la paie que
+/// complete une page de bulletin : `importation::bulletins`), `rapprocher` (la paie d'un mois) et `engagements_importes`
+/// (l'engagement) ; la plus sure l'emporte (`les_plus_proches`). Que l'apercu et l'ecriture lisent la meme fait qu'un
+/// import rejoue ne trouve rien.
 pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
-    if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) {
+    if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) || matches!((piece.nature, declare.nature), (Some(a), Some(b)) if a != b) {
         return None;
     }
     let dates = piece.dates.zip(declare.dates);
@@ -218,6 +239,9 @@ pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite
     }
     if piece.numero.is_some() && piece.numero == declare.numero {
         return Some(Proximite::MemeNumero);
+    }
+    if !piece.periode_de_paie {
+        return None;
     }
     let (a, d) = dates?;
     if a.debut() == d.debut() {
@@ -253,22 +277,12 @@ fn tient_dans(a: PeriodeOuverte, d: PeriodeOuverte) -> bool {
         }
 }
 
-/// Ce qu'une AEM, un bulletin ou un certificat (`c`, aux dates `dates`) dit autrement que la DSN (`p`) du meme contrat :
-/// des dates qui ne tiennent pas dans celles qu'elle declare, une autre nature (`incident::ContratDitAutrement`).
-fn dit_autrement(c: &ContratLu, dates: Option<PeriodeOuverte>, p: &PaieLue, dits: &mut Vec<ContratDitAutrement>) {
-    let piece = c.contrat.atteste_par;
-    let mut dire = |d: ContratDitAutrement| {
-        if !dits.contains(&d) {
-            dits.push(d);
-        }
-    };
-    if let (Some(a), Some(d)) = (dates, p.paie.periode) {
-        if !tient_dans(a, d) {
-            dire(ContratDitAutrement::Dates(piece));
-        }
-    }
-    if matches!((c.contrat.nature, p.paie.nature), (Some(a), Some(b)) if a != b) {
-        dire(ContratDitAutrement::Nature(piece));
+/// Une piece (`piece`) qui dit autrement que la DSN les dates du meme contrat (`incident::ContratDitAutrement`), dite
+/// une fois.
+fn dire_autrement(piece: engagement::importe::Attestation, dits: &mut Vec<ContratDitAutrement>) {
+    let d = ContratDitAutrement { piece };
+    if !dits.contains(&d) {
+        dits.push(d);
     }
 }
 
@@ -344,10 +358,24 @@ fn engagements_importes(
     for c in contrats {
         groupes.push(Groupe { salarie: c.salarie.clone(), periode: c.periode, contrat: Some(c), paies: Vec::new() });
     }
+    // LES CONTRATS ATTESTES QU'UNE PAIE DECLAREE DIT ELLE-MEME (`Proximite::sure`) : une autre ne les prend pas par une
+    // ressemblance plus faible.
+    let pris: HashSet<usize> = (0..groupes.len())
+        .filter(|&i| {
+            let g = &groupes[i];
+            g.contrat.as_ref().filter(|c| !permanent(c)).is_some_and(|c| {
+                paies.iter().filter(|p| !declaree_par_bulletin(p) && p.salarie == g.salarie).any(|p| {
+                    meme_contrat(Reperes::du_contrat(c, g.periode), Reperes::de_la_paie(p)).is_some_and(Proximite::sure)
+                })
+            })
+        })
+        .collect();
     for p in paies {
         let (s, dates, o) = (p.salarie.clone(), p.paie.periode, p.paie.numero_objet.clone());
-        // LE CONTRAT ATTESTE QUI EST LE MEME (`meme_contrat`, le plus sur) que celui que la DSN declare ; une paie de
-        // bulletin, et le contrat d'un permanent (son chemin est plus bas), aux memes dates seulement.
+        // LE CONTRAT ATTESTE QUI EST LE MEME (`meme_contrat`, le plus sur) que celui que la DSN declare ; par une
+        // ressemblance faible, seulement celui qu'aucune autre paie declaree ne dit (`pris`) et qui ne porte encore que
+        // des paies de ce contrat. Une paie de bulletin, et le contrat d'un permanent (son chemin est plus bas), aux memes
+        // dates seulement.
         let proches: Vec<(Proximite, usize)> = (0..groupes.len())
             .filter_map(|i| {
                 let g = &groupes[i];
@@ -355,7 +383,9 @@ fn engagements_importes(
                 if declaree_par_bulletin(&p) || permanent(c) {
                     return (g.periode == dates).then_some((Proximite::MemesDates, i));
                 }
-                meme_contrat(Reperes::du_contrat(c, g.periode), Reperes::de_la_paie(&p)).map(|x| (x, i))
+                let libre_pour_elle =
+                    || !pris.contains(&i) && g.paies.iter().filter(|y| !declaree_par_bulletin(y)).all(|y| y.paie.contrat == p.paie.contrat);
+                meme_contrat(Reperes::du_contrat(c, g.periode), Reperes::de_la_paie(&p)).filter(|x| x.sure() || libre_pour_elle()).map(|x| (x, i))
             })
             .collect();
         let la_plus_sure = proches.iter().map(|(x, _)| *x).min();
@@ -423,18 +453,21 @@ fn engagements_importes(
         // LA DSN VAUT : le meme contrat prend les dates qu'elle declare ; ce que la piece en disait autrement part chez
         // l'editeur (`incident::ContratDitAutrement`), rien ne se demande.
         if let Some(c) = groupes[i].contrat.as_ref().filter(|c| !declaree_par_bulletin(&p) && !permanent(c)) {
-            dit_autrement(c, groupes[i].periode, &p, &mut dits);
+            if groupes[i].periode.zip(dates).is_some_and(|(a, d)| !tient_dans(a, d)) {
+                dire_autrement(c.contrat.atteste_par, &mut dits);
+            }
             groupes[i].periode = dates;
         }
         groupes[i].paies.push(p);
     }
-    // UN CONTRAT SUR PLUSIEURS MOIS, UN ENGAGEMENT : le bulletin (ou l'AEM) de chaque mois en atteste la periode ; celui
-    // qu'aucune paie n'a rejoint et qui est le meme contrat (`meme_contrat`) que celui d'un seul engagement que la DSN
-    // declare s'y fond, et ce qui reste du contrat est le contrat entier (`au_contrat_entier`).
+    // UN CONTRAT SUR PLUSIEURS MOIS, UN ENGAGEMENT : le bulletin de chaque mois en atteste la periode ; celui qu'aucune
+    // paie n'a rejoint et qui est le meme contrat (`meme_contrat`) que celui d'un seul engagement que la DSN declare s'y
+    // fond, et ce qui reste du contrat est le contrat entier (`au_contrat_entier`).
     let mut k = 0;
     while k < groupes.len() {
         let g = &groupes[k];
-        let seul = g.contrat.as_ref().filter(|c| g.paies.is_empty() && !permanent(c)).and_then(|c| {
+        let bulletin = |c: &&ContratLu| c.contrat.atteste_par == engagement::importe::Attestation::Bulletin;
+        let seul = g.contrat.as_ref().filter(|c| g.paies.is_empty() && !permanent(c)).filter(bulletin).and_then(|c| {
             let siens: Vec<usize> = (0..groupes.len())
                 .filter(|&j| j != k && groupes[j].salarie == g.salarie)
                 .filter(|&j| {
@@ -449,8 +482,8 @@ fn engagements_importes(
         };
         let fondu = groupes.remove(k);
         let j = if j > k { j - 1 } else { j };
-        if let (Some(c), Some(x)) = (fondu.contrat.as_ref(), groupes[j].paies.iter().find(|x| !declaree_par_bulletin(x))) {
-            dit_autrement(c, fondu.periode, x, &mut dits);
+        if fondu.periode.zip(groupes[j].periode).is_some_and(|(a, d)| !tient_dans(a, d)) {
+            dire_autrement(engagement::importe::Attestation::Bulletin, &mut dits);
         }
         let h = &mut groupes[j];
         if h.contrat.is_none() {
@@ -458,6 +491,21 @@ fn engagements_importes(
         }
         if let Some(c) = h.contrat.as_mut() {
             au_contrat_entier(&mut c.contrat);
+        }
+    }
+    // UNE AEM OU UN CERTIFICAT QUE LA DSN DIT AUTREMENT : aux dates qui ne sont pas celles d'un contrat declare, il reste
+    // un engagement a part ; quand ses dates commencent avec un contrat declare du salarie, ou y tiennent, la sorte part
+    // chez l'editeur (Léandre, 19/11/2026 : « a priori, ça n'existe pas ; on avisera »).
+    for g in groupes.iter().filter(|g| g.paies.is_empty()) {
+        let Some(c) = g.contrat.as_ref().filter(|c| !permanent(c) && c.contrat.atteste_par != engagement::importe::Attestation::Bulletin) else { continue };
+        let comme_un_bulletin = Reperes { periode_de_paie: true, ..Reperes::du_contrat(c, g.periode) };
+        let ressemble = groupes
+            .iter()
+            .filter(|h| h.salarie == g.salarie)
+            .flat_map(|h| h.paies.iter().filter(|x| !declaree_par_bulletin(x)))
+            .any(|x| meme_contrat(comme_un_bulletin, Reperes::de_la_paie(x)).is_some());
+        if ressemble {
+            dire_autrement(c.contrat.atteste_par, &mut dits);
         }
     }
     // UN CONTRAT DE PERMANENT, UN ENGAGEMENT : les bulletins d'un permanent attestent chacun le mois qu'ils paient, tous
@@ -715,7 +763,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     let ambigues = rapprocher(&mut par_cle);
     if ambigues > 0 {
         avertissements.push(format!(
-            "{} paie(s) écrite(s) d'un bulletin seul ont les dates de plusieurs paies déclarées en DSN : aucune n'est rapprochée, les engagements importés restent côte à côte, à regarder.",
+            "{} paie(s) écrite(s) d'un bulletin seul sont du même contrat que plusieurs paies déclarées en DSN : aucune n'est rapprochée, les engagements importés restent côte à côte, à regarder.",
             ambigues
         ));
     }
@@ -727,7 +775,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     }
     if contrats_aem + contrats_bulletins + contrats_certificats + contrats_aem_pdf + neuves > 0 || importes_avant.is_empty() {
         let (importes, dits) = engagements_importes(engagements, par_cle.into_values().collect(), le)?;
-        crate::importation::incident::noter_les_contrats_dits_autrement(ctx, &dits)?;
+        crate::importation::incident::noter_les_contrats_dits_autrement(ctx, &dits);
         for p in engagement::importe::ecrire_tous(&ctx.racine, importes)? {
             fichiers.push(p);
         }

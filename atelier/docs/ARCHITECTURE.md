@@ -1198,7 +1198,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
 | réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
 | réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
-| contrat repris qu'une AEM, un bulletin ou un certificat et la DSN disent autrement (ses dates, sa nature) : la DSN vaut, la sorte part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
+| contrat repris qu'une AEM, un bulletin ou un certificat et la DSN datent autrement : la DSN vaut, la pièce part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
@@ -2592,15 +2592,20 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `PaieDuMois::activite`).
 - **Deux pièces, le même contrat : la DSN vaut** (Léandre, 19/11/2026 : « ce qu'on déclare, c'est ce qui est valable
   pour France Travail » ; « a priori, ça n'existe pas ») : deux pièces du même salarié disent le même contrat quand
-  elles ont les mêmes dates, sinon quand elles portent le même numéro de contrat, le même début, ou quand la période de
-  l'une tient dans le contrat que la DSN déclare (le bulletin d'un mois d'un CDDU sur deux mois) ; une paie d'un autre
-  mois ne se complète qu'aux mêmes dates (`ecrite::les_plus_proches`) ; deux numéros d'objet
-  différents, deux contrats (`importation::ecrite::meme_contrat`, que lisent la paie qu'une page de bulletin
-  complète à l'aperçu, `importation::bulletins`, celle de l'écriture, `rapprocher`, et l'engagement,
-  `engagements_importes` : l'aperçu et l'écriture lisant la même règle, un import rejoué ne trouve rien à faire). Un seul engagement, une seule paie par mois, aux dates de la DSN, quel que soit
-  l'ordre des imports ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait. Rien ne se demande à la compagnie : une
-  pièce dont les dates ne tiennent pas dans le contrat déclaré, ou qui dit une autre nature, part chez l'éditeur, en
-  silence, une fois par sorte (`importation::incident::ContratDitAutrement`). Le contrat d'un permanent suit la DSN qui
+  elles ont les mêmes dates, ou portent le même numéro de contrat. Un bulletin, qui imprime la période de sa paie, est
+  aussi du contrat que la DSN déclare quand il commence le même jour ou que sa période y tient (le bulletin d'un mois
+  d'un CDDU sur deux mois) ; une AEM ou un certificat attestent le contrat entier : les mêmes dates ou le même numéro
+  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats ; un contrat qu'une paie déclarée dit
+  par ses dates ou son numéro ne se prend pas par une ressemblance plus faible ; une paie d'un autre mois ne se
+  complète qu'aux mêmes dates (`ecrite::les_plus_proches`). La règle est `importation::ecrite::meme_contrat`, que
+  lisent la paie qu'une page de bulletin complète à l'aperçu (`importation::bulletins`, DSN de l'aperçu et de
+  l'historique), celle de l'écriture (`rapprocher`) et l'engagement (`engagements_importes`) : l'aperçu et l'écriture
+  lisant la même règle, un import rejoué ne trouve rien à faire. Un seul engagement, une seule paie par mois, aux
+  dates de la DSN, quel que soit l'ordre des imports ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait. Rien ne
+  se demande à la compagnie : un bulletin dont la période ne tient pas dans le contrat déclaré, une AEM ou un
+  certificat qui ressemble à un contrat déclaré sans en avoir les dates (il reste un engagement à part), part chez
+  l'éditeur, en silence, une fois par sorte de pièce (`importation::incident::ContratDitAutrement`) ; un journal des
+  incidents illisible ne fait pas refuser l'import. Le contrat d'un permanent suit la DSN qui
   arrive (« La DSN fait foi », plus haut).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
