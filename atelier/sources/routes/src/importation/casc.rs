@@ -2,10 +2,11 @@
 //! `casc-regularise`, qui note qu'une annee est regularisee. Un mois tenu dans un autre logiciel a pu partir sans la
 //! CASC-SVP ; PuppetPaie la declare lui-meme dans les DSN qu'il fait (`declarations::dsn`).
 //!
-//! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees (le brut que la DSN deposee ou
-//! le bulletin dit), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). Un mois dont la
-//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), ou deja regularise
-//! (`config/casc-svp.json`), n'y entre pas.
+//! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees que la DSN deposee declare
+//! (leur brut), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). N'y entre
+//! qu'un mois dont une DSN importee se lit (`importation::ecrite::lire_dsn_casc`) et ne porte pas la CASC-SVP : c'est
+//! elle qui dit si la cotisation est partie. Un mois sans DSN importee, ou dont la DSN ne se lit pas, n'y entre pas et
+//! rien n'en est dit ; un mois deja regularise (`config/casc-svp.json`) non plus.
 //!
 //! Le classeur du CASC-SVP se recree avec les colonnes du modele (`donnees/modeles/casc-svp-liste-nominative.xlsx`) :
 //! voir `liste_nominative_xlsx`.
@@ -63,12 +64,13 @@ impl Activite {
     }
 }
 
-/// Les paies versees de `mois`, d'apres les engagements importes : une par engagement qui a un brut ce mois-la. Un
-/// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
+/// Les paies versees de `mois` que sa DSN importee declare, d'apres les engagements importes : une par engagement qui
+/// a un brut ce mois-la ; une paie qu'un bulletin seul declare n'en est pas. Un salarie sans fiche refuse (sa ligne de
+/// la liste nominative ne se devine pas).
 fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let mut out = Vec::new();
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
-        let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
+        let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois && !p.paie.contrat.d_un_bulletin()) else { continue };
         let Some(brut) = p.paie.brut else { continue };
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
@@ -318,13 +320,14 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
     let mut lues: Vec<(Mois, Vec<Versee>)> = vec![];
     let contrat_casc = base.dsn.contrat.clone();
     for &m in &candidats {
+        // La DSN deposee est ce qui dit si la CASC-SVP est partie : un mois sans DSN importee, ou dont la DSN ne se lit
+        // pas, n'entre pas, et rien n'en est dit.
+        let Some(dsn) = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))? else { continue };
+        let Some(porte) = crate::importation::ecrite::lire_dsn_casc(&dsn, &contrat_casc)? else { continue };
         let paies = versees_du_mois(ctx, m)?;
         if paies.is_empty() {
             continue;
         }
-        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
-        // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
-        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|porte| porte);
         if porte {
             portees.push(m);
             continue;
@@ -772,7 +775,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         mois.dedup();
         let mois: Vec<String> = mois.iter().map(Mois::to_string).collect();
         r.avertissements.push(format!(
-            "Liste nominative : {} emploi(s) sans jours, cachets ni heures dans leur DSN ({}) -- colonnes laissees vides.",
+            "Liste nominative : {} emploi(s) sans jours, cachets ni heures lus ({}) -- colonnes laissees vides.",
             sans.len(),
             mois.join(", ")
         ));

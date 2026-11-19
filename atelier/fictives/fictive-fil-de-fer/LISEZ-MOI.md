@@ -38,8 +38,13 @@ fabrique et que l'import relit tel quel.
   les salaires, la fiche d'Armand Tessier, les courriels, les titres des deux spectacles), fait la revue des spectacles.
 - **Chaque mois joué** : les engagements validés quelques jours avant le premier jour de travail, la DPAE (test puis
   réel), les contrats à la signature ; la DSN déposée après le versement du dernier jour du mois (test puis réel, entre le 2 et le
-  5 du mois suivant), puis les documents aux salariés. Juillet, août, octobre et novembre n'ont pas d'engagement : leur
-  DSN part sans salarié.
+  5 du mois suivant), puis les documents aux salariés. Août, octobre et novembre n'ont pas d'engagement : leur DSN part
+  sans salarié.
+- **Un contrat à cheval sur deux mois** : Joséphine Albaret joue Mademoiselle Poussière seule à Dijon du 28 juin au
+  3 juillet, un seul contrat d'usage au cachet. Sa carte de juin dit le terme du contrat (le 3 juillet) et les jours de
+  juin, celle de juillet les jours de juillet ; l'engagement se valide une fois, le 22 juin, avec sa DPAE. Chaque mois a
+  sa paie ; la fin du contrat, dont la DSN de juin a déjà dit le terme, se signale le 6 juillet ; le certificat Congés Spectacles part
+  avec les documents de juillet, pour le contrat entier : 4 cachets, 560 € de brut.
 - **Repas** à chaque jour de jeu loin de chez soi, **nuitées** à Roanne et Montbrison (7 au 9 avril) et à Nevers (18 et
   19 septembre), au tarif de la convention. Basile Ferrand, technicien, dort hors de chez lui en avril sans justificatif
   (la part de la nuitée au-delà de la limite du BOSS entre dans le brut) et en septembre avec « justificatif conservé ».
@@ -48,7 +53,7 @@ fabrique et que l'import relit tel quel.
 
 ## Le calendrier 2026
 
-Chaque ligne compte un jour par personne et par jour de jeu ou de répétition (51 jours en tout) : un cachet pour un
+Chaque ligne compte un jour par personne et par jour de jeu ou de répétition (55 jours en tout) : un cachet pour un
 artiste ; pour un technicien, ses heures (Basile, régisseur général, 6 heures à 20 € ; Armand, technicien son, 5 heures
 à 23 €). Les représentations sont une par jour, le soir, sauf mention contraire. Qui joue : S = Solène, B = Basile, J = Joséphine, O = Octave,
 A = Armand.
@@ -62,6 +67,7 @@ A = Armand.
 | jeu. 9 et ven. 10 avril | Le Grand Fil, 2 représentations | Montbrison, centre culturel | S, B | 4 |
 | lun. 11 et mar. 12 mai | Mademoiselle Poussière, 2 représentations | Lons-le-Saunier, théâtre municipal | S, B, J | 6 |
 | ven. 12, sam. 13, dim. 14 juin | Le Grand Fil, festival, 3 représentations | Mâcon, parc des Expositions | S, B | 6 |
+| dim. 28 et mar. 30 juin, mer. 1er et ven. 3 juillet | Mademoiselle Poussière, Joséphine seule, 4 représentations (un contrat du 28 juin au 3 juillet) | Dijon, théâtre des Feuillants | J | 4 |
 | ven. 18, sam. 19, dim. 20 septembre | Mademoiselle Poussière, 3 représentations | Nevers, théâtre de la Maison de la culture | S, B, J | 9 |
 | ven. 4 et sam. 5 décembre | Le Grand Fil, 2 représentations | Dijon, théâtre des Feuillants | S, B | 4 |
 
