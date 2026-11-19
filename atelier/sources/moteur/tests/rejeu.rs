@@ -26,9 +26,11 @@ fn instant_naif(jour: socle::date::Jour, heure: &str) -> socle::paris::Moment {
 
 /// LES TRETEAUX DU BANC : le petit scenario de la preuve, joue au banc. Une compagnie ajoutee par le « + »
 /// d'un logiciel bride, configuree juste assez pour payer (convention 3090), une comedienne, deux cachets les 20 et
-/// 21/11/2026 ; puis le geste d'atelier qui rend ses envois simules, et le calendrier avance au 20/11, au 01/12, au 16/12 :
+/// 21/11/2026 et deux jours planifies les 02 et 03/12 (un contrat d'usage a cheval sur deux mois, qui finit a son terme) ;
+/// puis le geste d'atelier qui rend ses envois simules, et le calendrier avance au 20/11, au 01/12, au 11/12, au 16/12 :
 /// l'horloge de la fictive valide l'engagement, depose la DPAE (test puis reel), fabrique et depose la DSN de novembre et
-/// son signalement d'amorcage (test puis reel, chacun sur le bilan de son test), envoie les documents.
+/// son signalement d'amorcage (test puis reel, chacun sur le bilan de son test), envoie les documents, et signale la fin
+/// du contrat (deja declare par la DSN de novembre, il se signale : 62.017, fiche 2062) dans ses cinq jours ouvres.
 #[test]
 fn les_treteaux_du_banc_se_rejouent_et_rendent_les_memes_sorties() {
     let releve = outils::rejeu::rejouer_et_comparer("treteaux-du-banc", &outils::dossier_de_test("rejeu", "treteaux"));
@@ -49,9 +51,11 @@ fn les_treteaux_du_banc_se_rejouent_et_rendent_les_memes_sorties() {
     // La compagnie ajoutee le 02/11/2026 ne coche aucune echeance de 2026 fermee avant.
     let cochees = f["config/echeancier.json"]["fait"].as_object().map(|m| m.keys().cloned().collect::<Vec<_>>()).unwrap_or_default();
     assert!(cochees.is_empty(), "echeances cochees : {:?}", cochees);
-    // L'AER CINEMA SPECTACLE (`aer::due`, `aer_fictive`) : la DSN mensuelle de novembre, qui porte la fin du contrat de la
-    // comedienne, recoit son retour 46 et l'AER signee part avec ses documents ; le signalement d'amorcage (nature 08) n'en
-    // recoit aucun -- France Travail n'edite l'AER que depuis la mensuelle.
+    // L'AER CINEMA SPECTACLE (`aer::due`, `aer_fictive`) : « 1 AE CS éditée à la fin du dernier mois concerné par le
+    // contrat » ; la DSN mensuelle de novembre ne porte pas la fin du contrat de la comedienne, qui continue en decembre :
+    // elle ne recoit aucun retour 46, et aucune AER ne part avec les documents de novembre ; le signalement d'amorcage
+    // (nature 08) n'en recoit aucun non plus. LA FIN SE SIGNALE : le contrat finit le 03/12, deja declare par la DSN de
+    // novembre ; son signalement part en reel au plus tard le 10/12 (cinq jours ouvres, `obligations-base.json`).
     let natures = |fichier: &str| -> Vec<Value> {
         depots
             .iter()
@@ -60,9 +64,10 @@ fn les_treteaux_du_banc_se_rejouent_et_rendent_les_memes_sorties() {
             .map(|r| r["nature"].clone())
             .collect()
     };
-    assert!(natures("DSN_Novembre2026.dsn").contains(&json!("46")), "{:?}", natures("DSN_Novembre2026.dsn"));
+    assert!(!natures("DSN_Novembre2026.dsn").contains(&json!("46")), "{:?}", natures("DSN_Novembre2026.dsn"));
     assert!(!natures("Amorcage01_FULLER_20261120.dsn").contains(&json!("46")), "{:?}", natures("Amorcage01_FULLER_20261120.dsn"));
-    assert!(f.get("sorties/2026-11/envoi/AER_FULLER_Novembre2026.pdf").is_some(), "l'AER de novembre manque");
+    assert!(f.get("sorties/2026-11/envoi/AER_FULLER_Novembre2026.pdf").is_none(), "une AER part en novembre pour un contrat qui continue");
+    assert!(reel("dsn", "SignalementFinContrat_FULLER_20261203.dsn"), "le signalement de fin du contrat doit partir en reel");
     // Deux cachets de 150 € : 300 € de brut.
     let paie = &releve["paies"]["2026-11"]["paies"][0];
     assert_eq!(paie["brut"], json!("300"), "{}", paie);
@@ -93,7 +98,6 @@ fn les_treteaux_du_banc_se_rejouent_et_rendent_les_memes_sorties() {
         "2026-11/DPAE_Novembre2026_20261120-0700.txt.zip",
         "2026-11/Amorcage01_FULLER_20261120.dsn",
         "2026-11/envoi/Contrat_FULLER_FU1.26.01_Novembre2026.pdf",
-        "2026-11/envoi/AER_FULLER_Novembre2026.pdf",
         "2026-11/DSN_Novembre2026.dsn",
         "2026-11/envoi/Bulletin_FULLER_Novembre2026.pdf",
         "2026-11/envoi/CertificatCS_FULLER_Novembre2026.pdf",

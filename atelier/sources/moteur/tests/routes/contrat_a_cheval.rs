@@ -21,9 +21,7 @@ fn fuller_a_cheval(cas: &str) -> PathBuf {
     let sc = d.join("scenario");
     std::fs::create_dir_all(&sc).unwrap();
     let gestes = std::fs::read_to_string(scenario("treteaux-du-banc").join("gestes.jsonl")).unwrap();
-    let novembre = r#""dates":["2026-11-20","2026-11-21"],"planning":[]}"#;
-    assert!(gestes.contains(novembre));
-    let gestes = gestes.replace(novembre, r#""dates":["2026-11-20","2026-11-21"],"planning":["2026-12-02","2026-12-03"]}"#);
+    assert!(gestes.contains(r#""dates":["2026-11-20","2026-11-21"],"planning":["2026-12-02","2026-12-03"]}"#));
     std::fs::write(sc.join("gestes.jsonl"), gestes).unwrap();
     rejouer_dossier(&sc, &d).1
 }
@@ -46,6 +44,11 @@ fn le_second_mois_d_un_contrat_d_usage_n_est_pas_une_embauche() {
 
     let ecrite = reussi(&route(&c, "depot-apercu", json!({"quoi": "dsn", "mois": "2026-12"}), jour)).clone();
     let decembre = String::from_utf8_lossy(&std::fs::read(ecrite["fichier"].as_str().unwrap()).unwrap()).to_string();
+    // SA FIN : deja declare par la DSN de novembre, le contrat d'usage arrive a son terme ecrit 62.017 = 02, hors du
+    // circuit derogatoire (CCH-11 de S21.G00.62.017, `norme-dsn/texte/bloc-S21.G00.62.txt` : « un contrat d'usage qui n'a
+    // pas encore fait l'objet d'une déclaration dans une précédente DSN mensuelle validée »).
+    let fin = "S21.G00.62.001,'03122026'\r\nS21.G00.62.002,'031'";
+    assert!(decembre.contains(fin) && decembre.contains("S21.G00.62.017,'02'"), "la fin de decembre :\n{}", decembre);
     for attendu in ["S21.G00.40.001,'20112026'", "S21.G00.40.009,'FU1.26.01'", "S21.G00.40.010,'03122026'", "S21.G00.40.013,'4.00'"] {
         assert!(decembre.contains(attendu), "{} manque :\n{}", attendu, decembre);
     }
