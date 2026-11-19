@@ -3039,7 +3039,6 @@
       "regime_local_alsace_moselle": {
         "taux_sal": 1.3,
         "code81": "115",
-        "ctp": "381",
         "source": {
           "sources": [
             {
@@ -4815,7 +4814,6 @@
   "regime_local_alsace_moselle": {
     "taux_sal": 0.91,
     "code81": "115",
-    "ctp": "381",
     "source": {
       "sources": [
         {
@@ -4869,7 +4867,7 @@
       ],
       "raisonnement": "La loi abat de 30 % les taux des cotisations d'assurances sociales du régime général pour l'artiste (arrêté du 24/01/1975, art. 1) ; la cotisation du régime local est une cotisation d'assurance maladie du régime général, au chapitre de ses cotisations (CSS L. 242-13), de 1,3 % (le régime local). 1,3 × 70 % = 0,91. L'Urssaf dit 0,91 % pour l'artiste (la page des taux réduits des artistes, où la même cotisation vaut 1,30 % pour les autres professions qu'elle liste), et sa table des CTP le confirme : le cas général des artistes en Alsace-Moselle (313, 10,29) passe celui d'ailleurs (312, 9,38) de 0,91 exactement. Norme DSN : code 115."
     },
-    "note": "Régime local d'Alsace-Moselle de l'ARTISTE (le corps de ce barème) : cotisation salariale de 0,91 % (1,3 % abattu de 30 %) sur les revenus déplafonnés, DSN 115, CTP 381. Le technicien cotise au taux plein (`par_statut.technicien.regime_local_alsace_moselle`, 1,3 %). L'assiette est celle des cotisations de sécurité sociale (L242-1), la même que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier ; le bordereau de l'artiste en Alsace-Moselle (CTP 313 au lieu de 312 et 381)."
+    "note": "Régime local d'Alsace-Moselle de l'ARTISTE (le corps de ce barème) : cotisation salariale de 0,91 % (1,3 % abattu de 30 %) sur les revenus déplafonnés, DSN 115 ; au bordereau, l'artiste intermittent la paie dans le CTP 313, qui remplace le 312 (`organismes-base.json`), et non sous le 381. Le technicien cotise au taux plein (`par_statut.technicien.regime_local_alsace_moselle`, 1,3 %). L'assiette est celle des cotisations de sécurité sociale (L242-1), la même que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
   },
   "par_organisation_patronale": {
     "SYNDEAC": {
