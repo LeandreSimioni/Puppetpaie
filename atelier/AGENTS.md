@@ -205,6 +205,11 @@ Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le
 - **Le geste de la compagnie est simple.** Elle arrive, on lui dit : prends tous tes bulletins, et une DSN pour la
   configuration. Elle les met dans le dossier `import/`. Elle n'a plus qu'à poser ses codes et elle se sert du
   logiciel. Si une pièce lui manque, on en accepte d'autres (une AEM), sans en faire une affaire.
+- **Un seul dossier, `import/`, et pas de choix.** « Ça me paraît évident qu'on lui dit de mettre dans ce
+  dossier-là. […] Il faut des routes simples. » La route d'import ne propose aucun autre dossier ; c'est le
+  logiciel qui, depuis ce dossier, donne accès à tout de l'intérieur.
+- **Les pièces sont en lecture seule.** « On ne réécrit pas les pièces. On ne corrige pas une DSN qui est du
+  passé. » C'est la seule limite : tout le reste peut entrer.
 - **Le dossier `import/` garde tout, pour toujours.** On ne le vide pas ; les pièces restent accessibles ; la
   sauvegarde sur le Drive peut le prendre. Parce que les pièces restent, un logiciel amélioré les relit et en tire
   davantage : rien de ce qu'on n'a pas su lire aujourd'hui n'est perdu.
