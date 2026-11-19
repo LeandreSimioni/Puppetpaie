@@ -41,6 +41,7 @@ use crate::releve_retours::{self, Client};
 use crate::suites::Suites;
 use socle::echec::Echec;
 use socle::mois::Mois;
+use socle::paris::Moment;
 
 /// Trois mois de releve : « Les retours disponibles au téléchargement ont une période de rétention de 3 mois par le SI
 /// DSN » (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`
@@ -131,16 +132,38 @@ fn dernier_ordre_des_essais(racine: &Path) -> Result<Option<NumeroDOrdre>, Echec
     Ok(dernier)
 }
 
-/// LA PLATE-FORME RELEVEE avant d'ecrire un ordre, signalement ou essai de mensuelle : la releve des retours DSN des
-/// trois derniers mois (`releve_retours::relever_retours`, qui archive avant toute lecture), pour que les bilans
-/// archives que l'ordre lit ensuite disent ce qu'elle sait. Ce qui empeche de la lire, en une phrase ; `None` : elle
-/// est lue, ou c'est une compagnie fictive (organismes simulés, aucune plate-forme), qui n'a rien a dire.
-pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: Option<Client>, suites: &mut Suites) -> Option<String> {
+/// Le debut des trois mois que la plate-forme garde (`JOURS_DE_RELEVE`), avant `fin`.
+fn trois_mois_avant(fin: Moment) -> Result<Moment, Echec> {
+    fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))
+}
+
+/// Le releve avant l'ordre d'un SIGNALEMENT : les trois mois que la plate-forme garde. Son ordre ne se remet jamais a
+/// zero (cahier technique DSN 2026.1, p. 136) : tout bilan encore publie peut le porter.
+pub fn depuis_trois_mois() -> Result<Moment, Echec> {
+    trois_mois_avant(socle::temps::secondes())
+}
+
+/// Le releve avant l'ordre d'un essai de MENSUELLE : depuis minuit (heure de Paris) le premier jour de `mois`, jamais
+/// plus loin que les trois mois que la plate-forme garde.
+pub fn depuis_le_mois(mois: Mois) -> Result<Moment, Echec> {
+    let premier = Moment::a_paris(mois.premier_jour(), socle::paris::HeureDuJour::MINUIT).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
+    Ok(premier.max(depuis_trois_mois()?))
+}
+
+/// LA PLATE-FORME RELEVEE avant d'ecrire un ordre, signalement ou essai de mensuelle : la releve des BILANS (nature 11,
+/// les seuls retours que l'ordre lit : `dernier_ordre_des_bilans`, `dernier_ordre_des_mensuelles`) publies depuis
+/// `debut` (`depuis_trois_mois`, `depuis_le_mois`), par `releve_retours::relever_retours`, qui archive avant toute
+/// lecture, pour que les bilans archives que l'ordre lit ensuite disent ce qu'elle sait. Les autres retours, et les
+/// retours rates d'une autre nature, attendent le releve de toutes les natures. Ce qui empeche de la lire, en une
+/// phrase ; `None` : elle est lue, ou c'est une compagnie fictive (organismes simulés, aucune plate-forme), qui n'a rien
+/// a dire.
+pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: Option<Client>, debut: Moment, suites: &mut Suites) -> Option<String> {
     if client.is_none() && branchement.joue() {
         return None;
     }
     let fin = socle::temps::secondes();
-    match fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
+    let bilans = Some(crate::retours::NatureDuRetour::CertificatDeConformite);
+    match releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, bilans, suites) {
         // Seul ce qui empeche de lire la liste des retours ou un bilan se dit ici ; un autre retour rate reste dit avec
         // les incidents de la releve (`Releve::plateforme_non_lue`).
         Ok(r) if r.plateforme_non_lue.is_empty() => None,
@@ -158,7 +181,10 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
     let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
     let journal = reels.max(dernier_ordre_des_essais(&ctx.racine)?);
     let mut avertissements = Vec::new();
-    let pas_lue = relever_la_plateforme(ctx, branchement, client, suites);
+    let pas_lue = match depuis_trois_mois() {
+        Ok(debut) => relever_la_plateforme(ctx, branchement, client, debut, suites),
+        Err(e) => Some(e.phrase),
+    };
 
     let bilans = dernier_ordre_des_bilans(&ctx.racine, &siren(&ctx.entreprise)?)?;
     let dernier = match &bilans {

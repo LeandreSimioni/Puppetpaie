@@ -639,7 +639,10 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
 }
 
 /// Telecharge et archive ce que les organismes ont publie, de `debut` a `fin`. `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
-/// `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
+/// `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit. `nature` : la seule nature de
+/// retour que ce releve prend (le releve avant un ordre ne lit que les bilans, `ordre_signalements::relever_la_plateforme`) ;
+/// aucune : toutes. Un retour d'une autre nature n'est ni trouve, ni telecharge, ni note vu : le releve suivant de
+/// toutes les natures le prend, avec ses suites.
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
@@ -648,6 +651,7 @@ pub fn relever_retours(
     tout: bool,
     client: Option<Client>,
     canal: CanalDesRetours,
+    nature: Option<NatureDuRetour>,
     suites: &mut Suites,
 ) -> R<Releve> {
     let mut releve = Releve::vide();
@@ -681,7 +685,7 @@ pub fn relever_retours(
     for (t0, t1) in tranches(debut, fin)? {
         match client.lister_retours(t0, t1) {
             Ok(trouves) => {
-                for r in trouves {
+                for r in trouves.into_iter().filter(|r| nature.is_none_or(|n| r.nature_retour == n)) {
                     if !est_connu(&connus, &r) {
                         releve.nouveaux.push(r.clone());
                     }
@@ -816,7 +820,7 @@ pub fn relever_retours_dpae(
         return Ok(r);
     };
     let Some(flux) = flux else {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), CanalDesRetours::Dpae, suites);
+        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), CanalDesRetours::Dpae, None, suites);
     };
     let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));

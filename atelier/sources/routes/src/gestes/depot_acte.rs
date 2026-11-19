@@ -394,8 +394,19 @@ pub fn deposer_dsn_dans(
     // ailleurs sous le meme SIRET compte alors. Les suites de la releve se font avec celles du depot, quoi qu'il arrive.
     let mut suites = Suites::default();
     let essai_de_mensuelle = mode == Mode::Test && !apercu.est_signalement();
-    let pas_lue = if essai_de_mensuelle { crate::gestes::releve::relever_avant_l_ordre(ctx, branchement, environnement, &mut suites)? } else { None };
-    let ordre_test = if essai_de_mensuelle { mois_de_constitution(&apercu).and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)) } else { Ok(None) }.map(|o| o.and_then(|c| Some(c).max(apercu.ordre)));
+    // CE QUE L'ORDRE LIT (`prochain_ordre_de_test`) : les bilans recus au mois de constitution, et une mensuelle du mois
+    // declare acceptee, dont le bilan a pu arriver des le premier jour de ce mois ; la releve prend les bilans depuis
+    // le premier des deux. Une DSN sans date de constitution ne part pas : rien ne se releve pour elle.
+    let constitution = if essai_de_mensuelle { Some(mois_de_constitution(&apercu)) } else { None };
+    let pas_lue = match &constitution {
+        Some(Ok(c)) => crate::gestes::releve::relever_avant_l_ordre(ctx, branchement, environnement, le_mois.min(*c), &mut suites)?,
+        Some(Err(_)) | None => None,
+    };
+    let ordre_test = match constitution {
+        Some(c) => c.and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)),
+        None => Ok(None),
+    }
+    .map(|o| o.and_then(|c| Some(c).max(apercu.ordre)));
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
         envois::depot_acte::deposer_dsn(ctx, &porte, &d, &apercu, environnement, ordre_test, &mut suites).map(|f| (f, ordre_test))
