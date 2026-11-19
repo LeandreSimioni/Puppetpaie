@@ -815,8 +815,9 @@ fn dit_du_contrat(periode: &Periode, cachets: Option<Cachets>, heures: Option<He
 }
 
 /// UNE LIGNE DU CALENDRIER : un contrat qu'un engagement importe atteste (`engagement::importe::Importe::contrat_lu`) ;
-/// celui d'un permanent, mois par mois, comme le registre de l'import l'atteste (`Importe::mois_par_mois`) : chaque mois
-/// verse, aux dates du mois dans le contrat, avec ce que son bulletin compte. Ce que l'attestation ne dit pas reste vide.
+/// celui d'un permanent, et celui que ses seules DSN declarent, mois par mois, comme le registre de l'import l'atteste
+/// (`Importe::mois_par_mois`) : chaque mois verse, aux dates du mois dans le contrat, avec l'activite que les pieces
+/// disent du mois (`Importe::activite_du_mois`). Ce que les pieces ne disent pas reste vide.
 struct Atteste {
     salarie: IdSalarie,
     periode: Periode,
@@ -830,27 +831,31 @@ struct Atteste {
 fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     let mut out = Vec::new();
     for i in engagement::importe::tous(&ctx.racine)? {
-        let Some(c) = i.contrat_lu()? else { continue };
-        let salarie = c.salarie.clone();
-        let atteste = |periode: Periode, (cachets, heures, jours): (Option<Cachets>, Option<Heures>, Option<Jours>)| Atteste {
-            salarie: salarie.clone(),
-            periode,
-            numero_objet: c.contrat.numero_objet.clone(),
-            cachets,
-            heures,
-            jours,
-        };
-        if !i.permanent() {
+        let c = i.contrat_lu()?;
+        // Le contrat entier qu'une piece atteste (une AEM, un certificat, le bulletin d'un contrat d'usage).
+        if let (Some(c), false) = (&c, i.permanent()) {
             if let Some(periode) = c.periode.and_then(|o| o.fermee()) {
-                out.push(atteste(periode, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
+                out.push(Atteste {
+                    salarie: c.salarie.clone(),
+                    periode,
+                    numero_objet: c.contrat.numero_objet.clone(),
+                    cachets: c.contrat.cachets,
+                    heures: c.contrat.heures,
+                    jours: c.contrat.jours,
+                });
             }
             continue;
         }
-        // Un permanent dont l'engagement ne dit pas le debut ne se place dans aucun mois (le registre de l'import le dit
-        // muet).
-        let Some(contrat) = c.periode else { continue };
-        for (periode, p) in i.mois_par_mois(&contrat, &format!("le contrat de l'historique de {}", salarie))? {
-            out.push(atteste(periode, (p.cachets, p.heures, p.jours)));
+        // Un permanent, ou un contrat que ses seules DSN declarent : mois par mois. Celui dont l'engagement ne dit pas le
+        // debut ne se place dans aucun mois (le registre de l'import le dit muet).
+        let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
+        let Some(contrat) = i.objet().carte().contrat()? else { continue };
+        // Le calendrier se lit toujours : un mois verse que les dates du contrat ne touchent pas ne s'y place pas.
+        for (mois, p) in i.paies() {
+            let Some(periode) = contrat.croise(&Periode::du_mois(*mois)) else { continue };
+            let a = i.activite_du_mois(*mois);
+            let numero_objet = c.as_ref().and_then(|c| c.contrat.numero_objet.clone()).or_else(|| p.numero_objet.clone());
+            out.push(Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours });
         }
     }
     Ok(out)
