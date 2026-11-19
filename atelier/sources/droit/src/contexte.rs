@@ -488,11 +488,11 @@ fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, Ru
     Ok(())
 }
 
-/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CotisationDsn::cle`).
+/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CleDeCotisationDsn::nomme`).
 fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<CleDeCotisationDsn, CotisationModifiee>, ou: &str) -> R<()> {
     for (cle, m) in mods {
         let mut vue = false;
-        for c in liste.iter_mut().filter(|c| c.cle().as_ref() == Some(cle)) {
+        for c in liste.iter_mut().filter(|c| cle.nomme(c)) {
             crate::bareme::modifier_cotisation(c, m);
             vue = true;
         }

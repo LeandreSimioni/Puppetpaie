@@ -245,6 +245,8 @@ forme! {
         /// Le plafond journalier (T1 d'un jour travaille) des intermittents ; leurs tranches au-dela le multiplient comme
         /// celles d'un permanent (`tranches_du_plafond`).
         pub plafond_journalier: Option<MontantUnitaire>,
+        /// La limite des tranches journalieres, quand le texte de l'annee en dit une ; sans elle, aucune.
+        pub limite_du_plafond_journalier: Option<LimiteDuPlafondJournalier>,
         /// Les textes de ces plafonds.
         pub plafonds_des_intermittents: Option<Notes>,
         pub rubriques_bulletin: Vec<Rubrique>,
@@ -509,13 +511,15 @@ forme! {
     /// LES TRANCHES DU PLAFOND D'UNE PAIE, en nombre de plafonds (`plafond::assiettes_plafonnees`) : la tranche 2 de la
     /// retraite complementaire va jusqu'a `t2` plafonds (ANI Agirc-Arrco du 17/11/2017, art. 32 : « le montant egal a huit
     /// fois ce meme plafond »), et avec elle la tranche 1 + 2 et la CET ; la tranche 2 de la prevoyance conventionnelle,
-    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage, l'AGS et l'Apec,
-    /// dans la limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond » ; Audiens,
-    /// l'Apec). Chacune se lit ici, avec son texte.
+    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage et l'AGS, dans la
+    /// limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond ») ; l'Apec d'un
+    /// cadre, dans celle de `apec` (Audiens : « 4 fois le plafond de la Securite sociale »). Chacune se lit ici, avec son
+    /// texte.
     pub struct TranchesDuPlafond {
         pub t2: Coefficient,
         pub t2_conventionnelle: Coefficient,
         pub chomage: Coefficient,
+        pub apec: Coefficient,
     }
 }
 
@@ -583,9 +587,31 @@ impl Pile {
 }
 
 forme! {
+    /// LA LIMITE DES TRANCHES JOURNALIERES D'UN INTERMITTENT (`plafond_journalier` fois ses jours : la tranche 1 de la
+    /// retraite d'un cadre, et ses tranches au-dela, la prevoyance de tout intermittent) : Audiens, Parametres 2026 (l. 41-46),
+    /// « les plafonds applicables sont les plafonds journaliers - dans la limite du plafond mensuel » ; les Parametres 2025
+    /// ne la disent pas, et le bareme 2025 n'en a pas. Le calcul la pose a un seul endroit (`calcul::calculer_periode`).
+    pub struct LimiteDuPlafondJournalier {
+        pub dans_la_limite_du: PlafondQuiLimite,
+    }
+}
+
+/// LE PLAFOND QUI LIMITE LES TRANCHES JOURNALIERES (`LimiteDuPlafondJournalier`) : le plafond mensuel de la Securite
+/// sociale de l'annee (`PlafondSecuriteSociale::mensuel`), le seul que le texte nomme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlafondQuiLimite {
+    PlafondMensuel,
+}
+
+forme! {
+    /// LE PLAFOND DE LA SECURITE SOCIALE DE L'ANNEE : sa valeur mensuelle et sa valeur horaire (`plafond::Pss`), et sa
+    /// valeur annuelle, le plafond de la tranche 1 de l'annee de la retraite complementaire d'un intermittent
+    /// (`plafond::tranches_sous_le_plafond_annuel`).
     pub struct PlafondSecuriteSociale {
         pub mensuel: Montant,
         pub horaire: MontantUnitaire,
+        pub annuel: Montant,
     }
 }
 
@@ -733,7 +759,8 @@ forme! {
         pub composants_sal: Option<Vec<Taux>>,
         /// Le complement de taux patronal au-dela d'un seuil de SMIC.
         pub complement: Option<Complement>,
-        /// La CET des cadres, fondue dans la ligne quand elle est due.
+        /// La CET d'un cadre intermittent, fondue dans sa ligne de tranche quand elle est due (celle d'un permanent est sa
+        /// propre ligne, `CET`, de `par_nature.permanent`).
         pub cet_si_depasse: Option<Cet>,
         pub masquer_base_et_taux: Option<bool>,
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).
@@ -880,15 +907,6 @@ forme! {
         pub lignes: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
         pub apres: Option<CodeCotisation81>,
-    }
-}
-
-impl CotisationDsn {
-    /// LA CLE PAR LAQUELLE UNE COUCHE LA NOMME : son code, et son affectation si elle en a une. `None` : la cotisation
-    /// n'a pas de code, une couche ne la nomme pas.
-    pub fn cle(&self) -> Option<CleDeCotisationDsn> {
-        let code = self.code81?;
-        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone() })
     }
 }
 
@@ -1061,6 +1079,9 @@ forme! {
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
         pub plafond_journalier: Option<MontantUnitaire>,
+        /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
+        /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
+        pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,

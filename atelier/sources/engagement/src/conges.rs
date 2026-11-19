@@ -929,6 +929,39 @@ l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
     Ok(annee)
 }
 
+/// CE QUI PRECEDE LA PAIE D'INTERMITTENT DE `mois` DANS L'ANNEE CIVILE, POUR SA RETRAITE COMPLEMENTAIRE (`droit::plafond::
+/// tranches_sous_le_plafond_annuel`) : sous le plafond de l'annee `plafond_annuel`, les paies validees d'intermittent du
+/// salarie `cle` des mois de la meme annee, strictement avant `mois`, chacune pour ce qu'elle a applique
+/// (`calcul::ajouter_a_la_retraite_de_l_annee`). La circulaire Agirc-Arrco 2018-09-DC (annexe A, art. 1) : « les
+/// remunerations versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites annuelles des
+/// assiettes T1 et T2 » : l'annee civile (l'exercice de l'ANI, « entre le 1er janvier et le 31 decembre d'une meme
+/// annee »), chez la compagnie seule. Seules se relisent les paies d'intermittent (`etats::paies_validees_intermittentes`) :
+/// celle d'un CDI du meme salarie a ses tranches du mois et sa propre regularisation (`plafonds_des_mois_anterieurs`).
+/// Une paie qui ne se lit pas refuse : les tranches se comptent sur toute l'annee.
+///
+/// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS, comme pour le plafond de la Securite sociale (Leandre,
+/// 19/11/2026) : l'annee commence au premier mois paye ici. INFERENCE, une approximation de la premiere annee : les pieces
+/// reprises disent le brut, pas les tranches que l'ancien logiciel a appliquees (`importe::PaieVersee`), et rien ne se
+/// reconstruit (regle 1).
+pub(crate) fn retraite_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie, plafond_annuel: Montant) -> R<droit::plafond::AnneeAnterieure> {
+    let _derivation = Derivation::ouvrir();
+    let mut annee = droit::plafond::AnneeAnterieure::sous_le_plafond_annuel(plafond_annuel);
+    let cle = cle_de_fiche(ctx, cle)?;
+    for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
+        let paies = crate::etats::paies_validees_intermittentes(ctx, m, &cle).map_err(|e| {
+            e.reformuler(|e| format!(
+                "Retraite complémentaire de {} sur l'année : les paies de {} ne se lisent pas ({}). Ses tranches se comptent \
+sur les plafonds de l'année (Audiens, Paramètres) : sans ce mois, rien n'est calculé.",
+                cle, m, e
+            ))
+        })?;
+        for p in &paies {
+            crate::calcul::ajouter_a_la_retraite_de_l_annee(&mut annee, p)?;
+        }
+    }
+    Ok(annee)
+}
+
 /// Les heures supplementaires payees au salarie `cle` dans les mois de la meme annee civile, strictement avant `mois` :
 /// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`). Une
 /// paie reprise les dit quand son bulletin a ete lu, que chacune de ses lignes de remuneration est rattachee a sa

@@ -43,6 +43,23 @@ lieu à une régularisation progressive telle que prévue au II. de l'article R.
 `atelier/reference/sources/audiens-parametres-2026/`, et la
 fiche « taux et répartition ») ; `paie/src/norme.rs` ou équivalent (`cotisation_cet_patronale`).
 
+**Ticket #497 (19/11/2026), la CET d'un non-cadre** : l'art. 37, 2 du texte de Légifrance (l. 1307-1310 du premier
+`.txt`) dit la CET due « Pour les participants dont la rémunération excède le plafond », sans distinction de catégorie
+(la page « Documentation technique DSN », l. 177 : l'ANI « ne prévoit pas de distinction catégorielle entre les
+salariés cadres, non-cadres ») ; le cahier CT2026 (l. 343-346) : « pour tout salarié dont le salaire excède le plafond ».
+La ligne `cet` des barèmes 2025 et 2026 est donc de `par_nature.permanent` : tout permanent, cadre ou non.
+
+**Ticket #497 (19/11/2026), l'intermittent non cadre** : la circulaire 2018-09-DC, annexe A, « Spécificités propres à
+certaines catégories de salariés », **art. 1, « Intermittents des professions du spectacle et mannequins »** (l.
+4243-4248 du `.txt`) : « Pour le calcul des cotisations, les rémunérations versées dans l'année par chaque employeur sont
+traitées de façon distincte, dans les limites annuelles des assiettes T1 et T2 telles que définies à l'article 32 ne
+tenant pas compte de la durée de chaque emploi. » Avec Audiens (Paramètres 2025 et 2026, « ce sont les plafonds annuels
+qui doivent être retenus »), le fondement des lignes `retraite_t1`, `retraite_t2` et `cet` d'un intermittent sur
+`t1_annuelle`, `t2_annuelle`, `cet_annuelle` (`droit::plafond::tranches_sous_le_plafond_annuel`). L'article ne
+distingue pas le cadre ; Audiens lui donne des plafonds journaliers : le moteur garde à un cadre ses tranches
+journalières (`par_categorie.cadre`), seule sa base 43 suit l'année. Le cahier CT2026 (l. 5166-5168) : pour un
+intermittent, quelle que soit sa catégorie, les bases 23 et 43.
+
 **Lot R5a (11/10/2026), le plafond d'un temps partiel (D11)** : le cahier CT2026 (l. 3325-3343) fait proratiser la
 caisse sur 40.013 / 40.012 pour un « 20 - temps partiel ». Le moteur n'a qu'un plafond par paie
 (`paie/src/calcul.rs`, `plafond_de_l_engagement`), d'où sortent la vieillesse plafonnée, T1/T2 et la CET ; il le

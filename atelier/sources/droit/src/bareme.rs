@@ -1553,31 +1553,20 @@ pub fn parts_t1(total: Taux, sal: Coefficient) -> (Taux, Taux) {
     (total - part_sal, part_sal)
 }
 
-/// Remplace la retraite de la ligne `retraite_t1` (CEG inchangee) et, dans la
-/// DSN, le 131 (regime unifie Agirc-Arrco, cahier technique 2026.1 p. 302) qui
-/// porte un taux sur la meme assiette.
+/// Remplace la retraite de la ligne `retraite_t1` (CEG inchangee). Le 131 de la DSN la suit : il est la somme de ses
+/// lignes (`cotisations_dsn`, `lignes`).
 fn poser_t1(mut bar: Pile, retraite_pat: Taux, retraite_sal: Taux) -> R<Pile> {
     let ceg = bar.retraite_t1_repartition.as_ref().map(|r| r.ceg.clone()).ok_or_else(|| socle::fichiers::absent("retraite_t1_repartition"))?;
     let (ceg_pat, ceg_sal) = (ceg.pat, ceg.sal);
     let pat = retraite_pat + ceg_pat;
     let sal = retraite_sal + ceg_sal;
     let taux = socle::grandeurs::courte::<Taux>;
-    let mut base = None;
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == RETRAITE_T1) {
         r.taux_pat = Some(TauxDate(taux(pat)));
         r.taux_sal = Some(taux(sal));
         if r.composants_pat.as_deref().is_some_and(|l| !l.is_empty()) {
             r.composants_pat = Some(vec![taux(retraite_pat), taux(ceg_pat)]);
             r.composants_sal = Some(vec![taux(retraite_sal), taux(ceg_sal)]);
-        }
-        base = r.base.clone();
-    }
-    for c in &mut bar.cotisations_dsn {
-        if c.code81 == Some(CodeCotisation81::AgircArrco) && c.base == base && c.taux.is_some() && c.lignes.as_deref().is_none_or(<[IdDeCotisation]>::is_empty) {
-            c.taux = Some(crate::forme_bareme::TauxDate(taux(pat + sal)));
-            if c.composants.as_deref().is_some_and(|l| !l.is_empty()) {
-                c.composants = Some([retraite_pat, ceg_pat, retraite_sal, ceg_sal].into_iter().map(taux).collect());
-            }
         }
     }
     Ok(bar)
@@ -1716,6 +1705,9 @@ intermittent : ses tranches sont mensuelles"
         for (rid, champs) in sous.rubriques.iter().flatten() {
             par_dessus(sec.rubriques.get_or_insert_with(BTreeMap::new).entry(rid.clone()).or_default(), champs);
         }
+        if let Some(l) = sous.rubriques_retirees {
+            sec.rubriques_retirees.get_or_insert_with(Vec::new).extend(l);
+        }
         if let Some(l) = sous.rubriques_ajoutees {
             sec.rubriques_ajoutees.get_or_insert_with(Vec::new).extend(l);
         }
@@ -1725,6 +1717,11 @@ intermittent : ses tranches sont mensuelles"
         for (cle, champs) in sous.cotisations_dsn.iter().flatten() {
             cotisation_par_dessus(sec.cotisations_dsn.get_or_insert_with(BTreeMap::new).entry(cle.clone()).or_default(), champs);
         }
+    }
+    // Les rubriques du corps que la categorie remplace par les siennes (la tranche 2 et la CET de l'annee d'un non-cadre,
+    // pour un cadre intermittent) se retirent d'abord.
+    if let Some(retirees) = &sec.rubriques_retirees {
+        bar.rubriques_bulletin.retain(|r| !retirees.contains(&r.id));
     }
     for r in &mut bar.rubriques_bulletin {
         if let Some(m) = sec.rubriques.as_ref().and_then(|mods| mods.get(&r.id)) {
@@ -1743,8 +1740,8 @@ intermittent : ses tranches sont mensuelles"
         bar.cotisation_prevoyance_retraite_supp = sec.cotisation_prevoyance_retraite_supp.clone();
     }
     for c in &mut bar.cotisations_dsn {
-        let Some(cle) = c.cle() else { continue };
-        if let Some(m) = sec.cotisations_dsn.as_ref().and_then(|mods| mods.get(&cle)) {
+        let mods: Vec<&CotisationModifiee> = sec.cotisations_dsn.iter().flatten().filter(|(cle, _)| cle.nomme(c)).map(|(_, m)| m).collect();
+        for m in mods {
             modifier_cotisation(c, m);
         }
     }

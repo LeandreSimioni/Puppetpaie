@@ -224,15 +224,15 @@ impl JoursSansRemuneration {
 ///   la remuneration dans cette limite quand elle depasse le plafond (la retraite complementaire : ANI Agirc-Arrco du
 ///   17/11/2017, art. 44, « Les versements de cotisations donnent lieu a une regularisation progressive telle que prevue
 ///   au II. de l'article R. 242-2 du code de la securite sociale », circulaire 2018-09-DC, l. 1642-1643 ; cahier
-///   Agirc-Arrco CT2026). INFERENCE pour la CET : sa base regularisee devient celle de toute l'annee (la remuneration
-///   dans la limite de la tranche 2) des que la somme des remunerations depasse la somme des plafonds, et retombe a zero
-///   en dessous ; l'ANI (art. 37, circulaire 2018-09-DC l. 1362) la dit due « pour les participants dont la remuneration
-///   excede le plafond » sans dire comment le juger sur l'annee ; le plus proche est la fiche net-entreprises 2556
-///   (`net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt`, l. 89) :
-///   « des montants de CET peuvent egalement etre declares sur des mois ou l'individu a percu une remuneration inferieure
-///   au PMSS, y compris sous forme negative, lorsqu'ils resultent d'operations de regularisation portant sur des periodes
-///   anterieures au cours desquelles le salarie etait assujetti a cette contribution » : elle suppose la CET regularisee,
-///   sans dire le critere ;
+///   Agirc-Arrco CT2026). Pour la CET, sa base regularisee devient celle de toute l'annee (la remuneration dans la limite
+///   de la tranche 2) des que la somme des remunerations depasse la somme des plafonds, et retombe a zero en dessous :
+///   Audiens le dit, Parametres 2026, « Cas particulier : la CET », exemple 2
+///   (`audiens-parametres-2026/Audiens-Parametres-2026.txt`, l. 97-101) : « Pas de CET sur les bulletins de janvier a
+///   novembre (car le PSS n'est pas atteint) », « Puis, CET due des lors que le salaire atteint le PSS ➔ la CET sera
+///   calculee sur la base de 50 600 € sur le bulletin de decembre » ; l'ANI (art. 37) la dit due « pour les participants
+///   dont la remuneration excede le plafond », et la fiche net-entreprises 2556
+///   (`net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt`, l. 89) la
+///   suppose regularisee, « y compris sous forme negative » ;
 /// - `t2_conventionnelle` : au-dela du plafond, dans la limite de `TranchesDuPlafond::t2_conventionnelle` plafonds (la
 ///   prevoyance). INFERENCE : un seul emetteur, la FAQ DSN des organismes complementaires, suppose sa regularisation (la
 ///   tranche B « pouvant etre negative par effet de regularisation progressive ») sans la poser ; aucun accord de
@@ -326,12 +326,26 @@ impl AnneeAnterieure {
         AnneeAnterieure { remunerations: Montant::ZERO, plafonds: Montant::ZERO, appliquees: Regularisees::ZERO }
     }
 
+    /// RIEN AVANT, SOUS LE PLAFOND DE L'ANNEE `plafond_annuel` : l'annee de la retraite complementaire d'un intermittent
+    /// (`tranches_sous_le_plafond_annuel`). Le plafond est celui de l'annee entiere des le premier jour, « quelle que soit
+    /// la duree du travail » (Audiens, Parametres 2026, l. 67-69) : une paie ne l'augmente pas (elle s'ajoute avec un
+    /// plafond nul, `ajouter`).
+    pub fn sous_le_plafond_annuel(plafond_annuel: Montant) -> AnneeAnterieure {
+        AnneeAnterieure { remunerations: Montant::ZERO, plafonds: plafond_annuel, appliquees: Regularisees::ZERO }
+    }
+
     /// Une paie anterieure qui se regularise : sa remuneration, son plafond, et les assiettes qu'elle a appliquees, telles
     /// qu'elle les a ecrites (celles d'une paie corrigee depuis comprises : la suivante rattrape l'ecart).
     pub fn ajouter(&mut self, remuneration: Montant, plafond: Montant, appliquees: Regularisees) {
         self.remunerations += remuneration;
         self.plafonds += plafond;
         self.appliquees = self.appliquees + appliquees;
+    }
+
+    /// La somme des plafonds a laquelle la remuneration de l'annee se compare (le plafond de l'annee, sous
+    /// `sous_le_plafond_annuel`).
+    pub fn plafonds(&self) -> Montant {
+        self.plafonds
     }
 }
 
@@ -347,15 +361,17 @@ pub enum Plafonnement {
     Regularise(AnneeAnterieure),
 }
 
-/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite des
-/// plafonds du chomage de la paie (`chomage` : le chomage, l'AGS, l'Apec d'un permanent, le chomage d'un intermittent ;
-/// `TranchesDuPlafond::chomage`), qui ne se regularise pas : aucun texte depose ne dit la regularisation de ces
-/// contributions (la fiche Unedic ne dit que l'identite de leur assiette avec celle de la securite sociale), et seul se
-/// regularise ce qu'un texte depose fonde (Leandre, 19/11/2026).
+/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), le brut dans la limite des
+/// plafonds du chomage de la paie (`chomage` : le chomage et l'AGS d'un permanent, le chomage d'un intermittent ;
+/// `TranchesDuPlafond::chomage`) et dans celle des plafonds de l'Apec d'un permanent (`apec`, `TranchesDuPlafond::apec`),
+/// qui ne se regularisent pas : aucun texte depose ne dit la regularisation de ces contributions (la fiche Unedic ne dit
+/// que l'identite de leur assiette avec celle de la securite sociale), et seul se regularise ce qu'un texte depose fonde
+/// (Leandre, 19/11/2026).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssiettesPlafonnees {
     pub regularisees: Regularisees,
     pub chomage: Montant,
+    pub apec: Montant,
 }
 
 /// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
@@ -401,7 +417,27 @@ pub fn assiettes_plafonnees(
             Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
         }
     };
-    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage) }
+    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage), apec: remuneration.min(plafond * tranches.apec) }
+}
+
+/// LES TRANCHES DE LA RETRAITE COMPLEMENTAIRE D'UNE PAIE D'INTERMITTENT, SUR LE PLAFOND DE L'ANNEE : la tranche 1, la
+/// tranche 2 et la CET (`Regularisees::t1`, `t2`, `cet` ; les autres champs n'ont pas de sens ici) de la remuneration
+/// `remuneration` que la retraite compte, `annee` ce qui la precede dans l'annee chez la compagnie, sous le plafond annuel
+/// (`AnneeAnterieure::sous_le_plafond_annuel`). Le meme calcul que celui d'une paie qui se regularise
+/// (`assiettes_plafonnees`), une paie n'ajoutant aucun plafond a celui de l'annee. Textes, deux emetteurs :
+/// - Audiens, Parametres 2026 (`audiens-parametres-2026/Audiens-Parametres-2026.txt`, l. 66-74) : « Non-cadres : Pour
+///   determiner les tranches (T1 et T2), ce sont les plafonds annuels qui doivent etre retenus, quelle que soit la duree
+///   du travail » ; « 100 jours de travail remuneres : 50 000 € ➔ T1 = 48 060 € et T2 = 1 940 € » ; et la CET (l. 103-105) :
+///   « intermittent du spectacle non-cadre : 35 000 € de salaire brut sur l'annee ➔ CET non due », « 50 000 € [...] ➔ CET
+///   due » ;
+/// - la circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1, « Intermittents des professions du spectacle et mannequins »
+///   (`agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt`, l. 4246-4248) : « les remunerations
+///   versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites annuelles des assiettes
+///   T1 et T2 telles que definies a l'article 32 ne tenant pas compte de la duree de chaque emploi ».
+/// Le moment de la CET est celui d'une paie qui se regularise (`Regularisees`, l'exemple 2 d'Audiens) : rien tant que la
+/// remuneration de l'annee reste sous le plafond, toute celle de l'annee a la paie qui le passe (`BasculeDeLaCet`).
+pub fn tranches_sous_le_plafond_annuel(remuneration: Montant, tranches: &TranchesDuPlafond, annee: &AnneeAnterieure) -> Regularisees {
+    assiettes_plafonnees(remuneration, Montant::ZERO, Coefficient::ZERO, tranches, &Plafonnement::Regularise(*annee)).regularisees
 }
 
 use crate::forme_bareme::TranchesDuPlafond;

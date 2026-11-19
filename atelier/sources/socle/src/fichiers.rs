@@ -428,7 +428,7 @@ impl ValeurLue {
             },
             CleDeLecture::Moteur if !texte.is_empty() => ValeurLue::Moteur(texte),
             CleDeLecture::Date | CleDeLecture::Aujourdhui => ValeurLue::Jour(crate::date::Jour::lire(&texte).map_err(|_| refus())?),
-            CleDeLecture::Fiches { .. } | CleDeLecture::Imprevus { .. } | CleDeLecture::Datee(LectureDatee::Mensuels { .. } | LectureDatee::Paies { .. } | LectureDatee::PaiesAuMois { .. } | LectureDatee::Reprises { .. }) => ValeurLue::Empreinte(empreinte(&texte)?),
+            CleDeLecture::Fiches { .. } | CleDeLecture::Imprevus { .. } | CleDeLecture::Datee(LectureDatee::Mensuels { .. } | LectureDatee::Paies { .. } | LectureDatee::PaiesAuMois { .. } | LectureDatee::PaiesIntermittentes { .. } | LectureDatee::Reprises { .. }) => ValeurLue::Empreinte(empreinte(&texte)?),
             CleDeLecture::Datee(LectureDatee::Saisie { .. }) => ValeurLue::Saisie(EmpreinteDeSaisie::lire(&texte).map_err(|_| refus())?),
             CleDeLecture::Datee(LectureDatee::Pas { .. } | LectureDatee::Mission { .. }) if !texte.is_empty() => ValeurLue::Composee(texte),
             CleDeLecture::Moteur | CleDeLecture::Datee(_) => return Err(refus()),
@@ -501,6 +501,8 @@ pub enum LectureDatee<S, L> {
     Paies { mois: crate::mois::Mois, salarie: S },
     /// `paies-au-mois <mois> <salarie>` : celles de ses contrats payes au mois.
     PaiesAuMois { mois: crate::mois::Mois, salarie: S },
+    /// `paies-intermittentes <mois> <salarie>` : celles de ses contrats d'intermittent (qui ne sont pas payes au mois).
+    PaiesIntermittentes { mois: crate::mois::Mois, salarie: S },
     /// `reprises <mois> <salarie>` : les paies d'un salarie au mois reprises d'un ancien logiciel.
     Reprises { mois: crate::mois::Mois, salarie: S },
     /// `saisie <mois> [<salarie>]` : la saisie du mois, ou celle d'un salarie.
@@ -517,6 +519,7 @@ impl<S: std::fmt::Display, L: std::fmt::Display> std::fmt::Display for LectureDa
             LectureDatee::Mensuels { mois, salarie } => write!(f, "mensuels {} {}", mois, salarie),
             LectureDatee::Paies { mois, salarie } => write!(f, "paies {} {}", mois, salarie),
             LectureDatee::PaiesAuMois { mois, salarie } => write!(f, "paies-au-mois {} {}", mois, salarie),
+            LectureDatee::PaiesIntermittentes { mois, salarie } => write!(f, "paies-intermittentes {} {}", mois, salarie),
             LectureDatee::Reprises { mois, salarie } => write!(f, "reprises {} {}", mois, salarie),
             LectureDatee::Saisie { mois, salarie: Some(s) } => write!(f, "saisie {} {}", mois, s),
             LectureDatee::Saisie { mois, salarie: None } => write!(f, "saisie {}", mois),
@@ -547,6 +550,9 @@ impl<S: TryFrom<String, Error = crate::echec::Echec>, L: TryFrom<String, Error =
         }
         if let Some((mois, salarie)) = cle.strip_prefix("paies-au-mois ").and_then(|r| r.split_once(' ')) {
             return Some((|| Ok(LectureDatee::PaiesAuMois { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("paies-intermittentes ").and_then(|r| r.split_once(' ')) {
+            return Some((|| Ok(LectureDatee::PaiesIntermittentes { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
         }
         if let Some((mois, salarie)) = cle.strip_prefix("reprises ").and_then(|r| r.split_once(' ')) {
             return Some((|| Ok(LectureDatee::Reprises { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
