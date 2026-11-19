@@ -579,11 +579,11 @@ pub(crate) enum Objet {
 }
 
 impl Objet {
-    /// Le salarie qu'il nomme (la cle de sa fiche).
-    fn salarie(&self) -> droit::contexte::IdSalarie {
+    /// Le salarie qu'il nomme (la cle de sa fiche) ; `None` : une fin dont la carte ne le dit plus.
+    fn salarie(&self) -> Option<droit::contexte::IdSalarie> {
         match self {
             Objet::Fin(f) => f.salarie.clone(),
-            Objet::Arret(a) => a.salarie().clone(),
+            Objet::Arret(a) => Some(a.salarie().clone()),
         }
     }
 }
@@ -650,7 +650,7 @@ impl Echeance {
             Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
             _ => None,
         };
-        let salarie = || self.objet.as_ref().map(Objet::salarie);
+        let salarie = || self.objet.as_ref().and_then(Objet::salarie);
         Ok(Some(match &self.quoi {
             GenreDEcheance::Obligation => {
                 let Some(o) = self.obligation.as_ref() else { return Ok(None) };
@@ -1440,13 +1440,16 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui, &lues)?);
     }
     for f in fins {
-        if f.contrat.fin() > st.aujourdhui {
+        // Une carte qui ne se lit plus n'a ni salarie ni contrat a rappeler : son obligation est indeterminee, la colonne
+        // du mois la montre.
+        let (Some(cle), Some(contrat)) = (f.salarie.clone(), f.contrat) else { continue };
+        if contrat.fin() > st.aujourdhui {
             continue; // il n'a pas encore pris fin
         }
         if !du(&f.obligation) {
             continue;
         }
-        let salarie = f.salarie.to_string();
+        let salarie = cle.to_string();
         let numero = match &f.numero {
             Some(n) => format!("Le contrat {}", n),
             None => "Le contrat sans numéro".to_string(),
@@ -1454,13 +1457,13 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         let a_saisir: Vec<String> = f.a_saisir.iter().map(crate::imprevus::phrase_du_manque).collect();
         let mut r = rappel_d_obligation(
             &f.obligation,
-            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: f.salarie.clone(), jour: f.contrat.fin() },
+            CleDEcheance::DuSalarie { quoi: QuoiDuSalarie::FinContrat, salarie: cle.clone(), jour: contrat.fin() },
             format!("Signaler la fin du contrat de {}", salarie),
-            format!("{} s'est terminé le {}.", numero, f.contrat.fin().jj_mm_aaaa()),
+            format!("{} s'est terminé le {}.", numero, contrat.fin().jj_mm_aaaa()),
             Objet::Fin(Box::new(f.clone())),
         )?;
         r.mois = Some(f.mois);
-        r.salarie = Some(f.salarie.clone());
+        r.salarie = Some(cle);
         r.etape = Some(if a_saisir.is_empty() { EtapeDEcheance::AProduire } else { EtapeDEcheance::ASaisir });
         if !a_saisir.is_empty() {
             r.detail.push_str(&format!(" À saisir d'abord, dans la carte du contrat : {}", a_saisir.join(" ")));

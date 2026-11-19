@@ -1554,8 +1554,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   « calendaire ») ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté) ; ou sa fin déjà partie
   par le circuit dérogatoire (la DSN déposée du mois de la fin écrit 62.017 = 01). Décidé une fois, par
   `declarations::fin_a_la_dsn` (le calendrier, `ConnuDeLaDsn::du_contrat`, puis ce qui est parti : `Departs::de` et le
-  fichier déposé, relu une fois par geste, `DsnDeposees`) ; un fichier déposé qui manque ou ne se relit pas se dit
-  (`FinALaDsn::FichierIllisible`). Le premier et le dernier ouvrent le circuit dérogatoire d'un CDDU
+  fichier déposé, relu une fois par geste, `DsnDeposees`, ses contrats lus comme `dsn_lue::ContratDeclare`) ; la fin
+  partie se reconnaît au numéro du contrat et à 62.017 = 01, quelle que soit sa date (fiche 1902 : une correction
+  reporte le choix « précédemment transmis »). Un fichier déposé qui manque ou dont la forme ne se relit pas se dit
+  (`FinALaDsn::FichierIllisible`, avec le nom du fichier à remettre) ; une panne du disque remonte. Il ne ferme que ce
+  qui a besoin de la valeur, pour ce contrat seul : son signalement, l'envoi de ses documents, la DSN qui redéclare
+  sa fin ; la carte, la liste des fins, l'étape Documents et le rangement des AER le disent sur lui seul.
+  Le premier et le dernier ouvrent le circuit dérogatoire d'un CDDU
   (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.

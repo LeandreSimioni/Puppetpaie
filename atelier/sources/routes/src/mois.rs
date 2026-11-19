@@ -1431,7 +1431,9 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
 /// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets) ; si cette fin se signale, au motif
 /// par defaut et motif par motif (`Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un CDDU a son terme
 /// part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja declare) ; et le
-/// choix vide des motifs (le defaut d'une fin qui ne se signale pas). La page ne decide rien.
+/// choix vide des motifs (le defaut d'une fin qui ne se signale pas). `indeterminee` : la phrase d'une fin dont la DSN
+/// deposee de son mois manque ou ne se relit pas (`FinALaDsn::FichierIllisible`) -- le bloc se dessine quand meme, au
+/// calendrier du contrat, et la phrase dit quel fichier remettre. La page ne decide rien.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Rupture {
     porte: &'static str,
@@ -1439,21 +1441,21 @@ pub(crate) struct Rupture {
     signalement_fctu: bool,
     signalement_par_motif: BTreeMap<droit::natures::MotifDeRupture, bool>,
     motif_vide_dit: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    indeterminee: Option<String>,
 }
 
 /// LA RUPTURE de cet engagement : `None` quand elle n'a pas de sens ici -- une nature sans motif de rupture
 /// (S21.G00.62.002, CCH-11 : `Nature::motifs_rupture`), ou un contrat a terme qui ne finit pas ce mois-ci. Les motifs et
-/// ce que chacun demande viennent de `natures`. Ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`, au motif par
-/// defaut : il dit si la DSN deposee l'a deja declaree par le circuit) se decide une fois, avec ce qui est parti
+/// ce que chacun demande viennent de `natures`. Ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`, au motif de
+/// la carte : il dit si la DSN deposee l'a deja declaree par le circuit) se decide une fois, avec ce qui est parti
 /// (`departs`, `lues`).
 fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature, departs: &engagement::departs::Departs, lues: &declarations::fin_a_la_dsn::DsnDeposees) -> R<Option<Rupture>> {
     if nat.motifs_rupture().is_empty() {
         return Ok(None);
     }
     let fin = e.contrat().fin();
-    let Some(connu) = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, Some(&e.salarie), e.numero.as_ref(), nat, None, e.contrat().debut(), fin, e.mois)?) else {
-        return Ok(None);
-    };
+    let connu = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, Some(&e.salarie), e.numero.as_ref(), nat, e.motif_rupture, e.contrat().debut(), fin, e.mois)?, e.contrat().debut(), e.mois);
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
         return Ok(Some(rupture_pour(nat, connu, e.contrat().fin())));
@@ -1481,9 +1483,7 @@ fn rupture_en_saisie(e: &SaisieCarte, mois: Mois, departs: &engagement::departs:
     if nat.motifs_rupture().is_empty() {
         return Ok(None);
     }
-    let Some(connu) = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, e.salarie.as_ref(), e.numero.as_ref(), &nat, None, debut, e.fin_lue(), mois)?) else {
-        return Ok(None);
-    };
+    let connu = connu_pour_la_carte(declarations::fin_a_la_dsn::du_contrat(lues, departs, e.salarie.as_ref(), e.numero.as_ref(), &nat, e.motif_rupture, debut, e.fin_lue(), mois)?, debut, mois);
     if nat.duree_indeterminee || nat.mensuelle() {
         return Ok(Some(rupture_pour(&nat, connu, e.fin)));
     }
@@ -1493,19 +1493,21 @@ fn rupture_en_saisie(e: &SaisieCarte, mois: Mois, departs: &engagement::departs:
     }
 }
 
-/// Ce que la DSN sait de la fin, pour la carte : `None` quand le fichier depose de la DSN du mois manque ou ne se relit
-/// pas -- on ne sait pas si la fin est deja partie, et le bloc de fin ne se dessine pas ; la liste des fins a signaler
-/// le dit, sur cette fin seule (`imprevus::fins_a_signaler`, obligation indeterminee).
-fn connu_pour_la_carte(f: declarations::fin_a_la_dsn::FinALaDsn) -> Option<droit::natures::ConnuDeLaDsn> {
-    match f {
-        declarations::fin_a_la_dsn::FinALaDsn::Connue(c) => Some(c),
-        declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible { .. } => None,
+/// Ce que la DSN sait de la fin, pour la carte du contrat qui commence le `debut`, vue du mois `mois`. Quand le fichier
+/// depose de la DSN du mois manque ou ne se relit pas, on ne sait pas si la fin est deja partie : la carte garde son bloc
+/// de fin, son motif et ses faits, dessines au calendrier du contrat (`ConnuDeLaDsn::du_contrat`), avec la phrase du
+/// fichier a remettre ; seul l'acte qui a besoin de le savoir refuse (le signalement, l'envoi de ses documents).
+fn connu_pour_la_carte(f: declarations::fin_a_la_dsn::FinALaDsn, debut: Jour, mois: Mois) -> (droit::natures::ConnuDeLaDsn, Option<String>) {
+    match &f {
+        declarations::fin_a_la_dsn::FinALaDsn::Connue(c) => (*c, None),
+        declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible { .. } => (droit::natures::ConnuDeLaDsn::du_contrat(debut, mois), f.illisible()),
     }
 }
 
-/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` : si cette fin se
-/// signale, au motif par defaut et motif par motif (`Nature::signalement_fctu`), et le choix vide des motifs.
-fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>) -> Rupture {
+/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu` (et la phrase de ce qu'elle ne sait pas
+/// dire), qui finit le `fin` : si cette fin se signale, au motif par defaut et motif par motif
+/// (`Nature::signalement_fctu`), et le choix vide des motifs.
+fn rupture_pour(nat: &droit::natures::Nature, (connu, indeterminee): (droit::natures::ConnuDeLaDsn, Option<String>), fin: Option<Jour>) -> Rupture {
     let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
     let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
     let signalement_fctu = nat.signalement_fctu(None, connu);
@@ -1513,7 +1515,7 @@ fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDs
         Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
         _ => "— à choisir —".to_string(),
     };
-    Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit }
+    Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit, indeterminee }
 }
 
 
