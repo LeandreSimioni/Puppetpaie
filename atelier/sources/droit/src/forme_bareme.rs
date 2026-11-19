@@ -1070,6 +1070,9 @@ forme! {
         pub rubriques_bulletin: Option<Vec<Rubrique>>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
         pub reduction_generale: Option<ParametresDeLaReduction>,
+        /// Le regime local d'Alsace-Moselle du statut, qui remplace celui du corps (l'artiste, au taux abattu de 30 %) :
+        /// exige, un statut ne prend jamais le taux d'un autre.
+        pub regime_local_alsace_moselle: RegimeLocal,
     }
 }
 

@@ -6,7 +6,9 @@ JORFTEXT000000310494 : la base range un texte non codifié sous son JORFTEXT). `
 les pièces, `articles-20261010.md` le texte.
 
 - art. 1 et 2 : les taux des artistes (cotisations, FNAL, versement transport) à 70 % du régime général. Le moteur les
-  porte « cuits » dans les taux du barème (`logiciel/donnees/baremes/2026.json`, `_statuts`) et le facteur AT/MP 0,70.
+  porte « cuits » dans les taux du barème (`logiciel/donnees/baremes/2026.json`, `_statuts`) et le facteur AT/MP 0,70 ;
+  la cotisation du régime local d'Alsace-Moselle de l'artiste aussi, 0,91 = 1,3 × 70 % (`regime_local_alsace_moselle`
+  du corps des barèmes 2025 et 2026, avec la page des taux réduits de l'Urssaf : `../urssaf-taux-reduits-artistes/`).
 - art. 3, al. 2 : le plafond d'un artiste engagé moins de cinq jours continus, douze fois le plafond horaire par
   journée de travail. Le moteur : `paie/src/plafond.rs` (`plafond_urssaf`, `pour_paie`, `plafond_journees`), à la
   lettre depuis la vague 1l (10/10/2026, `prive/journal/archives/2026-10-08-lots/norme/corrections/PASSATION-V1l.md`) : la « période

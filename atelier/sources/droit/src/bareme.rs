@@ -244,6 +244,7 @@ mecanisme se decide. Tant que la section n'est pas marquee \
     if section.reduction_generale.is_some() {
         bar.reduction_generale = section.reduction_generale;
     }
+    bar.regime_local_alsace_moselle = Some(section.regime_local_alsace_moselle);
     Ok(bar)
 }
 
