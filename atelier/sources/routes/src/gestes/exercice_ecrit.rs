@@ -194,7 +194,9 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
         } else if !dsn_acceptee(ctx, m)? {
             avert.push(format!("{} : pas de DSN réelle acceptée au journal.", m));
         }
-        ecritures.extend(ecritures_du_mois(ctx, m, &plan, &departs)?);
+        let (du_mois, non_portees) = ecritures_du_mois(ctx, m, &plan, &departs)?;
+        ecritures.extend(du_mois);
+        avert.extend(non_portees);
     }
     if !propre.exists() {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());

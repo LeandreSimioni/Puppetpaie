@@ -23,7 +23,10 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<ExitCode, Echec> {
     for x in &d.inconnus {
         dire!("Non rattache : {}", x);
     }
-    if d.trouves.is_empty() {
+    for a in &d.sans_mode {
+        dire!("Mise de cote, aucun bilan ne la dit reelle ou de test : {} ({})", a.flux, a.piece);
+    }
+    if d.trouves.is_empty() && d.sans_mode.is_empty() {
         dire!("Aucun certificat de DPAE (nature 41) dans retours/dpae/ : rien a reprendre.");
         return Ok(ExitCode::SUCCESS);
     }

@@ -1445,12 +1445,30 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         total += x.cout;
         phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout), bulletins(x), euros(x.brut)));
     }
+    // Ce que le cout ne compte pas (une paie reprise dont la nature du contrat reste a dire) se dit a sa suite, court : leur
+    // nombre, et les contrats.
+    let mut contrats: Vec<&str> = Vec::new();
+    for n in &couts.non_comptees {
+        if !contrats.contains(&n.qui.as_str()) {
+            contrats.push(n.qui.as_str());
+        }
+    }
+    let non_comptees: String = match couts.non_comptees.len() {
+        0 => String::new(),
+        n => format!(
+            " {} non comptée{}, la nature du contrat reste à dire (Configuration, « Reprendre l'historique ») : {}.",
+            socle::ecran::compte(n, "paie reprise", "paies reprises"),
+            if n > 1 { "s" } else { "" },
+            contrats.join(", ")
+        ),
+    };
     let phrase = socle::phrase!(
-        "Coût de {}, jusqu'à {} : {} pour {}.",
+        "Coût de {}, jusqu'à {} : {} pour {}.{}",
         couts.annee,
         couts.jusqu_a.libelle(socle::mois::Graphie::Accentuee),
         socle::texte::euros(total),
-        socle::ecran::compte(couts.spectacles.len(), "spectacle", "spectacles")
+        socle::ecran::compte(couts.spectacles.len(), "spectacle", "spectacles"),
+        non_comptees
     );
     Ok(CoutsDits { phrase, phrases, annee: couts.annee, jusqu_a: couts.jusqu_a.to_string(), spectacles: dit(couts.spectacles)?, salaries: dit(couts.salaries)? })
 }

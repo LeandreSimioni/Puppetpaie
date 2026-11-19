@@ -83,14 +83,17 @@ pub enum Attestation {
 pub struct ContratAtteste {
     pub atteste_par: Attestation,
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    /// Ses compteurs : des cachets entiers (`Cachets`) ; des heures et des jours qui peuvent ne pas l'etre (une paie
+    /// d'un permanent que le registre de l'import compte au mois porte les heures que sa DSN declare, `151.67` :
+    /// `import::attestes`), en nombre JSON, entier quand ils le sont.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub heures: Option<Heures>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub jours: Option<Jours>,
     /// Les heures d'enseignement que les heures comptent (annexe 10).
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub heures_enseignement: Option<Heures>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
@@ -186,6 +189,10 @@ pub struct PaieVersee {
     /// Le motif de recours que la DSN deposee declare pour le contrat (S21.G00.40.021).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motif_recours: Option<droit::natures::MotifDeRecours>,
+    /// La nature du contrat d'usage que la DSN deposee declare (S21.G00.40.007 et .021 : `droit::natures::d_usage_declaree`) ;
+    /// `None` : elle n'en declare pas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nature: Option<NatureDeContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     /// Ses nets et son prelevement a la source, que la DSN deposee (bloc 50) ou son bulletin disent.
@@ -209,8 +216,16 @@ pub struct PaieVersee {
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
     #[serde(with = "bases_en_texte")]
     pub bases: BTreeMap<BaseAssujettie, Montant>,
-    /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    /// L'ACTIVITE DU MOIS (heures, cachets, jours) : ce que la DSN deposee declare du travail remunere du contrat pour le
+    /// mois (S21.G00.53 de type 01, `bloc-S21.G00.53.txt` : le « temps alloue par le salarie a un type d'activite »,
+    /// « valorise par periode de paie » et « rattache a un et un seul contrat » ; lu par `declarations::dsn_lue::Mesures`,
+    /// le rappel d'une periode anterieure hors du compte), tel qu'elle l'ecrit, au centieme pres : des heures en unites
+    /// 10 (« heure ») et 35 (« heures intermittents du spectacle »), des jours en unite 12 (« journee »), des cachets en
+    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par ce
+    /// qu'il imprime (il fait foi sur ce qu'il imprime : `routes::importation::bulletins`). Ce que l'AEM, le bulletin ou
+    /// le certificat d'un contrat d'usage atteste est au contrat entier (`ContratAtteste`) ; lequel l'emporte pour un
+    /// mois, `activite_du_mois` le dit.
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub heures: Option<Heures>,
     /// LA DUREE DU TRAVAIL QUE LE BULLETIN IMPRIME en en-tete (« Durée du travail : 151,67 h ») : le nombre d'heures de
     /// travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°), quand il ne l'imprime pas sur sa ligne de
@@ -222,9 +237,10 @@ pub struct PaieVersee {
         deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
     )]
     pub duree_du_travail: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    /// Les cachets du mois, ecrits comme les heures : la DSN les declare en decimal (« 3.00 »).
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub jours: Option<Jours>,
     pub spectacle: Option<String>,
     pub analytique: Option<String>,
@@ -453,6 +469,7 @@ impl PaieVersee {
             periode: None,
             quotite: None,
             motif_recours: None,
+            nature: None,
             brut: None,
             nets: Nets::default(),
             net_a_payer: None,
@@ -481,6 +498,53 @@ impl PaieVersee {
     }
 }
 
+/// L'ACTIVITE D'UN MOIS REPRIS (`activite_du_mois`) : ses cachets, ses heures et ses jours de travail remunere, chacun
+/// vide quand les pieces le taisent (vide n'est pas zero). Des cachets entiers ; des heures et des jours tels que les
+/// pieces les disent (la DSN : `151.67`), en texte.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct ActiviteDuMois {
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cachets: Option<Cachets>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures: Option<Heures>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub jours: Option<Jours>,
+}
+
+impl ActiviteDuMois {
+    /// N'en dit-elle rien ?
+    pub fn est_muette(&self) -> bool {
+        self.cachets.is_none() && self.heures.is_none() && self.jours.is_none()
+    }
+
+    /// Celle qui n'est pas nulle : une mesure nulle (`0.00`) ne remplit aucune case.
+    pub fn non_nulle(self) -> ActiviteDuMois {
+        ActiviteDuMois { cachets: self.cachets.filter(|n| !n.est_nul()), heures: self.heures.filter(|n| !n.est_nul()), jours: self.jours.filter(|n| !n.est_nul()) }
+    }
+}
+
+/// L'ACTIVITE QUE LES PIECES DISENT D'UN CONTRAT REPRIS POUR `mois` (`ActiviteDuMois`), chacune vide quand elles la
+/// taisent. Une seule regle, pour ce qui lit l'activite d'un mois repris :
+/// - le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en dit
+///   quelque chose : la piece du contrat compte le contrat entier, qui est ici celui du mois. L'AEM est « l'attestation
+///   employeur mensuelle » du contrat (S21.G00.40.025, `bloc-S21.G00.40.txt`) ; la DSN valorise la meme activite « par
+///   periode de paie » (`bloc-S21.G00.53.txt`) : la piece du contrat l'emporte ;
+/// - sinon, la paie du mois (`paie`) : le bulletin du mois d'un permanent, ou ce que la DSN declare pour le mois
+///   (`PaieVersee::heures`). Un contrat qui deborde du mois ne dit pas ce qui est de ce mois : la paie le dit.
+///
+/// `debut` et `fin` : les bornes de l'engagement qui porte le contrat (`Importe::activite_du_mois` les lit sur lui).
+pub fn activite_du_mois(
+    mois: Mois, paie: Option<&PaieVersee>, contrat: Option<&ContratAtteste>, debut: Option<Jour>, fin: Option<Jour>,
+) -> ActiviteDuMois {
+    let tient = [debut, fin].iter().all(|j| j.is_some_and(|j| j.mois_civil() == mois));
+    let atteste = contrat.filter(|_| tient).map(|c| ActiviteDuMois { cachets: c.cachets, heures: c.heures, jours: c.jours }).filter(|a| !a.est_muette());
+    match (atteste, paie) {
+        (Some(a), _) => a,
+        (None, Some(p)) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
+        (None, None) => ActiviteDuMois::default(),
+    }
+}
+
 impl ContratAtteste {
     /// Un contrat dont on ne sait encore que ce qui l'atteste, et la nature que la piece atteste (`None` : a dire).
     pub fn vide(atteste_par: Attestation, nature: Option<NatureDeContrat>) -> ContratAtteste {
@@ -504,6 +568,14 @@ impl ContratAtteste {
             importe_le: None,
         }
     }
+}
+
+/// LA NATURE D'UN ENGAGEMENT IMPORTE, sur sa carte et ses pieces : celle qui a ete dite (la carte), sinon celle que la
+/// piece du contrat atteste, sinon le contrat d'usage que la derniere DSN deposee qui declare une de ses paies declare
+/// (`PaieVersee::nature`) ; `None` : elle reste a dire. La seule regle, que lisent `Importe::nature` et ce qui ecrit la
+/// nature dite (`routes::importation::nature`).
+pub fn nature_de(carte: &Carte, pieces: &Pieces) -> Option<NatureDeContrat> {
+    carte.nature.or_else(|| pieces.contrat.as_ref().and_then(|c| c.nature)).or_else(|| pieces.paies.values().rev().find_map(|p| p.nature))
 }
 
 // ------------------------------------------------------------------ l'engagement importe
@@ -569,7 +641,8 @@ impl Importe {
 
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste
     /// (`routes::importation::bulletins` : une AEM, un certificat Congés Spectacles, un bulletin qui porte une marque du
-    /// spectacle). `None` : elle reste a dire (`a_dire`).
+    /// spectacle), sinon le contrat d'usage que sa DSN declare (`PaieVersee::nature`). `None` : elle reste a dire
+    /// (`a_dire`).
     pub fn nature(&self) -> Option<NatureDeContrat> {
         self.nature_dite()
     }
@@ -613,9 +686,15 @@ impl Importe {
         self.carte().motif_recours.or_else(|| self.paies().values().rev().find_map(|p| p.motif_recours))
     }
 
-    /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
+    /// L'activite que ses pieces disent pour `mois` (`activite_du_mois`, aux bornes de l'engagement).
+    pub fn activite_du_mois(&self, mois: Mois) -> ActiviteDuMois {
+        activite_du_mois(mois, self.paies().get(&mois), self.contrat(), self.carte().debut, self.carte().fin)
+    }
+
+    /// La nature dite (l'engagement) ou attestee (la piece), sinon le contrat d'usage que la derniere DSN deposee qui
+    /// declare une de ses paies declare (`PaieVersee::nature`) ; `None` : rien ne la porte.
     fn nature_dite(&self) -> Option<NatureDeContrat> {
-        self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature))
+        nature_de(self.carte(), self.pieces())
     }
 
     /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`ContratAtteste::nature`), et personne ne l'a
@@ -711,6 +790,9 @@ pub struct PaieImportee {
     /// Les heures pour les annexes 8 et 10 (un cachet compte pour les heures que sa rubrique declare) : la somme de celles
     /// des lignes rattachees, dans sa forme la plus courte ; `None` : aucune ligne n'est rattachee.
     pub heures_annexes: Option<Heures>,
+    /// Ses cachets, ses heures et ses jours du mois (`Importe::activite_du_mois`) ; une mesure que les pieces taisent
+    /// est vide.
+    pub activite: ActiviteDuMois,
     /// Les lignes de cotisation que le bulletin imprime, sous la cotisation que l'import leur a donnee, chaque taux dans
     /// sa forme la plus courte ; vide quand aucun bulletin ne les donne.
     pub lignes: Vec<CotisationImprimee>,
@@ -838,11 +920,18 @@ impl Importe {
             remuneration.push((l, rattachee));
         }
         let rattachees: Vec<&crate::calcul::LigneRattachee> = remuneration.iter().filter_map(|(_, r)| r.as_ref()).collect();
-        // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees.
-        (engagement.cachets, engagement.heures) = crate::cachets_et_heures(rattachees.iter().map(|r| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), r.heures_annexes)), nat.mensuelle());
         let heures_annexes = (!rattachees.is_empty()).then(|| socle::grandeurs::courte(rattachees.iter().map(|r| r.heures_annexes).sum()));
-        engagement.jours = Jours::de_dates(engagement.dates_travail.len());
-        engagement.jours_contrat = engagement.jours;
+        // SON ACTIVITE DU MOIS, par la seule regle (`activite_du_mois`) : ce qui la lit lit `PaieImportee::activite`, ou
+        // une mesure tue reste vide. L'engagement, qui n'a pas de case vide pour elle, porte ce qu'elle dit ; ce qu'elle
+        // tait y reste a zero, et ne s'y lit pas.
+        let activite = self.activite_du_mois(mois);
+        engagement.heures = activite.heures;
+        if let Some(c) = activite.cachets {
+            engagement.cachets = c;
+        }
+        if let Some(j) = activite.jours {
+            (engagement.jours, engagement.jours_contrat) = (j, j);
+        }
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.periode_payee()?.fin();
@@ -900,6 +989,7 @@ impl Importe {
             spectacle: spec,
             remuneration,
             heures_annexes,
+            activite,
             lignes: cotisations,
             bases,
             brut,
@@ -999,9 +1089,43 @@ pub fn empreinte_de(reprises: &[PaieReprise]) -> socle::fichiers::Empreinte {
     socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&reprises).as_bytes())
 }
 
-/// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<PaieImportee>> {
-    du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)).map(|i| i.paie(ctx, mois)).collect()
+/// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois, et
+/// celles qui ne s'y rangent pas encore (`NatureADire`). REGARDER N'EST JAMAIS REFUSE (« Le logiciel est doux ») : un
+/// contrat repris dont la nature reste a dire ne ferme pas la lecture des autres ; ce qui lit les paies du mois les range
+/// et dit, sur ce contrat-la, ce qui lui manque.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<NatureADire>)> {
+    let (mut rangees, mut a_dire) = (Vec::new(), Vec::new());
+    for i in du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)) {
+        match i.a_dire() {
+            true => a_dire.push(NatureADire { mois, salarie: i.carte().salarie.clone(), qui: crate::etats::qui_de(ctx, &i.objet) }),
+            false => rangees.push(i.paie(ctx, mois)?),
+        }
+    }
+    Ok((rangees, a_dire))
+}
+
+/// UNE PAIE REPRISE QUI NE SE RANGE PAS ENCORE : celle de `mois` d'un contrat dont la nature reste a dire
+/// (`Importe::a_dire`). Une nature ne se devine pas (regle 6) : ce qui a ete verse ne se range sous aucune
+/// (`Importe::nature_rangee`), et ce qui lit les paies du mois la dit sur ce contrat (`phrase`), sans refuser les autres.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NatureADire {
+    pub mois: Mois,
+    /// Le salarie du contrat (la cle de sa fiche) ; `None` : l'engagement ne le dit pas. Un calcul d'un salarie qui a
+    /// besoin de cette paie refuse pour lui seul, en la nommant.
+    pub salarie: Option<IdSalarie>,
+    /// Le contrat, tel qu'une phrase le nomme (`etats::qui_de`).
+    pub qui: String,
+}
+
+impl NatureADire {
+    /// Ce que la lecture en dit.
+    pub fn phrase(&self) -> String {
+        format!(
+            "{} : sa paie reprise de {} n'est pas comptée, la nature de ce contrat reste à dire (Configuration, « Reprendre l'historique »).",
+            self.qui,
+            self.mois.libelle(socle::mois::Graphie::Accentuee)
+        )
+    }
 }
 
 /// Tous les engagements importes, fichier par fichier.

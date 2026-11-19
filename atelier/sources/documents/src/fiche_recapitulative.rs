@@ -38,6 +38,10 @@ pub struct CoutsDeLAnnee {
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub salaries: Vec<(String, Cout)>,
+    /// Les paies reprises que le cout ne compte pas (`etats_paie::livre_des_etats`) : la nature de leur contrat reste a
+    /// dire.
+    #[serde(skip)]
+    pub non_comptees: Vec<engagement::importe::NatureADire>,
 }
 
 /// Le cout d'un spectacle ou d'un salarie : ses bulletins, ses sommes (en texte), ce qui n'est que prevu, et si une paie
@@ -88,12 +92,14 @@ impl<'a> Recapitulatifs<'a> {
             return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
         };
         let courant = self.ctx.aujourdhui.mois_civil();
-        let mut out = CoutsDeLAnnee { annee, jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new() };
+        let mut out = CoutsDeLAnnee { annee, jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new(), non_comptees: Vec::new() };
         let p = Periode::nouvelle(self.ctx, None, Some(annee), false, false)?;
         if p.mois.is_empty() {
             return Ok(out);
         }
-        let lignes = etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)?;
+        let (livre, non_comptees) = etats_paie::livre_des_etats(self.ctx, &p, &self.demande.departs)?;
+        out.non_comptees = non_comptees;
+        let lignes: Vec<LigneLivre> = livre.groupes.into_iter().flat_map(|g| g.lignes).collect();
         // Les cles, dans l'ordre ou les paies les rencontrent ; leur cumul jusqu'au mois courant, et ce qui n'est que
         // prevu apres lui (son seul cout). Une somme que les pieces importees taisent ne compte pas ; un cout qui manque
         // rend le cumul `incomplet`.

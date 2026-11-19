@@ -2,8 +2,8 @@
  *
  * Une route sans écran dessiné porte, dans sa fiche, la place où elle se montre (`ecran`, `affichage: "auto"`) et son
  * bouton (`bouton`) : la page l'affiche ici depuis sa fiche. Chaque champ de la charge dit ce que l'écran en montre
- * (`libelle`) et sa forme (`forme` : une liste se tape élément par élément, un oui/non se coche, un nombre, un mois ou une
- * date se choisissent ; le reste se tape). Puis la phrase rendue (ou ses lignes, `phrases`), ou le refus. La page ne
+ * (`libelle`) et sa forme (`forme` : une liste se tape élément par élément, un oui/non se coche, un nombre, un mois, une
+ * date ou une valeur d'une liste fermée, `choix`, se choisissent ; le reste se tape). Puis la phrase rendue (ou ses lignes, `phrases`), ou le refus. La page ne
  * compose ni ne décide rien : chaque mot et chaque forme viennent de la fiche ou de la réponse. Une place sans route
  * automatique ne montre rien.
  *
@@ -24,10 +24,13 @@ const SAISIES = {
   liste: (j) => `<span data-liste="${j}"><input type="text" data-element></span> <button type="button" class="lien" data-plus="${j}">+</button>`,
 };
 
-/** La saisie d'un champ selon sa forme ; `valeur` : ce qu'elle montre d'abord ; `choix` : la liste où il se choisit. */
+/** La saisie d'un champ selon sa forme ; `valeur` : ce qu'elle montre d'abord ; `choix` : la liste où il se choisit (celle
+ *  que le geste rend, sinon celle de la fiche : une liste fermée, `forme: "choix"`, s'ouvre sur une case vide, qui ne
+ *  part pas). */
 function saisieDuChamp(forme, j, valeur, choix) {
   if (choix) {
-    return `<select data-j="${j}">${choix.map((o) => `<option value="${echapper(o.code)}"${
+    const vide = forme === "choix" && valeur == null ? `<option value="" selected></option>` : "";
+    return `<select data-j="${j}">${vide}${choix.map((o) => `<option value="${echapper(o.code)}"${
       o.code === valeur ? " selected" : ""}>${echapper(o.libelle)}</option>`).join("")}</select>`;
   }
   return (SAISIES[forme] || ((k, v) => `<input type="text" data-j="${k}"${valeurDeDepart(v)}>`))(j, valeur);
@@ -37,7 +40,7 @@ function saisieDuChamp(forme, j, valeur, choix) {
  *  `choix` (une case qu'ils ne nomment pas : rien d'abord, et elle se tape). */
 function casesDesChamps(champs, valeurs, choix) {
   return champs.map((c, j) => `<label class="champ-boite">${echapper(c.libelle)}
-      ${saisieDuChamp(c.forme, j, valeurs[c.nom], choix[c.nom])}</label>`).join("");
+      ${saisieDuChamp(c.forme, j, valeurs[c.nom], choix[c.nom] || c.choix)}</label>`).join("");
 }
 
 /** Le « + » d'une liste : un élément de plus à taper. */

@@ -687,7 +687,9 @@ impl DsnLue {
     /// CE QUE LE CONTRAT `numero` DE L'INDIVIDU `nir` DECLARE, pour le mois (`rappel` faux) ou en rappel d'un mois deja
     /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, les lignes de
     /// salaire de base de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en
-    /// jours, 12 ; en cachets, 37).
+    /// jours, 12 ; en cachets, 36, 37 et 39 : « le nombre de cachets sous un bloc "Activité - S21.G00.53" avec les valeurs
+    /// "36 - cachets groupés", "37- cachets isolés" ou "39 - cachet" »,
+    /// `norme-dsn/netentreprises-fiche-intermittents-contrat-remunerations-20251113.txt`, « Point d'attention »).
     pub fn mesures(&self, nir: Option<&Nir>, numero: &NumeroContrat, rappel: bool) -> Mesures {
         // Les sommes du contrat, a zero avant sa premiere remuneration.
         let mut m = Mesures { brut: None, salaires_de_base: Vec::new(), jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
@@ -709,7 +711,7 @@ impl DsnLue {
                 match (a.unite, mesure) {
                     (Some(UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents), M::Heures(h)) => m.heures += h,
                     (Some(UniteDeMesure::Journee), M::Jours(j)) => m.jours += j,
-                    (Some(UniteDeMesure::CachetsIsoles), M::Cachets(c)) => m.cachets += c,
+                    (Some(UniteDeMesure::CachetsGroupes | UniteDeMesure::CachetsIsoles | UniteDeMesure::Cachet), M::Cachets(c)) => m.cachets += c,
                     _ => {}
                 }
             }

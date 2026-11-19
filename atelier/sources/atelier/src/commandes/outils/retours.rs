@@ -47,12 +47,13 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     }
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
-    let r = if dpae {
-        routes::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
+    let plage = envois::releve_retours::PlageDuReleve::Bornee { debut, fin, nature: None };
+    let (r, dit) = if dpae {
+        routes::gestes::releve::relever_retours_dpae(&cadre.ctx, plage, tout, flux)?
     } else {
-        routes::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, envois::releve_retours::CanalDesRetours::Dsn)?
+        routes::gestes::releve::relever_retours(&cadre.ctx, plage, tout, environnement, None, envois::releve_retours::CanalDesRetours::Dsn)?
     };
-    for i in &r.incidents {
+    for i in &dit.incidents {
         dire!("  {}", i);
     }
     let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_ref() == flux).collect();
@@ -69,7 +70,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
             super::dit(x.flux.as_ref().map(envois::retours::IdDeFlux::texte))
         );
     }
-    for quoi in &r.a_faire {
+    for quoi in &dit.a_faire {
         dire!("\n  A FAIRE : {}", quoi);
     }
     if !r.archives.is_empty() {
@@ -78,5 +79,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
             dire!("  {}", a.chemin.display());
         }
     }
-    Ok(if r.incidents.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+    Ok(if dit.incidents.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }

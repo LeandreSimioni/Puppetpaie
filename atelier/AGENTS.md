@@ -140,6 +140,10 @@ par son nom dans le JS : on lit sa fiche.
   le nuage partent au filet quand il se joint, et c'est voulu** : on voit le problème avant une compagnie (Léandre,
   18/11/2026). Un incident
   fermé qui revient ouvre un ticket neuf.
+- **Les intermittents d'abord** (Léandre, 19/11/2026 : « que le fonctionnement de base fonctionne avant qu'on
+  s'occupe des règles des permanents ») : tant que le chemin d'une compagnie d'intermittents n'est pas droit de bout
+  en bout (engager, payer, déclarer, relever), aucun ticket qui ne concerne que les permanents ne se traite ; ce
+  qu'on découvre sur eux va dans un ticket, et y reste. Léandre dit quand cela change.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
   ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.

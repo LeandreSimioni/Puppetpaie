@@ -534,11 +534,14 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, gar
 /// (`validees_du_mois`), puis celle de chaque engagement importe paye ce mois (`importe::paies_du_mois` : ce que les
 /// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye ; rien ne se
 /// calcule. Ce qui part (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Vec<PaieDuMois>> {
+/// Une paie reprise d'un contrat dont la nature reste a dire n'y est pas : elle se rend a part (`importe::NatureADire`),
+/// et l'etat qui lit le mois la dit sans refuser le reste.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<(Vec<PaieDuMois>, Vec<crate::importe::NatureADire>)> {
     let mut paies: Vec<PaieDuMois> =
         validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).map(PaieDuMois::Validee).collect();
-    paies.extend(crate::importe::paies_du_mois(ctx, mois)?.into_iter().map(PaieDuMois::Importee));
-    Ok(paies)
+    let (importees, a_dire) = crate::importe::paies_du_mois(ctx, mois)?;
+    paies.extend(importees.into_iter().map(PaieDuMois::Importee));
+    Ok((paies, a_dire))
 }
 
 /// UNE PAIE DU MOIS, CE QUE LIT UN ETAT : la paie ecrite d'un engagement valide, ou celle d'un engagement importe, que
@@ -732,11 +735,14 @@ impl PaieDuMois {
         }
     }
 
-    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la somme de ses lignes de cachets, ce que la DSN
-    /// declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
-    /// (ses heures, `heures_annexes`, ne sont pas dites).
-    pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
-        self.heures_annexes().map(|_| self.engagement().cachets)
+    /// L'ACTIVITE DE LA PAIE (cachets, heures, jours de travail remunere) : celle que son engagement compte, ou, pour
+    /// une paie importee, celle que les pieces disent du mois (`importe::Importe::activite_du_mois`, la seule regle),
+    /// chaque mesure qu'elles taisent vide.
+    pub fn activite(&self) -> crate::importe::ActiviteDuMois {
+        match self {
+            PaieDuMois::Validee(p) => crate::importe::ActiviteDuMois { cachets: Some(p.engagement.cachets), heures: p.engagement.heures, jours: Some(p.engagement.jours) },
+            PaieDuMois::Importee(p) => p.activite,
+        }
     }
 
     /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles

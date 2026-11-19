@@ -576,7 +576,11 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
+| jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
+| étape d'une ouverture et ce qu'elle a duré (la trace de l'ouverture les porte, dans l'ordre) | `EtapeMesuree` | `routes/src/gestes/ouverture.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
+| ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire ; chaque route qui relève le rend en entier) | `ADire` | `envois/src/suites.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
 | compte rendu d'un test de dépôt | `CompteRenduDuTest` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |
@@ -966,6 +970,20 @@ un libellé, chacun sa forme.
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
   journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
+- **plage d'un relevé des retours** : `Complete` (celui de l'ouverture : toutes les natures, depuis ce que le relevé
+  complet précédent a lu, moins une journée de recouvrement, jusqu'à maintenant, jamais plus loin que les jours de
+  l'ouverture) ou `Bornee` (début, fin, et la seule nature prise s'il y en a une : suivre un dépôt, le relevé avant un
+  ordre, l'enquête de l'éditeur). Seule la complète avance le relevé complet.
+- **jusqu'où le dernier relevé complet a lu** : par canal, `retours/releve-complet.json` ou
+  `retours/dpae/releve-complet.json`, une seule forme (`quoi`, `lu_jusqu_a`, `a_reprendre`), lue et écrite par
+  `envois::releve_retours` seul : la fin de la dernière tranche qu'un relevé complet a listée sans échec, et les retours
+  listés pas encore vus (leur annonce, `retours::Annonce`, telle que la liste l'a rendue). La liste coûte, pas la
+  reprise : un retour à reprendre ne retient pas l'instant ; le relevé complet suivant liste depuis l'instant, moins le
+  recouvrement, et reprend ces retours par leur annonce, par le même chemin qu'un retour listé (une archive déjà sur le
+  disque se relit sans réseau) ; vus, ils en sortent ; publiés depuis plus de quatre-vingt-dix jours (§ 8.2), ils en
+  sortent notés vus, chez l'éditeur comme un retour retiré. Un retour repris n'est pas compté nouveau. La liste filtre
+  sur la publication, la mise à disposition du retour (guide de l'API DSN v6.9, § 3.4.2 et § 3.4.4) : un retour publié
+  tard tombe dans le relevé suivant.
 - **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
   plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :
   `Production`, `Editeur`, nommés `production`, `editeur` (`NOMS`, ce que la ligne de commande propose, lu à sa porte
@@ -1091,7 +1109,8 @@ mode d'un envoi (`socle::mode::Mode`), dont `droit/src/nature_declaration.rs` d�
 l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur` (même fichier). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
 son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
 de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), la liste entière : ceux que nos natures
-déclarent à chaque paie (`contrats-base.json`, 001, 002, 003, 010), les heures en plus (017) et l'absence (028, 029)
+déclarent à chaque paie, fermés aux quatre que le moteur calcule (`RemunerationDeChaquePaie`, même fichier, lu de
+`contrats-base.json` : 001, 002, 003, 010 ; un autre code ne se lit pas), les heures en plus (017) et l'absence (028, 029)
 que `dsn::remunerations` écrit, celui que le `dsn_type` d'une rubrique nomme ; une DSN lue d'un code hors de la
 liste laisse la case vide. La période d'affectation d'un composant de versement
 (55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le
@@ -1127,7 +1146,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
-| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, un compte, la base d'une assiette ; ce qui ne s'additionne pas a sa sorte sans total — les jours d'un compteur de congés, un compte, un montant —, jamais un total effacé après coup) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJours`, `ColonneDeCompte`, `ColonneDeCompteSansTotal`, `ColonneDeMontantSansTotal`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
+| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, des jours travaillés, un compte, la base d'une assiette ; ce qui ne s'additionne pas a sa sorte sans total — les jours d'un compteur de congés, un compte, un montant —, jamais un total effacé après coup) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJoursTravailles`, `ColonneDeJours`, `ColonneDeCompte`, `ColonneDeCompteSansTotal`, `ColonneDeMontantSansTotal`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
 | cumul de lignes du livre de paie (combien de bulletins, et chacun de ses montants : le seul cumul des états, `cumuls_par` ; le livre, le récapitulatif annuel, la masse salariale, le coût par spectacle, le coût de l'année d'une fiche, la masse des contributions de branche, le taux patronal réel ; la clé et les lignes retenues se disent à la porte de chaque état) | `CumulDuLivre` | `documents/src/etats_paie.rs` |
@@ -1146,10 +1165,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| activité d'un mois repris (ses cachets, heures et jours de travail rémunéré, chacun vide quand les pièces le taisent ; une seule règle, `importe::activite_du_mois`, que lisent la carte du mois importé, la comparaison, la CASC-SVP et les états par `PaieDuMois::activite`) | `engagement::importe::ActiviteDuMois` | `engagement/src/importe.rs` |
+| paie reprise qui ne se range pas (celle d'un mois d'un contrat dont la nature reste à dire : ce qui lit les paies du mois la rend à part, ne la compte pas et la dit sur ce contrat, sans refuser le reste, `importe::paies_du_mois`, `etats::paies_du_mois`) | `engagement::importe::NatureADire` | `engagement/src/importe.rs` |
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
 | cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
-| contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
+| contrat qu'un certificat Congés Spectacles couvre (l'engagement de son dernier mois, la fiche du salarié, et chacun de ses mois payés, lus dans leurs paies validées, sans recalcul ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
+| mois payé d'un contrat, tel que sa paie validée le porte (dernier jour, dates travaillées, cachets, jours, heures, brut), que le certificat Congés Spectacles somme | `documents::conges_spectacles::MoisPaye` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
 | ligne de rémunération (ce qu'une ligne de paie paie, sa rubrique et son montant. Celle que le calcul rend dit toujours ce qu'elle paie, `LigneBrut` (son paiement obligatoire) ; celle d'un bulletin importé que l'import a rattachée à sa rubrique garde son montant lu, et ce qu'elle paie quand il l'imprime, `LigneRattachee` (la même ligne, son paiement facultatif : un forfait imprimé à son seul montant) ; un seul rattachement, `importe::LigneImprimee::rattachee` : une rubrique et un montant ; elle n'est pas une ligne de paie (`LignePaie`). Ses formes : la paie écrite, la ligne du calcul elle-même (son paiement écrit sans zéro, `EcritSansZero`) ; la zone `importe`, `LigneImprimee`, qu'une ligne non rattachée garde. Un état la lit d'une paie du mois sans recopie, `etats::RemunerationDuMois` : la ligne calculée, la ligne rattachée, ou ce que le bulletin importé imprime) | `engagement::calcul::LigneBrut`, `engagement::calcul::LigneRattachee` | `engagement/src/calcul.rs` |
@@ -2508,7 +2530,16 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   à sa place. Le titre compte toutes les cases exigées, où qu'elles soient rangées. Ce qui ne se lit pas est une panne :
   elle remonte.
 - **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
-  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Ce que la dernière DSN reprise déclare du
+  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Un contrat d'usage que la DSN déclare n'est pas à
+  dire : sa nature (S21.G00.40.007, « 02 ») et son motif de recours (.021, « 05 - Contrat d'usage », que le CDDU fixe)
+  la désignent, et elle seule ; l'import la pose sur la paie versée (`droit::natures::d_usage_declaree`,
+  `PaieVersee::nature`). Le code et le motif se lisent toujours ensemble (`Nature::declaree_par`) : un contrat de
+  nature 02 sans motif, ou d'un motif que le CDD ne propose pas, ne reçoit pas la nature d'un CDD. Un contrat que ses
+  seules DSN déclarent sans ce qui désigne sa nature reste à dire, comme celui d'un bulletin ; la page ne propose que les
+  natures que ses pièces permettent (`nature::natures_permises` : payée au mois pour un bulletin sans marque du
+  spectacle ; le code .007 que la DSN déclare, avec son motif quand elle le déclare ; aucune nature qui interdit le
+  numéro d'objet .050 qu'elle déclare, `contrats-base.json`), et `importation-nature` écrit celle que la compagnie dit
+  (`engagement::importe::nature_de`). Ce que la dernière DSN reprise déclare du
   contrat ne se demande pas (`nature::DeclareParLaDsn`) : `importation-etat` ne propose que la nature qu'elle déclare et
   ne demande que ce qu'elle tait (le salaire seul, le plus souvent), et `importation-nature` prend sur elle ce que sa
   charge tait ; tout déclaré, l'import l'écrit de lui-même. Le contrat déclaré est celui à dire, retrouvé comme
@@ -2550,6 +2581,13 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
+- **L'activité d'un mois repris** (`engagement::importe::activite_du_mois`) : la DSN déposée déclare, pour chaque
+  contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
+  l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Le bulletin du
+  mois d'un permanent les remplace par ce qu'il imprime ; le contrat qu'une AEM, un bulletin ou un certificat atteste
+  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle
+  (`ActiviteDuMois`), que lisent la carte du mois importé, la comparaison, la CASC-SVP et la paie importée
+  (`PaieImportee::activite`, que les états lisent par `PaieDuMois::activite`).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
@@ -2681,11 +2719,11 @@ et `debut_periode`/`fin_periode` (le contrat borné au mois). La DSN en tire :
 lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
 défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
-mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
-certificat CS (`paie_du_contrat_entier`) est le même engagement sur les
-lignes de tous ses mois (`Engagement::sur_tout_le_contrat` : ses termes, sa
-nature, ses bornes) ; il retire le planning des lignes : chaque mois a payé
-le sien.
+mois suivant (`lignes_du_planning`). Le certificat CS d'un contrat sur
+plusieurs mois (`paie_du_contrat_entier`) ne recalcule rien : il lit la paie
+validée de chacun de ses mois (`conges_spectacles::MoisPaye` : dates
+travaillées, cachets, jours, heures, brut) et en fait la somme ; le planning
+n'y compte pas : chaque mois a payé le sien.
 
 Le barème et le SMIC (`engagement::calcul`) sont ceux de `fin_periode`, pas de
 `fin` : un contrat de décembre à février se paie en décembre au barème de

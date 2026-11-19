@@ -83,7 +83,8 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::Referenc
 /// L'alerte apres l'import, lue avec ce que l'import a ecrit (`ctx`) : une compagnie de la 3090 qui arrive d'un autre
 /// logiciel avec des DSN de 2025 ou apres, d'ou la CASC-SVP manque peut-etre. Elle dit ce que la regularisation de
 /// toutes les annees ferait partir (`importation::casc::regularisation`, calculee sans rien ecrire) : ses mois, sa
-/// periode, son total. Rien si ce n'est pas la 3090, ou s'il n'y a rien a regulariser ; une regularisation qui refuse
+/// periode, son total. Seules les DSN importees qui se lisent en parlent : une compagnie qui n'a importe que des
+/// bulletins n'a rien a regulariser. Rien si ce n'est pas la 3090, ou s'il n'y a rien a regulariser ; une regularisation qui refuse
 /// (une annee dont le taux n'est pas releve, une DSN importee dont le fichier manque, une fiche sans NIR) dit son refus,
 /// qui est ce que l'export dirait.
 fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
@@ -267,8 +268,9 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
         // deja repris attestent commence au premier d'entre eux, que la DSN ajoutee ensuite peut preceder : c'est le mois
         // paye qu'il couvre, comme les bulletins de ce contrat lus avec elle (plus haut, le contrat a cheval).
         // Une paie declaree qui porte un numero d'objet est celle d'un contrat d'usage (regle 6 : le numero d'objet n'existe
-        // que sur les natures 02 et 10) : elle ne va pas au contrat d'un permanent, meme si elle paie un de ses mois.
-        let d_usage_declaree = !declaree_par_bulletin(&p) && o.is_some();
+        // que sur les natures 02 et 10) ; celle dont la DSN declare le contrat d'usage aussi (`PaieVersee::nature`) : elle
+        // ne va pas au contrat d'un permanent, meme si elle paie un de ses mois.
+        let d_usage_declaree = !declaree_par_bulletin(&p) && (o.is_some() || p.paie.nature.is_some());
         if candidats.is_empty() && !d_usage_declaree {
             let payee: Option<PeriodeOuverte> = if declaree_par_bulletin(&p) {
                 dates

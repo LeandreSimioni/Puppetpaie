@@ -306,10 +306,13 @@ const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
-/// deja comparee, elle ne se compare pas deux fois.
+/// deja comparee, elle ne se compare pas deux fois. UNE PAIE QUE LA SEULE DSN DECLARE n'a pas de lignes de cotisation a
+/// comparer (`PaieVersee::cotisations`, vide sans bulletin) : elle n'est pas une comparaison, ni faite ni manquee, et ne
+/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     saisies_refaites(imp)
         .into_iter()
+        .filter(|(_, p, ..)| p.cotisations.is_some())
         .filter_map(|(mois, p, nature, jours_comptes)| {
             let empreinte = empreinte(imp, mois, p);
             if deja(&empreinte) {
@@ -337,14 +340,13 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
-/// nombre de jours travailles que son bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le mois
-/// d'un permanent), sinon celui du contrat quand il n'a qu'une paie. UN CONTRAT DONT LA NATURE RESTE A DIRE (sans
-/// `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses paies
-/// se refont une fois sa nature dite.
+/// nombre de jours travailles que les pieces comptent pour le mois (`Importe::activite_du_mois` : le contrat atteste qui
+/// tient dans le mois, sinon la paie du mois, que son bulletin ou sa DSN dit). UN CONTRAT DONT LA NATURE RESTE A DIRE
+/// (sans `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses
+/// paies se refont une fois sa nature dite.
 fn saisies_refaites(imp: &Importe) -> Vec<(Mois, &PaieVersee, NatureDeContrat, Option<socle::grandeurs::Jours>)> {
     let paies = imp.paies();
-    let du_contrat = imp.contrat().and_then(|c| c.jours).filter(|_| paies.len() == 1);
-    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, p.jours.or(du_contrat)))).collect()
+    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, imp.activite_du_mois(mois).jours))).collect()
 }
 
 /// Ce que la saisie refaite dit de la paie, et ce que la comparaison note en chemin (`Comparaison`).

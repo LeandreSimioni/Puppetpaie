@@ -2,10 +2,11 @@
 //! `casc-regularise`, qui note qu'une annee est regularisee. Un mois tenu dans un autre logiciel a pu partir sans la
 //! CASC-SVP ; PuppetPaie la declare lui-meme dans les DSN qu'il fait (`declarations::dsn`).
 //!
-//! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees (le brut que la DSN deposee ou
-//! le bulletin dit), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). Un mois dont la
-//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), ou deja regularise
-//! (`config/casc-svp.json`), n'y entre pas.
+//! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees que la DSN deposee declare
+//! (leur brut), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). N'y entre
+//! qu'un mois dont une DSN importee se lit (`importation::ecrite::lire_dsn_casc`) et ne porte pas la CASC-SVP : c'est
+//! elle qui dit si la cotisation est partie. Un mois sans DSN importee, ou dont la DSN ne se lit pas, n'y entre pas et
+//! rien n'en est dit ; un mois deja regularise (`config/casc-svp.json`) non plus.
 //!
 //! Le classeur du CASC-SVP se recree avec les colonnes du modele (`donnees/modeles/casc-svp-liste-nominative.xlsx`) :
 //! voir `liste_nominative_xlsx`.
@@ -16,7 +17,8 @@ use socle::echec::Classe;
 use std::path::Path;
 
 use serde::Serialize;
-use socle::grandeurs::{nulle, Cachets, Heures, Jours, Montant, Taux};
+use engagement::importe::ActiviteDuMois;
+use socle::grandeurs::{nulle, Montant, Taux};
 
 use droit::contexte::Contexte;
 use socle::date::{Jour, PeriodeOuverte};
@@ -38,51 +40,27 @@ struct Versee {
     brut: Montant,
     numero: Option<engagement::numeros::NumeroContrat>,
     periode: Option<PeriodeOuverte>,
-    /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
-    activite: Activite,
+    /// Les cachets, heures et jours que les pieces disent du mois (`engagement::importe::activite_du_mois`), ceux qui ne
+    /// sont pas nuls.
+    activite: ActiviteDuMois,
     /// Artiste ou technicien : ce que le bulletin de la paie imprime, sinon la fiche ; `None` : rien ne le dit.
     statut: Option<droit::fiche::Statut>,
 }
 
-/// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que son contrat atteste, ceux
-/// qu'il dit et qui ne sont pas nuls.
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct Activite {
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub cachets: Option<Cachets>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub heures: Option<Heures>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub jours: Option<Jours>,
-}
-
-impl Activite {
-    /// N'en dit-elle rien ?
-    fn est_vide(&self) -> bool {
-        self.cachets.is_none() && self.heures.is_none() && self.jours.is_none()
-    }
-}
-
-/// Les paies versees de `mois`, d'apres les engagements importes : une par engagement qui a un brut ce mois-la. Un
-/// salarie sans fiche refuse (sa ligne de la liste nominative ne se devine pas).
+/// Les paies versees de `mois` que sa DSN importee declare, d'apres les engagements importes : une par engagement qui
+/// a un brut ce mois-la ; une paie qu'un bulletin seul declare n'en est pas. Un salarie sans fiche refuse (sa ligne de
+/// la liste nominative ne se devine pas).
 fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     let mut out = Vec::new();
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
-        let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
+        let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois && !p.paie.contrat.d_un_bulletin()) else { continue };
         let Some(brut) = p.paie.brut else { continue };
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let periode = p.paie.periode;
-        let mut activite = Activite::default();
-        if let Some(c) = i.contrat_lu()? {
-            if c.periode.and_then(|o| o.fermee()).is_some_and(|p| p.mois() == [mois]) {
-                activite = Activite {
-                    cachets: c.contrat.cachets.filter(|n| !n.est_nul()),
-                    heures: c.contrat.heures.filter(|n| !n.est_nul()),
-                    jours: c.contrat.jours.filter(|n| !n.est_nul()),
-                };
-            }
-        }
+        // L'activite du mois que les pieces disent (`Importe::activite_du_mois`) : le contrat atteste qui tient dans le
+        // mois, sinon ce que la paie du mois declare (la DSN, ou le bulletin d'un permanent).
+        let activite = i.activite_du_mois(mois).non_nulle();
         let numero = p.paie.contrat.numero_declare().cloned();
         let statut = p.paie.emploi_imprime.as_ref().and_then(|e| e.ecrit.statut).or_else(|| salarie.champs.statut.dite().copied());
         out.push(Versee { salarie, brut, numero, periode, activite, statut });
@@ -167,7 +145,7 @@ pub struct EmploiReg {
     pub mois: Mois,
     pub individu: IndividuReg,
     pub contrat: ContratReg,
-    pub activite: Activite,
+    pub activite: ActiviteDuMois,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periode: Option<PeriodeOuverte>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
@@ -318,13 +296,14 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
     let mut lues: Vec<(Mois, Vec<Versee>)> = vec![];
     let contrat_casc = base.dsn.contrat.clone();
     for &m in &candidats {
+        // La DSN deposee est ce qui dit si la CASC-SVP est partie : un mois sans DSN importee, ou dont la DSN ne se lit
+        // pas, n'entre pas, et rien n'en est dit.
+        let Some(dsn) = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))? else { continue };
+        let Some(porte) = crate::importation::ecrite::lire_dsn_casc(&dsn, &contrat_casc)? else { continue };
         let paies = versees_du_mois(ctx, m)?;
         if paies.is_empty() {
             continue;
         }
-        let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
-        // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
-        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|porte| porte);
         if porte {
             portees.push(m);
             continue;
@@ -406,7 +385,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
                 annee: an,
                 mois: *m,
                 individu,
-                activite: p.activite.clone(),
+                activite: p.activite,
                 periode: p.periode,
                 contrat,
                 brut,
@@ -669,6 +648,18 @@ const FUSIONS: [(u32, u16, u32, u16); 7] = [(0, 0, 1, 25), (0, 26, 0, 29), (0, 3
 /// fusionnees) et les memes valeurs ; la mise en forme est plus simple (gras, retour a la ligne, volet fige sous la
 /// 3e ligne). Les consignes de la 4e ligne du modele (« NE PAS REMPLIR »...) n'y sont pas : elles sont
 /// effacees avant d'ecrire.
+/// Les maximums des colonnes de la liste nominative, et ce qu'elles portent : les consignes du modele du CASC-SVP
+/// (`atelier/reference/sources/casc-svp-modele-liste-nominative.csv`, ligne 11 : « 30 Car alpha maximum »
+/// pour le nom de naissance, « 32 Car alpha maximum » pour le prenom, « 32 caractères maximum » pour l'adresse,
+/// « 5 caractères maximum » pour le code postal, « 26 caractères maximum » pour la commune, « 34 caractères maximum »
+/// pour l'emploi).
+const MAX_NOM: (&str, usize) = ("nom", 30);
+const MAX_PRENOM: (&str, usize) = ("prénom", 32);
+const MAX_ADRESSE: (&str, usize) = ("adresse", 32);
+const MAX_CODE_POSTAL: (&str, usize) = ("code postal", 5);
+const MAX_COMMUNE: (&str, usize) = ("commune", 26);
+const MAX_EMPLOI: (&str, usize) = ("emploi", 34);
+
 fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path, fichiers: &mut Vec<std::path::PathBuf>) -> R<()> {
     use documents::classeur::{Feuille, Style, Vertical};
     let mut ws = Feuille::nouvelle("Feuil1");
@@ -687,7 +678,17 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
     let mut cumul: Vec<((Annee, Nir), Montant)> = Vec::new();
-    let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
+    // Le texte s'ecrit entier, jamais coupe : celui qui depasse le maximum du modele se dit, ligne et colonne.
+    let mut depasses: Vec<String> = Vec::new();
+    // Les colonnes de l'activite laissees vides : ce qui manque (« cachets ni heures »), et les lignes du classeur.
+    let mut vides: Vec<(String, Vec<u32>)> = Vec::new();
+    let mut entier = |ligne: u32, (quoi, max): (&str, usize), t: String| -> String {
+        let n = t.chars().count();
+        if n > max {
+            depasses.push(format!("ligne {}, {} : {} caractères, {} de plus que les {} du modèle", ligne + 1, quoi, n, n - max, max));
+        }
+        t
+    };
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
@@ -711,15 +712,15 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (1, siret.clone()),
             (4, x.annee.to_string()),
             (5, aujourdhui.clone()),
-            (6, coupe(cellule(&i.nom), 30)),
-            (8, coupe(cellule(&i.prenom), 32)),
+            (6, entier(ligne, MAX_NOM, cellule(&i.nom))),
+            (8, entier(ligne, MAX_PRENOM, cellule(&i.prenom))),
             (9, jj(&i.date_naissance)),
             (10, format!("{}{}", i.nir, cle_nir)),
-            (13, coupe(cellule(&i.adresse), 32)),
-            (15, coupe(cellule(&i.code_postal), 5)),
-            (16, coupe(cellule(&i.commune), 26)),
+            (13, entier(ligne, MAX_ADRESSE, cellule(&i.adresse))),
+            (15, entier(ligne, MAX_CODE_POSTAL, cellule(&i.code_postal))),
+            (16, entier(ligne, MAX_COMMUNE, cellule(&i.commune))),
             (19, cellule(&i.email)),
-            (21, coupe(cellule(&c.emploi), 34)),
+            (21, entier(ligne, MAX_EMPLOI, cellule(&c.emploi))),
             (22, jj(&x.periode.map(|o| o.debut()))),
             (23, jj(&x.periode.and_then(|o| o.fin()))),
             (25, "I".to_string()),
@@ -732,27 +733,37 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         ws.nombre(ligne, 24, x.brut.a_l_euro(), &simple);
         ws.nombre(ligne, 36, total.a_l_euro(), &simple);
         let a = &x.activite;
-        // Un artiste dit ses cachets (colonne 33) et ses heures (34), un technicien ses jours (31) et ses heures (32).
+        // Un artiste dit ses cachets (colonne 33) et ses heures (34), un technicien ses jours (31) et ses heures (32) ;
+        // une colonne que rien ne dit reste vide, et se dit (`vides`).
+        let mut manque = Vec::new();
         match (artiste, a.cachets, a.jours) {
             (true, Some(c), _) => ws.nombre(ligne, 33, c, &simple),
             (false, _, Some(j)) => ws.nombre(ligne, 31, j, &simple),
-            (true, None, _) | (false, _, None) => {}
+            (true, None, _) => manque.push("cachets"),
+            (false, _, None) => manque.push("jours"),
         }
-        if let Some(h) = a.heures {
-            ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple);
+        match a.heures {
+            Some(h) => ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple),
+            None => manque.push("heures"),
+        }
+        if !manque.is_empty() {
+            let quoi = manque.join(" ni ");
+            match vides.iter_mut().find(|(q, _)| *q == quoi) {
+                Some((_, lignes)) => lignes.push(ligne + 1),
+                None => vides.push((quoi, vec![ligne + 1])),
+            }
         }
     }
-    let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.est_vide()).collect();
-    if !sans.is_empty() {
-        let mut mois: Vec<Mois> = sans.iter().map(|x| x.mois).collect();
-        mois.sort();
-        mois.dedup();
-        let mois: Vec<String> = mois.iter().map(Mois::to_string).collect();
-        r.avertissements.push(format!(
-            "Liste nominative : {} emploi(s) sans jours, cachets ni heures dans leur DSN ({}) -- colonnes laissees vides.",
-            sans.len(),
-            mois.join(", ")
-        ));
+    if !depasses.is_empty() {
+        r.avertissements.push(format!("Liste nominative : écrit en entier, plus long que le modèle du CASC-SVP ({}).", depasses.join(" ; ")));
+    }
+    // CE QUI RESTE VIDE, ligne par ligne : la colonne qu'aucune piece ne remplit (la DSN, l'AEM, le bulletin du mois).
+    if !vides.is_empty() {
+        let dits: Vec<String> = vides
+            .iter()
+            .map(|(quoi, lignes)| format!("sans {} lus, {} {}", quoi, if lignes.len() > 1 { "lignes" } else { "ligne" }, lignes.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")))
+            .collect();
+        r.avertissements.push(format!("Liste nominative : colonnes laissées vides, aucune pièce ne les dit ({}).", dits.join(" ; ")));
     }
     let chemin = dossier.join("CASC-SVP_liste-nominative.xlsx");
     std::fs::write(&chemin, ws.octets()?).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;

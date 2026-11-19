@@ -323,27 +323,20 @@ pub struct Releve {
     pub trouves: Vec<Annonce>,
     pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
-    pub incidents: Vec<String>,
-    /// CE QUI A EMPECHE DE LIRE LA PLATE-FORME, parmi les `incidents` (`plateforme_non_lue`) : la liste des retours (le
-    /// mot de passe, l'authentification, la consultation), ou un bilan (nature 11) qui ne s'est pas telecharge. Un autre
-    /// retour rate n'y est pas : il ne dit rien de ce que la plate-forme sait des ordres.
+    /// CE QUI A EMPECHE DE LIRE LA PLATE-FORME, des incidents que l'appelant dit (`ordre_signalements::relever_la_plateforme`
+    /// en une phrase, la releve de toutes les natures en tete de ce qu'elle a a dire) : la liste des retours (le mot de
+    /// passe, l'authentification, la consultation), ou un bilan (nature 11) qui ne s'est pas telecharge. Un autre retour
+    /// rate n'y est pas : il ne dit rien de ce que la plate-forme sait des ordres, et se dit dans les suites
+    /// (`Suites::dit`).
     pub plateforme_non_lue: Vec<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: usize,
-    /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
-    pub a_faire: Vec<String>,
 }
 
 impl Releve {
     /// Un releve ou rien n'est encore trouve.
     pub fn vide() -> Releve {
-        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), plateforme_non_lue: Vec::new(), rattaches: 0, a_faire: Vec::new() }
-    }
-
-    /// Un incident qui empeche de lire la plate-forme : dit avec les autres, et retenu (`plateforme_non_lue`).
-    fn plateforme_pas_lue(&mut self, phrase: String) {
-        self.plateforme_non_lue.push(phrase.clone());
-        self.incidents.push(phrase);
+        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), plateforme_non_lue: Vec::new(), rattaches: 0 }
     }
 }
 
@@ -416,18 +409,13 @@ pub(crate) fn archiver_retour(racine: &Path, canal: CanalDesRetours, retour: &An
             ".txt"
         }
     };
-    let horo = match retour.publication {
-        Some(p) => horodatage_archive(p),
-        None => maintenant.to_string(),
-    };
-    let flux = match &retour.flux {
-        Some(f) => f.texte(),
-        None => "sansflux",
-    };
-    let nom = format!("{}_nature{}_{}{}", horo, retour.nature_retour, flux, ext);
+    let nom = format!("{}{}", nom_d_archive(retour, maintenant), ext);
     let dest = dossier_archive(racine, canal)?.join(nom);
+    // L'archive se relit du disque (`piece_deja_la`) : elle n'y est qu'entiere, posee d'un seul renommage.
     if !dest.exists() {
-        std::fs::write(&dest, contenu).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
+        let provisoire = dest.with_extension("part");
+        std::fs::write(&provisoire, contenu).map_err(|e| crate::etats::erreur_io(&e, &provisoire))?;
+        std::fs::rename(&provisoire, &dest).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
     }
     Ok(dest)
 }
@@ -466,6 +454,157 @@ pub fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: CanalDesRetours) ->
 /// La cle d'un retour : son flux, sa nature, sa publication.
 type CleDeRetour = crate::etats::CleDuContenu;
 
+// ------------------------------------------------------------------ la plage, et jusqu'ou le releve complet a lu
+
+/// LA PLAGE D'UN RELEVE.
+pub enum PlageDuReleve {
+    /// LE RELEVE COMPLET (celui de l'ouverture) : toutes les natures, depuis l'instant jusqu'ou le releve complet
+    /// precedent du canal a lu (`ReleveComplet`), jusqu'a maintenant ; il avance cet instant. Sans releve complet
+    /// precedent, ou s'il remonte plus loin, la plage remonte de `jusqu_a` avant maintenant.
+    Complete { jusqu_a: std::time::Duration },
+    /// UNE PLAGE BORNEE, qui n'avance rien (suivre un depot, le releve avant un ordre, l'enquete de l'editeur). `nature` :
+    /// la seule nature de retour que ce releve prend (le releve avant un ordre ne lit que les bilans) ; aucune : toutes.
+    /// Un retour d'une autre nature n'est ni trouve, ni telecharge, ni note vu : le releve suivant de toutes les natures
+    /// le prend, avec ses suites.
+    Bornee { debut: Moment, fin: Moment, nature: Option<NatureDuRetour> },
+}
+
+impl PlageDuReleve {
+    /// La derniere journee, de hier a maintenant, toutes natures (`suivre-depot`, `bilan-repetition`, la relance d'un
+    /// depot dont la repetition manque).
+    pub fn derniere_journee() -> R<PlageDuReleve> {
+        let fin = socle::temps::secondes();
+        let debut = fin.moins_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
+        Ok(PlageDuReleve::Bornee { debut, fin, nature: None })
+    }
+}
+
+/// LE RECOUVREMENT : le releve complet repart une journee avant l'instant ou le precedent s'est arrete. La liste filtre
+/// sur la date de publication d'un retour, « l'horodatage de son enregistrement sur le SI DSN » (guide de l'API DSN v6.9,
+/// § 3.4.2, l. 1608-1619), la « Date à laquelle le SI DSN a mis le retour à disposition des services de recherche »
+/// (§ 3.4.4, l. 1694-1695) : un retour publie apres la fin d'un releve tombe dans le suivant. INFERENCE : aucun texte ne
+/// dit le delai entre cet horodatage et le moment ou la liste montre le retour, ni l'ecart entre la montre du poste (qui
+/// ecrit les bornes) et celle du SI DSN ; une journee les couvre, pour une tranche de plus. Les bornes s'ecrivent a la
+/// seconde et les tranches sont contigues (`tranches`) : rien ne tombe entre deux. Un retour revu est deja vu : il ne se
+/// retelecharge pas.
+/// Pour la DPAE par plage, aucun texte de l'Urssaf depose ne dit sur quelle date la liste filtre : INFERENCE, on la
+/// releve comme la DSN.
+const RECOUVREMENT: std::time::Duration = UNE_JOURNEE;
+
+/// L'HORIZON DU RELEVE COMPLET : sans releve complet precedent, ou quand il remonte plus loin, la plage part de
+/// quatre-vingt-dix jours avant maintenant, ce que le SI DSN garde au telechargement (guide de l'API DSN, § 8.2 :
+/// « une période de rétention de 3 mois »). Un releve qui remonte moins loin que cela n'est pas complet.
+pub const HORIZON_DU_RELEVE_COMPLET: std::time::Duration = socle::temps::jours_de_24_heures(90);
+
+/// JUSQU'OU LE DERNIER RELEVE COMPLET A LU, sur un canal, ET CE QUI RESTE A REPRENDRE : `retours/releve-complet.json` (la
+/// DSN), `retours/dpae/releve-complet.json` (la DPAE), a cote du journal des vus. `lu_jusqu_a` : la fin de la derniere
+/// tranche que le releve complet a listee sans echec, toutes celles d'avant listees aussi. `a_reprendre` : les retours
+/// listes et pas encore vus (un telechargement rate, un hote muet, une piece que son lecteur ne lit pas, un taux que ses
+/// suites liront), leur annonce telle que la liste l'a rendue : le releve complet suivant les reprend par elle, sans
+/// relister leur journee ; vus, ils en sortent. La liste coute, pas la reprise : un retour a reprendre ne retient pas
+/// `lu_jusqu_a`. Seul le releve complet l'ecrit (`PlageDuReleve::Complete`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleveComplet {
+    pub quoi: String,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub lu_jusqu_a: Moment,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub a_reprendre: Vec<Annonce>,
+}
+
+/// Ce que `releve-complet.json` dit de lui-meme.
+const QUOI_RELEVE_COMPLET: &str = "Jusqu'où le dernier relevé complet des retours (celui de l'ouverture) a lu ce canal, et les retours listés pas encore vus, à reprendre : le relevé suivant repart une journée avant, et reprend ceux-là sans relister.";
+
+/// Le fichier de `ReleveComplet` du canal.
+fn fichier_du_releve_complet(ctx: &Contexte, canal: CanalDesRetours) -> R<PathBuf> {
+    Ok(dossier_archive(&ctx.racine, canal)?.join("releve-complet.json"))
+}
+
+/// Jusqu'ou le dernier releve complet du canal a lu ; aucun : il n'y en a pas encore eu.
+fn releve_complet(ctx: &Contexte, canal: CanalDesRetours) -> R<Option<ReleveComplet>> {
+    let p = fichier_du_releve_complet(ctx, canal)?;
+    if !p.exists() {
+        return Ok(None);
+    }
+    socle::forme::lire_fichier(&p, "Le relevé complet des retours ne se lit pas.").map(Some)
+}
+
+/// Ecrit jusqu'ou le releve complet du canal a lu, et ce qui reste a reprendre.
+fn retenir_le_releve_complet(ctx: &Contexte, canal: CanalDesRetours, lu_jusqu_a: Moment, a_reprendre: Vec<Annonce>) -> R<()> {
+    let p = fichier_du_releve_complet(ctx, canal)?;
+    socle::ecriture::ecrire_json(&p, &ReleveComplet { quoi: QUOI_RELEVE_COMPLET.to_string(), lu_jusqu_a, a_reprendre }, 2)
+}
+
+/// UN RETOUR A REPRENDRE QUE LE SI DSN NE SERT PLUS : publie il y a plus de quatre-vingt-dix jours
+/// (`HORIZON_DU_RELEVE_COMPLET`, guide de l'API DSN, § 8.2 : « une période de rétention de 3 mois »). Il sort de la
+/// reprise, note vu, et l'editeur le sait comme d'un retour retire (`Suites::retires`). Sans publication dite, son age ne
+/// se sait pas : il reste a reprendre. Le canal DPAE a la meme retention (guide d'implementation de l'API DPAE, « Période
+/// de rétention des retours » : « une période de rétention de 3 mois par le SI DPAE. Au-delà, les retours sont purgés »,
+/// `atelier/reference/norme-dpae/API-DPAE-Guide-Implementation-NAT5492.pdf`).
+fn hors_de_l_horizon(r: &Annonce, maintenant: Moment) -> bool {
+    r.publication.is_some_and(|p| maintenant.depuis(p).is_some_and(|d| d > HORIZON_DU_RELEVE_COMPLET))
+}
+
+/// Le nom de l'archive d'un retour, sans son extension (`archiver_retour`).
+fn nom_d_archive(retour: &Annonce, maintenant: &str) -> String {
+    let horo = match retour.publication {
+        Some(p) => horodatage_archive(p),
+        None => maintenant.to_string(),
+    };
+    let flux = match &retour.flux {
+        Some(f) => f.texte(),
+        None => "sansflux",
+    };
+    format!("{}_nature{}_{}", horo, retour.nature_retour, flux)
+}
+
+/// Les extensions qu'une archive de retour peut porter (`archiver_retour`).
+const EXTENSIONS_D_ARCHIVE: [&str; 3] = [".pdf", ".xml", ".txt"];
+
+/// L'ARCHIVE D'UN RETOUR DEJA SUR LE DISQUE (un releve precedent l'a telechargee, son lecteur ne l'a pas lue, ou ses
+/// suites ne l'ont pas encore notee vue) : elle se relit sans reseau. Son nom tient a sa publication ; un retour qui ne la
+/// dit pas s'archive a l'heure du releve, et ne se retrouve pas : il se retelecharge.
+fn archive_deja_la(racine: &Path, canal: CanalDesRetours, retour: &Annonce) -> R<Option<PathBuf>> {
+    if retour.publication.is_none() {
+        return Ok(None);
+    }
+    let dossier = canal.chemin(racine);
+    let nom = nom_d_archive(retour, "");
+    Ok(EXTENSIONS_D_ARCHIVE.iter().map(|ext| dossier.join(format!("{}{}", nom, ext))).find(|p| p.is_file()))
+}
+
+/// La piece d'un retour, relue de son archive si elle est deja sur le disque (`archive_deja_la`), sinon aucune.
+fn piece_deja_la(racine: &Path, canal: CanalDesRetours, retour: &Annonce) -> R<Option<(Vec<u8>, PathBuf)>> {
+    match archive_deja_la(racine, canal, retour)? {
+        Some(chemin) => {
+            let contenu = std::fs::read(&chemin).map_err(|e| crate::etats::erreur_io(&e, &chemin))?;
+            Ok(Some((contenu, chemin)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// L'ADRESSE DE LA PIECE D'UN RETOUR, quand il a une piece a telecharger. Une nature au format « Aucun » de la liste des
+/// retours (guide de l'API DSN v6.9, l. 615-764, `FormatDuRetour::Aucun`) n'a pas de document, et son annonce entiere va
+/// au journal des vus. Le mandat a acquitter (nature 90) porte pourtant une adresse : « En mode API,
+/// l'URL renseignée dans le retour est celle d'acquittement du mandat » (§ 5.17.1, l. 4389-4392) ; c'est la page ou le
+/// declarant acquitte le mandat, pas une piece, et elle ne s'appelle pas. Cette liste est celle de la DSN : sur le canal
+/// DPAE, tout retour qui porte une adresse se telecharge.
+fn piece_a_telecharger(r: &Annonce, canal: CanalDesRetours) -> Option<Url> {
+    match (canal, r.nature_retour.format()) {
+        (CanalDesRetours::Dsn, Some(crate::retours::FormatDuRetour::Aucun)) => None,
+        _ => r.url.clone(),
+    }
+}
+
+/// Telecharge la piece d'un retour et l'archive : son contenu, son archive.
+fn telecharger_et_archiver(ctx: &Contexte, client: &mut Client, canal: CanalDesRetours, retour: &Annonce, url: &Url) -> Result<(Vec<u8>, PathBuf), Panne> {
+    let (contenu, ctype) = client.telecharger(url)?;
+    let chemin = archiver(ctx, retour, &contenu, ctype.as_deref(), canal)?;
+    Ok((contenu, chemin))
+}
+
 /// Les cles des retours deja vus sur le canal.
 fn deja_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<Vec<CleDeRetour>> {
     Ok(lire_vus(&journal_des_vus(ctx, canal)?)?.iter().map(crate::etats::cle_du_contenu).collect())
@@ -494,10 +633,16 @@ fn en_echec(p: Panne) -> Echec {
     p.en_echec()
 }
 
-/// Une journee de recherche : vingt-quatre heures.
+/// UNE TRANCHE DE RECHERCHE : vingt-quatre heures. Pour la consultation des depots, c'est le texte : « La plage de
+/// recherche est limitée à 24h » (guide de l'API DSN v6.9, § 3.3.1,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`, l. 1393). Pour les
+/// retours, aucun texte ne fixe une journee : § 8.3.2 (l. 5155-5164) dit que le service annonce l'etendue permise dans
+/// l'en-tete `Accept-Ranges`, et donne en exemple `minutes=0-60`. INFERENCE : une journee est l'etendue que le service
+/// accepte de fait, les releves reels passent par tranches d'une journee ; on ne lit pas l'en-tete, qui, s'il disait
+/// soixante minutes, ferait d'un releve de trente jours sept cent vingt appels.
 const UNE_JOURNEE: std::time::Duration = std::time::Duration::from_secs(86_400);
 
-/// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
+/// Une plage decoupee par journee (`UNE_JOURNEE`), en tranches contigues : la fin de l'une est le debut de la suivante.
 pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     // La requete ecrit ses bornes a la seconde : une fraction ne fait pas une tranche de plus.
     let (debut, fin) = (debut.a_la_seconde(), fin.a_la_seconde());
@@ -638,20 +783,16 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     crate::aer_fictive::archive(ctx, &octets, mois, ctx.aujourdhui)
 }
 
-/// Telecharge et archive ce que les organismes ont publie, de `debut` a `fin`. `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
-/// `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit. `nature` : la seule nature de
-/// retour que ce releve prend (le releve avant un ordre ne lit que les bilans, `ordre_signalements::relever_la_plateforme`) ;
-/// aucune : toutes. Un retour d'une autre nature n'est ni trouve, ni telecharge, ni note vu : le releve suivant de
-/// toutes les natures le prend, avec ses suites.
+/// Telecharge et archive ce que les organismes ont publie sur la plage. `client` : le client du service, avec son mot de
+/// passe (le canal DPAE passe le sien, avec `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et
+/// cela se dit.
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: Moment,
-    fin: Moment,
+    plage: PlageDuReleve,
     tout: bool,
     client: Option<Client>,
     canal: CanalDesRetours,
-    nature: Option<NatureDuRetour>,
     suites: &mut Suites,
 ) -> R<Releve> {
     let mut releve = Releve::vide();
@@ -666,7 +807,7 @@ pub fn relever_retours(
         _ => {}
     }
     let Some(mut client) = client else {
-        releve.plateforme_pas_lue(
+        releve.plateforme_non_lue.push(
             "Mot de passe net-entreprises absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service net-entreprises`.".into(),
         );
         return Ok(releve);
@@ -674,77 +815,176 @@ pub fn relever_retours(
     match client.authentifier() {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            releve.plateforme_pas_lue(format!("Authentification refusee : {}", p.echec.phrase));
+            releve.plateforme_non_lue.push(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
     }
     let connus = deja_vus(ctx, canal)?;
+    let fin = socle::temps::secondes();
+    let (debut, fin, nature, complet, precedent) = match plage {
+        PlageDuReleve::Complete { jusqu_a } => {
+            let au_plus_loin = fin.moins_duree(jusqu_a).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
+            let precedent = releve_complet(ctx, canal)?;
+            // Un instant retenu posterieur a maintenant (une montre en avance le jour ou il a ete ecrit) ne dit rien :
+            // la plage repart du plus loin, comme sans releve precedent.
+            let repris = match precedent.as_ref().filter(|c| c.lu_jusqu_a <= fin) {
+                Some(c) => Some(c.lu_jusqu_a.moins_duree(RECOUVREMENT).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?),
+                None => None,
+            };
+            // CE RELEVE N'AVANCE L'INSTANT RETENU QUE S'IL A LU TOUT CE QU'UN RELEVE COMPLET DOIT LIRE : a la date reelle
+            // de la machine (un jour pose par `--date` ecrirait un instant qui n'est pas celui de la montre), et sur une
+            // plage que l'appelant n'a pas raccourcie (`jusqu_a` plus court que l'horizon laisserait un trou entre
+            // l'instant retenu et le debut de cette plage, que l'instant avance refermerait pour toujours).
+            let a_la_date_reelle = socle::temps::jour_de_paris() == socle::temps::jour_de_la_montre();
+            let entiere = jusqu_a >= HORIZON_DU_RELEVE_COMPLET || repris.is_some_and(|r| r >= au_plus_loin);
+            let debut = match repris {
+                Some(r) => r.max(au_plus_loin),
+                None => au_plus_loin,
+            };
+            (debut, fin, None, a_la_date_reelle && entiere, precedent)
+        }
+        PlageDuReleve::Bornee { debut, fin, nature } => (debut, fin, nature, false, None),
+    };
+    // CE QUE LE RELEVE COMPLET PRECEDENT A LAISSE A REPRENDRE (`ReleveComplet::a_reprendre`) : ce qu'un autre releve a
+    // note vu depuis en sort ; ce que le SI DSN ne sert plus en sort aussi, note vu, et l'editeur le sait
+    // (`hors_de_l_horizon`) ; le reste se reprend par son annonce, plus bas, avec les retours listes.
+    let mut retenus: Vec<Annonce> = Vec::new();
+    let mut expires: Vec<Annonce> = Vec::new();
+    for r in precedent.iter().flat_map(|c| c.a_reprendre.iter()).filter(|r| !est_connu(&connus, r)) {
+        // A un jour pose (`--date`), l'age d'un retour n'est pas le sien : rien n'en sort.
+        if socle::temps::jour_de_paris() == socle::temps::jour_de_la_montre() && hors_de_l_horizon(r, fin) {
+            expires.push(r.clone());
+        } else {
+            retenus.push(r.clone());
+        }
+    }
+    for r in &expires {
+        if let (Some(url), Some(publie)) = (r.url.clone(), jour_de_publication_dit(r)) {
+            let pourquoi = match canal {
+                CanalDesRetours::Dsn => "le SI DSN ne le sert plus après quatre-vingt-dix jours (guide de l'API DSN, § 8.2)",
+                CanalDesRetours::Dpae => "le SI DPAE ne le sert plus après quatre-vingt-dix jours (guide d'implémentation de l'API DPAE, « Période de rétention des retours »)",
+            };
+            let phrase = format!("Retour nature {} publié le {}, jamais lu : {}.", r.nature_retour, publie, pourquoi);
+            suites.retires.push((r.nature_retour, url, erreur(Classe::Organisme, phrase)));
+        }
+    }
+    if !expires.is_empty() {
+        noter_vus(ctx, &expires, canal)?;
+    }
+    let cles_retenues: Vec<CleDeRetour> = retenus.iter().map(crate::etats::cle_du_contenu).collect();
+    // LA PLAGE SE DEMANDE PAR TRANCHES D'UNE JOURNEE (`UNE_JOURNEE`), contigues.
     // UN 404 SUR UNE TRANCHE VEUT DIRE << RIEN SUR CETTE TRANCHE >> ; tout autre code arrete : un 401 ne
-    // s'ameliorera pas au jour suivant.
+    // s'ameliorera pas au jour suivant. `lu_jusqu_a` : la fin de la derniere tranche listee, toutes celles d'avant
+    // listees aussi. Un retour retenu que la liste rend de nouveau n'est pas nouveau : il a deja ete compte.
+    let mut lu_jusqu_a: Option<Moment> = None;
+    // Les hotes qui n'ont pas repondu dans ce releve, avec la phrase de leur panne.
+    let mut muets: Vec<(String, String)> = Vec::new();
     for (t0, t1) in tranches(debut, fin)? {
         match client.lister_retours(t0, t1) {
             Ok(trouves) => {
                 for r in trouves.into_iter().filter(|r| nature.is_none_or(|n| r.nature_retour == n)) {
-                    if !est_connu(&connus, &r) {
+                    if !est_connu(&connus, &r) && !est_connu(&cles_retenues, &r) {
                         releve.nouveaux.push(r.clone());
                     }
                     releve.trouves.push(r);
                 }
             }
+            Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::NOT_FOUND) => {}
             Err(p) if p.est_api() => {
-                if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
-                    continue;
+                releve.plateforme_non_lue.push(format!("Consultation interrompue : {}", p.echec.phrase));
+                // UN HOTE QUI NE REPOND PAS (aucun statut HTTP) n'est plus appele dans ce releve (plus bas).
+                if p.code.is_none() {
+                    muets.push((socle::garde_reseau::hote_de(client.adresses.retours.texte()), p.echec.phrase.clone()));
                 }
-                releve.plateforme_pas_lue(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
         }
+        lu_jusqu_a = Some(t1);
     }
-    if !releve.incidents.is_empty() && releve.trouves.is_empty() {
+    // LES RETOURS RETENUS que la liste n'a pas rendus de nouveau se reprennent par leur annonce, sans relister leur
+    // journee : ils rejoignent les retours trouves, et suivent leur chemin (telechargement ou archive deja la, lecture,
+    // rangement, vus).
+    let listes: Vec<CleDeRetour> = releve.trouves.iter().map(crate::etats::cle_du_contenu).collect();
+    releve.trouves.extend(retenus.into_iter().filter(|r| !est_connu(&listes, r)));
+    // La liste n'a pas pu se lire, et rien n'est trouve ni a reprendre : il n'y a rien a telecharger ni a ranger ; ce qui
+    // a ete liste sans echec avance le releve complet.
+    if !releve.plateforme_non_lue.is_empty() && releve.trouves.is_empty() {
+        if let (true, Some(jusqu_a)) = (complet, lu_jusqu_a) {
+            retenir_le_releve_complet(ctx, canal, jusqu_a, Vec::new())?;
+        }
         return Ok(releve);
     }
 
-    // UN RETOUR RATE N'EST PAS UN RETOUR VU : un echec reste NEUF, et se retente au releve suivant.
+    // UN RETOUR RATE N'EST PAS UN RETOUR VU : un echec reste NEUF, et se retente au releve suivant. Sauf un retour que
+    // l'organisme a retire : HTTP 410, « la ressource n'est plus disponible » (guide de l'API DSN v6.9, § 9.1.7 « Codes
+    // HTTP standard », l. 5413-5416) ; il ne reviendra pas, il se note vu, et l'editeur le sait (`Suites::retires`). Sur
+    // le canal DPAE, aucun texte de l'Urssaf ne dit le 410 : INFERENCE, son service suit le code HTTP comme celui de la DSN.
+    // UN HOTE QUI NE REPOND PAS (aucun statut HTTP) n'est plus appele dans ce releve : les autres retours qu'il sert
+    // restent neufs, et se tentent au releve suivant ; un bilan parmi eux n'est pas lu, et cela se dit, de ce bilan.
+    // UNE PIECE DEJA ARCHIVEE se relit du disque, sans reseau (`piece_deja_la`) : une piece que son lecteur n'a pas lue,
+    // ou un taux que les suites n'ont pas encore note vu.
     let mut rates: Vec<Annonce> = Vec::new();
-    let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
+    let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.trouves.iter().filter(|r| !est_connu(&connus, r)).cloned().collect() };
     for r in a_telecharger {
-        let Some(url) = r.url.clone() else { continue };
-        match client.telecharger(&url) {
-            Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
-                // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxAtMp {
-                    suites.taux_atmp.push((r.clone(), chemin.clone()));
-                }
-                // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
-                    match crate::retours::declarations_du_bilan(&contenu) {
-                        Ok(ds) => {
-                            for d in ds {
-                                releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
-                            }
+        let Some(url) = piece_a_telecharger(&r, canal) else { continue };
+        let (contenu, chemin) = match piece_deja_la(&ctx.racine, canal, &r)? {
+            Some(piece) => piece,
+            None => {
+                let hote = socle::garde_reseau::hote_de(url.texte());
+                if let Some((_, panne)) = muets.iter().find(|(h, _)| *h == hote) {
+                    if r.nature_retour == NatureDuRetour::CertificatDeConformite {
+                        let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, panne);
+                        if !releve.plateforme_non_lue.contains(&phrase) {
+                            releve.plateforme_non_lue.push(phrase);
                         }
-                        Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),
+                    }
+                    rates.push(r);
+                    continue;
+                }
+                match telecharger_et_archiver(ctx, &mut client, canal, &r, &url) {
+                    Ok(piece) => piece,
+                    Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::GONE) => {
+                        suites.retires.push((r.nature_retour, url, p.echec));
+                        continue;
+                    }
+                    Err(p) if p.est_api() => {
+                        let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
+                        if p.code.is_none() {
+                            muets.push((hote, p.echec.phrase.clone()));
+                        }
+                        match r.nature_retour {
+                            NatureDuRetour::CertificatDeConformite => releve.plateforme_non_lue.push(phrase),
+                            _ => suites.dit.incidents.push(phrase),
+                        }
+                        rates.push(r);
+                        continue;
+                    }
+                    Err(p) => return Err(en_echec(p)),
+                }
+            }
+        };
+        // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
+        if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxAtMp {
+            suites.taux_atmp.push((r.clone(), chemin.clone()));
+        }
+        // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
+        if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
+            match crate::retours::declarations_du_bilan(&contenu) {
+                Ok(ds) => {
+                    for d in ds {
+                        suites.dit.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
-                // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxPas {
-                    suites.taux_pas.push((r.clone(), chemin.clone()));
-                }
-                releve.archives.push(RetourArchive { retour: r, chemin, contenu });
+                Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),
             }
-            Err(p) if p.est_api() => {
-                let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
-                match r.nature_retour {
-                    NatureDuRetour::CertificatDeConformite => releve.plateforme_pas_lue(phrase),
-                    _ => releve.incidents.push(phrase),
-                }
-                rates.push(r);
-            }
-            Err(p) => return Err(en_echec(p)),
         }
+        // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
+        if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxPas {
+            suites.taux_pas.push((r.clone(), chemin.clone()));
+        }
+        releve.archives.push(RetourArchive { retour: r, chemin, contenu });
     }
 
     if canal == CanalDesRetours::Dsn {
@@ -752,17 +992,17 @@ pub fn relever_retours(
         suites.illisibles.extend(reconstruire_effectifs(&ctx.racine)?);
     }
 
+    let mut vus: Vec<Annonce> = Vec::new();
     if !releve.trouves.is_empty() {
         // Un depot n'est fini que quand sa reponse est la : chaque retour se range en face du depot qui l'a
         // provoque -- par le flux, et par rien d'autre.
         let contenus: Vec<_> = releve.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         releve.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &releve.trouves, &contenus))?;
         // UNE PIECE QUE SON LECTEUR NE LIT PAS N'EST PAS UN RETOUR VU, comme un retour rate : elle reste neuve, et le
-        // releve suivant la retelecharge (l'archive deja la n'est pas reecrite) et la relit. Le taux AT/MP et le taux
+        // releve suivant la relit de son archive (`piece_deja_la`). Le taux AT/MP et le taux
         // du PAS se lisent dans les suites : ils s'y notent vus, une fois lus.
         let lus_aux_suites = |r: &Annonce| canal == CanalDesRetours::Dsn && matches!(r.nature_retour, NatureDuRetour::TauxAtMp | NatureDuRetour::TauxPas);
         let non_lus = archives_non_lues(&releve.archives, &suites.illisibles)?;
-        let mut vus: Vec<Annonce> = Vec::new();
         for r in releve.trouves.iter().filter(|r| !rates.contains(r) && !non_lus.contains(r)) {
             if lus_aux_suites(r) && releve.archives.iter().any(|a| &a.retour == r) {
                 suites.vus_une_fois_lus.push(r.clone());
@@ -771,6 +1011,21 @@ pub fn relever_retours(
             }
         }
         noter_vus(ctx, &vus, canal)?;
+    }
+
+    // LE RELEVE COMPLET AVANCE jusqu'a la fin de ce qu'il a liste sans echec, et retient ce qu'il n'a pas note vu (rate,
+    // piece non lue, taux que les suites liront) : le releve suivant le reprend par son annonce. Une liste qui n'a lu
+    // aucune tranche laisse l'instant ou il etait.
+    if complet {
+        let jusqu_a = match (lu_jusqu_a, &precedent) {
+            (Some(t), _) => Some(t),
+            (None, Some(c)) => Some(c.lu_jusqu_a),
+            (None, None) => None,
+        };
+        if let Some(jusqu_a) = jusqu_a {
+            let a_reprendre: Vec<Annonce> = releve.trouves.iter().filter(|r| !est_connu(&connus, r) && !vus.contains(r)).cloned().collect();
+            retenir_le_releve_complet(ctx, canal, jusqu_a, a_reprendre)?;
+        }
     }
 
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
@@ -794,12 +1049,12 @@ pub fn relever_retours(
 
 /// Les retours de l'API DPAE -- UN AUTRE SERVICE que celui de la DSN, ses archives sont dans `retours/dpae/`. `flux` : le
 /// seul chemin documente (la FAQ) quand on connait l'idflux ; sinon la consultation par plage, sur le canal `dpae`.
-/// `client` : le client Urssaf, avec son mot de passe ; `None` dans le monde : aucun mot de passe n'est pose.
+/// `client` : le client Urssaf, avec son mot de passe ; `None` dans le monde : aucun mot de passe n'est pose. Le chemin
+/// par flux n'avance pas le releve complet (`ReleveComplet`) : il ne lit pas une plage.
 pub fn relever_retours_dpae(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: Moment,
-    fin: Moment,
+    plage: PlageDuReleve,
     tout: bool,
     flux: Option<&IdDeFlux>,
     client: Option<Client>,
@@ -816,30 +1071,39 @@ pub fn relever_retours_dpae(
     }
     let Some(mut client) = client else {
         let mut r = Releve::vide();
-        r.plateforme_pas_lue("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
+        r.plateforme_non_lue.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
     let Some(flux) = flux else {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), CanalDesRetours::Dpae, None, suites);
+        return relever_retours(ctx, branchement, plage, tout, Some(client), CanalDesRetours::Dpae, suites);
     };
     let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.plateforme_pas_lue(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
+            r.plateforme_non_lue.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),
     }
+    // Un telechargement rate (hors 410) n'est pas vu : la consultation par plage le reprend.
+    let mut rates: Vec<Annonce> = Vec::new();
     for x in r.trouves.clone() {
-        let Some(url) = x.url.clone() else { continue };
-        match client.telecharger(&url) {
-            Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), CanalDesRetours::Dpae)?;
-                r.archives.push(RetourArchive { retour: x, chemin, contenu });
+        let Some(url) = piece_a_telecharger(&x, CanalDesRetours::Dpae) else { continue };
+        let piece = match piece_deja_la(&ctx.racine, CanalDesRetours::Dpae, &x)? {
+            Some(piece) => Ok(piece),
+            None => telecharger_et_archiver(ctx, &mut client, CanalDesRetours::Dpae, &x, &url),
+        };
+        match piece {
+            Ok((contenu, chemin)) => r.archives.push(RetourArchive { retour: x, chemin, contenu }),
+            // Un retour retire (HTTP 410) ne reviendra pas : l'editeur le sait, comme par la plage (INFERENCE, aucun
+            // texte de l'Urssaf ne dit le 410 : `relever_retours`).
+            Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::GONE) => suites.retires.push((x.nature_retour, url, p.echec)),
+            Err(p) if p.est_api() => {
+                suites.dit.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase));
+                rates.push(x);
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }
     }
@@ -849,16 +1113,10 @@ pub fn relever_retours_dpae(
         r.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &r.trouves, &contenus))?;
         // Une piece que son lecteur ne lit pas n'est pas vue : la consultation par plage la reprend aussi.
         let non_lus = archives_non_lues(&r.archives, &suites.illisibles)?;
-        let vus: Vec<Annonce> = r.trouves.iter().filter(|x| !non_lus.contains(x)).cloned().collect();
+        let vus: Vec<Annonce> = r.trouves.iter().filter(|x| !rates.contains(x) && !non_lus.contains(x)).cloned().collect();
         noter_vus(ctx, &vus, CanalDesRetours::Dpae)?;
     }
     Ok(r)
-}
-
-/// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
-pub fn derniere_journee() -> R<(Moment, Moment)> {
-    let fin = socle::temps::secondes();
-    Ok((fin.moins_duree(UNE_JOURNEE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif
@@ -984,9 +1242,4 @@ pub fn poser_effectif(racine: &Path, an: Annee, valeur: Effectif, le: Jour) -> R
     codes.insert(TypeDeParametreNeores::EffectifMoyen, EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
-}
-
-/// Le resume d'une relève, pour une phrase d'incident : `"; ".join(rel.incidents)`.
-pub fn incidents_en_phrase(r: &Releve) -> String {
-    r.incidents.join("; ")
 }

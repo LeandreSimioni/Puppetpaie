@@ -257,54 +257,6 @@ impl Engagement {
         })
     }
 
-    /// LE CONTRAT ENTIER d'un contrat d'usage a cheval, depuis l'engagement de son dernier mois : le meme contrat (ses
-    /// termes, sa nature, ses bornes, son numero), sur `lignes`, celles de tous ses mois, et leurs `jours`. Le planning
-    /// des mois passes a ete paye dans son mois : il ne compte pas deux fois. Ce que porte le certificat Conges Spectacles
-    /// du contrat (`routes::dossier_salarie::paie_du_contrat_entier`). Chaque champ d'`Assemble` se dit ici : celui
-    /// qu'on ajoute s'y pose.
-    pub fn sur_tout_le_contrat(&self, racine: &Path, lignes: Vec<LignePaie>, jours: Jours) -> R<Engagement> {
-        let lignes: Vec<LignePaie> = lignes.iter().map(|l| l.avec_les_jours(l.dates().to_vec(), Vec::new())).collect();
-        let entier = Assemble {
-            salarie: Some(self.salarie.clone()),
-            spectacle: self.spectacle.clone(),
-            dates_travail: jours_des_lignes(&lignes, false),
-            planning: Vec::new(),
-            lignes: Some(lignes),
-            // Le contrat entier n'est pas la paie d'un mois : ses rubriques se lisent au mois de sa premiere date jouee.
-            mois: None,
-            debut: Some(self.contrat().debut()),
-            fin: self.contrat().fin(),
-            numero: self.numero.clone(),
-            nature: Some(self.nature),
-            taux_cachet: self.taux_cachet,
-            jours: Some(jours),
-            // Ses jours sont ceux de ses lignes.
-            jours_contrat: None,
-            date_paiement: self.date_paiement,
-            lieu: Some(self.lieu.clone()),
-            emploi: self.emploi.clone(),
-            etablissement: self.etablissement.clone(),
-            quotite_contrat: self.quotite_contrat,
-            quotite_reference_saisie: self.quotite_reference_saisie,
-            modalite_temps_travail_saisie: self.modalite_temps_travail_saisie.clone(),
-            motif_recours: self.motif_recours,
-            motif_rupture: self.motif_rupture,
-            notification_rupture: self.notification_rupture,
-            preavis: self.preavis.clone(),
-            dernier_jour_paye: self.dernier_jour_paye,
-            // Un avenant du mois ne se recopie pas d'un mois a l'autre : il n'est pas un terme du contrat entier.
-            date_modification: None,
-            transaction: self.transaction.clone(),
-            avant: None,
-            periode_essai_jours: self.ecrit.periode_essai_jours,
-            personne_remplacee: self.ecrit.personne_remplacee.clone(),
-            repartition_horaire: self.ecrit.repartition_horaire.clone(),
-            clauses_particulieres: self.ecrit.clauses_particulieres.clone(),
-            modele_contrat: self.ecrit.modele_contrat.clone(),
-        };
-        Engagement::nouveau(racine, &entier, &self.nom, self.versement)
-    }
-
     /// L'engagement que `v` décrit (`Assemble`). `racine` est celle des donnees de la compagnie, pour le catalogue des
     /// rubriques. `qui` : le salarie tel qu'un refus le nomme (`salarie_nomme`).
     pub fn nouveau(racine: &Path, v: &Assemble, qui: &str, versement: Option<droit::versement::Versement>) -> R<Engagement> {

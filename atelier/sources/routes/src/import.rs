@@ -76,10 +76,10 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::ImportationNature,
-        geste: "Dire la nature des contrats repris d'un permanent, qu'aucune pièce ne dit.",
+        geste: "Dire la nature des contrats repris qu'aucune pièce ne dit.",
         charge: &[
             SALARIE,
-            Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "la nature d'un contrat de permanent (cdi, cdd…)", avance: false },
+            Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "une nature que ses pièces permettent (cdi, cdd, cddu_spectacle…)", avance: false },
             Champ { nom: "debut", libelle: Affiche::new("Début"), forme: Forme::Date, sens: "le contrat court encore : son début", avance: true },
             Champ { nom: "fin", libelle: Affiche::new("Terme"), forme: Forme::Date, sens: "son terme, s'il en a un", avance: true },
             Champ { nom: "numero", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré", avance: true },
@@ -381,23 +381,29 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
 /// (`dsn_aem::PaieDeclaree`), tel qu'elle l'ecrit (`declarations::dsn_lue::lire`, qui refuse une DSN dont un montant ou
-/// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
-/// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
-/// bulletin) ; la DSN les declare en decimal.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
+/// une date ne se lit pas). Son activite du mois (S21.G00.53 de type 01, hors rappel : `dsn_lue::Mesures`) y passe telle
+/// qu'elle est declaree, au centieme pres (`PaieVersee::heures`) ; une mesure nulle ne dit rien. Le contrat d'usage
+/// qu'elle declare (S21.G00.40.007 et .021) y pose sa nature (`droit::natures::d_usage_declaree`).
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> R<engagement::importe::PaieVersee> {
     use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite, x.motif_recours) = (periode, d.verse_le, c.and_then(|c| c.quotite), c.and_then(|c| c.motif_recours));
+    x.nature = match c {
+        Some(c) => droit::natures::d_usage_declaree(c.nature_dsn.as_deref(), c.motif_recours)?,
+        None => None,
+    };
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
+    let m = &d.mesures;
+    (x.heures, x.cachets, x.jours) = (Some(m.heures).filter(|h| !h.est_nul()), Some(m.cachets).filter(|c| !c.est_nul()), Some(m.jours).filter(|j| !j.est_nul()));
     // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
     if let Some(n) = &d.nets {
         x.nets = n.clone();
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
-    x
+    Ok(x)
 }
 
 /// UN SPECTACLE QUE L'IMPORT CREE d'un numero d'objet qu'aucune fiche ne porte : sans titre (les pieces n'en impriment
@@ -686,7 +692,7 @@ pub(crate) fn apercu_lu(
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
-        let paie = paie_declaree(v, periode, objet);
+        let paie = paie_declaree(v, periode, objet)?;
         paies.push(engagement::importe::PaieLue { mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {

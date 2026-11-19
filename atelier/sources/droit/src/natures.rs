@@ -1428,15 +1428,41 @@ struct Remunerations {
     _quoi: String,
     #[serde(rename = "note")]
     _note: Option<String>,
-    types: Vec<TypeDeRemuneration>,
+    types: Vec<RemunerationDeChaquePaie>,
     /// Les quatre blocs 51 valent-ils tous le brut ? (vrai sur un CDDU)
     toutes_au_brut: bool,
+}
+
+/// UN TYPE DE REMUNERATION QU'UNE NATURE DECLARE A CHAQUE PAIE (S21.G00.51.011), ferme aux types que le moteur calcule
+/// (cahier technique § 2.1.3.3 : 001, 002, 003, 010) : `contrats-base.json` qui en nommerait un autre ne se lit pas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum RemunerationDeChaquePaie {
+    #[serde(rename = "001")]
+    Brute,
+    #[serde(rename = "002")]
+    AssietteChomage,
+    #[serde(rename = "003")]
+    SalaireRetabli,
+    #[serde(rename = "010")]
+    SalaireDeBase,
+}
+
+impl RemunerationDeChaquePaie {
+    /// Son type dans la liste de la norme.
+    pub fn type_de_remuneration(self) -> TypeDeRemuneration {
+        match self {
+            RemunerationDeChaquePaie::Brute => TypeDeRemuneration::Brute,
+            RemunerationDeChaquePaie::AssietteChomage => TypeDeRemuneration::AssietteChomage,
+            RemunerationDeChaquePaie::SalaireRetabli => TypeDeRemuneration::SalaireRetabli,
+            RemunerationDeChaquePaie::SalaireDeBase => TypeDeRemuneration::SalaireDeBase,
+        }
+    }
 }
 
 codes_fermes! {
     /// UN TYPE DE REMUNERATION (S21.G00.51.011), la liste entiere de la norme (les valeurs de `formats-dsn-base.json` et
     /// de `formats-dsn-p27v01-base.json`). Ceux qu'une nature declare a chaque paie, `contrats-base.json` le dit
-    /// (`Nature::types_remuneration` : 001, 002, 003, 010, cahier technique § 2.1.3.3) ; les heures en plus (017) et
+    /// (`Nature::types_remuneration`, `RemunerationDeChaquePaie`) ; les heures en plus (017) et
     /// l'absence (028, 029), `dsn::remunerations`.
     TypeDeRemuneration, "Type de rémunération", "S21.G00.51.011" {
         /// 001 - Rémunération brute non plafonnée.
@@ -1601,6 +1627,22 @@ impl Proprietes {
     /// Les mentions obligatoires de son contrat ecrit, dans l'ordre de `contrats-base.json`.
     pub fn mentions_obligatoires(&self) -> Option<&[Mention]> {
         self.contrat_ecrit.as_ref().map(|c| c.mentions.as_slice())
+    }
+
+    /// CE QU'UNE DSN DECLARE D'UN CONTRAT DESIGNE-T-IL CETTE NATURE ? Sa nature du contrat (S21.G00.40.007, `code`, tel
+    /// qu'elle l'ecrit) est la sienne, et son motif de recours (.021, `motif`) aussi : celui que la nature fixe (le CDDU :
+    /// « 05 - Contrat d'usage », « C'est CE code qui fait d'un CDD un CDDU », `contrats-base.json`), ou l'un de ceux
+    /// qu'elle propose (le CDD : le 05 n'y est pas). Une nature qui n'ecrit pas de motif (le CDI) se juge sur son code
+    /// seul. Le motif « qualifie » le contrat a duree determinee (`bloc-S21.G00.40.txt`, S21.G00.40.021 : « Motif pour
+    /// lequel a ete conclu le Contrat a duree determinee ») : sans lui, un code 02 ne designe ni le CDD ni le CDDU.
+    pub fn declaree_par(&self, code: &str, motif: Option<MotifDeRecours>) -> bool {
+        let meme_code = self.code(NatureDuContratDsn::RUBRIQUE).as_deref() == Some(code);
+        let meme_motif = match (self.motif_recours_fixe(), self.motifs_recours()) {
+            (Some(fixe), _) => motif == Some(fixe),
+            (None, Some(offerts)) => motif.is_some_and(|m| offerts.iter().any(|o| o.code == m)),
+            (None, None) => true,
+        };
+        meme_code && meme_motif
     }
 
     /// Le motif de recours `code` appelle-t-il le nom et la qualification de la personne remplacee ? (L1242-12, 1° :
@@ -1778,7 +1820,7 @@ impl Proprietes {
         self.dpae.date_fin.obligatoire
     }
 
-    pub fn types_remuneration(&self) -> &[TypeDeRemuneration] {
+    pub fn types_remuneration(&self) -> &[RemunerationDeChaquePaie] {
         &self.remunerations.types
     }
 
@@ -1913,6 +1955,21 @@ pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, statut:
 /// Toutes les natures, dans l'ordre du fichier.
 pub fn natures() -> R<Arc<Vec<Arc<Nature>>>> {
     Ok(lu()?.natures.clone())
+}
+
+/// LE CONTRAT D'USAGE QU'UNE DSN DECLARE : la nature dont le motif de recours fixe (`Nature::motif_recours_fixe`, le
+/// CDDU : 05) et la nature du contrat sont ceux que la DSN declare pour lui (S21.G00.40.007 `code`, .021 `motif` :
+/// `Nature::declaree_par`), quand elle est la seule. Le motif seul fait le contrat d'usage (`contrats-base.json`,
+/// `cddu_spectacle`, S21.G00.40.021) : la DSN le dit, rien ne se devine (regle 6). `None` : la DSN ne declare pas un
+/// contrat d'usage, ou ne le dit pas assez (une nature payee au mois se dit apres l'import, `importation-nature`).
+pub fn d_usage_declaree(code: Option<&str>, motif: Option<MotifDeRecours>) -> R<Option<NatureDeContrat>> {
+    let Some(code) = code else { return Ok(None) };
+    let toutes = natures()?;
+    let designees: Vec<&Arc<Nature>> = toutes.iter().filter(|n| n.motif_recours_fixe().is_some() && n.declaree_par(code, motif)).collect();
+    Ok(match designees.as_slice() {
+        [n] => Some(n.cle),
+        _ => None,
+    })
 }
 
 #[cfg(test)]

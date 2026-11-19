@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Viré le"), forme: Forme::Date, sens: "le jour du virement, AAAA-MM-JJ", avance: false },
             Champ { nom: "montant", libelle: Affiche::new("Montant viré"), forme: Forme::Nombre, sens: "le montant viré", avance: false },
         ],
-        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"12.80"}"#,
+        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"1.12"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, FORME, MANQUE],
         acte: Acte::Ecrit,
@@ -125,7 +125,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Virements faits"), forme: Forme::Objet, sens: "{année: jour du virement fait, AAAA-MM-JJ}", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain", avance: false },
         ],
-        exemple: r#"{"vire_le":{"2026":"2026-11-02"}}"#,
+        exemple: r#"{"vire_le":{"2025":"2026-11-02"}}"#,
         rend: "partis (les destinataires), expediteur, periode, total, annees (les régularisations notées), eml",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },
@@ -599,7 +599,12 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
             (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), false)
         }
     };
-    let phrase = if ecrits.is_empty() { socle::phrase!("{} : aperçu, rien n'est écrit.", titre) } else { socle::phrase!("{} : écrit dans {}.", titre, ecrits.join(", ")) };
+    // Le nom de chaque fichier ecrit part dans la reponse (`fichier`, `fichiers`) : la phrase le dit en mots.
+    let phrase = match ecrits.len() {
+        0 => socle::phrase!("{} : aperçu, rien n'est écrit.", titre),
+        1 => socle::phrase!("{} : le fichier est écrit.", titre),
+        n => socle::phrase!("{} : {} fichiers écrits.", titre, n),
+    };
     let ecran = EcranDUnEtat {
         personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),

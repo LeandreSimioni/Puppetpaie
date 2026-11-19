@@ -25,7 +25,7 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure};
+use droit::natures::{contrat_court, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, NumeroDOrdre, RemunerationDeChaquePaie, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure};
 use socle::date::{Anciennete, Duree, EnJours, Jour, Periode};
 use socle::mode::Mode;
 use socle::mois::{Annee, Mois};
@@ -566,8 +566,9 @@ pub struct Cotisation {
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
     pub taux: Option<Taux>,
     pub montant: Option<Montant>,
-    /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) quand la source du taux de la ligne le dit
-    /// (`composant_79`, `bareme::bareme_sante`) ; `None` : la tranche A, sur le brut.
+    /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) : celui que la source du taux de la ligne dit
+    /// (`composant_79`, `bareme::bareme_sante`), sinon la tranche A sur la base que la cotisation a retenue ; `None` :
+    /// aucune ligne de la cotisation n'est au bulletin (la tranche A, a 0).
     pub composant79: Option<(TypeDeComposant, Montant)>,
     /// La part patronale de la CET (`parts_patronales_agirc_arrco`) : son code se lit dans la version de la norme du
     /// fichier (`Norme::cotisation_cet_patronale`), pas dans `code81`.
@@ -575,9 +576,15 @@ pub struct Cotisation {
 }
 
 /// Le composant d'une base 31 quand la source du taux n'en dit pas (`Cotisation::composant79`) : « 11 - Tranche A »
-/// (S21.G00.79.001). La prevoyance et la sante des intermittents : « La base de calcul de ces cotisations est le salaire
-/// brut dans la limite de la tranche A journalière » (Parametres Audiens 2026, § 3,
-/// `atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt` l. 197).
+/// (S21.G00.79.001), au montant de la base que la cotisation a retenue. La prevoyance et la sante des intermittents :
+/// « La base de calcul de ces cotisations est le salaire brut dans la limite de la tranche A journalière » (Parametres
+/// Audiens 2026, § 3, `atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt` l. 197) ; la
+/// fiche de parametrage d'Audiens pose leur taux sur la tranche A (`<TAPrev><Taux>1.2300</Taux></TAPrev>`,
+/// `atelier/reference/fiches-parametrage/audiens-2025-12-13-fiche139-expurgee.xml` l. 40-44), « Tranche du salaire brut
+/// comprise entre 0 et 1 PMSS » (specification FPOC, `atelier/reference/sources/fpoc-format/fpoc-specification-r1.4.0-
+/// 20260721.txt` l. 311-312) ; et « Pour la Prévoyance, ce bloc est à alimenter par les éléments constituant les
+/// paramètres qui entrent dans le calcul de la cotisation » (cahier technique 2026.1,
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.79.txt` l. 39-40).
 const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 
 /// UNE CONTRIBUTION DECLAREE SOUS UNE ADHESION AUDIENS ce mois-la (la CASC-SVP, une contribution de branche :
@@ -909,6 +916,9 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         } else if let Some(taux) = c.taux.map(|t| t.0).filter(|_| au_bulletin) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
+            if bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
+                l.composant79 = Some((TRANCHE_A, b));
+            }
             l.taux = Some(taux);
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
                 Some(composants) => composants.iter().fold(Montant::ZERO, |s, t| s + b.fois_taux(*t).au_centime()),
@@ -1000,7 +1010,7 @@ duquel le 142 que l'Urssaf attend sous le même versement (SIG-18) se déclare. 
                 base81: None,
                 taux: None,
                 montant: Some(somme_lignes(p, &contrib.lignes, false)),
-                composant79: None,
+                composant79: composant_79(p, &bar, &contrib.lignes)?,
                 cet: false,
             },
         );
@@ -1097,9 +1107,12 @@ duquel le 142 que l'Urssaf attend sous le même versement (SIG-18) se déclare. 
 }
 
 /// Le composant de la base 31 des `lignes` : le type que la source du taux de la premiere qui en porte un lui donne
-/// (`composant_79` de la pile, `bareme::bareme_sante`), et la base de cette ligne au bulletin.
+/// (`composant_79` de la pile, `bareme::bareme_sante`), et la base de cette ligne au bulletin ; sans type dit, la tranche
+/// A (`TRANCHE_A`) sur la base de la premiere de ses lignes au bulletin. `None` : aucune n'est au bulletin.
 fn composant_79(p: &Paie, pile: &Pile, lignes: &[IdDeCotisation]) -> R<Option<(TypeDeComposant, Montant)>> {
-    let Some((type_79, l)) = lignes.iter().find_map(|id| Some((pile.rubrique(id)?.composant_79?, p.lignes.iter().find(|l| l.est(id))?))) else {
+    let au_bulletin = |id: &IdDeCotisation| p.lignes.iter().find(|l| l.est(id));
+    let dit = lignes.iter().find_map(|id| Some((pile.rubrique(id)?.composant_79?, au_bulletin(id)?)));
+    let Some((type_79, l)) = dit.or_else(|| lignes.iter().find_map(|id| Some((TRANCHE_A, au_bulletin(id)?)))) else {
         return Ok(None);
     };
     // Le montant d'un composant (79.004) compte des euros : une base en heures se refuse.
@@ -2179,14 +2192,14 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, periode: &Periode, signe: Signe)
     let (debut, fin) = (periode.debut(), periode.fin());
     let e = &p.engagement;
     let nat = e.nat()?;
-    for &t in nat.types_remuneration() {
-        let montant = match t {
-            TypeDeRemuneration::Brute => brut_du_51(p)?,
-            TypeDeRemuneration::AssietteChomage => p.assiette_chomage,
-            TypeDeRemuneration::SalaireRetabli => p.salaire_retabli,
-            TypeDeRemuneration::SalaireDeBase => p.salaire_de_base,
-            autre => return Err(socle::refus!("contrats-base.json fait déclarer à chaque paie le type de rémunération {}, que le moteur ne calcule pas : le signaler au développeur.", autre)),
+    for &r in nat.types_remuneration() {
+        let montant = match r {
+            RemunerationDeChaquePaie::Brute => brut_du_51(p)?,
+            RemunerationDeChaquePaie::AssietteChomage => p.assiette_chomage,
+            RemunerationDeChaquePaie::SalaireRetabli => p.salaire_retabli,
+            RemunerationDeChaquePaie::SalaireDeBase => p.salaire_de_base,
         };
+        let t = r.type_de_remuneration();
         f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
         f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
         f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
@@ -2560,10 +2573,14 @@ pub fn bases_et_cotisations(
                 }
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
-                // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
+                // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur la base que la cotisation a
+                // retenue. Aucune de ses lignes au bulletin : la cotisation est nulle, et « Il convient de déclarer les
+                // mêmes Composants de base assujettie 79 que pour une cotisation non nulle », a 0 (FAQ DSN des organismes
+                // complementaires, `atelier/reference/sources/faq-dsn-organismes-complementaires/net-entreprises-faq-
+                // dsn-oc-declarants-v4-202310.txt` l. 1691-1694).
                 let (type_79, montant) = match c.composant79 {
                     Some(composant) => composant,
-                    None => (TRANCHE_A, p.brut),
+                    None => (TRANCHE_A, Montant::ZERO),
                 };
                 f.add(droit::rubrique!("S21.G00.79.001"), type_79);
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(montant, signe));

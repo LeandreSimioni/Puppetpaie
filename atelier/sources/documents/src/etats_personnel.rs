@@ -81,6 +81,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if contrats.iter().any(|c| c.contrat.is_none()) {
         avert.push("Contrat sans numéro : son mois n'a pas été produit, aucun numéro n'est figé. Rien n'est inventé.".to_string());
     }
+    avert.extend(lecture.avertissements());
     let mut t = Tableau::nouveau(EtatDExport::Contrats, "Liste des contrats", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
@@ -185,6 +186,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     }
     avert.push("La nationalité est le pays de nationalité de la fiche, suivi de la catégorie déclarée en DSN (française, Union européenne, EEE hors Union, reste du monde) ; une fiche sans pays n'en montre que la catégorie. Pour un salarié étranger hors UE, le registre doit aussi porter le type et le numéro du titre de travail (art. D1221-24) — à compléter à la main.".to_string());
     avert.extend(a_preciser);
+    avert.extend(lecture.avertissements());
     avert.push("Registre unique du personnel : il porte des données personnelles et se conserve cinq ans après le départ de chaque salarié. Il se présente à l'inspection du travail sur demande.".to_string());
     let mut t = Tableau::nouveau(EtatDExport::RegistreDuPersonnel, "Registre unique du personnel", p.libelle.clone());
     t.mois = p.mois.clone();

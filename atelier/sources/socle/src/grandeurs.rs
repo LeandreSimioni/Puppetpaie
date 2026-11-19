@@ -485,8 +485,7 @@ impl Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 4))
     }
 
-    /// Un coefficient qu'un texte fixe, en centiemes (`130` : 130 %, la limite de la reduction generale sous deduction
-    /// forfaitaire specifique).
+    /// Un coefficient qu'un texte fixe, en centiemes (`65` : 65 %).
     pub const fn centiemes(n: u32) -> Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 2))
     }
@@ -1897,12 +1896,14 @@ pub mod ecrit {
         }
     }
 
-    /// En nombre entier JSON (`2`) ; un decimal qui n'est pas un entier ne s'ecrit pas ainsi.
+    /// En nombre entier JSON (`2`) ; un decimal qui n'est pas un entier ne s'ecrit pas ainsi. Un entier ecrit avec des
+    /// decimales nulles en est un : la DSN ecrit ses mesures avec deux decimales (`2.00`, cahier technique : « avec
+    /// decimale ») et `2.00` s'ecrit `2`.
     pub mod entier {
         use crate::grandeurs::Grandeur;
 
         pub fn serialize<G: Grandeur, S: serde::Serializer>(g: &G, s: S) -> Result<S::Ok, S::Error> {
-            let d = crate::grandeurs::decimal(*g);
+            let d = crate::grandeurs::decimal(*g).normalize();
             match (d.scale(), i64::try_from(d.mantissa())) {
                 (0, Ok(n)) => s.serialize_i64(n),
                 _ => Err(serde::ser::Error::custom(format!("{} n'est pas un entier", d))),

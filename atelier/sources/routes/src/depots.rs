@@ -20,6 +20,7 @@ use engagement::numeros::NumeroContrat;
 use documents::SorteDePieceProduite;
 use envois::etats;
 use envois::releve_retours;
+use envois::suites::ADire;
 use socle::date::{Jour, PeriodeOuverte};
 use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -71,7 +72,7 @@ pub const ROUTES: &[Fiche] = &[
             ETABLISSEMENT,
             ENGAGEMENTS,
             SIGNALEMENT,
-            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Texte, sens: "test, ou reel : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
+            Champ { nom: "mode", libelle: Affiche::new("Test ou réel"), forme: Forme::Choix(crate::catalogue::MODES), sens: "test, ou reel : le dépôt réel (le mot de passe du logiciel, tapé par un humain au moment de l'acte)", avance: false },
             Champ { nom: "forcer", libelle: Affiche::new("Annule et remplace"), forme: Forme::OuiNon, sens: "vrai : l'annule-et-remplace d'une DSN déjà déposée, après l'avertissement", avance: true },
             Champ { nom: "contournement", libelle: Affiche::new("Motif d'un dépôt réel sans test"), forme: Forme::Texte, sens: "le motif écrit d'un dépôt réel sans test", avance: true },
         ],
@@ -93,7 +94,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Après un dépôt réel, relever les retours et dire s'il est passé ou refusé.",
         charge: &[QUOI, Champ { nom: "flux", libelle: Affiche::new("Flux"), forme: Forme::Texte, sens: "le flux du dépôt, tel que deposer le rend", avance: false }, MOIS],
         exemple: r#"{"quoi":"dpae"}"#,
-        rend: "fini, passe, refuse, incident (le relevé qui n'a pu se faire), phrase et couleur",
+        rend: "fini, passe, refuse, a_dire (ce que le relevé a à dire : incidents, a_faire), phrase et couleur",
         refus: &[MANQUE],
         acte: Acte::Ecrit,
         phrase: 80,
@@ -104,7 +105,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire où en est le test de la DSN ou de la DPAE ; chercher son compte rendu.",
         charge: &[QUOI, MOIS, ETABLISSEMENT, ENGAGEMENTS, SIGNALEMENT],
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "etat (testee : le réel peut partir ; en_test ; test_refuse, et son motif ; ecrite), titre et phrase de l'encart, conforme, incident",
+        rend: "etat (testee : le réel peut partir ; en_test ; test_refuse, et son motif ; ecrite), titre et phrase de l'encart, conforme, a_dire (ce que le relevé a à dire : incidents, a_faire)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
         acte: Acte::Ecrit,
         phrase: 500,
@@ -259,24 +260,24 @@ pub(crate) struct Deposee {
     avis: Option<Encart>,
 }
 
-/// La reponse de `suivre-depot` : le depot tranche ou non, passe ou refuse, le releve qui n'a pu se faire, la phrase
-/// et sa couleur.
+/// La reponse de `suivre-depot` : le depot tranche ou non, passe ou refuse, ce que le releve a a dire, la phrase et sa
+/// couleur.
 #[derive(Debug, Serialize)]
 pub(crate) struct Suivi {
     pub(crate) fini: bool,
     passe: bool,
     refuse: bool,
-    incident: String,
+    a_dire: ADire,
     phrase: Phrase,
     couleur: &'static str,
 }
 
-/// La reponse de `bilan-repetition` : ou en est le test (`etats::Repetition`), et le releve qui n'a pu se faire.
+/// La reponse de `bilan-repetition` : ou en est le test (`etats::Repetition`), et ce que son releve a a dire.
 #[derive(Debug, Serialize)]
 pub(crate) struct BilanDuTest {
     #[serde(flatten)]
     repetition: Repetition,
-    incident: String,
+    a_dire: ADire,
 }
 
 /// Une route de ce module.
@@ -839,15 +840,15 @@ impl Designation {
 pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let ChargeSuivre { quoi, flux, mois } = c;
     let dpae = quoi == Quoi::Dpae;
-    let (debut, fin) = releve_retours::derniere_journee()?;
+    let plage = releve_retours::PlageDuReleve::derniere_journee()?;
     let releve = if dpae {
-        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
+        crate::gestes::releve::relever_retours_dpae(ctx, plage, false, flux.as_ref())
     } else {
-        crate::gestes::releve::relever_retours(ctx, debut, fin, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn)
+        crate::gestes::releve::relever_retours(ctx, plage, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn)
     };
-    let incident = match releve {
-        Ok(r) => releve_retours::incidents_en_phrase(&r),
-        Err(e) => e.phrase,
+    let a_dire = match releve {
+        Ok((_, dit)) => dit,
+        Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
@@ -880,34 +881,35 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     } else {
         (socle::phrase!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
     };
-    Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
+    Ok(Suivi { fini: passe || refuse, passe, refuse, a_dire, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
 
 // ------------------------------------------------------------------ bilan-repetition
 
 /// `bilan_de_la_repetition` : ou en est le test de CE fichier -- et, s'il attend son compte rendu, aller le
-/// chercher maintenant. Une LECTURE : rien ne part. Rend `etats::Repetition`, et `incident` si le releve n'a
-/// pas pu se faire (le test reste ce qu'il est ; on le redira au passage suivant).
+/// chercher maintenant. Une LECTURE : rien ne part. Rend `etats::Repetition`, et ce que le releve a a dire
+/// (`a_dire` : ce qui n'a pas pu se faire, le test reste ce qu'il est et on le redira au passage suivant ; ce qu'un
+/// retour laisse a faire).
 fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     let mut repetition = bilan_de_la_repetition(ctx, &d)?;
-    let mut incident = String::new();
+    let mut a_dire = ADire::default();
     if repetition.etat == etats::EtatDuTest::EnTest {
-        let (debut, fin) = releve_retours::derniere_journee()?;
+        let plage = releve_retours::PlageDuReleve::derniere_journee()?;
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
+                crate::gestes::releve::relever_retours_dpae(ctx, plage, false, flux.as_ref())
             }
-            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn),
+            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, plage, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn),
         };
-        incident = match releve {
-            Ok(rel) => releve_retours::incidents_en_phrase(&rel),
-            Err(e) => e.phrase,
+        a_dire = match releve {
+            Ok((_, dit)) => dit,
+            Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
         };
         repetition = bilan_de_la_repetition(ctx, &d)?;
     }
     pastilles_du_test(&mut repetition);
-    Ok(BilanDuTest { repetition, incident })
+    Ok(BilanDuTest { repetition, a_dire })
 }
 
 /// L'erreur du disque, sous sa classe (`FichierAbsent`, `Disque`).
