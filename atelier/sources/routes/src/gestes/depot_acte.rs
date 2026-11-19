@@ -172,7 +172,8 @@ fn ordre_dit(o: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
 /// (`ordre_signalements::dernier_ordre_des_mensuelles` : les essais faits AILLEURS sous le meme SIREN, l'atelier ou un
 /// autre poste, comptent pour l'ordre sans s'afficher), plus un. Une mensuelle du mois deja
 /// acceptee dans la base d'essai, meme venue d'ailleurs, fait partir l'essai en annule-et-remplace. Trop grand ne coute
-/// rien ; trop petit, c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
+/// rien ; trop petit, c'est B1-208-11. Les bilans disent ce que la plate-forme sait : `deposer_dsn_dans` la releve
+/// avant (`releve::relever_avant_l_ordre`). `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
 fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, constitution: Mois) -> R<Option<NumeroDOrdre>> {
     let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), Some(Mode::Test)).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.signalement()).collect();
@@ -404,12 +405,6 @@ pub fn deposer_dsn_dans(
         refuser_si_copie(ctx, "une DSN reelle")?;
     }
 
-    // UN ESSAI DE PLUS SUR UN MOIS DEJA ESSAYE part en annule-et-remplace, a l'ordre suivant : la base de test
-    // garde les essais. JAMAIS PLUS BAS QUE L'ORDRE DU FICHIER.
-    let ordre_test = if mode == Mode::Reel || apercu.est_signalement() { None } else { prochain_ordre_de_test(ctx, le_mois, nic, mois_de_constitution(&apercu)?)? };
-    let ordre_test = ordre_test.max(ordre_d_essai);
-    let ordre_test = ordre_d_essai_du_fichier(ordre_test, &chemin)?;
-
     // LA PAIE DECLAREE : la version de chaque engagement que la DSN emporte -- pour la mensuelle, ceux du mois qui relevent
     // de son etablissement (S21.G00.11.001 ; une paie qui change ensuite appelle un annule-et-remplace,
     // `engagement::etats::a_refaire`) ; pour un signalement, celui dont il cite le contrat (S21.G00.40.009) dans le mois
@@ -442,11 +437,32 @@ pub fn deposer_dsn_dans(
         }
         v
     };
-    let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
+
+    // UN ESSAI DE PLUS SUR UN MOIS DEJA ESSAYE part en annule-et-remplace, a l'ordre suivant : la base de test
+    // garde les essais. JAMAIS PLUS BAS QUE L'ORDRE DU FICHIER. LA PLATE-FORME FAIT FOI : elle est relevee avant que
+    // l'ordre se lise dans les bilans (`releve::relever_avant_l_ordre`), comme pour un signalement ; un essai fait
+    // ailleurs sous le meme SIRET compte alors. Les suites de la releve se font avec celles du depot, quoi qu'il arrive.
     let mut suites = Suites::default();
-    let fait = envois::depot_acte::deposer_dsn(ctx, branchement, &d, &apercu, environnement, ordre_test, &mut suites);
+    let essai_de_mensuelle = mode == Mode::Test && !apercu.est_signalement();
+    let pas_lue = if essai_de_mensuelle { crate::gestes::releve::relever_avant_l_ordre(ctx, branchement, environnement, &mut suites)? } else { None };
+    let ordre_test = if essai_de_mensuelle { mois_de_constitution(&apercu).and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)) } else { Ok(None) }.and_then(|o| ordre_d_essai_du_fichier(o.max(ordre_d_essai), &chemin));
+    let parti = ordre_test.and_then(|ordre_test| {
+        let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
+        envois::depot_acte::deposer_dsn(ctx, branchement, &d, &apercu, environnement, ordre_test, &mut suites).map(|f| (f, ordre_test))
+    });
     let faites = crate::gestes::suites::faire(ctx, suites)?;
-    let mut fait = fait?;
+    let (mut fait, ordre_test) = parti?;
+    // Sans plate-forme lue, le journal et les bilans deja archives ont decide : cela se dit, jamais en silence.
+    if let Some(pourquoi) = pas_lue {
+        fait.suites.push(format!(
+            "La plate-forme n'a pas pu être consultée ({}) : l'essai est parti {} d'après le journal de ce dossier et les retours déjà archivés, qui ne savent que ce que ce dossier a déposé et relevé. Un essai déposé d'ailleurs sous le même SIRET (l'atelier, un autre poste) a pu prendre cet ordre : la plate-forme le refuserait (B1-208-10). Pour en être sûr : relever les retours, puis redéposer.",
+            pourquoi.trim_end_matches('.'),
+            match ordre_test {
+                Some(n) => format!("en annule-et-remplace à l'ordre {}", n),
+                None => "en normale, à l'ordre du fichier".to_string(),
+            }
+        ));
+    }
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
     Ok(fait)
 }

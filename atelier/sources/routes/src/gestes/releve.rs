@@ -55,6 +55,14 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(usize, Vec<String>)> {
     Ok((n?, faites.a_faire))
 }
 
+/// La plate-forme relevee avant l'ordre d'un essai de mensuelle (`envois::ordre_signalements::relever_la_plateforme`), par
+/// le client de la consultation de `environnement` ; les suites vont dans `suites`, que l'appelant fait avec celles du
+/// depot. Ce qui a empeche de la lire, en une phrase.
+pub(crate) fn relever_avant_l_ordre(ctx: &Contexte, branchement: envois::branchement::Branchement, environnement: EnvironnementNetEntreprises, suites: &mut Suites) -> R<Option<String>> {
+    let client = client_dsn(ctx, branchement, environnement)?;
+    Ok(envois::ordre_signalements::relever_la_plateforme(ctx, branchement, client, suites))
+}
+
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui
 /// de la consultation net-entreprises.
 pub(crate) fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {

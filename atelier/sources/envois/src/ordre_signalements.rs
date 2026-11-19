@@ -131,8 +131,24 @@ fn dernier_ordre_des_essais(racine: &Path) -> Result<Option<NumeroDOrdre>, Echec
     Ok(dernier)
 }
 
-/// Le plus grand ordre de signalement connu, la plate-forme faisant foi : la releve des retours des trois derniers mois
-/// (`releve_retours::relever_retours`, qui archive avant toute lecture), puis le plus grand de ce que disent les bilans
+/// LA PLATE-FORME RELEVEE avant d'ecrire un ordre, signalement ou essai de mensuelle : la releve des retours DSN des
+/// trois derniers mois (`releve_retours::relever_retours`, qui archive avant toute lecture), pour que les bilans
+/// archives que l'ordre lit ensuite disent ce qu'elle sait. Ce qui empeche de la lire, en une phrase ; `None` : elle
+/// est lue, ou c'est une compagnie fictive (organismes simulés, aucune plate-forme), qui n'a rien a dire.
+pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: Option<Client>, suites: &mut Suites) -> Option<String> {
+    if client.is_none() && branchement.joue() {
+        return None;
+    }
+    let fin = socle::temps::secondes();
+    match fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
+        Ok(r) if r.incidents.is_empty() => None,
+        Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
+        Err(e) => Some(e.phrase),
+    }
+}
+
+/// Le plus grand ordre de signalement connu, la plate-forme faisant foi : la plate-forme relevee
+/// (`relever_la_plateforme`), puis le plus grand de ce que disent les bilans
 /// archives et le journal (reels, `journal::dernier_ordre_des_signalements`, qui refuse une ligne reelle sans son
 /// ordre ; essais). `client` : le client net-entreprises, avec le mot de passe de consultation que `moteur` a pris (un test
 /// le pointe sur un faux serveur) ; `None` : aucun mot de passe, la plate-forme ne se lit pas et cela se dit.
@@ -140,20 +156,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
     let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
     let journal = reels.max(dernier_ordre_des_essais(&ctx.racine)?);
     let mut avertissements = Vec::new();
-
-    // LA PLATE-FORME : une compagnie fictive n'en a pas ; ailleurs, ce qui empeche de la lire se dit.
-    let joue = client.is_none() && branchement.joue();
-    // Ce qui empeche de la lire, en une phrase ; `None` : elle est lue.
-    let pas_lue: Option<String> = if joue {
-        None
-    } else {
-        let fin = socle::temps::secondes();
-        match fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
-            Ok(r) if r.incidents.is_empty() => None,
-            Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
-            Err(e) => Some(e.phrase),
-        }
-    };
+    let pas_lue = relever_la_plateforme(ctx, branchement, client, suites);
 
     let bilans = dernier_ordre_des_bilans(&ctx.racine, &siren(&ctx.entreprise)?)?;
     let dernier = match &bilans {
@@ -252,6 +255,9 @@ impl MensuellesVues {
 ///   grand ne coute rien ;
 /// - le rang que la plate-forme cite dans un refus (« d'ordre 20261021 inferieur (ou egal) au dernier ordre accepte
 ///   20261030 ») : AAAAMM + ordre, exact, quel que soit le jour du bilan.
+///
+/// Les bilans ne disent que ce qui a ete releve : l'essai d'une mensuelle releve d'abord la plate-forme
+/// (`relever_la_plateforme`), comme un signalement.
 ///
 /// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
 pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &Siren, base: Mode, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
