@@ -171,32 +171,29 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
 
 /// CE QU'UNE PIECE DIT D'UN CONTRAT POUR LE RECONNAITRE : ses dates, le numero du contrat, le numero d'objet.
 #[derive(Clone, Copy)]
-struct Reperes<'a> {
-    dates: Option<PeriodeOuverte>,
-    numero: Option<&'a str>,
-    objet: Option<&'a NumeroObjetSpectacle>,
+pub(crate) struct Reperes<'a> {
+    pub(crate) dates: Option<PeriodeOuverte>,
+    pub(crate) numero: Option<&'a NumeroContrat>,
+    pub(crate) objet: Option<&'a NumeroObjetSpectacle>,
 }
 
 impl<'a> Reperes<'a> {
-    /// Ceux d'une paie : les dates du contrat qu'elle paie, le numero que la DSN declare ou que le bulletin imprime.
-    fn de_la_paie(x: &'a PaieLue) -> Reperes<'a> {
-        let numero = match &x.paie.contrat {
-            CleDePaieVersee::Dsn(n) => Some(n.as_str()),
-            CleDePaieVersee::Bulletin(n) => Some(n.as_str()),
-            CleDePaieVersee::Copie { .. } => None,
-        };
+    /// Ceux d'une paie : les dates du contrat qu'elle paie, le numero de contrat que la DSN declare ou que son bulletin
+    /// imprime.
+    pub(crate) fn de_la_paie(x: &'a PaieLue) -> Reperes<'a> {
+        let numero = x.paie.contrat.numero_declare().or_else(|| x.paie.bulletin.as_ref().and_then(|b| b.contrat.as_ref()));
         Reperes { dates: x.paie.periode, numero, objet: x.paie.numero_objet.as_ref() }
     }
 
     /// Ceux du contrat qu'une AEM, un bulletin ou un certificat atteste, aux dates `dates`.
     fn du_contrat(c: &'a ContratLu, dates: Option<PeriodeOuverte>) -> Reperes<'a> {
-        Reperes { dates, numero: c.contrat.numero_contrat.as_ref().map(NumeroContrat::as_str), objet: c.contrat.numero_objet.as_ref() }
+        Reperes { dates, numero: c.contrat.numero_contrat.as_ref(), objet: c.contrat.numero_objet.as_ref() }
     }
 }
 
 /// A quel point deux pieces disent le meme contrat, de la plus sure a la moins sure (`meme_contrat`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Proximite {
+pub(crate) enum Proximite {
     /// Le meme numero de contrat, ou les memes dates.
     Exacte,
     MemeDebut,
@@ -208,9 +205,10 @@ enum Proximite {
 /// quand elles portent le meme numero de contrat ; sinon quand elles ont les memes dates, le meme debut, ou quand les
 /// dates de la piece tiennent dans le contrat que la DSN declare (`declare`) : le bulletin imprime la periode de sa
 /// paie, la DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`). Deux numeros d'objet
-/// differents : deux contrats. La seule regle, que lisent `rapprocher` (la paie d'un mois) et `engagements_importes`
-/// (l'engagement) ; la plus sure l'emporte.
-fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
+/// differents : deux contrats. La seule regle, que lisent l'apercu (la paie que complete une page de bulletin :
+/// `importation::bulletins`), `rapprocher` (la paie d'un mois) et `engagements_importes` (l'engagement) ; la plus sure
+/// l'emporte (`les_plus_proches`). Que l'apercu et l'ecriture lisent la meme fait qu'un import rejoue ne trouve rien.
+pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
     if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) {
         return None;
     }
@@ -227,6 +225,17 @@ fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
     } else {
         None
     }
+}
+
+/// LA PAIE DECLAREE QU'UNE PAIE DE BULLETIN DU MOIS `mois` COMPLETE, parmi celles du meme contrat (`proches`, avec leur
+/// mois et leur proximite) : plusieurs, celles du meme mois, puis les plus sures. Une seule : c'est elle ; plusieurs, ou
+/// aucune apres ce tri, la page ne se rattache a rien. Le seul tri, que lisent l'apercu et `rapprocher`.
+pub(crate) fn les_plus_proches<K>(mut proches: Vec<(Proximite, Mois, K)>, mois: Mois) -> Vec<K> {
+    if proches.len() > 1 {
+        proches.retain(|(_, m, _)| *m == mois);
+    }
+    let la_plus_sure = proches.iter().map(|(p, _, _)| *p).min();
+    proches.into_iter().filter(|(p, _, _)| Some(*p) == la_plus_sure).map(|(_, _, k)| k).collect()
 }
 
 /// Les dates `a` tiennent-elles dans le contrat `d` ? Une piece dont la periode tient dans le contrat que la DSN declare
@@ -274,17 +283,12 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleD
         if b.salarie.is_none() {
             continue;
         }
-        let mut proches: Vec<(Proximite, (socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee))> = par_cle
+        let proches: Vec<(Proximite, Mois, (socle::mois::Mois, Option<IdSalarie>, CleDePaieVersee))> = par_cle
             .iter()
             .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == b.salarie)
-            .filter_map(|(k, x)| meme_contrat(Reperes::de_la_paie(&b), Reperes::de_la_paie(x)).map(|p| (p, k.clone())))
+            .filter_map(|(k, x)| meme_contrat(Reperes::de_la_paie(&b), Reperes::de_la_paie(x)).map(|p| (p, k.0, k.clone())))
             .collect();
-        if proches.len() > 1 {
-            proches.retain(|(_, k)| k.0 == kb.0);
-        }
-        let la_plus_sure = proches.iter().map(|(p, _)| *p).min();
-        let cibles: Vec<_> = proches.into_iter().filter(|(p, _)| Some(*p) == la_plus_sure).map(|(_, k)| k).collect();
-        match cibles.as_slice() {
+        match les_plus_proches(proches, kb.0).as_slice() {
             [] => {}
             [kd] => {
                 if let Some(d) = par_cle.get_mut(kd) {

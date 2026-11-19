@@ -2585,8 +2585,8 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
 - **L'activité d'un mois repris** (`engagement::importe::activite_du_mois`) : la DSN déposée déclare, pour chaque
   contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
   l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Ce que la DSN
-  déclare l'emporte ; la pièce du contrat (AEM, bulletin, certificat) et le bulletin du mois n'ajoutent que ce qu'elle
-  tait. Sans DSN, le contrat qu'une pièce atteste dit l'activité quand il tient dans le mois ; sinon, le bulletin du
+  déclare l'emporte ; la pièce du contrat (AEM, bulletin, certificat) et le bulletin du mois d'un intermittent n'ajoutent
+  que ce qu'elle tait (le bulletin du mois d'un permanent remplace ce qu'il imprime). Sans DSN, le contrat qu'une pièce atteste dit l'activité quand il tient dans le mois ; sinon, le bulletin du
   mois. Une seule règle (`ActiviteDuMois`), que lisent la carte du mois importé, le calendrier des mois passés, la
   comparaison, la CASC-SVP et la paie importée (`PaieImportee::activite`, que les états lisent par
   `PaieDuMois::activite`).
@@ -2594,8 +2594,9 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   pour France Travail » ; « a priori, ça n'existe pas ») : deux pièces du même salarié disent le même contrat quand
   elles portent le même numéro de contrat, sinon quand elles ont les mêmes dates, le même début, ou quand la période de
   l'une tient dans le contrat que la DSN déclare (le bulletin d'un mois d'un CDDU sur deux mois) ; deux numéros d'objet
-  différents, deux contrats (`importation::ecrite::meme_contrat`, que lisent la paie du mois, `rapprocher`, et
-  l'engagement, `engagements_importes`). Un seul engagement, une seule paie par mois, aux dates de la DSN, quel que soit
+  différents, deux contrats (`importation::ecrite::meme_contrat`, que lisent la paie qu'une page de bulletin
+  complète à l'aperçu, `importation::bulletins`, celle de l'écriture, `rapprocher`, et l'engagement,
+  `engagements_importes` : l'aperçu et l'écriture lisant la même règle, un import rejoué ne trouve rien à faire). Un seul engagement, une seule paie par mois, aux dates de la DSN, quel que soit
   l'ordre des imports ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait. Rien ne se demande à la compagnie : une
   pièce dont les dates ne tiennent pas dans le contrat déclaré, ou qui dit une autre nature, part chez l'éditeur, en
   silence, une fois par sorte (`importation::incident::ContratDitAutrement`). Le contrat d'un permanent suit la DSN qui

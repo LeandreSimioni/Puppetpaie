@@ -956,31 +956,21 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         Dsn(usize),
         Historique((Mois, Option<IdSalarie>, CleDePaieVersee)),
     }
+    // Les paies de l'historique, par leurs dates : une page de bulletin deja reprise y retrouve la sienne.
     let mut index: HashMap<(Nir, socle::date::Periode), Vec<(Mois, CleDePaieVersee, Cible)>> = HashMap::new();
-    // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
-    // (S21.G00.40.001 et .010, un CDI sans fin), le bulletin de la periode payee ; les dates ne la rapprochent donc pas.
-    // Le numero du contrat (S21.G00.40.009, que le versement rappelle en S21.G00.51.010) et le mois, si : un bulletin qui
-    // imprime son numero se rattache a la paie que la DSN du mois declare sous ce numero.
-    let mut par_numero: HashMap<(Nir, Mois, NumeroContrat), Vec<(Mois, CleDePaieVersee, Cible)>> = HashMap::new();
-    // Sans numero imprime, la regle de l'ecriture (`import::ecrite::rapprocher`, « un contrat a cheval sur deux mois ») :
-    // le bulletin complete la paie declaree du meme mois dont le contrat contient sa periode, quand il n'y en a qu'une.
-    // (dates du contrat, contrat, cible) ; une fin absente : le contrat court encore.
-    let mut par_mois: HashMap<(Nir, Mois), Vec<(PeriodeOuverte, CleDePaieVersee, Cible)>> = HashMap::new();
+    // LES PAIES QUE LES DSN DE CET APERCU DECLARENT : une page de bulletin complete celle du meme contrat
+    // (`ecrite::meme_contrat`, la regle de l'ecriture). (NIR, mois, dates, numero du contrat, numero d'objet, contrat,
+    // cible.)
+    type Declaree = (Nir, Mois, Option<PeriodeOuverte>, Option<NumeroContrat>, Option<NumeroObjetSpectacle>, CleDePaieVersee, Cible);
+    let mut declarees: Vec<Declaree> = Vec::new();
     let mut vus: HashSet<(Mois, Nir, CleDePaieVersee)> = HashSet::new();
     // (mois, NIR, contrat, dates du contrat) d'une paie. Une paie sans NIR ne se rattache a aucun bulletin.
     let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.periode);
     for (k, x) in ap.paies.iter().enumerate() {
         let (mois, Some(nir), contrat, periode) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
-        if let Some(p) = periode.and_then(|o| o.fermee()) {
-            index.entry((nir.clone(), p)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
-        }
-        if let Some(n) = contrat.numero_declare() {
-            par_numero.entry((nir.clone(), mois.clone(), n.clone())).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
-        }
-        if let Some(o) = periode {
-            par_mois.entry((nir, mois)).or_default().push((o, contrat, Cible::Dsn(k)));
-        }
+        let r = crate::importation::ecrite::Reperes::de_la_paie(x);
+        declarees.push((nir, mois, periode, r.numero.cloned(), r.objet.cloned(), contrat, Cible::Dsn(k)));
     }
     // Une paie que l'historique tient d'un bulletin seul s'efface devant la DSN qui la declare (la DSN est lue apres le
     // bulletin : l'ordre inverse) : le bulletin complete la ligne DSN, et l'ecriture retire la ligne « bulletin »
@@ -1031,37 +1021,28 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         // UN NUMERO D'OBJET HORS DE SA FORME : la case reste vide, la page le dit.
         infos.avertissements.extend(faute_de_l_objet(&l.b));
-        let mut candidats: Vec<(Mois, CleDePaieVersee, Cible)> = index.get(&(l.nir.clone(), l.b.periode)).into_iter().flatten().cloned().collect();
-        if candidats.is_empty() {
-            if let Some(n) = l.b.contrat.as_deref().and_then(NumeroContrat::d_une_piece) {
-                candidats = par_numero.get(&(l.nir.clone(), l.mois, n)).into_iter().flatten().cloned().collect();
+        // La paie que la page complete : celle de l'historique aux memes dates, ou celle qu'une DSN de l'apercu declare
+        // pour le meme contrat (`ecrite::meme_contrat`) ; la plus proche (`ecrite::les_plus_proches`).
+        use crate::importation::ecrite::{les_plus_proches, meme_contrat, Proximite, Reperes};
+        let (numero, objet) = (l.b.contrat.as_deref().and_then(NumeroContrat::d_une_piece), objet_imprime(&l.b));
+        let piece = Reperes { dates: Some(l.b.periode.into()), numero: numero.as_ref(), objet: objet.as_ref() };
+        let mut proches: Vec<(Proximite, Mois, (Mois, CleDePaieVersee, Cible))> =
+            index.get(&(l.nir.clone(), l.b.periode)).into_iter().flatten().map(|c| (Proximite::Exacte, c.0, c.clone())).collect();
+        for (nir, mois, dates, numero, objet, contrat, cible) in &declarees {
+            let declare = Reperes { dates: *dates, numero: numero.as_ref(), objet: objet.as_ref() };
+            if let Some(p) = meme_contrat(piece, declare).filter(|_| *nir == l.nir) {
+                proches.push((p, *mois, (*mois, contrat.clone(), cible.clone())));
             }
         }
-        if candidats.is_empty() {
-            let contient: Vec<(Mois, CleDePaieVersee, Cible)> = par_mois
-                .get(&(l.nir.clone(), l.mois))
-                .into_iter()
-                .flatten()
-                .filter(|(o, _, _)| o.croise(&l.b.periode) == Some(l.b.periode))
-                .map(|(_, contrat, cible)| (l.mois, contrat.clone(), cible.clone()))
-                .collect();
-            if contient.len() == 1 {
-                candidats = contient;
-            }
+        if proches.iter().any(|c| matches!(c.2 .2, Cible::Dsn(_))) {
+            proches.retain(|c| !matches!(&c.2 .2, Cible::Historique(k) if de_bulletin.contains(k)));
         }
-        if candidats.iter().any(|c| matches!(c.2, Cible::Dsn(_))) {
-            candidats.retain(|c| !matches!(&c.2, Cible::Historique(k) if de_bulletin.contains(k)));
-        }
+        let mois_lus: Vec<String> = proches.iter().map(|c| c.1.to_string()).collect();
+        let candidats = les_plus_proches(proches, l.mois);
         if candidats.len() > 1 {
-            let memes: Vec<(Mois, CleDePaieVersee, Cible)> = candidats.iter().filter(|c| c.0 == l.mois).cloned().collect();
-            if memes.len() == 1 {
-                candidats = memes;
-            } else {
-                let mois: Vec<String> = candidats.iter().map(|c| c.0.to_string()).collect();
-                let raison = format!("plusieurs paies déclarées pour les mêmes dates ({}) : le bulletin ne se rattache à aucune", mois.join(", "));
-                pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort: Sort::Incoherent, raison, infos });
-                continue;
-            }
+            let raison = format!("plusieurs paies déclarées pour le même contrat ({}) : le bulletin ne se rattache à aucune", mois_lus.join(", "));
+            pages.entry(l.fichier).or_default().push(PageCr { page: l.page, sort: Sort::Incoherent, raison, infos });
+            continue;
         }
         let cible = candidats.into_iter().next();
         let ident = (

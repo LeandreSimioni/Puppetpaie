@@ -221,8 +221,8 @@ pub struct PaieVersee {
     /// « valorise par periode de paie » et « rattache a un et un seul contrat » ; lu par `declarations::dsn_lue::Mesures`,
     /// le rappel d'une periode anterieure hors du compte), tel qu'elle l'ecrit, au centieme pres : des heures en unites
     /// 10 (« heure ») et 35 (« heures intermittents du spectacle »), des jours en unite 12 (« journee »), des cachets en
-    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois n'y remplit que ce que la DSN
-    /// tait (`routes::importation::ecrite`). Ce que l'AEM, le bulletin ou
+    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par
+    /// ce qu'il imprime (`routes::importation::bulletins`) ; celui d'un intermittent n'y remplit que ce que la DSN tait. Ce que l'AEM, le bulletin ou
     /// le certificat d'un contrat d'usage atteste est au contrat entier (`ContratAtteste`) ; lequel l'emporte pour un
     /// mois, `activite_du_mois` le dit.
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
