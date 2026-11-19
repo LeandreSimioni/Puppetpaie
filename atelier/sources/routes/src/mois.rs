@@ -77,7 +77,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; contrat.rupture : sa fin et si elle se signale, motif par motif, à compléter ou non ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -1443,28 +1443,55 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     if nat.motifs_rupture().is_empty() {
         return Ok(None);
     }
-    let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
     let connu = e.connu_de_la_dsn();
-    let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
-    let signalement_fctu = nat.signalement_fctu(None, connu);
-    let motif_vide_dit = match nat.motif_rupture_par_defaut() {
-        Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
-        _ => "— à choisir —".to_string(),
-    };
-    let rupture = |fin| Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit };
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(rupture(e.contrat().fin())));
+        return Ok(Some(rupture_pour(nat, connu, e.contrat().fin())));
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
     if let PlaceDuMois::Premier | PlaceDuMois::Milieu = e.place_du_mois()? {
         return Ok(None);
     }
-    Ok(Some(rupture(Some(match e.contrat().fin() {
+    let fin = match e.contrat().fin() {
         Some(f) => f,
         None => e.periode_payee()?.fin(),
-    }))))
+    };
+    Ok(Some(rupture_pour(nat, connu, Some(fin))))
+}
+
+/// LA RUPTURE D'UNE CARTE QUI NE SE CALCULE PAS ENCORE (`a_completer`), lue sur sa saisie `e` du mois `mois` : le bloc de
+/// fin se dessine avant que la paie se calcule, pour que ce qui lui manque (une date de notification, un preavis) se tape
+/// ou il se demande. La meme que `rupture_de`, depuis ce que la carte dit : sa nature, son debut lu et sa fin lue
+/// (`Carte::debut_lu`, `Carte::fin_lue`). `None` sans nature ni debut (rien ne dit encore le contrat), pour une nature
+/// sans motif de rupture, ou pour un contrat aux cachets qui finit apres ce mois.
+fn rupture_en_saisie(e: &SaisieCarte, mois: Mois) -> R<Option<Rupture>> {
+    let (Some(_), Some(debut)) = (e.nature, e.debut_lu()) else { return Ok(None) };
+    let nat = e.nature_lue()?;
+    if nat.motifs_rupture().is_empty() {
+        return Ok(None);
+    }
+    let connu = droit::natures::ConnuDeLaDsn::du_contrat(debut, mois);
+    if nat.duree_indeterminee || nat.mensuelle() {
+        return Ok(Some(rupture_pour(&nat, connu, e.fin)));
+    }
+    match e.fin_lue() {
+        Some(f) if f.mois_civil() > mois => Ok(None),
+        fin => Ok(Some(rupture_pour(&nat, connu, fin))),
+    }
+}
+
+/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` : si cette fin se
+/// signale, au motif par defaut et motif par motif (`Nature::signalement_fctu`), et le choix vide des motifs.
+fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>) -> Rupture {
+    let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
+    let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
+    let signalement_fctu = nat.signalement_fctu(None, connu);
+    let motif_vide_dit = match nat.motif_rupture_par_defaut() {
+        Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
+        _ => "— à choisir —".to_string(),
+    };
+    Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit }
 }
 
 
@@ -1973,6 +2000,8 @@ struct EcritsSeuls {
     /// Les modeles que sa case `modele_contrat` offre ; vide tant que la carte ne dit pas sa nature : les modeles sont
     /// ceux d'une nature.
     modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
+    /// Sa rupture, lue sur sa saisie (`rupture_en_saisie`) : le bloc de fin se dessine avant que la paie se calcule.
+    rupture: Option<Rupture>,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2201,7 +2230,11 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin_ecrite: e.fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() } },
+                    contrat: EcritsSeuls {
+                        ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?,
+                        modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() },
+                        rupture: rupture_en_saisie(e, mois)?,
+                    },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

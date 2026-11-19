@@ -28,52 +28,64 @@ function carteFermee(div) {
  *  un CDDU déjà déclaré par la DSN d'un mois précédent se signale) ; la page
  *  ne fait que le lire. Sans motif choisi, c'est le motif par défaut. */
 function finSeSignale(rupture, motif) {
-  if (!rupture) return false;
   if (motif && motif in rupture.signalement_par_motif) return !!rupture.signalement_par_motif[motif];
   return !!rupture.signalement_fctu;
 }
 
-/** Ce que la fin du contrat déclarera : le motif, pour toute nature qui en a
- *  (un CDDU rompu avant son terme le dit aussi), et, quand cette fin se
- *  signale, les faits que le moteur ne devine pas, plus le dernier jour payé
- *  qui ne s'écrit que s'il s'écarte de la fin du contrat. */
-function ruptureDuBloc(div, nat, fin, e) {
-  // Un contrat aux cachets n'écrit pas sa fin : le moteur la donne (`contrat.rupture`, son dernier jour travaillé).
-  if (!(fin || (div._rupture && div._rupture.fin))) return;
-  if (!nat.motifs_rupture.length) return;
+/** Les cases de la fin d'un contrat, telles que l'engagement les écrit. */
+const CASES_DE_LA_FIN = ["motif_rupture", "notification_rupture", "engagement_licenciement", "signature_convention",
+  "preavis", "transaction", "dernier_jour_paye", "en_droit_a_la_retraite", "preavis_non_effectue", "preavis_mois",
+  "precarite_due", "precarite_pourquoi"];
+
+/** Ce que la fin du contrat déclarera. LA PAGE N'ENLÈVE RIEN QU'ELLE NE MONTRE
+ *  PAS : chaque case de la fin garde ce que la carte a écrit (`_ecrite`, ou
+ *  l'engagement lu), et seule une case que le bloc de fin montre (`majRupture`
+ *  le dessine d'après `contrat.rupture` et les faits du motif) prend ce qu'on
+ *  y voit — vide, elle se vide. Le moteur dit ce qui se montre ; la page ne
+ *  décide pas qu'une case cachée n'a plus de valeur. */
+function ruptureDuBloc(div, nat, e) {
+  const gardees = casesDeLaNature(nat.cle);
+  const ecrite = div._ecrite ? JSON.parse(div._ecrite) : (engagementLu(div) || {});
+  CASES_DE_LA_FIN.filter((k) => gardees.has(k) && ecrite[k] !== undefined).forEach((k) => { e[k] = ecrite[k]; });
+  const bloc = div.querySelector(".e-rupture");
+  if (!bloc || bloc.hidden) return;
+  // Une case montrée : son étiquette n'est pas cachée.
+  const montree = (s) => { const c = div.querySelector(s); return !!c && !c.closest("label").hidden; };
   const dans = (s) => div.querySelector(s).value;
-  if (dans(".e-motif-rupture")) e.motif_rupture = dans(".e-motif-rupture");
-  // Le reste ne part que si cette fin SE SIGNALE : le moteur le dit, motif
-  // par motif (`contrat.rupture.signalement_par_motif`). Un CDDU infra DSN à
-  // son terme (031) part dans la DSN du mois ; rompu avant, ou déjà déclaré
-  // le mois d'avant, il se signale (fiche 2062).
-  if (!finSeSignale(div._rupture, e.motif_rupture)) return;
-  // Les faits du motif, seulement ceux que le moteur a demandés.
-  // Un motif que le moteur ne nomme pas ne demande aucun fait.
-  const faits = e.motif_rupture in nat.faits_de_rupture ? nat.faits_de_rupture[e.motif_rupture] : [];
-  if (faits.includes("notification_rupture") && dans(".e-notification"))
-    e.notification_rupture = dans(".e-notification");
-  if (faits.includes("engagement_licenciement") && dans(".e-engagement-licenciement"))
-    e.engagement_licenciement = dans(".e-engagement-licenciement");
-  if (faits.includes("signature_convention") && dans(".e-signature-convention"))
-    e.signature_convention = dans(".e-signature-convention");
-  if (dans(".e-preavis-type")) {
-    e.preavis = { type: dans(".e-preavis-type"), debut: dans(".e-preavis-debut") || null,
-                  fin: dans(".e-preavis-fin") || null };
+  const prendre = (cle, s, valeur = (v) => v) => {
+    if (!montree(s)) return;
+    delete e[cle];
+    if (dans(s) !== "") e[cle] = valeur(dans(s));
+  };
+  prendre("motif_rupture", ".e-motif-rupture");
+  prendre("notification_rupture", ".e-notification");
+  prendre("engagement_licenciement", ".e-engagement-licenciement");
+  prendre("signature_convention", ".e-signature-convention");
+  if (montree(".e-preavis-type")) {
+    delete e.preavis;
+    if (dans(".e-preavis-type")) {
+      e.preavis = { type: dans(".e-preavis-type"), debut: dans(".e-preavis-debut") || null,
+                    fin: dans(".e-preavis-fin") || null };
+    }
   }
-  if (faits.includes("transaction") && dans(".e-transaction")) e.transaction = dans(".e-transaction");
-  if (dans(".e-dernier-paye")) e.dernier_jour_paye = dans(".e-dernier-paye");
-  if (faits.includes("en_droit_a_la_retraite") && dans(".e-en-droit"))
-    e.en_droit_a_la_retraite = dans(".e-en-droit") === "oui";
-  if (faits.includes("preavis_non_effectue")
-      && div.querySelector(".e-preavis-non-effectue").checked) {
-    e.preavis_non_effectue = true;
-    if (dans(".e-preavis-mois") !== "") e.preavis_mois = +dans(".e-preavis-mois");
+  prendre("transaction", ".e-transaction");
+  prendre("dernier_jour_paye", ".e-dernier-paye");
+  prendre("en_droit_a_la_retraite", ".e-en-droit", (v) => v === "oui");
+  if (montree(".e-preavis-non-effectue")) {
+    delete e.preavis_non_effectue;
+    delete e.preavis_mois;
+    if (div.querySelector(".e-preavis-non-effectue").checked) {
+      e.preavis_non_effectue = true;
+      prendre("preavis_mois", ".e-preavis-mois", (v) => +v);
+    }
   }
-  if (faits.includes("precarite_due")
-      && div.querySelector(".e-precarite-ecartee").checked) {
-    e.precarite_due = false;
-    if (dans(".e-precarite-pourquoi")) e.precarite_pourquoi = dans(".e-precarite-pourquoi");
+  if (montree(".e-precarite-ecartee")) {
+    delete e.precarite_due;
+    delete e.precarite_pourquoi;
+    if (div.querySelector(".e-precarite-ecartee").checked) {
+      e.precarite_due = false;
+      prendre("precarite_pourquoi", ".e-precarite-pourquoi");
+    }
   }
 }
 
@@ -127,7 +139,7 @@ function engagementDuBloc(div, mois) {
   } else if (lignes.length) {
     e.lignes = JSON.parse(JSON.stringify(lignes));
   }
-  ruptureDuBloc(div, nat, fin, e);
+  ruptureDuBloc(div, nat, e);
   // Un engagement sans `metier` prend celui de la fiche ; `cadre` voyage avec lui.
   if (metier) {
     e.metier = metier;
@@ -240,8 +252,10 @@ async function calculerApercu(lu) {
         div._total = null;
         peindreChiffres(div, null);
         div._paies = [];
-        // La rupture que le dernier aperçu calculé a dite reste : un fait refusé (une date de notification hors du
-        // contrat) ne fait pas disparaître de la saisie le motif et les dates de la fin.
+        // LA RUPTURE D'UNE CARTE À COMPLÉTER, le moteur la dit sur sa saisie (`contrat.rupture`) : le bloc de fin se
+        // dessine, et une case de la fin qui manque (une date de notification) se tape là où elle se demande.
+        div._rupture = (p && p.contrat && p.contrat.rupture) || null;
+        if (div.querySelector(".e-nature") && div.querySelector(".e-rupture")) majRupture(div);
         peindreCarte(div);
         div.querySelector(".resolu").innerHTML = "";
         // Les cases du contrat écrit se disent avant que le reste soit complet (la période d'essai d'un CDD).
