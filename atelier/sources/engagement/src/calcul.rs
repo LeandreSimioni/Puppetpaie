@@ -1996,7 +1996,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     Ok(paie)
 }
 
-/// Le plafond de securite sociale d'un engagement (`plafond::pour_paie`) : celui que le bas du bulletin imprime, et
+/// Le plafond de securite sociale d'un engagement (`plafond::plafond_permanent`, `plafond::pour_paie`) : celui que le bas du bulletin imprime, et
 /// celui sur lequel s'assoient la vieillesse plafonnee, le FNAL et le chomage d'un intermittent (`calculer`, 7.6).
 /// `sal` : la fiche du salarie telle que la paie la lit (`emploi_de`), pour son statut : l'arrete du 24/01/1975 ne
 /// vise que les artistes ; un technicien, comme un artiste engage cinq jours ou plus, a le plafond proratise sur les
@@ -2019,7 +2019,6 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
     // CSS).
     let artiste = statut_de(sal)? == Statut::Artiste;
     let ep = EngagementPlafond {
-        mensuelle: nat.mensuelle(),
         artiste,
         periode: e.periode_payee()?,
         // Un contrat paye a l'engagement a son terme (`Engagement::contrat` : sans fin seulement pour un permanent ouvert).

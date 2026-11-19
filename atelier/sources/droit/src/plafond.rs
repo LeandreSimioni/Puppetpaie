@@ -78,18 +78,6 @@ use socle::mois::Annee;
 
 // ----------------------------------------------------------------- le calcul
 
-/// PSS mensuel x jours calendaires de la `periode` / jours du mois, mois par mois,
-/// somme. Les deux bornes sont incluses.
-pub fn prorata_calendaire(periode: &Periode, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let mut total: Montant = nulle();
-    for mois in periode.mois() {
-        let Some(commun) = periode.croise(&Periode::du_mois(mois)) else { continue };
-        let jours = Jours::de_dates(commun.jours().count());
-        total += pss(mois.annee())?.mensuel.prorata(jours, Jours::fixes(mois.jours()));
-    }
-    Ok(total)
-}
-
 /// Vrai quand l'arrete du 24/01/1975, art. 3, al. 2 s'applique : un artiste engage moins de cinq jours continus (les
 /// jours calendaires du `contrat`, bornes incluses : du 24 au 24 fait un jour).
 pub fn engagement_court(contrat: &Periode, artiste: bool) -> bool {
@@ -109,7 +97,7 @@ pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Mont
 
 /// BOSS, assiette generale, § 1090 (tolerance) et § 700 (la formule) : pour chaque jour ayant donne lieu a
 /// remuneration (dates distinctes), mois par mois : PSS mensuel de l'annee x jours remuneres du mois / jours du mois ;
-/// la somme, non arrondie (la forme de `prorata_calendaire`).
+/// la somme, non arrondie (la forme du prorata de `plafond_permanent`).
 pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     let jours: BTreeSet<Jour> = dates.iter().copied().collect();
     let mut par_mois: std::collections::BTreeMap<socle::mois::Mois, usize> = Default::default();
@@ -159,7 +147,8 @@ pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R
 }
 
 /// Le plafond d'un permanent (mensualise) pour sa periode de paie, arrondi au centime : le prorata calendaire de
-/// R. 242-2, I, al. 3 (`prorata_calendaire`), et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
+/// R. 242-2, I, al. 3 (PSS mensuel x jours calendaires de la periode / jours du mois, mois par mois, les deux bornes
+/// incluses), et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
 /// correction du dernier alinea du meme I : « l'employeur est en droit de corriger le plafond, sans pouvoir augmenter sa
 /// valeur mensuelle, a due proportion de la duree de travail inscrite a leur contrat de travail [...], majoree du
 /// nombre d'heures complementaires [...], rapportee a celle correspondant a la plus courte des durees mentionnees au 1°
@@ -388,11 +377,9 @@ pub fn assiettes_plafonnees(
 
 use crate::forme_bareme::TranchesDuPlafond;
 
-/// Ce que `pour_paie` lit de l'engagement.
+/// Ce que `pour_paie` lit de l'engagement d'un intermittent.
 #[derive(Debug, Clone)]
 pub struct EngagementPlafond {
-    /// La nature du contrat est payee au mois (`Nature::mensuelle`).
-    pub mensuelle: bool,
     /// Le statut du salarie est `artiste` (vide compris) ; `false` : `technicien`.
     pub artiste: bool,
     /// La periode de paie.
@@ -405,14 +392,11 @@ pub struct EngagementPlafond {
     pub jours: Jours,
 }
 
-/// Le plafond d'UNE paie (R. 242-2 : le plafond « retenu pour chaque paie »). Un permanent : le prorata de droit
-/// commun sur la periode de paie du mois. Un intermittent : les journees datees de CETTE paie (aucune journee dans le
-/// mois, aucun plafond) : 12 x horaire chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel
-/// des jours remuneres (BOSS § 1090). Une journee dite et non datee refuse, une date hors de la periode de paie aussi.
+/// Le plafond d'UNE paie d'intermittent (R. 242-2 : le plafond « retenu pour chaque paie » ; celui d'un permanent :
+/// `plafond_permanent`) : les journees datees de CETTE paie (aucune journee dans le mois, aucun plafond) : 12 x horaire
+/// chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel des jours remuneres (BOSS § 1090). Une
+/// journee dite et non datee refuse, une date hors de la periode de paie aussi.
 pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    if e.mensuelle {
-        return Ok(prorata_calendaire(&e.periode, pss)?.au_centime());
-    }
     let court = engagement_court(&e.contrat, e.artiste);
     let datees = e.dates_travail.iter().collect::<BTreeSet<_>>().len();
     if e.jours != Jours::de_dates(datees) {
