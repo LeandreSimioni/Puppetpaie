@@ -1149,10 +1149,9 @@
           "article": "Paramètres 2026, p. 1, « A noter », prévoyance des intermittents (l. 45-46)",
           "citation": "le plafond applicable est le plafond journalier - dans la limite du plafond mensuel"
         }
-      ],
-      "raisonnement": "Audiens 2026 limite les tranches journalières (la retraite des cadres intermittents, la prévoyance de tout intermittent) au plafond mensuel ; les Paramètres 2025 ne le disent pas (l. 41-44). INFERENCE : le texte ne dit pas ce que « mensuel » couvre ; la limite se pose paie par paie, à la valeur mensuelle du plafond (4 005 €, `plafond_securite_sociale.mensuel`), sans proratisation ni cumul des contrats du mois."
+      ]
     },
-    "note": "Exemple : un cadre, 20 jours payés 400 € chacun dans le mois (8 000 €) : sa tranche 1 est 4 005 € et non 4 400 € (20 x 220) ; sa tranche 2 va jusqu'à 8 fois 4 005 €."
+    "note": "Audiens 2026 limite les tranches journalières (la retraite des cadres intermittents, la prévoyance de tout intermittent) au plafond mensuel ; les Paramètres 2025 ne le disent pas (l. 41-44). INFERENCE : le texte ne dit pas ce que « mensuel » couvre ; la limite se pose paie par paie, à la valeur mensuelle du plafond (4 005 €, `plafond_securite_sociale.mensuel`), sans proratisation ni cumul des contrats du mois. Exemple : un cadre, 20 jours payés 400 € chacun dans le mois (8 000 €) : sa tranche 1 est 4 005 € et non 4 400 € (20 x 220) ; sa tranche 2 va jusqu'à 8 fois 4 005 €."
   },
   "rubriques_bulletin": [
     {

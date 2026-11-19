@@ -1947,10 +1947,9 @@
             "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET (l. 1180-1183)",
             "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
           }
-        ],
-        "raisonnement": "Le cahier d'Agirc-Arrco (CT2025, 6.3.2, « Base exceptionnelle », l. 1159-1176) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la CET va toute sous l'assiette déplafonnée, ici la 23, la première des deux options du cahier (l. 1180-1190)."
+        ]
       },
-      "note": "Le 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`). Le 131 de sa tranche 1 est sous la base 43."
+      "note": "Le cahier d'Agirc-Arrco (CT2025, 6.3.2, « Base exceptionnelle », l. 1159-1176) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la CET va toute sous l'assiette déplafonnée, ici la 23, la première des deux options du cahier (l. 1180-1190). Le 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`). Le 131 de sa tranche 1 est sous la base 43."
     },
     {
       "bloc78": "27",
