@@ -496,10 +496,10 @@ impl PlageDuReleve {
 /// releve comme la DSN.
 const RECOUVREMENT: std::time::Duration = UNE_JOURNEE;
 
-/// L'HORIZON DU RELEVE COMPLET : sans releve complet precedent, ou quand il remonte plus loin, la plage part de trente
-/// jours avant maintenant (celui de l'ouverture, `routes::gestes::ouverture::TRENTE_JOURS`). Un releve qui remonte
-/// moins loin que cela n'est pas complet.
-const HORIZON_DU_RELEVE_COMPLET: std::time::Duration = socle::temps::jours_de_24_heures(30);
+/// L'HORIZON DU RELEVE COMPLET : sans releve complet precedent, ou quand il remonte plus loin, la plage part de
+/// quatre-vingt-dix jours avant maintenant, ce que le SI DSN garde au telechargement (guide de l'API DSN, § 8.2 :
+/// « une période de rétention de 3 mois »). Un releve qui remonte moins loin que cela n'est pas complet.
+pub const HORIZON_DU_RELEVE_COMPLET: std::time::Duration = socle::temps::jours_de_24_heures(90);
 
 /// JUSQU'OU LE DERNIER RELEVE COMPLET A LU, sur un canal : `retours/releve-complet.json` (la DSN),
 /// `retours/dpae/releve-complet.json` (la DPAE), a cote du journal des vus. `lu_jusqu_a` : la fin de la derniere tranche

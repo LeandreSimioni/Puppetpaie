@@ -47,7 +47,7 @@ impl Veille {
         Arc::new(Veille {
             racine: racine.to_path_buf(),
             periode,
-            jours: routes::gestes::ouverture::TRENTE_JOURS,
+            jours: routes::gestes::ouverture::QUATRE_VINGT_DIX_JOURS,
             erreur: Mutex::new(None),
             en_cours: AtomicBool::new(false),
             sauvegarde_en_cours: AtomicBool::new(false),

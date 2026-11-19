@@ -105,18 +105,24 @@ pub struct Options {
     pub sauvegarde_seule: bool,
 }
 
-/// Les trente jours de retours qu'un passage ordinaire releve au plus loin.
+/// Les trente jours que la commande des depots liste par defaut.
 pub const TRENTE_JOURS: Duration = socle::temps::jours_de_24_heures(30);
 
+/// Les quatre-vingt-dix jours de retours qu'une ouverture releve au plus loin, des la premiere (Leandre, 19/11/2026 :
+/// « il faut toujours prendre 90 jours ») : « Les retours disponibles au téléchargement ont une période de rétention de
+/// 3 mois par le SI DSN » (guide de l'API DSN, § 8.2, `atelier/reference/sources/gip-mds-api-dsn/LISEZ-MOI.md`). Le
+/// releve complet ne redemande ensuite que la suite (`envois::releve_retours::ReleveComplet`).
+pub const QUATRE_VINGT_DIX_JOURS: Duration = envois::releve_retours::HORIZON_DU_RELEVE_COMPLET;
+
 impl Options {
-    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours au plus.
+    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur quatre-vingt-dix jours de retours au plus.
     pub fn entiere() -> Options {
         Options {
             sauvegarder: true,
             retours: true,
             signatures: true,
             filet: true,
-            jours: TRENTE_JOURS,
+            jours: QUATRE_VINGT_DIX_JOURS,
             racine_drive: sauvegarde::RACINE_DRIVE.to_string(),
             pas_avant: Duration::ZERO,
             veille: false,
