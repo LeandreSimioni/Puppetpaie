@@ -228,9 +228,11 @@ pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite
 }
 
 /// LA PAIE DECLAREE QU'UNE PAIE DE BULLETIN DU MOIS `mois` COMPLETE, parmi celles du meme contrat (`proches`, avec leur
-/// mois et leur proximite) : plusieurs, celles du meme mois, puis les plus sures. Une seule : c'est elle ; plusieurs, ou
-/// aucune apres ce tri, la page ne se rattache a rien. Le seul tri, que lisent l'apercu et `rapprocher`.
+/// mois et leur proximite) : celle d'un autre mois seulement aux memes dates ou au meme numero ; plusieurs, celles du
+/// meme mois, puis les plus sures. Une seule : c'est elle ; plusieurs, ou aucune apres ce tri, la page ne se rattache a
+/// rien. Le seul tri, que lisent l'apercu et `rapprocher`.
 pub(crate) fn les_plus_proches<K>(mut proches: Vec<(Proximite, Mois, K)>, mois: Mois) -> Vec<K> {
+    proches.retain(|(p, m, _)| *m == mois || *p == Proximite::Exacte);
     if proches.len() > 1 {
         proches.retain(|(_, m, _)| *m == mois);
     }
