@@ -1535,17 +1535,14 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     };
     let plafond_journalier = bar.plafond_journalier;
     let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant { (jours * p).au_centime() };
-    // La tranche 1 de la prevoyance, quand sa base en est une : sur le plafond journalier d'un intermittent, ou celle d'un
-    // salarie au mois (`regularisees`, la tranche que sa cotisation prend).
-    let mut t1_prev = None;
-    if prev.base == Some(Assiette::T1Journaliere) {
-        if let Some(p) = plafond_journalier {
-            t1_prev = Some(brut.min(t1_du_contrat(p)));
-        }
-    }
-    if nat.mensuelle() && prev.base == Some(Assiette::T1Mensuelle) {
-        t1_prev = Some(regularisees.t1);
-    }
+    // La base de la prevoyance de la paie : sa tranche 1 quand le bareme l'y pose (sur le plafond journalier d'un
+    // intermittent, que le bareme dit alors ; ou celle d'un salarie au mois, `regularisees`, la tranche que sa cotisation
+    // prend), le brut sinon.
+    let base_prevoyance = match prev.base {
+        Some(Assiette::T1Journaliere) => brut.min(t1_du_contrat(plafond_journalier.ok_or_else(|| socle::fichiers::absent("plafond_journalier"))?)),
+        Some(Assiette::T1Mensuelle) if nat.mensuelle() => regularisees.t1,
+        _ => brut,
+    };
     // Les autres garanties de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette (les
     // contributions de l'employeur aux garanties collectives, CSS L136-1-1 : plus bas). Ce sont les lignes que la pile
     // range avec la prevoyance (`Pile::garanties_de_prevoyance`), toutes couches comprises : la tranche B d'un cadre
@@ -1588,12 +1585,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let abattue_csg = regularisees.abattue_csg;
     let (maj115, maj110) = (bar.majoration_conges_115, bar.majoration_conges_110);
     let assiettes = |montant: Montant, cs: bool| -> Assiettes {
-        let mut base_prev = montant;
-        if let Some(t1) = t1_prev {
-            if brut > Montant::ZERO {
-                base_prev = t1.prorata(montant, brut);
-            }
-        }
+        // La part de la base de la prevoyance qui revient a cette rubrique, au prorata de son montant dans le brut.
+        let base_prev = if brut > Montant::ZERO { base_prevoyance.prorata(montant, brut) } else { montant };
         let base_prev_t2 = if !tranches_prev.est_nul() && brut > Montant::ZERO {
             tranches_prev.prorata(montant, brut)
         } else {
@@ -1625,9 +1618,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // abattue ecrite est celle qui s'est appliquee, nulle (`abattue_appliquee`), et la paie suivante de l'annee rattrape.
     let mut abattue_appliquee = abattue_csg;
     if brut.est_nul() {
-        let prev_t1 = t1_prev.map_or(Montant::ZERO, |t1| t1.fois_taux(taux_prev));
         match par_rubrique.first_mut() {
-            Some(premiere) => premiere.csg = (premiere.csg + tranches_prev + prev_t1 - bar.abattement_de(abattue_csg)).au_centime(),
+            Some(premiere) => premiere.csg = (premiere.csg + tranches_prev + base_prevoyance.fois_taux(taux_prev) - bar.abattement_de(abattue_csg)).au_centime(),
             None => abattue_appliquee = Montant::ZERO,
         }
     }
