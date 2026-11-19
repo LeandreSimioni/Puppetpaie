@@ -715,15 +715,19 @@ impl DocumentsFabriques {
     }
 }
 
-/// Le numero d'un bulletin dans un nom de fichier : `12/2026` -> `12-2026`.
 /// L'ECART D'UNE PAIE REFAITE AVEC LE BULLETIN PARTI (`parti`, ce qu'il a paye), verse -- ou retenu -- avec la paie de
 /// `mois_versement` : la difference de net, et le prelevement a la source sur la difference de net imposable
-/// (`engagement::etats::prelevement_de_la_correction`, au taux du bulletin parti pour un trop-verse : BOFiP,
-/// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
-fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
-    let taux_parti = parti.pas.as_ref().map(|p| p.taux);
+/// (`engagement::etats::prelevement_de_la_correction`, BOFiP, BOI-IR-PAS-30-10-50, § 1 et § 90,
+/// `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`). Un trop-verse se reprend au taux
+/// initialement utilise, celui que la DSN du mois d'origine a declare (`engagement::etats::taux_de_pas_initial`, que
+/// `departs` disent) : le meme que la DSN qui porte la correction, pas celui du dernier bulletin parti.
+fn ecart_avec_le_bulletin_parti(
+    ctx: &Contexte, v: &engagement::etats::Valide, departs: &engagement::departs::Departs, mois: Mois, apres: &Paie, parti: &Paie, mois_versement: Mois,
+) -> R<documents::bulletin::Ecart> {
+    let declarees = engagement::etats::paies_declarees(ctx, v.objet(), departs, mois, None)?;
+    let taux_initial = engagement::etats::taux_de_pas_initial(&declarees);
     let d_net = apres.net_a_payer - parti.net_a_payer;
-    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_ref(), mois_versement)?;
+    let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_initial.as_ref(), mois_versement)?;
     let indu = pas_c.indu();
     let prelevement = pas_c.prelevement.map(|(taux, montant)| documents::bulletin::PrelevementDeLEcart { indu, taux, montant });
     let a_verser = match &prelevement {
@@ -741,6 +745,7 @@ fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois
     })
 }
 
+/// Le numero d'un bulletin dans un nom de fichier : `12/2026` -> `12-2026`.
 fn numero_en_nom(n: &NumeroDeBulletin) -> String {
     n.to_string().replace('/', "-")
 }
@@ -840,7 +845,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
         let ecart = match parti {
             Some((parti, v)) => {
                 let porteur = crate::regularisation::dsn_qui_porte_la_correction(ctx, v, &departs, mois)?;
-                Some(ecart_avec_le_bulletin_parti(ctx, &paies[i], &parti, porteur)?)
+                Some(ecart_avec_le_bulletin_parti(ctx, v, &departs, mois, &paies[i], &parti, porteur)?)
             }
             None => None,
         };
@@ -1574,7 +1579,7 @@ fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::
                 let ecart = match parti {
                     Some(parti) => {
                         let porteur = crate::regularisation::dsn_qui_porte_la_correction(&ctx, v, &avant, mois)?;
-                        Some(ecart_avec_le_bulletin_parti(&ctx, &p, &parti, porteur)?)
+                        Some(ecart_avec_le_bulletin_parti(&ctx, v, &avant, mois, &p, &parti, porteur)?)
                     }
                     None => None,
                 };
