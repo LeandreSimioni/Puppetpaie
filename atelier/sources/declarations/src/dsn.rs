@@ -1190,18 +1190,19 @@ fn parts_patronales_agirc_arrco(
 /// de ses lignes. Hors des lignes de retraite, ou sans ligne, refus : sa part patronale (142, 146), que l'Urssaf attend
 /// sous le meme versement (SIG-18), ne se lit que sur elles.
 fn lignes_du_131(c: &CotisationDsn) -> R<Vec<IdDeCotisation>> {
-    let ids: Vec<IdDeCotisation> = c.lignes.clone().unwrap_or_default();
     let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
-    if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(id)) {
-        return Err(refus!(
-            "Le bareme declare un 131 (Agirc-Arrco) fait {} : sa part patronale (142, 146), que l'Urssaf attend sous le \
+    let fait = match &c.lignes {
+        Some(ids) if !ids.is_empty() && ids.iter().all(|id| LIGNES_AGIRC_ARRCO.contains(id)) => return Ok(ids.clone()),
+        Some(ids) if !ids.is_empty() => format!("des lignes {}", dites(ids)),
+        _ => "d'aucune ligne du bulletin".to_string(),
+    };
+    Err(refus!(
+        "Le bareme declare un 131 (Agirc-Arrco) fait {} : sa part patronale (142, 146), que l'Urssaf attend sous le \
 meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les lignes de retraite du bulletin \
 ({}). Rien n'est ecrit.",
-            if ids.is_empty() { "d'aucune ligne du bulletin".to_string() } else { format!("des lignes {}", dites(&ids)) },
-            dites(&LIGNES_AGIRC_ARRCO)
-        ));
-    }
-    Ok(ids)
+        fait,
+        dites(&LIGNES_AGIRC_ARRCO)
+    ))
 }
 
 /// Une part patronale Agirc-Arrco (142, 146) a l'Urssaf `org`, sous la base 78 du 131 `l131` : sa base, son taux, son
