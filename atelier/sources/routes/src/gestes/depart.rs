@@ -215,8 +215,15 @@ impl Present {
         self.paies.is_empty() && self.regs.is_empty()
     }
 
+    /// Un refus de la fabrication garde sa classe (un manque de la compagnie reste un manque, une valeur illisible une
+    /// panne : `Echec::dit_un_manque`) ; son refus ordinaire, sans classe (une adhesion qui manque, `dsn::affiliations`),
+    /// est le refus du geste (`Classe::Refuse`, « ce que la phrase dit ; rien n'est ecrit ») : sans classe, le journal
+    /// des incidents le noterait en defaut du logiciel (`compagnie::incidents::nature_de`).
     fn fabriquer(&self, ctx: &Contexte, mois: Mois, forme: &Forme) -> R<declarations::dsn::Fabriquee> {
-        declarations::dsn::fabriquer(ctx, &self.paies, mois, &self.regs, &self.arrets, &forme.options(), &self.departs).map_err(|e| e.reclasser(Classe::Illisible))
+        declarations::dsn::fabriquer(ctx, &self.paies, mois, &self.regs, &self.arrets, &forme.options(), &self.departs).map_err(|e| match e.classe {
+            Some(_) => e,
+            None => e.reclasser(Classe::Refuse),
+        })
     }
 }
 

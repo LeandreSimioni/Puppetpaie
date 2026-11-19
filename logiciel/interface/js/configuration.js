@@ -499,21 +499,26 @@ function vueNaturesADire(liste) {
     quotite: (x) => `<label title="${aideDe("import_quotite")}">Heures par mois
         <input type="text" inputmode="decimal" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
   };
-  const lignes = liste.map((x) => `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
+  // Une seule nature proposée (celle que la DSN reprise déclare) : elle est
+  // choisie, et ses cases se montrent d'emblée.
+  const lignes = liste.map((x) => { const seule = x.natures.length === 1 ? x.natures[0] : null;
+    const montre = (c) => !!seule && seule.demande.includes(c);
+    return `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
         ${echapper(x.dit)}
         ${x.en_cours_dit ? `<div class="note">${echapper(x.en_cours_dit)}</div>` : ""}
-        <div class="e-contrat-champs" data-nature-cases hidden>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
-          `<span data-nature-case="${c}" hidden>${CASES[c](x)}</span>`).join("")}</div></div>
+        ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}
+        <div class="e-contrat-champs" data-nature-cases${seule && seule.demande.length ? "" : " hidden"}>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
+          `<span data-nature-case="${c}"${montre(c) ? "" : " hidden"}>${CASES[c](x)}</span>`).join("")}</div></div>
       <div class="rang-etat" style="display:flex;gap:6px;align-items:center">
         <select data-nature-choix aria-label="${echapper(x.choix_dit)}">
-          <option value="" data-demande="">— choisir —</option>
-          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"
+          ${seule ? "" : `<option value="" data-demande="">— choisir —</option>`}
+          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"${seule ? " selected" : ""}
              data-demande="${echapper(n.demande.join(" "))}">${echapper(n.libelle)}</option>`).join("")}
         </select>
         <button type="button" class="petit" data-nature-salarie="${echapper(x.salarie)}">Enregistrer</button>
       </div>
-    </div>`).join("");
+    </div>`; }).join("");
   return `<h3>Nature de ces contrats</h3>
     <p class="note">${aideDe("import_natures")}</p>${lignes}`;
 }
