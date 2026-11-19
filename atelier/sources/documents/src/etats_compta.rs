@@ -1348,23 +1348,37 @@ fn provision_d_une_annee_importee(
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
-    let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Montant, bool)>> {
+    fn bruts(
+        lecture: &mut crate::etats_paie::Lecture, importes: &[Mois], premier_importe: Mois, cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour,
+    ) -> R<Option<(Montant, bool)>> {
         let mut total = Montant::ZERO;
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
-            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
+            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| q.salarie.id == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
                 total += brut;
             }
         }
         Ok(Some((total, premier_importe <= du.mois_civil())))
+    }
+    // UNE PAIE REPRISE DONT LA NATURE RESTE A DIRE n'est pas comptee (`engagement::importe::NatureADire`) : la provision du
+    // salarie qui en a une sur ses periodes ne se fait pas, et se dit, sur lui seul ; les autres se provisionnent.
+    let pas_comptee = |cle: &droit::contexte::IdSalarie, manquent: &[engagement::importe::NatureADire]| -> String {
+        let mois: Vec<String> = manquent.iter().map(|a| a.mois.libelle(socle::mois::Graphie::Accentuee)).collect();
+        format!(
+            "{} : sa paie reprise de {} n'est pas comptée, la nature de son contrat reste à dire (Configuration, « Reprendre l'historique ») : sa provision ne se calcule pas sans elle, il n'est pas dans la provision.",
+            ctx.nomme(cle),
+            mois.join(", ")
+        )
     };
+    // Les salaries deja vus : un salarie se provisionne, ou se dit, une fois.
+    let mut vus: BTreeSet<droit::contexte::IdSalarie> = a_provisionner.iter().map(|(c, ..)| c.clone()).collect();
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
         let Some(au) = nat.au_mois().filter(|_| continuent.contains(&cle)) else {
             continue;
         };
-        if a_provisionner.iter().any(|(c, ..)| *c == cle) {
+        if !vus.insert(cle.clone()) {
             continue;
         }
         let date = ctx.salaries.get(&cle).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
@@ -1377,8 +1391,19 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
             continue;
         };
+        // Ses paies de la periode, du report et du mois : celle qui ne se range pas manque a ses sommes.
+        let mut du = cpt.periode.debut().mois_civil();
+        if let Some(r) = cpt.report {
+            du = du.min(r.debut().mois_civil());
+        }
+        let manquent = lecture.a_dire_de(&cle, du.max(premier_importe), m)?;
+        if !manquent.is_empty() {
+            avert.push(pas_comptee(&cle, &manquent));
+            sans_compteur += 1;
+            continue;
+        }
         // Un bulletin repris qui ne dit pas son brut ne couvre pas sa periode : la remuneration est celle que la fiche recopie.
-        if let Some((periode, true)) = bruts(&cle, &cpt.periode.debut(), &fin)? {
+        if let Some((periode, true)) = bruts(&mut lecture, &importes, premier_importe, &cle, &cpt.periode.debut(), &fin)? {
             if !cpt.remuneration_periode.est_nul() && cpt.remuneration_periode != periode {
                 avert.push(format!(
                     "{} : la rémunération de la période que sa fiche recopie ({}) n'est pas la somme des bruts de ses bulletins repris ({}) ; la provision prend les bulletins.",
@@ -1390,7 +1415,7 @@ fn provision_d_une_annee_importee(
             cpt.remuneration_periode = periode;
         }
         if let Some(r) = cpt.report {
-            if let Some((report, true)) = bruts(&cle, &r.debut(), &r.fin())? {
+            if let Some((report, true)) = bruts(&mut lecture, &importes, premier_importe, &cle, &r.debut(), &r.fin())? {
                 cpt.remuneration_report = report;
             }
         }
@@ -1406,6 +1431,15 @@ fn provision_d_une_annee_importee(
         };
         let provision = engagement::conges::provision_du_compteur(cpt, m, salaire.pour_une_unite()).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
+    }
+    // Le salarie dont le contrat repris qui continue n'a, en `m`, qu'une paie qui ne se range pas : sans sa nature, rien ne
+    // dit qu'il est paye au mois ; il n'est pas dans la provision, et le dit.
+    for cle in continuent.iter().filter(|c| !vus.contains(*c)) {
+        let manquent = lecture.a_dire_de(cle, m, m)?;
+        if !manquent.is_empty() {
+            avert.push(pas_comptee(cle, &manquent));
+            sans_compteur += 1;
+        }
     }
     avert.extend(lecture.avertissements());
     Ok(sans_compteur)
@@ -1456,7 +1490,11 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     };
     let fin = m.dernier_jour();
     let toutes = Periode::nouvelle(ctx, None, None, true, true)?;
+    // Le livre de toutes les annees, pour le taux de chaque salarie : ce qu'il dit des autres annees n'est pas de cet etat ;
+    // ce qui manque au taux d'un salarie se dit sur lui (`a_dire_de`).
     let livre = lignes_livre(ctx, &toutes, &mut Vec::new(), &d.departs)?;
+    let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
+    let depart_du_taux = m.avant(socle::date::Duree::mois(12)).map_err(|x| x.reclasser(Classe::Illisible))?.suivant();
     let mut lignes: Vec<Ligne> = Vec::new();
     // Ce que l'ecriture de la provision porte : les indemnites, et les charges que le taux reel permet de calculer.
     let (mut indemnites, mut charges_dites) = (zero, zero);
@@ -1474,8 +1512,19 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 (zero, zero, zero, String::new())
             }
         };
-        let (taux, n) = taux_patronal(&livre, &cle, m)?;
+        // Une paie reprise des douze mois dont la nature reste a dire n'est pas au livre : le taux de ce salarie ne se lit
+        // pas sans elle, et se dit sur lui.
+        let manquent = lecture.a_dire_de(&cle, depart_du_taux, m)?;
+        let (taux, n) = match manquent.is_empty() {
+            true => taux_patronal(&livre, &cle, m)?,
+            false => (None, 0),
+        };
         match (taux, n) {
+            _ if !manquent.is_empty() => avert.push(format!(
+                "{} : sa paie reprise de {} n'est pas comptée, la nature de son contrat reste à dire — le taux des charges patronales ne se lit pas sans elle, la colonne reste vide.",
+                cle,
+                manquent.iter().map(|a| a.mois.libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ")
+            )),
             (Some(_), _) => {}
             (None, 0) => avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle)),
             (None, _) => avert.push(format!("{} : ses bulletins des douze derniers mois ne portent aucun brut — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle)),

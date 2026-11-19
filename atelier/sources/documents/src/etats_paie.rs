@@ -292,6 +292,15 @@ impl<'a> Lecture<'a> {
         self.a_dire.iter().map(engagement::importe::NatureADire::phrase).collect()
     }
 
+    /// LES PAIES REPRISES DU SALARIE `cle` QUI NE SE RANGENT PAS, de `du` a `au` (ces mois sont lus) : un calcul de ce
+    /// salarie qui a besoin de ses paies de ces mois refuse pour lui seul, en les nommant ; vide : il les a toutes.
+    pub fn a_dire_de(&mut self, cle: &droit::contexte::IdSalarie, du: Mois, au: Mois) -> R<Vec<engagement::importe::NatureADire>> {
+        for m in du.jusqu_a(au) {
+            self.paies(m)?;
+        }
+        Ok(self.a_dire.iter().filter(|a| a.salarie.as_ref() == Some(cle) && du <= a.mois && a.mois <= au).cloned().collect())
+    }
+
     /// Le PAS de chaque paie du mois, par position dans `paies(mois)`.
     pub fn pas(&mut self, mois: Mois) -> R<Rc<Vec<Option<Prelevement>>>> {
         if !self.pas.contains_key(&mois) {

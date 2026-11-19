@@ -1089,7 +1089,7 @@ pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<Na
     let (mut rangees, mut a_dire) = (Vec::new(), Vec::new());
     for i in du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)) {
         match i.a_dire() {
-            true => a_dire.push(NatureADire { mois, qui: crate::etats::qui_de(ctx, &i.objet) }),
+            true => a_dire.push(NatureADire { mois, salarie: i.carte().salarie.clone(), qui: crate::etats::qui_de(ctx, &i.objet) }),
             false => rangees.push(i.paie(ctx, mois)?),
         }
     }
@@ -1102,6 +1102,9 @@ pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<Na
 #[derive(Debug, Clone, PartialEq)]
 pub struct NatureADire {
     pub mois: Mois,
+    /// Le salarie du contrat (la cle de sa fiche) ; `None` : l'engagement ne le dit pas. Un calcul d'un salarie qui a
+    /// besoin de cette paie refuse pour lui seul, en la nommant.
+    pub salarie: Option<IdSalarie>,
     /// Le contrat, tel qu'une phrase le nomme (`etats::qui_de`).
     pub qui: String,
 }
