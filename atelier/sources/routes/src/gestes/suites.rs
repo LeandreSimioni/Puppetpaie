@@ -116,6 +116,20 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
+                // Une notification que le lecteur ne lit pas est une piece de la norme qui n'est pas celle que le guide de
+                // l'API DSN et la specification des bilans decrivent : l'editeur le sait par le journal des incidents.
+                let note = compagnie::incidents::Note {
+                    nature: compagnie::incidents::LOGICIEL,
+                    ou: "retour-34",
+                    quoi: socle::echec::classe_notee(e.classe),
+                    resume: &e.phrase,
+                    detail: NotificationAtmpNonLue { archive: archive.to_string() },
+                    trace: None,
+                    sans_contexte: true,
+                };
+                if let Err(n) = compagnie::incidents::noter(&ctx.racine, &note) {
+                    a_faire.push(format!("{} : l'incident ne s'est pas noté au journal des incidents : {}", source, n.phrase));
+                }
                 a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, e.phrase));
                 continue;
             }
@@ -150,6 +164,13 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         }
     }
     Ok(a_faire)
+}
+
+/// Ce que l'incident d'une notification du taux AT/MP non lue porte au developpeur : le nom de son archive, pas son
+/// contenu.
+#[derive(serde::Serialize)]
+struct NotificationAtmpNonLue {
+    archive: String,
 }
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
