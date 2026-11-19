@@ -19,6 +19,14 @@ complémentaires pour accident du travail ou maladie professionnelle) est étend
 D. 1226-2 du code du travail ; les grilles de salaires inférieures au SMIC sont étendues sous réserve du SMIC. Aucun
 calcul ne lit encore ces exclusions.
 
+`legifrance-1285-arrete-extension-accord-salaires-20030808.pdf` (+ `.txt`, `pdftotext -layout`) : un arrêté portant
+extension d'un accord de la convention 1285, JORF du 8 août 2003, tel que Légifrance l'imprime (relevé le 19/11/2026
+par Léandre ; l'impression ne porte ni la date de l'arrêté ni son NOR). Il étend l'accord du 16 décembre 2002 sur les
+salaires : ce n'est pas l'arrêté d'extension de la convention. Il dit en revanche d'où vient son champ d'application :
+celui de la convention du 1er janvier 1984 « tel qu'il résulte de l'avenant du 17 juillet 1997, modifié par l'accord
+du 10 mars 1998, et tel qu'étendu par l'arrêté du 12 juin 1998 ». L'extension du champ aujourd'hui en vigueur tient
+donc aussi à un arrêté du 12 juin 1998, non déposé.
+
 **Pas déposé** : l'arrêté d'extension du 4 janvier 1994 (1285). Il est au JORF, que ni l'un ni l'autre entrepôt ne
 porte, et Légifrance refuse les robots. KALI dit seulement, dans le titre du texte de la 1285, « Etendue par arrêté du
 4 janvier 1994 JORF 26 janvier 1994 ».
@@ -53,3 +61,5 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 
 - `jorf-3090-arrete-extension-20130529.md` : `5faa31abdbcb3ea7684a89dcd4fcb6c28c686ee3ac5eeab936d4cd98bbc5112b`
 - `kali-3090-1285-champ-d-application-transcription-20261109.md` : `7c4b0ee3b97efa80ca83003c429ff937ee9863526ba863eabec9f0a55b8791f6`
+- `legifrance-1285-arrete-extension-accord-salaires-20030808.pdf` : `090eba40278d4730e85f02a8832a240498d13b7e60a7634dcc5e2a267d0ef06a`
+- `legifrance-1285-arrete-extension-accord-salaires-20030808.txt` : `fe31283d4265c7b0d0966593dbe7e87d2c9fbde0f4948d83bebe43b3f4c8fa30`
