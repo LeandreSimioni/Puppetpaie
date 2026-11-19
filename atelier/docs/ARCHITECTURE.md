@@ -577,6 +577,7 @@ un libellé, chacun sa forme.
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
+| ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire ; chaque route qui relève le rend en entier) | `ADire` | `envois/src/suites.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
 | compte rendu d'un test de dépôt | `CompteRenduDuTest` | `envois/src/retours.rs` |
 | statut d'un retour | `StatutDuRetour` | `envois/src/retours.rs` |

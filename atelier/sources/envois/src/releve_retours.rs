@@ -323,27 +323,20 @@ pub struct Releve {
     pub trouves: Vec<Annonce>,
     pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
-    pub incidents: Vec<String>,
-    /// CE QUI A EMPECHE DE LIRE LA PLATE-FORME, parmi les `incidents` (`plateforme_non_lue`) : la liste des retours (le
-    /// mot de passe, l'authentification, la consultation), ou un bilan (nature 11) qui ne s'est pas telecharge. Un autre
-    /// retour rate n'y est pas : il ne dit rien de ce que la plate-forme sait des ordres.
+    /// CE QUI A EMPECHE DE LIRE LA PLATE-FORME, des incidents que l'appelant dit (`ordre_signalements::relever_la_plateforme`
+    /// en une phrase, la releve de toutes les natures en tete de ce qu'elle a a dire) : la liste des retours (le mot de
+    /// passe, l'authentification, la consultation), ou un bilan (nature 11) qui ne s'est pas telecharge. Un autre retour
+    /// rate n'y est pas : il ne dit rien de ce que la plate-forme sait des ordres, et se dit dans les suites
+    /// (`Suites::dit`).
     pub plateforme_non_lue: Vec<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: usize,
-    /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
-    pub a_faire: Vec<String>,
 }
 
 impl Releve {
     /// Un releve ou rien n'est encore trouve.
     pub fn vide() -> Releve {
-        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), plateforme_non_lue: Vec::new(), rattaches: 0, a_faire: Vec::new() }
-    }
-
-    /// Un incident qui empeche de lire la plate-forme : dit avec les autres, et retenu (`plateforme_non_lue`).
-    fn plateforme_pas_lue(&mut self, phrase: String) {
-        self.plateforme_non_lue.push(phrase.clone());
-        self.incidents.push(phrase);
+        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), plateforme_non_lue: Vec::new(), rattaches: 0 }
     }
 }
 
@@ -666,7 +659,7 @@ pub fn relever_retours(
         _ => {}
     }
     let Some(mut client) = client else {
-        releve.plateforme_pas_lue(
+        releve.plateforme_non_lue.push(
             "Mot de passe net-entreprises absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service net-entreprises`.".into(),
         );
         return Ok(releve);
@@ -674,7 +667,7 @@ pub fn relever_retours(
     match client.authentifier() {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            releve.plateforme_pas_lue(format!("Authentification refusee : {}", p.echec.phrase));
+            releve.plateforme_non_lue.push(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
@@ -696,13 +689,14 @@ pub fn relever_retours(
                 if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
                     continue;
                 }
-                releve.plateforme_pas_lue(format!("Consultation interrompue : {}", p.echec.phrase));
+                releve.plateforme_non_lue.push(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
         }
     }
-    if !releve.incidents.is_empty() && releve.trouves.is_empty() {
+    // La liste n'a pas pu se lire, et rien n'est trouve : il n'y a rien a telecharger ni a ranger.
+    if !releve.plateforme_non_lue.is_empty() && releve.trouves.is_empty() {
         return Ok(releve);
     }
 
@@ -723,7 +717,7 @@ pub fn relever_retours(
                     match crate::retours::declarations_du_bilan(&contenu) {
                         Ok(ds) => {
                             for d in ds {
-                                releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                                suites.dit.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                             }
                         }
                         Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),
@@ -738,8 +732,8 @@ pub fn relever_retours(
             Err(p) if p.est_api() => {
                 let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
                 match r.nature_retour {
-                    NatureDuRetour::CertificatDeConformite => releve.plateforme_pas_lue(phrase),
-                    _ => releve.incidents.push(phrase),
+                    NatureDuRetour::CertificatDeConformite => releve.plateforme_non_lue.push(phrase),
+                    _ => suites.dit.incidents.push(phrase),
                 }
                 rates.push(r);
             }
@@ -816,7 +810,7 @@ pub fn relever_retours_dpae(
     }
     let Some(mut client) = client else {
         let mut r = Releve::vide();
-        r.plateforme_pas_lue("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
+        r.plateforme_non_lue.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
     let Some(flux) = flux else {
@@ -827,7 +821,7 @@ pub fn relever_retours_dpae(
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.plateforme_pas_lue(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
+            r.plateforme_non_lue.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),
@@ -839,7 +833,7 @@ pub fn relever_retours_dpae(
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), CanalDesRetours::Dpae)?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
+            Err(p) if p.est_api() => suites.dit.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }
     }
@@ -984,9 +978,4 @@ pub fn poser_effectif(racine: &Path, an: Annee, valeur: Effectif, le: Jour) -> R
     codes.insert(TypeDeParametreNeores::EffectifMoyen, EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
-}
-
-/// Le resume d'une relève, pour une phrase d'incident : `"; ".join(rel.incidents)`.
-pub fn incidents_en_phrase(r: &Releve) -> String {
-    r.incidents.join("; ")
 }

@@ -424,7 +424,7 @@ pub fn deposer_dsn_dans(
             }
         ));
     }
-    fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
+    fait.suites.extend(faites.phrases());
     Ok(fait)
 }
 
@@ -533,7 +533,7 @@ pub(crate) fn deposer_dpae_avec(
     let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;
     let mut fait = fait?;
-    fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));
+    fait.suites.extend(faites.phrases());
     // UN ACTE, UNE PREUVE : la demande de taux part sous celle de la DPAE.
     let meme = match mode {
         Mode::Reel => Some(Preuve { donnee: Some(forme.clone()), motdepasse: preuve.and_then(|p| p.motdepasse.clone()) }),
@@ -604,10 +604,14 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
         let mut fait = repete.and_then(|()| deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ()));
         if mode == Mode::Reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
-            // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place.
+            // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place ; ce qu'il a
+            // a dire se dit avec la demande.
             fait = envois::releve_retours::derniere_journee()
                 .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
-                .and_then(|_| deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ()));
+                .and_then(|(_, a_dire)| {
+                    dit.extend(a_dire.phrases());
+                    deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ())
+                });
         }
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {

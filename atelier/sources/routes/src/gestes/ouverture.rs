@@ -250,6 +250,12 @@ impl Ouverture {
         self.incidents.is_empty() && self.manquants.is_empty()
     }
 
+    /// Ce qu'une releve a a dire : ses incidents avec les incidents, ce qu'elle laisse a faire avec ce qui manque.
+    fn dire(&mut self, dit: envois::suites::ADire) {
+        self.incidents.extend(dit.incidents);
+        self.manquants.extend(dit.a_faire);
+    }
+
     /// Un secret absent -- la phrase du terminal, gardee pour ne pas la redire dans la fenetre.
     fn manque_coffre(&mut self, phrase: &str) {
         self.manquants.push(phrase.to_string());
@@ -570,7 +576,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
     };
     // La ligne des retours dit ce que la releve a fait, si ELLE a joint net-entreprises -- le Drive qui ne repond pas ne
     // la tait pas ; une releve sans reseau, elle, n'a rien vu, et « aucun retour » serait faux.
-    let releve_passee = r.releve.as_ref().is_some_and(|rel| !rel.incidents.iter().any(|i| sauvegarde::hors_ligne(i)));
+    let releve_passee = r.releve.as_ref().is_some_and(|rel| !rel.plateforme_non_lue.iter().any(|i| sauvegarde::hors_ligne(i)));
     let retours = releve_passee.then(|| {
         if trouves > 0 {
             format!("{} retour(s), dont {} nouveau(x).", trouves, nouveaux)
@@ -832,7 +838,10 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
             dire_l_etape(ctx, "Compagnie fictive : retours des dépôts joués…")?;
             let mut releve = Releve::vide();
             match crate::gestes::releve::rattacher_simulation(ctx) {
-                Ok((n, a_faire)) => (releve.rattaches, releve.a_faire) = (n, a_faire),
+                Ok((n, dit)) => {
+                    releve.rattaches = n;
+                    r.dire(dit);
+                }
                 // L'ouverture ne doit pas tomber.
                 Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
             }
@@ -983,9 +992,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
             let fin = socle::temps::secondes();
             match fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
-                Ok(rel) => {
-                    r.incidents.extend(rel.incidents.iter().cloned());
-                    r.manquants.extend(rel.a_faire.iter().cloned());
+                Ok((rel, dit)) => {
+                    r.dire(dit);
                     r.releve = Some(rel);
                 }
                 Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
@@ -1022,8 +1030,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });
             match rel {
-                Ok(rel) => {
-                    r.incidents.extend(rel.incidents.iter().cloned());
+                Ok((rel, dit)) => {
+                    r.dire(dit);
                     r.releve_dpae = Some(rel);
                 }
                 Err(e) => r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &e))),

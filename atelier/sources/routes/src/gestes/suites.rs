@@ -6,21 +6,15 @@ use droit::fiche::Lue as _;
 use socle::echec::Classe;
 
 use droit::contexte::Contexte;
-use envois::suites::Suites;
+use envois::suites::{ADire, Suites};
 use socle::echec::R;
 
-/// Ce que les suites laissent a dire : ce qu'il reste a faire, et ce qui n'a pas pu se faire.
-#[derive(Default)]
-pub struct Faites {
-    pub a_faire: Vec<String>,
-    pub incidents: Vec<String>,
-}
-
-/// Fait les suites d'un envoi. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit pas est un refus. Une
-/// piece de retour que son lecteur ne lit pas, quelle que soit sa nature, se note chez l'editeur
+/// Fait les suites d'un envoi, et rend tout ce qu'il a a dire : ce que l'envoi en dit deja (`Suites::dit`), puis ce que
+/// les suites laissent a faire ou n'ont pas pu faire. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit
+/// pas est un refus. Une piece de retour que son lecteur ne lit pas, quelle que soit sa nature, se note chez l'editeur
 /// (`compagnie::incidents::noter_retour_illisible`) ; les autres se rangent.
-pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
-    let mut faites = Faites::default();
+pub fn faire(ctx: &Contexte, s: Suites) -> R<ADire> {
+    let mut faites = s.dit;
     let mut illisibles = s.illisibles;
     if !s.incidents_des_retours.is_empty() {
         compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours, illisibles: Vec::new() })?;
