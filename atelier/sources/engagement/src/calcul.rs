@@ -1726,7 +1726,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let mut retraite_de_l_annee: Option<(droit::plafond::AnneeAnterieure, droit::plafond::Regularisees)> = None;
     if retraite_sur_l_annee {
         let plafond_annuel = bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.annuel;
-        let avant = annee_de_la_retraite(ctx, eng, &sal, plafond_annuel, &bar.tranches_du_plafond, precedentes)?;
+        let avant = annee_de_la_retraite(ctx, eng, &sal, plafond_annuel, precedentes)?;
         let remuneration = remuneration_de_la_retraite(brut, brut_abattu, dfs.as_ref())?;
         let t = droit::plafond::tranches_sous_le_plafond_annuel(remuneration, &bar.tranches_du_plafond, &avant);
         let abattue = retraite_abattue(dfs.as_ref());
@@ -2296,15 +2296,13 @@ fn remuneration_de_la_retraite(brut: Montant, abattu: Option<Montant>, dfs: Opti
 }
 
 /// CE QUI PRECEDE LA PAIE D'INTERMITTENT DE `eng` DANS L'ANNEE, POUR SA RETRAITE COMPLEMENTAIRE, sous le plafond annuel
-/// `plafond_annuel` et les bornes `tranches` du bareme : les paies d'intermittent de son salarie des mois d'avant,
-/// validees ou reprises (`conges::retraite_des_mois_anterieurs`), puis celles des contrats precedents du meme mois
-/// (`precedentes`), dans l'ordre de la saisie, comme `plafonnement`.
+/// `plafond_annuel` : les paies d'intermittent de son salarie des mois d'avant (`conges::retraite_des_mois_anterieurs`),
+/// puis celles des contrats precedents du meme mois (`precedentes`), dans l'ordre de la saisie, comme `plafonnement`.
 fn annee_de_la_retraite(
-    ctx: &Contexte, eng: &Engagement, sal: &SalarieDuContrat, plafond_annuel: Montant, tranches: &droit::forme_bareme::TranchesDuPlafond,
-    precedentes: &[Paie],
+    ctx: &Contexte, eng: &Engagement, sal: &SalarieDuContrat, plafond_annuel: Montant, precedentes: &[Paie],
 ) -> R<droit::plafond::AnneeAnterieure> {
     let mois = eng.periode_payee()?.fin().mois_civil();
-    let mut annee = crate::conges::retraite_des_mois_anterieurs(ctx, mois, &sal.id, plafond_annuel, tranches)?;
+    let mut annee = crate::conges::retraite_des_mois_anterieurs(ctx, mois, &sal.id, plafond_annuel)?;
     for p in precedentes.iter().filter(|p| p.salarie.id == sal.id || p.engagement.salarie == eng.salarie) {
         ajouter_a_la_retraite_de_l_annee(&mut annee, p)?;
     }
@@ -2336,37 +2334,6 @@ pub(crate) fn ajouter_a_la_retraite_de_l_annee(annee: &mut droit::plafond::Annee
     };
     let abattu = p.bases.get(&Assiette::BrutDfs).map(|b| b.en_euros(Assiette::BrutDfs)).transpose()?;
     annee.ajouter(remuneration_de_la_retraite(p.brut, abattu, p.deduction_forfaitaire.as_ref())?, Montant::ZERO, appliquees);
-    Ok(())
-}
-
-/// LA PAIE REPRISE D'UN ANCIEN LOGICIEL `r` (de `mois`), AJOUTEE A L'ANNEE DE LA RETRAITE COMPLEMENTAIRE D'UN
-/// INTERMITTENT, pour ce que ses pieces disent (`importe::PaieVersee`) : ce que la retraite a compte, sa base 23 quand sa
-/// DSN la declare (la « Base exceptionnelle (Agirc-Arrco) » d'un intermittent, son brut soumis : aide Agirc-Arrco
-/// CT2026, l. 5166-5168 et 637-638), sinon son brut ; et les tranches qu'elle a appliquees : la tranche 1, sa base 43
-/// quand sa DSN la declare (« la T1 a retenir », CT2026, l. 635), sinon la base de sa ligne de bulletin `retraite_t1` ;
-/// la tranche 2 et la CET, les bases de ses lignes `retraite_t2` et `cet` (une DSN d'intermittent n'a de base ni pour
-/// l'une ni pour l'autre). Une tranche que ses pieces taisent est celle que la regle donne a sa place dans l'annee
-/// (`droit::plafond::tranches_sous_le_plafond_annuel`) : INFERENCE, ecrite comme telle, l'ancien logiciel a applique les
-/// plafonds annuels que les textes disent (Audiens, Parametres ; circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1),
-/// et la paie d'ici ne rattrape rien de son passe (AGENTS, « L'import prend ce qu'il y a à prendre »). Sans brut ni base
-/// 23, l'annee ne se connait pas : refus, qui dit quoi importer.
-pub(crate) fn ajouter_la_reprise_a_la_retraite(
-    annee: &mut droit::plafond::AnneeAnterieure, r: &crate::importe::PaieVersee, tranches: &droit::forme_bareme::TranchesDuPlafond, mois: socle::mois::Mois,
-) -> R<()> {
-    use droit::base_assujettie::BaseAssujettie;
-    let remuneration = r.bases.get(&BaseAssujettie::ExceptionnelleAgircArrco).copied().or(r.brut).ok_or_else(|| {
-        socle::refus!("Retraite complémentaire de l'année : {}. Rien n'est calculé.", crate::conges::brut_non_dit(mois))
-    })?;
-    // La base d'une ligne de bulletin que l'import a rangee sous la cotisation `id`, quand il l'imprime en euros.
-    let imprimee = |id: &droit::forme_bareme::IdDeCotisation| -> Option<Montant> {
-        r.cotisations.iter().flatten().find(|l| l.cotisation == Some(crate::ecarts::RegroupementDeComparaison::Cotisation(id.clone()))).and_then(|l| l.base.as_ref()?.montant())
-    };
-    let regle = droit::plafond::tranches_sous_le_plafond_annuel(remuneration, tranches, annee);
-    let t1 = r.bases.get(&BaseAssujettie::PlafonneeExceptionnelleAgircArrco).copied().or_else(|| imprimee(&droit::forme_bareme::RETRAITE_T1)).unwrap_or(regle.t1);
-    let t2 = imprimee(&droit::forme_bareme::RETRAITE_T2).unwrap_or(regle.t2);
-    let cet = imprimee(&droit::forme_bareme::CET).unwrap_or(regle.cet);
-    let appliquees = droit::plafond::Regularisees { t1, t2, t2_conventionnelle: Montant::ZERO, t1_t2: t1 + t2, cet, abattue_csg: Montant::ZERO };
-    annee.ajouter(remuneration, Montant::ZERO, appliquees);
     Ok(())
 }
 

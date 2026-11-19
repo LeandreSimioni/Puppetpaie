@@ -939,14 +939,11 @@ impl PaieVersee {
 }
 
 /// UNE PAIE REPRISE DU SALARIE, TELLE QU'UN CALCUL D'UN AUTRE MOIS LA LIT (`reprises_du_salarie`) : ce qui a ete verse,
-/// tel que les pieces le disent (`PaieVersee`), le numero du contrat qu'elle paie (`Importe::numero_de_la_paie`), et si
-/// ce contrat est celui d'un permanent (`Importe::permanent` : paye au mois, ou de nature encore a dire), que l'annee de
-/// la retraite d'un intermittent ne compte pas (`etats::paies_intermittentes_du_salarie`). Rien ne s'y range ni ne s'y
-/// calcule : ni le bareme ni la convention de son mois.
+/// tel que les pieces le disent (`PaieVersee`), et le numero du contrat qu'elle paie (`Importe::numero_de_la_paie`).
+/// Rien ne s'y range ni ne s'y calcule : ni la nature du contrat, ni le bareme ou la convention de son mois.
 #[derive(Debug, Clone, Serialize)]
 pub struct PaieReprise {
     pub numero: Option<NumeroContrat>,
-    pub permanent: bool,
     pub paie: PaieVersee,
 }
 
@@ -961,7 +958,7 @@ pub fn reprises_du_salarie(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<
     let mut out = Vec::new();
     for i in du_mois(racine, mois)?.into_iter().filter(|i| i.objet.carte().salarie.as_ref() == Some(salarie)) {
         if let Some(p) = i.paies().get(&mois) {
-            out.push(PaieReprise { numero: i.numero_de_la_paie(p), permanent: i.permanent(), paie: p.clone() });
+            out.push(PaieReprise { numero: i.numero_de_la_paie(p), paie: p.clone() });
         }
     }
     Ok(out)

@@ -878,29 +878,12 @@ impl PaieAnterieure {
 /// nommant le mois et le contrat. L'import ne reprend pas un bulletin d'un mois que la saisie paie, mais une DSN de
 /// l'ancien logiciel qui declare un mois que le contrat continue ici se reprend telle qu'elle a ete deposee.
 pub fn paies_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieAnterieure>> {
-    avec_les_reprises(ctx, mois, salarie, paies_validees(ctx, mois, salarie)?, &|_| true)
-}
-
-/// CE QUE L'EMPLOYEUR A VERSE AU SALARIE `salarie` EN `mois` AU TITRE DE SES CONTRATS D'INTERMITTENT, tel que l'annee de
-/// sa retraite complementaire le lit (`conges::retraite_des_mois_anterieurs`) : comme `paies_du_salarie`, ses paies
-/// validees d'intermittent (`paies_validees_intermittentes` : une paie d'un CDI du meme salarie ne s'y lit ni ne s'y
-/// calcule) et ses paies reprises d'un ancien logiciel d'un contrat qui n'est pas celui d'un permanent
-/// (`importe::PaieReprise::permanent`).
-pub fn paies_intermittentes_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieAnterieure>> {
-    avec_les_reprises(ctx, mois, salarie, paies_validees_intermittentes(ctx, mois, salarie)?, &|r| !r.permanent)
-}
-
-/// Les paies validees `validees` du salarie `salarie` en `mois`, puis ses paies reprises que `garder` retient, une paie
-/// ne se comptant pas deux fois (`paies_du_salarie`) ; la lecture notee est celle de toutes ses reprises.
-fn avec_les_reprises(
-    ctx: &Contexte, mois: Mois, salarie: &IdSalarie, validees: Vec<Paie>, garder: &dyn Fn(&crate::importe::PaieReprise) -> bool,
-) -> R<Vec<PaieAnterieure>> {
-    let validees: Vec<PaieAnterieure> = validees.into_iter().map(PaieAnterieure::Validee).collect();
+    let validees: Vec<PaieAnterieure> = paies_validees(ctx, mois, salarie)?.into_iter().map(PaieAnterieure::Validee).collect();
     let reprises = crate::importe::reprises_du_salarie(&ctx.racine, mois, salarie)?;
     let lecture = CleLue::Datee(LectureDatee::Reprises { mois, salarie: salarie.clone() });
     socle::fichiers::noter_lecture(&lecture, ValeurLue::Empreinte(crate::importe::empreinte_de(&reprises)));
     let mut paies = validees.clone();
-    for r in reprises.into_iter().filter(|r| garder(r)) {
+    for r in reprises {
         if let Some(n) = r.numero.as_ref().filter(|n| validees.iter().any(|p| p.numero() == Some(*n))) {
             return Err(socle::refus!(
                 "Le contrat {} de {} est payé en {} deux fois : par l'ancien logiciel, dont la paie de ce mois est reprise, et \
