@@ -627,7 +627,7 @@ pub fn description(certs: &[(Certificat, &ContratDuCertificat)], ent: &Entrepris
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
 pub fn description_numerotee(paires: &[(&ContratDuCertificat, NumeroDeCertificat)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Illisible));
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Manque));
     }
     let mut tous: Vec<(Certificat, &ContratDuCertificat)> = Vec::new();
     for (p, premier) in paires {

@@ -142,7 +142,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
     poser(Marqueur::ContratDebut, e.contrat().debut().jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
-    poser(Marqueur::ContratNature, e.nat().map_err(|m| m.reclasser(Classe::Illisible))?.libelle.clone());
+    poser(Marqueur::ContratNature, e.nat()?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());
     poser(Marqueur::RecuDate, aujourdhui);
     Ok(m)
