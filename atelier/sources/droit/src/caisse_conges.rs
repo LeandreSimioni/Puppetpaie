@@ -17,7 +17,12 @@
 //! d'un intermittent (un artiste, ou un technicien d'une fonction que la liste de l'annexe 8 nomme pour la convention de
 //! l'employeur : `intermittent`) l'est ; un CDI ne l'est jamais. Ce qui n'est pas porte (des contrats successifs qui,
 //! mis bout a bout, font douze mois continus ; un contrat prolonge au-dela de douze mois) : aucun texte depose ne le
-//! tranche.
+//! tranche. Ni le CDDU d'un technicien que la liste de l'annexe 8 de la convention ne nomme pas : l'annexe 8 ne range
+//! que les fonctions de sa liste (art. 1er, § 2), et ses contributions ne sont que celles des salaries « relevant de la
+//! présente annexe » (art. 49, `plafond-intermittents/unedic-annexe8-convention-20241115.txt`, l. 1197) ; ce CDDU reste
+//! declare a la caisse (D. 7121-40, D. 7121-41 ; Audiens : « CDD de droit commun, CDD d'usage, etc »), mais son chomage
+//! est celui du droit commun, que le bareme ne porte pas pour un CDDU : le moteur le paie comme un intermittent de
+//! l'annexe 8.
 
 use crate::natures::Nature;
 use crate::fiche::{Lue, SalarieDuContrat};
@@ -61,8 +66,13 @@ pub fn douze_mois_ou_plus(contrat: &Periode) -> R<bool> {
 /// `atelier/reference/sources/code-du-travail/articles-20261102.md`, l. 596-607).
 /// INFERENCE (ecrite) : l'employeur est dans le domaine de sa convention. Pour le spectacle vivant (1285, 3090), la
 /// liste n'ajoute que des categories que remplit tout employeur de la convention qui fait jouer un spectacle (licencie,
-/// ou organisateur occasionnel) ; pour les autres domaines, elle nomme aussi des codes NAF, que le moteur ne confronte
-/// pas.
+/// ou organisateur occasionnel : art. 71, listes 6 et 7, l. 2949-2965). Pour les autres domaines, elle nomme aussi des
+/// codes NAF (art. 71, listes 1 a 5 et 8 a 10), que le moteur ne confronte pas au code APE de la fiche Entreprise, pour
+/// trois raisons : ces codes sont ceux de la NAF rev. 2, que la NAF 2025 remplace le 1er janvier 2027 sans
+/// correspondance mecanique (decret 2025-736, art. 2 ; `atelier/reference/sources/insee-naf-2025/LISEZ-MOI.md` : 90.01Z
+/// se scinde en 90.20Y et 90.39G) ; la liste les restreint par des mots qu'un code ne dit pas (« uniquement
+/// animation », « uniquement studios de radio », l. 2907 et 3596-3598) ; et le code APE « ne saurait suffire à créer
+/// des droits ou des obligations » (meme decret, art. 5, `legifrance-decret-2025-736-naf-2025-20250731.txt`, l. 30).
 /// Ce qui en suit, et le lit ici : la caisse des Conges Spectacles (`affilie`), le code emploi de la nomenclature du
 /// spectacle en DSN (S21.G00.40.005, CCH-18 : « 999SPT » n'est que pour les emplois permanents), l'attestation employeur
 /// Cinema Spectacle (`documents::aer::due`), le certificat de la caisse.
