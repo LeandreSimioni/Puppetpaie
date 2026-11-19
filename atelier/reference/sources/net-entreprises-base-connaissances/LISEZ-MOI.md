@@ -485,9 +485,12 @@ bloc « Fin de contrat » (S21.G00.62) dont la date de fin est la date de début
 de fin ; les montants déclarés à tort annulés en négatif dans des blocs datés du mois de l'erreur (S21.G00.50, sauf la
 RNF et le PAS, qui s'annulent par un bloc S21.G00.56 de type 01, fiche 1821 ; et les blocs 22, 23, 51, 52, 54, 78…).
 
-**Où le moteur s'en sert** : pas encore. Elle montre que le refus `ModificationNonDeclarable` (retirer un contrat déclaré
-d'un mois dont l'annule-et-remplace est passé) refuse du licite : la norme a une cinématique de correction (ticket du
-privé).
+**Où le moteur s'en sert** : le refus `ModificationNonDeclarable` (`routes/src/regularisation.rs`,
+`refus_non_declarable`) la cite. Le logiciel n'en écrit pas la forme : la norme dit la date de S21.G00.41.001 (« la date
+de survenance du changement de caractéristique du Contrat », `norme-dsn/texte/bloc-S21.G00.41.txt` l. 112), mais aucun
+texte déposé ne dit ce que porte le bloc 40 d'un contrat de nature 90. Le refus dit ce que le logiciel fait à la place
+(« Retirer cet engagement », dont la DSN suivante reprend en négatif ce qui a été déclaré, par un versement de
+correction daté de son propre mois), et que ce n'est pas la forme de la fiche.
 
 ## Fiche 2072 — Annuler une date de fin de contrat déclarée à tort (agents affiliés à l'Ircantec)
 

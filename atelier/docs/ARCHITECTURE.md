@@ -1936,11 +1936,17 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois
     déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro. Dans un mois
-    dont la DSN ne se remplace plus, la DSN suivante en annule les montants (`produire_regularisations::annulations`) ;
-    le reste de la correction d'un contrat déclaré à tort (fiche net-entreprises 898 : blocs 41 et 40 à la nature 90,
-    bloc 62 au jour du début, motif 999 ; RNF et PAS par un bloc 56 de type 01, fiche 1821) ne s'écrit pas : la fiche ne
-    dit pas la date du changement (S21.G00.41.001). « Modifier l'engagement » refuse donc d'en changer le salarié ou de
-    le sortir d'un tel mois, et dit quoi faire (`routes::regularisation::refus_non_declarable`).
+    dont la DSN ne se remplace plus, la DSN suivante en annule les montants (`produire_regularisations::annulations`) :
+    un versement de correction daté de la fin de son propre mois, la différence de RNF en S21.G00.50.002, ses
+    rémunérations et ses bases déclarées reprises en négatif à leurs périodes, un bloc 56 de type 03 pour un indu
+    seulement. Ce n'est pas la forme que la fiche net-entreprises 898 demande pour un contrat déclaré à tort (blocs 41
+    et 40 à la nature 90, bloc 62 au jour du début, motif 999 ; montants datés du mois de l'erreur ; RNF et PAS par un
+    bloc 56 de type 01, fiche 1821), qui ne s'écrit pas : la norme dit la date de S21.G00.41.001 (« la date de
+    survenance du changement de caractéristique du Contrat »), mais aucun texte déposé ne dit ce que porte le bloc 40
+    d'un contrat de nature 90. Une fin corrigée se déclare par un bloc 62 dans la DSN suivante (fiche 1722), et la
+    correction l'écrit ; mais seul un engagement non actif voit annulé ce qu'une DSN a déclaré pour un mois.
+    « Modifier l'engagement » refuse donc d'en changer le salarié ou de le sortir d'un tel mois, et dit quoi faire
+    (`routes::regularisation::refus_non_declarable`).
 - **Les versions datées** : tant que rien n'est parti d'un engagement, il se modifie librement, sans historique. Dès
   qu'un envoi est parti sur sa version, une revalidation qui le change garde la version d'avant dans l'engagement
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,
