@@ -568,7 +568,7 @@ pub struct Cotisation {
     pub montant: Option<Montant>,
     /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) : celui que la source du taux de la ligne dit
     /// (`composant_79`, `bareme::bareme_sante`), sinon la tranche A sur la base que la cotisation a retenue ; `None` :
-    /// aucune ligne de la cotisation n'est au bulletin (« 23 - Sans composant de base assujettie en paie »).
+    /// aucune ligne de la cotisation n'est au bulletin (la tranche A, a 0).
     pub composant79: Option<(TypeDeComposant, Montant)>,
     /// La part patronale de la CET (`parts_patronales_agirc_arrco`) : son code se lit dans la version de la norme du
     /// fichier (`Norme::cotisation_cet_patronale`), pas dans `code81`.
@@ -1010,7 +1010,7 @@ duquel le 142 que l'Urssaf attend sous le même versement (SIG-18) se déclare. 
                 base81: None,
                 taux: None,
                 montant: Some(somme_lignes(p, &contrib.lignes, false)),
-                composant79: None,
+                composant79: composant_79(p, &bar, &contrib.lignes)?,
                 cet: false,
             },
         );
@@ -2574,12 +2574,13 @@ pub fn bases_et_cotisations(
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur la base que la cotisation a
-                // retenue. Aucune de ses lignes au bulletin : « 23 - Sans composant de base assujettie en paie », a 0, et
-                // sa cotisation a 0 (CCH-13, SIG-19, `atelier/reference/norme-dsn/texte/bloc-S21.G00.79.txt` l. 87-89 et
-                // 145-147).
+                // retenue. Aucune de ses lignes au bulletin : la cotisation est nulle, et « Il convient de déclarer les
+                // mêmes Composants de base assujettie 79 que pour une cotisation non nulle », a 0 (FAQ DSN des organismes
+                // complementaires, `atelier/reference/sources/faq-dsn-organismes-complementaires/net-entreprises-faq-
+                // dsn-oc-declarants-v4-202310.txt` l. 1691-1694).
                 let (type_79, montant) = match c.composant79 {
                     Some(composant) => composant,
-                    None => (TypeDeComposant::SansComposantEnPaie, Montant::ZERO),
+                    None => (TRANCHE_A, Montant::ZERO),
                 };
                 f.add(droit::rubrique!("S21.G00.79.001"), type_79);
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(montant, signe));
@@ -2723,7 +2724,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: RangDuCon
             }
             f.add(droit::rubrique!("S21.G00.79.001"), match c.composant79 {
                 Some((t, _)) => t,
-                None => TypeDeComposant::SansComposantEnPaie,
+                None => TRANCHE_A,
             });
             f.add(droit::rubrique!("S21.G00.79.004"), "0.00");
             f.ecrire_code(code_declare(&c)?)?;

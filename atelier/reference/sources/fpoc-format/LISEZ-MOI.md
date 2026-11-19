@@ -44,7 +44,9 @@ Les exemples XML (`ExempleMin`, `ExempleMax`) de chaque version sont dans l'arch
 
 ## Où le moteur s'en sert
 
-Nulle part : le moteur ne lit aucune fiche de paramétrage ; la DSN d'un permanent santé déclare une base 79 type 18.
+Le moteur ne lit aucune fiche de paramétrage ; la DSN d'un permanent santé déclare une base 79 type 18. La
+spécification fonde ce que porte le composant « 11 - Tranche A » d'une base 31 (`declarations/src/dsn.rs`,
+`TRANCHE_A`).
 
 ## Empreintes
 
