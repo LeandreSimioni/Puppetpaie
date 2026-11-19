@@ -1038,14 +1038,14 @@ pub(crate) struct MoisDuBilan {
 }
 
 impl MoisDuBilan {
-    /// Un mois dont la DSN ne se lit pas : ses fichiers, et rien a corriger.
-    fn nu(mois: Mois, fichiers: &[NomDeFichier]) -> MoisDuBilan {
+    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit).
+    fn nu(mois: Mois, fichiers: &[NomDeFichier], pourquoi: String) -> MoisDuBilan {
         MoisDuBilan {
             mois,
             produit: !fichiers.is_empty(),
             dsn: None,
             saisi_dit: "saisi",
-            pastille: None,
+            pastille: Some(socle::ecran::Pastille { couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::AFaire), mots: pourquoi }),
             depose_le: None,
             depose_dit: None,
             documents_dit: None,
@@ -1066,9 +1066,25 @@ impl MoisDuBilan {
 /// a. L'etat de la DSN : « passee » (bilan OK), « refusee », « attente »,
 /// « a_deposer », « en_retard » ; la meme lecture que les
 /// rappels : le journal des depots, et lui seul.
+///
+/// CHAQUE MOIS SE LIT SEUL (« Le logiciel est doux ») : un mois qui ne se lit pas (une paie ecrite abimee, une piece, un
+/// calcul impossible, une case qui manque) se rend nu, avec sa phrase ; les autres se rendent. Seule une panne du disque
+/// remonte.
 fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichier>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
-    for &(le_mois, ref noms) in mois {
+    for (le_mois, noms) in mois {
+        out.push(match bilan_du_mois(m, ctx, *le_mois, noms) {
+            Ok(b) => b,
+            Err(e) if e.classe == Some(Classe::Disque) => return Err(e),
+            Err(e) => MoisDuBilan::nu(*le_mois, noms, format!("Ce mois ne se lit pas : {}", e.phrase)),
+        });
+    }
+    Ok(out)
+}
+
+/// Le bilan du mois `le_mois` (`bilan_des_mois`), dont `noms` sont les fichiers.
+fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFichier]) -> R<MoisDuBilan> {
+    {
         let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois)?;
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
@@ -1124,7 +1140,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             Etat::ADeposer => ("orange", "DSN à déposer"),
         };
         let quand = if depose { lu.quand.clone() } else { None };
-        out.push(MoisDuBilan {
+        Ok(MoisDuBilan {
             mois: le_mois,
             produit: !noms.is_empty(),
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
@@ -1144,15 +1160,14 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             importe: Some(importe),
             a_faire,
             sortes,
-            fichiers: noms.clone(),
+            fichiers: noms.to_vec(),
             clos: Some(m.exercice_clos(le_mois.annee())?),
-        });
+        })
     }
-    Ok(out)
 }
 
 /// Ce que l'Historique montre de chaque mois.
-fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<String>)> {
+fn historique(m: &mut Moteur, ctx: &Contexte) -> R<Vec<MoisDuBilan>> {
     let mut mois = mois_connus(&ctx.racine)?;
     // Les mois tenus avant ce logiciel sont des mois comme les autres : l'Historique les montre aussi.
     for im in import::mois::mois_importes(&ctx.racine)? {
@@ -1161,13 +1176,7 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
         }
     }
     mois.sort_by(|a, b| b.0.cmp(&a.0));
-    // Une fiche entreprise incomplete (effectif, echeance) n'empeche pas la page de s'ouvrir : la liste nue, et pourquoi
-    // le bilan des mois ne se fait pas. Une panne (le disque, une piece illisible) remonte.
-    Ok(match bilan_des_mois(m, ctx, &mois) {
-        Ok(b) => (b, None),
-        Err(e) if e.dit_un_manque() => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(*nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
-        Err(e) => return Err(e),
-    })
+    bilan_des_mois(m, ctx, &mois)
 }
 
 // ----------------------------------------------------------- les referentiels
@@ -1516,8 +1525,6 @@ pub(crate) struct EtatDeLaPage {
     demo: Option<crate::accueil::suppression::MentionDemo>,
     commencer_par_l_import: bool,
     historique: Vec<MoisDuBilan>,
-    /// Pourquoi l'Historique ne montre que la liste nue des mois, quand le bilan ne se fait pas.
-    historique_incomplet: Option<String>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
@@ -1545,7 +1552,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let mut m = Moteur::nouveau(ctx);
     let configuration = configuration(ctx)?;
     let niveaux_sante = niveaux_sante(ctx)?;
-    let (historique, historique_incomplet) = historique(&mut m, ctx)?;
+    let historique = historique(&mut m, ctx)?;
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
     // reste dans `configuration`, ou on peut la relire et la reactiver.
@@ -1607,7 +1614,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
         commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine)?,
         historique,
-        historique_incomplet,
         salaries,
         spectacles,
         rubriques,

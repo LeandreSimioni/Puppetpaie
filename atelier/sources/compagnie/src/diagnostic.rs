@@ -1218,9 +1218,10 @@ pub fn etat_du_mois(racine: &Path, mois: socle::mois::Mois) -> R<EtatDuMois> {
             retours: d
                 .retours_organisme()
                 .iter()
-                .map(|r| match &r.verdict {
-                    Some(v) => format!("{} {}", r.nature_retour, v),
-                    None => format!("{} sans verdict", r.nature_retour),
+                .map(|r| match (&r.verdict, &r.illisible) {
+                    (Some(v), _) => format!("{} {}", r.nature_retour, v),
+                    (None, Some(archive)) => format!("{} illisible ({})", r.nature_retour, archive),
+                    (None, None) => format!("{} sans verdict", r.nature_retour),
                 })
                 .collect(),
         })
