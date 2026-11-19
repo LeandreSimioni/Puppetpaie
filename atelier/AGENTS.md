@@ -217,9 +217,14 @@ Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le
   écarts de calcul »).
 - **L'ancien logiciel est un vrai logiciel de paie.** Les gens font leurs paies avec ; ses pièces sont justes a
   priori, et une DSN importée a été acceptée. On ne le traite jamais en château de sable : normalement il n'y a
-  pas de conflit entre deux pièces. S'il y en a un, la route d'import le montre et la compagnie tranche ; rien de
-  plus. Ce qui est déclaré (la DSN) est ce qui vaut pour France Travail : une DSN déjà là prime sur l'AEM ou le
-  bulletin qu'on ajoute ; un bulletin déjà là contre une DSN qui arrive, la compagnie choisit.
+  pas de conflit entre deux pièces : « A priori, ça n'existe pas. C'est là-dessus qu'on part. » On n'invente donc
+  pas de problèmes et on ne construit rien pour les trancher. Ce qui est déclaré (la DSN) est ce qui vaut pour
+  France Travail ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait.
+- **Ce qui ne rentre pas fait un incident, et on avise.** « Les gens vont mettre leurs pièces. S'il y a des choses
+  qui ne rentrent pas dans notre logiciel, on a un incident, on pourra le traiter petit à petit. » Comme pour un
+  écart de calcul : l'éditeur le reçoit, améliore le lecteur, et comme la pièce est restée dans `import/`, le
+  logiciel la retraite à la version suivante. Rien n'est demandé à la compagnie, rien ne lui est fermé : elle voit
+  son historique.
 - **Une règle de l'import tient en une phrase qu'un administrateur comprend.** Si elle demande un cas particulier,
   un refus de plus ou un mot de plomberie pour s'expliquer, elle est fausse : on revient à ce qui précède.
 
