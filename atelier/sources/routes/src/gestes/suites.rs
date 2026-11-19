@@ -17,8 +17,8 @@ pub struct Faites {
 }
 
 /// Fait les suites d'un envoi. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit pas est un refus. Une
-/// piece de retour que son lecteur ne lit pas se met de cote, se dit et se note (`dire_et_noter`), quelle que soit sa
-/// nature ; les autres se rangent.
+/// piece de retour que son lecteur ne lit pas, quelle que soit sa nature, se note chez l'editeur
+/// (`compagnie::incidents::noter_retour_illisible`) ; les autres se rangent.
 pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
     let mut faites = Faites::default();
     let mut illisibles = s.illisibles;
@@ -42,8 +42,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
             Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.phrase)),
         }
     }
-    // Une archive d'attestations que le lecteur ne lit pas ne se range pas, et n'empeche pas les autres
-    // (`documents::ranger_aer`, qui la met de cote).
+    // Une archive d'attestations que le lecteur ne lit pas ne se range pas, et n'empeche pas les autres.
     if !s.aer.is_empty() {
         match crate::documents::ranger_aer(ctx, None, Some(&s.aer)) {
             Ok((a_faire, pieces)) => {
@@ -53,11 +52,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
     }
-    let mut dites: Vec<socle::fichiers::NomDeFichier> = Vec::new();
     for p in &illisibles {
-        if !dites.contains(&p.archive) {
-            dites.push(p.archive.clone());
-            faites.a_faire.extend(dire_et_noter(ctx, p));
+        if let Err(n) = compagnie::incidents::noter_retour_illisible(&ctx.racine, p) {
+            faites.incidents.push(format!("Archive {} : l'incident ne s'est pas noté au journal des incidents : {}", p.archive, n.phrase));
         }
     }
     Ok(faites)
@@ -87,7 +84,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         let lus = match envois::retours::taux_pas_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                illisibles.push(envois::retours::PieceIllisible::mettre_de_cote(&ctx.racine, envois::releve_retours::CanalDesRetours::Dsn, envois::retours::NatureDuRetour::TauxPas, chemin, e)?);
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxPas, chemin, e)?);
                 continue;
             }
         };
@@ -116,8 +113,8 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;
 /// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et s'inscrivent dans la case de
 /// la fiche entreprise a leur date d'effet, s'ils en different (`routes::atmp::recue`). Seul le siege (le SIREN et le NIC de la fiche
-/// entreprise) recoit ici son taux : une notification pour un autre etablissement, illisible, ou qui donne plusieurs codes
-/// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
+/// entreprise) recoit ici son taux : une notification pour un autre etablissement, ou qui donne plusieurs codes risques
+/// pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire ; illisible, elle ne pose rien et se note.
 fn appliquer_taux_atmp(
     ctx: &Contexte,
     notifications: &[(envois::retours::Annonce, std::path::PathBuf)],
@@ -142,8 +139,7 @@ fn appliquer_taux_atmp(
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                illisibles.push(envois::retours::PieceIllisible::mettre_de_cote(&ctx.racine, envois::releve_retours::CanalDesRetours::Dsn, envois::retours::NatureDuRetour::TauxAtMp, chemin, e)?);
-                a_faire.push(format!("{} : rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source));
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxAtMp, chemin, e)?);
                 continue;
             }
         };
@@ -177,17 +173,6 @@ fn appliquer_taux_atmp(
         }
     }
     Ok(a_faire)
-}
-
-/// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : ce que la compagnie lit
-/// (`PieceIllisible::phrase`), l'incident chez l'editeur (`compagnie::incidents::noter_retour_illisible`), et, s'il ne
-/// s'est pas note, ce qui l'en a empeche.
-pub(crate) fn dire_et_noter(ctx: &Contexte, p: &envois::retours::PieceIllisible) -> Vec<String> {
-    let mut dit = vec![p.phrase()];
-    if let Err(n) = compagnie::incidents::noter_retour_illisible(&ctx.racine, p.nature, p.archive.texte(), &p.echec) {
-        dit.push(format!("Archive {} : l'incident ne s'est pas noté au journal des incidents : {}", p.archive, n.phrase));
-    }
-    dit
 }
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL

@@ -148,7 +148,7 @@ struct ChargeReprise {
 }
 
 /// Ce que rend `journal-reprise` : sa phrase, ce que la reprise a trouve, ajoute (ou ajouterait, chaque depot dit pour
-/// l'ecran), deja connu, sans mois, illisible, si elle a ecrit, et ce que l'Historique en dit (`ecran`).
+/// l'ecran), deja connu, sans mois, si elle a ecrit, et ce que l'Historique en dit (`ecran`).
 #[derive(Debug, Serialize)]
 struct RepriseDite {
     phrase: Phrase,
@@ -156,7 +156,6 @@ struct RepriseDite {
     ajoutes: Vec<AjoutDit>,
     deja: Vec<DepotVu>,
     sans_mois: Vec<DepotVu>,
-    illisibles: Vec<String>,
     ecrit: bool,
     rattaches: usize,
     ecran: EcranDeLaReprise,
@@ -206,7 +205,7 @@ fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
     };
     let phrase = socle::phrase!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", r.trouves.len(), n, if r.ecrit { "" } else { " (rien n'est écrit)" });
     let ajoutes = r.ajoutes.into_iter().map(ajout_dit).collect();
-    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, illisibles: r.illisibles, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
+    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
 }
 
 /// Un depot que la reprise remet, dit : quand il a ete recu et son mois, qui l'a depose ; sa pastille : un depot reel

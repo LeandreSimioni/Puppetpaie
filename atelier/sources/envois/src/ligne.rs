@@ -468,24 +468,9 @@ pub struct RetourOrganisme {
     /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
     #[serde(with = "socle::paris::ecrit::compacte::option")]
     pub publication: Option<socle::paris::Moment>,
-    /// SA PIECE NE SE LIT PAS : l'archive mise a part (`retours::PieceIllisible`). Il ne dit alors ni oui ni non : aucun
-    /// verdict, et il ne compte pas comme recu pour ce qu'il atteste (`de_nature`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub illisible: Option<NomDeFichier>,
 }
 
 impl RetourOrganisme {
-    /// UN RETOUR DE NATURE `nature` DONT LA PIECE SE LIT : la seule facon de demander si un retour de cette nature est la,
-    /// pour ce que sa presence atteste (le certificat 41, un bilan 11) ; un retour illisible ne l'atteste pas.
-    pub fn de_nature(&self, nature: crate::retours::NatureDuRetour) -> bool {
-        self.nature_retour == nature && self.illisible.is_none()
-    }
-
-    /// Ce que l'etat de son depot dit d'un retour dont la piece ne se lit pas (`retours::recu_illisible`) ; rien sinon.
-    pub fn dit_illisible(&self, canal: crate::releve_retours::CanalDesRetours) -> Option<String> {
-        self.illisible.as_ref().map(|a| crate::retours::recu_illisible(self.nature_retour, canal, a))
-    }
-
     pub fn verdict(&self) -> Option<Verdict> {
         self.verdict
     }
@@ -509,7 +494,6 @@ impl RetourOrganisme {
 
     /// Ce que sa piece en dit, pose sur lui.
     pub fn poser(&mut self, v: VerdictDeLaPiece) {
-        self.illisible = None;
         self.verdict = Some(v.verdict);
         self.anomalies = Some(v.anomalies);
         if v.dpae.is_some() {
@@ -527,11 +511,6 @@ impl RetourOrganisme {
         }
         if self.dpae.is_none() {
             self.dpae = autre.dpae.clone();
-        }
-        if self.verdict.is_some() {
-            self.illisible = None;
-        } else if self.illisible.is_none() {
-            self.illisible = autre.illisible.clone();
         }
     }
 }

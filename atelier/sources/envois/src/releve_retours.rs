@@ -379,32 +379,7 @@ impl CanalDesRetours {
             None => p,
         }
     }
-
-    /// LE DOSSIER DES PIECES QUI NE SE LISENT PAS (`retours::PieceIllisible::mettre_de_cote`), sous celui du canal : aucun
-    /// releve ne lit ce qui y est.
-    pub fn illisibles(self, racine: &Path) -> PathBuf {
-        self.chemin(racine).join(ILLISIBLES)
-    }
-
-    /// Le dossier des illisibles, tel que la compagnie le lit.
-    pub fn illisibles_dit(self) -> &'static str {
-        match self {
-            CanalDesRetours::Dsn => "retours/illisibles",
-            CanalDesRetours::Dpae => "retours/dpae/illisibles",
-        }
-    }
-
-    /// L'envoi dont ce canal rend les retours, pour en dire le libelle (`NatureDuRetour::libelle_du_canal`).
-    pub fn acte(self) -> Acte {
-        match self {
-            CanalDesRetours::Dsn => Acte::Dsn,
-            CanalDesRetours::Dpae => Acte::Dpae,
-        }
-    }
 }
-
-/// Le nom du dossier des illisibles d'un canal.
-const ILLISIBLES: &str = "illisibles";
 
 /// `retours/` (la DSN) ou `retours/dpae/` (la DPAE), cree.
 fn dossier_archive(racine: &Path, canal: CanalDesRetours) -> R<PathBuf> {
@@ -543,7 +518,6 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
                 libelle: libelle.into(),
                 statut: Some(StatutDuRetour::Ok),
                 publication: Some(pub_),
-                illisible: None,
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
@@ -614,7 +588,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
         }
         suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &decrits, &contenus))?;
         // L'EFFECTIF S'ECRIT SEUL, comme a la releve reelle.
-        suites.mettre_de_cote(reconstruire_effectifs(&ctx.racine)?);
+        suites.illisibles.extend(reconstruire_effectifs(&ctx.racine)?);
     }
     Ok(faits)
 }
@@ -724,7 +698,7 @@ pub fn relever_retours(
                                 releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                             }
                         }
-                        Err(e) => suites.mettre_de_cote([crate::retours::PieceIllisible::mettre_de_cote(&ctx.racine, canal, r.nature_retour, &chemin, e)?]),
+                        Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
@@ -743,7 +717,7 @@ pub fn relever_retours(
 
     if canal == CanalDesRetours::Dsn {
         // L'EFFECTIF S'ECRIT SEUL : `config/effectifs.json` se refait depuis les archives.
-        suites.mettre_de_cote(reconstruire_effectifs(&ctx.racine)?);
+        suites.illisibles.extend(reconstruire_effectifs(&ctx.racine)?);
     }
 
     if !releve.trouves.is_empty() {
@@ -850,7 +824,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("Le retour ne se lit pas en RO_B008_R002 (la valeur de l'effectif {}) : {} n'est pas un nombre.", code, socle::fichiers::repr(&valeur))))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -898,7 +872,7 @@ fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
 
 /// Relit tous les 118 archives et reecrit `config/effectifs.json`. Pour chaque annee
 /// et chaque code, le calcul le plus RECENT l'emporte ; l'effectif qu'une annee sans 118 a recu de la compagnie reste.
-/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se met a part et se rend (les autres
+/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se rend et ne compte pas (les autres
 /// comptent : ce qu'un 118 lisible a dit reste) ; le disque remonte.
 pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllisible>> {
     let dossier = racine.join(crate::retours::RETOURS);
@@ -925,14 +899,13 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllis
             Ok(Some(m)) => m,
             Ok(None) => continue,
             Err(e) => {
-                illisibles.push(crate::retours::PieceIllisible::mettre_de_cote(racine, CanalDesRetours::Dsn, NatureDuRetour::Effectifs, &p, e)?);
+                illisibles.push(crate::retours::PieceIllisible::de(NatureDuRetour::Effectifs, &p, e)?);
                 continue;
             }
         };
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
-            let an = Annee::du_mois(ref_an.mois_civil());
-            let codes = annees.entry(an).or_default();
+            let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }

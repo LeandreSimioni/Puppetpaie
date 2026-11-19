@@ -1176,7 +1176,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
                 archives.push((p, n));
             }
         }
-        // Une archive qui ne se lit pas se met a part au rangement et se note, une fois ; le refus qui suit la nomme.
+        // Une archive qui ne se lit pas se saute au rangement et se note.
         for (a, n) in archives {
             let n = n.texte();
             // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ-HHMMSS`.
@@ -1190,24 +1190,14 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             let ctx_j = contexte_du_jour(ctx, jour)?;
             let fait = socle::temps::pendant(instant, || crate::documents::ranger_aer_detail(&ctx_j, Some(mois), Some(std::slice::from_ref(&a)), false))?;
             for p in &fait.illisibles {
-                compagnie::incidents::noter_retour_illisible(&ctx.racine, p.nature, p.archive.texte(), &p.echec)?;
+                compagnie::incidents::noter_retour_illisible(&ctx.racine, p)?;
             }
             if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, fichier) {
                 return Ok(f);
             }
         }
-        let canal = envois::releve_retours::CanalDesRetours::Dsn;
-        let mises_a_part = envois::retours::archives_mises_de_cote(&canal.illisibles(&ctx.racine), envois::retours::NatureDuRetour::AerSpectacle)?;
-        if !mises_a_part.is_empty() {
-            return Err(refus(format!(
-                "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où {} ne se lit pas (mise à part dans « {} ») et la porte peut-être. La redemander à France Travail, ou le signaler.",
-                mises_a_part.iter().map(|n| format!("l'archive {}", n)).collect::<Vec<_>>().join(", "),
-                canal.illisibles_dit()
-            ))
-            .reclasser(Classe::Refuse));
-        }
         return Err(socle::echec::refus_avec(
-            "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où son retour (nature 46) manque ; le fichier a été déplacé ou effacé.",
+            "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où aucun retour (nature 46) lisible ne la porte : le fichier a été déplacé, effacé, ou ne se lit pas.",
             socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(fichier.clone().into()), ..Default::default() },
         )
         .reclasser(Classe::Refuse));

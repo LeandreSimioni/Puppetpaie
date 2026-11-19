@@ -5,9 +5,9 @@
 //! Idempotente : un flux deja au journal est saute. Une ligne reprise porte la date du depot (lue dans la piece)
 //! et sa `origine` (`retours/<piece>`) : c'est une reconstitution, pas un acte de ce logiciel.
 //!
-//! Un bilan qui ne se lit pas se met a part et se dit dans `illisibles` (`retours::PieceIllisible`), et les autres
-//! passent ; un fichier que le disque ne rend pas arrete la reprise ; un XML bien forme qui n'est pas un bilan de depot
-//! est saute sans bruit : le dossier melange des retours de toutes natures.
+//! Un bilan qui ne se lit pas se rend a noter (`retours::PieceIllisible`), et les autres passent ; un fichier que le
+//! disque ne rend pas arrete la reprise ; un XML bien forme qui n'est pas un bilan de depot est saute sans bruit : le
+//! dossier melange des retours de toutes natures.
 //!
 //! UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT (sinon un mois importe se dit en retard alors qu'il est deja
 //! declare) : le releve des retours et l'import remettent d'eux-memes au journal ce que les bilans archives attestent
@@ -66,8 +66,8 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
     Ok(noms)
 }
 
-/// Les depots que les bilans archives attestent. Un bilan de depot (nature 10 ou 11) qui ne se lit pas se met a part
-/// (`PieceIllisible::mettre_de_cote`) ; une piece d'une autre nature qui n'est pas un bilan se saute : son lecteur la lit.
+/// Les depots que les bilans archives attestent. Un bilan de depot (nature 10 ou 11) qui ne se lit pas se rend ; une
+/// piece d'une autre nature qui n'est pas un bilan se saute : son lecteur la lit.
 fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<crate::retours::PieceIllisible>)> {
     use crate::retours::NatureDuRetour;
     let dossier = ctx.racine.join(crate::retours::RETOURS);
@@ -82,7 +82,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<crate::retours::Piece
             Err(e) => {
                 let bilan = [NatureDuRetour::AccuseDEnregistrement, NatureDuRetour::CertificatDeConformite].into_iter().find(|n| crate::retours::archive_de_nature(nom.texte(), *n));
                 if let Some(nature) = bilan {
-                    illisibles.push(crate::retours::PieceIllisible::mettre_de_cote(&ctx.racine, crate::releve_retours::CanalDesRetours::Dsn, nature, &p, e)?);
+                    illisibles.push(crate::retours::PieceIllisible::de(nature, &p, e)?);
                 }
                 continue;
             }
@@ -123,14 +123,13 @@ pub struct DepotVu {
 }
 
 /// CE QUE LA REPRISE REND : les depots trouves, ceux qu'elle ajoute (ou ajouterait), ceux deja au journal, ceux qu'elle
-/// ne peut dater, les pieces illisibles, si elle a ecrit, et combien de retours se sont ranges en face.
+/// ne peut dater, si elle a ecrit, et combien de retours se sont ranges en face.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Reprise {
     pub trouves: Vec<DepotVu>,
     pub ajoutes: Vec<DepotVu>,
     pub deja: Vec<DepotVu>,
     pub sans_mois: Vec<DepotVu>,
-    pub illisibles: Vec<String>,
     pub ecrit: bool,
     pub rattaches: usize,
 }
@@ -166,7 +165,7 @@ fn reprise_et_incidents(
     pieces_illisibles: &mut Vec<crate::retours::PieceIllisible>,
 ) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
-    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles: illisibles.iter().map(crate::retours::PieceIllisible::phrase).collect(), ecrit: ecrire, rattaches: 0 };
+    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], ecrit: ecrire, rattaches: 0 };
     pieces_illisibles.extend(illisibles);
     let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
     for d in &attestes {
@@ -239,7 +238,6 @@ fn reprise_et_incidents(
             socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))?;
         let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
-        rapport.illisibles.extend(r.illisibles.iter().map(crate::retours::PieceIllisible::phrase));
         pieces_illisibles.extend(r.illisibles);
         rapport.rattaches = r.resultat?;
     }

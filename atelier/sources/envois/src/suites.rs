@@ -34,7 +34,7 @@ pub struct Suites {
     pub taux_atmp: Vec<(Annonce, PathBuf)>,
     /// Un depot refuse.
     pub depot_refuse: Option<DepotRefuse>,
-    /// Les pieces de retour que leur lecteur n'a pas lues, mises de cote : a dire et a noter.
+    /// Les pieces de retour que leur lecteur n'a pas lues : a noter chez l'editeur.
     pub illisibles: Vec<crate::retours::PieceIllisible>,
 }
 
@@ -42,16 +42,7 @@ impl Suites {
     /// Le resultat d'un `AvecIncidents`, ses incidents et ses pieces illisibles gardes pour l'appelant.
     pub fn garder<T>(&mut self, r: crate::etats::AvecIncidents<T>) -> socle::echec::R<T> {
         self.incidents_des_retours.extend(r.incidents);
-        self.mettre_de_cote(r.illisibles);
+        self.illisibles.extend(r.illisibles);
         r.resultat
-    }
-
-    /// Des pieces illisibles de plus, chacune une fois (par son archive).
-    pub fn mettre_de_cote(&mut self, pieces: impl IntoIterator<Item = crate::retours::PieceIllisible>) {
-        for p in pieces {
-            if !self.illisibles.iter().any(|x| x.archive == p.archive) {
-                self.illisibles.push(p);
-            }
-        }
     }
 }

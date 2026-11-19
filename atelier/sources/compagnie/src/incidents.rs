@@ -532,35 +532,24 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
         noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
     }
     for p in &r.illisibles {
-        noter_retour_illisible(racine, p.nature, p.archive.texte(), &p.echec)?;
+        noter_retour_illisible(racine, p)?;
     }
     r.resultat
 }
 
-/// UN RETOUR D'ORGANISME QUE SON LECTEUR NE LIT PAS (`echec`) : une piece de la norme qui n'est pas celle que ses textes
-/// decrivent (le guide de l'API DSN, la specification des retours). L'editeur le sait par le journal des incidents, a
-/// l'endroit `retour-<nature>` ; la compagnie, par la phrase de qui l'a lu. La seule facon de le noter, quelle que soit
-/// la nature.
-pub fn noter_retour_illisible(racine: &Path, nature: envois::retours::NatureDuRetour, archive: &str, echec: &socle::echec::Echec) -> R<()> {
-    /// Ce que l'incident porte : l'archive du retour, mise a part dans le dossier des illisibles de son canal.
-    #[derive(Serialize)]
-    struct RetourIllisible<'a> {
-        archive: &'a str,
+/// UN RETOUR D'ORGANISME QUE SON LECTEUR NE LIT PAS : une piece de la norme qui n'est pas celle que ses textes decrivent
+/// (le guide de l'API DSN, la specification des retours). L'editeur le sait par le journal des incidents, a l'endroit
+/// `retour-<nature>/<archive>`, avec ce que le lecteur en a dit (le resume), pour lui apprendre a la lire ; la compagnie
+/// n'en voit rien. La piece reste a sa place et se relit a chaque releve : elle se note UNE FOIS PAR ARCHIVE (l'endroit
+/// la nomme, l'empreinte la reconnait dans le journal, envoye ou non). La seule facon de le noter, quelle que soit la
+/// nature.
+pub fn noter_retour_illisible(racine: &Path, p: &envois::retours::PieceIllisible) -> R<()> {
+    let ou = format!("retour-{}/{}", p.nature, p.archive);
+    let quoi = p.echec.classe_notee();
+    if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
+        return Ok(());
     }
-    let ou = format!("retour-{}", nature);
-    noter(
-        racine,
-        &Note {
-            nature: LOGICIEL,
-            ou: &ou,
-            quoi: socle::echec::classe_notee(echec.classe),
-            resume: &echec.phrase,
-            detail: RetourIllisible { archive },
-            trace: None,
-            sans_contexte: true,
-        },
-    )
-    .map(|_| ())
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
 }
 
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).

@@ -835,8 +835,7 @@ impl Designation {
 // ------------------------------------------------------------------ suivre-depot
 
 /// `suivre_le_depot` : juste apres un depot REEL, relever ses retours et dire s'il est tranche. Une LECTURE. Fini quand
-/// chaque embauche du depot est passee ou refusee (DPAE), quand le bilan du mois est la (DSN) ; fini aussi quand le retour
-/// qui en decide est arrive et ne se lit pas (`RetourOrganisme::illisible`) : la phrase dit quoi faire.
+/// chaque embauche du depot est passee ou refusee (DPAE), quand le bilan du mois est la (DSN).
 pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let ChargeSuivre { quoi, flux, mois } = c;
     let dpae = quoi == Quoi::Dpae;
@@ -853,7 +852,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
     let du_flux = |q: documents::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
-    let (passe, refuse, illisible);
+    let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);
         // Une embauche que l'etat ne connait pas (une ligne non acceptee) n'est ni passee ni refusee.
@@ -864,7 +863,6 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
             .collect();
         passe = !embauches.is_empty() && embauches.iter().all(|x| x.is_some_and(|x| x.passee));
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
-        illisible = embauches.iter().flatten().find_map(|x| x.illisible.as_ref()).map(|dit| format!("La DPAE : {}", dit));
     } else {
         let ligne = du_flux(Quoi::Dsn.acte());
         let nic = ligne.and_then(Ligne::etablissement);
@@ -872,22 +870,17 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         let e = mois.map(|m| compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
         passe = e.as_ref().is_some_and(|e| e.etat == compagnie::etat_dsn::Etat::Passee);
         refuse = e.as_ref().is_some_and(|e| e.refusee());
-        illisible = e.filter(|e| e.etat == compagnie::etat_dsn::Etat::Illisible).and_then(|e| e.phrase);
     }
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.
     let nom = if dpae { "La DPAE" } else { "La DSN" };
-    let fini = passe || refuse || illisible.is_some();
     let (phrase, etat) = if passe {
         (socle::phrase!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
     } else if refuse {
         (socle::phrase!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
-    } else if let Some(dit) = illisible {
-        // Le retour est arrive et ne se lit pas : attendre ne le lira pas.
-        (socle::phrase!("{}", dit), socle::ecran::EtatDEcran::AFaire)
     } else {
         (socle::phrase!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
     };
-    Ok(Suivi { fini, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
+    Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
 
 // ------------------------------------------------------------------ bilan-repetition

@@ -16,16 +16,15 @@ use envois::etats;
 use socle::echec::R;
 use socle::mois::Mois;
 
-/// Où en est la DSN d'un mois : « passee », « attente », « refusee », « illisible » (le journal : un retour qui en décide
-/// est arrivé et ne se lit pas) ; « importee » (la DSN de l'ancien logiciel) ; « sans_trace » (un mois tenu avant dont
-/// rien ne garde la DSN, qui ne se réclame pas) ; « a_deposer » (un mois de ce logiciel dont la DSN n'est pas partie).
+/// Où en est la DSN d'un mois : « passee », « attente », « refusee » (le journal) ; « importee » (la DSN de l'ancien
+/// logiciel) ; « sans_trace » (un mois tenu avant dont rien ne garde la DSN, qui ne se réclame pas) ; « a_deposer » (un
+/// mois de ce logiciel dont la DSN n'est pas partie).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Etat {
     Passee,
     Attente,
     Refusee,
-    Illisible,
     Importee,
     SansTrace,
     ADeposer,
@@ -55,15 +54,14 @@ impl EtatDsn {
         etats.contains(&self.etat)
     }
 
-    /// Une DSN est partie pour ce mois et n'est pas refusée : passée, retour attendu ou illisible, ou déposée par l'ancien
-    /// logiciel.
+    /// Une DSN est partie pour ce mois et n'est pas refusée : passée, retour attendu, ou déposée par l'ancien logiciel.
     pub fn partie(&self) -> bool {
-        self.est(&[Etat::Passee, Etat::Attente, Etat::Illisible, Etat::Importee])
+        self.est(&[Etat::Passee, Etat::Attente, Etat::Importee])
     }
 
     /// Une DSN de ce logiciel est sur la plate-forme, refusée comprise.
     pub fn deposee(&self) -> bool {
-        self.est(&[Etat::Passee, Etat::Attente, Etat::Illisible, Etat::Refusee])
+        self.est(&[Etat::Passee, Etat::Attente, Etat::Refusee])
     }
 
     /// Passée, sans que France Travail ait encore renvoyé l'attestation employeur (AER) qu'elle en édite.
@@ -97,9 +95,6 @@ pub fn du_mois(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>) -> R<EtatDsn> {
             (Etat::Refusee, "refusée".to_string(), format!("DSN déposée le {} — REFUSÉE par la plate-forme", quand))
         } else if e.passee {
             (Etat::Passee, "déposée — passée".to_string(), format!("DSN déposée le {} — passée", quand))
-        } else if let Some(illisible) = &e.illisible {
-            // Le retour qui en decide est arrive et ne se lit pas : ni attendu, ni accepte.
-            (Etat::Illisible, "déposée — bilan illisible".to_string(), format!("DSN déposée le {} — {}", quand, illisible))
         } else {
             (Etat::Attente, "déposée — retour attendu".to_string(), format!("DSN déposée le {} — retour attendu", quand))
         };

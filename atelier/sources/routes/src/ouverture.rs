@@ -1123,8 +1123,7 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             // suivante (`import::mois::dsn_de_l_ancien_logiciel`).
             Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, le_mois)?.is_some_and(|d| d.engagements > 0),
             Etat::Passee => m.etat_remplacement(le_mois, None)?.a_envoyer,
-            // Le bilan se redemande a l'organisme : rien n'est a refaire dans la page Paie.
-            Etat::Attente | Etat::Illisible => false,
+            Etat::Attente => false,
             Etat::Refusee | Etat::SansTrace | Etat::ADeposer => true,
         };
         // CE QUE LA PASTILLE DIT, et sa couleur (`socle::ecran::couleur_de_l_etat`) : une DSN qui attend son bilan, ou dont
@@ -1133,7 +1132,6 @@ fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFic
             _ if retard => ("orange", "DSN en retard"),
             Etat::Passee => ("vert", "DSN passée"),
             Etat::Attente => ("gris", "DSN partie, bilan attendu"),
-            Etat::Illisible => ("orange", "DSN partie, bilan illisible"),
             Etat::Refusee => ("rouge", "DSN refusée"),
             Etat::Importee => ("vert", "DSN déclarée avant PuppetPaie"),
             Etat::SansTrace => ("gris", "tenu avant PuppetPaie — sa DSN est celle de l'ancien logiciel"),
