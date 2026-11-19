@@ -935,20 +935,19 @@ l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
 /// (`calcul::ajouter_a_la_retraite_de_l_annee`). La circulaire Agirc-Arrco 2018-09-DC (annexe A, art. 1) : « les
 /// remunerations versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites annuelles des
 /// assiettes T1 et T2 » : l'annee civile (l'exercice de l'ANI, « entre le 1er janvier et le 31 decembre d'une meme
-/// annee »), chez la compagnie seule. Seules se relisent les paies d'intermittent (`etats::paies_validees_intermittentes`) :
-/// celle d'un CDI du meme salarie a ses tranches du mois et sa propre regularisation (`plafonds_des_mois_anterieurs`).
-/// Une paie qui ne se lit pas refuse : les tranches se comptent sur toute l'annee.
-///
-/// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS, comme pour le plafond de la Securite sociale (Leandre,
-/// 19/11/2026) : l'annee commence au premier mois paye ici. INFERENCE, une approximation de la premiere annee : les pieces
-/// reprises disent le brut, pas les tranches que l'ancien logiciel a appliquees (`importe::PaieVersee`), et rien ne se
-/// reconstruit (regle 1).
-pub(crate) fn retraite_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie, plafond_annuel: Montant) -> R<droit::plafond::AnneeAnterieure> {
+/// annee »), chez la compagnie seule, « par chaque employeur » quel que soit le logiciel qui a calcule la paie : ses
+/// paies d'intermittent validees ici et celles reprises d'un ancien logiciel (`etats::paies_intermittentes_du_salarie`,
+/// le chemin des autres cumuls de l'annee). Celle d'un CDI du meme salarie a ses tranches du mois et sa propre
+/// regularisation (`plafonds_des_mois_anterieurs`). Une paie qui ne se lit pas refuse : les tranches se comptent sur
+/// toute l'annee. Une paie reprise s'ajoute pour ce que ses pieces disent (`calcul::ajouter_la_reprise_a_la_retraite`).
+pub(crate) fn retraite_des_mois_anterieurs(
+    ctx: &Contexte, mois: Mois, cle: &IdSalarie, plafond_annuel: Montant, tranches: &droit::forme_bareme::TranchesDuPlafond,
+) -> R<droit::plafond::AnneeAnterieure> {
     let _derivation = Derivation::ouvrir();
     let mut annee = droit::plafond::AnneeAnterieure::sous_le_plafond_annuel(plafond_annuel);
     let cle = cle_de_fiche(ctx, cle)?;
     for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        let paies = crate::etats::paies_validees_intermittentes(ctx, m, &cle).map_err(|e| {
+        let paies = crate::etats::paies_intermittentes_du_salarie(ctx, m, &cle).map_err(|e| {
             e.reformuler(|e| format!(
                 "Retraite complémentaire de {} sur l'année : les paies de {} ne se lisent pas ({}). Ses tranches se comptent \
 sur les plafonds de l'année (Audiens, Paramètres) : sans ce mois, rien n'est calculé.",
@@ -956,7 +955,10 @@ sur les plafonds de l'année (Audiens, Paramètres) : sans ce mois, rien n'est c
             ))
         })?;
         for p in &paies {
-            crate::calcul::ajouter_a_la_retraite_de_l_annee(&mut annee, p)?;
+            match p {
+                PaieAnterieure::Validee(p) => crate::calcul::ajouter_a_la_retraite_de_l_annee(&mut annee, p)?,
+                PaieAnterieure::Reprise(r) => crate::calcul::ajouter_la_reprise_a_la_retraite(&mut annee, &r.paie, tranches, m)?,
+            }
         }
     }
     Ok(annee)
