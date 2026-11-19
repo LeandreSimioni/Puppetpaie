@@ -1060,7 +1060,6 @@ forme! {
     #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
-        pub plafond_journalier: Option<MontantUnitaire>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
