@@ -1715,15 +1715,6 @@ impl Proprietes {
             && self.fin_de_contrat.circuit_derogatoire.as_ref().is_some_and(|c| motif.or_else(|| self.motif_rupture_par_defaut()).is_some_and(|m| c.motifs.contains(&m)))
     }
 
-    /// Un contrat d'usage (motif de recours 05, 3° de L. 1242-2 du code du travail) ? C'est la nature dont la fin ecrit sa
-    /// modalite de declaration (S21.G00.62.017, CCH-11 : « obligatoire si [...] la rubrique « Motif de recours -
-    /// S21.G00.40.021 » est égale à « 05 - Contrat d’usage » », `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`
-    /// l. 482-486) : celle qui a un circuit derogatoire. Son signalement de
-    /// fin part avec la DSN mensuelle (CSS R. 133-14, II, 2°, `obligations-base.json`, `delai_contrat_d_usage`).
-    pub fn contrat_d_usage(&self) -> bool {
-        self.fin_de_contrat.circuit_derogatoire.is_some()
-    }
-
     /// LA REGLE, ET SON SEUL ENDROIT : la fin de ce contrat, pour ce motif de rupture (`None` : le defaut de la
     /// nature), se declare-t-elle par un signalement de fin de contrat (nature 07) ? Toute fin de contrat donne lieu a
     /// l'attestation employeur (R. 1234-9), par le FCTU en DSN (fiche net-entreprises 119) ; le CDDU n'en est dispense

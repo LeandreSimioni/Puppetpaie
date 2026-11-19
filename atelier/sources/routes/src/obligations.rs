@@ -19,8 +19,7 @@
 //!   travail », sur net-entreprises (ecran ou EDI) ; CSS L. 331-9 (`.../code-de-la-securite-sociale/xml/L331-9.xml`) pour les
 //!   indemnites du conge de deuil de C. trav. L. 3142-1-1. « Des reception » n'est pas un delai chiffre : la date butoir est
 //!   le jour meme de la connaissance de l'arret, et l'obligation le dit (`inferences`) ;
-//! - le signalement de fin de contrat (07) : les memes textes, cinq jours ouvres apres la fin ; celui d'un contrat
-//!   d'usage, avec la DSN mensuelle du mois de la fin (R. 133-14, II, 2°) ;
+//! - le signalement de fin de contrat (07) : les memes textes, cinq jours ouvres apres la fin ;
 //! - la declaration d'accident du travail ou de trajet (motifs 04 et 06), HORS DSN : CSS L. 441-2 et R. 441-3
 //!   (`.../code-de-la-securite-sociale/xml/R441-3.xml`) : quarante-huit heures, dimanches et jours feries non compris, a
 //!   compter de la connaissance de l'accident ; les reserves motivees, dix jours francs apres (R. 441-6) ;
@@ -1188,16 +1187,10 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
 // -------------------------------------------------------- les fins de contrat
 
 /// Le signalement de fin de contrat (07) d'un contrat qui finit le `fin`. `cle` : la cle de la fiche du salarie (le nom
-/// du fichier que `fin-contrat-signaler` ecrit) ; `usage` : un contrat d'usage (`Nature::contrat_d_usage`) ; `journal` :
-/// les lignes du journal des depots.
-///
-/// LE DELAI : cinq jours ouvres (`delai`) ; pour un contrat d'usage, avec la DSN mensuelle du mois de la fin
-/// (`delai_contrat_d_usage` : CSS R. 133-14, II, 2°, les cinq jours « ne sont pas applicables » aux fins de CDD des
-/// secteurs du 3° de L. 1242-2, et le dernier alinea renvoie au premier, « au plus tard en même temps que la
-/// déclaration sociale nominative relative au mois au cours duquel cet événement est survenu »). Sa date butoir est
-/// l'echeance de cette DSN (`echeance_dsn`), comme pour un employeur subroge ; une echeance qui ne se compte pas
-/// (la fiche Entreprise ne la dit pas) laisse l'obligation indeterminee, en le disant.
-pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, usage: bool, journal: &[envois::journal::Ligne], aujourdhui: Jour) -> R<Obligation> {
+/// du fichier que `fin-contrat-signaler` ecrit) ; `journal` : les lignes du journal des depots. Le delai est le meme pour
+/// toute fin qui se signale, celle d'un contrat d'usage comprise : cinq jours ouvres (`delai`, et l'inference que la
+/// donnee dit dans `inferences`).
+pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[envois::journal::Ligne], aujourdhui: Jour) -> R<Obligation> {
     let n = base()?.obligations;
     let o = &n.signalement_fin_contrat;
     let mut m = Obligation::squelette(CleDObligation::SignalementFinContrat, o);
@@ -1206,16 +1199,6 @@ pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, usage: bool
         None => None,
     };
     let depart = Depart::du_jour(fin, "la fin du contrat", None);
-    if usage {
-        let dit = &o.delai_de(&o.delai_contrat_d_usage, "delai_contrat_d_usage")?.dit;
-        let echeance = match declarations::echeance_dsn::de_la_compagnie(ctx, fin.mois_civil()) {
-            Ok(e) => e,
-            Err(e) => return Ok(m.indeterminee(&format!("Le signalement part au plus tard avec la DSN mensuelle de {}, dont l'échéance ne se compte pas : {}", fin.mois_civil().libelle(socle::mois::Graphie::Accentuee), e.phrase))),
-        };
-        m.echeance_dsn = Some(echeance.dite()?);
-        m.conclure(aujourdhui, Some(&depart), InstantOuJour::Instant(echeance.limite()?), dit, fait)?;
-        return m.dire_le_butoir();
-    }
     let d = o.delai_de(&o.delai, "delai")?;
     let butoir = fin_du_delai(ctx, d, InstantOuJour::Jour(fin))?;
     m.conclure(aujourdhui, Some(&depart), butoir, d.dit(), fait)?;

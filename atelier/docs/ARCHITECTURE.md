@@ -225,7 +225,7 @@ un libellé, chacun sa forme.
 | jours ouvrés, jours ouvrables (un compte de jours que le calendrier change en jour : pas une `Duree`) | `JoursOuvres`, `JoursOuvrables` | `socle/src/date.rs` |
 | heure du jour | `HeureDuJour` | `socle/src/paris.rs` |
 | délai en heures, dimanches et jours fériés non compris | `DelaiEnHeures` | `socle/src/paris.rs` |
-| délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé, la fin d'un contrat d'usage) | `declarations/src/obligations.rs` |
+| délai d'une obligation | `declarations::obligations::Delai` (il court d'un fait), `declarations::obligations::AvecLaMensuelle` (le signalement d'un employeur subrogé) | `declarations/src/obligations.rs` |
 | ancienneté, âge | `Anciennete` | `socle/src/date.rs` |
 | durée mesurée (ce qu'a pris un passage de l'ouverture, la séance du coffre, l'âge d'un doublon, l'âge de la dernière ouverture, le délai et l'âge d'un verrou) | `std::time::Duration` (ses écritures : `socle::temps::ecrit`) | la bibliothèque standard |
 | décalage d'un fuseau sur l'UTC (celui qu'une date ou une heure de XML Schema porte, `Z` ou `+hh:mm` ; celui que la page dit de son fuseau, `PageDite.decalage_minutes`) | `DecalageSurUtc` (à la minute ; écrit et lu en minutes, en nombre ; celui de Paris à un instant, interne au socle, s'écrit `+HHMM` dans la date d'un courriel, `socle::paris::ecrit::rfc5322`) | `socle/src/paris.rs` |
@@ -321,10 +321,9 @@ un libellé, chacun sa forme.
 - **délai d'une obligation** : ce qui fixe, d'un fait, la date ou le moment limite d'une obligation (un signalement, une
   déclaration d'accident, une attestation) : en jours ouvrés, en jours, en heures hors dimanches et fériés (`Delai`, une
   `enum` qui court d'un fait, avec la phrase qui le dit, écrite par son cas dans `obligations-base.json`), ou, pour le
-  signalement d'un employeur subrogé et pour celui de la fin d'un contrat d'usage (CSS R. 133-14, II, 2°), avec la DSN
-  mensuelle du mois de l'événement (`AvecLaMensuelle`, sa phrase seule : sa fin est l'échéance de cette DSN). Chaque
-  champ du fichier n'admet que ce qui a un sens pour lui : `delai` et `delai_sans_subrogation` un `Delai`,
-  `delai_avec_subrogation` et `delai_contrat_d_usage` un `AvecLaMensuelle`. La fin d'un délai se compte à un
+  signalement d'un employeur subrogé, avec la DSN mensuelle du mois de l'événement (`AvecLaMensuelle`, sa phrase seule :
+  sa fin est l'échéance de cette DSN). Chaque champ du fichier n'admet que ce qui a un sens pour lui : `delai` et
+  `delai_sans_subrogation` un `Delai`, `delai_avec_subrogation` un `AvecLaMensuelle`. La fin d'un délai se compte à un
   seul endroit (`routes::obligations`, `fin_du_delai`).
 - **ancienneté, âge** : le temps passé depuis un jour, en mois ; un âge est l'ancienneté depuis la naissance
   (`Anciennete::age`). **Exacte** : ses mois sont une fraction (`socle::fraction::Fraction`, interne au socle, la forme
@@ -2832,7 +2831,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |
 | mutuelle santé | aucune | **obligatoire** (ANI, art. L911-7) |
-| fin du contrat | contrat infra DSN mensuelle à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra DSN mensuelle, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…), ou déjà déclaré par la DSN d'un mois précédent : 62.017 = 02 et **signalement nature 07**, au plus tard avec la DSN mensuelle du mois de la fin (CCH-12, fiche 2062, CSS R. 133-14, II, 2° ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU), sous cinq jours ouvrés |
+| fin du contrat | contrat infra DSN mensuelle à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra DSN mensuelle, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…), ou déjà déclaré par la DSN d'un mois précédent : 62.017 = 02 et **signalement nature 07**, sous cinq jours ouvrés (CCH-12, fiche 2062 ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU), sous cinq jours ouvrés |
 | blocs 51 | les quatre valent le brut | 001 brut, 002 assiette chômage, 003 salaire rétabli, 010 salaire de base |
 | bloc 53 | jours (12), cachets (37), heures (35) | heures (10), absences en type 02 |
 
@@ -3218,14 +3217,16 @@ règle (`Nature::signalement_fctu`, `Nature::codes_fin`), que lisent la
 mensuelle, le FCTU, les fins à signaler et leurs rappels, l'attestation et la
 carte d'un engagement (`contrat.rupture`).
 
-**Le délai du signalement d'un contrat d'usage** est la DSN mensuelle du mois
-de la fin, pas cinq jours ouvrés : CSS R. 133-14, II, 2° rend les cinq jours
-« pas applicables » aux fins de CDD des secteurs du 3° de L. 1242-2, et son
-dernier alinéa renvoie au premier (« au plus tard en même temps que la
-déclaration sociale nominative relative au mois au cours duquel cet événement
-est survenu ») ; `obligations-base.json`, `delai_contrat_d_usage`, et son
-inférence, qui dit aussi ce qui s'y oppose (la fiche 2062 et le § 2.5.3 ne
-nomment de dérogation au délai que le circuit dérogatoire). **Une fin déjà
+**Le délai du signalement d'un contrat d'usage** est celui de toute fin qui se
+signale : cinq jours ouvrés. CSS R. 133-14, II, 2° écarte les cinq jours
+« conformément aux modalités mises en œuvre pour l'application des articles
+R. 1234-9 à R. 1234-12 », et ces modalités, pour un contrat d'usage, sont le
+circuit dérogatoire de la fiche 2062 et du § 2.5.3, qui renvoient tout autre
+cas à « la procédure de droit commun (signalement) » ; la fiche 1902 dit
+« dans les 5 jours » même pour un 031 que le salarié refuse de voir au circuit
+dérogatoire. Signaler sous cinq jours ouvrés est juste dans les deux lectures ;
+`obligations-base.json`, `signalement_fin_contrat`, `inferences`, dit ce qui
+reste ouvert (la lettre du décret, plus large). **Une fin déjà
 partie n'est plus due** : la DSN mensuelle déposée de son mois qui l'a déclarée
 par le circuit dérogatoire (62.017 = 01) se relit
 (`obligations::fin_partie_au_circuit_derogatoire`), et rien ne se refait sur

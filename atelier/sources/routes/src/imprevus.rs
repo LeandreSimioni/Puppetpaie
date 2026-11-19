@@ -2486,8 +2486,8 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             }
         }
         let a_saisir = ce_qui_manque(ctx, e, &contrat)?;
-        // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`) : un contrat d'usage part avec la DSN mensuelle de son mois.
-        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), nat.contrat_d_usage(), &journal.lignes, aujourdhui)?;
+        // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).
+        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), &journal.lignes, aujourdhui)?;
         // Due : il manque de quoi signaler, ou le delai court. Sa pastille : celle du delai passe
         // (« en retard » l'emporte : la date butoir ne se tait pas parce qu'une case manque), sinon ce qui manque, sinon
         // celle du delai.
@@ -2534,9 +2534,9 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
 const MOIS_EN_ARRIERE: socle::date::Duree<socle::date::EnMois> =socle::date::Duree::mois(12);
 
 /// LES FINS D'AVANT, EN RETARD : celles des mois qui precedent `mois` (sur `MOIS_EN_ARRIERE`) dont le signalement est du
-/// et sa date butoir passee (`obligations::de_la_fin` : cinq jours ouvres, ou la DSN mensuelle du mois pour un contrat
-/// d'usage). Une echeance manquee reste due, et elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le
-/// contrat a fini.
+/// et sa date butoir passee. Une echeance manquee reste due -- le signalement se fait « dans les cinq jours ouvres qui
+/// suivent la survenance de la fin du contrat » (`obligations::de_la_fin`, `obligations-base.json`) -- et elle se dit sur
+/// le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
 pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     let mut out = Vec::new();
     // Du plus ancien au mois d'avant.

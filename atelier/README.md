@@ -808,8 +808,8 @@ Le signalement de **fin de contrat** (FCTU, nature 07) a sa commande,
 seule DSN mensuelle (infra DSN mensuelle) et arrivé à son terme n'en a pas
 besoin — sa fin part dans cette DSN, avec le circuit dérogatoire — sauf si le
 salarié le demande : le moteur l'écrit alors, et le dit. Un CDDU rompu avant
-son terme, ou qu'une DSN d'un mois précédent a déjà déclaré, se signale, au
-plus tard avec la DSN mensuelle du mois de sa fin (CSS R. 133-14, II, 2°).
+son terme, ou qu'une DSN d'un mois précédent a déjà déclaré, se signale, dans
+les cinq jours ouvrés qui suivent sa fin.
 
 ## Corriger un mois déjà déposé
 

@@ -24,6 +24,7 @@ mod notification_atmp;
 mod net_a_virer;
 mod duree_du_travail;
 mod arret_prolonge;
+mod signalement_apres_echeance;
 mod cdd_d_artiste;
 mod aer;
 mod dsn_sans_salarie;
