@@ -242,10 +242,9 @@ forme! {
         pub regularisation_du_plafond: RegularisationDuPlafond,
         pub majoration_conges_115: Coefficient,
         pub majoration_conges_110: Coefficient,
-        /// Le plafond journalier (T1 d'un jour travaille) des intermittents, et les multiples de la T2 et de l'Apec.
+        /// Le plafond journalier (T1 d'un jour travaille) des intermittents ; leurs tranches au-dela le multiplient comme
+        /// celles d'un permanent (`tranches_du_plafond`).
         pub plafond_journalier: Option<MontantUnitaire>,
-        pub t2_multiple: Option<Coefficient>,
-        pub apec_multiple: Option<Coefficient>,
         /// Les textes de ces plafonds.
         pub plafonds_des_intermittents: Option<Notes>,
         pub rubriques_bulletin: Vec<Rubrique>,
@@ -1062,8 +1061,6 @@ forme! {
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
         pub plafond_journalier: Option<MontantUnitaire>,
-        pub t2_multiple: Option<Coefficient>,
-        pub apec_multiple: Option<Coefficient>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,

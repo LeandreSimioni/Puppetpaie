@@ -1679,11 +1679,11 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // Les tranches d'un cadre intermittent, au-dela de la T1 (`bareme_cadre`).
     if let Some(pj) = plafond_journalier.filter(|_| !nat.mensuelle() && droit::bareme::est_cadre(&sal)) {
         let t1 = t1_du_contrat(pj);
-        let mult = |m: Option<socle::grandeurs::Coefficient>, cle: &str| -> R<socle::grandeurs::Coefficient> { Ok(m.ok_or_else(|| socle::fichiers::absent(cle))?.entier()) };
-        let (t2_mult, apec_mult) = (mult(bar.t2_multiple, "t2_multiple")?, mult(bar.apec_multiple, "apec_multiple")?);
+        // Les memes bornes que celles d'un permanent, en nombre de plafonds (`tranches_du_plafond`, leurs textes) : la
+        // tranche 2 jusqu'a huit (ANI Agirc-Arrco, art. 32), l'Apec dans la limite de quatre (Audiens, Parametres).
+        let (t2_mult, apec_mult) = (bar.tranches_du_plafond.t2, bar.tranches_du_plafond.chomage);
         bases.insert(Assiette::T2Journaliere, zero.max(brut.min(t1 * t2_mult) - t1));
-        // L'Apec, sur le brut dans la limite de quatre plafonds (Audiens, Parametres ; Agirc-Arrco, aide DSN) : en tout,
-        // et au-dela de la T1.
+        // L'Apec, sur le brut dans la limite de quatre plafonds : en tout, et au-dela de la T1.
         bases.insert(Assiette::Apec, brut.min(t1 * apec_mult));
         bases.insert(Assiette::ApecT2Journaliere, zero.max(brut.min(t1 * apec_mult) - t1));
         // La tranche B de la prevoyance d'un cadre technicien de la CCNEAC (XII.2.2.2) : la tranche 2 de son titre XII.2,
