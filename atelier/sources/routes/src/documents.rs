@@ -338,31 +338,17 @@ fn paies_de_la_periode(ctx: &Contexte, periode: Mois, departs: &engagement::depa
     Ok(paies)
 }
 
-/// CE QU'UNE AER REVENUE DOIT PORTER, pour la comparer (`periodes_attendues`).
-enum PeriodesAttendues {
-    /// La saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) : rien a quoi comparer.
-    HorsDuLogiciel,
-    /// On ne sait pas si cette AER est due : le fichier depose de la DSN du mois manque ou ne se relit pas
-    /// (`FinALaDsn::FichierIllisible`). La phrase dit quel fichier remettre ; cette AER seule ne se signe pas.
-    Indeterminees(String),
-    /// Les paies que l'AER doit porter (`documents::aer::periodes_attendues`).
-    Lues(Vec<engagement::calcul::Paie>),
-}
-
-/// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). Les paies
-/// d'un mois qui ne se lisent pas refusent la comparaison. `departs` et `lues` : ce qui est parti et les DSN deposees,
-/// lus une fois par le geste.
+/// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). `None` : la
+/// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
+/// ne se lisent pas refusent la comparaison. `departs` : ce qui est parti, lu une fois par le geste.
 fn periodes_attendues(
     ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie, departs: &engagement::departs::Departs,
-    lues: &declarations::fin_a_la_dsn::DsnDeposees,
-) -> R<PeriodesAttendues> {
+) -> R<Option<Vec<engagement::calcul::Paie>>> {
     if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
-        return Ok(PeriodesAttendues::HorsDuLogiciel);
+        return Ok(None);
     }
     // `documents::aer` demande les paies d'un mois sans refus possible : le premier refus est garde, et rendu apres.
     let mut faute: Option<Echec> = None;
-    // Une fin que la DSN ne sait pas dire (son fichier depose) : gardee, et rendue apres, pour cette AER seule.
-    let illisible: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
     let attendues = {
         let mut du_mois = |m: Mois| -> Vec<engagement::calcul::Paie> {
             if let Some(p) = par_mois.get(&m) {
@@ -379,23 +365,12 @@ fn periodes_attendues(
                 }
             }
         };
-        // Ce que la DSN sait de la fin de chaque paie (`declarations::fin_a_la_dsn`), decide une fois.
-        let connu_de = |p: &engagement::calcul::Paie| -> R<droit::natures::ConnuDeLaDsn> {
-            let f = declarations::fin_a_la_dsn::de_l_engagement(lues, departs, &p.engagement)?;
-            if let Some(phrase) = f.illisible() {
-                illisible.borrow_mut().get_or_insert(phrase);
-            }
-            f.connue()
-        };
-        documents::aer::periodes_attendues(periode, cle, &mut du_mois, &connu_de)
+        documents::aer::periodes_attendues(periode, cle, &mut du_mois)
     };
     if let Some(e) = faute {
         return Err(e);
     }
-    if let Some(phrase) = illisible.into_inner() {
-        return Ok(PeriodesAttendues::Indeterminees(phrase));
-    }
-    attendues.map(PeriodesAttendues::Lues)
+    attendues.map(Some)
 }
 
 /// `chemin_identite("cachet")` : le tampon pose, quelle que soit son extension (png, jpg, svg).
@@ -405,14 +380,12 @@ fn cachet_pose(gabarits: &Path) -> Option<String> {
 }
 
 /// `RangementAer` : ce que le rangement des AER a fait -- les PDF ecrits `(periode, cle, chemin)`, les attestations sans salarie
-/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`, et celles qu'on ne sait pas comparer
-/// `(cle, periode, pourquoi)` : le fichier depose de la DSN de leur mois manque ou ne se relit pas.
+/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`.
 #[derive(Default)]
 pub struct RangementAer {
     pub ecrits: Vec<(Mois, droit::contexte::IdSalarie, std::path::PathBuf)>,
     pub a_ranger: Vec<(String, std::path::PathBuf)>,
     pub refusees: Vec<(droit::contexte::IdSalarie, Mois, Vec<String>)>,
-    pub indeterminees: Vec<(droit::contexte::IdSalarie, Mois, String)>,
 }
 
 /// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la releve
@@ -427,9 +400,6 @@ pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
     for (cle, periode, ecarts) in &fait.refusees {
         phrases.push(format!("Attestation France Travail de {} ({}) NON SIGNEE : elle ne dit pas ce que la paie dit ({}). La correction se fait sur la DSN, pas sur le PDF.", cle, periode, ecarts.join("; ")));
     }
-    for (cle, periode, pourquoi) in &fait.indeterminees {
-        phrases.push(format!("Attestation France Travail de {} ({}) NON SIGNEE : elle ne se compare pas à la paie. {}", cle, periode, pourquoi));
-    }
     Ok(phrases)
 }
 
@@ -438,9 +408,8 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
     use documents::aer::{authentifier, Authentification, Echec as AerEchec};
     let vues = attestations_archivees(ctx, mois, fichiers)?;
     let mut par_mois: HashMap<Mois, Vec<engagement::calcul::Paie>> = HashMap::new();
-    // Ce qui est parti et les DSN deposees, lus une fois pour toutes les attestations.
+    // Ce qui est parti, lu une fois pour toutes les attestations.
     let departs = envois::journal::lu(&ctx.racine)?.departs;
-    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
     let mut cles: Vec<&CleAttestation> = vues.keys().collect();
     cles.sort();
     // `RangementAer.a_faire()` : d'abord les attestations sans salarie, puis les refusees (la paie ne les confirme pas).
@@ -468,21 +437,12 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             })?;
             imprime.extend(documents::aer::lire_quantites(&champs)?);
         }
-        match periodes_attendues(ctx, &mut par_mois, periode, &cle, &departs, &lues)? {
-            PeriodesAttendues::HorsDuLogiciel => {}
-            // Cette attestation seule ne se compare pas ; les autres se rangent. `forcer` signe malgre ce qu'on ne sait pas.
-            PeriodesAttendues::Indeterminees(pourquoi) if !forcer => {
-                fait.indeterminees.push((cle, periode, pourquoi));
+        if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle, &departs)? {
+            let ecarts = documents::aer::ecarts(&imprime, &attendues)?;
+            if !ecarts.is_empty() && !forcer {
+                // Une seule fausse et rien ne part.
+                fait.refusees.push((cle, periode, ecarts));
                 continue;
-            }
-            PeriodesAttendues::Indeterminees(_) => {}
-            PeriodesAttendues::Lues(attendues) => {
-                let ecarts = documents::aer::ecarts(&imprime, &attendues)?;
-                if !ecarts.is_empty() && !forcer {
-                    // Une seule fausse et rien ne part.
-                    fait.refusees.push((cle, periode, ecarts));
-                    continue;
-                }
             }
         }
         let signature = documents::bulletin::identite_de(&ctx.gabarits(), "signature").map(|f| f.to_string_lossy().into_owned());
@@ -517,43 +477,19 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
 
 /// Ce qui est du a chaque salarie du mois et ne se fabrique pas ici : l'AER Cinema Spectacle (`aer::due`), que France
 /// Travail publie apres la DSN (retour 46), et l'attestation employeur de droit commun (`aer::attestation_fctu`), qu'elle
-/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent. L'une ou l'autre, selon ce
-/// que la DSN sait de la fin (`declarations::fin_a_la_dsn`, la decision prise une fois), lu dans ce qui est parti
-/// (`departs`, lu une fois par le geste). Calcule une fois par geste.
-struct DuesAPart {
-    /// Par salarie : ce que son courriel dit absent.
-    pieces: HashMap<IdSalarie, Vec<&'static str>>,
-    /// Par salarie : pourquoi on ne sait pas quelle attestation lui est due (le fichier depose de la DSN de son mois
-    /// manque ou ne se relit pas, `FinALaDsn::FichierIllisible`) -- ses documents ne partent pas sans elle, ceux des
-    /// autres partent.
-    indeterminees: HashMap<IdSalarie, String>,
-}
-
-fn dues_a_part(ctx: &Contexte, paies: &[engagement::calcul::Paie], departs: &engagement::departs::Departs) -> R<DuesAPart> {
-    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
-    let mut out = DuesAPart { pieces: HashMap::new(), indeterminees: HashMap::new() };
+/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent. Calcule une fois par geste.
+fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<IdSalarie, Vec<&'static str>>> {
+    let mut out: HashMap<IdSalarie, Vec<&'static str>> = HashMap::new();
     for p in paies {
-        let connu = match declarations::fin_a_la_dsn::de_l_engagement(&lues, departs, &p.engagement)? {
-            declarations::fin_a_la_dsn::FinALaDsn::Connue(c) => c,
-            declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible { mois, fichier } => {
-                out.indeterminees.insert(p.salarie.id.clone(), declarations::fin_a_la_dsn::FinALaDsn::phrase_illisible(mois, fichier.as_ref()));
-                continue;
-            }
-        };
-        let siennes = out.pieces.entry(p.salarie.id.clone()).or_default();
-        if documents::aer::due(p, connu)? && !siennes.contains(&"aer") {
+        let siennes = out.entry(p.salarie.id.clone()).or_default();
+        if documents::aer::due(p)? && !siennes.contains(&"aer") {
             siennes.push("aer");
         }
-        if documents::aer::attestation_fctu(&p.engagement, connu)? && !siennes.contains(&"attestation_fctu") {
+        if documents::aer::attestation_fctu(&p.engagement)? && !siennes.contains(&"attestation_fctu") {
             siennes.push("attestation_fctu");
         }
     }
     Ok(out)
-}
-
-/// La phrase d'un salarie dont l'attestation ne se dit pas (`DuesAPart::indeterminees`) : ses documents ne partent pas.
-fn attestation_indeterminee_dite(nom: &str, pourquoi: &str) -> String {
-    format!("Les documents de {} ne partent pas : on ne sait pas quelle attestation France Travail lui est due. {}", nom, pourquoi)
 }
 
 /// Peut-on envoyer les documents du mois ? Ce qui l'empeche, ce qui est a savoir, et si une boite est posee.
@@ -564,7 +500,7 @@ struct Prets {
 }
 
 /// `documents_prets` : peut-on envoyer les documents du mois ? Le moteur repond, et dit pourquoi.
-fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie], dues: &DuesAPart) -> R<Prets> {
+fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie]) -> R<Prets> {
     // LES DOCUMENTS PARTENT DES QU'UN ENGAGEMENT EST VALIDE : ils se fabriquent a leur envoi, depuis sa paie ecrite.
     let mut empechements: Vec<String> = Vec::new();
     if paies.is_empty() {
@@ -572,14 +508,11 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
     }
     // L'AER NE SE FABRIQUE PAS : France Travail la renvoie apres la DSN, et elle part avec les documents quand elle est la.
     let mut informations: Vec<String> = Vec::new();
-    if compagnie::etat_dsn::du_mois(ctx, mois, None)?.aer_attendue() && dues.pieces.values().any(|v| v.contains(&"aer")) {
+    if compagnie::etat_dsn::du_mois(ctx, mois, None)?.aer_attendue() && dues_a_part(paies)?.values().any(|v| v.contains(&"aer")) {
         informations.push(
             "L'attestation employeur (AER) de France Travail n'est pas encore revenue : France Travail l'édite à partir de la DSN, et chaque relevé des retours la cherche. Elle partira avec un envoi suivant."
                 .to_string(),
         );
-    }
-    for (cle, pourquoi) in &dues.indeterminees {
-        informations.push(attestation_indeterminee_dite(&nom_de_la_paie(paies, cle), pourquoi));
     }
     let manquent = aer_manquantes(ctx, mois)?;
     if !manquent.is_empty() {
@@ -660,16 +593,13 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let departs = envois::journal::lu(&ctx.racine)?.departs;
     let paies = charger_le_mois(ctx, mois, &departs)?;
     let m = Moteur::nouveau(ctx);
-    let dues = dues_a_part(ctx, &paies, &departs)?;
-    let prets = documents_prets(ctx, mois, &paies, &dues)?;
+    let prets = documents_prets(ctx, mois, &paies)?;
     let pret = prets.empechements.is_empty();
     let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     // A QUI ILS PARTENT : le meme choix que l'envoi (`choisir`).
     let choix = choisir(ctx, mois, &paies)?;
     // CE QUI PARTIRA, nomme sans etre fabrique : les documents s'ecrivent, numerotes, a l'envoi (`envoyer_documents`).
-    // Un salarie dont l'attestation ne se dit pas n'a pas de message : ses documents ne partiraient pas (`documents_prets`
-    // le dit) ; les autres partent.
-    let messages: Vec<Message> = if pret { preparer(ctx, &paies, mois, &sorties)? } else { Vec::new() }.into_iter().filter(|x| !dues.indeterminees.contains_key(&x.cle)).collect();
+    let messages = if pret { preparer(ctx, &paies, mois, &sorties)? } else { Vec::new() };
     let tous_a_jour = messages.iter().all(|x| choix.a_jour.contains(&x.cle));
     let messages = choix.garder(messages, |x| &x.cle);
     let (mut expediteur, mut avertissements) = (String::new(), Vec::<String>::new());
@@ -1107,15 +1037,6 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             noms_sans
         )));
     }
-    // UN SALARIE DONT L'ATTESTATION NE SE DIT PAS (le fichier depose de la DSN de son mois manque ou ne se relit pas) :
-    // son envoi a besoin de savoir laquelle lui est due, il ne part pas, et la phrase dit quel fichier remettre ; les
-    // autres partent.
-    let dues = dues_a_part(ctx, &paies, &departs)?;
-    let (cles, indetermines): (Vec<IdSalarie>, Vec<IdSalarie>) = cles.into_iter().partition(|c| !dues.indeterminees.contains_key(c));
-    let indetermines_dits: Vec<String> = indetermines.iter().filter_map(|c| dues.indeterminees.get(c).map(|p| attestation_indeterminee_dite(&nom_de_la_paie(&paies, c), p))).collect();
-    if cles.is_empty() {
-        return Err(erreur(Classe::Manque, format!("{} Rien n'est parti.", indetermines_dits.join(" "))));
-    }
     // La boite, puis LA PREUVE, AVANT TOUTE FABRIQUE : un mot de passe refuse n'ecrit rien.
     let client = ouvrir()?;
     let expediteur = expediteur_de(client.as_ref())?;
@@ -1128,14 +1049,13 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     };
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
-    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &sorties, &choix.renvois, &dues.pieces)?;
+    let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &sorties, &choix.renvois, &dues_a_part(&paies_servies)?)?;
     // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
     let messages: Vec<envoi::Message<IdSalarie>> = messages.into_iter().filter(|m| cles.contains(&m.pour)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
     if !sans.is_empty() {
         avertissements.push(sans_courriel_dit(&noms_sans));
     }
-    avertissements.extend(indetermines_dits);
     let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?.email.portee().map(str::to_lowercase);
     if let Some(signataire) = signataire.filter(|s| *s != *expediteur) {
         avertissements.push(format!(

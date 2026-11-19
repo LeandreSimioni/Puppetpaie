@@ -19,7 +19,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> ExitCode {
 fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     let mois = args.tape("mois").map(socle::ligne::Argument::mois).transpose()?;
     let fait = routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
-    if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() && fait.indeterminees.is_empty() {
+    if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
         match mois {
             Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NatureDuRetour::AerSpectacle),
             None => dire!("Aucune attestation dans les retours de nature {}.", NatureDuRetour::AerSpectacle),
@@ -45,11 +45,5 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
         }
         dire!("\nLa correction se fait sur la DSN, et France Travail reedite l'attestation. --forcer signe quand meme.");
     }
-    if !fait.indeterminees.is_empty() {
-        dire!("\n{} attestation(s) NON SIGNEE(S) : elles ne se comparent pas a la paie.", fait.indeterminees.len());
-        for (cle, periode, pourquoi) in &fait.indeterminees {
-            dire!("   {}, {} : {}", cle, periode, pourquoi);
-        }
-    }
-    Ok(if fait.refusees.is_empty() && fait.indeterminees.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(2) })
+    Ok(if fait.refusees.is_empty() { ExitCode::SUCCESS } else { ExitCode::from(2) })
 }

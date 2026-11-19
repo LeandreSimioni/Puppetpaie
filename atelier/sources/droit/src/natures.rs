@@ -830,20 +830,14 @@ codes_fermes! {
 ///
 /// Une DSN mensuelle declare chaque mois tout contrat qui le touche : un contrat commence avant le mois declare l'a ete
 /// par la DSN de son premier mois (celle du logiciel, ou celle d'un ancien logiciel). Ce qu'il en est se lit sur son
-/// debut et sur le mois (`du_contrat`) ; et ce qui est parti peut dire plus : la DSN deposee du mois de la fin a pu deja
-/// la declarer par le circuit derogatoire (`FinPartieAuCircuitDerogatoire`). La decision se prend une fois, dans
-/// `declarations::fin_a_la_dsn`, qui lit ce qui est parti ; tous ceux qui ecrivent ou attendent la fin la lisent.
+/// debut et sur le mois (`du_contrat`), et seulement la : tous ceux qui ecrivent ou attendent la fin l'y lisent. Ce que
+/// le moteur a ecrit hier se redecide donc aujourd'hui de la meme facon, sans rien relire de ce qui est parti.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnuDeLaDsn {
     /// Le contrat commence dans le mois declare : aucune DSN precedente ne l'a porte.
     InfraDsn,
     /// Le contrat a commence avant : la DSN d'un mois precedent l'a declare.
     DejaDeclare,
-    /// La DSN mensuelle deposee du mois de la fin a deja declare cette fin par le circuit derogatoire (S21.G00.62.017 =
-    /// 01) : ce choix « precedemment transmis » se reporte (fiche 1902, `net-entreprises-fiche1902-circuit-derogatoire-
-    /// cddu-d-20250512.txt`), et « Aucun signalement de type FCTU n'est attendu quand la dérogation est appliquée » (fiche
-    /// 2062) ; rien ne se refait sur elle (regle 4).
-    FinPartieAuCircuitDerogatoire,
 }
 
 impl ConnuDeLaDsn {
@@ -860,9 +854,9 @@ impl ConnuDeLaDsn {
         }
     }
 
-    /// Le circuit derogatoire est-il ouvert a ce contrat : infra DSN mensuelle, ou sa fin deja partie par lui.
+    /// Le circuit derogatoire est-il ouvert a ce contrat : infra DSN mensuelle.
     pub fn ouvre_le_circuit(self) -> bool {
-        matches!(self, ConnuDeLaDsn::InfraDsn | ConnuDeLaDsn::FinPartieAuCircuitDerogatoire)
+        self == ConnuDeLaDsn::InfraDsn
     }
 }
 
@@ -1725,8 +1719,7 @@ impl Proprietes {
 
     /// La fin de ce contrat, pour ce motif de rupture (S21.G00.62.002 ; `None` : le defaut de la nature), part-elle par
     /// le circuit derogatoire ? Pour un CDDU, le seul 031 (CCH-12 de S21.G00.62.017, fiche 2062), et seulement s'il est
-    /// infra DSN mensuelle, ou si sa fin est deja partie par ce circuit (`ConnuDeLaDsn::ouvre_le_circuit`) : deja
-    /// declare, il suit le droit commun.
+    /// infra DSN mensuelle (`ConnuDeLaDsn::ouvre_le_circuit`) : deja declare, il suit le droit commun.
     pub fn circuit_derogatoire_pour(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> bool {
         connu.ouvre_le_circuit() && self.circuit_ouvert_au_motif(motif)
     }
@@ -1760,8 +1753,7 @@ impl Proprietes {
     /// Les rubriques du bloc 62 que la nature fixe, pour ce motif de rupture : rubrique -> valeur. La modalite de
     /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le circuit : « 01 » au circuit derogatoire,
     /// « 02 » hors de lui (CCH-11 et CCH-12, cahier technique DSN 2026.1 p. 277, `atelier/reference/norme-dsn/texte/
-    /// bloc-S21.G00.62.txt`) -- un contrat deja declare ecrit 02, une fin deja partie par le circuit y reste
-    /// (`circuit_derogatoire_pour`).
+    /// bloc-S21.G00.62.txt`) -- un contrat deja declare ecrit 02 (`circuit_derogatoire_pour`).
     pub fn codes_fin(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> BTreeMap<RubriqueDeLaNorme, ModaliteDeDeclarationDeFin> {
         let mut out = BTreeMap::new();
         if let Some(c) = &self.fin_de_contrat.circuit_derogatoire {

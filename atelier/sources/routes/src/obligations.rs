@@ -1194,25 +1194,15 @@ pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[
     let n = base()?.obligations;
     let o = &n.signalement_fin_contrat;
     let mut m = Obligation::squelette(CleDObligation::SignalementFinContrat, o);
+    let d = o.delai_de(&o.delai, "delai")?;
+    let butoir = fin_du_delai(ctx, d, InstantOuJour::Jour(fin))?;
     let fait = match cle {
         Some(c) => fctu_depose(journal, c, &fin)?,
         None => None,
     };
     let depart = Depart::du_jour(fin, "la fin du contrat", None);
-    let d = o.delai_de(&o.delai, "delai")?;
-    let butoir = fin_du_delai(ctx, d, InstantOuJour::Jour(fin))?;
     m.conclure(aujourdhui, Some(&depart), butoir, d.dit(), fait)?;
     m.dire_le_butoir()
-}
-
-/// Le signalement de fin d'un contrat dont on ne sait pas s'il est du, pour la raison `pourquoi` : une DSN mensuelle
-/// reelle et acceptee de son mois l'a porte, mais son fichier depose manque ou ne se relit pas
-/// (`declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible`) ; ou sa carte ne se lit plus. L'obligation est
-/// indeterminee et dit pourquoi : ni « en retard », ni un acte propose.
-pub(crate) fn de_la_fin_indeterminee(pourquoi: &str) -> R<Obligation> {
-    let n = base()?.obligations;
-    let o = &n.signalement_fin_contrat;
-    Obligation::squelette(CleDObligation::SignalementFinContrat, o).indeterminee(pourquoi).dire_le_butoir()
 }
 
 /// Le jour ou le signalement de fin de ce contrat est parti (`fctu_depose`), s'il l'est.

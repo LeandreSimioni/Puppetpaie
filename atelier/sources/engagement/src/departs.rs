@@ -38,9 +38,6 @@ pub struct Depart {
     pub avenant: Option<crate::numeros::NumeroDAvenant>,
     pub version: crate::stock::VersionDeLEngagement,
     pub le: socle::paris::InstantOuJour,
-    /// Le fichier que l'envoi a depose ou envoye, tel que sa ligne du journal le nomme ; `None` : la ligne n'en nomme
-    /// pas. Celui d'une DSN se relit la ou le depot l'a pris (`documents::fichier_depose`).
-    pub fichier: Option<socle::fichiers::NomDeFichier>,
 }
 
 /// Ce qui est parti, engagement par engagement : `(cle du salarie, numero du contrat)`.

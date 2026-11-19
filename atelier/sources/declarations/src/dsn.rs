@@ -1767,10 +1767,9 @@ profession intermediaire, 06 employe, 07 ouvrier), et {}. Il ne se devine pas : 
 }
 
 /// Les blocs 40 a 71 d'un contrat. `emplois` : le code emplois multiples (`40.036`) du contrat,
-/// que `emplois_multiples` tire des autres contrats de la periode. `fin_de_contrat` : le bloc 62 s'ecrit le mois ou le
-/// contrat finit, avec ce que la DSN sait de sa fin (`fin_a_la_dsn`) ; `None` : il ne s'ecrit pas.
+/// que `emplois_multiples` tire des autres contrats de la periode.
 pub fn bloc_contrat(
-    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: Option<droit::natures::ConnuDeLaDsn>,
+    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, emplois: &str,
 ) -> R<()> {
     bloc_contrat_fctu(f, p, ent, orgs, rang, bar, fin_de_contrat, arrets, nature_dsn, None, emplois)
@@ -1780,7 +1779,7 @@ pub fn bloc_contrat(
 /// fin de contrat (blocs 62 et 63, `fctu::bloc_62_63`) a la place de celle
 /// d'une mensuelle.
 pub fn bloc_contrat_fctu(
-    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: Option<droit::natures::ConnuDeLaDsn>,
+    f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: RangDuContrat, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, fin_fctu: Option<&crate::fctu::FinDeContrat>, emplois: &str,
 ) -> R<()> {
     let e = &p.engagement;
@@ -1940,17 +1939,19 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     if let Some(fin) = fin_fctu {
         crate::fctu::bloc_62_63(f, fin, e)?;
-    } else if let (engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier, Some(connu)) = (e.place_du_mois()?, fin_de_contrat) {
+    } else if matches!(e.place_du_mois()?, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && fin_de_contrat {
         let fin = e.contrat().fin().ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add(droit::rubrique!("S21.G00.62.001"), fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
         f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add(droit::rubrique!("S21.G00.62.006"), crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
-        // 62.017 d'un CDDU : 01 (circuit derogatoire) pour le 031 d'un contrat infra DSN mensuelle, ou dont la DSN deposee
-        // a deja declare la fin ainsi (fiche 1902 : le choix « précédemment transmis » se reporte) ; 02 sinon -- un contrat
-        // qu'une DSN precedente a declare suit le droit commun (CCH-12, `Nature::codes_fin`, `fin_a_la_dsn`).
-        for (rub, val) in nat.codes_fin(Some(motif), connu) {
+        // 62.017 d'un CDDU : 01 (circuit derogatoire) pour le 031 d'un contrat infra DSN mensuelle, 02 sinon -- un contrat
+        // qu'une DSN precedente a declare suit le droit commun (CCH-12, `Nature::codes_fin`). Il se decide au calendrier
+        // (`ConnuDeLaDsn::du_contrat`, sur le debut du contrat et le mois de l'engagement) : la correction d'une fin deja
+        // declaree redit donc ce que la DSN de son mois avait ecrit, le choix « précédemment transmis » (fiche 1902,
+        // `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`).
+        for (rub, val) in nat.codes_fin(Some(motif), droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
             f.add(rub, val);
         }
     }
@@ -4422,8 +4423,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let ent_e = bareme::fiche_de_l_etablissement(&ent, &nic)?;
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
-            // Seul le bloc 40 se garde : la fin (bloc 62) ne s'ecrit pas.
-            bloc_contrat(&mut f, &declaree, &ent_e, orgs, RangDuContrat::PREMIER, &bar, None, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
+            bloc_contrat(&mut f, &declaree, &ent_e, orgs, RangDuContrat::PREMIER, &bar, true,&[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
             let bloc: Vec<(RubriqueDeLaNorme, String)> =
                 f.lignes.into_iter().filter(|(k, _)| k.du_meme_bloc(crate::changements_contrat::DEBUT_CONTRAT)).collect();
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));
@@ -4614,9 +4614,6 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
 /// le montant.
 pub fn fabriquer(ctx: &Contexte, paies: &[Paie], mois: Mois, regs: &[Regularisation], arrets: &[Arret], o: &Options, departs: &engagement::departs::Departs) -> R<Fabriquee> {
     let ctx = &ctx.du_mois(mois)?;
-    // Ce que la DSN sait de la fin de chaque contrat qui finit (`fin_a_la_dsn`) : chaque DSN deposee ne se relit qu'une fois.
-    let lues = crate::fin_a_la_dsn::DsnDeposees::de(&ctx.racine);
-    let fin_connue = |e: &engagement::Engagement| -> R<droit::natures::ConnuDeLaDsn> { crate::fin_a_la_dsn::de_l_engagement(&lues, departs, e)?.connue() };
     let ent0 = &ctx.entreprise;
     let principal_nic = ent0.nic.exigee("nic")?;
     let nic = match &o.etablissement {
@@ -5160,7 +5157,7 @@ certificat de conformite du depot precedent.",
         for (p, rang) in lot.iter().zip(&rangs_du_lot) {
             let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, p)?;
             let debut_bloc = f.lignes.len();
-            bloc_contrat(&mut f, p, &ent_e, &orgs, *rang, &bar, Some(fin_connue(&p.engagement)?), &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(p, &periode))?;
+            bloc_contrat(&mut f, p, &ent_e, &orgs, *rang, &bar, true, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(p, &periode))?;
             // Ce qui a change depuis la derniere DSN deposee du contrat : le bloc S21.G00.41, sous son bloc 40.
             let declare = bloc_40_declare(ctx, p, mois, &etats_du_mois, departs, &orgs)?;
             crate::changements_contrat::poser(&mut f, debut_bloc, ctx, p, mois, &nics_courant_d_abord, declare.as_ref())?;
@@ -5199,7 +5196,6 @@ certificat de conformite du depot precedent.",
                     let fin = groupe.iter().any(|x| ajoute(x) || x.apres.engagement.contrat().fin() != x.avant.engagement.contrat().fin());
                     let debut_bloc = f.lignes.len();
                     let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, &dernier.apres)?;
-                    let fin = if fin { Some(fin_connue(&dernier.apres.engagement)?) } else { None };
                     bloc_contrat(&mut f, &dernier.apres, &ent_e, &orgs, rg, &b, fin, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(&dernier.apres, &autres))?;
                     // UNE DATE DE DEBUT CORRIGEE : l'ancienne, lue dans ce qui a ete declare, sous le bloc 40 (fiche 1952) --
                     // une fois, depuis la correction du dernier mois qui a declare le contrat.

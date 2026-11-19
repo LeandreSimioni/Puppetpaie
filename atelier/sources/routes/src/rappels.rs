@@ -24,7 +24,7 @@ use compagnie::etat_dsn;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
-use crate::imprevus::{FinASignaler, ResumeDArret};
+use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
@@ -574,16 +574,16 @@ pub(crate) struct Echeance {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub(crate) enum Objet {
-    Fin(Box<FinASignaler>),
+    Fin(Box<FinLue>),
     Arret(Box<ResumeDArret>),
 }
 
 impl Objet {
-    /// Le salarie qu'il nomme (la cle de sa fiche) ; `None` : une fin dont la carte ne le dit plus.
-    fn salarie(&self) -> Option<droit::contexte::IdSalarie> {
+    /// Le salarie qu'il nomme (la cle de sa fiche).
+    fn salarie(&self) -> droit::contexte::IdSalarie {
         match self {
             Objet::Fin(f) => f.salarie.clone(),
-            Objet::Arret(a) => Some(a.salarie().clone()),
+            Objet::Arret(a) => a.salarie().clone(),
         }
     }
 }
@@ -650,7 +650,7 @@ impl Echeance {
             Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
             _ => None,
         };
-        let salarie = || self.objet.as_ref().and_then(Objet::salarie);
+        let salarie = || self.objet.as_ref().map(Objet::salarie);
         Ok(Some(match &self.quoi {
             GenreDEcheance::Obligation => {
                 let Some(o) = self.obligation.as_ref() else { return Ok(None) };
@@ -1430,19 +1430,16 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
 
     // LES FINS DE CONTRAT : celles du mois passe et du mois en cours, deja finies (`crate::imprevus::fins_a_signaler`, la
     // meme liste que la colonne du mois), et celles d'avant dont le signalement est en retard (`fins_en_retard_avant`). Un CDD
-    // d'usage infra DSN mensuelle arrive a son terme (031) n'en fait pas partie, ni une fin que la DSN mensuelle deposee a
-    // deja declaree par le circuit derogatoire.
+    // d'usage infra DSN mensuelle arrive a son terme (031) n'en fait pas partie. Une carte a corriger n'a rien a rappeler :
+    // la colonne du mois la montre.
     let mois = st.aujourdhui.mois_civil();
     let precedent = mois.precedent();
-    let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&st.ctx.racine);
-    let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui, &lues)?;
+    let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui)?;
     for m in [precedent, mois] {
-        fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui, &lues)?);
+        fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui)?);
     }
-    for f in fins {
-        // Une carte qui ne se lit plus n'a ni salarie ni contrat a rappeler : son obligation est indeterminee, la colonne
-        // du mois la montre.
-        let (Some(cle), Some(contrat)) = (f.salarie.clone(), f.contrat) else { continue };
+    for f in fins.into_iter().filter_map(FinASignaler::lue) {
+        let (cle, contrat) = (f.salarie.clone(), f.contrat);
         if contrat.fin() > st.aujourdhui {
             continue; // il n'a pas encore pris fin
         }

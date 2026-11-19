@@ -1186,10 +1186,6 @@ pub(crate) struct Vue {
     recalcul: Option<String>,
     contrat: ContratDit,
     pieces: Vec<&'static str>,
-    /// L'attestation qu'on ne sait pas dire : le fichier depose de la DSN de son mois manque ou ne se relit pas
-    /// (`declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible`) ; la phrase dit quel fichier remettre. Sur cet
-    /// engagement seul : ni l'AER ni l'attestation du signalement ne s'attendent, et rien d'autre ne se ferme.
-    attestation_indeterminee: Option<String>,
     etats: Etats,
     a_completer: Option<String>,
 }
@@ -1562,8 +1558,6 @@ impl<'a> Moteur<'a> {
         let ids = engagement::stock::identites(&etats_eng.iter().map(|e| e.objet().clone()).collect::<Vec<_>>());
         let g = self.globales()?;
         let departs = self.departs()?;
-        // Ce que la DSN sait de la fin de chaque contrat (`declarations::fin_a_la_dsn`) : chaque DSN deposee, relue une fois.
-        let lues = declarations::fin_a_la_dsn::DsnDeposees::de(&self.ctx.racine);
         // Ce qui est a refaire de chacun, compare une fois : la liste des DPAE, la ligne et la DSN du mois le lisent.
         for e in &etats_eng {
             self.a_refaire_du_mois(mois, e, &departs)?;
@@ -1644,16 +1638,8 @@ impl<'a> Moteur<'a> {
             if matches!(place, engagement::PlaceDuMois::Seul | engagement::PlaceDuMois::Dernier) && p.declaree_a_la_caisse_des_conges()? {
                 pieces.push("certificat_cs");
             }
-            // Ce que la DSN sait de sa fin : un fichier depose qui ne se relit pas laisse l'attestation de CET engagement
-            // indeterminee, avec la phrase du fichier a remettre ; les autres ne voient rien changer.
-            let mut attestation_indeterminee = None;
-            match declarations::fin_a_la_dsn::de_l_engagement(&lues, &departs, &p.engagement)? {
-                declarations::fin_a_la_dsn::FinALaDsn::Connue(c) => {
-                    if documents::aer::due(p, c)? {
-                        pieces.push("aer");
-                    }
-                }
-                illisible @ declarations::fin_a_la_dsn::FinALaDsn::FichierIllisible { .. } => attestation_indeterminee = illisible.illisible(),
+            if documents::aer::due(p)? {
+                pieces.push("aer");
             }
             // LA DPAE DE CET ENGAGEMENT : partie (`departs`), et ce qui en est revenu (la ligne qui la porte, par le numero du
             // contrat). Refusee au bilan, elle n'est pas partie ; la ligne dit quand elle a ete refusee.
@@ -1728,7 +1714,6 @@ impl<'a> Moteur<'a> {
                 recalcul,
                 contrat,
                 pieces,
-                attestation_indeterminee,
                 etats: Etats { dpae, signature, documents },
                 a_completer: None,
             };
@@ -1787,7 +1772,6 @@ impl<'a> Moteur<'a> {
             recalcul: None,
             contrat: ContratDit::ACompleter(ContratACompleter { debut: debut_du_contrat, debut_lu: debut, fin_ecrite: e.fin, repris: false, anterieur }),
             pieces: Vec::new(),
-            attestation_indeterminee: None,
             etats: Etats::sans_envoi(),
             a_completer: Some(manque.to_string()),
         })
@@ -2657,11 +2641,6 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         PointDocuments::ARenvoyer => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
         PointDocuments::AEnvoyer => (EtatCase::AFaire, "Documents à envoyer".to_string(), route(envoyer_documents(mois, "Envoyer les documents…".into()))),
         PointDocuments::Fait | PointDocuments::ACompleter | PointDocuments::AValider => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(InstantOuJour::jour))?), None),
-    };
-    // L'attestation de cet engagement qu'on ne sait pas dire : la phrase du fichier a remettre suit celle du carre.
-    let phrase = match &p.attestation_indeterminee {
-        Some(pourquoi) => format!("{}. Attestation France Travail : {}", phrase, pourquoi),
-        None => phrase,
     };
     let documents = carre(QuelleEtape::Documents, "Documents", etat, phrase, geste, None);
     // CE QUI RESTE, EN UN MOT, sur le carre meme (la phrase entiere est l'infobulle) ; un point fait n'a rien qui reste.

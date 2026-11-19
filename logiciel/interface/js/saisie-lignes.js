@@ -1491,9 +1491,7 @@ function majRupture(div) {
   // Une fin qui ne se signale pas (le CDDU à son terme) ne montre que son
   // motif : le reste ne partirait nulle part.
   const signale = finSeSignale(rupture, sel.value);
-  // Une fin dont la DSN déposée du mois ne se relit pas : le moteur dit quel fichier remettre.
-  div.querySelector(".e-rupture-dit").textContent = ETAT.aides[signale ? "fin_signalee" : "fin_derogatoire"]
-    + (rupture.indeterminee ? " " + rupture.indeterminee : "");
+  div.querySelector(".e-rupture-dit").textContent = ETAT.aides[signale ? "fin_signalee" : "fin_derogatoire"];
   if (!signale) {
     bloc.querySelectorAll(":scope > label:not(.e-motif-l)").forEach((l) => { l.hidden = true; });
   } else {

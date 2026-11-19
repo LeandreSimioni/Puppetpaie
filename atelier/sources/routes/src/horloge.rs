@@ -747,8 +747,8 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         }),
         Geste::Fin { mois, salarie, fin } => pas(d, quoi, quand, |ctx| {
             let mut encore = false;
-            for x in crate::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui, &declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine))? {
-                encore |= x.salarie.as_ref() == Some(salarie) && x.contrat.map(|c| c.fin()) == Some(*fin) && due(&x.obligation, ctx.aujourdhui).is_some();
+            for x in crate::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui)?.into_iter().filter_map(crate::imprevus::FinASignaler::lue) {
+                encore |= x.salarie == *salarie && x.contrat.fin() == *fin && due(&x.obligation, ctx.aujourdhui).is_some();
             }
             if !encore {
                 return Ok(Joue::Rien);
@@ -957,17 +957,16 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
             });
         }
     }
-    for f in crate::imprevus::fins_a_signaler(ctx, le_mois, jour, &declarations::fin_a_la_dsn::DsnDeposees::de(&ctx.racine))? {
+    // Une carte a corriger n'a pas de signalement a deposer.
+    for f in crate::imprevus::fins_a_signaler(ctx, le_mois, jour)?.into_iter().filter_map(crate::imprevus::FinASignaler::lue) {
         let Some(butoir) = du(&f.obligation) else { continue };
         if cloture && !f.a_saisir.is_empty() {
             continue;
         }
-        // Une carte qui ne se lit plus n'a pas de signalement a deposer (son obligation est indeterminee).
-        let (Some(salarie), Some(contrat)) = (f.salarie, f.contrat) else { continue };
         dus.push(Pas {
             quand: a_l_heure(butoir, const { HeureDuJour::a(9, 30) })?,
-            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", salarie, contrat.fin().jj_mm_aaaa()),
-            geste: Geste::Fin { mois: le_mois, salarie, fin: contrat.fin() },
+            quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.contrat.fin().jj_mm_aaaa()),
+            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.clone(), fin: f.contrat.fin() },
         });
     }
     Ok(dus)

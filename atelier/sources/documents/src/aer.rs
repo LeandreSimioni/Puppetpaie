@@ -105,10 +105,8 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
 ///
-/// `connu` : ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`, la decision prise une fois).
-///
 /// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME (`Nature::a_son_terme_hors_du_circuit` : 031, commence un mois
-/// d'avant, sa fin pas partie par le circuit) n'attend pas cette AER : une attestation attendue, celle du signalement
+/// d'avant, au calendrier : `ConnuDeLaDsn::du_contrat`) n'attend pas cette AER : une attestation attendue, celle du signalement
 /// (`attestation_fctu`). C'est une INFERENCE. Ce qui la porte : l'archive des AER de la mensuelle est celle des contrats
 /// en circuit derogatoire (fiche 1902 : « cette DSN mensuelle donne lieu à une archive de l'ensemble des AER
 /// correspondant aux CDD d'usage en circuit dérogatoire » ; « il n'y aura pas d'AER pour ce contrat d'usage en circuit
@@ -120,9 +118,10 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// (`francetravail-100-dsn/LISEZMOI.md`). Tout autre contrat d'intermittent qui finit dans le mois a son AER, qu'il soit
 /// rompu ou qu'il soit un CDD d'artiste : « 1 AE CS éditée à la fin du dernier mois concerné par le contrat »
 /// (`movinmotion-fin-des-aem-20260601.txt`, plus haut).
-pub fn due(p: &engagement::calcul::Paie, connu: droit::natures::ConnuDeLaDsn) -> socle::echec::R<bool> {
+pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     let e = &p.engagement;
     let nat = e.nat()?;
+    let connu = droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois);
     if !droit::caisse_conges::intermittent(&nat, &p.salarie)? || nat.a_son_terme_hors_du_circuit(e.motif_rupture, connu) {
         return Ok(false);
     }
@@ -139,11 +138,9 @@ pub fn due(p: &engagement::calcul::Paie, connu: droit::natures::ConnuDeLaDsn) ->
 /// `net-entreprises-base-connaissances/net-entreprises-fiche3037-attestation-employeur-aed-fctu-20250323.txt`). Le moteur
 /// ne la range pas pour l'envoi : la forme de ce PDF (ses champs, son cadre d'authentification) n'est relevee sur
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
-/// `connu` : ce que la DSN sait de la fin (`declarations::fin_a_la_dsn`) ; une fin deja partie par le circuit ne se
-/// signale pas, et son attestation est celle de la mensuelle (`due`).
-pub fn attestation_fctu(e: &engagement::Engagement, connu: droit::natures::ConnuDeLaDsn) -> socle::echec::R<bool> {
+pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture, connu) {
+    if !nat.signalement_fctu(e.motif_rupture, droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
@@ -532,13 +529,12 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 }
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
-/// mois-ci (`due`, avec ce que la DSN sait de sa fin : `connu_de`), mois par mois depuis son debut, chacun lu dans la
-/// paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<Paie>, connu_de: &dyn Fn(&Paie) -> socle::echec::R<droit::natures::ConnuDeLaDsn>) -> socle::echec::R<Vec<Paie>> {
+/// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
+pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<Paie>) -> socle::echec::R<Vec<Paie>> {
     let de_lui = |p: &Paie| p.salarie.id == *cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).into_iter().filter(|p| de_lui(p)) {
-        if !due(&p, connu_de(&p)?)? {
+        if !due(&p)? {
             continue;
         }
         let numero = numero_de(&p)?.clone();
