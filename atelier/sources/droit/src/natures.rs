@@ -841,11 +841,16 @@ pub enum ConnuDeLaDsn {
 }
 
 impl ConnuDeLaDsn {
-    /// Ce que la DSN du mois `mois` sait du contrat qui commence le `debut`, d'apres le calendrier. HYPOTHESE : la paie du
+    /// Ce que la DSN du mois `mois` sait du contrat qui commence le `debut`, d'apres le calendrier. INFERENCE : la paie du
     /// moteur se ferme au mois civil, donc deux processus de paie sont deux mois civils, et « commence dans le mois » vaut
     /// « infra DSN mensuelle ». La fiche 1741 dit que cette notion « ne se définit donc ni en terme de durée du contrat,
     /// ni au sens calendaire » (l. 5 : le debut et la fin tombent « entre deux processus de traitement de la paie ») : une
     /// paie qui ne se fermerait pas au mois civil ne se lirait pas ainsi.
+    ///
+    /// INFERENCE aussi pour un debut corrige apres coup : un contrat d'usage dont on recule le debut dans le mois d'avant
+    /// devient « deja declare », et la correction de sa fin s'ecrit alors hors du circuit derogatoire (62.017 = 02, avec
+    /// son signalement), alors que la fiche net-entreprises 1902 (l. 14) demande de reporter le choix « précédemment
+    /// transmis ». Le contrat corrige est un contrat a cheval sur deux paies : c'est ce que ses dates disent.
     pub fn du_contrat(debut: socle::date::Jour, mois: socle::mois::Mois) -> ConnuDeLaDsn {
         if debut < mois.premier_jour() {
             ConnuDeLaDsn::DejaDeclare

@@ -2521,30 +2521,16 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             continue;
         };
         let Some(n) = e.nature else {
-            let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), &journal.lignes, aujourdhui)?;
-            let en_retard = obligation.etat == crate::obligations::EtatDObligation::EnRetard;
-            let pastille = if en_retard { obligation.pastille.clone() } else { Pastille::de(socle::ecran::EtatDEcran::AFaire, "à compléter") };
-            out.push(FinASignaler::Lue(FinLue {
-                salarie,
+            out.push(fin_a_corriger(
+                e,
                 mois,
-                contrat,
-                en_retard,
-                numero: e.numero.clone(),
-                libelle_nature: "nature à dire".to_string(),
-                motif_rupture: e.motif_rupture,
-                preavis: e.preavis.clone(),
-                a_saisir: vec![manque(
+                manque(
                     "nature",
                     "Nature",
                     "la nature du contrat.",
                     "La nature dit si la fin du contrat se signale (`Nature::signalement_fctu`) : sans elle, on ne sait pas.",
-                )],
-                du: true,
-                pastille,
-                obligation,
-                qui_dit: None,
-                contrat_dit: None,
-            }));
+                ),
+            ));
             continue;
         };
         let nat = n.proprietes()?;
@@ -2611,7 +2597,10 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
                 f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
             }
             FinASignaler::ACorriger(f) => {
-                let qui = f.salarie.as_ref().map(|s| ctx.nomme(s)).unwrap_or_else(|| "Une carte sans salarié".to_string());
+                let qui = match f.salarie.as_ref() {
+                    Some(s) => ctx.nomme(s),
+                    None => "Une carte sans salarié".to_string(),
+                };
                 f.qui_dit = Some(format!(
                     "{}, contrat {} : à corriger dans la carte de {}",
                     qui,

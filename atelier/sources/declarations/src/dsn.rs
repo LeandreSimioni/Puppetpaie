@@ -4423,7 +4423,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let ent_e = bareme::fiche_de_l_etablissement(&ent, &nic)?;
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
-            bloc_contrat(&mut f, &declaree, &ent_e, orgs, RangDuContrat::PREMIER, &bar, true,&[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
+            bloc_contrat(&mut f, &declaree, &ent_e, orgs, RangDuContrat::PREMIER, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
             let bloc: Vec<(RubriqueDeLaNorme, String)> =
                 f.lignes.into_iter().filter(|(k, _)| k.du_meme_bloc(crate::changements_contrat::DEBUT_CONTRAT)).collect();
             return Ok(Some(crate::changements_contrat::Declare { mois: m, siret: droit::fiche::Siret::de(ctx_m.entreprise.siren.exigee("siren")?, &nic), nic, bloc }));

@@ -342,7 +342,7 @@ n'est attendu, sauf demande expresse du salarié (fiche net-entreprises 2062).",
     // techniciens du spectacle ; pour un contrat d'usage qui se signale, les cinq jours sont ceux de la fiche 2062 (« dans
     // les 5 jours suivant la survenance de la fin de contrat de travail », l. 4) et l'inference de `obligations-base.json`
     // (`signalement_fin_contrat.inferences`).
-    let texte = if nat.circuit_ouvert_au_motif(None) { "fiche net-entreprises 2062" } else { "cahier technique p. 107" };
+    let texte = if nat.circuit_ouvert_au_motif(None) { "fiche net-entreprises 2062 : « dans les 5 jours »" } else { "cahier technique p. 107" };
     avertissements.push(format!(
         "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent ({}).",
         fin.fin.jj_mm_aaaa(),
