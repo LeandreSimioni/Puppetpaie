@@ -411,8 +411,11 @@ pub(crate) fn archiver_retour(racine: &Path, canal: CanalDesRetours, retour: &An
     };
     let nom = format!("{}{}", nom_d_archive(retour, maintenant), ext);
     let dest = dossier_archive(racine, canal)?.join(nom);
+    // L'archive se relit du disque (`piece_deja_la`) : elle n'y est qu'entiere, posee d'un seul renommage.
     if !dest.exists() {
-        std::fs::write(&dest, contenu).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
+        let provisoire = dest.with_extension("part");
+        std::fs::write(&provisoire, contenu).map_err(|e| crate::etats::erreur_io(&e, &provisoire))?;
+        std::fs::rename(&provisoire, &dest).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
     }
     Ok(dest)
 }
@@ -835,7 +838,8 @@ pub fn relever_retours(
     let mut retenus: Vec<Annonce> = Vec::new();
     let mut expires: Vec<Annonce> = Vec::new();
     for r in precedent.iter().flat_map(|c| c.a_reprendre.iter()).filter(|r| !est_connu(&connus, r)) {
-        if hors_de_l_horizon(r, fin) {
+        // A un jour pose (`--date`), l'age d'un retour n'est pas le sien : rien n'en sort.
+        if socle::temps::jour_de_paris() == socle::temps::jour_de_la_montre() && hors_de_l_horizon(r, fin) {
             expires.push(r.clone());
         } else {
             retenus.push(r.clone());
@@ -843,10 +847,11 @@ pub fn relever_retours(
     }
     for r in &expires {
         if let (Some(url), Some(publie)) = (r.url.clone(), jour_de_publication_dit(r)) {
-            let phrase = format!(
-                "Retour nature {} publié le {}, jamais lu : le SI DSN ne le sert plus après quatre-vingt-dix jours (guide de l'API DSN, § 8.2).",
-                r.nature_retour, publie
-            );
+            let pourquoi = match canal {
+                CanalDesRetours::Dsn => "le SI DSN ne le sert plus après quatre-vingt-dix jours (guide de l'API DSN, § 8.2)",
+                CanalDesRetours::Dpae => "il a plus de quatre-vingt-dix jours et n'est plus repris (aucun texte de l'Urssaf ne dit sa rétention : celle de la DSN, par inférence)",
+            };
+            let phrase = format!("Retour nature {} publié le {}, jamais lu : {}.", r.nature_retour, publie, pourquoi);
             suites.retires.push((r.nature_retour, url, erreur(Classe::Organisme, phrase)));
         }
     }
