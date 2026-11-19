@@ -1507,8 +1507,10 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let qui = ctx.nomme(&cle);
         for a in &cpt.avertissements {
             // Un avis du compteur nomme deja son salarie, par sa cle : il se dit par son nom.
-            let reste = a.texte.strip_prefix(&format!("{} : ", cle)).unwrap_or(&a.texte);
-            avert.push(format!("{} : {}", qui, reste));
+            avert.push(match a.texte.strip_prefix(&format!("{} : ", cle)) {
+                Some(reste) => format!("{} : {}", qui, reste),
+                None => format!("{} : {}", qui, a.texte),
+            });
         }
         let (dixieme, maintien, retenu, regle) = match &cpt.indemnite {
             Some(i) => (i.dixieme, i.maintien, i.retenu, i.regle.to_string()),
