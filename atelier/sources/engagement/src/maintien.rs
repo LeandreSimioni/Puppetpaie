@@ -263,6 +263,16 @@ pub struct DuMois {
     pub assiette_pas: Montant,
     /// Les heures d'absence que le maintien couvre (la quantite de sa ligne).
     pub heures: Heures,
+    /// LES JOURS D'ABSENCE OU L'EMPLOYEUR VERSE UN COMPLEMENT (`ajouter`) : ceux d'une suite de jours dont le complement,
+    /// la garantie moins les indemnites journalieres brutes, est positif. Ce sont les seuls jours d'un arret qui ne
+    /// reduisent pas le plafond de la paie (`imprevus::lignes_du_mois`) : BOSS, assiette generale, § 820
+    /// (`boss/boss-assiette-generale-20260801.txt`, l. 1142-1144), une absence « partiellement ou totalement remuneree par
+    /// l'employeur, sous forme de versement visant au maintien de salaire [...] et soumis a cotisations » ne le reduit
+    /// pas ; § 850 (l. 1163-1165), il se reduit « lorsque l'employeur ne verse au salarie, par subrogation, que les
+    /// indemnites journalieres de securite sociale non soumises a cotisations » : un complement nul est ce cas, comme la
+    /// carence, les jours au-dela des tranches et l'arret sans droit au maintien. Ceux d'un texte en net n'y sont pas : son
+    /// complement ne se connait qu'au calcul de la paie (`AuNet::jours`).
+    pub jours_maintenus: std::collections::BTreeSet<Jour>,
     pub avis: Vec<Avis>,
 }
 
@@ -278,6 +288,7 @@ impl DuMois {
             ij_subrogees_jours: nulle(),
             assiette_pas: nulle(),
             heures: Heures::ZERO,
+            jours_maintenus: std::collections::BTreeSet::new(),
             avis: Vec::new(),
         }
     }
@@ -295,6 +306,11 @@ pub struct AuNet {
     pub ij_nettes_hors_bulletin: Montant,
     pub ij_nettes_hors_garantie: Montant,
     pub complement_brut: Montant,
+    /// Les jours des suites d'un texte en net dont la garantie brute depasse les indemnites brutes, hors des jours que la
+    /// loi maintient deja (`lignes`). Hors de `DuMois::jours_maintenus`, ils reduisent le plafond de la paie ; ils sont
+    /// maintenus quand le complement net que le calcul reconstitue est positif (`au_net`, `Reconstitue::maintenus` ;
+    /// BOSS, assiette generale, § 820 et 850).
+    pub jours: std::collections::BTreeSet<Jour>,
 }
 
 /// Les indemnites d'un jour d'un arret, lues sur l'arret (`ij_brute`, `ij_nette`, et pour un accident du travail au-dela
@@ -425,6 +441,10 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         let mut parts = Vec::new();
         let mut hors_garantie = nulle::<Montant>();
         let mut heures = Heures::ZERO;
+        // Une garantie en net se reconstitue sur le mois, par le calcul de la paie (`au_net`) : les jours de ses suites ne
+        // sont maintenus que si le complement net qu'elle y verse est positif (`AuNet::jours`).
+        let en_net = matches!(t, Texte::Convention) && r.base == Base::Net;
+        let mut jours_au_net = std::collections::BTreeSet::new();
         for (s, f) in suites(&taux, &arret, &absence)? {
             let (x, h) = retenue(m, taux_horaire, &s)?;
             let (ib, inet) = ij_de(&s);
@@ -433,6 +453,15 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                 let gs = x * f;
                 garantie += gs;
                 deduit += ib;
+                // Les jours d'une suite dont le complement brut est positif sont maintenus (`DuMois::jours_maintenus`) ;
+                // d'un texte en net, ils le sont si le complement net du mois l'est aussi (`au_net`).
+                if gs - ib > nulle() {
+                    if en_net {
+                        jours_au_net.extend(s.jours());
+                    } else {
+                        out.jours_maintenus.extend(s.jours());
+                    }
+                }
                 complement += (gs - ib).max(nulle());
                 heures += h;
             } else {
@@ -469,7 +498,9 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
                     ij_nettes_hors_bulletin: nulle(),
                     ij_nettes_hors_garantie: nulle(),
                     complement_brut: nulle(),
+                    jours: std::collections::BTreeSet::new(),
                 });
+                a.jours.extend(jours_au_net);
                 a.texte = r.texte.clone();
                 a.net |= r.base == Base::Net;
                 a.plafond_net |= r.plafond_net;
@@ -705,8 +736,9 @@ fn net_de_csg_crds(brute: MontantUnitaire, csg: Taux, crds: Taux) -> MontantUnit
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
 /// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose. La
-/// ligne du maintien se paie en heures.
-pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
+/// ligne du maintien se paie en heures. `arrets` : les jours d'arret du mois (`imprevus::lignes_du_mois`), que le mois
+/// « s'il avait continue de travailler » ne compte pas sans remuneration (`Reconstitution::arrets`).
+pub fn lignes(dmois: &DuMois, arrets: &std::collections::BTreeSet<Jour>, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
     let plancher = dmois.ij_subrogees_brutes.au_centime();
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -728,10 +760,12 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
                     ij_nettes_hors_bulletin: a.ij_nettes_hors_bulletin.au_centime(),
                     ij_nettes_hors_garantie: a.ij_nettes_hors_garantie.au_centime(),
                     complement_brut: a.complement_brut.au_centime(),
+                    jours: a.jours.difference(&dmois.jours_maintenus).copied().collect(),
                     ..a.clone()
                 },
                 complement_direct: direct,
                 plancher,
+                arrets: arrets.clone(),
             })
         });
         let paiement = PaiementDeLigne::Heures(q, taux);
@@ -757,16 +791,29 @@ fn sur_les_heures(montant: Montant, heures: Heures) -> (Heures, MontantUnitaire)
 }
 
 /// LA LIGNE DU MAINTIEN GARANTI EN NET : ce qu'il faut pour le reconstituer (`au_net`) -- le mois, la garantie, le
-/// complement de la loi en brut et les indemnites subrogees qu'il avance.
+/// complement de la loi en brut et les indemnites subrogees qu'il avance ; les jours d'arret du mois.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reconstitution {
     pub mois: Mois,
     pub au_net: AuNet,
     pub complement_direct: Montant,
     pub plancher: Montant,
+    /// Les jours d'arret du mois : le net de reference, celui du mois « s'il avait continue de travailler » (3090, 11.2),
+    /// se calcule sans eux parmi les jours sans remuneration (`au_net`), donc sur le plafond entier qu'ils auraient
+    /// laisse ; il ne depend pas de ce que la reconstitution decide de leur maintien.
+    pub arrets: std::collections::BTreeSet<Jour>,
 }
 
 // ------------------------------------------------------------------ le net reconstitue
+
+/// CE QU'UNE RECONSTITUTION DONNE A LA PAIE (`au_net`) : le montant de la ligne du maintien, l'avis qui le dit, et les
+/// jours d'un texte en net que son complement maintient (`AuNet::jours`, quand il est positif ; aucun sinon).
+#[derive(Debug, Clone)]
+pub struct Reconstitue {
+    pub montant: Montant,
+    pub avis: Avis,
+    pub maintenus: std::collections::BTreeSet<Jour>,
+}
 
 /// Le nombre de calculs de la paie qu'une reconstitution s'autorise.
 const ESSAIS: usize = 40;
@@ -778,12 +825,15 @@ const ESSAIS: usize = 40;
 /// non garantis s'y ajoutent (3090, 11.2 : « 90 % de la remuneration nette que le salarie aurait percue s'il avait
 /// continue de travailler », « deduction faite des indemnites que l'interesse percoit de la securite sociale »). Un texte
 /// en brut qui plafonne au net (« un montant total superieur a la remuneration nette qu'il aurait effectivement percue »)
-/// baisse son complement jusqu'a `net0`. La loi, en brut, reste le plancher (la plus favorable). `paie(lignes)` est le
-/// calcul de la paie du mois, le seul : rien ne se calcule ici a cote de lui.
+/// baisse son complement jusqu'a `net0`. La loi, en brut, reste le plancher (la plus favorable). `paie(lignes, hors)` est
+/// le calcul de la paie du mois, le seul : rien ne se calcule ici a cote de lui ; `hors`, les jours qu'il ne compte pas
+/// sans remuneration. Les deux nets de reference (`net0`, et celui de l'absence sans maintien qui mesure ce qu'elle
+/// retire) se calculent sur le mois « s'il avait continue de travailler », les jours d'arret hors des jours sans
+/// remuneration (`Reconstitution::arrets`) : la garantie est la meme que les jours soient finalement maintenus ou non.
 pub fn au_net(
     lignes: &[LignePaie],
-    paie: &mut dyn FnMut(Vec<LignePaie>) -> R<crate::calcul::Paie>,
-) -> R<Option<(Montant, Avis)>> {
+    paie: &mut dyn FnMut(Vec<LignePaie>, &std::collections::BTreeSet<Jour>) -> R<crate::calcul::Paie>,
+) -> R<Option<Reconstitue>> {
     let Some((i, spec)) = lignes.iter().enumerate().find_map(|(i, l)| l.reconstitution().map(|s| (i, s.clone()))) else { return Ok(None) };
     let (plancher, direct, complement_brut) = (spec.plancher, spec.complement_direct, spec.au_net.complement_brut);
     let (hors_bulletin, hors_garantie) = (spec.au_net.ij_nettes_hors_bulletin, spec.au_net.ij_nettes_hors_garantie);
@@ -805,8 +855,9 @@ pub fn au_net(
         Ok(out)
     };
     let sans_absence: Vec<LignePaie> = avec(None)?.into_iter().filter(|l| !l.est_retenue_arret()).collect();
-    let net0 = paie(sans_absence)?.net_a_payer;
-    let net_abs = paie(avec(None)?)?.net_a_payer;
+    let net0 = paie(sans_absence, &spec.arrets)?.net_a_payer;
+    let net_abs = paie(avec(None)?, &spec.arrets)?.net_a_payer;
+    let aucun = std::collections::BTreeSet::new();
     let retire: Montant = parts.iter().map(|p| p.0).sum();
     let perdu = net0 - net_abs;
     let cible = if spec.au_net.net {
@@ -823,7 +874,7 @@ pub fn au_net(
     let mut calculs = 2usize;
     let mut recu = |a: Montant, calculs: &mut usize| -> R<Montant> {
         *calculs += 1;
-        Ok(paie(avec(Some(a))?)?.net_a_payer + hors_bulletin)
+        Ok(paie(avec(Some(a))?, &aucun)?.net_a_payer + hors_bulletin)
     };
     let resoudre = |cible: Montant, recu: &mut dyn FnMut(Montant, &mut usize) -> R<Montant>, calculs: &mut usize| -> R<Option<Montant>> {
         let (mut lo, mut flo) = (plancher, recu(plancher, calculs)? - cible);
@@ -888,6 +939,8 @@ atteinte. Rien n'est calculé ; signaler ce mois au développeur.",
     };
     let loi = direct + plancher;
     let retenu = convention.max(loi);
+    // Les jours d'un texte en net sont maintenus quand il verse plus que les indemnites subrogees qu'il avance.
+    let maintenus = if spec.au_net.net && convention > plancher { spec.au_net.jours.clone() } else { std::collections::BTreeSet::new() };
     let avis = info(format!(
         "Maintien de {} : {} {} ; reconstitué en {} calculs de la paie, au centime{}.",
         mois,
@@ -896,7 +949,7 @@ atteinte. Rien n'est calculé ; signaler ce mois au développeur.",
         calculs,
         if retenu > convention { " ; la loi donne plus, c'est elle qui est payée" } else { "" }
     ));
-    Ok(Some((retenu, avis)))
+    Ok(Some(Reconstitue { montant: retenu, avis, maintenus }))
 }
 
 /// Les lignes d'un engagement, la ligne du maintien portee a `montant` (le resultat de `au_net`).
@@ -959,7 +1012,7 @@ mod tests {
                 ..DuMois::vide()
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, socle::forme::lire_texte("\"2026-03\"", "le mois du test").unwrap(), &au);
+            let l = lignes(&m, &std::collections::BTreeSet::new(), socle::forme::lire_texte("\"2026-03\"", "le mois du test").unwrap(), &au);
             l[0].taux().unwrap()
         };
         let par_unite = |euros: u32| crate::ligne::TauxDeLigne::ParUnite(Montant::euros(euros).pour_une_unite());

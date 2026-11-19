@@ -40,7 +40,7 @@ use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 // Un montant tel que le bulletin l'imprime, « 1 234,56 » : l'ecriture du socle.
 use socle::texte::chiffres_en_euros as fr;
 
@@ -153,8 +153,32 @@ const fn t(milliemes: u32) -> Taux {
     Taux::milliemes_de_point(milliemes)
 }
 
-/// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels) : 0,9825.
-const ASSIETTE_CSG: Coefficient = Coefficient::dix_milliemes(9825);
+/// L'ASSIETTE DE LA CSG DU FAUX BULLETIN de brut `brut` et de plafond `plafond`, par la regle du moteur, lue au bareme
+/// livre de l'annee `annee` : la part du brut sous la limite de l'abattement (`droit::plafond::assiettes_plafonnees`),
+/// abattue (`Pile::assiette_csg`). La paie seule (`Plafonnement::ParPaie`) : le moteur ne regularise pas une paie reprise
+/// d'un ancien logiciel (`engagement::conges::plafonds_des_mois_anterieurs`), et c'est ainsi qu'il recalcule celle d'un
+/// faux bulletin importe pour la comparer.
+///
+/// UNE ANNEE SANS BAREME LIVRE (2024, que le banc decrit, et dont `pss` lit le plafond a la table du BOSS) : l'abattement
+/// et sa limite sont ceux de CSS L. 136-2, I, dans sa redaction en vigueur depuis le 16/12/2020, que le bareme livre de
+/// 2025 lit et cite (`limite_abattement_csg.source` : « en vigueur depuis le 16/12/2020 ») ; ils valent de 2021 a 2024
+/// comme en 2025, et se lisent donc la. Avant 2021, aucun texte depose ne les dit : refus.
+fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R<Montant> {
+    let livre = match droit::contexte::socle_livre_lu(annee)? {
+        Some(p) => Some(p),
+        None if annee >= socle::annee!("2021") && annee < socle::annee!("2025") => droit::contexte::socle_livre_lu(socle::annee!("2025"))?,
+        None => None,
+    };
+    let Some(pile) = livre else {
+        return Err(refus!(
+            "pas de barème livré pour {} (logiciel/donnees/baremes/{}.json), ni de texte déposé qui dise pour cette année l'abattement de la CSG et sa limite (CSS L. 136-2, I, en vigueur depuis le 16/12/2020)",
+            annee,
+            annee
+        ));
+    };
+    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
+    Ok(pile.assiette_csg(brut, brut, plafonnees.regularisees.abattue_csg).au_centime())
+}
 
 /// La table des parametres du BOSS deposee : elle porte le PSS de 2021 a 2026 (codes PSS_M_METROP et PSS_H_METROP),
 /// les annees qu'aucun bareme livre n'a (2024).
@@ -510,13 +534,14 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     // prorata des jours remuneres pour les autres intermittents.
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(&b.periode, None, &resoudre)
+        // Un bulletin du banc ne decrit aucune absence.
+        droit::plafond::plafond_permanent(&b.periode, &droit::plafond::JoursSansRemuneration::aucun(), None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
-    let assiette_csg = (brut * ASSIETTE_CSG).au_centime();
+    let assiette_csg = assiette_csg(brut, plafond, b.periode.fin().annee()).map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {

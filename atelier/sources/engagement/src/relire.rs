@@ -30,11 +30,15 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
         }
     }
     let appel = Cell::new(0usize);
-    let lignes = |_: &Contexte, _: &crate::saisie::Carte, _: socle::mois::Mois| -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
+    // Le plafond d'une paie ecrite se lit (`paie_lue`) : ses jours sans remuneration ne se deduisent pas.
+    let lignes = |_: &Contexte,
+                  _: &crate::saisie::Carte,
+                  _: socle::mois::Mois|
+     -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>, Option<droit::plafond::JoursSansRemuneration>)> {
         let rang = *mensuels.get(appel.get()).ok_or_else(|| socle::echec::refus("rang d'engagement inconnu"))?;
         appel.set(appel.get() + 1);
         let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "lignes"))?.engagement;
-        Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours)))
+        Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours), None))
     };
     let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {
@@ -95,7 +99,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, socle::grandeurs::courte(v.smic), v.heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, v.part_abattue_csg(), socle::grandeurs::courte(v.smic), v.heures, tp);
     // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
     let mut periodes_lues = Vec::new();
     for (n, x) in v.periodes.iter().enumerate() {

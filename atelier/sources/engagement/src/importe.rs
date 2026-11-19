@@ -828,6 +828,7 @@ impl Importe {
             suspensions: Vec::new(),
             avant: None,
             periode: None,
+            sans_remuneration: None,
             ecrit: crate::ContratEcrit::default(),
         };
         // Chaque ligne imprimee, avec sa ligne de remuneration quand elle est rattachee (`rattachee`).

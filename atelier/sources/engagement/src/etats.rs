@@ -776,13 +776,39 @@ impl PaieDuMois {
 /// Le calcul qui les lit note leur empreinte (`paies <mois> <salarie>`, `empreinte_des_paies_validees`), et elle seule :
 /// une paie validee de ce salarie qui change fait recalculer ses mois qui l'ont lue ; celle d'un autre salarie, non.
 pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
+    paies_validees_dont(ctx, mois, salarie, LectureDatee::Paies { mois, salarie: salarie.clone() }, &|_| Ok(true))
+}
+
+/// LES PAIES VALIDEES DE `mois` DU SALARIE `salarie` DONT LE CONTRAT EST PAYE AU MOIS (`Carte::mensuelle`), telles que
+/// les relit la regularisation du plafond (`conges::plafonds_des_mois_anterieurs`) : seules elles peuvent se regulariser
+/// (`droit::forme_bareme::RegularisationDuPlafond::regularise`), et une paie d'artiste ou de technicien intermittent,
+/// qui n'entre pas dans le cumul, ne se lit ni ne se calcule : son refus reste le sien et ne ferme pas la paie d'un CDI
+/// du meme salarie (« Le logiciel est doux »). La lecture notee est la leur (`paies-au-mois <mois> <salarie>`,
+/// `empreinte_des_paies_validees_au_mois`).
+pub fn paies_validees_au_mois(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
+    paies_validees_dont(ctx, mois, salarie, LectureDatee::PaiesAuMois { mois, salarie: salarie.clone() }, &au_mois)
+}
+
+/// Un engagement dont le contrat est paye au mois.
+fn au_mois(o: &Objet) -> R<bool> {
+    o.carte().mensuelle()
+}
+
+/// Les paies validees de `mois` du salarie, des seuls engagements que `garder` retient, filtres avant tout calcul
+/// (`valides_lues`) ; la lecture `lecture` se note avec leur empreinte (`empreinte_des_paies`).
+fn paies_validees_dont(
+    ctx: &Contexte, mois: Mois, salarie: &IdSalarie, lecture: LectureDatee<IdSalarie, droit::missions::LieuDeMission>, garder: &dyn Fn(&Objet) -> R<bool>,
+) -> R<Vec<Paie>> {
     // Un mois sans saisie n'a aucune paie validee.
     let lire = |saisie: std::sync::Arc<(crate::saisie::VueDuMois, socle::fichiers::EmpreinteDeSaisie)>| -> R<Vec<Paie>> {
         let data = &saisie.0;
-        let valides = valides_lues(ctx, mois, Some(salarie))?;
-        let lecture = CleLue::Datee(LectureDatee::Paies { mois, salarie: salarie.clone() });
-        socle::fichiers::noter_lecture(&lecture, ValeurLue::Empreinte(empreinte_des_paies(&valides, mois)?));
-        valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
+        let valides = valides_lues(ctx, mois, Some(salarie), garder)?;
+        socle::fichiers::noter_lecture(&CleLue::Datee(lecture.clone()), ValeurLue::Empreinte(empreinte_des_paies(&valides, mois)?));
+        let mut paies = Vec::new();
+        for (i, v) in &valides {
+            paies.push(v.paie(ctx, data, *i)?);
+        }
+        Ok(paies)
     };
     Ok(stock::vue_et_empreinte(&ctx.racine, mois)?.map(lire).transpose()?.into_iter().flatten().collect())
 }
@@ -863,7 +889,12 @@ pub fn paies_du_salarie(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Ve
 /// L'empreinte des paies validees de `mois` telles qu'un calcul les lit (`paies_validees`) : celles du salarie `salarie`
 /// (la cle de sa fiche), ou toutes avec `None` (ce que la DSN du mois declare) ; ce qui ne se lit pas se refuse.
 pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<socle::fichiers::Empreinte> {
-    empreinte_des_paies(&valides_lues(ctx, mois, salarie)?, mois)
+    empreinte_des_paies(&valides_lues(ctx, mois, salarie, &|_| Ok(true))?, mois)
+}
+
+/// Ce que vaut la lecture `paies-au-mois <mois> <salarie>` (`paies_validees_au_mois`).
+pub fn empreinte_des_paies_validees_au_mois(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<socle::fichiers::Empreinte> {
+    empreinte_des_paies(&valides_lues(ctx, mois, Some(salarie), &au_mois)?, mois)
 }
 
 /// Ce qu'un calcul lit d'une paie validee d'un autre mois : la paie, et le compteur de conges avant son mois.
@@ -962,14 +993,15 @@ pub(crate) fn marque_de_validation() -> String {
 /// rang a l'ecran : la paie ecrite, ou celle qui se calcule quand son mois ne l'a pas encore ecrite ; un engagement en
 /// cours de validation y porte les paies qu'elle a deja calculees, et seulement elles (un engagement deja valide, ses
 /// paies ecrites a cote). Ce qui est parti n'y change rien (une paie partie se lit comme une paie validee) : le journal
-/// des envois ne se lit pas, et un calcul qui lit ces paies ne depend que d'elles (`paies <mois> <salarie>`).
-fn valides_lues(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<(RangDansLeMois, Valide)>> {
+/// des envois ne se lit pas, et un calcul qui lit ces paies ne depend que d'elles (`paies <mois> <salarie>`). Seuls les
+/// engagements que `garder` retient y entrent, avant tout calcul : celui d'un autre ne refuse rien ici.
+fn valides_lues(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>, garder: &dyn Fn(&Objet) -> R<bool>) -> R<Vec<(RangDansLeMois, Valide)>> {
     // Hors d'une validation, aucun engagement n'est en cours.
     let en_cours: Vec<_> = EN_VALIDATION.with(|e| e.borrow().clone()).into_iter().flatten().collect();
     let mut out = Vec::new();
     let mut a_calculer: Vec<(RangDansLeMois, Valide)> = Vec::new();
     for (i, o) in RangDansLeMois::de_chacun(stock::objets_du_mois(&ctx.racine, mois)?) {
-        if salarie.is_some_and(|s| o.carte().salarie.as_ref() != Some(s)) {
+        if salarie.is_some_and(|s| o.carte().salarie.as_ref() != Some(s)) || !garder(&o)? {
             continue;
         }
         let v = match en_cours.iter().find(|(f, r, paies)| o.fichier == *f && o.rang == *r && (paies.contains_key(&mois) || !o.est_valide())) {
@@ -1179,7 +1211,7 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[RangDansLeMois]) -> R
             let regles = empreinte::regles(ctx, &fin)?;
             let mut siennes = entrees.clone();
             // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul.
-            siennes.retain(|k, _| !matches!(k, CleLue::Datee(LectureDatee::Paies { salarie: autre, .. } | LectureDatee::Reprises { salarie: autre, .. } | LectureDatee::Mensuels { salarie: autre, .. } | LectureDatee::Pas { salarie: autre, .. }) if *autre != salarie));
+            siennes.retain(|k, _| !matches!(k, CleLue::Datee(LectureDatee::Paies { salarie: autre, .. } | LectureDatee::PaiesAuMois { salarie: autre, .. } | LectureDatee::Reprises { salarie: autre, .. } | LectureDatee::Mensuels { salarie: autre, .. } | LectureDatee::Pas { salarie: autre, .. }) if *autre != salarie));
             siennes.insert(stock::cle_de_saisie(mois, Some(&salarie)), ValeurLue::Saisie(stock::empreinte_de_saisie(&data, Some(&salarie))));
             siennes.insert(cle_fiches, entree_fiches);
             let (conges, conges_avant) = conges.unzip();
@@ -1206,10 +1238,13 @@ fn chiffres_egaux(a: &PaieEcrite, b: &PaieEcrite) -> bool {
     egales_sans_avis(&a.paie, &b.paie) && a.pas == b.pas && a.conges_sans_avis() == b.conges_sans_avis()
 }
 
-/// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris.
+/// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris, et hors de la part que l'abattement de
+/// la CSG a abattue (`calcul::Contenu::part_abattue_csg`) : elle n'est ni payee, ni cotisee, ni declaree, et une paie ecrite
+/// avant qu'elle s'ecrive ne la porte pas ; ce qu'elle change dans la paie (l'assiette de la CSG) se compare, lui. Une paie
+/// dont aucun montant ne change ne se rectifie pas, et sa paie recalculee s'ecrit avec elle (`rafraichir`).
 fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
     fn sans_avis(p: &FormeDePaie<Avis>) -> FormeDePaie<Avis> {
-        FormeDePaie { avertissements: Vec::new(), periodes: p.periodes.iter().map(sans_avis).collect(), ..p.clone() }
+        FormeDePaie { avertissements: Vec::new(), part_abattue_csg: None, periodes: p.periodes.iter().map(sans_avis).collect(), ..p.clone() }
     }
     sans_avis(a) == sans_avis(b)
 }
@@ -1263,7 +1298,7 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<RaisonDuReca
     // Les paies d'un autre mois que le calcul lit (conges, cumuls, salaire de reference) : `paies <le mois> <son
     // salarie>`, les validees ; `reprises <le mois> <son salarie>`, celles d'un ancien logiciel.
     let premier = changees.iter().filter_map(|k| match k {
-        CleLue::Datee(LectureDatee::Paies { mois, .. } | LectureDatee::Reprises { mois, .. }) => Some(*mois),
+        CleLue::Datee(LectureDatee::Paies { mois, .. } | LectureDatee::PaiesAuMois { mois, .. } | LectureDatee::Reprises { mois, .. }) => Some(*mois),
         _ => None,
     }).min();
     if let Some(m) = premier {

@@ -128,6 +128,10 @@ pub struct Engagement {
     /// Une periode elementaire de paie : les bornes de CE calcul quand la paie du mois est decoupee
     /// (`periodes`) ; `None` : la periode de paie entiere (le contrat borne au mois).
     pub periode: Option<socle::date::Periode>,
+    /// Les jours du mois que l'employeur ne remunere pas et qui reduisent le plafond de la paie d'un salarie au mois
+    /// (`conges::lignes_du_mois`, `calcul::plafond_de_l_engagement`) ; `None` : un engagement dont le moteur ne deduit
+    /// pas le mois (au cachet, relu d'une paie ecrite, importe), dont le plafond ne se calcule pas.
+    pub sans_remuneration: Option<droit::plafond::JoursSansRemuneration>,
     /// Ce que la saisie dit du contrat ECRIT et que rien d'autre ne porte (`ContratEcrit`) : la periode
     /// d'essai (L1242-12, 6° ; R1221-34, 7°), la personne remplacee (L1242-12, 1°), la repartition des horaires d'un
     /// temps partiel (L3123-6, 1°), les clauses particulieres de ce contrat. Vide : rien n'est dit.
@@ -524,6 +528,7 @@ impl Engagement {
             suspensions: Vec::new(),
             avant: v.avant.clone(),
             periode: None,
+            sans_remuneration: None,
             ecrit: ContratEcrit {
                 periode_essai_jours: v.periode_essai_jours.filter(|j| !j.nulle()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
@@ -839,6 +844,7 @@ impl Engagement {
             suspensions: f.suspensions.clone(),
             avant: None,
             periode: None,
+            sans_remuneration: None,
             // `canon` ne l'ecrit que dit : absent, rien n'etait dit.
             ecrit: match &f.contrat_ecrit {
                 Some(c) => c.clone(),
@@ -1017,8 +1023,10 @@ impl Termes {
 }
 
 /// Ce que `conges::lignes_du_mois` rend pour un engagement paye
-/// au mois : les lignes de paie du mois, ce qu'il y a a en dire, et ses jours travailles (`None` : la saisie les dit).
-pub type LignesPermanent<'a> = &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<Jours>)>;
+/// au mois : les lignes de paie du mois, ce qu'il y a a en dire, ses jours travailles (`None` : la saisie les dit), et
+/// les jours qui reduisent son plafond (`Engagement::sans_remuneration` ; `None` : le mois n'est pas deduit).
+pub type LignesPermanent<'a> =
+    &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<Jours>, Option<droit::plafond::JoursSansRemuneration>)>;
 
 /// Les engagements d'un fichier de mois,
 /// construits avant tout calcul. `lignes_permanent` fournit les lignes d'un
@@ -1090,10 +1098,12 @@ pub(crate) fn engagements(
         };
         // Les jours travailles d'un contrat paye au mois : ceux que le moteur tire du mois (`conges::lignes_du_mois`).
         let mut jours_du_mois: Option<Jours> = None;
+        let mut sans_remuneration = None;
         let lignes = if nat.mensuelle() {
-            let (lignes, avis, jours_travailles) = lignes_permanent(ctx, carte, mois_dit)?;
+            let (lignes, avis, jours_travailles, sans) = lignes_permanent(ctx, carte, mois_dit)?;
             dits.push(avis);
             jours_du_mois = jours_travailles;
+            sans_remuneration = sans;
             Some(lignes)
         } else {
             match &carte.lignes {
@@ -1178,7 +1188,8 @@ pub(crate) fn engagements(
             (Some(_), _) | (None, Some(_)) => None,
             (None, None) => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
         };
-        let eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
+        let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
+        eng.sans_remuneration = sans_remuneration;
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -2153,7 +2164,7 @@ pub fn engagements_de_la_saisie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<V
 /// Le refus que donne la lecture de la saisie `data` quand elle est encore incomplete (`saisie_incomplete`), lignes
 /// d'un permanent mises a part ; `None` si elle se lit, ou si elle refuse pour une autre raison.
 pub fn refus_de_saisie_incomplete(ctx: &Contexte, data: &saisie::VueDuMois) -> Option<Echec> {
-    let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None));
+    let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None, None));
     match engagements(ctx, data, vide) {
         Err(m) if saisie_incomplete(&m) => Some(m),
         _ => None,
@@ -2171,7 +2182,7 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
         Some(fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, MontantUnitaire::ZERO, Heures::ZERO, tp))
+    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, MontantUnitaire::ZERO, Heures::ZERO, tp))
 }
 
 /// LA SAISIE LUE SANS PAIE (l'ecran, le panneau, les DPAE a faire) : l'embauche de chaque engagement de la saisie `data`

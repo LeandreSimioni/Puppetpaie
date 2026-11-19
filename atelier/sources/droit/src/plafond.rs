@@ -8,7 +8,8 @@
 //!     plafond = au centime( somme, pour chaque jour ayant donne lieu a remuneration dans la paie (dates distinctes),
 //!                           de PSS mensuel de son annee / jours de son mois )
 //! permanent (mensualise) :
-//!     plafond = au centime( PSS mensuel x jours de la periode de paie couverts par le contrat / jours du mois )
+//!     plafond = au centime( PSS mensuel x jours de la periode de paie couverts par le contrat, hors absence non
+//!                           remuneree / jours du mois )
 //! ```
 //!
 //! Textes (`atelier/reference/sources/`) :
@@ -37,7 +38,7 @@
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
 use socle::grandeurs::ecrit::texte::dit;
-use socle::grandeurs::{nulle, Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{nulle, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use std::collections::BTreeSet;
 
 /// LE PLAFOND DE LA SECURITE SOCIALE D'UNE ANNEE (CSS L. 241-3, D. 242-17 a D. 242-19) : sa valeur mensuelle, et sa
@@ -77,18 +78,6 @@ use socle::mois::Annee;
 
 // ----------------------------------------------------------------- le calcul
 
-/// PSS mensuel x jours calendaires de la `periode` / jours du mois, mois par mois,
-/// somme. Les deux bornes sont incluses.
-pub fn prorata_calendaire(periode: &Periode, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let mut total: Montant = nulle();
-    for mois in periode.mois() {
-        let Some(commun) = periode.croise(&Periode::du_mois(mois)) else { continue };
-        let jours = Jours::de_dates(commun.jours().count());
-        total += pss(mois.annee())?.mensuel.prorata(jours, Jours::fixes(mois.jours()));
-    }
-    Ok(total)
-}
-
 /// Vrai quand l'arrete du 24/01/1975, art. 3, al. 2 s'applique : un artiste engage moins de cinq jours continus (les
 /// jours calendaires du `contrat`, bornes incluses : du 24 au 24 fait un jour).
 pub fn engagement_court(contrat: &Periode, artiste: bool) -> bool {
@@ -108,7 +97,7 @@ pub fn plafond_journees(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Mont
 
 /// BOSS, assiette generale, § 1090 (tolerance) et § 700 (la formule) : pour chaque jour ayant donne lieu a
 /// remuneration (dates distinctes), mois par mois : PSS mensuel de l'annee x jours remuneres du mois / jours du mois ;
-/// la somme, non arrondie (la forme de `prorata_calendaire`).
+/// la somme, non arrondie (la forme du prorata de `plafond_permanent`).
 pub fn plafond_jours_remuneres(dates: &[Jour], pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
     let jours: BTreeSet<Jour> = dates.iter().copied().collect();
     let mut par_mois: std::collections::BTreeMap<socle::mois::Mois, usize> = Default::default();
@@ -158,7 +147,8 @@ pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R
 }
 
 /// Le plafond d'un permanent (mensualise) pour sa periode de paie, arrondi au centime : le prorata calendaire de
-/// R. 242-2, I, al. 3 (`prorata_calendaire`), et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
+/// R. 242-2, I, al. 3 (PSS mensuel x jours calendaires de la periode / jours du mois, mois par mois, les deux bornes
+/// incluses), et, quand l'employeur l'a choisi pour un salarie a temps partiel, la
 /// correction du dernier alinea du meme I : « l'employeur est en droit de corriger le plafond, sans pouvoir augmenter sa
 /// valeur mensuelle, a due proportion de la duree de travail inscrite a leur contrat de travail [...], majoree du
 /// nombre d'heures complementaires [...], rapportee a celle correspondant a la plus courte des durees mentionnees au 1°
@@ -167,8 +157,22 @@ pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R
 /// (duree contractuelle + heures complementaires) / duree legale du travail », et l'exemple « Plafond mensuel x
 /// (121,33 h / 151,67 h) x (12 jours / 31 jours) »). `temps_partiel` : (duree du contrat, duree de reference), `None`
 /// sans correction. Le rapport ne depasse jamais 1. Textes : `atelier/reference/sources/plafond-temps-partiel/`.
-pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let prorata = prorata_calendaire(periode, pss)?;
+///
+/// Les jours `sans_remuneration` (`JoursSansRemuneration`) sortent du prorata : CSS R. 242-2, I, al. 4, dernier tiret,
+/// « Le plafond est egalement reduit [...] pour tenir compte de periodes d'absence n'ayant pas donne lieu a
+/// remuneration » ; BOSS, assiette generale, § 870-880 (l. 1189-1195) : « valeur mensuelle du plafond x (nombre de jours
+/// remuneres de la periode d'emploi / nombre de jours calendaires du mois) », les jours remuneres etant « le nombre de
+/// jours calendaires desquels sont retires les jours d'absence ne donnant pas lieu a maintien de la remuneration ». La
+/// correction du temps partiel s'applique ensuite (§ 910 ; l'exemple du § 770 multiplie les deux rapports).
+pub fn plafond_permanent(
+    periode: &Periode, sans_remuneration: &JoursSansRemuneration, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>,
+) -> R<Montant> {
+    let mut prorata: Montant = nulle();
+    for mois in periode.mois() {
+        let Some(commun) = periode.croise(&Periode::du_mois(mois)) else { continue };
+        let remuneres = commun.jours().filter(|j| !sans_remuneration.0.contains(j)).count();
+        prorata += pss(mois.annee())?.mensuel.prorata(Jours::de_dates(remuneres), Jours::fixes(mois.jours()));
+    }
     match temps_partiel {
         Some((contrat, reference)) if contrat < reference => {
             if reference <= Heures::ZERO {
@@ -180,11 +184,231 @@ pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heure
     }
 }
 
-/// Ce que `pour_paie` lit de l'engagement.
+/// LES JOURS D'ABSENCE SANS REMUNERATION D'UNE PAIE, qui reduisent son plafond (`plafond_permanent`) : CSS R. 242-2, I,
+/// al. 4, dernier tiret ; BOSS, assiette generale, § 820-900 (`boss/boss-assiette-generale-20260801.txt`, l. 1142-1203).
+/// Un jour y entre quand l'absence de ce jour « ne donne pas lieu a un maintien de la remuneration par l'employeur »
+/// (§ 840) ; une absence « partiellement ou totalement remuneree par l'employeur, sous forme de versement visant au
+/// maintien de salaire » n'y entre pas (§ 820). Seules les journees d'absence totale comptent (§ 890), de date a date, les
+/// jours de repos et feries compris (§ 900). Qui sont ces jours, la deduction du mois d'un permanent le dit
+/// (`engagement::conges::lignes_du_mois`, avec les § 860 et 920) ; ce type ne fait que les porter.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct JoursSansRemuneration(BTreeSet<Jour>);
+
+impl JoursSansRemuneration {
+    /// Aucun jour : une paie sans absence non remuneree.
+    pub fn aucun() -> JoursSansRemuneration {
+        JoursSansRemuneration(BTreeSet::new())
+    }
+
+    /// Ces jours.
+    pub fn de(jours: BTreeSet<Jour>) -> JoursSansRemuneration {
+        JoursSansRemuneration(jours)
+    }
+
+    /// Ces jours, sans `jours` : ceux que la paie maintient finalement (le complement d'un maintien garanti en net, que
+    /// seul le calcul de la paie connait : `engagement::maintien::Reconstitue::maintenus`), ou ceux d'un arret pour le
+    /// mois « s'il avait continue de travailler » (`engagement::maintien::Reconstitution::arrets`).
+    pub fn hors(&self, jours: &BTreeSet<Jour>) -> JoursSansRemuneration {
+        JoursSansRemuneration(self.0.difference(jours).copied().collect())
+    }
+}
+
+// ------------------------------------------------------------ la regularisation sur l'annee
+
+/// LES ASSIETTES QUI SE REGULARISENT SUR L'ANNEE CIVILE, d'une paie ou d'une somme de paies (CSS R. 242-2, II : « Les
+/// cotisations calculees dans la limite d'un plafond annuel sont regularisees chaque mois ») :
+/// - `t1` : la remuneration dans la limite du plafond (la vieillesse plafonnee, le FNAL, la tranche 1 de la retraite
+///   complementaire et de la prevoyance : R. 242-2, II ; BOSS, assiette generale, § 1220-1240 ; lettre circulaire Acoss
+///   2013-019, annexe 1, « Regularisation progressive ») ;
+/// - `t2` : au-dela du plafond, dans la limite de `TranchesDuPlafond::t2` plafonds ; `t1_t2` : dans cette limite ; `cet` :
+///   la remuneration dans cette limite quand elle depasse le plafond (la retraite complementaire : ANI Agirc-Arrco du
+///   17/11/2017, art. 44, « Les versements de cotisations donnent lieu a une regularisation progressive telle que prevue
+///   au II. de l'article R. 242-2 du code de la securite sociale », circulaire 2018-09-DC, l. 1642-1643 ; cahier
+///   Agirc-Arrco CT2026). INFERENCE pour la CET : sa base regularisee devient celle de toute l'annee (la remuneration
+///   dans la limite de la tranche 2) des que la somme des remunerations depasse la somme des plafonds, et retombe a zero
+///   en dessous ; l'ANI (art. 37, circulaire 2018-09-DC l. 1362) la dit due « pour les participants dont la remuneration
+///   excede le plafond » sans dire comment le juger sur l'annee ; le plus proche est la fiche net-entreprises 2556
+///   (`net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt`, l. 89) :
+///   « des montants de CET peuvent egalement etre declares sur des mois ou l'individu a percu une remuneration inferieure
+///   au PMSS, y compris sous forme negative, lorsqu'ils resultent d'operations de regularisation portant sur des periodes
+///   anterieures au cours desquelles le salarie etait assujetti a cette contribution » : elle suppose la CET regularisee,
+///   sans dire le critere ;
+/// - `t2_conventionnelle` : au-dela du plafond, dans la limite de `TranchesDuPlafond::t2_conventionnelle` plafonds (la
+///   prevoyance). INFERENCE : un seul emetteur, la FAQ DSN des organismes complementaires, suppose sa regularisation (la
+///   tranche B « pouvant etre negative par effet de regularisation progressive ») sans la poser ; aucun accord de
+///   prevoyance depose ne la dit ;
+/// - `abattue_csg` : la part de la remuneration que l'abattement de la CSG abat, dans la limite de `limite_abattement_csg`
+///   plafonds (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : le « plafond annuel », calcule comme celui de la
+///   vieillesse, « voir le chapitre 6 », sa section 3, la regularisation, comprise).
+/// Textes : `atelier/reference/sources/` (le barème, `regularisation_du_plafond`, les cite). Une assiette regularisee
+/// peut etre negative (la FAQ des organismes complementaires le dit de la tranche B) : la DSN la declare signee.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Regularisees {
+    pub t1: Montant,
+    pub t2: Montant,
+    pub t2_conventionnelle: Montant,
+    pub t1_t2: Montant,
+    pub cet: Montant,
+    pub abattue_csg: Montant,
+}
+
+impl Regularisees {
+    /// Aucune.
+    pub const ZERO: Regularisees = Regularisees {
+        t1: Montant::ZERO,
+        t2: Montant::ZERO,
+        t2_conventionnelle: Montant::ZERO,
+        t1_t2: Montant::ZERO,
+        cet: Montant::ZERO,
+        abattue_csg: Montant::ZERO,
+    };
+
+    /// Celles d'une remuneration `remuneration` sous un plafond `plafond` (d'une paie, ou de l'annee : deux sommes),
+    /// `limite_csg` le nombre de plafonds sous lequel la CSG abat, `tranches` les bornes des tranches (le bareme).
+    fn sous(remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond) -> Regularisees {
+        let zero = Montant::ZERO;
+        let haut_t2 = plafond * tranches.t2;
+        Regularisees {
+            t1: remuneration.min(plafond),
+            t2: zero.max(remuneration.min(haut_t2) - plafond),
+            t2_conventionnelle: zero.max(remuneration.min(plafond * tranches.t2_conventionnelle) - plafond),
+            t1_t2: remuneration.min(haut_t2),
+            cet: if remuneration > plafond { remuneration.min(haut_t2) } else { zero },
+            abattue_csg: remuneration.min(plafond * limite_csg),
+        }
+    }
+}
+
+impl std::ops::Add for Regularisees {
+    type Output = Regularisees;
+    fn add(self, o: Regularisees) -> Regularisees {
+        Regularisees {
+            t1: self.t1 + o.t1,
+            t2: self.t2 + o.t2,
+            t2_conventionnelle: self.t2_conventionnelle + o.t2_conventionnelle,
+            t1_t2: self.t1_t2 + o.t1_t2,
+            cet: self.cet + o.cet,
+            abattue_csg: self.abattue_csg + o.abattue_csg,
+        }
+    }
+}
+
+impl std::ops::Sub for Regularisees {
+    type Output = Regularisees;
+    fn sub(self, o: Regularisees) -> Regularisees {
+        Regularisees {
+            t1: self.t1 - o.t1,
+            t2: self.t2 - o.t2,
+            t2_conventionnelle: self.t2_conventionnelle - o.t2_conventionnelle,
+            t1_t2: self.t1_t2 - o.t1_t2,
+            cet: self.cet - o.cet,
+            abattue_csg: self.abattue_csg - o.abattue_csg,
+        }
+    }
+}
+
+/// CE QUI PRECEDE UNE PAIE DANS L'ANNEE CIVILE, chez la compagnie (CSS R. 242-2, II : l'employeur « fait masse [...] des
+/// sommes dues au titre des periodes de travail comprises entre cette echeance et le premier jour de l'annee ou le jour
+/// de l'embauche » ; BOSS, assiette generale, § 1230 : « la somme des remunerations dues depuis le debut de l'annee »,
+/// « la somme des plafonds applicables », « le montant des assiettes plafonnees appliquees sur chaque echeance de paie
+/// precedente ») : la somme des remunerations, celle des plafonds de ces paies, et celle des assiettes qu'elles ont
+/// appliquees. Elle part de rien (`debut`), et chaque paie qui se regularise s'y ajoute (`ajouter`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnneeAnterieure {
+    remunerations: Montant,
+    plafonds: Montant,
+    appliquees: Regularisees,
+}
+
+impl AnneeAnterieure {
+    /// Rien avant : le premier jour de l'annee, ou de l'embauche.
+    pub fn debut() -> AnneeAnterieure {
+        AnneeAnterieure { remunerations: Montant::ZERO, plafonds: Montant::ZERO, appliquees: Regularisees::ZERO }
+    }
+
+    /// Une paie anterieure qui se regularise : sa remuneration, son plafond, et les assiettes qu'elle a appliquees, telles
+    /// qu'elle les a ecrites (celles d'une paie corrigee depuis comprises : la suivante rattrape l'ecart).
+    pub fn ajouter(&mut self, remuneration: Montant, plafond: Montant, appliquees: Regularisees) {
+        self.remunerations += remuneration;
+        self.plafonds += plafond;
+        self.appliquees = self.appliquees + appliquees;
+    }
+}
+
+/// COMMENT LE PLAFOND D'UNE PAIE TIENT COMPTE DE L'ANNEE : il se regularise sur ce qui la precede (`Regularise`, CSS
+/// R. 242-2, II), ou il est celui de la paie seule (`ParPaie`) : BOSS, assiette generale, § 1250, « Les salaries
+/// beneficiant de taux, d'assiettes ou de montants specifiques ou forfaitaires de cotisations [...] ne sont pas eligibles
+/// au principe de regularisation des cotisations plafonnees : pour ces salaries, l'assiette plafonnee applicable lors de
+/// chaque paie ne prend pas en compte la ou les assiettes plafonnees appliquees lors des echeances precedentes » ; qui
+/// l'est, le bareme le dit (`forme_bareme::RegularisationDuPlafond::regularise`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Plafonnement {
+    ParPaie,
+    Regularise(AnneeAnterieure),
+}
+
+/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite des
+/// plafonds du chomage de la paie (`chomage` : le chomage, l'AGS, l'Apec d'un permanent, le chomage d'un intermittent ;
+/// `TranchesDuPlafond::chomage`), qui ne se regularise pas : aucun texte depose ne dit la regularisation de ces
+/// contributions (la fiche Unedic ne dit que l'identite de leur assiette avec celle de la securite sociale), et seul se
+/// regularise ce qu'un texte depose fonde (Leandre, 19/11/2026).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssiettesPlafonnees {
+    pub regularisees: Regularisees,
+    pub chomage: Montant,
+}
+
+/// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
+/// remunerations de l'annee depasse la somme des plafonds) change avec elle. `Due` : la somme passe au-dessus, de
+/// `depassement` ; la CET devient due sur toute la remuneration de l'annee. `Rendue` : elle repasse au plus a la somme
+/// des plafonds, `ecart` en dessous ; la CET de l'annee se rend.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BasculeDeLaCet {
+    Due { depassement: Montant },
+    Rendue { ecart: Montant },
+}
+
+impl BasculeDeLaCet {
+    /// La bascule d'une paie (ou d'un mois decoupe en periodes), de l'annee qui la precede, `avant`, a l'annee jusqu'a
+    /// elle comprise, `apres` ; aucune quand le critere est le meme des deux cotes.
+    pub fn entre(avant: &AnneeAnterieure, apres: &AnneeAnterieure) -> Option<BasculeDeLaCet> {
+        match (avant.remunerations > avant.plafonds, apres.remunerations > apres.plafonds) {
+            (false, true) => Some(BasculeDeLaCet::Due { depassement: apres.remunerations - apres.plafonds }),
+            (true, false) => Some(BasculeDeLaCet::Rendue { ecart: apres.plafonds - apres.remunerations }),
+            _ => None,
+        }
+    }
+}
+
+/// LES ASSIETTES PLAFONNEES de la paie de remuneration `remuneration` (son brut soumis) et de plafond `plafond` (le
+/// plafond de la paie, `pour_paie`), `limite_csg` le nombre de plafonds sous lequel la CSG abat (le bareme,
+/// `limite_abattement_csg`), `tranches` les bornes des tranches en nombre de plafonds (le bareme, `tranches_du_plafond`) :
+/// le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui precede la paie dans l'annee
+/// (`plafonnement`).
+///
+/// Regularisee : chacune est celle de la somme des remunerations sous la somme des plafonds, de l'annee jusqu'a cette
+/// paie comprise, moins ce que les paies d'avant ont applique (BOSS, assiette generale, § 1230 : « si la somme des
+/// remunerations est inferieure a la somme des plafonds, l'assiette plafonnee a retenir pour une echeance de paie donnee
+/// est egale a la somme des remunerations, diminuee du montant des assiettes plafonnees appliquees sur chaque echeance de
+/// paie precedente » ; au-dessus, « egale a la somme des plafonds » diminuee de meme). Elle peut etre negative, ou depasser
+/// la remuneration de la paie.
+pub fn assiettes_plafonnees(
+    remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond, plafonnement: &Plafonnement,
+) -> AssiettesPlafonnees {
+    let regularisees = match plafonnement {
+        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg, tranches),
+        Plafonnement::Regularise(a) => {
+            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
+        }
+    };
+    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage) }
+}
+
+use crate::forme_bareme::TranchesDuPlafond;
+
+/// Ce que `pour_paie` lit de l'engagement d'un intermittent.
 #[derive(Debug, Clone)]
 pub struct EngagementPlafond {
-    /// La nature du contrat est payee au mois (`Nature::mensuelle`).
-    pub mensuelle: bool,
     /// Le statut du salarie est `artiste` (vide compris) ; `false` : `technicien`.
     pub artiste: bool,
     /// La periode de paie.
@@ -197,14 +421,11 @@ pub struct EngagementPlafond {
     pub jours: Jours,
 }
 
-/// Le plafond d'UNE paie (R. 242-2 : le plafond « retenu pour chaque paie »). Un permanent : le prorata de droit
-/// commun sur la periode de paie du mois. Un intermittent : les journees datees de CETTE paie (aucune journee dans le
-/// mois, aucun plafond) : 12 x horaire chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel
-/// des jours remuneres (BOSS § 1090). Une journee dite et non datee refuse, une date hors de la periode de paie aussi.
+/// Le plafond d'UNE paie d'intermittent (R. 242-2 : le plafond « retenu pour chaque paie » ; celui d'un permanent :
+/// `plafond_permanent`) : les journees datees de CETTE paie (aucune journee dans le mois, aucun plafond) : 12 x horaire
+/// chacune pour un artiste engage moins de cinq jours, sinon le prorata mensuel des jours remuneres (BOSS § 1090). Une
+/// journee dite et non datee refuse, une date hors de la periode de paie aussi.
 pub fn pour_paie(e: &EngagementPlafond, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    if e.mensuelle {
-        return Ok(prorata_calendaire(&e.periode, pss)?.au_centime());
-    }
     let court = engagement_court(&e.contrat, e.artiste);
     let datees = e.dates_travail.iter().collect::<BTreeSet<_>>().len();
     if e.jours != Jours::de_dates(datees) {

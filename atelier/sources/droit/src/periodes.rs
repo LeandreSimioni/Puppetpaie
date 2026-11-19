@@ -235,7 +235,7 @@ fn heures_en_mots(heures_par_jour: HeuresParUnite, jours: Jours) -> String {
 /// 22/21) : le logiciel ne le borne pas, et le dit (`DecompteDuMois::methode`).
 ///
 /// Une periode qui couvre le mois entier, sans ferie non paye, en porte tout le salaire. Le plafond de la securite
-/// sociale, lui, se proratise aux jours calendaires (CSS R. 242-2, `plafond::prorata_calendaire`) : ce n'est pas le
+/// sociale, lui, se proratise aux jours calendaires (CSS R. 242-2, `plafond::plafond_permanent`) : ce n'est pas le
 /// salaire.
 pub fn part_du_mois(periode: &Periode, mois: Mois, regle: RegleDuMoisIncomplet, horaire: &Horaire) -> R<DecompteDuMois> {
     let le_mois = Periode::du_mois(mois);
