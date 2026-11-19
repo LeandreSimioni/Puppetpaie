@@ -2876,8 +2876,13 @@ administratrice en CDI, elle lui donnerait des plafonds à la journée et la
 prévoyance de quelqu'un d'autre, en silence.
 `droit::bareme::bareme_cadre` lit `par_categorie.cadre_permanent` quand le contrat est
 mensuel, et refuse si la section n'est pas vérifiée (`verifie`) : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
-quatre plafonds **du mois** et la CET sur des tranches mensuelles. Sa
-prévoyance, elle, vient de la convention.
+quatre plafonds **du mois**. Sa prévoyance, elle, vient de la convention.
+
+**La CET est due par tout permanent, cadre ou non** (ANI Agirc-Arrco du 17/11/2017, art. 37 : « Pour les participants
+dont la rémunération excède le plafond » ; le tableau des permanents d'Audiens) : la ligne `cet` est de
+`par_nature.permanent`, sur `cet_mensuelle` (`droit::plafond::Regularisees`), régularisée sur l'année et dite à sa
+bascule (`droit::plafond::BasculeDeLaCet`) ; nulle, elle n'est pas au bulletin. Un cadre intermittent la paie fondue
+dans ses tranches journalières (`cet_si_depasse`, `Assiette::Cet`).
 
 `logiciel/donnees/contrats-base.json` porte ce que la DSN écrit de la **structure** d'un
 contrat, par nature. Trois

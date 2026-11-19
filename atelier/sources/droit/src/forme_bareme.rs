@@ -733,7 +733,8 @@ forme! {
         pub composants_sal: Option<Vec<Taux>>,
         /// Le complement de taux patronal au-dela d'un seuil de SMIC.
         pub complement: Option<Complement>,
-        /// La CET des cadres, fondue dans la ligne quand elle est due.
+        /// La CET d'un cadre intermittent, fondue dans sa ligne de tranche quand elle est due (celle d'un permanent est sa
+        /// propre ligne, `CET`, de `par_nature.permanent`).
         pub cet_si_depasse: Option<Cet>,
         pub masquer_base_et_taux: Option<bool>,
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).

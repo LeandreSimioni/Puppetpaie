@@ -43,6 +43,12 @@ lieu à une régularisation progressive telle que prévue au II. de l'article R.
 `atelier/reference/sources/audiens-parametres-2026/`, et la
 fiche « taux et répartition ») ; `paie/src/norme.rs` ou équivalent (`cotisation_cet_patronale`).
 
+**Ticket #497 (19/11/2026), la CET d'un non-cadre** : l'art. 37, 2 du texte de Légifrance (l. 1307-1310 du premier
+`.txt`) dit la CET due « Pour les participants dont la rémunération excède le plafond », sans distinction de catégorie
+(la page « Documentation technique DSN », l. 177 : l'ANI « ne prévoit pas de distinction catégorielle entre les
+salariés cadres, non-cadres ») ; le cahier CT2026 (l. 343-346) : « pour tout salarié dont le salaire excède le plafond ».
+La ligne `cet` des barèmes 2025 et 2026 est donc de `par_nature.permanent` : tout permanent, cadre ou non.
+
 **Lot R5a (11/10/2026), le plafond d'un temps partiel (D11)** : le cahier CT2026 (l. 3325-3343) fait proratiser la
 caisse sur 40.013 / 40.012 pour un « 20 - temps partiel ». Le moteur n'a qu'un plafond par paie
 (`paie/src/calcul.rs`, `plafond_de_l_engagement`), d'où sortent la vieillesse plafonnée, T1/T2 et la CET ; il le

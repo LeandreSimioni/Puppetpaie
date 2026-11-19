@@ -1145,7 +1145,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     let mut out = Vec::new();
     let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO, Montant::ZERO, None::<Taux>);
     for id in &ids {
-        // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
+        // Une tranche 2 nulle, une CET qui n'est pas due ne sont pas au bulletin (`calcul::calculer`).
         let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
         let (montant, cet) = sans_la_cet(p, l, r)?;
         // L'assiette (81.003) compte des euros : une base en heures se refuse.

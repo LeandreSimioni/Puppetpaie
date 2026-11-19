@@ -1733,8 +1733,9 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         bases.insert(Assiette::ApecMensuelle, plafonnees.chomage);
         bases.insert(Assiette::BrutChomage, plafonnees.chomage);
         bases.insert(Assiette::T2Conventionnelle, regularisees.t2_conventionnelle);
-        // La CET des permanents : due au-dela de la T1, sur le brut dans la limite de la T2 (`tranches_du_plafond.t2` ;
-        // ANI Agirc-Arrco, art. 32 et 37 ; Audiens, « dans la limite de la T1 + T2 »), regularisee (INFERENCE :
+        // La CET d'un permanent, cadre ou non : due au-dela de la T1, sur le brut dans la limite de la T2
+        // (`tranches_du_plafond.t2` ; ANI Agirc-Arrco, art. 32 et 37 : « Pour les participants dont la remuneration
+        // excede le plafond » ; Audiens, « dans la limite de la T1 + T2 »), regularisee (INFERENCE :
         // `droit::plafond::Regularisees`).
         bases.insert(Assiette::CetMensuelle, regularisees.cet);
         bases.insert(Assiette::T1T2Mensuelle, regularisees.t1_t2);
@@ -1811,7 +1812,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
                 taux_pat = Some(taux_compose(taux_pat.ok_or_else(manque)? + compl.taux));
             }
         }
-        // La CET des cadres, fondue dans T1 et T2 : l'arrondi se fait en deux parts.
+        // La CET d'un cadre intermittent, fondue dans T1 et T2 : l'arrondi se fait en deux parts.
         if let Some(cet) = &r.cet_si_depasse {
             if bases.get(&Assiette::Cet).is_some_and(|c| !c.est_nul()) {
                 let (cet_pat, cet_sal) = (cet.pat, cet.sal);
@@ -1865,8 +1866,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         tot_pat += m_pat;
         tot_sal += m_sal;
     }
+    // Une tranche au-dela du plafond, et la CET qui n'est pas due (la remuneration sous le plafond), ne sont pas au
+    // bulletin quand elles sont nulles : le bareme les porte pour tout permanent, la paie seulement pour qui les doit.
     lignes.retain(|l| {
-        !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
+        !(l.base.est_nulle()
+            && l.montant_pat.est_nul()
+            && l.montant_sal.est_nul()
+            && [droit::forme_bareme::RETRAITE_T2, droit::forme_bareme::APEC_T2, droit::forme_bareme::CET].iter().any(|id| l.est(id)))
     });
 
     // 7.9 : la reduction generale, apres les cotisations.

@@ -3296,33 +3296,6 @@
             "raisonnement": "Audiens et Agirc-Arrco, 2025 : 0,06 % (0,036 / 0,024) sur le brut limité à 4 plafonds."
           },
           "note": "Apec d'un cadre permanent : 0,036 / 0,024 sur le brut dans la limite de quatre plafonds mensuels (`apec_mensuelle`)."
-        },
-        {
-          "id": "cet",
-          "apres": "retraite_t2",
-          "famille": "RETRAITE",
-          "libelle": "Contribution d'équilibre technique (CET)",
-          "base": "cet_mensuelle",
-          "taux_pat": 0.21,
-          "taux_sal": 0.14,
-          "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, permanents",
-                "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 0,14 % 0,21 %"
-              },
-              {
-                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
-                "emetteur": "agirc_arrco",
-                "article": "aide DSN CT2025, CET",
-                "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
-              }
-            ],
-            "raisonnement": "Audiens (0,21 / 0,14 sur T1 + T2, due si salaire > T1) et Agirc-Arrco (0,35 % du premier euro jusqu'à 8 PSS, réparti 60/40) concordent."
-          },
-          "note": "CET d'un permanent : 0,21 / 0,14 du premier euro jusqu'à 8 plafonds, due dès que le salaire dépasse le plafond du mois ; `cet_mensuelle` vaut alors le brut.\nL'assiette n'est pas bornee a huit plafonds ici, comme elle ne l'est pas non plus pour un intermittent cadre : au-dela de 32 040 EUR de brut mensuel la CET serait surestimee. A corriger le jour ou une paie s'en approche -- aucune n'en approche."
         }
       ],
       "source": {
@@ -3336,13 +3309,13 @@
           {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
             "emetteur": "agirc_arrco",
-            "article": "aide DSN CT2025, CET",
-            "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
+            "article": "aide DSN CT2025, Apec",
+            "citation": "Elle se calcule sur le salaire brut limité à 4 fois le plafond de la sécurité sociale."
           }
         ],
-        "raisonnement": "Audiens (Apec 0,06 %, 0,036 / 0,024) et Agirc-Arrco (CET 0,35 % jusqu’à 8 PSS, réparti 60/40, soit 0,21 / 0,14) : chacun fonde une ligne, l’un et l’autre donnent les deux taux."
+        "raisonnement": "Audiens (Apec 0,06 %, 0,036 / 0,024) et Agirc-Arrco (sur le brut limité à 4 plafonds) concordent."
       },
-      "note": "Cadre permanent : Apec 0,036 / 0,024 sur le brut dans la limite de 4 plafonds mensuels ; CET 0,21 / 0,14 (0,35 % réparti 60/40) du premier euro jusqu'à 8 plafonds, dès que le salaire dépasse le plafond.\nCOMPLETE. Depuis la norme 2026.1, l'Apec se declare a part : << 132 - Cotisation Apec >> (`cotisations_ajoutees`, la ligne `apec_t1` du bulletin), a cote du << 131 - Cotisation regime unifie Agirc-Arrco >> de `par_nature.permanent`, qui somme `retraite_t1` et la CET (cahier technique 2026.1 p. 302 et 305 ; le 105 << y compris Apec >> n'y vaut plus que pour regulariser une periode anterieure a 2025). La prevoyance cadre (1,50 % TA en 3090) vient de la convention.\nCE QUI CHANGE POUR UN CADRE EN CONTRAT PERMANENT, par rapport a la section `par_nature.permanent`. Presque rien, et c'est le point : la retraite complementaire Agirc-Arrco est UNIFIEE depuis 2019 -- un cadre et un non cadre permanents paient les memes 6,01 / 4,01 en T1 et 14,57 / 9,72 en T2, deja dans la section de nature. Il ne reste donc que deux lignes propres au cadre, l'Apec et la CET, et une prevoyance portee a 1,50 % de la tranche A -- celle-la ne s'ecrit pas ici : la convention la fixe, `bareme_prevoyance` la pose.\n`par_categorie.cadre` decrit un cadre INTERMITTENT : ses tranches sont JOURNALIERES (plafond_journalier, t1_journaliere) et sa prevoyance est celle de l'accord interbranches (1,69 / 0,12). Appliquee a un cadre en CDI, elle lui donnerait des plafonds a la journee et la prevoyance d'un intermittent, en silence : `bareme::bareme_cadre` lit cette section-ci quand le contrat est mensuel."
+      "note": "Cadre permanent : Apec 0,036 / 0,024 sur le brut dans la limite de 4 plafonds mensuels ; les taux de retraite et la CET de son tableau sont ceux de `par_nature.permanent`.\nCOMPLETE. Depuis la norme 2026.1, l'Apec se declare a part : << 132 - Cotisation Apec >> (`cotisations_ajoutees`, la ligne `apec_t1` du bulletin), a cote du << 131 - Cotisation regime unifie Agirc-Arrco >> de `par_nature.permanent`, qui somme `retraite_t1` et la CET (cahier technique 2026.1 p. 302 et 305 ; le 105 << y compris Apec >> n'y vaut plus que pour regulariser une periode anterieure a 2025). La prevoyance cadre (1,50 % TA en 3090) vient de la convention.\nCE QUI CHANGE POUR UN CADRE EN CONTRAT PERMANENT, par rapport a la section `par_nature.permanent`. Presque rien, et c'est le point : la retraite complementaire Agirc-Arrco est UNIFIEE depuis 2019 -- un cadre et un non cadre permanents paient les memes 6,01 / 4,01 en T1 et 14,57 / 9,72 en T2, deja dans la section de nature, comme la CET (ANI, art. 37 : due par tout participant dont la remuneration excede le plafond, sans distinction de categorie). Il ne reste donc qu'une ligne propre au cadre, l'Apec, et une prevoyance portee a 1,50 % de la tranche A -- celle-la ne s'ecrit pas ici : la convention la fixe, `bareme_prevoyance` la pose.\n`par_categorie.cadre` decrit un cadre INTERMITTENT : ses tranches sont JOURNALIERES (plafond_journalier, t1_journaliere) et sa prevoyance est celle de l'accord interbranches (1,69 / 0,12). Appliquee a un cadre en CDI, elle lui donnerait des plafonds a la journee et la prevoyance d'un intermittent, en silence : `bareme::bareme_cadre` lit cette section-ci quand le contrat est mensuel."
     }
   },
   "par_nature": {
@@ -3660,6 +3633,39 @@
             "raisonnement": "Agirc-Arrco (21,59 % et CEG 2,70 %, répartis 60/40) et Audiens (12,95 / 8,64 et 1,62 / 1,08) concordent pour 2025."
           },
           "note": "Retraite T2 d'un permanent : 12,95 + 1,62 patronal, 8,64 + 1,08 salarial, sur la tranche entre 1 et 8 plafonds du mois."
+        },
+        {
+          "id": "cet",
+          "apres": "retraite_t2",
+          "famille": "RETRAITE",
+          "libelle": "Contribution d'équilibre technique (CET)",
+          "base": "cet_mensuelle",
+          "taux_pat": 0.21,
+          "taux_sal": 0.14,
+          "source": {
+            "sources": [
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt",
+                "emetteur": "convention",
+                "article": "ANI Agirc-Arrco du 17/11/2017, art. 37, 2",
+                "citation": "Pour les participants dont la rémunération excède le plafond fixé en application de […] une contribution d'équilibre technique de 0,35 % applicable sur les tranches 1 et 2 des revenus définies à l'article"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+                "emetteur": "agirc_arrco",
+                "article": "aide DSN CT2025, CET",
+                "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
+              },
+              {
+                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres Audiens 2025, p. 3, permanents",
+                "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 0,14 % 0,21 %"
+              }
+            ],
+            "raisonnement": "L'ANI (art. 37, 2) dit la CET due par tout participant dont la rémunération excède le plafond, cadre ou non : 0,35 % sur les tranches 1 et 2 (art. 32 : jusqu'à huit plafonds), répartie 60/40 (art. 38) ; Agirc-Arrco (« pour tout salarié ») et Audiens (le tableau des permanents, sans réserve de catégorie : 0,21 / 0,14 sur T1 + T2) concordent pour 2025."
+          },
+          "note": "CET d'un permanent, cadre ou non : 0,21 / 0,14 du premier euro jusqu'à huit plafonds, due quand la rémunération dépasse le plafond (`cet_mensuelle`, `droit::plafond::Regularisees::sous`, dans la limite de `tranches_du_plafond.t2`), régularisée sur l'année comme les tranches (ANI, art. 44 ; `droit::plafond::BasculeDeLaCet`)."
         },
         {
           "id": "mutuelle",
@@ -4142,7 +4148,7 @@
             ],
             "raisonnement": "La norme DSN (131, 105 réservé à la régularisation) et Agirc-Arrco (le 131 globalise retraite, CEG et CET) concordent sur le code ; pas sur la base (écart)."
           },
-          "note": "Retraite d'un permanent en DSN : 131 (retraite, CEG et CET), un montant sur la T1 et un sur la T2 ; le 105 ne sert qu'à régulariser les périodes antérieures à 2025.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale, et la CET d'un cadre. La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
+          "note": "Retraite d'un permanent en DSN : 131 (retraite, CEG et CET), un montant sur la T1 et un sur la T2 ; le 105 ne sert qu'à régulariser les périodes antérieures à 2025.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale, et la CET quand elle est due (ligne `cet`, cadre ou non). La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
         },
         {
           "bloc78": "03",
