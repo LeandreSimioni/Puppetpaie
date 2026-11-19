@@ -1241,10 +1241,18 @@ fn chiffres_egaux(a: &PaieEcrite, b: &PaieEcrite) -> bool {
 /// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris, et hors de la part que l'abattement de
 /// la CSG a abattue (`calcul::Contenu::part_abattue_csg`) : elle n'est ni payee, ni cotisee, ni declaree, et une paie ecrite
 /// avant qu'elle s'ecrive ne la porte pas ; ce qu'elle change dans la paie (l'assiette de la CSG) se compare, lui. Une paie
-/// dont aucun montant ne change ne se rectifie pas, et sa paie recalculee s'ecrit avec elle (`rafraichir`).
+/// dont aucun montant ne change ne se rectifie pas, et sa paie recalculee s'ecrit avec elle (`rafraichir`). Une ligne de
+/// cotisation dont la base et les deux montants sont nuls ne porte aucun chiffre : qu'une paie l'imprime et l'autre non
+/// (la tranche 2 ou la contribution d'equilibre technique qui ne sont pas dues, `calcul::calculer`) n'est pas un ecart.
 fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
     fn sans_avis(p: &FormeDePaie<Avis>) -> FormeDePaie<Avis> {
-        FormeDePaie { avertissements: Vec::new(), part_abattue_csg: None, periodes: p.periodes.iter().map(sans_avis).collect(), ..p.clone() }
+        FormeDePaie {
+            avertissements: Vec::new(),
+            part_abattue_csg: None,
+            lignes: p.lignes.iter().filter(|l| !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul())).cloned().collect(),
+            periodes: p.periodes.iter().map(sans_avis).collect(),
+            ..p.clone()
+        }
     }
     sans_avis(a) == sans_avis(b)
 }
