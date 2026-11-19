@@ -390,6 +390,56 @@ pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     Ok(bar)
 }
 
+/// LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes` : le technicien en CDDU que la
+/// liste de l'annexe 8 de la convention ne nomme pas). Le corps paie le chomage des annexes 8 et 10 (4 % + 5 % patronal,
+/// 2,40 % salarial, la majoration du CDDU court, a France Travail) ; ce contrat paie celui du reglement general, a
+/// l'Urssaf (`chomage_hors_des_annexes` du bareme : la ligne du chomage, les cotisations 040, 048 et 041 des annexes
+/// retirees, 040 et 048 de l'Urssaf ajoutees, la part chomage de la reduction generale a l'Urssaf et ses CTP 668 et
+/// 669). Les textes : `atelier/reference/sources/cddu-hors-annexe8/LISEZ-MOI.md`. Sans section verifiee : refus, pour
+/// ce contrat seul.
+pub fn bareme_chomage_hors_des_annexes(mut bar: Pile, hors_des_annexes: bool) -> R<Pile> {
+    if !hors_des_annexes {
+        return Ok(bar);
+    }
+    let Some(sec) = bar.chomage_hors_des_annexes.clone().filter(|s| s.verifie == Some(true)) else {
+        return Err(refus(
+            format!(
+                "Le barème {} ne paie pas encore le CDD d'usage d'un technicien que la liste de l'annexe 8 de la convention ne nomme pas : sa section n'est pas vérifiée.",
+                annee(&bar)
+            ),
+            format!(
+                "Bareme {} : la section chomage_hors_des_annexes n'est pas marquee \"verifie\": true. Ce contrat n'est pas \
+de l'annexe 8 (art. 1er, § 2) : son chomage est celui du reglement general (4 %, a l'Urssaf), pas celui des annexes \
+(9 % patronal, 2,40 % salarial, a France Travail). Le payer comme le corps le decrit donnerait un chomage faux. Refus.",
+                annee(&bar)
+            ),
+        ));
+    };
+    bar = empiler(
+        bar,
+        Couche {
+            retirees: None,
+            rubriques: Some(&sec.rubriques),
+            ajoutees: None,
+            cotisations_dsn: None,
+            prevoyance_retraite_supp: None,
+            sante_patronale: None,
+            majoration_conges_115: None,
+            majoration_conges_110: None,
+            reduction_generale: Some(&sec.reduction_generale),
+        },
+    );
+    bar.cotisations_dsn.retain(|c| !c.code81.is_some_and(|code| sec.cotisations_dsn_retirees.contains(&code)));
+    for c in &sec.cotisations_dsn_ajoutees {
+        // Dans l'ordre des blocs 78 : avant le premier bloc de type superieur.
+        match bar.cotisations_dsn.iter().position(|x| x.bloc78 > c.bloc78) {
+            Some(i) => bar.cotisations_dsn.insert(i, c.clone()),
+            None => bar.cotisations_dsn.push(c.clone()),
+        }
+    }
+    Ok(bar)
+}
+
 /// LA TAXE D'APPRENTISSAGE NON DUE. Quand la fiche entreprise dit un motif de non-assujettissement
 /// (table MNATA, `taxe_apprentissage_motif_non_assujettissement`) qui vaut pour la periode d'emploi `fin`
 /// (`apprentissage::taxe_apprentissage_non_due_au_mois`), la taxe n'est pas due : C. trav. L. 6241-1, I et III, dit
@@ -1129,6 +1179,7 @@ pub fn bareme_applique(
     bar = bareme_caisse_conges(bar, avant_la_nature.as_ref(), nat, caisse_conges)?;
     bar = bareme_cpf_cdd(bar, nat, cpf_cdd)?;
     bar = bareme_majoration_chomage(bar, majoration_chomage)?;
+    bar = bareme_chomage_hors_des_annexes(bar, crate::caisse_conges::cddu_hors_des_annexes(nat, sal)?)?;
     bar = bareme_taxe_apprentissage(bar, fiche, fin_periode)?;
     bar = bareme_convention(bar, ent, Some(nat))?;
     bar = bareme_casc(bar, ent);

@@ -3291,6 +3291,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
     let caisse = mensuelle && p.declaree_a_la_caisse_des_conges()?;
     let tech = !mensuelle && technicien(p);
     let art = !mensuelle && !tech;
+    let a_l_urssaf = droit::caisse_conges::chomage_a_l_urssaf(&*p.engagement.nat()?, &p.salarie)?;
     let zone = bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie);
     let l = lecture(p, bar)?;
     let (b78, l81) = lignes_declarees(&r.declare)?;
@@ -3310,7 +3311,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Assiette(A::CsgPermanent) => si(mensuelle, &|| base(Assiette::Csg)),
         CleCtp::Assiette(A::T1Permanent) => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
         // La base 07 deposee (78.004 sous le bloc 07), comme `base_07` pour le corrige.
-        CleCtp::Assiette(A::ChomagePermanent) => si(mensuelle, &|| {
+        CleCtp::Assiette(A::ChomagePermanent) => si(a_l_urssaf, &|| {
             let v: Vec<Montant> = b78.iter().filter(|(b, _)| *b == BaseAssujettie::AssuranceChomage).map(|(_, v)| *v).collect();
             match v.first() {
                 None => Ok(Montant::ZERO),
@@ -3319,7 +3320,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
             }
         }),
         CleCtp::Assiette(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
-        CleCtp::Montant(M::ReductionGeneralePermanent) => si(mensuelle, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Montant(M::ReductionGeneralePermanent) => si(a_l_urssaf, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 81.003 de la cotisation 129 deposee (aucune, pour un mois depose sans elles : la correction declare
         // alors toute la contribution, qui etait due).
         CleCtp::Assiette(A::CpfCdd) => Ok(somme_81(CODE81_CPF_CDD, &|x| x.base)),
@@ -3335,7 +3336,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Assiette(A::BrutArtisteHorsAlsaceMoselle) => si(art && !zone, &|| Ok(brut)),
         CleCtp::Assiette(A::BrutArtisteAlsaceMoselle) => si(art && zone, &|| Ok(brut)),
         CleCtp::Assiette(A::BrutRegimeLocal) => si(zone && !art, &|| Ok(brut)),
-        CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech && !a_l_urssaf, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 114 et 021 deposes, signes '-' au nominatif : le montant de la ligne 23 est leur oppose.
         CleCtp::Montant(M::ReductionHeuresEnPlus) => Ok(Montant::ZERO - somme_81(CODE81_REDUCTION_HEURES, &|x| x.montant)),
         CleCtp::Montant(M::DeductionHeuresSupplementaires) => Ok(Montant::ZERO - somme_81(CODE81_DEDUCTION_HEURES, &|x| x.montant)),
@@ -3557,13 +3558,14 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
         };
     }
     out.insert(CleCtp::Assiette(A::T1Permanent), t1);
-    // Le chomage et l'AGS des permanents (CTP 772 et 937, qualifiant 920) : la somme des bases 07 que leur nominatif
-    // declare (`base_07`). Le tableau d'equivalence de l'Urssaf rattache ces deux CTP a la base 07 (040 et 048) sous le
-    // qualifiant 920 (atelier/reference/sources/chomage-permanents/urssaf-equivalence-dida-20260611.csv, lignes 1640 et
-    // 280) ; c'est le brut dans la limite de quatre plafonds
-    // de la periode.
+    // Le chomage et l'AGS que l'Urssaf recouvre (CTP 772 et 937, qualifiant 920 ; `caisse_conges::chomage_a_l_urssaf` :
+    // les permanents et le CDD d'usage hors des annexes) : la somme des bases 07 que leur nominatif declare (`base_07`).
+    // Le tableau d'equivalence de l'Urssaf rattache ces deux CTP a la base 07 (040 et 048) sous le qualifiant 920
+    // (atelier/reference/sources/chomage-permanents/urssaf-equivalence-dida-20260611.csv, lignes 1640 et 280) ; c'est le
+    // brut dans la limite de quatre plafonds de la periode.
+    let a_l_urssaf: Vec<bool> = paies.iter().map(|p| droit::caisse_conges::chomage_a_l_urssaf(&*p.engagement.nat()?, &p.salarie)).collect::<R<_>>()?;
     let mut chomage = Montant::ZERO;
-    for i in (0..paies.len()).filter(|i| perm(*i)) {
+    for i in (0..paies.len()).filter(|i| a_l_urssaf[*i]) {
         chomage += base_07(paies[i], bar)?;
     }
     out.insert(CleCtp::Assiette(A::ChomagePermanent), chomage);
@@ -3588,11 +3590,12 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     }
     out.insert(CleCtp::Assiette(A::CfpPermanent), cfp);
     // La reduction generale que l'Urssaf recouvre (`reduction_a_l_urssaf`) : pour un permanent, CTP 668 « reduction
-    // generale etendue », sa part securite sociale ET sa part chomage ; pour un technicien intermittent, CTP 671, la
-    // seule part securite sociale (France Travail recouvre son chomage).
+    // generale etendue », sa part securite sociale ET sa part chomage, comme pour le CDD d'usage hors des annexes, dont
+    // l'Urssaf recouvre aussi le chomage (`chomage_a_l_urssaf`) ; pour un technicien intermittent des annexes, CTP 671,
+    // la seule part securite sociale (France Travail recouvre son chomage).
     let (mut rg_perm, mut rg_tech) = (Montant::ZERO, Montant::ZERO);
     for i in 0..paies.len() {
-        if perm(i) {
+        if a_l_urssaf[i] {
             rg_perm += reduction_a_l_urssaf(paies[i], bar)?;
         } else if technicien(paies[i]) {
             rg_tech += reduction_a_l_urssaf(paies[i], bar)?;

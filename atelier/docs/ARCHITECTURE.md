@@ -1275,6 +1275,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
+| chômage du CDD d'usage hors des annexes (la section du barème qui paie au règlement général, à l'Urssaf, le CDDU d'un technicien que la liste de l'annexe 8 de sa convention ne nomme pas ; qui en relève : `caisse_conges::cddu_hors_des_annexes`) | `ChomageHorsDesAnnexes` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
 | contribution de branche | `ContributionDeBranche` | `droit/src/forme_bareme.rs` |

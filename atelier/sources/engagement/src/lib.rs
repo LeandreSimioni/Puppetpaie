@@ -2117,12 +2117,13 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
             );
             p.ecrire().avertissements.push(Avis { info: false, texte: msg });
         }
-        // Un technicien en CDD que la liste de l'annexe 8 de la convention ne nomme pas : on dit ce qui en suit.
+        // Un technicien que la liste de l'annexe 8 de la convention ne nomme pas (CDD ou CDDU) : on dit ce qui en suit
+        // (`caisse_conges::hors_de_l_annexe8`, `cddu_hors_des_annexes`).
         let nat = p.engagement.nat()?;
         if let Some((metier, idcc)) = droit::caisse_conges::hors_de_l_annexe8(&nat, &p.salarie)? {
             let texte = format!(
-                "{} : {} n'est pas sur la liste de l'annexe 8 de la convention {} ; ce CDD ne relève pas de \
-                 l'intermittence (ni Congés Spectacles ni AER spectacle) ; ses congés sont payés par la compagnie.",
+                "{} : {} n'est pas sur la liste de l'annexe 8 de la convention {} ; son chômage est celui du droit \
+                 commun (4 %, à l'Urssaf), sans AER spectacle.",
                 qui_de(&p.salarie)?,
                 metier,
                 idcc

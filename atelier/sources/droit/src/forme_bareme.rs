@@ -262,6 +262,7 @@ forme! {
         #[serde(deserialize_with = "crate::natures::population::cles::deserialize")]
         pub par_nature: BTreeMap<Paie, CoucheNature>,
         pub par_caisse_conges: Option<CaisseConges>,
+        pub chomage_hors_des_annexes: Option<ChomageHorsDesAnnexes>,
         pub risques_atmp: Option<RisquesAtmp>,
         pub seuils_effectif: Option<SeuilsEffectif>,
         pub regime_local_alsace_moselle: Option<RegimeLocal>,
@@ -1125,6 +1126,20 @@ forme! {
     pub struct CaisseConges {
         pub affilie: CoucheCaisse,
         pub non_affilie: CoucheCaisse,
+    }
+}
+
+forme! {
+    /// LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes`) : ce que l'assurance chomage du
+    /// reglement general change au CDDU que l'annexe 8 ne range pas (`bareme::bareme_chomage_hors_des_annexes`). La ligne
+    /// du chomage modifiee, les cotisations des annexes retirees, celles de l'Urssaf ajoutees, la declaration de la
+    /// reduction generale dont l'Urssaf recouvre alors aussi la part chomage.
+    pub struct ChomageHorsDesAnnexes {
+        pub verifie: Option<bool>,
+        pub rubriques: BTreeMap<IdDeCotisation, RubriqueModifiee>,
+        pub cotisations_dsn_retirees: Vec<CodeCotisation81>,
+        pub cotisations_dsn_ajoutees: Vec<CotisationDsn>,
+        pub reduction_generale: ParametresDeLaReduction,
     }
 }
 

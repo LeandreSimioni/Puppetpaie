@@ -4553,7 +4553,7 @@
       },
       "majoration_conges_115": 1.115,
       "majoration_conges_110": 1.115,
-      "note": "Un CDD de droit commun de moins de douze mois d'un intermittent : un ARTISTE (annexe 10), ou un technicien d'une fonction que la liste de l'annexe 8 nomme pour la convention de l'employeur (`caisse_conges::intermittent`). Par-dessus `par_nature.permanent` : la ligne de la caisse et la cotisation 066 (bloc 78 de type 27) reprises du corps tel que le statut l'a laisse, et les majorations d'assiette des employeurs affilies a une caisse de conges (CSS L. 243-1-3), que les assiettes du permanent portent deja (`t1_mensuelle_x115`, `brut_x110`, `brut_x115` du versement mobilite et de la formation, `autres_4`) avec une majoration de 1,0.\n`majoration_conges_110` : 11,5 % et non 10 % : CSS D. 243-0-2 (atelier/reference/sources/code-de-la-securite-sociale/articles-20261010.md), 1° : << Le taux des majorations prevues a l'article L. 243-1-3 est fixe a 11,5 % >> ; 2° : 10 % pour la taxe d'apprentissage << des salaries intermittents du spectacle mentionnes a l'article L. 6331-55 >> -- ceux des secteurs << pour lesquels il est d'usage constant de ne pas recourir au contrat a duree indeterminee >>, les mots memes du CDD d'usage (L. 1242-2, 3°). Un CDD de droit commun (L. 1242-2, 1° ou 2°) n'en est pas : sa taxe d'apprentissage se majore de 11,5 %. LECTURE : D. 243-0-2 ne nomme pas le CDD de droit commun ; la cle garde son nom (`_110`), c'est celle de la taxe d'apprentissage.\nLa contribution a la formation professionnelle de droit commun (L. 6331-1, par L. 6131-2) et la contribution CPF-CDD (L. 6331-6) se majorent aussi (L. 243-1-3, 1°) : leur ligne du bulletin (`par_nature.permanent.rubriques_ajoutees[autres_4]`) et leurs 81.003 (128, 129) sont sur `brut_x115`, que la majoration de 1,115 porte ici. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md, << La CPF-CDD d'un CDD declare a la caisse >>."
+      "note": "Un CDD de droit commun de moins de douze mois d'un intermittent : un ARTISTE ou un TECHNICIEN du spectacle, que la liste de l'annexe 8 nomme sa fonction ou non (`caisse_conges::personnel_du_spectacle` : D. 7121-40, D. 7121-41 et Audiens disent « le personnel artistique et technique », sans liste). Par-dessus `par_nature.permanent` : la ligne de la caisse et la cotisation 066 (bloc 78 de type 27) reprises du corps tel que le statut l'a laisse, et les majorations d'assiette des employeurs affilies a une caisse de conges (CSS L. 243-1-3), que les assiettes du permanent portent deja (`t1_mensuelle_x115`, `brut_x110`, `brut_x115` du versement mobilite et de la formation, `autres_4`) avec une majoration de 1,0.\n`majoration_conges_110` : 11,5 % et non 10 % : CSS D. 243-0-2 (atelier/reference/sources/code-de-la-securite-sociale/articles-20261010.md), 1° : << Le taux des majorations prevues a l'article L. 243-1-3 est fixe a 11,5 % >> ; 2° : 10 % pour la taxe d'apprentissage << des salaries intermittents du spectacle mentionnes a l'article L. 6331-55 >> -- ceux des secteurs << pour lesquels il est d'usage constant de ne pas recourir au contrat a duree indeterminee >>, les mots memes du CDD d'usage (L. 1242-2, 3°). Un CDD de droit commun (L. 1242-2, 1° ou 2°) n'en est pas : sa taxe d'apprentissage se majore de 11,5 %. LECTURE : D. 243-0-2 ne nomme pas le CDD de droit commun ; la cle garde son nom (`_110`), c'est celle de la taxe d'apprentissage.\nLa contribution a la formation professionnelle de droit commun (L. 6331-1, par L. 6131-2) et la contribution CPF-CDD (L. 6331-6) se majorent aussi (L. 243-1-3, 1°) : leur ligne du bulletin (`par_nature.permanent.rubriques_ajoutees[autres_4]`) et leurs 81.003 (128, 129) sont sur `brut_x115`, que la majoration de 1,115 porte ici. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md, << La CPF-CDD d'un CDD declare a la caisse >>."
     },
     "non_affilie": {
       "verifie": true,
@@ -4590,7 +4590,164 @@
       ],
       "raisonnement": "La loi (D. 7121-40 et 41 : déclaration à la caisse du personnel non employé de façon continue douze mois ; D. 243-0-2 : majoration 11,5 %, 10 % pour la taxe d'apprentissage des seuls intermittents de L. 6331-55) et Audiens (affiliation selon la nature et la durée : CDD de moins de 12 mois)."
     },
-    "note": "Qui passe par la caisse des Congés Spectacles quand le contrat n'est pas ce que sa nature décrit : un CDD de droit commun de moins de douze mois d'un artiste y est déclaré (la ligne, le 066, les majorations d'assiette de 11,5 %, y compris pour la taxe d'apprentissage : il n'est pas intermittent au sens de L. 6331-55) ; un CDDU de douze mois ou plus n'y est pas déclaré.\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste l'est (`affilie`). Un CDI ne l'est jamais."
+    "note": "Qui passe par la caisse des Congés Spectacles quand le contrat n'est pas ce que sa nature décrit : un CDD de droit commun de moins de douze mois d'un artiste y est déclaré (la ligne, le 066, les majorations d'assiette de 11,5 %, y compris pour la taxe d'apprentissage : il n'est pas intermittent au sens de L. 6331-55) ; un CDDU de douze mois ou plus n'y est pas déclaré.\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste ou d'un technicien du spectacle l'est (`affilie`). Un CDI ne l'est jamais."
+  },
+  "chomage_hors_des_annexes": {
+    "verifie": false,
+    "rubriques": {
+      "chomage": {
+        "base": "brut_chomage",
+        "taux_pat": [
+          {
+            "depuis": "2025-01-01",
+            "valeur": 4.3
+          },
+          {
+            "depuis": "2025-05-01",
+            "valeur": 4.25
+          }
+        ],
+        "efface": [
+          "taux_sal"
+        ],
+        "composants": [
+          {
+            "depuis": "2025-01-01",
+            "valeur": [
+              4.05,
+              0.25
+            ]
+          },
+          {
+            "depuis": "2025-05-01",
+            "valeur": [
+              4,
+              0.25
+            ]
+          }
+        ],
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/sources/plafond-intermittents/unedic-circulaire-2025-05-contributions-20250501.txt",
+              "emetteur": "unedic",
+              "article": "circulaire 2025-05, § 2.1.1",
+              "citation": "des salariés dockers occasionnels visés à l’article L. 5343-6 du code des transports"
+            },
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "BOSS, COT_CH_UN_METROP (2025)",
+              "citation": "4,05;01/01/2025;30/04/2025;OK"
+            },
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "BOSS, COT_CH_UN_METROP (2025)",
+              "citation": ";4;01/05/2025;31/12/2025;OK"
+            },
+            {
+              "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+              "emetteur": "urssaf",
+              "article": "table des CTP, 937 AGS",
+              "citation": "'937';COTISATIONS AGS CAS GENERAL U2;COTIS.AGS CAS GENER.;E;;0.25;;2024-01-07;;"
+            }
+          ],
+          "raisonnement": "BOSS : 4,05 % jusqu'au 30/04/2025, 4 % ensuite ; Urssaf (CTP 937) : AGS 0,25 % ; Unédic : la majoration de 0,5 % du CDD d'usage court ne vise que les dockers occasionnels et les intermittents des annexes (L. 5424-20). 4,30 puis 4,25 en somme, rien de salarial."
+        },
+        "note": "Le chômage du CDD d'usage d'un technicien que la liste de l'annexe 8 de la convention ne nomme pas : celui du règlement général, comme d'un permanent (`par_nature.permanent.rubriques.chomage`), sur la même base."
+      }
+    },
+    "cotisations_dsn_retirees": [
+      "040",
+      "048",
+      "041"
+    ],
+    "cotisations_dsn_ajoutees": [
+      {
+        "bloc78": "07",
+        "code81": "040",
+        "org": "78861779300013",
+        "base": "brut_chomage",
+        "taux": [
+          {
+            "depuis": "2025-01-01",
+            "valeur": 4.05
+          },
+          {
+            "depuis": "2025-05-01",
+            "valeur": 4
+          }
+        ],
+        "base78": "brut_chomage",
+        "cle_total": "040:urssaf",
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "COT_CH_UN_METROP (2025), 4,05 % jusqu'au 30/04/2025",
+              "citation": "4,05;01/01/2025;30/04/2025;OK"
+            },
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "COT_CH_UN_METROP (2025), 4 % depuis le 01/05/2025",
+              "citation": ";4;01/05/2025;31/12/2025;OK"
+            },
+            {
+              "fichier": "atelier/reference/sources/cddu-hors-annexe8/legi-travail-D1242-1-L5424-20-L5427-1-20261119.md",
+              "emetteur": "loi",
+              "article": "C. trav. L. 5427-1, al. 3",
+              "citation": "Le recouvrement des contributions mentionnées aux 1° à 3° de l'article L. 5422-9 et à l'article L. 5422-11 est assuré, pour le compte de cet organisme, par les unions pour le recouvrement des cotisations de sécurité sociale et d'allocations familiales"
+            }
+          ],
+          "raisonnement": "Le BOSS donne le taux ; le code du travail confie le recouvrement à l'Urssaf, France Travail ne recouvrant que pour l'activité qui « bénéficie de l'aménagement des conditions d'indemnisation » (L. 5427-1, e)."
+        },
+        "note": "Cotisation AC du CDD d'usage hors des annexes, à l'Urssaf (81.002 et `cle_total`), comme d'un permanent."
+      },
+      {
+        "bloc78": "07",
+        "code81": "048",
+        "org": "78861779300013",
+        "base": "brut_chomage",
+        "taux": 0.25,
+        "base78": "brut_chomage",
+        "cle_total": "048:urssaf",
+        "source": {
+          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "emetteur": "urssaf",
+          "article": "table des CTP, 937 AGS",
+          "citation": "'937';COTISATIONS AGS CAS GENERAL U2;COTIS.AGS CAS GENER.;E;;0.25;;2024-01-07;;"
+        },
+        "note": "Cotisation AGS, 0,25 %, recouvrée par l'Urssaf comme le chômage."
+      }
+    ],
+    "reduction_generale": {
+      "dsn": {
+        "cle_total_chomage": "018:urssaf",
+        "ctp": "668",
+        "ctp_regularisation": "669"
+      }
+    },
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt",
+          "emetteur": "unedic",
+          "article": "Annexe VIII, art. 1er, § 2",
+          "citation": "Les bénéficiaires de la présente annexe sont les ouvriers et techniciens engagés dans le cadre d'un contrat à durée déterminée, pour assurer l'une des fonctions énumérées dans la liste figurant au titre XIV"
+        },
+        {
+          "fichier": "atelier/reference/sources/cddu-hors-annexe8/legi-travail-D1242-1-L5424-20-L5427-1-20261119.md",
+          "emetteur": "loi",
+          "article": "C. trav. L. 5427-1, e)",
+          "citation": "e) Par l'opérateur France Travail, lorsqu'elles sont dues au titre des salariés engagés à titre temporaire qui relèvent des professions de la production cinématographique, de l'audiovisuel ou du spectacle et lorsque l'activité exercée bénéficie de l'aménagement des conditions d'indemnisation mentionné à l'article L. 5424-20 ;"
+        }
+      ],
+      "raisonnement": "Comme en 2026 (`baremes/2026.json`, `chomage_hors_des_annexes`) : l'annexe 8 ne range que les fonctions de sa liste ; hors d'elle, le règlement général, recouvré par l'Urssaf."
+    },
+    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES : voir le barème 2026, même section. Non marquée vérifiée : ce marquage est celui d'un humain ; tant qu'il manque, la paie d'un tel contrat refuse, seule."
   },
   "risques_atmp": {
     "arrete": "l'arrêté du 29 avril 2025 relatif à la tarification des risques d'accidents du travail et de maladies professionnelles pour l'année 2025",
