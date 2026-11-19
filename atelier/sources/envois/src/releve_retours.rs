@@ -288,12 +288,13 @@ impl Client {
     }
 
     /// L'envoi du guide (text/plain, gzip, jeton DSNLogin) des octets deja prepares. `forme` : `dsn` (`DepotRefuse`)
-    /// ou `dpae` (`Organisme`). Rend la reponse et son type de contenu, s'il est dit.
-    pub fn deposer_octets(&mut self, url: &Url, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
+    /// ou `dpae` (`Organisme`). `au_jour` : la porte du depot, ouverte le jour reel de la machine. Rend la reponse et son
+    /// type de contenu, s'il est dit.
+    pub fn deposer_octets(&mut self, au_jour: &crate::branchement::AuJourDuJour, url: &Url, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
         let jeton = self.jeton.clone().ok_or_else(|| panne(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
-        let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
+        let (brut, entetes) = crate::transport::depot(au_jour, url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
         let texte = String::from_utf8_lossy(&brut).trim_matches(socle::texte::blanc).to_string();
         let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
         Ok((texte, ctype))
@@ -323,6 +324,10 @@ pub struct Releve {
     pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
+    /// CE QUI A EMPECHE DE LIRE LA PLATE-FORME, parmi les `incidents` (`plateforme_non_lue`) : la liste des retours (le
+    /// mot de passe, l'authentification, la consultation), ou un bilan (nature 11) qui ne s'est pas telecharge. Un autre
+    /// retour rate n'y est pas : il ne dit rien de ce que la plate-forme sait des ordres.
+    pub plateforme_non_lue: Vec<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: usize,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
@@ -332,7 +337,13 @@ pub struct Releve {
 impl Releve {
     /// Un releve ou rien n'est encore trouve.
     pub fn vide() -> Releve {
-        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), rattaches: 0, a_faire: Vec::new() }
+        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), plateforme_non_lue: Vec::new(), rattaches: 0, a_faire: Vec::new() }
+    }
+
+    /// Un incident qui empeche de lire la plate-forme : dit avec les autres, et retenu (`plateforme_non_lue`).
+    fn plateforme_pas_lue(&mut self, phrase: String) {
+        self.plateforme_non_lue.push(phrase.clone());
+        self.incidents.push(phrase);
     }
 }
 
@@ -651,7 +662,7 @@ pub fn relever_retours(
         _ => {}
     }
     let Some(mut client) = client else {
-        releve.incidents.push(
+        releve.plateforme_pas_lue(
             "Mot de passe net-entreprises absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service net-entreprises`.".into(),
         );
         return Ok(releve);
@@ -659,7 +670,7 @@ pub fn relever_retours(
     match client.authentifier() {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            releve.incidents.push(format!("Authentification refusee : {}", p.echec.phrase));
+            releve.plateforme_pas_lue(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
@@ -681,7 +692,7 @@ pub fn relever_retours(
                 if p.code == Some(ureq::http::StatusCode::NOT_FOUND) {
                     continue;
                 }
-                releve.incidents.push(format!("Consultation interrompue : {}", p.echec.phrase));
+                releve.plateforme_pas_lue(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
@@ -721,7 +732,11 @@ pub fn relever_retours(
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
             Err(p) if p.est_api() => {
-                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase));
+                let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
+                match r.nature_retour {
+                    NatureDuRetour::CertificatDeConformite => releve.plateforme_pas_lue(phrase),
+                    _ => releve.incidents.push(phrase),
+                }
                 rates.push(r);
             }
             Err(p) => return Err(en_echec(p)),
@@ -797,7 +812,7 @@ pub fn relever_retours_dpae(
     }
     let Some(mut client) = client else {
         let mut r = Releve::vide();
-        r.incidents.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
+        r.plateforme_pas_lue("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
     let Some(flux) = flux else {
@@ -808,7 +823,7 @@ pub fn relever_retours_dpae(
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.incidents.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
+            r.plateforme_pas_lue(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),

@@ -46,6 +46,55 @@ impl Branchement {
             None => Ok(()),
         }
     }
+
+    /// LA PORTE D'UN DEPOT CHEZ UN ORGANISME (une DSN chez net-entreprises, une DPAE chez l'Urssaf, test comme reel) :
+    /// celle de la branche (`ouvrir`), puis, pour le monde, le jour (`AuJourDuJour`). Le seul endroit qui le decide :
+    /// le transport d'un depot (`transport::depot`) ne part pas sans ce qu'il rend.
+    pub fn ouvrir_le_depot(self, quoi: crate::ligne::Acte) -> R<Porte> {
+        match self {
+            Branchement::Message(r) => Err(erreur(r.classe, r.phrase)),
+            Branchement::Simulateur => Ok(Porte::Simulateur),
+            Branchement::Monde => Ok(Porte::Monde(AuJourDuJour::constate(quoi)?)),
+        }
+    }
+}
+
+/// Ce que la porte d'un depot laisse passer : le simulateur joue le depot ; le monde l'envoie, le jour constate.
+pub enum Porte {
+    Monde(AuJourDuJour),
+    Simulateur,
+}
+
+impl Porte {
+    /// Le depot est-il joue par le simulateur ?
+    pub fn joue(&self) -> bool {
+        matches!(self, Porte::Simulateur)
+    }
+}
+
+/// UN DEPOT QUI PART CHEZ L'ORGANISME LE JOUR REEL DE LA MACHINE : le jour du moteur (`socle::temps::jour_de_paris`, que
+/// `--date` ou `PUPPETPAIE_AUJOURDHUI` deplacent) est celui de sa montre (`socle::temps::jour_de_la_montre`). Un fichier
+/// constitue a un autre jour porterait un faux mois de constitution (S20.G00.05.007), que la plate-forme retient pour
+/// le dernier ordre accepte : un essai constitue en decembre fait refuser les essais de novembre constitues en novembre
+/// (B1-208-11). Le passe se refuse comme le futur : une seule regle, l'egalite. Il ne se fabrique qu'ici.
+pub struct AuJourDuJour(());
+
+impl AuJourDuJour {
+    fn constate(quoi: crate::ligne::Acte) -> R<AuJourDuJour> {
+        let (route, machine) = (socle::temps::jour_de_paris(), socle::temps::jour_de_la_montre());
+        if route == machine {
+            return Ok(AuJourDuJour(()));
+        }
+        let acte = match quoi {
+            crate::ligne::Acte::Dsn => "Une DSN qui part chez net-entreprises",
+            crate::ligne::Acte::Dpae => "Une DPAE qui part chez l'Urssaf",
+            autre => return Err(erreur(Classe::Refuse, format!("Un dépôt chez un organisme est une DSN ou une DPAE, pas « {} ». Rien n'est parti.", autre.nom()))),
+        };
+        Err(erreur(
+            Classe::Refuse,
+            format!("{} se dépose à la date du jour : cette commande joue le {}, nous sommes le {}. Rien n'est parti.", acte, route.jj_mm_aaaa(), machine.jj_mm_aaaa()),
+        ))
+    }
 }
 
 // ----------------------------------------------------------------- le simulateur

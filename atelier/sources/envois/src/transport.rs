@@ -757,8 +757,9 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
 /// `Content-Encoding: gzip`, jeton DSNLogin. `forme` dit comment une panne se
-/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
-pub fn depot(url: &Url, jeton: &socle::secret::Secret, corps_gzip: &[u8], forme: &str, delai: Duration) -> Result<(Vec<u8>, Entetes), EchecApi> {
+/// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`). `_au_jour` : la porte du depot l'a ouverte le jour reel de
+/// la machine (`branchement::Branchement::ouvrir_le_depot`) ; sans lui, rien ne part.
+pub fn depot(_au_jour: &crate::branchement::AuJourDuJour, url: &Url, jeton: &socle::secret::Secret, corps_gzip: &[u8], forme: &str, delai: Duration) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
         jeton: Some(jeton),
         donnees: Some(corps_gzip),

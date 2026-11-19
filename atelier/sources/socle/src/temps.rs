@@ -232,6 +232,12 @@ pub fn jour_de_paris() -> Jour {
     secondes().jour_de_paris()
 }
 
+/// LE JOUR DE LA MACHINE, a Paris : celui de sa montre, que ni le jour pose ni le temps simule ne touchent. Le jour ou
+/// un acte quitte vraiment la machine (`envois::branchement::AuJourDuJour`).
+pub fn jour_de_la_montre() -> Jour {
+    montre().jour_de_paris()
+}
+
 /// Le jour UTC, au temps du moteur (`contexte::jour_reel`).
 pub fn jour_utc() -> Jour {
     secondes().jour_utc()

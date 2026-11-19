@@ -97,7 +97,8 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
 fn un_depot_part_en_post_text_plain_gzip_avec_le_jeton() {
     let (base, recu) = faux();
     let corps = gzip(b"faux depot");
-    let (rendu, _) = depot(&Url::lire(&format!("{}/depot", base)).unwrap(), &socle::secret::Secret::nouveau("J-9"), &corps, "dsn", std::time::Duration::from_secs(10)).unwrap();
+    let envois::branchement::Porte::Monde(au_jour) = envois::branchement::Branchement::Monde.ouvrir_le_depot(documents::Acte::Dsn).unwrap() else { panic!("le monde ouvre sur le monde") };
+    let (rendu, _) = depot(&au_jour, &Url::lire(&format!("{}/depot", base)).unwrap(), &socle::secret::Secret::nouveau("J-9"), &corps, "dsn", std::time::Duration::from_secs(10)).unwrap();
     assert_eq!(rendu, b"<retours/>");
     let v = &recu.lock().unwrap()[0];
     assert_eq!(v.methode, "POST");

@@ -84,6 +84,10 @@ echo '{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-09"}}' | moteur rou
 echo '{"route":"ouverture","charge":{"sauvegarder":false,"signatures":false}}' | moteur route --texte                     # quelques minutes plus tard : le bilan (CCO/BAN) fait foi
 ```
 
+**Un dépôt qui part au réseau se fait au jour réel de la machine** : à une autre date (`--date`,
+`PUPPETPAIE_AUJOURDHUI`), le moteur refuse et rien ne part, en test comme en réel (`Branchement::ouvrir_le_depot`), car
+le fichier porterait un faux mois de constitution, que la plate-forme garde pour le mois déclaré.
+
 La base d'essai de net-entreprises garde les essais **par SIRET**, y compris ceux faits depuis un autre poste. Avant
 chaque essai d'une mensuelle, le moteur relève les retours : l'essai part au-dessus du plus grand ordre que les bilans
 montrent pour ce mois (le « dernier ordre accepté » d'un refus B1-208-11 compris) et des essais de son journal dont le

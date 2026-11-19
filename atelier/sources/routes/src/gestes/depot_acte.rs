@@ -4,7 +4,8 @@
 //!
 //! DEPOSER EST L'UN DES RARES GESTES DU LOGICIEL QUI ENGAGENT L'EMPLOYEUR -- jusqu'a des ordres de
 //! telepaiement reellement preleves. L'ordre est donc toujours le meme, et c'est le moteur qui le tient (jamais
-//! la page) : ouvrir la porte du branchement ; lire le fichier ; verifier que le mode demande colle a ce qu'il code (un
+//! la page) : ouvrir la porte du depot (`Branchement::ouvrir_le_depot` : la branche, et pour le monde le jour reel de
+//! la machine) ; lire le fichier ; verifier que le mode demande colle a ce qu'il code (un
 //! fichier `02` depose << pour voir >> EST une declaration) ; exiger la preuve (le mot de passe du logiciel, retape au
 //! moment de l'acte) ; exiger la REPETITION (ce contenu exact est deja passe en test, ou un motif ECRIT) ; seulement
 //! alors chercher le secret de l'organisme ; deposer ; NOTER, quoi qu'il arrive -- succes comme echec.
@@ -247,7 +248,7 @@ pub fn deposer_dsn_dans(
     contournement: &str,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
-    branchement.ouvrir()?;
+    let porte = branchement.ouvrir_le_depot(Acte::Dsn)?;
     if mode == Mode::Reel && environnement != EnvironnementNetEntreprises::Production {
         return Err(erreur(
             Classe::Refuse,
@@ -397,7 +398,7 @@ pub fn deposer_dsn_dans(
     let ordre_test = if essai_de_mensuelle { mois_de_constitution(&apercu).and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)) } else { Ok(None) }.map(|o| o.and_then(|c| Some(c).max(apercu.ordre)));
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
-        envois::depot_acte::deposer_dsn(ctx, branchement, &d, &apercu, environnement, ordre_test, &mut suites).map(|f| (f, ordre_test))
+        envois::depot_acte::deposer_dsn(ctx, &porte, &d, &apercu, environnement, ordre_test, &mut suites).map(|f| (f, ordre_test))
     });
     let faites = crate::gestes::suites::faire(ctx, suites)?;
     let (mut fait, ordre_test) = parti?;
@@ -446,7 +447,7 @@ pub(crate) fn deposer_dpae_avec(
     client_donne: Option<&mut Client>,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
-    branchement.ouvrir()?;
+    let porte = branchement.ouvrir_le_depot(Acte::Dpae)?;
     let chemin = crate::depots::resoudre(&ctx.racine, fichier)?;
     let apercu = crate::depots::apercu_depot_dpae(ctx, &chemin)?;
     let octets = crate::depots::lire_octets(&chemin)?;
@@ -518,7 +519,7 @@ pub(crate) fn deposer_dpae_avec(
         None => client.as_mut(),
     };
     let mut suites = Suites::default();
-    let fait = envois::depot_acte::deposer_dpae(ctx, branchement, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
+    let fait = envois::depot_acte::deposer_dpae(ctx, &porte, &d, &contenu, embauches.clone(), c, apercu.deja_depose.clone(), &mut suites);
     let faites = crate::gestes::suites::faire(ctx, suites)?;
     let mut fait = fait?;
     fait.suites.extend(faites.incidents.into_iter().chain(faites.a_faire));

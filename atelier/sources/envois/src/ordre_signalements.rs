@@ -141,8 +141,10 @@ pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: O
     }
     let fin = socle::temps::secondes();
     match fin.moins_duree(JOURS_DE_RELEVE).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, suites)) {
-        Ok(r) if r.incidents.is_empty() => None,
-        Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
+        // Seul ce qui empeche de lire la liste des retours ou un bilan se dit ici ; un autre retour rate reste dit avec
+        // les incidents de la releve (`Releve::plateforme_non_lue`).
+        Ok(r) if r.plateforme_non_lue.is_empty() => None,
+        Ok(r) => Some(r.plateforme_non_lue.join("; ")),
         Err(e) => Some(e.phrase),
     }
 }

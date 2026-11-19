@@ -535,6 +535,8 @@ un libellé, chacun sa forme.
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
+| porte d'un dépôt chez un organisme (joué, ou envoyé au monde) | `envois::branchement::Porte` | `envois/src/branchement.rs` |
+| dépôt ouvert le jour réel de la machine (sans lui, le transport d'un dépôt ne part pas) | `envois::branchement::AuJourDuJour` | `envois/src/branchement.rs` |
 | sorte d'une copie | `SorteDeCopie` | `compagnie/src/installation.rs` |
 | clé d'incident | `CleDIncident` | `compagnie/src/incidents.rs` |
 | canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
