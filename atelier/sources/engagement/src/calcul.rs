@@ -1024,6 +1024,7 @@ impl Assiettes {
             Assiette::BrutX115Dfs => self.x115_dfs,
             Assiette::BrutX110Dfs => self.x110_dfs,
             Assiette::Csg
+            | Assiette::PartAbattueCsg
             | Assiette::T1Journaliere
             | Assiette::T2Journaliere
             | Assiette::T2PrevoyanceJournaliere
@@ -1503,6 +1504,15 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         }
     }
     let brut = soumises.iter().fold(Montant::ZERO, |a, l| a + l.montant);
+    // Le plafond de la paie, le meme partout (`plafond_de_l_engagement`) : corrige a la quotite d'un temps partiel, sauf
+    // renonciation de l'etablissement ou artiste (`plafond_temps_partiel`). Les assiettes plafonnees qu'il donne se
+    // calculent a un seul endroit (`droit::plafond::assiettes_plafonnees`), regularisees sur l'annee civile pour une paie
+    // qui se regularise (`plafonnement`).
+    let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
+    let plafonnement = plafonnement(ctx, eng, &nat, &sal, &bar.regularisation_du_plafond, precedentes)?;
+    let limite_csg = bar.limite_abattement_csg.plafonds;
+    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond_urssaf, limite_csg, &plafonnement);
+    let regularisees = plafonnees.regularisees;
 
     // 7.3 : la prevoyance dans l'assiette CSG.
     let (prev, taux_prev) = match bar.rubrique(&PREVOYANCE) {
@@ -1520,21 +1530,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     };
     let plafond_journalier = bar.plafond_journalier;
     let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant { (jours * p).au_centime() };
-    let mut plafond_prev = None;
+    // La tranche 1 de la prevoyance, quand sa base en est une : sur le plafond journalier d'un intermittent, ou celle d'un
+    // salarie au mois (`regularisees`, la tranche que sa cotisation prend).
+    let mut t1_prev = None;
     if prev.base == Some(Assiette::T1Journaliere) {
         if let Some(p) = plafond_journalier {
-            plafond_prev = Some(t1_du_contrat(p));
+            t1_prev = Some(brut.min(t1_du_contrat(p)));
         }
     }
-    let mut pss_prev = None;
-    if nat.mensuelle() {
-        // Le plafond de la periode, le meme partout (`plafond_de_l_engagement`) : corrige a la quotite d'un temps
-        // partiel, sauf renonciation de l'etablissement ou artiste (`plafond_temps_partiel`).
-        let p = plafond_de_l_engagement(ctx, eng, &sal)?;
-        pss_prev = Some(p);
-        if prev.base == Some(Assiette::T1Mensuelle) {
-            plafond_prev = Some(p);
-        }
+    if nat.mensuelle() && prev.base == Some(Assiette::T1Mensuelle) {
+        t1_prev = Some(regularisees.t1);
     }
     // Les autres garanties de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette (les
     // contributions de l'employeur aux garanties collectives, CSS L136-1-1 : plus bas). Ce sont les lignes que la pile
@@ -1545,14 +1550,15 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     for r in rubriques_bulletin.iter().filter(|r| r.id != PREVOYANCE && garanties.contains(&r.id)) {
         let (id, Some(taux)) = (&r.id, part_patronale(r)) else { continue };
         let base = base_de(r)?;
-        let t1 = if let (Assiette::T2PrevoyanceJournaliere, Some(pj)) = (base, plafond_journalier) {
-            Some(t1_du_contrat(pj))
-        } else if base == Assiette::T2Conventionnelle {
-            pss_prev
+        let base_t2 = if let (Assiette::T2PrevoyanceJournaliere, Some(pj)) = (base, plafond_journalier) {
+            let t1 = t1_du_contrat(pj);
+            Some(Montant::ZERO.max(brut.min(t1.fois(4)) - t1))
+        } else if base == Assiette::T2Conventionnelle && nat.mensuelle() {
+            Some(regularisees.t2_conventionnelle)
         } else {
             None
         };
-        let Some(t1) = t1 else {
+        let Some(base_t2) = base_t2 else {
             return Err(refus_detaille("Le barème de l'année porte une prévoyance que le calcul de la CSG ne sait pas lire : le signaler au développeur.", None, format!(
                 "Bareme {} : la ligne de prevoyance `{}` porte l'assiette \
                  `{}`, que le calcul de l'assiette CSG ne sait pas lire. Sa \
@@ -1561,7 +1567,6 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
                 bar.annee, id, base
             )));
         };
-        let base_t2 = Montant::ZERO.max(brut.min(t1.fois(4)) - t1);
         tranches_prev += base_t2.fois_taux(taux);
     }
     // La part patronale de la mutuelle : un forfait sur le plafond MENSUEL de la periode, sans la correction du temps
@@ -1572,15 +1577,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         tranches_prev += pss.fois_taux(m).au_centime();
     }
 
-    // 7.4 : les assiettes, par rubrique de salaire. La CSG abat le brut sous quatre plafonds de la paie, le plafond de
-    // la vieillesse (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : `Pile::assiette_csg`).
-    let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
+    // 7.4 : les assiettes, par rubrique de salaire. La CSG abat la part du brut sous quatre plafonds, le plafond de la
+    // vieillesse, regularisee sur l'annee comme lui (CSS L. 136-2, I ; BOSS, assiette generale, § 290 :
+    // `regularisees.abattue_csg`, `Pile::assiette_csg`).
+    let abattue_csg = regularisees.abattue_csg;
     let (maj115, maj110) = (bar.majoration_conges_115, bar.majoration_conges_110);
     let assiettes = |montant: Montant, cs: bool| -> Assiettes {
         let mut base_prev = montant;
-        if let Some(pp) = plafond_prev {
+        if let Some(t1) = t1_prev {
             if brut > Montant::ZERO {
-                base_prev = brut.min(pp).prorata(montant, brut);
+                base_prev = t1.prorata(montant, brut);
             }
         }
         let base_prev_t2 = if !tranches_prev.est_nul() && brut > Montant::ZERO {
@@ -1591,7 +1597,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         Assiettes {
             brut: montant,
             brut_cs: if cs { montant } else { Montant::ZERO },
-            csg: (bar.assiette_csg(montant, brut, plafond_urssaf) + base_prev.fois_taux(taux_prev) + base_prev_t2).au_centime(),
+            csg: (bar.assiette_csg(montant, brut, abattue_csg) + base_prev.fois_taux(taux_prev) + base_prev_t2).au_centime(),
             x115: (montant * maj115).au_centime(),
             x110: (montant * maj110).au_centime(),
             dfs: None,
@@ -1611,6 +1617,14 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     if brut.est_nul() && !tranches_prev.est_nul() {
         if let Some(premiere) = par_rubrique.first_mut() {
             premiere.csg = (premiere.csg + tranches_prev).au_centime();
+        }
+    }
+    // De meme, l'abattement qu'une paie sans brut regularise (un mois sans brut d'une annee dont les paies d'avant ont
+    // depasse la limite : la somme des plafonds grandit, celle des remunerations non) va entier a la premiere rubrique
+    // soumise.
+    if brut.est_nul() && !abattue_csg.est_nul() {
+        if let Some(premiere) = par_rubrique.first_mut() {
+            premiere.csg = (premiere.csg - bar.abattement_de(abattue_csg)).au_centime();
         }
     }
     let zero = Montant::ZERO;
@@ -1673,33 +1687,39 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // La CET, due quand le brut depasse la T1, sur T1 + T2 : huit plafonds au plus (Agirc-Arrco, « jusqu'a 8 PSS »).
         bases.insert(Assiette::Cet, if brut > t1 { brut.min(t1 * t2_mult) } else { zero });
     }
+    // La part que l'abattement de la CSG a abattue : la paie suivante de l'annee la lit (`ajouter_a_l_annee`), la taxe sur
+    // les salaires aussi.
+    bases.insert(Assiette::PartAbattueCsg, abattue_csg);
+    // La majoration de 11,5 % (CSS L. 243-1-3, D. 243-0-2) s'applique a l'assiette plafonnee : quand le plafond la limite,
+    // c'est elle qu'elle majore (lettre circulaire Acoss 2013-019, annexe 1, R2, et sa « Regularisation progressive » :
+    // l'assiette plafonnee regularisee, puis x 11,5 % ; atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md) ;
+    // sinon, le brut majore tel qu'il est.
+    let majoree = |t1: Montant, remuneration: Montant, x115: Montant| if t1 == remuneration { x115 } else { (t1 * maj115).au_centime() };
     if nat.mensuelle() {
-        let pss = plafond_de_l_engagement(ctx, eng, &sal)?;
         // `pss_periode` : l'assiette du forfait de sante (rubrique `mutuelle`, base 18 du bloc 79), le plafond de la
         // periode sans la correction du temps partiel (`plafond_de_la_sante`). Les tranches (`t1_mensuelle`...) suivent,
-        // elles, le plafond corrige.
+        // elles, le plafond corrige, regularisees sur l'annee (`regularisees`).
         bases.insert(Assiette::PssPeriode, pss_sante.ok_or_else(|| refus("le plafond de la santé d'un contrat payé au mois manque : le signaler au développeur"))?);
-        bases.insert(Assiette::T1Mensuelle, brut.min(pss));
+        bases.insert(Assiette::T1Mensuelle, regularisees.t1);
         // Le FNAL plafonne d'un permanent declare a la caisse (CDD de moins de douze mois d'un
         // artiste) : seul le montant plafonne se majore (lettre circulaire Acoss 2013-019, annexe 1, R2), comme
         // `brut_x115_plafonne` d'un intermittent. Sans majoration (1,0), c'est la tranche 1.
-        let x115 = bases[&Assiette::BrutX115];
-        bases.insert(Assiette::T1MensuelleX115, if brut <= pss { x115 } else { (pss * maj115).au_centime() });
-        bases.insert(Assiette::T2Mensuelle, zero.max(brut.min(pss.fois(8)) - pss));
+        bases.insert(Assiette::T1MensuelleX115, majoree(regularisees.t1, brut, bases[&Assiette::BrutX115]));
+        bases.insert(Assiette::T2Mensuelle, regularisees.t2);
         // Quatre plafonds de la periode : l'Apec d'un cadre, et le chomage et l'AGS d'un permanent. Les contributions
         // d'assurance chomage « sont assises sur les remunerations brutes dans la limite d'un plafond » (C. trav.
         // L. 5422-9), « fixe a quatre fois le plafond mentionne a l'article L. 241-3 du code de la securite sociale »
         // (reglement general annexe a la convention du 15/11/2024, art. 49, al. 2) ; l'AGS suit la meme assiette
         // (L. 3253-18). Le plafond est celui de la periode de paie, reduit au prorata des jours d'emploi quand le contrat
-        // ne couvre pas le mois (CSS R. 242-2, al. 3) : `pss`. Textes : atelier/reference/sources/chomage-permanents/.
-        let quatre_plafonds = brut.min(pss.fois(4));
-        bases.insert(Assiette::ApecMensuelle, quatre_plafonds);
-        bases.insert(Assiette::BrutChomage, quatre_plafonds);
-        bases.insert(Assiette::T2Conventionnelle, zero.max(brut.min(pss.fois(4)) - pss));
+        // ne couvre pas le mois (CSS R. 242-2, al. 3), sans regularisation (`AssiettesPlafonnees::quatre_plafonds`).
+        // Textes : atelier/reference/sources/chomage-permanents/.
+        bases.insert(Assiette::ApecMensuelle, plafonnees.quatre_plafonds);
+        bases.insert(Assiette::BrutChomage, plafonnees.quatre_plafonds);
+        bases.insert(Assiette::T2Conventionnelle, regularisees.t2_conventionnelle);
         // La CET des permanents : due au-dela de la T1, sur le brut dans la limite de huit plafonds (Agirc-Arrco, « jusqu'a 8 PSS » ;
         // Audiens, « dans la limite de la T1 + T2 »).
-        bases.insert(Assiette::CetMensuelle, if brut > pss { brut.min(pss.fois(8)) } else { zero });
-        bases.insert(Assiette::T1T2Mensuelle, brut.min(pss.fois(8)));
+        bases.insert(Assiette::CetMensuelle, regularisees.cet);
+        bases.insert(Assiette::T1T2Mensuelle, regularisees.t1_t2);
     } else {
         // Le plafond d'un intermittent : celui que le bas du bulletin imprime (`plafond_de_l_engagement`), et la seule
         // source. Textes : atelier/reference/sources/plafond-intermittents/LISEZ-MOI.md. La vieillesse plafonnee et le
@@ -1707,15 +1727,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // limite d'un plafond fixe a quatre fois le plafond mentionne a l'article L. 241-3 » (annexes VIII et X du
         // 15/11/2024, art. 49). Sous le plafond, rien ne bouge : les bases sont le brut, et le brut majore tel qu'il
         // etait.
-        let plafond_ss = plafond_de_l_engagement(ctx, eng, &sal)?;
-        plafond_intermittent = Some(plafond_ss);
-        let x115 = bases[&Assiette::BrutX115];
-        bases.insert(Assiette::BrutPlafonne, brut.min(plafond_ss));
-        // La majoration de 11,5 % (CSS L. 243-1-3, D. 243-0-2) s'applique a l'assiette plafonnee : au-dela du plafond,
-        // c'est le plafond qu'elle majore (lettre circulaire Acoss 2013-019, annexe 1, R2 ;
-        // atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md).
-        bases.insert(Assiette::BrutX115Plafonne, if brut <= plafond_ss { x115 } else { (plafond_ss * maj115).au_centime() });
-        bases.insert(Assiette::BrutChomage, brut.min(plafond_ss.fois(4)));
+        plafond_intermittent = Some(plafond_urssaf);
+        bases.insert(Assiette::BrutPlafonne, regularisees.t1);
+        bases.insert(Assiette::BrutX115Plafonne, majoree(regularisees.t1, brut, bases[&Assiette::BrutX115]));
+        bases.insert(Assiette::BrutChomage, plafonnees.quatre_plafonds);
     }
     if let Some(s) = brut_abattu {
         bases.insert(Assiette::BrutDfs, s);
@@ -1724,9 +1739,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         bases.insert(Assiette::BrutX110Dfs, par_rubrique.iter().filter_map(|b| b.x110_dfs).fold(zero, |a, x| a + x));
         if let Some(plafond_ss) = plafond_intermittent {
             // Le plafond limite l'assiette abattue : la vieillesse plafonnee et la base 02 sur le brut abattu dans la
-            // limite du plafond du contrat (V1n l'avait laisse sur le brut entier).
-            bases.insert(Assiette::BrutPlafonneDfs, s.min(plafond_ss));
-            bases.insert(Assiette::BrutX115PlafonneDfs, if s <= plafond_ss { x115 } else { (plafond_ss * maj115).au_centime() });
+            // limite du plafond du contrat (un intermittent ne se regularise pas : `RegularisationDuPlafond`).
+            let t1 = droit::plafond::assiettes_plafonnees(s, plafond_ss, limite_csg, &plafonnement).regularisees.t1;
+            bases.insert(Assiette::BrutPlafonneDfs, t1);
+            bases.insert(Assiette::BrutX115PlafonneDfs, majoree(t1, s, x115));
         }
     }
 
@@ -1870,7 +1886,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
-    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, plafond_urssaf, tot_pat, || {
+    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, abattue_csg, tot_pat, || {
         crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id)
     })?;
     let mut exonere = Montant::ZERO;
@@ -2007,6 +2023,67 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         jours: e.jours,
     };
     pour_paie(&ep, &pss_du_contexte(ctx))
+}
+
+/// COMMENT LE PLAFOND DE LA PAIE DE `eng` TIENT COMPTE DE L'ANNEE (`droit::plafond::Plafonnement`) : une paie que le
+/// bareme regularise (`regle`, `RegularisationDuPlafond::regularise`) lit ce qui la precede dans l'annee civile chez la
+/// compagnie : les paies de son salarie des mois d'avant (`conges::plafonds_des_mois_anterieurs`), puis celles des
+/// contrats precedents du meme mois (`precedentes`), « a chaque echeance de paie » (BOSS, assiette generale, § 1230) ;
+/// INFERENCE, ecrite comme telle : les contrats d'un mois se suivent dans l'ordre de la saisie (le total du mois n'en
+/// depend pas).
+fn plafonnement(
+    ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &SalarieDuContrat, regle: &droit::forme_bareme::RegularisationDuPlafond,
+    precedentes: &[Paie],
+) -> R<droit::plafond::Plafonnement> {
+    if !regle.regularise(nat.mensuelle(), statut_de(sal)? == Statut::Artiste) {
+        return Ok(droit::plafond::Plafonnement::ParPaie);
+    }
+    let mois = eng.periode_payee()?.fin().mois_civil();
+    let mut annee = crate::conges::plafonds_des_mois_anterieurs(ctx, mois, &sal.id, regle)?;
+    for p in precedentes.iter().filter(|p| p.salarie.id == sal.id || p.engagement.salarie == eng.salarie) {
+        ajouter_a_l_annee(&mut annee, p, regle)?;
+    }
+    Ok(droit::plafond::Plafonnement::Regularise(annee))
+}
+
+/// LA PAIE `p`, D'AVANT DANS L'ANNEE, AJOUTEE A CE QUI PRECEDE UNE PAIE (`droit::plafond::AnneeAnterieure`) quand elle se
+/// regularise (`regle`) : son brut, son plafond et les assiettes plafonnees qu'elle a ecrites ; une paie decoupee, periode
+/// par periode (chacune sa fiche et sa nature). Une paie qui ne se regularise pas n'y entre pas.
+pub(crate) fn ajouter_a_l_annee(
+    annee: &mut droit::plafond::AnneeAnterieure, p: &Paie, regle: &droit::forme_bareme::RegularisationDuPlafond,
+) -> R<()> {
+    if !p.periodes.is_empty() {
+        for part in &p.periodes {
+            ajouter_a_l_annee(annee, part, regle)?;
+        }
+        return Ok(());
+    }
+    if !regle.regularise(p.engagement.nat()?.mensuelle(), statut_de(&p.salarie)? == Statut::Artiste) {
+        return Ok(());
+    }
+    let periode = p.engagement.periode_payee()?;
+    let lue = |a: Assiette| -> R<Montant> {
+        let b = p.bases.get(&a).ok_or_else(|| {
+            refus(format!(
+                "{} : sa paie du {} au {} ne dit pas son assiette « {} », que la régularisation du plafond sur l'année lit (CSS R. 242-2, II). Le signaler au développeur.",
+                p.engagement.qui(),
+                periode.debut().jj_mm_aaaa(),
+                periode.fin().jj_mm_aaaa(),
+                a.nom()
+            ))
+        })?;
+        b.en_euros(a)
+    };
+    let appliquees = droit::plafond::Regularisees {
+        t1: lue(Assiette::T1Mensuelle)?,
+        t2: lue(Assiette::T2Mensuelle)?,
+        t2_conventionnelle: lue(Assiette::T2Conventionnelle)?,
+        t1_t2: lue(Assiette::T1T2Mensuelle)?,
+        cet: lue(Assiette::CetMensuelle)?,
+        abattue_csg: lue(Assiette::PartAbattueCsg)?,
+    };
+    annee.ajouter(p.brut, p.plafond_urssaf, appliquees);
+    Ok(())
 }
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la

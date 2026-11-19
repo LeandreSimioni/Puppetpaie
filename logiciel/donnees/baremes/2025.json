@@ -1009,12 +1009,69 @@
           "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
           "emetteur": "boss",
           "article": "BOSS, assiette générale, § 290",
-          "citation": "Les règles de calcul du plafond sont les mêmes que celles applicables pour le calcul du plafond retenu pour la détermination des cotisations d'assurance vieillesse"
+          "citation": "Le seuil égal à quatre fois le plafond annuel de la sécurité sociale s'applique à l'ensemble des rémunérations soumises à CSG entrant dans le champ de l'abattement. Les règles de calcul du plafond sont les mêmes que celles applicables pour le calcul du plafond retenu pour la détermination des cotisations d'assurance vieillesse (voir le chapitre 6 de la présente fiche)"
         }
       ],
-      "raisonnement": "La loi (L. 136-2, I, dans sa rédaction en vigueur depuis le 16/12/2020, donc toute l'année 2025) n'abat de 1,75 % que la part du revenu inférieure à quatre fois le plafond de L. 241-3 ; le BOSS (§ 290) dit que ce plafond se calcule comme celui de la vieillesse : le plafond de la paie (`engagement::calcul::plafond_de_l_engagement`)."
+      "raisonnement": "La loi (L. 136-2, I, dans sa rédaction en vigueur depuis le 16/12/2020, donc toute l'année 2025) n'abat de 1,75 % que la part du revenu inférieure à quatre fois le plafond de L. 241-3 ; le BOSS (§ 290) dit « quatre fois le plafond annuel », calculé comme celui de la vieillesse, chapitre 6 entier : le plafond de la paie (`engagement::calcul::plafond_de_l_engagement`), régularisé sur l'année civile comme lui pour une paie qui se régularise (section 3 du chapitre 6, `regularisation_du_plafond`)."
     },
-    "note": "Le brut au-dessus de `plafonds` fois le plafond de la paie entre entier dans l'assiette de la CSG et de la CRDS (`Pile::assiette_csg`)."
+    "note": "La part du brut sous `plafonds` fois le plafond de la paie, régularisée sur l'année avec les tranches de la vieillesse (`droit::plafond::assiettes_plafonnees`), est abattue ; le reste entre entier dans l'assiette de la CSG et de la CRDS (`Pile::assiette_csg`)."
+  },
+  "regularisation_du_plafond": {
+    "technicien_intermittent": "par_contrat",
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/code-de-la-securite-sociale/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "CSS R. 242-2, II (en vigueur depuis le 01/01/2020)",
+          "citation": "Les cotisations calculées dans la limite d'un plafond annuel sont régularisées chaque mois. L'employeur fait masse, à chaque échéance de cotisations, des sommes dues au titre des périodes de travail comprises entre cette échéance et le premier jour de l'année ou le jour de l'embauche, si elle est postérieure, et calcule les cotisations sur la partie de cette masse qui ne dépasse pas la somme des plafonds périodiques applicables à ces mêmes périodes."
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1230",
+          "citation": "si la somme des rémunérations est inférieure à la somme des plafonds, l'assiette plafonnée à retenir pour une échéance de paie donnée est égale à la somme des rémunérations, diminuée du montant des assiettes plafonnées appliquées sur chaque échéance de paie précédente"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1240",
+          "citation": "Ces dispositions, qui constituent une évolution par rapport à la doctrine antérieure, sont applicables de manière obligatoire à compter du 1er janvier 2022."
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1250",
+          "citation": "Les salariés bénéficiant de taux, d'assiettes ou de montants spécifiques ou forfaitaires de cotisations, ainsi que les travailleurs à domicile, ne sont pas éligibles au principe de régularisation des cotisations plafonnées"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1090",
+          "citation": "Sont notamment visés les artistes du spectacle [...] pour les salariés intermittents, le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à rémunération"
+        },
+        {
+          "fichier": "atelier/reference/sources/majoration-caisses-conges/acoss-lettre-circulaire-2013-019-20130328.txt",
+          "emetteur": "urssaf",
+          "article": "Lettre circulaire Acoss 2013-019, annexe 1, régularisation progressive",
+          "citation": "son assiette plafonnée de février 2013 est donc de 2414€ (5500€ -3086€). L'assiette FNAL majorée pour le paiement de la contribution est donc de 2692 € (2414€*11.5%)"
+        },
+        {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+          "emetteur": "agirc_arrco",
+          "article": "Aide à la codification DSN CT2026",
+          "citation": "la régularisation annuelle du plafond de sécurité sociale est remplacée par la régularisation progressive au mois le mois"
+        },
+        {
+          "fichier": "atelier/reference/sources/faq-dsn-organismes-complementaires/net-entreprises-faq-dsn-oc-declarants-v4-202310.txt",
+          "emetteur": "net_entreprises",
+          "article": "FAQ DSN des organismes complémentaires, tranche nulle",
+          "citation": "une tranche A inférieure au plafond n'implique pas nécessairement une tranche B nulle, celle-ci pouvant être négative par effet de régularisation progressive"
+        }
+      ],
+      "raisonnement": "R. 242-2, II (en vigueur depuis 2020) et le BOSS (§ 1220-1240, obligatoire depuis le 1er janvier 2022, donc toute l'année 2025) régularisent chaque mois les cotisations plafonnées sur l'année civile : à chaque paie, la somme des rémunérations depuis le 1er janvier ou l'embauche sous la somme des plafonds, moins les assiettes plafonnées déjà appliquées ; l'Acoss le fait pour le FNAL, majoration de 11,5 % comprise, l'Agirc-Arrco pour la retraite complémentaire (T1, T2, CET ; son aide de 2026 décrit la DSN mensuelle, qui régularise ainsi depuis qu'elle existe), la FAQ des organismes complémentaires pour les tranches de la prévoyance, qui peuvent devenir négatives. Le BOSS (§ 1250) en sort les salariés à taux spécifiques, dont les artistes du spectacle (§ 1090) : leurs paies gardent chacune son plafond et n'entrent pas dans le cumul d'un autre contrat (INFERENCE retenue par Léandre le 19/11/2026 pour un artiste qui a aussi un contrat de technicien : le § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste, aucun texte ne joint les deux). Le technicien intermittent : `par_contrat`, TOLÉRANCE RETENUE (Léandre, 19/11/2026), pas une règle : le § 1090 lui admet le plafond des jours rémunérés, écrit pour la classe que le § 1250 sort de la régularisation, et le § 1230 fait masse de tous les contrats ; aucun texte déposé ne nomme le technicien. Les paies reprises d'un ancien logiciel n'entrent pas dans le cumul : la régularisation commence au premier mois payé ici, INFERENCE et approximation de la première année (Léandre, 19/11/2026), les pièces reprises ne disant ni le plafond appliqué ni les tranches de la retraite et de la prévoyance. Le chômage, l'AGS et l'Apec ne se régularisent pas : aucun texte déposé ne le dit (la fiche Unédic ne dit que l'identité de leur assiette avec celle de la sécurité sociale)."
+    },
+    "note": "Une paie qui se régularise (un permanent qui n'est pas artiste) lit les paies validées de son salarié de l'année (`conges::plafonds_des_mois_anterieurs`), puis celles des contrats précédents du mois (`calcul::plafonnement`) ; ses assiettes plafonnées se calculent à un seul endroit (`droit::plafond::assiettes_plafonnees`). Une DSN déjà déposée ne se réécrit pas : la paie suivante rattrape l'écart d'une paie corrigée."
   },
   "majoration_conges_115": 1.115,
   "majoration_conges_110": 1.1,

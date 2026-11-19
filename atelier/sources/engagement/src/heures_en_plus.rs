@@ -159,7 +159,8 @@ pub(crate) struct Suites {
 }
 
 /// LES SUITES DES HEURES EN PLUS d'une paie de `brut`, ses lignes de remuneration `lb` et ses cotisations `lignes` (la
-/// reduction generale comprise), `tot_pat` ses cotisations patronales ; `None` sans heure en plus.
+/// reduction generale comprise), `tot_pat` ses cotisations patronales, `abattue_csg` la part de son brut que l'abattement
+/// de la CSG abat ; `None` sans heure en plus.
 /// - LA REDUCTION DE COTISATIONS SALARIALES (L241-17, II ; D241-21 ; BOSS § 350-370) : la remuneration des heures,
 ///   majorations comprises, fois le taux moyen des cotisations salariales d'assurance vieillesse (la famille RETRAITE du
 ///   bulletin : vieillesse, Agirc-Arrco, CET ; pas l'Apec) sur le brut, dans la limite de 11,31 % ; imputee sur la
@@ -173,7 +174,7 @@ pub(crate) struct Suites {
 ///   autres cotisations salariales, a leur taux moyen sur le brut, laissent apres la reduction ; la limite annuelle de
 ///   7 500 EUR se compte sur ce net, dans l'annee civile, chez l'employeur (`deja`).
 pub(crate) fn apres_les_cotisations(
-    ctx: &Contexte, bar: &droit::forme_bareme::Pile, lb: &[LigneBrut], lignes: &[LigneCotisation], brut: Montant, plafond: Montant, tot_pat: Montant, deja: impl FnOnce() -> R<Montant>,
+    ctx: &Contexte, bar: &droit::forme_bareme::Pile, lb: &[LigneBrut], lignes: &[LigneCotisation], brut: Montant, abattue_csg: Montant, tot_pat: Montant, deja: impl FnOnce() -> R<Montant>,
 ) -> R<Option<Suites>> {
     let siennes: Vec<&LigneBrut> = lb.iter().filter(|l| l.code == HEURE_SUPPLEMENTAIRE || l.code == HEURE_COMPLEMENTAIRE).collect();
     let remuneration = siennes.iter().fold(Montant::ZERO, |a, l| a + l.montant);
@@ -232,14 +233,14 @@ pub(crate) fn apres_les_cotisations(
 
     // L'exoneration d'impot : le net des heures.
     // La CSG deductible que la paie retient (une paie sans CSG n'en deduit rien) ; sa ligne porte son taux. Les heures y
-    // entrent pour leur part de l'assiette de la paie (`Pile::assiette_csg`, sous le plafond `plafond` de la paie).
+    // entrent pour leur part de l'assiette de la paie (`Pile::assiette_csg`, dont l'abattement abat `abattue_csg`).
     let taux_csg = lignes
         .iter()
         .filter(|l| l.est(&CSG_DED))
         .take(1)
         .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
         .sum::<R<Taux>>()?;
-    let csg_deductible = bar.assiette_csg(remuneration, brut, plafond).fois_taux(taux_csg).au_centime();
+    let csg_deductible = bar.assiette_csg(remuneration, brut, abattue_csg).fois_taux(taux_csg).au_centime();
     let autres = sal(&|l| !(l.est(&CSG_DED) || l.est(&CSG_CRDS_ND) || l.est(&MUTUELLE)));
     let leurs_cotisations = autres.prorata(remuneration, brut).au_centime();
     let net = (remuneration - csg_deductible - (leurs_cotisations - reduction).max(Montant::ZERO)).max(Montant::ZERO);

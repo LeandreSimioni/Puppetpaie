@@ -32,6 +32,10 @@ assiettes! {
     BrutCs = "brut_cs",
     /// L'assiette de la CSG et de la CRDS.
     Csg = "csg",
+    /// La part du brut que l'abattement de la CSG a abattue (`plafond::Regularisees::abattue_csg`) : la paie suivante de
+    /// l'annee la lit pour regulariser la limite de l'abattement, la taxe sur les salaires pour rendre l'abattement a
+    /// l'assiette de la CSG (CGI 231, 1). Aucune cotisation ne s'y assoit.
+    PartAbattueCsg = "part_abattue_csg",
     /// Le brut majore pour les caisses de conges (CSS L. 243-1-3, D. 243-0-2).
     BrutX115 = "brut_x115",
     BrutX110 = "brut_x110",

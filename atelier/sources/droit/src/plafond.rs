@@ -37,7 +37,7 @@
 use socle::date::{Duree, EnJours, Jour, Periode};
 use socle::echec::R;
 use socle::grandeurs::ecrit::texte::dit;
-use socle::grandeurs::{nulle, Heures, Jours, Montant, MontantUnitaire};
+use socle::grandeurs::{nulle, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 use std::collections::BTreeSet;
 
 /// LE PLAFOND DE LA SECURITE SOCIALE D'UNE ANNEE (CSS L. 241-3, D. 242-17 a D. 242-19) : sa valeur mensuelle, et sa
@@ -178,6 +178,160 @@ pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heure
         }
         _ => Ok(prorata.au_centime()),
     }
+}
+
+// ------------------------------------------------------------ la regularisation sur l'annee
+
+/// LES ASSIETTES QUI SE REGULARISENT SUR L'ANNEE CIVILE, d'une paie ou d'une somme de paies (CSS R. 242-2, II : « Les
+/// cotisations calculees dans la limite d'un plafond annuel sont regularisees chaque mois ») :
+/// - `t1` : la remuneration dans la limite du plafond (la vieillesse plafonnee, le FNAL, la tranche 1 de la retraite
+///   complementaire et de la prevoyance : R. 242-2, II ; BOSS, assiette generale, § 1220-1240 ; lettre circulaire Acoss
+///   2013-019, annexe 1, « Regularisation progressive ») ;
+/// - `t2` : au-dela du plafond, dans la limite de huit plafonds ; `t1_t2` : dans la limite de huit plafonds ; `cet` :
+///   la remuneration dans la limite de huit plafonds quand elle depasse le plafond (la retraite complementaire : cahier
+///   Agirc-Arrco CT2026, « la regularisation annuelle du plafond de securite sociale est remplacee par la regularisation
+///   progressive au mois le mois ») ;
+/// - `t2_conventionnelle` : au-dela du plafond, dans la limite de quatre plafonds (la prevoyance : FAQ DSN des organismes
+///   complementaires, la tranche B « pouvant etre negative par effet de regularisation progressive ») ;
+/// - `abattue_csg` : la part de la remuneration que l'abattement de la CSG abat, dans la limite de `limite_abattement_csg`
+///   plafonds (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : le « plafond annuel », calcule comme celui de la
+///   vieillesse, « voir le chapitre 6 », sa section 3, la regularisation, comprise).
+/// Textes : `atelier/reference/sources/` (le barème, `regularisation_du_plafond`, les cite). Une assiette regularisee
+/// peut etre negative (la FAQ des organismes complementaires le dit de la tranche B) : la DSN la declare signee.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Regularisees {
+    pub t1: Montant,
+    pub t2: Montant,
+    pub t2_conventionnelle: Montant,
+    pub t1_t2: Montant,
+    pub cet: Montant,
+    pub abattue_csg: Montant,
+}
+
+impl Regularisees {
+    /// Aucune.
+    pub const ZERO: Regularisees = Regularisees {
+        t1: Montant::ZERO,
+        t2: Montant::ZERO,
+        t2_conventionnelle: Montant::ZERO,
+        t1_t2: Montant::ZERO,
+        cet: Montant::ZERO,
+        abattue_csg: Montant::ZERO,
+    };
+
+    /// Celles d'une remuneration `remuneration` sous un plafond `plafond` (d'une paie, ou de l'annee : deux sommes),
+    /// `limite_csg` le nombre de plafonds sous lequel la CSG abat.
+    fn sous(remuneration: Montant, plafond: Montant, limite_csg: Coefficient) -> Regularisees {
+        let zero = Montant::ZERO;
+        let huit = plafond.fois(8);
+        Regularisees {
+            t1: remuneration.min(plafond),
+            t2: zero.max(remuneration.min(huit) - plafond),
+            t2_conventionnelle: zero.max(remuneration.min(plafond.fois(4)) - plafond),
+            t1_t2: remuneration.min(huit),
+            cet: if remuneration > plafond { remuneration.min(huit) } else { zero },
+            abattue_csg: remuneration.min(plafond * limite_csg),
+        }
+    }
+}
+
+impl std::ops::Add for Regularisees {
+    type Output = Regularisees;
+    fn add(self, o: Regularisees) -> Regularisees {
+        Regularisees {
+            t1: self.t1 + o.t1,
+            t2: self.t2 + o.t2,
+            t2_conventionnelle: self.t2_conventionnelle + o.t2_conventionnelle,
+            t1_t2: self.t1_t2 + o.t1_t2,
+            cet: self.cet + o.cet,
+            abattue_csg: self.abattue_csg + o.abattue_csg,
+        }
+    }
+}
+
+impl std::ops::Sub for Regularisees {
+    type Output = Regularisees;
+    fn sub(self, o: Regularisees) -> Regularisees {
+        Regularisees {
+            t1: self.t1 - o.t1,
+            t2: self.t2 - o.t2,
+            t2_conventionnelle: self.t2_conventionnelle - o.t2_conventionnelle,
+            t1_t2: self.t1_t2 - o.t1_t2,
+            cet: self.cet - o.cet,
+            abattue_csg: self.abattue_csg - o.abattue_csg,
+        }
+    }
+}
+
+/// CE QUI PRECEDE UNE PAIE DANS L'ANNEE CIVILE, chez la compagnie (CSS R. 242-2, II : l'employeur « fait masse [...] des
+/// sommes dues au titre des periodes de travail comprises entre cette echeance et le premier jour de l'annee ou le jour
+/// de l'embauche » ; BOSS, assiette generale, § 1230 : « la somme des remunerations dues depuis le debut de l'annee »,
+/// « la somme des plafonds applicables », « le montant des assiettes plafonnees appliquees sur chaque echeance de paie
+/// precedente ») : la somme des remunerations, celle des plafonds de ces paies, et celle des assiettes qu'elles ont
+/// appliquees. Elle part de rien (`debut`), et chaque paie qui se regularise s'y ajoute (`ajouter`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnneeAnterieure {
+    remunerations: Montant,
+    plafonds: Montant,
+    appliquees: Regularisees,
+}
+
+impl AnneeAnterieure {
+    /// Rien avant : le premier jour de l'annee, ou de l'embauche.
+    pub fn debut() -> AnneeAnterieure {
+        AnneeAnterieure { remunerations: Montant::ZERO, plafonds: Montant::ZERO, appliquees: Regularisees::ZERO }
+    }
+
+    /// Une paie anterieure qui se regularise : sa remuneration, son plafond, et les assiettes qu'elle a appliquees, telles
+    /// qu'elle les a ecrites (celles d'une paie corrigee depuis comprises : la suivante rattrape l'ecart).
+    pub fn ajouter(&mut self, remuneration: Montant, plafond: Montant, appliquees: Regularisees) {
+        self.remunerations += remuneration;
+        self.plafonds += plafond;
+        self.appliquees = self.appliquees + appliquees;
+    }
+}
+
+/// COMMENT LE PLAFOND D'UNE PAIE TIENT COMPTE DE L'ANNEE : il se regularise sur ce qui la precede (`Regularise`, CSS
+/// R. 242-2, II), ou il est celui de la paie seule (`ParPaie`) : BOSS, assiette generale, § 1250, « Les salaries
+/// beneficiant de taux, d'assiettes ou de montants specifiques ou forfaitaires de cotisations [...] ne sont pas eligibles
+/// au principe de regularisation des cotisations plafonnees : pour ces salaries, l'assiette plafonnee applicable lors de
+/// chaque paie ne prend pas en compte la ou les assiettes plafonnees appliquees lors des echeances precedentes » ; qui
+/// l'est, le bareme le dit (`forme_bareme::RegularisationDuPlafond::regularise`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Plafonnement {
+    ParPaie,
+    Regularise(AnneeAnterieure),
+}
+
+/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite de quatre
+/// plafonds de la paie (`quatre_plafonds` : le chomage, l'AGS, l'Apec d'un permanent), qui ne se regularise pas : aucun
+/// texte depose ne dit la regularisation de ces contributions (la fiche Unedic ne dit que l'identite de leur assiette avec
+/// celle de la securite sociale), et seul se regularise ce qu'un texte depose fonde (Leandre, 19/11/2026).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AssiettesPlafonnees {
+    pub regularisees: Regularisees,
+    pub quatre_plafonds: Montant,
+}
+
+/// LES ASSIETTES PLAFONNEES de la paie de remuneration `remuneration` (son brut soumis) et de plafond `plafond` (le
+/// plafond de la paie, `pour_paie`), `limite_csg` le nombre de plafonds sous lequel la CSG abat (le bareme,
+/// `limite_abattement_csg`) : le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui
+/// precede la paie dans l'annee (`plafonnement`).
+///
+/// Regularisee : chacune est celle de la somme des remunerations sous la somme des plafonds, de l'annee jusqu'a cette
+/// paie comprise, moins ce que les paies d'avant ont applique (BOSS, assiette generale, § 1230 : « si la somme des
+/// remunerations est inferieure a la somme des plafonds, l'assiette plafonnee a retenir pour une echeance de paie donnee
+/// est egale a la somme des remunerations, diminuee du montant des assiettes plafonnees appliquees sur chaque echeance de
+/// paie precedente » ; au-dessus, « egale a la somme des plafonds » diminuee de meme). Elle peut etre negative, ou depasser
+/// la remuneration de la paie.
+pub fn assiettes_plafonnees(remuneration: Montant, plafond: Montant, limite_csg: Coefficient, plafonnement: &Plafonnement) -> AssiettesPlafonnees {
+    let regularisees = match plafonnement {
+        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg),
+        Plafonnement::Regularise(a) => {
+            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg) - a.appliquees
+        }
+    };
+    AssiettesPlafonnees { regularisees, quatre_plafonds: remuneration.min(plafond.fois(4)) }
 }
 
 /// Ce que `pour_paie` lit de l'engagement.

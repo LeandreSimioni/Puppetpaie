@@ -1274,7 +1274,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | contrat dans l'effectif (un contrat tel que L. 130-1 et R. 130-1 CSS le comptent : sa personne, ses dates, et la part qu'un jour du contrat compte, aucune quand il est exclu du décompte, un CDD de remplacement ou un dispositif de L. 1111-3 du code du travail, `ContratDansLEffectif::de` ; le temps de travail, la part entière ou le rapport des quotités d'un temps partiel, une référence nulle refusée ; la seule règle, `droit::effectif::effectif_du_mois`, `effectif_au_jour` et `effectif_annuel`, que lisent l'Urssaf simulée depuis les DSN et l'effectif repris) | `droit::effectif::ContratDansLEffectif`, `droit::effectif::TempsDansLEffectif` | `droit/src/effectif.rs` |
 | effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou ce qui manque pour le calculer, et sa phrase ; « Pour démarrer » le propose sur la ligne de l'effectif, la route `effectif` le confirme) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
-| limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
+| limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
+| régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
+| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et les quatre plafonds du chômage, qui ne se régularisent pas ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
+| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
 | maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
@@ -2170,6 +2173,23 @@ FNAL (`brut_plafonne`, `brut_x115_plafonne`) et le chômage, dans la limite de
 quatre plafonds (`brut_chomage`) ; pour un permanent, les tranches et le
 chômage, dans la limite de quatre plafonds de la période (`brut_chomage`).
 
+**Le plafond se régularise sur l'année civile** (CSS R. 242-2, II ; BOSS,
+assiette générale, § 1220-1250) : les assiettes plafonnées d'une paie se
+calculent à un seul endroit, `droit::plafond::assiettes_plafonnees`, qui ne se
+calcule pas sans son plafonnement. Une paie qui se régularise (un permanent qui
+n'est pas artiste : `regularisation_du_plafond` du barème) prend la somme des
+rémunérations sous la somme des plafonds, depuis le 1er janvier ou l'embauche,
+moins ce que les paies d'avant ont appliqué (lues dans les paies validées de
+l'année, `conges::plafonds_des_mois_anterieurs`, puis les contrats précédents du
+mois) : la vieillesse plafonnée, le FNAL, les tranches de la retraite
+complémentaire et de la prévoyance, et la part que la CSG abat
+(`part_abattue_csg`, écrite dans la paie). Une tranche régularisée peut être
+négative, la DSN la déclare signée. L'artiste et le technicien intermittent
+gardent le plafond de chaque paie ; les paies reprises d'un ancien logiciel
+n'entrent pas dans le cumul (la régularisation commence au premier mois payé
+ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas. Une paie partie ne se
+réécrit pas : la suivante rattrape l'écart d'une paie corrigée.
+
 **Une valeur du barème peut être datée** : le SMIC (`smic_horaire`, liste de `{depuis, valeur}`), et toute autre
 valeur — un taux, un plafond —, parce que le droit change en cours d'année (AGS 0,20 → 0,25 au 01/07/2024,
 chômage 11,45 → 11,40 au 01/06/2025) :
@@ -2217,8 +2237,10 @@ Trois subtilités, chacune trouvée en cherchant pourquoi un centime manquait.
 `arrondi(brut × 0,9825) + part patronale de prévoyance`, soit
 255,45 + 2,89 = 258,34 pour 260 € de brut, et 510,90 + 5,77 = 516,67 pour 520 €. L'abattement ne vaut que sous
 quatre plafonds de la paie (CSS L. 136-2, I ; le plafond de la vieillesse, BOSS § 290 : `limite_abattement_csg` du
-barème) : au-dessus, le brut entre entier (`droit::forme_bareme::Pile::assiette_csg`, réparti entre les rubriques au
-prorata de leur montant).
+barème), régularisés sur l'année comme lui : au-dessus, le brut entre entier (`droit::forme_bareme::Pile::assiette_csg`,
+sur la part abattue que la paie écrit, `part_abattue_csg`, réparti entre les rubriques au prorata de leur montant).
+La taxe sur les salaires reprend l'assiette de la CSG sans la réduction (CGI 231, 1) : l'abattement de cette part lui
+est rendu (`documents::taxe_sur_les_salaires`).
 
 **Une ligne du bulletin peut cacher deux cotisations.** La ligne
 « autres contributions 0,680 % » sur 286,00 € affiche 1,95 € alors que
@@ -2814,7 +2836,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | numéro d'objet (40.050) | oui | **INTERDIT** — CCH-11 ne l'autorise que pour les natures 02 et 10 |
 | congés payés | caisse des Congés Spectacles (40.022, cotisation 15,5 %), sauf un CDDU de douze mois ou plus | chez l'employeur : compteur, indemnité, solde ; sauf le CDD de droit commun de moins de douze mois d'un artiste, déclaré à la caisse (`caisse_conges::affilie`) |
 | assiettes FNAL / taxe d'apprentissage | brut **majoré** de 11,5 % et de 10 % (CSS L. 243-1-3, D. 243-0-2), pour un contrat déclaré à la caisse des Congés Spectacles | brut nu ; tranche 1 majorée de 11,5 % (FNAL) et brut majoré de 11,5 % (taxe d'apprentissage) pour un contrat déclaré à la caisse (`par_caisse_conges.affilie` du barème) |
-| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) |
+| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
 | chômage | 9,75 / 2,40 dans la limite de quatre plafonds, recouvré par **France Travail** | 4,00 + AGS 0,25 dans la limite de quatre plafonds de la période, recouvré par l'**Urssaf** (CTP 772, 937) |
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |

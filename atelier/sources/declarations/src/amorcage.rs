@@ -182,6 +182,11 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         sante_obligatoire: None,
         abattement_csg: socle::grandeurs::Coefficient::ZERO,
         limite_abattement_csg: droit::forme_bareme::LimiteDeLAbattementCsg { plafonds: socle::grandeurs::Coefficient::ZERO, source: None, note: None },
+        regularisation_du_plafond: droit::forme_bareme::RegularisationDuPlafond {
+            technicien_intermittent: droit::forme_bareme::PlafondDuTechnicienIntermittent::ParContrat,
+            source: None,
+            note: None,
+        },
         majoration_conges_115: socle::grandeurs::Coefficient::ZERO,
         majoration_conges_110: socle::grandeurs::Coefficient::ZERO,
         plafond_journalier: None,
