@@ -461,6 +461,7 @@ function ouvrirCalendrier(ligne, moisForce) {
       : `<div class="c-passes">${contrats.length
           ? contrats.map((c) => ligneContratPasse(c, !salarie)).join("")
           : `<span class="discret">${echapper(lu.rien_dit)}</span>`}
+          ${lu.non_lus.map((x) => `<div class="discret">${echapper(x)}</div>`).join("")}
         </div>`);
     cal.innerHTML = `
       <div class="c-tete">

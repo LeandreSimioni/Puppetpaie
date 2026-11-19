@@ -99,7 +99,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats déclarés d'un mois importé.",
         charge: &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé d'un salarié, pour ne lire que les siens ; null : tous", avance: true }],
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
-        rend: "contrats : ceux que les engagements importés attestent",
+        rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
         acte: Acte::Lit,
         phrase: 0,
@@ -381,6 +381,8 @@ struct ContratsPasses {
     phrase: Phrase,
     mois: Mois,
     contrats: Vec<Passe>,
+    /// Les contrats repris qui ne se lisent pas, une phrase chacun : ils ne ferment pas le reste.
+    non_lus: Vec<String>,
     rien_dit: &'static str,
 }
 
@@ -827,36 +829,51 @@ struct Atteste {
     jours: Option<Jours>,
 }
 
-/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois.
-fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
-    let mut out = Vec::new();
+/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois. LE
+/// CALENDRIER SE LIT TOUJOURS : un engagement importe dont la carte ne se lit pas ne ferme que lui, et se dit (la
+/// seconde liste : une phrase par engagement) ; une panne remonte.
+fn historique(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
+    let (mut out, mut non_lus) = (Vec::new(), Vec::new());
     for i in engagement::importe::tous(&ctx.racine)? {
-        let c = i.contrat_lu()?;
-        // Le contrat entier qu'une piece atteste (une AEM, un certificat, le bulletin d'un contrat d'usage).
-        if let (Some(c), false) = (&c, i.permanent()) {
-            if let Some(periode) = c.periode.and_then(|o| o.fermee()) {
-                out.push(Atteste {
-                    salarie: c.salarie.clone(),
-                    periode,
-                    numero_objet: c.contrat.numero_objet.clone(),
-                    cachets: c.contrat.cachets,
-                    heures: c.contrat.heures,
-                    jours: c.contrat.jours,
-                });
+        match attestes_par(&i) {
+            Ok(a) => out.extend(a),
+            Err(e) if e.dit_un_manque() => {
+                non_lus.push(format!("Un contrat repris ({}, rang {}) ne se lit pas : {}", i.objet().fichier, i.objet().rang + 1, e.phrase))
             }
-            continue;
+            Err(e) => return Err(e),
         }
-        // Un permanent, ou un contrat que ses seules DSN declarent : mois par mois. Celui dont l'engagement ne dit pas le
-        // debut ne se place dans aucun mois (le registre de l'import le dit muet).
-        let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
-        let Some(contrat) = i.objet().carte().contrat()? else { continue };
-        // Le calendrier se lit toujours : un mois verse que les dates du contrat ne touchent pas ne s'y place pas.
-        for (mois, p) in i.paies() {
-            let Some(periode) = contrat.croise(&Periode::du_mois(*mois)) else { continue };
-            let a = i.activite_du_mois(*mois);
-            let numero_objet = c.as_ref().and_then(|c| c.contrat.numero_objet.clone()).or_else(|| p.numero_objet.clone());
-            out.push(Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours });
-        }
+    }
+    Ok((out, non_lus))
+}
+
+/// Ce que l'engagement importe `i` atteste, pour le calendrier.
+fn attestes_par(i: &engagement::importe::Importe) -> R<Vec<Atteste>> {
+    let c = i.contrat_lu()?;
+    // Le contrat entier qu'une piece atteste (une AEM, un certificat, le bulletin d'un contrat d'usage).
+    if let (Some(c), false) = (&c, i.permanent()) {
+        return Ok(c
+            .periode
+            .and_then(|o| o.fermee())
+            .map(|periode| Atteste {
+                salarie: c.salarie.clone(),
+                periode,
+                numero_objet: c.contrat.numero_objet.clone(),
+                cachets: c.contrat.cachets,
+                heures: c.contrat.heures,
+                jours: c.contrat.jours,
+            })
+            .into_iter()
+            .collect());
+    }
+    // Un permanent, ou un contrat que ses seules DSN declarent : mois par mois (`Importe::mois_par_mois`). Un mois verse
+    // que les dates du contrat ne touchent pas ne se place dans aucun mois.
+    let Some(salarie) = i.objet().carte().salarie.clone() else { return Ok(Vec::new()) };
+    let mut out = Vec::new();
+    for (mois, periode, p) in i.mois_par_mois()? {
+        let Some(periode) = periode else { continue };
+        let a = i.activite_du_mois(mois);
+        let numero_objet = c.as_ref().and_then(|c| c.contrat.numero_objet.clone()).or_else(|| p.numero_objet.clone());
+        out.push(Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours });
     }
     Ok(out)
 }
@@ -864,7 +881,8 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
 /// LES CONTRATS QUI TOUCHENT `mois`, pour le calendrier des mois passes. Deux sources : un mois qui a son fichier de paie
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
-fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
+/// Rend aussi ce qui ne s'est pas lu de l'historique (`historique`).
+fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<(Vec<Passe>, Vec<String>)> {
     let le_mois = Periode::du_mois(mois);
     let voulu = |cle: &IdSalarie| salarie.is_none_or(|s| s == cle);
     let spectacles = Spectacles::nouveau(ctx);
@@ -936,7 +954,8 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             }
         }
     }
-    for a in historique(ctx)? {
+    let (attestes, non_lus) = historique(ctx)?;
+    for a in attestes {
         if a.periode.croise(&le_mois).is_none() {
             continue;
         }
@@ -963,15 +982,16 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         });
     }
     out.sort_by(|a, b| (&a.salarie, &a.periode).cmp(&(&b.salarie, &b.periode)));
-    Ok(out)
+    Ok((out, non_lus))
 }
 
 fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsPasses> {
-    let contrats = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
+    let (contrats, non_lus) = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
     Ok(ContratsPasses {
         phrase: socle::phrase!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
         mois: c.mois,
         contrats,
+        non_lus,
         // Ce que la liste dit quand elle est vide : rien de declare pour ce salarie, ou aucun salarie choisi.
         rien_dit: if c.salarie.is_some() { "aucun contrat déclaré" } else { "aucun salarié coché" },
     })
