@@ -1203,12 +1203,17 @@ pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<Statut> {
 /// mois jusqu'a ce que le net garanti soit atteint au centime ; la paie est alors celle de ce montant. Les jours de ses
 /// suites reduisent le plafond tant que son complement net n'est pas connu (`maintien::AuNet::jours`) : quand la
 /// reconstitution le trouve positif, ils sont maintenus (BOSS, assiette generale, § 820), le plafond les rend, et la
-/// reconstitution se refait sur ce plafond.
+/// reconstitution se refait sur ce plafond. Sa garantie, calculee sur le mois sans les jours d'arret parmi les jours sans
+/// remuneration (`maintien::Reconstitution::arrets`), est la meme aux deux passages ; les jours rendus le restent.
 pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
     let reconstituer = |e: &Engagement| {
-        let mut paie_des = |lignes: Vec<crate::LignePaie>| {
+        let mut paie_des = |lignes: Vec<crate::LignePaie>, hors: &std::collections::BTreeSet<socle::date::Jour>| {
             let mut x = e.clone();
             x.lignes = lignes;
+            if !hors.is_empty() {
+                let sans = x.sans_remuneration.as_ref().ok_or_else(|| socle::fichiers::absent("sans_remuneration"))?;
+                x.sans_remuneration = Some(sans.hors(hors));
+            }
             calculer_du_mois(ctx, &x, precedentes)
         };
         crate::maintien::au_net(&e.lignes, &mut paie_des)
@@ -1230,21 +1235,23 @@ pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Pa
 fn calculer_du_mois(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
     let bornes = crate::periodes::bornes(ctx, eng)?;
     if bornes.len() <= 1 {
-        let (mut p, bascule) = calculer_periode(ctx, eng, precedentes)?;
-        p.ecrire().avertissements.extend(bascule);
+        let (mut p, annee) = calculer_periode(ctx, eng, precedentes)?;
+        let avis = avis_du_mois(eng, &p, annee.as_slice());
+        p.ecrire().avertissements.extend(avis);
         return Ok(p);
     }
     let mut parts: Vec<Paie> = Vec::new();
-    // L'avis de la bascule de la CET va a la paie du mois, une fois, pas a chacune de ses periodes.
-    let mut bascules: Vec<Avis> = Vec::new();
+    // L'avis de la bascule de la CET va a la paie du mois, une fois, net de ses periodes (`avis_du_mois`).
+    let mut annees: Vec<AnneeDeLaPeriode> = Vec::new();
     for e in crate::periodes::engagements_des_periodes(ctx, eng, &bornes)? {
         let avant: Vec<Paie> = precedentes.iter().chain(parts.iter()).cloned().collect();
-        let (p, bascule) = calculer_periode(ctx, &e, &avant)?;
+        let (p, annee) = calculer_periode(ctx, &e, &avant)?;
         parts.push(p);
-        bascules.extend(bascule);
+        annees.extend(annee);
     }
     let mut p = crate::periodes::assembler(ctx, eng, parts)?;
-    p.ecrire().avertissements.extend(bascules);
+    let avis = avis_du_mois(eng, &p, &annees);
+    p.ecrire().avertissements.extend(avis);
     Ok(p)
 }
 
@@ -1480,7 +1487,7 @@ pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantU
 
 /// La paie d'un engagement sur sa periode (la periode de paie, ou une periode elementaire), dans l'ordre du §7. La
 /// configuration de la compagnie se lit a la fin de cette periode (`Contexte::au`).
-pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<(Paie, Option<Avis>)> {
+pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<(Paie, Option<AnneeDeLaPeriode>)> {
     let nat = eng.nat()?;
     let mut avis_dfs: Vec<String> = Vec::new();
     let fin_periode = eng.periode_payee()?.fin();
@@ -1861,12 +1868,6 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     lignes.retain(|l| {
         !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
     });
-    // La paie ou la contribution d'equilibre technique de l'annee bascule (`droit::plafond::BasculeDeLaCet`) : la compagnie
-    // voit de combien la remuneration de l'annee depasse ses plafonds, et ce que la ligne de la CET en tire ce mois.
-    let bascule = match (plafonnees.bascule, lignes.iter().find(|l| l.est(&droit::forme_bareme::CET))) {
-        (Some(b), Some(cet)) => Some(avis_de_la_bascule(eng, b, cet)),
-        _ => None,
-    };
 
     // 7.9 : la reduction generale, apres les cotisations.
     let statut = sal.statut.dite().copied();
@@ -2008,23 +2009,57 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     p.assiette_chomage = chomage_51;
     p.heures_travaillees = Heures::ZERO.max(heures_annexes);
     p.remuneration = lb;
-    Ok((paie, bascule))
+    // L'annee de part et d'autre de la periode, quand elle se regularise : la bascule de la CET s'en juge
+    // (`AnneeDeLaPeriode`).
+    let annee = match plafonnement {
+        droit::plafond::Plafonnement::Regularise(avant) => {
+            let mut apres = avant;
+            ajouter_a_l_annee(&mut apres, &paie, &bar.regularisation_du_plafond)?;
+            Some(AnneeDeLaPeriode { avant, apres, t2: bar.tranches_du_plafond.t2 })
+        }
+        droit::plafond::Plafonnement::ParPaie => None,
+    };
+    Ok((paie, annee))
+}
+
+/// L'ANNEE DE PART ET D'AUTRE D'UNE PERIODE QUI SE REGULARISE (`calculer_periode`) : ce qui la precede (`avant`), l'annee
+/// jusqu'a elle comprise (`apres`), et la limite de la tranche 2 de son bareme, en plafonds (`t2`). La paie du mois en
+/// tire la bascule de la CET (`droit::plafond::BasculeDeLaCet::entre`) : entre l'annee avant sa premiere periode et
+/// l'annee apres sa derniere.
+pub(crate) struct AnneeDeLaPeriode {
+    avant: droit::plafond::AnneeAnterieure,
+    apres: droit::plafond::AnneeAnterieure,
+    t2: Coefficient,
+}
+
+/// L'avis de la bascule de la CET de la paie du mois `p` (`avis_de_la_bascule`), entre l'annee avant sa premiere
+/// periode qui se regularise et l'annee apres sa derniere : aucun quand le critere ne change pas sur le mois (deux
+/// bascules d'un mois decoupe qui s'annulent), ni quand la paie ne porte pas de ligne de la CET.
+fn avis_du_mois(eng: &Engagement, p: &Paie, annees: &[AnneeDeLaPeriode]) -> Option<Avis> {
+    let (premiere, derniere) = (annees.first()?, annees.last()?);
+    let bascule = droit::plafond::BasculeDeLaCet::entre(&premiere.avant, &derniere.apres)?;
+    let cet = p.lignes.iter().find(|l| l.est(&droit::forme_bareme::CET))?;
+    Some(avis_de_la_bascule(eng, bascule, cet, derniere.t2))
 }
 
 /// L'AVIS DE LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE (`droit::plafond::BasculeDeLaCet`), avec
 /// ce que sa ligne `cet` en tire ce mois : toute celle de l'annee quand elle devient due, sa restitution quand elle se rend.
-fn avis_de_la_bascule(eng: &Engagement, bascule: droit::plafond::BasculeDeLaCet, cet: &LigneCotisation) -> Avis {
+/// Le plafond compare est la somme des plafonds des paies de l'annee, proratises, depuis l'embauche ou le premier mois
+/// paye ici (`droit::plafond::Regularisees`), pas le plafond annuel ; la remuneration due l'est dans la limite de la
+/// tranche 2 (`t2` : `tranches_du_plafond.t2` du bareme, en plafonds).
+fn avis_de_la_bascule(eng: &Engagement, bascule: droit::plafond::BasculeDeLaCet, cet: &LigneCotisation, t2: Coefficient) -> Avis {
     let euros = socle::texte::euros;
     let parts = |sal: Montant, pat: Montant| format!("{} ({} salariale, {} patronale)", euros(sal + pat), euros(sal), euros(pat));
     let texte = match bascule {
         droit::plafond::BasculeDeLaCet::Due { depassement } => format!(
-            "{} : la rémunération de l'année dépasse de {} le plafond de la sécurité sociale de l'année ; la contribution d'équilibre technique devient due sur toute la rémunération de l'année : {}.",
+            "{} : la rémunération de l'année dépasse de {} la somme de ses plafonds de l'année ; la contribution d'équilibre technique devient due sur toute la rémunération de l'année, dans la limite de {} plafonds : {}.",
             eng.qui(),
             euros(depassement),
+            socle::texte::virgule(t2),
             parts(cet.montant_sal, cet.montant_pat)
         ),
         droit::plafond::BasculeDeLaCet::Rendue { ecart } => format!(
-            "{} : la rémunération de l'année ne dépasse plus le plafond de la sécurité sociale de l'année ({} en dessous) ; la contribution d'équilibre technique de l'année n'est plus due et se rend : {}.",
+            "{} : la rémunération de l'année ne dépasse plus la somme de ses plafonds de l'année ({} en dessous) ; la contribution d'équilibre technique de l'année n'est plus due et lui est remboursée sur cette paie : {}.",
             eng.qui(),
             euros(ecart),
             parts(cet.montant_sal.abs(), cet.montant_pat.abs())

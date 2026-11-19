@@ -930,7 +930,7 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
+    lignes.extend(crate::maintien::lignes(&maintien, &arrets, mois, au));
     sans_remuneration.extend(arrets.into_iter().filter(|j| !maintien.jours_maintenus.contains(j)));
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents, sans_remuneration))

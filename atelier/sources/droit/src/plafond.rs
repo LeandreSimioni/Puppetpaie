@@ -205,10 +205,11 @@ impl JoursSansRemuneration {
         JoursSansRemuneration(jours)
     }
 
-    /// Ces jours, sans ceux que la paie maintient finalement (le complement d'un maintien garanti en net, que seul le
-    /// calcul de la paie connait : `engagement::maintien::Reconstitue::maintenus`).
-    pub fn hors(&self, maintenus: &BTreeSet<Jour>) -> JoursSansRemuneration {
-        JoursSansRemuneration(self.0.difference(maintenus).copied().collect())
+    /// Ces jours, sans `jours` : ceux que la paie maintient finalement (le complement d'un maintien garanti en net, que
+    /// seul le calcul de la paie connait : `engagement::maintien::Reconstitue::maintenus`), ou ceux d'un arret pour le
+    /// mois « s'il avait continue de travailler » (`engagement::maintien::Reconstitution::arrets`).
+    pub fn hors(&self, jours: &BTreeSet<Jour>) -> JoursSansRemuneration {
+        JoursSansRemuneration(self.0.difference(jours).copied().collect())
     }
 }
 
@@ -355,9 +356,6 @@ pub enum Plafonnement {
 pub struct AssiettesPlafonnees {
     pub regularisees: Regularisees,
     pub chomage: Montant,
-    /// Posee la seule paie ou la CET de l'annee bascule (`BasculeDeLaCet`) ; aucune sinon, et aucune pour une paie qui
-    /// ne se regularise pas.
-    pub bascule: Option<BasculeDeLaCet>,
 }
 
 /// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
@@ -371,11 +369,12 @@ pub enum BasculeDeLaCet {
 }
 
 impl BasculeDeLaCet {
-    /// La bascule d'une paie, d'une annee anterieure `avant` (remunerations, plafonds) a l'annee jusqu'a elle comprise.
-    fn entre(avant: (Montant, Montant), apres: (Montant, Montant)) -> Option<BasculeDeLaCet> {
-        match (avant.0 > avant.1, apres.0 > apres.1) {
-            (false, true) => Some(BasculeDeLaCet::Due { depassement: apres.0 - apres.1 }),
-            (true, false) => Some(BasculeDeLaCet::Rendue { ecart: apres.1 - apres.0 }),
+    /// La bascule d'une paie (ou d'un mois decoupe en periodes), de l'annee qui la precede, `avant`, a l'annee jusqu'a
+    /// elle comprise, `apres` ; aucune quand le critere est le meme des deux cotes.
+    pub fn entre(avant: &AnneeAnterieure, apres: &AnneeAnterieure) -> Option<BasculeDeLaCet> {
+        match (avant.remunerations > avant.plafonds, apres.remunerations > apres.plafonds) {
+            (false, true) => Some(BasculeDeLaCet::Due { depassement: apres.remunerations - apres.plafonds }),
+            (true, false) => Some(BasculeDeLaCet::Rendue { ecart: apres.plafonds - apres.remunerations }),
             _ => None,
         }
     }
@@ -396,17 +395,13 @@ impl BasculeDeLaCet {
 pub fn assiettes_plafonnees(
     remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond, plafonnement: &Plafonnement,
 ) -> AssiettesPlafonnees {
-    let (regularisees, bascule) = match plafonnement {
-        Plafonnement::ParPaie => (Regularisees::sous(remuneration, plafond, limite_csg, tranches), None),
+    let regularisees = match plafonnement {
+        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg, tranches),
         Plafonnement::Regularise(a) => {
-            let annee = (a.remunerations + remuneration, a.plafonds + plafond);
-            (
-                Regularisees::sous(annee.0, annee.1, limite_csg, tranches) - a.appliquees,
-                BasculeDeLaCet::entre((a.remunerations, a.plafonds), annee),
-            )
+            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
         }
     };
-    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage), bascule }
+    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage) }
 }
 
 use crate::forme_bareme::TranchesDuPlafond;
