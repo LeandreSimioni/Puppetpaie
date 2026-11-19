@@ -103,6 +103,38 @@ echo '{"route":"deposer","charge":{"quoi":"dpae","mois":"2026-11"}}' | moteur ro
 echo '{"route":"ouverture","charge":{"sauvegarder":false,"signatures":false}}' | moteur route --texte
 ```
 
+## Ce qu'il faut pour qu'un dépôt de test revienne « OK » (appris le 19/11/2026)
+
+Trois choses font refuser un dépôt de test par l'enveloppe, avant tout contrôle du contenu ; aucune ne tient au
+logiciel :
+
+1. **La banque de la fictive doit exister.** La plate-forme contrôle le code banque **et** le code guichet des
+   coordonnées de prélèvement (S21.G00.20.003 et .004) : « B1-205-01 Le code banque 12345 est inconnu », puis
+   « B1-205-02 Le code guichet 00001 est inconnu ». Les fictives ont une banque inventée (« Banque du Marais », code
+   12345). Il n'y a pas besoin du vrai RIB de la compagnie : un **faux compte** sous un **vrai couple banque et
+   guichet** suffit. Dans la compagnie d'essai montée (jamais dans le dépôt), `config/entreprise.json`,
+   `banque[0].valeur` : `"bic": "BDFEFRPPCCT"`, `"iban": "FR7630001000640000000000040"` (banque 30001, guichet 00064,
+   compte 00000000000, clé 40 : les clés se calculent, le compte n'existe pas). Un dépôt de test ne conserve rien et
+   ne prélève rien.
+2. **Le mois ne doit pas être déjà déclaré sous ce SIRET.** La base d'essai connaît les DSN réelles de la compagnie :
+   une DSN de test d'un mois déjà déposé en réel est prise pour un « annule et remplace » hors délai (« B1-207-05 »,
+   « B1-208-12 »). Déposer sur le mois en cours, pas encore déclaré. Pour cela, rejouer la fictive jusqu'au mois
+   d'avant (`moteur-atelier scenario rejouer <fictive> <installation> --jusqu-au AAAA-MM-JJ`), ajouter le cas par les
+   routes, puis monter la compagnie d'essai depuis cette compagnie rejouée (`moteur essai monter DOSSIER --depuis
+   <installation>/fictives/ajoutee-…`).
+3. **L'ordre d'un signalement.** Un signalement refusé « B1-208-10 Il existe déjà une déclaration normale » : l'ordre
+   est pris par un essai antérieur. Refaire le signalement par sa route (`fin-contrat-signaler`) puis le redéposer : il
+   prend l'ordre suivant.
+
+Le bilan qui tranche est le retour de nature 11 (`retours/AAAAMMJJ-HHMMSS_nature11_….xml`, `etat_conformite`), relevé
+par `ouverture` une à deux minutes après le dépôt. La relève rapporte aussi les retours réels du déclarant (ses
+attestations, ses bilans) dans le dossier de la compagnie d'essai : ce dossier reste hors de tout dépôt et ne se cite
+pas.
+
+Prouvé ainsi le 19/11/2026 : le signalement de fin d'un contrat d'usage à cheval sur deux mois (nature 07, « OK »,
+aucune anomalie) et la DSN mensuelle de novembre 2026 qui porte sa fin hors du circuit dérogatoire (62.017 = 02,
+« OK », conforme).
+
 ## Ce qui reste à confirmer au premier dépôt
 
 Inférences, qu'aucun texte déposé ne dit (le premier bilan tranche) : que la plate-forme d'essai accepte un en-tête
