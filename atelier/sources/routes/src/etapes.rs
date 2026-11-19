@@ -835,7 +835,7 @@ pub(crate) fn nic_de_l_engagement(ctx: &Contexte, e: &engagement::etats::Etat) -
 /// `nic_de_l_engagement`, sur l'engagement tel qu'il est ecrit.
 pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock::Ecrit) -> R<Option<Nic>> {
     let Some(cle) = brut.saisie.carte.salarie.as_ref() else { return Ok(None) };
-    let mut fiche = droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?);
+    let mut fiche = droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle)?);
     if let Some(n) = &brut.saisie.carte.etablissement {
         fiche.etablissement = Some(n.clone());
     }
@@ -1584,7 +1584,7 @@ impl<'a> Moteur<'a> {
             let spectacle = match &p.spectacle {
                 Some(s) => match s.titre.dite() {
                     Some(t) => Some(t.clone()),
-                    None => return Err(socle::fichiers::absent("titre").reclasser(Classe::Manque)),
+                    None => return Err(socle::fichiers::manque("titre")),
                 },
                 None => None,
             };

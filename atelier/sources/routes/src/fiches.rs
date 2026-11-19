@@ -791,7 +791,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
     let phrase = match &c {
         ChargeActiver::Salarie { cle, actif } => {
-            let qui = match ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?.nomme() {
+            let qui = match ctx.fiche_de(cle)?.nomme() {
                 Some(n) => n,
                 None => cle.to_string(),
             };
@@ -1032,11 +1032,11 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     let mois = socle::temps::jour_de_paris().mois_civil();
     verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
 
-    let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string();
-    let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
+    let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::manque("raison_sociale"))?.to_string();
+    let sg = ctx.entreprise.signataire.exigee("signataire")?;
     let signataire = match sg.prenom_affichage.remplie() {
         Some(p) => p.to_string(),
-        None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
+        None => capitaliser(sg.prenom.ecrite("prenom")?),
     };
     let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;

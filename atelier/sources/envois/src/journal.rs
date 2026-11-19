@@ -654,7 +654,7 @@ pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: Mois, departs: &e
             if let Some(phrase) = v.a_revalider(ctx) {
                 return Err(refus(phrase));
             }
-            let version = v.version().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "version"))?;
+            let version = v.version().ok_or_else(|| socle::echec::paie_illisible("version"))?;
             out.push(Version { salarie: cle.clone(), numero: numero.clone(), version, mois: None });
         }
     }

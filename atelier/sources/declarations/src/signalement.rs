@@ -446,7 +446,7 @@ annule-et-remplace (type 03)."
     f.add_case(droit::rubrique!("S21.G00.40.019"), &etab.siret, "siret")?;
 
     if ent.banque.is_none() {
-        return Err(Echec::Autre(socle::fichiers::absent("banque")));
+        return Err(Echec::Autre(socle::fichiers::manque("banque")));
     }
     let banque = ent.banque.dite();
     if nature != NatureSignalement::Reprise && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {

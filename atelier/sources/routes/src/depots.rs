@@ -724,7 +724,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(PathBuf, DitALEcriture)> 
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
     let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
+        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::manque("fichier"));
     };
     if fichier.is_some() {
         return Err(socle::echec::a_la_cle(
@@ -1189,7 +1189,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
+        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::manque("fichier"))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;

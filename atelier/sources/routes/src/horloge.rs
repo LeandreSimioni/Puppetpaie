@@ -181,6 +181,7 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
         e.classe,
         Some(
             Classe::Refuse
+                | Classe::Manque
                 | Classe::SortieAbsente
                 | Classe::AucunDocument
                 | Classe::BoiteAbsente

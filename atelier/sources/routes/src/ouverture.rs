@@ -1557,7 +1557,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .into_iter()
         .map(|k| {
             let v = &ctx.spectacles[k];
-            let titre = v.titre.clone().ok_or_else(|| socle::fichiers::absent("titre").reclasser(Classe::Manque))?;
+            let titre = v.titre.clone().ok_or_else(|| socle::fichiers::manque("titre"))?;
             Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;

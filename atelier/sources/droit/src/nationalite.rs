@@ -177,7 +177,7 @@ pub fn codification_ue(fiche: &Nationalite) -> R<CodeNationalite> {
     }
     let Some(pays) = fiche.pays.clone() else {
         return match code {
-            None => Err(socle::fichiers::absent("code_nationalite_dsn")),
+            None => Err(socle::fichiers::manque("code_nationalite_dsn")),
             Some(HorsUnionEuropeenne) => Err(refus(format!(
                 "La nationalité de {} est codée 03 sans pays de nationalité. La norme DSN \
                  fait du 03 l'Espace économique européen hors Union (Islande, Liechtenstein, Norvège), et le reste du monde \

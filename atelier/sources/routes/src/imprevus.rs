@@ -1941,10 +1941,10 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, contrat: &Periode, mois: M
             liste.join("\n  ")
         )));
     }
-    let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::absent("preavis").reclasser(Classe::Manque))?;
+    let preavis = e.preavis.as_ref().ok_or_else(|| socle::fichiers::manque("preavis"))?;
     Ok(declarations::fctu::FinDeContrat {
         fin: contrat.fin(),
-        motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
+        motif: e.motif_rupture.ok_or_else(|| socle::fichiers::manque("motif_rupture"))?,
         mois_rattachement: mois,
         type_preavis: preavis.genre,
         preavis_debut: preavis.debut,
@@ -2277,7 +2277,7 @@ pub(crate) fn resume_d_arret_complet(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi,
 /// La nature d'un engagement : dite (regle 6) ; sinon `Manque`.
 fn nature_de(e: &Carte) -> R<std::sync::Arc<droit::natures::Nature>> {
     let Some(n) = e.nature else {
-        return Err(socle::fichiers::absent("nature").reclasser(Classe::Manque));
+        return Err(socle::fichiers::manque("nature"));
     };
     // Une nature dite qui ne se lit pas (les donnees livrees) est une panne : elle remonte telle quelle.
     n.proprietes()

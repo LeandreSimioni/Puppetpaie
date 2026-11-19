@@ -21,7 +21,7 @@ use socle::grandeurs::Montant;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
 fn est_erreur_operation(e: &Echec) -> bool {
-    matches!(e.classe, None | Some(Classe::Refuse) | Some(Classe::SaisieIncomplete))
+    matches!(e.classe, None | Some(Classe::Refuse | Classe::SaisieIncomplete | Classe::Manque))
 }
 
 fn copie(e: &Echec) -> Echec {
@@ -134,7 +134,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &droit::contexte::IdSalarie, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::manque(cle.as_str()))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {

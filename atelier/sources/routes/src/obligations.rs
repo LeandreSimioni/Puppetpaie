@@ -1508,7 +1508,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     let faite = match le {
         None => None,
         Some(le) => {
-            let depot = charge.depot.ok_or_else(|| socle::fichiers::absent("depot").reclasser(Classe::Manque))?;
+            let depot = charge.depot.ok_or_else(|| socle::fichiers::manque("depot"))?;
             let codes: Vec<LieuHorsDsn> = base()?.obligations.de(f.obligation).lieux().iter().map(|x| x.code).collect();
             if !codes.contains(&depot) {
                 let dits: Vec<&str> = codes.iter().map(|c| c.texte()).collect();

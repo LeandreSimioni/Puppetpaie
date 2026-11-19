@@ -198,7 +198,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let mut reparti = Montant::ZERO;
                         for (part, id_org, quoi) in [(rg.urssaf, MALADIE, "part Urssaf"), (rg.chomage, CHOMAGE, "part chômage"), (rg.agirc_arrco, RETRAITE_T1, "part retraite")] {
                             if !part.est_nul() {
-                                let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
+                                let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::manque(id_org.as_str()))?;
                                 ajouter(m, &o, id, &format!("{} — {}", l.libelle, quoi), None, None, None, None, Some(-part))?;
                                 reparti += part;
                             }
@@ -625,13 +625,13 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut cpnef = Montant::ZERO;
         if let Some(c) = &hb.cpnef_dialogue_social {
             let brut_cpnef = masse.fois_taux(c.taux).au_centime();
-            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
+            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::manque(cle));
             cpnef = plus_grand(borne(c.plancher, "plancher")?, plus_petit(borne(c.plafond, "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
-            .ok_or_else(|| socle::fichiers::absent("contribution_conventionnelle_permanents").reclasser(Classe::Manque))?
+            .ok_or_else(|| socle::fichiers::manque("contribution_conventionnelle_permanents"))?
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
@@ -640,7 +640,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 tranches
                     .iter()
                     .find(|x| x.jusqu_a.is_none_or(|j| eff <= j))
-                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::Manque))?
+                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches"))?
                     .taux,
             ),
             None if masse_permanents.est_nul() => None,

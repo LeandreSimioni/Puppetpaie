@@ -318,18 +318,15 @@ pub fn preparer_avec(
             continue;
         }
         vus.push(cle.clone());
-        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-            c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
-        }
         let email = s.email.dite().filter(|e| !e.is_empty());
-        // Une fiche sans adresse : `Illisible`, la fiche ne dit pas ce que l'envoi demande.
+        // Une fiche sans adresse : un manque, la fiche ne dit pas ce que l'envoi demande.
         let Some(email) = email else {
             return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
-                texte(&s.nom, "nom")?,
-                texte(&s.prenom, "prenom")?
+                s.nom.ecrite("nom")?,
+                s.prenom.ecrite("prenom")?
             )
-            .reclasser(socle::echec::Classe::Illisible));
+            .reclasser(socle::echec::Classe::Manque));
         };
         let mut pieces = Vec::new();
         let mut libelles = Vec::new();
@@ -359,19 +356,19 @@ pub fn preparer_avec(
         if a_part_du("attestation_fctu") {
             notes.push(NOTE_SANS_ATTESTATION_FCTU);
         }
-        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| socle::fichiers::absent("nom_affichage"))?.to_string();
+        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage")?.to_string();
         let mut ft = recap_france_travail(&siennes, m, &nom_affichage)?;
         if !ft.is_empty() && !notes.is_empty() {
             ft = format!("\n{}", ft);
         }
-        let signataire = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
+        let signataire = ent.signataire.exigee("signataire")?;
         let nom_signataire = match signataire.prenom_affichage.remplie() {
             Some(v) => v.to_string(),
-            None => signataire.prenom.ecrite("prenom").map_err(|_| socle::fichiers::absent("prenom"))?.to_string(),
+            None => signataire.prenom.ecrite("prenom")?.to_string(),
         };
         let courts: Vec<&str> = presents.iter().map(|p| p.court).collect();
         let mut champs = vec![
-            ("prenom", texte(&s.prenom_affichage, "prenom_affichage")?),
+            ("prenom", s.prenom_affichage.ecrite("prenom_affichage")?.to_string()),
             ("mois", nom_mois.to_string()),
             ("de_mois", socle::texte::de(nom_mois)),
             ("annee", an.to_string()),
@@ -392,7 +389,7 @@ pub fn preparer_avec(
         };
         messages.push(Message {
             pour: cle,
-            nom: format!("{} {}", texte(&s.prenom_affichage, "prenom_affichage")?, texte(&s.nom, "nom")?),
+            nom: format!("{} {}", s.prenom_affichage.ecrite("prenom_affichage")?, s.nom.ecrite("nom")?),
             destinataire: email.to_lowercase(),
             sujet,
             corps,

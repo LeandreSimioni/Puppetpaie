@@ -540,9 +540,9 @@ struct Message {
 fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sorties: &Path) -> R<Vec<Message>> {
     let etiq = mois.etiquette();
     let ent = &ctx.entreprise;
-    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::absent(k).reclasser(Classe::Manque)) } else { Ok(()) };
+    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::manque(k)) } else { Ok(()) };
     requis(&ent.nom_affichage, "nom_affichage")?;
-    let sg = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
+    let sg = ent.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?;
     if sg.prenom_affichage.remplie().is_none() {
         requis(&sg.prenom, "prenom")?;
     }
@@ -607,7 +607,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         // La boite qui enverrait, quand des documents sont dus.
         if !messages.is_empty() {
             expediteur = compte_de_la_boite(ctx)?.to_lowercase();
-            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
+            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?;
             if let Some(signataire) = sg.email.portee().map(str::to_lowercase).filter(|s| *s != expediteur) {
                 avertissements.push(format!(
                     "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
@@ -1040,7 +1040,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     // La boite, puis LA PREUVE, AVANT TOUTE FABRIQUE : un mot de passe refuse n'ecrit rien.
     let client = ouvrir()?;
     let expediteur = expediteur_de(client.as_ref())?;
-    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?.email.portee().map(str::to_lowercase);
+    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?.email.portee().map(str::to_lowercase);
     let preuve = match preuve {
         Some(p) => {
             let a_qui = format!("{} salarie(s) : {}", cles.len(), cles.iter().map(|c| nom_de_la_paie(&paies, c)).collect::<Vec<_>>().join(", "));

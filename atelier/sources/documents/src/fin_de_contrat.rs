@@ -77,7 +77,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let recu = piece(crate::PieceDuMois::RecuSoldeToutCompte);
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
-    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);
+    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom")?, p.salarie.nom.ecrite("nom")?);
     let maintien = engagement::portabilite::de(ctx, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
@@ -116,9 +116,9 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-        c.ecrite(k).map(str::to_string).map_err(|m| m.reclasser(Classe::Manque))
+        c.ecrite(k).map(str::to_string)
     }
-    let sig = ent.signataire.exigee("signataire").map_err(|m| m.reclasser(Classe::Manque))?;
+    let sig = ent.signataire.exigee("signataire")?;
     let aujourdhui = date.jj_mm_aaaa();
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -133,7 +133,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &engagement::numeros::Numero
     poser(Marqueur::EmployeurSignataire, format!("{} {}", ecrite(&sig.prenom, "prenom")?, ecrite(&sig.nom, "nom")?));
     poser(Marqueur::EmployeurSignataireFonction, ecrite(&sig.fonction, "fonction")?);
     poser(Marqueur::SalarieNomComplet, format!("{} {}", ecrite(&s.prenom, "prenom")?, ecrite(&s.nom, "nom")?));
-    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| m.reclasser(Classe::Manque))?.jj_mm_aaaa());
+    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance")?.jj_mm_aaaa());
     poser(Marqueur::SalarieLieuNaissance, ecrite(&s.lieu_naissance, "lieu_naissance")?);
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);

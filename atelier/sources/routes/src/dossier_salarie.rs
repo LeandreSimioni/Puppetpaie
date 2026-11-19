@@ -736,7 +736,7 @@ fn mois_puppetpaie(
             Some(t) => {
                 for (cle, siens) in &paires {
                     let (pc, _) = siens.first().ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un salarié sans certificat dans la liste des certificats."))?;
-                    let nom = pc.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?.to_string();
+                    let nom = pc.salarie.nom.ecrite("nom")?.to_string();
                     let mut ses_pages: Vec<usize> = Vec::new();
                     let mut etrangeres: Vec<NumeroDeCertificat> = Vec::new();
                     for (pc, n) in siens {

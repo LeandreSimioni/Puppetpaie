@@ -215,16 +215,29 @@ impl Present {
         self.paies.is_empty() && self.regs.is_empty()
     }
 
-    /// Un refus de la fabrication garde sa classe (un manque de la compagnie reste un manque, une valeur illisible une
-    /// panne : `Echec::dit_un_manque`) ; son refus ordinaire, sans classe (une adhesion qui manque, `dsn::affiliations`),
-    /// est le refus du geste (`Classe::Refuse`, « ce que la phrase dit ; rien n'est ecrit ») : sans classe, le journal
-    /// des incidents le noterait en defaut du logiciel (`compagnie::incidents::nature_de`).
     fn fabriquer(&self, ctx: &Contexte, mois: Mois, forme: &Forme) -> R<declarations::dsn::Fabriquee> {
-        declarations::dsn::fabriquer(ctx, &self.paies, mois, &self.regs, &self.arrets, &forme.options(), &self.departs).map_err(|e| match e.classe {
-            Some(_) => e,
-            None => e.reclasser(Classe::Refuse),
-        })
+        fabriquer_la_dsn(ctx, &self.paies, mois, &self.regs, &self.arrets, &forme.options(), &self.departs)
     }
+}
+
+/// LA DSN FABRIQUEE (`dsn::fabriquer`), la seule porte des gestes vers elle : un refus garde sa classe (un manque de la
+/// compagnie reste un manque, une valeur illisible une panne : `Echec::dit_un_manque`) ; son refus ordinaire, sans
+/// classe (une adhesion qui manque, `dsn::affiliations` ; une dispense contredite par le bulletin), est le refus du
+/// geste (`Classe::Refuse`, « ce que la phrase dit ; rien n'est ecrit ») : sans classe, le journal des incidents le
+/// noterait en defaut du logiciel (`compagnie::incidents::nature_de`).
+fn fabriquer_la_dsn(
+    ctx: &Contexte,
+    paies: &[Paie],
+    mois: Mois,
+    regs: &[declarations::dsn::Regularisation],
+    arrets: &[declarations::dsn::Arret],
+    options: &declarations::dsn::Options,
+    departs: &engagement::departs::Departs,
+) -> R<declarations::dsn::Fabriquee> {
+    declarations::dsn::fabriquer(ctx, paies, mois, regs, arrets, options, departs).map_err(|e| match e.classe {
+        Some(_) => e,
+        None => e.reclasser(Classe::Refuse),
+    })
 }
 
 /// LA DSN QUE PORTE LE FICHIER `chemin` (mois principal `mois`, etablissement `nic` ; le principal sans lui), fabriquee
@@ -384,7 +397,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
         }
         arrets.push(a);
     }
-    declarations::dsn::fabriquer(ctx, &paies, le_mois, &regs, &arrets, &forme.options(), &departs)
+    fabriquer_la_dsn(ctx, &paies, le_mois, &regs, &arrets, &forme.options(), &departs)
 }
 
 /// LES DSN MENSUELLES PARTIES de `mois` pour l'etablissement `nic` (`Null` : le principal), reelles et acceptees, dans
