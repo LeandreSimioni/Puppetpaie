@@ -1516,7 +1516,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
     let plafonnement = plafonnement(ctx, eng, &nat, &sal, &bar.regularisation_du_plafond, precedentes)?;
     let limite_csg = bar.limite_abattement_csg.plafonds;
-    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond_urssaf, limite_csg, &plafonnement);
+    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond_urssaf, limite_csg, &bar.tranches_du_plafond, &plafonnement);
     let regularisees = plafonnees.regularisees;
 
     // 7.3 : la prevoyance dans l'assiette CSG.
@@ -1712,13 +1712,14 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // L. 5422-9), « fixe a quatre fois le plafond mentionne a l'article L. 241-3 du code de la securite sociale »
         // (reglement general annexe a la convention du 15/11/2024, art. 49, al. 2) ; l'AGS suit la meme assiette
         // (L. 3253-18). Le plafond est celui de la periode de paie, reduit au prorata des jours d'emploi quand le contrat
-        // ne couvre pas le mois (CSS R. 242-2, al. 3), sans regularisation (`AssiettesPlafonnees::quatre_plafonds`).
-        // Textes : atelier/reference/sources/chomage-permanents/.
-        bases.insert(Assiette::ApecMensuelle, plafonnees.quatre_plafonds);
-        bases.insert(Assiette::BrutChomage, plafonnees.quatre_plafonds);
+        // ne couvre pas le mois (CSS R. 242-2, al. 3), sans regularisation (`AssiettesPlafonnees::chomage`, le multiple
+        // lu au bareme : `tranches_du_plafond`). Textes : atelier/reference/sources/chomage-permanents/.
+        bases.insert(Assiette::ApecMensuelle, plafonnees.chomage);
+        bases.insert(Assiette::BrutChomage, plafonnees.chomage);
         bases.insert(Assiette::T2Conventionnelle, regularisees.t2_conventionnelle);
-        // La CET des permanents : due au-dela de la T1, sur le brut dans la limite de huit plafonds (Agirc-Arrco, « jusqu'a 8 PSS » ;
-        // Audiens, « dans la limite de la T1 + T2 »).
+        // La CET des permanents : due au-dela de la T1, sur le brut dans la limite de la T2 (`tranches_du_plafond.t2` ;
+        // ANI Agirc-Arrco, art. 32 et 37 ; Audiens, « dans la limite de la T1 + T2 »), regularisee (INFERENCE :
+        // `droit::plafond::Regularisees`).
         bases.insert(Assiette::CetMensuelle, regularisees.cet);
         bases.insert(Assiette::T1T2Mensuelle, regularisees.t1_t2);
     } else {
@@ -1731,7 +1732,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         plafond_intermittent = Some(plafond_urssaf);
         bases.insert(Assiette::BrutPlafonne, regularisees.t1);
         bases.insert(Assiette::BrutX115Plafonne, majoree(regularisees.t1, brut, bases[&Assiette::BrutX115]));
-        bases.insert(Assiette::BrutChomage, plafonnees.quatre_plafonds);
+        bases.insert(Assiette::BrutChomage, plafonnees.chomage);
     }
     if let Some(s) = brut_abattu {
         bases.insert(Assiette::BrutDfs, s);
@@ -1741,7 +1742,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         if let Some(plafond_ss) = plafond_intermittent {
             // Le plafond limite l'assiette abattue : la vieillesse plafonnee et la base 02 sur le brut abattu dans la
             // limite du plafond du contrat (un intermittent ne se regularise pas : `RegularisationDuPlafond`).
-            let t1 = droit::plafond::assiettes_plafonnees(s, plafond_ss, limite_csg, &plafonnement).regularisees.t1;
+            let t1 = droit::plafond::assiettes_plafonnees(s, plafond_ss, limite_csg, &bar.tranches_du_plafond, &plafonnement).regularisees.t1;
             bases.insert(Assiette::BrutPlafonneDfs, t1);
             bases.insert(Assiette::BrutX115PlafonneDfs, majoree(t1, s, x115));
         }

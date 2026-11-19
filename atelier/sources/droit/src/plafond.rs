@@ -224,12 +224,23 @@ impl JoursSansRemuneration {
 /// - `t1` : la remuneration dans la limite du plafond (la vieillesse plafonnee, le FNAL, la tranche 1 de la retraite
 ///   complementaire et de la prevoyance : R. 242-2, II ; BOSS, assiette generale, § 1220-1240 ; lettre circulaire Acoss
 ///   2013-019, annexe 1, « Regularisation progressive ») ;
-/// - `t2` : au-dela du plafond, dans la limite de huit plafonds ; `t1_t2` : dans la limite de huit plafonds ; `cet` :
-///   la remuneration dans la limite de huit plafonds quand elle depasse le plafond (la retraite complementaire : cahier
-///   Agirc-Arrco CT2026, « la regularisation annuelle du plafond de securite sociale est remplacee par la regularisation
-///   progressive au mois le mois ») ;
-/// - `t2_conventionnelle` : au-dela du plafond, dans la limite de quatre plafonds (la prevoyance : FAQ DSN des organismes
-///   complementaires, la tranche B « pouvant etre negative par effet de regularisation progressive ») ;
+/// - `t2` : au-dela du plafond, dans la limite de `TranchesDuPlafond::t2` plafonds ; `t1_t2` : dans cette limite ; `cet` :
+///   la remuneration dans cette limite quand elle depasse le plafond (la retraite complementaire : ANI Agirc-Arrco du
+///   17/11/2017, art. 44, « Les versements de cotisations donnent lieu a une regularisation progressive telle que prevue
+///   au II. de l'article R. 242-2 du code de la securite sociale », circulaire 2018-09-DC, l. 1642-1643 ; cahier
+///   Agirc-Arrco CT2026). INFERENCE pour la CET : sa base regularisee devient celle de toute l'annee (la remuneration
+///   dans la limite de la tranche 2) des que la somme des remunerations depasse la somme des plafonds, et retombe a zero
+///   en dessous ; l'ANI (art. 37, circulaire 2018-09-DC l. 1362) la dit due « pour les participants dont la remuneration
+///   excede le plafond » sans dire comment le juger sur l'annee ; le plus proche est la fiche net-entreprises 2556
+///   (`net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt`, l. 89) :
+///   « des montants de CET peuvent egalement etre declares sur des mois ou l'individu a percu une remuneration inferieure
+///   au PMSS, y compris sous forme negative, lorsqu'ils resultent d'operations de regularisation portant sur des periodes
+///   anterieures au cours desquelles le salarie etait assujetti a cette contribution » : elle suppose la CET regularisee,
+///   sans dire le critere ;
+/// - `t2_conventionnelle` : au-dela du plafond, dans la limite de `TranchesDuPlafond::t2_conventionnelle` plafonds (la
+///   prevoyance). INFERENCE : un seul emetteur, la FAQ DSN des organismes complementaires, suppose sa regularisation (la
+///   tranche B « pouvant etre negative par effet de regularisation progressive ») sans la poser ; aucun accord de
+///   prevoyance depose ne la dit ;
 /// - `abattue_csg` : la part de la remuneration que l'abattement de la CSG abat, dans la limite de `limite_abattement_csg`
 ///   plafonds (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : le « plafond annuel », calcule comme celui de la
 ///   vieillesse, « voir le chapitre 6 », sa section 3, la regularisation, comprise).
@@ -257,16 +268,16 @@ impl Regularisees {
     };
 
     /// Celles d'une remuneration `remuneration` sous un plafond `plafond` (d'une paie, ou de l'annee : deux sommes),
-    /// `limite_csg` le nombre de plafonds sous lequel la CSG abat.
-    fn sous(remuneration: Montant, plafond: Montant, limite_csg: Coefficient) -> Regularisees {
+    /// `limite_csg` le nombre de plafonds sous lequel la CSG abat, `tranches` les bornes des tranches (le bareme).
+    fn sous(remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond) -> Regularisees {
         let zero = Montant::ZERO;
-        let huit = plafond.fois(8);
+        let haut_t2 = plafond * tranches.t2;
         Regularisees {
             t1: remuneration.min(plafond),
-            t2: zero.max(remuneration.min(huit) - plafond),
-            t2_conventionnelle: zero.max(remuneration.min(plafond.fois(4)) - plafond),
-            t1_t2: remuneration.min(huit),
-            cet: if remuneration > plafond { remuneration.min(huit) } else { zero },
+            t2: zero.max(remuneration.min(haut_t2) - plafond),
+            t2_conventionnelle: zero.max(remuneration.min(plafond * tranches.t2_conventionnelle) - plafond),
+            t1_t2: remuneration.min(haut_t2),
+            cet: if remuneration > plafond { remuneration.min(haut_t2) } else { zero },
             abattue_csg: remuneration.min(plafond * limite_csg),
         }
     }
@@ -340,20 +351,22 @@ pub enum Plafonnement {
     Regularise(AnneeAnterieure),
 }
 
-/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite de quatre
-/// plafonds de la paie (`quatre_plafonds` : le chomage, l'AGS, l'Apec d'un permanent), qui ne se regularise pas : aucun
-/// texte depose ne dit la regularisation de ces contributions (la fiche Unedic ne dit que l'identite de leur assiette avec
-/// celle de la securite sociale), et seul se regularise ce qu'un texte depose fonde (Leandre, 19/11/2026).
+/// LES ASSIETTES PLAFONNEES D'UNE PAIE : celles qui se regularisent (`regularisees`), et le brut dans la limite des
+/// plafonds du chomage de la paie (`chomage` : le chomage, l'AGS, l'Apec d'un permanent, le chomage d'un intermittent ;
+/// `TranchesDuPlafond::chomage`), qui ne se regularise pas : aucun texte depose ne dit la regularisation de ces
+/// contributions (la fiche Unedic ne dit que l'identite de leur assiette avec celle de la securite sociale), et seul se
+/// regularise ce qu'un texte depose fonde (Leandre, 19/11/2026).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AssiettesPlafonnees {
     pub regularisees: Regularisees,
-    pub quatre_plafonds: Montant,
+    pub chomage: Montant,
 }
 
 /// LES ASSIETTES PLAFONNEES de la paie de remuneration `remuneration` (son brut soumis) et de plafond `plafond` (le
 /// plafond de la paie, `pour_paie`), `limite_csg` le nombre de plafonds sous lequel la CSG abat (le bareme,
-/// `limite_abattement_csg`) : le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui
-/// precede la paie dans l'annee (`plafonnement`).
+/// `limite_abattement_csg`), `tranches` les bornes des tranches en nombre de plafonds (le bareme, `tranches_du_plafond`) :
+/// le seul endroit ou elles se calculent, et elles ne se calculent pas sans dire ce qui precede la paie dans l'annee
+/// (`plafonnement`).
 ///
 /// Regularisee : chacune est celle de la somme des remunerations sous la somme des plafonds, de l'annee jusqu'a cette
 /// paie comprise, moins ce que les paies d'avant ont applique (BOSS, assiette generale, § 1230 : « si la somme des
@@ -361,15 +374,19 @@ pub struct AssiettesPlafonnees {
 /// est egale a la somme des remunerations, diminuee du montant des assiettes plafonnees appliquees sur chaque echeance de
 /// paie precedente » ; au-dessus, « egale a la somme des plafonds » diminuee de meme). Elle peut etre negative, ou depasser
 /// la remuneration de la paie.
-pub fn assiettes_plafonnees(remuneration: Montant, plafond: Montant, limite_csg: Coefficient, plafonnement: &Plafonnement) -> AssiettesPlafonnees {
+pub fn assiettes_plafonnees(
+    remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond, plafonnement: &Plafonnement,
+) -> AssiettesPlafonnees {
     let regularisees = match plafonnement {
-        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg),
+        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg, tranches),
         Plafonnement::Regularise(a) => {
-            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg) - a.appliquees
+            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
         }
     };
-    AssiettesPlafonnees { regularisees, quatre_plafonds: remuneration.min(plafond.fois(4)) }
+    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage) }
 }
+
+use crate::forme_bareme::TranchesDuPlafond;
 
 /// Ce que `pour_paie` lit de l'engagement.
 #[derive(Debug, Clone)]

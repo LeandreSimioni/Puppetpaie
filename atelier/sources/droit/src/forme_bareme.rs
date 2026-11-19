@@ -236,6 +236,8 @@ forme! {
         pub abattement_csg: Coefficient,
         /// La part du brut que l'abattement de la CSG abat : sous un multiple du plafond de la paie (CSS L. 136-2, I).
         pub limite_abattement_csg: LimiteDeLAbattementCsg,
+        /// Les tranches du plafond d'une paie, en nombre de plafonds (ANI Agirc-Arrco, art. 32 ; IDCC 1285, XII ; Unedic).
+        pub tranches_du_plafond: TranchesDuPlafond,
         /// Quelles paies regularisent leurs assiettes plafonnees sur l'annee civile (CSS R. 242-2, II ; BOSS § 1250).
         pub regularisation_du_plafond: RegularisationDuPlafond,
         pub majoration_conges_115: Coefficient,
@@ -501,6 +503,20 @@ forme! {
     pub struct LimiteDeLAbattementCsg {
         /// Le nombre de plafonds de la paie sous lequel le brut est abattu.
         pub plafonds: Coefficient,
+    }
+}
+
+forme! {
+    /// LES TRANCHES DU PLAFOND D'UNE PAIE, en nombre de plafonds (`plafond::assiettes_plafonnees`) : la tranche 2 de la
+    /// retraite complementaire va jusqu'a `t2` plafonds (ANI Agirc-Arrco du 17/11/2017, art. 32 : « le montant egal a huit
+    /// fois ce meme plafond »), et avec elle la tranche 1 + 2 et la CET ; la tranche 2 de la prevoyance conventionnelle,
+    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage, l'AGS et l'Apec,
+    /// dans la limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond » ; Audiens,
+    /// l'Apec). Chacune se lit ici, avec son texte.
+    pub struct TranchesDuPlafond {
+        pub t2: Coefficient,
+        pub t2_conventionnelle: Coefficient,
+        pub chomage: Coefficient,
     }
 }
 

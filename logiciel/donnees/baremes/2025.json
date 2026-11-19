@@ -1016,6 +1016,41 @@
     },
     "note": "La part du brut sous `plafonds` fois le plafond de la paie, régularisée sur l'année avec les tranches de la vieillesse (`droit::plafond::assiettes_plafonnees`), est abattue ; le reste entre entier dans l'assiette de la CSG et de la CRDS (`Pile::assiette_csg`)."
   },
+  "tranches_du_plafond": {
+    "t2": 8,
+    "t2_conventionnelle": 4,
+    "chomage": 4,
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+          "emetteur": "agirc_arrco",
+          "article": "ANI Agirc-Arrco du 17/11/2017, art. 32",
+          "citation": "la tranche 2 des rémunérations (dite T2) est constituée de l’ensemble des éléments de l’assiette dont le montant est compris entre le plafond fixé en application de l’article L. 241-3 du code de la sécurité sociale et le montant égal à huit fois ce même plafond"
+        },
+        {
+          "fichier": "atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md",
+          "emetteur": "convention",
+          "article": "CCNEAC, article XII.2",
+          "citation": "la tranche 2 porte sur la rémunération comprise entre ce plafond et l'équivalent de 4 plafonds"
+        },
+        {
+          "fichier": "atelier/reference/sources/chomage-permanents/unedic-reglement-general-convention-20241115.txt",
+          "emetteur": "unedic",
+          "article": "Règlement général annexé à la convention du 15/11/2024, art. 49, al. 2",
+          "citation": "Les rémunérations mentionnées au premier alinéa sont comprises dans l'assiette des contributions dans la limite d'un plafond fixé à quatre fois le plafond mentionné à l'article L. 241-3 du code de la sécurité sociale."
+        },
+        {
+          "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+          "emetteur": "audiens",
+          "article": "p. 1, Apec",
+          "citation": "Cotisation Apec pour les cadres : le plafond applicable est 4 fois le plafond de la Sécurité sociale."
+        }
+      ],
+      "raisonnement": "Chaque borne a son texte : la tranche 2 de la retraite complémentaire (et avec elle la tranche 1 + 2 et la CET, assise sur les tranches 1 et 2, ANI art. 37) va jusqu'à huit plafonds (ANI art. 32, applicable depuis le 1er janvier 2019) ; la tranche 2 de la prévoyance conventionnelle des permanents, jusqu'à quatre (CCNEAC XII.2, inchangé depuis 2016 selon le relevé) ; le chômage et l'AGS, dans la limite de quatre plafonds (règlement Unédic du 15/11/2024, art. 49, applicable au 1er janvier 2025), comme l'Apec (Audiens 2025). Le plafond multiplié est celui de la paie, ou la somme des plafonds de l'année pour une paie qui se régularise (`droit::plafond::assiettes_plafonnees`)."
+    },
+    "note": "Les bornes des tranches d'une paie en nombre de plafonds : `t2` (tranche 2, tranche 1 + 2, CET), `t2_conventionnelle` (la tranche 2 de la prévoyance conventionnelle), `chomage` (le chômage, l'AGS et l'Apec d'un permanent, le chômage d'un intermittent)."
+  },
   "regularisation_du_plafond": {
     "technicien_intermittent": "par_contrat",
     "source": {
@@ -1063,13 +1098,19 @@
           "citation": "la régularisation annuelle du plafond de sécurité sociale est remplacée par la régularisation progressive au mois le mois"
         },
         {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+          "emetteur": "agirc_arrco",
+          "article": "ANI Agirc-Arrco du 17/11/2017, art. 44",
+          "citation": "Les versements de cotisations donnent lieu à une régularisation progressive telle que prévue au II. de l’article R. 242-2 du code de la sécurité sociale."
+        },
+        {
           "fichier": "atelier/reference/sources/faq-dsn-organismes-complementaires/net-entreprises-faq-dsn-oc-declarants-v4-202310.txt",
           "emetteur": "net_entreprises",
           "article": "FAQ DSN des organismes complémentaires, tranche nulle",
           "citation": "une tranche A inférieure au plafond n'implique pas nécessairement une tranche B nulle, celle-ci pouvant être négative par effet de régularisation progressive"
         }
       ],
-      "raisonnement": "R. 242-2, II (en vigueur depuis 2020) et le BOSS (§ 1220-1240, obligatoire depuis le 1er janvier 2022, donc toute l'année 2025) régularisent chaque mois les cotisations plafonnées sur l'année civile : à chaque paie, la somme des rémunérations depuis le 1er janvier ou l'embauche sous la somme des plafonds, moins les assiettes plafonnées déjà appliquées ; l'Acoss le fait pour le FNAL, majoration de 11,5 % comprise, l'Agirc-Arrco pour la retraite complémentaire (T1, T2, CET ; son aide de 2026 décrit la DSN mensuelle, qui régularise ainsi depuis qu'elle existe), la FAQ des organismes complémentaires pour les tranches de la prévoyance, qui peuvent devenir négatives. Le BOSS (§ 1250) en sort les salariés à taux spécifiques, dont les artistes du spectacle (§ 1090) : leurs paies gardent chacune son plafond et n'entrent pas dans le cumul d'un autre contrat (INFERENCE retenue par Léandre le 19/11/2026 pour un artiste qui a aussi un contrat de technicien : le § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste, aucun texte ne joint les deux). Le technicien intermittent : `par_contrat`, TOLÉRANCE RETENUE (Léandre, 19/11/2026), pas une règle : le § 1090 lui admet le plafond des jours rémunérés, écrit pour la classe que le § 1250 sort de la régularisation, et le § 1230 fait masse de tous les contrats ; aucun texte déposé ne nomme le technicien. Les paies reprises d'un ancien logiciel n'entrent pas dans le cumul : la régularisation commence au premier mois payé ici, INFERENCE et approximation de la première année (Léandre, 19/11/2026), les pièces reprises ne disant ni le plafond appliqué ni les tranches de la retraite et de la prévoyance. Le chômage, l'AGS et l'Apec ne se régularisent pas : aucun texte déposé ne le dit (la fiche Unédic ne dit que l'identité de leur assiette avec celle de la sécurité sociale)."
+      "raisonnement": "R. 242-2, II (en vigueur depuis 2020) et le BOSS (§ 1220-1240, obligatoire depuis le 1er janvier 2022, donc toute l'année 2025) régularisent chaque mois les cotisations plafonnées sur l'année civile : à chaque paie, la somme des rémunérations depuis le 1er janvier ou l'embauche sous la somme des plafonds, moins les assiettes plafonnées déjà appliquées ; l'Acoss le fait pour le FNAL, majoration de 11,5 % comprise, l'ANI Agirc-Arrco lui-même (art. 44 : « une régularisation progressive telle que prévue au II. de l'article R. 242-2 », applicable depuis le 1er janvier 2019) et son cahier de codification pour la retraite complémentaire (T1, T2 ; son aide de 2026 décrit la DSN mensuelle, qui régularise ainsi depuis qu'elle existe) ; la CET suit, INFERENCE : sa base régularisée devient celle de l'année dès que la somme des rémunérations dépasse la somme des plafonds, l'ANI (art. 37) la disant due quand « la rémunération excède le plafond » sans dire comment le juger sur l'année (la fiche net-entreprises 2556 suppose sa régularisation, CET négative comprise, sans en dire le critère) ; la prévoyance, INFERENCE : un seul émetteur, la FAQ des organismes complémentaires, suppose ses tranches régularisées (« pouvant être négative ») sans la poser, et aucun accord de prévoyance déposé ne le dit. Le BOSS (§ 1250) en sort les salariés à taux spécifiques, dont les artistes du spectacle (§ 1090) : leurs paies gardent chacune son plafond et n'entrent pas dans le cumul d'un autre contrat (INFERENCE retenue par Léandre le 19/11/2026 pour un artiste qui a aussi un contrat de technicien : le § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste, aucun texte ne joint les deux). Le technicien intermittent : `par_contrat`, TOLÉRANCE RETENUE (Léandre, 19/11/2026), pas une règle : le § 1090 lui admet le plafond des jours rémunérés, écrit pour la classe que le § 1250 sort de la régularisation, et le § 1230 fait masse de tous les contrats ; aucun texte déposé ne nomme le technicien. Les paies reprises d'un ancien logiciel n'entrent pas dans le cumul : la régularisation commence au premier mois payé ici, INFERENCE et approximation de la première année (Léandre, 19/11/2026), les pièces reprises ne disant ni le plafond appliqué ni les tranches de la retraite et de la prévoyance. Le chômage, l'AGS et l'Apec ne se régularisent pas : aucun texte déposé ne le dit (la fiche Unédic ne dit que l'identité de leur assiette avec celle de la sécurité sociale)."
     },
     "note": "Une paie qui se régularise (un permanent qui n'est pas artiste) lit les paies validées de son salarié de l'année (`conges::plafonds_des_mois_anterieurs`), puis celles des contrats précédents du mois (`calcul::plafonnement`) ; ses assiettes plafonnées se calculent à un seul endroit (`droit::plafond::assiettes_plafonnees`). Une DSN déjà déposée ne se réécrit pas : la paie suivante rattrape l'écart d'une paie corrigée."
   },
