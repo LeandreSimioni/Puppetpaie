@@ -845,8 +845,9 @@ fn historique(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
 }
 
 /// Ce que l'engagement importe `i` du salarie `salarie` atteste, pour le calendrier : chaque mois verse, aux dates du
-/// mois dans le contrat (`Importe::mois_par_mois` ; un mois verse que les dates du contrat ne touchent pas ne se place
-/// dans aucun mois) ; un contrat que rien ne paie (une AEM, un certificat), entier. L'activite est celle que les pieces
+/// mois dans le contrat (`Importe::mois_par_mois`) ; un mois verse que les dates du contrat ne touchent pas (la DSN de
+/// fevrier paie un CDDU de fin janvier : le mois d'une paie est celui de sa DSN), et un contrat que rien ne paie (une
+/// AEM, un certificat), le contrat entier. L'activite est celle que les pieces
 /// disent du mois (`Importe::activite_du_mois`), la seule regle, que les etats lisent aussi.
 fn attestes_par(i: &engagement::importe::Importe, salarie: &IdSalarie) -> R<Vec<Atteste>> {
     let objet = i.contrat().and_then(|c| c.numero_objet.clone());
@@ -854,13 +855,20 @@ fn attestes_par(i: &engagement::importe::Importe, salarie: &IdSalarie) -> R<Vec<
         let a = i.activite_du_mois(mois);
         Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours }
     };
+    let entier = i.objet().carte().contrat()?.and_then(|o| o.fermee());
     if i.paies().is_empty() {
-        let entier = i.objet().carte().contrat()?.and_then(|o| o.fermee());
         return Ok(entier.map(|p| atteste(p, p.debut().mois_civil(), objet)).into_iter().collect());
     }
     Ok(i.mois_par_mois()?
         .into_iter()
-        .filter_map(|(mois, periode, p)| periode.map(|periode| atteste(periode, mois, objet.clone().or_else(|| p.numero_objet.clone()))))
+        .filter_map(|(mois, periode, p)| {
+            let objet = objet.clone().or_else(|| p.numero_objet.clone());
+            match periode {
+                Some(periode) => Some(atteste(periode, mois, objet)),
+                // Verse un mois que ses dates ne touchent pas (la DSN du mois suivant le paie) : le contrat entier.
+                None => entier.map(|e| atteste(e, mois, objet)),
+            }
+        })
         .collect())
 }
 
