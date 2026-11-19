@@ -39,8 +39,28 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
             Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.phrase)),
         }
     }
-    if !s.aer.is_empty() {
-        match crate::documents::ranger_aer(ctx, None, Some(&s.aer)) {
+    // Une archive d'attestations que le lecteur ne lit pas ne se range pas, et n'empeche pas les autres.
+    let mut aer = Vec::new();
+    for chemin in s.aer {
+        let octets = match crate::depots::lire_octets(&chemin) {
+            Ok(o) => o,
+            Err(e) => {
+                faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase));
+                continue;
+            }
+        };
+        match envois::retours::aer_spectacle(&octets) {
+            Ok(_) => aer.push(chemin),
+            Err(e) => {
+                let nom = socle::fichiers::NomDeFichier::du(&chemin)?;
+                let source = format!("Attestations France Travail (retour DSN de nature 46, archive retours/{})", nom);
+                faites.a_faire.extend(illisible(ctx, envois::retours::NatureDuRetour::AerSpectacle, &nom.to_string(), &source, &e));
+                faites.a_faire.push(format!("{} : {} Elles ne se rangent pas.", source, e.phrase));
+            }
+        }
+    }
+    if !aer.is_empty() {
+        match crate::documents::ranger_aer(ctx, None, Some(&aer)) {
             Ok(a_faire) => faites.a_faire.extend(a_faire),
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
@@ -67,9 +87,18 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
-        let lus = envois::retours::taux_pas_d_octets(&octets)?;
-        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         let nom = socle::fichiers::NomDeFichier::du(chemin)?;
+        // Un compte rendu que le lecteur ne lit pas ne pose rien, et n'empeche pas les autres.
+        let lus = match envois::retours::taux_pas_d_octets(&octets) {
+            Ok(l) => l,
+            Err(e) => {
+                let source = format!("Compte rendu des taux de PAS de la DGFiP (retour DSN de nature 94, archive retours/{})", nom);
+                sans_taux.extend(illisible(ctx, envois::retours::NatureDuRetour::TauxPas, &nom.to_string(), &source, &e));
+                sans_taux.push(format!("{} : {} Aucun taux de ce compte rendu ne se pose.", source, e.phrase));
+                continue;
+            }
+        };
+        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", nom)))?;
@@ -116,20 +145,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                // Une notification que le lecteur ne lit pas est une piece de la norme qui n'est pas celle que le guide de
-                // l'API DSN et la specification des bilans decrivent : l'editeur le sait par le journal des incidents.
-                let note = compagnie::incidents::Note {
-                    nature: compagnie::incidents::LOGICIEL,
-                    ou: "retour-34",
-                    quoi: socle::echec::classe_notee(e.classe),
-                    resume: &e.phrase,
-                    detail: NotificationAtmpNonLue { archive: archive.to_string() },
-                    trace: None,
-                    sans_contexte: true,
-                };
-                if let Err(n) = compagnie::incidents::noter(&ctx.racine, &note) {
-                    a_faire.push(format!("{} : l'incident ne s'est pas noté au journal des incidents : {}", source, n.phrase));
-                }
+                a_faire.extend(illisible(ctx, envois::retours::NatureDuRetour::TauxAtMp, &archive.to_string(), &source, &e));
                 a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, e.phrase));
                 continue;
             }
@@ -166,11 +182,12 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
     Ok(a_faire)
 }
 
-/// Ce que l'incident d'une notification du taux AT/MP non lue porte au developpeur : le nom de son archive, pas son
-/// contenu.
-#[derive(serde::Serialize)]
-struct NotificationAtmpNonLue {
-    archive: String,
+/// UN RETOUR QUE SON LECTEUR NE LIT PAS (`compagnie::incidents::noter_retour_illisible`, l'archive `archive`, que la
+/// phrase dit `source`) : l'incident chez l'editeur, et ce que la compagnie lit s'il ne s'est pas note.
+fn illisible(ctx: &Contexte, nature: envois::retours::NatureDuRetour, archive: &str, source: &str, e: &socle::echec::Echec) -> Option<String> {
+    compagnie::incidents::noter_retour_illisible(&ctx.racine, nature, archive, e)
+        .err()
+        .map(|n| format!("{} : l'incident ne s'est pas noté au journal des incidents : {}", source, n.phrase))
 }
 
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL

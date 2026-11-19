@@ -533,6 +533,32 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
     r.resultat
 }
 
+/// UN RETOUR D'ORGANISME QUE SON LECTEUR NE LIT PAS (`echec`) : une piece de la norme qui n'est pas celle que ses textes
+/// decrivent (le guide de l'API DSN, la specification des retours). L'editeur le sait par le journal des incidents, a
+/// l'endroit `retour-<nature>` ; la compagnie, par la phrase de qui l'a lu. La seule facon de le noter, quelle que soit
+/// la nature.
+pub fn noter_retour_illisible(racine: &Path, nature: envois::retours::NatureDuRetour, archive: &str, echec: &socle::echec::Echec) -> R<()> {
+    /// Ce que l'incident porte : l'archive du retour, dans `retours/`.
+    #[derive(Serialize)]
+    struct RetourIllisible<'a> {
+        archive: &'a str,
+    }
+    let ou = format!("retour-{}", nature);
+    noter(
+        racine,
+        &Note {
+            nature: LOGICIEL,
+            ou: &ou,
+            quoi: socle::echec::classe_notee(echec.classe),
+            resume: &echec.phrase,
+            detail: RetourIllisible { archive },
+            trace: None,
+            sans_contexte: true,
+        },
+    )
+    .map(|_| ())
+}
+
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).
 const DOUBLON: std::time::Duration = std::time::Duration::from_secs(600);
 /// Les dernieres lignes du fil qu'un incident emporte.
