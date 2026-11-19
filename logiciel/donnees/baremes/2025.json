@@ -995,6 +995,27 @@
     "note": "En pourcent du financement de la complémentaire santé collective : la part de l'employeur quand la fiche entreprise ne dit pas la sienne, et le plancher qu'elle ne peut pas descendre sous (contrat de l'entreprise d'une convention sans régime de santé, `bareme::bareme_sante`)."
   },
   "abattement_csg": 0.9825,
+  "limite_abattement_csg": {
+    "plafonds": 4,
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/code-de-la-securite-sociale/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "CSS L. 136-2, I (en vigueur depuis le 16/12/2020)",
+          "citation": "une réduction représentative de frais professionnels fixée à 1,75 % pour leur montant inférieur à quatre fois la valeur du plafond mentionné à l'article L. 241-3"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 290",
+          "citation": "Les règles de calcul du plafond sont les mêmes que celles applicables pour le calcul du plafond retenu pour la détermination des cotisations d'assurance vieillesse"
+        }
+      ],
+      "raisonnement": "La loi (L. 136-2, I, dans sa rédaction en vigueur depuis le 16/12/2020, donc toute l'année 2025) n'abat de 1,75 % que la part du revenu inférieure à quatre fois le plafond de L. 241-3 ; le BOSS (§ 290) dit que ce plafond se calcule comme celui de la vieillesse : le plafond de la paie (`engagement::calcul::plafond_de_l_engagement`)."
+    },
+    "note": "Le brut au-dessus de `plafonds` fois le plafond de la paie entre entier dans l'assiette de la CSG et de la CRDS (`Pile::assiette_csg`)."
+  },
   "majoration_conges_115": 1.115,
   "majoration_conges_110": 1.1,
   "plafond_journalier": 216,

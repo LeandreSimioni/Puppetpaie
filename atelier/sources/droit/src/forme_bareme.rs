@@ -234,6 +234,8 @@ forme! {
         /// La part minimale de l'employeur a la complementaire sante collective (CSS L. 911-7, III).
         pub sante_obligatoire: Option<SanteObligatoire>,
         pub abattement_csg: Coefficient,
+        /// La part du brut que l'abattement de la CSG abat : sous un multiple du plafond de la paie (CSS L. 136-2, I).
+        pub limite_abattement_csg: LimiteDeLAbattementCsg,
         pub majoration_conges_115: Coefficient,
         pub majoration_conges_110: Coefficient,
         /// Le plafond journalier (T1 d'un jour travaille) des intermittents, et les multiples de la T2 et de l'Apec.
@@ -487,6 +489,30 @@ forme! {
     /// La part de l'employeur a la complementaire sante collective obligatoire, en pourcent : au moins la moitie.
     pub struct SanteObligatoire {
         pub part_employeur_minimum: Taux,
+    }
+}
+
+forme! {
+    /// La limite de l'abattement de la CSG : la reduction de 1,75 % ne vaut que « pour leur montant inferieur a quatre
+    /// fois la valeur du plafond mentionne a l'article L. 241-3 » (CSS L. 136-2, I), un plafond qui se calcule comme
+    /// celui de la vieillesse (BOSS, assiette generale, § 290) : le plafond de la paie.
+    pub struct LimiteDeLAbattementCsg {
+        /// Le nombre de plafonds de la paie sous lequel le brut est abattu.
+        pub plafonds: Coefficient,
+    }
+}
+
+impl Pile {
+    /// L'ASSIETTE DE LA CSG ET DE LA CRDS de la part `montant` d'un brut `brut` (la somme des rubriques soumises), sous
+    /// le plafond `plafond` de la paie (`engagement::calcul::plafond_de_l_engagement`) : le brut abattu de `abattement_csg`
+    /// sous `limite_abattement_csg` fois le plafond, et entier au-dessus (CSS L. 136-2, I), reparti entre les parts au
+    /// prorata de leur montant. Un brut sous la limite abat chaque part de `abattement_csg`.
+    pub fn assiette_csg(&self, montant: Montant, brut: Montant, plafond: Montant) -> Montant {
+        let limite = plafond * self.limite_abattement_csg.plafonds;
+        if brut <= limite {
+            return montant * self.abattement_csg;
+        }
+        (limite * self.abattement_csg + (brut - limite)).prorata(montant, brut)
     }
 }
 

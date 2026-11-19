@@ -1572,8 +1572,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         tranches_prev += pss.fois_taux(m).au_centime();
     }
 
-    // 7.4 : les assiettes, par rubrique de salaire.
-    let (abattement, maj115, maj110) = (bar.abattement_csg, bar.majoration_conges_115, bar.majoration_conges_110);
+    // 7.4 : les assiettes, par rubrique de salaire. La CSG abat le brut sous quatre plafonds de la paie, le plafond de
+    // la vieillesse (CSS L. 136-2, I ; BOSS, assiette generale, § 290 : `Pile::assiette_csg`).
+    let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
+    let (maj115, maj110) = (bar.majoration_conges_115, bar.majoration_conges_110);
     let assiettes = |montant: Montant, cs: bool| -> Assiettes {
         let mut base_prev = montant;
         if let Some(pp) = plafond_prev {
@@ -1589,7 +1591,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         Assiettes {
             brut: montant,
             brut_cs: if cs { montant } else { Montant::ZERO },
-            csg: (montant * abattement + base_prev.fois_taux(taux_prev) + base_prev_t2).au_centime(),
+            csg: (bar.assiette_csg(montant, brut, plafond_urssaf) + base_prev.fois_taux(taux_prev) + base_prev_t2).au_centime(),
             x115: (montant * maj115).au_centime(),
             x110: (montant * maj110).au_centime(),
             dfs: None,
@@ -1868,7 +1870,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
-    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || {
+    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, plafond_urssaf, tot_pat, || {
         crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id)
     })?;
     let mut exonere = Montant::ZERO;
@@ -1946,7 +1948,6 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let plafond_urssaf = plafond_de_l_engagement(ctx, eng, &sal)?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, plafond_urssaf, smic, heures, tp);
     let p = paie.ecrire();
     p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
