@@ -8,7 +8,8 @@
 //!     plafond = au centime( somme, pour chaque jour ayant donne lieu a remuneration dans la paie (dates distinctes),
 //!                           de PSS mensuel de son annee / jours de son mois )
 //! permanent (mensualise) :
-//!     plafond = au centime( PSS mensuel x jours de la periode de paie couverts par le contrat / jours du mois )
+//!     plafond = au centime( PSS mensuel x jours de la periode de paie couverts par le contrat, hors absence non
+//!                           remuneree / jours du mois )
 //! ```
 //!
 //! Textes (`atelier/reference/sources/`) :
@@ -167,8 +168,22 @@ pub fn plafond_urssaf(contrat: &Periode, artiste: bool, pss: &dyn Fn(Annee) -> R
 /// (duree contractuelle + heures complementaires) / duree legale du travail », et l'exemple « Plafond mensuel x
 /// (121,33 h / 151,67 h) x (12 jours / 31 jours) »). `temps_partiel` : (duree du contrat, duree de reference), `None`
 /// sans correction. Le rapport ne depasse jamais 1. Textes : `atelier/reference/sources/plafond-temps-partiel/`.
-pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>) -> R<Montant> {
-    let prorata = prorata_calendaire(periode, pss)?;
+///
+/// Les jours `sans_remuneration` (`JoursSansRemuneration`) sortent du prorata : CSS R. 242-2, I, al. 4, dernier tiret,
+/// « Le plafond est egalement reduit [...] pour tenir compte de periodes d'absence n'ayant pas donne lieu a
+/// remuneration » ; BOSS, assiette generale, § 870-880 (l. 1189-1195) : « valeur mensuelle du plafond x (nombre de jours
+/// remuneres de la periode d'emploi / nombre de jours calendaires du mois) », les jours remuneres etant « le nombre de
+/// jours calendaires desquels sont retires les jours d'absence ne donnant pas lieu a maintien de la remuneration ». La
+/// correction du temps partiel s'applique ensuite (§ 910 ; l'exemple du § 770 multiplie les deux rapports).
+pub fn plafond_permanent(
+    periode: &Periode, sans_remuneration: &JoursSansRemuneration, temps_partiel: Option<(Heures, Heures)>, pss: &dyn Fn(Annee) -> R<Pss>,
+) -> R<Montant> {
+    let mut prorata: Montant = nulle();
+    for mois in periode.mois() {
+        let Some(commun) = periode.croise(&Periode::du_mois(mois)) else { continue };
+        let remuneres = commun.jours().filter(|j| !sans_remuneration.0.contains(j)).count();
+        prorata += pss(mois.annee())?.mensuel.prorata(Jours::de_dates(remuneres), Jours::fixes(mois.jours()));
+    }
     match temps_partiel {
         Some((contrat, reference)) if contrat < reference => {
             if reference <= Heures::ZERO {
@@ -177,6 +192,28 @@ pub fn plafond_permanent(periode: &Periode, temps_partiel: Option<(Heures, Heure
             Ok(prorata.prorata(contrat, reference).au_centime())
         }
         _ => Ok(prorata.au_centime()),
+    }
+}
+
+/// LES JOURS D'ABSENCE SANS REMUNERATION D'UNE PAIE, qui reduisent son plafond (`plafond_permanent`) : CSS R. 242-2, I,
+/// al. 4, dernier tiret ; BOSS, assiette generale, § 820-900 (`boss/boss-assiette-generale-20260801.txt`, l. 1142-1203).
+/// Un jour y entre quand l'absence de ce jour « ne donne pas lieu a un maintien de la remuneration par l'employeur »
+/// (§ 840) ; une absence « partiellement ou totalement remuneree par l'employeur, sous forme de versement visant au
+/// maintien de salaire » n'y entre pas (§ 820). Seules les journees d'absence totale comptent (§ 890), de date a date, les
+/// jours de repos et feries compris (§ 900). Qui sont ces jours, l'engagement le dit (`engagement::imprevus`) ; ce type ne
+/// fait que les porter.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct JoursSansRemuneration(BTreeSet<Jour>);
+
+impl JoursSansRemuneration {
+    /// Aucun jour : une paie sans absence non remuneree.
+    pub fn aucun() -> JoursSansRemuneration {
+        JoursSansRemuneration(BTreeSet::new())
+    }
+
+    /// Ces jours.
+    pub fn de(jours: BTreeSet<Jour>) -> JoursSansRemuneration {
+        JoursSansRemuneration(jours)
     }
 }
 

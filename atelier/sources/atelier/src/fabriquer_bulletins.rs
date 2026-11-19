@@ -524,7 +524,8 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     // prorata des jours remuneres pour les autres intermittents.
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(&b.periode, None, &resoudre)
+        // Un bulletin du banc ne decrit aucune absence.
+        droit::plafond::plafond_permanent(&b.periode, &droit::plafond::JoursSansRemuneration::aucun(), None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)

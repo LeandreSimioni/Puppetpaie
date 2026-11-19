@@ -792,6 +792,35 @@ pub fn du_contrat_dans_le_mois(ctx: &Contexte, salarie: &IdSalarie, debut: &Jour
     par_premier_jour(out)
 }
 
+/// LES JOURS DE LA PERIODE `periode` OU LE CONTRAT DE `e` EST SUSPENDU SANS REMUNERATION, qui reduisent le plafond de sa
+/// paie (`droit::plafond::JoursSansRemuneration` ; CSS R. 242-2, I, al. 4 ; BOSS, assiette generale, § 820-900) : chaque
+/// jour d'une suspension que `permanents-base.json` ne dit pas remuneree (fiche DSN 3272 : « l'absence totale du salarie
+/// sans maintien de sa remuneration normale par son employeur ») ; chaque jour d'un arret que l'employeur ne maintient
+/// pas (`maintien::jours_maintenus` : la carence, les jours hors des tranches, un arret sans droit au maintien ou d'un
+/// motif sans maintien). Une suspension remuneree (637, L3142-2) ne reduit rien (§ 820).
+pub fn jours_sans_remuneration(ctx: &Contexte, e: &crate::Engagement, periode: &Periode) -> R<droit::plafond::JoursSansRemuneration> {
+    let mut jours = std::collections::BTreeSet::new();
+    let debut = e.contrat().debut();
+    let qui = ctx.nomme(&e.salarie);
+    for mois in periode.mois() {
+        for imp in du_contrat_dans_le_mois(ctx, &e.salarie, &debut, e.numero.as_ref(), mois)? {
+            let Some(absence) = absence(&imp)?.and_then(|a| a.croise(periode)) else { continue };
+            match &imp {
+                Imprevu::Suspension(s) => {
+                    if !verifier_motif_de_suspension(s.motif, &qui)?.remunere {
+                        jours.extend(absence.jours());
+                    }
+                }
+                Imprevu::Arret(a) => {
+                    let maintenus = crate::maintien::jours_maintenus(ctx, a, &*e.nat()?)?;
+                    jours.extend(absence.jours().filter(|j| !maintenus.contains(j)));
+                }
+            }
+        }
+    }
+    Ok(droit::plafond::JoursSansRemuneration::de(jours))
+}
+
 /// LES LIGNES QU'UN IMPREVU DONNE AU MOIS D'UN PERMANENT -- le seul endroit qui les tire. Chaque imprevu du contrat
 /// retire le salaire de ses heures d'absence dans le mois (bornees par le contrat) ; un arret le retire sous
 /// la rubrique de son motif (`arrets-base.json`, `rubrique` ; le catalogue la marque `arret_de_travail`), une suspension non remuneree sous

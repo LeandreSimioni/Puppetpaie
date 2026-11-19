@@ -2008,7 +2008,10 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(ctx, e)?),
             _ => None,
         };
-        return plafond_permanent(&e.periode_payee()?, tp, &pss_du_contexte(ctx));
+        // Les jours d'absence que l'employeur ne remunere pas reduisent le plafond (CSS R. 242-2, I, al. 4 ; BOSS § 840-880).
+        let periode = e.periode_payee()?;
+        let sans_remuneration = crate::imprevus::jours_sans_remuneration(ctx, e, &periode)?;
+        return plafond_permanent(&periode, &sans_remuneration, tp, &pss_du_contexte(ctx));
     }
     // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
     // CSS).
@@ -2105,7 +2108,7 @@ pub(crate) fn ajouter_a_l_annee(
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Montant> {
-    plafond_permanent(&e.periode_payee()?, None, &pss_du_contexte(ctx))
+    plafond_permanent(&e.periode_payee()?, &droit::plafond::JoursSansRemuneration::aucun(), None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.
