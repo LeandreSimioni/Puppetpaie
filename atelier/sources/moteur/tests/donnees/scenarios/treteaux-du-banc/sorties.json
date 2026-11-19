@@ -309,6 +309,7 @@
           "total_sal": "67.7",
           "plafond": "172.34",
           "plafond_urssaf": "720",
+          "part_abattue_csg": "300",
           "periodes": [],
           "plafond_temps_partiel": null
         }
@@ -1828,7 +1829,7 @@
       },
       "2026-11/DSN_Novembre2026.dsn": {
         "quand": "2026-12-15T10:00:00",
-        "empreinte_saisie": "c64f90806c9c29aa",
+        "empreinte_saisie": "e245f626ceb509a0",
         "versions_portees": []
       }
     },
@@ -2146,6 +2147,7 @@
               "total_sal": "67.7",
               "plafond": "172.34",
               "plafond_urssaf": "720",
+              "part_abattue_csg": "300",
               "periodes": [],
               "plafond_temps_partiel": "non_concerne"
             },
@@ -2201,7 +2203,7 @@
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
                 "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "3fe2f490365d01424e42f517039eec67ab929ba6a541700aab56492d8cf8bbae",
-                "fichier code:baremes/2026.json": "82f9e9ab50d7696f830b373f4e26b861815293d98fc21cc0865e6aef8b7725b6",
+                "fichier code:baremes/2026.json": "d5888f7bbb0e64bfa0a9ca9355faf82f9be8dba73c80e9c34b979ff6723a89f1",
                 "fichier code:contrats-base.json": "8e2e08f874c18f4a1f104e21a2aecd9b56d12077979c8c5a4f0d50470420e8eb",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
                 "fichier code:minima-conventionnels.json": "541c0912028b3dc8d2f713092b5e41e4cdc534b24cbd8f8586a96581d691e08a",
