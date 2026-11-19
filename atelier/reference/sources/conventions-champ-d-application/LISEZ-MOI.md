@@ -8,7 +8,6 @@ refuse les robots, 403) :
 | CCN 3090, article 1er (KALIARTI000028157291, en vigueur étendu depuis le 01/07/2013) | `kali-3090-1285-champ-d-application-transcription-20261109.md` ; `../kali-entrepot/articles.jsonl.gz`, clé `["3090", "KALIARTI000028157291"]` |
 | CCNEAC (1285), article I.1 (KALIARTI000037814017, en vigueur étendu depuis le 28/03/2018) | la même transcription ; `../kali-entrepot/articles.jsonl.gz`, clé `["1285", "KALIARTI000037814017"]` |
 | Code du travail, L2261-15 (LEGIARTI000042654539, depuis le 01/06/2021) | `../legi-entrepot/articles.jsonl.gz`, clé `["travail", "L2261-15"]` |
-
 | Arrêté du 29 mai 2013 portant extension de la CCN 3090 (NOR ETST1313918A, JORF n° 0130 du 7 juin 2013, texte n° 97) | `jorf-3090-arrete-extension-20130529.md` : le texte de la page Légifrance, copié par Léandre sur son poste le 19/11/2026 (le texte seul, sans l'impression de la page) |
 
 L'arrêté de 2013 rend obligatoires les dispositions de la convention 3090 « pour tous les employeurs et tous les
