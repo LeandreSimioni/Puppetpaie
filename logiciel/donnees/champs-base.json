@@ -1290,7 +1290,7 @@
    "avance": "cas_particulier",
    "libelle": "Nom d'usage",
    "forme": "officiel",
-   "aide": "Seulement s'il porte un autre nom que son nom de famille (celui d'un conjoint, par exemple). En capitales, sans accents.",
+   "aide": "Seulement s'il porte un autre nom que son nom de famille (celui d'un conjoint, par exemple). En capitales, sans accents, 32 caractères au plus.",
    "longueur": null,
    "exemple": "",
    "choix": [],
