@@ -91,7 +91,7 @@ pub const ROUTES: &[Fiche] = &[
         r#"{"mois":"2026-11"}"#, "imprevus (chacun résumé, un arrêt avec ses obligations), nomenclatures", Acte::Lit, ECRAN),
     fiche(Route::Arrets, "Lire tous les arrêts de la compagnie.", &[], "{}", "phrase, phrases (qui, quand, le motif, ce qui reste à signaler), arrets : chacun résumé", Acte::Lit, Ecran::Auto(Place::Exports, Affiche::new("Lire tous les arrêts"))),
     fiche(Route::FinsDeContrat, "Lire les fins de contrat dues ce mois, et ce qui manque à chacune.", &[MOIS],
-        r#"{"mois":"2026-11"}"#, "fins : chacune avec ce qui est fait et ce qui manque", Acte::Lit, ECRAN),
+        r#"{"mois":"2026-11"}"#, "fins : chacune lue (lecture « lue » : ce qui est fait et ce qui manque) ou sur une carte à corriger (lecture « a_corriger » : quoi corriger, et où)", Acte::Lit, ECRAN),
     fiche(Route::ArretContrats, "Lire les contrats qu'un arrêt suspendrait à ce jour.",
         &[SALARIE, Champ { nom: "jour", libelle: Affiche::new("Dernier jour travaillé"), forme: Forme::Date, sens: "le dernier jour travaillé", avance: false }],
         r#"{"salarie":"FULLER","jour":"2026-11-27"}"#, "contrats : ceux du salarié qui couvrent ce jour", Acte::Lit, ECRAN),
@@ -2279,7 +2279,8 @@ fn nature_de(e: &Carte) -> R<std::sync::Arc<droit::natures::Nature>> {
     let Some(n) = e.nature else {
         return Err(socle::fichiers::absent("nature").reclasser(Classe::Manque));
     };
-    n.proprietes().map_err(|m| m.reclasser(Classe::Manque))
+    // Une nature dite qui ne se lit pas (les donnees livrees) est une panne : elle remonte telle quelle.
+    n.proprietes()
 }
 
 /// CE QUI MANQUE A UN SIGNALEMENT, tel que l'ecran le dit : `champ` (la donnee de l'engagement, `data-fait` de sa carte),
@@ -2367,8 +2368,8 @@ fn ce_qui_manque(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<Vec<Manque>>
             "pourquoi le contrat a pris fin.",
             "Le motif de la rupture (S21.G00.62.002) est obligatoire, et un CDI n'en a aucun par défaut.",
         )),
-        // CCH-12 de S21.G00.62.003 : la date de notification, obligatoire pour ces motifs (`fctu::notification_exigee`).
-        Some(motif) if e.notification_rupture.is_none() && declarations::fctu::notification_exigee(motif)? => manques.push(manque(
+        // CCH-12 de S21.G00.62.003 : la date de notification, obligatoire pour ces motifs (`preavis::notification_exigee`).
+        Some(motif) if e.notification_rupture.is_none() && droit::preavis::notification_exigee(motif)? => manques.push(manque(
             "notification_rupture",
             "Notifiée le",
             "le jour où la rupture a été notifiée : la démission remise, la lettre de rupture ou de licenciement envoyée, la \
@@ -2427,7 +2428,7 @@ contredit le signalement.",
 /// nature, ce qui manque pour la signaler (`a_saisir`), son obligation (`obligations::de_la_fin`) et sa pastille ; la
 /// route `fins-de-contrat` y ajoute ses phrases (`qui_dit`, `contrat_dit`).
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct FinASignaler {
+pub(crate) struct FinLue {
     pub salarie: IdSalarie,
     pub mois: Mois,
     pub contrat: Periode,
@@ -2446,6 +2447,41 @@ pub(crate) struct FinASignaler {
     qui_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     contrat_dit: Option<String>,
+}
+
+/// LA FIN D'UNE CARTE VALIDEE QUI NE SE LIT PLUS (son contrat finit avant de commencer, son salarie n'est plus dit) : on
+/// ne sait ni si elle finit ce mois-ci, ni si elle se signale. Elle ne porte que ce qu'il faut corriger (`a_corriger`)
+/// et ou (la carte de son `mois`, son `numero`) ; aucun acte ne se propose sur elle. La route `fins-de-contrat` y ajoute
+/// sa phrase (`qui_dit`).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct FinACorriger {
+    pub mois: Mois,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    salarie: Option<IdSalarie>,
+    numero: Option<NumeroContrat>,
+    a_corriger: Manque,
+    pastille: Pastille,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    qui_dit: Option<String>,
+}
+
+/// UNE FIN DE LA LISTE DES FINS A SIGNALER : lue (`FinLue`, son salarie et son contrat dits), ou sur une carte a corriger
+/// (`FinACorriger`), qui reste listee, seule, et ne ferme ni la liste, ni les rappels, ni l'horloge.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "lecture", rename_all = "snake_case")]
+pub(crate) enum FinASignaler {
+    Lue(FinLue),
+    ACorriger(FinACorriger),
+}
+
+impl FinASignaler {
+    /// La fin lue ; `None` : une carte a corriger, sur qui rien ne se fait.
+    pub(crate) fn lue(self) -> Option<FinLue> {
+        match self {
+            FinASignaler::Lue(f) => Some(f),
+            FinASignaler::ACorriger(_) => None,
+        }
+    }
 }
 
 /// Les contrats qui finissent dans `mois` et dont la fin SE SIGNALE, chacun avec
@@ -2467,13 +2503,43 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             continue;
         }
         let e = carte;
-        let nat = nature_de(e)?;
-        // La regle est celle de la nature et du motif (`Nature::signalement_fctu`) : un CDDU rompu avant son terme se signale.
-        if !nat.signalement_fctu(e.motif_rupture) {
+        // UNE CARTE VALIDEE QUI NE SE LIT PLUS (son contrat finit avant de commencer, son salarie n'est plus dit) reste
+        // dans la liste, seule, avec ce qu'il faut corriger (`FinACorriger`). Une nature qui manque est un manque : la fin
+        // reste dans la liste, sur elle seule, avec ce qui lui manque. Une panne (le disque, une nature que les donnees
+        // livrees ne lisent pas) remonte.
+        let contrat = match contrat_fini(e) {
+            Ok(c) => c,
+            Err(err) if err.dit_un_manque() => {
+                out.push(fin_a_corriger(e, mois, manque("debut", "Contrat", err.phrase.clone(), "Le contrat de la carte ne se lit plus : on ne sait pas s'il finit ce mois-ci, ni si sa fin se signale.")));
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
+        let Some(contrat) = contrat.filter(|c| c.fin().mois_civil() == mois) else { continue };
+        let Some(salarie) = e.salarie.clone() else {
+            out.push(fin_a_corriger(e, mois, manque("salarie", "Salarié", "le salarié de cette carte.", "Une carte validée dit son salarié : sans lui, sa fin ne se signale pas.")));
+            continue;
+        };
+        let Some(n) = e.nature else {
+            out.push(fin_a_corriger(
+                e,
+                mois,
+                manque(
+                    "nature",
+                    "Nature",
+                    "la nature du contrat.",
+                    "La nature dit si la fin du contrat se signale (`Nature::signalement_fctu`) : sans elle, on ne sait pas.",
+                ),
+            ));
+            continue;
+        };
+        let nat = n.proprietes()?;
+        // La regle est celle de la nature, du motif et de ce que la DSN sait du contrat, au calendrier
+        // (`Nature::signalement_fctu`, `ConnuDeLaDsn::du_contrat`) : un CDDU rompu avant son terme, ou deja declare par la
+        // DSN d'un mois precedent, se signale.
+        if !nat.signalement_fctu(e.motif_rupture, droit::natures::ConnuDeLaDsn::du_contrat(contrat.debut(), mois)) {
             continue;
         }
-        let Some(contrat) = contrat_fini(e)?.filter(|c| c.fin().mois_civil() == mois) else { continue };
-        let salarie = e.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie").reclasser(Classe::Manque))?;
         let a_saisir = ce_qui_manque(ctx, e, &contrat)?;
         // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).
         let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), &journal.lignes, aujourdhui)?;
@@ -2484,7 +2550,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         let du = incomplet || obligation.du;
         let en_retard = obligation.etat == crate::obligations::EtatDObligation::EnRetard;
         let pastille = if incomplet && !en_retard { Pastille::de(socle::ecran::EtatDEcran::AFaire, "à compléter") } else { obligation.pastille.clone() };
-        out.push(FinASignaler {
+        out.push(FinASignaler::Lue(FinLue {
             salarie,
             mois,
             contrat,
@@ -2499,9 +2565,21 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             obligation,
             qui_dit: None,
             contrat_dit: None,
-        });
+        }));
     }
     Ok(out)
+}
+
+/// La fin d'une carte validee qui ne se lit plus (`fins_a_signaler`) : ce qu'il faut corriger, et ou.
+fn fin_a_corriger(e: &Carte, mois: Mois, a_corriger: Manque) -> FinASignaler {
+    FinASignaler::ACorriger(FinACorriger {
+        mois,
+        salarie: e.salarie.clone(),
+        numero: e.numero.clone(),
+        a_corriger,
+        pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "à corriger"),
+        qui_dit: None,
+    })
 }
 
 /// La route `fins-de-contrat`.
@@ -2509,12 +2587,28 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
     let mut fins = fins_en_retard_avant(ctx, c.mois, ctx.aujourdhui)?;
     fins.extend(fins_a_signaler(ctx, c.mois, ctx.aujourdhui)?);
     // Ce que l'ecran lit de chaque fin : qui, quelle nature, quel jour (et le mois d'une fin d'un mois passe), et son
-    // contrat.
+    // contrat ; d'une carte a corriger, qui et ou.
     for f in &mut fins {
-        let fin = f.contrat.fin().jj_mm_aaaa();
-        let ailleurs = if f.mois != c.mois { format!(" ({})", f.mois.libelle(Graphie::Accentuee)) } else { String::new() };
-        f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(&f.salarie), f.libelle_nature, fin, ailleurs));
-        f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
+        match f {
+            FinASignaler::Lue(f) => {
+                let fin = f.contrat.fin().jj_mm_aaaa();
+                let ailleurs = if f.mois != c.mois { format!(" ({})", f.mois.libelle(Graphie::Accentuee)) } else { String::new() };
+                f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(&f.salarie), f.libelle_nature, fin, ailleurs));
+                f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
+            }
+            FinASignaler::ACorriger(f) => {
+                let qui = match f.salarie.as_ref() {
+                    Some(s) => ctx.nomme(s),
+                    None => "Une carte sans salarié".to_string(),
+                };
+                f.qui_dit = Some(format!(
+                    "{}, contrat {} : à corriger dans la carte de {}",
+                    qui,
+                    numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO),
+                    f.mois.libelle(Graphie::Accentuee)
+                ));
+            }
+        }
     }
     Ok(ReponseFins { phrase: socle::phrase!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
 }
@@ -2524,13 +2618,13 @@ const MOIS_EN_ARRIERE: socle::date::Duree<socle::date::EnMois> =socle::date::Dur
 
 /// LES FINS D'AVANT, EN RETARD : celles des mois qui precedent `mois` (sur `MOIS_EN_ARRIERE`) dont le signalement est du
 /// et sa date butoir passee. Une echeance manquee reste due -- le signalement se fait « dans les cinq jours ouvres qui
-/// suivent la survenance de la fin du contrat » (cahier technique DSN 2026.1, p. 107, `fctu-base.json`, sa `note`) -- et
-/// elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
+/// suivent la survenance de la fin du contrat » (`obligations::de_la_fin`, `obligations-base.json`) -- et elle se dit sur
+/// le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
 pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     let mut out = Vec::new();
     // Du plus ancien au mois d'avant.
     for m in mois.avant(MOIS_EN_ARRIERE)?.jusqu_a(mois.precedent()) {
-        out.extend(fins_a_signaler(ctx, m, aujourdhui)?.into_iter().filter(|f| f.du && f.en_retard));
+        out.extend(fins_a_signaler(ctx, m, aujourdhui)?.into_iter().filter(|f| matches!(f, FinASignaler::Lue(l) if l.du && l.en_retard)));
     }
     Ok(out)
 }

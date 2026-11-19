@@ -29,7 +29,6 @@ use engagement::calcul::Paie;
 use documents::conges_spectacles::{self, ContratDuCertificat, MoisPaye};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
-use engagement::{self, Engagement};
 use engagement::numeros::{NumeroContrat, NumeroDeCertificat};
 use documents::fiche_recapitulative::Recapitulatifs;
 use documents::{CategorieDeDocument, SorteDePieceProduite};
@@ -518,28 +517,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
         return Ok((ContratDuCertificat { engagement: eng.clone(), brut, salarie: p.salarie.champs.clone(), mois_payes }, manquants));
     }
     lignes.extend(eng.lignes.iter().cloned());
-    // Le planning des mois passes a ete paye dans son mois : il ne compte pas deux fois.
-    for l in lignes.iter_mut() {
-        *l = l.avec_les_jours(l.dates().to_vec(), Vec::new());
-    }
-    // Les jours du contrat entier : ceux de ses lignes de travail (`engagement::dates_engagement`).
-    let dates = engagement::saisie::Carte { lignes: Some(lignes.clone()), ..Default::default() }.dates();
-    let entier = engagement::Assemble {
-        salarie: Some(eng.salarie.clone()),
-        spectacle: eng.spectacle.clone(),
-        dates_travail: dates,
-        lignes: Some(lignes),
-        debut: Some(eng.contrat().debut()),
-        fin: eng.contrat().fin(),
-        numero: eng.numero.clone(),
-        jours: Some(jours + eng.jours),
-        taux_cachet: eng.taux_cachet,
-        date_paiement: eng.date_paiement.clone(),
-        lieu: Some(eng.lieu.clone()),
-        emploi: eng.emploi.clone(),
-        ..Default::default()
-    };
-    let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie), eng.versement).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let entier = eng.sur_tout_le_contrat(&ctx.racine, lignes, jours + eng.jours).map_err(|m| m.reclasser(Classe::Illisible))?;
     Ok((ContratDuCertificat { engagement: entier, brut, salarie: p.salarie.champs.clone(), mois_payes: Vec::new() }, manquants))
 }
 

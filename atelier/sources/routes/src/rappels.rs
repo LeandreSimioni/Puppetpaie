@@ -24,7 +24,7 @@ use compagnie::etat_dsn;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Phrase, Porte, Rendu};
-use crate::imprevus::{FinASignaler, ResumeDArret};
+use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
@@ -574,7 +574,7 @@ pub(crate) struct Echeance {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub(crate) enum Objet {
-    Fin(Box<FinASignaler>),
+    Fin(Box<FinLue>),
     Arret(Box<ResumeDArret>),
 }
 
@@ -1430,14 +1430,15 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
 
     // LES FINS DE CONTRAT : celles du mois passe et du mois en cours, deja finies (`crate::imprevus::fins_a_signaler`, la
     // meme liste que la colonne du mois), et celles d'avant dont le signalement est en retard (`fins_en_retard_avant`). Un CDD
-    // d'usage du spectacle arrive a son terme (031) n'en fait pas partie.
+    // d'usage infra DSN mensuelle arrive a son terme (031) n'en fait pas partie. Une carte a corriger n'a rien a rappeler :
+    // la colonne du mois la montre.
     let mois = st.aujourdhui.mois_civil();
     let precedent = mois.precedent();
     let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui)?;
     for m in [precedent, mois] {
         fins.extend(crate::imprevus::fins_a_signaler(st.ctx, m, st.aujourdhui)?);
     }
-    for f in fins {
+    for f in fins.into_iter().filter_map(FinASignaler::lue) {
         if f.contrat.fin() > st.aujourdhui {
             continue; // il n'a pas encore pris fin
         }

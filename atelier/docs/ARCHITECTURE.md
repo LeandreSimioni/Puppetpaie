@@ -1212,6 +1212,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un envoi au journal des envois | `documents::Acte` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
+| ce que la DSN sait d'un contrat (infra DSN mensuelle, ou déjà déclaré) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
+| une fin de la liste des fins à signaler : lue, ou sur une carte à corriger | `routes::imprevus::FinASignaler` (`FinLue`, `FinACorriger`) | `routes/src/imprevus.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
@@ -1553,6 +1555,18 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   la DPAE ; le dernier, le bloc 62 et le certificat Congés Spectacles ; hors du seul mois, le contrat est « à cheval ».
   Écrite `seul`, `premier`, `dernier`, `milieu` (`place`), dans la forme canonique d'un engagement et ce que rendent la
   paie d'un mois et la carte d'un engagement.
+- **ce que la DSN sait d'un contrat** : rien encore (« infra DSN mensuelle », fiche net-entreprises 1741 : il commence
+  dans le mois déclaré : une hypothèse, la paie du moteur se fermant au mois civil, que la fiche 1741 ne dit pas
+  « calendaire ») ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté). Décidé au seul
+  calendrier, sur le début du contrat et le mois de l'engagement (`ConnuDeLaDsn::du_contrat`), que lisent la mensuelle,
+  sa correction, le FCTU, les attestations attendues, la liste des fins et la carte : ce que le moteur a écrit hier se
+  redécide aujourd'hui de la même façon, sans relire ce qui est parti ; une correction d'une fin redit donc le choix
+  « précédemment transmis » (fiche 1902). Le premier ouvre le circuit dérogatoire d'un CDDU
+  (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
+- **une fin à signaler** : lue (son salarié et son contrat dits : son obligation, ce qui manque pour la signaler) ou
+  sur une carte validée qui ne se lit plus (son contrat finit avant de commencer, son salarié n'est plus dit) : celle-ci
+  ne dit que quoi corriger et où, reste listée seule, et ne ferme ni la liste, ni les rappels, ni l'horloge. Écrite
+  `lue`, `a_corriger` (`lecture`) dans la réponse de `fins-de-contrat`.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
   Écrit `ce_mois`, `avant` (`debut`), dans la carte d'un engagement à compléter.
@@ -1937,7 +1951,18 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   - **non actif** (`etats::NonActif`, la clé `non_actif`) : un engagement dont quelque chose est parti ne se supprime
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois
-    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro.
+    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro. Dans un mois
+    dont la DSN ne se remplace plus, la DSN suivante en annule les montants (`produire_regularisations::annulations`) :
+    un versement de correction daté de la fin de son propre mois, la différence de RNF en S21.G00.50.002, ses
+    rémunérations et ses bases déclarées reprises en négatif à leurs périodes, un bloc 56 de type 03 pour un indu
+    seulement. Ce n'est pas la forme que la fiche net-entreprises 898 demande pour un contrat déclaré à tort (blocs 41
+    et 40 à la nature 90, bloc 62 au jour du début, motif 999 ; montants datés du mois de l'erreur ; RNF et PAS par un
+    bloc 56 de type 01, fiche 1821), qui ne s'écrit pas : la norme dit la date de S21.G00.41.001 (« la date de
+    survenance du changement de caractéristique du Contrat »), mais aucun texte déposé ne dit ce que porte le bloc 40
+    d'un contrat de nature 90. Une fin corrigée se déclare par un bloc 62 dans la DSN suivante (fiche 1722), et la
+    correction l'écrit ; mais seul un engagement non actif voit annulé ce qu'une DSN a déclaré pour un mois.
+    « Modifier l'engagement » refuse donc d'en changer le salarié ou de le sortir d'un tel mois, et dit quoi faire
+    (`routes::regularisation::refus_non_declarable`).
 - **Les versions datées** : tant que rien n'est parti d'un engagement, il se modifie librement, sans historique. Dès
   qu'un envoi est parti sur sa version, une revalidation qui le change garde la version d'avant dans l'engagement
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,
@@ -2650,8 +2675,10 @@ lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
 défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
 mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
-certificat CS (`paie_du_contrat_entier`) retire le planning des lignes :
-chaque mois a payé le sien.
+certificat CS (`paie_du_contrat_entier`) est le même engagement sur les
+lignes de tous ses mois (`Engagement::sur_tout_le_contrat` : ses termes, sa
+nature, ses bornes) ; il retire le planning des lignes : chaque mois a payé
+le sien.
 
 Le barème et le SMIC (`engagement::calcul`) sont ceux de `fin_periode`, pas de
 `fin` : un contrat de décembre à février se paie en décembre au barème de
@@ -2873,7 +2900,7 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |
 | mutuelle santé | aucune | **obligatoire** (ANI, art. L911-7) |
-| fin du contrat | à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra-mensuel, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…) : 62.017 = 02 et **signalement nature 07** (CCH-12, fiche 2062 ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU) |
+| fin du contrat | contrat infra DSN mensuelle à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra DSN mensuelle, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…), ou déjà déclaré par la DSN d'un mois précédent : 62.017 = 02 et **signalement nature 07**, sous cinq jours ouvrés (CCH-12, fiche 2062 ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU), sous cinq jours ouvrés |
 | blocs 51 | les quatre valent le brut | 001 brut, 002 assiette chômage, 003 salaire rétabli, 010 salaire de base |
 | bloc 53 | jours (12), cachets (37), heures (35) | heures (10), absences en type 02 |
 
@@ -3241,14 +3268,56 @@ l'identifiant technique d'affiliation (`70.012`) et le bloc 71 — et à
 l'inverse, elle **exige** le code APET (`11.002`), que le signalement d'arrêt
 interdit — en P26V01 : la norme P27V01 le retire.
 
-**Un CDDU du spectacle n'a pas besoin de FCTU** : la même page donne une
-dérogation aux artistes et techniciens du spectacle, et la fin d'un contrat
-d'usage part dans la **DSN mensuelle** avec le circuit dérogatoire
-`S21.G00.62.017 = '01'` — une rubrique justement **interdite** dans un FCTU.
-Le moteur en émet un quand même si le salarié le demande (la norme le permet,
-p. 68 et p. 107), en le disant par un avertissement (`fctu.rs`, « La
-dérogation du spectacle ») ; la mensuelle qui suit écrit alors encore
-62.017 = 01.
+**Un CDDU contenu dans une seule DSN n'a pas besoin de FCTU** : à son terme
+(031), la fin d'un contrat d'usage **infra DSN mensuelle** part dans la **DSN
+mensuelle** avec le circuit dérogatoire `S21.G00.62.017 = '01'` — une
+rubrique justement **interdite** dans un FCTU. Le moteur en émet un quand même
+si le salarié le demande (la norme le permet, p. 68 et p. 107), en le disant
+par un avertissement (`fctu.rs`) ; la mensuelle qui suit écrit alors encore
+62.017 = 01 (fiche 1902). **Un CDDU qu'une DSN précédente a déclaré** (il a
+commencé un mois d'avant, `droit::natures::ConnuDeLaDsn`) n'a pas cette
+dérogation : « le circuit dérogatoire ne peut être utilisé que pour un contrat
+d'usage qui n'a pas encore fait l'objet d'une déclaration dans une précédente
+DSN mensuelle validée » (bloc 62, 62.017 ; § 2.5.3 : « Dans les autres cas, le
+déclarant doit procéder selon la procédure de droit commun (signalement) » ;
+fiche 2062 : « la dérogation n'est applicable en DSN que pour les contrats CDDU
+infra-DSN »). Sa fin se signale, et la mensuelle écrit 62.017 = 02. Une seule
+règle (`Nature::signalement_fctu`, `Nature::codes_fin`, avec ce que la DSN sait
+du contrat, au calendrier : `ConnuDeLaDsn::du_contrat`), que lisent la
+mensuelle, le FCTU, les fins à signaler et leurs rappels, l'attestation et la
+carte d'un engagement (`contrat.rupture`).
+
+**Le délai du signalement d'un contrat d'usage** est celui de toute fin qui se
+signale : cinq jours ouvrés. CSS R. 133-14, II, 2° écarte les cinq jours
+« conformément aux modalités mises en œuvre pour l'application des articles
+R. 1234-9 à R. 1234-12 », et ces modalités, pour un contrat d'usage, sont le
+circuit dérogatoire de la fiche 2062 et du § 2.5.3, qui renvoient tout autre
+cas à « la procédure de droit commun (signalement) » ; la fiche 1902 dit
+« dans les 5 jours » même pour un 031 que le salarié refuse de voir au circuit
+dérogatoire. Signaler sous cinq jours ouvrés est juste dans les deux lectures ;
+`obligations-base.json`, `signalement_fin_contrat`, `inferences`, dit ce qui
+reste ouvert (la lettre du décret, plus large). **Rien de ce qui est parti ne
+se relit pour le décider** : le moteur écrit 62.017 au calendrier, et le bloc 62
+d'une mensuelle qui redéclare une fin redit ce que le calendrier dit, c'est-à-dire
+ce que la DSN de son mois avait écrit (le choix « précédemment transmis » se
+reporte, fiche 1902). **L'attestation
+attendue** reste l'AER de la mensuelle pour tout intermittent dont le contrat
+finit (`aer::due`), sauf pour le contrat d'usage déjà déclaré arrivé à son
+terme, qui attend celle du signalement (`aer::attestation_fctu`) : une
+INFÉRENCE, écrite sur `aer::due` (la phrase de la fiche 1902 vise un CDDU-D
+corrigé, et aucun texte déposé ne dit quelle attestation revient d'un FCTU
+d'intermittent).
+
+**INFÉRENCE : la dérogation « AEM » du § 5.2 ne joue plus.** Le § 5.2 compte
+parmi les dérogations au signalement les artistes, ouvriers et techniciens du
+spectacle « (AEM) », et la fiche 2062 exclut des FCTU les contrats « faisant
+l'objet d'une attestation employeur mensuelle (AEM) », désignés par le motif
+d'exclusion 40.025. Ce qui la porte : le courriel de France Travail du
+28/05/2026 dit que ce motif « doit rester vide » depuis le 100 % DSN (il n'est
+qu'au dépôt privé) ; le logiciel ne l'écrit donc pas, et la règle générale des
+CDDU s'applique à l'intermittent. Ce qui s'y oppose : le cahier technique
+2027.1.1 garde le § 5.2 mot pour mot, et aucun texte public ne dit la
+dérogation retirée.
 
 **Ce que l'arborescence tranche, et que le tableau des usages ne dit pas.**
 Le tableau dit qu'une rubrique a le droit d'être là ; il ne dit pas si son

@@ -357,6 +357,8 @@ pub struct ContratDeclare {
     /// S21.G00.62.001 et .002 : la fin que la DSN declare, et son motif.
     pub fin_declaree: Option<Jour>,
     pub motif_fin: Option<droit::natures::MotifDeRupture>,
+    /// S21.G00.62.017 : la modalite de declaration de la fin d'un contrat d'usage (le circuit derogatoire, ou non).
+    pub modalite_fin: Option<droit::natures::ModaliteDeDeclarationDeFin>,
 }
 
 /// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002, lue dans la
@@ -479,6 +481,7 @@ impl ContratDeclare {
             dernier_jour_travaille: None,
             fin_declaree: None,
             motif_fin: None,
+            modalite_fin: None,
         }
     }
 }
@@ -1408,6 +1411,12 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let m = fautes.code(rub, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
                     c.motif_fin = m;
+                }
+            }
+            droit::natures::ModaliteDeDeclarationDeFin::RUBRIQUE => {
+                let m = fautes.code(rub, &v);
+                if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
+                    c.modalite_fin = m;
                 }
             }
             S21_50_001 => {

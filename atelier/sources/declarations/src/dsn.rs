@@ -1946,8 +1946,12 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add(droit::rubrique!("S21.G00.62.006"), crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
-        // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
-        for (rub, val) in nat.codes_fin(Some(motif)) {
+        // 62.017 d'un CDDU : 01 (circuit derogatoire) pour le 031 d'un contrat infra DSN mensuelle, 02 sinon -- un contrat
+        // qu'une DSN precedente a declare suit le droit commun (CCH-12, `Nature::codes_fin`). Il se decide au calendrier
+        // (`ConnuDeLaDsn::du_contrat`, sur le debut du contrat et le mois de l'engagement) : la correction d'une fin deja
+        // declaree redit donc ce que la DSN de son mois avait ecrit, le choix « précédemment transmis » (fiche 1902,
+        // `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`).
+        for (rub, val) in nat.codes_fin(Some(motif), droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
             f.add(rub, val);
         }
     }

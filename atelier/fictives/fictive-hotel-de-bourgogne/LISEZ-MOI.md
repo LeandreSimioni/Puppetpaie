@@ -176,9 +176,14 @@ Août : les permanents seuls.
   chacun à sa date ; le repas du 17 ne fait pas un jour du contrat. Les 8 heures supplémentaires de Marivaux, saisies
   le 18. Le 26, la fiche d'Apolline Vilar se crée ; son CDD (1er juin au 31 octobre) se valide, sa DPAE part (test
   puis réel), son contrat part à la signature.
-- **Juin** : la démission de Clairon, remise le 2 (préavis du 3 juin au 2 juillet, son dernier jour).
+- **Juin** : la démission de Clairon, remise le 2 (préavis du 3 juin au 2 juillet, son dernier jour). Le même jour,
+  avec la série du festival, l'engagement de Copeau pour la reprise des Fausses Confidences avant Avignon : un contrat
+  d'usage à cheval sur deux mois, 2 cachets de 1 500 € les 29 et 30 juin, et au planning les 1er et 2 juillet ; sa
+  DPAE et son contrat partent avec ceux de la série. La DSN de juin le déclare, sans fin.
 - **Juillet** : le congé de Champmeslé du 20 au 31 ; le 3, le signalement de fin du contrat de Clairon (test puis réel)
-  et ses documents de fin ; le 31, les 6 heures complémentaires de Vilar.
+  et ses documents de fin ; le lundi 6, le signalement de fin du contrat de Copeau, arrivé à son terme le 2 (la DSN de
+  juin l'a déjà déclaré : sa fin se signale dans les cinq jours ouvrés, et la DSN de juillet écrit 62.017 = 02), test
+  puis réel, et ses documents de fin ; le 31, les 6 heures complémentaires de Vilar.
 - **Août** : sans intermittent ; Champmeslé en congé du 1er au 7, Marivaux du 10 au 28.
 - **Septembre** : l'augmentation de Champmeslé, décidée le 7, à 4 100,00 € au 1er septembre, et son avenant à la
   signature ; le même jour, l'augmentation de Vilar à 7 000 € au 16 septembre, et son avenant à la signature ; le 29,
@@ -207,6 +212,7 @@ rentre dormir chez soi, sauf pendant la tournée de mai. Les lettres sont celles
 | mer. 13 au sam. 16 mai | Les Fausses Confidences, tournée de Bretagne | Rennes, Lorient, Quimper | M, D, L, K, T |
 | ven. 22, sam. 23 mai | Le Barbier de Séville, 2 représentations | Paris, théâtre du Marais-Neuf | M, D, K |
 | ven. 5 au dim. 7, ven. 12 au dim. 14 juin | Le Barbier de Séville, festival, 6 représentations | Paris, parc de Bagatelle | M, D, L, K, T |
+| lun. 29 juin au jeu. 2 juillet | répétitions de reprise, Les Fausses Confidences ; Copeau, 4 cachets | Paris | C |
 | ven. 3 au dim. 5 juillet | Les Fausses Confidences, 3 représentations | Avignon | M, D, L, K, T |
 | ven. 10, sam. 11 juillet | Les Fausses Confidences, 2 représentations | Villeneuve-lès-Avignon | D, L, K |
 | lun. 7 au ven. 11 septembre | répétitions, Les Plaideurs | Paris | M, D, L |

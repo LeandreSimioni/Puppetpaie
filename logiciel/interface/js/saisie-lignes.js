@@ -1087,11 +1087,12 @@ function construireCarte(div, e) {
            type « 90 - pas de clause de préavis applicable », et ses deux
            dates deviennent alors interdites.
 
-           Un CDDU du spectacle n'en montre que le motif : arrivé à son terme
-           (031), sa fin part dans la DSN mensuelle par le circuit
-           dérogatoire ; rompu avant (036, 037…), elle se signale, et le
-           reste du bloc paraît (fiche 2062 ; le moteur le dit motif par
-           motif, signalement_par_motif). -->
+           Un CDDU du spectacle contenu dans le mois n'en montre que le
+           motif : arrivé à son terme (031), sa fin part dans la DSN
+           mensuelle par le circuit dérogatoire ; rompu avant (036, 037…),
+           ou déjà déclaré le mois d'avant, elle se signale, et le reste du
+           bloc paraît (fiche 2062 ; le moteur le dit pour ce contrat, motif
+           par motif, contrat.rupture.signalement_par_motif). -->
       <div class="e-rupture" hidden>
         <div class="e-fait-tete">Fin du contrat
           <span class="discret e-rupture-dit"></span></div>
@@ -1423,11 +1424,12 @@ function majNature(div) {
 }
 
 /** La fin d'un contrat, et ce que son signalement déclarera. Un CDDU du
- *  spectacle n'en montre que le motif : à son terme (031, le défaut), sa fin
- *  part dans la DSN mensuelle par le circuit dérogatoire et rien d'autre ne
- *  se demande ; rompu avant (036, 037, 084…), elle se signale, et le reste du
- *  bloc paraît. C'est le moteur qui le dit, motif par motif
- *  (`finSeSignale`) : la page ne fait que le montrer.
+ *  spectacle contenu dans le mois n'en montre que le motif : à son terme
+ *  (031, le défaut), sa fin part dans la DSN mensuelle par le circuit
+ *  dérogatoire et rien d'autre ne se demande ; rompu avant (036, 037, 084…),
+ *  ou déjà déclaré le mois d'avant, elle se signale, et le reste du bloc
+ *  paraît. C'est le moteur qui le dit, pour ce contrat, motif par motif
+ *  (`contrat.rupture`, `finSeSignale`) : la page ne fait que le montrer.
  *
  *  Les dates de préavis suivent le type choisi : le « 90 - pas de clause de
  *  préavis applicable » les INTERDIT (CCH-11 de S21.G00.63.002), et le
@@ -1436,7 +1438,8 @@ function majRupture(div) {
   const nat = natureDe(div.querySelector(".e-nature").value);
   const bloc = div.querySelector(".e-rupture");
   // Un contrat aux cachets n'écrit pas sa fin : le moteur la donne (`contrat.rupture`).
-  const fin = div.querySelector(".e-fin").value || (div._rupture && div._rupture.fin);
+  const rupture = div._rupture;
+  const fin = div.querySelector(".e-fin").value || (rupture && rupture.fin);
   const motifs = nat.motifs_rupture;
   // LA FIN NE SE DEMANDE QUE LE MOIS OÙ ELLE A LIEU : un CDD de janvier à
   // juin n'a rien à dire de sa fin en janvier. Elle paraît quand la fin du
@@ -1445,14 +1448,17 @@ function majRupture(div) {
   const moisAffiche = document.getElementById("mois").value;
   const finCeMois = fin && (!moisAffiche || fin.slice(0, 7) <= moisAffiche);
   const dejaDit = !!(div.querySelector(".e-motif-rupture").value || div.dataset.motifRupture);
-  bloc.hidden = !(fin && (finCeMois || dejaDit) && (nat.signalement_fctu || motifs.length));
+  // Sans la rupture que le moteur propose pour CE contrat (`contrat.rupture`),
+  // la fin n'a rien à dire ici.
+  bloc.hidden = !(rupture && fin && (finCeMois || dejaDit) && motifs.length);
   // Les motifs sont ceux de CETTE nature : un CDD peut finir à son terme
   // (031), un CDI ne le peut pas — il ne finit jamais tout seul. Le choix
   // vide d'une nature dont la fin par défaut ne se signale pas (le CDDU)
   // est ce défaut : la fin à son terme.
   const sel = div.querySelector(".e-motif-rupture");
   const voulu = sel.value || div.dataset.motifRupture;
-  const vide = nat.motif_rupture_vide_dit;
+  if (!rupture) return;
+  const vide = rupture.motif_vide_dit;
   poserListe(sel, "rupture:" + nat.cle, [motifs, vide], () => [`<option value="">${echapper(vide)}</option>`,
     ...motifs.map(
       (m) => `<option value="${echapper(m.code)}">${echapper(m.code)} — ${echapper(m.libelle)}</option>`)].join(""));
@@ -1463,8 +1469,9 @@ function majRupture(div) {
   const dit = motif && motif.dit;
   motifDit.textContent = texteDeLaCase(dit);
   motifDit.hidden = !dit;
-  // Les faits que le motif choisi demande (`faits_de_rupture`, du moteur) ; aucun sans motif.
-  const faits = nat.faits_de_rupture[sel.value];
+  // Les faits que le motif choisi demande (`faits_de_rupture`, du moteur) ; sans motif choisi, ceux que le moteur
+  // donne pour le choix vide (`faits_sans_motif` : ceux du motif par défaut de la nature).
+  const faits = sel.value ? nat.faits_de_rupture[sel.value] : nat.faits_sans_motif;
   div.querySelectorAll(".e-rupture [data-fait]").forEach((l) => {
     l.hidden = !(faits && faits.includes(l.dataset.fait));
   });
@@ -1483,7 +1490,7 @@ function majRupture(div) {
   }
   // Une fin qui ne se signale pas (le CDDU à son terme) ne montre que son
   // motif : le reste ne partirait nulle part.
-  const signale = finSeSignale(nat, sel.value);
+  const signale = finSeSignale(rupture, sel.value);
   div.querySelector(".e-rupture-dit").textContent = ETAT.aides[signale ? "fin_signalee" : "fin_derogatoire"];
   if (!signale) {
     bloc.querySelectorAll(":scope > label:not(.e-motif-l)").forEach((l) => { l.hidden = true; });

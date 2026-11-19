@@ -22,7 +22,7 @@ use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
-use droit::natures::{self, MotifDeRupture, Nature};
+use droit::natures::{self, MotifDeRupture};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
@@ -1335,55 +1335,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     })
 }
 
-/// `faits_de_rupture` : les faits a demander a l'ecran pour CE motif, et eux
-/// seuls (« si compagnie simple, interface simple »).
-fn faits_de_rupture(n: &Nature, m: MotifDeRupture) -> R<Vec<&'static str>> {
-    use MotifDeRupture::*;
-    let sans_notification = matches!(m, FinDeCdd | RuptureConventionnelle | DecesDeLEmployeur | ForceMajeure | CommunAccord);
-    let licenciement = matches!(
-        m,
-        LicenciementEconomique | LicenciementAutreMotif | LicenciementFauteGrave | LicenciementFauteLourde | InaptitudeNonProfessionnelle | InaptitudeProfessionnelle | RuptureAnticipeeFauteGrave | RuptureAnticipeeFauteLourde
-    );
-    let mut faits = Vec::new();
-    // La rupture conventionnelle, ou le moteur refuse sans le fait (CGI 80
-    // duodecies 6°).
-    let sec = permanents::rupture(Some(m))?;
-    if sec.is_some_and(|(fin, _)| fin == permanents::FinDeCdi::RuptureConventionnelle) {
-        faits.push("en_droit_a_la_retraite");
-    }
-    // Un contrat a duree indeterminee dont le motif ouvre un preavis, et dont le preavis non effectue se paie : pas
-    // celui que le texte n'indemnise pas (`preavis.indemnite_compensatrice.motifs_sans_indemnite` : 059, 039, 091).
-    let sans_indemnite = matches!(permanents::indemnite_de_preavis(Some(m))?, permanents::IndemniteDePreavis::Aucune(_));
-    if n.duree_indeterminee && !sans_indemnite {
-        if !permanents::sans_preavis(Some(m))? {
-            faits.push("preavis_non_effectue");
-        }
-    }
-    // Un CDD dont l'indemnite de fin de contrat est due.
-    if !n.duree_indeterminee && permanents::precarite_due(n, Some(m))?.is_none() {
-        faits.push("precarite_due");
-    }
-    // LES DATES ET LA TRANSACTION SELON LE MOTIF : une rupture decidee par l'un
-    // des deux se NOTIFIE ; un licenciement s'ENGAGE par la convocation a
-    // l'entretien prealable ; une rupture conventionnelle se date par la
-    // SIGNATURE de la convention ; la TRANSACTION suit un litige.
-    // Et toujours quand le signalement l'exige (CCH-12 de S21.G00.62.003, `fctu::notification_exigee`) : la force majeure
-    // (083) est de la liste ci-dessus, et sa date de notification est pourtant obligatoire dans un FCTU.
-    if !sans_notification || declarations::fctu::notification_exigee(m)? {
-        faits.push("notification_rupture");
-    }
-    if licenciement {
-        faits.push("engagement_licenciement");
-    }
-    if m == RuptureConventionnelle {
-        faits.push("signature_convention");
-    }
-    if licenciement || matches!(m, MiseALaRetraite | PriseDActe) {
-        faits.push("transaction");
-    }
-    Ok(faits)
-}
-
 /// UNE NATURE DE CONTRAT telle que l'ecran la propose : ce que `contrats-base.json` en dit, et ce que la page en tire sans
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1399,21 +1350,19 @@ struct NatureDeLaPage {
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
     /// et 10 (CCH-11).
     spectacle: bool,
-    /// La fin se signale-t-elle (`Nature::signalement_fctu`) : au motif par defaut, et motif par motif -- un CDDU a son
-    /// terme (031) part dans la mensuelle, rompu avant (036, 037...) il se signale. La page ne decide rien.
-    signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<MotifDeRupture, bool>,
     motifs_rupture: Vec<natures::RuptureOfferte>,
+    /// Les faits que chaque motif appelle (`permanents::faits_de_rupture`), et ceux du choix vide (`faits_sans_motif` :
+    /// ceux du motif par defaut de la nature) : la page montre ces cases, et elles seules.
     faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
+    faits_sans_motif: Vec<&'static str>,
     motif_rupture_defaut: Option<MotifDeRupture>,
     motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     quotite_defaut: Option<socle::grandeurs::Heures>,
-    /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
-    /// signale pas : le CDDU a son terme).
+    /// Le bouton qui propose la duree d'un temps plein. Si la fin se signale, et le choix vide des motifs de fin, c'est
+    /// le contrat qui le dit, pas sa nature (`mois::Rupture`).
     temps_plein_dit: Option<String>,
-    motif_rupture_vide_dit: String,
     unite_quotite: natures::UniteDeQuotite,
 }
 
@@ -1427,10 +1376,9 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
     let mut sortie = Vec::new();
     for n in toutes.iter() {
         let motifs = n.motifs_rupture();
-        let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
+        let mut faits = BTreeMap::new();
         for m in motifs {
-            faits.insert(m.code, faits_de_rupture(n, m.code)?);
-            signales.insert(m.code, n.signalement_fctu(Some(m.code)));
+            faits.insert(m.code, permanents::faits_de_rupture(n, Some(m.code))?);
         }
         let carte = cartes
             .iter()
@@ -1445,19 +1393,14 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
-            signalement_fctu: n.signalement_fctu(None),
-            signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),
             faits_de_rupture: faits,
+            faits_sans_motif: permanents::faits_de_rupture(n, None)?,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
             temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
-            motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
-                Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
-                _ => "— à choisir —".to_string(),
-            },
             unite_quotite: n.unite_quotite(),
         });
     }

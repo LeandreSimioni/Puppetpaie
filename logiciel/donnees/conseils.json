@@ -2612,7 +2612,7 @@
       "domaine": "déclarations",
       "public": "employeur",
       "quand": "toujours",
-      "texte": "La fin d'un contrat se signale dans la DSN dans les cinq jours ouvrés, sauf pour un CDD d'usage déclaré en circuit dérogatoire. Le retour de France Travail est l'attestation employeur rematérialisée (AER) : imprimez-la et remettez-la à la personne qui part.",
+      "texte": "La fin d'un contrat se signale dans la DSN dans les cinq jours ouvrés, sauf celle d'un CDD d'usage contenu dans le mois et arrivé à son terme : elle part dans la DSN mensuelle elle-même, par le circuit dérogatoire. Le retour de France Travail est l'attestation employeur rematérialisée (AER) : imprimez-la et remettez-la à la personne qui part.",
       "source": [
         {
           "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",

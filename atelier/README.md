@@ -804,9 +804,12 @@ leur état (*à signaler* / *signalé*, et la DSN qui les a reportés), et les
 boutons pour en saisir un, noter une reprise ou écrire le signalement.
 
 Le signalement de **fin de contrat** (FCTU, nature 07) a sa commande,
-`fin-contrat` (plus bas, avec les permanents). Un CDDU n'en a pas besoin —
-sa fin part dans la DSN mensuelle, avec le circuit dérogatoire — sauf si le
-salarié le demande : le moteur l'écrit alors, et le dit.
+`fin-contrat` (plus bas, avec les permanents). Un CDDU contenu dans une
+seule DSN mensuelle (infra DSN mensuelle) et arrivé à son terme n'en a pas
+besoin — sa fin part dans cette DSN, avec le circuit dérogatoire — sauf si le
+salarié le demande : le moteur l'écrit alors, et le dit. Un CDDU rompu avant
+son terme, ou qu'une DSN d'un mois précédent a déjà déclaré, se signale, dans
+les cinq jours ouvrés qui suivent sa fin.
 
 ## Corriger un mois déjà déposé
 

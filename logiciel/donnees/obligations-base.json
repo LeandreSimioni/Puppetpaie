@@ -84,9 +84,11 @@
     "signalement_fin_contrat": {
       "libelle": "Signalement de fin de contrat",
       "motifs": [],
-      "inferences": [],
+      "inferences": [
+        "Le délai d'un contrat d'usage qui se signale reste de cinq jours ouvrés. La lettre de R. 133-14, II, 2° est plus large : les cinq jours « ne sont pas applicables » aux fins de CDD des secteurs du 3° de L. 1242-2, et son dernier alinéa renvoie alors au délai de la DSN mensuelle du mois de l'événement ; mais il les écarte « conformément aux modalités mises en œuvre pour l'application des articles R. 1234-9 à R. 1234-12 », et ces modalités, pour un contrat d'usage, sont celles de la fiche 2062 (le circuit dérogatoire : nature 02, recours 05, 62.017 = 01, motif 031, contrat infra DSN mensuelle ; « Tous les autres motifs de rupture doivent être déclarés par l'émission d'un signalement FCTU ») et du § 2.5.3 (« Dans les autres cas, le déclarant doit procéder selon la procédure de droit commun (signalement) ») ; la fiche 1902 dit le signalement « dans les 5 jours » même pour un 031 que le salarié refuse de voir au circuit dérogatoire. Un signalement sous cinq jours ouvrés est juste dans les deux lectures, le délai de la DSN du mois ne l'est que dans la plus large : le moteur garde cinq jours ouvrés. Reste ouvert : la lettre du décret, que rien de déposé ne restreint expressément."
+      ],
       "a_avoir": [],
-      "nait_de": "un contrat dont la fin se signale (CDI, CDD ordinaire, CDD d'usage rompu avant son terme : `Nature::signalement_fctu`) et qui finit dans le mois",
+      "nait_de": "un contrat qui finit dans le mois et dont la fin se signale (`Nature::signalement_fctu`) : un CDI, un CDD ordinaire, un CDD d'usage rompu avant son terme ou qu'une DSN mensuelle précédente a déjà déclaré (le moteur le lit sur le début du contrat et le mois, `ConnuDeLaDsn::du_contrat`). Le délai est le même pour tous : cinq jours ouvrés après la fin",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le fichier « signalement de fin de contrat de travail unique » (nature 07) que le logiciel écrit.",
       "destinataire": "France Travail (l'attestation employeur du salarié), les organismes de prévoyance.",
@@ -94,12 +96,15 @@
         "jours_ouvres": {"jours": 5, "dit": "dans les cinq jours ouvrés qui suivent la fin du contrat"}
       },
       "exceptions": [
-        "R. 133-14, II, 2° : la fin d'un CDD d'usage (3° de L. 1242-2 du code du travail) arrivé à son terme suit le circuit dérogatoire, avec la DSN mensuelle, sauf si le salarié demande le délai de cinq jours (fiches 1902 et 2062) : ces fins-là ne sont pas dans la liste."
+        "R. 133-14, II, 2° et fiche 2062 : la fin d'un CDDU infra DSN mensuelle arrivé à son terme (031) part dans la DSN mensuelle elle-même, par le circuit dérogatoire (S21.G00.62.017 = 01), sauf si le salarié demande le signalement (fiche 1902), ce que le moteur ne porte pas : elle n'est pas dans la liste. Toute autre fin de CDDU (rompue avant son terme, ou d'un contrat qu'une DSN mensuelle précédente a déjà déclaré) se signale sous cinq jours ouvrés."
       ],
       "textes": [
         {"reference": "Code de la sécurité sociale, art. R. 133-14, II", "fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/R133-14.xml", "dit": "« sont déclarés dans un délai fixé par arrêté […], qui ne peut excéder cinq jours ouvrés, la fin du contrat de travail […] »."},
+        {"reference": "Code de la sécurité sociale, art. R. 133-14, II, 2°", "fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/R133-14.xml", "dit": "Les dispositions du précédent alinéa ne sont pas applicables : « 2° Pour les fins de contrat de mission des salariés des entreprises de travail temporaire, les fins de contrat à durée déterminée des salariés des associations intermédiaires et des salariés des secteurs d'activité prévus au 3° de l'article L. 1242-2 du code du travail, conformément aux modalités mises en œuvre pour l'application des articles R. 1234-9 à R. 1234-12 du même code, sauf si le salarié demande à ce qu'il soit fait application du délai mentionné au deuxième alinéa du II. »"},
         {"reference": "Arrêté du 2 juillet 2013, art. 1er", "fichier": "atelier/reference/sources/arrete-2013-delai-evenements-dsn/xml/1.xml", "dit": "Le délai prévu par le II de l'article R. 133-14 est fixé à cinq jours ouvrés."},
-        {"reference": "Cahier technique DSN 2026.1, § 5.2, p. 107", "fichier": "atelier/reference/norme-dsn/texte/chapitre-5-modeles.txt", "dit": "« Le signalement d'évènement doit être transmis dans les cinq jours ouvrés qui suivent la survenance de la fin du contrat de travail sauf dans le cadre des dérogations existantes »."}
+        {"reference": "Cahier technique DSN 2026.1, § 2.5.3", "fichier": "atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt", "dit": "« le circuit dérogatoire ne peut s'appliquer qu'aux contrats à durée déterminée d'usage infra DSN mensuelle » ; « Dans les autres cas, le déclarant doit procéder selon la procédure de droit commun (signalement). »"},
+        {"reference": "net-entreprises, fiche 2062 (05/09/2025)", "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt", "dit": "« En DSN, l'attestation employeur est obtenue suite à la transmission d’un signalement FCTU dans les 5 jours suivant la survenance de la fin de contrat de travail » ; « Tous les autres motifs de rupture doivent être déclarés par l’émission d’un signalement FCTU. » ; « Attention : la dérogation n’est applicable en DSN que pour les contrats CDDU infra-DSN. »"},
+        {"reference": "net-entreprises, fiche 1902 (12/05/2025)", "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt", "dit": "« Le salarié a le droit de refuser l'utilisation du circuit dérogatoire pour ses contrats. Il revient donc à l’employeur d’effectuer les signalements FCTU dans les 5 jours suivants la fin du ou des contrats. »"}
       ]
     },
     "declaration_accident": {

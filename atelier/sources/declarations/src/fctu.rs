@@ -14,6 +14,7 @@ use crate::dsn::{
     autre_revenu, bases_et_cotisations, bloc_anciennete, bloc_contrat_fctu, primes_et_indemnites,
     remunerations, usage_admet, Arret, Fichier, RangDuContrat, LOGICIEL, VERSION,
 };
+use droit::natures::ConnuDeLaDsn;
 use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::grandeurs::Signe;
@@ -109,17 +110,6 @@ pub fn preavis_non_effectue(type_preavis: TypeDePreavis) -> R<bool> {
             repr(type_preavis.code())
         )),
     }
-}
-
-// ------------------------------------------------ la date de notification de la rupture
-
-/// La date de notification de la rupture (S21.G00.62.003) est-elle obligatoire pour ce motif de rupture ? La liste
-/// `notification_rupture.motifs` de `fctu-base.json`, celle de la CCH-12 de S21.G00.62.003 (cahier technique DSN 2026.1,
-/// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
-/// refuse par le point de depot. Un seul endroit : la liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et
-/// `verifier` la lisent ici.
-pub fn notification_exigee(motif: droit::natures::MotifDeRupture) -> R<bool> {
-    Ok(nomenclatures()?.notification_rupture.motifs.contains(&motif))
 }
 
 // ------------------------------------------------ le type de preavis et ce que la paie verse
@@ -315,7 +305,7 @@ preavis de L1234-1."
     }
 
     // CCH-12 de S21.G00.62.003 : pour ces motifs, la date de notification est obligatoire.
-    if fin.notification.is_none() && notification_exigee(fin.motif)? {
+    if fin.notification.is_none() && droit::preavis::notification_exigee(fin.motif)? {
         return Err(Echec::impossible(format!(
             "Motif de rupture {} : la date de notification de la rupture (S21.G00.62.003, `notification_rupture` dans la \
 saisie) est OBLIGATOIRE -- CCH-12 de S21.G00.62.003, cahier technique DSN p. 275. Le point de depot refuserait le \
@@ -336,19 +326,27 @@ signalement sans elle. Rien n'est ecrit.",
         return Err(Echec::impossible(refus));
     }
 
-    // La derogation du CDDU (circuit derogatoire, motif 031 seul : fiche 2062) : le moteur le DIT plutot que de refuser,
-    // car le salarie peut demander le signalement (fiche 1902). Rompu avant son terme, le CDDU se signale.
-    if !nat.signalement_fctu(Some(fin.motif)) {
+    // La derogation du CDDU (circuit derogatoire, motif 031 d'un contrat infra DSN mensuelle, au calendrier :
+    // `ConnuDeLaDsn::du_contrat`) : le moteur le DIT plutot que de refuser, car « Aucun signalement de type FCTU n'est
+    // attendu quand la dérogation est appliquée, sauf demande expresse du salarié » (fiche 2062, `net-entreprises-base-
+    // connaissances/net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt`, l. 14). Rompu avant son
+    // terme, ou deja declare par une DSN precedente, le CDDU se signale.
+    if !nat.signalement_fctu(Some(fin.motif), ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
         avertissements.push(format!(
-            "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
-DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
-            e.numero_declare()?,
-            nat.libelle
+            "Contrat {} : sa fin part dans la DSN du mois, par le circuit dérogatoire ; aucun signalement de fin de contrat \
+n'est attendu, sauf demande expresse du salarié (fiche net-entreprises 2062).",
+            e.numero_declare()?
         ));
     }
+    // LE DELAI ET SON TEXTE : le § 5.2 du cahier technique (p. 107) dit cinq jours ouvres, mais en ecarte les artistes et
+    // techniciens du spectacle ; pour un contrat d'usage qui se signale, les cinq jours sont ceux de la fiche 2062 (« dans
+    // les 5 jours suivant la survenance de la fin de contrat de travail », l. 4) et l'inference de `obligations-base.json`
+    // (`signalement_fin_contrat.inferences`).
+    let texte = if nat.circuit_ouvert_au_motif(None) { "fiche net-entreprises 2062 : « dans les 5 jours »" } else { "cahier technique p. 107" };
     avertissements.push(format!(
-        "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent (cahier technique p. 107).",
-        fin.fin.jj_mm_aaaa()
+        "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent ({}).",
+        fin.fin.jj_mm_aaaa(),
+        texte
     ));
     Ok(avertissements)
 }

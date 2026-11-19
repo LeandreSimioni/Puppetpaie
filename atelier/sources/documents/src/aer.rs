@@ -104,15 +104,32 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// v3-2-20230328.txt`, l. 500-510) : le contrat d'un intermittent (`droit::caisse_conges::intermittent`). Un permanent n'en a
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
+///
+/// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME (`Nature::a_son_terme_hors_du_circuit` : 031, commence un mois
+/// d'avant, au calendrier : `ConnuDeLaDsn::du_contrat`) n'attend pas cette AER : une attestation attendue, celle du signalement
+/// (`attestation_fctu`). C'est une INFERENCE. Ce qui la porte : l'archive des AER de la mensuelle est celle des contrats
+/// en circuit derogatoire (fiche 1902 : « cette DSN mensuelle donne lieu à une archive de l'ensemble des AER
+/// correspondant aux CDD d'usage en circuit dérogatoire » ; « il n'y aura pas d'AER pour ce contrat d'usage en circuit
+/// dérogatoire corrigé dans l'archive des AER de la DSN mensuelle suivante (le contrat n'est plus infra-DSN) »,
+/// `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`), et ce contrat
+/// ecrit 62.017 = 02. Ce qui s'y oppose : cette phrase de la fiche 1902 vise un CDDU-D corrige, pas un contrat a cheval ;
+/// les pages relevees disent l'AE CS « éditée à la fin du dernier mois concerné par le contrat » sans distinguer le
+/// circuit ; et aucun texte depose ne dit quelle attestation revient d'un FCTU d'intermittent
+/// (`francetravail-100-dsn/LISEZMOI.md`). Tout autre contrat d'intermittent qui finit dans le mois a son AER, qu'il soit
+/// rompu ou qu'il soit un CDD d'artiste : « 1 AE CS éditée à la fin du dernier mois concerné par le contrat »
+/// (`movinmotion-fin-des-aem-20260601.txt`, plus haut).
 pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     let e = &p.engagement;
-    if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
+    let nat = e.nat()?;
+    let connu = droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois);
+    if !droit::caisse_conges::intermittent(&nat, &p.salarie)? || nat.a_son_terme_hors_du_circuit(e.motif_rupture, connu) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
 }
 
-/// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme : `Nature::signalement_fctu`)
+/// LA FIN DE CONTRAT QUI SE SIGNALE (CDD et CDI de droit commun, CDDU rompu avant son terme ou deja declare par une DSN
+/// precedente : `Nature::signalement_fctu`)
 /// dans le mois : France Travail en edite l'attestation employeur rematerialisee (AER) en retour du signalement FCTU
 /// (nature 44 : « AER » en PDF quand le signalement passe, compte rendu metier quand il est refuse -- guide
 /// d'implementation de l'API DSN v6.8, §5.7.4 a 5.7.6 et tableau des formats,
@@ -123,7 +140,7 @@ pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
 pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture) {
+    if !nat.signalement_fctu(e.motif_rupture, droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))
