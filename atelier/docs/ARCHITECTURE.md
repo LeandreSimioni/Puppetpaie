@@ -2894,12 +2894,14 @@ annexe A, art. 1 : « dans les limites annuelles des assiettes T1 et T2 ») : se
 `cet` (le corps du barème et `par_statut.technicien`) sont sur `t1_annuelle`, `t2_annuelle` et `cet_annuelle`, ses
 tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite_sociale.annuel`), calculées par le même
 chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
-des mois d'avant (`conges::retraite_des_mois_anterieurs`) et les contrats précédents du mois. Le plafond de la Sécurité
-sociale de ses paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut :
-rien ne change. Le 131 de sa DSN porte sa tranche 1 au taux et, en plus, ses lignes de tranche 2 et de CET
-(`lignes_en_plus`) ; sa base 43 est `t1_annuelle`. Un cadre intermittent retire la tranche 2 et la CET de l'année
-(`par_categorie.cadre.rubriques_retirees`) et cotise sur ses tranches journalières ; un permanent les retire de même
-(`par_nature.permanent`).
+des mois d'avant, validées ici ou reprises d'un ancien logiciel (`conges::retraite_des_mois_anterieurs`,
+`etats::paies_intermittentes_du_salarie`), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
+paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
+Le 131 de sa tranche 1 (sa ligne `retraite_t1`) se déclare sous la base 43, `t1_annuelle` ; celui de sa tranche 2 et
+de sa CET (`retraite_t2`, `cet`) sous la base 23. Seule la paie dont le barème pose `retraite_t1` sur `t1_annuelle`
+écrit les tranches de l'année : un cadre intermittent retire la tranche 2 et la CET de l'année
+(`par_categorie.cadre.rubriques_retirees`) et cotise sur ses tranches journalières, limitées en 2026 au plafond mensuel
+pour le mois civil (`limite_du_plafond_journalier`) ; un permanent les retire de même (`par_nature.permanent`).
 
 `logiciel/donnees/contrats-base.json` porte ce que la DSN écrit de la **structure** d'un
 contrat, par nature. Trois

@@ -1562,13 +1562,25 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     };
     let plafond_journalier = bar.plafond_journalier;
     // La tranche 1 journaliere du contrat : le plafond journalier par jour du contrat, dans la limite que le bareme de
-    // l'annee dit (`limite_du_plafond_journalier` : en 2026, « dans la limite du plafond mensuel », Audiens, Parametres).
-    // INFERENCE, ecrite comme telle : le texte ne dit pas ce que « mensuel » couvre ; la limite se pose paie par paie (la
-    // paie d'un intermittent est celle d'un contrat dans un mois), a la valeur mensuelle entiere du plafond (le tableau
-    // d'Audiens, « Mois : 4 005 »), sans la proratiser ni joindre les autres contrats du mois du salarie.
-    let limite_journaliere = match bar.limite_du_plafond_journalier.as_ref().map(|l| l.dans_la_limite_du) {
+    // l'annee dit (`limite_du_plafond_journalier` : en 2026, « dans la limite du plafond mensuel », Audiens, Parametres),
+    // pour le mois civil, tous les contrats d'intermittent du salarie confondus : le plafond journalier des contrats
+    // precedents du meme mois (`precedentes`, dans l'ordre de la saisie) se deduit du plafond mensuel, et ce contrat prend
+    // le reste. Ce que « mensuel » couvre, le texte ne le dit pas : la lecture et son INFERENCE sont ecrites dans la note
+    // de `limite_du_plafond_journalier` du bareme 2026. Une paie d'intermittent est celle d'un contrat dans un mois civil
+    // (`Engagement::periode_payee`, ses journees datees dans la periode : `droit::plafond::pour_paie`) : un contrat a
+    // cheval sur deux mois a une paie par mois, chacune sous le plafond mensuel de son mois.
+    // Un salarie au mois n'a pas de tranche journaliere.
+    let limite_journaliere = match bar.limite_du_plafond_journalier.as_ref().map(|l| l.dans_la_limite_du).filter(|_| !nat.mensuelle()) {
         Some(droit::forme_bareme::PlafondQuiLimite::PlafondMensuel) => {
-            Some(bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.mensuel)
+            let mensuel = bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.mensuel;
+            let pj = plafond_journalier.ok_or_else(|| socle::fichiers::absent("plafond_journalier"))?;
+            let mut deja = Montant::ZERO;
+            for p in precedentes.iter().filter(|p| p.salarie.id == sal.id || p.engagement.salarie == eng.salarie) {
+                if !p.engagement.nat()?.mensuelle() {
+                    deja += (p.engagement.jours * pj).au_centime();
+                }
+            }
+            Some(Montant::ZERO.max(mensuel - deja))
         }
         None => None,
     };
