@@ -1230,14 +1230,22 @@ pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Pa
 fn calculer_du_mois(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
     let bornes = crate::periodes::bornes(ctx, eng)?;
     if bornes.len() <= 1 {
-        return calculer_periode(ctx, eng, precedentes);
+        let (mut p, bascule) = calculer_periode(ctx, eng, precedentes)?;
+        p.ecrire().avertissements.extend(bascule);
+        return Ok(p);
     }
     let mut parts: Vec<Paie> = Vec::new();
+    // L'avis de la bascule de la CET va a la paie du mois, une fois, pas a chacune de ses periodes.
+    let mut bascules: Vec<Avis> = Vec::new();
     for e in crate::periodes::engagements_des_periodes(ctx, eng, &bornes)? {
         let avant: Vec<Paie> = precedentes.iter().chain(parts.iter()).cloned().collect();
-        parts.push(calculer_periode(ctx, &e, &avant)?);
+        let (p, bascule) = calculer_periode(ctx, &e, &avant)?;
+        parts.push(p);
+        bascules.extend(bascule);
     }
-    crate::periodes::assembler(ctx, eng, parts)
+    let mut p = crate::periodes::assembler(ctx, eng, parts)?;
+    p.ecrire().avertissements.extend(bascules);
+    Ok(p)
 }
 
 /// L'assiette d'une rubrique : le calcul ne cotise pas sur une assiette que la rubrique ne dit pas.
@@ -1472,7 +1480,7 @@ pub(crate) fn smic_d_une_absence(lb: &[LigneBrut], smic_horaire: Option<MontantU
 
 /// La paie d'un engagement sur sa periode (la periode de paie, ou une periode elementaire), dans l'ordre du §7. La
 /// configuration de la compagnie se lit a la fin de cette periode (`Contexte::au`).
-pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
+pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<(Paie, Option<Avis>)> {
     let nat = eng.nat()?;
     let mut avis_dfs: Vec<String> = Vec::new();
     let fin_periode = eng.periode_payee()?.fin();
@@ -1853,6 +1861,12 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     lignes.retain(|l| {
         !(l.base.est_nulle() && l.montant_pat.est_nul() && l.montant_sal.est_nul() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
     });
+    // La paie ou la contribution d'equilibre technique de l'annee bascule (`droit::plafond::BasculeDeLaCet`) : la compagnie
+    // voit de combien la remuneration de l'annee depasse ses plafonds, et ce que la ligne de la CET en tire ce mois.
+    let bascule = match (plafonnees.bascule, lignes.iter().find(|l| l.est(&droit::forme_bareme::CET))) {
+        (Some(b), Some(cet)) => Some(avis_de_la_bascule(eng, b, cet)),
+        _ => None,
+    };
 
     // 7.9 : la reduction generale, apres les cotisations.
     let statut = sal.statut.dite().copied();
@@ -1994,7 +2008,29 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     p.assiette_chomage = chomage_51;
     p.heures_travaillees = Heures::ZERO.max(heures_annexes);
     p.remuneration = lb;
-    Ok(paie)
+    Ok((paie, bascule))
+}
+
+/// L'AVIS DE LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE (`droit::plafond::BasculeDeLaCet`), avec
+/// ce que sa ligne `cet` en tire ce mois : toute celle de l'annee quand elle devient due, sa restitution quand elle se rend.
+fn avis_de_la_bascule(eng: &Engagement, bascule: droit::plafond::BasculeDeLaCet, cet: &LigneCotisation) -> Avis {
+    let euros = socle::texte::euros;
+    let parts = |sal: Montant, pat: Montant| format!("{} ({} salariale, {} patronale)", euros(sal + pat), euros(sal), euros(pat));
+    let texte = match bascule {
+        droit::plafond::BasculeDeLaCet::Due { depassement } => format!(
+            "{} : la rémunération de l'année dépasse de {} le plafond de la sécurité sociale de l'année ; la contribution d'équilibre technique devient due sur toute la rémunération de l'année : {}.",
+            eng.qui(),
+            euros(depassement),
+            parts(cet.montant_sal, cet.montant_pat)
+        ),
+        droit::plafond::BasculeDeLaCet::Rendue { ecart } => format!(
+            "{} : la rémunération de l'année ne dépasse plus le plafond de la sécurité sociale de l'année ({} en dessous) ; la contribution d'équilibre technique de l'année n'est plus due et se rend : {}.",
+            eng.qui(),
+            euros(ecart),
+            parts(cet.montant_sal.abs(), cet.montant_pat.abs())
+        ),
+    };
+    Avis { info: true, texte }
 }
 
 /// Le plafond de securite sociale d'un engagement (`plafond::plafond_permanent`, `plafond::pour_paie`) : celui que le bas du bulletin imprime, et

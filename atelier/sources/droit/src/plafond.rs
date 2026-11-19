@@ -355,6 +355,30 @@ pub enum Plafonnement {
 pub struct AssiettesPlafonnees {
     pub regularisees: Regularisees,
     pub chomage: Montant,
+    /// Posee la seule paie ou la CET de l'annee bascule (`BasculeDeLaCet`) ; aucune sinon, et aucune pour une paie qui
+    /// ne se regularise pas.
+    pub bascule: Option<BasculeDeLaCet>,
+}
+
+/// LA PAIE OU LA CONTRIBUTION D'EQUILIBRE TECHNIQUE DE L'ANNEE BASCULE : le critere de `Regularisees::sous` (la somme des
+/// remunerations de l'annee depasse la somme des plafonds) change avec elle. `Due` : la somme passe au-dessus, de
+/// `depassement` ; la CET devient due sur toute la remuneration de l'annee. `Rendue` : elle repasse au plus a la somme
+/// des plafonds, `ecart` en dessous ; la CET de l'annee se rend.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BasculeDeLaCet {
+    Due { depassement: Montant },
+    Rendue { ecart: Montant },
+}
+
+impl BasculeDeLaCet {
+    /// La bascule d'une paie, d'une annee anterieure `avant` (remunerations, plafonds) a l'annee jusqu'a elle comprise.
+    fn entre(avant: (Montant, Montant), apres: (Montant, Montant)) -> Option<BasculeDeLaCet> {
+        match (avant.0 > avant.1, apres.0 > apres.1) {
+            (false, true) => Some(BasculeDeLaCet::Due { depassement: apres.0 - apres.1 }),
+            (true, false) => Some(BasculeDeLaCet::Rendue { ecart: apres.1 - apres.0 }),
+            _ => None,
+        }
+    }
 }
 
 /// LES ASSIETTES PLAFONNEES de la paie de remuneration `remuneration` (son brut soumis) et de plafond `plafond` (le
@@ -372,13 +396,17 @@ pub struct AssiettesPlafonnees {
 pub fn assiettes_plafonnees(
     remuneration: Montant, plafond: Montant, limite_csg: Coefficient, tranches: &TranchesDuPlafond, plafonnement: &Plafonnement,
 ) -> AssiettesPlafonnees {
-    let regularisees = match plafonnement {
-        Plafonnement::ParPaie => Regularisees::sous(remuneration, plafond, limite_csg, tranches),
+    let (regularisees, bascule) = match plafonnement {
+        Plafonnement::ParPaie => (Regularisees::sous(remuneration, plafond, limite_csg, tranches), None),
         Plafonnement::Regularise(a) => {
-            Regularisees::sous(a.remunerations + remuneration, a.plafonds + plafond, limite_csg, tranches) - a.appliquees
+            let annee = (a.remunerations + remuneration, a.plafonds + plafond);
+            (
+                Regularisees::sous(annee.0, annee.1, limite_csg, tranches) - a.appliquees,
+                BasculeDeLaCet::entre((a.remunerations, a.plafonds), annee),
+            )
         }
     };
-    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage) }
+    AssiettesPlafonnees { regularisees, chomage: remuneration.min(plafond * tranches.chomage), bascule }
 }
 
 use crate::forme_bareme::TranchesDuPlafond;
