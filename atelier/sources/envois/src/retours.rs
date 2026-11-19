@@ -201,7 +201,7 @@ socle::noms_fermes! {
     FormatDuRetour, "Format de retour" {
         /// Le schema des bilans (`lire_rapport`).
         Harmonise = "harmonise",
-        /// Un accuse sans document : son statut dit tout.
+        /// Un retour sans document (un accuse, le mandat a acquitter) : son statut dit tout.
         Aucun = "aucun",
         /// Une archive d'AER.
         Pdf = "pdf",
@@ -266,6 +266,7 @@ impl NatureDuRetour {
             N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", Harmonise),
             N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", Aucun),
             N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", AgircArrco),
+            N::MandatAAcquitter => ("Compte-rendu mandat a acquitter", "l'organisme complémentaire ou l'Urssaf", Aucun),
             N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", Aucun),
             N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", Harmonise),
             N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", Harmonise),
