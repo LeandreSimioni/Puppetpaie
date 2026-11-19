@@ -157,11 +157,21 @@ const fn t(milliemes: u32) -> Taux {
 /// livre de l'annee `annee` : la part du brut sous la limite de l'abattement (`droit::plafond::assiettes_plafonnees`),
 /// abattue (`Pile::assiette_csg`). La paie seule (`Plafonnement::ParPaie`) : le moteur ne regularise pas une paie reprise
 /// d'un ancien logiciel (`engagement::conges::plafonds_des_mois_anterieurs`), et c'est ainsi qu'il recalcule celle d'un
-/// faux bulletin importe pour la comparer. Sans bareme livre de l'annee, refus : le taux et la limite ne s'inventent pas.
+/// faux bulletin importe pour la comparer.
+///
+/// UNE ANNEE SANS BAREME LIVRE (2024, que le banc decrit, et dont `pss` lit le plafond a la table du BOSS) : l'abattement
+/// et sa limite sont ceux de CSS L. 136-2, I, dans sa redaction en vigueur depuis le 16/12/2020, que le bareme livre de
+/// 2025 lit et cite (`limite_abattement_csg.source` : « en vigueur depuis le 16/12/2020 ») ; ils valent de 2021 a 2024
+/// comme en 2025, et se lisent donc la. Avant 2021, aucun texte depose ne les dit : refus.
 fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R<Montant> {
-    let Some(pile) = droit::contexte::socle_livre_lu(annee)? else {
+    let livre = match droit::contexte::socle_livre_lu(annee)? {
+        Some(p) => Some(p),
+        None if annee >= socle::annee!("2021") && annee < socle::annee!("2025") => droit::contexte::socle_livre_lu(socle::annee!("2025"))?,
+        None => None,
+    };
+    let Some(pile) = livre else {
         return Err(refus!(
-            "pas de barème livré pour {} (logiciel/donnees/baremes/{}.json) : l'abattement de la CSG et sa limite ne s'y lisent pas",
+            "pas de barème livré pour {} (logiciel/donnees/baremes/{}.json), ni de texte déposé qui dise pour cette année l'abattement de la CSG et sa limite (CSS L. 136-2, I, en vigueur depuis le 16/12/2020)",
             annee,
             annee
         ));
