@@ -322,24 +322,40 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
         ));
     }
     let principal = ctx.entreprise.nic_principal();
+    // Un mois dont la DSN ne se fait pas (une case que la compagnie n'a pas dite) ne coupe pas l'etat : il est dit, les
+    // autres mois se rendent ; une panne remonte.
+    let mut a_dire: Vec<String> = Vec::new();
     for &m in p.mois.iter().filter(|m| !importes.contains(m)) {
-        let mut une = false;
+        let (mut une, mut refusee) = (false, false);
         for nic in ctx.entreprise.nics().map_err(|e| e.reclasser(Classe::Refuse))? {
             let etablissement = if Some(&nic) == principal { None } else { Some(&nic) };
-            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| e.reclasser(Classe::Refuse))? {
-                out.push((m, nic, f, partie));
-                une = true;
+            match dsn_du_mois(ctx, m, etablissement) {
+                Ok(Some((f, partie))) => {
+                    out.push((m, nic, f, partie));
+                    une = true;
+                }
+                Ok(None) => {}
+                Err(e) if e.dit_un_manque() => {
+                    a_dire.push(format!("La DSN de {} ne se fait pas, et ce mois n'est pas dans l'état : {}", libelle_mois(m), e.phrase));
+                    refusee = true;
+                }
+                Err(e) => return Err(e),
             }
         }
-        if !une {
+        if !une && !refusee {
             sans.push(m.to_string());
         }
     }
+    let refusees = !a_dire.is_empty();
+    avert.extend(a_dire);
     if !sans.is_empty() {
         avert.push(format!("Aucune DSN partie ni paie validée pour {} : ces mois ne sont pas dans l'état.", sans.join(", ")));
     }
     if out.is_empty() {
-        // Seuls des mois repris : la raison qu'ils n'y sont pas est la reponse.
+        // Seuls des mois repris, ou dont la DSN ne se fait pas : la raison qu'ils n'y sont pas est la reponse.
+        if sans.is_empty() && refusees {
+            return Err(refus(avert.join(" ")));
+        }
         if sans.is_empty() {
             if let Some(repris) = avert.pop() {
                 return Err(refus(repris));

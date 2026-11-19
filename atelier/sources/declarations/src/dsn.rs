@@ -2511,6 +2511,17 @@ pub fn bases_et_cotisations(
     let mut courant: Option<(BaseAssujettie, Option<IdentifiantDAffiliation>, Montant)> = None;
     let places = places_par_contrat(bar);
     let composants = usage_admet(f, droit::rubrique!("S21.G00.79.001"), nature_dsn)?;
+    // La taxe sur les salaires au taux normal : « déclarées mensuellement au niveau de chaque salarié »
+    // (`documents::taxe_sur_les_salaires::base_au_taux_normal`), sous sa base 03, une fois par paie ; une compagnie qui ne
+    // la doit pas n'ecrit rien, une fiche qui ne le dit pas refuse.
+    let part_taxee = if nature_dsn == NatureDeLaDeclaration::Mensuelle && composants {
+        documents::taxe_sur_les_salaires::taxe_sur_les_salaires_de_la_fiche(&bar.entreprise.fiche).map_err(|m| {
+            m.reformuler(|m| format!("DSN, base de taxe sur les salaires de {} (S21.G00.79 de type 91) : {} Rien n'est ecrit.", qui_contrat(p), m))
+        })?
+    } else {
+        None
+    };
+    let mut base_91_ecrite = false;
     for mut c in cotisations(p, bar)? {
         if bases_exclues.contains(&c.bloc78) {
             continue;
@@ -2541,6 +2552,12 @@ pub fn bases_et_cotisations(
                     None => p.plafond,
                 };
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(v, signe));
+                // La base 03 de la DGFiP n'a pas d'affiliation (78.005 : organismes complementaires seulement).
+                if let Some(part) = part_taxee.filter(|_| c.affectation.is_none() && !base_91_ecrite) {
+                    base_91_ecrite = true;
+                    f.add(droit::rubrique!("S21.G00.79.001"), TypeDeComposant::TaxeSurLesSalairesAuTauxNormal);
+                    f.add(droit::rubrique!("S21.G00.79.004"), ms(documents::taxe_sur_les_salaires::base_au_taux_normal(p, bar, part), signe));
+                }
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
@@ -2575,6 +2592,16 @@ pub fn bases_et_cotisations(
             // Le taux s'ecrit dans la forme de la norme : sa porte.
             f.add(droit::rubrique!("S21.G00.81.007"), norme::taux(t, 3));
         }
+    }
+    if part_taxee.is_some() && !base_91_ecrite {
+        return Err(socle::echec::cle(
+            format!(
+                "La paie de {} ne déclare aucune base 03 sans affiliation : sa base de taxe sur les salaires au taux normal \
+(S21.G00.79 de type 91) n'a pas où s'écrire. C'est un défaut du logiciel : le signaler au développeur. Rien n'est écrit.",
+                qui_contrat(p)
+            ),
+            "S21.G00.79.001",
+        ));
     }
     Ok(())
 }

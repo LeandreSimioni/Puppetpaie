@@ -866,7 +866,7 @@
    "ecran": true
   },
   {
-   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010). Cela depend de sa TVA, que le moteur ne connait pas : la fiche le dit, et une\nfiche muette fait refuser la DSN de decembre (`assujettissement.rs`). La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679a`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
+   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010) ; chaque DSN mensuelle declare, quand elle la doit, la base de chaque salarie au taux\nnormal (S21.G00.79 de type 91, `dsn::bases_et_cotisations`). Cela depend de sa TVA, que le moteur ne connait pas : la\nfiche le dit, et une fiche muette fait refuser la DSN de chaque mois qui a des paies. La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679a`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
    "cle": "taxe_sur_les_salaires",
    "champs": [
     {"cle": "tva", "libelle": "La compagnie et la TVA", "forme": "choix", "ecran": true, "choix": ["assujettie", "exoneree"], "libelles": {"": "— à dire —", "assujettie": "Assujettie à la TVA", "exoneree": "Exonérée de TVA (ou hors de son champ)"}, "aide": "Assujettie : elle facture la TVA sur ses ventes (billetterie, cessions…) et la déclare. Exonérée : elle ne facture pas de TVA, ou ses activités n'y entrent pas — c'est le cas de beaucoup d'associations."},
@@ -876,7 +876,7 @@
    ],
    "libelle": "Taxe sur les salaires",
    "forme": "structure",
-   "aide": "Dites ce que vous savez de votre TVA : le logiciel en déduit si la compagnie doit la taxe sur les salaires, et sur quelle part (code général des impôts, art. 231), et l'écrit sous les cases. La DSN de décembre le déclare chaque année ; sans réponse, elle ne se fait pas.",
+   "aide": "Dites ce que vous savez de votre TVA : le logiciel en déduit si la compagnie doit la taxe sur les salaires, et sur quelle part (code général des impôts, art. 231), et l'écrit sous les cases. Chaque DSN le déclare, celle de décembre pour l'année ; sans réponse, la DSN d'un mois qui a des paies ne se fait pas.",
    "longueur": null,
    "exemple": "",
    "choix": [],
