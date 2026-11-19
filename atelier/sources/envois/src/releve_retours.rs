@@ -769,7 +769,10 @@ pub fn relever_retours(
             // l'instant retenu et le debut de cette plage, que l'instant avance refermerait pour toujours).
             let a_la_date_reelle = socle::temps::jour_de_paris() == socle::temps::jour_de_la_montre();
             let entiere = jusqu_a >= HORIZON_DU_RELEVE_COMPLET || repris.is_some_and(|r| r >= au_plus_loin);
-            let debut = repris.map_or(au_plus_loin, |r| r.max(au_plus_loin));
+            let debut = match repris {
+                Some(r) => r.max(au_plus_loin),
+                None => au_plus_loin,
+            };
             (debut, fin, None, a_la_date_reelle && entiere)
         }
         PlageDuReleve::Bornee { debut, fin, nature } => (debut, fin, nature, false),
