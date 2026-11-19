@@ -1557,7 +1557,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let base = base_de(r)?;
         let base_t2 = if let (Assiette::T2PrevoyanceJournaliere, Some(pj)) = (base, plafond_journalier) {
             let t1 = t1_du_contrat(pj);
-            Some(Montant::ZERO.max(brut.min(t1.fois(4)) - t1))
+            Some(Montant::ZERO.max(brut.min(t1 * bar.tranches_du_plafond.t2_conventionnelle) - t1))
         } else if base == Assiette::T2Conventionnelle && nat.mensuelle() {
             Some(regularisees.t2_conventionnelle)
         } else {
@@ -1687,7 +1687,9 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // et au-dela de la T1.
         bases.insert(Assiette::Apec, brut.min(t1 * apec_mult));
         bases.insert(Assiette::ApecT2Journaliere, zero.max(brut.min(t1 * apec_mult) - t1));
-        bases.insert(Assiette::T2PrevoyanceJournaliere, zero.max(brut.min(t1.fois(4)) - t1));
+        // La tranche B de la prevoyance d'un cadre technicien de la CCNEAC (XII.2.2.2) : la tranche 2 de son titre XII.2,
+        // « l'equivalent de 4 plafonds » (`tranches_du_plafond.t2_conventionnelle`).
+        bases.insert(Assiette::T2PrevoyanceJournaliere, zero.max(brut.min(t1 * bar.tranches_du_plafond.t2_conventionnelle) - t1));
         // La CET, due quand le brut depasse la T1, sur T1 + T2 : huit plafonds au plus (Agirc-Arrco, « jusqu'a 8 PSS »).
         bases.insert(Assiette::Cet, if brut > t1 { brut.min(t1 * t2_mult) } else { zero });
     }
