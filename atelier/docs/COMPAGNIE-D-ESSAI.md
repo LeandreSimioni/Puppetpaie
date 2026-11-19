@@ -113,9 +113,11 @@ logiciel :
    « B1-205-02 Le code guichet 00001 est inconnu ». Les fictives ont une banque inventée (« Banque du Marais », code
    12345). Il n'y a pas besoin du vrai RIB de la compagnie : un **faux compte** sous un **vrai couple banque et
    guichet** suffit. Dans la compagnie d'essai montée (jamais dans le dépôt), `config/entreprise.json`,
-   `banque[0].valeur` : `"bic": "BDFEFRPPCCT"`, `"iban": "FR7630001000640000000000040"` (banque 30001, guichet 00064,
-   compte 00000000000, clé 40 : les clés se calculent, le compte n'existe pas). Un dépôt de test ne conserve rien et
-   ne prélève rien.
+   `banque[0].valeur` : le `bic` de la banque choisie, et un `iban` composé du code banque, du code guichet, d'un
+   numéro de compte de onze zéros et des deux clés calculées (la clé RIB, puis la clé de l'IBAN). Le couple employé le
+   19/11/2026 : banque 30001, guichet 00064 (BIC `BDFEFRPPCCT`), clé RIB 40, clé de l'IBAN 76. Ce compte n'existe
+   pas ; l'IBAN assemblé ne s'écrit pas dans le dépôt (le garde avant commit refuse tout IBAN). Un dépôt de test ne
+   conserve rien et ne prélève rien.
 2. **Le mois ne doit pas être déjà déclaré sous ce SIRET.** La base d'essai connaît les DSN réelles de la compagnie :
    une DSN de test d'un mois déjà déposé en réel est prise pour un « annule et remplace » hors délai (« B1-207-05 »,
    « B1-208-12 »). Déposer sur le mois en cours, pas encore déclaré. Pour cela, rejouer la fictive jusqu'au mois
