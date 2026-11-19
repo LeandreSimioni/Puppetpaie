@@ -194,6 +194,30 @@ jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` 
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.
 
+## L'import : deux logiciels collés bout à bout
+
+Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le lit d'abord, et ne le complique pas.
+
+- **Le but, c'est l'historique du salarié.** « C'est comme si on collait deux logiciels les uns aux autres. […] Dans
+  un logiciel, ce qui est important, c'est aussi l'historique du salarié. » On voit d'un seul tenant ce qui vient de
+  l'ancien logiciel et ce qui se fait ici : le brut total d'un salarié, son dossier avec toutes ses fiches de paie,
+  celles de l'ancien logiciel comprises.
+- **Le geste de la compagnie est simple.** Elle arrive, on lui dit : prends tous tes bulletins, et une DSN pour la
+  configuration. Elle les met dans le dossier `import/`. Elle n'a plus qu'à poser ses codes et elle se sert du
+  logiciel. Si une pièce lui manque, on en accepte d'autres (une AEM), sans en faire une affaire.
+- **Le dossier `import/` garde tout, pour toujours.** On ne le vide pas ; les pièces restent accessibles ; la
+  sauvegarde sur le Drive peut le prendre. Parce que les pièces restent, un logiciel amélioré les relit et en tire
+  davantage : rien de ce qu'on n'a pas su lire aujourd'hui n'est perdu.
+- **On prend tout ce que la fiche de paie dit**, puisqu'on sait la lire, et on la compare à notre calcul (« Les
+  écarts de calcul »).
+- **L'ancien logiciel est un vrai logiciel de paie.** Les gens font leurs paies avec ; ses pièces sont justes a
+  priori, et une DSN importée a été acceptée. On ne le traite jamais en château de sable : normalement il n'y a
+  pas de conflit entre deux pièces. S'il y en a un, la route d'import le montre et la compagnie tranche ; rien de
+  plus. Ce qui est déclaré (la DSN) est ce qui vaut pour France Travail : une DSN déjà là prime sur l'AEM ou le
+  bulletin qu'on ajoute ; un bulletin déjà là contre une DSN qui arrive, la compagnie choisit.
+- **Une règle de l'import tient en une phrase qu'un administrateur comprend.** Si elle demande un cas particulier,
+  un refus de plus ou un mot de plomberie pour s'expliquer, elle est fausse : on revient à ce qui précède.
+
 ## Les sources : tout texte qu'on lit se dépose
 
 **Toute règle vient d'un texte déposé dans `atelier/reference/sources/` avant d'entrer dans le code**, sans exception ;
