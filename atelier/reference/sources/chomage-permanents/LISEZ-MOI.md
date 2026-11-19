@@ -86,6 +86,22 @@ Le règlement général art. 49 vaut pour toute l'année 2025, et la règle des 
   `../code-du-travail/articles-20261010.md`, l. 578 et 600) ; CSS R. 242-2 depuis le 01/01/2020.
 - 15 700 € = 4 × 3 925 €, le PSS mensuel 2025 de `logiciel/donnees/baremes/2025.json` (`plafond_securite_sociale`).
 
+### La circulaire Unédic n° 2026-06 du 1er septembre 2026
+
+`unedic-circulaire-2026-06-reglementation-20260901.pdf` (+ `.txt`, `pdftotext -layout`, 16 994 lignes) : « Réglementation
+d'assurance chômage applicable à compter du 1er septembre 2026 », 369 pages, quinze fiches techniques qui actualisent
+la circulaire n° 2025-03 après l'avenant n° 2 du 10 avril 2026. Relevée le 19/11/2026 par Léandre sur son poste
+(unedic.org, « Circulaires »).
+
+C'est la circulaire de **l'indemnisation** (conditions d'attribution, salaire de référence, durée, cumul), pas celle
+du recouvrement. Sur l'assiette des contributions, on n'y lit qu'une phrase, en passant (l. 3372-3375 du `.txt`) : le
+plafond du salaire de référence « correspond à celui appliqué à l'assiette des contributions d'assurance chômage, soit
+4 fois le plafond du régime d'assurance vieillesse de la sécurité sociale visé à l'article L. 241-3 du code de la
+sécurité sociale, soit 16 020 € au 1er janvier 2026 ». **Elle ne dit rien de la régularisation de ce plafond dans
+l'année** (cherché : « régularisation » avec « plafond », « R. 242-2 », « régularisation progressive » : aucune
+occurrence qui porte sur les contributions). Que le chômage et l'AGS se régularisent comme la vieillesse n'est donc
+toujours fondé par aucun texte déposé.
+
 ## Où le moteur s'en sert
 
 - `atelier/sources/paie/src/calcul.rs`, `calculer` (7.6, branche d'une nature mensuelle) : `brut_chomage` =
@@ -112,6 +128,8 @@ Le règlement général art. 49 vaut pour toute l'année 2025, et la règle des 
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `unedic-circulaire-2026-06-reglementation-20260901.pdf` : `8c8f6563541e31237c4ed82ae759894e3cf2cc263651678ed42a0501f11aaf85`
+- `unedic-circulaire-2026-06-reglementation-20260901.txt` : `e6d219004594e59d2ac0fd3f4dd4dccec70c2be2ea7282162c5d95e068424688`
 - `unedic-reglement-general-convention-20241115.pdf` : `33039432673f2d38e67e97d6f762d82cb422560287105de363aac848331ebc40`
 - `unedic-reglement-general-convention-20241115.txt` : `8ac2470faa6d0b43aff4b729c21d6cd23b7af1bf0f2c4e6fffd8ed99c0773624`
 - `urssaf-equivalence-dida-20260611.csv` : `043c5e1752074dddfe3e19b89285aeeca516e2736902a09ea7255dde7479bf9d`
