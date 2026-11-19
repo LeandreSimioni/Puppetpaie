@@ -104,9 +104,18 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// v3-2-20230328.txt`, l. 500-510) : le contrat d'un intermittent (`droit::caisse_conges::intermittent`). Un permanent n'en a
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
+///
+/// UNE SEULE ATTESTATION EST ATTENDUE, LA BONNE : l'archive des AER de la DSN mensuelle ne porte que les contrats d'usage
+/// declares par le circuit derogatoire (fiche 1902 : « cette DSN mensuelle donne lieu à une archive de l'ensemble des AER
+/// correspondant aux CDD d'usage en circuit dérogatoire » ; « il n'y aura pas d'AER pour ce contrat [...] dans l'archive
+/// des AER de la DSN mensuelle suivante (le contrat n'est plus infra-DSN) »,
+/// `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`). Une fin qui
+/// se signale (`Nature::signalement_fctu` : rompue avant son terme, ou d'un contrat deja declare) a son attestation en
+/// retour du signalement (`attestation_fctu`), et celle-la seule.
 pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     let e = &p.engagement;
-    if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
+    let nat = e.nat()?;
+    if !droit::caisse_conges::intermittent(&nat, &p.salarie)? || nat.signalement_fctu(e.motif_rupture, e.connu_de_la_dsn()) {
         return Ok(false);
     }
     Ok(e.contrat().fin().is_some_and(|f| Periode::du_mois(e.mois).contient(&f)))

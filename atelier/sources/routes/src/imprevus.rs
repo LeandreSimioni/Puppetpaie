@@ -2467,17 +2467,27 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
             continue;
         }
         let e = carte;
-        let nat = nature_de(e)?;
-        let Some(contrat) = contrat_fini(e)?.filter(|c| c.fin().mois_civil() == mois) else { continue };
+        // UNE CARTE QUI NE SE LIT PAS NE FERME PAS LA LISTE DES AUTRES : une carte validee a une nature et un contrat
+        // lisibles (la validation les a lus) ; si l'un ne se lit plus, c'est sa carte qui le dit, dans son mois (l'apercu
+        // la montre a completer), et la liste dit les autres fins.
+        let (Ok(nat), Ok(contrat)) = (nature_de(e), contrat_fini(e)) else { continue };
+        let Some(contrat) = contrat.filter(|c| c.fin().mois_civil() == mois) else { continue };
         // La regle est celle de la nature, du motif et de ce que la DSN sait du contrat (`Nature::signalement_fctu`) : un
         // CDDU rompu avant son terme, ou deja declare par la DSN d'un mois precedent, se signale.
         if !nat.signalement_fctu(e.motif_rupture, droit::natures::ConnuDeLaDsn::du_contrat(contrat.debut(), mois)) {
             continue;
         }
-        let salarie = e.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie").reclasser(Classe::Manque))?;
+        let Some(salarie) = e.salarie.clone() else { continue };
+        // UNE FIN DEJA PARTIE n'est pas due : la DSN mensuelle deposee de son mois l'a declaree par le circuit
+        // derogatoire (S21.G00.62.017 = 01), et ce qui est parti ne se refait pas (`fin_partie_au_circuit_derogatoire`).
+        if let Some(numero) = &e.numero {
+            if crate::obligations::fin_partie_au_circuit_derogatoire(&ctx.racine, &journal.lignes, &salarie, numero, contrat.fin())? {
+                continue;
+            }
+        }
         let a_saisir = ce_qui_manque(ctx, e, &contrat)?;
-        // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`).
-        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), &journal.lignes, aujourdhui)?;
+        // LE DELAI ET OU ON EN EST (`obligations::de_la_fin`) : un contrat d'usage part avec la DSN mensuelle de son mois.
+        let obligation = crate::obligations::de_la_fin(ctx, Some(&salarie), contrat.fin(), nat.contrat_d_usage(), &journal.lignes, aujourdhui)?;
         // Due : il manque de quoi signaler, ou le delai court. Sa pastille : celle du delai passe
         // (« en retard » l'emporte : la date butoir ne se tait pas parce qu'une case manque), sinon ce qui manque, sinon
         // celle du delai.
@@ -2524,9 +2534,9 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
 const MOIS_EN_ARRIERE: socle::date::Duree<socle::date::EnMois> =socle::date::Duree::mois(12);
 
 /// LES FINS D'AVANT, EN RETARD : celles des mois qui precedent `mois` (sur `MOIS_EN_ARRIERE`) dont le signalement est du
-/// et sa date butoir passee. Une echeance manquee reste due -- le signalement se fait « dans les cinq jours ouvres qui
-/// suivent la survenance de la fin du contrat » (cahier technique DSN 2026.1, p. 107, `fctu-base.json`, sa `note`) -- et
-/// elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le contrat a fini.
+/// et sa date butoir passee (`obligations::de_la_fin` : cinq jours ouvres, ou la DSN mensuelle du mois pour un contrat
+/// d'usage). Une echeance manquee reste due, et elle se dit sur le mois qu'on regarde, pas seulement sur celui ou le
+/// contrat a fini.
 pub(crate) fn fins_en_retard_avant(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     let mut out = Vec::new();
     // Du plus ancien au mois d'avant.

@@ -347,10 +347,17 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
             nat.libelle
         ));
     }
-    avertissements.push(format!(
-        "Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent (cahier technique p. 107).",
-        fin.fin.jj_mm_aaaa()
-    ));
+    // Le delai (`obligations-base.json`, `signalement_fin_contrat`) : cinq jours ouvres ; celui d'un contrat d'usage, avec
+    // la DSN mensuelle du mois de la fin (CSS R. 133-14, II, 2°).
+    avertissements.push(if nat.contrat_d_usage() {
+        format!(
+            "Fin du contrat le {} : le signalement est dû au plus tard avec la DSN mensuelle de {} (CSS R. 133-14, II, 2°).",
+            fin.fin.jj_mm_aaaa(),
+            fin.fin.mois_civil().libelle(socle::mois::Graphie::Accentuee)
+        )
+    } else {
+        format!("Fin du contrat le {} : le signalement est dû dans les cinq jours ouvrés qui suivent (cahier technique p. 107).", fin.fin.jj_mm_aaaa())
+    });
     Ok(avertissements)
 }
 

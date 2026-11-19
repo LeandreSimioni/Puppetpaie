@@ -1430,7 +1430,8 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
 
     // LES FINS DE CONTRAT : celles du mois passe et du mois en cours, deja finies (`crate::imprevus::fins_a_signaler`, la
     // meme liste que la colonne du mois), et celles d'avant dont le signalement est en retard (`fins_en_retard_avant`). Un CDD
-    // d'usage du spectacle arrive a son terme (031) n'en fait pas partie.
+    // d'usage infra DSN mensuelle arrive a son terme (031) n'en fait pas partie, ni une fin que la DSN mensuelle deposee a
+    // deja declaree par le circuit derogatoire.
     let mois = st.aujourdhui.mois_civil();
     let precedent = mois.precedent();
     let mut fins = crate::imprevus::fins_en_retard_avant(st.ctx, precedent, st.aujourdhui)?;

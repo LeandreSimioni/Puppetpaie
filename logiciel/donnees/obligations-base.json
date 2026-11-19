@@ -84,22 +84,28 @@
     "signalement_fin_contrat": {
       "libelle": "Signalement de fin de contrat",
       "motifs": [],
-      "inferences": [],
+      "inferences": [
+        "Le délai du contrat d'usage est la lecture de R. 133-14, II, 2° et de son dernier alinéa : les cinq jours ouvrés « ne sont pas applicables » aux fins de CDD des secteurs du 3° de L. 1242-2, et « l'obligation déclarative s'effectue dans le délai mentionné au premier alinéa du II », au plus tard avec la DSN mensuelle du mois de la fin ; le cahier technique (§ 5.2) compte de même parmi les dérogations aux cinq jours les artistes, ouvriers et techniciens du spectacle (« AEM »). Ce qui s'y oppose : R. 133-14 renvoie aux « modalités mises en œuvre pour l'application des articles R. 1234-9 à R. 1234-12 », qui ne nomment de modalité que pour l'intérim et les associations intermédiaires (R. 1234-11 et R. 1234-12, entrepôt LEGI) ; la fiche 2062 et le § 2.5.3 n'accordent la dérogation au délai qu'au CDDU infra DSN mensuelle arrivé à son terme (circuit dérogatoire) et renvoient les autres cas à la « procédure de droit commun (signalement) », que la fiche 2062 dit « dans les 5 jours ». Le moteur suit le décret, texte du plus haut rang, et le § 5.2. C'est une inférence."
+      ],
       "a_avoir": [],
-      "nait_de": "un contrat dont la fin se signale (CDI, CDD ordinaire, CDD d'usage rompu avant son terme : `Nature::signalement_fctu`) et qui finit dans le mois",
+      "nait_de": "un contrat qui finit dans le mois et dont la fin se signale (`Nature::signalement_fctu`) : un CDI, un CDD ordinaire, un CDD d'usage rompu avant son terme ou qu'une DSN mensuelle précédente a déjà déclaré ; pas celui dont la DSN mensuelle déposée a déjà déclaré la fin par le circuit dérogatoire (S21.G00.62.017 = 01)",
       "qui": "employeur",
       "ou": "En DSN, sur net-entreprises : le fichier « signalement de fin de contrat de travail unique » (nature 07) que le logiciel écrit.",
       "destinataire": "France Travail (l'attestation employeur du salarié), les organismes de prévoyance.",
       "delai": {
         "jours_ouvres": {"jours": 5, "dit": "dans les cinq jours ouvrés qui suivent la fin du contrat"}
       },
+      "delai_contrat_d_usage": {"dit": "au plus tard avec la DSN mensuelle du mois où le contrat d'usage finit"},
       "exceptions": [
-        "R. 133-14, II, 2° : la fin d'un CDD d'usage (3° de L. 1242-2 du code du travail) arrivé à son terme suit le circuit dérogatoire, avec la DSN mensuelle, sauf si le salarié demande le délai de cinq jours (fiches 1902 et 2062) : ces fins-là ne sont pas dans la liste."
+        "R. 133-14, II, 2° : la fin d'un CDD d'usage (3° de L. 1242-2 du code du travail) n'a pas le délai de cinq jours ; elle se déclare au plus tard avec la DSN mensuelle du mois où elle survient, sauf si le salarié demande le délai de cinq jours (fiche 1902), ce que le moteur ne porte pas. Celle d'un CDDU infra DSN mensuelle arrivé à son terme part dans la DSN mensuelle elle-même, par le circuit dérogatoire (fiche 2062) : elle n'est pas dans la liste.",
+        "Une fin que la DSN mensuelle déposée du mois a déjà déclarée par le circuit dérogatoire (S21.G00.62.017 = 01) n'est pas dans la liste : elle est partie, et un second acte ne se refait pas sur elle."
       ],
       "textes": [
         {"reference": "Code de la sécurité sociale, art. R. 133-14, II", "fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/R133-14.xml", "dit": "« sont déclarés dans un délai fixé par arrêté […], qui ne peut excéder cinq jours ouvrés, la fin du contrat de travail […] »."},
+        {"reference": "Code de la sécurité sociale, art. R. 133-14, II, 2° et dernier alinéa", "fichier": "atelier/reference/sources/code-de-la-securite-sociale/xml/R133-14.xml", "dit": "Les dispositions du précédent alinéa ne sont pas applicables : « 2° Pour les fins de contrat de mission des salariés des entreprises de travail temporaire, les fins de contrat à durée déterminée des salariés des associations intermédiaires et des salariés des secteurs d'activité prévus au 3° de l'article L. 1242-2 du code du travail, conformément aux modalités mises en œuvre pour l'application des articles R. 1234-9 à R. 1234-12 du même code, sauf si le salarié demande à ce qu'il soit fait application du délai mentionné au deuxième alinéa du II. » ; « Dans les cas prévus au 1° et au 2°, l'obligation déclarative s'effectue dans le délai mentionné au premier alinéa du II », soit « au plus tard en même temps que la déclaration sociale nominative relative au mois au cours duquel cet événement est survenu »."},
         {"reference": "Arrêté du 2 juillet 2013, art. 1er", "fichier": "atelier/reference/sources/arrete-2013-delai-evenements-dsn/xml/1.xml", "dit": "Le délai prévu par le II de l'article R. 133-14 est fixé à cinq jours ouvrés."},
-        {"reference": "Cahier technique DSN 2026.1, § 5.2, p. 107", "fichier": "atelier/reference/norme-dsn/texte/chapitre-5-modeles.txt", "dit": "« Le signalement d'évènement doit être transmis dans les cinq jours ouvrés qui suivent la survenance de la fin du contrat de travail sauf dans le cadre des dérogations existantes »."}
+        {"reference": "Cahier technique DSN 2026.1, § 5.2, p. 107", "fichier": "atelier/reference/norme-dsn/texte/chapitre-5-modeles.txt", "dit": "« Le signalement d'évènement doit être transmis dans les cinq jours ouvrés qui suivent la survenance de la fin du contrat de travail sauf dans le cadre des dérogations existantes : salariés intérimaires (sauf demande expresse du salarié) ; artistes du spectacle ou ouvriers et techniciens de l'édition d'enregistrement sonore, de la production cinématographique et audiovisuelle, de la radio, de la diffusion et du spectacle (AEM), déclarant ayant recours à la dérogation pour les contrats d'usage infra-DSN mensuelle (sauf demande expresse du salarié) »."},
+        {"reference": "net-entreprises, fiche 2062 (05/09/2025)", "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt", "dit": "« En DSN, l'attestation employeur est obtenue suite à la transmission d'un signalement FCTU dans les 5 jours suivant la survenance de la fin de contrat de travail » ; « Attention : la dérogation n'est applicable en DSN que pour les contrats CDDU infra-DSN. »"}
       ]
     },
     "declaration_accident": {

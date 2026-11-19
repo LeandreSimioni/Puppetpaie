@@ -49,6 +49,9 @@ pub struct DeBase {
     pub delai: Option<Delai>,
     pub delai_sans_subrogation: Option<Delai>,
     pub delai_avec_subrogation: Option<AvecLaMensuelle>,
+    /// Le delai du signalement de la fin d'un contrat d'usage (CSS R. 133-14, II, 2°) : avec la DSN mensuelle du mois de
+    /// la fin.
+    pub delai_contrat_d_usage: Option<AvecLaMensuelle>,
     pub connaissance_presumee: Option<String>,
     pub exceptions: Vec<String>,
     pub inferences: Vec<String>,
@@ -185,8 +188,9 @@ impl Delai {
     }
 }
 
-/// LE DELAI D'UN SIGNALEMENT QUAND L'EMPLOYEUR EST SUBROGE (« Le glossaire ») : avec la DSN mensuelle du mois de
-/// l'evenement (CSS R. 133-14, II), et la phrase qui le dit. Il ne court d'aucun fait : sa fin est l'echeance de cette
+/// LE DELAI D'UN SIGNALEMENT QUI PART AVEC LA DSN MENSUELLE (« Le glossaire ») : celui d'un employeur subroge, et celui
+/// de la fin d'un contrat d'usage (CSS R. 133-14, II, 2° et dernier alinea) : avec la DSN mensuelle du mois de
+/// l'evenement (CSS R. 133-14, II, premier alinea), et la phrase qui le dit. Il ne court d'aucun fait : sa fin est l'echeance de cette
 /// DSN (`echeance_dsn`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
