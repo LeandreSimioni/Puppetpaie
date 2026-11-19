@@ -1200,23 +1200,30 @@ pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<Statut> {
 /// precedentes, et la paie du mois en est la somme (`periodes::assembler`).
 ///
 /// Un maintien de salaire garanti en net (`maintien::au_net`) se reconstitue par ce meme calcul, refait sur les lignes du
-/// mois jusqu'a ce que le net garanti soit atteint au centime ; la paie est alors celle de ce montant.
+/// mois jusqu'a ce que le net garanti soit atteint au centime ; la paie est alors celle de ce montant. Les jours de ses
+/// suites reduisent le plafond tant que son complement net n'est pas connu (`maintien::AuNet::jours`) : quand la
+/// reconstitution le trouve positif, ils sont maintenus (BOSS, assiette generale, § 820), le plafond les rend, et la
+/// reconstitution se refait sur ce plafond.
 pub(crate) fn calculer_apres(ctx: &Contexte, eng: &Engagement, precedentes: &[Paie]) -> R<Paie> {
-    let mut paie_des = |lignes: Vec<crate::LignePaie>| {
-        let mut e = eng.clone();
-        e.lignes = lignes;
-        calculer_du_mois(ctx, &e, precedentes)
+    let reconstituer = |e: &Engagement| {
+        let mut paie_des = |lignes: Vec<crate::LignePaie>| {
+            let mut x = e.clone();
+            x.lignes = lignes;
+            calculer_du_mois(ctx, &x, precedentes)
+        };
+        crate::maintien::au_net(&e.lignes, &mut paie_des)
     };
-    match crate::maintien::au_net(&eng.lignes, &mut paie_des)? {
-        None => calculer_du_mois(ctx, eng, precedentes),
-        Some((montant, avis)) => {
-            let mut e = eng.clone();
-            e.lignes = crate::maintien::avec_le_montant(&eng.lignes, montant);
-            let mut p = calculer_du_mois(ctx, &e, precedentes)?;
-            p.ecrire().avertissements.push(avis);
-            Ok(p)
-        }
+    let Some(mut r) = reconstituer(eng)? else { return calculer_du_mois(ctx, eng, precedentes) };
+    let mut e = eng.clone();
+    if !r.maintenus.is_empty() {
+        let sans = e.sans_remuneration.as_ref().ok_or_else(|| socle::fichiers::absent("sans_remuneration"))?;
+        e.sans_remuneration = Some(sans.hors(&r.maintenus));
+        r = reconstituer(&e)?.ok_or_else(|| socle::refus!("{} : la ligne du maintien a reconstituer en net a disparu entre deux calculs de la paie.", eng.qui()))?;
     }
+    e.lignes = crate::maintien::avec_le_montant(&e.lignes, r.montant);
+    let mut p = calculer_du_mois(ctx, &e, precedentes)?;
+    p.ecrire().avertissements.push(r.avis);
+    Ok(p)
 }
 
 /// La paie d'un mois, d'un seul tenant ou en periodes elementaires.

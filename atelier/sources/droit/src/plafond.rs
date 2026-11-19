@@ -190,7 +190,7 @@ pub fn plafond_permanent(
 /// (§ 840) ; une absence « partiellement ou totalement remuneree par l'employeur, sous forme de versement visant au
 /// maintien de salaire » n'y entre pas (§ 820). Seules les journees d'absence totale comptent (§ 890), de date a date, les
 /// jours de repos et feries compris (§ 900). Qui sont ces jours, la deduction du mois d'un permanent le dit
-/// (`engagement::conges::lignes_du_mois`, avec les § 830, 860 et 920) ; ce type ne fait que les porter.
+/// (`engagement::conges::lignes_du_mois`, avec les § 860 et 920) ; ce type ne fait que les porter.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct JoursSansRemuneration(BTreeSet<Jour>);
 
@@ -203,6 +203,12 @@ impl JoursSansRemuneration {
     /// Ces jours.
     pub fn de(jours: BTreeSet<Jour>) -> JoursSansRemuneration {
         JoursSansRemuneration(jours)
+    }
+
+    /// Ces jours, sans ceux que la paie maintient finalement (le complement d'un maintien garanti en net, que seul le
+    /// calcul de la paie connait : `engagement::maintien::Reconstitue::maintenus`).
+    pub fn hors(&self, maintenus: &BTreeSet<Jour>) -> JoursSansRemuneration {
+        JoursSansRemuneration(self.0.difference(maintenus).copied().collect())
     }
 }
 

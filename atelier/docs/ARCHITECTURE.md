@@ -1282,7 +1282,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
-| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
+| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` ; ce que la reconstitution d'un maintien en net rend au calcul (son montant, son avis, les jours que son complement maintient) : `engagement::maintien::Reconstitue` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
 
 **Le détail**
 
@@ -2167,9 +2167,9 @@ le module la dit avec ses textes (`atelier/reference/sources/`) :
   couverts par le contrat (CSS R. 242-2), moins les jours d'absence que
   l'employeur ne rémunère pas (R. 242-2, I, al. 4 ; BOSS § 820-920 : une
   suspension non rémunérée, les jours d'un arrêt où le maintien ne verse aucun
-  complément, `maintien::DuMois::jours_maintenus` ; aucun quand la paie porte un
-  avantage en nature, § 830, ni dans un mois sans jour travaillé où une prime est
-  versée, § 860 et 920 : `conges::plafond_du_mois`) ; à **temps partiel**, proratisé
+  complément, `maintien::DuMois::jours_maintenus` ; aucun dans un mois sans jour
+  travaillé où une prime de la carte est versée, § 860 et 920 :
+  `conges::plafond_du_mois`) ; à **temps partiel**, proratisé
   aussi à sa quotité (CSS L. 242-8), sauf si la fiche entreprise dit que
   l'établissement y renonce (`plafond_temps_partiel` : « entier ») ; un
   artiste à temps partiel garde le plafond entier (BOSS § 1090). Le choix se
