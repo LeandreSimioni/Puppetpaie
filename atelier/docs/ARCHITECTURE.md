@@ -1934,7 +1934,12 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   - **non actif** (`etats::NonActif`, la clé `non_actif`) : un engagement dont quelque chose est parti ne se supprime
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois
-    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro.
+    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro. Dans un mois
+    dont la DSN ne se remplace plus, la DSN suivante en annule les montants (`produire_regularisations::annulations`) ;
+    le reste de la correction d'un contrat déclaré à tort (fiche net-entreprises 898 : blocs 41 et 40 à la nature 90,
+    bloc 62 au jour du début, motif 999 ; RNF et PAS par un bloc 56 de type 01, fiche 1821) ne s'écrit pas : la fiche ne
+    dit pas la date du changement (S21.G00.41.001). « Modifier l'engagement » refuse donc d'en changer le salarié ou de
+    le sortir d'un tel mois, et dit quoi faire (`routes::regularisation::refus_non_declarable`).
 - **Les versions datées** : tant que rien n'est parti d'un engagement, il se modifie librement, sans historique. Dès
   qu'un envoi est parti sur sa version, une revalidation qui le change garde la version d'avant dans l'engagement
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,

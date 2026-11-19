@@ -190,14 +190,23 @@ fn bornes_en_clair(b: &PeriodeOuverte) -> String {
     }
 }
 
-/// UN CONTRAT DECLARE NE SE RETIRE PAS D'UN MOIS DONT LA DSN NE SE REMPLACE PLUS. Passe la date d'exigibilite, une DSN
-/// ne se remplace plus : « il convient de corriger les informations erronees dans la DSN du mois suivant » (fiche
-/// net-entreprises 1722, `atelier/reference/sources/net-entreprises-base-connaissances/
-/// net-entreprises-fiche1722-annulation-fin-de-contrat-transmise-a-tort-20250326.txt`). Ce qui s'y corrige : la paie,
-/// par rappel, en approche differentielle ou par annulation et remplacement des montants (cahier technique DSN 2026.1,
-/// §2.1.3.6, `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`, l. 607) ; et, d'un contrat,
-/// sa fin, que le motif 099 annule (fiche 1722). INFERENCE : aucun de ces textes n'annule un contrat declare (son bloc
-/// S21.G00.40) ; un contrat qui n'a pas eu lieu garde son bloc et voit ses montants annules (ses quantites a zero).
+/// UN CONTRAT DECLARE NE CHANGE NI DE SALARIE NI DE MOIS DANS UN MOIS DONT LA DSN NE SE REMPLACE PLUS. Passe la date
+/// d'exigibilite, une DSN ne se remplace plus : « il convient de corriger les informations erronees dans la DSN du mois
+/// suivant » (fiche net-entreprises 1722, `atelier/reference/sources/net-entreprises-base-connaissances/
+/// net-entreprises-fiche1722-annulation-fin-de-contrat-transmise-a-tort-20250326.txt`).
+///
+/// Un contrat declare a tort (« saisi d'un nouveau contrat affecte a tort a un individu alors qu'il s'agit du contrat
+/// d'un autre ») s'y corrige ainsi (fiche 898, `net-entreprises-fiche898-individu-contrat-declare-a-tort-20250703.txt`) :
+/// un bloc S21.G00.41 et un bloc S21.G00.40 qui lui donnent une nature autre que CDD ou CDI (« 90 - Autre nature de
+/// contrat »), un bloc S21.G00.62 « dont la date de fin [est] egale a la date de debut », au motif accorde a cette
+/// nature (999, le seul que la CCH-11 de S21.G00.62.002 autorise pour la 90), sans signalement ; ses montants annules en
+/// negatif, dates du mois de l'erreur ; sa RNF et son PAS par un bloc S21.G00.56 de type 01 (fiche 1821). Le logiciel
+/// n'ecrit pas les blocs 41, 40 et 62 de cette correction : la fiche ne dit pas la date de la modification
+/// (S21.G00.41.001, « la date de survenance du changement », bloc 41 du cahier technique), ni ce que le bloc 40 d'un
+/// contrat de nature 90 porte ; il ne les choisit pas (regle 1). Ce qu'il fait d'un contrat qui n'a pas eu lieu,
+/// c'est « Retirer cet engagement » : la DSN suivante en annule les montants (`produire_regularisations::annulations`).
+/// Un contrat dont seules les dates changent n'est pas un contrat declare a tort : aucune fiche deposee ne dit comment
+/// le retirer d'un mois declare.
 ///
 /// `avant` : l'engagement tel qu'il est ecrit ; `apres` : ce qu'il devient. Refus : un mois que sa DSN a declare pour
 /// lui (`departs`) et dont la DSN ne se remplace plus (`modification_de_l_engagement`, `DsnDeposee::Corrigee`), qu'il ne couvre plus --
@@ -230,10 +239,12 @@ pub(crate) fn refus_non_declarable(
             Some(par) => format!("dans la DSN {}, qui a porté la correction {}", de_mois_en_clair(par), de_mois_en_clair(lu)),
             None => format!("dans la DSN {}, qui ne se remplace plus", de_mois_en_clair(lu)),
         };
-        return Ok(Some(format!(
-            "Le contrat de {} du {} est déclaré {} : il ne se retire plus. La DSN corrige la paie d'un mois passé (rappel de paie, cahier technique DSN §2.1.3.6) et annule une fin de contrat (motif 099, fiche net-entreprises 1722), pas un contrat. S'il n'a pas eu lieu, gardez-le et mettez ses quantités à zéro : la DSN suivante déclarera l'annulation de ses montants. Rien n'est enregistré.",
-            nom, debut, dsn
-        )));
+        let que_faire = if meme_salarie {
+            "Le logiciel ne sait pas retirer un contrat déclaré d'un mois en gardant le contrat : aucune fiche net-entreprises ne dit comment. S'il n'a pas eu lieu ce mois-là, « Retirer cet engagement » : la DSN suivante annulera ses montants, datés du mois de l'erreur."
+        } else {
+            "La fiche net-entreprises 898 corrige un contrat affecté au mauvais salarié dans la DSN suivante, et le logiciel n'écrit pas cette correction : la fiche ne dit pas la date du changement de nature. Ce qu'il fait : « Retirer cet engagement » (la DSN suivante annulera ses montants, datés du mois de l'erreur ; le contrat reste déclaré, à zéro), puis engagez l'autre salarié sur ces dates (la DSN suivante le déclarera en entier)."
+        };
+        return Ok(Some(format!("Le contrat de {} du {} est déclaré {}. {} Rien n'est enregistré.", nom, debut, dsn, que_faire)));
     }
     Ok(None)
 }
