@@ -123,11 +123,29 @@ pub struct FormeDePaie<A> {
     pub plafond: Montant,
     #[serde(with = "nombre")]
     pub plafond_urssaf: Montant,
+    /// La part du brut que l'abattement de la CSG a abattue (`calcul::Contenu::part_abattue_csg`), toujours ecrite ; une
+    /// paie ecrite avant qu'elle le soit ne la porte pas, et elle se lit par `part_abattue_csg()`, nulle part ailleurs.
+    #[serde(default, with = "nombre::option")]
+    pub part_abattue_csg: Option<Montant>,
     /// Un mois decoupe : ses periodes elementaires, chacune une paie. Vide pour un mois d'un seul tenant.
     pub periodes: Vec<FormeDePaie<A>>,
     /// Le plafond d'un salarie a temps partiel tel que le calcul l'a applique (`calcul::PlafondTempsPartiel`) : la forme
     /// ecrite seule le porte.
     pub plafond_temps_partiel: Option<crate::calcul::PlafondTempsPartiel>,
+}
+
+impl<A> FormeDePaie<A> {
+    /// LA PART DU BRUT QUE L'ABATTEMENT DE LA CSG A ABATTUE DANS CETTE PAIE, telle qu'elle l'ecrit ; une paie ecrite avant
+    /// que le calcul l'ecrive ne la porte pas, et ce qu'elle a fait se lit dans ses chiffres : le calcul d'alors abattait
+    /// de 1,75 % chaque rubrique soumise, sans limite (`montant * abattement_csg` pour chacune, l'assiette de la CSG etant
+    /// le brut abattu plus la prevoyance patronale), soit tout son brut soumis (`brut`, la somme de ces rubriques). Ce
+    /// n'est pas un repli : c'est le fait de cette paie, le seul endroit ou il se dit.
+    pub fn part_abattue_csg(&self) -> Montant {
+        match self.part_abattue_csg {
+            Some(m) => m,
+            None => self.brut,
+        }
+    }
 }
 
 /// Une fiche nommee par sa cle (le salarie, le spectacle d'une paie).

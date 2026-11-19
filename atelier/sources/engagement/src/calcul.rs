@@ -466,6 +466,12 @@ pub struct Contenu {
     /// Le « Plafond Urssaf » du bas de bulletin, tel que le calcul l'a pose (`plafond_urssaf`) et que la paie ecrite le
     /// garde : un document le lit, il ne le recalcule pas.
     pub plafond_urssaf: Montant,
+    /// LA PART DU BRUT QUE L'ABATTEMENT DE LA CSG A ABATTUE dans cette paie (`plafond::Regularisees::abattue_csg`, telle
+    /// qu'elle s'est appliquee) : la paie suivante de l'annee la lit pour regulariser la limite de l'abattement
+    /// (`ajouter_a_l_annee`), la taxe sur les salaires pour rendre l'abattement a l'assiette de la CSG (CGI 231, 1). Ce
+    /// n'est pas une assiette : aucune cotisation ne s'y assoit, la DSN ne la declare pas, et deux paies qui ne different
+    /// que par elle disent les memes chiffres (`etats::chiffres_egaux`).
+    pub part_abattue_csg: Montant,
     /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
     pub smic: MontantUnitaire,
     pub heures: Heures,
@@ -518,11 +524,11 @@ impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
         engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Montant,
-        base_csg: Montant, plafond: Montant, plafond_urssaf: Montant, smic: MontantUnitaire, heures: Heures,
+        base_csg: Montant, plafond: Montant, plafond_urssaf: Montant, part_abattue_csg: Montant, smic: MontantUnitaire, heures: Heures,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
         Paie(Contenu {
-            engagement, salarie, spectacle, brut, base_csg, plafond, plafond_urssaf, smic, heures,
+            engagement, salarie, spectacle, brut, base_csg, plafond, plafond_urssaf, part_abattue_csg, smic, heures,
             lignes: Vec::new(), total_pat: Montant::ZERO, total_sal: Montant::ZERO, net_a_payer: Montant::ZERO, net_social: Montant::ZERO,
             net_imposable: Montant::ZERO, cout_employeur: Montant::ZERO, numero_bulletin: None,
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
@@ -539,7 +545,7 @@ impl Paie {
         let mut engagement = self.engagement.clone();
         engagement.lignes.clear();
         (engagement.jours, engagement.cachets, engagement.heures) = (socle::grandeurs::Jours::ZERO, socle::grandeurs::Cachets::ZERO, None);
-        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.plafond_urssaf, self.smic, Heures::ZERO, self.plafond_temps_partiel);
+        let mut p = Paie::nouveau(engagement, self.salarie.clone(), self.spectacle.clone(), Montant::ZERO, Montant::ZERO, Montant::ZERO, self.plafond_urssaf, Montant::ZERO, self.smic, Heures::ZERO, self.plafond_temps_partiel);
         p.0.bases = self.bases.keys().map(|k| (*k, BaseDeCotisation::nulle(*k))).collect();
         p
     }
@@ -1024,7 +1030,6 @@ impl Assiettes {
             Assiette::BrutX115Dfs => self.x115_dfs,
             Assiette::BrutX110Dfs => self.x110_dfs,
             Assiette::Csg
-            | Assiette::PartAbattueCsg
             | Assiette::T1Journaliere
             | Assiette::T2Journaliere
             | Assiette::T2PrevoyanceJournaliere
@@ -1613,18 +1618,17 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // l'assiette de la CSG (CSS L136-1-1, I, « toutes les sommes [...] dues [...] a l'occasion d'un travail », dont le III, 2°,
     // n'exclut pas les contributions aux garanties collectives : `atelier/reference/sources/suspension-non-remuneree/legi-extrait-code-de-la-
     // securite-sociale-20261015.md`) ; elles se repartissent au prorata du brut de chaque rubrique, et un brut nul ne les
-    // repartit nulle part : elles vont entieres a la premiere rubrique soumise, plutot que de sortir de l'assiette.
-    if brut.est_nul() && !tranches_prev.est_nul() {
-        if let Some(premiere) = par_rubrique.first_mut() {
-            premiere.csg = (premiere.csg + tranches_prev).au_centime();
-        }
-    }
-    // De meme, l'abattement qu'une paie sans brut regularise (un mois sans brut d'une annee dont les paies d'avant ont
-    // depasse la limite : la somme des plafonds grandit, celle des remunerations non) va entier a la premiere rubrique
-    // soumise.
-    if brut.est_nul() && !abattue_csg.est_nul() {
-        if let Some(premiere) = par_rubrique.first_mut() {
-            premiere.csg = (premiere.csg - bar.abattement_de(abattue_csg)).au_centime();
+    // repartit nulle part : elles vont entieres a la premiere rubrique soumise, plutot que de sortir de l'assiette. La part
+    // patronale de la tranche 1 de la prevoyance aussi : regularisee, la tranche 1 d'un mois sans brut peut etre positive
+    // (la somme des plafonds grandit plus que celle des remunerations), et sa cotisation est due. De meme, l'abattement
+    // qu'une paie sans brut regularise va entier a cette rubrique. Sans aucune rubrique soumise, rien ne se pose : la part
+    // abattue ecrite est celle qui s'est appliquee, nulle (`abattue_appliquee`), et la paie suivante de l'annee rattrape.
+    let mut abattue_appliquee = abattue_csg;
+    if brut.est_nul() {
+        let prev_t1 = t1_prev.map_or(Montant::ZERO, |t1| t1.fois_taux(taux_prev));
+        match par_rubrique.first_mut() {
+            Some(premiere) => premiere.csg = (premiere.csg + tranches_prev + prev_t1 - bar.abattement_de(abattue_csg)).au_centime(),
+            None => abattue_appliquee = Montant::ZERO,
         }
     }
     let zero = Montant::ZERO;
@@ -1687,9 +1691,6 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // La CET, due quand le brut depasse la T1, sur T1 + T2 : huit plafonds au plus (Agirc-Arrco, « jusqu'a 8 PSS »).
         bases.insert(Assiette::Cet, if brut > t1 { brut.min(t1 * t2_mult) } else { zero });
     }
-    // La part que l'abattement de la CSG a abattue : la paie suivante de l'annee la lit (`ajouter_a_l_annee`), la taxe sur
-    // les salaires aussi.
-    bases.insert(Assiette::PartAbattueCsg, abattue_csg);
     // La majoration de 11,5 % (CSS L. 243-1-3, D. 243-0-2) s'applique a l'assiette plafonnee : quand le plafond la limite,
     // c'est elle qu'elle majore (lettre circulaire Acoss 2013-019, annexe 1, R2, et sa « Regularisation progressive » :
     // l'assiette plafonnee regularisee, puis x 11,5 % ; atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md) ;
@@ -1886,7 +1887,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
-    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, abattue_csg, tot_pat, || {
+    let heures_en_plus = crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, abattue_appliquee, tot_pat, || {
         crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id)
     })?;
     let mut exonere = Montant::ZERO;
@@ -1964,7 +1965,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, plafond_urssaf, smic, heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, plafond_urssaf, abattue_appliquee, smic, heures, tp);
     let p = paie.ecrire();
     p.heures_absence = -lb.iter().filter(|l| l.heures_annexes < Heures::ZERO).fold(Heures::ZERO, |a, l| a + l.heures_annexes);
     p.lignes = lignes;
@@ -2083,7 +2084,7 @@ pub(crate) fn ajouter_a_l_annee(
         t2_conventionnelle: lue(Assiette::T2Conventionnelle)?,
         t1_t2: lue(Assiette::T1T2Mensuelle)?,
         cet: lue(Assiette::CetMensuelle)?,
-        abattue_csg: lue(Assiette::PartAbattueCsg)?,
+        abattue_csg: p.part_abattue_csg,
     };
     annee.ajouter(p.brut, p.plafond_urssaf, appliquees);
     Ok(())
@@ -2251,6 +2252,7 @@ impl Paie {
             total_sal: self.total_sal,
             plafond: self.plafond,
             plafond_urssaf: self.plafond_urssaf,
+            part_abattue_csg: Some(self.part_abattue_csg),
             periodes: self.periodes.iter().map(|p| p.forme(avis, ecrite)).collect::<R<_>>()?,
             plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })

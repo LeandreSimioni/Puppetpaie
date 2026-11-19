@@ -1206,10 +1206,13 @@ fn chiffres_egaux(a: &PaieEcrite, b: &PaieEcrite) -> bool {
     egales_sans_avis(&a.paie, &b.paie) && a.pas == b.pas && a.conges_sans_avis() == b.conges_sans_avis()
 }
 
-/// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris.
+/// Deux paies egales hors de leurs avertissements, ceux de leurs periodes compris, et hors de la part que l'abattement de
+/// la CSG a abattue (`calcul::Contenu::part_abattue_csg`) : elle n'est ni payee, ni cotisee, ni declaree, et une paie ecrite
+/// avant qu'elle s'ecrive ne la porte pas ; ce qu'elle change dans la paie (l'assiette de la CSG) se compare, lui. Une paie
+/// dont aucun montant ne change ne se rectifie pas, et sa paie recalculee s'ecrit avec elle (`rafraichir`).
 fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
     fn sans_avis(p: &FormeDePaie<Avis>) -> FormeDePaie<Avis> {
-        FormeDePaie { avertissements: Vec::new(), periodes: p.periodes.iter().map(sans_avis).collect(), ..p.clone() }
+        FormeDePaie { avertissements: Vec::new(), part_abattue_csg: None, periodes: p.periodes.iter().map(sans_avis).collect(), ..p.clone() }
     }
     sans_avis(a) == sans_avis(b)
 }

@@ -159,7 +159,7 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDuCalculAnnuel], bar: &droit::fo
         match m {
             MoisDuCalculAnnuel::Calcules(_, ps) => {
                 for p in ps.iter().filter(|p| !p.engagement.sans_paie()) {
-                    *par_salarie.entry(p.salarie.id.to_string()).or_insert(Montant::ZERO) += assiette_taxe_sur_les_salaires(p, bar)?;
+                    *par_salarie.entry(p.salarie.id.to_string()).or_insert(Montant::ZERO) += assiette_taxe_sur_les_salaires(p, bar);
                 }
             }
             MoisDuCalculAnnuel::Contrats(_) => return Err(refus("assiettes de la taxe sur les salaires : un mois sans montants")),

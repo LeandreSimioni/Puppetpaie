@@ -15,20 +15,13 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fic
 
 /// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE VALIDEE : celle de la CSG, sans la reduction de 1,75 % (CGI art.
 /// 231, 1 : « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable ») :
-/// son assiette de la CSG, plus l'abattement de la part que la CSG a abattue (`Assiette::PartAbattueCsg`, que le calcul
-/// ecrit, sous la limite de l'abattement et regularisee sur l'annee : `Pile::abattement_de`). Elle ne contredit pas le
-/// calcul de la CSG : elle lui rend ce qu'il a abattu, rien d'autre. L'etat « taxe sur les salaires » (`etats_compta`) et
-/// la DSN de decembre (`declarations::assujettissement`) la lisent.
-pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile) -> R<Montant> {
-    use droit::assiette::Assiette::PartAbattueCsg;
-    let abattue = p.bases.get(&PartAbattueCsg).ok_or_else(|| {
-        socle::echec::refus(format!(
-            "{} : sa paie ne dit pas la part que la CSG a abattue (« {} »), que la taxe sur les salaires rend à l'assiette de la CSG (CGI art. 231, 1). Le signaler au développeur.",
-            p.engagement.qui(),
-            PartAbattueCsg.nom()
-        ))
-    })?;
-    Ok((p.base_csg + bar.abattement_de(abattue.en_euros(PartAbattueCsg)?)).au_centime())
+/// son assiette de la CSG, plus l'abattement de la part que la CSG a abattue (`calcul::Contenu::part_abattue_csg`, que
+/// le calcul ecrit, sous la limite de l'abattement et regularisee sur l'annee, et qu'une paie ecrite avant se lit dans
+/// ses chiffres : `paie_ecrite::FormeDePaie::part_abattue_csg` ; `Pile::abattement_de`). Elle ne contredit pas le calcul
+/// de la CSG : elle lui rend ce qu'il a abattu, rien d'autre. L'etat « taxe sur les salaires » (`etats_compta`) et la DSN
+/// de decembre (`declarations::assujettissement`) la lisent.
+pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile) -> Montant {
+    (p.base_csg + bar.abattement_de(p.part_abattue_csg)).au_centime()
 }
 
 /// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE DU MOIS (`assiette_taxe_sur_les_salaires`), ou d'une paie importee
@@ -42,7 +35,7 @@ pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit:
 /// n'a pas abattue.
 pub fn assiette_d_une_paie_du_mois(p: &engagement::etats::PaieDuMois, bar: &droit::forme_bareme::Pile) -> R<Option<Montant>> {
     match p {
-        engagement::etats::PaieDuMois::Validee(v) => assiette_taxe_sur_les_salaires(v, bar).map(Some),
+        engagement::etats::PaieDuMois::Validee(v) => Ok(Some(assiette_taxe_sur_les_salaires(v, bar))),
         engagement::etats::PaieDuMois::Importee(_) => {
             let (Some(brut), Some(base_csg)) = (p.brut(), p.base_csg()?) else { return Ok(None) };
             Ok(Some((base_csg - (brut * bar.abattement_csg).au_centime() + brut).au_centime()))

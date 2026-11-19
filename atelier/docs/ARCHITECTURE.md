@@ -2187,12 +2187,23 @@ moins ce que les paies d'avant ont appliqué (lues dans les paies validées de
 l'année, `conges::plafonds_des_mois_anterieurs`, puis les contrats précédents du
 mois) : la vieillesse plafonnée, le FNAL, les tranches de la retraite
 complémentaire et de la prévoyance, et la part que la CSG abat
-(`part_abattue_csg`, écrite dans la paie). Une tranche régularisée peut être
-négative, la DSN la déclare signée. L'artiste et le technicien intermittent
-gardent le plafond de chaque paie ; les paies reprises d'un ancien logiciel
-n'entrent pas dans le cumul (la régularisation commence au premier mois payé
-ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas. Une paie partie ne se
-réécrit pas : la suivante rattrape l'écart d'une paie corrigée.
+(`part_abattue_csg`, un champ de la paie, pas une assiette : rien ne s'y
+assoit, la DSN ne la déclare pas ; une paie écrite avant qu'il s'écrive a
+abattu tout son brut soumis, `FormeDePaie::part_abattue_csg`). Une tranche
+régularisée peut être négative, la DSN la déclare signée. L'artiste et le
+technicien intermittent gardent le plafond de chaque paie ; les paies reprises
+d'un ancien logiciel n'entrent pas dans le cumul (la régularisation commence
+au premier mois payé ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas.
+Une paie corrigée (une saisie d'un mois passé) n'est pas reprise par les
+suivantes : la suivante lit ce qu'elle a appliqué et rattrape l'écart. Au
+passage d'une version qui change le calcul, chaque mois fini se recalcule
+(`etats::corriger_les_mois_finis`) : une paie partie dont un montant payé,
+cotisé ou déclaré change (comparé par `etats::chiffres_egaux`, sans ses
+avertissements ni sa part abattue) devient un bulletin rectificatif et une
+correction due à la DSN suivante (`etats::correction_due`), qui déclare la
+différence sans réécrire la DSN déposée ; une paie dont aucun montant ne
+change garde ses numéros et s'écrit avec sa part abattue, sans rectificatif ni
+correction.
 
 **Une valeur du barème peut être datée** : le SMIC (`smic_horaire`, liste de `{depuis, valeur}`), et toute autre
 valeur — un taux, un plafond —, parce que le droit change en cours d'année (AGS 0,20 → 0,25 au 01/07/2024,
