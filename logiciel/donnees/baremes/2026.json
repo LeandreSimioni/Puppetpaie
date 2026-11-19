@@ -1132,6 +1132,27 @@
   "majoration_conges_115": 1.115,
   "majoration_conges_110": 1.1,
   "plafond_journalier": 220,
+  "limite_du_plafond_journalier": {
+    "dans_la_limite_du": "plafond_mensuel",
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+          "emetteur": "audiens",
+          "article": "Paramètres 2026, p. 1, « A noter », retraite complémentaire des cadres intermittents (l. 41-42)",
+          "citation": "Intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers - dans la limite"
+        },
+        {
+          "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+          "emetteur": "audiens",
+          "article": "Paramètres 2026, p. 1, « A noter », prévoyance des intermittents (l. 45-46)",
+          "citation": "le plafond applicable est le plafond journalier - dans la limite du plafond mensuel"
+        }
+      ],
+      "raisonnement": "Audiens 2026 limite les tranches journalières (la retraite des cadres intermittents, la prévoyance de tout intermittent) au plafond mensuel ; les Paramètres 2025 ne le disent pas (l. 41-44). INFERENCE : le texte ne dit pas ce que « mensuel » couvre ; la limite se pose paie par paie, à la valeur mensuelle du plafond (4 005 €, `plafond_securite_sociale.mensuel`), sans proratisation ni cumul des contrats du mois."
+    },
+    "note": "Exemple : un cadre, 20 jours payés 400 € chacun dans le mois (8 000 €) : sa tranche 1 est 4 005 € et non 4 400 € (20 x 220) ; sa tranche 2 va jusqu'à 8 fois 4 005 €."
+  },
   "rubriques_bulletin": [
     {
       "id": "maladie",

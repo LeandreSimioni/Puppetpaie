@@ -197,6 +197,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         majoration_conges_115: socle::grandeurs::Coefficient::ZERO,
         majoration_conges_110: socle::grandeurs::Coefficient::ZERO,
         plafond_journalier: None,
+        limite_du_plafond_journalier: None,
         plafonds_des_intermittents: None,
         rubriques_bulletin: Vec::new(),
         cotisations_dsn: Vec::new(),

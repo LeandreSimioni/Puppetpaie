@@ -245,6 +245,8 @@ forme! {
         /// Le plafond journalier (T1 d'un jour travaille) des intermittents ; leurs tranches au-dela le multiplient comme
         /// celles d'un permanent (`tranches_du_plafond`).
         pub plafond_journalier: Option<MontantUnitaire>,
+        /// La limite des tranches journalieres, quand le texte de l'annee en dit une ; sans elle, aucune.
+        pub limite_du_plafond_journalier: Option<LimiteDuPlafondJournalier>,
         /// Les textes de ces plafonds.
         pub plafonds_des_intermittents: Option<Notes>,
         pub rubriques_bulletin: Vec<Rubrique>,
@@ -580,6 +582,24 @@ impl Pile {
     pub fn abattement_de(&self, abattue: Montant) -> Montant {
         abattue * (Coefficient::UN - self.abattement_csg)
     }
+}
+
+forme! {
+    /// LA LIMITE DES TRANCHES JOURNALIERES D'UN INTERMITTENT (`plafond_journalier` fois ses jours : la tranche 1 de la
+    /// retraite d'un cadre, et ses tranches au-dela, la prevoyance de tout intermittent) : Audiens, Parametres 2026 (l. 41-46),
+    /// « les plafonds applicables sont les plafonds journaliers - dans la limite du plafond mensuel » ; les Parametres 2025
+    /// ne la disent pas, et le bareme 2025 n'en a pas. Le calcul la pose a un seul endroit (`calcul::calculer_periode`).
+    pub struct LimiteDuPlafondJournalier {
+        pub dans_la_limite_du: PlafondQuiLimite,
+    }
+}
+
+/// LE PLAFOND QUI LIMITE LES TRANCHES JOURNALIERES (`LimiteDuPlafondJournalier`) : le plafond mensuel de la Securite
+/// sociale de l'annee (`PlafondSecuriteSociale::mensuel`), le seul que le texte nomme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlafondQuiLimite {
+    PlafondMensuel,
 }
 
 forme! {

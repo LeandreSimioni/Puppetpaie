@@ -1561,7 +1561,24 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         }
     };
     let plafond_journalier = bar.plafond_journalier;
-    let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant { (jours * p).au_centime() };
+    // La tranche 1 journaliere du contrat : le plafond journalier par jour du contrat, dans la limite que le bareme de
+    // l'annee dit (`limite_du_plafond_journalier` : en 2026, « dans la limite du plafond mensuel », Audiens, Parametres).
+    // INFERENCE, ecrite comme telle : le texte ne dit pas ce que « mensuel » couvre ; la limite se pose paie par paie (la
+    // paie d'un intermittent est celle d'un contrat dans un mois), a la valeur mensuelle entiere du plafond (le tableau
+    // d'Audiens, « Mois : 4 005 »), sans la proratiser ni joindre les autres contrats du mois du salarie.
+    let limite_journaliere = match bar.limite_du_plafond_journalier.as_ref().map(|l| l.dans_la_limite_du) {
+        Some(droit::forme_bareme::PlafondQuiLimite::PlafondMensuel) => {
+            Some(bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.mensuel)
+        }
+        None => None,
+    };
+    let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant {
+        let t1 = (jours * p).au_centime();
+        match limite_journaliere {
+            Some(m) => t1.min(m),
+            None => t1,
+        }
+    };
     // La base de la prevoyance de la paie : sa tranche 1 quand le bareme l'y pose (sur le plafond journalier d'un
     // intermittent, que le bareme dit alors ; ou celle d'un salarie au mois, `regularisees`, la tranche que sa cotisation
     // prend), le brut sinon.
