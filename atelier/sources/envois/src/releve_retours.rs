@@ -539,8 +539,9 @@ fn retenir_le_releve_complet(ctx: &Contexte, canal: CanalDesRetours, lu_jusqu_a:
 /// UN RETOUR A REPRENDRE QUE LE SI DSN NE SERT PLUS : publie il y a plus de quatre-vingt-dix jours
 /// (`HORIZON_DU_RELEVE_COMPLET`, guide de l'API DSN, § 8.2 : « une période de rétention de 3 mois »). Il sort de la
 /// reprise, note vu, et l'editeur le sait comme d'un retour retire (`Suites::retires`). Sans publication dite, son age ne
-/// se sait pas : il reste a reprendre. Sur le canal DPAE, aucun texte de l'Urssaf ne dit la retention : INFERENCE, la
-/// meme que la DSN.
+/// se sait pas : il reste a reprendre. Le canal DPAE a la meme retention (guide d'implementation de l'API DPAE, « Période
+/// de rétention des retours » : « une période de rétention de 3 mois par le SI DPAE. Au-delà, les retours sont purgés »,
+/// `atelier/reference/norme-dpae/API-DPAE-Guide-Implementation-NAT5492.pdf`).
 fn hors_de_l_horizon(r: &Annonce, maintenant: Moment) -> bool {
     r.publication.is_some_and(|p| maintenant.depuis(p).is_some_and(|d| d > HORIZON_DU_RELEVE_COMPLET))
 }
@@ -849,7 +850,7 @@ pub fn relever_retours(
         if let (Some(url), Some(publie)) = (r.url.clone(), jour_de_publication_dit(r)) {
             let pourquoi = match canal {
                 CanalDesRetours::Dsn => "le SI DSN ne le sert plus après quatre-vingt-dix jours (guide de l'API DSN, § 8.2)",
-                CanalDesRetours::Dpae => "il a plus de quatre-vingt-dix jours et n'est plus repris (aucun texte de l'Urssaf ne dit sa rétention : celle de la DSN, par inférence)",
+                CanalDesRetours::Dpae => "le SI DPAE ne le sert plus après quatre-vingt-dix jours (guide d'implémentation de l'API DPAE, « Période de rétention des retours »)",
             };
             let phrase = format!("Retour nature {} publié le {}, jamais lu : {}.", r.nature_retour, publie, pourquoi);
             suites.retires.push((r.nature_retour, url, erreur(Classe::Organisme, phrase)));
