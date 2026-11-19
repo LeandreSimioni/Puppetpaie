@@ -90,6 +90,11 @@ Tous de nationalité française, nés en France.
 - **Gaspard Marivaux** : temps plein, depuis le 05/09/2022, 2 487,39 € (16,40 € de l'heure).
 - **Philomène Clairon** : temps partiel à 80 % (28 h par semaine, 121,33 h par mois ; lundi, mardi, jeudi et vendredi,
   de 9 h à 16 h 30), depuis le 08/01/2024, 1 941,28 € (16,00 € de l'heure).
+- **Anselme Molière**, comédien intermittent non cadre, passe le plafond annuel de sa retraite complémentaire (48 060 €
+  en 2026) : ses six représentations du festival de juin 2026 sont payées 7 500 € le cachet. Sa rémunération de l'année
+  passe de 5 550 € à 50 550 € à la paie de juin : la tranche 2 de l'année (2 490 €) et la CET sur toute la rémunération
+  de l'année (50 550 €) y entrent, puis chaque paie suivante est toute en tranche 2, CET comprise (Audiens, Paramètres :
+  les plafonds annuels des non-cadres).
 - Cachet de représentation : Molière 175 €, Dorval 165 €, Lemaître 170 € ; un service de répétition de 4 heures, 64 €,
   deux par jour. Lekain : 17,50 € de l'heure, sept heures par jour de jeu. Talma : 17,50 € de l'heure, huit heures
   par jour de jeu (le moteur refuse un service pour un technicien) : les textes de la 1285 ne définissent le service que pour les artistes
