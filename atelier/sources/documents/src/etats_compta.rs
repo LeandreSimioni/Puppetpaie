@@ -1589,7 +1589,6 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             )))
         }
     };
-    let abatt = bar.abattement_csg;
     let zero = Montant::ZERO;
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
@@ -1612,7 +1611,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
             // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base_csg)) = (pa.brut(), pa.base_csg()?) else {
+            let (Some(brut), Some(base)) = (pa.brut(), crate::taxe_sur_les_salaires::assiette_d_une_paie_du_mois(pa, &bar)?) else {
                 return Err(refus(format!(
                     "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
                     crate::tableaux_export::qui_souple(pa.salarie()),
@@ -1626,7 +1625,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
             let x = par.get_mut(&cle).expect("insere");
             x.1 += brut;
-            x.2 += crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(brut, base_csg, abatt);
+            x.2 += base;
             x.3.insert(m);
         }
     }

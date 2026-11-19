@@ -6,19 +6,48 @@
 use droit::fiche::Lue as _;
 use socle::echec::R;
 use socle::texte::{euros, virgule, Phrase};
-use socle::grandeurs::{Coefficient, Montant, Taux};
+use socle::grandeurs::{Montant, Taux};
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
 pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
 
 // ------------------------------------------------------------ la taxe sur les salaires, salarie par salarie
 
-/// L'assiette de la taxe sur les salaires d'une paie : celle de la CSG, sans la reduction de 1,75 % (CGI art. 231, 1 :
-/// « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable »).
-/// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
-/// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
-pub fn assiette_taxe_sur_les_salaires(brut: Montant, base_csg: Montant, abattement: Coefficient) -> Montant {
-    (base_csg - (brut * abattement).au_centime() + brut).au_centime()
+/// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE VALIDEE : celle de la CSG, sans la reduction de 1,75 % (CGI art.
+/// 231, 1 : « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable ») :
+/// son assiette de la CSG, plus l'abattement de la part que la CSG a abattue (`Assiette::PartAbattueCsg`, que le calcul
+/// ecrit, sous la limite de l'abattement et regularisee sur l'annee : `Pile::abattement_de`). Elle ne contredit pas le
+/// calcul de la CSG : elle lui rend ce qu'il a abattu, rien d'autre. L'etat « taxe sur les salaires » (`etats_compta`) et
+/// la DSN de decembre (`declarations::assujettissement`) la lisent.
+pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile) -> R<Montant> {
+    use droit::assiette::Assiette::PartAbattueCsg;
+    let abattue = p.bases.get(&PartAbattueCsg).ok_or_else(|| {
+        socle::echec::refus(format!(
+            "{} : sa paie ne dit pas la part que la CSG a abattue (« {} »), que la taxe sur les salaires rend à l'assiette de la CSG (CGI art. 231, 1). Le signaler au développeur.",
+            p.engagement.qui(),
+            PartAbattueCsg.nom()
+        ))
+    })?;
+    Ok((p.base_csg + bar.abattement_de(abattue.en_euros(PartAbattueCsg)?)).au_centime())
+}
+
+/// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE DU MOIS (`assiette_taxe_sur_les_salaires`), ou d'une paie importee
+/// telle que l'import la donne ; `None` : ses pieces ne disent pas son brut ou son assiette de la CSG.
+///
+/// UNE PAIE IMPORTEE ne dit que son brut et son assiette de la CSG (la DSN, bloc 78 de type 04) : ni la part que l'ancien
+/// logiciel a abattue, ni le plafond qu'il a applique (`importe::PaieVersee`), et rien ne se reconstruit (regle 1). Son
+/// assiette se prend telle que l'import la donne, sans recalcul (Leandre, 19/11/2026) : l'assiette de la CSG, plus
+/// l'abattement de tout le brut au facteur de la CSG du bareme (`abattement_csg`). INFERENCE, une approximation : exacte
+/// quand l'ancien logiciel a abattu tout le brut ; au-dessus de la limite, elle rend aussi l'abattement d'une part qu'il
+/// n'a pas abattue.
+pub fn assiette_d_une_paie_du_mois(p: &engagement::etats::PaieDuMois, bar: &droit::forme_bareme::Pile) -> R<Option<Montant>> {
+    match p {
+        engagement::etats::PaieDuMois::Validee(v) => assiette_taxe_sur_les_salaires(v, bar).map(Some),
+        engagement::etats::PaieDuMois::Importee(_) => {
+            let (Some(brut), Some(base_csg)) = (p.brut(), p.base_csg()?) else { return Ok(None) };
+            Ok(Some((base_csg - (brut * bar.abattement_csg).au_centime() + brut).au_centime()))
+        }
+    }
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle

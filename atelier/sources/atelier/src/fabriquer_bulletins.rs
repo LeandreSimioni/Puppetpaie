@@ -40,7 +40,7 @@ use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 // Un montant tel que le bulletin l'imprime, « 1 234,56 » : l'ecriture du socle.
 use socle::texte::chiffres_en_euros as fr;
 
@@ -153,8 +153,22 @@ const fn t(milliemes: u32) -> Taux {
     Taux::milliemes_de_point(milliemes)
 }
 
-/// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels) : 0,9825.
-const ASSIETTE_CSG: Coefficient = Coefficient::dix_milliemes(9825);
+/// L'ASSIETTE DE LA CSG DU FAUX BULLETIN de brut `brut` et de plafond `plafond`, par la regle du moteur, lue au bareme
+/// livre de l'annee `annee` : la part du brut sous la limite de l'abattement (`droit::plafond::assiettes_plafonnees`),
+/// abattue (`Pile::assiette_csg`). La paie seule (`Plafonnement::ParPaie`) : le moteur ne regularise pas une paie reprise
+/// d'un ancien logiciel (`engagement::conges::plafonds_des_mois_anterieurs`), et c'est ainsi qu'il recalcule celle d'un
+/// faux bulletin importe pour la comparer. Sans bareme livre de l'annee, refus : le taux et la limite ne s'inventent pas.
+fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R<Montant> {
+    let Some(pile) = droit::contexte::socle_livre_lu(annee)? else {
+        return Err(refus!(
+            "pas de barème livré pour {} (logiciel/donnees/baremes/{}.json) : l'abattement de la CSG et sa limite ne s'y lisent pas",
+            annee,
+            annee
+        ));
+    };
+    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond, pile.limite_abattement_csg.plafonds, &droit::plafond::Plafonnement::ParPaie);
+    Ok(pile.assiette_csg(brut, brut, plafonnees.regularisees.abattue_csg).au_centime())
+}
 
 /// La table des parametres du BOSS deposee : elle porte le PSS de 2021 a 2026 (codes PSS_M_METROP et PSS_H_METROP),
 /// les annees qu'aucun bareme livre n'a (2024).
@@ -516,7 +530,7 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
-    let assiette_csg = (brut * ASSIETTE_CSG).au_centime();
+    let assiette_csg = assiette_csg(brut, plafond, b.periode.fin().annee()).map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
