@@ -465,8 +465,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         out.push(manque_de_la_case(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", aide)?);
     }
     // LA TVA ET LA TAXE SUR LES SALAIRES : chaque DSN mensuelle declare la base de chaque salarie au taux normal quand la
-    // compagnie la doit (S21.G00.79 de type 91), celle de decembre si elle la doit (bloc S21.G00.44) ; aucune ne se fait
-    // sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`).
+    // compagnie la doit (S21.G00.79 de type 91), celle de decembre si elle la doit (bloc S21.G00.44) ; sans reponse, la DSN
+    // d'un mois qui a des paies ne se fait pas (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`).
     if let documents::taxe_sur_les_salaires::Decision::ADire(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
         let cle = documents::taxe_sur_les_salaires::CHAMP_TAXE_SUR_LES_SALAIRES;
         let (libelle, _) = champ(cle)?;

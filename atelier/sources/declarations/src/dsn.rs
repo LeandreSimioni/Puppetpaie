@@ -2593,6 +2593,16 @@ pub fn bases_et_cotisations(
             f.add(droit::rubrique!("S21.G00.81.007"), norme::taux(t, 3));
         }
     }
+    if part_taxee.is_some() && !base_91_ecrite {
+        return Err(socle::echec::cle(
+            format!(
+                "La paie de {} ne déclare aucune base 03 sans affiliation : sa base de taxe sur les salaires au taux normal \
+(S21.G00.79 de type 91) n'a pas où s'écrire. C'est un défaut du logiciel : le signaler au développeur. Rien n'est écrit.",
+                qui_contrat(p)
+            ),
+            "S21.G00.79.001",
+        ));
+    }
     Ok(())
 }
 

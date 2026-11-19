@@ -35,8 +35,9 @@ pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit:
 ///   "91" » ; la fiche net-entreprises 1265, tableau P27V01, feuille DGFiP (`atelier/reference/sources/
 ///   net-entreprises-base-connaissances/net-entreprises-fiche1265-combinaisons-78-79-81-p27v01-20260630.txt`, l. 317) :
 ///   « 03 - Assiette brute déplafonnée ; 91 - Base de taxe sur les salaires au taux normal ».
-/// INFERENCE : la part taxee s'applique a la base de chaque paie comme a l'assiette de l'annee du bloc 44 (BOFiP
-/// BOI-TPS-TS-30, § 240 : le rapport s'applique aux « rémunérations individuelles »).
+/// La part taxee : CGI art. 231, 1 (`atelier/reference/sources/code-general-des-impots/articles-20261015.md`, l. 57) :
+/// l'assiette est « une partie des rémunérations versées, déterminée en appliquant à l'ensemble de ces rémunérations le
+/// rapport » ; elle s'applique donc a chaque remuneration, arrondie au centime par paie.
 pub fn base_au_taux_normal(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile, part: Taux) -> Montant {
     assiette_taxe_sur_les_salaires(p, bar).fois_taux(part).au_centime()
 }
@@ -95,8 +96,8 @@ pub fn fractions_majorees(base: Montant, seuil_1: Montant, seuil_2: Montant) -> 
 /// - `sous_franchise` : quand la taxe serait due, le chiffre d'affaires de l'annee precedente n'excede-t-il pas les
 ///   plafonds de l'article 293 B ? (2e alinea) ;
 /// - `association_1679a` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
-/// Chaque case ne se montre que si la precedente l'appelle (`champs`). Une case qui manque fait refuser chaque DSN
-/// mensuelle, avec ce qu'il faut dire (regle 1 : rien ne se devine).
+/// Chaque case ne se montre que si la precedente l'appelle (`champs`). Une case qui manque fait refuser la DSN de
+/// chaque mois qui a des paies, avec ce qu'il faut dire (regle 1 : rien ne se devine).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegimeTaxeSalaires {
     pub decision: Decision,
@@ -134,8 +135,8 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     let mut champs = vec!["tva"];
     let manque = |champs: Vec<&'static str>, quoi: String, consequence: Phrase| RegimeTaxeSalaires {
         decision: Decision::ADire(format!(
-            "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, aucune DSN \
-mensuelle ne se fait : chacune declare, si la compagnie la doit, la base de chaque salarie.",
+            "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN \
+d'un mois qui a des paies ne se fait pas : elle declare, si la compagnie la doit, la base de chaque salarie.",
             quoi
         )),
         association: false,
@@ -196,7 +197,7 @@ des impôts, art. 231)",
                 "dire si la compagnie est assujettie a la TVA ou exoneree".to_string(),
                 Phrase::fixe(
                     "Dites si la compagnie est assujettie à la TVA ou exonérée : le logiciel en déduit si elle doit la taxe \
-sur les salaires. Sans réponse, aucune DSN ne se fait.",
+sur les salaires. Sans réponse, la DSN d'un mois qui a des paies ne se fait pas.",
                 ),
             )
         }
@@ -348,7 +349,8 @@ pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -
     match regime_taxe_sur_les_salaires(ent, None).decision {
         Decision::NonDue => Ok(None),
         Decision::DueSur(p) => Ok(Some(p)),
-        Decision::ADire(phrase) => Err(socle::echec::refus(phrase)),
+        // Une case de la fiche que la compagnie n'a pas dite : un manque.
+        Decision::ADire(phrase) => Err(socle::echec::refus(phrase).reclasser(socle::echec::Classe::Manque)),
     }
 }
 
