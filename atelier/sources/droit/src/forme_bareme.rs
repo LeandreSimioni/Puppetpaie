@@ -1078,7 +1078,6 @@ forme! {
     #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
-        pub plafond_journalier: Option<MontantUnitaire>,
         /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
         /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,

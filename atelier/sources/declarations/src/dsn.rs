@@ -672,7 +672,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Montant>> {
     let b = &p.bases;
     let mut out = HashMap::new();
     // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
-    let lue = |a: Assiette| -> R<Montant> { b.get(&a).and_then(|x| x.montant()).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, a.nom())) };
+    let lue = |a: Assiette| -> R<Montant> { b.get(&a).and_then(|x| x.montant()).ok_or_else(|| socle::echec::paie_illisible(a.nom())) };
     out.insert(Assiette::Brut, p.brut);
     out.insert(Assiette::BrutCs, lue(Assiette::BrutCs)?);
     out.insert(Assiette::Csg, p.base_csg);
@@ -843,7 +843,7 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
         // Une base en euros ; une base en heures n'est pas un montant que la DSN declare, et se refuse en nommant son assiette.
         k => match p.bases.get(&k) {
             Some(b) => b.en_euros(k)?,
-            None => return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom())),
+            None => return Err(socle::echec::paie_illisible(k.nom())),
         },
     })
 }
@@ -3463,7 +3463,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     // sinon la tranche 1 elle-meme).
     let (mut t1, mut t1_x115) = (Montant::ZERO, Montant::ZERO);
     for i in (0..paies.len()).filter(|i| perm(*i)) {
-        let t = base_de_la_paie(paies[i], Assiette::T1Mensuelle)?.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, Assiette::T1Mensuelle.nom()))?;
+        let t = base_de_la_paie(paies[i], Assiette::T1Mensuelle)?.ok_or_else(|| socle::echec::paie_illisible(Assiette::T1Mensuelle.nom()))?;
         t1 += t;
         t1_x115 += match base_de_la_paie(paies[i], Assiette::T1MensuelleX115)? {
             Some(majoree) => majoree,

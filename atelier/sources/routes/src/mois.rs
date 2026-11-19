@@ -684,7 +684,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         if !vus.insert((salarie.clone(), contrat.debut(), numero.clone())) {
             continue;
         }
-        let fiche = ctx.fiche_de(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
+        let fiche = ctx.fiche_de(&salarie)?;
         let derniere = i.paies().values().last();
         let numero_objet = match i.contrat().and_then(|c| c.numero_objet.as_ref()) {
             Some(n) => Some(n),
@@ -1714,7 +1714,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let e = &p.engagement;
     let nat = e.nat()?;
     let s = &p.salarie;
-    let exige = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::absent(k).reclasser(Classe::Manque)) } else { Ok(c.clone()) };
+    let exige = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::manque(k)) } else { Ok(c.clone()) };
     let salarie = SalarieVu {
         cle: s.id.clone(),
         nom: exige(&s.nom.en_texte(), "nom")?,
@@ -1726,7 +1726,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     let spectacle = match &p.spectacle {
         Some(s) => match s.titre.dite() {
             Some(titre) => Some(SpectacleVu { titre: titre.clone(), numero_objet: s.numero_objet.dite().cloned() }),
-            None => return Err(socle::fichiers::absent("titre").reclasser(Classe::Manque)),
+            None => return Err(socle::fichiers::manque("titre")),
         },
         None => None,
     };
@@ -1741,7 +1741,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
     }
     let taux_cachet = match premier_cachet {
-        Some(l) => Some(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?),
+        Some(l) => Some(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::manque("taux"))?),
         None => brut.taux_cachet.or(data.taux_cachet),
     };
     let lieu = brut.lieu.clone();
@@ -1922,7 +1922,7 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
         // Un permanent n'a pas de spectacle -- le numero d'objet lui est interdit
         // (CCH-11) -- donc rien a verifier de ce cote.
         if let Some(sp) = p.spectacle.as_ref().filter(|s| s.archivee()) {
-            let titre = sp.titre.ecrite("titre").map_err(|m| m.reclasser(Classe::Manque))?;
+            let titre = sp.titre.ecrite("titre")?;
             let lequel = match sp.numero_objet.portee() {
                 Some(objet) => format!("« {} » (objet {})", titre, objet),
                 None => format!("« {} »", titre),

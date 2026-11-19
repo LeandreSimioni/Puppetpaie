@@ -64,7 +64,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<Siren, Echec> {
     match (ent.siren.dite(), ent.siret.dite()) {
         (Some(s), _) => Ok(s.clone()),
         (None, Some(siret)) => Ok(siret.siren()),
-        (None, None) => Err(socle::fichiers::absent("siren")),
+        (None, None) => Err(socle::fichiers::manque("siren")),
     }
 }
 

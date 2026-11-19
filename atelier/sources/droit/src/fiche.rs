@@ -35,9 +35,9 @@ pub trait Lue<T> {
         self.dite().is_some()
     }
 
-    /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`).
+    /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`), un manque (`socle::fichiers::manque`).
     fn exigee(&self, cle: &str) -> R<&T> {
-        self.dite().ok_or_else(|| socle::fichiers::absent(cle))
+        self.dite().ok_or_else(|| socle::fichiers::manque(cle))
     }
 
     /// La meme case, son texte en `String` : pour une table de cases qui les ecrit toutes de meme.

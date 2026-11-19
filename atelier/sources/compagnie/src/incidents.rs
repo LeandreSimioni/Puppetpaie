@@ -521,7 +521,8 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
 }
 
 /// Note les incidents qu'un rattachement des retours a releves (`envois::etats::AvecIncidents`), meme quand il s'est
-/// arrete sur une erreur, puis rend son resultat. Un incident qui ne s'ecrit pas se refuse.
+/// arrete sur une erreur, et les pieces qu'il n'a pas lues (`noter_retour_illisible`), puis rend son resultat. Un incident
+/// qui ne s'ecrit pas se refuse.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
         let canal = match i.canal {
@@ -530,7 +531,25 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
         };
         noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
     }
+    for p in &r.illisibles {
+        noter_retour_illisible(racine, p)?;
+    }
     r.resultat
+}
+
+/// UN RETOUR D'ORGANISME QUE SON LECTEUR NE LIT PAS : une piece de la norme qui n'est pas celle que ses textes decrivent
+/// (le guide de l'API DSN, la specification des retours). L'editeur le sait par le journal des incidents, a l'endroit
+/// `retour-<nature>/<archive>`, avec ce que le lecteur en a dit (le resume), pour lui apprendre a la lire ; la compagnie
+/// n'en voit rien. La piece reste a sa place et se relit a chaque releve : elle se note UNE FOIS PAR ARCHIVE (l'endroit
+/// la nomme, l'empreinte la reconnait dans le journal, envoye ou non). La seule facon de le noter, quelle que soit la
+/// nature.
+pub fn noter_retour_illisible(racine: &Path, p: &envois::retours::PieceIllisible) -> R<()> {
+    let ou = format!("retour-{}/{}", p.nature, p.archive);
+    let quoi = p.echec.classe_notee();
+    if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
+        return Ok(());
+    }
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
 }
 
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).
@@ -541,11 +560,11 @@ const FIL_PAR_INCIDENT: usize = 100;
 const ECRITURES_PAR_INCIDENT: usize = 3;
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
-/// situation d'usage, pas un defaut du logiciel.
-const REFUS_PAR_CLASSE: [Classe; 15] = [
+/// situation d'usage, pas un defaut du logiciel ; l'effectif et le taux AT/MP qui manquent aussi : la compagnie les dit.
+const REFUS_PAR_CLASSE: [Classe; 17] = [
     Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FabriqueRefus, Classe::FicheRefusee,
     Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::VersionExigee, Classe::CompteursVerrouilles,
-    Classe::Manque, Classe::Illisible, Classe::FichierAbsent,
+    Classe::Manque, Classe::TauxAtmpAbsent, Classe::EffectifAbsent, Classe::Illisible, Classe::FichierAbsent,
     Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable,
 ];
 

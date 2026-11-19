@@ -299,7 +299,8 @@ async function appelerMoteur(route, charge = {}) {
     vide.detail = { phrase: vide.message };
     throw vide;
   }
-  // Une route qui a écrit (même refusée) : ce qui a été lu part.
+  // Une route qui a pu écrire (toute route qui écrit, même refusée ; une lecture qui a rangé des retours) : ce qui a été
+  // lu part.
   if (d.ecrit) oublierLeMois();
   if (!d.ok && d.refus.classe === "EnvoiBride") montrerEnvoiRefuse(d.refus.phrase);
   return lireReponse(d);

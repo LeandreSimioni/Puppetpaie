@@ -19,7 +19,7 @@ use engagement::Engagement;
 use engagement::numeros::NumeroDeCertificat;
 use socle::grandeurs::ecrit::sans_zero::dit;
 use socle::grandeurs::{courte, Cachets, Heures, Jours, Montant};
-use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::echec::{erreur, refus, Classe, R};
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
 
@@ -454,10 +454,6 @@ fn periodes_au_mois(periode: Periode, mois_payes: &[MoisPaye]) -> R<Vec<((Period
     Ok(out)
 }
 
-fn cle_absente(k: &str) -> Echec {
-    socle::fichiers::absent(k).reclasser(Classe::Manque)
-}
-
 // --------------------------------------------------------------------- rendu
 
 /// 12345678900017 -> '123456789 00017'.
@@ -473,13 +469,13 @@ fn siret_espace(siret: &str) -> String {
 
 /// Une case texte de la fiche du salarie que le certificat exige : absente, elle se refuse.
 fn texte_requis<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-    c.ecrite(k).map(str::to_string).map_err(|_| cle_absente(k))
+    c.ecrite(k).map(str::to_string)
 }
 
 /// `valeurs` : ce qui va dans chaque case, dans l'ordre du formulaire.
 fn valeurs(c: &Certificat, p: &ContratDuCertificat, ent: &ChampsEntreprise) -> R<Vec<(&'static str, String)>> {
     let s = &p.salarie;
-    let sig = ent.signataire.dite().ok_or_else(|| cle_absente("signataire"))?;
+    let sig = ent.signataire.exigee("signataire")?;
 
     let adresse_defaut = texte_requis(&s.adresse, "adresse")?;
     let commune_defaut = texte_requis(&s.commune, "commune")?;
@@ -627,7 +623,7 @@ pub fn description(certs: &[(Certificat, &ContratDuCertificat)], ent: &Entrepris
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
 pub fn description_numerotee(paires: &[(&ContratDuCertificat, NumeroDeCertificat)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Illisible));
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Manque));
     }
     let mut tous: Vec<(Certificat, &ContratDuCertificat)> = Vec::new();
     for (p, premier) in paires {
@@ -641,7 +637,7 @@ pub fn description_numerotee(paires: &[(&ContratDuCertificat, NumeroDeCertificat
 /// `recapitulatif` : le meme contenu en texte, ce qui va etre imprime et sous quels numeros (la trace des N CE
 /// consommes).
 pub fn recapitulatif(paires: &[(&ContratDuCertificat, NumeroDeCertificat)], ent: &ChampsEntreprise) -> R<String> {
-    let adherent = ent.congesspectacles_adherent.remplie().ok_or_else(|| socle::fichiers::absent("congesspectacles_adherent"))?.to_string();
+    let adherent = ent.congesspectacles_adherent.remplie().ok_or_else(|| socle::fichiers::manque("congesspectacles_adherent"))?.to_string();
     let mut lignes = vec!["Certificats d'emploi Conges Spectacles".to_string(), format!("Compte (adherent Audiens) : {}", adherent), "-".repeat(76)];
     for (p, premier) in paires {
         for c in certificats(p, *premier)? {

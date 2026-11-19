@@ -5,9 +5,9 @@
 //! Idempotente : un flux deja au journal est saute. Une ligne reprise porte la date du depot (lue dans la piece)
 //! et sa `origine` (`retours/<piece>`) : c'est une reconstitution, pas un acte de ce logiciel.
 //!
-//! Une piece qui ne se lit pas (fichier inaccessible, XML mal forme) est NOMMEE dans `illisibles`, « nom (classe) »,
-//! et les autres passent ; un XML bien forme qui n'est pas un bilan de depot est saute sans
-//! bruit : le dossier melange des retours de toutes natures.
+//! Un bilan qui ne se lit pas se rend a noter (`retours::PieceIllisible`), et les autres passent ; un fichier que le
+//! disque ne rend pas arrete la reprise ; un XML bien forme qui n'est pas un bilan de depot est saute sans bruit : le
+//! dossier melange des retours de toutes natures.
 //!
 //! UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT (sinon un mois importe se dit en retard alors qu'il est deja
 //! declare) : le releve des retours et l'import remettent d'eux-memes au journal ce que les bilans archives attestent
@@ -66,25 +66,24 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
     Ok(noms)
 }
 
-/// Lecture pure.
-fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
+/// Les depots que les bilans archives attestent. Un bilan de depot (nature 10 ou 11) qui ne se lit pas se rend ; une
+/// piece d'une autre nature qui n'est pas un bilan se saute : son lecteur la lit.
+fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<crate::retours::PieceIllisible>)> {
+    use crate::retours::NatureDuRetour;
     let dossier = ctx.racine.join(crate::retours::RETOURS);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let mut par_flux: Vec<(IdDeFlux, Vec<(Bilan, NomDeFichier)>)> = vec![];
-    let mut illisibles: Vec<String> = vec![];
+    let mut illisibles = vec![];
     for (nom, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
-        let octets = match std::fs::read(&p) {
-            Ok(o) => o,
-            Err(e) => {
-                illisibles.push(format!("{} (Disque : {})", nom, e.kind()));
-                continue;
-            }
-        };
+        let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
         let b = match crate::retours::bilan_d_octets(&octets) {
             Ok(Some(b)) => b,
             Ok(None) => continue,
             Err(e) => {
-                illisibles.push(format!("{} ({})", nom, e.classe_notee()));
+                let bilan = [NatureDuRetour::AccuseDEnregistrement, NatureDuRetour::CertificatDeConformite].into_iter().find(|n| crate::retours::archive_de_nature(nom.texte(), *n));
+                if let Some(nature) = bilan {
+                    illisibles.push(crate::retours::PieceIllisible::de(nature, &p, e)?);
+                }
                 continue;
             }
         };
@@ -124,14 +123,13 @@ pub struct DepotVu {
 }
 
 /// CE QUE LA REPRISE REND : les depots trouves, ceux qu'elle ajoute (ou ajouterait), ceux deja au journal, ceux qu'elle
-/// ne peut dater, les pieces illisibles, si elle a ecrit, et combien de retours se sont ranges en face.
+/// ne peut dater, si elle a ecrit, et combien de retours se sont ranges en face.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Reprise {
     pub trouves: Vec<DepotVu>,
     pub ajoutes: Vec<DepotVu>,
     pub deja: Vec<DepotVu>,
     pub sans_mois: Vec<DepotVu>,
-    pub illisibles: Vec<String>,
     pub ecrit: bool,
     pub rattaches: usize,
 }
@@ -139,9 +137,9 @@ pub struct Reprise {
 /// `journal-reprise` : `ecrire` absent, elle dit ce qu'elle ferait ; `qui` signe les lignes reprises. Rend le rapport, et les
 /// incidents que le rattachement des retours a releves (`moteur` les note).
 pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str) -> AvecIncidents<Reprise> {
-    let mut incidents = Vec::new();
-    let resultat = reprise_et_incidents(ctx, ecrire, qui, &mut incidents);
-    AvecIncidents { resultat, incidents }
+    let (mut incidents, mut illisibles) = (Vec::new(), Vec::new());
+    let resultat = reprise_et_incidents(ctx, ecrire, qui, &mut incidents, &mut illisibles);
+    AvecIncidents { resultat, incidents, illisibles }
 }
 
 /// L'heure qu'une ligne reprise d'un bilan porte : la date et l'heure de reception que le bilan dit (`Bilan::recu_le`),
@@ -159,9 +157,16 @@ fn mode_du_bilan(essai_reel: Option<Mode>) -> Mode {
     }
 }
 
-fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {
+fn reprise_et_incidents(
+    ctx: &Contexte,
+    ecrire: bool,
+    qui: &str,
+    incidents: &mut Vec<crate::etats::IncidentDeRetour>,
+    pieces_illisibles: &mut Vec<crate::retours::PieceIllisible>,
+) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
-    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], illisibles, ecrit: ecrire, rattaches: 0 };
+    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], ecrit: ecrire, rattaches: 0 };
+    pieces_illisibles.extend(illisibles);
     let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
     for d in &attestes {
         let b = &d.bilan;
@@ -233,6 +238,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             socle::forme::lire_fichier(&p, "Le journal des retours vus ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))?;
         let r = crate::etats::rattacher_retours_ecrits(&ctx.racine, &retours);
         incidents.extend(r.incidents);
+        pieces_illisibles.extend(r.illisibles);
         rapport.rattaches = r.resultat?;
     }
     Ok(rapport)
@@ -243,7 +249,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
 /// ajoutees. Idempotente (par le flux).
 pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
     let r = reprise(ctx, true, qui);
-    AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents }
+    AvecIncidents { resultat: r.resultat.map(|v| v.ajoutes.len()), incidents: r.incidents, illisibles: r.illisibles }
 }
 
 // ------------------------------------------------------------- la reprise du canal DPAE

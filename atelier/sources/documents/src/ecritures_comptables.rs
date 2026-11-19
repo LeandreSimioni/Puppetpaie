@@ -217,7 +217,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                     *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
                     for (part, id_tiers) in [(rg.urssaf, MALADIE), (rg.chomage, CHOMAGE), (rg.agirc_arrco, RETRAITE_T1)] {
                         if !part.est_nul() {
-                            let r = plan.lignes.get(&id_tiers).ok_or_else(|| socle::fichiers::absent(id_tiers.as_str()).reclasser(Classe::Manque))?;
+                            let r = plan.lignes.get(&id_tiers).ok_or_else(|| socle::fichiers::manque(id_tiers.as_str()))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;
                         }
                     }

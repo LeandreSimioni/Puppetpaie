@@ -58,7 +58,7 @@ pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Depart
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?.veille()?;
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois)?.veille()?;
     Ok(ctx.aujourdhui > limite)
 }
 
@@ -160,11 +160,10 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
 fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Mois, mois_courant: Mois) -> R<Vec<Reg>> {
     let mut out = Vec::new();
     for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(|e| e.reclasser(Classe::Illisible))?.is_none() {
+        if n.correction_due(ctx, departs, mois, mois_courant)?.is_none() {
             continue;
         }
-        let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
-            .map_err(|e| e.reclasser(Classe::Illisible))?
+        let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)?
             .ok_or_else(|| {
                 let numero = engagement::numeros::numero_dit(n.objet().carte().numero.as_ref(), "le contrat ", "", "un contrat sans numero");
                 erreur(Classe::Illisible, format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
@@ -201,7 +200,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &droit::fiche::Nic) -
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| e.reclasser(Classe::Illisible))? != *nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie)? != *nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
@@ -252,10 +251,10 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
     for r in regs {
         let s = &r.apres.salarie;
         if s.nom.is_none() {
-            return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
+            return Err(socle::fichiers::manque("nom"));
         }
         // Une regularisation corrige un contrat deja declare : son numero se lit (regle 4).
-        let numero = r.apres.engagement.numero.as_ref().ok_or_else(|| socle::fichiers::absent("numero").reclasser(Classe::Manque))?;
+        let numero = r.apres.engagement.numero.as_ref().ok_or_else(|| socle::fichiers::manque("numero"))?;
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
             documents::tableaux_export::qui_souple(s),

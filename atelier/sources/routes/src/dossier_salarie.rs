@@ -488,7 +488,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
     for &m in mois_du.iter().filter(|m| **m < eng.mois) {
         let ecrite = match eng.numero.as_ref() {
-            Some(n) => engagement::etats::paie_ecrite_de(ctx, m, &cle, n, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Illisible))?).map_err(|e| e.reclasser(Classe::Illisible))?,
+            Some(n) => engagement::etats::paie_ecrite_de(ctx, m, &cle, n, &envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Illisible))?)?,
             None => None,
         };
         let Some(paie) = ecrite.as_ref().map(|x| &x.paie) else {
@@ -517,7 +517,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
         return Ok((ContratDuCertificat { engagement: eng.clone(), brut, salarie: p.salarie.champs.clone(), mois_payes }, manquants));
     }
     lignes.extend(eng.lignes.iter().cloned());
-    let entier = eng.sur_tout_le_contrat(&ctx.racine, lignes, jours + eng.jours).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let entier = eng.sur_tout_le_contrat(&ctx.racine, lignes, jours + eng.jours)?;
     Ok((ContratDuCertificat { engagement: entier, brut, salarie: p.salarie.champs.clone(), mois_payes: Vec::new() }, manquants))
 }
 
@@ -736,7 +736,7 @@ fn mois_puppetpaie(
             Some(t) => {
                 for (cle, siens) in &paires {
                     let (pc, _) = siens.first().ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un salarié sans certificat dans la liste des certificats."))?;
-                    let nom = pc.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?.to_string();
+                    let nom = pc.salarie.nom.ecrite("nom")?.to_string();
                     let mut ses_pages: Vec<usize> = Vec::new();
                     let mut etrangeres: Vec<NumeroDeCertificat> = Vec::new();
                     for (pc, n) in siens {

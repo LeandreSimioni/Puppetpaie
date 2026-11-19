@@ -1194,7 +1194,7 @@ fn formater(modele: &str, valeurs: &[(&str, String)]) -> R<String> {
                         None => return Err(erreur(Classe::Illisible, "une accolade ouverte n'est pas fermée avant la fin du texte")),
                     }
                 }
-                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| socle::fichiers::absent(&nom).reclasser(Classe::Manque))?;
+                let v = valeurs.iter().find(|(k, _)| *k == nom).ok_or_else(|| socle::fichiers::manque(&nom))?;
                 out.push_str(&v.1);
             }
             '}' => return Err(erreur(Classe::Illisible, "une accolade fermée n'a pas été ouverte")),

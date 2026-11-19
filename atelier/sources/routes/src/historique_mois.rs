@@ -494,10 +494,7 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
 fn piece_du_retour(racine: &Path, canal: CanalDesRetours, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
-    let mut dossier = racine.join(envois::retours::RETOURS);
-    if let Some(d) = canal.dossier() {
-        dossier = dossier.join(d);
-    }
+    let dossier = canal.chemin(racine);
     let flux: String = match flux {
         Some(f) => f.texte().chars().take(24).collect(),
         None => "sansflux".into(),

@@ -933,10 +933,18 @@ pub fn imprimable(c: char) -> bool {
 // Un fichier ou une demande dont un champ manque ou n'a pas la forme attendue :
 // la phrase nomme le champ, ce qui etait attendu et ce qui a ete lu.
 
-/// « champ 'prenom' absent ».
+/// « champ 'prenom' absent » : une cle qu'une donnee du logiciel devait porter (un bareme, une ligne calculee, un
+/// fichier qu'il a ecrit). Rien que la compagnie puisse dire : un defaut. Une case qu'elle n'a pas dite : `manque`.
 #[track_caller]
 pub fn absent(cle: &str) -> Echec {
     crate::echec::cle("Il manque une donnée attendue.", cle)
+}
+
+/// UNE CASE QUE LA COMPAGNIE N'A PAS DITE (celle d'une fiche, d'une saisie, d'une demande), et que l'acte exige : un
+/// manque (`Classe::Manque`), qui se demande, pas un defaut du logiciel. La cle va a part.
+#[track_caller]
+pub fn manque(cle: &str) -> Echec {
+    crate::echec::cle("Il manque une donnée attendue.", cle).reclasser(crate::echec::Classe::Manque)
 }
 
 /// Une valeur dite en francais, depuis son nom de type (`NoneType`, `bool`, `int`, `float`, `str`, `list`, `dict`).

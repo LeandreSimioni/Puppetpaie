@@ -274,7 +274,7 @@ impl Valide {
             ),
         })?;
         let une = relire::saisie_d_un_engagement(data, i)?;
-        Ok(paie_sur_son_ecrite(relire::paies(ctx, &une, &[&x.paie])?.pop().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paie"))?, &x))
+        Ok(paie_sur_son_ecrite(relire::paies(ctx, &une, &[&x.paie])?.pop().ok_or_else(|| socle::echec::paie_illisible("paie"))?, &x))
     }
 }
 
@@ -525,7 +525,7 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, gar
             None => v.paie(ctx, &data, i)?,
         };
         paies.push(paie);
-        gardes.push(i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "engagements"))?);
+        gardes.push(i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::paie_illisible("engagements"))?);
     }
     Ok(Some((crate::saisie::VueDuMois { engagements: gardes, ..data }, paies)))
 }
@@ -2180,7 +2180,7 @@ fn version_de_la_dsn<'a>(ctx: &Contexte, o: &'a Objet, departs: &Departs, mois: 
 
 /// Ce que la version `version` dit de `mois` (`Objet::vue` de sa saisie).
 fn vue_de_la_version(o: &Objet, version: stock::Version, mois: Mois) -> R<Option<crate::saisie::Carte>> {
-    let saisie = version.saisie().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "saisie"))?;
+    let saisie = version.saisie().ok_or_else(|| socle::echec::paie_illisible("saisie"))?;
     o.d_apres_la_saisie(saisie).vue(mois)
 }
 
@@ -2203,7 +2203,7 @@ fn paie_de_la_version(ctx: &Contexte, o: &Objet, version: stock::Version, mois: 
     let Some(ecrite) = paie_ecrite_de_la_version(o, version, mois)? else { return Ok(None) };
     let Some(vue) = vue_de_la_version(o, version, mois)? else { return Ok(None) };
     let data = crate::saisie::VueDuMois { mois, taux_cachet: ecrite.saisie_du_mois.taux_cachet.clone(), engagements: vec![vue] };
-    let eng = relire::engagements_ecrits(ctx, &data, &[&ecrite.paie])?.pop().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paie"))?;
+    let eng = relire::engagements_ecrits(ctx, &data, &[&ecrite.paie])?.pop().ok_or_else(|| socle::echec::paie_illisible("paie"))?;
     let lue = relire::paie_sur_ses_fiches(ctx, eng, &ecrite.paie, &ecrite.fiches)?;
     Ok(Some(paie_sur_son_ecrite(lue, &ecrite)))
 }

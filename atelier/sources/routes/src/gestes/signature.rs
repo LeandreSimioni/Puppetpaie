@@ -46,12 +46,6 @@ fn refus(message: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, message)
 }
 
-/// La case `cle` de la fiche entreprise manque.
-#[track_caller]
-fn requis_manque(cle: &str) -> Echec {
-    socle::fichiers::absent(cle).reclasser(Classe::Manque)
-}
-
 use droit::marqueurs::Marqueur;
 
 /// Les clauses qu'un avenant peut modifier : ce que L1242-12 et les conventions mettent au contrat et qui bouge
@@ -136,14 +130,14 @@ fn et_fr(morceaux: &[String]) -> String {
 /// `signataire` et `raison` des courriels : le prenom d'affichage du signataire (sinon son prenom, capitalise), et
 /// le nom d'affichage de la compagnie (sinon sa raison sociale).
 pub(crate) fn signataire_et_raison(ctx: &Contexte) -> R<(String, String)> {
-    let sg = ctx.entreprise.signataire.dite().ok_or_else(|| requis_manque("signataire"))?;
+    let sg = ctx.entreprise.signataire.exigee("signataire")?;
     let signataire = match sg.prenom_affichage.portee() {
         Some(p) => p.to_string(),
-        None => capitaliser(sg.prenom.portee().ok_or_else(|| requis_manque("prenom"))?),
+        None => capitaliser(sg.prenom.ecrite("prenom")?),
     };
     let raison = match ctx.entreprise.nom_affichage.portee() {
         Some(r) => r.to_string(),
-        None => ctx.entreprise.raison_sociale.ecrite("raison_sociale").map_err(|_| requis_manque("raison_sociale"))?.to_string(),
+        None => ctx.entreprise.raison_sociale.ecrite("raison_sociale")?.to_string(),
     };
     Ok((signataire, raison))
 }
@@ -158,7 +152,7 @@ fn prenom_de(sal: &ChampsSalarie) -> R<String> {
 
 /// Le texte d'une case de la fiche, exigee.
 fn exige<T: AsRef<str>>(c: &Option<T>, cle: &str) -> R<String> {
-    c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))
+    c.ecrite(cle).map(str::to_string)
 }
 
 /// « Prenom Nom » tel que la reponse « Je signe » le dit : `prenom_affichage or prenom`, `nom_affichage or nom`.

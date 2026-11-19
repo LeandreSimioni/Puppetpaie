@@ -1179,8 +1179,8 @@ fiche entreprise ne porte pas a cette date (Configuration › Entreprise › Ava
             nic,
             nics.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")
         );
-        // Un salarie sans nom : la phrase se tourne sans lui.
-        return Err(socle::echec::refus(match sal.nom.remplie() {
+        // Un salarie sans nom : la phrase se tourne sans lui. La fiche entreprise ne porte pas l'etablissement : un manque.
+        return Err(socle::echec::erreur(socle::echec::Classe::Manque, match sal.nom.remplie() {
             Some(n) => format!("{} : l{}", n, suite),
             None => format!("L{}", suite),
         }));
@@ -1194,7 +1194,7 @@ pub fn fiche_de_l_etablissement(fiche: &ChampsEntreprise, nic: &Nic) -> R<Champs
     if Some(nic) == fiche.nic_principal() {
         return Ok(fiche.clone());
     }
-    let e = fiche.etablissement(nic).ok_or_else(|| socle::refus!("Etablissement inconnu : {}.", nic))?;
+    let e = fiche.etablissement(nic).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Manque, format!("Etablissement inconnu : {}.", nic)))?;
     let mut vue = fiche.clone();
     let nic_e = e.nic.exigee("nic")?;
     vue.siret = Some(Siret::de(fiche.siren.exigee("siren")?, nic_e));
@@ -1248,7 +1248,7 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &Nic) -> R<Pile>
     // Le taux de l'etablissement, lu par la meme regle que celui de la compagnie (`taux_atmp_de_l_annee`), en
     // Alsace-Moselle d'apres SON code postal ; ce qui manque, `bareme_atmp` le refuse en le disant.
     let Some(dit) = e.taux_atmp.as_ref().filter(|t| !t.est_vide()) else {
-        return Err(socle::fichiers::absent("taux_atmp"));
+        return Err(socle::fichiers::manque("taux_atmp"));
     };
     let nom = match e.libelle.remplie().filter(|l| !l.trim().is_empty()) {
         Some(libelle) => libelle,

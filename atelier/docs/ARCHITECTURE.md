@@ -570,6 +570,7 @@ un libellé, chacun sa forme.
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | format d'une pièce de retour | `FormatDuRetour` | `envois/src/retours.rs` |
+| pièce de retour qui ne se lit pas | `PieceIllisible` | `envois/src/retours.rs` |
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |

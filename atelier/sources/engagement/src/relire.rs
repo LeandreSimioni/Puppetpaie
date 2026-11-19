@@ -37,12 +37,12 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
      -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>, Option<droit::plafond::JoursSansRemuneration>)> {
         let rang = *mensuels.get(appel.get()).ok_or_else(|| socle::echec::refus("rang d'engagement inconnu"))?;
         appel.set(appel.get() + 1);
-        let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "lignes"))?.engagement;
+        let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::paie_illisible("lignes"))?.engagement;
         Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours), None))
     };
     let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {
-        return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "paies"));
+        return Err(socle::echec::paie_illisible("paies"));
     }
     for (e, p) in engs.iter_mut().zip(paies) {
         // Le numero est celui de l'engagement, pose quand le contrat part ; une paie validee avant ne le porte pas.
@@ -98,7 +98,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     } else {
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
-    let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
+    let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::paie_illisible("plafond_temps_partiel"))?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, v.plafond_urssaf, v.part_abattue_csg(), socle::grandeurs::courte(v.smic), v.heures, tp);
     // Les periodes elementaires d'un mois decoupe : chacune sur l'engagement borne a sa periode, aux termes qu'elle porte.
     let mut periodes_lues = Vec::new();
@@ -143,6 +143,6 @@ pub fn paies(ctx: &Contexte, data: &crate::saisie::VueDuMois, ecrites: &[&FormeD
 
 /// La saisie `data` reduite a son engagement `i` : ce que la relecture d'une seule paie lit.
 pub fn saisie_d_un_engagement(data: &crate::saisie::VueDuMois, i: crate::saisie::RangDansLeMois) -> R<crate::saisie::VueDuMois> {
-    let e = i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "engagements"))?;
+    let e = i.dans(&data.engagements).cloned().ok_or_else(|| socle::echec::paie_illisible("engagements"))?;
     Ok(crate::saisie::VueDuMois { mois: data.mois, taux_cachet: data.taux_cachet.clone(), engagements: vec![e] })
 }

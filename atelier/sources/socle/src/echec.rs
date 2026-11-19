@@ -517,6 +517,13 @@ pub fn cle(phrase: impl Into<String>, cle: &str) -> Echec {
 /// Une paie ecrite (ce que la validation d'un engagement a garde) qui ne se relit pas : la cle va a part (`a_la_cle`).
 pub const PAIE_ILLISIBLE: &str = "Une paie écrite ne se relit pas : revalider l'engagement.";
 
+/// UNE PAIE ECRITE QUI NE SE RELIT PAS, a la cle `cle` : une panne (`Classe::Illisible`), pas une case que la compagnie
+/// aurait a dire (`Echec::dit_un_manque`).
+#[track_caller]
+pub fn paie_illisible(cle: &str) -> Echec {
+    self::cle(PAIE_ILLISIBLE, cle).reclasser(Classe::Illisible)
+}
+
 /// UN FICHIER DE LA COMPAGNIE QUI NE PORTE PAS CE QU'IL DEVRAIT (une forme inattendue) : la phrase en mots, le chemin et ce
 /// qui ne va pas a part.
 #[track_caller]

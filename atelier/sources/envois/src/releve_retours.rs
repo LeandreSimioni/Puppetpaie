@@ -439,8 +439,8 @@ fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
     socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.")
 }
 
-/// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
-fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: CanalDesRetours) -> R<()> {
+/// Ajoute au journal du canal les retours qu'il n'a pas encore vus : un retour vu ne se retelecharge plus.
+pub fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: CanalDesRetours) -> R<()> {
     let p = journal_des_vus(ctx, canal)?;
     let mut deja = lire_vus(&p)?;
     let connus: Vec<CleDeRetour> = deja.iter().map(crate::etats::cle_du_contenu).collect();
@@ -464,6 +464,19 @@ fn deja_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<Vec<CleDeRetour>> {
 fn est_connu(connus: &[CleDeRetour], r: &Annonce) -> bool {
     let k = crate::etats::cle_du_contenu(r);
     connus.contains(&k)
+}
+
+/// Les retours de ce releve dont l'archive est une piece que son lecteur n'a pas lue (`illisibles`, par le nom de
+/// l'archive et la nature).
+fn archives_non_lues(archives: &[RetourArchive], illisibles: &[crate::retours::PieceIllisible]) -> R<Vec<Annonce>> {
+    let mut non_lus = Vec::new();
+    for a in archives {
+        let nom = socle::fichiers::NomDeFichier::du(&a.chemin)?;
+        if illisibles.iter().any(|p| p.nature == a.retour.nature_retour && p.archive == nom) {
+            non_lus.push(a.retour.clone());
+        }
+    }
+    Ok(non_lus)
 }
 
 fn en_echec(p: Panne) -> Echec {
@@ -588,7 +601,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<usize> {
         }
         suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &decrits, &contenus))?;
         // L'EFFECTIF S'ECRIT SEUL, comme a la releve reelle.
-        reconstruire_effectifs(&ctx.racine)?;
+        suites.illisibles.extend(reconstruire_effectifs(&ctx.racine)?);
     }
     Ok(faits)
 }
@@ -692,8 +705,13 @@ pub fn relever_retours(
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
                 if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
-                    for d in crate::retours::declarations_du_bilan(&contenu)? {
-                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                    match crate::retours::declarations_du_bilan(&contenu) {
+                        Ok(ds) => {
+                            for d in ds {
+                                releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
+                            }
+                        }
+                        Err(e) => suites.illisibles.push(crate::retours::PieceIllisible::de(r.nature_retour, &chemin, e)?),
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
@@ -712,16 +730,28 @@ pub fn relever_retours(
 
     if canal == CanalDesRetours::Dsn {
         // L'EFFECTIF S'ECRIT SEUL : `config/effectifs.json` se refait depuis les archives.
-        reconstruire_effectifs(&ctx.racine)?;
+        suites.illisibles.extend(reconstruire_effectifs(&ctx.racine)?);
     }
 
     if !releve.trouves.is_empty() {
-        let vus: Vec<Annonce> = releve.trouves.iter().filter(|r| !rates.contains(r)).cloned().collect();
-        noter_vus(ctx, &vus, canal)?;
         // Un depot n'est fini que quand sa reponse est la : chaque retour se range en face du depot qui l'a
         // provoque -- par le flux, et par rien d'autre.
         let contenus: Vec<_> = releve.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         releve.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &releve.trouves, &contenus))?;
+        // UNE PIECE QUE SON LECTEUR NE LIT PAS N'EST PAS UN RETOUR VU, comme un retour rate : elle reste neuve, et le
+        // releve suivant la retelecharge (l'archive deja la n'est pas reecrite) et la relit. Le taux AT/MP et le taux
+        // du PAS se lisent dans les suites : ils s'y notent vus, une fois lus.
+        let lus_aux_suites = |r: &Annonce| canal == CanalDesRetours::Dsn && matches!(r.nature_retour, NatureDuRetour::TauxAtMp | NatureDuRetour::TauxPas);
+        let non_lus = archives_non_lues(&releve.archives, &suites.illisibles)?;
+        let mut vus: Vec<Annonce> = Vec::new();
+        for r in releve.trouves.iter().filter(|r| !rates.contains(r) && !non_lus.contains(r)) {
+            if lus_aux_suites(r) && releve.archives.iter().any(|a| &a.retour == r) {
+                suites.vus_une_fois_lus.push(r.clone());
+            } else {
+                vus.push(r.clone());
+            }
+        }
+        noter_vus(ctx, &vus, canal)?;
     }
 
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
@@ -795,10 +825,13 @@ pub fn relever_retours_dpae(
         }
     }
     if !r.trouves.is_empty() {
-        noter_vus(ctx, &r.trouves, CanalDesRetours::Dpae)?;
         // Le chemin par flux accroche aussi ce qu'il trouve au journal.
         let contenus: Vec<_> = r.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         r.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &r.trouves, &contenus))?;
+        // Une piece que son lecteur ne lit pas n'est pas vue : la consultation par plage la reprend aussi.
+        let non_lus = archives_non_lues(&r.archives, &suites.illisibles)?;
+        let vus: Vec<Annonce> = r.trouves.iter().filter(|x| !non_lus.contains(x)).cloned().collect();
+        noter_vus(ctx, &vus, CanalDesRetours::Dpae)?;
     }
     Ok(r)
 }
@@ -819,7 +852,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        let v = socle::grandeurs::lu::en_texte::<Effectif>(&valeur).map_err(|_| erreur(Classe::Illisible, format!("Le retour ne se lit pas en RO_B008_R002 (la valeur de l'effectif {}) : {} n'est pas un nombre.", code, socle::fichiers::repr(&valeur))))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -867,13 +900,15 @@ fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
 
 /// Relit tous les 118 archives et reecrit `config/effectifs.json`. Pour chaque annee
 /// et chaque code, le calcul le plus RECENT l'emporte ; l'effectif qu'une annee sans 118 a recu de la compagnie reste.
-/// Ne touche pas au fichier s'il n'y a aucun 118.
-pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
+/// Ne touche pas au fichier s'il n'y a aucun 118. Un 118 que son lecteur ne lit pas se rend et ne compte pas (les autres
+/// comptent : ce qu'un 118 lisible a dit reste) ; le disque remonte.
+pub fn reconstruire_effectifs(racine: &Path) -> R<Vec<crate::retours::PieceIllisible>> {
     let dossier = racine.join(crate::retours::RETOURS);
+    let mut illisibles = Vec::new();
     // Sans dossier des retours, aucun 118 n'est arrive.
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(illisibles),
         Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
     let mut noms: Vec<String> = Vec::new();
@@ -888,7 +923,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     for nom in &noms {
         let p = dossier.join(nom);
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
-        let Some(mesures) = lire_crm118(&octets)? else { continue };
+        let mesures = match lire_crm118(&octets) {
+            Ok(Some(m)) => m,
+            Ok(None) => continue,
+            Err(e) => {
+                illisibles.push(crate::retours::PieceIllisible::de(NatureDuRetour::Effectifs, &p, e)?);
+                continue;
+            }
+        };
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
             let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
@@ -899,13 +941,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         }
     }
     if annees.is_empty() {
-        return Ok(());
+        return Ok(illisibles);
     }
     let existant = effectifs_lus(racine)?;
     for (an, dit) in dits(existant.as_ref()) {
         annees.entry(an).or_default().entry(TypeDeParametreNeores::EffectifMoyen).or_insert(dit);
     }
-    ecrire_effectifs(racine, existant.as_ref(), annees)
+    ecrire_effectifs(racine, existant.as_ref(), annees)?;
+    Ok(illisibles)
 }
 
 /// L'EFFECTIF QUE LA COMPAGNIE DIT POUR L'ANNEE `an` (l'effectif annuel moyen de l'annee civile, L. 130-1, I, CSS ;

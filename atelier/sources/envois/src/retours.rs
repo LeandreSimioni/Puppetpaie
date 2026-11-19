@@ -13,6 +13,7 @@
 //! lit pas est un refus `XmlIllisible` (la phrase est celle de `roxmltree`).
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
@@ -212,6 +213,26 @@ socle::noms_fermes! {
         /// Le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le cite, [7], sans le joindre), et qui
         /// ne se traduit donc pas.
         AgircArrco = "agirc-arrco",
+    }
+}
+
+/// UNE PIECE DE RETOUR QUE SON LECTEUR NE LIT PAS, quelle que soit sa nature : elle reste dans le dossier de son canal et
+/// se relit a chaque releve (le jour ou une mise a jour sait la lire, elle se lit) ; rien ne se range pour elle, les
+/// autres pieces se lisent. Elle se note chez l'editeur, une fois par archive
+/// (`compagnie::incidents::noter_retour_illisible`) ; la compagnie n'en voit rien. Le disque n'est pas une piece
+/// illisible : il remonte.
+#[derive(Debug, Clone)]
+pub struct PieceIllisible {
+    pub nature: NatureDuRetour,
+    pub archive: socle::fichiers::NomDeFichier,
+    /// Ce que son lecteur en a dit : ou la lecture a bute.
+    pub echec: Echec,
+}
+
+impl PieceIllisible {
+    /// La piece de l'archive `chemin`, que son lecteur n'a pas lue (`echec`).
+    pub fn de(nature: NatureDuRetour, chemin: &Path, echec: Echec) -> R<PieceIllisible> {
+        Ok(PieceIllisible { nature, archive: socle::fichiers::NomDeFichier::du(chemin)?, echec })
     }
 }
 
@@ -1340,31 +1361,31 @@ fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
 
 fn bilan_depuis(champs: &[(String, String)], type_rapport: TypeDeRapport) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let Some(flux) = forme_du_retour(get("idflux").as_deref(), IdDeFlux::lire)? else { return Ok(None) };
+    let Some(flux) = forme_du_retour("idflux", get("idflux").as_deref(), IdDeFlux::lire)? else { return Ok(None) };
     let recu_le = reception_du_rapport(&get)?;
     Ok(Some(Bilan {
         flux,
         recu_le,
         essai_reel: essai_du_retour(get("essai_reel").as_deref())?,
-        etat_envoi: forme_du_retour(get("envoi_etat").as_deref(), Verdict::lire)?,
-        etat_declaration: forme_du_retour(get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
+        etat_envoi: forme_du_retour("envoi_etat", get("envoi_etat").as_deref(), Verdict::lire)?,
+        etat_declaration: forme_du_retour("etat", get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
         type_rapport,
         type_declaration: type_du_retour(get("type").as_deref())?,
-        fraction: forme_du_retour(get("fraction").as_deref(), Fraction::lire)?,
-        ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
-        salaries: forme_du_retour(get("salaries").as_deref(), compte_du_retour)?,
-        contrats: forme_du_retour(get("contrats").as_deref(), compte_du_retour)?,
+        fraction: forme_du_retour("fraction", get("fraction").as_deref(), Fraction::lire)?,
+        ordre: forme_du_retour("ordre", get("ordre").as_deref(), NumeroDOrdre::lire)?,
+        salaries: forme_du_retour("salaries", get("salaries").as_deref(), compte_du_retour)?,
+        contrats: forme_du_retour("contrats", get("contrats").as_deref(), compte_du_retour)?,
         conformite: get("etat_conformite"),
         certificat: get("certificat_conformite"),
-        siret_declarant: forme_du_retour(get("siret").as_deref(), Siret::lire)?,
+        siret_declarant: forme_du_retour("siret", get("siret").as_deref(), Siret::lire)?,
     }))
 }
 
 /// LE BILAN QUE PORTENT LES OCTETS `o` : `None` quand ce n'est pas un rapport de depot (un XML d'une autre forme, ou
-/// sans flux) ; un XML qui ne se lit pas est un refus (sa classe) : la reprise du journal le nomme (`illisibles`), le
-/// rattachement des retours le tient pour une piece sans bilan (`bilan_si_xml`).
+/// sans flux) ; un XML qui ne se lit pas est un refus (sa classe) : la reprise du journal le rend a noter
+/// (`retours::PieceIllisible`), le rattachement des retours le tient pour une piece sans bilan (`bilan_si_xml`).
 pub fn bilan_d_octets(o: &[u8]) -> R<Option<Bilan>> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(nettoye(&texte))?;
@@ -1429,10 +1450,10 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
         out.push(DeclarationIdentifiee {
             nature_declaration: nature_du_retour(get("nature").as_deref())?,
             type_declaration: type_du_retour(get("type").as_deref())?,
-            ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
-            siren: forme_du_retour(get("SIREN").as_deref(), Siren::lire)?,
-            nic: forme_du_retour(get("nic_affectation").as_deref(), Nic::lire)?,
-            etat: forme_du_retour(get("etat").as_deref(), Verdict::lire)?,
+            ordre: forme_du_retour("ordre", get("ordre").as_deref(), NumeroDOrdre::lire)?,
+            siren: forme_du_retour("SIREN", get("SIREN").as_deref(), Siren::lire)?,
+            nic: forme_du_retour("nic_affectation", get("nic_affectation").as_deref(), Nic::lire)?,
+            etat: forme_du_retour("etat", get("etat").as_deref(), Verdict::lire)?,
             essai_reel,
             codes,
         });
@@ -1483,10 +1504,11 @@ fn compte_du_retour(texte: &str) -> R<usize> {
     texte.parse::<usize>().map_err(|_| socle::refus!("Un compte que le retour porte ne se lit pas : {} n'est pas un nombre entier positif.", socle::fichiers::repr(texte)))
 }
 
-/// Ce qu'un retour de la norme porte dans une forme de la norme (`lire` : une fraction, un numero d'ordre), `None` s'il
-/// ne le porte pas : hors de sa forme, le retour ne se lit pas.
-fn forme_du_retour<T>(texte: Option<&str>, lire: fn(&str) -> R<T>) -> R<Option<T>> {
-    texte.map(|t| lire(t).map_err(|e| e.reclasser(Classe::Illisible))).transpose()
+/// Ce qu'un retour de la norme porte en `zone` (l'element, l'attribut ou la rubrique) dans une forme de la norme (`lire` :
+/// une fraction, un numero d'ordre), `None` s'il ne le porte pas : hors de sa forme, le retour ne se lit pas, et la
+/// phrase dit la zone (celle de `lire` dit la valeur).
+fn forme_du_retour<T>(zone: &str, texte: Option<&str>, lire: fn(&str) -> R<T>) -> R<Option<T>> {
+    texte.map(|t| lire(t).map_err(|e| socle::echec::erreur(Classe::Illisible, format!("Le retour ne se lit pas en {} : {}", zone, e.phrase)))).transpose()
 }
 
 fn code_du_retour<T: ListeDeLaNorme>(code: Option<&str>, quoi: &str) -> R<Option<T>> {
@@ -1528,7 +1550,7 @@ pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
             }
         }
         if !message.is_empty() {
-            let cat = match forme_du_retour(Some(categorie).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)? {
+            let cat = match forme_du_retour("categorie", Some(categorie).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)? {
                 Some(c) => format!(" ({})", c),
                 None => String::new(),
             };
@@ -1563,7 +1585,7 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
             let t = x.texte_net();
             match local(&x.tag) {
                 "code" if code.is_empty() => code = t.to_string(),
-                "categorie" if categorie.is_none() => categorie = forme_du_retour(Some(t).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
+                "categorie" if categorie.is_none() => categorie = forme_du_retour("categorie", Some(t).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
                 "message" if message.is_empty() => message = t.to_string(),
                 "identifiant" if rubrique.is_empty() => rubrique = t.to_string(),
                 _ => {}
@@ -1982,7 +2004,7 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         }
         let champs = enfants_textes(a, el);
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
-        let Some(nir) = forme_du_retour(lu("NIR").as_deref(), Nir::lire)? else { continue };
+        let Some(nir) = forme_du_retour("NIR", lu("NIR").as_deref(), Nir::lire)? else { continue };
         // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
         // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant. Le salarie
         // que le compte rendu nomme sans taux n'a aucun taux transmis (ni taux, ni type) ; ce que sa paie en fait, c'est
@@ -2402,7 +2424,7 @@ fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
         0 => {
             let n = (m.taille as usize).min(m.taille_comp as usize);
             if comprime.len() < n {
-                return Err(echec(Classe::ArchiveNonLue, ""));
+                return Err(echec(Classe::ArchiveNonLue, format!("archive zip tronquee : « {} » stocke {} octets, il en annonce {}", m.original, comprime.len(), n)));
             }
             comprime[..n].to_vec()
         }
@@ -2694,7 +2716,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
     let libelle = type_rapport.as_deref().and_then(TypeDeRapport::du_code).map(|t| t.libelle().to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
     let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
-    let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, essai_du_retour(de_l_envoi("essai_reel").as_deref())?);
+    let (etat_envoi, essai_reel) = (forme_du_retour("envoi_etat", de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, essai_du_retour(de_l_envoi("essai_reel").as_deref())?);
     let mut declarations = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let sous_bloc = |nom: &str| match arbre.sous(d).find(|x| local(&x.tag) == nom) {
@@ -2706,9 +2728,9 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         declarations.push(DeclarationDuRapport {
             nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
             type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
-            ordre: forme_du_retour(Some(premier_texte(&arbre, id, &["ordre"])).filter(|t| !t.is_empty()), NumeroDOrdre::lire)?,
+            ordre: forme_du_retour("ordre", Some(premier_texte(&arbre, id, &["ordre"])).filter(|t| !t.is_empty()), NumeroDOrdre::lire)?,
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
-            etat: forme_du_retour(Some(premier_texte(&arbre, bilan, &["etat", "etat_conformite"])).filter(|t| !t.is_empty()), Verdict::lire)?,
+            etat: forme_du_retour("etat", Some(premier_texte(&arbre, bilan, &["etat", "etat_conformite"])).filter(|t| !t.is_empty()), Verdict::lire)?,
         });
     }
     let mut anomalies = Vec::new();
@@ -3189,8 +3211,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let r = |bloc: Option<&Noeud>, nom: &str| bloc.and_then(|b| rubrique_texte(&a, b, nom));
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
     let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
-    let declencheur = forme_du_retour(r(b001, "RO_B001_R001").as_deref(), code_ferme::<DeclencheurNeores>)?;
-    let type_de_retour = forme_du_retour(r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
+    let declencheur = forme_du_retour("RO_B001_R001", r(b001, "RO_B001_R001").as_deref(), code_ferme::<DeclencheurNeores>)?;
+    let type_de_retour = forme_du_retour("RO_B002_R004", r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
     let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
         Ok(IndividuNeores {
             identite: IdentiteDeclaree {
@@ -3198,7 +3220,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 prenoms: rubrique_texte(&a, b, &format!("{}_R004", p)),
                 ..IdentiteDeclaree::default()
             },
-            matricule: forme_du_retour(rubrique_de(&a, b, &format!("{}_R005", p)), droit::fiche::Matricule::lire)?,
+            matricule: forme_du_retour(&format!("{}_R005", p), rubrique_de(&a, b, &format!("{}_R005", p)), droit::fiche::Matricule::lire)?,
             debut_contrat: rubrique_jour(&a, b, &format!("{}_R006", p))?,
             contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
         })
@@ -3220,7 +3242,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                         cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
                         debut: rubrique_jour(&a, b, "RO_B007_R005")?,
                         fin: rubrique_jour(&a, b, "RO_B007_R006")?,
-                        resultat: forme_du_retour(rubrique_de(&a, b, "RO_B007_R009"), code_ferme::<ResultatDuControleNeores>)?,
+                        resultat: forme_du_retour("RO_B007_R009", rubrique_de(&a, b, "RO_B007_R009"), code_ferme::<ResultatDuControleNeores>)?,
                         acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
                     })
                 })
@@ -3231,7 +3253,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 fin: rubrique_jour(&a, d, "RO_B005_R003")?,
                 montant: rubrique_montant(&a, d, "RO_B005_R004")?,
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
-                substituable: forme_du_retour(rubrique_de(&a, d, "RO_B005_R005"), code_ferme::<SubstituableNeores>)?,
+                substituable: forme_du_retour("RO_B005_R005", rubrique_de(&a, d, "RO_B005_R005"), code_ferme::<SubstituableNeores>)?,
                 rappel: rd("RO_B005_R006"),
                 interlocuteur: rd("RO_B005_R007"),
                 individus,
@@ -3241,8 +3263,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         actions.push(ActionNeores {
             code: rc("RO_B004_R001"),
             libelle: rc("RO_B004_R002"),
-            type_action: forme_du_retour(rubrique_de(&a, c, "RO_B004_R003"), code_ferme::<TypeDActionNeores>)?,
-            resultat: forme_du_retour(rubrique_de(&a, c, "RO_B004_R006"), code_ferme::<ResultatDuControleNeores>)?,
+            type_action: forme_du_retour("RO_B004_R003", rubrique_de(&a, c, "RO_B004_R003"), code_ferme::<TypeDActionNeores>)?,
+            resultat: forme_du_retour("RO_B004_R006", rubrique_de(&a, c, "RO_B004_R006"), code_ferme::<ResultatDuControleNeores>)?,
             individus: rc("RO_B004_R009"),
             contrats: rc("RO_B004_R010"),
             controle: rc("RO_B004_R011"),
@@ -3250,7 +3272,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
             action: rc("RO_B004_R013"),
             aide: rc("RO_B004_R014"),
             consequences: rc("RO_B004_R015"),
-            substituable: forme_du_retour(rubrique_de(&a, c, "RO_B004_R016"), code_ferme::<SubstituableNeores>)?,
+            substituable: forme_du_retour("RO_B004_R016", rubrique_de(&a, c, "RO_B004_R016"), code_ferme::<SubstituableNeores>)?,
             rappel: rc("RO_B004_R017"),
             exception: rc("RO_B004_R018"),
             details,
@@ -3261,7 +3283,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B008")
         .map(|p| {
             Ok(ParametreNeores {
-                type_parametre: forme_du_retour(rubrique_de(&a, p, "RO_B008_R001"), code_ferme::<TypeDeParametreNeores>)?,
+                type_parametre: forme_du_retour("RO_B008_R001", rubrique_de(&a, p, "RO_B008_R001"), code_ferme::<TypeDeParametreNeores>)?,
                 valeur: rubrique_texte(&a, p, "RO_B008_R002"),
                 effet: rubrique_jour(&a, p, "RO_B008_R003")?,
                 fin: rubrique_jour(&a, p, "RO_B008_R004")?,
@@ -3277,20 +3299,20 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
             let x = |n: &str| rubrique_texte(&a, b, n);
             Ok(IdentiteNeores {
                 declaree: IdentiteDeclaree {
-                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
-                    ntt: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
+                    nir: forme_du_retour("RO_B009_R001", rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
+                    ntt: forme_du_retour("RO_B009_R002", rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
                     nom: x("RO_B009_R004"),
                     prenoms: x("RO_B009_R006"),
-                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R008"), naissance_du_retour)?,
+                    naissance: forme_du_retour("RO_B009_R008", rubrique_de(&a, b, "RO_B009_R008"), naissance_du_retour)?,
                 },
                 reference: IdentiteDeclaree {
-                    nir: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
+                    nir: forme_du_retour("RO_B009_R003", rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
                     ntt: None,
                     nom: x("RO_B009_R005"),
                     prenoms: x("RO_B009_R007"),
-                    naissance: forme_du_retour(rubrique_de(&a, b, "RO_B009_R009"), naissance_de_reference)?.flatten(),
+                    naissance: forme_du_retour("RO_B009_R009", rubrique_de(&a, b, "RO_B009_R009"), naissance_de_reference)?.flatten(),
                 },
-                matricule: forme_du_retour(rubrique_de(&a, b, "RO_B009_R010"), droit::fiche::Matricule::lire)?,
+                matricule: forme_du_retour("RO_B009_R010", rubrique_de(&a, b, "RO_B009_R010"), droit::fiche::Matricule::lire)?,
             })
         })
         .collect::<R<_>>()?;
@@ -3322,9 +3344,9 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
         mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
         essai_reel: essai_du_retour(r(b000, "RO_B000_R013").as_deref())?,
-        ordre: forme_du_retour(r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
+        ordre: forme_du_retour("RO_B000_R012", r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
         metier: r(b003, "RO_B003_R001"),
-        conformite: forme_du_retour(r(b003, "RO_B003_R002").as_deref(), Verdict::lire)?,
+        conformite: forme_du_retour("RO_B003_R002", r(b003, "RO_B003_R002").as_deref(), Verdict::lire)?,
         actions,
         parametres,
         identites,
@@ -3462,8 +3484,8 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 code: at(rm, "CodeRetourMetier"),
                 libelle: at(rm, "LibelCodeRetourMetier"),
                 description: at(rm, "DescriptionRetour"),
-                criticite: forme_du_retour(at(rm, "CriticiteRetour").as_deref(), code_ferme::<CriticiteOc>)?,
-                nombre: forme_du_retour(at(rm, "NbErreursSimilaires").as_deref(), compte_du_retour)?,
+                criticite: forme_du_retour("CriticiteRetour", at(rm, "CriticiteRetour").as_deref(), code_ferme::<CriticiteOc>)?,
+                nombre: forme_du_retour("NbErreursSimilaires", at(rm, "NbErreursSimilaires").as_deref(), compte_du_retour)?,
                 rubrique: at(rm, "RubriqueBlocRetour"),
                 libelle_rubrique: at(rm, "LibelRubBlocRetour"),
                 valeur: at(rm, "ValeurRubriqueErreur"),
@@ -3478,7 +3500,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         declarations.push(DeclarationOc {
             nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
             type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
-            ordre: forme_du_retour(at(d, "NoOrdreDecla").as_deref(), NumeroDOrdre::lire)?,
+            ordre: forme_du_retour("NoOrdreDecla", at(d, "NoOrdreDecla").as_deref(), NumeroDOrdre::lire)?,
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: organisme_crm_oc(d, "CodeOC")?,
             code_delegataire: organisme_crm_oc(d, "CodeDELEG")?,
@@ -3487,18 +3509,18 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             contact: at(d, "NomContact"),
             courriel: at(d, "MailContact"),
             telephone: at(d, "TelContact"),
-            code_retour: forme_du_retour(at(d, "CodeRetourDecla").as_deref(), code_ferme::<RetourGlobalOc>)?,
+            code_retour: forme_du_retour("CodeRetourDecla", at(d, "CodeRetourDecla").as_deref(), code_ferme::<RetourGlobalOc>)?,
             complement: at(d, "ComplementRetourDecla"),
-            erreurs: forme_du_retour(at(d, "NbreErreur").as_deref(), compte_du_retour)?,
-            critiques: forme_du_retour(at(d, "NbreCritique").as_deref(), compte_du_retour)?,
-            affiliations: forme_du_retour(at(d, "NbreAff").as_deref(), compte_du_retour)?,
-            radiations: forme_du_retour(at(d, "NbreRad").as_deref(), compte_du_retour)?,
-            salaries: forme_du_retour(at(d, "NbreSal").as_deref(), compte_du_retour)?,
+            erreurs: forme_du_retour("NbreErreur", at(d, "NbreErreur").as_deref(), compte_du_retour)?,
+            critiques: forme_du_retour("NbreCritique", at(d, "NbreCritique").as_deref(), compte_du_retour)?,
+            affiliations: forme_du_retour("NbreAff", at(d, "NbreAff").as_deref(), compte_du_retour)?,
+            radiations: forme_du_retour("NbreRad", at(d, "NbreRad").as_deref(), compte_du_retour)?,
+            salaries: forme_du_retour("NbreSal", at(d, "NbreSal").as_deref(), compte_du_retour)?,
             mandats,
             retours,
         });
     }
-    Ok(Some(CrmOc { type_crm: forme_du_retour(at(racine, "TypCRM").as_deref(), code_ferme::<TypeDeCrmOc>)?, essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
+    Ok(Some(CrmOc { type_crm: forme_du_retour("TypCRM", at(racine, "TypCRM").as_deref(), code_ferme::<TypeDeCrmOc>)?, essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
 }
 
 /// UN COMPTE RENDU D'ORGANISME COMPLEMENTAIRE LU (`lire_crm_oc`) ; un attribut que le fichier ne porte pas est vide.

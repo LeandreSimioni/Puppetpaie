@@ -1474,7 +1474,7 @@ pub fn jj(iso: &str) -> String {
 /// « NOM Prenom ».
 pub fn qui(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     if fiche.nom.is_none() {
-        return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
+        return Err(socle::fichiers::manque("nom"));
     }
     Ok(qui_souple(fiche))
 }
