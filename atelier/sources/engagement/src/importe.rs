@@ -234,8 +234,8 @@ pub struct PaieVersee {
         deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
     )]
     pub duree_du_travail: Option<Heures>,
-    /// Des cachets entiers : la DSN ne les ecrit pas autrement (`declarations::dsn::MesureDActivite::lue`).
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    /// Les cachets du mois, ecrits comme les heures : la DSN les declare en decimal (« 3.00 »).
+    #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub cachets: Option<Cachets>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub jours: Option<Jours>,
