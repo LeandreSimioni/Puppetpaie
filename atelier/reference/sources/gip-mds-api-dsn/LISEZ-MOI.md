@@ -41,7 +41,9 @@ brut de ce que l'archive ne contient pas (la fiche 692, deux pages de net-entrep
 - §8.2 « Période de rétention des retours » (p. 93) : « Les données de suivi des retours sont disponibles via le service
   de consultation selon les mêmes règles d'historique que le tableau de bord (13 mois). Les retours disponibles au
   téléchargement ont une période de rétention de 3 mois par le SI DSN. Au-delà, les retours sont purgés et ne sont pas
-  archivés par le SI DSN. »
+  archivés par le SI DSN. » Le relevé complet remonte au plus quatre-vingt-dix jours
+  (`envois::releve_retours::HORIZON_DU_RELEVE_COMPLET`), et un retour qu'il a retenu à reprendre, publié depuis plus
+  longtemps, en sort, noté vu, chez l'éditeur comme un retour retiré (`envois::releve_retours::hors_de_l_horizon`).
 - §8.3 « Contraintes de polling » (p. 93-94) : l'intervalle entre deux recherches (en-tête `Expires`) et l'étendue
   d'une plage (en-tête `Accept-Ranges`) ; 429 quand on ne les respecte pas (§9.1.1, p. 95). Le relevé des retours ne
   lit pas l'`Accept-Ranges` (v6.9 l. 5155-5164, dont l'exemple est `minutes=0-60`) : il découpe sa plage par journée
