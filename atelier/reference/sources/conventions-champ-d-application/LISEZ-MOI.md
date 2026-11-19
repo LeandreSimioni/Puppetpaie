@@ -9,10 +9,20 @@ refuse les robots, 403) :
 | CCNEAC (1285), article I.1 (KALIARTI000037814017, en vigueur étendu depuis le 28/03/2018) | la même transcription ; `../kali-entrepot/articles.jsonl.gz`, clé `["1285", "KALIARTI000037814017"]` |
 | Code du travail, L2261-15 (LEGIARTI000042654539, depuis le 01/06/2021) | `../legi-entrepot/articles.jsonl.gz`, clé `["travail", "L2261-15"]` |
 
-**Pas déposés** : les arrêtés d'extension du 4 janvier 1994 (1285) et du 29 mai 2013 (3090). Ils sont au JORF, que ni
-l'un ni l'autre entrepôt ne porte, et Légifrance refuse les robots. KALI dit seulement, dans le titre du texte de la 1285,
-« Etendue par arrêté du 4 janvier 1994 JORF 26 janvier 1994 » ; pour la 3090, les articles relevés sont « VIGUEUR_ETEN »
-(en vigueur, étendus), sans la date de l'arrêté.
+| Arrêté du 29 mai 2013 portant extension de la CCN 3090 (NOR ETST1313918A, JORF n° 0130 du 7 juin 2013, texte n° 97) | `jorf-3090-arrete-extension-20130529.md` : le texte de la page Légifrance, copié par Léandre sur son poste le 19/11/2026 (le texte seul, sans l'impression de la page) |
+
+L'arrêté de 2013 rend obligatoires les dispositions de la convention 3090 « pour tous les employeurs et tous les
+salariés compris dans son champ d'application » (art. 1), à compter de sa publication (art. 2), avec des exclusions et
+des réserves article par article ; entre autres : les termes « trois mois de travail effectif prolongeable d'un mois »
+de l'article VII-3 (période d'essai des contrats à durée indéterminée) sont exclus ; le premier alinéa de l'article
+X-1.1 (salariés ne relevant pas de la caisse des congés spectacles) est exclu ; l'article XI-4 (indemnités
+complémentaires pour accident du travail ou maladie professionnelle) est étendu sous réserve de L. 1226-1, D. 1226-1 et
+D. 1226-2 du code du travail ; les grilles de salaires inférieures au SMIC sont étendues sous réserve du SMIC. Aucun
+calcul ne lit encore ces exclusions.
+
+**Pas déposé** : l'arrêté d'extension du 4 janvier 1994 (1285). Il est au JORF, que ni l'un ni l'autre entrepôt ne
+porte, et Légifrance refuse les robots. KALI dit seulement, dans le titre du texte de la 1285, « Etendue par arrêté du
+4 janvier 1994 JORF 26 janvier 1994 ».
 
 ## Ce qu'on en lit
 
@@ -42,4 +52,5 @@ l'un ni l'autre entrepôt ne porte, et Légifrance refuse les robots. KALI dit s
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `jorf-3090-arrete-extension-20130529.md` : `5faa31abdbcb3ea7684a89dcd4fcb6c28c686ee3ac5eeab936d4cd98bbc5112b`
 - `kali-3090-1285-champ-d-application-transcription-20261109.md` : `7c4b0ee3b97efa80ca83003c429ff937ee9863526ba863eabec9f0a55b8791f6`
