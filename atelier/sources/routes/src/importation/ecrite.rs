@@ -83,7 +83,8 @@ pub(crate) fn lire_dsn_casc(chemin: &Path, contrat: &droit::organismes::Referenc
 /// L'alerte apres l'import, lue avec ce que l'import a ecrit (`ctx`) : une compagnie de la 3090 qui arrive d'un autre
 /// logiciel avec des DSN de 2025 ou apres, d'ou la CASC-SVP manque peut-etre. Elle dit ce que la regularisation de
 /// toutes les annees ferait partir (`importation::casc::regularisation`, calculee sans rien ecrire) : ses mois, sa
-/// periode, son total. Rien si ce n'est pas la 3090, ou s'il n'y a rien a regulariser ; une regularisation qui refuse
+/// periode, son total. Seules les DSN importees qui se lisent en parlent : une compagnie qui n'a importe que des
+/// bulletins n'a rien a regulariser. Rien si ce n'est pas la 3090, ou s'il n'y a rien a regulariser ; une regularisation qui refuse
 /// (une annee dont le taux n'est pas releve, une DSN importee dont le fichier manque, une fiche sans NIR) dit son refus,
 /// qui est ce que l'export dirait.
 fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {

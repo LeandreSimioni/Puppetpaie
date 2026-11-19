@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Viré le"), forme: Forme::Date, sens: "le jour du virement, AAAA-MM-JJ", avance: false },
             Champ { nom: "montant", libelle: Affiche::new("Montant viré"), forme: Forme::Nombre, sens: "le montant viré", avance: false },
         ],
-        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"12.80"}"#,
+        exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"1.12"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, FORME, MANQUE],
         acte: Acte::Ecrit,
