@@ -183,13 +183,16 @@ codes_fermes! {
 
 /// LA COTISATION DE LA DSN QU'UNE COUCHE DU BAREME NOMME (les cles de `cotisations_dsn` d'une categorie, d'une nature,
 /// de la surcouche) : son code (81.001) et, quand plusieurs cotisations du corps partagent ce code, son affectation
-/// (`CotisationDsn::affectation`), ecrits `code` ou `code:affectation` (`059:203`). Une cle vide, un code hors de la
-/// liste, une affectation vide se refusent a la lecture.
+/// (`CotisationDsn::affectation`) ou la base 78 qui la porte (`CotisationDsn::bloc78` : le 131 de la tranche 1 d'un
+/// intermittent sous la base 43, celui de sa tranche 2 sous la base 23), ecrits `code`, `code:affectation` (`059:203`)
+/// ou `code/base` (`131/43`). Une cle sans base nomme toutes les cotisations de ce code et de cette affectation. Une cle
+/// vide, un code hors de la liste, une affectation vide, une base hors de la liste se refusent a la lecture.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
 #[serde(try_from = "String")]
 pub struct CleDeCotisationDsn {
     pub code: CodeCotisation81,
     pub affectation: Option<IdentifiantDAffiliation>,
+    pub base: Option<crate::base_assujettie::BaseAssujettie>,
 }
 
 crate::cle_opaque! {
@@ -206,6 +209,14 @@ crate::cle_opaque! {
 impl CleDeCotisationDsn {
     /// La cle ecrite `texte`.
     pub fn lire(texte: &str) -> socle::echec::R<CleDeCotisationDsn> {
+        let (texte, base) = match texte.split_once('/') {
+            Some((t, b)) => {
+                let base = crate::base_assujettie::BaseAssujettie::du_code(b)
+                    .ok_or_else(|| socle::refus!("cle de cotisation de la DSN {} : base assujettie inconnue", socle::fichiers::repr(b)))?;
+                (t, Some(base))
+            }
+            None => (texte, None),
+        };
         let (code, affectation) = match texte.split_once(':') {
             Some((c, a)) if !a.is_empty() => (c, Some(IdentifiantDAffiliation::lire(a)?)),
             Some(_) => return Err(socle::refus!("cle de cotisation de la DSN {} : affectation vide", socle::fichiers::repr(texte))),
@@ -215,16 +226,25 @@ impl CleDeCotisationDsn {
             let connus: Vec<&str> = CodeCotisation81::TOUS.iter().map(|c| c.code()).collect();
             socle::refus!("Code de cotisation inconnu : {}. Connus : {}.", socle::fichiers::repr(code), connus.join(", "))
         })?;
-        Ok(CleDeCotisationDsn { code, affectation })
+        Ok(CleDeCotisationDsn { code, affectation, base })
+    }
+
+    /// NOMME-T-ELLE LA COTISATION `c` : son code, son affectation et, quand la cle la dit, sa base 78.
+    pub fn nomme(&self, c: &crate::forme_bareme::CotisationDsn) -> bool {
+        c.code81 == Some(self.code) && c.affectation == self.affectation && self.base.is_none_or(|b| b == c.bloc78)
     }
 }
 
 impl std::fmt::Display for CleDeCotisationDsn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.affectation {
-            Some(a) => write!(f, "{}:{}", self.code, a),
-            None => write!(f, "{}", self.code),
+        write!(f, "{}", self.code)?;
+        if let Some(a) = &self.affectation {
+            write!(f, ":{}", a)?;
         }
+        if let Some(b) = self.base {
+            write!(f, "/{}", b.code())?;
+        }
+        Ok(())
     }
 }
 

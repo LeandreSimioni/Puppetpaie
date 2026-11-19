@@ -1751,8 +1751,8 @@ intermittent : ses tranches sont mensuelles"
         bar.cotisation_prevoyance_retraite_supp = sec.cotisation_prevoyance_retraite_supp.clone();
     }
     for c in &mut bar.cotisations_dsn {
-        let Some(cle) = c.cle() else { continue };
-        if let Some(m) = sec.cotisations_dsn.as_ref().and_then(|mods| mods.get(&cle)) {
+        let mods: Vec<&CotisationModifiee> = sec.cotisations_dsn.iter().flatten().filter(|(cle, _)| cle.nomme(c)).map(|(_, m)| m).collect();
+        for m in mods {
             modifier_cotisation(c, m);
         }
     }

@@ -883,23 +883,8 @@ forme! {
         pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
         pub lignes: Option<Vec<IdDeCotisation>>,
-        /// Les lignes du bulletin qui s'ajoutent a une cotisation calculee a son `taux` sur sa `base` : le 131 d'un
-        /// intermittent porte sa tranche 1 au taux, comme toujours, et la tranche 2 et la CET de l'annee quand elles sont
-        /// dues (cahier Agirc-Arrco CT2026, 6.3.2 : « Le code de cotisation 131 globalise les montants des cotisations
-        /// Retraite complementaire, CEG, et CET »). Sans `taux`, elles ne comptent pas : `lignes` dit alors toute la
-        /// cotisation.
-        pub lignes_en_plus: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
         pub apres: Option<CodeCotisation81>,
-    }
-}
-
-impl CotisationDsn {
-    /// LA CLE PAR LAQUELLE UNE COUCHE LA NOMME : son code, et son affectation si elle en a une. `None` : la cotisation
-    /// n'a pas de code, une couche ne la nomme pas.
-    pub fn cle(&self) -> Option<CleDeCotisationDsn> {
-        let code = self.code81?;
-        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone() })
     }
 }
 
@@ -922,7 +907,6 @@ impl CotisationDsn {
             cle_total: None,
             code_insee: None,
             lignes: None,
-            lignes_en_plus: None,
             apres: None,
             source: None,
             note: None,

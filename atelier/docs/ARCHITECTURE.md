@@ -1628,8 +1628,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   règle datée sont des décisions de l'éditeur (`decision_de_l_editeur`) : elles seules refont une paie partie.
 - **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
   `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
-  de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :
-  `CleDeCotisationDsn` (même fichier).
+  de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) ou la
+  base 78 qui la porte (`131/43`, le 131 de la tranche 1 d'un intermittent) : `CleDeCotisationDsn` (même fichier).
 - **clé de totalisation** : le versement (bloc S21.G00.20) dont le montant (20.005) compte une cotisation de la DSN : son
   code 81.001 et, quand ce code va à deux versements, qui le recouvre, écrits `code` ou `code:recouvreur`
   (`018:urssaf`, `018:chomage`, `040:urssaf`) ; une cotisation que le barème ne clé pas se totalise sous son code. Son

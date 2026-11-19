@@ -1835,30 +1835,36 @@
       "bloc78": "23",
       "code81": "131",
       "org": null,
-      "base": "t1_annuelle",
-      "taux": 11.04,
+      "base": "t2_annuelle",
       "base78": "brut",
-      "lignes_en_plus": [
+      "lignes": [
         "retraite_t2",
         "cet"
       ],
       "source": {
         "sources": [
           {
-            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres 2026, p. 3, artistes intermittents non cadres, retraite complémentaire T1 (4,44 salarial + 4,45 patronal)",
-            "citation": "T1 annuelle 4,44 % 4,45 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2 (l. 1090-1092)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
           },
           {
-            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-            "citation": "T1 annuelle 0,86 % 1,29 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2, remarque sur la CET (l. 1172-1174)",
+            "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt",
+            "emetteur": "net_entreprises",
+            "article": "fiche 2556, le 131 (l. 43)",
+            "citation": "Les cotisations sur la Tranche 2 à déclarer sous l’assiette déplafonnée"
           }
-        ]
+        ],
+        "raisonnement": "Le cahier d'Agirc-Arrco (CT2026, 6.3.2, « Base exceptionnelle », l. 1153-1166) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la fiche 2556 dit de même (l. 41-43). La CET va toute sous l'assiette déplafonnée, ici la 23, la première des deux options du cahier (l. 1172-1178), celle aussi de la part patronale (146 en 2026, fiche 2556 l. 505-507) et la seule du 148 de 2027 (l. 85)."
       },
-      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287). La marque `_libelle_a_confirmer`, heritee du 105, est retiree.\nLe 131 d'un intermittent non cadre, sous la base 23 : sa tranche 1 de l'annee au taux (`t1_annuelle`), plus sa tranche 2 et sa CET de l'annee quand elles sont dues (`lignes_en_plus`, les lignes du bulletin ; absentes, elles ne comptent rien) : « Le code de cotisation 131 globalise les montants des cotisations Retraite complementaire, CEG, et CET » (cahier Agirc-Arrco CT2026, 6.3.2) ; la CET sous la base deplafonnee, ici la 23, l'une des deux options du meme cahier (l. 1175-1178), avec sa part patronale (146 ; `dsn::parts_patronales_agirc_arrco`)."
+      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLe 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`, fiche 2556, cas n° 4). Le 131 de sa tranche 1 est sous la base 43."
     },
     {
       "bloc78": "27",
@@ -1933,18 +1939,47 @@
     },
     {
       "bloc78": "43",
-      "code81": null,
+      "code81": "131",
       "org": null,
-      "base": "brut",
-      "taux": null,
+      "base": "t1_annuelle",
+      "taux": 11.04,
       "base78": "t1_annuelle",
       "source": {
-        "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
-        "emetteur": "agirc_arrco",
-        "article": "Aide à la codification DSN CT2026, base assujettie 23 et 43 des intermittents",
-        "citation": "Pour les intermittents du spectacle ou de l'audiovisuel, quelle que soit leur catégorie, utiliser les valeurs « 23 – Base exceptionnelle (Agirc-Arrco) » et « 43 – Base plafonnée exceptionnelle Agirc- Arrco »"
+        "sources": [
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, base assujettie 23 et 43 des intermittents",
+            "citation": "Pour les intermittents du spectacle ou de l'audiovisuel, quelle que soit leur catégorie, utiliser les valeurs « 23 – Base exceptionnelle (Agirc-Arrco) » et « 43 – Base plafonnée exceptionnelle Agirc- Arrco »"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2 (l. 1090-1092)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
+          },
+          {
+            "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt",
+            "emetteur": "net_entreprises",
+            "article": "fiche 2556, le 131 (l. 41)",
+            "citation": "Les cotisations sur la Tranche 1 à déclarer sous l’assiette plafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres 2026, p. 3, artistes intermittents non cadres, retraite complémentaire T1 (4,44 salarial + 4,45 patronal)",
+            "citation": "T1 annuelle 4,44 % 4,45 %"
+          },
+          {
+            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
+            "citation": "T1 annuelle 0,86 % 1,29 %"
+          }
+        ],
+        "raisonnement": "La base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2026, l. 635 et 5166-5168) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1153-1162 ; fiche 2556 l. 41), et sa part patronale, le 142, aussi (fiche 2556, l. 63). Les taux sont ceux d'Audiens."
       },
-      "note": "La base plafonnee exceptionnelle (43) d'un intermittent : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel) ; « L'assiette brute plafonnee correspond a la T1 a retenir » (meme cahier)."
+      "note": "Le 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel) au taux, comme le montant que portaient les DSN deja deposees (la somme des lignes arrondies du bulletin en differe parfois d'un centime : 525 € donnent 30,14 + 27,83 = 57,97 contre 57,96 au taux). Un cadre intermittent y declare sa tranche 1 journaliere et sa ligne (`par_categorie.cadre`, `131/43`)."
     }
   ],
   "majoration_chomage_cddu": {
@@ -2863,29 +2898,18 @@
           "bloc78": "23",
           "code81": "131",
           "org": null,
-          "base": "t1_annuelle",
-          "taux": 10.02,
+          "base": "t2_annuelle",
           "base78": "brut",
-          "lignes_en_plus": [
+          "lignes": [
             "retraite_t2",
             "cet"
           ],
-          "note": "Comme le 131 du corps : la tranche 1 de l'annee au taux, plus la tranche 2 et la CET de l'annee quand elles sont dues.",
+          "note": "Comme le 131 de la base 23 du corps : la tranche 2 et la CET de l'annee, les lignes du bulletin, quand elles sont dues.",
           "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres 2026, p. 3, techniciens non cadres, retraite complémentaire T1 (3,93 salarial + 3,94 patronal)",
-                "citation": "T1 annuelle              3,93 %            3,94 %"
-              },
-              {
-                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-                "citation": "T1 annuelle 0,86 % 1,29 %"
-              }
-            ]
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2 (l. 1090-1092)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
           }
         },
         {
@@ -2960,12 +2984,28 @@
         },
         {
           "bloc78": "43",
-          "code81": null,
+          "code81": "131",
           "org": null,
-          "base": "brut",
-          "taux": null,
+          "base": "t1_annuelle",
+          "taux": 10.02,
           "base78": "t1_annuelle",
-          "note": "Comme le 43 du corps : la tranche 1 de l'annee de la retraite complementaire du technicien."
+          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au taux.",
+          "source": {
+            "sources": [
+              {
+                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres 2026, p. 3, techniciens non cadres, retraite complémentaire T1 (3,93 salarial + 3,94 patronal)",
+                "citation": "T1 annuelle              3,93 %            3,94 %"
+              },
+              {
+                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
+                "citation": "T1 annuelle 0,86 % 1,29 %"
+              }
+            ]
+          }
         }
       ],
       "note": "La section du technicien intermittent : retraite complémentaire Audiens de sa population, taux Urssaf de droit commun sans abattement (BOSS), prévoyance et Congés Spectacles comme l'artiste.\nTaux pleins 2026 (13,00 et 5,25 : les taux reduits n'existent plus), ccn source (CASC-SVP 0,50), Agirc-Arrco techniciens (5,23 + 4,79), RGDU calculee contrat par contrat (D. 241-7) et declaree en 018 Urssaf, 018 France Travail et 106 (CTP 671). Non verifie sur un compte rendu : la repartition 2026 de la RGDU entre Urssaf, chomage et retraite (prorata des points de T). A lire sur le compte-rendu Urssaf de la premiere DSN avec un technicien.\nAnnexe 8 (techniciens, ouvriers et cadres du spectacle)\nChaque source se verifie des DEUX cotes. Audiens donne les artistes (4,45 + 1,29 = 5,74 patronale ; 4,44 + 0,86 = 5,30 salariale) : ce sont exactement les taux artistes de ce bareme, obtenus jadis par retro-ingenierie d'un bulletin. Et le BOSS donne 13,00 et 5,25, dont 70 % font 9,10 et 3,68, egalement les taux artistes. La section technicien n'est donc pas une reconstruction plausible : c'est la meme table, lue une fois avec abattement et une fois sans.\nS21.G00.40.002 et .003 sont des champs de fiche. Le << 204 >> de mai 2025 est l'affectation du second contrat du salarie dans le mois, pas un code annexe 8 ; la regle par versement le produit deja. Plus d'AEM depuis le 01/06/2026 (100 % DSN).\n`cotisations_dsn` : Meme structure de blocs que l'artiste (les blocs 02/03/04/07/23/27/31/43), avec les taux pleins : 049 FNAL 0,10 sur brut x 1,115 ; 074 + 102 = 3,45 + 1,80 = 5,25 AF et 075 + 907 = 7,00 + 6,00 = 13,00 maladie -- la DSN 2026 des artistes garde cette decomposition taux reduit / complement (074 2,42 + 102 1,26 ; 075 4,90 + 907 4,20), on la garde donc pour le technicien ; 130 et 128 identiques ; 040/048/041 chomage identiques (annexes 8 et 10 partagent le taux) ; 131 Agirc-Arrco 10,02 = 5,23 + 4,79 (Audiens 2026, techniciens non-cadres) ; 066 Conges Spectacles 15,5 ; 059 Thalie 0,42 (202) et prevoyance 1,23 (203), meme population ETAM que les artistes (fiche de parametrage Audiens). Un << 204 >> n'est pas un code annexe 8 : c'est l'affectation du DEUXIEME contrat du meme salarie dans le mois (202 pour le premier, 204 pour le second), la regle par versement."
@@ -3277,12 +3317,18 @@
         }
       ],
       "cotisations_dsn": {
-        "131": {
+        "131/43": {
           "lignes": [
-            "retraite_t1",
-            "retraite_t2"
+            "retraite_t1"
           ],
-          "note": "Montant Agirc-Arrco (131, regime unifie, SANS l'Apec depuis la norme 2026.1 : l'Apec part en 132, `cotisations_ajoutees`) = la somme des lignes du bulletin, chaque part arrondie separement. Juin 2025 avait ete declare en 105 << y compris Apec >> : 32,27 = 32,07 de retraite + 0,20 d'Apec."
+          "base78": "t1_journaliere",
+          "source": {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, les bases assujetties (l. 635)",
+            "citation": "L’assiette brute plafonnée correspond à la T1 à retenir."
+          },
+          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1` (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue (la ligne `cet` du corps lui est retiree). L'Apec part en 132 (`cotisations_ajoutees`)."
         },
         "059:203": {
           "taux": 1.81,
@@ -3340,7 +3386,7 @@
           }
         ]
       },
-      "note": "Un cadre intermittent est payé en artiste avec la prévoyance et la retraite des cadres, sur des tranches journalières : T1 = 220 € par jour travaillé en 2026, T2 jusqu'à 8 plafonds, Apec dans la limite de 4 plafonds (Paramètres Audiens 2026, p. 1 à 3).\nAudiens, Parametres 2026 p. 2 : la T2 journaliere court de 1 a 8 plafonds journaliers (T1 = 220, T2 = 7 x 220 au-dela, donc jusqu'a 8 x T1) ; l'Apec est assise sur 4 plafonds (T1 x 4).\nAudiens, Parametres 2026 p. 2 : << intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers >>, 220 EUR x jours travailles pour la T1, 7 x 220 au-dela pour la T2. Pour les non-cadres, ce sont les plafonds annuels (`t1_annuelle`, `t2_annuelle`, `cet_annuelle` du corps) : la section les retire (`rubriques_retirees` : la tranche 2 et la CET de l'annee) et pose ses tranches journalieres. La base 43 du corps reste la tranche 1 de l'annee (`t1_annuelle`, la circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1, pour tout intermittent) : le brut tant que l'annee reste sous le plafond annuel."
+      "note": "Un cadre intermittent est payé en artiste avec la prévoyance et la retraite des cadres, sur des tranches journalières : T1 = 220 € par jour travaillé en 2026, T2 jusqu'à 8 plafonds, Apec dans la limite de 4 plafonds (Paramètres Audiens 2026, p. 1 à 3).\nAudiens, Parametres 2026 p. 2 : la T2 journaliere court de 1 a 8 plafonds journaliers (T1 = 220, T2 = 7 x 220 au-dela, donc jusqu'a 8 x T1) ; l'Apec est assise sur 4 plafonds (T1 x 4).\nAudiens, Parametres 2026 p. 2 : << intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers >>, 220 EUR x jours travailles pour la T1, 7 x 220 au-dela pour la T2. Pour les non-cadres, ce sont les plafonds annuels (`t1_annuelle`, `t2_annuelle`, `cet_annuelle` du corps) : la section les retire (`rubriques_retirees` : la tranche 2 et la CET de l'annee) et pose ses tranches journalieres. Sa base 43 est sa tranche 1 journaliere, « la T1 a retenir » (cahier Agirc-Arrco CT2026, l. 635), sous laquelle se declare le 131 de sa tranche 1 (`131/43`)."
     },
     "cadre_permanent": {
       "verifie": true,
@@ -4293,7 +4339,7 @@
             ],
             "raisonnement": "Comme n. 56. La CET d'un permanent (ligne `cet`) se declare toute sous l'assiette deplafonnee (03), avec la tranche 2 : la premiere des deux options d'Agirc-Arrco pour le 131 (CT2026, l. 1175-1178), celle aussi de la part patronale (146 en 2026, fiche 2556 l. 505-507), et la seule du 148 de 2027 (l. 85) ; la part patronale se declare sous la base 78 du 131 (`dsn::parts_patronales_agirc_arrco`)."
           },
-          "note": "Le 131 de la T2 d'un permanent, et sa CET.\nAgirc-Arrco tranche 2 : 14,57 + 9,72, et la CET 0,21 + 0,14 quand elle est due. Nulle tant que le salaire ne depasse pas le plafond de Securite sociale du mois. A CONFIRMER AU DEPOT DE TEST : deux blocs 78, la base 02 pour la tranche 1 et la base 03 pour la tranche 2 et la CET, sous le meme versement."
+          "note": "Le 131 de la T2 d'un permanent, et sa CET.\nAgirc-Arrco tranche 2 : 14,57 + 9,72, et la CET 0,21 + 0,14 quand elle est due. Sous le plafond, ni la tranche 2 ni la CET ne sont au bulletin, et aucun 131 ne se declare sous la base 03 (fiche net-entreprises 2556, cas n° 4 ; `dsn::cotisations`). A CONFIRMER AU DEPOT DE TEST : deux blocs 78, la base 02 pour la tranche 1 et la base 03 pour la tranche 2 et la CET, sous le meme versement."
         },
         {
           "bloc78": "31",

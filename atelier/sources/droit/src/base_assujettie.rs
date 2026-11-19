@@ -92,6 +92,14 @@ impl BaseAssujettie {
                 | BaseAssujettie::PlafonneeExceptionnelleAgircArrco
         )
     }
+
+    /// L'ASSIETTE DEPLAFONNEE D'AGIRC-ARRCO : « 03 - Assiette brute deplafonnee, le cas echeant 22 - Base brute
+    /// specifique ou 23 - Base exceptionnelle (Agirc Arrco) », sous laquelle se declarent le 131 de la tranche 2 et la
+    /// part patronale de la CET (cahier d'aide a la codification Agirc-Arrco CT2026, 6.3.2, l. 1087-1092 et 1172-1174 ;
+    /// fiche net-entreprises 2556, l. 85 et 505 : `atelier/reference/sources/net-entreprises-base-connaissances/`).
+    pub fn deplafonnee_agirc_arrco(self) -> bool {
+        matches!(self, BaseAssujettie::BruteDeplafonnee | BaseAssujettie::BruteSpecifique | BaseAssujettie::ExceptionnelleAgircArrco)
+    }
 }
 
 codes_fermes! {
