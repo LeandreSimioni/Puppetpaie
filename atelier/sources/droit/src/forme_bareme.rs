@@ -511,13 +511,15 @@ forme! {
     /// LES TRANCHES DU PLAFOND D'UNE PAIE, en nombre de plafonds (`plafond::assiettes_plafonnees`) : la tranche 2 de la
     /// retraite complementaire va jusqu'a `t2` plafonds (ANI Agirc-Arrco du 17/11/2017, art. 32 : « le montant egal a huit
     /// fois ce meme plafond »), et avec elle la tranche 1 + 2 et la CET ; la tranche 2 de la prevoyance conventionnelle,
-    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage, l'AGS et l'Apec,
-    /// dans la limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond » ; Audiens,
-    /// l'Apec). Chacune se lit ici, avec son texte.
+    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage et l'AGS, dans la
+    /// limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond ») ; l'Apec d'un
+    /// cadre, dans celle de `apec` (Audiens : « 4 fois le plafond de la Securite sociale »). Chacune se lit ici, avec son
+    /// texte.
     pub struct TranchesDuPlafond {
         pub t2: Coefficient,
         pub t2_conventionnelle: Coefficient,
         pub chomage: Coefficient,
+        pub apec: Coefficient,
     }
 }
 

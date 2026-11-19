@@ -1027,6 +1027,7 @@
     "t2": 8,
     "t2_conventionnelle": 4,
     "chomage": 4,
+    "apec": 4,
     "source": {
       "sources": [
         {
@@ -1054,9 +1055,9 @@
           "citation": "Cotisation Apec pour les cadres : le plafond applicable est 4 fois le plafond de la Sécurité sociale."
         }
       ],
-      "raisonnement": "Chaque borne a son texte : la tranche 2 de la retraite complémentaire (et avec elle la tranche 1 + 2 et la CET, assise sur les tranches 1 et 2, ANI art. 37) va jusqu'à huit plafonds (ANI art. 32, applicable depuis le 1er janvier 2019) ; la tranche 2 de la prévoyance conventionnelle, jusqu'à quatre (CCNEAC XII.2, inchangé depuis 2016 selon le relevé, pour tout son titre : celle des permanents, et la tranche B d'un cadre technicien intermittent, XII.2.2.2, sur la tranche 1 de son contrat) ; le chômage et l'AGS, dans la limite de quatre plafonds (règlement Unédic du 15/11/2024, art. 49, applicable au 1er janvier 2025), comme l'Apec (Audiens 2025). Le plafond multiplié est celui de la paie, ou la somme des plafonds de l'année pour une paie qui se régularise (`droit::plafond::assiettes_plafonnees`)."
+      "raisonnement": "Chaque borne a son texte : la tranche 2 de la retraite complémentaire (et avec elle la tranche 1 + 2 et la CET, assise sur les tranches 1 et 2, ANI art. 37) va jusqu'à huit plafonds (ANI art. 32, applicable depuis le 1er janvier 2019) ; la tranche 2 de la prévoyance conventionnelle, jusqu'à quatre (CCNEAC XII.2, inchangé depuis 2016 selon le relevé, pour tout son titre : celle des permanents, et la tranche B d'un cadre technicien intermittent, XII.2.2.2, sur la tranche 1 de son contrat) ; le chômage et l'AGS, dans la limite de quatre plafonds (règlement Unédic du 15/11/2024, art. 49, applicable au 1er janvier 2025) ; l'Apec dans la limite de quatre plafonds, à part (`apec`, Audiens 2025). Le plafond multiplié est celui de la paie, ou la somme des plafonds de l'année pour une paie qui se régularise (`droit::plafond::assiettes_plafonnees`)."
     },
-    "note": "Les bornes des tranches d'une paie en nombre de plafonds : `t2` (tranche 2, tranche 1 + 2, CET), `t2_conventionnelle` (la tranche 2 de la prévoyance conventionnelle), `chomage` (le chômage, l'AGS et l'Apec d'un permanent, le chômage et l'Apec d'un intermittent). Un intermittent les multiplie sur la tranche 1 de son contrat."
+    "note": "Les bornes des tranches d'une paie en nombre de plafonds : `t2` (tranche 2, tranche 1 + 2, CET), `t2_conventionnelle` (la tranche 2 de la prévoyance conventionnelle), `chomage` (le chômage et l'AGS d'un permanent, le chômage d'un intermittent), `apec` (l'Apec d'un cadre, permanent ou intermittent). Un intermittent les multiplie sur la tranche 1 de son contrat."
   },
   "regularisation_du_plafond": {
     "technicien_intermittent": "par_contrat",

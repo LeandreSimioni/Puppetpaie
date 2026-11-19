@@ -186,6 +186,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
             t2: socle::grandeurs::Coefficient::ZERO,
             t2_conventionnelle: socle::grandeurs::Coefficient::ZERO,
             chomage: socle::grandeurs::Coefficient::ZERO,
+            apec: socle::grandeurs::Coefficient::ZERO,
             source: None,
             note: None,
         },

@@ -96,7 +96,7 @@ impl Assiette {
     /// UNE ASSIETTE PAR RUBRIQUE DE SALAIRE se calcule sur chaque rubrique soumise (le calcul, §7.4), et une cotisation
     /// s'y somme rubrique par rubrique, chacune arrondie ; toute autre est globale : une seule valeur pour la paie. La
     /// tranche 1 de l'annee d'un intermittent l'est aussi : sous le plafond, c'est le brut de chaque rubrique, et sa
-    /// retraite se compte comme avant elle.
+    /// retraite se compte, rubrique par rubrique, comme sur son brut.
     pub fn par_rubrique(self) -> bool {
         matches!(
             self,
