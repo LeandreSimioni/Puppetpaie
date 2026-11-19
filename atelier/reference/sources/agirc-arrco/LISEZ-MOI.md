@@ -8,6 +8,15 @@ Agirc-Arrco, ses annexes A et B, la délibération 1, les répertoires. « Appli
 **Transmis par Léandre le 11/10/2026** (agirc-arrco.fr, textes de référence ; URL à compléter). Empreinte SHA-256 (16
 premiers caractères) : `b8af8df7372e4f89`. Transcription : `pdftotext -layout`, `.txt` à côté (5 182 lignes).
 
+`legifrance-ani-agirc-arrco-20171117-p001-053-20261119.pdf` et `…-p054-103-20261119.pdf` (+ `.txt`, `pdftotext
+-layout`) : le même accord tel que Légifrance l'imprime (« Texte de base », « Etendu par arrêté du 24 avril 2018 JORF
+28 avril 2018 », 103 pages coupées en deux), relevé le 19/11/2026 par Léandre sur son poste ; chaque article y porte
+son état (« EN VIGUEUR ÉTENDU »). On y lit, lignes du premier `.txt` : **art. 32** (l. 1192-1204), la tranche 1 est ce
+qui « n'excède pas le plafond fixé en application de l'article L. 241-3 du code de la sécurité sociale », la tranche 2
+va de ce plafond à « 8 fois ce même plafond » ; **art. 44** (l. 1662-1663), « Les versements de cotisations donnent
+lieu à une régularisation progressive telle que prévue au II. de l'article R. 242-2 du code de la sécurité sociale »
+(la même phrase est dans la circulaire, l. 1642 de son `.txt`).
+
 ## Ce qu'on en lit (lignes du `.txt`)
 
 - **Article 32, tranches de rémunération** (l. 1245-1256) : « la tranche 1 […] est constituée de l'ensemble des
@@ -152,3 +161,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `agirc-arrco-faq-sommes-versees-apres-depart-v2-202506.txt` : `9054005b378e803b4f5244ac4b8b50628d24caefc5cae06f57eaf41d7ab1a855`
 - `agirc-arrco-faq-temps-partiel-cotisant-temps-plein-201910.txt` : `fdecc5c6c63539b8e14a36c0ed28ffa923a0ccdce4aee52d09b69b2643ba1857`
 - `agirc-arrco-page-documentation-technique-dsn-20261011.txt` : `d5d7dfece5c546483d32b2db443480bff335564a0bd6069c2fa4c52e407579dd`
+- `legifrance-ani-agirc-arrco-20171117-p001-053-20261119.pdf` : `c9ed284f2176de4bf00ba13de9278fef22a7a3dd089ad461e1322d1156e43c7a`
+- `legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt` : `cfa62f3e2cc713731a438fce0ad93fab835b3b22175c235ac8bbed964debedae`
+- `legifrance-ani-agirc-arrco-20171117-p054-103-20261119.pdf` : `2e680accee28e79b00328f3af4df39031704f432c44503137b98e4a2e6751c15`
+- `legifrance-ani-agirc-arrco-20171117-p054-103-20261119.txt` : `2506fcbb9e0d3a2b1d31e9eb7ab35182bea0e57eb98781fd28318c1b8a95a84b`
