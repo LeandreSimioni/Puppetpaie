@@ -41,8 +41,8 @@ pub fn case_refusee(case: &str, raison: &str) -> String {
 
 /// LA CASE OU UNE SAISIE `v` SE REFUSE AU CHEMIN `chemin` : une faute qui a un chemin se dit par sa case, a tout niveau
 /// (une valeur qui ne se lit pas, une cle inconnue ou qui manque dans une case) : la case du changement qui la porte
-/// (`{"case": …, "valeur": …}`, celui de la carte), sinon la premiere cle du chemin. Aucune pour une faute a la racine de
-/// la saisie (une cle inconnue, une cle qui manque a la charge).
+/// (`{"case": …, "valeur": …}`, celui de la carte), sinon la premiere cle du chemin (une cle inconnue de la charge est
+/// au chemin de son nom). Aucune pour une faute a la racine de la saisie (une cle qui manque a la charge).
 fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> Option<crate::echec::CaseDeLaSaisie> {
     use crate::echec::CaseDeLaSaisie;
     use serde_path_to_error::Segment;
@@ -77,7 +77,8 @@ fn case_au_chemin(v: &Value, chemin: &serde_path_to_error::Path) -> Option<crate
 /// saisie (`droit::fiche::FormeDeCase::RANGER`) d'abord range dans sa forme (`range_si_saisi`), comme la saisie d'une
 /// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit. Une case dont la valeur ne se lit pas (un texte tape qui ne
 /// se convertit pas, un nombre hors de sa forme) refuse la saisie en portant sa case, son chemin et la raison
-/// (`echec::CaseRefusee`), dont la route fait sa phrase ; une faute de la saisie elle-meme, par `phrase`.
+/// (`echec::CaseRefusee`), dont la route fait sa phrase ; une cle exigee qui manque a la racine, de meme, a sa case
+/// (`cle_qui_manque`) ; une autre faute de la saisie elle-meme, par `phrase`.
 #[track_caller]
 pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
     let _remise = EnSaisie::ouverte();
@@ -87,10 +88,22 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
         Ok(t) => return Ok(t),
         Err(e) => e,
     };
-    match case_au_chemin(v, e.path()) {
-        Some(case) => Err(case_refusee_a(phrase, case, e.path().to_string(), en_clair(&e.inner().to_string()))),
-        None => Err(refus(phrase, None, &e)),
+    let detail = en_clair(&e.inner().to_string());
+    match (case_au_chemin(v, e.path()), cle_qui_manque(&e.inner().to_string())) {
+        (Some(case), _) => Err(case_refusee_a(phrase, case, e.path().to_string(), detail)),
+        (None, Some(cle)) => Err(case_refusee_a(phrase, crate::echec::CaseDeLaSaisie::Cle(cle.clone()), cle, detail)),
+        (None, None) => Err(refus(phrase, None, &e)),
     }
+}
+
+/// LA CLE EXIGEE QUI MANQUE A LA RACINE D'UNE SAISIE (« missing field `quoi` ») : la case fautive est elle, que le chemin
+/// de la faute (la racine) ne nomme pas.
+fn cle_qui_manque(m: &str) -> Option<String> {
+    let m = match m.split_once(" at line ") {
+        Some((avant, _)) => avant,
+        None => m,
+    };
+    m.strip_prefix("missing field `").and_then(|r| r.strip_suffix('`')).map(str::to_string)
 }
 
 /// Le temps d'une lecture d'une saisie (`EN_SAISIE`) : l'etat d'avant revient en sortant, panique comprise ; une lecture
@@ -457,6 +470,12 @@ fn en_clair(m: &str) -> String {
     }
     if let Some(r) = m.strip_prefix("invalid type: ") {
         return format!("la valeur n'a pas la forme attendue : {}", r.replace(", expected ", ", attendu "));
+    }
+    if let Some(r) = m.strip_prefix("invalid value: ") {
+        return match r.split_once(", expected ") {
+            Some((valeur, attendu)) => format!("la valeur {} n'est pas admise (attendu : {})", valeur, attendu),
+            None => format!("la valeur {} n'est pas admise", r),
+        };
     }
     if let Some(r) = m.strip_prefix("unknown variant ") {
         return format!("la valeur {} n'est pas connue ici", r.replace(", expected one of ", " (attendues : ").replace(", expected ", " (attendue : ").replace("` or `", "` ou `") + ")");
