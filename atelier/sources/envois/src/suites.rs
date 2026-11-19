@@ -62,7 +62,8 @@ pub struct Suites {
     /// Les retours du canal DSN que les suites lisent (`taux_pas`, `taux_atmp`) : ils se notent vus une fois lus
     /// (`releve_retours::noter_vus`) ; une piece que son lecteur ne lit pas reste neuve, et le releve suivant la relit.
     pub vus_une_fois_lus: Vec<Annonce>,
-    /// Les retours que l'organisme a retires (HTTP 410 au telechargement) : leur nature, l'adresse de telechargement qui
+    /// Les retours que l'organisme a retires (HTTP 410 au telechargement), ou qu'il ne sert plus (un retour a reprendre
+    /// publie depuis plus de quatre-vingt-dix jours, `releve_retours::hors_de_l_horizon`) : leur nature, l'adresse de telechargement qui
     /// les identifie (guide de l'API DSN v6.9, § 3.4.4, l. 1756-1771 : l'identifiant n'est la « que pour
     /// rétrocompatibilité », l'URL le remplace) et le refus qui l'a dit. Notes vus, ils ne reviendront pas ; ils se notent
     /// chez l'editeur.

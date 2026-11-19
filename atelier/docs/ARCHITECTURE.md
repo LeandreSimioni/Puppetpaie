@@ -974,10 +974,15 @@ un libellé, chacun sa forme.
   l'ouverture) ou `Bornee` (début, fin, et la seule nature prise s'il y en a une : suivre un dépôt, le relevé avant un
   ordre, l'enquête de l'éditeur). Seule la complète avance le relevé complet.
 - **jusqu'où le dernier relevé complet a lu** : par canal, `retours/releve-complet.json` ou
-  `retours/dpae/releve-complet.json`, une seule forme (`quoi`, `lu_jusqu_a`), lue et écrite par `envois::releve_retours`
-  seul : la fin de la dernière tranche qu'un relevé complet a listée sans échec, jamais au-delà du début de la tranche
-  d'un retour listé et ni vu ni lu (il se reprend). La liste filtre sur la publication, la mise à disposition du retour
-  (guide de l'API DSN v6.9, § 3.4.2 et § 3.4.4) : un retour publié tard tombe dans le relevé suivant.
+  `retours/dpae/releve-complet.json`, une seule forme (`quoi`, `lu_jusqu_a`, `a_reprendre`), lue et écrite par
+  `envois::releve_retours` seul : la fin de la dernière tranche qu'un relevé complet a listée sans échec, et les retours
+  listés pas encore vus (leur annonce, `retours::Annonce`, telle que la liste l'a rendue). La liste coûte, pas la
+  reprise : un retour à reprendre ne retient pas l'instant ; le relevé complet suivant liste depuis l'instant, moins le
+  recouvrement, et reprend ces retours par leur annonce, par le même chemin qu'un retour listé (une archive déjà sur le
+  disque se relit sans réseau) ; vus, ils en sortent ; publiés depuis plus de quatre-vingt-dix jours (§ 8.2), ils en
+  sortent notés vus, chez l'éditeur comme un retour retiré. Un retour repris n'est pas compté nouveau. La liste filtre
+  sur la publication, la mise à disposition du retour (guide de l'API DSN v6.9, § 3.4.2 et § 3.4.4) : un retour publié
+  tard tombe dans le relevé suivant.
 - **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
   plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :
   `Production`, `Editeur`, nommés `production`, `editeur` (`NOMS`, ce que la ligne de commande propose, lu à sa porte
