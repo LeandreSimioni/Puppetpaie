@@ -2529,7 +2529,11 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   à sa place. Le titre compte toutes les cases exigées, où qu'elles soient rangées. Ce qui ne se lit pas est une panne :
   elle remonte.
 - **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
-  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Ce que la dernière DSN reprise déclare du
+  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Un contrat d'usage que la DSN déclare n'est pas à
+  dire : sa nature (S21.G00.40.007, « 02 ») et son motif de recours (.021, « 05 - Contrat d'usage », que le CDDU fixe)
+  la désignent, et elle seule ; l'import la pose sur la paie versée (`droit::natures::d_usage_declaree`,
+  `PaieVersee::nature`). Le code et le motif se lisent toujours ensemble (`Nature::declaree_par`) : un contrat de
+  nature 02 sans motif, ou d'un motif que le CDD ne propose pas, ne reçoit pas la nature d'un CDD. Ce que la dernière DSN reprise déclare du
   contrat ne se demande pas (`nature::DeclareParLaDsn`) : `importation-etat` ne propose que la nature qu'elle déclare et
   ne demande que ce qu'elle tait (le salaire seul, le plus souvent), et `importation-nature` prend sur elle ce que sa
   charge tait ; tout déclaré, l'import l'écrit de lui-même. Le contrat déclaré est celui à dire, retrouvé comme

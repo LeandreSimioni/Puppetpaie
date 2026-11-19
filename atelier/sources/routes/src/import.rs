@@ -382,14 +382,19 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 /// UN CONTRAT QU'UN VERSEMENT DE LA DSN PAIE, EN PAIE VERSEE : ses dates, et ce que la DSN lui attribue
 /// (`dsn_aem::PaieDeclaree`), tel qu'elle l'ecrit (`declarations::dsn_lue::lire`, qui refuse une DSN dont un montant ou
 /// une date ne se lit pas). Son activite du mois (S21.G00.53 de type 01, hors rappel : `dsn_lue::Mesures`) y passe telle
-/// qu'elle est declaree, au centieme pres (`PaieVersee::heures`) ; une mesure nulle ne dit rien.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
+/// qu'elle est declaree, au centieme pres (`PaieVersee::heures`) ; une mesure nulle ne dit rien. Le contrat d'usage
+/// qu'elle declare (S21.G00.40.007 et .021) y pose sa nature (`droit::natures::d_usage_declaree`).
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::PeriodeOuverte>, objet: Option<NumeroObjetSpectacle>) -> R<engagement::importe::PaieVersee> {
     use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.periode, x.verse_le, x.quotite, x.motif_recours) = (periode, d.verse_le, c.and_then(|c| c.quotite), c.and_then(|c| c.motif_recours));
+    x.nature = match c {
+        Some(c) => droit::natures::d_usage_declaree(c.nature_dsn.as_deref(), c.motif_recours)?,
+        None => None,
+    };
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
     let m = &d.mesures;
     (x.heures, x.cachets, x.jours) = (Some(m.heures).filter(|h| !h.est_nul()), Some(m.cachets).filter(|c| !c.est_nul()), Some(m.jours).filter(|j| !j.est_nul()));
@@ -398,7 +403,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
         x.nets = n.clone();
     }
     (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
-    x
+    Ok(x)
 }
 
 /// UN SPECTACLE QUE L'IMPORT CREE d'un numero d'objet qu'aucune fiche ne porte : sans titre (les pieces n'en impriment
@@ -687,7 +692,7 @@ pub(crate) fn apercu_lu(
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }
         // 50.004 est le net verse, pas le net a payer : la DSN ne declare pas celui-ci, un bulletin le donnera.
-        let paie = paie_declaree(v, periode, objet);
+        let paie = paie_declaree(v, periode, objet)?;
         paies.push(engagement::importe::PaieLue { mois, salarie: cle_de(nir), paie });
     }
     let reponse = Importation {

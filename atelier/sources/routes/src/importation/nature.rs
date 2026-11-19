@@ -137,8 +137,10 @@ impl DeclareParLaDsn {
         };
         let Some(p) = lecture.paies.get(&(mois, Some(nir), numero.clone())) else { return Ok(Ok(None)) };
         let Some(c) = p.contrat.as_ref() else { return Ok(Ok(None)) };
+        // La nature et le motif de recours que la DSN declare ensemble (`Nature::declaree_par`) : un contrat d'usage, de
+        // nature 02 comme un CDD, n'en recoit pas la nature.
         let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = match c.nature_dsn.as_deref() {
-            Some(code) => permises.iter().filter(|n| n.code(droit::rubrique!("S21.G00.40.007")).as_deref() == Some(code)).collect(),
+            Some(code) => permises.iter().filter(|n| n.declaree_par(code, c.motif_recours)).collect(),
             None => Vec::new(),
         };
         // Le salaire de base d'un mois que la paie couvre entier, sous un contrat qui le couvre entier : le montant d'une
@@ -707,13 +709,13 @@ pub(crate) fn la_dsn_fait_foi(
         if lecture.is_none() {
             lecture = Some(import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(racine))?);
         }
-        let code = lecture.as_ref().and_then(|l| l.paies.get(&(mois, paie.nir.clone(), numero.clone()))).and_then(|d| d.contrat.as_ref()).and_then(|c| c.nature_dsn.clone());
-        let code_de = |n: &droit::natures::Nature| n.code(droit::rubrique!("S21.G00.40.007"));
-        if let Some(code) = code {
+        let declare = lecture.as_ref().and_then(|l| l.paies.get(&(mois, paie.nir.clone(), numero.clone()))).and_then(|d| d.contrat.as_ref());
+        // Le code et le motif de recours declares ensemble designent la nature (`Nature::declaree_par`).
+        if let Some((code, motif)) = declare.and_then(|c| Some((c.nature_dsn.clone()?, c.motif_recours))) {
             let dite = permises.iter().find(|n| n.cle == nature);
-            let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = permises.iter().filter(|n| code_de(n).as_deref() == Some(code.as_str())).collect();
-            // La nature dite porte deja le code declare : la DSN ne dit rien d'autre.
-            let meme_code = dite.is_some_and(|n| code_de(n).as_deref() == Some(code.as_str()));
+            let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = permises.iter().filter(|n| n.declaree_par(&code, motif)).collect();
+            // La nature dite est deja celle que la DSN declare : elle ne dit rien d'autre.
+            let meme_code = dite.is_some_and(|n| n.declaree_par(&code, motif));
             if let (false, [declaree]) = (meme_code, du_code.as_slice()) {
                 valeurs.push(ValeurDuContrat::Nature { avant: nature, declaree: declaree.cle });
             }

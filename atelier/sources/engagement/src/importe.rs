@@ -186,6 +186,10 @@ pub struct PaieVersee {
     /// Le motif de recours que la DSN deposee declare pour le contrat (S21.G00.40.021).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub motif_recours: Option<droit::natures::MotifDeRecours>,
+    /// La nature du contrat d'usage que la DSN deposee declare (S21.G00.40.007 et .021 : `droit::natures::d_usage_declaree`) ;
+    /// `None` : elle n'en declare pas.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nature: Option<NatureDeContrat>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     /// Ses nets et son prelevement a la source, que la DSN deposee (bloc 50) ou son bulletin disent.
@@ -462,6 +466,7 @@ impl PaieVersee {
             periode: None,
             quotite: None,
             motif_recours: None,
+            nature: None,
             brut: None,
             nets: Nets::default(),
             net_a_payer: None,
@@ -600,7 +605,8 @@ impl Importe {
 
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste
     /// (`routes::importation::bulletins` : une AEM, un certificat Congés Spectacles, un bulletin qui porte une marque du
-    /// spectacle). `None` : elle reste a dire (`a_dire`).
+    /// spectacle), sinon le contrat d'usage que sa DSN declare (`PaieVersee::nature`). `None` : elle reste a dire
+    /// (`a_dire`).
     pub fn nature(&self) -> Option<NatureDeContrat> {
         self.nature_dite()
     }
@@ -649,9 +655,10 @@ impl Importe {
         activite_du_mois(mois, self.paies().get(&mois), self.contrat(), self.carte().debut, self.carte().fin)
     }
 
-    /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
+    /// La nature dite (l'engagement) ou attestee (la piece), sinon le contrat d'usage que la derniere DSN deposee qui
+    /// declare une de ses paies declare (`PaieVersee::nature`) ; `None` : rien ne la porte.
     fn nature_dite(&self) -> Option<NatureDeContrat> {
-        self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature))
+        self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature)).or_else(|| self.paies().values().rev().find_map(|p| p.nature))
     }
 
     /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`ContratAtteste::nature`), et personne ne l'a

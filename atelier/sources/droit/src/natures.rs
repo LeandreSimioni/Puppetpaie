@@ -1629,6 +1629,22 @@ impl Proprietes {
         self.contrat_ecrit.as_ref().map(|c| c.mentions.as_slice())
     }
 
+    /// CE QU'UNE DSN DECLARE D'UN CONTRAT DESIGNE-T-IL CETTE NATURE ? Sa nature du contrat (S21.G00.40.007, `code`, tel
+    /// qu'elle l'ecrit) est la sienne, et son motif de recours (.021, `motif`) aussi : celui que la nature fixe (le CDDU :
+    /// « 05 - Contrat d'usage », « C'est CE code qui fait d'un CDD un CDDU », `contrats-base.json`), ou l'un de ceux
+    /// qu'elle propose (le CDD : le 05 n'y est pas). Une nature qui n'ecrit pas de motif (le CDI) se juge sur son code
+    /// seul. Le motif « qualifie » le contrat a duree determinee (`bloc-S21.G00.40.txt`, S21.G00.40.021 : « Motif pour
+    /// lequel a ete conclu le Contrat a duree determinee ») : sans lui, un code 02 ne designe ni le CDD ni le CDDU.
+    pub fn declaree_par(&self, code: &str, motif: Option<MotifDeRecours>) -> bool {
+        let meme_code = self.code(NatureDuContratDsn::RUBRIQUE).as_deref() == Some(code);
+        let meme_motif = match (self.motif_recours_fixe(), self.motifs_recours()) {
+            (Some(fixe), _) => motif == Some(fixe),
+            (None, Some(offerts)) => motif.is_some_and(|m| offerts.iter().any(|o| o.code == m)),
+            (None, None) => true,
+        };
+        meme_code && meme_motif
+    }
+
     /// Le motif de recours `code` appelle-t-il le nom et la qualification de la personne remplacee ? (L1242-12, 1° :
     /// le CDD conclu au titre du 1° de L1242-2.)
     pub fn motif_de_remplacement(&self, code: MotifDeRecours) -> bool {
@@ -1939,6 +1955,21 @@ pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, statut:
 /// Toutes les natures, dans l'ordre du fichier.
 pub fn natures() -> R<Arc<Vec<Arc<Nature>>>> {
     Ok(lu()?.natures.clone())
+}
+
+/// LE CONTRAT D'USAGE QU'UNE DSN DECLARE : la nature dont le motif de recours fixe (`Nature::motif_recours_fixe`, le
+/// CDDU : 05) et la nature du contrat sont ceux que la DSN declare pour lui (S21.G00.40.007 `code`, .021 `motif` :
+/// `Nature::declaree_par`), quand elle est la seule. Le motif seul fait le contrat d'usage (`contrats-base.json`,
+/// `cddu_spectacle`, S21.G00.40.021) : la DSN le dit, rien ne se devine (regle 6). `None` : la DSN ne declare pas un
+/// contrat d'usage, ou ne le dit pas assez (une nature payee au mois se dit apres l'import, `importation-nature`).
+pub fn d_usage_declaree(code: Option<&str>, motif: Option<MotifDeRecours>) -> R<Option<NatureDeContrat>> {
+    let Some(code) = code else { return Ok(None) };
+    let toutes = natures()?;
+    let designees: Vec<&Arc<Nature>> = toutes.iter().filter(|n| n.motif_recours_fixe().is_some() && n.declaree_par(code, motif)).collect();
+    Ok(match designees.as_slice() {
+        [n] => Some(n.cle),
+        _ => None,
+    })
 }
 
 #[cfg(test)]
