@@ -91,7 +91,8 @@ fn motif_de_fin(c: &ContratDeclare) -> R<droit::natures::MotifDeRupture> {
 /// sens) : sa nature (S21.G00.40.007), et son motif de recours (S21.G00.40.021), celui que la nature fixe (le CDDU : 02
 /// et 05) ou l'un de ceux qu'elle accepte (le CDD : 02 et sa liste). Aucune nature, ou plus d'une : refus.
 fn nature_declaree(c: &ContratDeclare) -> R<droit::natures::NatureDeContrat> {
-    let dite = c.nature_dsn.as_deref().and_then(droit::natures::NatureDuContratDsn::du_code);
+    let code = exigee(&c.nature_dsn, "la nature d'un contrat", droit::rubrique!("S21.G00.40.007"))?;
+    let dite = droit::natures::NatureDuContratDsn::du_code(code);
     let mut lues = Vec::new();
     for n in droit::natures::NatureDeContrat::TOUTES {
         let p = n.proprietes()?;
@@ -106,11 +107,10 @@ fn nature_declaree(c: &ContratDeclare) -> R<droit::natures::NatureDeContrat> {
     match lues.as_slice() {
         [n] => Ok(*n),
         _ => Err(socle::echec::cle(
-            format!(
-                "La DSN déclare un contrat de nature {} (motif de recours {}) qu'aucune nature de contrats-base.json ne dit seule.",
-                c.nature_dsn.as_deref().unwrap_or("non dite"),
-                c.motif_recours.map(|m| m.to_string()).unwrap_or_else(|| "non dit".to_string())
-            ),
+            match c.motif_recours {
+                Some(m) => format!("La DSN déclare un contrat de nature {} (motif de recours {}) qu'aucune nature de contrats-base.json ne dit seule.", code, m),
+                None => format!("La DSN déclare un contrat de nature {} sans motif de recours, qu'aucune nature de contrats-base.json ne dit seule.", code),
+            },
             "S21.G00.40.007",
         )),
     }
