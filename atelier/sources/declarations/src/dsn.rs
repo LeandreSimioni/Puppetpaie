@@ -873,6 +873,8 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     // le 131 de l'assiette deplafonnee sous lequel elle se declare, une fois.
     let mut cet: (Montant, Montant, Option<Taux>) = (Montant::ZERO, Montant::ZERO, None);
     let mut sous_le_deplafonne: Option<Cotisation> = None;
+    // Le 131 de la tranche 1 (celui qui fait la somme de `retraite_t1`), sous la base duquel se declare le 142.
+    let mut de_la_tranche_1: Option<Cotisation> = None;
     for c in &bar.cotisations_dsn {
         if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
@@ -923,6 +925,9 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             if l131.bloc78.deplafonnee_agirc_arrco() {
                 sous_le_deplafonne = Some(l131.clone());
             }
+            if du_131.contains(&droit::forme_bareme::RETRAITE_T1) {
+                de_la_tranche_1 = Some(l131.clone());
+            }
             if au_bulletin {
                 out.extend(parts_patronales_agirc_arrco(p, &bar, &du_131, &l131, &mut cet)?);
             }
@@ -944,6 +949,31 @@ assiette déplafonnée (03, 22 ou 23), sous laquelle sa part patronale se décla
         })?;
         let org = org_de(&bar, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
         out.push(Cotisation { cet: true, ..part_patronale(&sous, org, AGIRC_ARRCO_PATRONALE_T2, cet.0, t, cet.1) });
+    }
+    // UN 131 NE PART JAMAIS SANS SON 142. SIG-18 (cahier technique 2026.1, `norme-dsn/texte/bloc-S21.G00.81.txt`
+    // l. 158-163) : un 131 sous une base 78 du mois veut « au moins un bloc [...] 142 [...] sous le même bloc
+    // "Versement individu" » ; la fiche net-entreprises 2556 (l. 61) : un 142 « est attendu dès lors qu'il est déclaré une
+    // cotisation [...] 131 ». Quand la part patronale de tranche 1 est nulle (un intermittent passe au-dela du plafond de
+    // l'annee, dont la paie est toute en tranche 2 ; un mois sans brut), `parts_patronales_agirc_arrco` n'ecrit rien, et
+    // le 142 se declare ici a 0,00, sous la base du 131 de la tranche 1 (la 43 d'un intermittent, fiche 2556 l. 63 ; la 02
+    // d'un permanent, l. 61) : l'Urssaf (81.002), son assiette (81.003, « à renseigner pour une cotisation », p. 308) et
+    // le taux patronal de tranche 1 du bareme (81.007, « à renseigner pour une cotisation », p. 310 ; « ainsi que le
+    // taux », guide Urssaf du 04/06/2026 p. 34). Aucun texte n'interdit un 142 nul : 81.004 admet 0.00 (CSL 00, p. 309).
+    // Rien ne demande un 146 : SIG-18 ne parle que du 142, et la fiche 2556 (l. 89) n'attend aucun 146 sans tranche 2.
+    let porte_un_131 = out.iter().any(|c| c.code81 == Some(AGIRC_ARRCO_UNIFIE) && c.montant.is_some());
+    if porte_un_131 && !out.iter().any(|c| c.code81 == Some(AGIRC_ARRCO_PATRONALE_T1)) {
+        let t1 = de_la_tranche_1.ok_or_else(|| {
+            refus!(
+                "{} : le barème déclare un 131 (Agirc-Arrco), mais aucun 131 de la tranche 1 (la ligne {}), sous la base \
+duquel le 142 que l'Urssaf attend sous le même versement (SIG-18) se déclare. Rien n'est écrit.",
+                qui_contrat(p),
+                droit::forme_bareme::RETRAITE_T1.as_str()
+            )
+        })?;
+        let r = bar.rubrique(&droit::forme_bareme::RETRAITE_T1).ok_or_else(|| socle::fichiers::absent(droit::forme_bareme::RETRAITE_T1.as_str()))?;
+        let taux = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0;
+        let org = org_de(&bar, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
+        out.push(part_patronale(&t1, org, AGIRC_ARRCO_PATRONALE_T1, t1.base78, taux, Montant::ZERO));
     }
     let nat = p.engagement.nat()?;
     let nature = nat.section_des_organismes();
@@ -1141,7 +1171,8 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
 /// individuelle est rattachee a la base assujettie juridique correspondante » (p. 5), et la modalite Urssaf de 78.001
 /// admet les bases 23 et 43 (norme p. 293, ligne 133) ; la fiche net-entreprises 2556 (l. 63) : « pour les cas des
 /// techniciens intermittents du spectacle [...] il est attendu la declaration du code de cotisation 142 [...] sous le code
-/// de base assujettie 43 », celle du 131 de leur tranche 1. Une part nulle ne s'ecrit pas. La CET ne s'ecrit pas ici : sa
+/// de base assujettie 43 », celle du 131 de leur tranche 1. Une part nulle ne s'ecrit pas ici : un 142 nul, que SIG-18
+/// demande a cote de tout 131, `cotisations` le declare a 0,00 ; un 146 nul, aucun texte ne le demande. La CET ne s'ecrit pas ici : sa
 /// part patronale s'ajoute a `cet` (sa base, son montant, son taux), que `cotisations` declare une fois, sous l'assiette
 /// deplafonnee ; son code s'ecrit selon la version du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`).
 fn parts_patronales_agirc_arrco(
