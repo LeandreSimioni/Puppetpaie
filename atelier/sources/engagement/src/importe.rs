@@ -221,7 +221,7 @@ pub struct PaieVersee {
     /// « valorise par periode de paie » et « rattache a un et un seul contrat » ; lu par `declarations::dsn_lue::Mesures`,
     /// le rappel d'une periode anterieure hors du compte), tel qu'elle l'ecrit, au centieme pres : des heures en unites
     /// 10 (« heure ») et 35 (« heures intermittents du spectacle »), des jours en unite 12 (« journee »), des cachets en
-    /// unite 37 (« cachets isoles ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par ce
+    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par ce
     /// qu'il imprime (il fait foi sur ce qu'il imprime : `routes::importation::bulletins`). Ce que l'AEM, le bulletin ou
     /// le certificat d'un contrat d'usage atteste est au contrat entier (`ContratAtteste`) ; lequel l'emporte pour un
     /// mois, `activite_du_mois` le dit.
