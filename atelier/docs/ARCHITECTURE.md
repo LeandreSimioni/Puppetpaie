@@ -1198,6 +1198,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
 | réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
 | réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
+| pièce gardée d'un contrat repris (un bulletin repris avant la DSN et la DSN disent autrement ses dates, son activité ou sa nature : la compagnie garde l'une ; sans choix, le bulletin ; ailleurs la DSN prime, `importe::la_dsn_prime`) | `engagement::importe::PieceGardee` | `engagement/src/importe.rs` |
+| désaccord d'un contrat repris, tel que la page le lit (ce qui diffère, ses deux gestes) | `DesaccordADire` | `routes/src/importation/desaccord.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
@@ -2584,10 +2586,21 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
 - **L'activité d'un mois repris** (`engagement::importe::activite_du_mois`) : la DSN déposée déclare, pour chaque
   contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
   l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Le bulletin du
-  mois d'un permanent les remplace par ce qu'il imprime ; le contrat qu'une AEM, un bulletin ou un certificat atteste
-  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle
+  mois d'un permanent les remplace par ce qu'il imprime. Quand la DSN prime (`importe::la_dsn_prime`, ci-dessous), ce
+  qu'elle déclare l'emporte, et la pièce du contrat n'ajoute que ce qu'elle tait ; sinon, le contrat qu'une AEM, un
+  bulletin ou un certificat atteste l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle
   (`ActiviteDuMois`), que lisent la carte du mois importé, la comparaison, la CASC-SVP et la paie importée
   (`PaieImportee::activite`, que les états lisent par `PaieDuMois::activite`).
+- **Deux pièces, le même contrat** (Léandre, 19/11/2026 : « il faut faire une règle simple pour l'import ») : une
+  AEM ou un bulletin et la DSN qui déclarent le même salarié, commençant le même jour (et le même numéro d'objet quand
+  les deux en portent un), disent le même contrat : un seul engagement (`importation/ecrite.rs`). Sur ce qu'elles en
+  disent (ses dates, son activité, sa nature ; ni montants ni cotisations), **la DSN prime**
+  (`engagement::importe::la_dsn_prime`) : l'AEM ou le bulletin n'ajoutent que ce qu'elle tait. Seul un bulletin repris
+  **avant** la DSN (le jour de leur import) est gardé tant que la compagnie n'a pas choisi : `importation-etat` montre
+  ce qui diffère (« le bulletin repris dit …, la DSN ajoutée ensuite dit … », `importation/desaccord.rs`), et
+  `importation-desaccord` écrit son choix sur le contrat (`ContratAtteste::gardee`, `PieceGardee`) ; « la DSN » donne
+  aussi à l'engagement les dates qu'elle déclare. Le contrat d'un permanent suit la DSN qui arrive (« La DSN fait
+  foi », plus haut).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien

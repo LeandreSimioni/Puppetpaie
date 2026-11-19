@@ -122,6 +122,7 @@ routes! {
         Importer = "importer",
         ImportationNature = "importation-nature",
         ImportationIdentite = "importation-identite",
+        ImportationDesaccord = "importation-desaccord",
         DossierFormes = "dossier-formes",
         ExportsPeriodes = "exports-periodes",
         RetenirLogiciel = "retenir-logiciel",

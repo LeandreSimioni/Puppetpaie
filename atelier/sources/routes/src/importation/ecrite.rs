@@ -14,8 +14,9 @@
 //!
 //! UNE PAIE, DEUX SOURCES, UNE LIGNE (les deux chemins) : une ligne de DSN qui arrive sur une ligne que des bulletins
 //! ont deja completee garde ce que le bulletin a ecrit (le bulletin fait foi) ; une ligne qu'un bulletin seul declare
-//! s'efface devant la ligne de DSN des memes salarie, debut et fin, qu'elle complete (`rapprocher`) -- l'ordre DSN
-//! puis bulletins, ou bulletins puis DSN, donne les memes engagements.
+//! s'efface devant la ligne de DSN des memes salarie, debut et fin, qu'elle complete (`rapprocher`). Ce que les pieces
+//! disent du contrat (ses dates, son activite, sa nature) : la DSN prime, sauf sur un bulletin repris avant elle, que la
+//! compagnie tranche (`engagement::importe::la_dsn_prime`, `importation::desaccord`).
 
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -214,7 +215,9 @@ fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, CleD
 
 /// LES ENGAGEMENTS IMPORTES, tires des contrats attestes (`contrats`, une AEM ou un bulletin chacun) et des paies
 /// versees (`paies`, une par mois et par contrat). Un engagement, c'est un salarie, un debut et une fin : le contrat
-/// atteste qui les porte (plusieurs : celui du meme numero d'objet que la paie), et ses paies, une par mois. Une paie
+/// atteste qui les porte (plusieurs : celui du meme numero d'objet que la paie), et ses paies, une par mois. Une AEM ou
+/// un bulletin et la DSN qui commencent le meme jour disent le meme contrat : un engagement, aux dates de la DSN quand
+/// elle prime (`engagement::importe::la_dsn_prime`), sinon a celles du bulletin repris avant elle. Une paie
 /// qu'aucun contrat atteste ne porte fait son engagement avec celles des memes salarie, debut, fin et numero de contrat. Les mois du
 /// contrat d'un permanent font un seul engagement (plus bas).
 /// Son numero est celui que la DSN deposee a declare (S21.G00.40.009), sinon celui que le bulletin imprime ; jamais un
@@ -245,7 +248,21 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     }
     for p in paies {
         let (s, dates, o) = (p.salarie.clone(), p.paie.periode, p.paie.numero_objet.clone());
-        let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| groupes[i].contrat.is_some() && groupes[i].salarie == s && groupes[i].periode == dates).collect();
+        // LE MEME CONTRAT (Léandre, 19/11/2026 : « une règle simple ») : le contrat atteste du meme salarie aux memes
+        // dates ; pour une paie que la DSN declare, celui qui commence le meme jour, du meme numero d'objet quand les deux
+        // pieces en portent un. Ses dates sont alors celles de la piece qui prime (`la_dsn_prime`, plus bas).
+        let meme_contrat = |g: &Groupe| {
+            let Some(c) = g.contrat.as_ref() else { return false };
+            let memes_objets = match (&c.contrat.numero_objet, &o) {
+                (Some(a), Some(b)) => a.meme(b),
+                _ => true,
+            };
+            g.salarie == s
+                && (g.periode == dates
+                    || (!declaree_par_bulletin(&p) && !permanent(c) && memes_objets && g.periode.zip(dates).is_some_and(|(a, b)| a.debut() == b.debut())))
+        };
+        let mut candidats: Vec<usize> = (0..groupes.len()).filter(|&i| meme_contrat(&groupes[i])).collect();
+        let memes_contrats = candidats.clone();
         // Le contrat qu'un bulletin atteste porte la periode du mois ; la paie declaree, le contrat entier : la periode
         // du bulletin dans le contrat declare, et l'engagement prend les dates du contrat.
         if let (true, Some(declare), false) = (candidats.is_empty(), dates, declaree_par_bulletin(&p)) {
@@ -322,6 +339,11 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 }
             },
         };
+        // Les dates du meme contrat que la DSN declare autrement : les siennes, quand elle prime.
+        let prime = groupes[i].contrat.as_ref().is_some_and(|c| engagement::importe::la_dsn_prime(Some(&c.contrat), &p.paie));
+        if memes_contrats.contains(&i) && groupes[i].periode != dates && prime {
+            groupes[i].periode = dates;
+        }
         groupes[i].paies.push(p);
     }
     // UN CONTRAT DE PERMANENT, UN ENGAGEMENT : les bulletins d'un permanent attestent chacun le mois qu'ils paient, tous
@@ -560,7 +582,11 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
         let Some(cle) = x.paie.nir.as_ref().and_then(|n| par_nir.get(n)) else { continue };
         let mut x = x.clone();
         x.salarie = Some(cle.clone());
+        // Le jour ou la paie a ete reprise la premiere fois : ce qui etait la avant elle (`la_dsn_prime`) le lit.
         x.paie.importe_le = Some(le);
+        if let Some(premier) = avant.get(&x.cle()).and_then(|a| a.paie.importe_le) {
+            x.paie.importe_le = Some(premier);
+        }
         let k = x.cle();
         if let Some(a) = par_cle.get(&k).filter(|a| porte_un_bulletin(a) && !porte_un_bulletin(&x)) {
             completer_par(&mut x.paie, &a.paie.clone());
@@ -787,16 +813,24 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     // LES INDIVIDUS MIS DE COTE (`importation::identite`) : rien d'eux n'est repris, la phrase le dit, et chacun sa
     // question.
     let en_question = reponse.dire_les_identites();
+    // LES CONTRATS QU'UN BULLETIN DEJA REPRIS ET LA DSN QUI ARRIVE DISENT AUTREMENT (`importation::desaccord`) : la page
+    // de l'import les montre, la compagnie choisit.
+    let desaccords = match crate::importation::desaccord::en_attente(&frais)?.len() {
+        0 => String::new(),
+        1 => " Un bulletin déjà repris et la DSN disent autrement un contrat : choisissez lequel garder (Reprendre l'historique).".to_string(),
+        n => format!(" {} contrats sont dits autrement par un bulletin déjà repris et par la DSN : choisissez lequel garder (Reprendre l'historique).", n),
+    };
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
-        "Repris : {}, {} ; fiches écrites : {}.{}{}{}",
+        "Repris : {}, {} ; fiches écrites : {}.{}{}{}{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
         titres,
         en_question,
-        remplacees
+        remplacees,
+        desaccords
     );
     reponse.fait();
     rapporter_les_ecarts(&frais)?;
