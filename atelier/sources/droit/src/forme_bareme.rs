@@ -583,9 +583,13 @@ impl Pile {
 }
 
 forme! {
+    /// LE PLAFOND DE LA SECURITE SOCIALE DE L'ANNEE : sa valeur mensuelle et sa valeur horaire (`plafond::Pss`), et sa
+    /// valeur annuelle, le plafond de la tranche 1 de l'annee de la retraite complementaire d'un intermittent
+    /// (`plafond::tranches_sous_le_plafond_annuel`).
     pub struct PlafondSecuriteSociale {
         pub mensuel: Montant,
         pub horaire: MontantUnitaire,
+        pub annuel: Montant,
     }
 }
 
@@ -879,6 +883,12 @@ forme! {
         pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
         pub lignes: Option<Vec<IdDeCotisation>>,
+        /// Les lignes du bulletin qui s'ajoutent a une cotisation calculee a son `taux` sur sa `base` : le 131 d'un
+        /// intermittent porte sa tranche 1 au taux, comme toujours, et la tranche 2 et la CET de l'annee quand elles sont
+        /// dues (cahier Agirc-Arrco CT2026, 6.3.2 : « Le code de cotisation 131 globalise les montants des cotisations
+        /// Retraite complementaire, CEG, et CET »). Sans `taux`, elles ne comptent pas : `lignes` dit alors toute la
+        /// cotisation.
+        pub lignes_en_plus: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
         pub apres: Option<CodeCotisation81>,
     }
@@ -912,6 +922,7 @@ impl CotisationDsn {
             cle_total: None,
             code_insee: None,
             lignes: None,
+            lignes_en_plus: None,
             apres: None,
             source: None,
             note: None,
@@ -1062,6 +1073,9 @@ forme! {
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
         pub plafond_journalier: Option<MontantUnitaire>,
+        /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
+        /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
+        pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,

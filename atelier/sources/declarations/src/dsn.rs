@@ -688,7 +688,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Montant>> {
     for a in [
         Assiette::T1Mensuelle, Assiette::T2Mensuelle, Assiette::ApecMensuelle, Assiette::CetMensuelle, Assiette::PssPeriode,
         Assiette::T2Conventionnelle, Assiette::BrutPlafonne, Assiette::BrutX115Plafonne, Assiette::BrutChomage,
-        Assiette::T1MensuelleX115,
+        Assiette::T1MensuelleX115, Assiette::T1Annuelle, Assiette::T2Annuelle, Assiette::CetAnnuelle,
     ] {
         if b.contains_key(&a) {
             out.insert(a, lue(a)?);
@@ -896,9 +896,16 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
             l.taux = Some(taux);
-            l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
+            let au_taux = match c.composants.as_ref().filter(|c| !c.is_empty()) {
                 Some(composants) => composants.iter().fold(Montant::ZERO, |s, t| s + b.fois_taux(*t).au_centime()),
                 None => b.fois_taux(taux).au_centime(),
+            };
+            // Les lignes du bulletin qui s'ajoutent a la cotisation au taux (`lignes_en_plus`) : la tranche 2 et la CET de
+            // l'annee d'un intermittent, au 131 de sa tranche 1, quand elles sont dues (absentes du bulletin, elles ne
+            // comptent rien).
+            l.montant = Some(match c.lignes_en_plus.as_deref() {
+                Some(ids) => au_taux + somme_lignes(p, ids, false),
+                None => au_taux,
             });
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
@@ -1108,14 +1115,21 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
 /// individuelle est rattachee a la base assujettie juridique correspondante » (p. 5), et la modalite Urssaf de 78.001
 /// admet la base 23 (norme p. 293, ligne 133). Une part nulle ne s'ecrit pas. En 2027 la CET a son code, 148, « entierement
 /// sous l'assiette deplafonnee » (03, 22 ou 23 ; fiche net-entreprises 2556, l. 83-87) : le code s'ecrit selon la version
-/// du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`), la base reste celle du 131 (type 23).
+/// du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`), la base reste celle du 131 : l'assiette deplafonnee
+/// (03) d'un permanent, la base exceptionnelle (23) d'un intermittent, cadre ou non.
 fn parts_patronales_agirc_arrco(p: &Paie, pile: &Pile, c: &CotisationDsn, l131: &Cotisation) -> R<Vec<Cotisation>> {
     let rubrique = |id: &IdDeCotisation| pile.rubrique(id);
-    // Le 131 nomme ses lignes, ou porte un taux sur l'assiette de la ligne de retraite qu'il declare (`bareme::poser_t1`).
+    // Le 131 nomme ses lignes, ou porte un taux sur l'assiette de la ligne de retraite qu'il declare (`bareme::poser_t1`),
+    // et les lignes qui s'y ajoutent (`lignes_en_plus` : la tranche 2 et la CET de l'annee d'un intermittent).
     let ids: Vec<IdDeCotisation> = if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty()) {
         lignes.clone()
     } else {
-        LIGNES_AGIRC_ARRCO.iter().filter(|id| rubrique(id).is_some_and(|r| r.base == c.base)).cloned().collect()
+        LIGNES_AGIRC_ARRCO
+            .iter()
+            .filter(|id| rubrique(id).is_some_and(|r| r.base == c.base))
+            .chain(c.lignes_en_plus.iter().flatten())
+            .cloned()
+            .collect()
     };
     let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
     if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(id)) {

@@ -1716,6 +1716,9 @@ intermittent : ses tranches sont mensuelles"
         for (rid, champs) in sous.rubriques.iter().flatten() {
             par_dessus(sec.rubriques.get_or_insert_with(BTreeMap::new).entry(rid.clone()).or_default(), champs);
         }
+        if let Some(l) = sous.rubriques_retirees {
+            sec.rubriques_retirees.get_or_insert_with(Vec::new).extend(l);
+        }
         if let Some(l) = sous.rubriques_ajoutees {
             sec.rubriques_ajoutees.get_or_insert_with(Vec::new).extend(l);
         }
@@ -1725,6 +1728,11 @@ intermittent : ses tranches sont mensuelles"
         for (cle, champs) in sous.cotisations_dsn.iter().flatten() {
             cotisation_par_dessus(sec.cotisations_dsn.get_or_insert_with(BTreeMap::new).entry(cle.clone()).or_default(), champs);
         }
+    }
+    // Les rubriques du corps que la categorie remplace par les siennes (la tranche 2 et la CET de l'annee d'un non-cadre,
+    // pour un cadre intermittent) se retirent d'abord.
+    if let Some(retirees) = &sec.rubriques_retirees {
+        bar.rubriques_bulletin.retain(|r| !retirees.contains(&r.id));
     }
     for r in &mut bar.rubriques_bulletin {
         if let Some(m) = sec.rubriques.as_ref().and_then(|mods| mods.get(&r.id)) {

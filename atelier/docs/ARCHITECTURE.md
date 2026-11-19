@@ -1281,8 +1281,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | tranches du plafond (les bornes des tranches d'une paie en nombre de plafonds, chacune avec son texte : la tranche 2 de la retraite complémentaire, ANI Agirc-Arrco art. 32 ; la tranche 2 de la prévoyance conventionnelle, CCNEAC XII.2 ; le chômage, l'AGS et l'Apec, règlement Unédic art. 49) | `droit::forme_bareme::TranchesDuPlafond` | `droit/src/forme_bareme.rs` |
 | jours sans rémunération d'une paie (les jours d'absence que l'employeur ne maintient pas, qui réduisent le plafond d'un permanent : CSS R. 242-2, I, al. 4 ; BOSS § 820-920 ; `engagement::conges::lignes_du_mois` les dit, l'engagement les porte, `Engagement::sans_remuneration`) | `droit::plafond::JoursSansRemuneration` | `droit/src/plafond.rs` |
 | assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds du chômage, `chomage`, qui ne se régularise pas ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
-| bascule de la contribution d'équilibre technique (la paie où la rémunération de l'année passe au-dessus de la somme de ses plafonds, ou repasse dessous : la CET de l'année devient due, ou se rend ; jugée par `BasculeDeLaCet::entre` sur l'année avant la paie et l'année jusqu'à elle, un mois découpé entre l'année avant sa première période et l'année après sa dernière, dite par un avis de la paie du mois, `calcul::avis_de_la_bascule`) ; l'année de part et d'autre d'une période qui se régularise, interne au calcul | `droit::plafond::BasculeDeLaCet`, `engagement::calcul::AnneeDeLaPeriode` | `droit/src/plafond.rs`, `engagement/src/calcul.rs` |
-| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
+| bascule de la contribution d'équilibre technique (la paie où la rémunération de l'année passe au-dessus de la somme de ses plafonds, ou repasse dessous : la CET de l'année devient due, ou se rend ; jugée par `BasculeDeLaCet::entre` sur l'année avant la paie et l'année jusqu'à elle, un mois découpé entre l'année avant sa première période et l'année après sa dernière, dite par un avis de la paie du mois, `calcul::avis_de_la_bascule`) ; l'année de part et d'autre d'une période qui se régularise ou dont la retraite se compte sur le plafond de l'année, interne au calcul ; le plafond auquel la rémunération de l'année se compare (la somme des plafonds des paies d'un salarié au mois, ou le plafond annuel de la retraite d'un intermittent) | `droit::plafond::BasculeDeLaCet`, `engagement::calcul::AnneeDeLaPeriode`, `engagement::calcul::PlafondDeLAnnee` | `droit/src/plafond.rs`, `engagement/src/calcul.rs` |
+| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
 | maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` ; ce que la reconstitution d'un maintien en net rend au calcul (son montant, son avis, les jours que son complement maintient) : `engagement::maintien::Reconstitue` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
@@ -1940,7 +1940,9 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
     paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
     nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
     lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-au-mois <mois> <salarié>` pour les seules
-    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres) : un
+    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres, et
+    `paies-intermittentes <mois> <salarié>` pour celles de ses contrats d'intermittent, que l'année de sa retraite
+    complémentaire lit) : un
     réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a
     lues. Une paie reprise et une paie validée du même contrat le même mois refusent, en nommant le mois et le contrat :
     une paie ne se compte pas deux fois. Une grandeur que ses pièces ne disent pas (son brut, la déduction qu'il a
@@ -2599,7 +2601,7 @@ fabrication décide par elles des rubriques qu'une version a retirées (`06.003`
 tables P27V01 sont relevées des classeurs 2027.1.2 de net-entreprises (fiches
 3357 et 3358) par `moteur-atelier extraire usages` et `moteur-atelier extraire formats` (`atelier/src/extraire/`).
 La part patronale de la CET se déclare en `146` en P26V01 et en `148` en P27V01,
-sous la base 78 du `131` qui la porte (type 23 d'un cadre intermittent ; 03, avec la tranche 2, d'un permanent : la CET
+sous la base 78 du `131` qui la porte (type 23 d'un intermittent, cadre ou non ; 03, avec la tranche 2, d'un permanent : la CET
 « entièrement sous l'assiette déplafonnée »), à l'Urssaf (fiche net-entreprises 2556 ;
 `cotisation_cet_patronale` de la donnée). Le code APE de la fiche entreprise se
 saisit en NAF rév. 2 ou en NAF 2025 (`logiciel/donnees/naf-base.json`, relevé
@@ -2884,6 +2886,19 @@ dont la rémunération excède le plafond » ; le tableau des permanents d'Audie
 `par_nature.permanent`, sur `cet_mensuelle` (`droit::plafond::Regularisees`), régularisée sur l'année et dite à sa
 bascule (`droit::plafond::BasculeDeLaCet`) ; nulle, elle n'est pas au bulletin. Un cadre intermittent la paie fondue
 dans ses tranches journalières (`cet_si_depasse`, `Assiette::Cet`).
+
+**La retraite complémentaire d'un intermittent non cadre se compte sur l'année** (Audiens, Paramètres : « ce sont les
+plafonds annuels qui doivent être retenus, quelle que soit la durée du travail » ; circulaire Agirc-Arrco 2018-09-DC,
+annexe A, art. 1 : « dans les limites annuelles des assiettes T1 et T2 ») : ses lignes `retraite_t1`, `retraite_t2` et
+`cet` (le corps du barème et `par_statut.technicien`) sont sur `t1_annuelle`, `t2_annuelle` et `cet_annuelle`, ses
+tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite_sociale.annuel`), calculées par le même
+chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
+des mois d'avant (`conges::retraite_des_mois_anterieurs`) et les contrats précédents du mois. Le plafond de la Sécurité
+sociale de ses paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut :
+rien ne change. Le 131 de sa DSN porte sa tranche 1 au taux et, en plus, ses lignes de tranche 2 et de CET
+(`lignes_en_plus`) ; sa base 43 est `t1_annuelle`. Un cadre intermittent retire la tranche 2 et la CET de l'année
+(`par_categorie.cadre.rubriques_retirees`) et cotise sur ses tranches journalières ; un permanent les retire de même
+(`par_nature.permanent`).
 
 `logiciel/donnees/contrats-base.json` porte ce que la DSN écrit de la **structure** d'un
 contrat, par nature. Trois
