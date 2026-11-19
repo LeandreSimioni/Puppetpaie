@@ -2610,7 +2610,13 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
             }
         }
     }
-    Ok(ReponseFins { phrase: socle::phrase!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
+    // Une carte a corriger compte parmi les fins : la phrase le dit.
+    let a_corriger = fins.iter().filter(|f| matches!(f, FinASignaler::ACorriger(_))).count();
+    let phrase = match a_corriger {
+        0 => socle::phrase!("Fins de contrat du mois : {}.", fins.len()),
+        n => socle::phrase!("Fins de contrat du mois : {}, dont {} à corriger.", fins.len(), n),
+    };
+    Ok(ReponseFins { phrase, mois: c.mois, fins })
 }
 
 /// Combien de mois en arriere un signalement de fin en retard se rappelle : une annee de paies.
