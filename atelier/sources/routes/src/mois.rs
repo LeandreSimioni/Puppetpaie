@@ -1059,6 +1059,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, mois, &id)?, Some(id)),
     };
     c.changements.appliquer(ctx, mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let qui = qui_de_la_carte(ctx, &brouillon.en_carte());
+    crate::ouverture::sans_les_faits_que_le_motif_n_a_pas(&mut brouillon, &qui)?;
     let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, mois, &id)?;
     let (k, _) = engagement::stock::designe(&ctx.racine, mois, &id)?;
@@ -1351,6 +1353,8 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
         }
         let mut b = Brouillon::de_la_carte(&ecrit, &qui_de_la_carte(ctx, &ecrit)).map_err(|e| e.reclasser(Classe::Refuse))?;
         m.changements.appliquer(ctx, mois, &mut b, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|e| e.reclasser(Classe::Refuse))?;
+        let qui = qui_de_la_carte(ctx, &b.en_carte());
+        crate::ouverture::sans_les_faits_que_le_motif_n_a_pas(&mut b, &qui)?;
         let saisie = engagement::stock::en_forme(&b.en_carte()).map_err(|e| e.reclasser(Classe::Refuse))?;
         // L'avenant du mois se deduit des termes dates de l'engagement ecrit (`stock::Objet::vue`) : le brouillon ne le
         // porte pas.

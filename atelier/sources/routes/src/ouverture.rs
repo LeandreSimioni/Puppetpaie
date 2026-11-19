@@ -1335,6 +1335,51 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     })
 }
 
+/// UNE CASE QUE LE MOTIF N'A PAS N'EXISTE PAS : apres les changements d'une carte (`enregistrer-saisie`, l'apercu,
+/// `modifier-engagement`), chaque fait de la fin (`faits_de_rupture`) que son motif de rupture n'appelle pas se vide --
+/// sans motif dit, aucun. Il ne reste pas ecrit sans se voir, et rien ne le controle (une date de notification posee sous
+/// un 034, puis le motif devient 031 : elle s'en va, et `notifiee_pendant_le_contrat` ne la juge plus). `qui` : le
+/// salarie que le refus nomme.
+pub(crate) fn sans_les_faits_que_le_motif_n_a_pas(b: &mut engagement::carte::Brouillon, qui: &str) -> R<()> {
+    let nat = b.nature().proprietes()?;
+    let mut c = b.en_carte();
+    let faits = match c.motif_rupture {
+        Some(m) => faits_de_rupture(&nat, m)?,
+        None => Vec::new(),
+    };
+    let garde = |f: &str| faits.contains(&f);
+    let mut vide = false;
+    if !garde("notification_rupture") {
+        vide |= c.notification_rupture.take().is_some();
+    }
+    if !garde("engagement_licenciement") {
+        vide |= c.engagement_licenciement.take().is_some();
+    }
+    if !garde("signature_convention") {
+        vide |= c.signature_convention.take().is_some();
+    }
+    if !garde("transaction") {
+        vide |= c.transaction.take().is_some();
+    }
+    if !garde("en_droit_a_la_retraite") {
+        vide |= c.en_droit_a_la_retraite.take().is_some();
+    }
+    // La duree du preavis non effectue, et le pourquoi de l'indemnite ecartee, suivent leur case (la page les montre
+    // avec elle).
+    if !garde("preavis_non_effectue") {
+        vide |= c.preavis_non_effectue.take().is_some();
+        vide |= c.preavis_mois.take().is_some();
+    }
+    if !garde("precarite_due") {
+        vide |= c.precarite_due.take().is_some();
+        vide |= c.precarite_pourquoi.take().is_some();
+    }
+    if vide {
+        *b = engagement::carte::Brouillon::de_la_carte(&c, qui)?;
+    }
+    Ok(())
+}
+
 /// `faits_de_rupture` : les faits a demander a l'ecran pour CE motif, et eux
 /// seuls (« si compagnie simple, interface simple »).
 fn faits_de_rupture(n: &Nature, m: MotifDeRupture) -> R<Vec<&'static str>> {

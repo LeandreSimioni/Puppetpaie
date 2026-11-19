@@ -121,14 +121,16 @@ fn la_date_de_debut_changee_se_fait_signer_en_avenant() {
 
 /// LA RUPTURE SE NOTIFIE PENDANT LE CONTRAT (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` :
 /// la date de notification est « supérieure ou égale à la date de début de contrat de travail et inférieure ou égale à
-/// la date de fin ») : une date hors du contrat se refuse a la validation, en disant les bornes, et rien ne s'ecrit.
+/// la date de fin ») : une date hors du contrat se refuse a la validation, en disant les bornes, et rien ne s'ecrit. Le
+/// motif est un de ceux qui ont la case (037, une rupture anticipee : `ouverture::faits_de_rupture`) ; sans lui, la case
+/// n'existe pas et ne se controle pas.
 #[test]
 fn une_notification_hors_du_contrat_se_refuse_a_la_validation() {
     let c = fuller_a_cheval("notification");
     let jour = "2026-12-16";
     let avant = saisie(&c, crate::outils::le_mois("2026-12"));
     let id = socle::ecriture::en_valeur(&crate::outils::identite(&c, crate::outils::le_mois("2026-12"), "FULLER", None));
-    let r = crate::outils::modifier(&c, "2026-12", &id, &json!({"notification_rupture": "2026-11-14"}), true, None, jour);
+    let r = crate::outils::modifier(&c, "2026-12", &id, &json!({"motif_rupture": "037", "notification_rupture": "2026-11-14"}), true, None, jour);
     let (_, phrase) = refus(&r);
     assert!(phrase.contains("14/11/2026") && phrase.contains("20/11/2026") && phrase.contains("03/12/2026"), "{}", r);
     assert_eq!(saisie(&c, crate::outils::le_mois("2026-12")), avant, "une notification refusee s'est ecrite");
