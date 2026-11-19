@@ -45,7 +45,9 @@ permanents.
   social et économique (procès-verbal de carence).
 - Contact : contact@hotel-bourgogne.exemple.invalid, 01 40 00 00 12. Hortense Champmeslé, administratrice, signe les
   contrats et les déclarations (par délégation de la présidente).
-- Banque du Marais, agence de la rue Étienne-Marcel ; BIC **BDMRFR2AXXX**, IBAN **FR76 1234 5678 9000 0777 8880 147**.
+- Le compte des dépôts de test (`atelier/docs/COMPAGNIE-D-ESSAI.md`) : un vrai couple banque et guichet, que la
+  plate-forme connaît, et un numéro de compte fait de zéros, qui n'est le compte de personne ; BIC **BDFEFRPPCCT**,
+  IBAN **FR76 3000 1000 6400 0000 0000 040**.
 - **Santé au travail** : service interentreprises de Paris, code **MT075**.
 - **Congés Spectacles** : numéro d'adhérent **1842960731B**.
 - **Prévoyance et santé des permanents** : Audiens (P0983), « PREVOYANCE CCNEAC » et « SANTE CCNEAC ».

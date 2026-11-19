@@ -104,7 +104,8 @@ La compagnie défraie ses salariés : **les repas** (chaque jour de jeu ou de r�
 | Delmas Octave | octave.delmas@exemple.invalid |
 | Tessier Armand | armand.tessier@exemple.invalid |
 
-- **Banque** : le compte de la compagnie (IBAN ci-dessus) est domicilié au Crédit du Fil, agence de Chalon ; son BIC est
-  **FDFRFR2AXXX**.
+- **Banque** : le compte des dépôts de test (`atelier/docs/COMPAGNIE-D-ESSAI.md`), un vrai couple banque et guichet,
+  que la plate-forme connaît, et un numéro de compte fait de zéros, qui n'est le compte de personne ; BIC
+  **BDFEFRPPCCT**, IBAN **FR76 3000 1000 6400 0000 0000 040**.
 - **Papiers de décembre 2025** : la déclaration mensuelle que l'ancien logiciel a déposée pour décembre 2025 est dans
   `papiers-2025/` avec les bulletins (`DSN_Decembre2025.dsn`).

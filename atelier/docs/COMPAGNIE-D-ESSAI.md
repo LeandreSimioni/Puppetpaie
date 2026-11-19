@@ -110,13 +110,12 @@ logiciel :
 
 1. **La banque de la fictive doit exister.** La plate-forme contrôle le code banque **et** le code guichet des
    coordonnées de prélèvement (S21.G00.20.003 et .004) : « B1-205-01 Le code banque 12345 est inconnu », puis
-   « B1-205-02 Le code guichet 00001 est inconnu ». Les fictives ont une banque inventée (« Banque du Marais », code
-   12345). Il n'y a pas besoin du vrai RIB de la compagnie : un **faux compte** sous un **vrai couple banque et
-   guichet** suffit. Dans la compagnie d'essai montée (jamais dans le dépôt), `config/entreprise.json`,
-   `banque[0].valeur` : le `bic` `BDFEFRPPCCT` et l'`iban` `FR7630001000640000000000040` (banque 30001, guichet
-   00064, un numéro de compte de onze zéros, clé RIB 40, clé de l'IBAN 76). Ce compte n'existe pas ; le garde avant
-   commit le connaît (`FICTIVES`, `atelier/sources/atelier/src/verifier_avant_commit.rs`). Un dépôt de test ne
-   conserve rien et ne prélève rien.
+   « B1-205-02 Le code guichet 00001 est inconnu ». Il n'y a pas besoin du vrai RIB de la compagnie : un **faux
+   compte** sous un **vrai couple banque et guichet** suffit. **Les fictives de référence le portent** (le Fil de Fer,
+   l'Hôtel de Bourgogne) : le `bic` `BDFEFRPPCCT` et l'`iban` `FR7630001000640000000000040` (banque 30001, guichet
+   00064, un numéro de compte de onze zéros, clé RIB 40, clé de l'IBAN 76), si bien qu'une compagnie d'essai montée
+   depuis l'une d'elles n'a rien à retoucher. Ce compte n'existe pas ; le garde avant commit le connaît (`FICTIVES`,
+   `atelier/sources/atelier/src/verifier_avant_commit.rs`). Un dépôt de test ne conserve rien et ne prélève rien.
 2. **Le mois ne doit pas être déjà déclaré sous ce SIRET.** La base d'essai connaît les DSN réelles de la compagnie :
    une DSN de test d'un mois déjà déposé en réel est prise pour un « annule et remplace » hors délai (« B1-207-05 »,
    « B1-208-12 »). Déposer sur le mois en cours, pas encore déclaré. Pour cela, rejouer la fictive jusqu'au mois
