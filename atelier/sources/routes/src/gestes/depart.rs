@@ -725,7 +725,9 @@ fn ecart_avec_le_bulletin_parti(
     ctx: &Contexte, v: &engagement::etats::Valide, departs: &engagement::departs::Departs, mois: Mois, apres: &Paie, parti: &Paie, mois_versement: Mois,
 ) -> R<documents::bulletin::Ecart> {
     let declarees = engagement::etats::paies_declarees(ctx, v.objet(), departs, mois, None)?;
-    let taux_initial = engagement::etats::taux_de_pas_initial(&declarees);
+    // Aucune DSN n'a encore declare ce mois pour ce contrat (ajoute apres le depart de la DSN) : le taux « applique lors
+    // du versement de l'indu » (BOFiP, § 90) est celui du bulletin parti, qui a paye.
+    let taux_initial = engagement::etats::taux_de_pas_initial(&declarees).or(parti.pas.as_ref().map(|p| p.taux));
     let d_net = apres.net_a_payer - parti.net_a_payer;
     let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_initial.as_ref(), mois_versement)?;
     let indu = pas_c.indu();
