@@ -122,14 +122,23 @@ pub struct DepotVu {
     pub deja: bool,
 }
 
+/// UN DEPOT MIS DE COTE PARCE QUE SON BILAN NE DIT PAS S'IL ETAIT REEL OU DE TEST (`Bilan::essai_reel` vide) : la
+/// reprise ne lui donne pas de mode (regle 1), elle le nomme, par son flux et ses pieces.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct DepotSansMode {
+    pub flux: IdDeFlux,
+    pub pieces: Vec<NomDeFichier>,
+}
+
 /// CE QUE LA REPRISE REND : les depots trouves, ceux qu'elle ajoute (ou ajouterait), ceux deja au journal, ceux qu'elle
-/// ne peut dater, si elle a ecrit, et combien de retours se sont ranges en face.
+/// ne peut dater, ceux dont le bilan ne dit pas le mode, si elle a ecrit, et combien de retours se sont ranges en face.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Reprise {
     pub trouves: Vec<DepotVu>,
     pub ajoutes: Vec<DepotVu>,
     pub deja: Vec<DepotVu>,
     pub sans_mois: Vec<DepotVu>,
+    pub sans_mode: Vec<DepotSansMode>,
     pub ecrit: bool,
     pub rattaches: usize,
 }
@@ -148,15 +157,6 @@ fn heure_du_bilan(b: &Bilan) -> Option<InstantOuJour> {
     b.recu_le.as_ref().and_then(Reception::au_journal)
 }
 
-/// LE MODE D'UN BILAN REPRIS : celui qu'il dit (`essai_reel`). UN REPLI, garde tel quel (ticket #446) : un bilan qui ne
-/// dit pas son mode se reprend en test.
-fn mode_du_bilan(essai_reel: Option<Mode>) -> Mode {
-    match essai_reel {
-        Some(m) => m,
-        None => Mode::Test,
-    }
-}
-
 fn reprise_et_incidents(
     ctx: &Contexte,
     ecrire: bool,
@@ -165,12 +165,15 @@ fn reprise_et_incidents(
     pieces_illisibles: &mut Vec<crate::retours::PieceIllisible>,
 ) -> R<Reprise> {
     let (attestes, illisibles) = depots_attestes(ctx)?;
-    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], ecrit: ecrire, rattaches: 0 };
+    let mut rapport = Reprise { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mois: vec![], sans_mode: vec![], ecrit: ecrire, rattaches: 0 };
     pieces_illisibles.extend(illisibles);
     let mut a_ecrire: Vec<(&Atteste, Mode)> = Vec::new();
     for d in &attestes {
         let b = &d.bilan;
-        let mode = mode_du_bilan(b.essai_reel);
+        let Some(mode) = b.essai_reel else {
+            rapport.sans_mode.push(DepotSansMode { flux: d.flux.clone(), pieces: d.pieces.clone() });
+            continue;
+        };
         // UN TEST QUE CE LOGICIEL N'A PAS ENVOYE NE S'AFFICHE PAS ET NE SE REPREND PAS : sous le
         // meme compte net-entreprises, les essais de l'atelier (ligne de commande, `moteur --dev`, seances du nuage)
         // reviennent dans les retours de la compagnie. Un test n'engage rien : absent du journal, il vient d'ailleurs.
@@ -333,8 +336,8 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
     Ok((sortie, inconnus))
 }
 
-/// Une DPAE attestee telle que la reprise la montre : son flux entier quand un bilan le porte, reel ou test, `accepte`
-/// (ce que son bilan dit ; sans bilan, le certificat n'atteste que le depot parti), deja au journal ou non.
+/// Une DPAE attestee telle que la reprise la montre : son flux entier, reel ou test et `accepte` (ce que son bilan
+/// dit), deja au journal ou non.
 #[cfg(feature = "atelier")]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DpaeVue {
@@ -352,6 +355,8 @@ pub struct RepriseDpae {
     pub trouves: Vec<DpaeVue>,
     pub ajoutes: Vec<DpaeVue>,
     pub deja: Vec<DpaeVue>,
+    /// Les DPAE qu'aucun bilan ne dit reelles ou de test : mises de cote, nommees (regle 1).
+    pub sans_mode: Vec<DpaeAttestee>,
     pub inconnus: Vec<String>,
     pub ecrit: bool,
 }
@@ -377,7 +382,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
         }
     }
 
-    let mut rapport = RepriseDpae { trouves: vec![], ajoutes: vec![], deja: vec![], inconnus, ecrit: ecrire };
+    let mut rapport = RepriseDpae { trouves: vec![], ajoutes: vec![], deja: vec![], sans_mode: vec![], inconnus, ecrit: ecrire };
     for e in attestees {
         // Le nom de fichier tronque le flux ; le bilan XML porte l'entier. On rattache par prefixe, et on garde l'entier quand on le trouve.
         let entier = match bilans.iter().find(|(f, _)| f.texte().starts_with(e.flux.texte())) {
@@ -385,12 +390,11 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             None => e.flux.clone(),
         };
         let b = bilans.iter().find(|(f, _)| *f == entier).and_then(|(_, l)| crate::retours::fusionner_bilans(l));
-        // Sans bilan, le certificat atteste un depot parti : pris au point de depot (`accepte`), il n'en dit pas le
-        // verdict, que seuls les retours rattaches a la ligne donnent (`etats::verdict_dpae`) ; tant qu'aucun n'y est
-        // range, la DPAE est partie, sans bilan connu. Le mode reel est une INFERENCE : aucun bilan ne dit l'essai.
-        let (mode, accepte_) = match &b {
-            Some(b) => (mode_du_bilan(b.essai_reel), accepte(b)),
-            None => (Mode::Reel, true),
+        // Le mode, reel ou test, seul un bilan le dit : une DPAE sans bilan, ou dont le bilan ne le dit pas, se met de
+        // cote (regle 1).
+        let Some((mode, accepte_)) = b.as_ref().and_then(|b| b.essai_reel.map(|m| (m, accepte(b)))) else {
+            rapport.sans_mode.push(DpaeAttestee { flux: entier, ..e });
+            continue;
         };
         let deja = connus.contains(&entier);
         let vue = DpaeVue { attestee: DpaeAttestee { flux: entier, ..e }, mode, accepte: accepte_, deja };

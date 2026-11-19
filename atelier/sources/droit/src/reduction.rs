@@ -45,10 +45,6 @@ pub struct ReductionGenerale {
     pub agirc_arrco: Montant,
 }
 
-/// 130 % : la limite de la reduction sous deduction forfaitaire specifique, au regard de celle du brut entier (arrete du
-/// 4 decembre 2019, art. 1er ; `reduction_generale_sous_dfs`).
-const LIMITE_SOUS_DFS: Coefficient = Coefficient::centiemes(130);
-
 /// 0,6 : le diviseur du parametre T de la formule de la reduction (`FormuleDeReduction::Fillon`).
 const SIX_DIXIEMES: Coefficient = Coefficient::dixiemes(6);
 
@@ -133,9 +129,10 @@ fn repartir_la_reduction(rg: &ParametresDeLaReduction, coefficient: Coefficient,
 /// 4 septembre 2025, art. 11 ; `atelier/reference/sources/dfs/arrete-2019-reduction-generale/`) : << Le montant de la
 /// reduction generale [...] calcule pour les remunerations apres application de l'abattement forfaitaire [...] ne peut
 /// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> La
-/// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite de 130 % de celle du brut entier.
+/// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite (`limite`, lue au bareme :
+/// `deduction_forfaitaire.limite_reduction_generale`) de celle du brut entier.
 pub fn reduction_generale_sous_dfs(
-    rg: Option<&ParametresDeLaReduction>, statut: Option<Statut>, brut: Montant, abattu: Montant, heures: Heures, caisse_conges: bool,
+    rg: Option<&ParametresDeLaReduction>, limite: Taux, statut: Option<Statut>, brut: Montant, abattu: Montant, heures: Heures, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
     let Some(apres) = reduction_generale(rg, statut, abattu, heures, caisse_conges)? else { return Ok(None) };
     // Le brut entier (au moins le brut abattu) ouvre la reduction des qu'elle s'ouvre sur l'abattu (memes parametres,
@@ -143,7 +140,7 @@ pub fn reduction_generale_sous_dfs(
     let Some(sans) = reduction_generale(rg, statut, brut, heures, caisse_conges)? else {
         return Err(socle::echec::refus("La réduction générale s'ouvre sur le brut abattu mais pas sur le brut entier : le signaler au développeur."));
     };
-    let limite = (sans.montant * LIMITE_SOUS_DFS).au_centime();
+    let limite = sans.montant.fois_taux(limite).au_centime();
     if apres.montant <= limite {
         return Ok(Some(apres));
     }

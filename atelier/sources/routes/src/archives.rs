@@ -599,7 +599,12 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
             (EtatRendu::Tableau(t), titre, ecrit, avertissements, personnelles, Vec::new(), false)
         }
     };
-    let phrase = if ecrits.is_empty() { socle::phrase!("{} : aperçu, rien n'est écrit.", titre) } else { socle::phrase!("{} : écrit dans {}.", titre, ecrits.join(", ")) };
+    // Le nom de chaque fichier ecrit part dans la reponse (`fichier`, `fichiers`) : la phrase le dit en mots.
+    let phrase = match ecrits.len() {
+        0 => socle::phrase!("{} : aperçu, rien n'est écrit.", titre),
+        1 => socle::phrase!("{} : le fichier est écrit.", titre),
+        n => socle::phrase!("{} : {} fichiers écrits.", titre, n),
+    };
     let ecran = EcranDUnEtat {
         personnelles: personnelles.then_some("Cet état porte des données personnelles : il reste dans prive/, et ne s'envoie qu'à qui en a besoin."),
         partiels: (!partiels.is_empty()).then(|| format!("Totaux partiels : {}.", partiels.join(" ; "))),

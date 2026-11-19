@@ -148,7 +148,7 @@ struct ChargeReprise {
 }
 
 /// Ce que rend `journal-reprise` : sa phrase, ce que la reprise a trouve, ajoute (ou ajouterait, chaque depot dit pour
-/// l'ecran), deja connu, sans mois, si elle a ecrit, et ce que l'Historique en dit (`ecran`).
+/// l'ecran), deja connu, sans mois, sans mode (mis de cote, nommes), si elle a ecrit, et ce que l'Historique en dit (`ecran`).
 #[derive(Debug, Serialize)]
 struct RepriseDite {
     phrase: Phrase,
@@ -156,6 +156,7 @@ struct RepriseDite {
     ajoutes: Vec<AjoutDit>,
     deja: Vec<DepotVu>,
     sans_mois: Vec<DepotVu>,
+    sans_mode: Vec<envois::reprise_journal::DepotSansMode>,
     ecrit: bool,
     rattaches: usize,
     ecran: EcranDeLaReprise,
@@ -203,9 +204,20 @@ fn reprise(ctx: &Contexte, c: ChargeReprise) -> R<RepriseDite> {
         logiciel: "Le nom du logiciel n'est pas une annotation : il est lu dans le certificat de conformité. C'est lui qui distingue le dépôt d'un autre logiciel d'un dépôt PuppetPaie.",
         bouton: format!("Reprendre ces {} dépôt(s)", n),
     };
-    let phrase = socle::phrase!("Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}.", r.trouves.len(), n, if r.ecrit { "" } else { " (rien n'est écrit)" });
+    // Un depot mis de cote se dit : son bilan ne dit pas s'il etait un essai ou un depot reel.
+    let de_cote = match r.sans_mode.len() {
+        0 => String::new(),
+        k => format!(" ; laissés de côté, leur bilan ne disant pas s'ils étaient de test ou réels : {}", k),
+    };
+    let phrase = socle::phrase!(
+        "Dépôts trouvés dans les retours : {} ; ajoutés au journal : {}{}{}.",
+        r.trouves.len(),
+        n,
+        if r.ecrit { "" } else { " (rien n'est écrit)" },
+        de_cote
+    );
     let ajoutes = r.ajoutes.into_iter().map(ajout_dit).collect();
-    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
+    Ok(RepriseDite { phrase, trouves: r.trouves, ajoutes, deja: r.deja, sans_mois: r.sans_mois, sans_mode: r.sans_mode, ecrit: r.ecrit, rattaches: r.rattaches, ecran })
 }
 
 /// Un depot que la reprise remet, dit : quand il a ete recu et son mois, qui l'a depose ; sa pastille : un depot reel

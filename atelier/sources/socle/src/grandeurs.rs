@@ -485,8 +485,7 @@ impl Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 4))
     }
 
-    /// Un coefficient qu'un texte fixe, en centiemes (`130` : 130 %, la limite de la reduction generale sous deduction
-    /// forfaitaire specifique).
+    /// Un coefficient qu'un texte fixe, en centiemes (`65` : 65 %).
     pub const fn centiemes(n: u32) -> Coefficient {
         Coefficient(Decimal::from_parts(n, 0, 0, false, 2))
     }

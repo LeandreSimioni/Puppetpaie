@@ -680,6 +680,18 @@ const FUSIONS: [(u32, u16, u32, u16); 7] = [(0, 0, 1, 25), (0, 26, 0, 29), (0, 3
 /// fusionnees) et les memes valeurs ; la mise en forme est plus simple (gras, retour a la ligne, volet fige sous la
 /// 3e ligne). Les consignes de la 4e ligne du modele (« NE PAS REMPLIR »...) n'y sont pas : elles sont
 /// effacees avant d'ecrire.
+/// Les maximums des colonnes de la liste nominative, et ce qu'elles portent : les consignes du modele du CASC-SVP
+/// (`atelier/reference/sources/casc-svp-modele-liste-nominative.csv`, ligne 11 : « 30 Car alpha maximum »
+/// pour le nom de naissance, « 32 Car alpha maximum » pour le prenom, « 32 caractères maximum » pour l'adresse,
+/// « 5 caractères maximum » pour le code postal, « 26 caractères maximum » pour la commune, « 34 caractères maximum »
+/// pour l'emploi).
+const MAX_NOM: (&str, usize) = ("nom", 30);
+const MAX_PRENOM: (&str, usize) = ("prénom", 32);
+const MAX_ADRESSE: (&str, usize) = ("adresse", 32);
+const MAX_CODE_POSTAL: (&str, usize) = ("code postal", 5);
+const MAX_COMMUNE: (&str, usize) = ("commune", 26);
+const MAX_EMPLOI: (&str, usize) = ("emploi", 34);
+
 fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path, fichiers: &mut Vec<std::path::PathBuf>) -> R<()> {
     use documents::classeur::{Feuille, Style, Vertical};
     let mut ws = Feuille::nouvelle("Feuil1");
@@ -698,7 +710,15 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
     let mut cumul: Vec<((Annee, Nir), Montant)> = Vec::new();
-    let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
+    // Le texte s'ecrit entier, jamais coupe : celui qui depasse le maximum du modele se dit, ligne et colonne.
+    let mut depasses: Vec<String> = Vec::new();
+    let mut entier = |ligne: u32, (quoi, max): (&str, usize), t: String| -> String {
+        let n = t.chars().count();
+        if n > max {
+            depasses.push(format!("ligne {}, {} : {} caractères, {} de plus que les {} du modèle", ligne + 1, quoi, n, n - max, max));
+        }
+        t
+    };
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
@@ -722,15 +742,15 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (1, siret.clone()),
             (4, x.annee.to_string()),
             (5, aujourdhui.clone()),
-            (6, coupe(cellule(&i.nom), 30)),
-            (8, coupe(cellule(&i.prenom), 32)),
+            (6, entier(ligne, MAX_NOM, cellule(&i.nom))),
+            (8, entier(ligne, MAX_PRENOM, cellule(&i.prenom))),
             (9, jj(&i.date_naissance)),
             (10, format!("{}{}", i.nir, cle_nir)),
-            (13, coupe(cellule(&i.adresse), 32)),
-            (15, coupe(cellule(&i.code_postal), 5)),
-            (16, coupe(cellule(&i.commune), 26)),
+            (13, entier(ligne, MAX_ADRESSE, cellule(&i.adresse))),
+            (15, entier(ligne, MAX_CODE_POSTAL, cellule(&i.code_postal))),
+            (16, entier(ligne, MAX_COMMUNE, cellule(&i.commune))),
             (19, cellule(&i.email)),
-            (21, coupe(cellule(&c.emploi), 34)),
+            (21, entier(ligne, MAX_EMPLOI, cellule(&c.emploi))),
             (22, jj(&x.periode.map(|o| o.debut()))),
             (23, jj(&x.periode.and_then(|o| o.fin()))),
             (25, "I".to_string()),
@@ -752,6 +772,9 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         if let Some(h) = a.heures {
             ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple);
         }
+    }
+    if !depasses.is_empty() {
+        r.avertissements.push(format!("Liste nominative : écrit en entier, plus long que le modèle du CASC-SVP ({}).", depasses.join(" ; ")));
     }
     let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.est_vide()).collect();
     if !sans.is_empty() {

@@ -3168,8 +3168,15 @@
       "25": 21
     },
     "plafond_annuel": 7600,
+    "limite_reduction_generale": 130,
     "source": {
       "sources": [
+        {
+          "fichier": "atelier/reference/sources/dfs/arrete-2019-reduction-generale/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "arrêté du 4 décembre 2019, art. 1er, limite de la réduction générale sous abattement",
+          "citation": "ne peut excéder, pour ces rémunérations, 130 % du montant la réduction calculé sans application du même abattement"
+        },
         {
           "fichier": "atelier/reference/sources/dfs/arrete-2025-frais-professionnels/articles-20261103.md",
           "emetteur": "loi",

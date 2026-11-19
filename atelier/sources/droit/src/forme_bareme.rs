@@ -1153,7 +1153,7 @@ crate::cle_opaque! {
 
 forme! {
     /// LA SECTION `deduction_forfaitaire` DU BAREME DE L'ANNEE : la regle (les professions, le taux de chaque categorie,
-    /// le plafond annuel, les rubriques abattues, la tolerance du BOSS). Une forme du bareme, pas la DFS d'une paie
+    /// le plafond annuel, la limite de la reduction generale, les rubriques abattues, la tolerance du BOSS). Une forme du bareme, pas la DFS d'une paie
     /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
     /// salarie (`DfsDuSalarie`).
     pub struct DfsDuBareme {
@@ -1162,6 +1162,9 @@ forme! {
         pub frais_cumulables: bool,
         pub taux: BTreeMap<CategorieDfs, Taux>,
         pub plafond_annuel: Montant,
+        /// La limite de la reduction generale sous DFS, en pourcentage de celle du brut entier (arrete du 4 decembre
+        /// 2019, art. 1er : 130 % ; `reduction::reduction_generale_sous_dfs`).
+        pub limite_reduction_generale: Taux,
         pub rubriques_abattues: Vec<IdDeCotisation>,
     }
 }

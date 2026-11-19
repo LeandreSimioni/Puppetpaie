@@ -1986,8 +1986,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 : la reduction generale, apres les cotisations.
     let statut = sal.statut.dite().copied();
     let caisse_conges = bases[&Assiette::BrutCs] > Montant::ZERO;
-    // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
-    // (`reduction_generale_sous_dfs`).
+    // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite que le bareme dit de celle du brut entier
+    // (`deduction_forfaitaire.limite_reduction_generale`, `reduction_generale_sous_dfs`).
     // Le SMIC horaire de la reduction (`smic_horaire_reference`) ; sans lui, pas de reduction.
     let smic_horaire_rg = bar.reduction_generale.as_ref().and_then(|r| r.smic_horaire_reference);
     let absence = smic_d_une_absence(&lb, smic_horaire_rg);
@@ -2000,7 +2000,10 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         bases.insert(Assiette::RemunerationHabituelleHorsEna, a.habituelle);
     }
     let rg = match brut_abattu {
-        Some(abattu) => reduction_generale_sous_dfs(bar.reduction_generale.as_ref(), statut, brut, abattu, heures_rg, caisse_conges)?,
+        Some(abattu) => {
+            let limite = bar.deduction_forfaitaire.as_ref().ok_or_else(|| socle::fichiers::absent("deduction_forfaitaire"))?.limite_reduction_generale;
+            reduction_generale_sous_dfs(bar.reduction_generale.as_ref(), limite, statut, brut, abattu, heures_rg, caisse_conges)?
+        }
         None => reduction_generale(bar.reduction_generale.as_ref(), statut, brut, heures_rg, caisse_conges)?,
     };
     // Le SMIC se calcule sur les heures exactes du rapport ; le bulletin les dit au centieme.
