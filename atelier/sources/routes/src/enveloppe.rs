@@ -9,9 +9,9 @@
 //! - rendue : `{"ok": true, "ecrit": …, "resultat": {"phrase": "…", …}}` ;
 //! - refusee : `{"ok": false, "ecrit": …, "refus": {"classe": "Manque", "phrase": "…", "corriger": "…", "a_part": {…}}}`.
 //!
-//! `ecrit` dit ce qui a change dans la compagnie et que la page doit relire : une route dont la fiche ecrit ou engage,
-//! qui a rendu ; et toute route qui a ecrit au journal des envois, meme en refusant (un envoi qui echoue note sa
-//! tentative, `ligne_d_envoi::noter_echec_d_envoi`). L'ecran oublie alors ce qu'il a lu. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
+//! `ecrit` dit que la route a pu changer la compagnie et que la page doit relire : toute route dont la fiche ecrit ou
+//! engage, quelle que soit son issue ; et une lecture qui a ecrit au journal des envois (un releve qui range des
+//! retours). L'ecran oublie alors ce qu'il a lu. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
 //! `corriger`, ce que la fiche de la route dit de corriger pour cette classe, quand elle le dit ; `a_part`, ce que le
 //! refus porte hors de sa phrase (un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche : `socle::echec::APart`).
 //!
@@ -478,7 +478,7 @@ impl<'de> Deserialize<'de> for Reponse {
 }
 
 impl Reponse {
-    /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus, sans rien ecrire au journal des envois (une
+    /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus, sans compter le journal des envois (une
     /// lecture que le moteur garde, une route tombee).
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
         Reponse::du_geste(route, rendu, false)
@@ -490,12 +490,12 @@ impl Reponse {
         Reponse::issue_de(route, rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)), au_journal)
     }
 
-    /// L'issue `issue` de la route `route`, et si elle a ecrit (`ecrit`) : ce qui a change dans la compagnie et que la
-    /// page doit relire. Une route qui ecrit ou engage et qui a rendu ; toute route qui a ecrit au journal des envois
-    /// (`au_journal`), meme en refusant : un envoi qui echoue note sa tentative (`noter_echec_d_envoi`).
+    /// L'issue `issue` de la route `route`, et si elle a pu ecrire (`ecrit`) : la page oublie alors ce qu'elle garde de
+    /// la compagnie, et c'est tout ce que cela coute. Toute route dont la fiche ecrit ou engage, quelle que soit son
+    /// issue (elle a pu ecrire avant de refuser, ou de tomber) ; et une lecture qui a ecrit au journal des envois
+    /// (`au_journal` : un releve qui range des retours).
     fn issue_de(route: Route, issue: Result<Objet, Refus>, au_journal: bool) -> Reponse {
-        let ecrit = au_journal || (super::est_une_ecriture(route) && issue.is_ok());
-        Reponse { ecrit, issue }
+        Reponse { ecrit: au_journal || super::est_une_ecriture(route), issue }
     }
 
     /// Le refus d'une demande qui n'a pas atteint de route (illisible, mal formee, une route inconnue) : rien ne s'est
@@ -505,7 +505,7 @@ impl Reponse {
     }
 
     /// Le refus `refus` de la route `route`, deja dit (la fenetre autour de la route, un refus qu'elle rend tel quel) :
-    /// `ecrit` faux, la fenetre ne sachant rien du journal.
+    /// `ecrit` suit la fiche de la route, comme pour tout refus.
     pub fn refusee_par(route: Route, refus: Refus) -> Reponse {
         Reponse::issue_de(route, Err(refus), false)
     }

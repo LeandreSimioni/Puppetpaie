@@ -428,7 +428,7 @@ thread_local! {
 }
 
 /// LE NOMBRE D'ECRITURES DU JOURNAL faites sur ce fil : une route compare celui d'avant et celui d'apres, et sait si
-/// elle a ecrit au journal, meme en refusant (un envoi coupe note sa tentative, `ligne_d_envoi::noter_echec_d_envoi`).
+/// elle a ecrit au journal ; c'est ce qui le dit d'une lecture (un releve qui range des retours, `suivre-depot`).
 pub fn ecritures_du_fil() -> u64 {
     ECRITURES.with(std::cell::Cell::get)
 }
