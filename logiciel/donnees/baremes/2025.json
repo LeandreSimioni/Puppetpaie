@@ -1944,12 +1944,19 @@
           {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
             "emetteur": "agirc_arrco",
-            "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET (l. 1180-1183)",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET, première option (l. 1182-1184)",
             "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET, seconde option (l. 1186-1190)",
+            "citation": "Soit le montant de CET est ventilé entre l'assiette plafonnée"
           }
-        ]
+        ],
+        "raisonnement": "Le cahier d'Agirc-Arrco (CT2025, 6.3.2, « Base exceptionnelle », l. 1159-1173) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43. Pour la CET dans le 131, il ouvre deux options (remarque, l. 1180) : toute sous l'assiette déplafonnée (l. 1182-1184), ou ventilée entre la plafonnée (tranche 1) et la déplafonnée (tranche 2) (l. 1186-1190). CE QUE CHAQUE POPULATION FAIT. L'intermittent non cadre a sa ligne `cet`, toute sous la base 23 : la première option. Le cadre intermittent n'a pas de ligne `cet` : la CET de sa tranche 1 est dans sa ligne `retraite_t1`, déclarée sous la base 43 (`131/43`), celle de sa tranche 2 dans `retraite_t2`, sous la base 23 : la seconde option, ventilée. Le permanent fait comme l'intermittent non cadre, sous la base 03 (`par_nature.permanent`)."
       },
-      "note": "Le cahier d'Agirc-Arrco (CT2025, 6.3.2, « Base exceptionnelle », l. 1159-1176) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la CET va toute sous l'assiette déplafonnée, ici la 23, la première des deux options du cahier (l. 1180-1190). Le 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`). Le 131 de sa tranche 1 est sous la base 43."
+      "note": "Le 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`). Le 131 de sa tranche 1 est sous la base 43."
     },
     {
       "bloc78": "27",

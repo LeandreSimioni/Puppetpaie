@@ -1873,19 +1873,31 @@
           {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
             "emetteur": "agirc_arrco",
-            "article": "Aide à la codification DSN CT2026, 6.3.2, remarque sur la CET (l. 1172-1174)",
+            "article": "Aide à la codification DSN CT2026, 6.3.2, remarque sur la CET, première option (l. 1177-1179)",
             "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2, remarque sur la CET, seconde option (l. 1181-1185)",
+            "citation": "Soit le montant de CET est ventilé entre l'assiette plafonnée"
           },
           {
             "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt",
             "emetteur": "net_entreprises",
             "article": "fiche 2556, le 131 (l. 43)",
             "citation": "Les cotisations sur la Tranche 2 à déclarer sous l’assiette déplafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt",
+            "emetteur": "net_entreprises",
+            "article": "fiche 2556, la CET dans le 131 (l. 51)",
+            "citation": "la CET est déclarée sous le code « 131 - Cotisation régime unifié Agirc-Arrco » en distinguant la Tranche 1 et la Tranche 2"
           }
         ],
-        "raisonnement": "Le cahier d'Agirc-Arrco (CT2026, 6.3.2, « Base exceptionnelle », l. 1153-1166) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la fiche 2556 dit de même (l. 41-43). La CET va toute sous l'assiette déplafonnée, ici la 23, la première des deux options du cahier (l. 1172-1178), celle aussi de la part patronale (146 en 2026, fiche 2556 l. 505-507) et la seule du 148 de 2027 (l. 85)."
+        "raisonnement": "Le cahier d'Agirc-Arrco (CT2026, 6.3.2, « Base exceptionnelle », l. 1154-1168) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43 ; la fiche 2556 dit de même (l. 41-43). Pour la CET dans le 131, le cahier de l'organisme ouvre deux options (remarque, l. 1175) : toute sous l'assiette déplafonnée (l. 1177-1179), ou ventilée, la part de la tranche 1 sous la plafonnée et celle de la tranche 2 sous la déplafonnée (l. 1181-1185) ; la fiche 2556 ne décrit que la ventilation (l. 51) sans écarter l'autre option, et aucun texte déposé ne l'interdit. CE QUE CHAQUE POPULATION FAIT. L'intermittent non cadre a sa ligne `cet` (sur `cet_annuelle`), toute sous la base 23 : la première option (l. 1177-1179). Le cadre intermittent n'a pas de ligne `cet` (`par_categorie.cadre.rubriques_retirees`) : il paie la CET fondue dans ses tranches journalières, celle de sa tranche 1 dans sa ligne `retraite_t1`, déclarée sous la base 43 (`131/43`), celle de sa tranche 2 dans `retraite_t2`, sous la base 23 : la seconde option, ventilée (l. 1181-1185 ; fiche 2556, l. 51). Le permanent fait comme l'intermittent non cadre, sous la base 03 (`par_nature.permanent`). La part patronale de la CET se déclare, elle, toute sous l'assiette déplafonnée pour chacun : l'une des deux options du 146 de 2026 (fiche 2556, l. 505-507), la seule du 148 de 2027 (l. 85)."
       },
-      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLe 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`, fiche 2556, cas n° 4). Le 131 de sa tranche 1 est sous la base 43."
+      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLe 131 de la tranche 2 d'un intermittent, et la CET d'un non cadre, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`, fiche 2556, cas n° 4). Le 131 de sa tranche 1 est sous la base 43 (celui d'un cadre y porte la CET de sa tranche 1)."
     },
     {
       "bloc78": "27",
