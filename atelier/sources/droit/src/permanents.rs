@@ -1244,3 +1244,53 @@ pub fn duree_du_maintien(anciennete: Anciennete) -> R<Vec<crate::maintien::Tranc
         })
         .collect()
 }
+
+/// LES FAITS DE LA FIN QU'UN MOTIF APPELLE, et eux seuls (« si compagnie simple, interface simple ») : les cases de la
+/// carte (`notification_rupture`, `engagement_licenciement`, `signature_convention`, `transaction`,
+/// `en_droit_a_la_retraite`, `preavis_non_effectue`, `precarite_due`) que la page montre pour ce motif, que la carte garde
+/// (une case que le motif n'a pas se vide : `engagement::carte::Changements::appliquer`) et que le calcul juge. Sans
+/// motif dit (`None`), ce sont ceux du motif par defaut de la nature (`Nature::motif_rupture_par_defaut` : un CDD a son
+/// terme, 031) ; une nature sans motif par defaut (le CDI) n'en a aucun.
+pub fn faits_de_rupture(n: &Nature, motif: Option<MotifDeRupture>) -> R<Vec<&'static str>> {
+    use MotifDeRupture::*;
+    let Some(m) = motif.or_else(|| n.motif_rupture_par_defaut()) else { return Ok(Vec::new()) };
+    let sans_notification = matches!(m, FinDeCdd | RuptureConventionnelle | DecesDeLEmployeur | ForceMajeure | CommunAccord);
+    let licenciement = matches!(
+        m,
+        LicenciementEconomique | LicenciementAutreMotif | LicenciementFauteGrave | LicenciementFauteLourde | InaptitudeNonProfessionnelle | InaptitudeProfessionnelle | RuptureAnticipeeFauteGrave | RuptureAnticipeeFauteLourde
+    );
+    let mut faits = Vec::new();
+    // La rupture conventionnelle, ou le moteur refuse sans le fait (CGI 80 duodecies 6°).
+    let sec = rupture(Some(m))?;
+    if sec.is_some_and(|(fin, _)| fin == FinDeCdi::RuptureConventionnelle) {
+        faits.push("en_droit_a_la_retraite");
+    }
+    // Un contrat a duree indeterminee dont le motif ouvre un preavis, et dont le preavis non effectue se paie : pas
+    // celui que le texte n'indemnise pas (`preavis.indemnite_compensatrice.motifs_sans_indemnite` : 059, 039, 091).
+    let sans_indemnite = matches!(indemnite_de_preavis(Some(m))?, IndemniteDePreavis::Aucune(_));
+    if n.duree_indeterminee && !sans_indemnite && !sans_preavis(Some(m))? {
+        faits.push("preavis_non_effectue");
+    }
+    // Un CDD dont l'indemnite de fin de contrat est due.
+    if !n.duree_indeterminee && precarite_due(n, Some(m))?.is_none() {
+        faits.push("precarite_due");
+    }
+    // LES DATES ET LA TRANSACTION SELON LE MOTIF : une rupture decidee par l'un des deux se NOTIFIE ; un licenciement
+    // s'ENGAGE par la convocation a l'entretien prealable ; une rupture conventionnelle se date par la SIGNATURE de la
+    // convention ; la TRANSACTION suit un litige. Et toujours quand le signalement l'exige (CCH-12 de S21.G00.62.003,
+    // `preavis::notification_exigee`) : la force majeure (083) est de la liste ci-dessus, et sa date de notification est
+    // pourtant obligatoire dans un FCTU.
+    if !sans_notification || crate::preavis::notification_exigee(m)? {
+        faits.push("notification_rupture");
+    }
+    if licenciement {
+        faits.push("engagement_licenciement");
+    }
+    if m == RuptureConventionnelle {
+        faits.push("signature_convention");
+    }
+    if licenciement || matches!(m, MiseALaRetraite | PriseDActe) {
+        faits.push("transaction");
+    }
+    Ok(faits)
+}

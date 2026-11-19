@@ -2372,8 +2372,8 @@ fn ce_qui_manque(ctx: &Contexte, e: &Carte, contrat: &Periode) -> R<Vec<Manque>>
             "pourquoi le contrat a pris fin.",
             "Le motif de la rupture (S21.G00.62.002) est obligatoire, et un CDI n'en a aucun par défaut.",
         )),
-        // CCH-12 de S21.G00.62.003 : la date de notification, obligatoire pour ces motifs (`fctu::notification_exigee`).
-        Some(motif) if e.notification_rupture.is_none() && declarations::fctu::notification_exigee(motif)? => manques.push(manque(
+        // CCH-12 de S21.G00.62.003 : la date de notification, obligatoire pour ces motifs (`preavis::notification_exigee`).
+        Some(motif) if e.notification_rupture.is_none() && droit::preavis::notification_exigee(motif)? => manques.push(manque(
             "notification_rupture",
             "Notifiée le",
             "le jour où la rupture a été notifiée : la démission remise, la lettre de rupture ou de licenciement envoyée, la \

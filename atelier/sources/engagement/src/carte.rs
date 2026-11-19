@@ -756,6 +756,11 @@ impl Changements {
     /// rien : ses lignes se rangent d'abord, chacune lue au catalogue de la compagnie (`racine`, `ligne::ranger`) ; le
     /// premier refus (il nomme sa case, ou sa ligne) laisse `b` tel qu'il etait. `qui` : le salarie que le refus nomme,
     /// tel que le brouillon le dit au moment du changement.
+    ///
+    /// UNE CASE QUE LE MOTIF N'A PAS N'EXISTE PAS, et c'est ici, le seul endroit ou une carte change, qu'elle se vide :
+    /// chaque fait de la fin que le motif de rupture n'appelle pas (`droit::permanents::faits_de_rupture` ; sans motif dit,
+    /// ceux du motif par defaut de la nature) s'en va. Il ne reste pas ecrit sans se voir, et rien ne le controle (une date
+    /// de notification posee sous un 034, puis le motif devient 031 : elle s'en va).
     pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> R<()> {
         let mut essai = b.clone();
         for ch in self.0 {
@@ -763,9 +768,49 @@ impl Changements {
             let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
             essai.changer(ch, &q)?;
         }
+        sans_les_faits_que_le_motif_n_a_pas(&mut essai, &qui)?;
         *b = essai;
         Ok(())
     }
+}
+
+/// Le brouillon `b`, sans les faits de la fin que son motif n'appelle pas (`Changements::appliquer`). `qui` : le salarie
+/// que le refus nomme.
+fn sans_les_faits_que_le_motif_n_a_pas(b: &mut Brouillon, qui: &impl Fn(&Brouillon) -> String) -> R<()> {
+    let nat = b.nature().proprietes()?;
+    let mut c = b.en_carte();
+    let faits = droit::permanents::faits_de_rupture(&nat, c.motif_rupture)?;
+    let garde = |f: &str| faits.contains(&f);
+    let mut vide = false;
+    if !garde("notification_rupture") {
+        vide |= c.notification_rupture.take().is_some();
+    }
+    if !garde("engagement_licenciement") {
+        vide |= c.engagement_licenciement.take().is_some();
+    }
+    if !garde("signature_convention") {
+        vide |= c.signature_convention.take().is_some();
+    }
+    if !garde("transaction") {
+        vide |= c.transaction.take().is_some();
+    }
+    if !garde("en_droit_a_la_retraite") {
+        vide |= c.en_droit_a_la_retraite.take().is_some();
+    }
+    // La duree du preavis non effectue, et le pourquoi de l'indemnite ecartee, suivent leur case (la page les montre
+    // avec elle).
+    if !garde("preavis_non_effectue") {
+        vide |= c.preavis_non_effectue.take().is_some();
+        vide |= c.preavis_mois.take().is_some();
+    }
+    if !garde("precarite_due") {
+        vide |= c.precarite_due.take().is_some();
+        vide |= c.precarite_pourquoi.take().is_some();
+    }
+    if vide {
+        *b = Brouillon::de_la_carte(&c, &qui(b))?;
+    }
+    Ok(())
 }
 
 /// LE SALARIE QU'UN NOM TAPE DESIGNE, retrouve une fois a la porte (`Contexte::cle_du_salarie`) : la carte ne porte

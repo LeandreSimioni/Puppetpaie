@@ -22,7 +22,7 @@ use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
-use droit::natures::{self, MotifDeRupture, Nature};
+use droit::natures::{self, MotifDeRupture};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
@@ -1335,100 +1335,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     })
 }
 
-/// UNE CASE QUE LE MOTIF N'A PAS N'EXISTE PAS : apres les changements d'une carte (`enregistrer-saisie`, l'apercu,
-/// `modifier-engagement`), chaque fait de la fin (`faits_de_rupture`) que son motif de rupture n'appelle pas se vide --
-/// sans motif dit, aucun. Il ne reste pas ecrit sans se voir, et rien ne le controle (une date de notification posee sous
-/// un 034, puis le motif devient 031 : elle s'en va, et `notifiee_pendant_le_contrat` ne la juge plus). `qui` : le
-/// salarie que le refus nomme.
-pub(crate) fn sans_les_faits_que_le_motif_n_a_pas(b: &mut engagement::carte::Brouillon, qui: &str) -> R<()> {
-    let nat = b.nature().proprietes()?;
-    let mut c = b.en_carte();
-    let faits = match c.motif_rupture {
-        Some(m) => faits_de_rupture(&nat, m)?,
-        None => Vec::new(),
-    };
-    let garde = |f: &str| faits.contains(&f);
-    let mut vide = false;
-    if !garde("notification_rupture") {
-        vide |= c.notification_rupture.take().is_some();
-    }
-    if !garde("engagement_licenciement") {
-        vide |= c.engagement_licenciement.take().is_some();
-    }
-    if !garde("signature_convention") {
-        vide |= c.signature_convention.take().is_some();
-    }
-    if !garde("transaction") {
-        vide |= c.transaction.take().is_some();
-    }
-    if !garde("en_droit_a_la_retraite") {
-        vide |= c.en_droit_a_la_retraite.take().is_some();
-    }
-    // La duree du preavis non effectue, et le pourquoi de l'indemnite ecartee, suivent leur case (la page les montre
-    // avec elle).
-    if !garde("preavis_non_effectue") {
-        vide |= c.preavis_non_effectue.take().is_some();
-        vide |= c.preavis_mois.take().is_some();
-    }
-    if !garde("precarite_due") {
-        vide |= c.precarite_due.take().is_some();
-        vide |= c.precarite_pourquoi.take().is_some();
-    }
-    if vide {
-        *b = engagement::carte::Brouillon::de_la_carte(&c, qui)?;
-    }
-    Ok(())
-}
-
-/// `faits_de_rupture` : les faits a demander a l'ecran pour CE motif, et eux
-/// seuls (« si compagnie simple, interface simple »).
-fn faits_de_rupture(n: &Nature, m: MotifDeRupture) -> R<Vec<&'static str>> {
-    use MotifDeRupture::*;
-    let sans_notification = matches!(m, FinDeCdd | RuptureConventionnelle | DecesDeLEmployeur | ForceMajeure | CommunAccord);
-    let licenciement = matches!(
-        m,
-        LicenciementEconomique | LicenciementAutreMotif | LicenciementFauteGrave | LicenciementFauteLourde | InaptitudeNonProfessionnelle | InaptitudeProfessionnelle | RuptureAnticipeeFauteGrave | RuptureAnticipeeFauteLourde
-    );
-    let mut faits = Vec::new();
-    // La rupture conventionnelle, ou le moteur refuse sans le fait (CGI 80
-    // duodecies 6°).
-    let sec = permanents::rupture(Some(m))?;
-    if sec.is_some_and(|(fin, _)| fin == permanents::FinDeCdi::RuptureConventionnelle) {
-        faits.push("en_droit_a_la_retraite");
-    }
-    // Un contrat a duree indeterminee dont le motif ouvre un preavis, et dont le preavis non effectue se paie : pas
-    // celui que le texte n'indemnise pas (`preavis.indemnite_compensatrice.motifs_sans_indemnite` : 059, 039, 091).
-    let sans_indemnite = matches!(permanents::indemnite_de_preavis(Some(m))?, permanents::IndemniteDePreavis::Aucune(_));
-    if n.duree_indeterminee && !sans_indemnite {
-        if !permanents::sans_preavis(Some(m))? {
-            faits.push("preavis_non_effectue");
-        }
-    }
-    // Un CDD dont l'indemnite de fin de contrat est due.
-    if !n.duree_indeterminee && permanents::precarite_due(n, Some(m))?.is_none() {
-        faits.push("precarite_due");
-    }
-    // LES DATES ET LA TRANSACTION SELON LE MOTIF : une rupture decidee par l'un
-    // des deux se NOTIFIE ; un licenciement s'ENGAGE par la convocation a
-    // l'entretien prealable ; une rupture conventionnelle se date par la
-    // SIGNATURE de la convention ; la TRANSACTION suit un litige.
-    // Et toujours quand le signalement l'exige (CCH-12 de S21.G00.62.003, `fctu::notification_exigee`) : la force majeure
-    // (083) est de la liste ci-dessus, et sa date de notification est pourtant obligatoire dans un FCTU.
-    if !sans_notification || declarations::fctu::notification_exigee(m)? {
-        faits.push("notification_rupture");
-    }
-    if licenciement {
-        faits.push("engagement_licenciement");
-    }
-    if m == RuptureConventionnelle {
-        faits.push("signature_convention");
-    }
-    if licenciement || matches!(m, MiseALaRetraite | PriseDActe) {
-        faits.push("transaction");
-    }
-    Ok(faits)
-}
-
 /// UNE NATURE DE CONTRAT telle que l'ecran la propose : ce que `contrats-base.json` en dit, et ce que la page en tire sans
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1445,7 +1351,10 @@ struct NatureDeLaPage {
     /// et 10 (CCH-11).
     spectacle: bool,
     motifs_rupture: Vec<natures::RuptureOfferte>,
+    /// Les faits que chaque motif appelle (`permanents::faits_de_rupture`), et ceux du choix vide (`faits_sans_motif` :
+    /// ceux du motif par defaut de la nature) : la page montre ces cases, et elles seules.
     faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
+    faits_sans_motif: Vec<&'static str>,
     motif_rupture_defaut: Option<MotifDeRupture>,
     motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
@@ -1469,7 +1378,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
         let motifs = n.motifs_rupture();
         let mut faits = BTreeMap::new();
         for m in motifs {
-            faits.insert(m.code, faits_de_rupture(n, m.code)?);
+            faits.insert(m.code, permanents::faits_de_rupture(n, Some(m.code))?);
         }
         let carte = cartes
             .iter()
@@ -1486,6 +1395,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
             motifs_rupture: motifs.to_vec(),
             faits_de_rupture: faits,
+            faits_sans_motif: permanents::faits_de_rupture(n, None)?,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),

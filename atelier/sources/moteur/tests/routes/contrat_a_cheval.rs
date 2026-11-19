@@ -122,8 +122,8 @@ fn la_date_de_debut_changee_se_fait_signer_en_avenant() {
 /// LA RUPTURE SE NOTIFIE PENDANT LE CONTRAT (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` :
 /// la date de notification est « supérieure ou égale à la date de début de contrat de travail et inférieure ou égale à
 /// la date de fin ») : une date hors du contrat se refuse a la validation, en disant les bornes, et rien ne s'ecrit. Le
-/// motif est un de ceux qui ont la case (037, une rupture anticipee : `ouverture::faits_de_rupture`) ; sans lui, la case
-/// n'existe pas et ne se controle pas.
+/// motif est un de ceux qui ont la case (037, une rupture anticipee : `permanents::faits_de_rupture`) ; sans lui (le 031
+/// d'un CDDU), la case n'existe pas et ne se controle pas.
 #[test]
 fn une_notification_hors_du_contrat_se_refuse_a_la_validation() {
     let c = fuller_a_cheval("notification");

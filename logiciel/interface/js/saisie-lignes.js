@@ -1469,8 +1469,9 @@ function majRupture(div) {
   const dit = motif && motif.dit;
   motifDit.textContent = texteDeLaCase(dit);
   motifDit.hidden = !dit;
-  // Les faits que le motif choisi demande (`faits_de_rupture`, du moteur) ; aucun sans motif.
-  const faits = nat.faits_de_rupture[sel.value];
+  // Les faits que le motif choisi demande (`faits_de_rupture`, du moteur) ; sans motif choisi, ceux que le moteur
+  // donne pour le choix vide (`faits_sans_motif` : ceux du motif par défaut de la nature).
+  const faits = sel.value ? nat.faits_de_rupture[sel.value] : nat.faits_sans_motif;
   div.querySelectorAll(".e-rupture [data-fait]").forEach((l) => {
     l.hidden = !(faits && faits.includes(l.dataset.fait));
   });

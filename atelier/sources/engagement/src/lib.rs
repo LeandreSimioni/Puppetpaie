@@ -1200,10 +1200,6 @@ pub(crate) fn engagements(
     Ok((out, dits))
 }
 
-/// La rupture se notifie pendant le contrat : « La date de notification de la rupture de contrat doit être supérieure
-/// ou égale à la date de début de contrat de travail et inférieure ou égale à la date de fin de contrat de travail »
-/// (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). La saisie `e` qui la dit
-/// (`notification_rupture`) se refuse, en disant les bornes du contrat `eng` ; un contrat sans fin ne borne que le debut.
 /// Le refus du jour du versement de `eng` que les textes interdisent (`droit::versement::refus`) ; `None` : il passe.
 fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<String>> {
     let verse = eng.date_du_versement()?;
@@ -1223,8 +1219,17 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
     droit::versement::refus(qui, &verse, eng.mois, fin_cirque.as_ref())
 }
 
+/// La rupture se notifie pendant le contrat : « La date de notification de la rupture de contrat doit être supérieure
+/// ou égale à la date de début de contrat de travail et inférieure ou égale à la date de fin de contrat de travail »
+/// (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). La saisie `e` qui la dit
+/// (`notification_rupture`) se refuse, en disant les bornes du contrat `eng` ; un contrat sans fin ne borne que le debut.
 fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {
     let Some(n) = e.notification_rupture else { return Ok(()) };
+    // Une case que le motif n'appelle pas (`droit::permanents::faits_de_rupture`, au motif de la carte ou, sans lui, au
+    // defaut de la nature) ne se juge pas.
+    if !droit::permanents::faits_de_rupture(&*eng.nat()?, e.motif_rupture)?.contains(&"notification_rupture") {
+        return Ok(());
+    }
     if eng.contrat().contient(&n) {
         return Ok(());
     }

@@ -163,6 +163,15 @@ pub fn base() -> R<BaseFctu> {
     Ok((*b).clone())
 }
 
+/// La date de notification de la rupture (S21.G00.62.003) est-elle obligatoire pour ce motif de rupture ? La liste
+/// `notification_rupture.motifs` de `fctu-base.json`, celle de la CCH-12 de S21.G00.62.003 (cahier technique DSN 2026.1,
+/// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
+/// refuse par le point de depot. Un seul endroit : les faits que le motif appelle (`permanents::faits_de_rupture`), la
+/// liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et `declarations::fctu::verifier` la lisent ici.
+pub fn notification_exigee(motif: crate::natures::MotifDeRupture) -> R<bool> {
+    Ok(base()?.notification_rupture.motifs.contains(&motif))
+}
+
 impl TypesPreavis {
     /// Le type de ce code, ou `None`.
     pub fn du_code(&self, code: TypeDePreavis) -> Option<&TypePreavis> {

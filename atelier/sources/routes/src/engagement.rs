@@ -334,7 +334,6 @@ fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: RangDansLeMois, o: &enga
     let vue = o.vue(lu)?.ok_or_else(|| refus(format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", qui)))?;
     let mut carte = Brouillon::de_la_carte(&vue, &qui).map_err(|e| e.reclasser(Classe::Refuse))?;
     changements.appliquer(ctx, lu, &mut carte, |_| qui.clone()).map_err(|e| e.reclasser(Classe::Refuse))?;
-    crate::ouverture::sans_les_faits_que_le_motif_n_a_pas(&mut carte, &qui)?;
     engagement::etats::modifier(ctx, lu, i)?;
     engagement::stock::poser_la_saisie(ctx, lu, i, &carte.en_carte(), jour).map_err(|e| e.reclasser(Classe::Refuse))?;
     if !engagement::etats::a_revalider_rouvert(ctx, lu, i)? {

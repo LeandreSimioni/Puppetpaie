@@ -112,17 +112,6 @@ pub fn preavis_non_effectue(type_preavis: TypeDePreavis) -> R<bool> {
     }
 }
 
-// ------------------------------------------------ la date de notification de la rupture
-
-/// La date de notification de la rupture (S21.G00.62.003) est-elle obligatoire pour ce motif de rupture ? La liste
-/// `notification_rupture.motifs` de `fctu-base.json`, celle de la CCH-12 de S21.G00.62.003 (cahier technique DSN 2026.1,
-/// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
-/// refuse par le point de depot. Un seul endroit : la liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et
-/// `verifier` la lisent ici.
-pub fn notification_exigee(motif: droit::natures::MotifDeRupture) -> R<bool> {
-    Ok(nomenclatures()?.notification_rupture.motifs.contains(&motif))
-}
-
 // ------------------------------------------------ le type de preavis et ce que la paie verse
 
 /// Les lignes d'une paie declarees en indemnite compensatrice de preavis (S21.G00.52.001), en (code, libelle).
@@ -317,7 +306,7 @@ preavis de L1234-1."
     }
 
     // CCH-12 de S21.G00.62.003 : pour ces motifs, la date de notification est obligatoire.
-    if fin.notification.is_none() && notification_exigee(fin.motif)? {
+    if fin.notification.is_none() && droit::preavis::notification_exigee(fin.motif)? {
         return Err(Echec::impossible(format!(
             "Motif de rupture {} : la date de notification de la rupture (S21.G00.62.003, `notification_rupture` dans la \
 saisie) est OBLIGATOIRE -- CCH-12 de S21.G00.62.003, cahier technique DSN p. 275. Le point de depot refuserait le \
