@@ -492,7 +492,14 @@ impl PlageDuReleve {
 /// ecrit les bornes) et celle du SI DSN ; une journee les couvre, pour une tranche de plus. Les bornes s'ecrivent a la
 /// seconde et les tranches sont contigues (`tranches`) : rien ne tombe entre deux. Un retour revu est deja vu : il ne se
 /// retelecharge pas.
+/// Pour la DPAE par plage, aucun texte de l'Urssaf depose ne dit sur quelle date la liste filtre : INFERENCE, on la
+/// releve comme la DSN.
 const RECOUVREMENT: std::time::Duration = UNE_JOURNEE;
+
+/// L'HORIZON DU RELEVE COMPLET : sans releve complet precedent, ou quand il remonte plus loin, la plage part de trente
+/// jours avant maintenant (celui de l'ouverture, `routes::gestes::ouverture::TRENTE_JOURS`). Un releve qui remonte
+/// moins loin que cela n'est pas complet.
+const HORIZON_DU_RELEVE_COMPLET: std::time::Duration = socle::temps::jours_de_24_heures(30);
 
 /// JUSQU'OU LE DERNIER RELEVE COMPLET A LU, sur un canal : `retours/releve-complet.json` (la DSN),
 /// `retours/dpae/releve-complet.json` (la DPAE), a cote du journal des vus. `lu_jusqu_a` : la fin de la derniere tranche
@@ -750,11 +757,20 @@ pub fn relever_retours(
     let (debut, fin, nature, complet) = match plage {
         PlageDuReleve::Complete { jusqu_a } => {
             let au_plus_loin = fin.moins_duree(jusqu_a).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
-            let debut = match releve_complet(ctx, canal)? {
-                Some(c) => c.lu_jusqu_a.moins_duree(RECOUVREMENT).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?.max(au_plus_loin),
-                None => au_plus_loin,
+            // Un instant retenu posterieur a maintenant (une montre en avance le jour ou il a ete ecrit) ne dit rien :
+            // la plage repart du plus loin, comme sans releve precedent.
+            let repris = match releve_complet(ctx, canal)?.filter(|c| c.lu_jusqu_a <= fin) {
+                Some(c) => Some(c.lu_jusqu_a.moins_duree(RECOUVREMENT).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?),
+                None => None,
             };
-            (debut, fin, None, true)
+            // CE RELEVE N'AVANCE L'INSTANT RETENU QUE S'IL A LU TOUT CE QU'UN RELEVE COMPLET DOIT LIRE : a la date reelle
+            // de la machine (un jour pose par `--date` ecrirait un instant qui n'est pas celui de la montre), et sur une
+            // plage que l'appelant n'a pas raccourcie (`jusqu_a` plus court que l'horizon laisserait un trou entre
+            // l'instant retenu et le debut de cette plage, que l'instant avance refermerait pour toujours).
+            let a_la_date_reelle = socle::temps::jour_de_paris() == socle::temps::jour_de_la_montre();
+            let entiere = jusqu_a >= HORIZON_DU_RELEVE_COMPLET || repris.is_some_and(|r| r >= au_plus_loin);
+            let debut = repris.map_or(au_plus_loin, |r| r.max(au_plus_loin));
+            (debut, fin, None, a_la_date_reelle && entiere)
         }
         PlageDuReleve::Bornee { debut, fin, nature } => (debut, fin, nature, false),
     };
