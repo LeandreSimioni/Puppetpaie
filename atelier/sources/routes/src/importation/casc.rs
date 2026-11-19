@@ -57,13 +57,6 @@ pub struct Activite {
     pub jours: Option<Jours>,
 }
 
-impl Activite {
-    /// N'en dit-elle rien ?
-    fn est_vide(&self) -> bool {
-        self.cachets.is_none() && self.heures.is_none() && self.jours.is_none()
-    }
-}
-
 /// Les paies versees de `mois` que sa DSN importee declare, d'apres les engagements importes : une par engagement qui
 /// a un brut ce mois-la ; une paie qu'un bulletin seul declare n'en est pas. Un salarie sans fiche refuse (sa ligne de
 /// la liste nominative ne se devine pas).
@@ -698,6 +691,8 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let mut cumul: Vec<((Annee, Nir), Montant)> = Vec::new();
     // Le texte s'ecrit entier, jamais coupe : celui qui depasse le maximum du modele se dit, ligne et colonne.
     let mut depasses: Vec<String> = Vec::new();
+    // Les colonnes de l'activite laissees vides : ce qui manque (« cachets ni heures »), et les lignes du classeur.
+    let mut vides: Vec<(String, Vec<u32>)> = Vec::new();
     let mut entier = |ligne: u32, (quoi, max): (&str, usize), t: String| -> String {
         let n = t.chars().count();
         if n > max {
@@ -749,30 +744,37 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         ws.nombre(ligne, 24, x.brut.a_l_euro(), &simple);
         ws.nombre(ligne, 36, total.a_l_euro(), &simple);
         let a = &x.activite;
-        // Un artiste dit ses cachets (colonne 33) et ses heures (34), un technicien ses jours (31) et ses heures (32).
+        // Un artiste dit ses cachets (colonne 33) et ses heures (34), un technicien ses jours (31) et ses heures (32) ;
+        // une colonne que rien ne dit reste vide, et se dit (`vides`).
+        let mut manque = Vec::new();
         match (artiste, a.cachets, a.jours) {
             (true, Some(c), _) => ws.nombre(ligne, 33, c, &simple),
             (false, _, Some(j)) => ws.nombre(ligne, 31, j, &simple),
-            (true, None, _) | (false, _, None) => {}
+            (true, None, _) => manque.push("cachets"),
+            (false, _, None) => manque.push("jours"),
         }
-        if let Some(h) = a.heures {
-            ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple);
+        match a.heures {
+            Some(h) => ws.nombre(ligne, if artiste { 34 } else { 32 }, h, &simple),
+            None => manque.push("heures"),
+        }
+        if !manque.is_empty() {
+            let quoi = manque.join(" ni ");
+            match vides.iter_mut().find(|(q, _)| *q == quoi) {
+                Some((_, lignes)) => lignes.push(ligne + 1),
+                None => vides.push((quoi, vec![ligne + 1])),
+            }
         }
     }
     if !depasses.is_empty() {
         r.avertissements.push(format!("Liste nominative : écrit en entier, plus long que le modèle du CASC-SVP ({}).", depasses.join(" ; ")));
     }
-    let sans: Vec<&EmploiReg> = r.emplois.iter().filter(|x| x.activite.est_vide()).collect();
-    if !sans.is_empty() {
-        let mut mois: Vec<Mois> = sans.iter().map(|x| x.mois).collect();
-        mois.sort();
-        mois.dedup();
-        let mois: Vec<String> = mois.iter().map(Mois::to_string).collect();
-        r.avertissements.push(format!(
-            "Liste nominative : {} emploi(s) sans jours, cachets ni heures lus ({}) -- colonnes laissees vides.",
-            sans.len(),
-            mois.join(", ")
-        ));
+    // CE QUI RESTE VIDE, ligne par ligne : la colonne qu'aucune piece ne remplit (la DSN, l'AEM, le bulletin du mois).
+    if !vides.is_empty() {
+        let dits: Vec<String> = vides
+            .iter()
+            .map(|(quoi, lignes)| format!("sans {} lus, {} {}", quoi, if lignes.len() > 1 { "lignes" } else { "ligne" }, lignes.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")))
+            .collect();
+        r.avertissements.push(format!("Liste nominative : colonnes laissées vides, aucune pièce ne les dit ({}).", dits.join(" ; ")));
     }
     let chemin = dossier.join("CASC-SVP_liste-nominative.xlsx");
     std::fs::write(&chemin, ws.octets()?).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
