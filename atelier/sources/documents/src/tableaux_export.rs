@@ -206,6 +206,7 @@ enum Total {
     Montant,
     Heures,
     Cachets,
+    Jours,
     Compte,
     Assiette(Assiette),
 }
@@ -503,11 +504,14 @@ colonnes_des_etats! {
         Report = "report", "Report N-1 (j)";
         Solde = "solde", "Solde (j)";
     }
+    /// UNE COLONNE DE JOURS TRAVAILLES, totalisee : ceux d'un contrat, tels que sa paie les dit (`PaieDuMois::activite` :
+    /// la DSN les declare en journees, au centieme).
+    ColonneDeJoursTravailles, [Jours], Some(Total::Jours), Nombre {
+        Jours = "jours", "Jours";
+    }
     /// UNE COLONNE DE COMPTES (« combien de… »), totalisee.
     ColonneDeCompte, [usize], Some(Total::Compte), Nombre {
         Bulletins = "bulletins", "Bulletins";
-        /// Les jours travailles d'un contrat, comptes.
-        Jours = "jours", "Jours";
     }
     /// UNE COLONNE DE COMPTES SANS TOTAL : ce qui ne s'additionne pas d'une ligne a l'autre.
     ColonneDeCompteSansTotal, [usize], None, Nombre {
@@ -844,6 +848,11 @@ fn somme(lignes: &[&Ligne], cle: ColonneDEtat, total: Total) -> Option<Val> {
             _ => None,
         })
         .map(Val::Cachets),
+        Total::Jours => somme_de(lignes, cle, |v| match v {
+            Val::Jours(j) => Some(*j),
+            _ => None,
+        })
+        .map(Val::Jours),
         Total::Compte => somme_de(lignes, cle, |v| match v {
             Val::Compte(n) => Some(*n),
             _ => None,

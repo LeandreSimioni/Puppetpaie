@@ -735,11 +735,14 @@ impl PaieDuMois {
         }
     }
 
-    /// LES CACHETS DE LA PAIE : ceux que son engagement compte (la somme de ses lignes de cachets, ce que la DSN
-    /// declare en activite) ; `None` pour une paie importee dont aucune ligne n'est rattachee a une rubrique
-    /// (ses heures, `heures_annexes`, ne sont pas dites).
-    pub fn cachets(&self) -> Option<socle::grandeurs::Cachets> {
-        self.heures_annexes().map(|_| self.engagement().cachets)
+    /// L'ACTIVITE DE LA PAIE (cachets, heures, jours de travail remunere) : celle que son engagement compte, ou, pour
+    /// une paie importee, celle que les pieces disent du mois (`importe::Importe::activite_du_mois`, la seule regle),
+    /// chaque mesure qu'elles taisent vide.
+    pub fn activite(&self) -> crate::importe::ActiviteDuMois {
+        match self {
+            PaieDuMois::Validee(p) => crate::importe::ActiviteDuMois { cachets: Some(p.engagement.cachets), heures: p.engagement.heures, jours: Some(p.engagement.jours) },
+            PaieDuMois::Importee(p) => p.activite,
+        }
     }
 
     /// LES HEURES DE LA PAIE POUR LES ANNEXES 8 ET 10 (un cachet compte pour les heures que sa rubrique declare) : celles

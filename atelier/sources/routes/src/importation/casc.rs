@@ -17,7 +17,8 @@ use socle::echec::Classe;
 use std::path::Path;
 
 use serde::Serialize;
-use socle::grandeurs::{nulle, Cachets, Heures, Jours, Montant, Taux};
+use engagement::importe::ActiviteDuMois;
+use socle::grandeurs::{nulle, Montant, Taux};
 
 use droit::contexte::Contexte;
 use socle::date::{Jour, PeriodeOuverte};
@@ -39,22 +40,11 @@ struct Versee {
     brut: Montant,
     numero: Option<engagement::numeros::NumeroContrat>,
     periode: Option<PeriodeOuverte>,
-    /// Les cachets, heures et jours que les pieces disent du mois (`engagement::importe::activite_du_mois`).
-    activite: Activite,
+    /// Les cachets, heures et jours que les pieces disent du mois (`engagement::importe::activite_du_mois`), ceux qui ne
+    /// sont pas nuls.
+    activite: ActiviteDuMois,
     /// Artiste ou technicien : ce que le bulletin de la paie imprime, sinon la fiche ; `None` : rien ne le dit.
     statut: Option<droit::fiche::Statut>,
-}
-
-/// L'ACTIVITE D'UN EMPLOI DE LA REGULARISATION : les cachets, les heures et les jours que les pieces disent du mois (le
-/// contrat atteste qui tient dans le mois, sinon la DSN ou le bulletin du mois), ceux qui ne sont pas nuls.
-#[derive(Clone, Debug, Default, Serialize)]
-pub struct Activite {
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub cachets: Option<Cachets>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub heures: Option<Heures>,
-    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
-    pub jours: Option<Jours>,
 }
 
 /// Les paies versees de `mois` que sa DSN importee declare, d'apres les engagements importes : une par engagement qui
@@ -70,8 +60,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let periode = p.paie.periode;
         // L'activite du mois que les pieces disent (`Importe::activite_du_mois`) : le contrat atteste qui tient dans le
         // mois, sinon ce que la paie du mois declare (la DSN, ou le bulletin d'un permanent).
-        let (cachets, heures, jours) = i.activite_du_mois(mois);
-        let activite = Activite { cachets: cachets.filter(|n| !n.est_nul()), heures: heures.filter(|n| !n.est_nul()), jours: jours.filter(|n| !n.est_nul()) };
+        let activite = i.activite_du_mois(mois).non_nulle();
         let numero = p.paie.contrat.numero_declare().cloned();
         let statut = p.paie.emploi_imprime.as_ref().and_then(|e| e.ecrit.statut).or_else(|| salarie.champs.statut.dite().copied());
         out.push(Versee { salarie, brut, numero, periode, activite, statut });
@@ -156,7 +145,7 @@ pub struct EmploiReg {
     pub mois: Mois,
     pub individu: IndividuReg,
     pub contrat: ContratReg,
-    pub activite: Activite,
+    pub activite: ActiviteDuMois,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub periode: Option<PeriodeOuverte>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
@@ -396,7 +385,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
                 annee: an,
                 mois: *m,
                 individu,
-                activite: p.activite.clone(),
+                activite: p.activite,
                 periode: p.periode,
                 contrat,
                 brut,

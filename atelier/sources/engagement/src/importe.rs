@@ -498,8 +498,33 @@ impl PaieVersee {
     }
 }
 
-/// L'ACTIVITE QUE LES PIECES DISENT D'UN CONTRAT REPRIS POUR `mois` : (cachets, heures, jours), chacun vide quand elles
-/// le taisent. Une seule regle, pour ce qui lit l'activite d'un mois repris :
+/// L'ACTIVITE D'UN MOIS REPRIS (`activite_du_mois`) : ses cachets, ses heures et ses jours de travail remunere, chacun
+/// vide quand les pieces le taisent (vide n'est pas zero). Des cachets entiers ; des heures et des jours tels que les
+/// pieces les disent (la DSN : `151.67`), en texte.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct ActiviteDuMois {
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub cachets: Option<Cachets>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub heures: Option<Heures>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
+    pub jours: Option<Jours>,
+}
+
+impl ActiviteDuMois {
+    /// N'en dit-elle rien ?
+    pub fn est_muette(&self) -> bool {
+        self.cachets.is_none() && self.heures.is_none() && self.jours.is_none()
+    }
+
+    /// Celle qui n'est pas nulle : une mesure nulle (`0.00`) ne remplit aucune case.
+    pub fn non_nulle(self) -> ActiviteDuMois {
+        ActiviteDuMois { cachets: self.cachets.filter(|n| !n.est_nul()), heures: self.heures.filter(|n| !n.est_nul()), jours: self.jours.filter(|n| !n.est_nul()) }
+    }
+}
+
+/// L'ACTIVITE QUE LES PIECES DISENT D'UN CONTRAT REPRIS POUR `mois` (`ActiviteDuMois`), chacune vide quand elles la
+/// taisent. Une seule regle, pour ce qui lit l'activite d'un mois repris :
 /// - le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en dit
 ///   quelque chose : la piece du contrat compte le contrat entier, qui est ici celui du mois. L'AEM est « l'attestation
 ///   employeur mensuelle » du contrat (S21.G00.40.025, `bloc-S21.G00.40.txt`) ; la DSN valorise la meme activite « par
@@ -510,13 +535,13 @@ impl PaieVersee {
 /// `debut` et `fin` : les bornes de l'engagement qui porte le contrat (`Importe::activite_du_mois` les lit sur lui).
 pub fn activite_du_mois(
     mois: Mois, paie: Option<&PaieVersee>, contrat: Option<&ContratAtteste>, debut: Option<Jour>, fin: Option<Jour>,
-) -> (Option<Cachets>, Option<Heures>, Option<Jours>) {
+) -> ActiviteDuMois {
     let tient = [debut, fin].iter().all(|j| j.is_some_and(|j| j.mois_civil() == mois));
-    let atteste = contrat.filter(|_| tient).map(|c| (c.cachets, c.heures, c.jours)).filter(|(c, h, j)| c.is_some() || h.is_some() || j.is_some());
+    let atteste = contrat.filter(|_| tient).map(|c| ActiviteDuMois { cachets: c.cachets, heures: c.heures, jours: c.jours }).filter(|a| !a.est_muette());
     match (atteste, paie) {
         (Some(a), _) => a,
-        (None, Some(p)) => (p.cachets, p.heures, p.jours),
-        (None, None) => (None, None, None),
+        (None, Some(p)) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
+        (None, None) => ActiviteDuMois::default(),
     }
 }
 
@@ -654,7 +679,7 @@ impl Importe {
     }
 
     /// L'activite que ses pieces disent pour `mois` (`activite_du_mois`, aux bornes de l'engagement).
-    pub fn activite_du_mois(&self, mois: Mois) -> (Option<Cachets>, Option<Heures>, Option<Jours>) {
+    pub fn activite_du_mois(&self, mois: Mois) -> ActiviteDuMois {
         activite_du_mois(mois, self.paies().get(&mois), self.contrat(), self.carte().debut, self.carte().fin)
     }
 
@@ -757,6 +782,9 @@ pub struct PaieImportee {
     /// Les heures pour les annexes 8 et 10 (un cachet compte pour les heures que sa rubrique declare) : la somme de celles
     /// des lignes rattachees, dans sa forme la plus courte ; `None` : aucune ligne n'est rattachee.
     pub heures_annexes: Option<Heures>,
+    /// Ses cachets, ses heures et ses jours du mois (`Importe::activite_du_mois`) ; une mesure que les pieces taisent
+    /// est vide.
+    pub activite: ActiviteDuMois,
     /// Les lignes de cotisation que le bulletin imprime, sous la cotisation que l'import leur a donnee, chaque taux dans
     /// sa forme la plus courte ; vide quand aucun bulletin ne les donne.
     pub lignes: Vec<CotisationImprimee>,
@@ -884,11 +912,18 @@ impl Importe {
             remuneration.push((l, rattachee));
         }
         let rattachees: Vec<&crate::calcul::LigneRattachee> = remuneration.iter().filter_map(|(_, r)| r.as_ref()).collect();
-        // Ses cachets et ses heures, comme ceux d'un engagement calcule (`cachets_et_heures`), des lignes rattachees.
-        (engagement.cachets, engagement.heures) = crate::cachets_et_heures(rattachees.iter().map(|r| (r.paiement.and_then(crate::ligne::PaiementDeLigne::quantite), r.heures_annexes)), nat.mensuelle());
         let heures_annexes = (!rattachees.is_empty()).then(|| socle::grandeurs::courte(rattachees.iter().map(|r| r.heures_annexes).sum()));
-        engagement.jours = Jours::de_dates(engagement.dates_travail.len());
-        engagement.jours_contrat = engagement.jours;
+        // SON ACTIVITE DU MOIS, par la seule regle (`activite_du_mois`) : ce qui la lit lit `PaieImportee::activite`, ou
+        // une mesure tue reste vide. L'engagement, qui n'a pas de case vide pour elle, porte ce qu'elle dit ; ce qu'elle
+        // tait y reste a zero, et ne s'y lit pas.
+        let activite = self.activite_du_mois(mois);
+        engagement.heures = activite.heures;
+        if let Some(c) = activite.cachets {
+            engagement.cachets = c;
+        }
+        if let Some(j) = activite.jours {
+            (engagement.jours, engagement.jours_contrat) = (j, j);
+        }
 
         // Le bareme de la paie range les bases ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let fin_periode = engagement.periode_payee()?.fin();
@@ -946,6 +981,7 @@ impl Importe {
             spectacle: spec,
             remuneration,
             heures_annexes,
+            activite,
             lignes: cotisations,
             bases,
             brut,

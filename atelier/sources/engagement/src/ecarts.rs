@@ -343,7 +343,7 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
 /// paies se refont une fois sa nature dite.
 fn saisies_refaites(imp: &Importe) -> Vec<(Mois, &PaieVersee, NatureDeContrat, Option<socle::grandeurs::Jours>)> {
     let paies = imp.paies();
-    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, imp.activite_du_mois(mois).2))).collect()
+    imp.nature().into_iter().flat_map(|nature| paies.iter().map(move |(&mois, p)| (mois, p, nature, imp.activite_du_mois(mois).jours))).collect()
 }
 
 /// Ce que la saisie refaite dit de la paie, et ce que la comparaison note en chemin (`Comparaison`).

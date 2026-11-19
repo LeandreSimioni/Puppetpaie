@@ -1471,9 +1471,10 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
             let e = paie.engagement();
-            // Les cachets et les heures que la paie compte ; une paie importee dont aucune ligne n'est rattachee a une
-            // rubrique ne les dit pas : ils restent vides.
-            let (cachets, heures) = (paie.cachets(), paie.heures_annexes());
+            // Les cachets et les jours que la paie compte (`PaieDuMois::activite` : pour une paie importee, ce que les
+            // pieces disent du mois, une mesure tue restant vide) ; les heures pour les annexes, celles de ses lignes
+            // (une paie importee dont aucune ligne n'est rattachee a une rubrique ne les dit pas).
+            let (activite, heures) = (paie.activite(), paie.heures_annexes());
             let emploi = e.emploi.ecrit.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie().emploi.en_texte());
             let debut = e.contrat().debut().iso();
             // La fin du contrat, sinon son dernier jour travaille.
@@ -1484,7 +1485,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let mut l = Ligne::nouvelle();
             l.m(C::Mois, m).t(C::Salarie, qui(paie.salarie())?).t(C::CleSalarie, paie.salarie().id.to_string());
             l.ot(C::Contrat, e.numero.clone()).ot(C::Spectacle, titre_spectacle(paie)).ot(C::Emploi, emploi).t(C::Debut, jj(&debut)).ot(C::Fin, fin.as_deref().map(jj));
-            l.grandeur_ou_rien(C::Cachets, cachets).grandeur_ou_rien(C::Heures, heures).compte(C::Jours, e.dates_travail.len()).om(C::Brut, paie.brut().map(Montant::au_centime));
+            l.grandeur_ou_rien(C::Cachets, activite.cachets).grandeur_ou_rien(C::Heures, heures).grandeur_ou_rien(C::Jours, activite.jours).om(C::Brut, paie.brut().map(Montant::au_centime));
             lignes.push(l);
         }
     }

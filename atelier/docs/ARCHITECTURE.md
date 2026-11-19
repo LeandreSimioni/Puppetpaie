@@ -1146,7 +1146,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | regroupement d'un état | `RegroupementDEtat` | `documents/src/plan_comptable.rs` |
 | logiciel du comptable | `LogicielComptable` | `documents/src/plan_comptable.rs` |
 | période d'export | `PeriodeDExport` | `documents/src/plan_comptable.rs` |
-| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, un compte, la base d'une assiette ; ce qui ne s'additionne pas a sa sorte sans total — les jours d'un compteur de congés, un compte, un montant —, jamais un total effacé après coup) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJours`, `ColonneDeCompte`, `ColonneDeCompteSansTotal`, `ColonneDeMontantSansTotal`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
+| colonne d'un état (la clé d'une case ; chaque colonne a le type de ce qu'elle reçoit, `Recoit` : un texte, une grandeur à droite sans total, ou, totalisée, la seule grandeur que son total additionne — un montant, des heures, des cachets, des jours travaillés, un compte, la base d'une assiette ; ce qui ne s'additionne pas a sa sorte sans total — les jours d'un compteur de congés, un compte, un montant —, jamais un total effacé après coup) | `ColonneDEtat` ; ses sortes : `ColonneDeTexte`, `ColonneADroite`, `ColonneDeMontant`, `ColonneDHeures`, `ColonneDeCachets`, `ColonneDeJoursTravailles`, `ColonneDeJours`, `ColonneDeCompte`, `ColonneDeCompteSansTotal`, `ColonneDeMontantSansTotal`, `DuMois`, `DeLAssiette` | `documents/src/tableaux_export.rs` |
 | code journal | `CodeJournal` | `documents/src/ecritures_comptables.rs` |
 | numéro de compte | `NumeroDeCompte` | `documents/src/ecritures_comptables.rs` |
 | cumul de lignes du livre de paie (combien de bulletins, et chacun de ses montants : le seul cumul des états, `cumuls_par` ; le livre, le récapitulatif annuel, la masse salariale, le coût par spectacle, le coût de l'année d'une fiche, la masse des contributions de branche, le taux patronal réel ; la clé et les lignes retenues se disent à la porte de chaque état) | `CumulDuLivre` | `documents/src/etats_paie.rs` |
@@ -1165,6 +1165,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| activité d'un mois repris (ses cachets, heures et jours de travail rémunéré, chacun vide quand les pièces le taisent ; une seule règle, `importe::activite_du_mois`, que lisent la carte du mois importé, la comparaison, la CASC-SVP et les états par `PaieDuMois::activite`) | `engagement::importe::ActiviteDuMois` | `engagement/src/importe.rs` |
 | paie reprise qui ne se range pas (celle d'un mois d'un contrat dont la nature reste à dire : ce qui lit les paies du mois la rend à part, ne la compte pas et la dit sur ce contrat, sans refuser le reste, `importe::paies_du_mois`, `etats::paies_du_mois`) | `engagement::importe::NatureADire` | `engagement/src/importe.rs` |
 | paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
 | paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
@@ -2579,8 +2580,9 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
   l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Le bulletin du
   mois d'un permanent les remplace par ce qu'il imprime ; le contrat qu'une AEM, un bulletin ou un certificat atteste
-  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle, que lisent la carte
-  du mois importé, la comparaison et la CASC-SVP.
+  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle
+  (`ActiviteDuMois`), que lisent la carte du mois importé, la comparaison, la CASC-SVP et la paie importée
+  (`PaieImportee::activite`, que les états lisent par `PaieDuMois::activite`).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
