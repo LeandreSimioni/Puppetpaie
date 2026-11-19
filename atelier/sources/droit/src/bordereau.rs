@@ -28,6 +28,14 @@ noms_fermes! {
         BrutX115Technicien = "brut_x115_technicien",
         BrutArtiste = "brut_artiste",
         BrutX115Artiste = "brut_x115_artiste",
+        /// Les artistes intermittents d'un etablissement hors du Bas-Rhin, du Haut-Rhin et de la Moselle (CTP 312).
+        BrutArtisteHorsAlsaceMoselle = "brut_artiste_hors_alsace_moselle",
+        /// Les artistes intermittents d'un etablissement du Bas-Rhin, du Haut-Rhin ou de la Moselle (CTP 313, qui porte
+        /// leur regime local).
+        BrutArtisteAlsaceMoselle = "brut_artiste_alsace_moselle",
+        /// Les salaries d'un etablissement du Bas-Rhin, du Haut-Rhin ou de la Moselle dont le regime local ne passe pas
+        /// par le CTP 313 : tous, sauf les artistes intermittents (CTP 381).
+        BrutRegimeLocal = "brut_regime_local",
     }
 }
 
@@ -42,6 +50,13 @@ impl AssietteDuBordereau {
             AssietteDuBordereau::BrutX110 => Some(Assiette::BrutX110),
             _ => None,
         }
+    }
+
+    /// Ne somme-t-elle que les salaries d'un etablissement d'Alsace-Moselle ? Sa ligne ne s'ecrit alors que si elle
+    /// n'est pas nulle, comme celle d'une population (`statut`, `nature`) : un CTP de la zone n'a rien a faire au
+    /// bordereau d'une compagnie qui n'y emploie personne.
+    pub fn de_l_alsace_moselle(self) -> bool {
+        matches!(self, AssietteDuBordereau::BrutArtisteAlsaceMoselle | AssietteDuBordereau::BrutRegimeLocal)
     }
 }
 

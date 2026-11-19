@@ -1070,6 +1070,9 @@ forme! {
         pub rubriques_bulletin: Option<Vec<Rubrique>>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
         pub reduction_generale: Option<ParametresDeLaReduction>,
+        /// Le regime local d'Alsace-Moselle du statut, qui remplace celui du corps (l'artiste, au taux abattu de 30 %) :
+        /// exige, un statut ne prend jamais le taux d'un autre.
+        pub regime_local_alsace_moselle: RegimeLocal,
     }
 }
 
@@ -1409,11 +1412,12 @@ forme! {
 }
 
 forme! {
+    /// Le regime local d'Alsace-Moselle d'un statut : son taux salarial et son code au nominatif. Ses CTP du bordereau
+    /// (313 pour l'artiste intermittent, 381 pour les autres) sont dans la table des CTP (`organismes-base.json`).
     pub struct RegimeLocal {
         #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
         pub taux_sal: Taux,
         pub code81: CodeCotisation81,
-        pub ctp: crate::organismes::CodeCtp,
     }
 }
 

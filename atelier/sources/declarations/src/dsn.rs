@@ -3286,6 +3286,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
     let caisse = mensuelle && p.declaree_a_la_caisse_des_conges()?;
     let tech = !mensuelle && technicien(p);
     let art = !mensuelle && !tech;
+    let zone = bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie);
     let l = lecture(p, bar)?;
     let (b78, l81) = lignes_declarees(&r.declare)?;
     let brut = r.declare.brut;
@@ -3326,6 +3327,9 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Assiette(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115)),
         CleCtp::Assiette(A::BrutArtiste) => si(art, &|| Ok(brut)),
         CleCtp::Assiette(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115)),
+        CleCtp::Assiette(A::BrutArtisteHorsAlsaceMoselle) => si(art && !zone, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutArtisteAlsaceMoselle) => si(art && zone, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutRegimeLocal) => si(zone && !art, &|| Ok(brut)),
         CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 114 et 021 deposes, signes '-' au nominatif : le montant de la ligne 23 est leur oppose.
         CleCtp::Montant(M::ReductionHeuresEnPlus) => Ok(Montant::ZERO - somme_81(CODE81_REDUCTION_HEURES, &|x| x.montant)),
@@ -3335,6 +3339,8 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Plafonnee(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
         CleCtp::Plafonnee(A::BrutArtiste) => si(art, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115Plafonne)),
+        CleCtp::Plafonnee(A::BrutArtisteHorsAlsaceMoselle) => si(art && !zone, &|| base(Assiette::BrutPlafonne)),
+        CleCtp::Plafonnee(A::BrutArtisteAlsaceMoselle) => si(art && zone, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutTechnicien) => si(tech, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115Plafonne)),
         autre @ CleCtp::Plafonnee(_) => return Err(refus!("assiette inconnue : {}", socle::fichiers::repr(&autre.to_string()))),
@@ -3602,10 +3608,21 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     out.insert(CleCtp::Assiette(A::BrutX115Technicien), somme(&tech, &|i| assiette(&b[i], Assiette::BrutX115)));
     out.insert(CleCtp::Assiette(A::BrutArtiste), somme(&art, &|i| assiette(&b[i], Assiette::Brut)));
     out.insert(CleCtp::Assiette(A::BrutX115Artiste), somme(&art, &|i| assiette(&b[i], Assiette::BrutX115)));
+    // L'Alsace-Moselle (l'etablissement du salarie, `bareme::alsace_moselle`) : l'artiste intermittent y releve du CTP
+    // 313, dont le taux deplafonne porte son regime local (0,91 : 10,29 contre 9,38 au 312, la part salariale 1,19
+    // contre 0,28 ; table des CTP de l'Urssaf, `atelier/reference/sources/urssaf-codes-types-personnel-20261029.xml`),
+    // les autres salaries de la zone du CTP 381 (1,30), sur la meme assiette que la cotisation 115 du nominatif.
+    let zone: Vec<bool> = paies.iter().map(|p| bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie)).collect();
+    let art_hors_zone = |i: usize| art(i) && !zone[i];
+    let art_zone = |i: usize| art(i) && zone[i];
+    let regime_local = |i: usize| zone[i] && !art(i);
+    out.insert(CleCtp::Assiette(A::BrutArtisteHorsAlsaceMoselle), somme(&art_hors_zone, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutArtisteAlsaceMoselle), somme(&art_zone, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutRegimeLocal), somme(&regime_local, &|i| assiette(&b[i], Assiette::Brut)));
     out.insert(CleCtp::Montant(MontantDuBordereau::ReductionGeneraleUrssaf), rg_tech);
     // Sous le qualifiant 921 (« Assiette plafonnee », cahier technique 2026.1, p. 168), une population porte son assiette
     // PLAFONNEE : celle du bulletin et de la base 02 de chaque contrat (point 22). La cle de la table des CTP reste
-    // celle de la population (`brut_artiste` sous 312/921) ; c'est le qualifiant qui dit plafonnee.
+    // celle de la population (`brut_artiste_hors_alsace_moselle` sous 312/921) ; c'est le qualifiant qui dit plafonnee.
     let base = |i: usize, a: Assiette| b[i].get(&a).copied().ok_or_else(|| socle::fichiers::absent(a.nom()));
     let plaf = |f: &dyn Fn(usize) -> bool, a: Assiette| -> R<Montant> {
         (0..paies.len()).filter(|i| f(*i)).try_fold(Montant::ZERO, |s, i| Ok(s + base(i, a)?))
@@ -3614,6 +3631,8 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     out.insert(CleCtp::Plafonnee(A::T1X115Permanent), t1_x115);
     out.insert(CleCtp::Plafonnee(A::BrutArtiste), plaf(&art, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutX115Artiste), plaf(&art, Assiette::BrutX115Plafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutArtisteHorsAlsaceMoselle), plaf(&art_hors_zone, Assiette::BrutPlafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutArtisteAlsaceMoselle), plaf(&art_zone, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutTechnicien), plaf(&tech, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutX115Technicien), plaf(&tech, Assiette::BrutX115Plafonne)?);
     // Les heures en plus : la reduction salariale (CTP 003) et la deduction patronale (CTP 004, 005), en montant, comme
@@ -3765,7 +3784,8 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
-        if (ctp.statut.is_some() || ctp.population.is_some()) && valeur.est_nul() {
+        let d_une_population = ctp.statut.is_some() || ctp.population.is_some() || ctp.assiette.is_some_and(AssietteDuBordereau::de_l_alsace_moselle);
+        if d_une_population && valeur.est_nul() {
             continue;
         }
         let v = valeur.a_l_euro();
@@ -3797,21 +3817,6 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             }
             lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(vm.taux.au_pair(2))), Some(assiette.a_l_euro()), None, Some(vm.code_insee.clone())));
         }
-    }
-    let mut local = Montant::ZERO;
-    for p in paies {
-        if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
-            local += assiette(&bases(p, &*bareme_de(p, bar)?)?, Assiette::Brut);
-        }
-    }
-    if !local.est_nul() {
-        // Le CTP que le bareme dit pour le regime local (« 381 », avec sa source).
-        let code = bar
-            .regime_local_alsace_moselle
-            .as_ref()
-            .map(|r| r.ctp.clone())
-            .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "regime_local_alsace_moselle.ctp"))?;
-        lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, None, Some(local.a_l_euro()), None, None));
     }
     if let Some(s) = solde_ta {
         lignes.push(ligne(CodeCtp::du_moteur("995"), QualifiantDAssiette::AutreAssiette, None, Some(s.assiette), None, None));

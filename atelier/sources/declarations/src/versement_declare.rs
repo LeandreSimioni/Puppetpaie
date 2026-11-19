@@ -89,8 +89,9 @@ pub struct VersementDeclare {
     /// S21.G00.50.006 du versement du mois d'origine : le taux de prelevement a la source applique ce mois-la, que le
     /// bloc 56 d'un indu cite (S21.G00.56.006, « le taux applique le mois de l'erreur ou de l'indu », cahier technique
     /// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.56.txt`). Apres une correction deja portee, il reste
-    /// celui du mois d'origine : le versement de rappel porte le taux de SON mois, qui n'est pas le mois de l'erreur
-    /// (inference : le texte ne parle pas d'une seconde correction). `None` : le versement n'en porte pas.
+    /// celui du mois d'origine, le taux « initialement utilise » (BOFiP, BOI-IR-PAS-30-10-50, § 90) : le versement de
+    /// rappel porte le taux de SON mois, qui n'est pas le mois de l'erreur (`engagement::etats::taux_de_pas_initial`, que
+    /// le bulletin rectificatif lit aussi). `None` : le versement n'en porte pas.
     pub taux_pas: Option<TauxDePas>,
     /// S21.G00.40.001 (JJMMAAAA) : la date de debut declaree, la DERNIERE (une correction deja portee a pu la changer).
     /// Une correction qui la change la declare en S21.G00.41.021 (fiche net-entreprises 1952). `None` : rien de declare
@@ -261,8 +262,8 @@ pub fn dernier_declare(
     ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: Mois, mois_courant: Mois,
 ) -> R<Option<DernierDeclare>> {
     let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, Some(mois_courant))?;
-    let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
-    let mut etat = de_la_paie(ctx, &derniere.paie, mois, origine.paie.pas.as_ref().map(|p| p.taux))?;
+    let Some(derniere) = declarees.last() else { return Ok(None) };
+    let mut etat = de_la_paie(ctx, &derniere.paie, mois, engagement::etats::taux_de_pas_initial(&declarees))?;
     let mut rappels = Montant::ZERO;
     for paire in declarees.windows(2) {
         let (avant, puis) = (&paire[0].paie, &paire[1].paie);

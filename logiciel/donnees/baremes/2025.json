@@ -3077,6 +3077,46 @@
           "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au montant de sa ligne `retraite_t1` (ses quatre parts arrondies separement, `composants_pat` et `composants_sal`)."
         }
       ],
+      "regime_local_alsace_moselle": {
+        "taux_sal": 1.3,
+        "code81": "115",
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+              "emetteur": "urssaf",
+              "article": "CTP 381",
+              "citation": "'381';MAJO ALSACE MOSELLE - SECTEUR PRIVE AL;MAJ ALS MOS PR;E;;1.3;;2022-01-04;;"
+            },
+            {
+              "fichier": "atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt",
+              "emetteur": "gip_mds",
+              "article": "S21.G00.81.001",
+              "citation": "115 - Cotisation Assurance Maladie pour le Régime Local Alsace Moselle"
+            },
+            {
+              "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+              "emetteur": "loi",
+              "article": "L242-13",
+              "citation": "Une cotisation à la charge des assurés mentionnés aux 1° à 3° du II de l'article L. 325-1"
+            },
+            {
+              "fichier": "atelier/reference/sources/regime-local-alsace-moselle/regime-local-cotisation-20261104.txt",
+              "emetteur": "regime_local",
+              "article": "page « Cotisation »",
+              "citation": "Une cotisation de 1,3% depuis le 1er avril 2022"
+            },
+            {
+              "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+              "emetteur": "urssaf",
+              "article": "Urssaf, artistes du spectacle, salariés concernés",
+              "citation": "Seuls les artistes du spectacle sont concernés par l’application des taux réduits. Les techniciens ne sont pas concernés."
+            }
+          ],
+          "raisonnement": "La loi (L. 242-13 : cotisation à la charge du salarié, sur les revenus d'activité de L. 242-1, taux fixé par le conseil d'administration du régime) et l'Urssaf (CTP 381, 1,3 déplafonné) ; la norme DSN donne le code 115. Le technicien n'a pas l'abattement des artistes (Urssaf)."
+        },
+        "note": "Régime local d'Alsace-Moselle du technicien : cotisation salariale de 1,3 % sur les revenus déplafonnés, DSN code 115, CTP 381."
+      },
       "note": "La section du technicien intermittent : taux de retraite complémentaire Audiens de sa population (Paramètres de l'année, p. 3), taux Urssaf de droit commun sans abattement (BOSS), prévoyance et Congés Spectacles d'Audiens, identiques à ceux de l'artiste.\nTaux pleins 2026 (13,00 et 5,25 : les taux reduits n'existent plus), ccn source (CASC-SVP 0,50), Agirc-Arrco techniciens (5,23 + 4,79), RGDU calculee contrat par contrat (D. 241-7) et declaree en 018 Urssaf, 018 France Travail et 106 (CTP 671). Non verifie sur un compte rendu : la repartition 2026 de la RGDU entre Urssaf, chomage et retraite (prorata des points de T). A lire sur le compte-rendu Urssaf de la premiere DSN avec un technicien.\nAnnexe 8 (techniciens, ouvriers et cadres du spectacle)\nChaque source se verifie des DEUX cotes. Audiens donne les artistes (4,45 + 1,29 = 5,74 patronale ; 4,44 + 0,86 = 5,30 salariale) : ce sont exactement les taux artistes de ce bareme, obtenus jadis par retro-ingenierie d'un bulletin. Et le BOSS donne 13,00 et 5,25, dont 70 % font 9,10 et 3,68, egalement les taux artistes. La section technicien n'est donc pas une reconstruction plausible : c'est la meme table, lue une fois avec abattement et une fois sans.\nS21.G00.40.002 et .003 sont des champs de fiche. Le << 204 >> de mai 2025 est l'affectation du second contrat du salarie dans le mois, pas un code annexe 8 ; la regle par versement le produit deja. Plus d'AEM depuis le 01/06/2026 (100 % DSN).\n`cotisations_dsn` : Meme structure de blocs que l'artiste (les blocs 02/03/04/07/23/27/31/43), avec les taux pleins : 049 FNAL 0,10 sur brut x 1,115 ; 074 + 102 = 3,45 + 1,80 = 5,25 AF et 075 + 907 = 7,00 + 6,00 = 13,00 maladie -- la DSN 2026 des artistes garde cette decomposition taux reduit / complement (074 2,42 + 102 1,26 ; 075 4,90 + 907 4,20), on la garde donc pour le technicien ; 130 et 128 identiques ; 040/048/041 chomage identiques (annexes 8 et 10 partagent le taux) ; 131 Agirc-Arrco 10,02 = 5,23 + 4,79 (Audiens 2026, techniciens non-cadres) ; 066 Conges Spectacles 15,5 ; 059 Thalie 0,42 (202) et prevoyance 1,23 (203), meme population ETAM que les artistes (fiche de parametrage Audiens). Un << 204 >> n'est pas un code annexe 8 : c'est l'affectation du DEUXIEME contrat du meme salarie dans le mois (202 pour le premier, 204 pour le second), la regle par versement.\nSection du technicien 2025 : taux reduits, reduction Fillon, vieillesse 2,02, prevoyance 1,16, CASC 0,40, pas de Thalie."
     }
   },
@@ -4806,16 +4846,33 @@
     "note": "CE QUE L'EFFECTIF DE L'ENTREPRISE CHANGE DANS CE SOCLE, ecrit pour etre LU par le moteur : il lit cette section, la confronte a l'effectif que l'Urssaf calcule et renvoie en CRM de nature 118 (config/effectifs.json ; un seuil n'est franchi qu'apres cinq annees consecutives), et REFUSE de payer plutot que de produire un bulletin faux et muet.\nCe socle est ecrit pour une entreprise de MOINS DE ONZE salaries -- le plus petit palier, et le seul que nos declarations reelles eprouvent. Une entreprise plus grande surcharge, dans son propre fichier (`config/baremes/<annee>.json`), les chemins listes ci-dessous.\n`chemins` donne, pour chaque valeur, l'endroit exact du bareme et LA VALEUR QUE LE SOCLE Y PORTE. Le controle est celui-la : si l'effectif declare atteint `seuil` et que la valeur fondue est encore celle du socle, personne ne l'a surchargee -- refus. Une valeur surchargee est tenue pour DECIDEE : le moteur verifie qu'une decision a ete prise, pas laquelle, comme pour le taux AT/MP qu'il ne peut pas connaitre.\nLe jour ou la DSN est due suit le meme seuil que le FNAL (le 15, le 5 a partir de cinquante salaries -- art. R. 243-6 CSS), et il ne vit pas dans le bareme : `entreprise.echeance_dsn` le deduit de l'effectif (le 15 quand il est inconnu)."
   },
   "regime_local_alsace_moselle": {
-    "taux_sal": 1.3,
+    "taux_sal": 0.91,
     "code81": "115",
-    "ctp": "381",
     "source": {
       "sources": [
         {
+          "fichier": "atelier/reference/sources/arrete-1975-artistes-du-spectacle/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "arrêté du 24/01/1975, art. 1",
+          "citation": "Les taux des cotisations d'assurances sociales, d'accidents du travail et de maladies professionnelles et d'allocations familiales dues au titre de l'emploi des artistes du spectacle visés au 15° de l'article L. 311-3 du code de la sécurité sociale, sont fixés à raison de 70 % des taux du régime général des salariés."
+        },
+        {
           "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
           "emetteur": "urssaf",
-          "article": "CTP 381",
-          "citation": "'381';MAJO ALSACE MOSELLE - SECTEUR PRIVE AL;MAJ ALS MOS PR;E;;1.3;;2022-01-04;;"
+          "article": "CTP 313, artistes en Alsace-Moselle, 10,22 du 2024-01-01 au 2026-01-01",
+          "citation": "'313';ARTISTES CAS GENERAL ABATTEMENT 30% AL;ARTISTES;A;10.82;10.22;0.0;2024-01-01;;"
+        },
+        {
+          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "emetteur": "urssaf",
+          "article": "CTP 312, artistes hors Alsace-Moselle, 9,31 du 2024-01-01 au 2026-01-01",
+          "citation": "'312';ARTISTES CAS GENERAL ABATTEMENT 30%;ARTISTES 30%;A;10.82;9.31;0.0;2024-01-01;;"
+        },
+        {
+          "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+          "emetteur": "urssaf",
+          "article": "Urssaf, artistes du spectacle, cotisations concernées (page de 2026)",
+          "citation": "Cotisation maladie supplémentaire pour les départements du 0,91 %"
         },
         {
           "fichier": "atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt",
@@ -4848,9 +4905,9 @@
           "citation": "La cotisation est uniquement salariale, il n’y a pas de cotisation patronale."
         }
       ],
-      "raisonnement": "La loi (L. 242-13 : cotisation à la charge du salarié, sur les revenus d'activité de L. 242-1, taux fixé par le conseil d'administration du régime) et l'Urssaf (CTP 381, 1,3 déplafonné) ; la norme DSN donne le code 115 et 40.016 = 01."
+      "raisonnement": "La loi abat de 30 % les taux des cotisations d'assurances sociales du régime général pour l'artiste (arrêté du 24/01/1975, art. 1) ; la cotisation du régime local est une cotisation d'assurance maladie du régime général, au chapitre de ses cotisations (CSS L. 242-13), de 1,3 % depuis le 1er avril 2022 (le régime local). 1,3 × 70 % = 0,91. L'Urssaf le confirme pour 2025 par sa table des CTP : le cas général des artistes en Alsace-Moselle (313, 10,22) passe celui d'ailleurs (312, 9,31) de 0,91 exactement, du 01/01/2024 au 01/01/2026 ; sa page des taux réduits des artistes dit 0,91 % (lue en 2026). La norme DSN donne le code 115 et 40.016 = 01."
     },
-    "note": "Régime local d'Alsace-Moselle : cotisation salariale unique de 1,3 % sur les revenus déplafonnés, DSN code 115, CTP 381, contrat S21.G00.40.016 = 01.\nINFERENCE : le taux plein pour un artiste. L'abattement de 30 % des artistes (arrete du 24/01/1975) porte sur les taux du regime general ; celui du regime local est fixe par son conseil d'administration (L242-13, II), et aucune source lue ne le reduit. L'assiette est celle des cotisations de securite sociale (L242-1), la meme que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
+    "note": "Régime local d'Alsace-Moselle de l'ARTISTE (le corps de ce barème) : cotisation salariale de 0,91 % (1,3 % abattu de 30 %) sur les revenus déplafonnés, DSN code 115, contrat S21.G00.40.016 = 01 ; au bordereau, l'artiste intermittent la paie dans le CTP 313, qui remplace le 312 (`organismes-base.json`), et non sous le 381. Le technicien cotise au taux plein (`par_statut.technicien.regime_local_alsace_moselle`, 1,3 %). L'assiette est celle des cotisations de securite sociale (L242-1), la meme que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
   },
   "par_organisation_patronale": {
     "SYNDEAC": {
