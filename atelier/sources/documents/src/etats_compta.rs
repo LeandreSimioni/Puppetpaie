@@ -1593,14 +1593,16 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Montant, Montant, BTreeSet<Mois>)> = BTreeMap::new();
-    // Une paie importee que l'etat ne compte pas (ses pieces taisent son brut ou son assiette de CSG) : le total est alors
-    // incomplet, et le calcul comme sa conclusion le redisent.
+    // Un mois qui ne se charge pas, une paie importee que l'etat ne compte pas (ses pieces taisent son brut ou son assiette
+    // de CSG) : le total est alors incomplet, et, la ou un montant se calcule (une part taxee dite), le calcul comme sa
+    // conclusion le redisent.
     let mut ecartees = false;
     for m in p.mois.clone() {
         let paies = match engagement::etats::paies_du_mois(ctx, m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
+                ecartees = true;
                 continue;
             }
             Err(e) => return Err(e),
@@ -1665,6 +1667,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         Some(pct) => (pct, brute.fois_taux(pct).a_l_euro_au_pair()),
         None => (Taux::ZERO, zero),
     };
+    // Sans part taxee, rien ne se calcule : il n'y a pas de montant a dire incomplet.
+    let incomplet = ecartees && part.is_some();
     let franchise = ts.franchise;
     let limite = ts.decote_jusqu_a;
     let mut etapes = vec![format!(
@@ -1676,7 +1680,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut net;
     if due <= franchise {
         net = zero;
-        let rien = if ecartees { "" } else { " — rien à payer" };
+        let rien = if incomplet { "" } else { " — rien à payer" };
         etapes.push(format!("franchise : {} n'excède pas {}{}", euros(due), euros(ts.franchise), rien));
     } else if due <= limite {
         let decote = (limite - due).fois(3).reparti_sur(4).a_l_euro_au_pair();
@@ -1698,11 +1702,11 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         net = reste;
     }
     etapes.push(format!("taxe nette due : {}", euros(net)));
-    let sans = if ecartees { ", sans les paies nommées ci-dessus" } else { "" };
+    let sans = if incomplet { ", sans ce qui est écarté ci-dessus" } else { "" };
     avert.push(format!("Calcul {}{} : {}.", annee, sans, etapes.join(" ; ")));
-    if ecartees {
+    if incomplet {
         avert.push(format!(
-            "Taxe nette sans les paies nommées ci-dessus : {} ; ce qui est à payer et à déposer se lit quand leurs chiffres sont dits.",
+            "Taxe nette sans ce qui est écarté ci-dessus : {} ; ce qui est à payer et à déposer se lit quand plus rien n'est écarté.",
             euros(net)
         ));
     } else if net.est_nul() {
