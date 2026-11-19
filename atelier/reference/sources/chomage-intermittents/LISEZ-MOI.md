@@ -129,6 +129,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `francetravail-premiers-pas-intermittence-20261020.txt` : `3e7416162c8a052b358a18fcb3110f3fd704d8e6e3d80f05cb412cf2edcd8e4f`
 - `kali-1285-organisation-travail-repetitions-representations-20261020.md` : `70026862e38e0a501f34b60d5e21cc43e2098d31bbe6068b75069b2da3da8ac1`
 - `kali-3090-repetitions-cachets-representations-20261020.md` : `97ea1b94ffe07357821895918eb2a14a8a5998634ef8089533d59645ceb1f565`
+- `movinmotion-support-numero-conges-spectacles-20261119.md` : `cd06e2826f0c2c570ed658a922c77bddaa6212178397b2f53967c59754fa402f`
 - `unedic-avenant1-convention-20250707.txt` : `f3199a122fa233597d14d73a8bbe107e27db1fa28fcb91a819a351e23840a350`
 - `unedic-avenant2-convention-20260410.txt` : `b789c04d8e96d984ebfcd5c568dfc66d78bc1db2af88e3f02541915a2afadf07`
 - `unedic-circulaire-2025-07-revalorisation-20250701.txt` : `17a3a3a22db5e0b4def6d57c67afec9dfdeb16ddda30839471df963f25ce767f`
