@@ -20,3 +20,16 @@ Les fiches de huit rubriques de la PCS-ESE 2017 de l'Insee, le texte de leur pag
   ainsi posé se corrige sur la fiche du salarié.
 - L'import le lit pour une fiche neuve dont la DSN ne nomme aucun métier (`routes::import`, `fiche_salarie`) : hors de
   ces six codes, le statut reste vide et le calcul le demande.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `353b.txt` : `9738ee51eddc01a5cc343c9aae291f1288b2280115840918b25a848f8b9b0556`
+- `353c.txt` : `53ae5c99aa175d94f5e2e05b9a925b897a8127ce3ec81aae4be6dd1b6943a8da`
+- `354b.txt` : `f499486370e0e3b2ee56b3deb869c17fa6fe19e3dab3c3971179b38f136f8d51`
+- `354c.txt` : `12de43e53595e4cd0f3fe725840f47acb3646703738145e3e9216c720b3b16d3`
+- `354e.txt` : `4a57d0ddf29052a8bbd761ec4436670580abb43c4565fea94102a73a1d07af78`
+- `354f.txt` : `a63dc3469a7187094b85e9b5dc14eec6c725c9f809c7b1f605321a70525e8704`
+- `465b.txt` : `8bb787f4e7cfbd6b39e53d7e6a91ed4c3efe9b3c33d7f3747a3c8aafce2b898e`
+- `637c.txt` : `d2bb5ab088cbb11c273fe2c43ecbccd434bd6c9793c6c9f01d079650aad37864`

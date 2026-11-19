@@ -22,6 +22,8 @@ releve-codes` ne garde que la version en vigueur d'un article.
 | `legifrance-ct-L1221-3-20080501` | C. trav. L. 1221-3, depuis le 01/05/2008 (relevé le 09/11/2026) | « Le contrat de travail établi par écrit est rédigé en français » ; un emploi au terme étranger s'explique en français ; une traduction dans la langue du salarié étranger, à sa demande, les deux textes faisant également foi | le vérificateur des modèles de contrat le rappelle (`documents::contrat_ecrit::EN_FRANCAIS`, rendu par `modele-contrat` et l’écran des modèles) ; aucune langue ne se détecte |
 | `legifrance-css-L911-8-20130617` | CSS L. 911-8, depuis le 17/06/2013 (relevé le 10/11/2026) | la portabilité : la couverture santé et prévoyance collective se maintient gratuitement après une fin de contrat ouvrant droit au chômage, autant que l'indemnisation, dans la limite de la durée du dernier contrat, douze mois au plus ; 6° : l'employeur le signale dans le certificat de travail et en informe l'organisme | la mention du maintien des garanties sur le certificat de travail, sauf faute lourde, avec sa durée maximale (1°) (`engagement::portabilite`, `documents::fin_de_contrat::mention`, marqueur `certificat.portabilite` du modèle, qu'un modèle copié doit citer) ; ce qui reste dû quand une compagnie cesse d'employer des permanents (`engagement::permanents`) |
 | `legifrance-decret-2015-87-20150201` | décret n° 2015-87 du 28/01/2015 | le financement mutualisé des organisations syndicales et patronales ; il ne fixe pas lui-même le taux : le 0,016 % est à C. trav. D. 2135-34, déjà dans l'entrepôt LEGI (`legi-entrepot/articles.jsonl.gz`) | aucun calcul ; lu pour la contribution au dialogue social |
+| `legifrance-css-D241-3-1-20180101` | CSS D. 241-3-1, du 01/01/2018 au 01/01/2026 (décret 2017-1894 ; relevé le 19/11/2026) | « Le taux des cotisations d'allocations familiales […] est fixé à 5,25 %, sous réserve des dispositions des articles D. 241-3-2 et D. 613-1 ». Il ne dit ni le taux réduit ni un seuil en SMIC, ni rien de la maladie | le taux plein des allocations familiales du barème 2025 ; aucun calcul ne le cite encore |
+| `legifrance-jorf-arrete-extension-3090-degre-eleve-de-solidarite-20260521` | arrêté du 21/05/2026, JORF n° 0130 du 05/06/2026, texte n° 85, NOR TRST2613566A, version initiale (relevé le 19/11/2026) | art. 1 : rend obligatoires, dans le champ de la convention 3090, les stipulations de l'accord du 12/05/2025 relatif au degré élevé de solidarité en prévoyance ; art. 2 : effet à la date de publication. Ses visas citent « l'arrêté du 29 mai 2013 et les arrêtés successifs portant extension de la convention » : l'arrêté d'extension de la convention elle-même n'est pas ce texte, et n'est pas déposé | aucun calcul ; lu pour l'extension de la 3090 |
 
 ## Empreintes
 
@@ -33,6 +35,8 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `legifrance-cgi-204-H-20260221.txt` : `20eb55e2637533b683148ab6434426baac0015e2307b63905d568d90304c2281`
 - `legifrance-cgi-293-B-20250101.pdf` : `8993eb353367fd96a65d87415f74525e170fa4b3d29f03861e69e680ad2e9acf`
 - `legifrance-cgi-293-B-20250101.txt` : `126e8562bd09f63957c6ebe433017f05a3696b56ff5a5e9062ce968f9eecbe37`
+- `legifrance-css-D241-3-1-20180101.pdf` : `a3248290ded6c6e201476fe95646cda3f5789de57473839fb71b789e784d74cd`
+- `legifrance-css-D241-3-1-20180101.txt` : `ab8ce76f2efaed5e88ad1010828e004fd5326439a18f45f22d08fbcd8a3271ce`
 - `legifrance-css-D241-7-20231231.pdf` : `c2d81a98cafa61dda3d4c9a0477512c604e66241607b2b88489f618ab762bc24`
 - `legifrance-css-D241-7-20231231.txt` : `7546e32e53ab7aca7f19a1075c74634c939ec78345127850ba62ec0b1874b325`
 - `legifrance-css-D241-7-20250407.pdf` : `cc7901c47186a439374ae542fdb25b2f1225f72e65589dca4e5b7faf0bf5804e`
@@ -57,3 +61,5 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `legifrance-ct-L2262-1-20080501.txt` : `2feee5f0be9b19cda14bcc6d81659884b7546126618d2211d112c6ee3ce93c97`
 - `legifrance-decret-2015-87-20150201.pdf` : `7508e7deae1457c9720fb40b689ed476cab0cabd7e842fdd1224c94b752ee196`
 - `legifrance-decret-2015-87-20150201.txt` : `b8c40a72f4baba50dc40c8eed42ba5646b188e08a3d16d246bc8f792a02c120d`
+- `legifrance-jorf-arrete-extension-3090-degre-eleve-de-solidarite-20260521.pdf` : `de45d9ad45f30d24460b85dba7ec36dd7b50065555a0bb907dcf9f1a7d229589`
+- `legifrance-jorf-arrete-extension-3090-degre-eleve-de-solidarite-20260521.txt` : `4b777e5ab5eddc67d8ffd4168c5d59eb1c6c9eea74f92e6c4e4a5c1f4a3441d4`
