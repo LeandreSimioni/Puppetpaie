@@ -2894,8 +2894,8 @@ annexe A, art. 1 : « dans les limites annuelles des assiettes T1 et T2 ») : se
 `cet` (le corps du barème et `par_statut.technicien`) sont sur `t1_annuelle`, `t2_annuelle` et `cet_annuelle`, ses
 tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite_sociale.annuel`), calculées par le même
 chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
-des mois d'avant, validées ici ou reprises d'un ancien logiciel (`conges::retraite_des_mois_anterieurs`,
-`etats::paies_intermittentes_du_salarie`), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
+validées des mois d'avant (`conges::retraite_des_mois_anterieurs` ; une paie reprise d'un ancien logiciel n'y entre
+pas : l'année commence au premier mois payé ici), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
 paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
 Le 131 de sa tranche 1 (sa ligne `retraite_t1`) se déclare sous la base 43, `t1_annuelle` ; celui de sa tranche 2 et
 de sa CET (`retraite_t2`, `cet`) sous la base 23. Seule la paie dont le barème pose `retraite_t1` sur `t1_annuelle`

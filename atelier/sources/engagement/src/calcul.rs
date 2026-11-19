@@ -1563,34 +1563,64 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let plafond_journalier = bar.plafond_journalier;
     // La tranche 1 journaliere du contrat : le plafond journalier par jour du contrat, dans la limite que le bareme de
     // l'annee dit (`limite_du_plafond_journalier` : en 2026, « dans la limite du plafond mensuel », Audiens, Parametres),
-    // pour le mois civil, tous les contrats d'intermittent du salarie confondus : le plafond journalier des contrats
-    // precedents du meme mois (`precedentes`, dans l'ordre de la saisie) se deduit du plafond mensuel, et ce contrat prend
-    // le reste. Ce que « mensuel » couvre, le texte ne le dit pas : la lecture et son INFERENCE sont ecrites dans la note
-    // de `limite_du_plafond_journalier` du bareme 2026. Une paie d'intermittent est celle d'un contrat dans un mois civil
+    // pour le mois civil, tous les contrats d'intermittent du salarie confondus : ce que les contrats precedents du meme
+    // mois (`precedentes`, dans l'ordre de la saisie) ont REELLEMENT cotise dans chaque tranche se deduit du plafond
+    // mensuel de cette tranche (un plafond pour la tranche 1, huit pour les tranches 1 et 2, quatre pour l'Apec et la
+    // tranche B), et ce contrat prend le reste, dans la limite de ses propres plafonds journaliers. Ainsi, dans le mois,
+    // la tranche 1 ne depasse pas le plafond mensuel et rien n'echappe a la tranche 2 sous huit plafonds. Ce que
+    // « mensuel » couvre, le texte ne le dit pas : la lecture et son INFERENCE sont ecrites dans la note de
+    // `limite_du_plafond_journalier` du bareme 2026. Une paie d'intermittent est celle d'un contrat dans un mois civil
     // (`Engagement::periode_payee`, ses journees datees dans la periode : `droit::plafond::pour_paie`) : un contrat a
     // cheval sur deux mois a une paie par mois, chacune sous le plafond mensuel de son mois.
     // Un salarie au mois n'a pas de tranche journaliere.
+    struct DejaDansLeMois {
+        mensuel: Montant,
+        t1: Montant,
+        t1_et_t2: Montant,
+        apec: Montant,
+        t1_et_tranche_b: Montant,
+    }
     let limite_journaliere = match bar.limite_du_plafond_journalier.as_ref().map(|l| l.dans_la_limite_du).filter(|_| !nat.mensuelle()) {
         Some(droit::forme_bareme::PlafondQuiLimite::PlafondMensuel) => {
             let mensuel = bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.mensuel;
-            let pj = plafond_journalier.ok_or_else(|| socle::fichiers::absent("plafond_journalier"))?;
-            let mut deja = Montant::ZERO;
+            let mut d = DejaDansLeMois { mensuel, t1: Montant::ZERO, t1_et_t2: Montant::ZERO, apec: Montant::ZERO, t1_et_tranche_b: Montant::ZERO };
             for p in precedentes.iter().filter(|p| p.salarie.id == sal.id || p.engagement.salarie == eng.salarie) {
-                if !p.engagement.nat()?.mensuelle() {
-                    deja += (p.engagement.jours * pj).au_centime();
-                }
+                let base = |a: Assiette| p.bases.get(&a).map(|b| b.en_euros(a)).transpose();
+                // Une paie sans tranche journaliere est celle d'un contrat au mois : elle n'en consomme pas.
+                let Some(t1) = base(Assiette::T1Journaliere)? else { continue };
+                d.t1 += t1;
+                // Un non-cadre n'a cotise que dans sa tranche 1 journaliere.
+                d.t1_et_t2 += match base(Assiette::T2Journaliere)? {
+                    Some(t2) => t1 + t2,
+                    None => t1,
+                };
+                d.apec += match base(Assiette::Apec)? {
+                    Some(a) => a,
+                    None => t1,
+                };
+                d.t1_et_tranche_b += match base(Assiette::T2PrevoyanceJournaliere)? {
+                    Some(b) => t1 + b,
+                    None => t1,
+                };
             }
-            Some(Montant::ZERO.max(mensuel - deja))
+            Some(d)
         }
         None => None,
     };
-    let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant {
-        let t1 = (jours * p).au_centime();
-        match limite_journaliere {
-            Some(m) => t1.min(m),
-            None => t1,
+    // Le montant que ce contrat peut cotiser jusqu'a `n` plafonds : `n` fois ses plafonds journaliers, dans la limite de
+    // ce que le mois laisse (`deja` : ce que les contrats precedents y ont cotise).
+    let jusqu_a = |p: socle::grandeurs::MontantUnitaire, n: Option<Coefficient>, deja: fn(&DejaDansLeMois) -> Montant| -> Montant {
+        let journalier = (jours * p).au_centime();
+        let (du_contrat, du_mois) = match n {
+            Some(n) => (journalier * n, limite_journaliere.as_ref().map(|d| d.mensuel * n)),
+            None => (journalier, limite_journaliere.as_ref().map(|d| d.mensuel)),
+        };
+        match (limite_journaliere.as_ref(), du_mois) {
+            (Some(d), Some(du_mois)) => du_contrat.min(Montant::ZERO.max(du_mois - deja(d))),
+            _ => du_contrat,
         }
     };
+    let t1_du_contrat = |p: socle::grandeurs::MontantUnitaire| -> Montant { jusqu_a(p, None, |d| d.t1) };
     // La base de la prevoyance de la paie : sa tranche 1 quand le bareme l'y pose (sur le plafond journalier d'un
     // intermittent, que le bareme dit alors ; ou celle d'un salarie au mois, `regularisees`, la tranche que sa cotisation
     // prend), le brut sinon.
@@ -1610,7 +1640,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let base = base_de(r)?;
         let base_t2 = if let (Assiette::T2PrevoyanceJournaliere, Some(pj)) = (base, plafond_journalier) {
             let t1 = t1_du_contrat(pj);
-            Some(Montant::ZERO.max(brut.min(t1 * bar.tranches_du_plafond.t2_conventionnelle) - t1))
+            Some(Montant::ZERO.max(brut.min(jusqu_a(pj, Some(bar.tranches_du_plafond.t2_conventionnelle), |d| d.t1_et_tranche_b)) - t1))
         } else if base == Assiette::T2Conventionnelle && nat.mensuelle() {
             Some(regularisees.t2_conventionnelle)
         } else {
@@ -1763,16 +1793,17 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let t1 = t1_du_contrat(pj);
         // Les memes bornes que celles d'un permanent, en nombre de plafonds (`tranches_du_plafond`, leurs textes) : la
         // tranche 2 jusqu'a huit (ANI Agirc-Arrco, art. 32), l'Apec dans la limite de quatre (Audiens, Parametres).
-        let (t2_mult, apec_mult) = (bar.tranches_du_plafond.t2, bar.tranches_du_plafond.apec);
-        bases.insert(Assiette::T2Journaliere, zero.max(brut.min(t1 * t2_mult) - t1));
+        let huit = jusqu_a(pj, Some(bar.tranches_du_plafond.t2), |d| d.t1_et_t2);
+        let quatre_apec = jusqu_a(pj, Some(bar.tranches_du_plafond.apec), |d| d.apec);
+        bases.insert(Assiette::T2Journaliere, zero.max(brut.min(huit) - t1));
         // L'Apec, sur le brut dans la limite de quatre plafonds : en tout, et au-dela de la T1.
-        bases.insert(Assiette::Apec, brut.min(t1 * apec_mult));
-        bases.insert(Assiette::ApecT2Journaliere, zero.max(brut.min(t1 * apec_mult) - t1));
+        bases.insert(Assiette::Apec, brut.min(quatre_apec));
+        bases.insert(Assiette::ApecT2Journaliere, zero.max(brut.min(quatre_apec) - t1));
         // La tranche B de la prevoyance d'un cadre technicien de la CCNEAC (XII.2.2.2) : la tranche 2 de son titre XII.2,
         // « l'equivalent de 4 plafonds » (`tranches_du_plafond.t2_conventionnelle`).
-        bases.insert(Assiette::T2PrevoyanceJournaliere, zero.max(brut.min(t1 * bar.tranches_du_plafond.t2_conventionnelle) - t1));
+        bases.insert(Assiette::T2PrevoyanceJournaliere, zero.max(brut.min(jusqu_a(pj, Some(bar.tranches_du_plafond.t2_conventionnelle), |d| d.t1_et_tranche_b)) - t1));
         // La CET, due quand le brut depasse la T1, sur T1 + T2 : huit plafonds au plus (Agirc-Arrco, « jusqu'a 8 PSS »).
-        bases.insert(Assiette::Cet, if brut > t1 { brut.min(t1 * t2_mult) } else { zero });
+        bases.insert(Assiette::Cet, if brut > t1 { brut.min(huit) } else { zero });
     }
     // La majoration de 11,5 % (CSS L. 243-1-3, D. 243-0-2) s'applique a l'assiette plafonnee : quand le plafond la limite,
     // c'est elle qu'elle majore (lettre circulaire Acoss 2013-019, annexe 1, R2, et sa « Regularisation progressive » :
