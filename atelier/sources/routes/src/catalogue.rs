@@ -374,7 +374,26 @@ pub enum Forme {
     Liste,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
     Objet,
+    /// Une valeur d'une liste fermee : ses valeurs et leurs libelles ; l'ecran la fait choisir.
+    Choix(&'static [Choix]),
 }
+
+/// Une valeur d'une liste fermee (`Forme::Choix`) : ce que la charge ecrit (`code`) et ce que l'ecran en montre.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Choix {
+    pub code: &'static str,
+    pub libelle: Affiche,
+}
+
+/// Une valeur d'une liste fermee, telle que le catalogue l'ecrit.
+#[derive(serde::Serialize)]
+pub struct ChoixEcrit {
+    code: &'static str,
+    libelle: &'static str,
+}
+
+/// Le mode d'un depot ou d'un fichier : un essai, ou le reel.
+pub const MODES: &[Choix] = &[Choix { code: "test", libelle: Affiche::new("Test") }, Choix { code: "reel", libelle: Affiche::new("Réel") }];
 
 impl Forme {
     pub fn mot(self) -> &'static str {
@@ -386,6 +405,15 @@ impl Forme {
             Forme::Date => "date",
             Forme::Liste => "liste",
             Forme::Objet => "objet",
+            Forme::Choix(_) => "choix",
+        }
+    }
+
+    /// Les valeurs d'une liste fermee, ecrites ; aucune pour une autre forme.
+    fn choix(self) -> Option<Vec<ChoixEcrit>> {
+        match self {
+            Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Liste | Forme::Objet => None,
         }
     }
 }
@@ -407,13 +435,15 @@ pub struct ChampEcrit {
     nom: &'static str,
     libelle: &'static str,
     forme: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    choix: Option<Vec<ChoixEcrit>>,
     sens: &'static str,
     avance: bool,
 }
 
 impl Champ {
     pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme.mot(), sens: self.sens, avance: self.avance }
+        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme.mot(), choix: self.forme.choix(), sens: self.sens, avance: self.avance }
     }
 }
 
