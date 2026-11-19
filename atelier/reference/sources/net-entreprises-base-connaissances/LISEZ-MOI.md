@@ -117,6 +117,16 @@ net social, intermittents, Agirc-Arrco, identification, contrats, Urssaf, entrep
   813 et 814 (service à la personne, chèques vacances), non déposées ; 3387 concerne a priori les élus locaux (à
   vérifier, non relevée).
 
+## La nature d'un contrat déclarée par erreur se corrige par un bloc 41 (extrait relevé le 19/11/2026)
+
+`net-entreprises-mandat-social-nature-du-contrat-extrait-20261119.md` : la transcription d'une capture d'écran d'une
+page de net-entreprises sur le mandat social (un extrait, sans titre, adresse ni date). On y lit : « En cas d'erreur
+sur la nature du contrat de travail déclarée, il convient de la corriger dans une DSN ultérieure. Cette modalité du
+contrat peut être corrigée par un bloc « S21.G00.41 – Changements de contrat » » ; la valeur 90 se nomme « Autre nature
+de contrat, convention, mandat (hors mandat social) » ; la page renvoie aux fiches 2957 (mandat social, non déposée)
+et 2956 (déposée). Elle ne dit pas ce que porte un contrat passé en nature 90 parce qu'il a été déclaré à tort (fiche
+898). Le moteur ne s'en sert pas.
+
 ## Lot R10 (11/10/2026) : la fiche 1265, l. 52, et la fiche 2956, l. 216-225
 
 - **1265, l. 52** : « Pour tout changement intervenant en cours de mois, il convient de ventiler les bases assujetties par
@@ -631,3 +641,4 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `net-entreprises-fiche863-code-risque-taux-atmp-20250409.pdf` : `c8c62e222fbe12171003573231531cb3283e18f191b6560983a71a0f276e3105`
 - `net-entreprises-fiche863-code-risque-taux-atmp-20250409.txt` : `f7c112583e8997dd25469991df309577d84d44923732178e4de7bbbf13829121`
 - `net-entreprises-fiche898-individu-contrat-declare-a-tort-20250703.txt` : `81bae6192872139869c9ff3c72a55bfe003693d0bec0477e037cc100e88773fa`
+- `net-entreprises-mandat-social-nature-du-contrat-extrait-20261119.md` : `997deabcee3414f15d967d9a5ec85a4402ea685ebda5c365412e2ae47c04cc07`
