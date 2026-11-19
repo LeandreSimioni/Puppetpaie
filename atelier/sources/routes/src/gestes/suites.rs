@@ -30,15 +30,23 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
             faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.phrase));
         }
     }
+    // Ce que les suites ont lu jusqu'au bout : ses retours se notent vus.
+    let mut lus: Vec<&(envois::retours::Annonce, std::path::PathBuf)> = Vec::new();
     if !s.taux_pas.is_empty() {
         match appliquer_taux_pas(ctx, &s.taux_pas, &mut illisibles) {
-            Ok(sans_taux) => faites.a_faire.extend(sans_taux),
+            Ok(sans_taux) => {
+                faites.a_faire.extend(sans_taux);
+                lus.extend(&s.taux_pas);
+            }
             Err(e) => faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.phrase)),
         }
     }
     if !s.taux_atmp.is_empty() {
         match appliquer_taux_atmp(ctx, &s.taux_atmp, &mut illisibles) {
-            Ok(a_faire) => faites.a_faire.extend(a_faire),
+            Ok(a_faire) => {
+                faites.a_faire.extend(a_faire);
+                lus.extend(&s.taux_atmp);
+            }
             Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.phrase)),
         }
     }
@@ -56,6 +64,19 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
         if let Err(n) = compagnie::incidents::noter_retour_illisible(&ctx.racine, p) {
             faites.incidents.push(format!("Archive {} : l'incident ne s'est pas noté au journal des incidents : {}", p.archive, n.phrase));
         }
+    }
+    // UNE PIECE QUE SON LECTEUR NE LIT PAS N'EST PAS UN RETOUR VU (`envois::releve_retours::relever_retours`) : le
+    // releve suivant la retelecharge et la relit.
+    let mut vus: Vec<envois::retours::Annonce> = Vec::new();
+    for (retour, chemin) in lus {
+        let nom = socle::fichiers::NomDeFichier::du(chemin)?;
+        let non_lue = illisibles.iter().any(|p| p.nature == retour.nature_retour && p.archive == nom);
+        if !non_lue && s.vus_une_fois_lus.contains(retour) {
+            vus.push(retour.clone());
+        }
+    }
+    if !vus.is_empty() {
+        envois::releve_retours::noter_vus(ctx, &vus, envois::releve_retours::CanalDesRetours::Dsn)?;
     }
     Ok(faites)
 }
