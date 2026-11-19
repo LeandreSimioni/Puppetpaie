@@ -281,6 +281,12 @@ des tests, ~3 Go). **Avant chaque PR aussi, la cible Windows se vérifie**, cell
   ne le juge pas au compte des tests. Une paie « non comparée » (une case manque à la compagnie) n'a rien éprouvé.
   La comparaison se fait à la fin d'un import, puis à la route `ouverture` ; un scénario qui ne joue pas `ouverture`
   ne recompare rien.
+- **L'import prend ce qu'il y a à prendre, et on n'y passe pas des heures** (Léandre, 19/11/2026 : « On prend tout ce
+  qu'on a à prendre. Si les gens mettent tout leur bulletin de paye, ils ont tout l'historique. Et tant mieux pour
+  eux. Mais c'est pas qu'on va faire des tests et des trucs et passer des heures à ça. ») : ce qui est importé est le
+  passé d'un autre logiciel ; on ne le rejoue pas, on ne le redéclare pas. Un cas rare de l'import ne vaut ni un
+  refus de plus, ni un test, ni un second tour de relecture ; seul compte que l'import ne ferme rien (« Le logiciel
+  est doux ») et n'écrive rien de faux dans ce qui se paiera ici.
 - **Aucun test ne sort de la machine** : gardé par `moteur/tests/fichiers/garde_reseau.rs`.
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
   outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la
