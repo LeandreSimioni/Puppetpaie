@@ -606,8 +606,8 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
             releve = true;
             // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place ; ce qu'il a
             // a dire se dit avec la demande.
-            fait = envois::releve_retours::derniere_journee()
-                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
+            fait = envois::releve_retours::PlageDuReleve::derniere_journee()
+                .and_then(|plage| crate::gestes::releve::relever_retours(ctx, plage, false, EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn))
                 .and_then(|(_, a_dire)| {
                     dit.extend(a_dire.phrases());
                     deposer_dsn(ctx, fichier, mode, preuve, qui, false, contournement).map(|_| ())

@@ -47,10 +47,11 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
     }
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
+    let plage = envois::releve_retours::PlageDuReleve::Bornee { debut, fin, nature: None };
     let (r, dit) = if dpae {
-        routes::gestes::releve::relever_retours_dpae(&cadre.ctx, debut, fin, tout, flux)?
+        routes::gestes::releve::relever_retours_dpae(&cadre.ctx, plage, tout, flux)?
     } else {
-        routes::gestes::releve::relever_retours(&cadre.ctx, debut, fin, tout, environnement, None, envois::releve_retours::CanalDesRetours::Dsn)?
+        routes::gestes::releve::relever_retours(&cadre.ctx, plage, tout, environnement, None, envois::releve_retours::CanalDesRetours::Dsn)?
     };
     for i in &dit.incidents {
         dire!("  {}", i);

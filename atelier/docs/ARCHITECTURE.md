@@ -576,6 +576,8 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
+| jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
 | plate-forme de net-entreprises | `EnvironnementNetEntreprises` | `envois/src/releve_retours.rs` |
 | ce qu'une relève a à dire (ses incidents, ce que ses retours laissent à faire ; chaque route qui relève le rend en entier) | `ADire` | `envois/src/suites.rs` |
 | verdict | `Verdict` | `envois/src/retours.rs` |
@@ -967,6 +969,15 @@ un libellé, chacun sa forme.
   services, mots de passe et archives distincts. Une liste du logiciel : `Dsn`, `Dpae` ; il ne s'écrit dans aucun
   fichier ; `dossier()` : ses pièces dans `retours/` ou `retours/dpae/`. Que portent la relève, l'archive d'une pièce, le
   journal des retours vus, l'incident d'un retour (sa nature au journal des incidents), la pièce que l'Historique relit.
+- **plage d'un relevé des retours** : `Complete` (celui de l'ouverture : toutes les natures, depuis ce que le relevé
+  complet précédent a lu, moins une journée de recouvrement, jusqu'à maintenant, jamais plus loin que les jours de
+  l'ouverture) ou `Bornee` (début, fin, et la seule nature prise s'il y en a une : suivre un dépôt, le relevé avant un
+  ordre, l'enquête de l'éditeur). Seule la complète avance le relevé complet.
+- **jusqu'où le dernier relevé complet a lu** : par canal, `retours/releve-complet.json` ou
+  `retours/dpae/releve-complet.json`, une seule forme (`quoi`, `lu_jusqu_a`), lue et écrite par `envois::releve_retours`
+  seul : la fin de la dernière tranche qu'un relevé complet a listée sans échec, jamais au-delà du début de la tranche
+  d'un retour listé et ni vu ni lu (il se reprend). La liste filtre sur la publication, la mise à disposition du retour
+  (guide de l'API DSN v6.9, § 3.4.2 et § 3.4.4) : un retour publié tard tombe dans le relevé suivant.
 - **plate-forme de net-entreprises** : la plate-forme à laquelle le client de la DSN parle : la production, ou la
   plate-forme d'essai de l'éditeur, où rien n'est déclaré (un dépôt réel n'y part pas). Une liste du logiciel :
   `Production`, `Editeur`, nommés `production`, `editeur` (`NOMS`, ce que la ligne de commande propose, lu à sa porte

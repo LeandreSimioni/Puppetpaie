@@ -85,7 +85,9 @@ pub struct Options {
     pub signatures: bool,
     /// Ce qui part chez l'editeur (incidents, reponses aux signalements).
     pub filet: bool,
-    /// Jusqu'ou en arriere on cherche les retours : des jours de 24 heures avant maintenant (`Moment::moins_duree`).
+    /// Jusqu'ou en arriere on cherche les retours au plus loin : des jours de 24 heures avant maintenant
+    /// (`Moment::moins_duree`). Le releve repart de ce que le releve complet precedent a lu, s'il est plus pres
+    /// (`envois::releve_retours::PlageDuReleve::Complete`).
     pub jours: Duration,
     /// Le dossier racine dans le Drive.
     pub racine_drive: String,
@@ -103,11 +105,11 @@ pub struct Options {
     pub sauvegarde_seule: bool,
 }
 
-/// Les trente jours de retours qu'un passage ordinaire releve.
+/// Les trente jours de retours qu'un passage ordinaire releve au plus loin.
 pub const TRENTE_JOURS: Duration = socle::temps::jours_de_24_heures(30);
 
 impl Options {
-    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours.
+    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours au plus.
     pub fn entiere() -> Options {
         Options {
             sauvegarder: true,
@@ -990,8 +992,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
-            let fin = socle::temps::secondes();
-            match fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
+            let plage = envois::releve_retours::PlageDuReleve::Complete { jusqu_a: opt.jours };
+            match crate::gestes::releve::relever_retours(ctx, plage, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn) {
                 Ok((rel, dit)) => {
                     r.dire(dit);
                     r.releve = Some(rel);
@@ -1022,13 +1024,13 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "Urssaf : retours des DPAE…")?;
-            let fin = socle::temps::secondes();
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
-                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
-                None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
-            });
+            let plage = envois::releve_retours::PlageDuReleve::Complete { jusqu_a: opt.jours };
+            let rel = match client_dpae {
+                Some(c) => crate::gestes::releve::relever_retours(ctx, plage, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
+                None => crate::gestes::releve::relever_retours_dpae(ctx, plage, false, None),
+            };
             match rel {
                 Ok((rel, dit)) => {
                     r.dire(dit);

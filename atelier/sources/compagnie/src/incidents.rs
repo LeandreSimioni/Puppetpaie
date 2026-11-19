@@ -552,21 +552,15 @@ pub fn noter_retour_illisible(racine: &Path, p: &envois::retours::PieceIllisible
     noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
 }
 
-/// UN RETOUR QUE L'ORGANISME A RETIRE : son telechargement a rendu HTTP 410 (guide de l'API DSN v6.9, § 9.1.5,
-/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`, l. 5413-5416 :
-/// « 410 : Gone. Ce cas de figure peut concerner le téléchargement des certains CRM afin d'indiquer que la ressource n'est
-/// plus disponible »). Le releve le note vu ; l'editeur le sait par le journal des incidents, a l'endroit
-/// `retour-<nature>/<flux>_<publication>`, une fois (l'empreinte le reconnait) ; la compagnie n'en voit rien.
-pub fn noter_retour_retire(racine: &Path, retour: &envois::retours::Annonce, echec: &socle::echec::Echec) -> R<()> {
-    let flux = match &retour.flux {
-        Some(f) => f.texte(),
-        None => "sansflux",
-    };
-    let publication = match retour.publication {
-        Some(p) => socle::paris::ecrit::compacte::texte(p),
-        None => "sanspublication".to_string(),
-    };
-    let ou = format!("retour-{}/{}_{}", retour.nature_retour, flux, publication);
+/// UN RETOUR QUE L'ORGANISME A RETIRE : son telechargement a rendu HTTP 410 (guide de l'API DSN v6.9, § 9.1.7 « Codes
+/// HTTP standard », `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`,
+/// l. 5413-5416 : « 410 : Gone. Ce cas de figure peut concerner le téléchargement des certains CRM afin d'indiquer que la
+/// ressource n'est plus disponible »). Le releve le note vu ; l'editeur le sait par le journal des incidents, a l'endroit
+/// `retour-<nature>/<url>`, une fois (l'empreinte le reconnait). L'adresse de telechargement est ce qui identifie le
+/// retour (§ 3.4.4, l. 1756-1771 : l'identifiant n'est la « que pour rétrocompatibilité ») ; il n'a pas d'archive. La
+/// compagnie n'en voit rien.
+pub fn noter_retour_retire(racine: &Path, nature: envois::retours::NatureDuRetour, url: &socle::garde_reseau::Url, echec: &socle::echec::Echec) -> R<()> {
+    let ou = format!("retour-{}/{}", nature, url.texte());
     let quoi = echec.classe_notee();
     if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
         return Ok(());

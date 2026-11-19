@@ -55,9 +55,9 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<ADire> {
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
     }
-    for (retour, echec) in &s.retires {
-        if let Err(n) = compagnie::incidents::noter_retour_retire(&ctx.racine, retour, echec) {
-            faites.incidents.push(format!("Retour de nature {} retiré par l'organisme : l'incident ne s'est pas noté au journal des incidents : {}", retour.nature_retour, n.phrase));
+    for (nature, url, echec) in &s.retires {
+        if let Err(n) = compagnie::incidents::noter_retour_retire(&ctx.racine, *nature, url, echec) {
+            faites.incidents.push(format!("Retour de nature {} retiré par l'organisme : l'incident ne s'est pas noté au journal des incidents : {}", nature, n.phrase));
         }
     }
     for p in &illisibles {

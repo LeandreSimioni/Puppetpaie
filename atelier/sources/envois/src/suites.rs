@@ -62,9 +62,11 @@ pub struct Suites {
     /// Les retours du canal DSN que les suites lisent (`taux_pas`, `taux_atmp`) : ils se notent vus une fois lus
     /// (`releve_retours::noter_vus`) ; une piece que son lecteur ne lit pas reste neuve, et le releve suivant la relit.
     pub vus_une_fois_lus: Vec<Annonce>,
-    /// Les retours que l'organisme a retires (HTTP 410 au telechargement) et le refus qui l'a dit : notes vus, ils ne
-    /// reviendront pas ; ils se notent chez l'editeur.
-    pub retires: Vec<(Annonce, socle::echec::Echec)>,
+    /// Les retours que l'organisme a retires (HTTP 410 au telechargement) : leur nature, l'adresse de telechargement qui
+    /// les identifie (guide de l'API DSN v6.9, § 3.4.4, l. 1756-1771 : l'identifiant n'est la « que pour
+    /// rétrocompatibilité », l'URL le remplace) et le refus qui l'a dit. Notes vus, ils ne reviendront pas ; ils se notent
+    /// chez l'editeur.
+    pub retires: Vec<(crate::retours::NatureDuRetour, socle::garde_reseau::Url, socle::echec::Echec)>,
     /// Ce que l'envoi a deja a dire (les incidents de sa releve, ce que ses retours laissent a faire) : les suites y
     /// ajoutent le leur.
     pub dit: ADire,

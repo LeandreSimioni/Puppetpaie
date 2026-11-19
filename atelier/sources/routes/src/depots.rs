@@ -840,11 +840,11 @@ impl Designation {
 pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let ChargeSuivre { quoi, flux, mois } = c;
     let dpae = quoi == Quoi::Dpae;
-    let (debut, fin) = releve_retours::derniere_journee()?;
+    let plage = releve_retours::PlageDuReleve::derniere_journee()?;
     let releve = if dpae {
-        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
+        crate::gestes::releve::relever_retours_dpae(ctx, plage, false, flux.as_ref())
     } else {
-        crate::gestes::releve::relever_retours(ctx, debut, fin, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn)
+        crate::gestes::releve::relever_retours(ctx, plage, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn)
     };
     let a_dire = match releve {
         Ok((_, dit)) => dit,
@@ -894,13 +894,13 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
     let mut repetition = bilan_de_la_repetition(ctx, &d)?;
     let mut a_dire = ADire::default();
     if repetition.etat == etats::EtatDuTest::EnTest {
-        let (debut, fin) = releve_retours::derniere_journee()?;
+        let plage = releve_retours::PlageDuReleve::derniere_journee()?;
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
+                crate::gestes::releve::relever_retours_dpae(ctx, plage, false, flux.as_ref())
             }
-            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn),
+            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, plage, false, releve_retours::EnvironnementNetEntreprises::Production, None, envois::releve_retours::CanalDesRetours::Dsn),
         };
         a_dire = match releve {
             Ok((_, dit)) => dit,

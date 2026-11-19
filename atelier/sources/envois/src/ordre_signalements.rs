@@ -162,8 +162,8 @@ pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: O
         return None;
     }
     let fin = socle::temps::secondes();
-    let bilans = Some(crate::retours::NatureDuRetour::CertificatDeConformite);
-    match releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CanalDesRetours::Dsn, bilans, suites) {
+    let plage = releve_retours::PlageDuReleve::Bornee { debut, fin, nature: Some(crate::retours::NatureDuRetour::CertificatDeConformite) };
+    match releve_retours::relever_retours(ctx, branchement, plage, false, client, releve_retours::CanalDesRetours::Dsn, suites) {
         // Seul ce qui empeche de lire la liste des retours ou un bilan se dit ici (`Releve::plateforme_non_lue`) ; le
         // reste de ce que la releve a a dire est dans les suites (`Suites::dit`).
         Ok(r) if r.plateforme_non_lue.is_empty() => None,

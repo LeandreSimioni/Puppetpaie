@@ -4,10 +4,9 @@
 
 use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
-use envois::releve_retours::{CanalDesRetours, Client, EnvironnementNetEntreprises, Releve};
+use envois::releve_retours::{CanalDesRetours, Client, EnvironnementNetEntreprises, PlageDuReleve, Releve};
 use envois::suites::{ADire, Suites};
 use socle::echec::R;
-use socle::paris::Moment;
 use compagnie::consultation::{client_dpae, client_dsn};
 
 /// Fait les suites d'une releve : la releve, et tout ce qu'elle a a dire, ce qui a empeche de lire la plate-forme en
@@ -22,23 +21,23 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<(Releve, ADire)
 
 /// Releve les retours du canal `canal` (la DPAE avec un client Urssaf donne) : `client` donne, ou celui de la
 /// consultation net-entreprises.
-pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: EnvironnementNetEntreprises, client: Option<Client>, canal: CanalDesRetours) -> R<(Releve, ADire)> {
+pub fn relever_retours(ctx: &Contexte, plage: PlageDuReleve, tout: bool, environnement: EnvironnementNetEntreprises, client: Option<Client>, canal: CanalDesRetours) -> R<(Releve, ADire)> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,
     };
     let mut s = Suites::default();
-    let r = envois::releve_retours::relever_retours(ctx, b, debut, fin, tout, client, canal, None, &mut s);
+    let r = envois::releve_retours::relever_retours(ctx, b, plage, tout, client, canal, &mut s);
     avec_les_suites(ctx, r, s)
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, flux: Option<&envois::retours::IdDeFlux>) -> R<(Releve, ADire)> {
+pub fn relever_retours_dpae(ctx: &Contexte, plage: PlageDuReleve, tout: bool, flux: Option<&envois::retours::IdDeFlux>) -> R<(Releve, ADire)> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();
-    let r = envois::releve_retours::relever_retours_dpae(ctx, b, debut, fin, tout, flux, client, &mut s);
+    let r = envois::releve_retours::relever_retours_dpae(ctx, b, plage, tout, flux, client, &mut s);
     avec_les_suites(ctx, r, s)
 }
 
