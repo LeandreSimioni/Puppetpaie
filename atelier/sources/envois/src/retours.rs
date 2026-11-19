@@ -201,7 +201,7 @@ socle::noms_fermes! {
     FormatDuRetour, "Format de retour" {
         /// Le schema des bilans (`lire_rapport`).
         Harmonise = "harmonise",
-        /// Un retour sans document (un accuse, le mandat a acquitter) : son statut dit tout.
+        /// Un retour sans document (un accuse, le mandat a acquitter).
         Aucun = "aucun",
         /// Une archive d'AER.
         Pdf = "pdf",

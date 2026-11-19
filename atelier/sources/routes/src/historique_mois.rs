@@ -1036,7 +1036,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
             if let PieceDuRetour::Illisible(m) = &sans {
                 phrases.push(format!("La pièce de ce retour ne se lit pas sur ce poste : {} ; ce qui est dit ici vient du relevé.", m));
             } else if format == Some(retours::FormatDuRetour::Aucun) {
-                phrases.push("Un retour sans document : son statut dit tout.".into());
+                phrases.push("Un retour sans document à télécharger.".into());
             } else if flux.is_some_and(IdDeFlux::est_fictif) {
                 // Le retour d'un depot joue par une compagnie fictive (`envois::releve_retours::rattacher_simulation`, qui
                 // le reconnait a son flux) : le bilan est joue sans piece ; seule l'AER (nature 46) a la sienne, fabriquee
