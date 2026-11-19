@@ -38,8 +38,10 @@ pub struct CoutsDeLAnnee {
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub salaries: Vec<(String, Cout)>,
-    /// Les paies reprises que le cout ne compte pas, une phrase chacune (`etats_paie::LivreDePaie::non_comptees`).
-    pub non_comptees: Vec<String>,
+    /// Les paies reprises que le cout ne compte pas (`etats_paie::livre_des_etats`) : la nature de leur contrat reste a
+    /// dire.
+    #[serde(skip)]
+    pub non_comptees: Vec<engagement::importe::NatureADire>,
 }
 
 /// Le cout d'un spectacle ou d'un salarie : ses bulletins, ses sommes (en texte), ce qui n'est que prevu, et si une paie
@@ -95,8 +97,8 @@ impl<'a> Recapitulatifs<'a> {
         if p.mois.is_empty() {
             return Ok(out);
         }
-        let livre = etats_paie::livre_des_etats(self.ctx, &p, &self.demande.departs)?;
-        out.non_comptees = livre.non_comptees;
+        let (livre, non_comptees) = etats_paie::livre_des_etats(self.ctx, &p, &self.demande.departs)?;
+        out.non_comptees = non_comptees;
         let lignes: Vec<LigneLivre> = livre.groupes.into_iter().flat_map(|g| g.lignes).collect();
         // Les cles, dans l'ordre ou les paies les rencontrent ; leur cumul jusqu'au mois courant, et ce qui n'est que
         // prevu apres lui (son seul cout). Une somme que les pieces importees taisent ne compte pas ; un cout qui manque

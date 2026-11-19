@@ -554,10 +554,8 @@ pub struct LivreDePaie {
     pub format: FormatDExport,
     #[serde(serialize_with = "crate::tableaux_export::nom_du_fichier")]
     pub fichier: Option<PathBuf>,
+    /// Ce que le livre dit, dont chaque paie reprise qu'il ne compte pas (`engagement::importe::NatureADire::phrase`).
     pub avertissements: Vec<String>,
-    /// Les paies reprises que le livre ne compte pas, une phrase chacune (`engagement::importe::NatureADire`) : elles
-    /// sont aussi dans `avertissements`.
-    pub non_comptees: Vec<String>,
 }
 
 /// `REGROUPEMENTS`.
@@ -596,7 +594,7 @@ fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option
 /// celles que l'import a lues), ce qu'il a fallu taire, si ses numeros de contrat sont tous ecrits, et les paies reprises
 /// qu'il ne compte pas (`engagement::importe::NatureADire`, en phrases). Un montant que les pieces d'une paie importee ne
 /// disent pas reste vide (`PaieDuMois`) ; aucun numero n'est invente.
-fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool, Vec<String>)> {
+fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engagement::departs::Departs) -> R<(Vec<LigneLivre>, Vec<String>, bool, Vec<engagement::importe::NatureADire>)> {
     if engagement::etats::validees_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?.is_none() && !mois_importes(ctx)?.contains(&mois) {
         return Err(erreur(Classe::Refuse, format!("{} : aucun engagement ne touche ce mois.", mois)));
     }
@@ -637,7 +635,7 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
     }
     // Ses numeros de contrat sont ecrits quand chaque engagement est valide, ou que la DSN de l'ancien logiciel les a donnes.
     let figes = paies.iter().all(|p| p.engagement().numero.is_some());
-    Ok((lignes, sans_pas, figes, a_dire.iter().map(engagement::importe::NatureADire::phrase).collect()))
+    Ok((lignes, sans_pas, figes, a_dire))
 }
 
 /// Les lignes en groupes, chacun avec son sous-total. L'ordre DANS un groupe est chronologique puis
@@ -689,6 +687,12 @@ fn grouper(lignes: &[LigneLivre], regroupement: RegroupementDEtat) -> R<Vec<Grou
 
 /// Le livre de paie d'UNE periode (un mois, une annee ou toutes), au format et dans le regroupement demandes.
 pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
+    Ok(livre_lu(ctx, d)?.0)
+}
+
+/// Le livre de paie (`livre_de_paie`), et les paies reprises qu'il ne compte pas (`engagement::importe::NatureADire`,
+/// que ses avertissements disent chacune).
+fn livre_lu(ctx: &Contexte, d: &Demande) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
     let quand = Quand::lire(
         d.mois,
         d.annee,
@@ -705,7 +709,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     };
     let p = Periode::pour(ctx, quand, true)?;
     let (mut lignes, mut avert, mut sans_pas, mut sans_numeros) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let mut a_dire: Vec<String> = Vec::new();
+    let mut a_dire: Vec<engagement::importe::NatureADire> = Vec::new();
     for &m in &p.mois {
         let (l_m, sans, figes, non_comptees) = lignes_du_mois(ctx, m, d.coordonnees, &d.departs)?;
         lignes.extend(l_m);
@@ -719,7 +723,7 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     if lignes.is_empty() && a_dire.is_empty() {
         return Err(refus("Aucun bulletin sur la période : rien à porter au livre de paie."));
     }
-    avert.extend(a_dire.iter().cloned());
+    avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
     if !sans_numeros.is_empty() {
         avert.push(format!(
             "Numéros de contrat absents pour {} : ces mois n'ont pas été produits par PuppetPaie, rien n'y a été figé. La colonne Contrat reste vide plutôt que de porter un numéro qui n'a jamais été déclaré.",
@@ -749,12 +753,11 @@ pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
         format,
         fichier: None,
         avertissements: avert,
-        non_comptees: a_dire,
     };
     if d.ecrire {
         livre.fichier = Some(ecrire_livre(ctx, &livre, &p.quand)?);
     }
-    Ok(livre)
+    Ok((livre, a_dire))
 }
 
 /// LE NOM D'UN FICHIER D'EXPORT, ecrit en Rust : autour de la periode (`Periode::nom`, `Quand::nom`, une annee), ou fixe
@@ -1008,14 +1011,14 @@ pub fn ecrire_fini(ctx: &Contexte, t: &mut Tableau, p: Option<&Periode>, nom: &s
 /// Les lignes du livre de paie, et ses avertissements -- les etats de synthese se
 /// construisent dessus, pour tomber sur le livre.
 pub fn lignes_livre(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<LigneLivre>> {
-    let livre = livre_des_etats(ctx, p, departs)?;
+    let (livre, _) = livre_des_etats(ctx, p, departs)?;
     avert.extend(livre.avertissements.iter().filter(|a| !a.starts_with("Numéros de contrat")).cloned());
     Ok(livre.groupes.into_iter().flat_map(|g| g.lignes).collect())
 }
 
 /// Le livre de paie de la periode `p` que lisent les etats de synthese (`lignes_livre`) et le cout de l'annee : regroupe
-/// par salarie, sans coordonnees, sans fichier.
-pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::departs::Departs) -> R<LivreDePaie> {
+/// par salarie, sans coordonnees, sans fichier ; et les paies reprises qu'il ne compte pas (ses avertissements les disent).
+pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::departs::Departs) -> R<(LivreDePaie, Vec<engagement::importe::NatureADire>)> {
     let (mois, annee, toutes) = p.quand.en_demande();
     let d = Demande {
         mois,
@@ -1029,7 +1032,7 @@ pub fn livre_des_etats(ctx: &Contexte, p: &Periode, departs: &engagement::depart
         logiciel: None,
         analytique: None,
     };
-    livre_de_paie(ctx, &d)
+    livre_lu(ctx, &d)
 }
 
 /// Le salarie tel que le dit la premiere des `lignes` d'un cumul (celles que `du_cumul` retient).
@@ -1376,6 +1379,8 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if lignes.is_empty() {
         avert.push("Aucun bulletin de la période ne porte la réduction générale (elle ne s'applique pas aux artistes du spectacle).".to_string());
     }
+    // Les paies reprises qui ne se rangent pas : l'etat ne les lit pas, et le dit.
+    avert.extend(lecture.avertissements());
     let mut t = Tableau::nouveau(EtatDExport::ReductionGenerale, "Réduction générale des cotisations", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
@@ -1498,7 +1503,8 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             lignes.push(l);
         }
     }
-    if lignes.is_empty() {
+    // Des paies que l'etat ne compte pas encore (`NatureADire`) : il repond, vide s'il le faut, et dit pourquoi.
+    if lignes.is_empty() && lecture.avertissements().is_empty() {
         return Err(refus(format!("Aucun contrat validé sur la période ({}).", p.libelle)));
     }
     let mut t = Tableau::nouveau(EtatDExport::HeuresEtCachets, "Heures et cachets (annexes 8 et 10)", p.libelle.clone());

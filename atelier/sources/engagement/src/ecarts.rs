@@ -306,10 +306,13 @@ const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
-/// deja comparee, elle ne se compare pas deux fois.
+/// deja comparee, elle ne se compare pas deux fois. UNE PAIE QUE LA SEULE DSN DECLARE n'a pas de lignes de cotisation a
+/// comparer (`PaieVersee::cotisations`, vide sans bulletin) : elle n'est pas une comparaison, ni faite ni manquee, et ne
+/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     saisies_refaites(imp)
         .into_iter()
+        .filter(|(_, p, ..)| p.cotisations.is_some())
         .filter_map(|(mois, p, nature, jours_comptes)| {
             let empreinte = empreinte(imp, mois, p);
             if deja(&empreinte) {
