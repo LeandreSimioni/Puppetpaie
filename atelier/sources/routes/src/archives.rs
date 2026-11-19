@@ -125,7 +125,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "vire_le", libelle: Affiche::new("Virements faits"), forme: Forme::Objet, sens: "{année: jour du virement fait, AAAA-MM-JJ}", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel ; sans lui, le moteur le demande à un humain", avance: false },
         ],
-        exemple: r#"{"vire_le":{"2026":"2026-11-02"}}"#,
+        exemple: r#"{"vire_le":{"2025":"2026-11-02"}}"#,
         rend: "partis (les destinataires), expediteur, periode, total, annees (les régularisations notées), eml",
         refus: &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est parti" },

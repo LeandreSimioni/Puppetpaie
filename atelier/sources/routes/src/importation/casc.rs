@@ -775,7 +775,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         mois.dedup();
         let mois: Vec<String> = mois.iter().map(Mois::to_string).collect();
         r.avertissements.push(format!(
-            "Liste nominative : {} emploi(s) sans jours, cachets ni heures dans leur DSN ({}) -- colonnes laissees vides.",
+            "Liste nominative : {} emploi(s) sans jours, cachets ni heures lus ({}) -- colonnes laissees vides.",
             sans.len(),
             mois.join(", ")
         ));

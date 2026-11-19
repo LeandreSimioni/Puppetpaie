@@ -42,8 +42,8 @@ fabrique et que l'import relit tel quel.
   sans salarié.
 - **Un contrat à cheval sur deux mois** : Joséphine Albaret joue Mademoiselle Poussière seule à Dijon du 28 juin au
   3 juillet, un seul contrat d'usage au cachet. Sa carte de juin dit le terme du contrat (le 3 juillet) et les jours de
-  juin, celle de juillet les jours de juillet ; l'engagement se valide une fois, en juin. Chaque mois a sa paie ; la fin
-  du contrat, que la DSN de juin a déjà déclaré, se signale le 6 juillet ; le certificat Congés Spectacles part
+  juin, celle de juillet les jours de juillet ; l'engagement se valide une fois, le 22 juin, avec sa DPAE. Chaque mois a
+  sa paie ; la fin du contrat, dont la DSN de juin a déjà dit le terme, se signale le 6 juillet ; le certificat Congés Spectacles part
   avec les documents de juillet, pour le contrat entier : 4 cachets, 560 € de brut.
 - **Repas** à chaque jour de jeu loin de chez soi, **nuitées** à Roanne et Montbrison (7 au 9 avril) et à Nevers (18 et
   19 septembre), au tarif de la convention. Basile Ferrand, technicien, dort hors de chez lui en avril sans justificatif

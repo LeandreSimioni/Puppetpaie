@@ -217,7 +217,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         })
     });
     std::fs::write(c.join("config/diagnostic.json"), json!({"serveur": filet}).to_string()).unwrap();
-    // Les bulletins d'un ancien logiciel, dans la boîte de l'import : un artiste (janvier 2026, sans la CASC-SVP) et un
+    // Les bulletins d'un ancien logiciel, dans la boîte de l'import : un artiste (janvier 2026) et un
     // permanent (mai 2025) dont aucune pièce ne dit la nature du contrat.
     let (mut artiste, mut permanent) = (a_repetitions(), a_heures());
     for a in [&mut artiste, &mut permanent] {
@@ -233,8 +233,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     pdf(vec![page_a(&permanent)], &c.join("import/permanent.pdf"));
     // La DSN de mai 2025 de l'ancien logiciel, deposee sans la CASC-SVP (aucune adhesion, aucun rattachement) : elle
     // declare un contrat de l'artiste, et c'est elle que la regularisation de 2025 lit (`casc-regularise`).
-    std::fs::write(c.join("import/DSN_Mai2025.dsn"), DSN_MAI_2025_SANS_CASC).unwrap();
-    // Un permanent en CDI, arrete deux fois (un accident du travail, un deuil d'enfant) : ce que seul un contrat paye au mois
+    std::fs::write(c.join("import/DSN_Mai2025.dsn"), DSN_MAI_2025_SANS_CASC).unwrap();    // Un permanent en CDI, arrete deux fois (un accident du travail, un deuil d'enfant) : ce que seul un contrat paye au mois
     // appelle (le maintien de salaire), et ce que ces motifs font declarer hors DSN.
     let cases = json!({"prenom_affichage": "Josef",
         "nom_affichage": "Svoboda", "nir": "1750544999001", "nir_cle": "19", "date_naissance": "1975-05-10", "lieu_naissance_affichage": "Villeneuve-sur-Loire",
@@ -306,6 +305,12 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             // une installation a part.
             Route::CompagnieCouleur | Route::CompagnieRemettreAZero | Route::CompagniesGarder => route(&installation_a_part(&c, f.nom()).1, f.nom(), exemple, "2026-11-02"),
             Route::AdministrateurRattacher | Route::AdministrateurDetacher => administrateur(&c, f.route, exemple),
+            // La compagnie n'a qu'une annee a regulariser, que l'exemple de `casc-regularise` a deja notee : l'envoi se
+            // joue sur cette annee de nouveau a regulariser.
+            Route::CascEnvoyer => {
+                std::fs::remove_file(c.join("config/casc-svp.json")).unwrap();
+                route_avec(&c, f.nom(), exemple, "2026-11-02", &[(VARIABLE_ESSAIS, "exemple")])
+            }
             // Le dossier portable : une installation a part qui porte deja les trois systemes (rien ne se telecharge).
             Route::PortableCompleter => {
                 let (inst, reelle) = installation_a_part(&c, f.nom());
