@@ -1263,11 +1263,10 @@ fn chiffres_egaux(a: &PaieEcrite, b: &PaieEcrite) -> bool {
 /// cotisation dont la base et les deux montants sont nuls ne porte aucun chiffre : qu'une paie l'imprime et l'autre non
 /// (la tranche 2 ou la contribution d'equilibre technique qui ne sont pas dues, `calcul::calculer`) n'est pas un ecart.
 /// Une assiette qu'une seule des deux paies ecrit (`Paie::bases`) ne se compare pas non plus : ce qu'elle porte se lit
-/// dans les lignes et les montants, qui se comparent. Les tranches de l'annee de la retraite d'un intermittent
+/// dans les lignes et les montants, qui se comparent. Les tranches de l'annee de la retraite d'un intermittent non cadre
 /// (`t1_annuelle`, `t2_annuelle`, `cet_annuelle`, `calcul::calculer`, 7.6) sont les bases de ses lignes `retraite_t1`,
-/// `retraite_t2` et `cet`, et, pour une paie qui ne les ecrit pas, sa ligne `retraite_t1` dit sa tranche 1
-/// (`calcul::tranches_de_l_annee_appliquees`) ; la base 43 d'un cadre intermittent est sa tranche 1 journaliere, que les
-/// deux paies ecrivent.
+/// `retraite_t2` et `cet` ; la base 43 d'un cadre intermittent est sa tranche 1 journaliere, que les deux paies
+/// ecrivent.
 fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
     // `None` : les deux paies n'ont pas le meme nombre de periodes, elles different.
     fn sans_avis(p: &FormeDePaie<Avis>, autre: &FormeDePaie<Avis>) -> Option<FormeDePaie<Avis>> {

@@ -1706,10 +1706,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // remuneration que la retraite compte (`remuneration_de_la_retraite`). Rubrique par rubrique : quand toute la
     // remuneration de la paie est en tranche 1, la tranche de chaque rubrique est sa part, et la retraite d'un non-cadre se
     // calcule comme sur son brut ; sinon, au prorata ; une paie sans remuneration pose sa tranche (regularisee) sur sa
-    // premiere rubrique. La tranche appliquee est la somme de celles des rubriques. Un cadre intermittent cotise sur ses
-    // tranches journalieres (`par_categorie.cadre`, Audiens) : les siennes de l'annee ne sont que la base 43 de sa DSN.
+    // premiere rubrique. La tranche appliquee est la somme de celles des rubriques. Seule cotise sur l'annee la paie dont
+    // le bareme pose la ligne `retraite_t1` sur `t1_annuelle` (`retraite_sur_l_annee`) : un cadre intermittent cotise sur
+    // ses tranches journalieres (`par_categorie.cadre`, Audiens), et un permanent sur ses tranches du mois ; ni l'un ni
+    // l'autre n'a de tranche de l'annee.
+    let retraite_sur_l_annee = bar.rubrique(&droit::forme_bareme::RETRAITE_T1).is_some_and(|r| r.base == Some(Assiette::T1Annuelle));
     let mut retraite_de_l_annee: Option<(droit::plafond::AnneeAnterieure, droit::plafond::Regularisees)> = None;
-    if !nat.mensuelle() {
+    if retraite_sur_l_annee {
         let plafond_annuel = bar.plafond_securite_sociale.as_ref().ok_or_else(|| socle::fichiers::absent("plafond_securite_sociale"))?.annuel;
         let avant = annee_de_la_retraite(ctx, eng, &sal, plafond_annuel, precedentes)?;
         let remuneration = remuneration_de_la_retraite(brut, brut_abattu, dfs.as_ref())?;
@@ -1929,9 +1932,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // bulletin quand elles sont nulles : le bareme les porte pour tout permanent, la paie seulement pour qui les doit. De
     // meme la tranche 1 de l'annee d'un intermittent (`t1_annuelle`) quand l'annee a deja passe le plafond annuel : la
     // paie est toute en tranche 2. La tranche 1 d'un mois sans brut d'un permanent (`t1_mensuelle`) reste.
-    let t1_de_l_annee = bar.rubrique(&droit::forme_bareme::RETRAITE_T1).is_some_and(|r| r.base == Some(Assiette::T1Annuelle));
     lignes.retain(|l| {
-        let sans_t1 = t1_de_l_annee && l.est(&droit::forme_bareme::RETRAITE_T1);
+        let sans_t1 = retraite_sur_l_annee && l.est(&droit::forme_bareme::RETRAITE_T1);
         !(l.base.est_nulle()
             && l.montant_pat.est_nul()
             && l.montant_sal.est_nul()
@@ -2299,8 +2301,9 @@ fn annee_de_la_retraite(
 /// (`droit::plafond::tranches_sous_le_plafond_annuel`) : la remuneration que la retraite compte
 /// (`remuneration_de_la_retraite`), sans plafond (celui de l'annee est deja pose), et les tranches qu'elle a appliquees
 /// telles qu'elle les a ecrites (7.5 ter : `t1_annuelle`, `t2_annuelle`, `cet_annuelle` ; la tranche 1 + 2 est leur somme,
-/// et ni la prevoyance ni la CSG n'y ont de tranche). Une paie decoupee, periode par periode. Une paie au mois n'y entre
-/// pas : elle a ses tranches du mois.
+/// et ni la prevoyance ni la CSG n'y ont de tranche). Une paie decoupee, periode par periode. Une paie qui ne cotise pas
+/// sur l'annee (un cadre intermittent, sur ses tranches journalieres ; une paie au mois, sur ses tranches du mois) n'y
+/// entre pas.
 pub(crate) fn ajouter_a_la_retraite_de_l_annee(annee: &mut droit::plafond::AnneeAnterieure, p: &Paie) -> R<()> {
     if !p.periodes.is_empty() {
         for part in &p.periodes {
@@ -2308,10 +2311,7 @@ pub(crate) fn ajouter_a_la_retraite_de_l_annee(annee: &mut droit::plafond::Annee
         }
         return Ok(());
     }
-    if p.engagement.nat()?.mensuelle() {
-        return Ok(());
-    }
-    let (t1, t2, cet) = tranches_de_l_annee_appliquees(p)?;
+    let Some((t1, t2, cet)) = tranches_de_l_annee_appliquees(p)? else { return Ok(()) };
     let appliquees = droit::plafond::Regularisees {
         t1,
         t2,
@@ -2326,22 +2326,15 @@ pub(crate) fn ajouter_a_la_retraite_de_l_annee(annee: &mut droit::plafond::Annee
 }
 
 /// LES TRANCHES DE L'ANNEE QU'UNE PAIE D'INTERMITTENT `p` A APPLIQUEES a sa retraite complementaire (tranche 1, tranche 2,
-/// CET) : celles qu'elle a ecrites (7.5 ter : `t1_annuelle`, `t2_annuelle`, `cet_annuelle`). Une paie qui ne les ecrit
-/// pas a ete calculee par un bareme ou la retraite d'un intermittent ne se comptait pas sur l'annee : sa ligne
-/// `retraite_t1` etait assise sur tout son brut soumis (abattu sous deduction forfaitaire specifique), et elle n'avait
-/// ni ligne `retraite_t2` ni ligne `cet`. Ce qu'elle a applique se lit donc dans ses chiffres : en tranche 1, la base de
-/// sa ligne `retraite_t1` ; ni tranche 2 ni CET. Une paie qui n'ecrit ni les tranches ni cette ligne refuse.
-fn tranches_de_l_annee_appliquees(p: &Paie) -> R<(Montant, Montant, Montant)> {
+/// CET) : celles qu'elle a ecrites (7.5 ter : `t1_annuelle`, `t2_annuelle`, `cet_annuelle`). Seule une paie qui cotise
+/// sur l'annee les ecrit (`retraite_sur_l_annee`, 7.5 ter) ; `None` : elle n'y cotise pas.
+fn tranches_de_l_annee_appliquees(p: &Paie) -> R<Option<(Montant, Montant, Montant)>> {
     const LUE_PAR: &str = "la retraite complémentaire de l'année d'un intermittent lit (Audiens, Paramètres : les plafonds annuels)";
-    if p.bases.contains_key(&Assiette::T1Annuelle) {
-        let lue = |a: Assiette| assiette_de_l_annee(p, a, LUE_PAR);
-        return Ok((lue(Assiette::T1Annuelle)?, lue(Assiette::T2Annuelle)?, lue(Assiette::CetAnnuelle)?));
+    if !p.bases.contains_key(&Assiette::T1Annuelle) {
+        return Ok(None);
     }
-    let Some(ligne) = p.lignes.iter().find(|l| l.est(&droit::forme_bareme::RETRAITE_T1)) else {
-        // Ni les tranches ni la ligne : le refus de la lecture nomme l'assiette qui manque.
-        return assiette_de_l_annee(p, Assiette::T1Annuelle, LUE_PAR).map(|t1| (t1, Montant::ZERO, Montant::ZERO));
-    };
-    Ok((ligne.base.en_euros(Assiette::T1Annuelle)?, Montant::ZERO, Montant::ZERO))
+    let lue = |a: Assiette| assiette_de_l_annee(p, a, LUE_PAR);
+    Ok(Some((lue(Assiette::T1Annuelle)?, lue(Assiette::T2Annuelle)?, lue(Assiette::CetAnnuelle)?)))
 }
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la
