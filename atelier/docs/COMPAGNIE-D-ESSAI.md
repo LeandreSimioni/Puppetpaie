@@ -84,11 +84,11 @@ echo '{"route":"deposer","charge":{"quoi":"dsn","mois":"2026-09"}}' | moteur rou
 echo '{"route":"ouverture","charge":{"sauvegarder":false,"signatures":false}}' | moteur route --texte                     # quelques minutes plus tard : le bilan (CCO/BAN) fait foi
 ```
 
-La base d'essai de net-entreprises garde les essais **par SIRET**, y compris ceux faits depuis un autre poste ; le
-journal de la compagnie d'essai, neuf, ne les connaît pas (et les bilans ne disent pas le mois d'une déclaration : le
-moteur ne peut pas le lire sur la plate-forme). Chaque nouvel essai du même mois part à un ordre plus grand que le
-précédent (le journal compte ses essais) : si le bilan refuse l'ordre (B1-208-11, « dernier ordre accepté AAAAMMnn »),
-redéposer jusqu'à le passer.
+La base d'essai de net-entreprises garde les essais **par SIRET**, y compris ceux faits depuis un autre poste. Avant
+chaque essai d'une mensuelle, le moteur relève les retours : l'essai part au-dessus du plus grand ordre que les bilans
+montrent pour ce mois (le « dernier ordre accepté » d'un refus B1-208-11 compris) et des essais de son journal dont le
+bilan n'est pas encore arrivé ; une mensuelle du mois déjà acceptée le fait partir en annule-et-remplace. Si la
+plate-forme n'a pas pu être lue, la réponse du dépôt le dit.
 
 Une DSN copiée de la fictive (écrite avant le montage, sous son SIREN) est refusée : déposer la DSN par son mois, qui
 la fabrique sous votre identité.

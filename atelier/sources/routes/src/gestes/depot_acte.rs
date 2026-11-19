@@ -134,17 +134,6 @@ fn refuser_si_copie(ctx: &Contexte, quoi: &str) -> R<()> {
 
 // ------------------------------------------------------------------------ la DSN
 
-/// `ordre_d_essai_du_fichier` : l'ordre auquel un essai part : le calcule, jamais plus bas que celui que le fichier porte
-/// deja. `None` reste `None`.
-fn ordre_d_essai_du_fichier(calcule: Option<NumeroDOrdre>, chemin: &Path) -> R<Option<NumeroDOrdre>> {
-    let Some(c) = calcule else { return Ok(None) };
-    let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
-    Ok(Some(match rang_dans_le_fichier(&octets)? {
-        Some(m) => c.max(m),
-        None => c,
-    }))
-}
-
 /// Le mois de constitution (`AAAA-MM`) d'une DSN (S20.G00.05.007). La rubrique est obligatoire pour toute nature de
 /// declaration (norme DSN, `atelier/reference/norme-dsn/dsn-note-differentielle-ct-2026.1.2-vers-2027.1.2-20251224.txt`,
 /// l. 4838 : « S20.G00.05.007 Date de constitution du fichier O O O O O O O ») : une DSN qui ne la dit pas se refuse.
@@ -155,25 +144,19 @@ fn mois_de_constitution(a: &DsnLue) -> R<Mois> {
     }
 }
 
-/// Le rang que la DSN porte (S20.G00.05.004), s'il y en a un (hors de sa forme, la lecture de la DSN le laisse vide).
-fn rang_dans_le_fichier(octets: &[u8]) -> R<Option<NumeroDOrdre>> {
-    Ok(declarations::dsn_lue::lire(octets, None)?.ordre)
-}
-
 /// L'ordre qu'une DSN a deposer porte (S20.G00.05.004) : absent (ou hors de sa forme), elle se refait.
 fn ordre_dit(o: Option<NumeroDOrdre>) -> R<NumeroDOrdre> {
     o.ok_or_else(|| socle::echec::cle("Cette DSN ne dit pas son ordre : la refaire. Rien n'est parti.", "S20.G00.05.004").reclasser(Classe::Illisible))
 }
 
-/// `prochain_ordre_de_test` : l'ordre a donner au prochain essai de ce mois, ou `None` pour le premier. Les
-/// suivants partent en annule-et-remplace, a un ordre plus grand que tout ce que la base de test a pu retenir :
-/// le plus grand des ordres deja poses par nous, de ceux des fichiers essayes encore sur le disque, du nombre
-/// d'essais, et de ce que les bilans archives disent de la base d'essai pour le mois de constitution du fichier
-/// (`ordre_signalements::dernier_ordre_des_mensuelles` : les essais faits AILLEURS sous le meme SIREN, l'atelier ou un
-/// autre poste, comptent pour l'ordre sans s'afficher), plus un. Une mensuelle du mois deja
-/// acceptee dans la base d'essai, meme venue d'ailleurs, fait partir l'essai en annule-et-remplace. Trop grand ne coute
-/// rien ; trop petit, c'est B1-208-11. Les bilans disent ce que la plate-forme sait : `deposer_dsn_dans` la releve
-/// avant (`releve::relever_avant_l_ordre`). `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
+/// `prochain_ordre_de_test` : l'ordre a donner au prochain essai de ce mois, ou `None` pour le premier (il part en
+/// normale, a l'ordre du fichier). Les suivants partent en annule-et-remplace, au-dessus de ce que la base d'essai
+/// connait, d'apres deux sources : ce que la plate-forme a dit, relevee au moment du depot (`releve::relever_avant_l_ordre`)
+/// puis lue dans les bilans archives pour le mois de constitution du fichier (`ordre_signalements::dernier_ordre_des_mensuelles` :
+/// les essais faits ailleurs sous le meme SIREN comptent) ; et le journal, pour l'essai dont le bilan n'est pas encore
+/// arrive : l'ordre auquel chaque essai est parti (`ordre_test`, sinon celui du fichier). Une mensuelle du mois deja
+/// acceptee dans la base d'essai fait partir l'essai en annule-et-remplace. Trop grand ne coute rien ; trop petit,
+/// c'est B1-208-11. `constitution` : le mois de constitution du fichier (`AAAA-MM`, S20.G00.05.007).
 fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, constitution: Mois) -> R<Option<NumeroDOrdre>> {
     let du_mois = envois::journal::lire(&ctx.racine, Some(Acte::Dsn), Some(le_mois), Some(Mode::Test)).map_err(|m| m.reclasser(Classe::Disque))?;
     let essais: Vec<&Ligne> = etats::de_l_etablissement(&du_mois, nic, ctx.entreprise.nic_principal()).into_iter().filter(|l| !l.signalement()).collect();
@@ -181,23 +164,8 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&Nic>, cons
     if essais.is_empty() && !vues.du_mois_acceptee {
         return Ok(None);
     }
-    let mut connus: Vec<NumeroDOrdre> = vec![NumeroDOrdre::du_nombre(essais.len() as u64)?];
-    connus.extend(vues.ordre);
-    for l in &essais {
-        if let Some(n) = l.dsn().and_then(|e| e.detail.ordre_test).filter(|n| *n >= NumeroDOrdre::PREMIER) {
-            connus.push(n);
-        }
-        if let Some(nom) = l.fichier() {
-            let p = documents::fichier_depose(&ctx.racine, le_mois, nom.texte());
-            if p.exists() {
-                let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
-                if let Some(n) = rang_dans_le_fichier(&octets)? {
-                    connus.push(n);
-                }
-            }
-        }
-    }
-    NumeroDOrdre::suivant(connus.into_iter().max()).map(Some)
+    let du_journal = essais.iter().filter_map(|l| l.dsn()).filter_map(|e| e.detail.ordre_test.or(e.detail.ordre)).max();
+    NumeroDOrdre::suivant(du_journal.max(vues.ordre)).map(Some)
 }
 
 /// Le garde-fou du depot REEL d'une mensuelle, ecrit depuis la
@@ -262,18 +230,12 @@ pub(crate) fn deposer_dsn(
     forcer: bool,
     contournement: &str,
 ) -> R<DepotFait> {
-    deposer_dsn_dans(ctx, fichier, mode, preuve, qui, EnvironnementNetEntreprises::Production, forcer, contournement, None)
+    deposer_dsn_dans(ctx, fichier, mode, preuve, qui, EnvironnementNetEntreprises::Production, forcer, contournement)
 }
 
-/// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`) et l'ordre d'un essai, que seul
-/// l'outil de l'atelier donne (`atelier::commandes::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
+/// `deposer_dsn` avec l'ENVIRONNEMENT du point de depot (`production` ou `editeur`), que seul l'outil de l'atelier
+/// choisit (`atelier::commandes::outils::depot_dsn`). La plate-forme de l'editeur est une plate-forme d'ESSAI :
 /// un depot REEL n'y a pas de sens et reste refuse ici, car le journal le noterait comme une declaration partie.
-///
-/// `ordre_d_essai` : l'ordre au-dessous duquel un ESSAI de mensuelle ne part pas, donne par qui sait ce que la base
-/// d'essai a deja retenu pour ce SIRET et ce mois (un autre poste, une compagnie d'essai, le « dernier ordre accepte »
-/// d'un B1-208-11). L'essai part alors en annule-et-remplace a cet ordre, ou plus haut si le journal en sait davantage.
-/// Refuse pour un depot reel et pour un signalement (leur ordre est celui du fichier, lu sur la plate-forme a son
-/// ecriture : `ordre_signalements`).
 pub fn deposer_dsn_dans(
     ctx: &Contexte,
     fichier: &Path,
@@ -283,7 +245,6 @@ pub fn deposer_dsn_dans(
     environnement: EnvironnementNetEntreprises,
     forcer: bool,
     contournement: &str,
-    ordre_d_essai: Option<NumeroDOrdre>,
 ) -> R<DepotFait> {
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     branchement.ouvrir()?;
@@ -301,18 +262,6 @@ pub fn deposer_dsn_dans(
     // LE MOIS QUE LE FICHIER DECLARE ; un signalement se date par son evenement, sa ligne par le mois de ce jour.
     let le_mois = apercu.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}). Rien n'est parti.", declarations::dsn_lue::SANS_MOIS)))?;
     let evenement = if apercu.est_signalement() { apercu.evenement() } else { None };
-    let ordre_d_essai = match ordre_d_essai {
-        Some(n) => {
-            if mode == Mode::Reel || apercu.est_signalement() || n < NumeroDOrdre::PREMIER {
-                return Err(erreur(
-                    Classe::Refuse,
-                    "Un ordre d'essai ne vaut que pour le depot de TEST d'une DSN mensuelle, et c'est un entier positif : un depot reel part a l'ordre du fichier, un signalement a celui que la plate-forme a donne a son ecriture. Rien n'est parti.",
-                ));
-            }
-            Some(n)
-        }
-        None => None,
-    };
     // UNE COMPAGNIE D'ESSAI ne depose que ce qu'elle a ecrit sous SON identite : les DSN copiees de la fictive portent le
     // SIREN de la fictive, que le compte net-entreprises ne declare pas. Le refus ne cite aucun des deux numeros.
     if compagnie::essai::est_essai(&ctx.racine)? && apercu.emetteur.as_deref() != ctx.entreprise.siren.portee() {
@@ -445,7 +394,7 @@ pub fn deposer_dsn_dans(
     let mut suites = Suites::default();
     let essai_de_mensuelle = mode == Mode::Test && !apercu.est_signalement();
     let pas_lue = if essai_de_mensuelle { crate::gestes::releve::relever_avant_l_ordre(ctx, branchement, environnement, &mut suites)? } else { None };
-    let ordre_test = if essai_de_mensuelle { mois_de_constitution(&apercu).and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)) } else { Ok(None) }.and_then(|o| ordre_d_essai_du_fichier(o.max(ordre_d_essai), &chemin));
+    let ordre_test = if essai_de_mensuelle { mois_de_constitution(&apercu).and_then(|c| prochain_ordre_de_test(ctx, le_mois, nic, c)) } else { Ok(None) }.map(|o| o.and_then(|c| Some(c).max(apercu.ordre)));
     let parti = ordre_test.and_then(|ordre_test| {
         let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement, mode, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: mdp, versions: &versions };
         envois::depot_acte::deposer_dsn(ctx, branchement, &d, &apercu, environnement, ordre_test, &mut suites).map(|f| (f, ordre_test))

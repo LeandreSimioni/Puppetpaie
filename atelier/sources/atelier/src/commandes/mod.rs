@@ -19,7 +19,7 @@ pub fn commandes() -> Vec<Commande> {
         Commande { nom: "aer", aide: "ranger de nouveau les AER recues ; --forcer (atelier)", cachee: false, spec: &aer::SPEC, executer: aer::executer },
         Commande { nom: "journal", aide: "--dpae : reprendre au journal les DPAE attestees (atelier)", cachee: false, spec: &journal::SPEC, executer: journal::executer },
         Commande { nom: "retours", aide: "l'enquete des retours : plage, flux, plate-forme (atelier)", cachee: false, spec: &retours::SPEC, executer: retours::executer },
-        Commande { nom: "depot-dsn", aide: "un depot de test a un ordre, ou chez l'editeur (atelier)", cachee: false, spec: &depot_dsn::SPEC, executer: depot_dsn::executer },
+        Commande { nom: "depot-dsn", aide: "un depot de test, en production ou chez l'editeur (atelier)", cachee: false, spec: &depot_dsn::SPEC, executer: depot_dsn::executer },
     ]
 }
 

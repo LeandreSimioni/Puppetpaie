@@ -478,7 +478,7 @@ moteur-atelier pas --demander [--mois AAAA-MM] [--salaries A,B] [--test]   # les
 moteur-atelier aer [--mois AAAA-MM] [--forcer]   # ranger de nouveau les AER reçues ; --forcer signe malgré un écart
 moteur-atelier journal --dpae [--ecrire]    # reprendre au journal les DPAE que les certificats de l'Urssaf attestent
 moteur-atelier retours [--dpae] [--flux F] [--depuis JJ/MM/AAAA] [--jusqu-a JJ/MM/AAAA] [--tout] [--environnement editeur]
-moteur-atelier depot-dsn AAAA-MM|FICHIER [--ordre N] [--environnement editeur]   # un dépôt de test à un ordre, ou chez l'éditeur
+moteur-atelier depot-dsn AAAA-MM|FICHIER [--environnement editeur]   # un dépôt de test, en production ou chez l'éditeur
 ```
 
 ## La DPAE, séparément

@@ -8,7 +8,7 @@
 //! - `aer` : ranger de nouveau les attestations France Travail recues, `--forcer` pour signer malgre un ecart ;
 //! - `journal --dpae` : reprendre au journal les DPAE que les certificats de l'Urssaf attestent ;
 //! - `retours` : relever les retours d'une plage, d'un flux, sur la plate-forme de l'editeur (l'enquete) ;
-//! - `depot-dsn` : un depot de TEST a un ordre donne (`--ordre`) ou sur la plate-forme de l'editeur.
+//! - `depot-dsn` : un depot de TEST, en production ou sur la plate-forme de l'editeur.
 
 pub mod aer;
 pub mod depot_dsn;
