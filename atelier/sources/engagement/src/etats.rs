@@ -776,13 +776,34 @@ impl PaieDuMois {
 /// Le calcul qui les lit note leur empreinte (`paies <mois> <salarie>`, `empreinte_des_paies_validees`), et elle seule :
 /// une paie validee de ce salarie qui change fait recalculer ses mois qui l'ont lue ; celle d'un autre salarie, non.
 pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
+    paies_validees_dont(ctx, mois, salarie, &|_| Ok(true))
+}
+
+/// LES PAIES VALIDEES DE `mois` DU SALARIE `salarie` DONT LE CONTRAT EST PAYE AU MOIS (`Carte::mensuelle`), telles que
+/// les relit la regularisation du plafond (`conges::plafonds_des_mois_anterieurs`) : seules elles peuvent se regulariser
+/// (`droit::forme_bareme::RegularisationDuPlafond::regularise`), et une paie d'artiste ou de technicien intermittent,
+/// qui n'entre pas dans le cumul, ne se relit pas : son refus reste le sien et ne ferme pas la paie d'un CDI du meme
+/// salarie (« Le logiciel est doux »). La lecture notee est celle de toutes ses paies du mois (`paies_validees`).
+pub fn paies_validees_au_mois(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
+    paies_validees_dont(ctx, mois, salarie, &|o: &Objet| o.carte().mensuelle())
+}
+
+/// Les paies validees de `mois` du salarie, relues pour les seuls engagements que `garder` retient ; la lecture notee
+/// porte sur toutes (`empreinte_des_paies`).
+fn paies_validees_dont(ctx: &Contexte, mois: Mois, salarie: &IdSalarie, garder: &dyn Fn(&Objet) -> R<bool>) -> R<Vec<Paie>> {
     // Un mois sans saisie n'a aucune paie validee.
     let lire = |saisie: std::sync::Arc<(crate::saisie::VueDuMois, socle::fichiers::EmpreinteDeSaisie)>| -> R<Vec<Paie>> {
         let data = &saisie.0;
         let valides = valides_lues(ctx, mois, Some(salarie))?;
         let lecture = CleLue::Datee(LectureDatee::Paies { mois, salarie: salarie.clone() });
         socle::fichiers::noter_lecture(&lecture, ValeurLue::Empreinte(empreinte_des_paies(&valides, mois)?));
-        valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
+        let mut paies = Vec::new();
+        for (i, v) in &valides {
+            if garder(&v.objet)? {
+                paies.push(v.paie(ctx, data, *i)?);
+            }
+        }
+        Ok(paies)
     };
     Ok(stock::vue_et_empreinte(&ctx.racine, mois)?.map(lire).transpose()?.into_iter().flatten().collect())
 }

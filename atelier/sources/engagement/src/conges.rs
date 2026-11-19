@@ -896,8 +896,10 @@ pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalari
 
 /// CE QUI PRECEDE LA PAIE DE `mois` DANS L'ANNEE CIVILE, POUR LA REGULARISATION DU PLAFOND (`droit::plafond::
 /// AnneeAnterieure`, CSS R. 242-2, II) : les paies validees du salarie `cle` des mois de la meme annee, strictement avant
-/// `mois`, chacune pour ce qu'elle a applique (`calcul::ajouter_a_l_annee`, celles que `regle` regularise). Un mois qui ne
-/// se lit pas refuse : le plafond se regularise sur toute l'annee.
+/// `mois`, chacune pour ce qu'elle a applique (`calcul::ajouter_a_l_annee`, celles que `regle` regularise). Seules se
+/// relisent celles d'un contrat paye au mois (`etats::paies_validees_au_mois`) : une paie d'artiste ou de technicien
+/// intermittent n'entre pas dans le cumul, et son refus ne ferme pas celle d'un CDI du meme salarie. Une paie au mois qui
+/// ne se lit pas refuse : le plafond se regularise sur toute l'annee.
 ///
 /// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS : la regularisation commence au premier mois paye ici (Leandre,
 /// 19/11/2026). INFERENCE, une approximation de la premiere annee : R. 242-2, II fait masse des sommes dues depuis « le
@@ -909,8 +911,11 @@ pub(crate) fn plafonds_des_mois_anterieurs(
 ) -> R<droit::plafond::AnneeAnterieure> {
     let _derivation = Derivation::ouvrir();
     let mut annee = droit::plafond::AnneeAnterieure::debut();
+    let cle = cle_de_fiche(ctx, cle)?;
     for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
-        let paies = paies_versees(ctx, m, cle).map_err(|e| {
+        // Seules les paies d'un contrat paye au mois peuvent se regulariser : celles d'un intermittent ne se relisent pas
+        // (`etats::paies_validees_au_mois`), et les reprises n'entrent pas (ci-dessus).
+        let paies = crate::etats::paies_validees_au_mois(ctx, m, &cle).map_err(|e| {
             e.reformuler(|e| format!(
                 "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur toute \
 l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
@@ -918,10 +923,7 @@ l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
             ))
         })?;
         for p in &paies {
-            match p {
-                PaieAnterieure::Validee(p) => crate::calcul::ajouter_a_l_annee(&mut annee, p, regle)?,
-                PaieAnterieure::Reprise(_) => {}
-            }
+            crate::calcul::ajouter_a_l_annee(&mut annee, p, regle)?;
         }
     }
     Ok(annee)
