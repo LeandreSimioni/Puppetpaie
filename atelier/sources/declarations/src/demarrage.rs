@@ -464,13 +464,13 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         let (libelle, aide) = champ(cle)?;
         out.push(manque_de_la_case(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", aide)?);
     }
-    // LA TVA ET LA TAXE SUR LES SALAIRES : la DSN de decembre declare chaque annee si la compagnie la doit (bloc
-    // S21.G00.44) et ne se fait pas sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`). Une compagnie qui
-    // demarre en novembre la rencontrait au premier mois de decembre, sans que rien ne l'ait dit d'avance.
+    // LA TVA ET LA TAXE SUR LES SALAIRES : chaque DSN mensuelle declare la base de chaque salarie au taux normal quand la
+    // compagnie la doit (S21.G00.79 de type 91), celle de decembre si elle la doit (bloc S21.G00.44) ; aucune ne se fait
+    // sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`).
     if let documents::taxe_sur_les_salaires::Decision::ADire(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
         let cle = documents::taxe_sur_les_salaires::CHAMP_TAXE_SUR_LES_SALAIRES;
         let (libelle, _) = champ(cle)?;
-        out.push(manque_de_la_case(cle, libelle, "la DSN de décembre", m)?);
+        out.push(manque_de_la_case(cle, libelle, "la DSN du mois", m)?);
     }
     // LES CONTRATS DES PERMANENTS : c'est tout ce que la compagnie a a saisir des organismes (le reste, les textes le
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
