@@ -386,7 +386,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
         rafraichirActions();
         return;
       }
-      if (r) ecrire(encartRepetition(r) + (r.incident ? `<p class="discret">${echapper(r.incident)}</p>` : ""));
+      if (r) ecrire(encartRepetition(r) + phrasesDuReleve(r.a_dire).map((p) => `<p class="discret">${echapper(p)}</p>`).join(""));
       await new Promise((ok) => setTimeout(ok, enFictive() ? 3000 : 10000));
     }
     libre();
@@ -441,12 +441,19 @@ async function suivreDepot(quoi, flux, mois) {
       r = await api("suivre-depot", { quoi, flux, mois });
       suiviRepris("suivre-depot");
     } catch (e) { direLeRefusDuSuivi("suivre-depot", e.message); continue; }
-    if (r && r.fini) {
-      dire(r.phrase, r.couleur);
+    const phrases = phrasesDuReleve(r.a_dire);
+    if (r.fini) {
+      dire([r.phrase, ...phrases].join(" "), r.couleur);
       await rafraichirActions();
       return;
     }
+    if (phrases.length) dire(phrases.join(" "), "orange");
   }
+}
+
+/** Ce que le relevé d'un suivi a à dire (`a_dire` du moteur) : ses incidents, puis ce qu'il reste à faire. */
+function phrasesDuReleve(aDire) {
+  return [...aDire.incidents, ...aDire.a_faire];
 }
 
 /** Ce que le certificat de conformité (nature 41) dit de chaque personne. */

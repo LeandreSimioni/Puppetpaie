@@ -43,7 +43,22 @@ brut de ce que l'archive ne contient pas (la fiche 692, deux pages de net-entrep
   téléchargement ont une période de rétention de 3 mois par le SI DSN. Au-delà, les retours sont purgés et ne sont pas
   archivés par le SI DSN. »
 - §8.3 « Contraintes de polling » (p. 93-94) : l'intervalle entre deux recherches (en-tête `Expires`) et l'étendue
-  d'une plage (en-tête `Accept-Ranges`) ; 429 quand on ne les respecte pas (§9.1.1, p. 95).
+  d'une plage (en-tête `Accept-Ranges`) ; 429 quand on ne les respecte pas (§9.1.1, p. 95). Le relevé des retours ne
+  lit pas l'`Accept-Ranges` (v6.9 l. 5155-5164, dont l'exemple est `minutes=0-60`) : il découpe sa plage par journée
+  (`envois::releve_retours::tranches`). Aucun texte ne fixe une journée pour les retours ; le seul « 24h » écrit est
+  celui de la consultation des **dépôts** (§3.3.1, « La plage de recherche est limitée à 24h », v6.9 l. 1393).
+  INFERENCE : une journée est l'étendue que le service accepte de fait, les relevés réels passent ainsi.
+- §3.4.2 « Recherche par déclarant et plage horaire » (v6.9 l. 1608-1619) : le début et la fin de la plage sont
+  « comparé[s] avec la date de publication d'un retour par un OPS (c'est-à-dire l'horodatage de son enregistrement sur
+  le SI DSN) » ; §3.4.4 (l. 1694-1695) : la publication est la « Date à laquelle le SI DSN a mis le retour à
+  disposition des services de recherche », obligatoire. Un retour publié tard tombe donc dans la plage qui suit sa
+  publication : le relevé complet repart de là où le précédent s'est arrêté, moins une journée de recouvrement
+  (`envois::releve_retours::ReleveComplet`, `RECOUVREMENT`).
+- §3.4.4 (v6.9 l. 1756-1771) : l'identifiant d'un retour n'est là « Pour rétrocompatibilité uniquement » ; son URL de
+  téléchargement l'identifie (`compagnie::incidents::noter_retour_retire`).
+- §9.1.7 « Codes HTTP standard » (v6.9 l. 5413-5416) : « 410 : Gone […] la ressource n'est plus disponible ». Un retour
+  dont le téléchargement rend 410 se note vu et chez l'éditeur (`compagnie::incidents::noter_retour_retire`). Pour la
+  DPAE, aucun texte de l'Urssaf ne dit le 410 : le moteur le traite de même, par inférence.
 
 **La spécification du schéma des bilans (VT2.2, 18/11/2020).** Une déclaration d'un bilan porte son identification
 (rang, nature S20.G00.05.001, type .002, fraction .003, ordre .004, mois .005, id_annulation .006, SIREN, NIC du siège,

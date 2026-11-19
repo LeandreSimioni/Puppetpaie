@@ -296,7 +296,8 @@ fn les_organismes_de_la_fictive_rendent_le_taux_du_pas_et_le_refus_annonces() {
     let relever = || {
         socle::temps::pendant(fin, || {
             let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
-            routes::gestes::releve::rattacher_simulation(&ctx).unwrap();
+            let (_, dit) = routes::gestes::releve::rattacher_simulation(&ctx).unwrap();
+            assert!(dit.incidents.is_empty(), "{:?}", dit.incidents);
         })
     };
     let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();

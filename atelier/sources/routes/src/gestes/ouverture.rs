@@ -85,7 +85,9 @@ pub struct Options {
     pub signatures: bool,
     /// Ce qui part chez l'editeur (incidents, reponses aux signalements).
     pub filet: bool,
-    /// Jusqu'ou en arriere on cherche les retours : des jours de 24 heures avant maintenant (`Moment::moins_duree`).
+    /// Jusqu'ou en arriere on cherche les retours au plus loin : des jours de 24 heures avant maintenant
+    /// (`Moment::moins_duree`). Le releve repart de ce que le releve complet precedent a lu, s'il est plus pres
+    /// (`envois::releve_retours::PlageDuReleve::Complete`).
     pub jours: Duration,
     /// Le dossier racine dans le Drive.
     pub racine_drive: String,
@@ -103,18 +105,24 @@ pub struct Options {
     pub sauvegarde_seule: bool,
 }
 
-/// Les trente jours de retours qu'un passage ordinaire releve.
+/// Les trente jours que la commande des depots liste par defaut.
 pub const TRENTE_JOURS: Duration = socle::temps::jours_de_24_heures(30);
 
+/// Les quatre-vingt-dix jours de retours qu'une ouverture releve au plus loin, des la premiere (Leandre, 19/11/2026 :
+/// « il faut toujours prendre 90 jours ») : « Les retours disponibles au téléchargement ont une période de rétention de
+/// 3 mois par le SI DSN » (guide de l'API DSN, § 8.2, `atelier/reference/sources/gip-mds-api-dsn/LISEZ-MOI.md`). Le
+/// releve complet ne redemande ensuite que la suite (`envois::releve_retours::ReleveComplet`).
+pub const QUATRE_VINGT_DIX_JOURS: Duration = envois::releve_retours::HORIZON_DU_RELEVE_COMPLET;
+
 impl Options {
-    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours.
+    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur quatre-vingt-dix jours de retours au plus.
     pub fn entiere() -> Options {
         Options {
             sauvegarder: true,
             retours: true,
             signatures: true,
             filet: true,
-            jours: TRENTE_JOURS,
+            jours: QUATRE_VINGT_DIX_JOURS,
             racine_drive: sauvegarde::RACINE_DRIVE.to_string(),
             pas_avant: Duration::ZERO,
             veille: false,
@@ -248,6 +256,12 @@ impl Ouverture {
     /// `Ouverture.tout_va_bien`.
     pub(crate) fn tout_va_bien(&self) -> bool {
         self.incidents.is_empty() && self.manquants.is_empty()
+    }
+
+    /// Ce qu'une releve a a dire : ses incidents avec les incidents, ce qu'elle laisse a faire avec ce qui manque.
+    fn dire(&mut self, dit: envois::suites::ADire) {
+        self.incidents.extend(dit.incidents);
+        self.manquants.extend(dit.a_faire);
     }
 
     /// Un secret absent -- la phrase du terminal, gardee pour ne pas la redire dans la fenetre.
@@ -570,7 +584,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
     };
     // La ligne des retours dit ce que la releve a fait, si ELLE a joint net-entreprises -- le Drive qui ne repond pas ne
     // la tait pas ; une releve sans reseau, elle, n'a rien vu, et « aucun retour » serait faux.
-    let releve_passee = r.releve.as_ref().is_some_and(|rel| !rel.incidents.iter().any(|i| sauvegarde::hors_ligne(i)));
+    let releve_passee = r.releve.as_ref().is_some_and(|rel| !rel.plateforme_non_lue.iter().any(|i| sauvegarde::hors_ligne(i)));
     let retours = releve_passee.then(|| {
         if trouves > 0 {
             format!("{} retour(s), dont {} nouveau(x).", trouves, nouveaux)
@@ -832,7 +846,10 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
             dire_l_etape(ctx, "Compagnie fictive : retours des dépôts joués…")?;
             let mut releve = Releve::vide();
             match crate::gestes::releve::rattacher_simulation(ctx) {
-                Ok((n, a_faire)) => (releve.rattaches, releve.a_faire) = (n, a_faire),
+                Ok((n, dit)) => {
+                    releve.rattaches = n;
+                    r.dire(dit);
+                }
                 // L'ouverture ne doit pas tomber.
                 Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
             }
@@ -981,11 +998,10 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
-            let fin = socle::temps::secondes();
-            match fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
-                Ok(rel) => {
-                    r.incidents.extend(rel.incidents.iter().cloned());
-                    r.manquants.extend(rel.a_faire.iter().cloned());
+            let plage = envois::releve_retours::PlageDuReleve::Complete { jusqu_a: opt.jours };
+            match crate::gestes::releve::relever_retours(ctx, plage, false, envois::releve_retours::EnvironnementNetEntreprises::Production, client_dsn, envois::releve_retours::CanalDesRetours::Dsn) {
+                Ok((rel, dit)) => {
+                    r.dire(dit);
                     r.releve = Some(rel);
                 }
                 Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
@@ -1014,16 +1030,16 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "Urssaf : retours des DPAE…")?;
-            let fin = socle::temps::secondes();
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = fin.moins_duree(opt.jours).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
-                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
-                None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
-            });
+            let plage = envois::releve_retours::PlageDuReleve::Complete { jusqu_a: opt.jours };
+            let rel = match client_dpae {
+                Some(c) => crate::gestes::releve::relever_retours(ctx, plage, false, envois::releve_retours::EnvironnementNetEntreprises::Production, Some(c), envois::releve_retours::CanalDesRetours::Dpae),
+                None => crate::gestes::releve::relever_retours_dpae(ctx, plage, false, None),
+            };
             match rel {
-                Ok(rel) => {
-                    r.incidents.extend(rel.incidents.iter().cloned());
+                Ok((rel, dit)) => {
+                    r.dire(dit);
                     r.releve_dpae = Some(rel);
                 }
                 Err(e) => r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &e))),

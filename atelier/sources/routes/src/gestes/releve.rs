@@ -4,55 +4,51 @@
 
 use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
-use envois::releve_retours::{CanalDesRetours, Client, EnvironnementNetEntreprises, Releve};
-use envois::suites::Suites;
+use envois::releve_retours::{CanalDesRetours, Client, EnvironnementNetEntreprises, PlageDuReleve, Releve};
+use envois::suites::{ADire, Suites};
 use socle::echec::R;
-use socle::paris::Moment;
 use compagnie::consultation::{client_dpae, client_dsn};
 
-/// Fait les suites d'une releve et les reporte sur elle.
-fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
+/// Fait les suites d'une releve : la releve, et tout ce qu'elle a a dire, ce qui a empeche de lire la plate-forme en
+/// tete.
+fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<(Releve, ADire)> {
     let faites = crate::gestes::suites::faire(ctx, s);
-    let mut releve = r?;
-    let faites = faites?;
-    releve.a_faire.extend(faites.a_faire);
-    releve.incidents.extend(faites.incidents);
-    Ok(releve)
+    let releve = r?;
+    let mut dit = ADire { incidents: releve.plateforme_non_lue.clone(), a_faire: Vec::new() };
+    dit.etendre(faites?);
+    Ok((releve, dit))
 }
 
 /// Releve les retours du canal `canal` (la DPAE avec un client Urssaf donne) : `client` donne, ou celui de la
 /// consultation net-entreprises.
-pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, environnement: EnvironnementNetEntreprises, client: Option<Client>, canal: CanalDesRetours) -> R<Releve> {
+pub fn relever_retours(ctx: &Contexte, plage: PlageDuReleve, tout: bool, environnement: EnvironnementNetEntreprises, client: Option<Client>, canal: CanalDesRetours) -> R<(Releve, ADire)> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
         Some(c) => Some(c),
         None => client_dsn(ctx, b, environnement)?,
     };
     let mut s = Suites::default();
-    let r = envois::releve_retours::relever_retours(ctx, b, debut, fin, tout, client, canal, None, &mut s);
+    let r = envois::releve_retours::relever_retours(ctx, b, plage, tout, client, canal, &mut s);
     avec_les_suites(ctx, r, s)
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, flux: Option<&envois::retours::IdDeFlux>) -> R<Releve> {
+pub fn relever_retours_dpae(ctx: &Contexte, plage: PlageDuReleve, tout: bool, flux: Option<&envois::retours::IdDeFlux>) -> R<(Releve, ADire)> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();
-    let r = envois::releve_retours::relever_retours_dpae(ctx, b, debut, fin, tout, flux, client, &mut s);
+    let r = envois::releve_retours::relever_retours_dpae(ctx, b, plage, tout, flux, client, &mut s);
     avec_les_suites(ctx, r, s)
 }
 
-/// Le simulateur rend les retours des depots joues qui les attendent : le nombre de depots
-/// completes, et ce que le rangement des AER jouees laisse a faire (une attestation que la paie ne confirme pas, un nom
-/// qu'aucune fiche ne porte). Un rangement qui echoue est un refus.
-pub fn rattacher_simulation(ctx: &Contexte) -> R<(usize, Vec<String>)> {
+/// Le simulateur rend les retours des depots joues qui les attendent : le nombre de depots completes, et ce que leurs
+/// suites ont a dire (une attestation que la paie ne confirme pas, un nom qu'aucune fiche ne porte, un rangement qui
+/// echoue).
+pub fn rattacher_simulation(ctx: &Contexte) -> R<(usize, ADire)> {
     let mut s = Suites::default();
     let n = envois::releve_retours::rattacher_simulation(ctx, &mut s);
     let faites = crate::gestes::suites::faire(ctx, s)?;
-    if let Some(i) = faites.incidents.into_iter().next() {
-        return Err(socle::echec::refus(i));
-    }
-    Ok((n?, faites.a_faire))
+    Ok((n?, faites))
 }
 
 /// La plate-forme relevee avant l'ordre d'un essai de mensuelle (`envois::ordre_signalements::relever_la_plateforme`), ses
@@ -66,7 +62,7 @@ pub(crate) fn relever_avant_l_ordre(ctx: &Contexte, branchement: envois::branche
 }
 
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui
-/// de la consultation net-entreprises.
+/// de la consultation net-entreprises. Ce que la releve et ses suites ont a dire part avec ses avertissements.
 pub(crate) fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<OrdreConnu> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = match client {
@@ -75,6 +71,8 @@ pub(crate) fn dernier_ordre_connu(ctx: &Contexte, client: Option<Client>) -> R<O
     };
     let mut s = Suites::default();
     let r = envois::ordre_signalements::dernier_ordre_connu(ctx, b, client, &mut s);
-    crate::gestes::suites::faire(ctx, s)?;
-    r
+    let faites = crate::gestes::suites::faire(ctx, s)?;
+    let mut connu = r?;
+    connu.avertissements.extend(faites.phrases());
+    Ok(connu)
 }
