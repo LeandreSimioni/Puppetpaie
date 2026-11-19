@@ -1160,10 +1160,11 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
     }
     mois.sort_by(|a, b| b.0.cmp(&a.0));
     // Une fiche entreprise incomplete (effectif, echeance) n'empeche pas la page de s'ouvrir : la liste nue, et pourquoi
-    // le bilan des mois ne se fait pas.
+    // le bilan des mois ne se fait pas. Une panne (le disque, une piece illisible) remonte.
     Ok(match bilan_des_mois(m, ctx, &mois) {
         Ok(b) => (b, None),
-        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(*nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
+        Err(e) if e.dit_un_manque() => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(*nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
+        Err(e) => return Err(e),
     })
 }
 

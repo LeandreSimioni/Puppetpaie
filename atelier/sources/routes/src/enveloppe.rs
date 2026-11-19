@@ -9,9 +9,9 @@
 //! - rendue : `{"ok": true, "ecrit": …, "resultat": {"phrase": "…", …}}` ;
 //! - refusee : `{"ok": false, "ecrit": …, "refus": {"classe": "Manque", "phrase": "…", "corriger": "…", "a_part": {…}}}`.
 //!
-//! `ecrit` dit que la route a ecrit ou engage : une route dont la fiche ecrit ou engage, qui a rendu ; un refus n'ecrit
-//! rien, sauf un envoi coupe en route, dont les premiers courriels sont partis (`Classe::CourrielAvecAvertissement` : ce
-//! qui est parti s'est ecrit). L'ecran oublie alors ce qu'il a lu. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
+//! `ecrit` dit ce qui a change dans la compagnie et que la page doit relire : une route dont la fiche ecrit ou engage,
+//! qui a rendu ; et toute route qui a ecrit au journal des envois, meme en refusant (un envoi qui echoue note sa
+//! tentative, `ligne_d_envoi::noter_echec_d_envoi`). L'ecran oublie alors ce qu'il a lu. La `classe` d'un refus est un mot du logiciel (`socle::echec::Classe`), absente pour un refus ordinaire ;
 //! `corriger`, ce que la fiche de la route dit de corriger pour cette classe, quand elle le dit ; `a_part`, ce que le
 //! refus porte hors de sa phrase (un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche : `socle::echec::APart`).
 //!
@@ -478,19 +478,23 @@ impl<'de> Deserialize<'de> for Reponse {
 }
 
 impl Reponse {
-    /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus.
+    /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus, sans rien ecrire au journal des envois (une
+    /// lecture que le moteur garde, une route tombee).
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
-        Reponse::issue_de(route, rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)))
+        Reponse::du_geste(route, rendu, false)
     }
 
-    /// L'issue `issue` de la route `route`, et si elle a ecrit : une route qui ecrit ou engage, qui a rendu ; un refus
-    /// n'ecrit rien, sauf celui d'un envoi coupe en route, dont les premiers courriels sont partis et notes.
-    fn issue_de(route: Route, issue: Result<Objet, Refus>) -> Reponse {
-        let ecrit = super::est_une_ecriture(route)
-            && match &issue {
-                Ok(_) => true,
-                Err(r) => r.classe == Some(Classe::CourrielAvecAvertissement),
-            };
+    /// La reponse de la route `route` servie : ce qu'elle a rendu, ou son refus ; `au_journal`, si elle a ecrit au
+    /// journal des envois (`envois::journal::ecritures_du_fil`).
+    pub fn du_geste(route: Route, rendu: R<Rendu>, au_journal: bool) -> Reponse {
+        Reponse::issue_de(route, rendu.map(|r| r.objet).map_err(|e| Refus::de(Some(route), e)), au_journal)
+    }
+
+    /// L'issue `issue` de la route `route`, et si elle a ecrit (`ecrit`) : ce qui a change dans la compagnie et que la
+    /// page doit relire. Une route qui ecrit ou engage et qui a rendu ; toute route qui a ecrit au journal des envois
+    /// (`au_journal`), meme en refusant : un envoi qui echoue note sa tentative (`noter_echec_d_envoi`).
+    fn issue_de(route: Route, issue: Result<Objet, Refus>, au_journal: bool) -> Reponse {
+        let ecrit = au_journal || (super::est_une_ecriture(route) && issue.is_ok());
         Reponse { ecrit, issue }
     }
 
@@ -500,9 +504,10 @@ impl Reponse {
         Reponse { ecrit: false, issue: Err(refus) }
     }
 
-    /// Le refus `refus` de la route `route`, deja dit (la fenetre autour de la route, un refus qu'elle rend tel quel).
+    /// Le refus `refus` de la route `route`, deja dit (la fenetre autour de la route, un refus qu'elle rend tel quel) :
+    /// `ecrit` faux, la fenetre ne sachant rien du journal.
     pub fn refusee_par(route: Route, refus: Refus) -> Reponse {
-        Reponse::issue_de(route, Err(refus))
+        Reponse::issue_de(route, Err(refus), false)
     }
 
     /// La route a-t-elle rendu (et non refuse) ?

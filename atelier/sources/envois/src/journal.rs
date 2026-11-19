@@ -360,6 +360,7 @@ fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<IdDEnvoi, usize>
         let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&p).map_err(|e| socle::echec::du_disque(&p, &e))?;
         f.write_all(texte.as_bytes()).map_err(|e| socle::echec::du_disque(&p, &e))?;
     }
+    ECRITURES.with(|n| n.set(n.get() + 1));
     let meta = std::fs::metadata(&p).map_err(|e| socle::echec::du_disque(&p, &e))?;
     // Ce que le processus tient se replie de ce qu'il vient d'ecrire ; si un autre processus a ajoute entre la lecture
     // et l'ecriture, le journal se relira du fichier.
@@ -409,6 +410,14 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
 thread_local! {
     /// L'heure et l'origine que portent les lignes notees pendant `dater_pendant`.
     static DATE: std::cell::RefCell<Option<(Moment, String)>> = const { std::cell::RefCell::new(None) };
+    /// Les ecritures du journal faites sur ce fil (`ajouter`) : `ecritures_du_fil`.
+    static ECRITURES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// LE NOMBRE D'ECRITURES DU JOURNAL faites sur ce fil : une route compare celui d'avant et celui d'apres, et sait si
+/// elle a ecrit au journal, meme en refusant (un envoi coupe note sa tentative, `ligne_d_envoi::noter_echec_d_envoi`).
+pub fn ecritures_du_fil() -> u64 {
+    ECRITURES.with(std::cell::Cell::get)
 }
 
 /// `f`, chaque ligne qu'il note portant `quand` et `origine` : un pas que l'horloge d'une compagnie fictive joue a sa
