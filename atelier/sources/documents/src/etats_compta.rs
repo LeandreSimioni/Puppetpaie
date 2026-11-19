@@ -1372,6 +1372,8 @@ fn provision_d_une_annee_importee(
     };
     // Les salaries deja vus : un salarie se provisionne, ou se dit, une fois.
     let mut vus: BTreeSet<droit::contexte::IdSalarie> = a_provisionner.iter().map(|(c, ..)| c.clone()).collect();
+    // Les paies a dire que la phrase d'un salarie a deja nommees (`pas_comptee`) : elles ne se redisent pas.
+    let mut dites: Vec<engagement::importe::NatureADire> = Vec::new();
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
@@ -1399,6 +1401,7 @@ fn provision_d_une_annee_importee(
         let manquent = lecture.a_dire_de(&cle, du.max(premier_importe), m)?;
         if !manquent.is_empty() {
             avert.push(pas_comptee(&cle, &manquent));
+            dites.extend(manquent);
             sans_compteur += 1;
             continue;
         }
@@ -1438,10 +1441,11 @@ fn provision_d_une_annee_importee(
         let manquent = lecture.a_dire_de(cle, m, m)?;
         if !manquent.is_empty() {
             avert.push(pas_comptee(cle, &manquent));
+            dites.extend(manquent);
             sans_compteur += 1;
         }
     }
-    avert.extend(lecture.avertissements());
+    avert.extend(lecture.a_dire().iter().filter(|a| !dites.contains(a)).map(engagement::importe::NatureADire::phrase));
     Ok(sans_compteur)
 }
 
@@ -1499,15 +1503,20 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     // Ce que l'ecriture de la provision porte : les indemnites, et les charges que le taux reel permet de calculer.
     let (mut indemnites, mut charges_dites) = (zero, zero);
     for (cle, contrat, nature, cpt) in a_provisionner {
+        // Le salarie, tel que l'ecran le nomme.
+        let qui = ctx.nomme(&cle);
         for a in &cpt.avertissements {
-            // Un avis du compteur nomme deja son salarie.
-            avert.push(if a.texte.starts_with(&format!("{} :", cle)) { a.texte.clone() } else { format!("{} : {}", cle, a.texte) });
+            // Un avis du compteur nomme deja son salarie, par sa cle : il se dit par son nom.
+            avert.push(match a.texte.strip_prefix(&format!("{} : ", cle)) {
+                Some(reste) => format!("{} : {}", qui, reste),
+                None => format!("{} : {}", qui, a.texte),
+            });
         }
         let (dixieme, maintien, retenu, regle) = match &cpt.indemnite {
             Some(i) => (i.dixieme, i.maintien, i.retenu, i.regle.to_string()),
             None => {
                 if cpt.solde < Jours::ZERO {
-                    avert.push(format!("{} : compteur négatif ({} jours) — des congés pris par anticipation ; aucune dette, et une avance à régler.", cle, sans_zero::dit(cpt.solde.au_demi_superieur())));
+                    avert.push(format!("{} : compteur négatif ({} jours) — des congés pris par anticipation ; aucune dette, et une avance à régler.", qui, sans_zero::dit(cpt.solde.au_demi_superieur())));
                 }
                 (zero, zero, zero, String::new())
             }
@@ -1522,12 +1531,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         match (taux, n) {
             _ if !manquent.is_empty() => avert.push(format!(
                 "{} : sa paie reprise de {} n'est pas comptée, la nature de son contrat reste à dire — le taux des charges patronales ne se lit pas sans elle, la colonne reste vide.",
-                cle,
+                qui,
                 manquent.iter().map(|a| a.mois.libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ")
             )),
             (Some(_), _) => {}
-            (None, 0) => avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle)),
-            (None, _) => avert.push(format!("{} : ses bulletins des douze derniers mois ne portent aucun brut — le taux des charges patronales ne se lit pas, la colonne reste vide.", cle)),
+            (None, 0) => avert.push(format!("{} : aucun bulletin de PuppetPaie sur les douze derniers mois — le taux des charges patronales ne se lit pas, la colonne reste vide.", qui)),
+            (None, _) => avert.push(format!("{} : ses bulletins des douze derniers mois ne portent aucun brut — le taux des charges patronales ne se lit pas, la colonne reste vide.", qui)),
         }
         let charges = taux.map(|t| retenu.fois_taux(t).au_centime());
         indemnites += retenu;

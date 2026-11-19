@@ -340,8 +340,7 @@ pub fn calculee(racine: &Path, imp: &Importe, mois: Mois) -> R<crate::calcul::Pa
 }
 
 /// Les paies de l'engagement importe `imp` que ce moteur refait : chacune avec son mois, la nature du contrat et le
-/// nombre de jours travailles que les pieces comptent pour le mois (`Importe::activite_du_mois` : le contrat atteste qui
-/// tient dans le mois, sinon la paie du mois, que son bulletin ou sa DSN dit). UN CONTRAT DONT LA NATURE RESTE A DIRE
+/// nombre de jours travailles que les pieces comptent pour le mois (`Importe::activite_du_mois`, la seule regle). UN CONTRAT DONT LA NATURE RESTE A DIRE
 /// (sans `nature`, celui d'un permanent : `import::nature`) n'en a aucune : une nature ne se devine pas (regle 6) ; ses
 /// paies se refont une fois sa nature dite.
 fn saisies_refaites(imp: &Importe) -> Vec<(Mois, &PaieVersee, NatureDeContrat, Option<socle::grandeurs::Jours>)> {

@@ -289,7 +289,12 @@ impl<'a> Lecture<'a> {
     /// CE QUE L'ETAT DIT DES PAIES QU'IL N'A PAS COMPTEES : une phrase par paie reprise des mois lus dont la nature du
     /// contrat reste a dire (`engagement::importe::NatureADire::phrase`). L'etat repond avec le reste.
     pub fn avertissements(&self) -> Vec<String> {
-        self.a_dire.iter().map(engagement::importe::NatureADire::phrase).collect()
+        self.a_dire().iter().map(engagement::importe::NatureADire::phrase).collect()
+    }
+
+    /// Les paies reprises des mois lus dont la nature du contrat reste a dire.
+    pub fn a_dire(&self) -> &[engagement::importe::NatureADire] {
+        &self.a_dire
     }
 
     /// LES PAIES REPRISES DU SALARIE `cle` QUI NE SE RANGENT PAS, de `du` a `au` (ces mois sont lus) : un calcul de ce
