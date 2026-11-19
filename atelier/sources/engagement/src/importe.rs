@@ -999,9 +999,40 @@ pub fn empreinte_de(reprises: &[PaieReprise]) -> socle::fichiers::Empreinte {
     socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&reprises).as_bytes())
 }
 
-/// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<PaieImportee>> {
-    du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)).map(|i| i.paie(ctx, mois)).collect()
+/// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois, et
+/// celles qui ne s'y rangent pas encore (`NatureADire`). REGARDER N'EST JAMAIS REFUSE (« Le logiciel est doux ») : un
+/// contrat repris dont la nature reste a dire ne ferme pas la lecture des autres ; ce qui lit les paies du mois les range
+/// et dit, sur ce contrat-la, ce qui lui manque.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<(Vec<PaieImportee>, Vec<NatureADire>)> {
+    let (mut rangees, mut a_dire) = (Vec::new(), Vec::new());
+    for i in du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)) {
+        match i.a_dire() {
+            true => a_dire.push(NatureADire { mois, qui: crate::etats::qui_de(ctx, &i.objet) }),
+            false => rangees.push(i.paie(ctx, mois)?),
+        }
+    }
+    Ok((rangees, a_dire))
+}
+
+/// UNE PAIE REPRISE QUI NE SE RANGE PAS ENCORE : celle de `mois` d'un contrat dont la nature reste a dire
+/// (`Importe::a_dire`). Une nature ne se devine pas (regle 6) : ce qui a ete verse ne se range sous aucune
+/// (`Importe::nature_rangee`), et ce qui lit les paies du mois la dit sur ce contrat (`phrase`), sans refuser les autres.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NatureADire {
+    pub mois: Mois,
+    /// Le contrat, tel qu'une phrase le nomme (`etats::qui_de`).
+    pub qui: String,
+}
+
+impl NatureADire {
+    /// Ce que la lecture en dit.
+    pub fn phrase(&self) -> String {
+        format!(
+            "{} : sa paie reprise de {} n'est pas comptée, la nature de ce contrat reste à dire (Configuration, « Reprendre l'historique »).",
+            self.qui,
+            self.mois.libelle(socle::mois::Graphie::Accentuee)
+        )
+    }
 }
 
 /// Tous les engagements importes, fichier par fichier.

@@ -234,6 +234,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if !sans_bulletin.is_empty() {
         avert.push(format!("Paies reprises de la seule DSN, sans leur bulletin, hors de l'état : {}.", mois_dits(&sans_bulletin)));
     }
+    avert.extend(lecture.avertissements());
     for (libelle, (mois, total)) in &non_rattachees {
         avert.push(format!("Ligne « {} » des bulletins repris ({}) : la lecture de l'import ne la rattache à aucune cotisation, hors de l'état ({}).", libelle, mois_dits(mois), socle::texte::euros(*total)));
     }
@@ -286,7 +287,8 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
     for &m in &p.mois {
-        let paies = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
+        let (paies, a_dire) = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
+        avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
         if paies.is_empty() {
             sans.push(m.to_string());
         } else {

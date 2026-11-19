@@ -534,11 +534,14 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, gar
 /// (`validees_du_mois`), puis celle de chaque engagement importe paye ce mois (`importe::paies_du_mois` : ce que les
 /// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye ; rien ne se
 /// calcule. Ce qui part (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Vec<PaieDuMois>> {
+/// Une paie reprise d'un contrat dont la nature reste a dire n'y est pas : elle se rend a part (`importe::NatureADire`),
+/// et l'etat qui lit le mois la dit sans refuser le reste.
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<(Vec<PaieDuMois>, Vec<crate::importe::NatureADire>)> {
     let mut paies: Vec<PaieDuMois> =
         validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).map(PaieDuMois::Validee).collect();
-    paies.extend(crate::importe::paies_du_mois(ctx, mois)?.into_iter().map(PaieDuMois::Importee));
-    Ok(paies)
+    let (importees, a_dire) = crate::importe::paies_du_mois(ctx, mois)?;
+    paies.extend(importees.into_iter().map(PaieDuMois::Importee));
+    Ok((paies, a_dire))
 }
 
 /// UNE PAIE DU MOIS, CE QUE LIT UN ETAT : la paie ecrite d'un engagement valide, ou celle d'un engagement importe, que

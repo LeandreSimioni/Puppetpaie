@@ -273,7 +273,9 @@ fn ecritures_de(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &
     let (plan, origine) = crate::plan_comptable::plan(ctx)?;
     let mut out = Vec::new();
     for &m in &p.mois {
-        out.extend(ecritures_du_mois(ctx, m, &plan, departs)?);
+        let (ecritures, non_portees) = ecritures_du_mois(ctx, m, &plan, departs)?;
+        out.extend(ecritures);
+        avert.extend(non_portees);
     }
     if !socle::fichiers::existe_lu(&crate::plan_comptable::PLAN_COMPTABLE.dans(&ctx.racine))? {
         avert.push("Plan comptable : celui livré avec le logiciel, à faire valider par le comptable (config/plan-comptable.json pour le remplacer).".to_string());
@@ -1155,8 +1157,9 @@ pub fn trop_longs(ctx: &Contexte, format: FormatDExport, departs: &engagement::d
     // celui de son export : il se dit ici aussi.
     let mut ecr = Vec::new();
     let periode = Periode::nouvelle(ctx, None, None, true, false)?.mois;
+    // Les libelles des seules ecritures fabriquees : une paie reprise qu'elles ne portent pas n'a pas de libelle ici.
     for &m in &periode {
-        ecr.extend(ecritures_du_mois(ctx, m, &plan, departs)?);
+        ecr.extend(ecritures_du_mois(ctx, m, &plan, departs)?.0);
     }
     let env = envoi(ctx, &plan, &periode, None, format)?;
     fabriquer(&ec, &ecr, &env)?;
@@ -1404,6 +1407,7 @@ fn provision_d_une_annee_importee(
         let provision = engagement::conges::provision_du_compteur(cpt, m, salaire.pour_une_unite()).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
+    avert.extend(lecture.avertissements());
     Ok(sans_compteur)
 }
 
@@ -1599,7 +1603,12 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut ecartees = false;
     for m in p.mois.clone() {
         let paies = match engagement::etats::paies_du_mois(ctx, m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
-            Ok(paies) => paies,
+            Ok((paies, a_dire)) => {
+                // Une paie reprise dont la nature reste a dire ne se compte pas : le total est incomplet, et l'etat la nomme.
+                ecartees |= !a_dire.is_empty();
+                avert.extend(a_dire.iter().map(engagement::importe::NatureADire::phrase));
+                paies
+            }
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
                 ecartees = true;
