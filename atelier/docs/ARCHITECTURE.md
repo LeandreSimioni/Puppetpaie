@@ -2617,8 +2617,10 @@ lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
 défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
 mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
-certificat CS (`paie_du_contrat_entier`) retire le planning des lignes :
-chaque mois a payé le sien.
+certificat CS (`paie_du_contrat_entier`) est le même engagement sur les
+lignes de tous ses mois (`Engagement::sur_tout_le_contrat` : ses termes, sa
+nature, ses bornes) ; il retire le planning des lignes : chaque mois a payé
+le sien.
 
 Le barème et le SMIC (`engagement::calcul`) sont ceux de `fin_periode`, pas de
 `fin` : un contrat de décembre à février se paie en décembre au barème de
