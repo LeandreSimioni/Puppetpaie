@@ -570,6 +570,14 @@ impl ContratAtteste {
     }
 }
 
+/// LA NATURE D'UN ENGAGEMENT IMPORTE, sur sa carte et ses pieces : celle qui a ete dite (la carte), sinon celle que la
+/// piece du contrat atteste, sinon le contrat d'usage que la derniere DSN deposee qui declare une de ses paies declare
+/// (`PaieVersee::nature`) ; `None` : elle reste a dire. La seule regle, que lisent `Importe::nature` et ce qui ecrit la
+/// nature dite (`routes::importation::nature`).
+pub fn nature_de(carte: &Carte, pieces: &Pieces) -> Option<NatureDeContrat> {
+    carte.nature.or_else(|| pieces.contrat.as_ref().and_then(|c| c.nature)).or_else(|| pieces.paies.values().rev().find_map(|p| p.nature))
+}
+
 // ------------------------------------------------------------------ l'engagement importe
 
 /// Un engagement importe : l'engagement tel qu'il est ecrit, ses pieces avec lui.
@@ -686,7 +694,7 @@ impl Importe {
     /// La nature dite (l'engagement) ou attestee (la piece), sinon le contrat d'usage que la derniere DSN deposee qui
     /// declare une de ses paies declare (`PaieVersee::nature`) ; `None` : rien ne la porte.
     fn nature_dite(&self) -> Option<NatureDeContrat> {
-        self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature)).or_else(|| self.paies().values().rev().find_map(|p| p.nature))
+        nature_de(self.carte(), self.pieces())
     }
 
     /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`ContratAtteste::nature`), et personne ne l'a

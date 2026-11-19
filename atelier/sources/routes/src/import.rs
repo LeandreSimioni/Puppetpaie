@@ -76,10 +76,10 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::ImportationNature,
-        geste: "Dire la nature des contrats repris d'un permanent, qu'aucune pièce ne dit.",
+        geste: "Dire la nature des contrats repris qu'aucune pièce ne dit.",
         charge: &[
             SALARIE,
-            Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "la nature d'un contrat de permanent (cdi, cdd…)", avance: false },
+            Champ { nom: "nature", libelle: Affiche::new("Nature du contrat"), forme: Forme::Texte, sens: "une nature que ses pièces permettent (cdi, cdd, cddu_spectacle…)", avance: false },
             Champ { nom: "debut", libelle: Affiche::new("Début"), forme: Forme::Date, sens: "le contrat court encore : son début", avance: true },
             Champ { nom: "fin", libelle: Affiche::new("Terme"), forme: Forme::Date, sens: "son terme, s'il en a un", avance: true },
             Champ { nom: "numero", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "son numéro, tel que la DSN de l'ancien logiciel l'a déclaré", avance: true },
