@@ -2599,7 +2599,8 @@ fabrication décide par elles des rubriques qu'une version a retirées (`06.003`
 tables P27V01 sont relevées des classeurs 2027.1.2 de net-entreprises (fiches
 3357 et 3358) par `moteur-atelier extraire usages` et `moteur-atelier extraire formats` (`atelier/src/extraire/`).
 La part patronale de la CET se déclare en `146` en P26V01 et en `148` en P27V01,
-sous la base 78 du `131` (type 23), à l'Urssaf (fiche net-entreprises 2556 ;
+sous la base 78 du `131` qui la porte (type 23 d'un cadre intermittent ; 03, avec la tranche 2, d'un permanent : la CET
+« entièrement sous l'assiette déplafonnée »), à l'Urssaf (fiche net-entreprises 2556 ;
 `cotisation_cet_patronale` de la donnée). Le code APE de la fiche entreprise se
 saisit en NAF rév. 2 ou en NAF 2025 (`logiciel/donnees/naf-base.json`, relevé
 de l'INSEE) ; un fichier P27V01 refuse un code NAF rév. 2 et dit vers quels codes

@@ -4034,8 +4034,7 @@
           "base": "t1_mensuelle",
           "base78": "t1_mensuelle",
           "lignes": [
-            "retraite_t1",
-            "cet"
+            "retraite_t1"
           ],
           "source": {
             "sources": [
@@ -4066,7 +4065,7 @@
             ],
             "raisonnement": "Comme n. 56."
           },
-          "note": "Le 131 de la T1 d'un permanent : retraite, CEG et CET.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale, et la CET quand elle est due (ligne `cet`, cadre ou non). La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
+          "note": "Le 131 de la T1 d'un permanent : retraite et CEG.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale. La CET se declare avec la tranche 2, sous l'assiette deplafonnee. La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
         },
         {
           "bloc78": "03",
@@ -4075,7 +4074,8 @@
           "base": "t2_mensuelle",
           "base78": "brut",
           "lignes": [
-            "retraite_t2"
+            "retraite_t2",
+            "cet"
           ],
           "source": {
             "sources": [
@@ -4090,11 +4090,23 @@
                 "emetteur": "agirc_arrco",
                 "article": "aide DSN CT2025, 6.3.2",
                 "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+                "emetteur": "agirc_arrco",
+                "article": "aide DSN CT2026, 6.3.2, remarque sur la CET (l. 1175-1178)",
+                "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
+              },
+              {
+                "fichier": "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2556-agirc-arrco-fiabilisation-20260708.txt",
+                "emetteur": "net_entreprises",
+                "article": "fiche 2556, code 148 (l. 85)",
+                "citation": "En 2027, le montant de CET est à déclarer entièrement sous l'assiette déplafonnée"
               }
             ],
-            "raisonnement": "Comme n. 56."
+            "raisonnement": "Comme n. 56. La CET d'un permanent (ligne `cet`) se declare toute sous l'assiette deplafonnee (03), avec la tranche 2 : la premiere des deux options d'Agirc-Arrco pour le 131 (CT2026, l. 1175-1178), celle aussi de la part patronale (146 en 2026, fiche 2556 l. 505-507), et la seule du 148 de 2027 (l. 85) ; la part patronale se declare sous la base 78 du 131 (`dsn::parts_patronales_agirc_arrco`)."
           },
-          "note": "Le 131 de la T2 d'un permanent.\nAgirc-Arrco tranche 2 : 14,57 + 9,72. Nulle tant que le salaire ne depasse pas le plafond de Securite sociale du mois. A CONFIRMER AU DEPOT DE TEST : deux blocs 78 de code 23 sous le meme versement, un par tranche."
+          "note": "Le 131 de la T2 d'un permanent, et sa CET.\nAgirc-Arrco tranche 2 : 14,57 + 9,72, et la CET 0,21 + 0,14 quand elle est due. Nulle tant que le salaire ne depasse pas le plafond de Securite sociale du mois. A CONFIRMER AU DEPOT DE TEST : deux blocs 78 de code 23 sous le meme versement, un par tranche."
         },
         {
           "bloc78": "31",
