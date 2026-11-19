@@ -194,15 +194,15 @@ impl<'a> Reperes<'a> {
 /// A quel point deux pieces disent le meme contrat, de la plus sure a la moins sure (`meme_contrat`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Proximite {
-    /// Le meme numero de contrat, ou les memes dates.
-    Exacte,
+    MemesDates,
+    MemeNumero,
     MemeDebut,
     /// Les dates de la piece tiennent dans le contrat declare.
     Dedans,
 }
 
 /// LE MEME CONTRAT (Léandre, 19/11/2026 : « il faut faire simple ») : deux pieces du meme salarie disent le meme contrat
-/// quand elles portent le meme numero de contrat ; sinon quand elles ont les memes dates, le meme debut, ou quand les
+/// quand elles ont les memes dates ; sinon quand elles portent le meme numero de contrat, le meme debut, ou quand les
 /// dates de la piece tiennent dans le contrat que la DSN declare (`declare`) : le bulletin imprime la periode de sa
 /// paie, la DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`). Deux numeros d'objet
 /// differents : deux contrats. La seule regle, que lisent l'apercu (la paie que complete une page de bulletin :
@@ -212,13 +212,15 @@ pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite
     if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) {
         return None;
     }
-    if piece.numero.is_some() && piece.numero == declare.numero {
-        return Some(Proximite::Exacte);
+    let dates = piece.dates.zip(declare.dates);
+    if dates.is_some_and(|(a, d)| a == d) {
+        return Some(Proximite::MemesDates);
     }
-    let (Some(a), Some(d)) = (piece.dates, declare.dates) else { return None };
-    if a == d {
-        Some(Proximite::Exacte)
-    } else if a.debut() == d.debut() {
+    if piece.numero.is_some() && piece.numero == declare.numero {
+        return Some(Proximite::MemeNumero);
+    }
+    let (a, d) = dates?;
+    if a.debut() == d.debut() {
         Some(Proximite::MemeDebut)
     } else if tient_dans(a, d) {
         Some(Proximite::Dedans)
@@ -228,11 +230,11 @@ pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite
 }
 
 /// LA PAIE DECLAREE QU'UNE PAIE DE BULLETIN DU MOIS `mois` COMPLETE, parmi celles du meme contrat (`proches`, avec leur
-/// mois et leur proximite) : celle d'un autre mois seulement aux memes dates ou au meme numero ; plusieurs, celles du
-/// meme mois, puis les plus sures. Une seule : c'est elle ; plusieurs, ou aucune apres ce tri, la page ne se rattache a
-/// rien. Le seul tri, que lisent l'apercu et `rapprocher`.
+/// mois et leur proximite) : celle d'un autre mois seulement aux memes dates ; plusieurs, celles du meme mois, puis les
+/// plus sures. Une seule : c'est elle ; plusieurs, ou aucune apres ce tri, la page ne se rattache a rien. Le seul tri,
+/// que lisent l'apercu et `rapprocher`.
 pub(crate) fn les_plus_proches<K>(mut proches: Vec<(Proximite, Mois, K)>, mois: Mois) -> Vec<K> {
-    proches.retain(|(p, m, _)| *m == mois || *p == Proximite::Exacte);
+    proches.retain(|(p, m, _)| *m == mois || *p == Proximite::MemesDates);
     if proches.len() > 1 {
         proches.retain(|(_, m, _)| *m == mois);
     }
@@ -351,7 +353,7 @@ fn engagements_importes(
                 let g = &groupes[i];
                 let c = g.contrat.as_ref().filter(|_| g.salarie == s)?;
                 if declaree_par_bulletin(&p) || permanent(c) {
-                    return (g.periode == dates).then_some((Proximite::Exacte, i));
+                    return (g.periode == dates).then_some((Proximite::MemesDates, i));
                 }
                 meme_contrat(Reperes::du_contrat(c, g.periode), Reperes::de_la_paie(&p)).map(|x| (x, i))
             })

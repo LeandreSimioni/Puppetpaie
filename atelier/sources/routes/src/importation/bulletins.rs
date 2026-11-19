@@ -1027,7 +1027,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let (numero, objet) = (l.b.contrat.as_deref().and_then(NumeroContrat::d_une_piece), objet_imprime(&l.b));
         let piece = Reperes { dates: Some(l.b.periode.into()), numero: numero.as_ref(), objet: objet.as_ref() };
         let mut proches: Vec<(Proximite, Mois, (Mois, CleDePaieVersee, Cible))> =
-            index.get(&(l.nir.clone(), l.b.periode)).into_iter().flatten().map(|c| (Proximite::Exacte, c.0, c.clone())).collect();
+            index.get(&(l.nir.clone(), l.b.periode)).into_iter().flatten().map(|c| (Proximite::MemesDates, c.0, c.clone())).collect();
         for (nir, mois, dates, numero, objet, contrat, cible) in &declarees {
             let declare = Reperes { dates: *dates, numero: numero.as_ref(), objet: objet.as_ref() };
             if let Some(p) = meme_contrat(piece, declare).filter(|_| *nir == l.nir) {

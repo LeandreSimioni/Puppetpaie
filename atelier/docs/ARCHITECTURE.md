@@ -2592,8 +2592,9 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   `PaieDuMois::activite`).
 - **Deux pièces, le même contrat : la DSN vaut** (Léandre, 19/11/2026 : « ce qu'on déclare, c'est ce qui est valable
   pour France Travail » ; « a priori, ça n'existe pas ») : deux pièces du même salarié disent le même contrat quand
-  elles portent le même numéro de contrat, sinon quand elles ont les mêmes dates, le même début, ou quand la période de
-  l'une tient dans le contrat que la DSN déclare (le bulletin d'un mois d'un CDDU sur deux mois) ; deux numéros d'objet
+  elles ont les mêmes dates, sinon quand elles portent le même numéro de contrat, le même début, ou quand la période de
+  l'une tient dans le contrat que la DSN déclare (le bulletin d'un mois d'un CDDU sur deux mois) ; une paie d'un autre
+  mois ne se complète qu'aux mêmes dates (`ecrite::les_plus_proches`) ; deux numéros d'objet
   différents, deux contrats (`importation::ecrite::meme_contrat`, que lisent la paie qu'une page de bulletin
   complète à l'aperçu, `importation::bulletins`, celle de l'écriture, `rapprocher`, et l'engagement,
   `engagements_importes` : l'aperçu et l'écriture lisant la même règle, un import rejoué ne trouve rien à faire). Un seul engagement, une seule paie par mois, aux dates de la DSN, quel que soit
