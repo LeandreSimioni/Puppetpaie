@@ -2001,13 +2001,9 @@
       "code81": "131",
       "org": null,
       "base": "t1_annuelle",
-      "taux": 11.04,
       "base78": "t1_annuelle",
-      "composants": [
-        4.45,
-        1.29,
-        4.44,
-        0.86
+      "lignes": [
+        "retraite_t1"
       ],
       "source": {
         "sources": [
@@ -2024,21 +2020,15 @@
             "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
           },
           {
-            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres Audiens 2025, p. 3, artistes intermittents non cadres, retraite T1 (4,44 salarial + 4,45 patronal)",
-            "citation": "T1 annuelle 4,44 % 4,45 %"
-          },
-          {
-            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres Audiens 2025, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-            "citation": "T1 annuelle 0,86 % 1,29 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1167)",
+            "citation": "montant des cotisations T1"
           }
         ],
-        "raisonnement": "La base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2025, l. 633 et 5155-5157) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1159-1168). Les taux sont ceux d'Audiens."
+        "raisonnement": "La base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2025, l. 633 et 5155-5157) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1159-1168), au « montant des cotisations T1 » (l. 1167) : celui que le bulletin a calculé, la somme de ses lignes `retraite_t1`, comme le 131 de la base 23 et celui d'un permanent."
       },
-      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLe 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel), aux quatre composants. Un cadre intermittent y declare sa tranche 1 journaliere et sa ligne (`par_categorie.cadre`, `131/43`).\nEn 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLe 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel), au montant de sa ligne `retraite_t1`. Un cadre intermittent y declare sa tranche 1 journaliere (`par_categorie.cadre`, `131/43`).\nEn 2025 la ligne `retraite_t1` est la somme de QUATRE parts arrondies separement (`composants_pat`, `composants_sal`) -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68), comme le 105 des DSN deposees de fevrier, mars, juin, juillet et aout 2025."
     }
   ],
   "majoration_chomage_cddu": {
@@ -3069,31 +3059,17 @@
           "code81": "131",
           "org": null,
           "base": "t1_annuelle",
-          "taux": 10.02,
           "base78": "t1_annuelle",
-          "composants": [
-            3.94,
-            1.29,
-            3.93,
-            0.86
+          "lignes": [
+            "retraite_t1"
           ],
           "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, techniciens intermittents non cadres, retraite T1 (3,93 salarial + 3,94 patronal)",
-                "citation": "T1 annuelle 3,93 % 3,94 %"
-              },
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-                "citation": "T1 annuelle 0,86 % 1,29 %"
-              }
-            ]
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1167)",
+            "citation": "montant des cotisations T1"
           },
-          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, aux quatre composants. En 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au montant de sa ligne `retraite_t1` (ses quatre parts arrondies separement, `composants_pat` et `composants_sal`)."
         }
       ],
       "note": "La section du technicien intermittent : taux de retraite complémentaire Audiens de sa population (Paramètres de l'année, p. 3), taux Urssaf de droit commun sans abattement (BOSS), prévoyance et Congés Spectacles d'Audiens, identiques à ceux de l'artiste.\nTaux pleins 2026 (13,00 et 5,25 : les taux reduits n'existent plus), ccn source (CASC-SVP 0,50), Agirc-Arrco techniciens (5,23 + 4,79), RGDU calculee contrat par contrat (D. 241-7) et declaree en 018 Urssaf, 018 France Travail et 106 (CTP 671). Non verifie sur un compte rendu : la repartition 2026 de la RGDU entre Urssaf, chomage et retraite (prorata des points de T). A lire sur le compte-rendu Urssaf de la premiere DSN avec un technicien.\nAnnexe 8 (techniciens, ouvriers et cadres du spectacle)\nChaque source se verifie des DEUX cotes. Audiens donne les artistes (4,45 + 1,29 = 5,74 patronale ; 4,44 + 0,86 = 5,30 salariale) : ce sont exactement les taux artistes de ce bareme, obtenus jadis par retro-ingenierie d'un bulletin. Et le BOSS donne 13,00 et 5,25, dont 70 % font 9,10 et 3,68, egalement les taux artistes. La section technicien n'est donc pas une reconstruction plausible : c'est la meme table, lue une fois avec abattement et une fois sans.\nS21.G00.40.002 et .003 sont des champs de fiche. Le << 204 >> de mai 2025 est l'affectation du second contrat du salarie dans le mois, pas un code annexe 8 ; la regle par versement le produit deja. Plus d'AEM depuis le 01/06/2026 (100 % DSN).\n`cotisations_dsn` : Meme structure de blocs que l'artiste (les blocs 02/03/04/07/23/27/31/43), avec les taux pleins : 049 FNAL 0,10 sur brut x 1,115 ; 074 + 102 = 3,45 + 1,80 = 5,25 AF et 075 + 907 = 7,00 + 6,00 = 13,00 maladie -- la DSN 2026 des artistes garde cette decomposition taux reduit / complement (074 2,42 + 102 1,26 ; 075 4,90 + 907 4,20), on la garde donc pour le technicien ; 130 et 128 identiques ; 040/048/041 chomage identiques (annexes 8 et 10 partagent le taux) ; 131 Agirc-Arrco 10,02 = 5,23 + 4,79 (Audiens 2026, techniciens non-cadres) ; 066 Conges Spectacles 15,5 ; 059 Thalie 0,42 (202) et prevoyance 1,23 (203), meme population ETAM que les artistes (fiche de parametrage Audiens). Un << 204 >> n'est pas un code annexe 8 : c'est l'affectation du DEUXIEME contrat du meme salarie dans le mois (202 pour le premier, 204 pour le second), la regle par versement.\nSection du technicien 2025 : taux reduits, reduction Fillon, vieillesse 2,02, prevoyance 1,16, CASC 0,40, pas de Thalie."
@@ -3401,9 +3377,6 @@
       ],
       "cotisations_dsn": {
         "131/43": {
-          "lignes": [
-            "retraite_t1"
-          ],
           "base78": "t1_journaliere",
           "source": {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
@@ -3411,7 +3384,7 @@
             "article": "Aide à la codification DSN CT2025, les bases assujetties (l. 633)",
             "citation": "L’assiette brute plafonnée correspond à la T1 à retenir."
           },
-          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1` (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue. L'Apec part en 132 (`cotisations_ajoutees`). Juin 2025 avait ete declare en 105 << y compris Apec >> : 32,27 = 32,07 de retraite + 0,20 d'Apec."
+          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1`, comme celui du corps (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; seule change la base 78 : la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue. L'Apec part en 132 (`cotisations_ajoutees`). Juin 2025 avait ete declare en 105 << y compris Apec >> : 32,27 = 32,07 de retraite + 0,20 d'Apec."
         },
         "059:202": {
           "taux": 1.74,

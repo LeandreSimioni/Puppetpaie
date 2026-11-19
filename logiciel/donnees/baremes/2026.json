@@ -1963,8 +1963,10 @@
       "code81": "131",
       "org": null,
       "base": "t1_annuelle",
-      "taux": 11.04,
       "base78": "t1_annuelle",
+      "lignes": [
+        "retraite_t1"
+      ],
       "source": {
         "sources": [
           {
@@ -1986,21 +1988,15 @@
             "citation": "Les cotisations sur la Tranche 1 à déclarer sous l’assiette plafonnée"
           },
           {
-            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres 2026, p. 3, artistes intermittents non cadres, retraite complémentaire T1 (4,44 salarial + 4,45 patronal)",
-            "citation": "T1 annuelle 4,44 % 4,45 %"
-          },
-          {
-            "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-            "citation": "T1 annuelle 0,86 % 1,29 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1162)",
+            "citation": "montant des cotisations T1"
           }
         ],
-        "raisonnement": "La base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2026, l. 635 et 5166-5168) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1153-1162 ; fiche 2556 l. 41), et sa part patronale, le 142, aussi (fiche 2556, l. 63). Les taux sont ceux d'Audiens."
+        "raisonnement": "La base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2026, l. 635 et 5166-5168) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1153-1162 ; fiche 2556 l. 41), au « montant des cotisations T1 » (l. 1162) : celui que le bulletin a calculé, la somme de ses lignes `retraite_t1`, comme le 131 de la base 23 et celui d'un permanent. Sa part patronale, le 142, s'y rattache aussi (fiche 2556, l. 63)."
       },
-      "note": "Le 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel) au taux, comme le montant que portaient les DSN deja deposees (la somme des lignes arrondies du bulletin en differe parfois d'un centime : 525 € donnent 30,14 + 27,83 = 57,97 contre 57,96 au taux). Un cadre intermittent y declare sa tranche 1 journaliere et sa ligne (`par_categorie.cadre`, `131/43`)."
+      "note": "Le 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel), au montant de sa ligne `retraite_t1`, chaque part arrondie separement (175 € : 10,05 + 9,28 = 19,33). Un cadre intermittent y declare sa tranche 1 journaliere (`par_categorie.cadre`, `131/43`)."
     }
   ],
   "majoration_chomage_cddu": {
@@ -3008,24 +3004,16 @@
           "code81": "131",
           "org": null,
           "base": "t1_annuelle",
-          "taux": 10.02,
           "base78": "t1_annuelle",
-          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au taux.",
+          "lignes": [
+            "retraite_t1"
+          ],
+          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au montant de sa ligne `retraite_t1`.",
           "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres 2026, p. 3, techniciens non cadres, retraite complémentaire T1 (3,93 salarial + 3,94 patronal)",
-                "citation": "T1 annuelle              3,93 %            3,94 %"
-              },
-              {
-                "fichier": "atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres 2026, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-                "citation": "T1 annuelle 0,86 % 1,29 %"
-              }
-            ]
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2026, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1162)",
+            "citation": "montant des cotisations T1"
           }
         }
       ],
@@ -3339,9 +3327,6 @@
       ],
       "cotisations_dsn": {
         "131/43": {
-          "lignes": [
-            "retraite_t1"
-          ],
           "base78": "t1_journaliere",
           "source": {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
@@ -3349,7 +3334,7 @@
             "article": "Aide à la codification DSN CT2026, les bases assujetties (l. 635)",
             "citation": "L’assiette brute plafonnée correspond à la T1 à retenir."
           },
-          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1` (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue (la ligne `cet` du corps lui est retiree). L'Apec part en 132 (`cotisations_ajoutees`)."
+          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1`, comme celui du corps (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; seule change la base 78 : la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue (la ligne `cet` du corps lui est retiree). L'Apec part en 132 (`cotisations_ajoutees`)."
         },
         "059:203": {
           "taux": 1.81,

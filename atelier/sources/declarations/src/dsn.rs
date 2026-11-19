@@ -899,7 +899,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         // un salarie paye sous le plafond n'a de 131 que sous l'assiette plafonnee, son assiette deplafonnee ne porte
         // que l'Apec) ; sa base 78 se declare, elle.
         let unifie = c.code81 == Some(AGIRC_ARRCO_UNIFIE);
-        let du_131 = if unifie { lignes_du_131(&bar, c)? } else { Vec::new() };
+        let du_131 = if unifie { lignes_du_131(c)? } else { Vec::new() };
         let au_bulletin = !unifie || du_131.iter().any(|id| p.lignes.iter().any(|x| x.est(id)));
         if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty() && au_bulletin) {
             l.montant = Some(somme_lignes(p, lignes, false));
@@ -1185,14 +1185,12 @@ fn parts_patronales_agirc_arrco(
     Ok(out)
 }
 
-/// LES LIGNES DU BULLETIN D'UN 131 : celles que la cotisation `c` nomme (`lignes`), ou, quand elle porte un taux, la
-/// ligne de retraite de meme assiette (`bareme::poser_t1`). Hors des lignes de retraite, refus : sa part patronale (142,
-/// 146), que l'Urssaf attend sous le meme versement (SIG-18), ne se lit que sur elles.
-fn lignes_du_131(pile: &Pile, c: &CotisationDsn) -> R<Vec<IdDeCotisation>> {
-    let ids: Vec<IdDeCotisation> = match c.lignes.as_ref().filter(|l| !l.is_empty()) {
-        Some(lignes) => lignes.clone(),
-        None => LIGNES_AGIRC_ARRCO.iter().filter(|id| pile.rubrique(id).is_some_and(|r| r.base == c.base)).cloned().collect(),
-    };
+/// LES LIGNES DU BULLETIN D'UN 131 : celles que la cotisation `c` nomme (`lignes`) ; tout 131 est le « montant des
+/// cotisations » de sa tranche que le bulletin a calcule (cahier Agirc-Arrco CT2026, 6.3.2, l. 1162 et 1167), la somme
+/// de ses lignes. Hors des lignes de retraite, ou sans ligne, refus : sa part patronale (142, 146), que l'Urssaf attend
+/// sous le meme versement (SIG-18), ne se lit que sur elles.
+fn lignes_du_131(c: &CotisationDsn) -> R<Vec<IdDeCotisation>> {
+    let ids: Vec<IdDeCotisation> = c.lignes.clone().unwrap_or_default();
     let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
     if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(id)) {
         return Err(refus!(
