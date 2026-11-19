@@ -4,8 +4,8 @@
 //!
 //! Tout se lit dans les engagements importes (`engagement::importe`) : les paies versees (le brut que la DSN deposee ou
 //! le bulletin dit), la fiche du salarie, le contrat atteste (numero, bornes, cachets, heures et jours). Un mois dont la
-//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), dont aucune DSN importee ne se lit (on ne
-//! sait pas : le dossier le dit), ou deja regularise (`config/casc-svp.json`), n'y entre pas.
+//! DSN importee porte deja la CASC-SVP (`importation::ecrite::lire_dsn_casc`), ou deja regularise
+//! (`config/casc-svp.json`), n'y entre pas.
 //!
 //! Le classeur du CASC-SVP se recree avec les colonnes du modele (`donnees/modeles/casc-svp-liste-nominative.xlsx`) :
 //! voir `liste_nominative_xlsx`.
@@ -315,9 +315,6 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
         avert.push(format!("Hors du dispositif CASC-SVP (article 4.22 B), donc hors du dossier : {}.", liste(&exemptes)));
     }
     let mut portees: Vec<Mois> = vec![];
-    // Les mois sans DSN importee, ou dont la DSN ne se lit pas : on ne sait pas si elle portait la CASC-SVP. Ils ne
-    // comptent pas, et le dossier les nomme (regle 1 : une piece qui ne se lit pas se met de cote, on le dit).
-    let mut inconnus: Vec<Mois> = vec![];
     let mut lues: Vec<(Mois, Vec<Versee>)> = vec![];
     let contrat_casc = base.dsn.contrat.clone();
     for &m in &candidats {
@@ -326,22 +323,15 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
             continue;
         }
         let dsn = crate::importation::ecrite::dsn_importee(ctx, m).map_err(|e| e.reclasser(Classe::Refuse))?;
-        match dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten() {
-            Some(true) => portees.push(m),
-            Some(false) => lues.push((m, paies)),
-            None => inconnus.push(m),
+        // Un mois sans DSN importee, ou dont la DSN ne se lit pas, ne la porte pas.
+        let porte = dsn.as_deref().map(|c| crate::importation::ecrite::lire_dsn_casc(c, &contrat_casc)).transpose()?.flatten().is_some_and(|porte| porte);
+        if porte {
+            portees.push(m);
+            continue;
         }
+        lues.push((m, paies));
     }
-    let sans_dsn_lisible = (!inconnus.is_empty()).then(|| {
-        format!(
-            "Aucune DSN importée lisible pour {} : on ne sait pas si la CASC-SVP y était déclarée, ces mois sont hors du dossier. Importer leur DSN pour les compter.",
-            liste(&inconnus)
-        )
-    });
     if lues.is_empty() {
-        if let Some(phrase) = sans_dsn_lisible {
-            return Ok(ARegulariser::Rien(phrase));
-        }
         if !faits.is_empty() {
             return Ok(ARegulariser::Rien(format!(
                 "Tout est regularise : {}. Les DSN suivantes portent la CASC-SVP elles-memes.",
@@ -361,7 +351,6 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<ARegulariser> {
     if !portees.is_empty() {
         avert.push(format!("La DSN porte deja la CASC-SVP, donc hors du dossier : {}.", liste(&portees)));
     }
-    avert.extend(sans_dsn_lisible);
 
     let mut par_mois: Vec<MoisReg> = vec![];
     let mut par_salarie: Vec<((Annee, Nir), SalarieReg)> = vec![];
