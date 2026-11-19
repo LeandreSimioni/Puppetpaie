@@ -352,11 +352,13 @@ struct Passe {
     salarie: IdSalarie,
     nom: String,
     periode: Periode,
+    /// Des cachets entiers ; des heures et des jours tels que les pieces les disent (la DSN : `151.67`), en nombre JSON,
+    /// entier quand ils le sont.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     heures: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     jours: Option<Jours>,
     titre: Option<String>,
     numero_objet: Option<NumeroObjetSpectacle>,

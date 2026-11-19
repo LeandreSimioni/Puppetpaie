@@ -83,14 +83,17 @@ pub enum Attestation {
 pub struct ContratAtteste {
     pub atteste_par: Attestation,
     pub numero_objet: Option<NumeroObjetSpectacle>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    /// Ses compteurs : des cachets entiers (`Cachets`) ; des heures et des jours qui peuvent ne pas l'etre (une paie
+    /// d'un permanent que le registre de l'import compte au mois porte les heures que sa DSN declare, `151.67` :
+    /// `import::attestes`), en nombre JSON, entier quand ils le sont.
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub heures: Option<Heures>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub jours: Option<Jours>,
     /// Les heures d'enseignement que les heures comptent (annexe 10).
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub heures_enseignement: Option<Heures>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,

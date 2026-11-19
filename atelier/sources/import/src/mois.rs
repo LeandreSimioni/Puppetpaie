@@ -341,11 +341,13 @@ pub struct CarteImportee {
     fin: Option<Jour>,
     periode: String,
     dates: Vec<Jour>,
+    /// L'activite du mois (`engagement::importe::activite_du_mois`) : des cachets entiers ; des heures et des jours tels
+    /// que la DSN les declare (`151.67`), en nombre JSON, entier quand ils le sont.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     cachets: Option<Cachets>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     heures: Option<Heures>,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     jours: Option<Jours>,
     montants: Montants,
     sources: Sources,
