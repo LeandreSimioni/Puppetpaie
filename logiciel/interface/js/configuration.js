@@ -507,6 +507,7 @@ function vueNaturesADire(liste) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
         ${echapper(x.dit)}
         ${x.en_cours_dit ? `<div class="note">${echapper(x.en_cours_dit)}</div>` : ""}
+        ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}
         <div class="e-contrat-champs" data-nature-cases${seule && seule.demande.length ? "" : " hidden"}>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
           `<span data-nature-case="${c}"${montre(c) ? "" : " hidden"}>${CASES[c](x)}</span>`).join("")}</div></div>
       <div class="rang-etat" style="display:flex;gap:6px;align-items:center">

@@ -65,7 +65,8 @@ fn demande(n: &droit::natures::Nature, en_cours: bool) -> Vec<Demande> {
 /// Les DSN reprises (le dossier de l'import), lues une fois par geste, a la premiere qui en a besoin.
 struct DsnReprises<'a> {
     racine: &'a Path,
-    lue: std::cell::OnceCell<import::dsn_aem::LectureDsn>,
+    /// Lues, ou la phrase qui dit pourquoi elles ne se relisent pas (un manque, pas une panne).
+    lue: std::cell::OnceCell<Result<import::dsn_aem::LectureDsn, socle::texte::Phrase>>,
 }
 
 impl<'a> DsnReprises<'a> {
@@ -73,69 +74,125 @@ impl<'a> DsnReprises<'a> {
         DsnReprises { racine, lue: std::cell::OnceCell::new() }
     }
 
-    fn lue(&self) -> R<&import::dsn_aem::LectureDsn> {
+    /// LA LECTURE REPOND (« Le logiciel est doux », comme `importation::identite::en_attente`) : une DSN reprise qui ne
+    /// se relit plus ne declare rien, et ce qu'elle declarait se demande ; seule l'erreur qui dit un manque
+    /// (`Echec::dit_un_manque`) le devient, une panne (le disque) remonte.
+    fn lue(&self) -> R<&Result<import::dsn_aem::LectureDsn, socle::texte::Phrase>> {
         if let Some(l) = self.lue.get() {
             return Ok(l);
         }
-        let l = import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(self.racine))?;
+        let l = match import::dsn_aem::lire_dsn(&import::mois::dossier_des_bulletins(self.racine)) {
+            Ok(l) => Ok(l),
+            Err(e) if e.dit_un_manque() => Err(socle::phrase!("Les DSN reprises ne se relisent pas : {} Ce qu'elles déclarent du contrat se demande donc.", e.phrase)),
+            Err(e) => return Err(e),
+        };
         Ok(self.lue.get_or_init(|| l))
     }
 }
 
-/// CE QUE LA DERNIERE DSN REPRISE D'UN SALARIE DECLARE DE SON CONTRAT, sa derniere paie declaree
-/// (`norme-dsn/texte/bloc-S21.G00.40.txt`) : la nature (S21.G00.40.007, celle du seul permanent qui porte ce code), le
-/// debut (.001), la fin s'il a un terme (.010), le numero (.009), la duree du travail en heures (.013), et le salaire du
-/// contrat, « la remuneration brute habituelle du salarie » (S21.G00.51, type 010 ; `bloc-S21.G00.51.txt`), d'un mois
-/// que la paie et le contrat couvrent entier (`Mesures::salaire_habituel_du_mois`, `couvre_le_mois`). Ce qu'elle ne
-/// declare pas est vide.
+/// LE CONTRAT A DIRE QUE LA DSN DECLARE, retrouve par ce qui l'identifie, comme `la_dsn_fait_foi` : le numero sous lequel
+/// une DSN deposee a declare une paie d'un contrat a dire du salarie (`CleDePaieVersee::numero_declare`, la paie que
+/// l'import a rattachee a sa DSN), au dernier mois ou elle en declare une. Ce mois-la, deux numeros (deux contrats a dire
+/// declares), ou aucun (aucune paie rattachee) : rien n'identifie le contrat, la DSN n'en declare rien.
+fn contrat_identifie<'i>(importes: &'i [Importe], salarie: &IdSalarie) -> Option<(socle::mois::Mois, &'i engagement::numeros::NumeroContrat)> {
+    let declares: Vec<(socle::mois::Mois, &engagement::numeros::NumeroContrat)> = importes
+        .iter()
+        .filter(|i| i.a_dire() && i.objet().carte().salarie.as_ref() == Some(salarie))
+        .flat_map(|i| i.paies().iter().filter_map(|(m, p)| Some((*m, p.contrat.numero_declare()?))))
+        .collect();
+    let dernier = declares.iter().map(|(m, _)| *m).max()?;
+    let mut du_dernier = declares.iter().filter(|(m, _)| *m == dernier).map(|(_, n)| *n);
+    let numero = du_dernier.next()?;
+    du_dernier.all(|n| n == numero).then_some((dernier, numero))
+}
+
+/// CE QUE LA DERNIERE DSN REPRISE D'UN SALARIE DECLARE DU CONTRAT A DIRE (`contrat_identifie`) : le contrat tel qu'elle
+/// le declare (`ContratDeclare`, `norme-dsn/texte/bloc-S21.G00.40.txt` : le debut .001, la fin s'il a un terme .010, le
+/// numero .009, la duree du travail .013), et ce qui en est propre ici : la nature (S21.G00.40.007, celle du seul
+/// permanent qui porte ce code) et le salaire du contrat, « la remuneration brute habituelle du salarie » (S21.G00.51,
+/// type 010 ; `bloc-S21.G00.51.txt`), d'un mois que la paie et le contrat couvrent entier
+/// (`Mesures::salaire_habituel_du_mois`, `couvre_le_mois`) ; sinon, pourquoi il ne s'y lit pas.
 struct DeclareParLaDsn {
+    contrat: declarations::dsn_lue::ContratDeclare,
     nature: Option<std::sync::Arc<droit::natures::Nature>>,
-    debut: Option<Jour>,
-    fin: Option<Jour>,
-    numero: engagement::numeros::NumeroContrat,
-    salaire: Option<socle::grandeurs::MontantUnitaire>,
-    quotite: Option<socle::grandeurs::Heures>,
+    salaire: Result<socle::grandeurs::MontantUnitaire, &'static str>,
 }
 
 impl DeclareParLaDsn {
-    /// Ce que la derniere DSN reprise du salarie `salarie` declare de son contrat ; rien quand sa fiche n'a pas de NIR (un
-    /// salarie ne se rattache a sa DSN que par lui) ou qu'aucune DSN reprise ne le declare.
-    fn de(dsn: &DsnReprises, ctx: &Contexte, salarie: &IdSalarie, permises: &[std::sync::Arc<droit::natures::Nature>]) -> R<Option<Self>> {
-        let Some(nir) = ctx.salaries.get(salarie).and_then(|f| f.nir.dite().cloned()) else { return Ok(None) };
-        let lecture = dsn.lue()?;
-        let Some(((mois, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_ref() == Some(&nir)).last() else { return Ok(None) };
-        let c = p.contrat.as_ref();
-        let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = match c.and_then(|c| c.nature_dsn.as_deref()) {
+    /// Ce que la derniere DSN reprise du salarie `salarie` declare du contrat a dire ; rien (`Ok(None)`) quand sa fiche
+    /// n'a pas de NIR (un salarie ne se rattache a sa DSN que par lui), que rien n'identifie le contrat, ou qu'aucune DSN
+    /// reprise ne le declare ; la phrase qui le dit (`Err`) quand les DSN reprises ne se relisent pas.
+    fn de(
+        dsn: &DsnReprises,
+        ctx: &Contexte,
+        importes: &[Importe],
+        salarie: &IdSalarie,
+        permises: &[std::sync::Arc<droit::natures::Nature>],
+    ) -> R<Result<Option<Self>, socle::texte::Phrase>> {
+        let Some(nir) = ctx.salaries.get(salarie).and_then(|f| f.nir.dite().cloned()) else { return Ok(Ok(None)) };
+        let Some((mois, numero)) = contrat_identifie(importes, salarie) else { return Ok(Ok(None)) };
+        let lecture = match dsn.lue()? {
+            Ok(l) => l,
+            Err(p) => return Ok(Err(p.clone())),
+        };
+        let Some(p) = lecture.paies.get(&(mois, Some(nir), numero.clone())) else { return Ok(Ok(None)) };
+        let Some(c) = p.contrat.as_ref() else { return Ok(Ok(None)) };
+        let du_code: Vec<&std::sync::Arc<droit::natures::Nature>> = match c.nature_dsn.as_deref() {
             Some(code) => permises.iter().filter(|n| n.code(droit::rubrique!("S21.G00.40.007")).as_deref() == Some(code)).collect(),
             None => Vec::new(),
         };
-        Ok(Some(DeclareParLaDsn {
+        // Le salaire de base d'un mois que la paie couvre entier, sous un contrat qui le couvre entier : le montant d'une
+        // unite, le mois. D'une partie du mois, il n'en est que la part : il se demande, et chaque cause se dit.
+        let salaire = if !couvre_le_mois(c, mois) {
+            Err(" Son salaire mensuel ne s'y lit pas : le contrat déclaré ne couvre pas tout le mois de sa dernière paie déclarée.")
+        } else {
+            match p.paie.mesures.salaire_habituel_du_mois(mois) {
+                Some(m) => Ok(m.pour_une_unite()),
+                None => Err(" Son salaire mensuel ne s'y lit pas : sa dernière paie déclarée ne le paie pas sur un mois entier, d'une seule ligne de salaire de base."),
+            }
+        };
+        Ok(Ok(Some(DeclareParLaDsn {
+            contrat: c.clone(),
             nature: match du_code.as_slice() {
                 [n] => Some(std::sync::Arc::clone(n)),
                 _ => None,
             },
-            debut: c.map(|c| c.periode.debut()),
-            fin: c.and_then(|c| c.periode.fin()),
-            numero: numero.clone(),
-            // Le salaire de base d'un mois que la paie couvre entier, sous un contrat qui le couvre entier : le montant
-            // d'une unite, le mois. D'une partie du mois, il n'en est que la part : il se demande.
-            salaire: p.paie.mesures.salaire_habituel_du_mois(*mois).filter(|_| c.is_some_and(|c| couvre_le_mois(c, *mois))).map(|m| m.pour_une_unite()),
-            // La duree d'un contrat au mois : la quotite que la DSN declare en heures.
-            quotite: match c.and_then(|c| c.quotite) {
-                Some(droit::natures::QuotiteDuContrat::Heures(h)) => Some(h),
-                Some(droit::natures::QuotiteDuContrat::Jours(_)) | None => None,
-            },
-        }))
+            salaire,
+        })))
+    }
+
+    fn debut(&self) -> Jour {
+        self.contrat.periode.debut()
+    }
+
+    fn fin(&self) -> Option<Jour> {
+        self.contrat.periode.fin()
+    }
+
+    fn numero(&self) -> Option<&engagement::numeros::NumeroContrat> {
+        self.contrat.numero.as_ref()
+    }
+
+    fn salaire(&self) -> Option<socle::grandeurs::MontantUnitaire> {
+        self.salaire.ok()
+    }
+
+    /// La duree d'un contrat au mois : la quotite que la DSN declare en heures.
+    fn quotite(&self) -> Option<socle::grandeurs::Heures> {
+        match self.contrat.quotite {
+            Some(droit::natures::QuotiteDuContrat::Heures(h)) => Some(h),
+            Some(droit::natures::QuotiteDuContrat::Jours(_)) | None => None,
+        }
     }
 
     /// La DSN declare-t-elle ce que la nature demande ?
     fn declare(&self, champ: Demande) -> bool {
         match champ {
-            Demande::Debut => self.debut.is_some(),
-            Demande::Fin => self.fin.is_some(),
-            Demande::Numero => true,
-            Demande::Salaire => self.salaire.is_some(),
-            Demande::Quotite => self.quotite.is_some(),
+            Demande::Debut => true,
+            Demande::Fin => self.fin().is_some(),
+            Demande::Numero => self.numero().is_some(),
+            Demande::Salaire => self.salaire().is_some(),
+            Demande::Quotite => self.quotite().is_some(),
         }
     }
 
@@ -145,17 +202,17 @@ impl DeclareParLaDsn {
         if let Some(n) = &self.nature {
             dit.push(n.libelle.clone());
         }
-        if let Some(d) = self.debut {
-            dit.push(format!("début le {}", d.jj_mm_aaaa()));
-        }
-        if let Some(f) = self.fin {
+        dit.push(format!("début le {}", self.debut().jj_mm_aaaa()));
+        if let Some(f) = self.fin() {
             dit.push(format!("fin le {}", f.jj_mm_aaaa()));
         }
-        dit.push(format!("numéro {}", self.numero));
-        if let Some(h) = self.quotite {
+        if let Some(n) = self.numero() {
+            dit.push(format!("numéro {}", n));
+        }
+        if let Some(h) = self.quotite() {
             dit.push(format!("{} heures par mois", socle::grandeurs::ecrit::sans_zero::dit(h)));
         }
-        if let Some(s) = self.salaire {
+        if let Some(s) = self.salaire() {
             dit.push(format!("salaire mensuel de {} €", socle::grandeurs::ecrit::sans_zero::dit(s)));
         }
         dit.join(", ")
@@ -258,7 +315,10 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
     let mut out = Vec::new();
     for (salarie, c) in par {
         let en_cours = c.en_cours;
-        let declare = DeclareParLaDsn::de(dsn, ctx, &salarie, &natures)?;
+        let (declare, dsn_non_relue) = match DeclareParLaDsn::de(dsn, ctx, &importes, &salarie, &natures)? {
+            Ok(d) => (d, None),
+            Err(p) => (None, Some(p)),
+        };
         let nature_declaree = declare.as_ref().and_then(|d| d.nature.as_ref()).map(|n| n.cle);
         let natures = natures
             .iter()
@@ -286,10 +346,9 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
                 au.libelle(socle::mois::Graphie::Accentuee),
                 suite.libelle(socle::mois::Graphie::Accentuee),
                 d.en_clair(),
-                if d.salaire.is_some() {
-                    ""
-                } else {
-                    " Son salaire mensuel ne s'y lit pas : sa dernière paie déclarée ne le paie pas sur un mois entier, d'une seule ligne de salaire de base."
+                match d.salaire {
+                    Ok(_) => "",
+                    Err(pourquoi) => pourquoi,
                 }
             )),
             (true, Some(au), Some(suite), None) => Some(format!(
@@ -315,6 +374,7 @@ fn a_dire_lu(ctx: &Contexte, dsn: &DsnReprises) -> R<Vec<ADire>> {
             natures,
             dit,
             en_cours_dit,
+            dsn_non_relue,
         });
     }
     Ok(out)
@@ -339,6 +399,9 @@ pub(crate) struct ADire {
     pub(crate) dit: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) en_cours_dit: Option<String>,
+    /// Les DSN reprises ne se relisent pas : ce qu'elles declarent du contrat se demande, et la phrase dit pourquoi.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) dsn_non_relue: Option<socle::texte::Phrase>,
 }
 
 /// Une nature de permanent qui peut se dire, et ce qu'elle demande d'un contrat qui court encore.
@@ -420,20 +483,29 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
         Demande::Salaire => charge.salaire.is_none(),
         Demande::Quotite => charge.quotite.is_none(),
     };
-    let declare = if champs.iter().any(tait) { DeclareParLaDsn::de(dsn, ctx, salarie, &permises)? } else { None };
+    // Des DSN reprises qui ne se relisent pas ne declarent rien : ce que la charge tait manque, et le refus dit pourquoi.
+    let (declare, non_relue) = if champs.iter().any(tait) {
+        match DeclareParLaDsn::de(dsn, ctx, &importes, salarie, &permises)? {
+            Ok(d) => (d, None),
+            Err(p) => (None, Some(p)),
+        }
+    } else {
+        (None, None)
+    };
     let d = declare.as_ref();
     let charge = ChargeNature {
         salarie: salarie.clone(),
         nature,
-        debut: charge.debut.or(d.and_then(|d| d.debut)),
-        fin: charge.fin.or(d.and_then(|d| d.fin)),
-        numero: charge.numero.clone().or(d.map(|d| d.numero.clone())),
-        salaire: charge.salaire.or(d.and_then(|d| d.salaire)),
-        quotite: charge.quotite.or(d.and_then(|d| d.quotite)),
+        debut: charge.debut.or(d.map(DeclareParLaDsn::debut)),
+        fin: charge.fin.or(d.and_then(DeclareParLaDsn::fin)),
+        numero: charge.numero.clone().or(d.and_then(|d| d.numero().cloned())),
+        salaire: charge.salaire.or(d.and_then(DeclareParLaDsn::salaire)),
+        quotite: charge.quotite.or(d.and_then(DeclareParLaDsn::quotite)),
     };
+    let pourquoi: String = non_relue.iter().map(|p| format!(" {}", p)).collect();
     for champ in champs {
         let manque = || {
-            refus(match champ {
+            refus(format!("{}{}", match champ {
                 Demande::Debut => format!("La date de début du contrat de {} manque (celle que la DSN déclare) : rien n'a été écrit.", qui),
                 Demande::Fin => format!("La date de fin prévue du contrat de {} manque : rien n'a été écrit.", qui),
                 Demande::Salaire => format!("Le salaire mensuel brut du contrat de {} manque (celui du contrat signé) : rien n'a été écrit.", qui),
@@ -442,7 +514,7 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
                     qui
                 ),
                 Demande::Numero => format!("Le numéro du contrat de {} manque (celui que la DSN déclare) : rien n'a été écrit.", qui),
-            })
+            }, pourquoi))
         };
         match champ {
             Demande::Debut | Demande::Fin => {
@@ -553,9 +625,11 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     let dsn = DsnReprises::de(racine);
     let permises = natures_permanentes()?;
     let mut faits = Vec::new();
-    for (salarie, x) in a_dire_par_salarie(&importes(racine)?)? {
+    let tous = importes(racine)?;
+    for (salarie, x) in a_dire_par_salarie(&tous)? {
         let ctx = Contexte::nouveau(racine, Some(*quand))?;
-        let Some(d) = DeclareParLaDsn::de(&dsn, &ctx, &salarie, &permises)? else { continue };
+        // Des DSN reprises qui ne se relisent pas ne disent rien : rien ne s'ecrit, `importation-etat` dit pourquoi.
+        let Ok(Some(d)) = DeclareParLaDsn::de(&dsn, &ctx, &tous, &salarie, &permises)? else { continue };
         let Some(nat) = d.nature.clone() else { continue };
         if !demande(&nat, x.en_cours).into_iter().all(|champ| d.declare(champ)) {
             continue;

@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
