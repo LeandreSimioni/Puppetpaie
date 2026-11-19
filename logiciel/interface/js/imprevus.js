@@ -94,21 +94,23 @@ function peindreDus(mois) {
   if (IMPREVUS) IMPREVUS.imprevus.filter((i) => i.genre === "arret").forEach((a) => {
     a.obligations.filter((o) => o.du).forEach((o) => rangs.push({ a, o }));
   });
+  // Une carte à corriger (`lecture` : « a_corriger ») n'a pas d'obligation : elle passe devant, avec ce qu'il faut y
+  // corriger.
   if (FINS) FINS.fins.forEach((f) => {
-    const o = f.obligation;
-    if (f.du) rangs.push({ f, o });
+    if (f.lecture === "a_corriger") rangs.push({ c: f });
+    else if (f.du) rangs.push({ f, o: f.obligation });
   });
   if (!rangs.length) { cible.innerHTML = ""; return; }
   // Le plus pressé d'abord (`priorite`, que le moteur donne), puis par date butoir ; une obligation sans butoir après
   // celles qui en ont un.
-  const rang = (x) => String(x.o.priorite) + (x.o.butoir || "9");
+  const rang = (x) => (x.c ? "" : String(x.o.priorite) + (x.o.butoir || "9"));
   rangs.sort((x, y) => rang(x).localeCompare(rang(y)));
   cible.innerHTML = `<h2>Ce qui est dû</h2>
-    ${rangs.map((x, k) => (x.a ? rangObligation(x.a, x.o, k) : rangFin(x.f, k))).join("")}`;
+    ${rangs.map((x, k) => (x.c ? rangACorriger(x.c, k) : x.a ? rangObligation(x.a, x.o, k) : rangFin(x.f, k))).join("")}`;
   rangs.forEach((x, k) => {
     const r = cible.querySelector(`[data-du="${k}"]`);
     if (x.a) brancherObligation(r, x.a, x.o);
-    else brancherFin(r, mois, x.f);
+    else if (x.f) brancherFin(r, mois, x.f);
   });
 }
 
@@ -183,8 +185,9 @@ function brancherObligation(r, a, o) {
 
 /* LA FIN D'UN CONTRAT QUI SE SIGNALE (nature 07), sous la même
    forme. Un CDI ou un CDD ordinaire qui se termine fait un signalement à
-   part ; un CDD d'usage à son terme (031) n'en fait pas — sa fin part dans la
-   mensuelle ; rompu avant (036, 037…), il se signale (fiche 2062). C'est le
+   part ; un CDD d'usage contenu dans le mois, à son terme (031), n'en fait pas —
+   sa fin part dans la mensuelle ; rompu avant (036, 037…), ou déjà déclaré le
+   mois d'avant, il se signale (fiche 2062). C'est le
    moteur qui tranche (`Nature::signalement_fctu`, route `fins-de-contrat`).
    Ce qui manque au signalement se tape dans la carte, sous « Contrat » :
    proposer un bouton qui refuse serait pire que ne rien proposer. Le
@@ -202,6 +205,14 @@ function rangFin(f, k) {
       ${f.a_saisir.map((m, i) => `<p><b>${echapper(m.case)}</b> : ${echapper(m.dire)}
         <button class="lien" data-case="${i}">La dire</button></p>`).join("")}</div>` : "",
     pourquoiDu(f.obligation));
+}
+
+/** Une fin sur une carte qui ne se lit plus : ce qu'il faut corriger, et où (`qui_dit`) ; aucun geste ne s'y propose. */
+function rangACorriger(f, k) {
+  const m = f.a_corriger;
+  return rangDu(k, pastilleDeLEtat(f.pastille), f.qui_dit, "", "", "",
+    `<div class="du-manque"><p><b>${echapper(m.case)}</b> : ${echapper(m.dire)}</p>
+      <p class="discret">${echapper(m.pourquoi)}</p></div>`, "");
 }
 
 function brancherFin(r, mois, f) {

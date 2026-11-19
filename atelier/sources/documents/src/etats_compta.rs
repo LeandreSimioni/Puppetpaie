@@ -1481,8 +1481,8 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(c) = charges {
             charges_dites += c;
         }
-        let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
-        let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
+        let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::manque(cle.as_str()))?;
+        let nom = fiche.nom.exigee("nom")?;
         let mut l = Ligne::nouvelle();
         l.t(C::Salarie, match fiche.prenom.portee() {
             Some(prenom) => format!("{} {}", nom, prenom),
@@ -1589,33 +1589,49 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             )))
         }
     };
-    let abatt = bar.abattement_csg;
     let zero = Montant::ZERO;
     // cle -> (salarie, brut, base, mois) dans l'ordre d'insertion
     let mut ordre: Vec<String> = Vec::new();
     let mut par: BTreeMap<String, (String, Montant, Montant, BTreeSet<Mois>)> = BTreeMap::new();
+    // Un mois qui ne se charge pas, une paie importee que l'etat ne compte pas (ses pieces taisent son brut ou son assiette
+    // de CSG) : le total est alors incomplet, et, la ou un montant se calcule (une part taxee dite), le calcul comme sa
+    // conclusion le redisent.
+    let mut ecartees = false;
     for m in p.mois.clone() {
         let paies = match engagement::etats::paies_du_mois(ctx, m, &d.departs).map_err(|x| x.reclasser(Classe::Refuse)) {
             Ok(paies) => paies,
             Err(e) if matches!(e.classe, Some(Classe::Refuse) | Some(Classe::Illisible) | Some(Classe::Manque) | Some(Classe::FichierAbsent)) => {
                 avert.push(format!("{} : le mois ne se charge pas ({}) — écarté.", m, e.phrase));
+                ecartees = true;
                 continue;
             }
             Err(e) => return Err(e),
         };
         for pa in &paies {
-            if pa.sans_paie() {
+            // Un engagement valide sans ligne ne paie rien. Une paie importee dont aucune ligne n'est rattachee a une
+            // rubrique a pourtant son brut : elle entre dans l'assiette, ou la taxe se refuse en la nommant.
+            if pa.importee().is_none() && pa.sans_paie() {
                 continue;
             }
             // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
             // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
-            // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
-            let (Some(brut), Some(base_csg)) = (pa.brut(), pa.base_csg()?) else {
-                return Err(refus(format!(
-                    "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
+            // taisent ne s'invente pas : cette paie ne se compte pas, l'etat la nomme avec ce qui lui manque et rend les
+            // autres (« Le logiciel est doux »).
+            let (brut, base) = (pa.brut(), crate::taxe_sur_les_salaires::assiette_d_une_paie_du_mois(pa, &bar)?);
+            let (Some(brut), Some(base)) = (brut, base) else {
+                let manque = match (brut, base) {
+                    (None, None) => "son brut ni son assiette de CSG",
+                    (None, Some(_)) => "son brut",
+                    _ => "son assiette de CSG",
+                };
+                ecartees = true;
+                avert.push(format!(
+                    "{}, {} : les pièces importées ne disent pas {} ; cette paie n'est pas comptée ci-dessous.",
                     crate::tableaux_export::qui_souple(pa.salarie()),
-                    m
-                )));
+                    m,
+                    manque
+                ));
+                continue;
             };
             let cle = pa.salarie().id.to_string();
             if !par.contains_key(&cle) {
@@ -1624,7 +1640,7 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             }
             let x = par.get_mut(&cle).expect("insere");
             x.1 += brut;
-            x.2 += crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(brut, base_csg, abatt);
+            x.2 += base;
             x.3.insert(m);
         }
     }
@@ -1651,6 +1667,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         Some(pct) => (pct, brute.fois_taux(pct).a_l_euro_au_pair()),
         None => (Taux::ZERO, zero),
     };
+    // Sans part taxee, rien ne se calcule : il n'y a pas de montant a dire incomplet.
+    let incomplet = ecartees && part.is_some();
     let franchise = ts.franchise;
     let limite = ts.decote_jusqu_a;
     let mut etapes = vec![format!(
@@ -1662,7 +1680,8 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut net;
     if due <= franchise {
         net = zero;
-        etapes.push(format!("franchise : {} n'excède pas {} — rien à payer", euros(due), euros(ts.franchise)));
+        let rien = if incomplet { "" } else { " — rien à payer" };
+        etapes.push(format!("franchise : {} n'excède pas {}{}", euros(due), euros(ts.franchise), rien));
     } else if due <= limite {
         let decote = (limite - due).fois(3).reparti_sur(4).a_l_euro_au_pair();
         net = due - decote;
@@ -1683,8 +1702,14 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         net = reste;
     }
     etapes.push(format!("taxe nette due : {}", euros(net)));
-    avert.push(format!("Calcul {} : {}.", annee, etapes.join(" ; ")));
-    if net.est_nul() {
+    let sans = if incomplet { ", sans ce qui est écarté ci-dessus" } else { "" };
+    avert.push(format!("Calcul {}{} : {}.", annee, sans, etapes.join(" ; ")));
+    if incomplet {
+        avert.push(format!(
+            "Taxe nette sans ce qui est écarté ci-dessus : {} ; ce qui est à payer et à déposer se lit quand plus rien n'est écarté.",
+            euros(net)
+        ));
+    } else if net.est_nul() {
         avert.push("Rien à payer : pas de relevé 2501-SD ni de déclaration 2502-SD à déposer (franchise ou abattement).".to_string());
     } else {
         let periodicite = if net < Montant::euros(4000) {

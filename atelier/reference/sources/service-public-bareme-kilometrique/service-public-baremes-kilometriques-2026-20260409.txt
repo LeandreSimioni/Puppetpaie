@@ -1,0 +1,148 @@
+  Impôts 2026
+
+Frais professionnels : les barèmes kilométriques 2026
+sont disponibles
+Publié le 09 avril 2026 - Service Public / Direction de l'information légale et administrative (Premier ministre)
+
+Vous utilisez votre véhicule personnel à des fins professionnelles ? Les frais occasionnés sont
+déductibles soit forfaitairement, soit en justifiant les frais réels engagés. Ceux-ci dépendent de
+barèmes établis pour les différents types de véhicules. La brochure fiscale 2026 vient de publier les
+barèmes kilométriques à appliquer cette année sur votre déclaration de revenus.
+
+Vous avez des frais de transport entre votre domicile et votre lieu de travail et vous utilisez votre véhicule personnel ?
+Pour votre déclaration de revenus, vous pouvez opter pour le régime des frais réels déductibles plutôt que pour la
+déduction forfaitaire de 10 %.
+
+En se basant sur les barèmes kilométriques définis par l’administration fiscale
+ (https://www.impots.gouv.fr/www2/fichiers/documentation/brochure/ir_2026/pdf_som/06-
+ traitements_salaires_85a114.pdf#Page=23)
+, les salariés et les entrepreneurs individuels soumis à l'impôt sur le revenu dans la catégorie des bénéfices non
+commerciaux (BNC) peuvent :
+
+  évaluer les dépenses qu’ils ont engagées durant leurs déplacements professionnels ;
+  et demander aux services fiscaux la déduction de leurs frais réels pour l’impôt 2026 sur les revenus 2025.
+Cette année, comme en 2025, les barèmes kilométriques ne sont pas revalorisés. Leur niveau a été augmenté pour la
+dernière fois en 2023 à hauteur de 5,4 %.
+
+  À savoir
+
+  Le barème kilométrique applicable aux voitures peut être utilisé si le salarié lui-même est propriétaire ou
+  copropriétaire, ou lorsque son conjoint ou l'un des membres du foyer fiscal est personnellement propriétaire.
+
+  Le barème applicable aux deux-roues est désormais utilisable que le salarié soit ou non propriétaire du véhicule. Si le
+  véhicule est loué, le loyer payé au titre de la location est couvert par le barème et ne peut donc pas être déduit en
+  plus de celui-ci.
+
+
+
+Quel est le barème kilométrique 2026 applicable aux voitures ?
+Tableau - Le barème kilométrique applicable aux voitures (thermiques, à hydrogène et hybrides) (en €)
+
+
+Puissance administrative       Distance (d) jusqu'à         Distance (d) de 5 001 km à        Distance (d) au-delà de
+(en CV)                        5 000 km                     20 000 km                         20 000 km
+3 CV et moins                  d x 0,529                    (d x 0,316) + 1 065               d x 0,370
+4 CV                           d x 0,606                    (d x 0,340) + 1 330               d x 0,407
+5 CV                           d x 0,636                    (d x 0,357) + 1 395               d x 0,427
+6 CV                           d x 0,665                    (d x 0,374) + 1 457               d x 0,447
+7 CV et plus                   d x 0,697                    (d x 0,394) + 1 515               d x 0,470
+
+
+
+Exemple :
+Pour 4 000 kilomètres parcourus à titre professionnel en 2025 avec un véhicule de 5 CV, vous pouvez faire état dans
+votre déclaration de revenus d’un montant de frais réels de 2 544 € (4 000 km x 0,636).
+
+ À noter
+
+ Pour les véhicules électriques, une majoration de 20 % est appliquée sur le barème applicable aux véhicules
+ thermiques, à hydrogène ou hybrides. Vous pouvez retrouver les barèmes applicables aux véhicules 100 % électriques
+ sur la brochure fiscale (https://www.impots.gouv.fr/www2/fichiers/documentation/brochure/ir_2026/accueil.htm) .
+
+
+
+Quel est le barème kilométrique 2026 applicable aux deux-roues ?
+Tableau - Le barème kilométrique applicable aux motocyclettes (en €)
+
+
+Puissance administrative        Distance (d) jusqu'à         Distance (d) de 3 001 km à        Distance (d) au-delà de
+(en CV)                         3 000 km                     6 000 km                          6 000 km
+1 ou 2 CV                       d x 0,395                    (d x 0,099) + 891                 d x 0,248
+3, 4 ou 5 CV                    d x 0,468                    (d x 0,082) + 1 158               d x 0,275
+plus de 5 CV                    d x 0,606                    (d x 0,079) + 1 583               d x 0,343
+
+
+
+Tableau - Le barème kilométrique applicable aux cyclomoteurs (en €)
+
+
+Distance (d) jusqu'à 3 000 km Distance (d) de 3 001 km à 6 000 km Distance (d) au-delà de 6 000 km
+d x 0,315                     (d x 0,079) + 711                     d x 0,198
+
+
+
+
+ Rappel
+
+ Les barèmes kilométriques prennent notamment en compte :
+
+    la dépréciation du véhicule au cours de l'année ;
+    les frais d’achat des casques et protections ;
+    les frais de réparation et d'entretien ;
+    les dépenses de pneumatiques ;
+    la consommation de carburant ;
+    les primes d'assurance.
+
+ Il est possible d'y ajouter (sous réserve de pouvoir présenter les justificatifs) :
+    les intérêts d'emprunt (en cas d'achat de véhicule à crédit) ;
+    les frais de péage ;
+    les frais de stationnement.
+
+ Les frais de déplacement calculés concernent en particulier le transport entre votre domicile et votre lieu de travail,
+ et le transport pendant vos heures de travail.
+
+
+
+  Voir aussi
+  Impôt sur le revenu - Frais professionnels : forfait ou frais réels (déduction)
+   (https://www.service-public.gouv.fr/particuliers/vosdroits/F1989)
+  Service Public
+  Le barème des frais de carburant pour la déclaration de revenus 2026 est disponible
+  (https://www.service-public.gouv.fr/particuliers/actualites/A16343)
+  Service Public
+  Déclaration des revenus de 2025 : quelle est la date limite dans votre département ?
+  (https://www.service-public.gouv.fr/particuliers/actualites/A15597)
+  Service Public
+  Les frais de transport (https://www.impots.gouv.fr/portail/particulier/frais-de-transport)
+  Direction générale des finances publiques (DGFiP)
+  L'utilisation du barème kilométrique est-elle obligatoire pour évaluer mes frais de transport domicile-travail
+  effectués en voiture ou en deux-roues ?
+  (https://www.impots.gouv.fr/portail/particulier/questions/lutilisation-du-bareme-kilometrique-est-elle-obligatoire-
+  pour-evaluer-mes)
+  Direction générale des finances publiques (DGFiP)
+
+
+
+
+  Agenda
+   DU 21 NOV. AU 27 NOV. 2026
+  Départ à la retraite
+  Des rendez-vous d’information gratuits dédiés à votre future retraite
+  (https://www.service-public.gouv.fr/particuliers/actualites/A15281)
+  Publié le 16 novembre 2026
+   À PARTIR DU 20 NOV. 2026
+  Consommation
+  Découverts bancaires : la réglementation change le 20 novembre
+  (https://www.service-public.gouv.fr/particuliers/actualites/A18569)
+  Publié le 12 novembre 2026
+   À PARTIR DU 1 NOV. 2026
+  Sécurité routière
+  Pneus hiver, chaînes : quelles sont vos obligations jusqu’au 31 mars 2027 ?
+  (https://www.service-public.gouv.fr/particuliers/actualites/A14389)
+  Publié le 20 octobre 2026
+
+
+
+Voir toutes les échéances (https://www.service-public.gouv.fr/particuliers/actualites/agenda)
+ Une remarque ? (https://www.service-public.gouv.fr/particuliers/actualites/A14686/remarque)
+

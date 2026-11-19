@@ -107,12 +107,14 @@ pub const PIECES: [Piece; 3] = [
 /// Quand l'AER DUE ce mois-ci (un intermittent dont le contrat finit dans le mois) n'est pas jointe. On le
 /// DIT, plutot que d'envoyer un message qui laisse croire que le dossier est complet ; on ne promet rien de la suite.
 /// Un salarie a qui aucune AER Cinema Spectacle n'est due (un permanent, un contrat d'usage qui continue le mois
-/// suivant) n'a pas cette phrase.
+/// suivant, un contrat d'usage deja declare arrive a son terme : `aer::due`) n'a pas cette phrase.
 pub const NOTE_SANS_AER: &str = "Ton attestation employeur France Travail (AER Cinéma Spectacle) de ce mois n'est pas \
     jointe : France Travail l'édite à partir de notre déclaration, et elle n'était pas encore revenue au moment de cet envoi.";
 
 /// Quand le contrat finit ce mois-ci et que sa fin se signale (`aer::attestation_fctu` : CDD, CDI, CDDU rompu avant son
-/// terme) : l'attestation employeur de droit commun revient de France Travail apres le signalement, a part de la paie.
+/// terme ou qu'une DSN mensuelle precedente a deja declare) : l'attestation employeur revient de France Travail apres le
+/// signalement, a part de la paie ; pour le contrat d'usage deja declare arrive a son terme, c'est la seule attendue
+/// (`aer::due`, une inference ecrite la).
 /// Le courriel le dit, pour que son absence ne laisse pas croire le dossier complet ; il ne promet rien.
 pub const NOTE_SANS_ATTESTATION_FCTU: &str = "Ton contrat se termine ce mois-ci : ton attestation employeur pour France \
     Travail n'est pas jointe à ce courriel. France Travail l'édite à partir du signalement de fin de contrat.";
@@ -316,18 +318,15 @@ pub fn preparer_avec(
             continue;
         }
         vus.push(cle.clone());
-        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-            c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
-        }
         let email = s.email.dite().filter(|e| !e.is_empty());
-        // Une fiche sans adresse : `Illisible`, la fiche ne dit pas ce que l'envoi demande.
+        // Une fiche sans adresse : un manque, la fiche ne dit pas ce que l'envoi demande.
         let Some(email) = email else {
             return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
-                texte(&s.nom, "nom")?,
-                texte(&s.prenom, "prenom")?
+                s.nom.ecrite("nom")?,
+                s.prenom.ecrite("prenom")?
             )
-            .reclasser(socle::echec::Classe::Illisible));
+            .reclasser(socle::echec::Classe::Manque));
         };
         let mut pieces = Vec::new();
         let mut libelles = Vec::new();
@@ -357,19 +356,19 @@ pub fn preparer_avec(
         if a_part_du("attestation_fctu") {
             notes.push(NOTE_SANS_ATTESTATION_FCTU);
         }
-        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| socle::fichiers::absent("nom_affichage"))?.to_string();
+        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage")?.to_string();
         let mut ft = recap_france_travail(&siennes, m, &nom_affichage)?;
         if !ft.is_empty() && !notes.is_empty() {
             ft = format!("\n{}", ft);
         }
-        let signataire = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
+        let signataire = ent.signataire.exigee("signataire")?;
         let nom_signataire = match signataire.prenom_affichage.remplie() {
             Some(v) => v.to_string(),
-            None => signataire.prenom.ecrite("prenom").map_err(|_| socle::fichiers::absent("prenom"))?.to_string(),
+            None => signataire.prenom.ecrite("prenom")?.to_string(),
         };
         let courts: Vec<&str> = presents.iter().map(|p| p.court).collect();
         let mut champs = vec![
-            ("prenom", texte(&s.prenom_affichage, "prenom_affichage")?),
+            ("prenom", s.prenom_affichage.ecrite("prenom_affichage")?.to_string()),
             ("mois", nom_mois.to_string()),
             ("de_mois", socle::texte::de(nom_mois)),
             ("annee", an.to_string()),
@@ -390,7 +389,7 @@ pub fn preparer_avec(
         };
         messages.push(Message {
             pour: cle,
-            nom: format!("{} {}", texte(&s.prenom_affichage, "prenom_affichage")?, texte(&s.nom, "nom")?),
+            nom: format!("{} {}", s.prenom_affichage.ecrite("prenom_affichage")?, s.nom.ecrite("nom")?),
             destinataire: email.to_lowercase(),
             sujet,
             corps,

@@ -235,8 +235,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
     // retraite complementaire (S21.G00.40.003), sinon le statut du spectacle (artiste, technicien).
-    let artiste = sal.statut.dite() == Some(&droit::fiche::Statut::Artiste);
-    let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, artiste)).transpose()?.flatten() {
+    let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, sal.statut.dite().copied())).transpose()?.flatten() {
         Some(c) => c,
         None => match sal.statut_categoriel_rc.dite() {
             Some(droit::fiche::StatutCategorielRc::Cadre | droit::fiche::StatutCategorielRc::Extension) => "cadre".to_string(),
@@ -544,4 +543,69 @@ pub struct ChampDeModele {
     pub obligatoire: bool,
     pub texte: Option<String>,
     pub si_dite: bool,
+}
+
+/// LE TITRE QUE PORTE UN CONTRAT OU UN AVENANT QUE PUPPETPAIE FABRIQUE : celui du modele de base de sa nature (`TITRE:`
+/// du fichier livre que nomme `contrat_ecrit` de `contrats-base.json`), que le PDF garde dans ses proprietes
+/// (`fabrique_pdf::modele::texte_brut` : le titre du fichier). Un modele special le garde aussi : il ne s'ecrit que
+/// paragraphe par paragraphe (`routes::modeles_contrat`). Chaque marqueur y tient la place d'un texte non vide (le
+/// numero d'un avenant) ; le reste se lit tel quel, sans son gras.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TitreDeContrat {
+    /// Les textes fixes du titre, un de plus que ses marqueurs : ce qui precede le premier, ce qui separe deux marqueurs,
+    /// ce qui suit le dernier.
+    textes: Vec<String>,
+}
+
+impl TitreDeContrat {
+    fn du_modele(titre: &str) -> TitreDeContrat {
+        let mut textes = Vec::new();
+        let (mut i, mut depuis) = (0, 0);
+        while let Some(k) = titre[i..].find("{{") {
+            let a = i + k;
+            match fabrique_pdf::modele::marqueur_en(titre, a) {
+                Some((_, fin)) => {
+                    textes.push(titre[depuis..a].replace("**", ""));
+                    (i, depuis) = (fin, fin);
+                }
+                None => i = a + 2,
+            }
+        }
+        textes.push(titre[depuis..].replace("**", ""));
+        TitreDeContrat { textes }
+    }
+
+    /// Le titre `titre` d'un PDF est-il celui-ci, chaque marqueur tenu par un texte non vide ?
+    pub fn est(&self, titre: &str) -> bool {
+        let Some((premier, suite)) = self.textes.split_first() else { return false };
+        let Some(mut reste) = titre.strip_prefix(premier.as_str()) else { return false };
+        for (n, t) in suite.iter().enumerate() {
+            let dernier = n + 1 == suite.len();
+            // Le marqueur tient au moins un caractere : le texte qui le suit se cherche apres lui.
+            let Some(c) = reste.chars().next() else { return false };
+            let apres = &reste[c.len_utf8()..];
+            let trouve = if dernier { apres.ends_with(t.as_str()).then(|| apres.len() - t.len()) } else { apres.find(t.as_str()) };
+            let Some(p) = trouve else { return false };
+            reste = &apres[p + t.len()..];
+        }
+        reste.is_empty()
+    }
+}
+
+/// Les titres des contrats et des avenants que PuppetPaie fabrique : ceux des modeles de base de chaque nature qui a un
+/// contrat ecrit. Un modele livre qui ne se lit pas, ou sans titre, se refuse : c'est un defaut du logiciel.
+pub fn titres_des_contrats() -> R<Vec<TitreDeContrat>> {
+    let mut titres: Vec<TitreDeContrat> = Vec::new();
+    for nat in natures::natures()?.iter() {
+        for nom in [nat.modele_contrat(), nat.modele_avenant()].into_iter().flatten() {
+            let chemin = socle::fichiers::dossier_du_code().join("modeles").join(&nom);
+            let lu = ModeleLu::du_fichier(&chemin)?.decoupe(&nom.to_string())?;
+            let titre = lu.titre.ok_or_else(|| erreur(Classe::Illisible, format!("Le modèle livré {} n'a pas de titre (TITRE:) : le signaler au développeur.", nom)))?;
+            let t = TitreDeContrat::du_modele(&titre);
+            if !titres.contains(&t) {
+                titres.push(t);
+            }
+        }
+    }
+    Ok(titres)
 }

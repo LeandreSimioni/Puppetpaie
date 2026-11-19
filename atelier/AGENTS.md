@@ -79,6 +79,11 @@ soient droits.
   un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
   diff à l'arrivée le tient). **Enregistrer sans rien changer n'est jamais une faute** (Léandre : « on peut appuyer sur
   enregistrer comme on veut ») : rien ne change, rien ne se refuse.
+- **Le logiciel est doux** (Léandre, 18/11/2026 : « l'idée, c'est une logique douce du logiciel ») : regarder n'est
+  jamais refusé. Une route qui lit (l'état de la compagnie, un mois, une fiche) répond toujours, avec ce qu'elle sait ;
+  ce qui manque se demande, sur la chose à qui il manque, et ne ferme rien d'autre. Seul refuse le calcul ou l'acte qui
+  a besoin de la valeur, pour lui seul : la case d'un salarié ne ferme pas le mois des autres, l'effectif qui manque ne
+  vide pas la page. Une route de lecture qui refuse en bloc est un bug bloquant, à corriger avant tout le reste.
 - **Reconstruire, c'est renommer et rebrancher** : vérifier une fois à la main sur une fictive, puis supprimer l'ancien
   et ses tests dans le même geste ; un lot finit avec moins de lignes et de tests (sauf une forme qu'on déclare). Rien
   sans l'aval de Léandre ; une pause demandée est une pause.
@@ -120,12 +125,21 @@ par son nom dans le JS : on lit sa fiche.
   qu'il cite existe.
 - Le rejeu des fictives (`cargo test --profile essais -p moteur --test rejeu`) suit chaque lot qui touche au calcul ou
   aux déclarations ; avant, un lot n'est pas « fini ».
-- **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause.
+- **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause. **Une lenteur se juge au geste, pas à
+  la durée d'un rejeu** : le rejeu d'une fictive joue une année de gestes par les vraies routes (l'Hôtel de Bourgogne,
+  503 routes en 18,6 s au binaire optimisé le 18/11/2026 : 37 ms par geste ; le Fil de Fer, 160 routes en 3 s).
 
 ## Une séance, par tickets
 
 - **Un ticket** : le reproduire, corriger dans le public, prouver, le **commenter** (quoi, où, comment le voir) et le
   **fermer** dès que c'est sur la branche : « ce sera réglé dans la nouvelle version ». Ce qu'il demande se fait entier.
+- **Un incident du filet se lit par sa machine** : `version` est le numéro de la dernière publication
+  (`logiciel/VERSION`), que porte aussi un binaire compilé des sources du jour : elle ne date pas le code. C'est
+  `moteur`, l'empreinte des sources compilées, qui distingue deux moteurs ; `installation`, `chemin` et `compagnie`
+  disent d'où il vient (un worktree, une fictive livrée dans `/tmp`, un poste). **Les incidents d'une fictive rejouée dans
+  le nuage partent au filet quand il se joint, et c'est voulu** : on voit le problème avant une compagnie (Léandre,
+  18/11/2026). Un incident
+  fermé qui revient ouvre un ticket neuf.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
   ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.
@@ -225,19 +239,32 @@ mot de passe ni le coffre. Si la clé du poste n'ouvre pas le coffre, le dire et
 
 **Un dépôt de test ne conserve rien et c'est le seul validateur du projet** (règle 10). Dans le nuage, un dépôt réel est
 mécaniquement impossible (`PreuveInsuffisante`) ; un dépôt de test passe par la compagnie d'essai si Léandre a posé
-`NET_ENTREPRISES_MOTDEPASSE` : un agent ne la pose, ne la modifie ni ne l'affiche.
+`NET_ENTREPRISES_MOTDEPASSE` : un agent ne la pose, ne la modifie ni ne l'affiche. De même pour l'identité du poste
+de l'éditeur, que le binaire de l'atelier porte au filet (`PUPPETPAIE_ATELIER_POSTE`, `PUPPETPAIE_ATELIER_CLE_POSTE`,
+`docs/COMPAGNIE-D-ESSAI.md`) : un agent ne la pose ni ne l'affiche, et ne lance ni `env`, ni `printenv`, ni `set`.
 
 ## Faire tourner le code dans le conteneur, et les tests
 
 **Pour reproduire, on ne compile pas** : `echo '{"route":"…","charge":{…}}' | PUPPETPAIE_CODE=logiciel/donnees
 atelier/sources/moteur/bin/linux/moteur route --racine <copie d'une fictive>` (ce binaire est celui de la dernière
-publication : il peut retarder sur les sources).
+publication : il peut retarder sur les sources). Le binaire de l'atelier (`atelier/sources/atelier/bin/linux/
+moteur-atelier`) sert les mêmes routes (`moteur-atelier route --racine R --date AAAA-MM-JJ`) et date du dernier lot qui
+l'a refait (`git log` de ce fichier le dit).
+
+**Rejouer une fictive sans rien compiler** : `moteur-atelier scenario rejouer <dossier de la fictive> <installation
+neuve> [--jusqu-au AAAA-MM-JJ]` (le dossier, pas son `gestes.jsonl`) ; la compagnie rejouée est dans
+`<installation>/fictives/ajoutee-…`, avec son journal. `scenario livrer` rend la fictive telle qu'elle se publie : sans
+journal des incidents. `PUPPETPAIE_INCIDENTS=<dossier>` déplace le journal des incidents dans
+`<dossier>/incidents.json`.
 
 **Une PR dont la suite est rouge ne se fusionne pas.** La suite complète (`cargo test --profile essais --no-fail-fast`,
 dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
 lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans `moteur`, le binaire concerné :
 `-p moteur --test routes`, `--test rejeu`…). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"` (les dossiers de travail
-des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
+des tests, ~3 Go). **Avant chaque PR aussi, la cible Windows se vérifie**, celle que les compagnies reçoivent :
+`cargo check --locked --target x86_64-pc-windows-gnu --manifest-path moteur/Cargo.toml`, puis celui de
+`fenetre/Cargo.toml` (dans un conteneur neuf : `rustup target add x86_64-pc-windows-gnu` et le paquet
+`gcc-mingw-w64-x86-64`) ; le flux « Tests » le fait aussi, lancé à la main (son passage `windows`). **Toute compilation et tout test de l'orchestrateur se lancent en arrière-plan**, sans exception
 (Léandre : « en tant qu'orchestrateur, il faut que tu sois disponible ») : il attend leur fin en parlant avec Léandre.
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,
@@ -247,6 +274,19 @@ des tests, ~3 Go). **Toute compilation et tout test de l'orchestrateur se lancen
   fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Les tests
   éprouvent des fonctionnements d'ensemble, ils ne rattrapent pas les erreurs des agents. Un test monte sa
   propre compagnie (`outils::dossier_de_test`).
+- **Le calcul de paie s'éprouve à l'import, sur les bulletins des compagnies** (Léandre, 18/11/2026 : « je compte sur
+  le fait que chaque compagnie qui arrive m'amène un nouveau bulletin ») : chaque paie importée d'un autre logiciel se
+  compare à ce que le moteur calcule, et chaque écart arrive chez l'éditeur en incident `ecarts_import`
+  (`docs/ARCHITECTURE.md`, « L'import », « Les écarts de calcul »). Le petit nombre de tests du calcul est voulu : on
+  ne le juge pas au compte des tests. Une paie « non comparée » (une case manque à la compagnie) n'a rien éprouvé.
+  La comparaison se fait à la fin d'un import, puis à la route `ouverture` ; un scénario qui ne joue pas `ouverture`
+  ne recompare rien.
+- **L'import prend ce qu'il y a à prendre, et on n'y passe pas des heures** (Léandre, 19/11/2026 : « On prend tout ce
+  qu'on a à prendre. Si les gens mettent tout leur bulletin de paye, ils ont tout l'historique. Et tant mieux pour
+  eux. Mais c'est pas qu'on va faire des tests et des trucs et passer des heures à ça. ») : ce qui est importé est le
+  passé d'un autre logiciel ; on ne le rejoue pas, on ne le redéclare pas. Un cas rare de l'import ne vaut ni un
+  refus de plus, ni un test, ni un second tour de relecture ; seul compte que l'import ne ferme rien (« Le logiciel
+  est doux ») et n'écrive rien de faux dans ce qui se paiera ici.
 - **Aucun test ne sort de la machine** : gardé par `moteur/tests/fichiers/garde_reseau.rs`.
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
   outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la

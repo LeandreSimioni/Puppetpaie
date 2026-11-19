@@ -19,7 +19,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
 use socle::ecriture::{CaseEcrite, EcritureDeCase};
-use socle::grandeurs::{Cachets, HeuresParUnite, Jours, Montant, Taux};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, Taux};
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -35,9 +35,9 @@ pub trait Lue<T> {
         self.dite().is_some()
     }
 
-    /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`).
+    /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`), un manque (`socle::fichiers::manque`).
     fn exigee(&self, cle: &str) -> R<&T> {
-        self.dite().ok_or_else(|| socle::fichiers::absent(cle))
+        self.dite().ok_or_else(|| socle::fichiers::manque(cle))
     }
 
     /// La meme case, son texte en `String` : pour une table de cases qui les ecrit toutes de meme.
@@ -438,13 +438,30 @@ texte_borne! {
 }
 
 impl CodePcsEse {
-    /// UN EMPLOI D'ARTISTE DU SPECTACLE : un code du groupe 354. Les rubriques deposees de ce groupe sont des artistes
-    /// « dans le cadre d'un spectacle vivant ou audiovisuel » (Insee, PCS-ESE 2017,
-    /// `atelier/reference/sources/insee-pcs-ese-2017-fiches/354b.txt`, `354c.txt`, `354e.txt`, l. 34-35), et les
-    /// « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34). INFERENCE : le groupe entier se lit ainsi ;
-    /// ses autres rubriques ne sont pas deposees.
-    pub fn est_un_artiste_du_spectacle(&self) -> bool {
-        self.0.starts_with("354")
+    /// LE STATUT QUE LA FICHE DEPOSEE DE CE CODE FONDE (Insee, PCS-ESE 2017, `atelier/reference/sources/
+    /// insee-pcs-ese-2017-fiches/`), et lui seul :
+    /// - artiste : 354b « Artistes de la musique et du chant », 354c « Artistes dramatiques », 354e « Artistes de la
+    ///   danse », chacun « dans le cadre d'un spectacle vivant ou audiovisuel » (`354b.txt`, `354c.txt`, `354e.txt`,
+    ///   l. 34-35), et 354f « Artistes du cirque et des spectacles divers » (`354f.txt`, l. 34-35) ;
+    /// - technicien : 465b « Assistants techniques de la réalisation des spectacles vivants et audiovisuels », « une
+    ///   activité d'ordre technique » (`465b.txt`, l. 34-35), et 637c « Ouvriers et techniciens des spectacles vivants
+    ///   et audiovisuels », à qui « il ne leur est pas reconnu une activité de création » (`637c.txt`, l. 34-36).
+    ///
+    /// Aucun pour tout autre code : 353b (on y range un « Producteur réalisateur », `353b.txt` l. 54) et 353c (« Cadres
+    /// artistiques et technico-artistiques », le réalisateur et le régisseur général ensemble, `353c.txt` l. 51-52) ne se
+    /// tranchent pas par leur code ; les autres fiches ne sont pas déposées. Le statut se dit alors sur la fiche.
+    ///
+    /// INFERENCE : une fiche Insee classe une profession, elle ne dit pas le statut d'artiste du spectacle ni celui de
+    /// technicien. Ranger tout un code d'un cote se lit dans l'intitule et la definition de la rubrique, que certains de
+    /// ses metiers ne suivent pas : 354b compte un « Accordeur » (`354b.txt` l. 54) ; 354f, un « Mannequin », un
+    /// « Présentateur », un « Animateur (radio, télévision » (`354f.txt` l. 47, 56, 59) ; 465b, des « tâches
+    /// technico-administratives » (`465b.txt` l. 35). Le statut ainsi pose se corrige sur la fiche.
+    pub fn statut_de_sa_fiche(&self) -> Option<Statut> {
+        match self.0.as_str() {
+            "354b" | "354c" | "354e" | "354f" => Some(Statut::Artiste),
+            "465b" | "637c" => Some(Statut::Technicien),
+            _ => None,
+        }
     }
 }
 
@@ -1612,6 +1629,7 @@ impl FormeDeCase for Taux {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for Jours {}
 impl FormeDeCase for HeuresParUnite {}
+impl FormeDeCase for Heures {}
 impl FormeDeCase for Cachets {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
@@ -1764,6 +1782,27 @@ pub enum Piece {
     /// L'exemption de la CASC-SVP : seule une compagnie d'au moins cinquante salaries dotee d'un comite l'ouvre
     /// (`ExemptionCasc`).
     Casc,
+    /// Les cumuls de l'annee qu'un ancien logiciel avait faits : seule une paie que la compagnie a reprise de lui
+    /// l'ouvre (`RepriseDesCumuls`).
+    Reprise,
+}
+
+/// LA CLE DE LA REPRISE DES CUMULS DE L'ANNEE (`ChampsSalarie::reprise`) : ce que l'ancien logiciel avait cumule dans
+/// l'annee civile et que ses pieces ne disent pas (la deduction forfaitaire specifique deja pratiquee, les heures
+/// supplementaires du contingent, le net des heures en plus deja exonere d'impot). Seule une paie reprise d'un ancien
+/// logiciel la donne (`engagement::importe`, la paie versee d'un engagement importe) : la paie d'ici ne la donne pas.
+///
+/// A la difference des autres cles, qui naissent ici d'un fait que `droit` tient, son constructeur est public : la paie
+/// reprise vit au-dessus de `droit` (`engagement::importe::PaieVersee`), et rien dans la structure ne reserve l'appel a
+/// celui qui la lit. L'appelle `engagement::importe::PaieVersee::reprise_des_cumuls`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RepriseDesCumuls(());
+
+impl RepriseDesCumuls {
+    /// La cle que donne une paie reprise d'un ancien logiciel.
+    pub fn d_une_paie_reprise() -> RepriseDesCumuls {
+        RepriseDesCumuls(())
+    }
 }
 
 /// LA CLE DE L'EXEMPTION DE LA CASC-SVP (`ChampsEntreprise::exemption_casc`) : « les entreprises d'au moins 50 salariés
@@ -1840,7 +1879,8 @@ impl<C: std::fmt::Debug, K> std::fmt::Debug for PieceFermee<C, K> {
 macro_rules! fiche {
     ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident, cles $cles:ident { $( $(#[$fm:meta])* $var:ident ( $t:ty ) = $ecrit:literal => $champ:ident ),* $(,)? }
      pieces $pcles:ident { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $ouvre:ty { $( $(#[$pfm:meta])* $pvar:ident ( $pt:ty ) = $pecrit:literal => $pchamp:ident ),* $(,)? } )* }
-     $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
+     $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?
+     $( memoires { $( $(#[$mm:meta])* $memoire:ident : $mt:ty = $mecrit:literal ),* $(,)? } )?) => {
         $( cases! { @ecrites $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt = $pecrit ),* } } )*
 
         cles! { $cles { $( $var = $ecrit, )* } }
@@ -2086,12 +2126,16 @@ macro_rules! fiche {
         }
 
         /// La fiche telle qu'ecrite : chaque champ une liste datee ; absente ou nulle, la fiche ne dit rien de ce champ.
+        /// Ses MEMOIRES (`memoires`) sont ce que le moteur garde de la fiche pour lui seul : ni des cases ni des notes, elles
+        /// ne sont pas de la fiche a un jour (`au`), et rien de ce qui lit une fiche (le calcul, la paie gardee, les
+        /// documents, les declarations, l'ecran) ne les voit.
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $datee {
             $( #[serde(rename = $ecrit, skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
             $( $( #[serde(rename = $pecrit, skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
+            $( $( $(#[$mm])* #[serde(rename = $mecrit, skip_serializing_if = "Option::is_none")] pub $memoire: Option<$mt>, )* )?
         }
 
         impl $datee {
@@ -2129,7 +2173,7 @@ macro_rules! fiche {
                 out
             }
 
-            /// Les listes et les notes que `autre` porte remplacent les siennes, entieres ; les autres restent.
+            /// Les listes, les notes et les memoires que `autre` porte remplacent les siennes, entieres ; les autres restent.
             pub fn par_dessus(&mut self, autre: &$datee) {
                 $( if autre.$champ.is_some() {
                     self.$champ = autre.$champ.clone();
@@ -2139,6 +2183,9 @@ macro_rules! fiche {
                 } )* )*
                 $( $( if autre.$note.is_some() {
                     self.$note = autre.$note.clone();
+                } )* )?
+                $( $( if autre.$memoire.is_some() {
+                    self.$memoire = autre.$memoire.clone();
                 } )* )?
             }
         }
@@ -2737,6 +2784,27 @@ cases! {
     }
 }
 
+cases! {
+    /// LES CUMULS DE L'ANNEE CIVILE A LA REPRISE : ce que l'ancien logiciel avait cumule pour le salarie dans l'annee de
+    /// `date`, avant elle (le premier jour du premier mois que PuppetPaie paie), et que ses pieces ne disent pas. Chaque
+    /// cumul a son texte, qui le compte par an : la deduction forfaitaire specifique deja pratiquee, en euros (arrete du
+    /// 4 septembre 2025, art. 9, I : « dans la limite de 7 600 euros par année civile », `atelier/reference/sources/dfs/`) ;
+    /// les heures supplementaires deja payees, que le contingent annuel et les paliers annuels d'une convention comptent
+    /// (C. trav. L3121-30 et L3121-33, `atelier/reference/sources/code-du-travail/articles-20261110.md`) ; le montant net
+    /// des heures en plus deja exonere d'impot sur le revenu (CGI 81 quater : « une limite annuelle égale à 7 500 € »,
+    /// `atelier/reference/sources/code-general-des-impots/articles-20261110.md`). Vide n'est pas zero : un cumul qu'un
+    /// calcul lit et que la reprise tait se refuse (`engagement::conges`).
+    pub struct CumulsReprise {
+        date: Jour,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        deduction_forfaitaire: Montant,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        heures_supplementaires: Heures,
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        heures_en_plus_exonerees: Montant,
+    }
+}
+
 impl FormeDeCase for crate::pas::TauxRecu {
     fn cases() -> Vec<Declaree> {
         vec![
@@ -2956,6 +3024,18 @@ fiche! {
             StagiaireCcneac(StagiaireCcneac) = "stagiaire_ccneac" => stagiaire_ccneac,
             Experimente3241(bool) = "experimente_3241" => experimente_3241,
         }
+        /// LA REPRISE DES CUMULS DE L'ANNEE : ce que seuls les cumuls de l'annee civile lisent, quand une paie de
+        /// l'annee a ete reprise d'un ancien logiciel. Seule une paie reprise l'ouvre (`RepriseDesCumuls`).
+        reprise: Reprise, CasesDeLaReprise, RepriseDesCumuls {
+            CumulsReprise(CumulsReprise) = "cumuls_reprise" => cumuls_reprise,
+        }
+    }
+    memoires {
+        /// LE MATRICULE DONNE D'OFFICE : celui que le moteur a donne a la fiche neuve dont personne n'avait dit le
+        /// matricule (le suivant, `routes::fiches::ecriture`, `completer_neuve`). Le matricule de la fiche est d'office
+        /// tant qu'il est celui-ci, de tout temps ; une DSN reprise qui arrive le remplace par celui qu'elle declare,
+        /// tant que rien d'ici ne l'a engage (`routes::importation::matricules`).
+        matricule_d_office: Matricule = "matricule_d_office",
     }
 }
 

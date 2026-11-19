@@ -70,6 +70,13 @@ Pages du PDF (le pied de page numérote 2 à 4 ; la page 1 n'a pas de numéro) :
   réunies sur une ligne : 5,30 / 5,74 = 4,44 + 0,86 / 4,45 + 1,29 pour un artiste ; 4,79 / 5,23 pour un technicien et
   pour la T1 journalière d'un cadre ; 4,01 / 6,01 et 9,72 / 14,57 (T2) pour un permanent ;
   `atelier/reference/sources/agirc-arrco/LISEZ-MOI.md` dit ce que le cahier technique Agirc-Arrco y ajoute.
+- Les plafonds annuels des intermittents non-cadres (p. 2, l. 66-74 : « ce sont les plafonds annuels qui doivent être
+  retenus, quelle que soit la durée du travail », 48 060 €, et ses trois exemples), leur tranche 2 et leur CET (p. 3,
+  « T2 annuelle », « T1 + T2 annuelles » ; p. 2, exemples 3 et 4 de la CET) : les lignes `retraite_t1`, `retraite_t2`
+  et `cet` du corps et de `par_statut.technicien`, sur `t1_annuelle`, `t2_annuelle`, `cet_annuelle`
+  (`droit::plafond::tranches_sous_le_plafond_annuel`). L'exemple 2 de la CET des permanents (l. 97-101 : rien de janvier
+  à novembre, la CET « sur la base de 50 600 € sur le bulletin de décembre ») dit le moment de la CET régularisée
+  (`droit::plafond::Regularisees`, `BasculeDeLaCet`).
 - La prévoyance des intermittents et le Fonds santé (p. 4) sont aussi dans `accord-interbranche-prevoyance-
   intermittents/` (l'accord lui-même), que la note `_source` de la ligne `prevoyance` du barème cite.
 

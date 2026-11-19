@@ -176,7 +176,9 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
     // Ce que la compagnie porte (les engagements, leurs paies, les imprevus) se lit une fois par geste (`socle::forme::geste`).
     let _geste = socle::forme::geste();
     compagnie::incidents::brancher_l_engagement();
+    let journal_avant = envois::journal::ecritures_du_fil();
     let rendu = servir(o, route, charge).map_err(|e| case_nommee(route, e));
+    let au_journal = envois::journal::ecritures_du_fil() != journal_avant;
     // Ce que la route rend, reussite ou refus, est ce que l'ecran lit : ses phrases passent ici (`phrase_a_sa_place`).
     let racine = crate::service::compagnie_nommee(o).then(|| crate::service::racine_de(o));
     if let (Ok(v), Some(r)) = (&rendu, &racine) {
@@ -184,7 +186,7 @@ pub(crate) fn servir_la_route(o: &Options, route: Route, charge: &Charge) -> Rep
             phrase_a_sa_place(r, route, v);
         }
     }
-    let reponse = Reponse::de(route, rendu);
+    let reponse = Reponse::du_geste(route, rendu, au_journal);
     if let (Some(refus), Some(r)) = (reponse.refus(), &racine) {
         refus_a_sa_place(r, route.nom(), &refus.phrase);
     }

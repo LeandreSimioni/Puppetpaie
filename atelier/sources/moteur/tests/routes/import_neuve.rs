@@ -220,6 +220,58 @@ fn la_nature_d_un_contrat_de_permanent_se_demande_apres_l_import() {
     assert_eq!(reussi(&route(&racine, "importation-etat", json!({})))["a_dire"], json!([]));
 }
 
+/// REGARDER N'EST JAMAIS REFUSE (le bug : une compagnie qui venait d'importer ses bulletins n'avait dit ni son effectif
+/// ni sa premiere embauche ; `etat` refusait `EffectifAbsent`, et la Paie comme la Configuration restaient vides, case
+/// de l'effectif comprise). Juste apres l'import, chaque lecture que la page fait en s'ouvrant repond, et `etat` dit a
+/// part ce qui manque pour payer.
+#[test]
+fn apres_l_import_les_lectures_repondent_sans_l_effectif() {
+    let racine = neuve("lectures");
+    deposer(&racine);
+    reussi(&route(&racine, "importer", json!({})));
+    let etat = reussi(&route(&racine, "etat", json!({}))).clone();
+    let pour_payer = etat["configuration"]["pour_payer"].as_str().unwrap_or_else(|| panic!("ce qui manque pour payer n'est pas dit : {}", etat["configuration"]["pour_payer"]));
+    assert!(!pour_payer.is_empty());
+    for (nom, charge) in [
+        ("configuration", json!({})),
+        ("saisie", json!({"mois": "2026-10"})),
+        ("pour-demarrer", json!({})),
+        ("importation-etat", json!({})),
+        ("taxe-sur-les-salaires-regime", json!({})),
+    ] {
+        let r = route(&racine, nom, charge);
+        assert_eq!(r["ok"], json!(true), "{} : {}", nom, r);
+    }
+}
+
+/// UNE DSN AJOUTEE APRES LES BULLETINS FINIT EN UN IMPORT (le bug : les bulletins repris d'abord, la DSN ajoutee au
+/// dossier ensuite, la paie declaree d'un permanent ne rejoignait pas le contrat que ses bulletins attestaient ; il
+/// fallait rejouer `importer` deux fois pour que sa nature soit dite). Les papiers de l'Hotel de Bourgogne, sans leur
+/// DSN puis avec : un seul `importer` dit la nature des permanents, le suivant ne trouve rien a faire.
+#[test]
+fn une_dsn_ajoutee_apres_les_bulletins_finit_en_un_import() {
+    let jour = "2026-01-02";
+    let racine = ajouter_venant(&dossier_de_test("import_neuve", "dsn_apres"), "Compagnie des Essais", Venue::LogicielPrecedent).unwrap().racine;
+    let papiers = crate::outils::rejeu::reference("fictive-hotel-de-bourgogne").join("papiers-2025");
+    let import = racine.join("import");
+    std::fs::create_dir_all(&import).unwrap();
+    let est_une_dsn = |p: &Path| p.extension().is_some_and(|e| e == "dsn");
+    let pieces: Vec<PathBuf> = std::fs::read_dir(&papiers).unwrap().map(|e| e.unwrap().path()).collect();
+    for p in pieces.iter().filter(|p| !est_une_dsn(p)) {
+        std::fs::copy(p, import.join(p.file_name().unwrap())).unwrap();
+    }
+    let importer = || reussi(&crate::outils::route(&racine, "importer", json!({}), jour)).clone();
+    let a_dire = || reussi(&crate::outils::route(&racine, "importation-etat", json!({}), jour))["a_dire"].clone();
+    importer();
+    assert_eq!(a_dire().as_array().unwrap().len(), 3, "les trois permanents attendent leur nature : {}", a_dire());
+    for p in pieces.iter().filter(|p| est_une_dsn(p)) {
+        std::fs::copy(p, import.join(p.file_name().unwrap())).unwrap();
+    }
+    importer();
+    assert_eq!(a_dire(), json!([]), "la DSN ajoutee dit la nature des permanents du premier coup");
+    assert_eq!(importer()["rien_a_faire"], json!(true), "un import de plus ne trouve rien a faire");
+}
+
 /// Le contrat d'un permanent paye le dernier mois repris continue : sa nature se dit avec la date de debut et le numero
 /// que la DSN de l'ancien logiciel lui a donnes (S21.G00.40.001 et .009, `norme-dsn/texte/bloc-S21.G00.40.txt` ; un
 /// numero ne se recalcule pas, regle 4). Sans eux, ou avec un debut que les bulletins dementent : refus, rien n'est

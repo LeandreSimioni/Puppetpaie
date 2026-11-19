@@ -32,7 +32,7 @@ compagnie = { path = "../compagnie" }
 import = { path = "../import" }
 serde = { workspace = true }
 # Deflate et CRC-32 (le zip du dossier d'un salarie), deja lies par la fabrique de PDF.
-flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 # L'empreinte d'un fichier (l'etat garde, la cloture, un incident de l'import).
 sha2 = { workspace = true }
 # Les motifs des incidents de l'import ; sans les optimisations par defaut, qui pesent sur le binaire.

@@ -331,13 +331,17 @@ function dessinerFormulaire(fiche) {
     sections.forEach(([, cles], i) => cles.forEach((k) => {
       if (parCle[k] && !!parCle[k].avance === avancee(i)) places.add(k);
     }));
-    const reste = saisissables.filter((c) => !places.has(c.cle));
+    // UNE CASE OUBLIÉE D'UNE PIÈCE QU'AUCUNE SECTION NE TIENT (`piece` de la description : le tiroir du salarié au mois
+    // ne tient que la sienne) a son bloc à elle, sans titre, avant les tiroirs « Avancé » : son libellé la dit, et le
+    // bloc se replie avec elle quand le moteur ne la montre pas (`montrerBlocsPermanents`).
+    const aPart = saisissables.filter((c) => !places.has(c.cle) && c.piece && c.piece !== "permanent" && !c.avance);
+    const reste = saisissables.filter((c) => !places.has(c.cle) && !aPart.includes(c));
     // Un champ oublie des tables va dans la derniere section TITREE de son rang (simple ou avancee) : la derniere tout
     // court peut etre l'historique, qui n'a pas de titre.
     const derniere = (avance) => sections.map(([t], i) => !!t && avancee(i) === avance).lastIndexOf(true);
     const derniereSimple = derniere(false);
     const derniereAvancee = derniere(true);
-    champs = sections.map(([titre, cles, options], i) => {
+    const blocs = sections.map(([titre, cles, options], i) => {
       let dedans = cles.map((k) => parCle[k]).filter((c) => c && !!c.avance === avancee(i));
       if (i === derniereSimple) dedans = dedans.concat(reste.filter((c) => !c.avance || derniereAvancee < 0));
       if (i === derniereAvancee) dedans = dedans.concat(reste.filter((c) => !!c.avance));
@@ -383,7 +387,14 @@ function dessinerFormulaire(fiche) {
         ${entete}
         <div class="champs">${dedansHtml}</div>
       </section>`;
-    }).join("");
+    });
+    const aPartHtml = aPart.map(champHtml).join("");
+    if (aPartHtml.trim()) {
+      const premiereAvancee = sections.findIndex((s, i) => avancee(i));
+      blocs.splice(premiereAvancee < 0 ? blocs.length : premiereAvancee, 0,
+        `<section class="bloc" data-bloc-permanents="1"><div class="champs">${aPartHtml}</div></section>`);
+    }
+    champs = blocs.join("");
   }
 
   const err = fiche.anomalies.filter((a) => a.gravite === "erreur").length;

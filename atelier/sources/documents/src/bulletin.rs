@@ -81,7 +81,7 @@ fn jours_de_conges(j: socle::grandeurs::Jours) -> String {
 
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
 fn du_spectacle<T: AsRef<str>>(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<T>, cle: &str) -> R<String> {
-    sp.map(case).and_then(Option::as_ref).map(|t| t.as_ref().to_string()).ok_or_else(|| socle::fichiers::absent(cle))
+    sp.map(case).and_then(Option::as_ref).map(|t| t.as_ref().to_string()).ok_or_else(|| socle::fichiers::manque(cle))
 }
 
 
@@ -289,8 +289,8 @@ fn nom_imprime(sal: &ChampsSalarie) -> R<String> {
     let lu = |cases: [Option<&str>; 2]| -> Option<String> {
         cases.into_iter().flatten().find(|t| !t.trim().is_empty()).map(str::to_string)
     };
-    let nom = lu([sal.nom_affichage.portee(), sal.nom.portee()]).ok_or_else(|| socle::fichiers::absent("nom"))?;
-    let prenom = lu([sal.prenom_affichage.portee(), sal.prenom.portee()]).ok_or_else(|| socle::fichiers::absent("prenom"))?;
+    let nom = lu([sal.nom_affichage.portee(), sal.nom.portee()]).ok_or_else(|| socle::fichiers::manque("nom"))?;
+    let prenom = lu([sal.prenom_affichage.portee(), sal.prenom.portee()]).ok_or_else(|| socle::fichiers::manque("prenom"))?;
     Ok(format!("{} {}", nom.to_uppercase(), prenom))
 }
 
@@ -1047,7 +1047,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         k("N° Sécurité sociale :"),
         mt(format!(" {}\n", nir_affiche)),
         k("Date de naissance :"),
-        mt(format!(" {}\n", sal.date_naissance.dite().ok_or_else(|| socle::fichiers::absent("date_naissance"))?.jj_mm_aaaa())),
+        mt(format!(" {}\n", sal.date_naissance.exigee("date_naissance")?.jj_mm_aaaa())),
         k("Emploi :"),
         mt(format!(" {}\n", emploi_imprime(e, sal)?)),
     ];

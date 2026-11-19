@@ -45,7 +45,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qui est repris d'un ancien logiciel, et la boîte où déposer.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire), editeur",
+        rend: "importe_le, contrats, salaries, du, au, dossier (la boîte import/), reprises, a_dire (les natures à dire ; dsn_non_relue : la DSN reprise qui ne s'est pas relue), identites (questions : les questions d'identité et leurs gestes ; non_relues : ce qui ne s'est pas relu), guide, editeur",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -56,18 +56,19 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &[DOSSIER],
         exemple: r#"{}"#,
-        rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles",
+        rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
         acte: Acte::Lit,
         phrase: 0,
-        ecran: ECRAN,
+        // Hors du chemin simple : on met les pieces dans le dossier et on importe (`importer` se rejoue).
+        ecran: Ecran::DessineAvance(Place::Import),
     },
     Fiche {
         route: Route::Importer,
         geste: "Reprendre les pièces d'un ancien logiciel : fiches, engagements importés.",
         charge: &[DOSSIER],
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
@@ -86,11 +87,26 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "quotite", libelle: Affiche::new("Heures par mois"), forme: Forme::Nombre, sens: "sa durée du travail, en heures par mois", avance: true },
         ],
         exemple: r#"{"salarie":"TARTEMPION","nature":"cdi"}"#,
-        rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares",
+        rend: "ecrits, a_dire (ce qui reste à dire), permanents_declares ; ce que la charge tait se prend sur la DSN reprise",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, la nature ou le champ que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
+    },
+    Fiche {
+        route: Route::ImportationIdentite,
+        geste: "Dire si la personne d'une DSN est le salarié d'une fiche sans numéro (NIR).",
+        charge: &[
+            Champ { nom: "nir", libelle: Affiche::new("Numéro déclaré"), forme: Forme::Texte, sens: "le numéro de sécurité sociale que la DSN déclare, sans sa clé", avance: false },
+            SALARIE,
+            Champ { nom: "reponse", libelle: Affiche::new("Réponse"), forme: Forme::Texte, sens: "meme : c'est le salarié de la fiche ; autre : une autre personne", avance: false },
+        ],
+        exemple: r#"{"nir":"2850799999124","salarie":"TARTEMPION","reponse":"autre"}"#,
+        rend: "phrase",
+        refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié ou la réponse que la phrase nomme ; rien n'est écrit" }, FORME],
+        acte: Acte::Ecrit,
+        phrase: 0,
+        ecran: Ecran::Geste(Place::Import),
     },
 ];
 
@@ -105,11 +121,13 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::ImportationApercu => en_json(crate::importation::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
-            en_json(etat_importation(&ctx.racine)?)
+            en_json(etat_importation(ctx)?)
         }
         Route::Importer => en_json(crate::importation::ecrite::importer(ctx, &charge.lire()?)?),
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
+        // La reponse a une question d'identite (`importation::identite`).
+        Route::ImportationIdentite => en_json(crate::importation::identite::repondre(ctx, &charge.lire()?)?),
         autre => Err(enveloppe::route_inconnue(autre.nom())),
     }
 }
@@ -188,16 +206,15 @@ fn ecarts<P: FicheSaisie>(fiche: &P, declare: &P, mois: socle::mois::Mois) -> R<
 /// Ce qu'une fiche neuve recoit d'une DSN, et la faute de chaque case que la DSN porte hors de son type.
 fn fiche_salarie(decl: &SalarieDeclare) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let emploi = decl.emploi.as_ref();
-    // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes ; une autre PCS :
-    // technicien) ; sans l'un ni l'autre, rien ne le dit.
+    // Le statut de bareme se lit au metier du code emploi France Travail, a defaut au code PCS dont la fiche deposee le
+    // fonde (`CodePcsEse::statut_de_sa_fiche`) ; sinon rien ne le dit, la case reste vide et le calcul la demande.
     let m = match emploi.and_then(|e| e.code_emploi_ft.as_ref()) {
         Some(code) => droit::emplois::metier(code)?,
         None => None,
     };
     let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_ref())) {
         (Some(m), _) => Some(m.statut()),
-        (None, Some(pcs)) if pcs.est_un_artiste_du_spectacle() => Some(droit::fiche::Statut::Artiste),
-        (None, Some(_)) => Some(droit::fiche::Statut::Technicien),
+        (None, Some(pcs)) => pcs.statut_de_sa_fiche(),
         (None, None) => None,
     };
     // L'EMPLOI EN CLAIR d'un metier : son libelle, au feminin pour une salariee (le sexe que porte son NIR), comme quand
@@ -300,6 +317,14 @@ pub(crate) struct Apercu {
     /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
     /// `declarations::dsn_lue`), la plus recente ; rien si aucune ne la dit.
     pub(crate) convention: Option<droit::fiche::Idcc>,
+    /// Les versements des individus mis de cote (`Importation::identites`), par nom de la DSN qui les declare.
+    pub(crate) paies_en_question: HashMap<String, usize>,
+    /// LE MATRICULE QUE LA DERNIERE DSN DECLARE POUR LE SALARIE D'UNE FICHE QUI EXISTE (S21.G00.30.019), quand elle en
+    /// declare un : `importation::matricules` en fait foi.
+    pub(crate) matricules_declares: Vec<(droit::contexte::IdSalarie, droit::fiche::Matricule)>,
+    /// LA PIECE QUI DONNE SON MATRICULE A UNE FICHE NEUVE, par le NIR de la fiche : la premiere qui le porte (la DSN
+    /// passe avant les bulletins, qui completent ce qu'elle cree) ; `importation::matricules` la nomme.
+    pub(crate) matricules_lus_dans: HashMap<Option<Nir>, Source>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -365,7 +390,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
     let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
-    (x.periode, x.verse_le, x.quotite) = (periode, d.verse_le, c.and_then(|c| c.quotite));
+    (x.periode, x.verse_le, x.quotite, x.motif_recours) = (periode, d.verse_le, c.and_then(|c| c.quotite), c.and_then(|c| c.motif_recours));
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
     // Un taux que la DSN n'ecrit pas comme la norme n'en est pas un : vide (`dsn_lue`).
     if let Some(n) = &d.nets {
@@ -470,14 +495,27 @@ pub(crate) fn apercu_lu(
             par_nir.insert(n.clone(), cle.clone());
         }
     }
+    // UN INDIVIDU QUI RESSEMBLE AU SALARIE D'UNE FICHE SANS NIR ne se cree pas : l'import demande si c'est la meme
+    // personne, et n'ecrit rien de lui (ni fiche, ni contrat, ni paie) tant que la compagnie n'a pas repondu
+    // (`importation::identite`).
+    let identites = crate::importation::identite::questions(ctx, &lecture.salaries, a_venir)?;
+    let en_question: HashSet<Nir> = identites.iter().map(|q| q.nir.clone()).collect();
     let mut ordre: Vec<&SalarieDeclare> = lecture.salaries.iter().collect();
     ordre.sort_by(|a, b| a.mois.cmp(&b.mois));
     let mut salaries = Vec::new();
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
     let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
+    let mut matricules_declares = Vec::new();
+    let mut matricules_lus_dans: HashMap<Option<Nir>, Source> = HashMap::new();
     for decl in ordre {
+        if decl.individu.identite.nir.as_ref().is_some_and(|n| en_question.contains(n)) {
+            continue;
+        }
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = decl.individu.identite.nir.as_ref().and_then(|n| par_nir.get(n)) {
+            if let Some(m) = &decl.individu.code_salarie {
+                matricules_declares.push((cle.clone(), m.clone()));
+            }
             let fiche = &ctx.salaries[cle].champs;
             let ec = ecarts(fiche, &decl.fiche()?.0, decl.mois)?;
             let mut entree = FicheImportee::new(FicheVisee::Nommee(FicheNommee::Salarie(cle.clone())), &libelle, EtatFiche::Existante, ec, Vec::new(), &FicheProposee::vide(NomDeFiche::Salarie));
@@ -490,6 +528,9 @@ pub(crate) fn apercu_lu(
             continue;
         }
         let (donnees, fautes) = fiche_salarie(decl)?;
+        if donnees.code_salarie.as_ref().is_some_and(|m| !m.trim().is_empty()) {
+            matricules_lus_dans.entry(decl.individu.identite.nir.clone()).or_insert(Source::Dsn);
+        }
         let donnees = FicheProposee::Salarie(donnees);
         let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(&donnees, &fautes)?;
         salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
@@ -585,7 +626,8 @@ pub(crate) fn apercu_lu(
 
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
-    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone()))).count();
+    // Ceux d'un individu mis de cote (une question d'identite) attendent la reponse : ils ne sont pas « sans fiche ».
+    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone())) && !en_question.contains(&c.nir)).count();
     let contrats_du = contrats.iter().map(|c| c.periode.debut()).min();
     let contrats_au = contrats.iter().map(|c| c.periode.fin()).max();
     if sans_fiche > 0 {
@@ -616,6 +658,15 @@ pub(crate) fn apercu_lu(
         contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.periode), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
+    // Les versements d'un individu mis de cote, par DSN : ils attendent la reponse (le sort de leur DSN le dit).
+    let mut paies_en_question: HashMap<String, usize> = HashMap::new();
+    for ((_, nir, _), v) in &lecture.paies {
+        if let (Some(n), Some(f)) = (nir, &v.fichier) {
+            if en_question.contains(n) {
+                *paies_en_question.entry(f.texte().to_string()).or_default() += 1;
+            }
+        }
+    }
     for ((mois, nir, contrat), v) in &lecture.paies {
         if !a_une_fiche(nir) {
             continue;
@@ -670,6 +721,8 @@ pub(crate) fn apercu_lu(
         pastilles: import::reponse::pastilles_des_sorts(),
         encart: None,
         couleur: None,
+        identites,
+        dsn_fait_foi: Vec::new(),
     };
     Ok(Apercu {
         reponse,
@@ -682,6 +735,9 @@ pub(crate) fn apercu_lu(
         licences: lecture.licences.clone(),
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
+        paies_en_question,
+        matricules_declares,
+        matricules_lus_dans,
     })
 }
 
@@ -696,7 +752,8 @@ pub(crate) fn apercu_lu(
 ///   parlent de l'import, sans valeur personnelle (ils ont ete caviardes avant d'etre ecrits) ; `attend_editeur` en
 ///   compte ceux qui n'ont pas de reponse. Un journal des incidents ou une boite des messages qui ne se lit pas se
 ///   refuse.
-fn etat_importation(racine: &Path) -> R<EtatImportation> {
+fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
+    let racine = &ctx.racine;
     let contrats = engagement::importe::contrats_lus(racine)?;
     let paies = engagement::importe::paies_lues(racine)?;
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
@@ -745,7 +802,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
             socle::phrase!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
         (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
-        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel. Ses bulletins, DSN ou AEM se déposent dans le dossier d'import de la compagnie, puis s'importent."),
+        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans un dossier, choisissez-le, puis importez."),
     };
     Ok(EtatImportation {
         phrase,
@@ -760,7 +817,8 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         editeur,
         pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
         attend_editeur,
-        a_dire: crate::importation::nature::a_dire(racine)?,
+        a_dire: crate::importation::nature::a_dire(ctx)?,
+        identites: crate::importation::identite::en_attente(ctx)?,
         guide: import::guide::guide(),
         repris_dit,
         repris_titre,
@@ -786,6 +844,9 @@ struct EtatImportation {
     attend_editeur: usize,
     /// Les contrats repris dont la nature reste a dire, par salarie.
     a_dire: Vec<crate::importation::nature::ADire>,
+    /// Les individus que les DSN reprises declarent et que l'import met de cote, le temps que la compagnie dise s'ils
+    /// sont le salarie d'une fiche sans NIR (`importation::identite`).
+    identites: crate::importation::identite::IdentitesEnAttente,
     /// Ce qu'on met dans la boite aux lettres, ce qui s'en lit, ce qui restera a dire (`import::guide`).
     guide: import::guide::Guide,
     repris_dit: Option<String>,

@@ -40,3 +40,25 @@ jobs:
       # qu'elle prend, qui se recompile donc a part (atelier/AGENTS.md, « Les tests »).
       - name: Lancer la suite de l'atelier
         run: cargo nextest run --cargo-profile essais --locked -p atelier --target-dir target-atelier
+
+  # LA CIBLE WINDOWS, celle que les compagnies recoivent : le moteur et la fenetre se compilent pour elle, comme
+  # l'installeur les construit (`atelier/installeur/construire.sh`), mais en verifiant seulement les types. Sans ce
+  # passage, une cible Windows cassee ne se voit qu'a la publication (du 11 au 17/11/2026, elle ne compilait plus).
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+          workspaces: |
+            atelier/sources
+            atelier/sources/fenetre
+      - name: MinGW et la cible Windows
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          rustup target add x86_64-pc-windows-gnu
+      - name: Le moteur pour Windows
+        run: cargo check --locked --target x86_64-pc-windows-gnu --manifest-path atelier/sources/moteur/Cargo.toml
+      - name: La fenetre pour Windows
+        run: cargo check --locked --target x86_64-pc-windows-gnu --manifest-path atelier/sources/fenetre/Cargo.toml

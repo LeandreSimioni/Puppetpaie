@@ -720,6 +720,18 @@ impl<'de> serde::Deserialize<'de> for Nombre {
     }
 }
 
+/// Il se reecrit en nombre JSON, sa valeur gardee : un entier tel quel (`3`), sinon a virgule dans sa forme la plus
+/// courte (`86.67` ; `12.50` s'ecrit `12.5` : `ecrire_a_virgule`) ; une donnee relue puis reecrite (une description de
+/// l'atelier) garde la valeur de ses nombres, pas leurs zeros de fin.
+impl serde::Serialize for Nombre {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match (self.0.scale(), i64::try_from(self.0.mantissa())) {
+            (0, Ok(n)) => s.serialize_i64(n),
+            _ => ecrire_a_virgule(&self.0, s),
+        }
+    }
+}
+
 /// Le nombre tel qu'il est lu, son echelle gardee (`12.50`) : ce qu'un avertissement de lecture cite.
 impl std::fmt::Display for Nombre {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

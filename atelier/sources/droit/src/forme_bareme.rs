@@ -234,12 +234,19 @@ forme! {
         /// La part minimale de l'employeur a la complementaire sante collective (CSS L. 911-7, III).
         pub sante_obligatoire: Option<SanteObligatoire>,
         pub abattement_csg: Coefficient,
+        /// La part du brut que l'abattement de la CSG abat : sous un multiple du plafond de la paie (CSS L. 136-2, I).
+        pub limite_abattement_csg: LimiteDeLAbattementCsg,
+        /// Les tranches du plafond d'une paie, en nombre de plafonds (ANI Agirc-Arrco, art. 32 ; IDCC 1285, XII ; Unedic).
+        pub tranches_du_plafond: TranchesDuPlafond,
+        /// Quelles paies regularisent leurs assiettes plafonnees sur l'annee civile (CSS R. 242-2, II ; BOSS § 1250).
+        pub regularisation_du_plafond: RegularisationDuPlafond,
         pub majoration_conges_115: Coefficient,
         pub majoration_conges_110: Coefficient,
-        /// Le plafond journalier (T1 d'un jour travaille) des intermittents, et les multiples de la T2 et de l'Apec.
+        /// Le plafond journalier (T1 d'un jour travaille) des intermittents ; leurs tranches au-dela le multiplient comme
+        /// celles d'un permanent (`tranches_du_plafond`).
         pub plafond_journalier: Option<MontantUnitaire>,
-        pub t2_multiple: Option<Coefficient>,
-        pub apec_multiple: Option<Coefficient>,
+        /// La limite des tranches journalieres, quand le texte de l'annee en dit une ; sans elle, aucune.
+        pub limite_du_plafond_journalier: Option<LimiteDuPlafondJournalier>,
         /// Les textes de ces plafonds.
         pub plafonds_des_intermittents: Option<Notes>,
         pub rubriques_bulletin: Vec<Rubrique>,
@@ -491,9 +498,120 @@ forme! {
 }
 
 forme! {
+    /// La limite de l'abattement de la CSG : la reduction de 1,75 % ne vaut que « pour leur montant inferieur a quatre
+    /// fois la valeur du plafond mentionne a l'article L. 241-3 » (CSS L. 136-2, I), un plafond qui se calcule comme
+    /// celui de la vieillesse (BOSS, assiette generale, § 290) : le plafond de la paie.
+    pub struct LimiteDeLAbattementCsg {
+        /// Le nombre de plafonds de la paie sous lequel le brut est abattu.
+        pub plafonds: Coefficient,
+    }
+}
+
+forme! {
+    /// LES TRANCHES DU PLAFOND D'UNE PAIE, en nombre de plafonds (`plafond::assiettes_plafonnees`) : la tranche 2 de la
+    /// retraite complementaire va jusqu'a `t2` plafonds (ANI Agirc-Arrco du 17/11/2017, art. 32 : « le montant egal a huit
+    /// fois ce meme plafond »), et avec elle la tranche 1 + 2 et la CET ; la tranche 2 de la prevoyance conventionnelle,
+    /// jusqu'a `t2_conventionnelle` (IDCC 1285, titre XII : « l'equivalent de 4 plafonds ») ; le chomage et l'AGS, dans la
+    /// limite de `chomage` (reglement general de l'assurance chomage, art. 49 : « quatre fois le plafond ») ; l'Apec d'un
+    /// cadre, dans celle de `apec` (Audiens : « 4 fois le plafond de la Securite sociale »). Chacune se lit ici, avec son
+    /// texte.
+    pub struct TranchesDuPlafond {
+        pub t2: Coefficient,
+        pub t2_conventionnelle: Coefficient,
+        pub chomage: Coefficient,
+        pub apec: Coefficient,
+    }
+}
+
+/// LE PLAFOND DU TECHNICIEN INTERMITTENT : `par_contrat`, la seule valeur, une TOLERANCE RETENUE et non une regle
+/// (Leandre, 19/11/2026) : le BOSS (assiette generale) lui admet le plafond des jours remuneres au § 1090, ecrit pour les
+/// salaries « non eligibles a la reduction du plafond », la classe que le § 1250 sort de la regularisation ; et le § 1230
+/// regularise « l'ensemble des remunerations dues par un meme employeur a un meme salarie, y compris au titre de
+/// plusieurs contrats ». Aucun texte depose ne nomme le technicien : son plafond reste celui de chaque contrat, comme celui
+/// que le moteur lui calcule (`plafond::pour_paie`), tant qu'aucun texte ne tranche.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlafondDuTechnicienIntermittent {
+    ParContrat,
+}
+
+forme! {
+    /// QUELLES PAIES REGULARISENT LEURS ASSIETTES PLAFONNEES SUR L'ANNEE CIVILE (CSS R. 242-2, II ; BOSS, assiette
+    /// generale, § 1220-1250 : `plafond::assiettes_plafonnees`). Le permanent (paye au mois) se regularise ; l'artiste,
+    /// permanent ou non, ne se regularise pas (§ 1250 ; § 1090 : « Sont notamment vises les artistes du spectacle ») ; le
+    /// technicien intermittent, comme le dit `technicien_intermittent`.
+    pub struct RegularisationDuPlafond {
+        pub technicien_intermittent: PlafondDuTechnicienIntermittent,
+    }
+}
+
+impl RegularisationDuPlafond {
+    /// LA PAIE D'UN CONTRAT paye au mois (`mensuelle`) ou non, d'un artiste (`artiste`) ou d'un technicien, se
+    /// regularise-t-elle sur l'annee ? Les paies qui ne se regularisent pas n'entrent pas dans le cumul des autres : celles
+    /// d'un artiste qui a aussi un contrat de technicien a la compagnie (INFERENCE retenue par Leandre, 19/11/2026 : le
+    /// § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste de la regularisation, aucun texte ne joint les
+    /// deux), et celles d'un technicien intermittent (`technicien_intermittent`).
+    pub fn regularise(&self, mensuelle: bool, artiste: bool) -> bool {
+        if artiste {
+            return false;
+        }
+        if mensuelle {
+            return true;
+        }
+        match self.technicien_intermittent {
+            PlafondDuTechnicienIntermittent::ParContrat => false,
+        }
+    }
+}
+
+impl Pile {
+    /// L'ASSIETTE DE LA CSG ET DE LA CRDS de la part `montant` d'un brut `brut` (la somme des rubriques soumises), dont
+    /// l'abattement de la CSG abat `abattue` (`plafond::Regularisees::abattue_csg` : la part sous `limite_abattement_csg`
+    /// fois le plafond, regularisee sur l'annee quand la paie se regularise) : `montant` moins sa part de l'abattement
+    /// (`abattement_de`), au prorata de son montant dans le brut (CSS L. 136-2, I). Une paie dont tout le brut est abattu
+    /// abat chaque part de `abattement_csg` ; un brut nul n'a aucune part ou mettre l'abattement (le calcul le pose sur
+    /// sa premiere rubrique).
+    pub fn assiette_csg(&self, montant: Montant, brut: Montant, abattue: Montant) -> Montant {
+        if abattue == brut || brut.est_nul() {
+            return montant * self.abattement_csg;
+        }
+        montant - self.abattement_de(abattue).prorata(montant, brut)
+    }
+
+    /// L'ABATTEMENT DE LA CSG sur la part abattue `abattue` (CSS L. 136-2, I : « une reduction representative de frais
+    /// professionnels fixee a 1,75 % ») : `abattue` fois un moins `abattement_csg`, exact. Ce que la taxe sur les
+    /// salaires rend a l'assiette de la CSG (CGI 231, 1 : la reduction « n'est pas applicable »).
+    pub fn abattement_de(&self, abattue: Montant) -> Montant {
+        abattue * (Coefficient::UN - self.abattement_csg)
+    }
+}
+
+forme! {
+    /// LA LIMITE DES TRANCHES JOURNALIERES D'UN INTERMITTENT (`plafond_journalier` fois ses jours : la tranche 1 de la
+    /// retraite d'un cadre, et ses tranches au-dela, la prevoyance de tout intermittent) : Audiens, Parametres 2026 (l. 41-46),
+    /// « les plafonds applicables sont les plafonds journaliers - dans la limite du plafond mensuel » ; les Parametres 2025
+    /// ne la disent pas, et le bareme 2025 n'en a pas. Le calcul la pose a un seul endroit (`calcul::calculer_periode`).
+    pub struct LimiteDuPlafondJournalier {
+        pub dans_la_limite_du: PlafondQuiLimite,
+    }
+}
+
+/// LE PLAFOND QUI LIMITE LES TRANCHES JOURNALIERES (`LimiteDuPlafondJournalier`) : le plafond mensuel de la Securite
+/// sociale de l'annee (`PlafondSecuriteSociale::mensuel`), le seul que le texte nomme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlafondQuiLimite {
+    PlafondMensuel,
+}
+
+forme! {
+    /// LE PLAFOND DE LA SECURITE SOCIALE DE L'ANNEE : sa valeur mensuelle et sa valeur horaire (`plafond::Pss`), et sa
+    /// valeur annuelle, le plafond de la tranche 1 de l'annee de la retraite complementaire d'un intermittent
+    /// (`plafond::tranches_sous_le_plafond_annuel`).
     pub struct PlafondSecuriteSociale {
         pub mensuel: Montant,
         pub horaire: MontantUnitaire,
+        pub annuel: Montant,
     }
 }
 
@@ -641,7 +759,8 @@ forme! {
         pub composants_sal: Option<Vec<Taux>>,
         /// Le complement de taux patronal au-dela d'un seuil de SMIC.
         pub complement: Option<Complement>,
-        /// La CET des cadres, fondue dans la ligne quand elle est due.
+        /// La CET d'un cadre intermittent, fondue dans sa ligne de tranche quand elle est due (celle d'un permanent est sa
+        /// propre ligne, `CET`, de `par_nature.permanent`).
         pub cet_si_depasse: Option<Cet>,
         pub masquer_base_et_taux: Option<bool>,
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).
@@ -788,15 +907,6 @@ forme! {
         pub lignes: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
         pub apres: Option<CodeCotisation81>,
-    }
-}
-
-impl CotisationDsn {
-    /// LA CLE PAR LAQUELLE UNE COUCHE LA NOMME : son code, et son affectation si elle en a une. `None` : la cotisation
-    /// n'a pas de code, une couche ne la nomme pas.
-    pub fn cle(&self) -> Option<CleDeCotisationDsn> {
-        let code = self.code81?;
-        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone() })
     }
 }
 
@@ -968,9 +1078,9 @@ forme! {
     #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
-        pub plafond_journalier: Option<MontantUnitaire>,
-        pub t2_multiple: Option<Coefficient>,
-        pub apec_multiple: Option<Coefficient>,
+        /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
+        /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
+        pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,

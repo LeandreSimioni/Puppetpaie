@@ -11,7 +11,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::CheminRelatif;
 use socle::mois::Mois;
 
-use crate::branchement::{reponse_fictive, Branchement};
+use crate::branchement::{reponse_fictive, Porte};
 use crate::depot;
 use declarations::dsn_lue::DsnLue;
 use crate::ligne::{Acte, DetailDpae, DetailDsn, EmbaucheDeclaree, Envoi, Ligne, Ouverture, Version};
@@ -134,23 +134,24 @@ fn repondu_aussitot(ctx: &Contexte, joue: bool, ligne: Ligne, suites: &mut Suite
 }
 
 /// Depose une DSN. `ordre_test` : l'ordre auquel un essai de mensuelle part en annule-et-remplace (`None` : celui du
-/// fichier). `environnement` : `production`, ou la plate-forme d'essai de l'editeur.
+/// fichier). `environnement` : `production`, ou la plate-forme d'essai de l'editeur. `porte` : celle que la route a
+/// ouverte avant de rien faire (`Branchement::ouvrir_le_depot`).
 pub fn deposer_dsn(
     ctx: &Contexte,
-    branchement: Branchement,
+    porte: &Porte,
     d: &Depot,
     apercu: &DsnLue,
     environnement: EnvironnementNetEntreprises,
     ordre_test: Option<droit::natures::NumeroDOrdre>,
     suites: &mut Suites,
 ) -> R<DepotFait> {
-    branchement.ouvrir()?;
     let deja = crate::etats::deja_depose(&crate::journal::lu(&ctx.racine)?.lignes, Acte::Dsn, &socle::fichiers::Empreinte::des_octets(d.octets).courte());
-    let joue = branchement.joue();
+    let joue = porte.joue();
     let envoi = || -> R<String> {
-        if joue {
-            return reponse_fictive(Acte::Dsn, d.mode);
-        }
+        let au_jour = match porte {
+            Porte::Simulateur => return reponse_fictive(Acte::Dsn, d.mode),
+            Porte::Monde(au_jour) => au_jour,
+        };
         let mut client = Client::dsn(ctx, environnement, d.motdepasse.clone());
         client.authentifier().map_err(Panne::en_echec)?;
         // La verification est refaite ici : la derniere porte avant le reseau.
@@ -163,7 +164,7 @@ pub fn deposer_dsn(
             }
         }
         let url = client.adresses.depot.clone();
-        let (reponse, _type) = client.deposer_octets(&url, &contenu, "dsn").map_err(Panne::en_echec)?;
+        let (reponse, _type) = client.deposer_octets(au_jour, &url, &contenu, "dsn").map_err(Panne::en_echec)?;
         Ok(reponse)
     };
     let preuve = Some(d.preuve.to_string());
@@ -208,10 +209,11 @@ pub fn deposer_dsn(
 
 /// Depose une DPAE. `contenu` : le fichier tel qu'il part (bascule en test faite) ; `embauches` : ce qu'elle declare
 /// (salarie, numero du contrat, premier jour, fin) ; `client` : le client Urssaf, identifiants deja verifies (le monde
-/// seulement) ; `deja` : le depot precedent du meme fichier.
+/// seulement) ; `deja` : le depot precedent du meme fichier ; `porte` : celle que la route a ouverte
+/// (`Branchement::ouvrir_le_depot`).
 pub fn deposer_dpae(
     ctx: &Contexte,
-    branchement: Branchement,
+    porte: &Porte,
     d: &Depot,
     contenu: &[u8],
     embauches: Vec<EmbaucheDeclaree>,
@@ -219,17 +221,17 @@ pub fn deposer_dpae(
     deja: Option<Ligne>,
     suites: &mut Suites,
 ) -> R<DepotFait> {
-    branchement.ouvrir()?;
-    let joue = branchement.joue();
+    let joue = porte.joue();
     let mut client = client;
     let mut envoi = || -> R<String> {
-        if joue {
-            return reponse_fictive(Acte::Dpae, d.mode);
-        }
+        let au_jour = match porte {
+            Porte::Simulateur => return reponse_fictive(Acte::Dpae, d.mode),
+            Porte::Monde(au_jour) => au_jour,
+        };
         let c: &mut Client = client.as_deref_mut().ok_or_else(|| erreur(Classe::Refuse, "client absent"))?;
         c.authentifier().map_err(Panne::en_echec)?;
         let url = c.adresses.depot.clone();
-        let (reponse, _type) = c.deposer_octets(&url, contenu, "dpae").map_err(Panne::en_echec)?;
+        let (reponse, _type) = c.deposer_octets(au_jour, &url, contenu, "dpae").map_err(Panne::en_echec)?;
         Ok(reponse)
     };
     let preuve = Some(d.preuve.to_string());

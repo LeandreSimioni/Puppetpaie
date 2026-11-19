@@ -156,11 +156,19 @@ pub struct NotificationRupture {
     pub motifs: Vec<crate::natures::MotifDeRupture>,
 }
 
-/// `fctu-base.json`, lu par sa forme.
-pub fn base() -> R<BaseFctu> {
+/// `fctu-base.json`, lu par sa forme, partage tel que le cache le garde : il se lit sans se recopier.
+pub fn base() -> R<std::sync::Arc<BaseFctu>> {
     static CACHE: std::sync::OnceLock<FormeGardee<BaseFctu>> = std::sync::OnceLock::new();
-    let b = forme_en_cache(&CACHE, &FCTU, "Les codes du signalement de fin de contrat livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
-    Ok((*b).clone())
+    forme_en_cache(&CACHE, &FCTU, "Les codes du signalement de fin de contrat livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)
+}
+
+/// La date de notification de la rupture (S21.G00.62.003) est-elle obligatoire pour ce motif de rupture ? La liste
+/// `notification_rupture.motifs` de `fctu-base.json`, celle de la CCH-12 de S21.G00.62.003 (cahier technique DSN 2026.1,
+/// p. 275, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). Un signalement de ce motif qui ne la porte pas est
+/// refuse par le point de depot. Un seul endroit : les faits que le motif appelle (`permanents::faits_de_rupture`), la
+/// liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et `declarations::fctu::verifier` la lisent ici.
+pub fn notification_exigee(motif: crate::natures::MotifDeRupture) -> R<bool> {
+    Ok(base()?.notification_rupture.motifs.contains(&motif))
 }
 
 impl TypesPreavis {
@@ -185,7 +193,7 @@ impl<T: Copy> Nomenclature<T> {
 /// Les codes S21.G00.52.001 d'une indemnite compensatrice de preavis (`types_preavis.codes_52_de_l_indemnite_de_preavis` :
 /// 023, 032 ; cahier technique 2026.1, p. 253).
 pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<TypeDePrime>> {
-    Ok(base()?.types_preavis.codes_52_de_l_indemnite_de_preavis)
+    Ok(base()?.types_preavis.codes_52_de_l_indemnite_de_preavis.clone())
 }
 
 /// Le type de preavis (S21.G00.63.001) et l'indemnite compensatrice de preavis que la paie verse disent-ils la meme
@@ -194,7 +202,8 @@ pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<TypeDePrime>> {
 /// `versee` (02) veut une ligne, `aucune` (01, 03, 10, 60, 61, 90) n'en veut pas, un type sans
 /// drapeau (50, 51) n'est pas confronte. Un type inconnu refuse.
 pub fn desaccord_du_preavis(type_preavis: TypeDePreavis, versees: &[(TypeDePrime, String)]) -> R<Option<String>> {
-    let types = base()?.types_preavis;
+    let b = base()?;
+    let types = &b.types_preavis;
     let t = types.du_code(type_preavis).ok_or_else(|| {
         socle::echec::refus_avec(
             format!("Type de preavis {} inconnu de la norme (S21.G00.63.001).", repr(type_preavis.code())),

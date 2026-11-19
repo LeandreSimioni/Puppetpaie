@@ -12,7 +12,12 @@
 //!   moteur -- l'import ne recalcule rien, le bulletin fait foi) ; elles sont COHERENTES, comme le lecteur les controle :
 //!   net avant impot = brut - cotisations salariales + lignes non soumises ; net a payer = net avant impot - impot ;
 //!   quand la description porte les cotisations d'une paie (`cotisations`, `net_imposable`, `pas`), ce sont elles,
-//!   imprimees telles quelles : les bulletins disent alors ce que dit la DSN de la meme paie ;
+//!   imprimees telles quelles : les bulletins disent alors ce que ce moteur calcule de la meme paie, et une compagnie
+//!   qui les importe ne s'ecarte de rien ;
+//! - `moteur-atelier remplir-bulletins <description.json> <compagnie>` les y ecrit (`remplir`) : la paie que ce moteur
+//!   calcule de chaque bulletin que la compagnie a importe (`engagement::ecarts::calculee`, la saisie que la
+//!   comparaison de l'import refait), et l'impot preleve au taux du bulletin
+//!   (`engagement::etats::prelevement_au_taux_imprime`) ; aucun calcul ici ;
 //! - le net imposable (le net avant impot hors non soumis, plus la CSG/CRDS non deductible), le PAS au taux donne ;
 //! - les cumuls de l'annee par salarie (cachets, heures, jours, brut, plafond, cout employeur, net imposable, PAS), dans
 //!   l'ordre du temps, tels que `bulletin_lu::compteurs` les confronte aux lignes : ils s'accordent.
@@ -26,7 +31,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use socle::forme::Nombre;
 
 use super::bulletins_fictifs::{m, page_a, page_b, pdf_octets, Identite, RangA, RangB, A, B};
@@ -35,11 +40,13 @@ use fabrique_pdf::forme::Mesure;
 use import::bulletin_lu::{jetons, Table};
 use socle::date::{Jour, Periode};
 use socle::echec::{refus, R};
-use socle::grandeurs::{Cachets, Coefficient, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
+use socle::grandeurs::{Cachets, Heures, HeuresParUnite, Jours, Montant, MontantUnitaire, Taux};
 // Un montant tel que le bulletin l'imprime, « 1 234,56 » : l'ecriture du socle.
 use socle::texte::chiffres_en_euros as fr;
 
 pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description.json> <dossier> [--gabarit coolpaie|spaiectacle]";
+
+pub const USAGE_REMPLIR: &str = "usage : moteur-atelier remplir-bulletins <description.json> <compagnie qui a importé ses bulletins>";
 
 // --------------------------------------------------------------------------------------------- la ligne de commande
 
@@ -87,6 +94,31 @@ pub fn commande(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
     }
 }
 
+/// `moteur-atelier remplir-bulletins <description.json> <compagnie>` : la description reecrite, la paie de chacun de ses
+/// bulletins remplie (`remplir`). Rien ne s'ecrit si un bulletin se refuse.
+pub fn commande_remplir(args: &[socle::ligne::Argument]) -> std::process::ExitCode {
+    use std::process::ExitCode;
+    let args: &[String] = &socle::ligne::textes(args);
+    let [description, compagnie] = args else {
+        eprintln!("{}", USAGE_REMPLIR);
+        return ExitCode::from(2);
+    };
+    let chemin = Path::new(description);
+    let r = socle::forme::lire_fichier::<DescriptionLue>(chemin, "La description des bulletins ne se lit pas.")
+        .and_then(|d| remplir(d, Path::new(compagnie)))
+        .and_then(|d| socle::ecriture::ecrire_json(chemin, &d, 1).map(|()| d.bulletins.len()));
+    match r {
+        Ok(n) => {
+            dire!("{} bulletin(s) rempli(s) dans {}", n, description);
+            ExitCode::SUCCESS
+        }
+        Err(m) => {
+            eprintln!("{}", m.en_lignes());
+            ExitCode::FAILURE
+        }
+    }
+}
+
 // --------------------------------------------------------------------------------------------- les taux du faux logiciel
 
 #[derive(Clone, Copy, PartialEq)]
@@ -121,8 +153,32 @@ const fn t(milliemes: u32) -> Taux {
     Taux::milliemes_de_point(milliemes)
 }
 
-/// La part du brut soumise a la CSG (abattement de 1,75 % pour frais professionnels) : 0,9825.
-const ASSIETTE_CSG: Coefficient = Coefficient::dix_milliemes(9825);
+/// L'ASSIETTE DE LA CSG DU FAUX BULLETIN de brut `brut` et de plafond `plafond`, par la regle du moteur, lue au bareme
+/// livre de l'annee `annee` : la part du brut sous la limite de l'abattement (`droit::plafond::assiettes_plafonnees`),
+/// abattue (`Pile::assiette_csg`). La paie seule (`Plafonnement::ParPaie`) : le moteur ne regularise pas une paie reprise
+/// d'un ancien logiciel (`engagement::conges::plafonds_des_mois_anterieurs`), et c'est ainsi qu'il recalcule celle d'un
+/// faux bulletin importe pour la comparer.
+///
+/// UNE ANNEE SANS BAREME LIVRE (2024, que le banc decrit, et dont `pss` lit le plafond a la table du BOSS) : l'abattement
+/// et sa limite sont ceux de CSS L. 136-2, I, dans sa redaction en vigueur depuis le 16/12/2020, que le bareme livre de
+/// 2025 lit et cite (`limite_abattement_csg.source` : « en vigueur depuis le 16/12/2020 ») ; ils valent de 2021 a 2024
+/// comme en 2025, et se lisent donc la. Avant 2021, aucun texte depose ne les dit : refus.
+fn assiette_csg(brut: Montant, plafond: Montant, annee: socle::mois::Annee) -> R<Montant> {
+    let livre = match droit::contexte::socle_livre_lu(annee)? {
+        Some(p) => Some(p),
+        None if annee >= socle::annee!("2021") && annee < socle::annee!("2025") => droit::contexte::socle_livre_lu(socle::annee!("2025"))?,
+        None => None,
+    };
+    let Some(pile) = livre else {
+        return Err(refus!(
+            "pas de barème livré pour {} (logiciel/donnees/baremes/{}.json), ni de texte déposé qui dise pour cette année l'abattement de la CSG et sa limite (CSS L. 136-2, I, en vigueur depuis le 16/12/2020)",
+            annee,
+            annee
+        ));
+    };
+    let plafonnees = droit::plafond::assiettes_plafonnees(brut, plafond, pile.limite_abattement_csg.plafonds, &pile.tranches_du_plafond, &droit::plafond::Plafonnement::ParPaie);
+    Ok(pile.assiette_csg(brut, brut, plafonnees.regularisees.abattue_csg).au_centime())
+}
 
 /// La table des parametres du BOSS deposee : elle porte le PSS de 2021 a 2026 (codes PSS_M_METROP et PSS_H_METROP),
 /// les annees qu'aucun bareme livre n'a (2024).
@@ -227,10 +283,11 @@ struct CotisationPayee {
 /// LA DESCRIPTION, telle qu'elle s'ecrit (`atelier/outils/banc/LISEZ-MOI.md`, « Une compagnie qui vient d'un logiciel
 /// précédent ») : chaque valeur y est dite ; seuls sont facultatifs ce qui peut ne pas exister (le numero Congés
 /// Spectacles d'un salarie, l'objet d'un bulletin, sa case « Analytique », ses lignes non soumises, la paie qu'il
-/// imprime).
-#[derive(Deserialize)]
+/// imprime). Elle se reecrit telle quelle, la paie de chaque bulletin remplie (`remplir`).
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DescriptionLue {
+    #[serde(skip_serializing_if = "Option::is_none")]
     gabarit: Option<Gabarit>,
     entreprise: EntrepriseLue,
     salaries: Vec<SalarieLu>,
@@ -238,14 +295,14 @@ pub struct DescriptionLue {
 }
 
 /// Le logiciel dont le bulletin prend la page.
-#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Gabarit {
     Coolpaie,
     Spaiectacle,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct EntrepriseLue {
     raison_sociale: String,
@@ -259,14 +316,14 @@ struct EntrepriseLue {
     convention: ConventionLue,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ConventionLue {
     idcc: droit::fiche::Idcc,
     libelle: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct SalarieLu {
     code: String,
@@ -277,18 +334,19 @@ struct SalarieLu {
     adresse: String,
     code_postal: String,
     commune: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     conges_spectacles: Option<String>,
 }
 
 /// Le regime du salarie : l'intermittent cotise au chomage des annexes 8 et 10 et aux Congés Spectacles.
-#[derive(Deserialize, Clone, Copy, PartialEq)]
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
 enum Regime {
     Intermittent,
     Permanent,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct BulletinLu {
     salarie: String,
@@ -299,51 +357,56 @@ struct BulletinLu {
     fin: Jour,
     /// Les jours travailles, en paires [debut, fin].
     dates: Vec<[Jour; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     objet: Option<ObjetLu>,
     /// La case « Analytique » de sPAIEctacle (le titre du spectacle, sous son numero d'objet).
+    #[serde(skip_serializing_if = "Option::is_none")]
     analytique: Option<String>,
     lignes: Vec<LigneLue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     non_soumis: Option<Vec<LigneLue>>,
-    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize", serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     taux_pas: Taux,
     regle_le: Jour,
+    #[serde(skip_serializing_if = "Option::is_none")]
     cotisations: Option<Vec<CotisationLue>>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    #[serde(default, with = "socle::grandeurs::ecrit::nombre::option", skip_serializing_if = "Option::is_none")]
     net_imposable: Option<Montant>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    #[serde(default, with = "socle::grandeurs::ecrit::nombre::option", skip_serializing_if = "Option::is_none")]
     pas: Option<Montant>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ObjetLu {
     numero: String,
     titre: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct LigneLue {
     libelle: String,
     /// Dans l'unite de la rubrique de son libelle : lue a la lecture de la ligne (`QuantiteDeLigne::imprimee`).
     quantite: Nombre,
-    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize", serialize_with = "socle::grandeurs::ecrit::nombre_json::serialize")]
     taux: MontantUnitaire,
 }
 
-/// Une cotisation d'une paie de PuppetPaie (une de ses `lignes`, telle quelle).
-#[derive(Deserialize)]
+/// Une cotisation d'une paie de PuppetPaie : une de ses lignes (`engagement::calcul::LigneCotisation`), sans son taux
+/// employeur, que le bulletin n'imprime pas.
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct CotisationLue {
     famille: String,
     libelle: String,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    #[serde(default, with = "socle::grandeurs::ecrit::nombre::option", skip_serializing_if = "Option::is_none")]
     base: Option<Montant>,
-    #[serde(default, deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
+    #[serde(default, with = "socle::grandeurs::ecrit::nombre::option", skip_serializing_if = "Option::is_none")]
     taux_sal: Option<Taux>,
-    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     montant_sal: Montant,
-    #[serde(deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::deserialize")]
+    #[serde(with = "socle::grandeurs::ecrit::nombre")]
     montant_pat: Montant,
     masquer_base_et_taux: bool,
 }
@@ -471,13 +534,14 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     // prorata des jours remuneres pour les autres intermittents.
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(&b.periode, None, &resoudre)
+        // Un bulletin du banc ne decrit aucune absence.
+        droit::plafond::plafond_permanent(&b.periode, &droit::plafond::JoursSansRemuneration::aucun(), None, &resoudre)
     } else {
         let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
         droit::plafond::plafond_urssaf(&b.periode, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
-    let assiette_csg = (brut * ASSIETTE_CSG).au_centime();
+    let assiette_csg = assiette_csg(brut, plafond, b.periode.fin().annee()).map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
     let mut cotisations = Vec::new();
     let (mut total_e, mut total_s, mut csg_non_deductible) = (Montant::ZERO, Montant::ZERO, Montant::ZERO);
     for (cle, base, ei, si, ep, sp) in COTISATIONS.iter().copied().filter(|_| b.paie.is_none()) {
@@ -701,9 +765,16 @@ fn lire_paie(liste: Option<Vec<CotisationLue>>, net_imposable: Option<Montant>, 
             .famille_nommee(&c.famille)
             .and_then(|f| FAMILLES_B.iter().find(|(x, _)| *x == f.as_str()).copied())
             .ok_or_else(|| refus!("{} : la famille « {} » n'en est pas une que le bulletin imprime dans son total", ouc, c.famille))?;
-        if g.cotisation(&c.libelle).is_none() {
+        let Some(cotisation) = g.cotisation(&c.libelle) else {
             return Err(refus!("{} : « {} » n'est pas une cotisation de la table de lecture : ajoutez-la à `cotisations`", ouc, c.libelle));
-        }
+        };
+        // L'APEC A SON RANG, apres celui de l'assurance chomage dont le bareme la fait famille : « Assurance chômage »,
+        // puis « Apec » (arrete du 25/02/2016, art. 1, I, le modele : `atelier/reference/sources/montant-net-social/
+        // legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`).
+        let famille = match cotisation {
+            engagement::ecarts::RegroupementDeComparaison::Apec => (famille.0, RenduB::Rang("Apec")),
+            _ => famille,
+        };
         let masquee = c.masquer_base_et_taux;
         cotisations.push(CotisationPayee {
             famille,
@@ -784,7 +855,8 @@ fn libelle_b(cle: &str) -> (Option<&'static str>, Mesure, &'static str, &'static
 
 /// Comment sPAIEctacle imprime une famille de cotisations, au modele du bulletin clarifie (arrete du 25 fevrier 2016,
 /// art. 1, I : `atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`) :
-/// la sante et la retraite, un titre puis leurs lignes ; la CSG, ses lignes ; toute autre famille, un rang qui la nomme.
+/// la sante et la retraite, un titre puis leurs lignes ; la CSG, ses lignes ; toute autre famille, un rang qui la nomme ;
+/// l'Apec, le sien (`lire_paie`).
 #[derive(Clone, Copy, PartialEq)]
 enum RenduB {
     Titre(&'static str),
@@ -826,7 +898,7 @@ fn rangs_de_la_paie(p: &Paie) -> Vec<RangB<String>> {
     let mut k = 0;
     while k < p.cotisations.len() {
         let (famille, rendu) = p.cotisations[k].famille;
-        let n = p.cotisations[k..].iter().take_while(|c| c.famille.0 == famille).count();
+        let n = p.cotisations[k..].iter().take_while(|c| c.famille == (famille, rendu)).count();
         let groupe: Vec<&CotisationPayee> = p.cotisations[k..k + n].iter().filter(|c| !(c.montant_salarie.est_nul() && c.montant_employeur.est_nul())).collect();
         k += n;
         if groupe.is_empty() {
@@ -1063,4 +1135,64 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
         faits.push(ligne);
     }
     Ok(faits)
+}
+
+// --------------------------------------------------------------------------------------------- la paie qu'ils impriment
+
+/// LA DESCRIPTION `d`, LA PAIE DE CHACUN DE SES BULLETINS REMPLIE de ce que ce moteur calcule : `compagnie` a importe
+/// ces bulletins (le rejeu de son scenario), sa configuration est complete. Chaque bulletin se retrouve parmi ses paies
+/// importees par son salarie (le NIR), son mois et sa periode, que les dates de la paie contiennent ; ses `cotisations` et son `net_imposable` sont ceux de la
+/// paie que la comparaison de l'import refait de lui (`engagement::ecarts::calculee`), son `pas` l'impot preleve sur elle
+/// au taux qu'il imprime (`engagement::etats::prelevement_au_taux_imprime`). Le reste de la description ne change pas.
+/// Un bulletin qui ne se retrouve pas, ou dont le moteur refuse la paie, refuse le tout, en le nommant.
+pub fn remplir(mut d: DescriptionLue, compagnie: &Path) -> R<DescriptionLue> {
+    // Seul sPAIEctacle imprime les cotisations d'une paie (`lire_paie`).
+    if d.gabarit != Some(Gabarit::Spaiectacle) {
+        return Err(refus("la description ne dit pas `\"gabarit\": \"spaiectacle\"` : seul ce gabarit imprime les cotisations d'une paie"));
+    }
+    let importes = engagement::importe::tous(compagnie)?;
+    let nirs: HashMap<&str, &str> = d
+        .salaries
+        .iter()
+        .map(|s| match droit::fiche::Nir::et_sa_cle(&s.nir) {
+            Some((treize, _)) => Ok((s.code.as_str(), treize)),
+            None => Err(refus!("salarié {} : le NIR {} n'a ni treize ni quinze caractères", s.code, s.nir)),
+        })
+        .collect::<R<_>>()?;
+    for (k, b) in d.bulletins.iter_mut().enumerate() {
+        let ou = format!("bulletin {} (salarié {}, du {} au {})", k + 1, b.salarie, b.debut.iso(), b.fin.iso());
+        let nir = *nirs.get(b.salarie.as_str()).ok_or_else(|| refus!("{} : aucun salarié de ce code", ou))?;
+        let mois = b.fin.mois_civil();
+        // La paie dont les dates contiennent la periode du bulletin : celles du contrat d'un mois que la DSN declare (un
+        // permanent, de son debut et sans fin : `routes::importation::bulletins`), celles du bulletin sinon.
+        let periode = socle::date::Periode::du_au(b.debut, b.fin).map_err(|m| m.reformuler(|p| format!("{} : {}", ou, p)))?;
+        let siennes: Vec<&engagement::importe::Importe> = importes
+            .iter()
+            .filter(|i| i.paies().get(&mois).is_some_and(|p| p.nir.as_deref() == Some(nir) && p.periode.and_then(|o| o.croise(&periode)) == Some(periode)))
+            .collect();
+        let [imp] = siennes.as_slice() else {
+            return Err(refus!("{} : {} paie(s) importée(s) de ce salarié, de ce mois et de cette période dans {}, il en faut une", ou, siennes.len(), compagnie.display()));
+        };
+        let paie = engagement::ecarts::calculee(compagnie, imp, mois).map_err(|m| m.reformuler(|p| format!("{} : ce moteur ne calcule pas sa paie : {}", ou, p)))?;
+        let Some(taux) = droit::pas::TauxDePas::du_taux(b.taux_pas) else {
+            return Err(refus!("{} : `taux_pas` {} n'est pas un taux de PAS", ou, socle::grandeurs::ecrit::sans_zero::dit(b.taux_pas)));
+        };
+        b.pas = Some(engagement::etats::prelevement_au_taux_imprime(&paie, taux)?);
+        b.net_imposable = Some(paie.net_imposable);
+        b.cotisations = Some(
+            paie.lignes
+                .iter()
+                .map(|l| CotisationLue {
+                    famille: l.famille.as_str().to_string(),
+                    libelle: l.libelle.clone(),
+                    base: l.base.montant(),
+                    taux_sal: l.taux_sal,
+                    montant_sal: l.montant_sal,
+                    montant_pat: l.montant_pat,
+                    masquer_base_et_taux: l.masquer_base_et_taux,
+                })
+                .collect(),
+        );
+    }
+    Ok(d)
 }

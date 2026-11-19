@@ -76,7 +76,6 @@
    "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
-   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -95,7 +94,139 @@
      "taux": 140
     }
    ],
-   "taux_pas": 5.5
+   "taux_pas": 5.5,
+   "regle_le": "2025-09-14",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "38.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "420",
+     "taux_sal": "0.12",
+     "montant_sal": "0.5",
+     "montant_pat": "4.37",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "4.41",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "420",
+     "taux_sal": "4.83",
+     "montant_sal": "20.29",
+     "montant_pat": "25.16",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "420",
+     "taux_sal": "0.28",
+     "montant_sal": "1.18",
+     "montant_pat": "5.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "420",
+     "taux_sal": "5.3",
+     "montant_sal": "22.26",
+     "montant_pat": "24.11",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "15.46",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "420",
+     "taux_sal": "2.4",
+     "montant_sal": "10.08",
+     "montant_pat": "40.95",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "10.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "468.3",
+     "montant_sal": "0",
+     "montant_pat": "0.33",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "462",
+     "montant_sal": "0",
+     "montant_pat": "3.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "65.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "1.68",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "6.8",
+     "montant_sal": "28.36",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "2.9",
+     "montant_sal": "12.09",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "337.33",
+   "pas": "18.55"
   },
   {
    "salarie": "2",
@@ -104,7 +235,6 @@
    "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
-   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -123,7 +253,148 @@
      "taux": 20
     }
    ],
-   "taux_pas": 7.5
+   "taux_pas": 7.5,
+   "regle_le": "2025-09-14",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "25.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens, cadres)",
+     "base": "360",
+     "taux_sal": "0.12",
+     "montant_sal": "0.43",
+     "montant_pat": "5.83",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "5.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "360",
+     "taux_sal": "6.9",
+     "montant_sal": "24.84",
+     "montant_pat": "30.78",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "360",
+     "taux_sal": "0.4",
+     "montant_sal": "1.44",
+     "montant_pat": "7.27",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Retraite complémentaire Tranche 1 (cadres)",
+     "base": "360",
+     "taux_sal": "4.79",
+     "montant_sal": "17.25",
+     "montant_pat": "18.82",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "12.42",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "360",
+     "taux_sal": "2.4",
+     "montant_sal": "8.64",
+     "montant_pat": "35.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "APEC Tranche A",
+     "base": "360",
+     "taux_sal": "0.024",
+     "montant_sal": "0.09",
+     "montant_pat": "0.13",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "8.7",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "401.4",
+     "montant_sal": "0",
+     "montant_pat": "0.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "396",
+     "montant_sal": "0",
+     "montant_pat": "2.7",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "55.8",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "360",
+     "montant_sal": "0",
+     "montant_pat": "1.44",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "359.53",
+     "taux_sal": "6.8",
+     "montant_sal": "24.45",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "359.53",
+     "taux_sal": "2.9",
+     "montant_sal": "10.43",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "282.86",
+   "pas": "21.21"
   },
   {
    "salarie": "3",
@@ -132,7 +403,6 @@
    "regime": "intermittent",
    "debut": "2025-09-12",
    "fin": "2025-09-14",
-   "regle_le": "2025-09-14",
    "dates": [
     [
      "2025-09-12",
@@ -151,7 +421,139 @@
      "taux": 140
     }
    ],
-   "taux_pas": 2.5
+   "taux_pas": 2.5,
+   "regle_le": "2025-09-14",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "38.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "420",
+     "taux_sal": "0.12",
+     "montant_sal": "0.5",
+     "montant_pat": "4.37",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "4.41",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "420",
+     "taux_sal": "4.83",
+     "montant_sal": "20.29",
+     "montant_pat": "25.16",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "420",
+     "taux_sal": "0.28",
+     "montant_sal": "1.18",
+     "montant_pat": "5.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "420",
+     "taux_sal": "5.3",
+     "montant_sal": "22.26",
+     "montant_pat": "24.11",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "15.46",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "420",
+     "taux_sal": "2.4",
+     "montant_sal": "10.08",
+     "montant_pat": "40.95",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "10.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "468.3",
+     "montant_sal": "0",
+     "montant_pat": "0.33",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "462",
+     "montant_sal": "0",
+     "montant_pat": "3.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "65.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "1.68",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "6.8",
+     "montant_sal": "28.36",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "2.9",
+     "montant_sal": "12.09",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "337.33",
+   "pas": "8.43"
   },
   {
    "salarie": "1",
@@ -160,7 +562,6 @@
    "regime": "intermittent",
    "debut": "2025-10-03",
    "fin": "2025-10-19",
-   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-03",
@@ -183,14 +584,146 @@
      "taux": 140
     }
    ],
-   "taux_pas": 5.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 6,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 5.5,
+   "regle_le": "2025-10-19",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "76.44",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "840",
+     "taux_sal": "0.12",
+     "montant_sal": "1.01",
+     "montant_pat": "8.74",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "8.82",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "759.68",
+     "taux_sal": "4.83",
+     "montant_sal": "36.69",
+     "montant_pat": "45.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "840",
+     "taux_sal": "0.28",
+     "montant_sal": "2.35",
+     "montant_pat": "11.84",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "840",
+     "taux_sal": "5.3",
+     "montant_sal": "44.52",
+     "montant_pat": "48.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "30.91",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "840",
+     "taux_sal": "2.4",
+     "montant_sal": "20.16",
+     "montant_pat": "81.9",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "20.29",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "847.04",
+     "montant_sal": "0",
+     "montant_pat": "0.59",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "924",
+     "montant_sal": "0",
+     "montant_pat": "6.28",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "130.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "759.68",
+     "montant_sal": "0",
+     "montant_pat": "3.04",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "834.04",
+     "taux_sal": "6.8",
+     "montant_sal": "56.71",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "834.04",
+     "taux_sal": "2.9",
+     "montant_sal": "24.19",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "678.56",
+   "pas": "37.32"
   },
   {
    "salarie": "2",
@@ -199,7 +732,6 @@
    "regime": "intermittent",
    "debut": "2025-10-03",
    "fin": "2025-10-19",
-   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-03",
@@ -222,14 +754,155 @@
      "taux": 20
     }
    ],
-   "taux_pas": 7.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 6,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 7.5,
+   "regle_le": "2025-10-19",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "50.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens, cadres)",
+     "base": "720",
+     "taux_sal": "0.12",
+     "montant_sal": "0.86",
+     "montant_pat": "11.66",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "10.8",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "720",
+     "taux_sal": "6.9",
+     "montant_sal": "49.68",
+     "montant_pat": "61.56",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "720",
+     "taux_sal": "0.4",
+     "montant_sal": "2.88",
+     "montant_pat": "14.54",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Retraite complémentaire Tranche 1 (cadres)",
+     "base": "720",
+     "taux_sal": "4.79",
+     "montant_sal": "34.49",
+     "montant_pat": "37.66",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "24.84",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "720",
+     "taux_sal": "2.4",
+     "montant_sal": "17.28",
+     "montant_pat": "70.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "APEC Tranche A",
+     "base": "720",
+     "taux_sal": "0.024",
+     "montant_sal": "0.17",
+     "montant_pat": "0.26",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "17.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "802.8",
+     "montant_sal": "0",
+     "montant_pat": "0.8",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "792",
+     "montant_sal": "0",
+     "montant_pat": "5.38",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "111.6",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "2.88",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "719.06",
+     "taux_sal": "6.8",
+     "montant_sal": "48.9",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "719.06",
+     "taux_sal": "2.9",
+     "montant_sal": "20.85",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "565.74",
+   "pas": "42.43"
   },
   {
    "salarie": "3",
@@ -238,7 +911,6 @@
    "regime": "intermittent",
    "debut": "2025-10-17",
    "fin": "2025-10-19",
-   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-17",
@@ -257,7 +929,139 @@
      "taux": 140
     }
    ],
-   "taux_pas": 2.5
+   "taux_pas": 2.5,
+   "regle_le": "2025-10-19",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "38.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "420",
+     "taux_sal": "0.12",
+     "montant_sal": "0.5",
+     "montant_pat": "4.37",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "4.41",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "420",
+     "taux_sal": "4.83",
+     "montant_sal": "20.29",
+     "montant_pat": "25.16",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "420",
+     "taux_sal": "0.28",
+     "montant_sal": "1.18",
+     "montant_pat": "5.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "420",
+     "taux_sal": "5.3",
+     "montant_sal": "22.26",
+     "montant_pat": "24.11",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "15.46",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "420",
+     "taux_sal": "2.4",
+     "montant_sal": "10.08",
+     "montant_pat": "40.95",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "10.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "468.3",
+     "montant_sal": "0",
+     "montant_pat": "0.33",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "462",
+     "montant_sal": "0",
+     "montant_pat": "3.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "65.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "420",
+     "montant_sal": "0",
+     "montant_pat": "1.68",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "6.8",
+     "montant_sal": "28.36",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "417.02",
+     "taux_sal": "2.9",
+     "montant_sal": "12.09",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "337.33",
+   "pas": "8.43"
   },
   {
    "salarie": "5",
@@ -266,7 +1070,6 @@
    "regime": "intermittent",
    "debut": "2025-10-17",
    "fin": "2025-10-19",
-   "regle_le": "2025-10-19",
    "dates": [
     [
      "2025-10-17",
@@ -285,7 +1088,139 @@
      "taux": 23
     }
    ],
-   "taux_pas": 3
+   "taux_pas": 3,
+   "regle_le": "2025-10-19",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "24.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "345",
+     "taux_sal": "0.12",
+     "montant_sal": "0.41",
+     "montant_pat": "3.59",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "5.18",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "345",
+     "taux_sal": "6.9",
+     "montant_sal": "23.81",
+     "montant_pat": "29.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "345",
+     "taux_sal": "0.4",
+     "montant_sal": "1.38",
+     "montant_pat": "6.97",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "345",
+     "taux_sal": "4.79",
+     "montant_sal": "16.53",
+     "montant_pat": "18.04",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "11.9",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "345",
+     "taux_sal": "2.4",
+     "montant_sal": "8.28",
+     "montant_pat": "33.64",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "8.34",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "384.68",
+     "montant_sal": "0",
+     "montant_pat": "0.38",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "379.5",
+     "montant_sal": "0",
+     "montant_pat": "2.58",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "53.48",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "1.38",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "342.55",
+     "taux_sal": "6.8",
+     "montant_sal": "23.29",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "342.55",
+     "taux_sal": "2.9",
+     "montant_sal": "9.93",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "271.3",
+   "pas": "8.14"
   },
   {
    "salarie": "1",
@@ -294,7 +1229,6 @@
    "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-23",
-   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-07",
@@ -317,14 +1251,146 @@
      "taux": 140
     }
    ],
-   "taux_pas": 5.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 6,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 5.5,
+   "regle_le": "2025-11-23",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "76.44",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "840",
+     "taux_sal": "0.12",
+     "montant_sal": "1.01",
+     "montant_pat": "8.74",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "8.82",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "785",
+     "taux_sal": "4.83",
+     "montant_sal": "37.92",
+     "montant_pat": "47.02",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "840",
+     "taux_sal": "0.28",
+     "montant_sal": "2.35",
+     "montant_pat": "11.84",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "840",
+     "taux_sal": "5.3",
+     "montant_sal": "44.52",
+     "montant_pat": "48.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "30.91",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "840",
+     "taux_sal": "2.4",
+     "montant_sal": "20.16",
+     "montant_pat": "81.9",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "20.29",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "875.28",
+     "montant_sal": "0",
+     "montant_pat": "0.61",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "924",
+     "montant_sal": "0",
+     "montant_pat": "6.28",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "840",
+     "montant_sal": "0",
+     "montant_pat": "130.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "785",
+     "montant_sal": "0",
+     "montant_pat": "3.14",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "834.04",
+     "taux_sal": "6.8",
+     "montant_sal": "56.71",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "834.04",
+     "taux_sal": "2.9",
+     "montant_sal": "24.19",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "677.33",
+   "pas": "37.25"
   },
   {
    "salarie": "2",
@@ -333,7 +1399,6 @@
    "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-23",
-   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-07",
@@ -356,14 +1421,155 @@
      "taux": 20
     }
    ],
-   "taux_pas": 7.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 6,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 7.5,
+   "regle_le": "2025-11-23",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "50.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens, cadres)",
+     "base": "720",
+     "taux_sal": "0.12",
+     "montant_sal": "0.86",
+     "montant_pat": "11.66",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "10.8",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "720",
+     "taux_sal": "6.9",
+     "montant_sal": "49.68",
+     "montant_pat": "61.56",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "720",
+     "taux_sal": "0.4",
+     "montant_sal": "2.88",
+     "montant_pat": "14.54",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Retraite complémentaire Tranche 1 (cadres)",
+     "base": "720",
+     "taux_sal": "4.79",
+     "montant_sal": "34.49",
+     "montant_pat": "37.66",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "24.84",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "720",
+     "taux_sal": "2.4",
+     "montant_sal": "17.28",
+     "montant_pat": "70.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "APEC Tranche A",
+     "base": "720",
+     "taux_sal": "0.024",
+     "montant_sal": "0.17",
+     "montant_pat": "0.26",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "17.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "802.8",
+     "montant_sal": "0",
+     "montant_pat": "0.8",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "792",
+     "montant_sal": "0",
+     "montant_pat": "5.38",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "111.6",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "720",
+     "montant_sal": "0",
+     "montant_pat": "2.88",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "719.06",
+     "taux_sal": "6.8",
+     "montant_sal": "48.9",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "719.06",
+     "taux_sal": "2.9",
+     "montant_sal": "20.85",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "565.74",
+   "pas": "42.43"
   },
   {
    "salarie": "4",
@@ -372,7 +1578,6 @@
    "regime": "intermittent",
    "debut": "2025-11-21",
    "fin": "2025-11-23",
-   "regle_le": "2025-11-23",
    "dates": [
     [
      "2025-11-21",
@@ -391,7 +1596,139 @@
      "taux": 130
     }
    ],
-   "taux_pas": 0
+   "taux_pas": 0,
+   "regle_le": "2025-11-23",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "35.49",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "390",
+     "taux_sal": "0.12",
+     "montant_sal": "0.47",
+     "montant_pat": "4.06",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "4.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "390",
+     "taux_sal": "4.83",
+     "montant_sal": "18.84",
+     "montant_pat": "23.36",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "390",
+     "taux_sal": "0.28",
+     "montant_sal": "1.09",
+     "montant_pat": "5.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "390",
+     "taux_sal": "5.3",
+     "montant_sal": "20.67",
+     "montant_pat": "22.39",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "14.35",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "390",
+     "taux_sal": "2.4",
+     "montant_sal": "9.36",
+     "montant_pat": "38.03",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "9.42",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "434.85",
+     "montant_sal": "0",
+     "montant_pat": "0.3",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "429",
+     "montant_sal": "0",
+     "montant_pat": "2.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "60.45",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "390",
+     "montant_sal": "0",
+     "montant_pat": "1.56",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "387.23",
+     "taux_sal": "6.8",
+     "montant_sal": "26.33",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "387.23",
+     "taux_sal": "2.9",
+     "montant_sal": "11.23",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "313.24",
+   "pas": "0"
   },
   {
    "salarie": "5",
@@ -400,7 +1737,6 @@
    "regime": "intermittent",
    "debut": "2025-11-07",
    "fin": "2025-11-09",
-   "regle_le": "2025-11-09",
    "dates": [
     [
      "2025-11-07",
@@ -419,7 +1755,139 @@
      "taux": 23
     }
    ],
-   "taux_pas": 3
+   "taux_pas": 3,
+   "regle_le": "2025-11-09",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "24.15",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "345",
+     "taux_sal": "0.12",
+     "montant_sal": "0.41",
+     "montant_pat": "3.59",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "5.18",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "345",
+     "taux_sal": "6.9",
+     "montant_sal": "23.81",
+     "montant_pat": "29.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "345",
+     "taux_sal": "0.4",
+     "montant_sal": "1.38",
+     "montant_pat": "6.97",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "345",
+     "taux_sal": "4.79",
+     "montant_sal": "16.53",
+     "montant_pat": "18.04",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "11.9",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "345",
+     "taux_sal": "2.4",
+     "montant_sal": "8.28",
+     "montant_pat": "33.64",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "8.34",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "384.68",
+     "montant_sal": "0",
+     "montant_pat": "0.38",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "379.5",
+     "montant_sal": "0",
+     "montant_pat": "2.58",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "53.48",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "345",
+     "montant_sal": "0",
+     "montant_pat": "1.38",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "342.55",
+     "taux_sal": "6.8",
+     "montant_sal": "23.29",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "342.55",
+     "taux_sal": "2.9",
+     "montant_sal": "9.93",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "271.3",
+   "pas": "8.14"
   },
   {
    "salarie": "1",
@@ -428,7 +1896,6 @@
    "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-20",
-   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-05",
@@ -451,14 +1918,146 @@
      "taux": 140
     }
    ],
-   "taux_pas": 5.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 5,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 5.5,
+   "regle_le": "2025-12-20",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "700",
+     "montant_sal": "0",
+     "montant_pat": "63.7",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "700",
+     "taux_sal": "0.12",
+     "montant_sal": "0.84",
+     "montant_pat": "7.28",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "700",
+     "montant_sal": "0",
+     "montant_pat": "7.35",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "633.06",
+     "taux_sal": "4.83",
+     "montant_sal": "30.58",
+     "montant_pat": "37.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "700",
+     "taux_sal": "0.28",
+     "montant_sal": "1.96",
+     "montant_pat": "9.87",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "700",
+     "taux_sal": "5.3",
+     "montant_sal": "37.1",
+     "montant_pat": "40.18",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "700",
+     "montant_sal": "0",
+     "montant_pat": "25.76",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "700",
+     "taux_sal": "2.4",
+     "montant_sal": "16.8",
+     "montant_pat": "68.25",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "700",
+     "montant_sal": "0",
+     "montant_pat": "16.91",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "705.86",
+     "montant_sal": "0",
+     "montant_pat": "0.49",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "770",
+     "montant_sal": "0",
+     "montant_pat": "5.23",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "700",
+     "montant_sal": "0",
+     "montant_pat": "108.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "633.06",
+     "montant_sal": "0",
+     "montant_pat": "2.53",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "695.03",
+     "taux_sal": "6.8",
+     "montant_sal": "47.26",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "695.03",
+     "taux_sal": "2.9",
+     "montant_sal": "20.16",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "565.46",
+   "pas": "31.1"
   },
   {
    "salarie": "2",
@@ -467,7 +2066,6 @@
    "regime": "intermittent",
    "debut": "2025-12-05",
    "fin": "2025-12-20",
-   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-05",
@@ -490,14 +2088,155 @@
      "taux": 20
     }
    ],
-   "taux_pas": 7.5,
    "non_soumis": [
     {
      "libelle": "Défraiement non soumis",
      "quantite": 5,
      "taux": 18
     }
-   ]
+   ],
+   "taux_pas": 7.5,
+   "regle_le": "2025-12-20",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale – Maladie Maternité Invalidité Décès",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "42",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens, cadres)",
+     "base": "600",
+     "taux_sal": "0.12",
+     "montant_sal": "0.72",
+     "montant_pat": "9.72",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL – MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "9",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "600",
+     "taux_sal": "6.9",
+     "montant_sal": "41.4",
+     "montant_pat": "51.3",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "600",
+     "taux_sal": "0.4",
+     "montant_sal": "2.4",
+     "montant_pat": "12.12",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Retraite complémentaire Tranche 1 (cadres)",
+     "base": "600",
+     "taux_sal": "4.79",
+     "montant_sal": "28.74",
+     "montant_pat": "31.38",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "20.7",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "600",
+     "taux_sal": "2.4",
+     "montant_sal": "14.4",
+     "montant_pat": "58.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "APEC Tranche A",
+     "base": "600",
+     "taux_sal": "0.024",
+     "montant_sal": "0.14",
+     "montant_pat": "0.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "14.5",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "669",
+     "montant_sal": "0",
+     "montant_pat": "0.67",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "660",
+     "montant_sal": "0",
+     "montant_pat": "4.48",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "93",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "600",
+     "montant_sal": "0",
+     "montant_pat": "2.4",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "599.22",
+     "taux_sal": "6.8",
+     "montant_sal": "40.75",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "599.22",
+     "taux_sal": "2.9",
+     "montant_sal": "17.38",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "471.45",
+   "pas": "35.36"
   },
   {
    "salarie": "3",
@@ -506,7 +2245,6 @@
    "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
-   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-19",
@@ -525,7 +2263,139 @@
      "taux": 140
     }
    ],
-   "taux_pas": 2.5
+   "taux_pas": 2.5,
+   "regle_le": "2025-12-20",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "25.48",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "280",
+     "taux_sal": "0.12",
+     "montant_sal": "0.34",
+     "montant_pat": "2.91",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "2.94",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "280",
+     "taux_sal": "4.83",
+     "montant_sal": "13.52",
+     "montant_pat": "16.77",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "280",
+     "taux_sal": "0.28",
+     "montant_sal": "0.78",
+     "montant_pat": "3.95",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "280",
+     "taux_sal": "5.3",
+     "montant_sal": "14.84",
+     "montant_pat": "16.07",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "10.3",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "280",
+     "taux_sal": "2.4",
+     "montant_sal": "6.72",
+     "montant_pat": "27.3",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "6.76",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "312.2",
+     "montant_sal": "0",
+     "montant_pat": "0.22",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "308",
+     "montant_sal": "0",
+     "montant_pat": "2.1",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "43.4",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "280",
+     "montant_sal": "0",
+     "montant_pat": "1.12",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "278.01",
+     "taux_sal": "6.8",
+     "montant_sal": "18.9",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "278.01",
+     "taux_sal": "2.9",
+     "montant_sal": "8.06",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "224.9",
+   "pas": "5.62"
   },
   {
    "salarie": "4",
@@ -534,7 +2404,6 @@
    "regime": "intermittent",
    "debut": "2025-12-19",
    "fin": "2025-12-20",
-   "regle_le": "2025-12-20",
    "dates": [
     [
      "2025-12-19",
@@ -553,7 +2422,139 @@
      "taux": 130
     }
    ],
-   "taux_pas": 0
+   "taux_pas": 0,
+   "regle_le": "2025-12-20",
+   "cotisations": [
+    {
+     "famille": "SANTÉ",
+     "libelle": "Sécurité sociale — Maladie Maternité Invalidité Décès",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "23.66",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "SANTÉ",
+     "libelle": "Complémentaire Incapacité Invalidité Décès (Audiens)",
+     "base": "260",
+     "taux_sal": "0.12",
+     "montant_sal": "0.31",
+     "montant_pat": "2.7",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ACCIDENTS DU TRAVAIL — MALADIES PROFESSIONNELLES",
+     "libelle": "Accidents du travail",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "2.73",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale plafonnée",
+     "base": "260",
+     "taux_sal": "4.83",
+     "montant_sal": "12.56",
+     "montant_pat": "15.57",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Sécurité sociale déplafonnée",
+     "base": "260",
+     "taux_sal": "0.28",
+     "montant_sal": "0.73",
+     "montant_pat": "3.67",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "RETRAITE",
+     "libelle": "Complémentaire Tranche 1",
+     "base": "260",
+     "taux_sal": "5.3",
+     "montant_sal": "13.78",
+     "montant_pat": "14.92",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "FAMILLE",
+     "libelle": "Allocations familiales",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "9.57",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "ASSURANCE CHÔMAGE",
+     "libelle": "Chômage",
+     "base": "260",
+     "taux_sal": "2.4",
+     "montant_sal": "6.24",
+     "montant_pat": "25.35",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "6.28",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "289.9",
+     "montant_sal": "0",
+     "montant_pat": "0.2",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR",
+     "libelle": "Autres contributions dues par l'employeur",
+     "base": "286",
+     "montant_sal": "0",
+     "montant_pat": "1.95",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CONGÉS SPECTACLES",
+     "libelle": "Caisse des Congés Spectacles",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "40.3",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "COTISATIONS STATUTAIRES OU PRÉVUES PAR LA CONVENTION COLLECTIVE",
+     "libelle": "Cotisations conventionnelles IDCC 3090",
+     "base": "260",
+     "montant_sal": "0",
+     "montant_pat": "1.04",
+     "masquer_base_et_taux": true
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG déductible de l'impôt sur le revenu",
+     "base": "258.15",
+     "taux_sal": "6.8",
+     "montant_sal": "17.55",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    },
+    {
+     "famille": "CSG / CRDS",
+     "libelle": "CSG/CRDS non déductible de l'impôt sur le revenu",
+     "base": "258.15",
+     "taux_sal": "2.9",
+     "montant_sal": "7.49",
+     "montant_pat": "0",
+     "masquer_base_et_taux": false
+    }
+   ],
+   "net_imposable": "208.83",
+   "pas": "0"
   }
  ]
 }

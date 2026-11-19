@@ -866,7 +866,7 @@
    "ecran": true
   },
   {
-   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010). Cela depend de sa TVA, que le moteur ne connait pas : la fiche le dit, et une\nfiche muette fait refuser la DSN de decembre (`assujettissement.rs`). La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679a`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
+   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010) ; chaque DSN mensuelle declare, quand elle la doit, la base de chaque salarie au taux\nnormal (S21.G00.79 de type 91, `dsn::bases_et_cotisations`). Cela depend de sa TVA, que le moteur ne connait pas : la\nfiche le dit, et une fiche muette fait refuser la DSN de chaque mois qui a des paies. La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679a`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
    "cle": "taxe_sur_les_salaires",
    "champs": [
     {"cle": "tva", "libelle": "La compagnie et la TVA", "forme": "choix", "ecran": true, "choix": ["assujettie", "exoneree"], "libelles": {"": "— à dire —", "assujettie": "Assujettie à la TVA", "exoneree": "Exonérée de TVA (ou hors de son champ)"}, "aide": "Assujettie : elle facture la TVA sur ses ventes (billetterie, cessions…) et la déclare. Exonérée : elle ne facture pas de TVA, ou ses activités n'y entrent pas — c'est le cas de beaucoup d'associations."},
@@ -876,7 +876,7 @@
    ],
    "libelle": "Taxe sur les salaires",
    "forme": "structure",
-   "aide": "Dites ce que vous savez de votre TVA : le logiciel en déduit si la compagnie doit la taxe sur les salaires, et sur quelle part (code général des impôts, art. 231), et l'écrit sous les cases. La DSN de décembre le déclare chaque année ; sans réponse, elle ne se fait pas.",
+   "aide": "Dites ce que vous savez de votre TVA : le logiciel en déduit si la compagnie doit la taxe sur les salaires, et sur quelle part (code général des impôts, art. 231), et l'écrit sous les cases. Chaque DSN le déclare, celle de décembre pour l'année ; sans réponse, la DSN d'un mois qui a des paies ne se fait pas.",
    "longueur": null,
    "exemple": "",
    "choix": [],
@@ -1221,7 +1221,7 @@
    "avance": "toujours_remplie",
    "libelle": "Matricule",
    "forme": "chiffres",
-   "aide": "Le numéro du salarié dans la compagnie. Il se donne tout seul à la création (le suivant) et ne se change plus : il identifie la personne dans la DSN.",
+   "aide": "Le numéro du salarié dans la compagnie, qui l'identifie dans la DSN. Il se donne tout seul à la création (le suivant), ou vient des pièces reprises.",
    "longueur": null,
    "exemple": "",
    "choix": [],
@@ -2207,6 +2207,29 @@
    "libelle": "Congés payés à la reprise",
    "forme": "structure",
    "aide": "Seulement pour un salarié au mois déjà employé avant PuppetPaie. Recopier le dernier bulletin de l'ancien logiciel : à partir de quel jour PuppetPaie compte, les jours restants de l'année précédente (N-1), les jours acquis et pris sur l'année en cours (N). Les rémunérations servent au dixième (L3141-24) ; vides, le maintien de salaire s'applique seul, et le logiciel le dit.",
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si": null,
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "ecran": true
+  },
+  {
+   "note": "LES CUMULS DE L'ANNEE A LA REPRISE. Trois plafonds se comptent sur\nl'annee : la deduction forfaitaire specifique (7 600 EUR par annee\ncivile, arrete du 4 septembre 2025, art. 9), le contingent d'heures\nsupplementaires (C. trav. L3121-30, un contingent \"annuel\" dont l'accord\nfixe l'annee, L3121-33 ; le moteur le compte sur l'annee civile :\nINFERENCE) et l'exoneration d'impot des heures en plus (CGI 81 quater,\n7 500 EUR, une limite annuelle : l'annee civile de l'impot, INFERENCE). Les pieces de l'ancien logiciel ne les disent\npas : ce qu'il avait cumule dans l'annee se lit sur son dernier\nbulletin, et se saisit une fois. Ne se montre que pour un salarie dont\nune paie de l'annee a ete reprise.",
+   "cle": "cumuls_reprise",
+   "champs": [
+    {"cle": "date", "libelle": "PuppetPaie paie à partir du", "forme": "date", "ecran": true, "aide": "Le premier jour du premier mois payé par PuppetPaie dans l'année. Ce qui suit vaut pour l'année de cette date, avant elle."},
+    {"cle": "deduction_forfaitaire", "libelle": "Déduction forfaitaire déjà pratiquée (€)", "forme": "texte", "ecran": true, "aide": "Le total de la déduction forfaitaire spécifique pour frais professionnels appliquée depuis le 1er janvier. 0 s'il n'y en a pas."},
+    {"cle": "heures_supplementaires", "libelle": "Heures supplémentaires déjà payées", "forme": "texte", "ecran": true, "aide": "Le nombre d'heures supplémentaires payées depuis le 1er janvier : le contingent annuel les compte. 0 s'il n'y en a pas."},
+    {"cle": "heures_en_plus_exonerees", "libelle": "Heures en plus déjà exonérées d'impôt (€)", "forme": "texte", "ecran": true, "aide": "Le montant net des heures supplémentaires et complémentaires exonéré d'impôt depuis le 1er janvier (limite de 7 500 € par an). 0 s'il n'y en a pas."}
+   ],
+   "libelle": "Cumuls de l'année à la reprise",
+   "forme": "structure",
+   "aide": "Pour un salarié dont une paie de l'année vient de l'ancien logiciel. Recopier ses cumuls de l'année sur son dernier bulletin : le logiciel en a besoin pour les plafonds de l'année, que les pièces reprises ne disent pas.",
    "longueur": null,
    "exemple": "",
    "choix": [],

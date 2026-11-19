@@ -672,7 +672,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Montant>> {
     let b = &p.bases;
     let mut out = HashMap::new();
     // Une base en euros ; une base en heures n'est pas un montant que la DSN declare.
-    let lue = |a: Assiette| -> R<Montant> { b.get(&a).and_then(|x| x.montant()).ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, a.nom())) };
+    let lue = |a: Assiette| -> R<Montant> { b.get(&a).and_then(|x| x.montant()).ok_or_else(|| socle::echec::paie_illisible(a.nom())) };
     out.insert(Assiette::Brut, p.brut);
     out.insert(Assiette::BrutCs, lue(Assiette::BrutCs)?);
     out.insert(Assiette::Csg, p.base_csg);
@@ -688,7 +688,7 @@ pub fn bases(p: &Paie, bar: &Pile) -> R<HashMap<Assiette, Montant>> {
     for a in [
         Assiette::T1Mensuelle, Assiette::T2Mensuelle, Assiette::ApecMensuelle, Assiette::CetMensuelle, Assiette::PssPeriode,
         Assiette::T2Conventionnelle, Assiette::BrutPlafonne, Assiette::BrutX115Plafonne, Assiette::BrutChomage,
-        Assiette::T1MensuelleX115,
+        Assiette::T1MensuelleX115, Assiette::T1Annuelle, Assiette::T2Annuelle, Assiette::CetAnnuelle,
     ] {
         if b.contains_key(&a) {
             out.insert(a, lue(a)?);
@@ -843,7 +843,7 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
         // Une base en euros ; une base en heures n'est pas un montant que la DSN declare, et se refuse en nommant son assiette.
         k => match p.bases.get(&k) {
             Some(b) => b.en_euros(k)?,
-            None => return Err(socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom())),
+            None => return Err(socle::echec::paie_illisible(k.nom())),
         },
     })
 }
@@ -869,6 +869,12 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bar = bareme_de(p, bar)?;
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
+    // La part patronale de la CET des 131 de la paie (sa base, son montant, son taux : `parts_patronales_agirc_arrco`), et
+    // le 131 de l'assiette deplafonnee sous lequel elle se declare, une fois.
+    let mut cet: (Montant, Montant, Option<Taux>) = (Montant::ZERO, Montant::ZERO, None);
+    let mut sous_le_deplafonne: Option<Cotisation> = None;
+    // Le 131 de la tranche 1 (celui qui fait la somme de `retraite_t1`), sous la base duquel se declare le 142.
+    let mut de_la_tranche_1: Option<Cotisation> = None;
     for c in &bar.cotisations_dsn {
         if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n)).transpose()? == Some(false) {
             continue;
@@ -889,10 +895,18 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             composant79: None,
             cet: false,
         };
-        if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty()) {
+        // Les lignes du bulletin d'un 131 (`lignes_du_131`). Un 131 dont aucune n'est au bulletin ne se declare pas : la
+        // tranche 2 et la CET qui ne sont pas dues (`calcul::calculer` ne les imprime pas), la tranche 1 de l'annee d'un
+        // intermittent deja passee au-dela du plafond annuel. La fiche net-entreprises 2556 (cas n° 4, l. 975-1137 :
+        // un salarie paye sous le plafond n'a de 131 que sous l'assiette plafonnee, son assiette deplafonnee ne porte
+        // que l'Apec) ; sa base 78 se declare, elle.
+        let unifie = c.code81 == Some(AGIRC_ARRCO_UNIFIE);
+        let du_131 = if unifie { lignes_du_131(c)? } else { Vec::new() };
+        let au_bulletin = !unifie || du_131.iter().any(|id| p.lignes.iter().any(|x| x.est(id)));
+        if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty() && au_bulletin) {
             l.montant = Some(somme_lignes(p, lignes, false));
             l.composant79 = composant_79(p, &bar, lignes)?;
-        } else if let Some(taux) = c.taux.map(|t| t.0) {
+        } else if let Some(taux) = c.taux.map(|t| t.0).filter(|_| au_bulletin) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
             l.taux = Some(taux);
@@ -905,12 +919,61 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         if l.montant.is_some() && l.code81.is_none() {
             return Err(socle::echec::livree(&droit::contexte::SOCLES, "cotisations_dsn.code81"));
         }
-        let unifie = l.code81 == Some(AGIRC_ARRCO_UNIFIE);
         out.push(l);
         if unifie {
             let l131 = out[out.len() - 1].clone();
-            out.extend(parts_patronales_agirc_arrco(p, &bar, c, &l131)?);
+            if l131.bloc78.deplafonnee_agirc_arrco() {
+                sous_le_deplafonne = Some(l131.clone());
+            }
+            if du_131.contains(&droit::forme_bareme::RETRAITE_T1) {
+                de_la_tranche_1 = Some(l131.clone());
+            }
+            if au_bulletin {
+                out.extend(parts_patronales_agirc_arrco(p, &bar, &du_131, &l131, &mut cet)?);
+            }
         }
+    }
+    // La part patronale de la CET, sous l'assiette deplafonnee du 131 de la tranche 2 : « En 2027, le montant de CET est
+    // a declarer entierement sous l'assiette deplafonnee » (fiche net-entreprises 2556, l. 85) ; en 2026, c'est l'une des
+    // deux options (l. 505-507), et la CET qu'un cadre intermittent paie fondue dans sa tranche 1 (`sans_la_cet`) s'y
+    // ajoute a celle de sa tranche 2. La CET n'a pas la base de la tranche 2 : elle part dans un 146 a elle, ce que le
+    // guide Urssaf admet (« il est tolere de multiplier les blocs [...] 146 [...] pour declarer separement chacun des
+    // elements sous ce meme code », p. 38).
+    if let (Some(t), false) = (cet.2, cet.1.est_nul()) {
+        let sous = sous_le_deplafonne.ok_or_else(|| {
+            refus!(
+                "{} : la paie porte une contribution d'équilibre technique, mais le barème ne déclare aucun 131 sous une \
+assiette déplafonnée (03, 22 ou 23), sous laquelle sa part patronale se déclare (fiche net-entreprises 2556). Rien n'est écrit.",
+                qui_contrat(p)
+            )
+        })?;
+        let org = org_de(&bar, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
+        out.push(Cotisation { cet: true, ..part_patronale(&sous, org, AGIRC_ARRCO_PATRONALE_T2, cet.0, t, cet.1) });
+    }
+    // UN 131 NE PART JAMAIS SANS SON 142. SIG-18 (cahier technique 2026.1, `norme-dsn/texte/bloc-S21.G00.81.txt`
+    // l. 158-163) : un 131 sous une base 78 du mois veut « au moins un bloc [...] 142 [...] sous le même bloc
+    // "Versement individu" » ; la fiche net-entreprises 2556 (l. 61) : un 142 « est attendu dès lors qu'il est déclaré une
+    // cotisation [...] 131 ». Quand la part patronale de tranche 1 est nulle (un intermittent passe au-dela du plafond de
+    // l'annee, dont la paie est toute en tranche 2 ; un mois sans brut), `parts_patronales_agirc_arrco` n'ecrit rien, et
+    // le 142 se declare ici a 0,00, sous la base du 131 de la tranche 1 (la 43 d'un intermittent, fiche 2556 l. 63 ; la 02
+    // d'un permanent, l. 61) : l'Urssaf (81.002), son assiette (81.003, « à renseigner pour une cotisation », p. 308) et
+    // le taux patronal de tranche 1 du bareme (81.007, « à renseigner pour une cotisation », p. 310 ; « ainsi que le
+    // taux », guide Urssaf du 04/06/2026 p. 34). Aucun texte n'interdit un 142 nul : 81.004 admet 0.00 (CSL 00, p. 309).
+    // Rien ne demande un 146 : SIG-18 ne parle que du 142, et la fiche 2556 (l. 89) n'attend aucun 146 sans tranche 2.
+    let porte_un_131 = out.iter().any(|c| c.code81 == Some(AGIRC_ARRCO_UNIFIE) && c.montant.is_some());
+    if porte_un_131 && !out.iter().any(|c| c.code81 == Some(AGIRC_ARRCO_PATRONALE_T1)) {
+        let t1 = de_la_tranche_1.ok_or_else(|| {
+            refus!(
+                "{} : le barème déclare un 131 (Agirc-Arrco), mais aucun 131 de la tranche 1 (la ligne {}), sous la base \
+duquel le 142 que l'Urssaf attend sous le même versement (SIG-18) se déclare. Rien n'est écrit.",
+                qui_contrat(p),
+                droit::forme_bareme::RETRAITE_T1.as_str()
+            )
+        })?;
+        let r = bar.rubrique(&droit::forme_bareme::RETRAITE_T1).ok_or_else(|| socle::fichiers::absent(droit::forme_bareme::RETRAITE_T1.as_str()))?;
+        let taux = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0;
+        let org = org_de(&bar, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
+        out.push(part_patronale(&t1, org, AGIRC_ARRCO_PATRONALE_T1, t1.base78, taux, Montant::ZERO));
     }
     let nat = p.engagement.nat()?;
     let nature = nat.section_des_organismes();
@@ -1106,33 +1169,81 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
 /// part dans un 146 a elle, ce que le guide admet (« il est tolere de multiplier les blocs [...] 146 [...] pour declarer
 /// separement chacun des elements sous ce meme code », p. 38). Le bloc 78 est celui du 131 : « Chaque cotisation
 /// individuelle est rattachee a la base assujettie juridique correspondante » (p. 5), et la modalite Urssaf de 78.001
-/// admet la base 23 (norme p. 293, ligne 133). Une part nulle ne s'ecrit pas. En 2027 la CET a son code, 148, « entierement
-/// sous l'assiette deplafonnee » (03, 22 ou 23 ; fiche net-entreprises 2556, l. 83-87) : le code s'ecrit selon la version
-/// du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`), la base reste celle du 131 (type 23).
-fn parts_patronales_agirc_arrco(p: &Paie, pile: &Pile, c: &CotisationDsn, l131: &Cotisation) -> R<Vec<Cotisation>> {
+/// admet les bases 23 et 43 (norme p. 293, ligne 133) ; la fiche net-entreprises 2556 (l. 63) : « pour les cas des
+/// techniciens intermittents du spectacle [...] il est attendu la declaration du code de cotisation 142 [...] sous le code
+/// de base assujettie 43 », celle du 131 de leur tranche 1. Une part nulle ne s'ecrit pas ici : un 142 nul, que SIG-18
+/// demande a cote de tout 131, `cotisations` le declare a 0,00 ; un 146 nul, aucun texte ne le demande. La CET ne s'ecrit pas ici : sa
+/// part patronale s'ajoute a `cet` (sa base, son montant, son taux), que `cotisations` declare une fois, sous l'assiette
+/// deplafonnee ; son code s'ecrit selon la version du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`).
+fn parts_patronales_agirc_arrco(
+    p: &Paie, pile: &Pile, ids: &[IdDeCotisation], l131: &Cotisation, cet: &mut (Montant, Montant, Option<Taux>),
+) -> R<Vec<Cotisation>> {
     let rubrique = |id: &IdDeCotisation| pile.rubrique(id);
-    // Le 131 nomme ses lignes, ou porte un taux sur l'assiette de la ligne de retraite qu'il declare (`bareme::poser_t1`).
-    let ids: Vec<IdDeCotisation> = if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty()) {
-        lignes.clone()
-    } else {
-        LIGNES_AGIRC_ARRCO.iter().filter(|id| rubrique(id).is_some_and(|r| r.base == c.base)).cloned().collect()
-    };
     let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
-    if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(id)) {
-        return Err(refus!(
-            "Le bareme declare un 131 (Agirc-Arrco) fait {} : sa part patronale (142, 146), que l'Urssaf attend sous le \
+    let org = org_de(pile, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
+    let mut out = Vec::new();
+    let mut ajouter_a_la_cet = |base: Montant, montant: Montant, t: Taux| -> R<()> {
+        if cet.2.is_some_and(|x| x != t) {
+            return Err(refus!("La CET des lignes {} n'a pas un seul taux patronal : sa part patronale (146 en 2026, 148 en 2027) ne s'ecrit pas.", dites(ids)));
+        }
+        cet.2 = Some(t);
+        cet.0 += base;
+        cet.1 += montant;
+        Ok(())
+    };
+    for id in ids {
+        // Une tranche 2 nulle, une CET qui n'est pas due ne sont pas au bulletin (`calcul::calculer`).
+        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
+        let (montant, fondue) = sans_la_cet(p, l, r)?;
+        // L'assiette (81.003) compte des euros : une base en heures se refuse.
+        let base = l.base.montant().ok_or_else(|| refus!("La ligne « {} » du bulletin a une base en heures : sa part Agirc-Arrco ne se déclare pas. Rien n'est écrit.", id))?;
+        let taux = match &fondue {
+            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
+            None => l.taux_pat.ok_or_else(|| refus!("La ligne « {} » du bulletin n'a pas de taux patronal : sa part Agirc-Arrco ne se declare pas.", id))?,
+        };
+        // La CET fondue dans les tranches d'un cadre intermittent (`sans_la_cet`) ; la ligne « cet » d'un permanent ou d'un
+        // intermittent non-cadre, toute de la CET.
+        if let Some((m, t)) = fondue {
+            ajouter_a_la_cet(base, m, t)?;
+        }
+        if *id == droit::forme_bareme::CET {
+            ajouter_a_la_cet(base, montant, taux)?;
+        } else if !montant.est_nul() {
+            let code = if *id == droit::forme_bareme::RETRAITE_T1 { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
+            out.push(part_patronale(l131, org.clone(), code, base, taux, montant));
+        }
+    }
+    Ok(out)
+}
+
+/// LES LIGNES DU BULLETIN D'UN 131 : celles que la cotisation `c` nomme (`lignes`) ; tout 131 est le « montant des
+/// cotisations » de sa tranche que le bulletin a calcule (cahier Agirc-Arrco CT2026, 6.3.2, l. 1162 et 1167), la somme
+/// de ses lignes. Hors des lignes de retraite, ou sans ligne, refus : sa part patronale (142, 146), que l'Urssaf attend
+/// sous le meme versement (SIG-18), ne se lit que sur elles.
+fn lignes_du_131(c: &CotisationDsn) -> R<Vec<IdDeCotisation>> {
+    let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
+    let fait = match &c.lignes {
+        Some(ids) if !ids.is_empty() && ids.iter().all(|id| LIGNES_AGIRC_ARRCO.contains(id)) => return Ok(ids.clone()),
+        Some(ids) if !ids.is_empty() => format!("des lignes {}", dites(ids)),
+        _ => "d'aucune ligne du bulletin".to_string(),
+    };
+    Err(refus!(
+        "Le bareme declare un 131 (Agirc-Arrco) fait {} : sa part patronale (142, 146), que l'Urssaf attend sous le \
 meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les lignes de retraite du bulletin \
 ({}). Rien n'est ecrit.",
-            if ids.is_empty() { "d'aucune ligne du bulletin".to_string() } else { format!("des lignes {}", dites(&ids)) },
-            dites(&LIGNES_AGIRC_ARRCO)
-        ));
-    }
-    let org = org_de(pile, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
-    let part = |code: CodeCotisation81, base: Montant, taux: Taux, montant: Montant| Cotisation {
+        fait,
+        dites(&LIGNES_AGIRC_ARRCO)
+    ))
+}
+
+/// Une part patronale Agirc-Arrco (142, 146) a l'Urssaf `org`, sous la base 78 du 131 `l131` : sa base, son taux, son
+/// montant (`parts_patronales_agirc_arrco`).
+fn part_patronale(l131: &Cotisation, org: IdentifiantDOrganisme, code: CodeCotisation81, base: Montant, taux: Taux, montant: Montant) -> Cotisation {
+    Cotisation {
         bloc78: l131.bloc78,
         base78: l131.base78,
         code81: Some(code),
-        org: Some(org.clone()),
+        org: Some(org),
         affectation: l131.affectation.clone(),
         cle_total: None,
         code_insee: None,
@@ -1141,38 +1252,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         montant: Some(montant),
         composant79: None,
         cet: false,
-    };
-    let mut out = Vec::new();
-    let (mut cet_montant, mut cet_base, mut cet_taux) = (Montant::ZERO, Montant::ZERO, None::<Taux>);
-    for id in &ids {
-        // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
-        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
-        let (montant, cet) = sans_la_cet(p, l, r)?;
-        // L'assiette (81.003) compte des euros : une base en heures se refuse.
-        let base = l.base.montant().ok_or_else(|| refus!("La ligne « {} » du bulletin a une base en heures : sa part Agirc-Arrco ne se déclare pas. Rien n'est écrit.", id))?;
-        let taux = match &cet {
-            Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
-            None => l.taux_pat.ok_or_else(|| refus!("La ligne « {} » du bulletin n'a pas de taux patronal : sa part Agirc-Arrco ne se declare pas.", id))?,
-        };
-        if let Some((m, t)) = cet {
-            if cet_taux.is_some_and(|x| x != t) {
-                return Err(refus!("La CET des lignes {} n'a pas un seul taux patronal : sa part patronale (146 en 2026, 148 en 2027) ne s'ecrit pas.", dites(&ids)));
-            }
-            cet_taux = Some(t);
-            cet_montant += m;
-            cet_base += base;
-        }
-        if !montant.est_nul() {
-            let code = if *id == droit::forme_bareme::RETRAITE_T1 { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
-            // La ligne « cet » d'un permanent est toute de la CET ; celle d'un cadre intermittent est fondue dans ses
-            // tranches et se separe plus bas (`sans_la_cet`).
-            out.push(Cotisation { cet: *id == droit::forme_bareme::CET, ..part(code, base, taux, montant) });
-        }
     }
-    if let (Some(t), false) = (cet_taux, cet_montant.est_nul()) {
-        out.push(Cotisation { cet: true, ..part(AGIRC_ARRCO_PATRONALE_T2, cet_base, t, cet_montant) });
-    }
-    Ok(out)
 }
 
 /// Les cotisations d'une meme base se suivent, pour s'ecrire sous un seul bloc 78. Une base est la « Somme des
@@ -1946,8 +2026,12 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add(droit::rubrique!("S21.G00.62.006"), crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
-        // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
-        for (rub, val) in nat.codes_fin(Some(motif)) {
+        // 62.017 d'un CDDU : 01 (circuit derogatoire) pour le 031 d'un contrat infra DSN mensuelle, 02 sinon -- un contrat
+        // qu'une DSN precedente a declare suit le droit commun (CCH-12, `Nature::codes_fin`). Il se decide au calendrier
+        // (`ConnuDeLaDsn::du_contrat`, sur le debut du contrat et le mois de l'engagement) : la correction d'une fin deja
+        // declaree redit donc ce que la DSN de son mois avait ecrit, le choix « précédemment transmis » (fiche 1902,
+        // `net-entreprises-base-connaissances/net-entreprises-fiche1902-circuit-derogatoire-cddu-d-20250512.txt`).
+        for (rub, val) in nat.codes_fin(Some(motif), droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois)) {
             f.add(rub, val);
         }
     }
@@ -2427,6 +2511,17 @@ pub fn bases_et_cotisations(
     let mut courant: Option<(BaseAssujettie, Option<IdentifiantDAffiliation>, Montant)> = None;
     let places = places_par_contrat(bar);
     let composants = usage_admet(f, droit::rubrique!("S21.G00.79.001"), nature_dsn)?;
+    // La taxe sur les salaires au taux normal : « déclarées mensuellement au niveau de chaque salarié »
+    // (`documents::taxe_sur_les_salaires::base_au_taux_normal`), sous sa base 03, une fois par paie ; une compagnie qui ne
+    // la doit pas n'ecrit rien, une fiche qui ne le dit pas refuse.
+    let part_taxee = if nature_dsn == NatureDeLaDeclaration::Mensuelle && composants {
+        documents::taxe_sur_les_salaires::taxe_sur_les_salaires_de_la_fiche(&bar.entreprise.fiche).map_err(|m| {
+            m.reformuler(|m| format!("DSN, base de taxe sur les salaires de {} (S21.G00.79 de type 91) : {} Rien n'est ecrit.", qui_contrat(p), m))
+        })?
+    } else {
+        None
+    };
+    let mut base_91_ecrite = false;
     for mut c in cotisations(p, bar)? {
         if bases_exclues.contains(&c.bloc78) {
             continue;
@@ -2457,6 +2552,12 @@ pub fn bases_et_cotisations(
                     None => p.plafond,
                 };
                 f.add(droit::rubrique!("S21.G00.79.004"), ms(v, signe));
+                // La base 03 de la DGFiP n'a pas d'affiliation (78.005 : organismes complementaires seulement).
+                if let Some(part) = part_taxee.filter(|_| c.affectation.is_none() && !base_91_ecrite) {
+                    base_91_ecrite = true;
+                    f.add(droit::rubrique!("S21.G00.79.001"), TypeDeComposant::TaxeSurLesSalairesAuTauxNormal);
+                    f.add(droit::rubrique!("S21.G00.79.004"), ms(documents::taxe_sur_les_salaires::base_au_taux_normal(p, bar, part), signe));
+                }
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
@@ -2491,6 +2592,16 @@ pub fn bases_et_cotisations(
             // Le taux s'ecrit dans la forme de la norme : sa porte.
             f.add(droit::rubrique!("S21.G00.81.007"), norme::taux(t, 3));
         }
+    }
+    if part_taxee.is_some() && !base_91_ecrite {
+        return Err(socle::echec::cle(
+            format!(
+                "La paie de {} ne déclare aucune base 03 sans affiliation : sa base de taxe sur les salaires au taux normal \
+(S21.G00.79 de type 91) n'a pas où s'écrire. C'est un défaut du logiciel : le signaler au développeur. Rien n'est écrit.",
+                qui_contrat(p)
+            ),
+            "S21.G00.79.001",
+        ));
     }
     Ok(())
 }
@@ -3410,7 +3521,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     // sinon la tranche 1 elle-meme).
     let (mut t1, mut t1_x115) = (Montant::ZERO, Montant::ZERO);
     for i in (0..paies.len()).filter(|i| perm(*i)) {
-        let t = base_de_la_paie(paies[i], Assiette::T1Mensuelle)?.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, Assiette::T1Mensuelle.nom()))?;
+        let t = base_de_la_paie(paies[i], Assiette::T1Mensuelle)?.ok_or_else(|| socle::echec::paie_illisible(Assiette::T1Mensuelle.nom()))?;
         t1 += t;
         t1_x115 += match base_de_la_paie(paies[i], Assiette::T1MensuelleX115)? {
             Some(majoree) => majoree,

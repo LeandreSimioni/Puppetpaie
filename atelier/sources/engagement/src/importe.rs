@@ -7,8 +7,8 @@
 //!
 //! Ses mois sont valides et leurs documents sont partis : ce qui en est parti, c'est l'import lui-meme (les pieces de
 //! l'autre logiciel). SES MOIS REPRIS SE LISENT, ILS NE SE MODIFIENT PAS ET NE SE RECALCULENT JAMAIS : ils ne sont
-//! aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul, aucune declaration ni aucun document qui part
-//! ne les prend ; l'ecran ne peut ni les reecrire ni en poser un double (`stock::ecrire_la_carte`). Son numero de
+//! aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul ne les refait, aucune declaration ni aucun
+//! document qui part ne les prend (un calcul d'un autre mois lit ce qu'ils ont verse : `reprises_du_salarie`) ; l'ecran ne peut ni les reecrire ni en poser un double (`stock::ecrire_la_carte`). Son numero de
 //! contrat est celui que la DSN deposee lui a donne (S21.G00.40.009), jamais un numero tire : il compte parmi les
 //! numeros pris (`numeros`).
 //!
@@ -23,8 +23,10 @@
 //! se lit a partir de lui.
 //!
 //! Ce qui le lit : les cumuls des annexes 8 et 10 (`cumul`, par ce que le contrat atteste), le mois tenu avant
-//! PuppetPaie (`contrats_lus`, `paies_lues` : un contrat atteste, une paie versee), et les etats, qui lisent chacune de
-//! ses paies dans les mots du moteur (`Importe::paie`, par `etats::paies_du_mois`). L'import manipule les memes formes,
+//! PuppetPaie (`contrats_lus`, `paies_lues` : un contrat atteste, une paie versee), les etats, qui lisent chacune de
+//! ses paies dans les mots du moteur (`Importe::paie`, par `etats::paies_du_mois`), et les calculs qui lisent le
+//! salaire d'un autre mois, qui lisent ses paies telles que les pieces les disent, sans rien en calculer
+//! (`reprises_du_salarie`, par `etats::paies_du_salarie`). L'import manipule les memes formes,
 //! avec les bornes de leur engagement (`ContratLu`, `PaieLue`), de la lecture des pieces a l'ecriture (`Neuf`).
 
 use std::collections::BTreeMap;
@@ -181,6 +183,9 @@ pub struct PaieVersee {
     pub periode: Option<socle::date::PeriodeOuverte>,
     /// La quotite que la DSN deposee declare pour le contrat (S21.G00.40.013), dans l'unite de 40.011.
     pub quotite: Option<droit::natures::QuotiteDuContrat>,
+    /// Le motif de recours que la DSN deposee declare pour le contrat (S21.G00.40.021).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
     pub brut: Option<Montant>,
     /// Ses nets et son prelevement a la source, que la DSN deposee (bloc 50) ou son bulletin disent.
@@ -207,6 +212,16 @@ pub struct PaieVersee {
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub heures: Option<Heures>,
+    /// LA DUREE DU TRAVAIL QUE LE BULLETIN IMPRIME en en-tete (« Durée du travail : 151,67 h ») : le nombre d'heures de
+    /// travail auquel le salaire se rapporte (C. trav. R. 3243-1, 5°), quand il ne l'imprime pas sur sa ligne de
+    /// salaire (« Salaire mensuel de base »).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "socle::grandeurs::ecrit::texte::option::serialize",
+        deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize"
+    )]
+    pub duree_du_travail: Option<Heures>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
     pub cachets: Option<Cachets>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
@@ -437,6 +452,7 @@ impl PaieVersee {
             numero_objet: None,
             periode: None,
             quotite: None,
+            motif_recours: None,
             brut: None,
             nets: Nets::default(),
             net_a_payer: None,
@@ -450,6 +466,7 @@ impl PaieVersee {
             fichier: None,
             bases: BTreeMap::new(),
             heures: None,
+            duree_du_travail: None,
             cachets: None,
             jours: None,
             spectacle: None,
@@ -570,6 +587,30 @@ impl Importe {
                 "nature",
             )
         })
+    }
+
+    /// LES DATES DU CONTRAT QUE PAIE `p`, l'une de ses paies : celles de l'engagement, sinon celles de la paie. Le contrat
+    /// d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin ; sans fin dite, un
+    /// autre finit avec la paie. `None` : ni l'engagement ni la paie ne disent son debut. Sa paie dans les mots du moteur
+    /// (`paie`) et la saisie que la comparaison refait (`ecarts`) le lisent.
+    pub(crate) fn contrat_de_la_paie(&self, p: &PaieVersee) -> R<Option<PeriodeOuverte>> {
+        Ok(Some(match (self.carte().contrat()?, p.periode) {
+            (Some(c), _) if c.fin().is_some() || self.permanent() => c,
+            (Some(c), paie) => match paie.and_then(|o| o.fin()) {
+                Some(fin) => c.fermee_au(fin)?.into(),
+                None => c,
+            },
+            (None, Some(o)) if self.permanent() => o.sans_fin(),
+            (None, Some(o)) => o,
+            (None, None) => return Ok(None),
+        }))
+    }
+
+    /// LE MOTIF DE RECOURS DU CONTRAT : celui que l'engagement dit, sinon celui que la derniere DSN deposee qui declare
+    /// une de ses paies declare pour lui (S21.G00.40.021, `PaieVersee::motif_recours`) : une piece propre se prend telle
+    /// quelle (regle 1). `None` : personne ne le dit.
+    pub fn motif_recours(&self) -> Option<droit::natures::MotifDeRecours> {
+        self.carte().motif_recours.or_else(|| self.paies().values().rev().find_map(|p| p.motif_recours))
     }
 
     /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
@@ -734,17 +775,8 @@ impl Importe {
             Some(e) => e.clone(),
             None => droit::emplois::EmploiEngagement::default(),
         };
-        // Le contrat d'un permanent finit a sa fin, dite ou declaree, jamais a celle du mois que paie un bulletin.
-        // Sans fin dite, un autre finit avec la paie.
-        let contrat = match (self.carte().contrat()?, p.periode) {
-            (Some(c), _) if c.fin().is_some() || self.permanent() => c,
-            (Some(c), paie) => match paie.and_then(|o| o.fin()) {
-                Some(fin) => c.fermee_au(fin)?.into(),
-                None => c,
-            },
-            (None, Some(o)) if self.permanent() => o.sans_fin(),
-            (None, Some(o)) => o,
-            (None, None) => return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois)),
+        let Some(contrat) = self.contrat_de_la_paie(p)? else {
+            return Err(socle::refus!("{} (rang {}) : ni l'engagement ni la paie de {} ne disent le début du contrat", self.objet.fichier, self.objet.rang, mois));
         };
         let dates_travail: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
         let brut = p.brut;
@@ -767,10 +799,7 @@ impl Importe {
             // Ses lignes de remuneration sont celles du bulletin (`remuneration`) : il n'a aucune ligne saisie.
             lignes: Vec::new(),
             contrat,
-            numero: match self.carte().numero.clone() {
-                Some(n) => Some(n),
-                None => p.bulletin.as_ref().and_then(|b| b.contrat.clone()),
-            },
+            numero: self.numero_de_la_paie(p),
             mois,
             planning: Vec::new(),
             planning_lieux: BTreeMap::new(),
@@ -789,7 +818,7 @@ impl Importe {
             quotite_contrat: quotite,
             quotite_reference_saisie: None,
             modalite_temps_travail_saisie: None,
-            motif_recours: None,
+            motif_recours: self.motif_recours(),
             motif_rupture: None,
             notification_rupture: None,
             preavis: None,
@@ -799,6 +828,7 @@ impl Importe {
             suspensions: Vec::new(),
             avant: None,
             periode: None,
+            sans_remuneration: None,
             ecrit: crate::ContratEcrit::default(),
         };
         // Chaque ligne imprimee, avec sa ligne de remuneration quand elle est rattachee (`rattachee`).
@@ -889,6 +919,84 @@ impl Importe {
             }),
         })
     }
+}
+
+impl Importe {
+    /// LE NUMERO DU CONTRAT QUE PAIE `p`, l'une de ses paies : celui de l'engagement, sinon celui que son bulletin
+    /// imprime ; `None` : aucun des deux ne le dit.
+    fn numero_de_la_paie(&self, p: &PaieVersee) -> Option<NumeroContrat> {
+        self.carte().numero.clone().or_else(|| p.bulletin.as_ref().and_then(|b| b.contrat.clone()))
+    }
+}
+
+impl PaieVersee {
+    /// LA CLE DE LA REPRISE DES CUMULS DE L'ANNEE (`droit::fiche::RepriseDesCumuls`) : une paie reprise d'un ancien
+    /// logiciel la donne, et elle seule ; ce que cet ancien logiciel avait cumule dans l'annee, ses pieces ne le disent
+    /// pas, la fiche du salarie le dit (`cumuls_reprise`, lu par `conges::cumul_de_l_annee`).
+    pub fn reprise_des_cumuls(&self) -> droit::fiche::RepriseDesCumuls {
+        droit::fiche::RepriseDesCumuls::d_une_paie_reprise()
+    }
+}
+
+/// UNE PAIE REPRISE DU SALARIE, TELLE QU'UN CALCUL D'UN AUTRE MOIS LA LIT (`reprises_du_salarie`) : ce qui a ete verse,
+/// tel que les pieces le disent (`PaieVersee`), et le numero du contrat qu'elle paie (`Importe::numero_de_la_paie`).
+/// Rien ne s'y range ni ne s'y calcule : ni la nature du contrat, ni le bareme ou la convention de son mois.
+#[derive(Debug, Clone, Serialize)]
+pub struct PaieReprise {
+    pub numero: Option<NumeroContrat>,
+    pub paie: PaieVersee,
+}
+
+/// LES PAIES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` REPRISES D'UN ANCIEN LOGICIEL, une par engagement
+/// importe qui le paie ce mois, telles que leurs pieces les disent (`PaieReprise`). Le calcul qui les lit note leur
+/// empreinte (`reprises <mois> <salarie>`, `empreinte_des_reprises`, par `etats::paies_du_salarie`). Un engagement
+/// importe non actif (un contrat repris qui a continue ici, puis retire apres un envoi : `etats::desactiver`) y est
+/// comme les autres : ce que l'ancien logiciel a verse l'a ete. Un engagement importe qui ne dit pas son salarie n'est
+/// celui de personne : il ne fait pas refuser les calculs des autres salaries (ce qui lit ses paies et son contrat pour
+/// eux-memes le refuse, `cle_ecrite`).
+pub fn reprises_du_salarie(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<Vec<PaieReprise>> {
+    let mut out = Vec::new();
+    for i in du_mois(racine, mois)?.into_iter().filter(|i| i.objet.carte().salarie.as_ref() == Some(salarie)) {
+        if let Some(p) = i.paies().get(&mois) {
+            out.push(PaieReprise { numero: i.numero_de_la_paie(p), paie: p.clone() });
+        }
+    }
+    Ok(out)
+}
+
+/// LA CLE DE LA REPRISE DES CUMULS QUE LA FICHE DU SALARIE `salarie` (la cle de sa fiche) MONTRE
+/// (`routes::fiches::montres`) : une paie reprise de lui (celles que les calculs lisent, `reprises_du_salarie` : d'un
+/// engagement importe actif ou non), d'une annee civile qu'un engagement d'ici, actif, touche aussi. Les cumuls de
+/// l'annee d'une paie de cet engagement lisent alors cette paie reprise, et la reprise des cumuls de la fiche quand elle
+/// ne dit pas ce qu'ils comptent (`conges::cumul_de_l_annee`). `None` : aucun calcul ne la lit.
+pub fn reprise_des_cumuls_de(racine: &Path, salarie: &IdSalarie) -> R<Option<droit::fiche::RepriseDesCumuls>> {
+    let objets = stock::objets(racine)?;
+    let siens = objets.iter().filter(|o| o.carte().salarie.as_ref() == Some(salarie));
+    let mut reprises: Vec<(socle::mois::Annee, &PaieVersee)> = Vec::new();
+    let mut ici: Vec<(socle::mois::Annee, Option<socle::mois::Annee>)> = Vec::new();
+    for o in siens {
+        if let Some(p) = o.pieces() {
+            reprises.extend(p.paies.iter().map(|(m, paie)| (m.annee(), paie)));
+        }
+        // Un engagement non actif ne touche plus aucun mois d'ici (`stock::Objet::couvre`).
+        if !o.importe_seul() && !o.est_non_actif() {
+            ici.push((o.premier_mois().annee(), o.dernier_mois()?.map(Mois::annee)));
+        }
+    }
+    let touchee = |an: socle::mois::Annee| ici.iter().any(|(premier, dernier)| *premier <= an && dernier.is_none_or(|d| an <= d));
+    Ok(reprises.into_iter().find(|(an, _)| touchee(*an)).map(|(_, p)| p.reprise_des_cumuls()))
+}
+
+/// L'empreinte des paies reprises du salarie `salarie` en `mois` telles qu'un calcul les lit (`reprises_du_salarie`) :
+/// un reimport, un bulletin qui complete une paie de DSN, une ligne rattachee la changent, et la paie validee qui les a
+/// lues se recalcule.
+pub fn empreinte_des_reprises(racine: &Path, mois: Mois, salarie: &IdSalarie) -> R<socle::fichiers::Empreinte> {
+    Ok(empreinte_de(&reprises_du_salarie(racine, mois, salarie)?))
+}
+
+/// L'empreinte de paies reprises lues (`empreinte_des_reprises`).
+pub fn empreinte_de(reprises: &[PaieReprise]) -> socle::fichiers::Empreinte {
+    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(&reprises).as_bytes())
 }
 
 /// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois.
@@ -1025,17 +1133,29 @@ pub struct Neuf {
 
 /// LE CONTRAT DE PERMANENT QUI CONTINUE ICI : sa nature est dite et payee au mois, il a ete verse le dernier mois repris
 /// (`dernier`), et il ne finit pas avant le mois qui suit.
-fn continue_ici(e: &Neuf, dernier: Mois) -> R<bool> {
-    let mensuel = e.carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
+fn continue_ici(carte: &Carte, pieces: &Pieces, dernier: Mois) -> R<bool> {
+    let mensuel = carte.nature.map(|n| n.proprietes().map(|x| x.mensuelle())).transpose()?.is_some_and(|m| m);
     let premier_jour_suivant = dernier.suivant().premier_jour();
-    Ok(mensuel && e.pieces.paies.contains_key(&dernier) && e.carte.fin.is_none_or(|f| f >= premier_jour_suivant))
+    Ok(mensuel && pieces.paies.contains_key(&dernier) && carte.fin.is_none_or(|f| f >= premier_jour_suivant))
+}
+
+/// LE MOIS D'ENTREE D'UN ENGAGEMENT IMPORTE, le fichier qui le porte (`ecrire_tous`), `dernier` etant le dernier mois
+/// repris.
+fn mois_d_entree(carte: &Carte, pieces: &Pieces, dernier: Option<Mois>) -> R<Mois> {
+    Ok(match (dernier, carte.debut) {
+        (Some(d), _) if continue_ici(carte, pieces, d)? => d.suivant(),
+        (_, Some(premier)) => premier.mois_civil(),
+        _ => pieces.paies.keys().next().copied().ok_or_else(|| socle::echec::refus("un engagement importe sans debut ni paie"))?,
+    })
 }
 
 /// ECRIT LES ENGAGEMENTS IMPORTES, tous : chacun dans le fichier de son mois d'entree -- le mois ou il commence (son
 /// `debut`, sinon le premier mois ou il a ete verse), ou, pour le contrat de permanent qui continue ici (`continue_ici`),
 /// le mois qui suit le dernier mois repris : son premier mois neuf. Ils vont apres les engagements de la saisie. Ceux qui
 /// y etaient s'en vont ; rien d'autre ne change. LE MEME CONTRAT DEJA ECRIT (meme salarie, un mois verse en commun) garde
-/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent. Rend les fichiers ecrits.
+/// ce qui a ete dit de lui et ce que la saisie lui a ecrit ; seules ses pieces se remplacent (ce qu'une DSN qui arrive
+/// declare autrement se remplace ensuite, et se dit : `routes::importation::nature::la_dsn_fait_foi`). Rend les fichiers
+/// ecrits.
 pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
     let existants = tous(racine)?;
     let dernier = importes.iter().flat_map(|e| e.pieces.paies.keys().copied()).max();
@@ -1056,11 +1176,7 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
                 e.carte = ecrit.saisie.carte.clone();
             }
         }
-        let mois = match (dernier, e.carte.debut) {
-            (Some(d), _) if continue_ici(&e, d)? => d.suivant(),
-            (_, Some(premier)) => premier.mois_civil(),
-            _ => e.pieces.paies.keys().next().copied().ok_or_else(|| socle::echec::refus("un engagement importe sans debut ni paie"))?,
-        };
+        let mois = mois_d_entree(&e.carte, &e.pieces, dernier)?;
         ecrit.importe = Some(e.pieces);
         par_mois.entry(mois).or_default().push(ecrit);
     }
@@ -1094,18 +1210,70 @@ pub fn ecrire_tous(racine: &Path, importes: Vec<Neuf>) -> R<Vec<PathBuf>> {
 }
 
 /// CE QUE L'IMPORT COMPLETE DE LUI-MEME : ce que les pieces ne disaient pas et que la personne dit apres l'import (la
-/// nature d'un contrat de permanent, son numero). `completer` recoit chaque engagement importe (sa carte, a changer, et
-/// ses pieces) et dit s'il l'a changee ; ceux-la se reecrivent. Rend combien ont change.
+/// nature d'un contrat de permanent, son numero). `completer` recoit chaque engagement importe NON VALIDE (sa carte, a
+/// changer, et ses pieces) ; un engagement valide a ete dit et arrete : sa carte ne se change plus ici. SEULE LA CARTE
+/// CHANGE : sa saisie d'ici (avenants, faits des mois), ses versions, son numero donne restent ; un engagement dont la
+/// carte ne change pas ne se reecrit pas. Celui dont le mois d'entree change avec sa carte (`mois_d_entree`) passe dans
+/// le fichier de ce mois, a la place de son mois d'origine parmi les importes. Rend combien ont change.
 pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -> bool) -> R<usize> {
-    let mut tous: Vec<Neuf> = tous(racine)?.into_iter().map(|i| Neuf { carte: i.carte().clone(), pieces: i.pieces().clone() }).collect();
-    let mut changes = 0usize;
-    for e in tous.iter_mut() {
-        if completer(&mut e.carte, &e.pieces) {
-            changes += 1;
+    let tous = tous(racine)?;
+    let dernier = tous.iter().flat_map(|i| i.paies().keys().copied()).max();
+    // (fichier, rang, mois d'entree, l'engagement tel qu'il s'ecrit)
+    let mut changes: Vec<(Mois, usize, Mois, stock::Ecrit)> = Vec::new();
+    for i in tous.iter().filter(|i| !i.objet.est_valide()) {
+        let mut carte = i.carte().clone();
+        if !completer(&mut carte, i.pieces()) || carte == *i.carte() {
+            continue;
+        }
+        let mois = mois_d_entree(&carte, i.pieces(), dernier)?;
+        let mut ecrit = (*i.objet.brut).clone();
+        // Un numero que la carte recoit n'est plus celui que le moteur avait donne (`numero_pour`) : il se lit, il ne se
+        // reforme pas (regle 4).
+        if carte.numero != i.carte().numero {
+            ecrit.numero_pour = None;
+        }
+        ecrit.saisie.carte = carte;
+        changes.push((i.objet.fichier, i.objet.rang, mois, ecrit));
+    }
+    let mut fichiers: Vec<Mois> = changes.iter().flat_map(|(f, _, m, _)| [*f, *m]).collect();
+    fichiers.sort();
+    fichiers.dedup();
+    for f in fichiers {
+        let mut contenu = match stock::lire_fichier(racine, f)? {
+            Some(c) => c,
+            None => stock::FichierDuMois { mois: f, taux_cachet: None, engagements: Vec::new() },
+        };
+        // Ceux qui restent dans ce fichier se remplacent a leur rang ; ceux qui en partent s'en vont (du dernier rang au
+        // premier, pour que les rangs lus tiennent) ; ceux qui y arrivent vont apres.
+        let mut partent: Vec<usize> = Vec::new();
+        for (de, rang, vers, ecrit) in &changes {
+            if *de != f {
+                continue;
+            }
+            let place = contenu.engagements.get_mut(*rang).ok_or_else(|| socle::refus!("{} : l'engagement {} a disparu", f, rang + 1))?;
+            if *vers == f {
+                *place = ecrit.clone();
+            } else {
+                partent.push(*rang);
+            }
+        }
+        partent.sort_unstable_by(|a, b| b.cmp(a));
+        for rang in partent {
+            contenu.engagements.remove(rang);
+        }
+        // L'ordre des engagements importes d'un fichier est celui de leur mois d'origine, puis de leur rang : ceux qui
+        // viennent d'un mois d'avant se placent devant les importes deja la, ceux d'un mois d'apres, derriere. L'ordre ne
+        // depend pas de celui ou la compagnie a repondu.
+        let arrivent = |avant: bool| changes.iter().filter(move |(de, _, vers, _)| *vers == f && if avant { *de < f } else { *de > f }).map(|(_, _, _, e)| e.clone());
+        let premier_importe = contenu.engagements.iter().take_while(|e| e.importe.is_none()).count();
+        let derriere: Vec<stock::Ecrit> = arrivent(false).collect();
+        contenu.engagements.splice(premier_importe..premier_importe, arrivent(true));
+        contenu.engagements.extend(derriere);
+        if contenu.engagements.is_empty() && contenu.taux_cachet.is_none() {
+            stock::retirer(racine, f)?;
+        } else {
+            stock::poser(racine, &contenu)?;
         }
     }
-    if changes > 0 {
-        ecrire_tous(racine, tous)?;
-    }
-    Ok(changes)
+    Ok(changes.len())
 }

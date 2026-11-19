@@ -96,16 +96,34 @@ en vigueur depuis le 02/01/2020).
 
 - **L. 130-1, I** : l'effectif annuel est « la moyenne du nombre de personnes employées au cours de chacun des mois de
   l'année civile précédente » ; **II** : un seuil n'est franchi qu'après cinq années civiles consécutives.
-- **R. 130-1, I** : les mois sans salarié ne comptent pas dans la moyenne ; l'effectif se tronque au centième.
+- **L. 130-1, I, troisième alinéa** : l'année de création du premier emploi salarié, l'effectif est « l'effectif présent
+  le dernier jour du mois au cours duquel a été réalisée cette première embauche » (`droit::effectif::effectif_au_jour`) ;
+  pas une moyenne. INFÉRENCE : le prorata des jours du mois (R. 130-1, II, quatrième alinéa) n'a pas d'objet pour un seul
+  jour ; le temps partiel s'y décompte comme ailleurs.
+- **R. 130-1, I** : « les mois au cours desquels aucun salarié n'est employé » ne comptent pas dans la moyenne ;
+  l'effectif se tronque au centième. INFÉRENCE : le mois où seuls travaillent des salariés exclus du décompte (un
+  CDD de remplacement, un apprenti) compte dans la moyenne, à zéro. Le texte n'écarte que les mois où « aucun salarié
+  n'est employé », et un salarié exclu du décompte est un salarié employé ; il ne dit pas ce cas en toutes lettres.
 - **R. 130-1, II** : comptent les titulaires d'un contrat de travail, sauf les CDD qui remplacent un salarié absent
-  (deuxième phrase du 2° de L. 1111-2 du code du travail) ; à temps plein, entièrement ; à temps partiel, au rapport des
-  horaires du contrat à la durée légale ou conventionnelle (dernier alinéa de L. 1111-2) ; chacun « à due proportion du
-  nombre de jours du mois pendant lequel [il a] été employé ».
-- **R. 130-1, III** renvoie à L. 1111-3 du code du travail (apprentis, contrats aidés…), qui n'est pas relevé : ces
-  exclusions ne sont pas appliquées.
+  (deuxième phrase du 2° de L. 1111-2 du code du travail) ; à temps plein, entièrement ; à temps partiel au sens de
+  L. 3123-1, au rapport des horaires du contrat à la durée légale ou conventionnelle (dernier alinéa de L. 1111-2) ; chacun
+  « à due proportion du nombre de jours du mois pendant lequel [il a] été employé ». Une quotité de référence nulle ne
+  rapporte rien : le contrat ne se compte pas, et le refus le dit (`TempsDansLEffectif::partiel`). INFÉRENCE : le CDDU,
+  que sa nature déclare « salarié non concerné » par la modalité du temps de travail (S21.G00.40.014 = 99), n'est pas à
+  temps partiel au sens de L. 3123-1 (il n'a pas de durée contractuelle hebdomadaire, mensuelle ni annuelle à comparer à
+  la durée légale, `../code-du-travail/articles-20261015.md`, L3123-1) : il compte entier, à due proportion des jours de
+  son contrat (jamais de ses seuls jours travaillés).
+- **R. 130-1, III** renvoie à L. 1111-3 du code du travail (1°, 2°, 4° et 6° : apprentis, CIE, CAE, professionnalisation),
+  déposé dans `../code-du-travail/legifrance-code-du-travail-L1111-3-20261118.pdf` : ce que la DSN en déclare
+  (S21.G00.40.008) s'applique ; ce que les paies reprises ne disent pas se dit dans la phrase de l'effectif proposé
+  (`../code-du-travail/LISEZ-MOI.md`, « Ceux que l'effectif ne compte pas »).
+- **R. 130-1, V** (le transfert des contrats, L. 1224-1) : ni appliqué ni lu d'une pièce reprise.
 
-**Où le moteur s'en sert** : `atelier/sources/envois/src/organismes_simules.rs` (`effectif_annuel`), le compte rendu de
-nature 118 que le simulateur rend à une compagnie fictive ; `droit/src/contexte.rs` (`EffectifsParAnnee::atteint`) pour la règle
+**Où le moteur s'en sert** : `atelier/sources/droit/src/effectif.rs` (`ContratDansLEffectif::de`, `effectif_du_mois`,
+`effectif_au_jour`, `effectif_annuel`), la seule
+règle, que lisent `atelier/sources/envois/src/organismes_simules.rs`, le compte rendu de nature 118 que le simulateur
+rend à une compagnie fictive, depuis ses DSN, et `atelier/sources/engagement/src/effectif_repris.rs`, l'effectif que
+« Pour démarrer » propose d'après les paies reprises d'un ancien logiciel ; `droit/src/contexte.rs` (`EffectifsParAnnee::atteint`) pour la règle
 des cinq ans, et `EffectifsParAnnee::a_dire` pour les années qui manquent ; `routes/src/fiches.rs` (route `effectif`) pour
 l'effectif qu'une compagnie venue d'un autre logiciel dit d'une année sans compte rendu 118, tronqué au centième (R. 130-1, I),
 qu'un 118 de la même année remplace (`envois/src/releve_retours.rs`, `poser_effectif`).

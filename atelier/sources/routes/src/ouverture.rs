@@ -22,7 +22,7 @@ use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
-use droit::natures::{self, MotifDeRupture, Nature};
+use droit::natures::{self, MotifDeRupture};
 use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
@@ -120,11 +120,7 @@ const AIDES: &[(&str, &str)] = &[
     ("revue_spectacles", "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet."),
     ("mot_de_passe", "Le mot de passe du logiciel ne sert qu'à prouver que quelqu'un est là. Les mots de passe des organismes et de la boîte restent dans le coffre."),
     ("import_dossier", "Vide : le dossier d'import de la compagnie."),
-    ("import_relire", "Un fichier ajouté depuis, un salarié ou une année qui manquait."),
-    ("import_relire_note", "Les fiches qui existent déjà ne sont pas touchées ; ce que les DSN ou les bulletins disaient autrement est seulement signalé. Ce qui est déjà repris ne se double pas."),
-    ("import_relire_intro", "Mettez dans ce dossier ce qui manquait, puis « Aperçu ». Rien n'est écrit avant « Reprendre »."),
-    ("import_intro", "Mettez dans le dossier ci-dessous tout ce que votre ancien logiciel vous a laissé, puis « Importer » : PuppetPaie crée la fiche de la compagnie, ses salariés, ses spectacles et leurs contrats avec ce que les pièces disent."),
-    ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD. Dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
+    ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
     ("import_numero", "Le numéro du contrat : la rubrique S21.G00.40.009 de sa dernière DSN."),
     ("import_quotite", "La durée du travail, en heures par mois : la rubrique S21.G00.40.013 de la DSN."),
     ("import_ecarts", "Le bulletin fait foi : c'est son montant qui s'écrit, l'écart reste noté ici."),
@@ -140,7 +136,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels (niveaux_sante : null tant que le barème ne se compose pas), auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -151,7 +147,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire les fiches de la compagnie, vérifiées.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases",
+        rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
         acte: Acte::Lit,
         phrase: 0,
@@ -509,11 +505,11 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// Les lignes des autres etablissements demandent-elles leur versement mobilite ? Oui quand le siege en paie un : le
 /// controle des etablissements l'exige alors de chacun (`droit::contexte::controler_etablissements`). Un bareme du jour qui
 /// ne se compose pas ne le demande pas : la configuration s'ouvre quand meme (c'est la qu'on la corrige), et dit pourquoi
-/// (`ConfigurationDeLaPage::bareme`).
-fn versement_mobilite_des_etablissements(ctx: &Contexte) -> (bool, Option<String>) {
+/// (`ConfigurationDeLaPage::pour_payer`, que le meme empilement refuse).
+fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
-        Ok(b) => (droit::bareme::versement_mobilite(&b).is_some(), None),
-        Err(e) => (false, Some(format!("Le barème d'aujourd'hui ne se compose pas : {}", e.phrase))),
+        Ok(b) => droit::bareme::versement_mobilite(&b).is_some(),
+        Err(_) => false,
     }
 }
 
@@ -800,8 +796,10 @@ pub(crate) struct ConfigurationDeLaPage {
     /// Ce que la liste des etablissements commande.
     etablissements: Option<Vec<ChoixEtablissement>>,
     versement_mobilite_des_etablissements: bool,
-    /// Pourquoi le bareme du jour ne se compose pas, s'il ne se compose pas.
-    bareme: Option<String>,
+    /// CE QUI MANQUE POUR PAYER AUJOURD'HUI : le refus du bareme du jour, controle (`Contexte::bareme` : l'effectif, le
+    /// taux AT/MP...), que le bandeau montre ; « Pour démarrer » demande la case (`declarations::demarrage`). Lire
+    /// l'etat de la compagnie n'est pas payer : la paie refuse a son calcul.
+    pour_payer: Option<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
     invitation: Invitation,
@@ -909,7 +907,13 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let fiches_attendues = fiches_attendues(ctx)?;
     let liste = |un: &str, les: &str| MotsDeLaListe { nouvelle: format!("+ un {}", un), aucun: format!("Aucun {} actif", un), archives: format!("Afficher les {} archivés", les) };
     let boite_liee = boite_liee(ctx)?;
-    let (versement_mobilite_des_etablissements, bareme) = versement_mobilite_des_etablissements(ctx);
+    let versement_mobilite_des_etablissements = versement_mobilite_des_etablissements(ctx);
+    let pour_payer = match ctx.bareme(&jour) {
+        Ok(_) => None,
+        Err(e) if e.dit_un_manque() => Some(e.phrase),
+        // Une panne (le disque, le socle livre) n'est pas ce qui manque pour payer : elle remonte.
+        Err(e) => return Err(e),
+    };
     Ok(ConfigurationDeLaPage {
         ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
         fiches_attendues_titre: format!("{} fiche(s) en attente", fiches_attendues.len()),
@@ -924,7 +928,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         description: Descriptions { entreprise: description_entreprise, salarie: champs::description(NomDeFiche::Salarie)?, spectacle: champs::description(NomDeFiche::Spectacle)? },
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
-        bareme,
+        pour_payer,
         identite: identite(ctx, &ctx.gabarits())?,
         invitation: Invitation {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
@@ -1034,14 +1038,14 @@ pub(crate) struct MoisDuBilan {
 }
 
 impl MoisDuBilan {
-    /// Un mois dont la DSN ne se lit pas : ses fichiers, et rien a corriger.
-    fn nu(mois: Mois, fichiers: &[NomDeFichier]) -> MoisDuBilan {
+    /// Un mois qui ne se lit pas : ses fichiers, rien a corriger, et pourquoi (sa pastille le dit).
+    fn nu(mois: Mois, fichiers: &[NomDeFichier], pourquoi: String) -> MoisDuBilan {
         MoisDuBilan {
             mois,
             produit: !fichiers.is_empty(),
             dsn: None,
             saisi_dit: "saisi",
-            pastille: None,
+            pastille: Some(socle::ecran::Pastille { couleur: socle::ecran::couleur_de_l_etat(socle::ecran::EtatDEcran::AFaire), mots: pourquoi }),
             depose_le: None,
             depose_dit: None,
             documents_dit: None,
@@ -1062,10 +1066,26 @@ impl MoisDuBilan {
 /// a. L'etat de la DSN : « passee » (bilan OK), « refusee », « attente »,
 /// « a_deposer », « en_retard » ; la meme lecture que les
 /// rappels : le journal des depots, et lui seul.
+///
+/// CHAQUE MOIS SE LIT SEUL (« Le logiciel est doux ») : un mois qui ne se lit pas (une paie ecrite abimee, une piece, un
+/// calcul impossible, une case qui manque) se rend nu, avec sa phrase ; les autres se rendent. Seule une panne du disque
+/// remonte.
 fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichier>)]) -> R<Vec<MoisDuBilan>> {
     let mut out = Vec::new();
-    for &(le_mois, ref noms) in mois {
-        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+    for (le_mois, noms) in mois {
+        out.push(match bilan_du_mois(m, ctx, *le_mois, noms) {
+            Ok(b) => b,
+            Err(e) if e.classe == Some(Classe::Disque) => return Err(e),
+            Err(e) => MoisDuBilan::nu(*le_mois, noms, format!("Ce mois ne se lit pas : {}", e.phrase)),
+        });
+    }
+    Ok(out)
+}
+
+/// Le bilan du mois `le_mois` (`bilan_des_mois`), dont `noms` sont les fichiers.
+fn bilan_du_mois(m: &mut Moteur, ctx: &Contexte, le_mois: Mois, noms: &[NomDeFichier]) -> R<MoisDuBilan> {
+    {
+        let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, le_mois)?;
         let limite = echeance.jour;
         let en_retard = echeance.passee_au(&ctx.aujourdhui);
         // L'ETAT DE LA DSN, lu une fois (`compagnie::etat_dsn`) ; une DSN a deposer passee l'echeance est en retard.
@@ -1118,7 +1138,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             Etat::ADeposer => ("orange", "DSN à déposer"),
         };
         let quand = if depose { lu.quand.clone() } else { None };
-        out.push(MoisDuBilan {
+        Ok(MoisDuBilan {
             mois: le_mois,
             produit: !noms.is_empty(),
             dsn: Some(if retard { DsnDuBilan::EnRetard } else { DsnDuBilan::Lue(lu.etat) }),
@@ -1138,15 +1158,14 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<NomDeFichie
             importe: Some(importe),
             a_faire,
             sortes,
-            fichiers: noms.clone(),
+            fichiers: noms.to_vec(),
             clos: Some(m.exercice_clos(le_mois.annee())?),
-        });
+        })
     }
-    Ok(out)
 }
 
 /// Ce que l'Historique montre de chaque mois.
-fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<String>)> {
+fn historique(m: &mut Moteur, ctx: &Contexte) -> R<Vec<MoisDuBilan>> {
     let mut mois = mois_connus(&ctx.racine)?;
     // Les mois tenus avant ce logiciel sont des mois comme les autres : l'Historique les montre aussi.
     for im in import::mois::mois_importes(&ctx.racine)? {
@@ -1155,12 +1174,7 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
         }
     }
     mois.sort_by(|a, b| b.0.cmp(&a.0));
-    // Une fiche entreprise incomplete (effectif, echeance) n'empeche pas la page de s'ouvrir : la liste nue, et pourquoi
-    // le bilan des mois ne se fait pas.
-    Ok(match bilan_des_mois(m, ctx, &mois) {
-        Ok(b) => (b, None),
-        Err(e) => (mois.iter().map(|(nom, noms)| MoisDuBilan::nu(*nom, noms)).collect(), Some(format!("Le bilan des mois ne se fait pas : {}", e.phrase))),
-    })
+    bilan_des_mois(m, ctx, &mois)
 }
 
 // ----------------------------------------------------------- les referentiels
@@ -1331,55 +1345,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     })
 }
 
-/// `faits_de_rupture` : les faits a demander a l'ecran pour CE motif, et eux
-/// seuls (« si compagnie simple, interface simple »).
-fn faits_de_rupture(n: &Nature, m: MotifDeRupture) -> R<Vec<&'static str>> {
-    use MotifDeRupture::*;
-    let sans_notification = matches!(m, FinDeCdd | RuptureConventionnelle | DecesDeLEmployeur | ForceMajeure | CommunAccord);
-    let licenciement = matches!(
-        m,
-        LicenciementEconomique | LicenciementAutreMotif | LicenciementFauteGrave | LicenciementFauteLourde | InaptitudeNonProfessionnelle | InaptitudeProfessionnelle | RuptureAnticipeeFauteGrave | RuptureAnticipeeFauteLourde
-    );
-    let mut faits = Vec::new();
-    // La rupture conventionnelle, ou le moteur refuse sans le fait (CGI 80
-    // duodecies 6°).
-    let sec = permanents::rupture(Some(m))?;
-    if sec.is_some_and(|(fin, _)| fin == permanents::FinDeCdi::RuptureConventionnelle) {
-        faits.push("en_droit_a_la_retraite");
-    }
-    // Un contrat a duree indeterminee dont le motif ouvre un preavis, et dont le preavis non effectue se paie : pas
-    // celui que le texte n'indemnise pas (`preavis.indemnite_compensatrice.motifs_sans_indemnite` : 059, 039, 091).
-    let sans_indemnite = matches!(permanents::indemnite_de_preavis(Some(m))?, permanents::IndemniteDePreavis::Aucune(_));
-    if n.duree_indeterminee && !sans_indemnite {
-        if !permanents::sans_preavis(Some(m))? {
-            faits.push("preavis_non_effectue");
-        }
-    }
-    // Un CDD dont l'indemnite de fin de contrat est due.
-    if !n.duree_indeterminee && permanents::precarite_due(n, Some(m))?.is_none() {
-        faits.push("precarite_due");
-    }
-    // LES DATES ET LA TRANSACTION SELON LE MOTIF : une rupture decidee par l'un
-    // des deux se NOTIFIE ; un licenciement s'ENGAGE par la convocation a
-    // l'entretien prealable ; une rupture conventionnelle se date par la
-    // SIGNATURE de la convention ; la TRANSACTION suit un litige.
-    // Et toujours quand le signalement l'exige (CCH-12 de S21.G00.62.003, `fctu::notification_exigee`) : la force majeure
-    // (083) est de la liste ci-dessus, et sa date de notification est pourtant obligatoire dans un FCTU.
-    if !sans_notification || declarations::fctu::notification_exigee(m)? {
-        faits.push("notification_rupture");
-    }
-    if licenciement {
-        faits.push("engagement_licenciement");
-    }
-    if m == RuptureConventionnelle {
-        faits.push("signature_convention");
-    }
-    if licenciement || matches!(m, MiseALaRetraite | PriseDActe) {
-        faits.push("transaction");
-    }
-    Ok(faits)
-}
-
 /// UNE NATURE DE CONTRAT telle que l'ecran la propose : ce que `contrats-base.json` en dit, et ce que la page en tire sans
 /// rien decider (les faits a demander et le signalement, motif par motif ; ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1395,21 +1360,19 @@ struct NatureDeLaPage {
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
     /// et 10 (CCH-11).
     spectacle: bool,
-    /// La fin se signale-t-elle (`Nature::signalement_fctu`) : au motif par defaut, et motif par motif -- un CDDU a son
-    /// terme (031) part dans la mensuelle, rompu avant (036, 037...) il se signale. La page ne decide rien.
-    signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<MotifDeRupture, bool>,
     motifs_rupture: Vec<natures::RuptureOfferte>,
+    /// Les faits que chaque motif appelle (`permanents::faits_de_rupture`), et ceux du choix vide (`faits_sans_motif` :
+    /// ceux du motif par defaut de la nature) : la page montre ces cases, et elles seules.
     faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
+    faits_sans_motif: Vec<&'static str>,
     motif_rupture_defaut: Option<MotifDeRupture>,
     motifs_recours: Vec<natures::RecoursOffert>,
     motif_recours_exige: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     quotite_defaut: Option<socle::grandeurs::Heures>,
-    /// Le bouton qui propose la duree d'un temps plein, et le choix vide des motifs de fin (le defaut d'une fin qui ne se
-    /// signale pas : le CDDU a son terme).
+    /// Le bouton qui propose la duree d'un temps plein. Si la fin se signale, et le choix vide des motifs de fin, c'est
+    /// le contrat qui le dit, pas sa nature (`mois::Rupture`).
     temps_plein_dit: Option<String>,
-    motif_rupture_vide_dit: String,
     unite_quotite: natures::UniteDeQuotite,
 }
 
@@ -1423,10 +1386,9 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
     let mut sortie = Vec::new();
     for n in toutes.iter() {
         let motifs = n.motifs_rupture();
-        let (mut faits, mut signales) = (BTreeMap::new(), BTreeMap::new());
+        let mut faits = BTreeMap::new();
         for m in motifs {
-            faits.insert(m.code, faits_de_rupture(n, m.code)?);
-            signales.insert(m.code, n.signalement_fctu(Some(m.code)));
+            faits.insert(m.code, permanents::faits_de_rupture(n, Some(m.code))?);
         }
         let carte = cartes
             .iter()
@@ -1441,19 +1403,14 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
-            signalement_fctu: n.signalement_fctu(None),
-            signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),
             faits_de_rupture: faits,
+            faits_sans_motif: permanents::faits_de_rupture(n, None)?,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
             temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
-            motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
-                Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
-                _ => "— à choisir —".to_string(),
-            },
             unite_quotite: n.unite_quotite(),
         });
     }
@@ -1475,17 +1432,20 @@ struct NiveauDeSante {
 }
 
 /// Les niveaux de garantie que le bareme connait, pour la fiche salarie (`releve_svp_sante` de la rubrique `mutuelle` des
-/// permanents). Vide quand le bareme n'en porte pas, ou quand il ne se compose pas encore (une fiche entreprise
-/// incomplete : la configuration le dit, `ConfigurationDeLaPage::bareme`).
-fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
-    if !compose {
-        return Ok(Vec::new());
-    }
-    let pile = ctx.bareme(&ctx.aujourdhui)?;
+/// permanents), lus dans le bareme du jour avant son controle (`Contexte::bareme_fondu` : la couche de la convention les
+/// porte, l'effectif n'y change rien). Vide quand le bareme n'en porte pas ; `None` quand il ne se compose pas (le taux
+/// AT/MP, la convention, la surcouche) : pourquoi, la configuration le dit (`ConfigurationDeLaPage::pour_payer`, que le
+/// meme empilement refuse).
+fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
+    let pile = match ctx.bareme_fondu(&ctx.aujourdhui) {
+        Ok(p) => p,
+        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) => return Err(e),
+    };
     // La complementaire sante est celle des permanents : la couche de leur nature.
     let releve = pile.par_nature.get(&droit::natures::Paie::Mensuelle).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
-    Ok(releve
+    Ok(Some(releve
         .into_iter()
         .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
@@ -1495,7 +1455,7 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
             enfant: t.enfant,
             libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
         })
-        .collect())
+        .collect()))
 }
 
 /// Une convention collective que le bareme sait servir : son IDCC, son libelle, si sa couche de taux est RELEVEE
@@ -1563,8 +1523,6 @@ pub(crate) struct EtatDeLaPage {
     demo: Option<crate::accueil::suppression::MentionDemo>,
     commencer_par_l_import: bool,
     historique: Vec<MoisDuBilan>,
-    /// Pourquoi l'Historique ne montre que la liste nue des mois, quand le bilan ne se fait pas.
-    historique_incomplet: Option<String>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
     rubriques: Vec<RubriqueDeLaPage>,
@@ -1575,7 +1533,7 @@ pub(crate) struct EtatDeLaPage {
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
     transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
-    niveaux_sante: Vec<NiveauDeSante>,
+    niveaux_sante: Option<Vec<NiveauDeSante>>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
     conventions: Vec<ConventionServie>,
@@ -1591,8 +1549,8 @@ pub(crate) struct EtatDeLaPage {
 pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let mut m = Moteur::nouveau(ctx);
     let configuration = configuration(ctx)?;
-    let niveaux_sante = niveaux_sante(ctx, configuration.bareme.is_none())?;
-    let (historique, historique_incomplet) = historique(&mut m, ctx)?;
+    let niveaux_sante = niveaux_sante(ctx)?;
+    let historique = historique(&mut m, ctx)?;
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
     // reste dans `configuration`, ou on peut la relire et la reactiver.
@@ -1607,7 +1565,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         .into_iter()
         .map(|k| {
             let v = &ctx.spectacles[k];
-            let titre = v.titre.clone().ok_or_else(|| socle::fichiers::absent("titre").reclasser(Classe::Manque))?;
+            let titre = v.titre.clone().ok_or_else(|| socle::fichiers::manque("titre"))?;
             Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;
@@ -1619,8 +1577,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // LA FIN D'UN CONTRAT, telle qu'elle se saisit. Les types de preavis
     // SAISISSABLES seulement.
     let fctu = droit::preavis::base()?;
-    let types_preavis: Vec<droit::preavis::TypePreavis> = fctu.types_preavis.codes.into_iter().filter(|c| c.saisissable).collect();
-    let transaction = fctu.transaction.codes;
+    let types_preavis: Vec<droit::preavis::TypePreavis> = fctu.types_preavis.codes.iter().filter(|c| c.saisissable).cloned().collect();
+    let transaction = fctu.transaction.codes.clone();
 
     // Les organismes de recouvrement, pour que le code Urssaf de la DPAE se
     // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
@@ -1654,7 +1612,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // son guide (`import::guide::commencer_par_l_import`) ; ce qui manque pour demarrer se dit apres lui.
         commencer_par_l_import: import::guide::commencer_par_l_import(&ctx.racine)?,
         historique,
-        historique_incomplet,
         salaries,
         spectacles,
         rubriques,

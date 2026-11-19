@@ -18,6 +18,7 @@ use std::path::Path;
 
 
 use crate::calcul::Paie;
+use crate::etats::PaieAnterieure;
 use crate::saisie::{Carte, CongePris};
 use droit::catalogue::rubrique;
 use droit::clauses;
@@ -210,21 +211,15 @@ pub(crate) fn jours_dits(j: Jours) -> String {
     socle::grandeurs::ecrit::sans_zero::dit(j.au_demi_superieur())
 }
 
-/// Ce qu'une paie validee apporte au compteur de conges et a la deduction forfaitaire de l'annee : pas une copie de la
-/// paie, ce qu'un calcul de l'annee en garde (`lue`), une fois par mois et par salarie.
+/// Ce qu'une paie validee apporte au compteur de conges : pas une copie de la paie, ce que le compteur en garde (`lue`),
+/// une fois par mois et par salarie.
 #[derive(Debug, Clone)]
 struct ApportDUnePaie {
     brut: Montant,
-    /// La deduction forfaitaire specifique retenue, s'il y en a une.
-    dfs: Option<Montant>,
     /// Un contrat paye au mois : sa presence dans le mois, et ce qu'il en decompte.
     mensuel: Option<MoisPaye>,
     /// Le compteur avant le mois que la paie a ecrit (`etats::CONGES_AVANT`).
     avant: Option<Avant>,
-    /// Les heures supplementaires payees (`heures_en_plus::HEURE_SUPPLEMENTAIRE`) et le montant net des heures en plus
-    /// exonere d'impot (`Assiette::HeuresEnPlusExonere`), s'il y en a un.
-    heures_supplementaires: Heures,
-    exonere: Option<Montant>,
 }
 
 #[derive(Debug, Clone)]
@@ -258,19 +253,18 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<ApportDUnePaie> {
     } else {
         None
     };
-    let dfs = p.deduction_forfaitaire.as_ref().map(|d| d.montant);
-    let heures_supplementaires = crate::heures_en_plus::supplementaires_payees(&p.remuneration)?;
-    let exonere = p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere).map(|x| x.en_euros(droit::assiette::Assiette::HeuresEnPlusExonere)).transpose()?;
-    Ok(ApportDUnePaie { brut: p.brut, dfs, mensuel, avant: p.conges_avant.clone(), heures_supplementaires, exonere })
+    Ok(ApportDUnePaie { brut: p.brut, mensuel, avant: p.conges_avant.clone() })
 }
 
-// Le memo d'une derivation : la profondeur des derivations ouvertes, et ce que les paies de chaque (racine, mois,
-// salarie) ont deja apporte (`ApportDUnePaie`), ou le refus d'un mois qui ne se lit pas.
+// Le memo d'une derivation : la profondeur des derivations ouvertes ; ce que les paies validees de chaque (racine, mois,
+// salarie) ont deja apporte au compteur (`ApportDUnePaie`), et ce qui lui a ete verse (`paies_versees`), ou le refus
+// d'un mois qui ne se lit pas.
 type PaiesDuMois = R<Vec<ApportDUnePaie>>;
+type Versees = R<Vec<PaieAnterieure>>;
 
 thread_local! {
-    static MEMO: RefCell<(u32, HashMap<(String, String), PaiesDuMois>)> =
-        RefCell::new((0, HashMap::new()));
+    static MEMO: RefCell<(u32, HashMap<(String, String), PaiesDuMois>, HashMap<(String, String), Versees>)> =
+        RefCell::new((0, HashMap::new(), HashMap::new()));
 }
 
 /// Une derivation ouverte : chaque mois s'y lit une fois ; le memo se vide quand la derniere se ferme.
@@ -290,6 +284,7 @@ impl Drop for Derivation {
             m.0 -= 1;
             if m.0 == 0 {
                 m.1.clear();
+                m.2.clear();
             }
         });
     }
@@ -840,51 +835,360 @@ fn cle_de_fiche(ctx: &Contexte, cle: &IdSalarie) -> R<IdSalarie> {
     Ok(ctx.fiche_de(cle)?.id)
 }
 
-/// Le brut d'un salarie sur un mois anterieur -- l'assiette du dixieme -- tel que ses paies validees le portent.
-pub(crate) fn remuneration_du_mois(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
-    Ok(paies_du_mois(ctx, mois, &cle_de_fiche(ctx, cle)?)?.iter().fold(Montant::ZERO, |a, p| a + p.brut))
+/// CE QUE L'EMPLOYEUR A VERSE AU SALARIE `cle` EN `mois`, ses paies validees et reprises d'un ancien logiciel
+/// (`etats::paies_du_salarie`), lu une fois par derivation : le seul lecteur du salaire d'un autre mois.
+pub(crate) fn paies_versees(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<PaieAnterieure>> {
+    let cle = cle_de_fiche(ctx, cle)?;
+    let reference = cle_du_memo(ctx, mois, &cle);
+    let memo = MEMO.with(|m| {
+        let m = m.borrow();
+        if m.0 > 0 { m.2.get(&reference).cloned() } else { None }
+    });
+    if let Some(p) = memo {
+        return p;
+    }
+    let p = crate::etats::paies_du_salarie(ctx, mois, &cle);
+    MEMO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.0 > 0 {
+            m.2.insert(reference, p.clone());
+        }
+    });
+    p
+}
+
+/// LE BRUT VERSE AU SALARIE `cle` EN `mois` : la somme des bruts de ses paies validees et reprises (`paies_versees`) ;
+/// `None` : une paie reprise de ce mois ne dit pas son brut (`importe::PaieVersee::brut`), et rien ne le remplace.
+/// Aucune paie, `Some(0)` : le lecteur qui distingue un mois sans paie d'un mois paye zero lit `paies_versees`.
+pub(crate) fn brut_verse(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Option<Montant>> {
+    Ok(paies_versees(ctx, mois, cle)?.iter().map(PaieAnterieure::brut).sum())
+}
+
+/// Ce que dit un calcul qui lit le brut d'un mois qu'une paie importee ne dit pas (`brut_verse`).
+pub(crate) fn brut_non_dit(mois: Mois) -> String {
+    format!(
+        "la paie reprise de l'ancien logiciel en {} ne dit pas son brut : importer le bulletin de ce mois-là",
+        mois.libelle(socle::mois::Graphie::Accentuee)
+    )
 }
 
 /// La deduction forfaitaire specifique deja retenue pour un salarie dans les mois de la meme annee civile, strictement
-/// avant `mois` (AAAA-MM), telle que ses paies validees la portent (`calcul::dfs_deja_deduite` ; arrete du 4 septembre
-/// 2025, art. 9 : << dans la limite de 7 600 euros par annee civile >>). Une paie validee qui ne se lit pas refuse : le
-/// cumul de l'annee ne se devine pas.
+/// avant `mois` (AAAA-MM) (`calcul::dfs_deja_deduite` ; arrete du 4 septembre 2025, art. 9 : << dans la limite de 7 600
+/// euros par annee civile >>, `atelier/reference/sources/dfs/`) : celle de chaque paie validee ; une paie reprise ne la
+/// porte pas (l'import n'en garde rien, `importe::PaieVersee`) : la reprise des cumuls de la fiche la dit
+/// (`CumulsReprise::deduction_forfaitaire`), sinon le cumul refuse.
 pub(crate) fn dfs_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
-    let regle = "Le plafond de 7 600 € par année civile (arrêté du 4 septembre 2025, art. 9)";
-    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.dfs.into_iter().fold(a, |a, d| a + d), "Déduction forfaitaire spécifique", regle)
+    let de = |p: &PaieAnterieure| -> R<Option<Montant>> {
+        Ok(match p {
+            PaieAnterieure::Validee(p) => Some(p.deduction_forfaitaire.iter().fold(Montant::ZERO, |a, d| a + d.montant)),
+            PaieAnterieure::Reprise(_) => None,
+        })
+    };
+    let cumul = Cumul {
+        qui: "Déduction forfaitaire spécifique",
+        regle: "Le plafond de 7 600 € par année civile (arrêté du 4 septembre 2025, art. 9)",
+        manque: "la déduction forfaitaire spécifique qu'elle a retenue",
+        cumule: "la déduction forfaitaire spécifique déjà pratiquée",
+        case: "deduction_forfaitaire",
+    };
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, de, |r| r.deduction_forfaitaire, &cumul)
+}
+
+/// CE QUI PRECEDE LA PAIE DE `mois` DANS L'ANNEE CIVILE, POUR LA REGULARISATION DU PLAFOND (`droit::plafond::
+/// AnneeAnterieure`, CSS R. 242-2, II) : les paies validees du salarie `cle` des mois de la meme annee, strictement avant
+/// `mois`, chacune pour ce qu'elle a applique (`calcul::ajouter_a_l_annee`, celles que `regle` regularise). Seules se
+/// relisent celles d'un contrat paye au mois (`etats::paies_validees_au_mois`) : une paie d'artiste ou de technicien
+/// intermittent n'entre pas dans le cumul, et son refus ne ferme pas celle d'un CDI du meme salarie. Une paie au mois qui
+/// ne se lit pas refuse : le plafond se regularise sur toute l'annee.
+///
+/// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS : la regularisation commence au premier mois paye ici (Leandre,
+/// 19/11/2026). INFERENCE, une approximation de la premiere annee : R. 242-2, II fait masse des sommes dues depuis « le
+/// premier jour de l'annee ou le jour de l'embauche », mais les pieces reprises ne disent ni le plafond que l'ancien
+/// logiciel a applique ni ses tranches de retraite et de prevoyance (`importe::PaieVersee`), et rien ne se reconstruit
+/// (regle 1) ; aucune paie ne se refuse parce que l'annee a commence ailleurs.
+pub(crate) fn plafonds_des_mois_anterieurs(
+    ctx: &Contexte, mois: Mois, cle: &IdSalarie, regle: &droit::forme_bareme::RegularisationDuPlafond,
+) -> R<droit::plafond::AnneeAnterieure> {
+    let _derivation = Derivation::ouvrir();
+    let mut annee = droit::plafond::AnneeAnterieure::debut();
+    let cle = cle_de_fiche(ctx, cle)?;
+    for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
+        // Seules les paies d'un contrat paye au mois peuvent se regulariser : celles d'un intermittent ne se relisent pas
+        // (`etats::paies_validees_au_mois`), et les reprises n'entrent pas (ci-dessus).
+        let paies = crate::etats::paies_validees_au_mois(ctx, m, &cle).map_err(|e| {
+            e.reformuler(|e| format!(
+                "Régularisation du plafond de {} : les paies de {} ne se lisent pas ({}). Le plafond se régularise sur toute \
+l'année (CSS R. 242-2, II) : sans ce mois, rien n'est calculé.",
+                cle, m, e
+            ))
+        })?;
+        for p in &paies {
+            crate::calcul::ajouter_a_l_annee(&mut annee, p, regle)?;
+        }
+    }
+    Ok(annee)
+}
+
+/// CE QUI PRECEDE LA PAIE D'INTERMITTENT DE `mois` DANS L'ANNEE CIVILE, POUR SA RETRAITE COMPLEMENTAIRE (`droit::plafond::
+/// tranches_sous_le_plafond_annuel`) : sous le plafond de l'annee `plafond_annuel`, les paies validees d'intermittent du
+/// salarie `cle` des mois de la meme annee, strictement avant `mois`, chacune pour ce qu'elle a applique
+/// (`calcul::ajouter_a_la_retraite_de_l_annee`). La circulaire Agirc-Arrco 2018-09-DC (annexe A, art. 1) : « les
+/// remunerations versees dans l'annee par chaque employeur sont traitees de facon distincte, dans les limites annuelles des
+/// assiettes T1 et T2 » : l'annee civile (l'exercice de l'ANI, « entre le 1er janvier et le 31 decembre d'une meme
+/// annee »), chez la compagnie seule. Seules se relisent les paies d'intermittent (`etats::paies_validees_intermittentes`) :
+/// celle d'un CDI du meme salarie a ses tranches du mois et sa propre regularisation (`plafonds_des_mois_anterieurs`).
+/// Une paie qui ne se lit pas refuse : les tranches se comptent sur toute l'annee.
+///
+/// UNE PAIE REPRISE D'UN ANCIEN LOGICIEL N'Y ENTRE PAS, comme pour le plafond de la Securite sociale (Leandre,
+/// 19/11/2026) : l'annee commence au premier mois paye ici. INFERENCE, une approximation de la premiere annee : les pieces
+/// reprises disent le brut, pas les tranches que l'ancien logiciel a appliquees (`importe::PaieVersee`), et rien ne se
+/// reconstruit (regle 1).
+pub(crate) fn retraite_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie, plafond_annuel: Montant) -> R<droit::plafond::AnneeAnterieure> {
+    let _derivation = Derivation::ouvrir();
+    let mut annee = droit::plafond::AnneeAnterieure::sous_le_plafond_annuel(plafond_annuel);
+    let cle = cle_de_fiche(ctx, cle)?;
+    for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
+        let paies = crate::etats::paies_validees_intermittentes(ctx, m, &cle).map_err(|e| {
+            e.reformuler(|e| format!(
+                "Retraite complémentaire de {} sur l'année : les paies de {} ne se lisent pas ({}). Ses tranches se comptent \
+sur les plafonds de l'année (Audiens, Paramètres) : sans ce mois, rien n'est calculé.",
+                cle, m, e
+            ))
+        })?;
+        for p in &paies {
+            crate::calcul::ajouter_a_la_retraite_de_l_annee(&mut annee, p)?;
+        }
+    }
+    Ok(annee)
 }
 
 /// Les heures supplementaires payees au salarie `cle` dans les mois de la meme annee civile, strictement avant `mois` :
-/// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`).
+/// les paliers annuels d'une convention et son contingent les comptent (`droit::heures_en_plus::supplementaires`). Une
+/// paie reprise les dit quand son bulletin a ete lu, que chacune de ses lignes de remuneration est rattachee a sa
+/// rubrique (`importe::LigneImprimee`, sa rubrique et son montant) et que celles des heures supplementaires disent leurs
+/// heures ; une ligne qu'elle ne rattache pas peut en payer : la reprise des cumuls de la fiche les dit
+/// (`CumulsReprise::heures_supplementaires`), sinon le cumul refuse.
 pub(crate) fn heures_supplementaires_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Heures> {
-    cumul_de_l_annee(ctx, mois, cle, Heures::ZERO, |a, p| a + p.heures_supplementaires, "Heures supplémentaires", "Le contingent annuel et ses paliers")
+    let de = |p: &PaieAnterieure| -> R<Option<Heures>> {
+        let lignes = match p {
+            PaieAnterieure::Validee(p) => return crate::heures_en_plus::supplementaires_payees(&p.remuneration).map(Some),
+            PaieAnterieure::Reprise(r) => &r.paie.lignes,
+        };
+        let Some(rattachees) = lignes_rattachees(lignes) else { return Ok(None) };
+        let mut total = Heures::ZERO;
+        for (rubrique, l) in rattachees {
+            if rubrique != &crate::heures_en_plus::HEURE_SUPPLEMENTAIRE {
+                continue;
+            }
+            match l.paiement.and_then(crate::ligne::PaiementDeLigne::quantite) {
+                Some(crate::ligne::QuantiteDeLigne::Heures(h)) => total = total + h,
+                _ => return Ok(None),
+            }
+        }
+        Ok(Some(total))
+    };
+    let cumul = Cumul {
+        qui: "Heures supplémentaires",
+        regle: "Le contingent annuel et ses paliers",
+        manque: "les heures supplémentaires qu'elle a payées",
+        cumule: "les heures supplémentaires déjà payées",
+        case: "heures_supplementaires",
+    };
+    cumul_de_l_annee(ctx, mois, cle, Heures::ZERO, de, |r| r.heures_supplementaires, &cumul)
+}
+
+/// LES LIGNES DE REMUNERATION D'UNE PAIE REPRISE, CHACUNE SOUS SA RUBRIQUE, quand toutes le sont : une ligne qu'aucune
+/// rubrique ne rattache, ou qui ne dit pas son montant (`importe::LigneImprimee::rattachee`), peut payer n'importe quoi,
+/// et une paie dont aucun bulletin n'a ete lu (sans ligne) ne dit pas ce qu'elle paie : `None`.
+fn lignes_rattachees(lignes: &[crate::importe::LigneImprimee]) -> Option<Vec<(&droit::catalogue::CodeDeRubrique, &crate::importe::LigneImprimee)>> {
+    if lignes.is_empty() {
+        return None;
+    }
+    lignes.iter().map(|l| l.montant.and(l.rubrique.as_ref()).map(|r| (r, l))).collect()
 }
 
 /// Le montant net des heures en plus deja exonere d'impot pour le salarie `cle` dans l'annee civile, avant `mois` : la
-/// limite annuelle de CGI 81 quater le compte (`heures_en_plus`).
+/// limite annuelle de CGI 81 quater le compte (`heures_en_plus`). Une paie validee le porte dans sa base
+/// `Assiette::HeuresEnPlusExonere` quand elle paie des heures en plus (sans elle, rien n'est exonere). Ce qu'une paie
+/// reprise a exonere, ses pieces ne le gardent pas (`importe::PaieVersee` : ni le bulletin ni la DSN lus n'en gardent
+/// rien), et ses lignes ne le disent pas non plus (CGI 81 quater exonere ce que CSS L241-17, I et III, nomme, la
+/// majoration d'un forfait en jours comprise, que le catalogue ne range pas a part) : la reprise des cumuls de la fiche
+/// le dit (`CumulsReprise::heures_en_plus_exonerees`), sinon le cumul refuse.
 pub(crate) fn exonere_des_mois_anterieurs(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Montant> {
-    let regle = "La limite annuelle de 7 500 € (CGI 81 quater)";
-    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, |a, p| p.exonere.into_iter().fold(a, |a, x| a + x), "Exonération d'impôt des heures en plus", regle)
+    use droit::assiette::Assiette::HeuresEnPlusExonere;
+    let de = |p: &PaieAnterieure| -> R<Option<Montant>> {
+        Ok(match p {
+            PaieAnterieure::Validee(p) => {
+                let dite = p.bases.get(&HeuresEnPlusExonere).map(|x| x.en_euros(HeuresEnPlusExonere)).transpose()?;
+                Some(dite.into_iter().fold(Montant::ZERO, |a, x| a + x))
+            }
+            PaieAnterieure::Reprise(_) => None,
+        })
+    };
+    let cumul = Cumul {
+        qui: "Exonération d'impôt des heures en plus",
+        regle: "La limite annuelle de 7 500 € (CGI 81 quater)",
+        manque: "le montant net des heures en plus exonéré d'impôt",
+        cumule: "le montant net des heures en plus déjà exonéré d'impôt",
+        case: "heures_en_plus_exonerees",
+    };
+    cumul_de_l_annee(ctx, mois, cle, Montant::ZERO, de, |r| r.heures_en_plus_exonerees, &cumul)
 }
 
-/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `plus` ajoute, depuis `zero`, de chaque paie validee
-/// du salarie `cle`. Une paie validee qui ne se lit pas refuse : le cumul de l'annee ne se devine pas.
-fn cumul_de_l_annee<T: Copy>(ctx: &Contexte, mois: Mois, cle: &IdSalarie, zero: T, plus: impl Fn(T, &ApportDUnePaie) -> T, qui: &str, regle: &str) -> R<T> {
+/// CE QU'UN CUMUL DE L'ANNEE DIT DE LUI DANS SES REFUS : ce qu'il compte (`qui`), sa regle (`regle`), ce qu'une paie
+/// reprise ne dit pas de lui (`manque`), ce que la reprise des cumuls de la fiche en dit (`cumule`), et sa case dans
+/// cette reprise (`case`, sous `cumuls_reprise`).
+struct Cumul {
+    qui: &'static str,
+    regle: &'static str,
+    manque: &'static str,
+    cumule: &'static str,
+    case: &'static str,
+}
+
+/// LA CASE DE LA REPRISE DES CUMULS, telle que la fiche et ses refus la nomment.
+const CUMULS_REPRISE: &str = "cumuls_reprise";
+
+/// LE CUMUL DE L'ANNEE CIVILE, strictement avant `mois`, de ce que `de` lit de chaque paie versee au salarie `cle`,
+/// validee ou reprise d'un ancien logiciel (`paies_versees`), depuis `zero`. Le cumul de l'annee ne se devine pas : un
+/// mois qui ne se lit pas refuse.
+///
+/// LA REPRISE DES CUMULS (`droit::fiche::CumulsReprise`, la case `cumuls_reprise` de la fiche, que seule une paie
+/// reprise de l'annee ouvre : `PaieAnterieure::reprise_des_cumuls`) : datee de cette annee, elle dit le cumul des mois
+/// d'avant le mois de sa date (`de_la_reprise`), et les paies de ces mois-la ne se lisent pas ; les paies de son mois
+/// et des suivants s'y ajoutent. Un cumul qu'elle tait se refuse en nommant sa case ; une paie validee ici avant sa date,
+/// ou une reprise datee apres `mois`, se contredisent, et le refus nomme sa date. Sans reprise de cette annee, une paie
+/// reprise qui ne dit pas ce que `de` lit (`None`) refuse en nommant son mois, ce qui lui manque et la case.
+fn cumul_de_l_annee<T: Copy + std::ops::Add<Output = T>>(
+    ctx: &Contexte,
+    mois: Mois,
+    cle: &IdSalarie,
+    zero: T,
+    de: impl Fn(&PaieAnterieure) -> R<Option<T>>,
+    de_la_reprise: impl Fn(&droit::fiche::CumulsReprise) -> Option<T>,
+    cumul: &Cumul,
+) -> R<T> {
     let _derivation = Derivation::ouvrir();
-    let cle_fiche = cle_de_fiche(ctx, cle)?;
-    let mut total = zero;
-    for m in crate::stock::mois_saisis(&ctx.racine)? {
-        if m.annee() != mois.annee() || m >= mois {
+    let Cumul { qui, regle, manque, cumule, case } = cumul;
+    // Une paie d'un mois de l'annee qui ne se lit pas, ou dont ce cumul ne se lit pas : sans ce mois, le cumul ne se
+    // connait pas.
+    let illisible = |m: Mois, e: socle::echec::Echec| {
+        e.reformuler(|e| format!(
+            "{} de {} : les paies de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
+ne se connaît pas. Rien n'est calculé.",
+            qui, cle, m, e, regle
+        ))
+    };
+    let mut lues = Vec::new();
+    for m in mois.annee().les_mois().into_iter().filter(|m| *m < mois) {
+        let paies = paies_versees(ctx, m, cle).map_err(|e| illisible(m, e))?;
+        lues.push((m, paies));
+    }
+    // La reprise des cumuls : seule une paie reprise de l'annee l'ouvre ; datee d'une autre annee, elle n'en dit rien.
+    let reprise = match lues.iter().flat_map(|(_, paies)| paies).find_map(PaieAnterieure::reprise_des_cumuls) {
+        Some(cle_de_la_reprise) => ctx.fiche_de(cle)?.reprise.ouvrir(&cle_de_la_reprise).cumuls_reprise.dite().cloned(),
+        None => None,
+    };
+    if reprise.as_ref().is_some_and(|r| r.date.is_none()) {
+        return Err(socle::echec::cle(
+            format!(
+                "{} de {} : la reprise des cumuls de l'année ne dit pas sa date. Écrire le premier jour du premier mois que \
+                 PuppetPaie paie, sur la fiche du salarié. Rien n'est calculé.",
+                qui, cle
+            ),
+            &format!("{}.date", CUMULS_REPRISE),
+        ));
+    }
+    let datee = reprise.as_ref().and_then(|r| r.date.dite().copied().map(|d| (d, r))).filter(|(d, _)| d.annee() == mois.annee());
+    let (depuis, mut total) = match datee {
+        Some((date, r)) => {
+            if date.mois_civil() > mois {
+                return Err(socle::echec::cle(
+                    format!(
+                        "{} de {} : la reprise des cumuls de l'année est datée du {}, après la paie de {} ; PuppetPaie paie \
+                         à partir de cette date. Corriger sa date sur la fiche du salarié. Rien n'est calculé.",
+                        qui,
+                        cle,
+                        date.jj_mm_aaaa(),
+                        mois.libelle(socle::mois::Graphie::Accentuee)
+                    ),
+                    &format!("{}.date", CUMULS_REPRISE),
+                ));
+            }
+            let Some(avant) = de_la_reprise(r) else {
+                return Err(socle::echec::cle(
+                    format!(
+                        "{} de {} : la reprise des cumuls de l'année, datée du {}, ne dit pas {}. L'écrire sur la fiche du \
+                         salarié, tel que l'ancien logiciel l'avait cumulé avant cette date, 0 s'il n'y en avait pas. Rien \
+                         n'est calculé.",
+                        qui,
+                        cle,
+                        date.jj_mm_aaaa(),
+                        cumule
+                    ),
+                    &format!("{}.{}", CUMULS_REPRISE, case),
+                ));
+            };
+            (Some(date), avant)
+        }
+        None => (None, zero),
+    };
+    for (m, paies) in &lues {
+        if let Some(date) = depuis.filter(|d| *m < d.mois_civil()) {
+            if paies.iter().any(|p| matches!(p, PaieAnterieure::Validee(_))) {
+                return Err(socle::echec::cle(
+                    format!(
+                        "{} de {} : une paie est validée ici en {}, avant le {} où la reprise des cumuls de l'année dit que \
+                         PuppetPaie paie. Corriger la date de la reprise sur la fiche du salarié. Rien n'est calculé.",
+                        qui,
+                        cle,
+                        m.libelle(socle::mois::Graphie::Accentuee),
+                        date.jj_mm_aaaa()
+                    ),
+                    &format!("{}.date", CUMULS_REPRISE),
+                ));
+            }
             continue;
         }
-        let paies = paies_du_mois(ctx, m, &cle_fiche).map_err(|e| {
-            e.reformuler(|e| format!(
-                "{} de {} : les paies validées de {} ne se lisent pas ({}). {} se suit sur toute l'année : sans ce mois, le cumul \
-ne se connaît pas. Rien n'est calculé.",
-                qui, cle, m, e, regle
-            ))
-        })?;
-        total = paies.iter().fold(total, &plus);
+        for p in paies {
+            // Datee sur ou avant le mois d'une paie que l'ancien logiciel a faite, la reprise ne dit pas encore tout ce
+            // qu'il a cumule, ou le compterait deux fois : c'est sa date qui est en cause, que la paie reprise dise ou
+            // non la grandeur lue.
+            let reprise = matches!(p, PaieAnterieure::Reprise(_));
+            match (de(p).map_err(|e| illisible(*m, e))?, depuis) {
+                (Some(x), None) => total = total + x,
+                (Some(x), Some(_)) if !reprise => total = total + x,
+                (_, Some(date)) => {
+                    return Err(socle::echec::cle(
+                        format!(
+                            "{} de {} : la reprise des cumuls de l'année est datée du {}, et l'ancien logiciel a encore payé \
+                             {} : sa date est le premier jour du premier mois que PuppetPaie paie, après le dernier que \
+                             l'ancien logiciel a payé. Corriger sa date sur la fiche du salarié. Rien n'est calculé.",
+                            qui,
+                            cle,
+                            date.jj_mm_aaaa(),
+                            m.libelle(socle::mois::Graphie::Accentuee)
+                        ),
+                        &format!("{}.date", CUMULS_REPRISE),
+                    ));
+                }
+                (None, None) => {
+                    return Err(socle::echec::cle(
+                        format!(
+                            "{} de {} : la paie reprise de l'ancien logiciel en {} ne dit pas {}. {} se suit sur toute \
+                             l'année : dire sur la fiche du salarié, dans la reprise des cumuls de l'année, ce que l'ancien \
+                             logiciel avait cumulé à la date où PuppetPaie a pris la suite. Rien n'est calculé.",
+                            qui,
+                            cle,
+                            m.libelle(socle::mois::Graphie::Accentuee),
+                            manque,
+                            regle
+                        ),
+                        CUMULS_REPRISE,
+                    ))
+                }
+            }
+        }
     }
     Ok(total)
 }
@@ -944,7 +1248,9 @@ pub(crate) fn conges_pris_de_la_paie(racine: &Path, paie: &Paie) -> R<Jours> {
 /// L'ordre des lignes est celui du bulletin : le salaire de base, les
 /// absences, les indemnites, les primes, le solde de tout compte, puis les repas et les nuitees que la carte porte en
 /// lignes, aux limites de tout salarie (`crate::frais_au_dela`). Et les jours travailles du mois.
-pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>)> {
+pub(crate) fn lignes_du_mois(
+    ctx: &Contexte, e: &Carte, mois: Mois,
+) -> R<(Vec<LignePaie>, Vec<Avis>, Option<socle::grandeurs::Jours>, Option<droit::plafond::JoursSansRemuneration>)> {
     let nat = e.nature_lue()?;
     let Some(au) = nat.au_mois() else {
         return Err(socle::refus!("{} n'est pas un contrat paye au mois : ses lignes se saisissent.", nat.libelle));
@@ -1056,7 +1362,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     }
 
     // --- les imprevus : un arret de travail, une suspension, saisis une fois sur le salarie (`imprevus`)
-    let (l, a, absents) = crate::imprevus::lignes_du_mois(
+    let (l, a, absents, sans_remuneration) = crate::imprevus::lignes_du_mois(
         ctx,
         e,
         mois,
@@ -1076,9 +1382,12 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let jours_travailles = (reel.jours - absents).max(socle::grandeurs::Jours::ZERO);
 
     // --- les primes
+    // Une prime de la carte versee ce mois (`plafond_du_mois` : BOSS, assiette generale, § 860 et 920).
+    let mut prime_versee = false;
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
         let montant = socle::grandeurs::courte(pr.montant);
+        prime_versee |= montant > Montant::ZERO;
         let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
@@ -1135,6 +1444,9 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = legale;
         let base = base_conv.prorata(quotite, reference).au_centime();
         let montant = base.fois_taux(pourcentage).au_centime();
+        // Elle ne garde pas au mois son plafond (`plafond_du_mois`) : elle se calcule ici sans regarder l'absence, et le
+        // § 920 ne vaut que pour un element du ce mois-la ; aucun texte depose ne la dit due pendant une absence non
+        // remuneree.
         // Une prime se paie en une fois, dans l'unite de sa rubrique.
         let unite = droit::catalogue::rubrique(&ctx.racine, &clauses::RUBRIQUE_PRIME_ANCIENNETE, &fin_mois)?.unite;
         lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, PaiementDeLigne::une_fois(unite, socle::grandeurs::courte(montant))));
@@ -1169,7 +1481,37 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         lignes.extend(l);
         avert.extend(a);
     }
-    Ok((lignes, avert, Some(jours_travailles)))
+    let sans_remuneration = plafond_du_mois(sans_remuneration, &presence, prime_versee);
+    Ok((lignes, avert, Some(jours_travailles), Some(sans_remuneration)))
+}
+
+/// LES JOURS DU MOIS QUI REDUISENT LE PLAFOND DE LA PAIE (`droit::plafond::JoursSansRemuneration`) : les jours d'absence
+/// sans remuneration que les imprevus disent (`imprevus::lignes_du_mois` : CSS R. 242-2, I, al. 4, dernier tiret ; BOSS,
+/// assiette generale, § 820-850), sauf ce que la paie du mois verse d'autre pendant eux (`boss/boss-assiette-generale-
+/// 20260801.txt`) : une prime, dans un mois sans aucun jour travaille ni remunere. § 860 (l. 1171-1176), « En cas
+/// d'absence de maintien de salaire mais de versement, durant un mois ne comportant aucune periode travaillee, d'autres
+/// elements de remuneration, notamment des primes, [...] si les conditions de ce versement sont prevues par la
+/// reglementation, un accord collectif ou le contrat de travail, le plafond du mois lors duquel le versement est prevu ne
+/// peut etre reduit » ; § 920, 1er alinea (l. 1208-1210), quand des elements « ne visant pas directement au maintien de
+/// salaire sont verses sans etre rattaches a une periode d'emploi anterieure, un plafond mensuel entier s'applique,
+/// eventuellement proratise si le salarie est habituellement a temps partiel », et son exemple (l. 1224-1228) : la prime
+/// « versee en application d'une convention ou d'un accord collectif ou encore du contrat de travail » se rattache a la
+/// periode de versement.
+/// INFERENCE, ecrite comme telle : toute prime de la carte de montant positif est un tel element, verse ce mois-la sans
+/// etre rattache a une periode d'emploi anterieure. En est exclu le rappel de salaire, que le § 920 rattache a la periode
+/// qu'il corrige (l. 1229-1231, « aucun plafond n'est applicable ») : la carte ne sait pas le dire, et une prime ne se
+/// saisit pas comme tel. La prime d'anciennete de la convention n'en est pas (`lignes_du_mois`).
+///
+/// Le prorata du contrat (R. 242-2, I, al. 3) et la correction du temps partiel (§ 910) s'appliquent ensuite
+/// (`droit::plafond::plafond_permanent`).
+fn plafond_du_mois(
+    sans_remuneration: std::collections::BTreeSet<socle::date::Jour>, presence: &Periode, prime_versee: bool,
+) -> droit::plafond::JoursSansRemuneration {
+    let aucun_jour_remunere = presence.jours().all(|j| sans_remuneration.contains(&j));
+    if prime_versee && aucun_jour_remunere {
+        return droit::plafond::JoursSansRemuneration::aucun();
+    }
+    droit::plafond::JoursSansRemuneration::de(sans_remuneration)
 }
 
 /// Ce que le moteur a retire du decompte des jours ouvrables, et ce qu'il n'a

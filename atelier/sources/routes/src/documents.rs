@@ -276,9 +276,16 @@ struct Attestation {
 /// Une attestation d'un retour, par sa periode (`None` : le retour ne la dit pas) et le nom qu'elle porte.
 type CleAttestation = (Option<Mois>, String);
 
+/// Les attestations archivees (`attestations_archivees`), et les archives de nature 46 que leur lecteur ne lit pas.
+struct AttestationsArchivees {
+    vues: HashMap<CleAttestation, Vec<Attestation>>,
+    illisibles: Vec<envois::retours::PieceIllisible>,
+}
+
 /// (periode, qui) -> les attestations du DERNIER retour qui le porte, lues
-/// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode.
-fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<&[std::path::PathBuf]>) -> R<HashMap<CleAttestation, Vec<Attestation>>> {
+/// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode. Une archive que
+/// `retours::aer_spectacle` ne lit pas reste a sa place et se rend, les autres se lisent ; le disque remonte.
+fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<&[std::path::PathBuf]>) -> R<AttestationsArchivees> {
     let dossier = ctx.racine.join(envois::retours::RETOURS);
     // `fichiers` : seulement ces archives (la releve range ce qu'elle vient de telecharger).
     let mut fichiers: Vec<String> = match seulement {
@@ -289,10 +296,17 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
     let index: Vec<(droit::contexte::IdSalarie, String)> =
         ctx.salaries.iter().map(|(cle, v)| (cle.clone(),[v.nom.portee(), v.prenom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" "))).collect();
     let mut vues: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
+    let mut illisibles = Vec::new();
     for nom in fichiers {
         let chemin = dossier.join(&nom);
         let octets = crate::depots::lire_octets(&chemin)?;
-        let liste = envois::retours::aer_spectacle(&octets)?;
+        let liste = match envois::retours::aer_spectacle(&octets) {
+            Ok(l) => l,
+            Err(e) => {
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::AerSpectacle, &chemin, e)?);
+                continue;
+            }
+        };
         let cles = envois::retours::rattacher(&liste.iter().map(|a| a.qui.as_str()).collect::<Vec<_>>(), &index);
         let mut de_ce_retour: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
         for (a, cle) in liste.into_iter().zip(cles) {
@@ -305,16 +319,16 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
         }
         vues.extend(de_ce_retour);
     }
-    Ok(vues)
+    Ok(AttestationsArchivees { vues, illisibles })
 }
 
 /// `aer_manquantes` : les salaries dont France Travail a renvoye l'AER du mois, mais dont le PDF signe
-/// n'est pas dans `sorties/<mois>/envoi/`.
+/// n'est pas dans `sorties/<mois>/envoi/`. Une archive qui ne se lit pas ne nomme personne : le releve la note.
 fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
     let sorties = documents::DossierDuMois::Sorties.dans(&ctx.racine, mois);
     let etiquette = mois.etiquette();
     let mut out: Vec<String> = Vec::new();
-    for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
+    for groupe in attestations_archivees(ctx, Some(mois), None)?.vues.values() {
         let Some(att) = groupe.first() else { continue };
         if !att.cle.as_ref().is_some_and(|cle| envoi::chemin_de_la_piece(documents::PieceDuMois::Aer, &sorties, cle, &etiquette).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
@@ -333,16 +347,17 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
 
 /// Les paies de `periode`, sous les numeros de contrat que la DSN a DECLARES (regle 4 : un numero se lit --
 /// `ecrire_documents::paies_aux_numeros_declares`) ; ce qui les empeche de se lire se refuse.
-fn paies_de_la_periode(ctx: &Contexte, periode: Mois) -> R<Vec<engagement::calcul::Paie>> {
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, periode, None, &departs)?;
+fn paies_de_la_periode(ctx: &Contexte, periode: Mois, departs: &engagement::departs::Departs) -> R<Vec<engagement::calcul::Paie>> {
+    let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, periode, None, departs)?;
     Ok(paies)
 }
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). `None` : la
 /// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
-/// ne se lisent pas refusent la comparaison.
-fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<engagement::calcul::Paie>>> {
+/// ne se lisent pas refusent la comparaison. `departs` : ce qui est parti, lu une fois par le geste.
+fn periodes_attendues(
+    ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie, departs: &engagement::departs::Departs,
+) -> R<Option<Vec<engagement::calcul::Paie>>> {
     if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
         return Ok(None);
     }
@@ -353,7 +368,7 @@ fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagemen
             if let Some(p) = par_mois.get(&m) {
                 return p.clone();
             }
-            match paies_de_la_periode(ctx, m) {
+            match paies_de_la_periode(ctx, m, departs) {
                 Ok(p) => {
                     par_mois.insert(m, p.clone());
                     p
@@ -369,7 +384,8 @@ fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagemen
     if let Some(e) = faute {
         return Err(e);
     }
-    attendues.map(Some)}
+    attendues.map(Some)
+}
 
 /// `chemin_identite("cachet")` : le tampon pose, quelle que soit son extension (png, jpg, svg).
 fn cachet_pose(gabarits: &Path) -> Option<String> {
@@ -378,17 +394,18 @@ fn cachet_pose(gabarits: &Path) -> Option<String> {
 }
 
 /// `RangementAer` : ce que le rangement des AER a fait -- les PDF ecrits `(periode, cle, chemin)`, les attestations sans salarie
-/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`.
+/// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`, les archives qui ne se lisent pas.
 #[derive(Default)]
 pub struct RangementAer {
     pub ecrits: Vec<(Mois, droit::contexte::IdSalarie, std::path::PathBuf)>,
     pub a_ranger: Vec<(String, std::path::PathBuf)>,
     pub refusees: Vec<(droit::contexte::IdSalarie, Mois, Vec<String>)>,
+    pub illisibles: Vec<envois::retours::PieceIllisible>,
 }
 
-/// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la releve
-/// et l'ouverture (qui ne signent jamais malgre un ecart).
-pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>) -> R<Vec<String>> {
+/// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la
+/// releve (qui ne signe jamais malgre un ecart) ; et les archives qui ne se lisent pas, que la releve note.
+pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>) -> R<(Vec<String>, Vec<envois::retours::PieceIllisible>)> {
     let fait = ranger_aer_detail(ctx, mois, fichiers, false)?;
     let mut phrases: Vec<String> = Vec::new();
     // `RangementAer.a_faire()` : d'abord les attestations sans salarie, puis les refusees (la paie ne les confirme pas).
@@ -398,18 +415,20 @@ pub(crate) fn ranger_aer(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
     for (cle, periode, ecarts) in &fait.refusees {
         phrases.push(format!("Attestation France Travail de {} ({}) NON SIGNEE : elle ne dit pas ce que la paie dit ({}). La correction se fait sur la DSN, pas sur le PDF.", cle, periode, ecarts.join("; ")));
     }
-    Ok(phrases)
+    Ok((phrases, fait.illisibles))
 }
 
 /// Le rangement des AER revenues et ce qu'il a laisse. `forcer` : signer malgre un ecart (`aer --forcer`).
 pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[std::path::PathBuf]>, forcer: bool) -> R<RangementAer> {
     use documents::aer::{authentifier, Authentification, Echec as AerEchec};
-    let vues = attestations_archivees(ctx, mois, fichiers)?;
+    let AttestationsArchivees { vues, illisibles } = attestations_archivees(ctx, mois, fichiers)?;
     let mut par_mois: HashMap<Mois, Vec<engagement::calcul::Paie>> = HashMap::new();
+    // Ce qui est parti, lu une fois pour toutes les attestations.
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
     let mut cles: Vec<&CleAttestation> = vues.keys().collect();
     cles.sort();
     // `RangementAer.a_faire()` : d'abord les attestations sans salarie, puis les refusees (la paie ne les confirme pas).
-    let mut fait = RangementAer::default();
+    let mut fait = RangementAer { illisibles, ..RangementAer::default() };
     for k in cles {
         let groupe = &vues[k];
         let (Some(periode), Some(cle)) = (k.0, groupe[0].cle.clone()) else {
@@ -433,7 +452,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             })?;
             imprime.extend(documents::aer::lire_quantites(&champs)?);
         }
-        if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle)? {
+        if let Some(attendues) = periodes_attendues(ctx, &mut par_mois, periode, &cle, &departs)? {
             let ecarts = documents::aer::ecarts(&imprime, &attendues)?;
             if !ecarts.is_empty() && !forcer {
                 // Une seule fausse et rien ne part.
@@ -473,7 +492,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
 
 /// Ce qui est du a chaque salarie du mois et ne se fabrique pas ici : l'AER Cinema Spectacle (`aer::due`), que France
 /// Travail publie apres la DSN (retour 46), et l'attestation employeur de droit commun (`aer::attestation_fctu`), qu'elle
-/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent.
+/// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent. Calcule une fois par geste.
 fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<IdSalarie, Vec<&'static str>>> {
     let mut out: HashMap<IdSalarie, Vec<&'static str>> = HashMap::new();
     for p in paies {
@@ -536,9 +555,9 @@ struct Message {
 fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sorties: &Path) -> R<Vec<Message>> {
     let etiq = mois.etiquette();
     let ent = &ctx.entreprise;
-    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::absent(k).reclasser(Classe::Manque)) } else { Ok(()) };
+    let requis = |c: &Option<String>, k: &str| if c.is_none() { Err(socle::fichiers::manque(k)) } else { Ok(()) };
     requis(&ent.nom_affichage, "nom_affichage")?;
-    let sg = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
+    let sg = ent.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?;
     if sg.prenom_affichage.remplie().is_none() {
         requis(&sg.prenom, "prenom")?;
     }
@@ -574,19 +593,20 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, sort
 
 /// Ce qui peut partir de `mois` (`engagement::etats::validees_du_mois` : la saisie des engagements valides et leurs paies
 /// ecrites), numerote. L'envoi des documents (`envoyer_documents`) prepare ses messages sur les memes paies que l'apercu.
-pub(crate) fn charger_le_mois(ctx: &Contexte, mois: Mois) -> R<Vec<engagement::calcul::Paie>> {
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
+/// `departs` : ce qui est parti, lu une fois par le geste.
+pub(crate) fn charger_le_mois(ctx: &Contexte, mois: Mois, departs: &engagement::departs::Departs) -> R<Vec<engagement::calcul::Paie>> {
     // Un mois sans engagement valide n'a aucune paie.
-    let mut paies: Vec<engagement::calcul::Paie> = engagement::etats::validees_du_mois(ctx, mois, &departs)?.into_iter().flat_map(|(_, paies)| paies).collect();
-    documents::ecrire_documents::numeroter(ctx, &mut paies, mois.annee(), &departs)?;
+    let mut paies: Vec<engagement::calcul::Paie> = engagement::etats::validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, paies)| paies).collect();
+    documents::ecrire_documents::numeroter(ctx, &mut paies, mois.annee(), departs)?;
     Ok(paies)
 }
 
 /// `apercu_envoi` : ce que chaque salarie recevrait, sans rien envoyer.
 fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let mois = le_mois;
-    // Ce qui peut partir du mois, numerote.
-    let paies = charger_le_mois(ctx, mois)?;
+    // Ce qui peut partir du mois, numerote ; ce qui est parti, lu une fois.
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let paies = charger_le_mois(ctx, mois, &departs)?;
     let m = Moteur::nouveau(ctx);
     let prets = documents_prets(ctx, mois, &paies)?;
     let pret = prets.empechements.is_empty();
@@ -602,7 +622,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         // La boite qui enverrait, quand des documents sont dus.
         if !messages.is_empty() {
             expediteur = compte_de_la_boite(ctx)?.to_lowercase();
-            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
+            let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?;
             if let Some(signataire) = sg.email.portee().map(str::to_lowercase).filter(|s| *s != expediteur) {
                 avertissements.push(format!(
                     "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
@@ -774,7 +794,7 @@ const PIECES_A_IMPRIMER: [documents::PieceDuMois; 3] = [documents::PieceDuMois::
 /// engagement, et la paie est figee comme par le courriel. Rien ne quitte le poste : aucun mot de passe.
 pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui: &str) -> R<DocumentsImprimes> {
     let mois = c.mois;
-    let paies = charger_le_mois(ctx, mois)?;
+    let paies = charger_le_mois(ctx, mois, &envois::journal::lu(&ctx.racine)?.departs)?;
     if paies.is_empty() {
         return Err(erreur(
             Classe::AucunDocument,
@@ -1001,7 +1021,8 @@ fn declaration_de_la_correction(ctx: &Contexte, mois: Mois) -> R<Option<Declarat
 /// documents et les messages. Une boite absente se voit avant la preuve ; une preuve refusee n.ecrit rien. Rien n.est parti.
 pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdSalarie]>, preuve: Option<&Preuve>, ouvrir: Ouvrir) -> R<EnvoiPrepare> {
     let debut = std::time::Instant::now();
-    let paies = charger_le_mois(ctx, mois)?;
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let paies = charger_le_mois(ctx, mois, &departs)?;
     if paies.is_empty() {
         return Err(erreur(
             Classe::AucunDocument,
@@ -1034,6 +1055,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     // La boite, puis LA PREUVE, AVANT TOUTE FABRIQUE : un mot de passe refuse n'ecrit rien.
     let client = ouvrir()?;
     let expediteur = expediteur_de(client.as_ref())?;
+    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?.email.portee().map(str::to_lowercase);
     let preuve = match preuve {
         Some(p) => {
             let a_qui = format!("{} salarie(s) : {}", cles.len(), cles.iter().map(|c| nom_de_la_paie(&paies, c)).collect::<Vec<_>>().join(", "));
@@ -1050,7 +1072,6 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     if !sans.is_empty() {
         avertissements.push(sans_courriel_dit(&noms_sans));
     }
-    let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?.email.portee().map(str::to_lowercase);
     if let Some(signataire) = signataire.filter(|s| *s != *expediteur) {
         avertissements.push(format!(
             "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
@@ -1153,7 +1174,7 @@ fn sans_courriel_dit(noms: &str) -> String {
 /// Ceux a qui les documents du mois sont a faire partir (`choisir`) et qui n'ont pas de courriel dans leur fiche : leurs
 /// documents s'impriment. Leur cle, et leur nom.
 pub(crate) fn sans_courriel(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalarie, String)>> {
-    let paies = charger_le_mois(ctx, mois)?;
+    let paies = charger_le_mois(ctx, mois, &envois::journal::lu(&ctx.racine)?.departs)?;
     let mut cles: Vec<IdSalarie> = Vec::new();
     for p in &paies {
         let c = p.salarie.id.clone();

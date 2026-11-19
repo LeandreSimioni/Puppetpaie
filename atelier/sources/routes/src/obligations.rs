@@ -928,7 +928,7 @@ fn signalement_dsn(
             // un ferie (R. 133-14, I), a midi (cahier technique § 1.4.2). INFERENCE : le report de la mensuelle vaut pour le
             // signalement qui part avec elle (le texte du report parle de « la declaration sociale nominative » sans
             // distinguer).
-            let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, evenement.mois_civil()).map_err(|m| m.reclasser(Classe::Illisible))?;
+            let echeance = declarations::echeance_dsn::de_la_compagnie(ctx, evenement.mois_civil())?;
             m.echeance_dsn = Some(echeance.dite()?);
             // La connaissance ne compte pas : le delai court du mois de l'evenement.
             let ev = Depart::du_jour(evenement, "le jour de l'événement (sa DSN mensuelle est celle de son mois)", None);
@@ -1187,7 +1187,9 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
 // -------------------------------------------------------- les fins de contrat
 
 /// Le signalement de fin de contrat (07) d'un contrat qui finit le `fin`. `cle` : la cle de la fiche du salarie (le nom
-/// du fichier que `fin-contrat-signaler` ecrit) ; `journal` : les lignes du journal des depots.
+/// du fichier que `fin-contrat-signaler` ecrit) ; `journal` : les lignes du journal des depots. Le delai est le meme pour
+/// toute fin qui se signale, celle d'un contrat d'usage comprise : cinq jours ouvres (`delai`, et l'inference que la
+/// donnee dit dans `inferences`).
 pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[envois::journal::Ligne], aujourdhui: Jour) -> R<Obligation> {
     let n = base()?.obligations;
     let o = &n.signalement_fin_contrat;
@@ -1506,7 +1508,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     let faite = match le {
         None => None,
         Some(le) => {
-            let depot = charge.depot.ok_or_else(|| socle::fichiers::absent("depot").reclasser(Classe::Manque))?;
+            let depot = charge.depot.ok_or_else(|| socle::fichiers::manque("depot"))?;
             let codes: Vec<LieuHorsDsn> = base()?.obligations.de(f.obligation).lieux().iter().map(|x| x.code).collect();
             if !codes.contains(&depot) {
                 let dits: Vec<&str> = codes.iter().map(|c| c.texte()).collect();

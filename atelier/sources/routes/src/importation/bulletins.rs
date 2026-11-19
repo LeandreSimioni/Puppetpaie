@@ -130,8 +130,18 @@ pub(crate) struct DossierLu {
 
 /// `importation-apercu` avec `{"dossier": ...}`.
 pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
-    let mut r = lire_dossier(ctx, dossier, &HashMap::new(), |lu| Ok(lu.ap))?.reponse;
+    // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
+    // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.
+    let departs = envois::journal::lu(&ctx.racine)?.departs;
+    let (mut ap, matricules) = lire_dossier(ctx, dossier, &HashMap::new(), |lu| {
+        let m = crate::importation::matricules::prevoir(ctx, &lu.ap, &departs)?;
+        Ok((lu.ap, m))
+    })?;
+    matricules.poser(&mut ap.a_creer, &mut ap.a_completer)?;
+    let mut r = ap.reponse;
+    matricules.montrer(&mut r, &ap.a_creer);
     r.dire_l_apercu();
+    r.phrase = socle::phrase!("{}{}", r.phrase, matricules.dire(false));
     Ok(r)
 }
 
@@ -151,13 +161,33 @@ pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<
 /// se reprend pas.
 pub(crate) fn nom_copie(f: &import::tri::Fichier) -> R<Option<NomDeFichier>> {
     let ext = match f.sorte {
-        Sorte::Dsn => "dsn",
+        Sorte::Dsn => EXTENSION_DSN,
         // `importation::lire_aem` ne lit que les `*.txt`.
         Sorte::Aem => "txt",
         Sorte::PdfTexte => "pdf",
         _ => return Ok(None),
     };
     f.empreinte.as_ref().map(|e| NomDeFichier::lire(&format!("{}.{}", e.courte(), ext))).transpose()
+}
+
+/// L'extension de la copie d'une DSN (`nom_copie`).
+const EXTENSION_DSN: &str = "dsn";
+
+/// L'IMPORT A-T-IL REPRIS UNE DSN ? Sa copie est sous `historique/bulletins/`, nommee par `nom_copie` d'apres la sorte que
+/// le tri a lue dans son contenu (`import::tri`) : son nom le dit, sans ouvrir aucun fichier. Aucune tant que le dossier
+/// n'existe pas ; un disque qui refuse se dit.
+pub(crate) fn une_dsn_reprise(racine: &Path) -> R<bool> {
+    let dossier = import::mois::dossier_des_bulletins(racine);
+    if !socle::fichiers::existe_lu(&dossier)? {
+        return Ok(false);
+    }
+    let disque = |e: std::io::Error| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque);
+    for e in std::fs::read_dir(&dossier).map_err(disque)? {
+        if e.map_err(disque)?.path().extension().is_some_and(|x| x == EXTENSION_DSN) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// LE NOM DE LA COPIE D'UNE PIECE LUE : une piece lue a ete hachee au tri, elle a donc sa copie ; sans elle, c'est un
@@ -560,6 +590,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 
     // Le sort des DSN et des AEM, avant que les bulletins ne completent les paies.
     let mut sorts_export: BTreeMap<usize, (Sort, String)> = BTreeMap::new();
+    // Les personnes mises de cote (`importation::identite`) : rien d'elles ne se reprend avant la reponse.
+    let en_question: HashSet<Nir> = ap.reponse.identites.iter().map(|q| q.nir.clone()).collect();
     for (i, nom) in &noms {
         let f = &tri.fichiers[*i];
         if f.sorte == Sorte::Dsn {
@@ -576,15 +608,27 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 Some(m) => format!("DSN de {}", m),
                 None => "DSN".to_string(),
             };
+            // Les versements d'une personne mise de cote attendent la reponse a sa question d'identite.
+            let attente = match ap.paies_en_question.get(nom.as_str()).copied() {
+                Some(k) if k > 0 => format!(" ; {} versement(s) d'une personne qui ressemble à une fiche sans numéro de sécurité sociale, repris après votre réponse", k),
+                _ => String::new(),
+            };
             sorts_export.insert(*i, match (n, nouveaux) {
+                (0, _) if !attente.is_empty() => (Sort::Repris, format!("{} : aucun versement à reprendre maintenant{}", dsn, attente)),
                 (0, _) => (Sort::Repris, format!("{} : aucun versement à reprendre (DSN sans versement, ou remplacée par une DSN du même mois déposée après)", dsn)),
-                (n, 0) => (Sort::DejaRepris, format!("{} : ses {} versement(s) sont déjà dans l'historique", dsn, n)),
-                (n, k) => (Sort::Repris, format!("{} : {} versement(s), dont {} à reprendre", dsn, n, k)),
+                (n, 0) if attente.is_empty() => (Sort::DejaRepris, format!("{} : ses {} versement(s) sont déjà dans l'historique", dsn, n)),
+                (n, k) => (Sort::Repris, format!("{} : {} versement(s), dont {} à reprendre{}", dsn, n, k, attente)),
             });
         } else {
-            let (mut n, mut nouveaux, mut sans) = (0usize, 0usize, 0usize);
+            let (mut n, mut nouveaux, mut sans, mut attendent) = (0usize, 0usize, 0usize, 0usize);
             for c in ap.contrats.iter().filter(|c| c.fichier.texte() == nom) {
                 n += 1;
+                // Le contrat d'une personne mise de cote attend la reponse a sa question d'identite : il n'est pas
+                // « sans fiche ».
+                if en_question.contains(&c.nir) {
+                    attendent += 1;
+                    continue;
+                }
                 if !par_nir.contains_key(&c.nir) && !nirs_dsn.contains(&c.nir) && !a_venir.contains(&c.nir) {
                     sans += 1;
                     continue;
@@ -594,7 +638,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     nouveaux += 1;
                 }
             }
-            let sans_txt = if sans > 0 { format!(" ; {} sans fiche (NIR qu'aucune DSN ni aucun bulletin ne déclare)", sans) } else { String::new() };
+            let mut sans_txt = if sans > 0 { format!(" ; {} sans fiche (NIR qu'aucune DSN ni aucun bulletin ne déclare)", sans) } else { String::new() };
+            if attendent > 0 {
+                sans_txt.push_str(&format!(" ; {} d'une personne qui ressemble à une fiche sans numéro de sécurité sociale, repris après votre réponse", attendent));
+            }
             // `importation::lire_aem` garde un contrat une fois : un fichier qui ne rend rien a ete lu ailleurs, sauf
             // s'il est dans ses illisibles.
             let illisible =
@@ -602,7 +649,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             sorts_export.insert(*i, match (n, nouveaux) {
                 (0, _) if illisible => (Sort::NonReconnu, "AEM dont les enregistrements ne se lisent pas".to_string()),
                 (0, _) => (Sort::DejaRepris, "AEM : ses contrats attestés sont déjà dans un autre fichier du dossier".to_string()),
-                (n, 0) if sans == 0 => (Sort::DejaRepris, format!("AEM : ses {} contrat(s) attesté(s) sont déjà dans l'historique", n)),
+                (n, 0) if sans == 0 && attendent == 0 => (Sort::DejaRepris, format!("AEM : ses {} contrat(s) attesté(s) sont déjà dans l'historique", n)),
                 (n, k) => (Sort::Repris, format!("AEM : {} contrat(s) attesté(s), dont {} nouveau(x){}", n, k, sans_txt)),
             });
         }
@@ -652,6 +699,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // LA DSN LA CREE, LE BULLETIN LA COMPLETE : ce que la DSN ne porte pas (le n° Congés Spectacles,
             // une adresse qu'elle n'a pas) vient du bulletin ; ce que la DSN donne reste.
             completer_a_creer::<FicheSalarieDatee>(&mut ap.a_creer, &mut reponse, Some(nir), &proposees, fautes)?;
+            noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, Source::Bulletin);
             continue;
         }
         let libelle = libelle_propose(&proposees);
@@ -659,6 +707,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let anomalies = verifier_comme_a_l_ecriture(&proposees, &fautes)?;
         reponse.salaries.push(FicheImportee::new(FicheVisee::ACreer(NomDeFiche::Salarie), &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
         ap.a_creer.push(ACreer { rang: Some(reponse.salaries.len() - 1), donnees: proposees, fautes });
+        noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, Source::Bulletin);
         nouvelles_fiches += 1;
     }
 
@@ -692,6 +741,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         if rang_a_creer(&ap.a_creer, NomDeFiche::Salarie, Some(nir)).is_some() {
             completer_a_creer::<FicheSalarieDatee>(&mut ap.a_creer, &mut reponse, Some(nir), &proposees, fautes)?;
+            noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, dernier.piece());
             continue;
         }
         let libelle = libelle_propose(&proposees);
@@ -701,6 +751,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         entree.lu_dans = Some(origine_cert(dernier));
         reponse.salaries.push(entree);
         ap.a_creer.push(ACreer { rang: Some(reponse.salaries.len() - 1), donnees: proposees, fautes });
+        noter_le_matricule(&ap.a_creer, &mut ap.matricules_lus_dans, nir, dernier.piece());
         nouvelles_fiches += 1;
         *fiches_certificats.entry(dernier.piece()).or_default() += 1;
         *salaries_certificats.entry(dernier.piece()).or_default() += 1;
@@ -1358,6 +1409,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 None => (Sort::NonReconnu, format!("{} que l'import n'a pas lue", f.sorte.nom())),
             },
             Sorte::PdfSansTexte => (Sort::SansTexte, tri_raison),
+            Sorte::Contrat => (Sort::Contrat, tri_raison),
             Sorte::Archive => (Sort::Archive, tri_raison),
             Sorte::Doublon => (Sort::Doublon, tri_raison),
             Sorte::Illisible | Sorte::Autre => (Sort::NonReconnu, tri_raison),
@@ -1392,7 +1444,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let repris = match f.sorte {
             Sorte::Dsn | Sorte::Aem => matches!(sort, Sort::Repris | Sort::DejaRepris),
             Sorte::PdfTexte => ps.iter().any(|p| matches!(p.sort, Sort::Repris | Sort::LibelleInconnu | Sort::DejaRepris)),
-            Sorte::PdfSansTexte | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
+            Sorte::PdfSansTexte | Sorte::Contrat | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
         };
         let copie = nom_copie(f)?.filter(|_| repris);
         if let Some(c) = &copie {
@@ -1527,6 +1579,17 @@ fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
         periode: Some(l.b.periode),
         mois: Some(l.mois),
         ..InfosPage::default()
+    }
+}
+
+/// La piece `piece` donne-t-elle son matricule a la fiche neuve du salarie `nir` ? La premiere qui le porte le garde
+/// (`Apercu::matricules_lus_dans`).
+fn noter_le_matricule(a_creer: &[ACreer], lus_dans: &mut HashMap<Option<Nir>, Source>, nir: &Nir, piece: Source) {
+    let porte = rang_a_creer(a_creer, NomDeFiche::Salarie, Some(nir))
+        .and_then(|i| a_creer[i].donnees.salarie())
+        .is_some_and(|s| s.code_salarie.as_ref().is_some_and(|m| !m.trim().is_empty()));
+    if porte {
+        lus_dans.entry(Some(nir.clone())).or_insert(piece);
     }
 }
 
@@ -2073,6 +2136,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, lignes: Vec<engagement::imp
     }
     ligne.lignes = lignes;
     ligne.dates = b.dates_travaillees.clone();
+    ligne.duree_du_travail = b.duree_du_travail;
     ligne.cotisations = Some(
         b.cotisations
             .iter()

@@ -16,34 +16,67 @@ pub struct Faites {
     pub incidents: Vec<String>,
 }
 
-/// Fait les suites d'un envoi. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit pas est un refus.
+/// Fait les suites d'un envoi. Un rangement d'AER qui echoue se dit ; une marque qui ne s'ecrit pas est un refus. Une
+/// piece de retour que son lecteur ne lit pas, quelle que soit sa nature, se note chez l'editeur
+/// (`compagnie::incidents::noter_retour_illisible`) ; les autres se rangent.
 pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
     let mut faites = Faites::default();
+    let mut illisibles = s.illisibles;
     if !s.incidents_des_retours.is_empty() {
-        compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours })?;
+        compagnie::incidents::noter_ceux_des_retours(&ctx.racine, envois::etats::AvecIncidents { resultat: Ok(()), incidents: s.incidents_des_retours, illisibles: Vec::new() })?;
     }
     if let Some(d) = &s.depot_refuse {
         if let Err(e) = noter_incident_depot(ctx, d) {
             faites.incidents.push(format!("Le dépôt refusé ne s'est pas noté au journal des incidents : {}", e.phrase));
         }
     }
+    // Ce que les suites ont lu jusqu'au bout : ses retours se notent vus.
+    let mut lus: Vec<&(envois::retours::Annonce, std::path::PathBuf)> = Vec::new();
     if !s.taux_pas.is_empty() {
-        match appliquer_taux_pas(ctx, &s.taux_pas) {
-            Ok(sans_taux) => faites.a_faire.extend(sans_taux),
+        match appliquer_taux_pas(ctx, &s.taux_pas, &mut illisibles) {
+            Ok(sans_taux) => {
+                faites.a_faire.extend(sans_taux);
+                lus.extend(&s.taux_pas);
+            }
             Err(e) => faites.incidents.push(format!("Taux de PAS recus mais non appliques : {}", e.phrase)),
         }
     }
     if !s.taux_atmp.is_empty() {
-        match appliquer_taux_atmp(ctx, &s.taux_atmp) {
-            Ok(a_faire) => faites.a_faire.extend(a_faire),
+        match appliquer_taux_atmp(ctx, &s.taux_atmp, &mut illisibles) {
+            Ok(a_faire) => {
+                faites.a_faire.extend(a_faire);
+                lus.extend(&s.taux_atmp);
+            }
             Err(e) => faites.incidents.push(format!("Notification du taux AT/MP reçue mais non posée : {}", e.phrase)),
         }
     }
+    // Une archive d'attestations que le lecteur ne lit pas ne se range pas, et n'empeche pas les autres.
     if !s.aer.is_empty() {
         match crate::documents::ranger_aer(ctx, None, Some(&s.aer)) {
-            Ok(a_faire) => faites.a_faire.extend(a_faire),
+            Ok((a_faire, pieces)) => {
+                faites.a_faire.extend(a_faire);
+                illisibles.extend(pieces);
+            }
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
+    }
+    for p in &illisibles {
+        if let Err(n) = compagnie::incidents::noter_retour_illisible(&ctx.racine, p) {
+            faites.incidents.push(format!("Archive {} : l'incident ne s'est pas noté au journal des incidents : {}", p.archive, n.phrase));
+        }
+    }
+    // UNE PIECE QUE SON LECTEUR NE LIT PAS N'EST PAS UN RETOUR VU (`envois::releve_retours::relever_retours`) : le
+    // releve suivant la retelecharge et la relit.
+    let mut vus: Vec<envois::retours::Annonce> = Vec::new();
+    for (retour, chemin) in lus {
+        let nom = socle::fichiers::NomDeFichier::du(chemin)?;
+        let non_lue = illisibles.iter().any(|p| p.nature == retour.nature_retour && p.archive == nom);
+        if !non_lue && s.vus_une_fois_lus.contains(retour) {
+            vus.push(retour.clone());
+        }
+    }
+    if !vus.is_empty() {
+        envois::releve_retours::noter_vus(ctx, &vus, envois::releve_retours::CanalDesRetours::Dsn)?;
     }
     Ok(faites)
 }
@@ -54,7 +87,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent. Un releve sans taux lisible
 /// ne pose aucun taux : la situation du salarie reste ce qu'elle etait, et la phrase rendue le dit.
-fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
+fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)], illisibles: &mut Vec<envois::retours::PieceIllisible>) -> R<Vec<String>> {
     let nirs: Vec<(droit::contexte::IdSalarie, droit::fiche::Nir)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|nir| (cle.clone(), nir.clone()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
@@ -67,9 +100,16 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
     for (retour, chemin) in crm {
         let en_retour_de = mois_declare(retour);
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
-        let lus = envois::retours::taux_pas_d_octets(&octets)?;
-        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         let nom = socle::fichiers::NomDeFichier::du(chemin)?;
+        // Un compte rendu que le lecteur ne lit pas ne pose rien, et n'empeche pas les autres.
+        let lus = match envois::retours::taux_pas_d_octets(&octets) {
+            Ok(l) => l,
+            Err(e) => {
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxPas, chemin, e)?);
+                continue;
+            }
+        };
+        let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", nom)))?;
@@ -94,9 +134,13 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
 /// LES NOTIFICATIONS DU TAUX AT/MP (nature 34) : le code risque et le taux se lisent de la notification (regle 1 ;
 /// `envois::retours::taux_atmp_d_octets`, `atelier/reference/sources/gip-mds-api-dsn/`) et s'inscrivent dans la case de
 /// la fiche entreprise a leur date d'effet, s'ils en different (`routes::atmp::recue`). Seul le siege (le SIREN et le NIC de la fiche
-/// entreprise) recoit ici son taux : une notification pour un autre etablissement, illisible, ou qui donne plusieurs codes
-/// risques pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire.
-fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<Vec<String>> {
+/// entreprise) recoit ici son taux : une notification pour un autre etablissement, ou qui donne plusieurs codes risques
+/// pour la meme annee ne pose rien et se dit, dans ce qu'il reste a faire ; illisible, elle ne pose rien et se note.
+fn appliquer_taux_atmp(
+    ctx: &Contexte,
+    notifications: &[(envois::retours::Annonce, std::path::PathBuf)],
+    illisibles: &mut Vec<envois::retours::PieceIllisible>,
+) -> R<Vec<String>> {
     use std::collections::BTreeMap;
     let mut a_faire = Vec::new();
     let (siren, nic) = (ctx.entreprise.siren.portee(), ctx.entreprise.nic.portee());
@@ -116,7 +160,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         let lus = match envois::retours::taux_atmp_d_octets(&octets) {
             Ok(l) => l,
             Err(e) => {
-                a_faire.push(format!("{} : {} Rien n'est posé ; le code et le taux de la notification (compte AT/MP sur net-entreprises) se saisissent dans Configuration › Entreprise, « Accidents du travail (AT/MP) ».", source, e.phrase));
+                illisibles.push(envois::retours::PieceIllisible::de(envois::retours::NatureDuRetour::TauxAtMp, chemin, e)?);
                 continue;
             }
         };

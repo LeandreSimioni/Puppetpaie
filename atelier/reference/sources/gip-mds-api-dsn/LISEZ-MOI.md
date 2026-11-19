@@ -12,6 +12,7 @@ brut de ce que l'archive ne contient pas (la fiche 692, deux pages de net-entrep
 | fichier | transcription de | comment |
 |---|---|---|
 | `gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt` | `DSN_Guide-implementation-API_v6-8_2026-07-06.pdf` (dans l'archive) | `pdftotext -layout`, entier |
+| `gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt` | `DSN_Guide-implementation-API_v6-9_2026-09-04.pdf` (dans l'archive v6.9, `atelier/reference/norme-dsn/dsn-guide-implementation-API-v6.9.zip`, relevée le 19/11/2026 par Léandre) | `pdftotext -layout`, entier ; pas encore lu contre la v6.8. Ses documents de référence nomment `dsn_bilans_v02r02.xsd` (l. 530), que l'archive ne contient pas : le schéma v02r02 n'est toujours pas déposé |
 | `gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` | `DSN-NormalisationBilans-Spécifications du schéma-VT2.2.docx` (dans l'archive) | le texte de `word/document.xml`, lignes vides retirées ; les schémas (images) n'y sont pas |
 | `ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` | `CRM-DSN-OC-P3-V1.1.4-17062025.pdf` (dans l'archive) : la spécification des comptes rendus métier des organismes complémentaires (CTIP, France Assureurs, Mutualité française), onglets Règles, Versions, Données, Schéma, codes retour | `pdftotext -layout`, entier ; le schéma (p. 9) est une image |
 | `ctip-crm-dsn-oc-p3-v1.1.3-20250617.txt` | `CRM-DSN-OC-P3-V1.1.3-17062025.pdf` (dans l'archive), la version 1.1.3 | `pdftotext -layout` |
@@ -167,6 +168,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `ctip-crm-oc-presentation-v1.1.3-v1.1.4-20200130.txt` : `1946e40ba836e14d0d48b0b9b75c594bfafae09abbda8270545f6b82e5dc6820`
 - `ctip-dsn-crm-oc-phases-2-3-20160601.txt` : `3ab132e729e17b8bccb62a04450fa09ce158600815da93453bddb7790e9fc97f`
 - `gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt` : `09bbdeba2887a55d287b56a581aff168683213e680387b2cd126bb629731cedb`
+- `gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt` : `5429a12d55a44c42f2f081f17781ef914e12cc171a880283c3993a25d10b7955`
 - `gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` : `5403e712f68b2166051eac9770a233ed3d16d0dd85ca078b521f5829fe0a8861`
 - `gip-mds-specifications-schema-bilans-vt2.2-communication-type-20201118.png` : `3491da3cf56ec142b90ae3d65e43a743e4aeebeceea83a5043e76a221267d9f6`
 - `gip-mds-specifications-schema-bilans-vt2.2-declaration-resultat-type-20201118.png` : `fe301f0787da98f5d5379377ddd523967124efe00df709b7ad800d7cfeaee498`

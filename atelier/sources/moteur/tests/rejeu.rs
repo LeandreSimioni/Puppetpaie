@@ -483,6 +483,26 @@ fn la_fictive_tient_son_annee_et_se_livre(nom: &str, decembre: usize, dpae: &[&s
     let exercices = outils::lire(&racine, "config/exercices.json");
     assert_eq!(exercices["clos"]["2026"]["sans_dsn"], json!([]), "2026 se clot avec ses douze DSN : {}", exercices);
 
+    // LES PAIES IMPORTEES DE 2025 SONT CELLES QUE CE MOTEUR CALCULE : la compagnie complete, chacune se compare (le
+    // chemin de l'import et de l'ouverture, `engagement::ecarts::comparer`, comme si aucune ne l'etait encore), et aucune
+    // ne s'ecarte de ce qu'il calcule de sa saisie. Leurs bulletins disent ce que le moteur calcule
+    // (`moteur-atelier remplir-bulletins`) : un ecart ici est une regression du calcul. Le taux AT/MP de 2025 est celui
+    // que la DSN de decembre reprise declare (S21.G00.40.043), pose au 1er janvier par l'import : l'AT/MP se compare aussi.
+    let importes = engagement::importe::tous(&racine).unwrap();
+    let paies_importees: usize = importes.iter().map(|i| i.paies().len()).sum();
+    let comparaisons: Vec<engagement::ecarts::Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&racine, i, &|_| false)).collect();
+    assert!(paies_importees > 0 && comparaisons.len() == paies_importees, "{} paie(s) importee(s), {} comparee(s)", paies_importees, comparaisons.len());
+    let de_la_compagnie = Some(engagement::ecarts::OrigineDuTauxAtmp::Compagnie);
+    let ecartees: Vec<String> = comparaisons
+        .iter()
+        .filter(|c| !matches!(&c.ecarts, Ok(e) if e.is_empty()) || !c.non_rattachees.is_empty() || c.taux_atmp != de_la_compagnie)
+        .map(|c| match &c.ecarts {
+            Ok(e) => format!("{} : {:?} ; non rattachees : {:?} ; taux AT/MP : {:?}", c.mois, e, c.non_rattachees, c.taux_atmp),
+            Err(m) => format!("{} : non comparee : {}", c.mois, m.phrase),
+        })
+        .collect();
+    assert!(ecartees.is_empty(), "{} paie(s) importee(s) s'ecartent du calcul :\n{}", ecartees.len(), ecartees.join("\n"));
+
     // LE RELEVE, compare a l'oracle : chaque paie (brut, net, cout, et son PAS : taux, type, prelevement), chaque DSN
     // (chaque individu : contrat, taux et type de PAS, montant preleve ; chaque versement), chaque depot.
     let mut paies = serde_json::Map::new();
@@ -672,4 +692,22 @@ fn la_fictive_de_l_hotel_de_bourgogne_tient_son_annee_et_se_livre() {
     let (conf, au_mois) = aucune_piece_fermee_ne_se_montre(&racine, jour);
     assert!(!au_mois.contains("MOLIERE") && !au_mois.contains("TALMA") && au_mois.contains("CHAMPMESLE"), "{:?}", au_mois);
     assert!(montrees(&conf, "CHAMPMESLE").iter().any(|c| c == "echelon_ccneac"), "Champmeslé ne voit pas son échelon : {:?}", montrees(&conf, "CHAMPMESLE"));
+    // LA TAXE SUR LES SALAIRES CHAQUE MOIS (norme 2026.1, chapitre 2, l. 2048-2049 : « Les bases imposables au taux normal
+    // sont déclarées mensuellement au niveau de chaque salarié ») : la fiche dit 72 % des recettes soumises a la TVA, la
+    // part taxee est donc 28 % (CGI art. 231, 1) d'une assiette qui est celle de la CSG sans son abattement (231, 1) : la
+    // base 04, plus ce que l'abattement a retire du brut (une permanente sous la limite : toute sa base 03).
+    use socle::grandeurs::{lu::en_texte, Coefficient, Montant, Taux};
+    let bloc = outils::rejeu::Soir { jour: jour.to_string(), racine: &racine }.bloc_dsn(le_mois("2026-02"), "CHAMPMESLE");
+    // Le premier montant `rubrique` (78.004, 79.004) qui suit le code `code` de sa rubrique de type (78.001, 79.001).
+    let apres = |type_: &str, code: &str, rubrique: &str| -> Montant {
+        let i = bloc.iter().position(|(k, v)| k == type_ && v == code).unwrap_or_else(|| panic!("aucun {} {} dans {:?}", type_, code, bloc));
+        en_texte(&bloc[i..].iter().find(|(k, _)| k == rubrique).unwrap().1).unwrap()
+    };
+    let bareme: Value = serde_json::from_slice(&std::fs::read(outils::code_livre().join("baremes/2026.json")).unwrap()).unwrap();
+    let abattement: Coefficient = en_texte(&bareme["abattement_csg"].to_string()).unwrap();
+    let base_78 = |code: &str| apres("S21.G00.78.001", code, "S21.G00.78.004");
+    let assiette = (base_78("04") + base_78("03") * (Coefficient::UN - abattement)).au_centime();
+    let base_91 = bloc.iter().skip_while(|(k, v)| !(k == "S21.G00.78.001" && v == "03")).skip(1).take_while(|(k, _)| k != "S21.G00.78.001").any(|(k, v)| k == "S21.G00.79.001" && v == "91");
+    assert!(base_91, "la base 03 de Champmeslé ne porte pas de 79 de type 91 : {:?}", bloc);
+    assert_eq!(apres("S21.G00.79.001", "91", "S21.G00.79.004"), assiette.fois_taux(Taux::points(28)).au_centime(), "{:?}", bloc);
 }

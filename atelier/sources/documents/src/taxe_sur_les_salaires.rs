@@ -1,24 +1,64 @@
 //! La taxe sur les salaires (CGI art. 231) : ce que la fiche entreprise en dit et ce que le moteur en conclut, les
 //! plafonds de la franchise en base de TVA, l'assiette d'une paie et les fractions aux taux majores. L'etat « taxe sur
-//! les salaires » (`etats_compta`) et le bloc S21.G00.44 de la DSN de decembre (`declarations::assujettissement`) lisent
-//! les memes fonctions.
+//! les salaires » (`etats_compta`), la base de chaque salarie de chaque DSN mensuelle (`declarations::dsn`, composant 91)
+//! et le bloc S21.G00.44 de la DSN de decembre (`declarations::assujettissement`) lisent les memes fonctions.
 
 use droit::fiche::Lue as _;
 use socle::echec::R;
 use socle::texte::{euros, virgule, Phrase};
-use socle::grandeurs::{Coefficient, Montant, Taux};
+use socle::grandeurs::{Montant, Taux};
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
 pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
 
 // ------------------------------------------------------------ la taxe sur les salaires, salarie par salarie
 
-/// L'assiette de la taxe sur les salaires d'une paie : celle de la CSG, sans la reduction de 1,75 % (CGI art. 231, 1 :
-/// « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable »).
-/// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
-/// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
-pub fn assiette_taxe_sur_les_salaires(brut: Montant, base_csg: Montant, abattement: Coefficient) -> Montant {
-    (base_csg - (brut * abattement).au_centime() + brut).au_centime()
+/// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE VALIDEE : celle de la CSG, sans la reduction de 1,75 % (CGI art.
+/// 231, 1 : « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable ») :
+/// son assiette de la CSG, plus l'abattement de la part que la CSG a abattue (`calcul::Contenu::part_abattue_csg`, que
+/// le calcul ecrit, sous la limite de l'abattement et regularisee sur l'annee, et qu'une paie ecrite avant se lit dans
+/// ses chiffres : `paie_ecrite::FormeDePaie::part_abattue_csg` ; `Pile::abattement_de`). Elle ne contredit pas le calcul
+/// de la CSG : elle lui rend ce qu'il a abattu, rien d'autre. L'etat « taxe sur les salaires » (`etats_compta`), la DSN
+/// mensuelle (`base_au_taux_normal`) et celle de decembre (`declarations::assujettissement`) la lisent.
+pub fn assiette_taxe_sur_les_salaires(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile) -> Montant {
+    (p.base_csg + bar.abattement_de(p.part_abattue_csg)).au_centime()
+}
+
+/// LA BASE IMPOSABLE AU TAUX NORMAL D'UNE PAIE (S21.G00.79.001 de type « 91 », sous la base 03) : son assiette
+/// (`assiette_taxe_sur_les_salaires`), multipliee par la part taxee des remunerations (`part`, le rapport de CGI art. 231,
+/// 1, que `taxe_sur_les_salaires_de_la_fiche` conclut), au centime. Les textes (`atelier/reference/norme-dsn/texte/`) :
+/// - `chapitre-2-principes-de-constitution.txt`, l. 2048-2049 : « Les bases imposables au taux normal sont déclarées
+///   mensuellement au niveau de chaque salarié et ajustées de paie en paie selon le principe de la régularisation
+///   progressive » ; l. 2051-2052 : « Les bases imposables aux taux majorés sont déclarées annuellement, uniquement au
+///   niveau de l'établissement dans le bloc base assujettie » (le bloc 44 de decembre, `declarations::assujettissement`) ;
+/// - `bloc-S21.G00.78.txt`, l. 127 : la DGFiP attend la base « 03 » ; `bloc-S21.G00.79.txt`, l. 67 : « DGFiP : "90",
+///   "91" » ; la fiche net-entreprises 1265, tableau P27V01, feuille DGFiP (`atelier/reference/sources/
+///   net-entreprises-base-connaissances/net-entreprises-fiche1265-combinaisons-78-79-81-p27v01-20260630.txt`, l. 317) :
+///   « 03 - Assiette brute déplafonnée ; 91 - Base de taxe sur les salaires au taux normal ».
+/// La part taxee : CGI art. 231, 1 (`atelier/reference/sources/code-general-des-impots/articles-20261015.md`, l. 57) :
+/// l'assiette est « une partie des rémunérations versées, déterminée en appliquant à l'ensemble de ces rémunérations le
+/// rapport » ; elle s'applique donc a chaque remuneration, arrondie au centime par paie.
+pub fn base_au_taux_normal(p: &engagement::calcul::Paie, bar: &droit::forme_bareme::Pile, part: Taux) -> Montant {
+    assiette_taxe_sur_les_salaires(p, bar).fois_taux(part).au_centime()
+}
+
+/// L'ASSIETTE DE LA TAXE SUR LES SALAIRES D'UNE PAIE DU MOIS (`assiette_taxe_sur_les_salaires`), ou d'une paie importee
+/// telle que l'import la donne ; `None` : ses pieces ne disent pas son brut ou son assiette de la CSG.
+///
+/// UNE PAIE IMPORTEE ne dit que son brut et son assiette de la CSG (la DSN, bloc 78 de type 04) : ni la part que l'ancien
+/// logiciel a abattue, ni le plafond qu'il a applique (`importe::PaieVersee`), et rien ne se reconstruit (regle 1). Son
+/// assiette se prend telle que l'import la donne, sans recalcul (Leandre, 19/11/2026) : l'assiette de la CSG, plus
+/// l'abattement de tout le brut au facteur de la CSG du bareme (`abattement_csg`). INFERENCE, une approximation : exacte
+/// quand l'ancien logiciel a abattu tout le brut ; au-dessus de la limite, elle rend aussi l'abattement d'une part qu'il
+/// n'a pas abattue.
+pub fn assiette_d_une_paie_du_mois(p: &engagement::etats::PaieDuMois, bar: &droit::forme_bareme::Pile) -> R<Option<Montant>> {
+    match p {
+        engagement::etats::PaieDuMois::Validee(v) => Ok(Some(assiette_taxe_sur_les_salaires(v, bar))),
+        engagement::etats::PaieDuMois::Importee(_) => {
+            let (Some(brut), Some(base_csg)) = (p.brut(), p.base_csg()?) else { return Ok(None) };
+            Ok(Some((base_csg - (brut * bar.abattement_csg).au_centime() + brut).au_centime()))
+        }
+    }
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle
@@ -32,7 +72,7 @@ pub fn fractions_majorees(base: Montant, seuil_1: Montant, seuil_2: Montant) -> 
 /// LA TAXE SUR LES SALAIRES SE DEDUIT DE LA TVA. La fiche disait « la compagnie la doit-elle ? »
 /// et « part des salaires taxee » : on demandait a l'administratrice la conclusion du droit, pas le fait qu'elle connait.
 /// Elle dit maintenant ce qu'elle sait de sa TVA, et le moteur conclut, une seule fois, ici -- pour l'ecran (la route
-/// `taxe-sur-les-salaires`), pour la DSN de decembre (`blocs`) et pour l'etat « taxe sur les salaires » (`etats_compta`).
+/// `taxe-sur-les-salaires`), pour chaque DSN mensuelle (sa base 91) et celle de decembre (`blocs`) et pour l'etat « taxe sur les salaires » (`etats_compta`).
 ///
 /// Le texte : CGI art. 231, 1 (version en vigueur depuis le 19/06/2025, deposee :
 /// `atelier/reference/sources/code-general-des-impots/xml/231.xml`, lisible dans `articles-20261015.md`) :
@@ -57,7 +97,7 @@ pub fn fractions_majorees(base: Montant, seuil_1: Montant, seuil_2: Montant) -> 
 ///   plafonds de l'article 293 B ? (2e alinea) ;
 /// - `association_1679a` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
 /// Chaque case ne se montre que si la precedente l'appelle (`champs`). Une case qui manque fait refuser la DSN de
-/// decembre, avec ce qu'il faut dire (regle 1 : rien ne se devine).
+/// chaque mois qui a des paies, avec ce qu'il faut dire (regle 1 : rien ne se devine).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegimeTaxeSalaires {
     pub decision: Decision,
@@ -95,8 +135,8 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     let mut champs = vec!["tva"];
     let manque = |champs: Vec<&'static str>, quoi: String, consequence: Phrase| RegimeTaxeSalaires {
         decision: Decision::ADire(format!(
-            "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN de \
-decembre ne se fait pas.",
+            "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN \
+d'un mois qui a des paies ne se fait pas : elle declare, si la compagnie la doit, la base de chaque salarie.",
             quoi
         )),
         association: false,
@@ -157,7 +197,7 @@ des impôts, art. 231)",
                 "dire si la compagnie est assujettie a la TVA ou exoneree".to_string(),
                 Phrase::fixe(
                     "Dites si la compagnie est assujettie à la TVA ou exonérée : le logiciel en déduit si elle doit la taxe \
-sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
+sur les salaires. Sans réponse, la DSN d'un mois qui a des paies ne se fait pas.",
                 ),
             )
         }
@@ -201,8 +241,8 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
         association,
         champs,
         consequence: socle::phrase!(
-            "La compagnie doit la taxe sur les salaires, {} (code général des impôts, art. 231). La DSN de décembre en \
-déclare les assiettes ; l'état « Taxe sur les salaires » (Exports) calcule ce qui reste à payer après la franchise et la \
+            "La compagnie doit la taxe sur les salaires, {} (code général des impôts, art. 231). Chaque DSN déclare la \
+base de chaque salarié au taux normal, celle de décembre les assiettes de l'année ; l'état « Taxe sur les salaires » (Exports) calcule ce qui reste à payer après la franchise et la \
 décote{}.",
             sur,
             if association { ", puis l'abattement des associations (art. 1679 A)" } else { "" }
@@ -303,13 +343,14 @@ art. 231 et 293 B{depuis}.",
     })
 }
 
-/// Ce que la DSN de decembre lit : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en
+/// Ce que chaque DSN mensuelle lit (sa base 91, et en decembre le bloc 44) : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en
 /// pourcentage. Une fiche qui ne dit pas tout : refus, avec ce qu'il faut dire (`regime_taxe_sur_les_salaires`).
 pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Taux>> {
     match regime_taxe_sur_les_salaires(ent, None).decision {
         Decision::NonDue => Ok(None),
         Decision::DueSur(p) => Ok(Some(p)),
-        Decision::ADire(phrase) => Err(socle::echec::refus(phrase)),
+        // Une case de la fiche que la compagnie n'a pas dite : un manque.
+        Decision::ADire(phrase) => Err(socle::echec::refus(phrase).reclasser(socle::echec::Classe::Manque)),
     }
 }
 

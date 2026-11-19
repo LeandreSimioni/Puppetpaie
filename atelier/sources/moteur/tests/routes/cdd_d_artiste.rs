@@ -17,14 +17,24 @@
 
 use serde_json::json;
 
-use crate::outils::rejeu::rejouer;
+use crate::outils::rejeu::{rejouer_dossier, scenario};
 use crate::outils::{nombre, refus, reussi, route, valider};
+
+/// La reponse de la fiche sur la TVA, telle qu'une compagnie la donne au demarrage : sans elle, la DSN d'un mois qui a
+/// des paies ne se fait pas (la base de taxe sur les salaires de chaque salarie, `dsn::bases_et_cotisations`). Ici,
+/// assujettie sur toutes ses recettes : la taxe n'est pas due.
+const TVA_DITE: &str = "{\"case\":\"taxe_sur_les_salaires\",\"valeur\":{\"tva\":\"assujettie\",\"part_tva\":100}},";
 
 #[test]
 fn de_la_validation_a_l_attestation() {
     let d = crate::outils::dossier_de_test("cdd_d_artiste", "fuller");
-    // Les Faisceaux le 20/02/2026 : le CDI de SVOBODA valide, janvier paye.
-    let (_, c) = rejouer("faisceaux-sans-civilite", &d);
+    // Les Faisceaux le 20/02/2026 : le CDI de SVOBODA valide, janvier paye ; la fiche dit sa TVA.
+    let sc = d.join("scenario");
+    std::fs::create_dir_all(&sc).unwrap();
+    let gestes = std::fs::read_to_string(scenario("faisceaux-sans-civilite").join("gestes.jsonl")).unwrap();
+    let gestes = gestes.replacen("{\"case\":\"declarant_dsn\",\"valeur\":{", &format!("{}{{\"case\":\"declarant_dsn\",\"valeur\":{{", TVA_DITE), 1);
+    std::fs::write(sc.join("gestes.jsonl"), gestes).unwrap();
+    let (_, c) = rejouer_dossier(&sc, &d);
     // Le minimum de la 3252 change avec l'anciennete : la fiche dit d'ou elle se compte (son premier jour ici). Paye au
     // mois, ses jours travailles se disent.
     let anciennete = json!({"nom": "salarie", "cle": "FULLER", "confirme": true, "changements": [{"case": "poste_depuis", "valeur": "2026-03-02"},

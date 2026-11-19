@@ -32,8 +32,9 @@ async function montrerRappels(lu = api) {
   // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle s'ouvrait
   // aussi une fois par jour quand rien n'attendait : elle n'apparaît
   // que s'il y a quelque chose à faire.
-  if (!liste.length && !(ech && ech.a_faire) && !manques.length) return;
-  RAPPELS_MONTRES = { liste, ech, manques };
+  if (!liste.length && !(ech && ech.a_faire) && !manques.length && !DEMARRAGE.dsn) return;
+  // Ce qu'une DSN pourrait donner compte dans ce que la boîte a montré : qu'il change, et elle se rouvre.
+  RAPPELS_MONTRES = { liste, ech, manques, dsn: DEMARRAGE.dsn };
   if (dejaMontres(RAPPELS_MONTRES)) return;
   boiteRappels(liste, ech, manques, r.fermer_dit);
 }
@@ -80,7 +81,8 @@ function htmlPoses() {
  * « Enregistrer » écrit tout ce qui a changé (`enregistrer-fiche`, une
  * écriture par fiche), et la liste se relit. La page ne fait que la mise en
  * page. */
-let DEMARRAGE = { titre: "", note: "", manques: [] };
+const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null };
+let DEMARRAGE = DEMARRAGE_VIDE;
 
 /* La case qu'une ligne propose, telle que sa fiche la décrit : `{nom, fiche,
  * c}`, ou null quand elle ne se remplit pas ici (un organisme, le barème, le
@@ -119,7 +121,7 @@ function caseDemarrageHtml(k) {
 }
 
 function htmlDemarrage(manques) {
-  if (!manques.length) return htmlPoses();
+  if (!manques.length && !DEMARRAGE.dsn) return htmlPoses();
   const n = ++DEMARRAGE_LISTES;
   // CHAQUE CHOSE MÈNE À SA PLACE : `ou` est un lien qui y conduit (la fiche,
   // l'onglet), sous la case ; la fiche d'un salarié ou d'un spectacle, quand la ligne en nomme un.
@@ -128,6 +130,10 @@ function htmlDemarrage(manques) {
   const lien = (m) => `<button type="button" class="lien"${attributChamp(m.champ)}
         data-manque-onglet="${echapper(m.onglet)}"${qui(m)}>${echapper(m.ou)}</button>`;
   const pour = (m) => (m.pour ? `<div class="note">${echapper(m.pour)}</div>` : "");
+  // L'EFFECTIF DE CHAQUE ANNÉE QUE LA LIGNE DEMANDE (`effectifs`, du moteur) : ce que les paies reprises en donnent
+  // (sa phrase), et ses gestes, que le moteur rend et qu'`avance.js` dessine.
+  const effectifs = (m, i) => (m.effectifs || []).map((e, k) => `<div class="note" data-demarrage-effectif="${i}" data-demarrage-rang="${k}">
+      ${e.phrase ? `<p>${echapper(e.phrase)}</p>` : ""}${boutonsDesGestes(e.gestes)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
     const k = caseDuManque(m);
@@ -135,21 +141,29 @@ function htmlDemarrage(manques) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
+        ${effectifs(m, i)}
         ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
       <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
       ${pour(m)}
+      ${effectifs(m, i)}
       <div class="actions">${lien(m)}</div>
     </li>`;
   };
   const entreprise = manques.filter((m) => !m.qui);
   const lesQui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
   const aRemplir = manques.some((m) => caseDuManque(m));
+  // CE QU'UNE DSN DONNERAIT (`dsn`, du moteur) : sa phrase, et chaque ligne, qui mène à sa place.
+  const dsn = DEMARRAGE.dsn ? `<div class="encart attention"><p>${echapper(DEMARRAGE.dsn.phrase)}</p>
+      <ul class="rappel-liste">${DEMARRAGE.dsn.manques.map((m) => `<li class="demarrage-ligne">
+        <b>${echapper(m.libelle)}</b>${m.qui ? ` <span class="discret">— ${echapper(m.qui)}</span>` : ""} ${lien(m)}</li>`).join("")}</ul>
+    </div>` : "";
   return `
     <div class="rappel demarrage demarrage-liste" data-demarrage-liste="${n}">
       ${DEMARRAGE.titre ? `<h3>${echapper(DEMARRAGE.titre)}</h3>` : ""}
+      ${dsn}
       ${DEMARRAGE.note ? `<p class="note">${echapper(DEMARRAGE.note)}</p>` : ""}
       ${entreprise.length ? `<ul class="rappel-liste">${entreprise.map(ligne).join("")}</ul>` : ""}
       ${lesQui.map((q) => `<h4>${echapper(q)}</h4>
@@ -170,6 +184,21 @@ function brancherDemarrage(conteneur) {
     const sel = `[data-demarrage-liste="${li.closest(".demarrage-liste").dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"]`;
     brancherAide(sel);
     brancherTaxeSalaires(sel);
+  });
+  // LES GESTES DE L'EFFECTIF D'UNE ANNÉE (`effectifs[].gestes`, du moteur) : comme les autres sorties de la liste, ils
+  // demandent d'abord ce qu'il faut faire de ce qui est tapé et pas enregistré (`quitterDemarrage`) ; puis la
+  // liste se relit.
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage-effectif]").forEach((bloc) => {
+    const m = DEMARRAGE.manques[+bloc.dataset.demarrageEffectif];
+    const e = m && m.effectifs && m.effectifs[+bloc.dataset.demarrageRang];
+    if (!e) return;
+    bloc.querySelectorAll("[data-geste]").forEach((b) => {
+      const g = e.gestes[+b.dataset.geste];
+      b.onclick = async () => {
+        if (!(await quitterDemarrage())) return;
+        await faireLeGeste(g, { pardessus: true }, async () => { await relireEtat(); await repeindreDemarrage(); });
+      };
+    });
   });
 }
 
@@ -203,8 +232,20 @@ function changementsDemarrage(liste) {
   });
   return [...parFiche.values()].map(({ donnees, ...f }) => ({ ...f, ...casesDeLaCharge(donnees) }));
 }
+/* UNE LISTE OÙ L'ON A TAPÉ : une valeur que le moteur propose remplit sa case sans que personne n'y touche ; elle part
+ * avec « Enregistrer », mais ce n'est pas un changement qu'on perdrait en quittant. Seule une liste où l'on a tapé
+ * (`touchee`, posé à la première frappe, perdu quand la liste se relit) fait demander avant de partir. */
+document.addEventListener("input", (e) => {
+  const l = e.target.closest && e.target.closest(".demarrage-liste");
+  if (l) l.dataset.touchee = "1";
+});
+document.addEventListener("change", (e) => {
+  const l = e.target.closest && e.target.closest(".demarrage-liste");
+  if (l) l.dataset.touchee = "1";
+});
+const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")].find((l) => l.dataset.touchee && changementsDemarrage(l).length);
 function demarrageModifie() {
-  return [...document.querySelectorAll(".demarrage-liste")].some((l) => changementsDemarrage(l).length);
+  return !!listeDemarrageModifiee();
 }
 
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
@@ -254,7 +295,7 @@ document.addEventListener("click", (e) => {
  * même boîte que la fiche (`demanderSiEnregistrer`). Rend vrai si l'on peut
  * partir. */
 async function quitterDemarrage() {
-  const liste = [...document.querySelectorAll(".demarrage-liste")].find((l) => changementsDemarrage(l).length);
+  const liste = listeDemarrageModifiee();
   if (!liste) return true;
   const choix = await demanderSiEnregistrer();
   if (choix === "rester") return false;
@@ -293,10 +334,12 @@ document.addEventListener("click", async (e) => {
   if (sous && !sous.classList.contains("actif")) sous.click();
 });
 
-/* `pour-demarrer`, lu : la liste et ce que le moteur a posé. */
+/* `pour-demarrer`, lu : la liste et ce que le moteur a posé. Une lecture
+ * refusée laisse ce qui est peint et ce qu'on en sait tels quels : la liste
+ * à l'écran reste celle dont on lit les changements. */
 async function lireDemarrage(lu) {
   const pd = await lu("pour-demarrer");
-  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques };
+  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques, dsn: pd.dsn || null };
   POSES_DEMARRAGE = pd.poses;
   return DEMARRAGE.manques;
 }

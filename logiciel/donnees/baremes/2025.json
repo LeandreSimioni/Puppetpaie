@@ -959,6 +959,7 @@
   "plafond_securite_sociale": {
     "mensuel": 3925,
     "horaire": 29,
+    "annuel": 47100,
     "source": {
       "sources": [
         {
@@ -966,6 +967,12 @@
           "emetteur": "boss",
           "article": "table des paramètres 2026, PSS_M_METROP et PSS_H_METROP",
           "citation": "3925;01/01/2025;31/12/2025;OK"
+        },
+        {
+          "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+          "emetteur": "boss",
+          "article": "BOSS, PSS_A_METROP",
+          "citation": "47100;01/01/2025;31/12/2025;OK"
         },
         {
           "fichier": "atelier/reference/boss-table-parametres-2026.csv",
@@ -980,9 +987,9 @@
           "citation": "Fraction du salaire du premier euro 47 100 3 925 216 47 100"
         }
       ],
-      "raisonnement": "BOSS (administration, table opposable) : 3 925 € par mois et 29 € par heure du 01/01 au 31/12/2025 ; Audiens (organisme) : 3 925 € par mois. Deux émetteurs."
+      "raisonnement": "BOSS (administration, table opposable) : 3 925 € par mois, 29 € par heure et 47 100 € par an du 01/01 au 31/12/2025 ; Audiens (organisme) : 3 925 € par mois, 47 100 € par an. Deux émetteurs."
     },
-    "note": "Plafond de la sécurité sociale de l'année : mensuel et horaire, BOSS (PSS_M_METROP, PSS_H_METROP).\nLe << Plafond Urssaf >> du bas de bulletin : max(mensuel x jours calendaires du contrat / jours du mois, horaire x 12 h x cachets). (`engagement::calcul::plafond_de_l_engagement`).\nBOSS, table des parametres (atelier/reference/boss-table-parametres-2026.csv), lignes datees 2025 : PSS_M_METROP 3 925, PSS_H_METROP 29."
+    "note": "Plafond de la sécurité sociale de l'année : mensuel, horaire et annuel, BOSS (PSS_M_METROP, PSS_H_METROP, PSS_A_METROP). L'annuel est le plafond de la tranche 1 de l'année de la retraite complémentaire d'un intermittent (`droit::plafond::tranches_sous_le_plafond_annuel`).\nLe << Plafond Urssaf >> du bas de bulletin : max(mensuel x jours calendaires du contrat / jours du mois, horaire x 12 h x cachets). (`engagement::calcul::plafond_de_l_engagement`).\nBOSS, table des parametres (atelier/reference/boss-table-parametres-2026.csv), lignes datees 2025 : PSS_M_METROP 3 925, PSS_H_METROP 29."
   },
   "sante_obligatoire": {
     "part_employeur_minimum": 50,
@@ -995,11 +1002,135 @@
     "note": "En pourcent du financement de la complémentaire santé collective : la part de l'employeur quand la fiche entreprise ne dit pas la sienne, et le plancher qu'elle ne peut pas descendre sous (contrat de l'entreprise d'une convention sans régime de santé, `bareme::bareme_sante`)."
   },
   "abattement_csg": 0.9825,
+  "limite_abattement_csg": {
+    "plafonds": 4,
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/code-de-la-securite-sociale/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "CSS L. 136-2, I (en vigueur depuis le 16/12/2020)",
+          "citation": "une réduction représentative de frais professionnels fixée à 1,75 % pour leur montant inférieur à quatre fois la valeur du plafond mentionné à l'article L. 241-3"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 290",
+          "citation": "Le seuil égal à quatre fois le plafond annuel de la sécurité sociale s'applique à l'ensemble des rémunérations soumises à CSG entrant dans le champ de l'abattement. Les règles de calcul du plafond sont les mêmes que celles applicables pour le calcul du plafond retenu pour la détermination des cotisations d'assurance vieillesse (voir le chapitre 6 de la présente fiche)"
+        }
+      ],
+      "raisonnement": "La loi (L. 136-2, I, dans sa rédaction en vigueur depuis le 16/12/2020, donc toute l'année 2025) n'abat de 1,75 % que la part du revenu inférieure à quatre fois le plafond de L. 241-3 ; le BOSS (§ 290) dit « quatre fois le plafond annuel », calculé comme celui de la vieillesse, chapitre 6 entier : le plafond de la paie (`engagement::calcul::plafond_de_l_engagement`), régularisé sur l'année civile comme lui pour une paie qui se régularise (section 3 du chapitre 6, `regularisation_du_plafond`)."
+    },
+    "note": "La part du brut sous `plafonds` fois le plafond de la paie, régularisée sur l'année avec les tranches de la vieillesse (`droit::plafond::assiettes_plafonnees`), est abattue ; le reste entre entier dans l'assiette de la CSG et de la CRDS (`Pile::assiette_csg`)."
+  },
+  "tranches_du_plafond": {
+    "t2": 8,
+    "t2_conventionnelle": 4,
+    "chomage": 4,
+    "apec": 4,
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+          "emetteur": "agirc_arrco",
+          "article": "ANI Agirc-Arrco du 17/11/2017, art. 32",
+          "citation": "la tranche 2 des rémunérations (dite T2) est constituée de l’ensemble des éléments de l’assiette dont le montant est compris entre le plafond fixé en application de l’article L. 241-3 du code de la sécurité sociale et le montant égal à huit fois ce même plafond"
+        },
+        {
+          "fichier": "atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md",
+          "emetteur": "convention",
+          "article": "CCNEAC, article XII.2",
+          "citation": "la tranche 2 porte sur la rémunération comprise entre ce plafond et l'équivalent de 4 plafonds"
+        },
+        {
+          "fichier": "atelier/reference/sources/chomage-permanents/unedic-reglement-general-convention-20241115.txt",
+          "emetteur": "unedic",
+          "article": "Règlement général annexé à la convention du 15/11/2024, art. 49, al. 2",
+          "citation": "Les rémunérations mentionnées au premier alinéa sont comprises dans l'assiette des contributions dans la limite d'un plafond fixé à quatre fois le plafond mentionné à l'article L. 241-3 du code de la sécurité sociale."
+        },
+        {
+          "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+          "emetteur": "audiens",
+          "article": "p. 1, Apec",
+          "citation": "Cotisation Apec pour les cadres : le plafond applicable est 4 fois le plafond de la Sécurité sociale."
+        }
+      ],
+      "raisonnement": "Chaque borne a son texte : la tranche 2 de la retraite complémentaire (et avec elle la tranche 1 + 2 et la CET, assise sur les tranches 1 et 2, ANI art. 37) va jusqu'à huit plafonds (ANI art. 32, applicable depuis le 1er janvier 2019) ; la tranche 2 de la prévoyance conventionnelle, jusqu'à quatre (CCNEAC XII.2, inchangé depuis 2016 selon le relevé, pour tout son titre : celle des permanents, et la tranche B d'un cadre technicien intermittent, XII.2.2.2, sur la tranche 1 de son contrat) ; le chômage et l'AGS, dans la limite de quatre plafonds (règlement Unédic du 15/11/2024, art. 49, applicable au 1er janvier 2025) ; l'Apec dans la limite de quatre plafonds, à part (`apec`, Audiens 2025). Le plafond multiplié est celui de la paie, ou la somme des plafonds de l'année pour une paie qui se régularise (`droit::plafond::assiettes_plafonnees`)."
+    },
+    "note": "Les bornes des tranches d'une paie en nombre de plafonds : `t2` (tranche 2, tranche 1 + 2, CET), `t2_conventionnelle` (la tranche 2 de la prévoyance conventionnelle), `chomage` (le chômage et l'AGS d'un permanent, le chômage d'un intermittent), `apec` (l'Apec d'un cadre, permanent ou intermittent). Un intermittent les multiplie sur la tranche 1 de son contrat."
+  },
+  "regularisation_du_plafond": {
+    "technicien_intermittent": "par_contrat",
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/code-de-la-securite-sociale/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "CSS R. 242-2, II (en vigueur depuis le 01/01/2020)",
+          "citation": "Les cotisations calculées dans la limite d'un plafond annuel sont régularisées chaque mois. L'employeur fait masse, à chaque échéance de cotisations, des sommes dues au titre des périodes de travail comprises entre cette échéance et le premier jour de l'année ou le jour de l'embauche, si elle est postérieure, et calcule les cotisations sur la partie de cette masse qui ne dépasse pas la somme des plafonds périodiques applicables à ces mêmes périodes."
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1230",
+          "citation": "si la somme des rémunérations est inférieure à la somme des plafonds, l'assiette plafonnée à retenir pour une échéance de paie donnée est égale à la somme des rémunérations, diminuée du montant des assiettes plafonnées appliquées sur chaque échéance de paie précédente"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1240",
+          "citation": "Ces dispositions, qui constituent une évolution par rapport à la doctrine antérieure, sont applicables de manière obligatoire à compter du 1er janvier 2022."
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1250",
+          "citation": "Les salariés bénéficiant de taux, d'assiettes ou de montants spécifiques ou forfaitaires de cotisations, ainsi que les travailleurs à domicile, ne sont pas éligibles au principe de régularisation des cotisations plafonnées"
+        },
+        {
+          "fichier": "atelier/reference/sources/boss/boss-assiette-generale-20260801.txt",
+          "emetteur": "boss",
+          "article": "BOSS, assiette générale, § 1090",
+          "citation": "Sont notamment visés les artistes du spectacle [...] pour les salariés intermittents, le plafond soit proratisé pour ne tenir compte que des jours ayant donné lieu à rémunération"
+        },
+        {
+          "fichier": "atelier/reference/sources/majoration-caisses-conges/acoss-lettre-circulaire-2013-019-20130328.txt",
+          "emetteur": "urssaf",
+          "article": "Lettre circulaire Acoss 2013-019, annexe 1, régularisation progressive",
+          "citation": "son assiette plafonnée de février 2013 est donc de 2414€ (5500€ -3086€). L'assiette FNAL majorée pour le paiement de la contribution est donc de 2692 € (2414€*11.5%)"
+        },
+        {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+          "emetteur": "agirc_arrco",
+          "article": "Aide à la codification DSN CT2025 (l. 198-199)",
+          "citation": "la régularisation annuelle du plafond de sécurité sociale est remplacée par la régularisation progressive au mois le mois"
+        },
+        {
+          "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+          "emetteur": "agirc_arrco",
+          "article": "ANI Agirc-Arrco du 17/11/2017, art. 44",
+          "citation": "Les versements de cotisations donnent lieu à une régularisation progressive telle que prévue au II. de l’article R. 242-2 du code de la sécurité sociale."
+        },
+        {
+          "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+          "emetteur": "audiens",
+          "article": "Paramètres Audiens 2025, p. 2, « Cas particulier : la CET », exemple 2",
+          "citation": "Puis, CET due dès lors que le salaire atteint le PSS ➔ la CET sera calculée sur la base de 50 600 €"
+        },
+        {
+          "fichier": "atelier/reference/sources/faq-dsn-organismes-complementaires/net-entreprises-faq-dsn-oc-declarants-v4-202310.txt",
+          "emetteur": "net_entreprises",
+          "article": "FAQ DSN des organismes complémentaires, tranche nulle",
+          "citation": "une tranche A inférieure au plafond n'implique pas nécessairement une tranche B nulle, celle-ci pouvant être négative par effet de régularisation progressive"
+        }
+      ],
+      "raisonnement": "R. 242-2, II (en vigueur depuis 2020) et le BOSS (§ 1220-1240, obligatoire depuis le 1er janvier 2022, donc toute l'année 2025) régularisent chaque mois les cotisations plafonnées sur l'année civile : à chaque paie, la somme des rémunérations depuis le 1er janvier ou l'embauche sous la somme des plafonds, moins les assiettes plafonnées déjà appliquées ; l'Acoss le fait pour le FNAL, majoration de 11,5 % comprise, l'ANI Agirc-Arrco lui-même (art. 44 : « une régularisation progressive telle que prévue au II. de l'article R. 242-2 », applicable depuis le 1er janvier 2019) et son cahier de codification pour la retraite complémentaire (T1, T2 ; son aide de 2026 décrit la DSN mensuelle, qui régularise ainsi depuis qu'elle existe) ; la CET suit : sa base régularisée devient celle de l'année dès que la somme des rémunérations dépasse la somme des plafonds, ce que dit l'exemple 2 d'Audiens (« Pas de CET sur les bulletins de janvier à novembre », puis la CET « calculée sur la base de 50 600 € sur le bulletin de décembre »), l'ANI (art. 37) la disant due quand « la rémunération excède le plafond » et la fiche net-entreprises 2556 la supposant régularisée, CET négative comprise ; la prévoyance, INFERENCE : un seul émetteur, la FAQ des organismes complémentaires, suppose ses tranches régularisées (« pouvant être négative ») sans la poser, et aucun accord de prévoyance déposé ne le dit. Le BOSS (§ 1250) en sort les salariés à taux spécifiques, dont les artistes du spectacle (§ 1090) : leurs paies gardent chacune son plafond et n'entrent pas dans le cumul d'un autre contrat (INFERENCE retenue par Léandre le 19/11/2026 pour un artiste qui a aussi un contrat de technicien : le § 1230 fait masse de tous les contrats, le § 1250 sort l'artiste, aucun texte ne joint les deux). Le technicien intermittent : `par_contrat`, TOLÉRANCE RETENUE (Léandre, 19/11/2026), pas une règle : le § 1090 lui admet le plafond des jours rémunérés, écrit pour la classe que le § 1250 sort de la régularisation, et le § 1230 fait masse de tous les contrats ; aucun texte déposé ne nomme le technicien. Les paies reprises d'un ancien logiciel n'entrent pas dans le cumul : la régularisation commence au premier mois payé ici, INFERENCE et approximation de la première année (Léandre, 19/11/2026), les pièces reprises ne disant ni le plafond appliqué ni les tranches de la retraite et de la prévoyance. Le chômage, l'AGS et l'Apec ne se régularisent pas : aucun texte déposé ne le dit (la fiche Unédic ne dit que l'identité de leur assiette avec celle de la sécurité sociale). La retraite complémentaire d'un intermittent se compte à part, sur le plafond annuel et non sur la somme des plafonds de ses paies (Audiens et l'ANI, annexe A, art. 1 : `retraite_t2` du corps) ; le plafond de la sécurité sociale de ses paies n'en change pas."
+    },
+    "note": "Une paie qui se régularise (un permanent qui n'est pas artiste) lit les paies validées de son salarié de l'année (`conges::plafonds_des_mois_anterieurs`), puis celles des contrats précédents du mois (`calcul::plafonnement`) ; ses assiettes plafonnées se calculent à un seul endroit (`droit::plafond::assiettes_plafonnees`). Une DSN déjà déposée ne se réécrit pas : la paie suivante rattrape l'écart d'une paie corrigée."
+  },
   "majoration_conges_115": 1.115,
   "majoration_conges_110": 1.1,
   "plafond_journalier": 216,
-  "t2_multiple": 8,
-  "apec_multiple": 4,
   "rubriques_bulletin": [
     {
       "id": "maladie",
@@ -1115,7 +1246,7 @@
       "id": "retraite_t1",
       "famille": "RETRAITE",
       "libelle": "Complémentaire Tranche 1",
-      "base": "brut",
+      "base": "t1_annuelle",
       "taux_pat": 5.74,
       "taux_sal": 5.3,
       "composants_pat": [
@@ -1142,7 +1273,91 @@
           }
         ]
       },
-      "note": "En 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+      "note": "En 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019.\n`base` : `t1_annuelle`, la tranche 1 de l'année chez la compagnie, sous le plafond annuel (`plafond_securite_sociale.annuel`) : le brut de chaque rubrique tant que la rémunération de l'année reste sous lui (`droit::plafond::tranches_sous_le_plafond_annuel` ; le fondement : `retraite_t2`)."
+    },
+    {
+      "id": "retraite_t2",
+      "famille": "RETRAITE",
+      "libelle": "Complémentaire Tranche 2",
+      "base": "t2_annuelle",
+      "taux_pat": 12.42,
+      "taux_sal": 11.87,
+      "composants_pat": [
+        10.8,
+        1.62
+      ],
+      "composants_sal": [
+        10.79,
+        1.08
+      ],
+      "source": {
+        "sources": [
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 3, artistes et techniciens intermittents non cadres, retraite complémentaire T2 (10,79 salarial + 10,80 patronal)",
+            "citation": "T2 annuelle 10,79 % 10,80 %"
+          },
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 3, contribution d'équilibre général T2 (1,08 salarial + 1,62 patronal)",
+            "citation": "T2 annuelle 1,08 % 1,62 %"
+          },
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 2, intermittents non-cadres, plafonds annuels",
+            "citation": "Pour déterminer les tranches (T1 et T2), ce sont les plafonds annuels qui doivent être retenus, quelle que soit"
+          },
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 2, intermittents non-cadres, exemple 2",
+            "citation": "100 jours de travail rémunérés : 50 000 € ➔ T1 = 47 100 € et T2 = 2 900 €"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Circulaire 2018-09-DC, ANI du 17/11/2017, annexe A, art. 1, intermittents des professions du spectacle",
+            "citation": "Pour le calcul des cotisations, les rémunérations versées dans l’année par chaque employeur sont traitées de façon distincte, dans les limites annuelles des assiettes T1 et T2 telles que définies à l’article 32 ne tenant pas compte de la durée de chaque emploi."
+          }
+        ],
+        "raisonnement": "Audiens (le tableau des non-cadres, « T2 annuelle », et les plafonds annuels « quelle que soit la durée du travail ») et Agirc-Arrco (l'ANI, annexe A, art. 1 : les rémunérations de l'année de chaque employeur, « dans les limites annuelles des assiettes T1 et T2 ») : la tranche 2 d'un intermittent est la part de sa rémunération de l'année chez la compagnie au-delà du plafond annuel, dans la limite de huit plafonds (`tranches_du_plafond.t2`, ANI art. 32), comptée à chaque paie sur ce qui la précède dans l'année civile (ANI art. 44, la régularisation progressive)."
+      },
+      "note": "Retraite complémentaire T2 d'un intermittent non cadre : 10,80 + CEG 1,62 patronal, 10,79 + 1,08 salarial, sur `t2_annuelle` ; nulle, elle n'est pas au bulletin (`calcul::calculer`)."
+    },
+    {
+      "id": "cet",
+      "famille": "RETRAITE",
+      "libelle": "Contribution d'équilibre technique (CET)",
+      "base": "cet_annuelle",
+      "taux_pat": 0.21,
+      "taux_sal": 0.14,
+      "source": {
+        "sources": [
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 3, artistes et techniciens intermittents non cadres, CET",
+            "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 annuelles 0,14 % 0,21 %"
+          },
+          {
+            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+            "emetteur": "audiens",
+            "article": "Paramètres Audiens 2025, p. 2, « Cas particulier : la CET », exemple 4",
+            "citation": "Exemple 4 : salarié intermittent du spectacle non-cadre : 50 000 € de salaire brut sur l’année ➔ CET due"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt",
+            "emetteur": "convention",
+            "article": "ANI Agirc-Arrco du 17/11/2017, art. 37, 2",
+            "citation": "Pour les participants dont la rémunération excède le plafond fixé en application de"
+          }
+        ],
+        "raisonnement": "L'ANI (art. 37) dit la CET due par tout participant dont la rémunération excède le plafond, 0,35 % sur T1 et T2, 60/40 (art. 38) ; Audiens la porte au tableau des intermittents non-cadres sur « T1 + T2 annuelles » et la dit due à 50 000 € sur l'année (exemple 4), pas à 35 000 € (exemple 3) : due quand la rémunération de l'année chez la compagnie dépasse le plafond annuel, sur toute la rémunération de l'année dans la limite de huit plafonds, à la paie où elle le dépasse (le moment de l'exemple 2 d'Audiens)."
+      },
+      "note": "CET d'un intermittent non cadre : 0,21 / 0,14 sur `cet_annuelle` (`droit::plafond::Regularisees::sous` sous le plafond annuel) ; nulle, elle n'est pas au bulletin. L'avis de sa bascule : `calcul::avis_de_la_bascule`."
     },
     {
       "id": "famille",
@@ -1712,32 +1927,35 @@
       "bloc78": "23",
       "code81": "131",
       "org": null,
-      "base": "brut",
-      "taux": 11.04,
+      "base": "t2_annuelle",
       "base78": "brut",
-      "composants": [
-        4.45,
-        1.29,
-        4.44,
-        0.86
+      "lignes": [
+        "retraite_t2",
+        "cet"
       ],
       "source": {
         "sources": [
           {
-            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres Audiens 2025, p. 3, artistes intermittents non cadres, retraite T1 (4,44 salarial + 4,45 patronal)",
-            "citation": "T1 annuelle 4,44 % 4,45 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2 (l. 1095-1097)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
           },
           {
-            "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-            "emetteur": "audiens",
-            "article": "Paramètres Audiens 2025, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-            "citation": "T1 annuelle 0,86 % 1,29 %"
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET, première option (l. 1182-1184)",
+            "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, remarque sur la CET, seconde option (l. 1186-1190)",
+            "citation": "Soit le montant de CET est ventilé entre l'assiette plafonnée"
           }
         ]
       },
-      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287). La marque `_libelle_a_confirmer`, heritee du 105, est retiree.\nEn 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+      "note": "Le cahier d'Agirc-Arrco (CT2025, 6.3.2, « Base exceptionnelle », l. 1159-1173) range le 131 « montant des cotisations T2 » d'un intermittent sous la base 23, celui de sa T1 sous la base 43. Pour la CET dans le 131, il ouvre deux options (remarque, l. 1180) : toute sous l'assiette déplafonnée (l. 1182-1184), ou ventilée entre la plafonnée (tranche 1) et la déplafonnée (tranche 2) (l. 1186-1190). CE QUE CHAQUE POPULATION FAIT. L'intermittent non cadre a sa ligne `cet`, toute sous la base 23 : la première option. Le cadre intermittent n'a pas de ligne `cet` : la CET de sa tranche 1 est dans sa ligne `retraite_t1`, déclarée sous la base 43 (`131/43`), celle de sa tranche 2 dans `retraite_t2`, sous la base 23 : la seconde option, ventilée. Le permanent fait comme l'intermittent non cadre, sous la base 03 (`par_nature.permanent`).\nLe 131 de la tranche 2 d'un intermittent, et sa CET, sous la base 23 : la somme des lignes `retraite_t2` et `cet` du bulletin, qui n'y sont que dues (`calcul::calculer`) ; sans elles, aucun 131 sous la 23, et la base 23 se declare seule (`dsn::cotisations`). Le 131 de sa tranche 1 est sous la base 43."
     },
     {
       "bloc78": "27",
@@ -1786,11 +2004,36 @@
     },
     {
       "bloc78": "43",
-      "code81": null,
+      "code81": "131",
       "org": null,
-      "base": "brut",
-      "taux": null,
-      "base78": "brut"
+      "base": "t1_annuelle",
+      "base78": "t1_annuelle",
+      "lignes": [
+        "retraite_t1"
+      ],
+      "source": {
+        "sources": [
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, base assujettie 23 et 43 des intermittents (l. 5155-5157)",
+            "citation": "Pour les intermittents du spectacle ou de l'audiovisuel, quelle que soit leur catégorie, utiliser les valeurs « 23 – Base exceptionnelle (Agirc-Arrco) » et « 43 – Base plafonnée exceptionnelle Agirc- Arrco »"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2 (l. 1095-1097)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
+          },
+          {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1167)",
+            "citation": "montant des cotisations T1"
+          }
+        ]
+      },
+      "note": "131 - Cotisation regime unifie Agirc-Arrco, le libelle de la norme (cahier technique 2026.1, p. 305 ; atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt, l. 287).\nLa base 43 d'un intermittent, quelle que soit sa catégorie, est « la T1 à retenir » (CT2025, l. 633 et 5155-5157) ; le 131 de sa tranche 1 s'y rattache (6.3.2, « Base exceptionnelle », l. 1159-1168), au « montant des cotisations T1 » (l. 1167) : celui que le bulletin a calculé, la somme de ses lignes `retraite_t1`, comme le 131 de la base 23 et celui d'un permanent.\nLe 131 de la tranche 1 d'un intermittent, sous la base plafonnee exceptionnelle (43) : la tranche 1 de l'annee de sa retraite complementaire (`t1_annuelle`, le brut tant que la remuneration de l'annee reste sous le plafond annuel), au montant de sa ligne `retraite_t1`. Un cadre intermittent y declare sa tranche 1 journaliere (`par_categorie.cadre`, `131/43`).\nEn 2025 la ligne `retraite_t1` est la somme de QUATRE parts arrondies separement (`composants_pat`, `composants_sal`) -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68), comme le 105 des DSN deposees de fevrier, mars, juin, juillet et aout 2025."
     }
   ],
   "majoration_chomage_cddu": {
@@ -1939,7 +2182,7 @@
           "id": "retraite_t1",
           "famille": "RETRAITE",
           "libelle": "Complémentaire Tranche 1",
-          "base": "brut",
+          "base": "t1_annuelle",
           "taux_pat": 5.23,
           "taux_sal": 4.79,
           "composants_pat": [
@@ -1966,7 +2209,73 @@
               }
             ]
           },
-          "note": "Retraite complémentaire T1 du technicien intermittent non cadre : 3,94 patronal / 3,93 salarial, plus CEG T1 1,29 / 0,86 (Paramètres Audiens, tableau des techniciens intermittents non cadres) ; assiette annuelle (plafonds annuels des non-cadres).\nEn 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+          "note": "Retraite complémentaire T1 du technicien intermittent non cadre : 3,94 patronal / 3,93 salarial, plus CEG T1 1,29 / 0,86 (Paramètres Audiens, tableau des techniciens intermittents non cadres), sur `t1_annuelle`, la tranche 1 de l'année chez la compagnie sous le plafond annuel (`droit::plafond::tranches_sous_le_plafond_annuel` ; le fondement : `retraite_t2` du corps).\nEn 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+        },
+        {
+          "id": "retraite_t2",
+          "famille": "RETRAITE",
+          "libelle": "Complémentaire Tranche 2",
+          "base": "t2_annuelle",
+          "taux_pat": 12.42,
+          "taux_sal": 11.87,
+          "composants_pat": [
+            10.8,
+            1.62
+          ],
+          "composants_sal": [
+            10.79,
+            1.08
+          ],
+          "source": {
+            "sources": [
+              {
+                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres Audiens 2025, p. 3, techniciens intermittents non cadres, retraite complémentaire T2",
+                "citation": "T2 annuelle 10,79 % 10,80 %"
+              },
+              {
+                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+                "emetteur": "audiens",
+                "article": "idem, contribution d'équilibre général T2",
+                "citation": "T2 annuelle 1,08 % 1,62 %"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt",
+                "emetteur": "agirc_arrco",
+                "article": "Circulaire 2018-09-DC, ANI du 17/11/2017, annexe A, art. 1, intermittents des professions du spectacle",
+                "citation": "les rémunérations versées dans l’année par chaque employeur sont traitées de façon distincte, dans les limites annuelles des assiettes T1 et T2"
+              }
+            ],
+            "raisonnement": "Comme la `retraite_t2` du corps (l'artiste) : Audiens (« T2 annuelle », plafonds annuels) et Agirc-Arrco (annexe A, art. 1) ; les mêmes taux pour le technicien non cadre."
+          },
+          "note": "Retraite complémentaire T2 du technicien intermittent non cadre : 10,80 + CEG 1,62 patronal, 10,79 + 1,08 salarial, sur `t2_annuelle` ; nulle, elle n'est pas au bulletin."
+        },
+        {
+          "id": "cet",
+          "famille": "RETRAITE",
+          "libelle": "Contribution d'équilibre technique (CET)",
+          "base": "cet_annuelle",
+          "taux_pat": 0.21,
+          "taux_sal": 0.14,
+          "source": {
+            "sources": [
+              {
+                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres Audiens 2025, p. 3, techniciens intermittents non cadres, CET",
+                "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 annuelles 0,14 % 0,21 %"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt",
+                "emetteur": "convention",
+                "article": "ANI Agirc-Arrco du 17/11/2017, art. 37, 2",
+                "citation": "Pour les participants dont la rémunération excède le plafond fixé en application de"
+              }
+            ],
+            "raisonnement": "Comme la `cet` du corps (l'artiste) : l'ANI (art. 37) et Audiens (« T1 + T2 annuelles », exemples 3 et 4)."
+          },
+          "note": "CET du technicien intermittent non cadre : 0,21 / 0,14 sur `cet_annuelle` ; nulle, elle n'est pas au bulletin."
         },
         {
           "id": "famille",
@@ -2691,32 +3000,19 @@
           "bloc78": "23",
           "code81": "131",
           "org": null,
-          "base": "brut",
-          "taux": 10.02,
+          "base": "t2_annuelle",
           "base78": "brut",
-          "composants": [
-            3.94,
-            1.29,
-            3.93,
-            0.86
+          "lignes": [
+            "retraite_t2",
+            "cet"
           ],
+          "note": "Comme le 131 de la base 23 du corps : la tranche 2 et la CET de l'annee, les lignes du bulletin, quand elles sont dues.",
           "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, techniciens intermittents non cadres, retraite T1 (3,93 salarial + 3,94 patronal)",
-                "citation": "T1 annuelle 3,93 % 3,94 %"
-              },
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, contribution d'équilibre général T1 (0,86 salarial + 1,29 patronal)",
-                "citation": "T1 annuelle 0,86 % 1,29 %"
-              }
-            ]
-          },
-          "note": "En 2025 le 105 (Agirc-Arrco, Audiens) est la somme de QUATRE parts arrondies separement -- retraite et CEG, employeur et salarie -- et non le taux total applique une fois : 130,00 -> 5,79 + 1,68 + 5,77 + 1,12 = 14,36 (130 x 11,04 = 14,35) ; 724,00 -> 79,94 (et non 79,93) ; 450,00 -> 49,69 (et non 49,68). Lu dans les DSN deposees de fevrier, mars, juin, juillet et aout 2025. Les taux sont ceux d'Audiens (Parametres, p. 3), inchanges depuis 2019."
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2 (l. 1095-1097)",
+            "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
+          }
         },
         {
           "bloc78": "27",
@@ -2765,11 +3061,20 @@
         },
         {
           "bloc78": "43",
-          "code81": null,
+          "code81": "131",
           "org": null,
-          "base": "brut",
-          "taux": null,
-          "base78": "brut"
+          "base": "t1_annuelle",
+          "base78": "t1_annuelle",
+          "lignes": [
+            "retraite_t1"
+          ],
+          "source": {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, 6.3.2, « Base exceptionnelle », le 131 sous la base 43 (l. 1167)",
+            "citation": "montant des cotisations T1"
+          },
+          "note": "Comme le 131 de la base 43 du corps : la tranche 1 de l'annee du technicien, au montant de sa ligne `retraite_t1` (ses quatre parts arrondies separement, `composants_pat` et `composants_sal`)."
         }
       ],
       "note": "La section du technicien intermittent : taux de retraite complémentaire Audiens de sa population (Paramètres de l'année, p. 3), taux Urssaf de droit commun sans abattement (BOSS), prévoyance et Congés Spectacles d'Audiens, identiques à ceux de l'artiste.\nTaux pleins 2026 (13,00 et 5,25 : les taux reduits n'existent plus), ccn source (CASC-SVP 0,50), Agirc-Arrco techniciens (5,23 + 4,79), RGDU calculee contrat par contrat (D. 241-7) et declaree en 018 Urssaf, 018 France Travail et 106 (CTP 671). Non verifie sur un compte rendu : la repartition 2026 de la RGDU entre Urssaf, chomage et retraite (prorata des points de T). A lire sur le compte-rendu Urssaf de la premiere DSN avec un technicien.\nAnnexe 8 (techniciens, ouvriers et cadres du spectacle)\nChaque source se verifie des DEUX cotes. Audiens donne les artistes (4,45 + 1,29 = 5,74 patronale ; 4,44 + 0,86 = 5,30 salariale) : ce sont exactement les taux artistes de ce bareme, obtenus jadis par retro-ingenierie d'un bulletin. Et le BOSS donne 13,00 et 5,25, dont 70 % font 9,10 et 3,68, egalement les taux artistes. La section technicien n'est donc pas une reconstruction plausible : c'est la meme table, lue une fois avec abattement et une fois sans.\nS21.G00.40.002 et .003 sont des champs de fiche. Le << 204 >> de mai 2025 est l'affectation du second contrat du salarie dans le mois, pas un code annexe 8 ; la regle par versement le produit deja. Plus d'AEM depuis le 01/06/2026 (100 % DSN).\n`cotisations_dsn` : Meme structure de blocs que l'artiste (les blocs 02/03/04/07/23/27/31/43), avec les taux pleins : 049 FNAL 0,10 sur brut x 1,115 ; 074 + 102 = 3,45 + 1,80 = 5,25 AF et 075 + 907 = 7,00 + 6,00 = 13,00 maladie -- la DSN 2026 des artistes garde cette decomposition taux reduit / complement (074 2,42 + 102 1,26 ; 075 4,90 + 907 4,20), on la garde donc pour le technicien ; 130 et 128 identiques ; 040/048/041 chomage identiques (annexes 8 et 10 partagent le taux) ; 131 Agirc-Arrco 10,02 = 5,23 + 4,79 (Audiens 2026, techniciens non-cadres) ; 066 Conges Spectacles 15,5 ; 059 Thalie 0,42 (202) et prevoyance 1,23 (203), meme population ETAM que les artistes (fiche de parametrage Audiens). Un << 204 >> n'est pas un code annexe 8 : c'est l'affectation du DEUXIEME contrat du meme salarie dans le mois (202 pour le premier, 204 pour le second), la regle par versement.\nSection du technicien 2025 : taux reduits, reduction Fillon, vieillesse 2,02, prevoyance 1,16, CASC 0,40, pas de Thalie."
@@ -2910,6 +3215,10 @@
   "par_categorie": {
     "cadre": {
       "verifie": true,
+      "rubriques_retirees": [
+        "retraite_t2",
+        "cet"
+      ],
       "rubriques": {
         "prevoyance": {
           "taux_pat": 1.62,
@@ -3072,12 +3381,15 @@
         }
       ],
       "cotisations_dsn": {
-        "131": {
-          "lignes": [
-            "retraite_t1",
-            "retraite_t2"
-          ],
-          "note": "Montant Agirc-Arrco (131, regime unifie, SANS l'Apec depuis la norme 2026.1 : l'Apec part en 132, `cotisations_ajoutees`) = la somme des lignes du bulletin, chaque part arrondie separement. Juin 2025 avait ete declare en 105 << y compris Apec >> : 32,27 = 32,07 de retraite + 0,20 d'Apec."
+        "131/43": {
+          "base78": "t1_journaliere",
+          "source": {
+            "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+            "emetteur": "agirc_arrco",
+            "article": "Aide à la codification DSN CT2025, les bases assujetties (l. 633)",
+            "citation": "L’assiette brute plafonnée correspond à la T1 à retenir."
+          },
+          "note": "Le 131 de la tranche 1 d'un cadre intermittent, sous la base 43 : sa ligne `retraite_t1`, comme celui du corps (retraite, CEG et la CET de sa tranche 1, fondue dans la ligne), chaque part arrondie separement ; seule change la base 78 : la base 43 est sa tranche 1 journaliere, la T1 qu'il retient (Audiens : « les plafonds applicables sont les plafonds journaliers »). Le 131 de sa tranche 2 est celui de la base 23 du corps : sa ligne `retraite_t2`, CET de la tranche 2 fondue. L'Apec part en 132 (`cotisations_ajoutees`). Juin 2025 avait ete declare en 105 << y compris Apec >> : 32,27 = 32,07 de retraite + 0,20 d'Apec."
         },
         "059:202": {
           "taux": 1.74,
@@ -3105,7 +3417,7 @@
           }
         ]
       },
-      "note": "Un cadre intermittent (artiste cadre, S21.G00.40.003 = 01) est payé en artiste avec la prévoyance et la retraite des cadres ; ses tranches sont journalières (T1 = le plafond journalier par jour travaillé, T2 jusqu'à 8 plafonds, Apec dans la limite de 4 plafonds).\nAudiens, Parametres 2026 p. 2 : la T2 journaliere court de 1 a 8 plafonds journaliers (T1 = 220, T2 = 7 x 220 au-dela, donc jusqu'a 8 x T1) ; l'Apec est assise sur 4 plafonds (T1 x 4).\nAudiens, Parametres 2026 p. 2 : << intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers >>, 220 EUR x jours travailles pour la T1, 7 x 220 au-dela pour la T2. Pour les non-cadres, ce sont les plafonds annuels -- d'ou la retraite des artistes et techniciens sur le brut entier."
+      "note": "Un cadre intermittent (artiste cadre, S21.G00.40.003 = 01) est payé en artiste avec la prévoyance et la retraite des cadres ; ses tranches sont journalières (T1 = le plafond journalier par jour travaillé, T2 jusqu'à 8 plafonds, Apec dans la limite de 4 plafonds).\nAudiens, Parametres 2026 p. 2 : la T2 journaliere court de 1 a 8 plafonds journaliers (T1 = 220, T2 = 7 x 220 au-dela, donc jusqu'a 8 x T1) ; l'Apec est assise sur 4 plafonds (T1 x 4).\nAudiens, Parametres 2026 p. 2 : << intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers >>, 220 EUR x jours travailles pour la T1, 7 x 220 au-dela pour la T2. Pour les non-cadres, ce sont les plafonds annuels (`t1_annuelle`, `t2_annuelle`, `cet_annuelle` du corps) : la section les retire (`rubriques_retirees` : la tranche 2 et la CET de l'annee) et pose ses tranches journalieres. Sa base 43 est sa tranche 1 journaliere, « la T1 a retenir » (cahier Agirc-Arrco CT2025, l. 633), sous laquelle se declare le 131 de sa tranche 1 (`131/43`)."
     },
     "cadre_permanent": {
       "verifie": true,
@@ -3179,33 +3491,6 @@
             "raisonnement": "Audiens et Agirc-Arrco, 2025 : 0,06 % (0,036 / 0,024) sur le brut limité à 4 plafonds."
           },
           "note": "Apec d'un cadre permanent : 0,036 / 0,024 sur le brut dans la limite de quatre plafonds mensuels (`apec_mensuelle`)."
-        },
-        {
-          "id": "cet",
-          "apres": "retraite_t2",
-          "famille": "RETRAITE",
-          "libelle": "Contribution d'équilibre technique (CET)",
-          "base": "cet_mensuelle",
-          "taux_pat": 0.21,
-          "taux_sal": 0.14,
-          "source": {
-            "sources": [
-              {
-                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
-                "emetteur": "audiens",
-                "article": "Paramètres Audiens 2025, p. 3, permanents",
-                "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 0,14 % 0,21 %"
-              },
-              {
-                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
-                "emetteur": "agirc_arrco",
-                "article": "aide DSN CT2025, CET",
-                "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
-              }
-            ],
-            "raisonnement": "Audiens (0,21 / 0,14 sur T1 + T2, due si salaire > T1) et Agirc-Arrco (0,35 % du premier euro jusqu'à 8 PSS, réparti 60/40) concordent."
-          },
-          "note": "CET d'un permanent : 0,21 / 0,14 du premier euro jusqu'à 8 plafonds, due dès que le salaire dépasse le plafond du mois ; `cet_mensuelle` vaut alors le brut.\nL'assiette n'est pas bornee a huit plafonds ici, comme elle ne l'est pas non plus pour un intermittent cadre : au-dela de 32 040 EUR de brut mensuel la CET serait surestimee. A corriger le jour ou une paie s'en approche -- aucune n'en approche."
         }
       ],
       "source": {
@@ -3219,13 +3504,13 @@
           {
             "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
             "emetteur": "agirc_arrco",
-            "article": "aide DSN CT2025, CET",
-            "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
+            "article": "aide DSN CT2025, Apec",
+            "citation": "Elle se calcule sur le salaire brut limité à 4 fois le plafond de la sécurité sociale."
           }
         ],
-        "raisonnement": "Audiens (Apec 0,06 %, 0,036 / 0,024) et Agirc-Arrco (CET 0,35 % jusqu’à 8 PSS, réparti 60/40, soit 0,21 / 0,14) : chacun fonde une ligne, l’un et l’autre donnent les deux taux."
+        "raisonnement": "Audiens (Apec 0,06 %, 0,036 / 0,024) et Agirc-Arrco (sur le brut limité à 4 plafonds) concordent."
       },
-      "note": "Cadre permanent : Apec 0,036 / 0,024 sur le brut dans la limite de 4 plafonds mensuels ; CET 0,21 / 0,14 (0,35 % réparti 60/40) du premier euro jusqu'à 8 plafonds, dès que le salaire dépasse le plafond.\nCOMPLETE. Depuis la norme 2026.1, l'Apec se declare a part : << 132 - Cotisation Apec >> (`cotisations_ajoutees`, la ligne `apec_t1` du bulletin), a cote du << 131 - Cotisation regime unifie Agirc-Arrco >> de `par_nature.permanent`, qui somme `retraite_t1` et la CET (cahier technique 2026.1 p. 302 et 305 ; le 105 << y compris Apec >> n'y vaut plus que pour regulariser une periode anterieure a 2025). La prevoyance cadre (1,50 % TA en 3090) vient de la convention.\nCE QUI CHANGE POUR UN CADRE EN CONTRAT PERMANENT, par rapport a la section `par_nature.permanent`. Presque rien, et c'est le point : la retraite complementaire Agirc-Arrco est UNIFIEE depuis 2019 -- un cadre et un non cadre permanents paient les memes 6,01 / 4,01 en T1 et 14,57 / 9,72 en T2, deja dans la section de nature. Il ne reste donc que deux lignes propres au cadre, l'Apec et la CET, et une prevoyance portee a 1,50 % de la tranche A -- celle-la ne s'ecrit pas ici : la convention la fixe, `bareme_prevoyance` la pose.\n`par_categorie.cadre` decrit un cadre INTERMITTENT : ses tranches sont JOURNALIERES (plafond_journalier, t1_journaliere) et sa prevoyance est celle de l'accord interbranches (1,69 / 0,12). Appliquee a un cadre en CDI, elle lui donnerait des plafonds a la journee et la prevoyance d'un intermittent, en silence : `bareme::bareme_cadre` lit cette section-ci quand le contrat est mensuel."
+      "note": "Cadre permanent : Apec 0,036 / 0,024 sur le brut dans la limite de 4 plafonds mensuels ; les taux de retraite et la CET de son tableau sont ceux de `par_nature.permanent`.\nCOMPLETE. Depuis la norme 2026.1, l'Apec se declare a part : << 132 - Cotisation Apec >> (`cotisations_ajoutees`, la ligne `apec_t1` du bulletin), a cote du << 131 - Cotisation regime unifie Agirc-Arrco >> de `par_nature.permanent` : celui de la tranche 1 (base 02) somme `retraite_t1`, celui de la tranche 2 (base 03) `retraite_t2` et la CET (cahier technique 2026.1 p. 302 et 305 ; le 105 << y compris Apec >> n'y vaut plus que pour regulariser une periode anterieure a 2025). La prevoyance cadre (1,50 % TA en 3090) vient de la convention.\nCE QUI CHANGE POUR UN CADRE EN CONTRAT PERMANENT, par rapport a la section `par_nature.permanent`. Presque rien, et c'est le point : la retraite complementaire Agirc-Arrco est UNIFIEE depuis 2019 -- un cadre et un non cadre permanents paient les memes 6,01 / 4,01 en T1 et 14,57 / 9,72 en T2, deja dans la section de nature, comme la CET (ANI, art. 37 : due par tout participant dont la remuneration excede le plafond, sans distinction de categorie). Il ne reste donc qu'une ligne propre au cadre, l'Apec, et une prevoyance portee a 1,50 % de la tranche A -- celle-la ne s'ecrit pas ici : la convention la fixe, `bareme_prevoyance` la pose.\n`par_categorie.cadre` decrit un cadre INTERMITTENT : ses tranches sont JOURNALIERES (plafond_journalier, t1_journaliere) et sa prevoyance est celle de l'accord interbranches (1,69 / 0,12). Appliquee a un cadre en CDI, elle lui donnerait des plafonds a la journee et la prevoyance d'un intermittent, en silence : `bareme::bareme_cadre` lit cette section-ci quand le contrat est mensuel."
     }
   },
   "par_nature": {
@@ -3494,7 +3779,9 @@
         }
       },
       "rubriques_retirees": [
-        "conges_spec"
+        "conges_spec",
+        "retraite_t2",
+        "cet"
       ],
       "rubriques_ajoutees": [
         {
@@ -3542,7 +3829,40 @@
             ],
             "raisonnement": "Agirc-Arrco (21,59 % et CEG 2,70 %, répartis 60/40) et Audiens (12,95 / 8,64 et 1,62 / 1,08) concordent pour 2025."
           },
-          "note": "Retraite T2 d'un permanent : 12,95 + 1,62 patronal, 8,64 + 1,08 salarial, sur la tranche entre 1 et 8 plafonds du mois."
+          "note": "Retraite T2 d'un permanent : 12,95 + 1,62 patronal, 8,64 + 1,08 salarial, sur la tranche entre 1 et 8 plafonds du mois. Elle remplace la tranche 2 de l'année d'un intermittent du corps, retirée (`rubriques_retirees`), comme la `cet`."
+        },
+        {
+          "id": "cet",
+          "apres": "retraite_t2",
+          "famille": "RETRAITE",
+          "libelle": "Contribution d'équilibre technique (CET)",
+          "base": "cet_mensuelle",
+          "taux_pat": 0.21,
+          "taux_sal": 0.14,
+          "source": {
+            "sources": [
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt",
+                "emetteur": "convention",
+                "article": "ANI Agirc-Arrco du 17/11/2017, art. 37, 2",
+                "citation": "Pour les participants dont la rémunération excède le plafond fixé en application de […] une contribution d'équilibre technique de 0,35 % applicable sur les tranches 1 et 2 des revenus définies à l'article"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+                "emetteur": "agirc_arrco",
+                "article": "aide DSN CT2025, CET",
+                "citation": "0,35 % du salaire, du premier euro jusqu’à 8 PSS, pour tout salarié dont le salaire excède le"
+              },
+              {
+                "fichier": "atelier/reference/fiches-parametrage/Audiens-Parametres-2025.txt",
+                "emetteur": "audiens",
+                "article": "Paramètres Audiens 2025, p. 3, permanents",
+                "citation": "Contribution d’équilibre technique (due si salaire > T1) T1 + T2 0,14 % 0,21 %"
+              }
+            ],
+            "raisonnement": "L'ANI (art. 37, 2) dit la CET due par tout participant dont la rémunération excède le plafond, cadre ou non : 0,35 % sur les tranches 1 et 2 (art. 32 : jusqu'à huit plafonds), répartie 60/40 (art. 38) ; Agirc-Arrco (« pour tout salarié ») et Audiens (le tableau des permanents, sans réserve de catégorie : 0,21 / 0,14 sur T1 + T2) concordent pour 2025."
+          },
+          "note": "CET d'un permanent, cadre ou non : 0,21 / 0,14 du premier euro jusqu'à huit plafonds, due quand la rémunération dépasse le plafond (`cet_mensuelle`, `droit::plafond::Regularisees::sous`, dans la limite de `tranches_du_plafond.t2`), régularisée sur l'année comme les tranches (ANI, art. 44 ; `droit::plafond::BasculeDeLaCet`)."
         },
         {
           "id": "mutuelle",
@@ -4005,8 +4325,7 @@
           "base": "t1_mensuelle",
           "base78": "t1_mensuelle",
           "lignes": [
-            "retraite_t1",
-            "cet"
+            "retraite_t1"
           ],
           "source": {
             "sources": [
@@ -4025,7 +4344,7 @@
             ],
             "raisonnement": "La norme DSN (131, 105 réservé à la régularisation) et Agirc-Arrco (le 131 globalise retraite, CEG et CET) concordent sur le code ; pas sur la base (écart)."
           },
-          "note": "Retraite d'un permanent en DSN : 131 (retraite, CEG et CET), un montant sur la T1 et un sur la T2 ; le 105 ne sert qu'à régulariser les périodes antérieures à 2025.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale, et la CET d'un cadre. La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
+          "note": "Retraite d'un permanent en DSN : 131 (retraite, CEG et CET), un montant sur la T1 et un sur la T2 ; le 105 ne sert qu'à régulariser les périodes antérieures à 2025.\nCotisation regime unifie Agirc-Arrco (131) sur la tranche 1 : 6,01 patronale + 4,01 salariale. La CET se declare avec la tranche 2, sous l'assiette deplafonnee. La tranche 2 est declaree separement, sur sa propre base ; l'Apec d'un cadre en 132 (`par_categorie.cadre_permanent.cotisations_ajoutees`)."
         },
         {
           "bloc78": "03",
@@ -4034,7 +4353,8 @@
           "base": "t2_mensuelle",
           "base78": "brut",
           "lignes": [
-            "retraite_t2"
+            "retraite_t2",
+            "cet"
           ],
           "source": {
             "sources": [
@@ -4049,11 +4369,17 @@
                 "emetteur": "agirc_arrco",
                 "article": "aide DSN CT2025, 6.3.2",
                 "citation": "Il se ventile entre un montant de cotisations sur T1 rattaché à la base plafonnée, et un montant de"
+              },
+              {
+                "fichier": "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
+                "emetteur": "agirc_arrco",
+                "article": "aide DSN CT2025, 6.3.2, remarque sur la CET",
+                "citation": "Soit le montant de CET est déclaré en totalité sous l'assiette déplafonnée"
               }
             ],
-            "raisonnement": "Comme n. 56."
+            "raisonnement": "Comme n. 56. La CET d'un permanent (ligne `cet`) se declare toute sous l'assiette deplafonnee (03), avec la tranche 2 : la premiere des deux options d'Agirc-Arrco pour le 131."
           },
-          "note": "Le 131 de la tranche 2 d'un permanent : la retraite T2 et sa CEG.\nAgirc-Arrco tranche 2 : 14,57 + 9,72. Nulle tant que le salaire ne depasse pas le plafond de Securite sociale du mois. A CONFIRMER AU DEPOT DE TEST : deux blocs 78 de code 23 sous le meme versement, un par tranche."
+          "note": "Le 131 de la tranche 2 d'un permanent : la retraite T2 et sa CEG, et la CET quand elle est due.\nAgirc-Arrco tranche 2 : 14,57 + 9,72. Sous le plafond, ni la tranche 2 ni la CET ne sont au bulletin, et aucun 131 ne se declare sous la base 03 (fiche net-entreprises 2556, cas n° 4 ; `dsn::cotisations`). A CONFIRMER AU DEPOT DE TEST : deux blocs 78, la base 02 pour la tranche 1 et la base 03 pour la tranche 2 et la CET, sous le meme versement."
         },
         {
           "bloc78": "31",
@@ -5373,6 +5699,6 @@
         }
       ]
     },
-    "note": "plafond_journalier, t2_multiple, apec_multiple : la tranche A journalière d'un intermittent (216 € par jour travaillé), la T2 jusqu'à 8 plafonds, l'Apec dans la limite de 4 plafonds. La prévoyance des intermittents, cadres ou non, s'assied sur la tranche A journalière ; la retraite des non-cadres sur les plafonds annuels."
+    "note": "plafond_journalier : la tranche A journalière d'un intermittent (216 € par jour travaillé) ; au-delà, la T2 jusqu'à 8 plafonds, l'Apec dans la limite de 4 plafonds (`tranches_du_plafond`). La prévoyance des intermittents, cadres ou non, s'assied sur la tranche A journalière ; la retraite des non-cadres sur les plafonds annuels."
   }
 }

@@ -835,7 +835,7 @@ pub(crate) fn nic_de_l_engagement(ctx: &Contexte, e: &engagement::etats::Etat) -
 /// `nic_de_l_engagement`, sur l'engagement tel qu'il est ecrit.
 pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock::Ecrit) -> R<Option<Nic>> {
     let Some(cle) = brut.saisie.carte.salarie.as_ref() else { return Ok(None) };
-    let mut fiche = droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?);
+    let mut fiche = droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle)?);
     if let Some(n) = &brut.saisie.carte.etablissement {
         fiche.etablissement = Some(n.clone());
     }
@@ -1584,7 +1584,7 @@ impl<'a> Moteur<'a> {
             let spectacle = match &p.spectacle {
                 Some(s) => match s.titre.dite() {
                     Some(t) => Some(t.clone()),
-                    None => return Err(socle::fichiers::absent("titre").reclasser(Classe::Manque)),
+                    None => return Err(socle::fichiers::manque("titre")),
                 },
                 None => None,
             };
@@ -1854,7 +1854,7 @@ impl<'a> Moteur<'a> {
     /// `limite` : le dernier jour ou un annule-et-remplace est admis, jusqu'a minuit : la veille de l'echeance de depot
     /// (`echeance_dsn::Echeance::veille`, reportee comme elle).
     pub(crate) fn limite(&self, mois: Mois) -> R<Jour> {
-        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let e = declarations::echeance_dsn::de_la_compagnie(self.ctx, mois)?;
         e.veille()
     }
 
@@ -2332,7 +2332,7 @@ impl<'a> Moteur<'a> {
     /// l'echeance a midi, l'annule-et-remplace jusqu'a la veille a minuit). INFERENCE : un depot refuse n'ouvre pas
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
     fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<Groupe> {
-        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois)?;
         let au_depot = echeance_dsn(echeance.limite()?, "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
         let partie = e.deposee();
@@ -2369,7 +2369,7 @@ impl<'a> Moteur<'a> {
             // Apres la veille : la correction part dans la DSN qui porte (la premiere d'un mois suivant qui n'est pas
             // partie), celle que l'avertissement de « Modifier l'engagement » nomme aussi.
             let suivant = compagnie::etat_dsn::dsn_qui_porte(self.ctx, le_mois)?;
-            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, suivant).map_err(|m| m.reclasser(Classe::Illisible))?;
+            let e2 = declarations::echeance_dsn::de_la_compagnie(self.ctx, suivant)?;
             let a = deposer_dsn(suivant, nic, format!("Déposer la DSN de {}…", suivant.libelle(Graphie::Accentuee)));
             return Ok(Groupe::de(
                 EtatCase::AFaire,

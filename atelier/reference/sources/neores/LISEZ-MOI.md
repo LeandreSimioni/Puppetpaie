@@ -12,6 +12,8 @@ son archive.
 | `gip-mds-neores-cahier-technique-2026.1.2-20251024.pdf` (+ `.txt`, `pdftotext -layout`) | « Cahier technique NEORES », version 2026.1.2 (norme en production), 55 p., daté du 24/10/2025 | `/media/documentation/neores/dsn-cahier-technique-2026.1.pdf` (Last-Modified 18/11/2025) |
 | `gip-mds-neores-cahier-technique-2027.1.0-20260303.pdf` (+ `.txt`) | le cahier 2027.1.0 (norme à venir), daté du 03/03/2026 | `/media/documentation/neores/neores-cahier-technique-2027.1.pdf` (13/03/2026) |
 | `gip-mds-neores-note-differentielle-2026.1.2-2027.1.0-20260313.pdf` (+ `.txt`) | la note différentielle CT 2026.1.2 → CT 2027.1.0 | `/media/documentation/neores/neores-differentiel-cahier-technique-2026.1-2027.1.pdf` (13/03/2026) |
+| `gip-mds-neores-cahier-technique-2027.1.1-20261029.pdf` (+ `.txt`) | le cahier 2027.1.1, 66 p., daté du 29/10/2026 ; relevé le 19/11/2026 par Léandre sur son poste | `/media/documentation/neores/neores-cahier-technique-2027.1.pdf` (le nom du fichier servi ; l'adresse n'a pas été revue par le conteneur) |
+| `gip-mds-neores-note-differentielle-2026.1.2-2027.1.1-20261105.pdf` (+ `.txt`) | la note différentielle CT 2026.1.2 → CT 2027.1.1 (« publié en novembre 2026 »), 43 p., fichier du 05/11/2026 ; relevée le 19/11/2026 par Léandre | `/media/documentation/neores/neores-differentiel-cahier-technique-2026.1-2027.1.pdf` (même réserve) |
 | `gip-mds-neores-table-types-de-parametres-20230703.xlsx` (+ `.csv`, LibreOffice, la feuille unique) | « Table des types de paramètres – RO.B008.R001 (décembre 2022) » | `/media/documentation/neores/neores-table-types-de-parametres.xlsx` (03/07/2023) |
 
 Les schémas XSD (`NEOReS_Master_Message_2026.1.1.xsd`, `NEOReS_datatypes_2026.1.1.xsd`, `NEORES-2026-détails.xlsx`…)
@@ -42,6 +44,8 @@ libellé de chaque contrôle, `RO.B004.R002`).
   caractère substituable et le rappel descendent de `RO.B004` (R016, R017) à `RO.B005` (R005, R006), avec
   `RO.B005.R007` (responsable de l'interlocution) ; deux blocs nouveaux, `RO.B011` (information : code, libellé, numéro
   d'enregistrement de la procédure, information, référence, aide) et `RO.B012` (identifiants de l'individu).
+- **CT 2027.1.1 et sa note différentielle** : déposés, pas encore lus contre le lecteur ; ce que le 2027.1.1 change au
+  2027.1.0 reste à relever dans la note.
 - **La table des types de paramètres** : 118 « Effectifs », A01 effectif moyen annuel, A02 BOETH, A03 ECAP, A04
   assujettissement OETH, A05 CSA CFIP, A07 CSA (niveau entreprise).
 
@@ -65,8 +69,12 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `gip-mds-neores-cahier-technique-2026.1.2-20251024.txt` : `ceacfcf9cb9aa8d140c9f74d52e292e8cdf95accb27d098ca75ffebb6c3cf060`
 - `gip-mds-neores-cahier-technique-2027.1.0-20260303.pdf` : `12e03e606d418a55307c4ee1f73e920ed3eb5e05e6b47eec1ab1c6a522eeebee`
 - `gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` : `52f23c4fed89842d07373d9d989df024619f73cf7e0632fa54e658e50e3174e5`
+- `gip-mds-neores-cahier-technique-2027.1.1-20261029.pdf` : `bdd74b845fa55b820b4a63b15218d1e1284163f819ccd484b52032276f8db9b8`
+- `gip-mds-neores-cahier-technique-2027.1.1-20261029.txt` : `6614b401652ff8150a68d41468bb28c596776ac4a25ae878b70cfb5d371aaea8`
 - `gip-mds-neores-note-differentielle-2026.1.2-2027.1.0-20260313.pdf` : `c52937ff35ee841ba29d15af8cd6a877becce7569c5672f274f47daa8ef25600`
 - `gip-mds-neores-note-differentielle-2026.1.2-2027.1.0-20260313.txt` : `b6f466ea9af3507e2690656c8f4564262d46763b9890a4aceebfc58dc970f9e2`
+- `gip-mds-neores-note-differentielle-2026.1.2-2027.1.1-20261105.pdf` : `a9266b554ca4eb2b735dc15429a20e6a3bf243419176feea2d6cb25ae74cd799`
+- `gip-mds-neores-note-differentielle-2026.1.2-2027.1.1-20261105.txt` : `06f50adcf70a0fa82969d25a2a32b5a7af5ab79fc9a483de22e3d57f46ce230c`
 - `gip-mds-neores-table-types-de-parametres-20230703.csv` : `72fc659a70ef72d6020d41bc752eba0e92ca3230f32f7523e48e44f114c0c2bb`
 - `gip-mds-neores-table-types-de-parametres-20230703.xlsx` : `b0e27324f077d5f4b3f68249616a65c68a8e7e635d3303c5db976da9d38023de`
 - `net-entreprises-page-norme-et-documentation-neores-20261014.html` : `0569107aa3337b0a5ae61454c5964bbefbc90746f1597bc899781d739f46e614`

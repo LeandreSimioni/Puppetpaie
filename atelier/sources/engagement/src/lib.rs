@@ -19,6 +19,7 @@ pub mod cumul;
 pub mod duree;
 pub mod departs;
 pub mod ecarts;
+pub mod effectif_repris;
 pub mod empreinte;
 pub mod heures_en_plus;
 pub mod etats;
@@ -127,6 +128,10 @@ pub struct Engagement {
     /// Une periode elementaire de paie : les bornes de CE calcul quand la paie du mois est decoupee
     /// (`periodes`) ; `None` : la periode de paie entiere (le contrat borne au mois).
     pub periode: Option<socle::date::Periode>,
+    /// Les jours du mois que l'employeur ne remunere pas et qui reduisent le plafond de la paie d'un salarie au mois
+    /// (`conges::lignes_du_mois`, `calcul::plafond_de_l_engagement`) ; `None` : un engagement dont le moteur ne deduit
+    /// pas le mois (au cachet, relu d'une paie ecrite, importe), dont le plafond ne se calcule pas.
+    pub sans_remuneration: Option<droit::plafond::JoursSansRemuneration>,
     /// Ce que la saisie dit du contrat ECRIT et que rien d'autre ne porte (`ContratEcrit`) : la periode
     /// d'essai (L1242-12, 6° ; R1221-34, 7°), la personne remplacee (L1242-12, 1°), la repartition des horaires d'un
     /// temps partiel (L3123-6, 1°), les clauses particulieres de ce contrat. Vide : rien n'est dit.
@@ -250,6 +255,54 @@ impl Engagement {
         self.numero.as_ref().ok_or_else(|| {
             socle::echec::cle(format!("{} : le contrat n'a pas de numéro (S21.G00.40.009), il ne se déclare pas. Valider l'engagement le lui donne.", self.qui()), "numero")
         })
+    }
+
+    /// LE CONTRAT ENTIER d'un contrat d'usage a cheval, depuis l'engagement de son dernier mois : le meme contrat (ses
+    /// termes, sa nature, ses bornes, son numero), sur `lignes`, celles de tous ses mois, et leurs `jours`. Le planning
+    /// des mois passes a ete paye dans son mois : il ne compte pas deux fois. Ce que porte le certificat Conges Spectacles
+    /// du contrat (`routes::dossier_salarie::paie_du_contrat_entier`). Chaque champ d'`Assemble` se dit ici : celui
+    /// qu'on ajoute s'y pose.
+    pub fn sur_tout_le_contrat(&self, racine: &Path, lignes: Vec<LignePaie>, jours: Jours) -> R<Engagement> {
+        let lignes: Vec<LignePaie> = lignes.iter().map(|l| l.avec_les_jours(l.dates().to_vec(), Vec::new())).collect();
+        let entier = Assemble {
+            salarie: Some(self.salarie.clone()),
+            spectacle: self.spectacle.clone(),
+            dates_travail: jours_des_lignes(&lignes, false),
+            planning: Vec::new(),
+            lignes: Some(lignes),
+            // Le contrat entier n'est pas la paie d'un mois : ses rubriques se lisent au mois de sa premiere date jouee.
+            mois: None,
+            debut: Some(self.contrat().debut()),
+            fin: self.contrat().fin(),
+            numero: self.numero.clone(),
+            nature: Some(self.nature),
+            taux_cachet: self.taux_cachet,
+            jours: Some(jours),
+            // Ses jours sont ceux de ses lignes.
+            jours_contrat: None,
+            date_paiement: self.date_paiement,
+            lieu: Some(self.lieu.clone()),
+            emploi: self.emploi.clone(),
+            etablissement: self.etablissement.clone(),
+            quotite_contrat: self.quotite_contrat,
+            quotite_reference_saisie: self.quotite_reference_saisie,
+            modalite_temps_travail_saisie: self.modalite_temps_travail_saisie.clone(),
+            motif_recours: self.motif_recours,
+            motif_rupture: self.motif_rupture,
+            notification_rupture: self.notification_rupture,
+            preavis: self.preavis.clone(),
+            dernier_jour_paye: self.dernier_jour_paye,
+            // Un avenant du mois ne se recopie pas d'un mois a l'autre : il n'est pas un terme du contrat entier.
+            date_modification: None,
+            transaction: self.transaction.clone(),
+            avant: None,
+            periode_essai_jours: self.ecrit.periode_essai_jours,
+            personne_remplacee: self.ecrit.personne_remplacee.clone(),
+            repartition_horaire: self.ecrit.repartition_horaire.clone(),
+            clauses_particulieres: self.ecrit.clauses_particulieres.clone(),
+            modele_contrat: self.ecrit.modele_contrat.clone(),
+        };
+        Engagement::nouveau(racine, &entier, &self.nom, self.versement)
     }
 
     /// L'engagement que `v` décrit (`Assemble`). `racine` est celle des donnees de la compagnie, pour le catalogue des
@@ -523,6 +576,7 @@ impl Engagement {
             suspensions: Vec::new(),
             avant: v.avant.clone(),
             periode: None,
+            sans_remuneration: None,
             ecrit: ContratEcrit {
                 periode_essai_jours: v.periode_essai_jours.filter(|j| !j.nulle()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
@@ -838,6 +892,7 @@ impl Engagement {
             suspensions: f.suspensions.clone(),
             avant: None,
             periode: None,
+            sans_remuneration: None,
             // `canon` ne l'ecrit que dit : absent, rien n'etait dit.
             ecrit: match &f.contrat_ecrit {
                 Some(c) => c.clone(),
@@ -1016,8 +1071,10 @@ impl Termes {
 }
 
 /// Ce que `conges::lignes_du_mois` rend pour un engagement paye
-/// au mois : les lignes de paie du mois, ce qu'il y a a en dire, et ses jours travailles (`None` : la saisie les dit).
-pub type LignesPermanent<'a> = &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<Jours>)>;
+/// au mois : les lignes de paie du mois, ce qu'il y a a en dire, ses jours travailles (`None` : la saisie les dit), et
+/// les jours qui reduisent son plafond (`Engagement::sans_remuneration` ; `None` : le mois n'est pas deduit).
+pub type LignesPermanent<'a> =
+    &'a dyn Fn(&Contexte, &saisie::Carte, Mois) -> R<(Vec<LignePaie>, Vec<Avis>, Option<Jours>, Option<droit::plafond::JoursSansRemuneration>)>;
 
 /// Les engagements d'un fichier de mois,
 /// construits avant tout calcul. `lignes_permanent` fournit les lignes d'un
@@ -1089,10 +1146,12 @@ pub(crate) fn engagements(
         };
         // Les jours travailles d'un contrat paye au mois : ceux que le moteur tire du mois (`conges::lignes_du_mois`).
         let mut jours_du_mois: Option<Jours> = None;
+        let mut sans_remuneration = None;
         let lignes = if nat.mensuelle() {
-            let (lignes, avis, jours_travailles) = lignes_permanent(ctx, carte, mois_dit)?;
+            let (lignes, avis, jours_travailles, sans) = lignes_permanent(ctx, carte, mois_dit)?;
             dits.push(avis);
             jours_du_mois = jours_travailles;
+            sans_remuneration = sans;
             Some(lignes)
         } else {
             match &carte.lignes {
@@ -1177,7 +1236,8 @@ pub(crate) fn engagements(
             (Some(_), _) | (None, Some(_)) => None,
             (None, None) => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
         };
-        let eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
+        let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
+        eng.sans_remuneration = sans_remuneration;
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -1199,10 +1259,6 @@ pub(crate) fn engagements(
     Ok((out, dits))
 }
 
-/// La rupture se notifie pendant le contrat : « La date de notification de la rupture de contrat doit être supérieure
-/// ou égale à la date de début de contrat de travail et inférieure ou égale à la date de fin de contrat de travail »
-/// (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). La saisie `e` qui la dit
-/// (`notification_rupture`) se refuse, en disant les bornes du contrat `eng` ; un contrat sans fin ne borne que le debut.
 /// Le refus du jour du versement de `eng` que les textes interdisent (`droit::versement::refus`) ; `None` : il passe.
 fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<String>> {
     let verse = eng.date_du_versement()?;
@@ -1222,8 +1278,17 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
     droit::versement::refus(qui, &verse, eng.mois, fin_cirque.as_ref())
 }
 
+/// La rupture se notifie pendant le contrat : « La date de notification de la rupture de contrat doit être supérieure
+/// ou égale à la date de début de contrat de travail et inférieure ou égale à la date de fin de contrat de travail »
+/// (CCH-11 de S21.G00.62.003, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`). La saisie `e` qui la dit
+/// (`notification_rupture`) se refuse, en disant les bornes du contrat `eng` ; un contrat sans fin ne borne que le debut.
 fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {
     let Some(n) = e.notification_rupture else { return Ok(()) };
+    // Une case que le motif n'appelle pas (`droit::permanents::faits_de_rupture`, au motif de la carte ou, sans lui, au
+    // defaut de la nature) ne se juge pas.
+    if !droit::permanents::faits_de_rupture(&*eng.nat()?, e.motif_rupture)?.contains(&"notification_rupture") {
+        return Ok(());
+    }
     if eng.contrat().contient(&n) {
         return Ok(());
     }
@@ -2048,7 +2113,8 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     let _derivation = crate::conges::Derivation::ouvrir();
     // Un engagement en saisie se calcule comme sa validation le calculera : ses propres mois d'avant comptent.
     let mois = data.mois;
-    let _comme_a_la_validation = crate::etats::CommeALaValidation::ouvrir(ctx, mois)?;
+    let salaries: Vec<&IdSalarie> = data.engagements.iter().filter_map(|e| e.salarie.as_ref()).collect();
+    let _comme_a_la_validation = crate::etats::CommeALaValidation::ouvrir(ctx, mois, &salaries)?;
     let lignes: LignesPermanent = &crate::conges::lignes_du_mois;
     let (engs, dits) = engagements(ctx, data, lignes)?;
     let mut paies = Vec::new();
@@ -2151,7 +2217,7 @@ pub fn engagements_de_la_saisie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<V
 /// Le refus que donne la lecture de la saisie `data` quand elle est encore incomplete (`saisie_incomplete`), lignes
 /// d'un permanent mises a part ; `None` si elle se lit, ou si elle refuse pour une autre raison.
 pub fn refus_de_saisie_incomplete(ctx: &Contexte, data: &saisie::VueDuMois) -> Option<Echec> {
-    let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None));
+    let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None, None));
     match engagements(ctx, data, vide) {
         Err(m) if saisie_incomplete(&m) => Some(m),
         _ => None,
@@ -2169,7 +2235,7 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
         Some(fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, MontantUnitaire::ZERO, Heures::ZERO, tp))
+    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, Montant::ZERO, MontantUnitaire::ZERO, Heures::ZERO, tp))
 }
 
 /// LA SAISIE LUE SANS PAIE (l'ecran, le panneau, les DPAE a faire) : l'embauche de chaque engagement de la saisie `data`

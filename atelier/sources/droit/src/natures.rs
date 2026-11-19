@@ -817,6 +817,54 @@ codes_fermes! {
     }
 }
 
+/// CE QUE LA DSN SAIT D'UN CONTRAT, au mois qu'elle declare : rien encore (« infra DSN mensuelle » : il « n'a encore fait
+/// l'objet d'aucune declaration mensuelle a la date de survenance de la fin du contrat », « declare en integralite dans
+/// une seule DSN mensuelle », fiche net-entreprises 1741, `atelier/reference/sources/net-entreprises-base-connaissances/
+/// net-entreprises-fiche1741-contrat-infra-dsn-mensuelle-20250707.txt`, l. 4-5), ou deja declare par la DSN d'un mois
+/// precedent. Le circuit derogatoire n'est ouvert qu'au premier : « Le circuit derogatoire ne peut etre utilise que pour
+/// un contrat d'usage qui n'a pas encore fait l'objet d'une declaration dans une precedente DSN mensuelle validee »
+/// (cahier technique 2026.1, S21.G00.62.017, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` l. 481-482 ; 2027,
+/// `texte-2027/bloc-S21.G00.62.txt` l. 460-461) ; « Dans les autres cas, le declarant doit proceder selon la procedure
+/// de droit commun (signalement) » (§ 2.5.3, `texte/chapitre-2-principes-de-constitution.txt` l. 2550-2556) ; « la
+/// derogation n'est applicable en DSN que pour les contrats CDDU infra-DSN » (fiche 2062, l. 13).
+///
+/// Une DSN mensuelle declare chaque mois tout contrat qui le touche : un contrat commence avant le mois declare l'a ete
+/// par la DSN de son premier mois (celle du logiciel, ou celle d'un ancien logiciel). Ce qu'il en est se lit sur son
+/// debut et sur le mois (`du_contrat`), et seulement la : tous ceux qui ecrivent ou attendent la fin l'y lisent. Ce que
+/// le moteur a ecrit hier se redecide donc aujourd'hui de la meme facon, sans rien relire de ce qui est parti.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnuDeLaDsn {
+    /// Le contrat commence dans le mois declare : aucune DSN precedente ne l'a porte.
+    InfraDsn,
+    /// Le contrat a commence avant : la DSN d'un mois precedent l'a declare.
+    DejaDeclare,
+}
+
+impl ConnuDeLaDsn {
+    /// Ce que la DSN du mois `mois` sait du contrat qui commence le `debut`, d'apres le calendrier. INFERENCE : la paie du
+    /// moteur se ferme au mois civil, donc deux processus de paie sont deux mois civils, et « commence dans le mois » vaut
+    /// « infra DSN mensuelle ». La fiche 1741 dit que cette notion « ne se définit donc ni en terme de durée du contrat,
+    /// ni au sens calendaire » (l. 5 : le debut et la fin tombent « entre deux processus de traitement de la paie ») : une
+    /// paie qui ne se fermerait pas au mois civil ne se lirait pas ainsi.
+    ///
+    /// INFERENCE aussi pour un debut corrige apres coup : un contrat d'usage dont on recule le debut dans le mois d'avant
+    /// devient « deja declare », et la correction de sa fin s'ecrit alors hors du circuit derogatoire (62.017 = 02, avec
+    /// son signalement), alors que la fiche net-entreprises 1902 (l. 14) demande de reporter le choix « précédemment
+    /// transmis ». Le contrat corrige est un contrat a cheval sur deux paies : c'est ce que ses dates disent.
+    pub fn du_contrat(debut: socle::date::Jour, mois: socle::mois::Mois) -> ConnuDeLaDsn {
+        if debut < mois.premier_jour() {
+            ConnuDeLaDsn::DejaDeclare
+        } else {
+            ConnuDeLaDsn::InfraDsn
+        }
+    }
+
+    /// Le circuit derogatoire est-il ouvert a ce contrat : infra DSN mensuelle.
+    pub fn ouvre_le_circuit(self) -> bool {
+        self == ConnuDeLaDsn::InfraDsn
+    }
+}
+
 codes_fermes! {
     /// LE TYPE D'UNE ACTIVITE (S21.G00.53.001), la liste entiere de la norme (cahier technique DSN 2026.1,
     /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt` ; relevee dans `formats-dsn-*-base.json`).
@@ -1675,30 +1723,46 @@ impl Proprietes {
     }
 
     /// La fin de ce contrat, pour ce motif de rupture (S21.G00.62.002 ; `None` : le defaut de la nature), part-elle par
-    /// le circuit derogatoire ? Pour un CDDU, le seul 031 (CCH-12 de S21.G00.62.017, fiche 2062).
-    pub fn circuit_derogatoire_pour(&self, motif: Option<MotifDeRupture>) -> bool {
+    /// le circuit derogatoire ? Pour un CDDU, le seul 031 (CCH-12 de S21.G00.62.017, fiche 2062), et seulement s'il est
+    /// infra DSN mensuelle (`ConnuDeLaDsn::ouvre_le_circuit`) : deja declare, il suit le droit commun.
+    pub fn circuit_derogatoire_pour(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> bool {
+        connu.ouvre_le_circuit() && self.circuit_ouvert_au_motif(motif)
+    }
+
+    /// Le motif de rupture (`None` : le defaut de la nature) est-il de ceux que le circuit derogatoire de cette nature
+    /// accepte (le 031 d'un CDDU, `contrats-base.json`, `circuit_derogatoire.motifs`) ? Le motif seul : ce que la DSN sait
+    /// du contrat n'y entre pas (`circuit_derogatoire_pour`).
+    pub fn circuit_ouvert_au_motif(&self, motif: Option<MotifDeRupture>) -> bool {
         self.fin_de_contrat.circuit_derogatoire.as_ref().is_some_and(|c| motif.or_else(|| self.motif_rupture_par_defaut()).is_some_and(|m| c.motifs.contains(&m)))
+    }
+
+    /// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME : son motif est celui du circuit derogatoire, mais une DSN d'un
+    /// mois precedent l'a porte (`ConnuDeLaDsn::DejaDeclare`) : sa fin ecrit 62.017 = 02 et se signale (62.017 ;
+    /// § 2.5.3 ; fiche 2062 : « la dérogation n'est applicable en DSN que pour les contrats CDDU infra-DSN »).
+    pub fn a_son_terme_hors_du_circuit(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> bool {
+        connu == ConnuDeLaDsn::DejaDeclare && self.circuit_ouvert_au_motif(motif)
     }
 
     /// LA REGLE, ET SON SEUL ENDROIT : la fin de ce contrat, pour ce motif de rupture (`None` : le defaut de la
     /// nature), se declare-t-elle par un signalement de fin de contrat (nature 07) ? Toute fin de contrat donne lieu a
     /// l'attestation employeur (R. 1234-9), par le FCTU en DSN (fiche net-entreprises 119) ; le CDDU n'en est dispense
-    /// que par le circuit derogatoire, pour le 031 : « Tous les autres motifs de rupture doivent etre declares par
-    /// l'emission d'un signalement FCTU » (fiche 2062, `atelier/reference/sources/net-entreprises-base-connaissances/
-    /// net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt`). Les listes des fins a signaler (ligne de
-    /// commande, page, rappels), le FCTU et l'ecran de saisie la lisent ici.
-    pub fn signalement_fctu(&self, motif: Option<MotifDeRupture>) -> bool {
-        self.fin_de_contrat.signalement_fctu.valeur && !self.circuit_derogatoire_pour(motif)
+    /// que par le circuit derogatoire, pour le 031 d'un contrat infra DSN mensuelle : « Tous les autres motifs de
+    /// rupture doivent etre declares par l'emission d'un signalement FCTU », « la derogation n'est applicable en DSN que
+    /// pour les contrats CDDU infra-DSN » (fiche 2062, `atelier/reference/sources/net-entreprises-base-connaissances/
+    /// net-entreprises-fiche2062-derogations-fin-de-contrat-fctu-20250905.txt`, l. 12-13). Les listes des fins a
+    /// signaler (ligne de commande, page, rappels), le FCTU et l'ecran de saisie la lisent ici.
+    pub fn signalement_fctu(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> bool {
+        self.fin_de_contrat.signalement_fctu.valeur && !self.circuit_derogatoire_pour(motif, connu)
     }
 
     /// Les rubriques du bloc 62 que la nature fixe, pour ce motif de rupture : rubrique -> valeur. La modalite de
-    /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le motif : « 01 » au circuit derogatoire,
+    /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le circuit : « 01 » au circuit derogatoire,
     /// « 02 » hors de lui (CCH-11 et CCH-12, cahier technique DSN 2026.1 p. 277, `atelier/reference/norme-dsn/texte/
-    /// bloc-S21.G00.62.txt`).
-    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<RubriqueDeLaNorme, ModaliteDeDeclarationDeFin> {
+    /// bloc-S21.G00.62.txt`) -- un contrat deja declare ecrit 02 (`circuit_derogatoire_pour`).
+    pub fn codes_fin(&self, motif: Option<MotifDeRupture>, connu: ConnuDeLaDsn) -> BTreeMap<RubriqueDeLaNorme, ModaliteDeDeclarationDeFin> {
         let mut out = BTreeMap::new();
         if let Some(c) = &self.fin_de_contrat.circuit_derogatoire {
-            let valeur = if self.circuit_derogatoire_pour(motif) { c.applique } else { c.non_applique };
+            let valeur = if self.circuit_derogatoire_pour(motif, connu) { c.applique } else { c.non_applique };
             out.insert(c.rubrique, valeur);
         }
         out
@@ -1827,11 +1891,21 @@ fn lu() -> R<Arc<Contrats>> {
 /// La categorie d'emploi d'un classement conventionnel (S21.G00.40.002), telle que le contrat ecrit l'imprime
 /// (`categories_d_emploi` de `contrats-base.json`, libelles de la norme ; R1221-34, 3°). L'`artiste` qui n'est pas cadre
 /// (03, 04) : « non-cadre », la categorie de sa convention (3090, art. 6.3 ; 1285, art. XI.2.1), pas le libelle du 05.
-pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, artiste: bool) -> R<Option<String>> {
+/// Un classement qui n'est pas cadre, d'un salarie dont le `statut` n'est pas dit, se refuse : la categorie en depend.
+pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, statut: Option<crate::fiche::Statut>) -> R<Option<String>> {
     use crate::fiche::StatutConventionnel;
     let c = &lu()?.categories;
-    if artiste && !matches!(classement, StatutConventionnel::Cadre03 | StatutConventionnel::Cadre04) {
-        return Ok(Some(c.artiste_non_cadre.libelle.clone()));
+    if !matches!(classement, StatutConventionnel::Cadre03 | StatutConventionnel::Cadre04) {
+        match statut {
+            Some(crate::fiche::Statut::Artiste) => return Ok(Some(c.artiste_non_cadre.libelle.clone())),
+            Some(crate::fiche::Statut::Technicien) => {}
+            None => {
+                return Err(socle::echec::cle(
+                    "La fiche du salarié ne dit pas son statut, artiste ou technicien : la catégorie d'emploi que le contrat écrit porte en dépend. Le dire sur sa fiche.",
+                    "statut",
+                ))
+            }
+        }
     }
     Ok(c.par_classement.get(&classement).cloned())
 }

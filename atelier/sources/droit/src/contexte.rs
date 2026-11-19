@@ -325,7 +325,7 @@ impl EffectifsParAnnee {
             "Effectif de l'entreprise pour payer en {} : {}. Le seuil de {} salariés ne se franchit qu'après cinq années civiles \
 consécutives au-dessus (CSS, art. L. 130-1, II) : il manque l'effectif de {}. Une compagnie de moins de cinq ans dit la date \
 de sa première embauche (Configuration › Entreprise) ; une plus ancienne dit l'effectif de chacune de ces années, tel que \
-l'Urssaf l'a calculé (Configuration › Entreprise, Avancé, « Dire ou poser l'effectif », ou la route effectif). Le compte \
+l'Urssaf l'a calculé (Configuration › Entreprise, « Pour démarrer » ou Avancé, « Dire ou poser l'effectif », ou la route effectif). Le compte \
 rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
             annee_paie,
             if connues.is_empty() {
@@ -488,11 +488,11 @@ fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, Ru
     Ok(())
 }
 
-/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CotisationDsn::cle`).
+/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CleDeCotisationDsn::nomme`).
 fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<CleDeCotisationDsn, CotisationModifiee>, ou: &str) -> R<()> {
     for (cle, m) in mods {
         let mut vue = false;
-        for c in liste.iter_mut().filter(|c| c.cle().as_ref() == Some(cle)) {
+        for c in liste.iter_mut().filter(|c| cle.nomme(c)) {
             crate::bareme::modifier_cotisation(c, m);
             vue = true;
         }
@@ -1329,14 +1329,22 @@ impl Contexte {
 
     /// La fiche salarie `cle` a `jour`. Refus : la fiche ne dit rien ce jour-la.
     pub fn salarie_au(&self, cle: &IdSalarie, jour: &Jour) -> R<FicheSalarie> {
-        let (id, brute) = self.fiches.salaries.fiches.get_key_value(cle).ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))?;
+        let (id, brute) = self
+            .fiches
+            .salaries
+            .fiches
+            .get_key_value(cle)
+            .ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Manque, format!("Salarie inconnu : {}.", repr_texte(cle.as_str()))))?;
         let champs = brute.au(jour);
         if champs.est_vide() {
-            return Err(socle::refus!(
-                "La fiche de {} ne dit rien au {} : sa premiere valeur est posterieure. Dater sa fiche a partir de ce jour \
+            return Err(socle::echec::erreur(
+                socle::echec::Classe::Manque,
+                format!(
+                    "La fiche de {} ne dit rien au {} : sa premiere valeur est posterieure. Dater sa fiche a partir de ce jour \
 (Configuration, « a partir du »).",
-                cle,
-                jour.jj_mm_aaaa()
+                    cle,
+                    jour.jj_mm_aaaa()
+                ),
             ));
         }
         Ok(FicheSalarie { id: id.clone(), champs })
@@ -1739,9 +1747,13 @@ PSS_H_METROP).",
         }
     }
 
-    /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle.
+    /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle, une fiche que
+    /// la compagnie n'a pas (`Classe::Manque`).
     pub fn fiche_de(&self, cle: &IdSalarie) -> R<FicheSalarie> {
-        self.salaries.get(cle).cloned().ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))
+        self.salaries
+            .get(cle)
+            .cloned()
+            .ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Manque, format!("Salarie inconnu : {}.", repr_texte(cle.as_str()))))
     }
 
     /// LA CLE DE LA FICHE QUE `designe` RETROUVE, la seule resolution d'un salarie designe : par cle, NIR, nom, prenom

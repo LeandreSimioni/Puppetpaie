@@ -724,7 +724,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(PathBuf, DitALEcriture)> 
     // Un signalement se nomme par son fichier, la declaration du mois par son mois : les deux ne designent pas la meme.
     let (le_mois, fichier) = (d.mois, d.fichier.as_deref().filter(|f| !f.as_os_str().is_empty()));
     let Some(le_mois) = le_mois else {
-        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
+        return fichier.map(|f| (f.to_path_buf(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::manque("fichier"));
     };
     if fichier.is_some() {
         return Err(socle::echec::a_la_cle(
@@ -1046,10 +1046,10 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
         let e_id = &e.identite;
-        // La fiche se compare telle que la DPAE l'ecrit : son NIR, et sans lui son nom, son prenom (en capitales) et sa
-        // date de naissance.
-        fn en_capitales<T: AsRef<str>>(t: &Option<T>) -> Option<String> {
-            t.as_ref().map(|t| t.as_ref().trim().to_uppercase())
+        // La fiche se compare telle que la DPAE l'ecrit : son NIR, et sans lui son nom et son prenom dans le jeu de leur
+        // zone (`dpae::identite_declaree` : « Hélène » y est « HELENE ») et sa date de naissance.
+        fn telle_que_declaree<T: AsRef<str>>(t: &Option<T>) -> Option<String> {
+            t.as_ref().and_then(|t| declarations::dpae::identite_declaree(t.as_ref()))
         }
         let trouve: Option<&IdSalarie> = ctx
             .salaries
@@ -1064,7 +1064,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &Path) -> R<ApercuDpae>
                             (Some(j), Some(n)) => n.jour() == Some(j),
                             _ => false,
                         };
-                        c.nom.is_some() && en_capitales(&c.nom) == e_id.nom && en_capitales(&c.prenom) == e_id.prenoms && meme_naissance
+                        c.nom.is_some() && telle_que_declaree(&c.nom) == e_id.nom && telle_que_declaree(&c.prenom) == e_id.prenoms && meme_naissance
                     }
                 }
             })
@@ -1189,7 +1189,7 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
 fn bilan_de_la_repetition(ctx: &Contexte, d: &Designation) -> R<Repetition> {
     let fichier = match d.mois {
         Some(m) => partie(ctx, d, m)?.ok_or_else(|| refus(format!("Rien n'est parti pour {} : le déposer d'abord en test.", m)))?,
-        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque))?,
+        None => d.fichier.clone().filter(|f| !f.as_os_str().is_empty()).ok_or_else(|| socle::fichiers::manque("fichier"))?,
     };
     let chemin = resoudre(&ctx.racine, &fichier)?;
     let empreinte = empreinte_du_fichier(&chemin)?;

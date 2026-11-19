@@ -29,7 +29,7 @@ pub fn relever_retours(ctx: &Contexte, debut: Moment, fin: Moment, tout: bool, e
         None => client_dsn(ctx, b, environnement)?,
     };
     let mut s = Suites::default();
-    let r = envois::releve_retours::relever_retours(ctx, b, debut, fin, tout, client, canal, &mut s);
+    let r = envois::releve_retours::relever_retours(ctx, b, debut, fin, tout, client, canal, None, &mut s);
     avec_les_suites(ctx, r, s)
 }
 
@@ -53,6 +53,16 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(usize, Vec<String>)> {
         return Err(socle::echec::refus(i));
     }
     Ok((n?, faites.a_faire))
+}
+
+/// La plate-forme relevee avant l'ordre d'un essai de mensuelle (`envois::ordre_signalements::relever_la_plateforme`), ses
+/// bilans publies depuis le premier jour de `depuis` (`envois::ordre_signalements::depuis_le_mois`), par le client de la
+/// consultation de `environnement` ; les suites vont dans `suites`, que l'appelant fait avec celles du depot. Ce qui a
+/// empeche de la lire, en une phrase.
+pub(crate) fn relever_avant_l_ordre(ctx: &Contexte, branchement: envois::branchement::Branchement, environnement: EnvironnementNetEntreprises, depuis: socle::mois::Mois, suites: &mut Suites) -> R<Option<String>> {
+    let debut = envois::ordre_signalements::depuis_le_mois(depuis)?;
+    let client = client_dsn(ctx, branchement, environnement)?;
+    Ok(envois::ordre_signalements::relever_la_plateforme(ctx, branchement, client, debut, suites))
 }
 
 /// Le plus grand ordre de signalement connu (`envois::ordre_signalements::dernier_ordre_connu`) : `client` donne, ou celui

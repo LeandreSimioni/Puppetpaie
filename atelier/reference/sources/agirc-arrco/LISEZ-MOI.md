@@ -8,6 +8,15 @@ Agirc-Arrco, ses annexes A et B, la délibération 1, les répertoires. « Appli
 **Transmis par Léandre le 11/10/2026** (agirc-arrco.fr, textes de référence ; URL à compléter). Empreinte SHA-256 (16
 premiers caractères) : `b8af8df7372e4f89`. Transcription : `pdftotext -layout`, `.txt` à côté (5 182 lignes).
 
+`legifrance-ani-agirc-arrco-20171117-p001-053-20261119.pdf` et `…-p054-103-20261119.pdf` (+ `.txt`, `pdftotext
+-layout`) : le même accord tel que Légifrance l'imprime (« Texte de base », « Etendu par arrêté du 24 avril 2018 JORF
+28 avril 2018 », 103 pages coupées en deux), relevé le 19/11/2026 par Léandre sur son poste ; chaque article y porte
+son état (« EN VIGUEUR ÉTENDU »). On y lit, lignes du premier `.txt` : **art. 32** (l. 1192-1204), la tranche 1 est ce
+qui « n'excède pas le plafond fixé en application de l'article L. 241-3 du code de la sécurité sociale », la tranche 2
+va de ce plafond à « 8 fois ce même plafond » ; **art. 44** (l. 1662-1663), « Les versements de cotisations donnent
+lieu à une régularisation progressive telle que prévue au II. de l'article R. 242-2 du code de la sécurité sociale »
+(la même phrase est dans la circulaire, l. 1642 de son `.txt`).
+
 ## Ce qu'on en lit (lignes du `.txt`)
 
 - **Article 32, tranches de rémunération** (l. 1245-1256) : « la tranche 1 […] est constituée de l'ensemble des
@@ -33,6 +42,23 @@ premiers caractères) : `b8af8df7372e4f89`. Transcription : `pdftotext -layout`,
 `logiciel/donnees/baremes/2026.json` (T1/T2, CEG, CET : les notes `_source` citent Audiens « Paramètres 2026 »,
 `atelier/reference/sources/audiens-parametres-2026/`, et la
 fiche « taux et répartition ») ; `paie/src/norme.rs` ou équivalent (`cotisation_cet_patronale`).
+
+**Ticket #497 (19/11/2026), la CET d'un non-cadre** : l'art. 37, 2 du texte de Légifrance (l. 1307-1310 du premier
+`.txt`) dit la CET due « Pour les participants dont la rémunération excède le plafond », sans distinction de catégorie
+(la page « Documentation technique DSN », l. 177 : l'ANI « ne prévoit pas de distinction catégorielle entre les
+salariés cadres, non-cadres ») ; le cahier CT2026 (l. 343-346) : « pour tout salarié dont le salaire excède le plafond ».
+La ligne `cet` des barèmes 2025 et 2026 est donc de `par_nature.permanent` : tout permanent, cadre ou non.
+
+**Ticket #497 (19/11/2026), l'intermittent non cadre** : la circulaire 2018-09-DC, annexe A, « Spécificités propres à
+certaines catégories de salariés », **art. 1, « Intermittents des professions du spectacle et mannequins »** (l.
+4243-4248 du `.txt`) : « Pour le calcul des cotisations, les rémunérations versées dans l'année par chaque employeur sont
+traitées de façon distincte, dans les limites annuelles des assiettes T1 et T2 telles que définies à l'article 32 ne
+tenant pas compte de la durée de chaque emploi. » Avec Audiens (Paramètres 2025 et 2026, « ce sont les plafonds annuels
+qui doivent être retenus »), le fondement des lignes `retraite_t1`, `retraite_t2` et `cet` d'un intermittent sur
+`t1_annuelle`, `t2_annuelle`, `cet_annuelle` (`droit::plafond::tranches_sous_le_plafond_annuel`). L'article ne
+distingue pas le cadre ; Audiens lui donne des plafonds journaliers : le moteur garde à un cadre ses tranches
+journalières (`par_categorie.cadre`), seule sa base 43 suit l'année. Le cahier CT2026 (l. 5166-5168) : pour un
+intermittent, quelle que soit sa catégorie, les bases 23 et 43.
 
 **Lot R5a (11/10/2026), le plafond d'un temps partiel (D11)** : le cahier CT2026 (l. 3325-3343) fait proratiser la
 caisse sur 40.013 / 40.012 pour un « 20 - temps partiel ». Le moteur n'a qu'un plafond par paie
@@ -152,3 +178,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `agirc-arrco-faq-sommes-versees-apres-depart-v2-202506.txt` : `9054005b378e803b4f5244ac4b8b50628d24caefc5cae06f57eaf41d7ab1a855`
 - `agirc-arrco-faq-temps-partiel-cotisant-temps-plein-201910.txt` : `fdecc5c6c63539b8e14a36c0ed28ffa923a0ccdce4aee52d09b69b2643ba1857`
 - `agirc-arrco-page-documentation-technique-dsn-20261011.txt` : `d5d7dfece5c546483d32b2db443480bff335564a0bd6069c2fa4c52e407579dd`
+- `legifrance-ani-agirc-arrco-20171117-p001-053-20261119.pdf` : `c9ed284f2176de4bf00ba13de9278fef22a7a3dd089ad461e1322d1156e43c7a`
+- `legifrance-ani-agirc-arrco-20171117-p001-053-20261119.txt` : `cfa62f3e2cc713731a438fce0ad93fab835b3b22175c235ac8bbed964debedae`
+- `legifrance-ani-agirc-arrco-20171117-p054-103-20261119.pdf` : `2e680accee28e79b00328f3af4df39031704f432c44503137b98e4a2e6751c15`
+- `legifrance-ani-agirc-arrco-20171117-p054-103-20261119.txt` : `2506fcbb9e0d3a2b1d31e9eb7ab35182bea0e57eb98781fd28318c1b8a95a84b`

@@ -1190,15 +1190,17 @@ pub fn prime_anciennete(
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let m = e.metier_lu(fiche)?;
-    // Artiste : l'engagement le dit, sinon la fiche.
-    let artiste = match e.statut {
-        Some(s) => s == Statut::Artiste,
-        None => fiche.statut.dite() == Some(&Statut::Artiste),
-    };
     let Some(m) = m.as_ref() else { return Ok(None) };
     let code = &m.code;
     let Some(c3090) = grille_technique(m) else { return Ok(None) };
-    if artiste {
+    // Artiste : l'engagement le dit, sinon la fiche, sinon son metier, qui est ici d'une grille technique (`m.statut()`).
+    // Le metier n'est pas une valeur par defaut : c'est ce que l'engagement dit de plus precis quand ni lui ni la fiche
+    // ne nomment le statut.
+    let statut = match e.statut.or_else(|| fiche.statut.dite().copied()) {
+        Some(s) => s,
+        None => m.statut(),
+    };
+    if statut == Statut::Artiste {
         return Ok(None);
     }
     let famille = m.famille();

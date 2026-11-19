@@ -70,6 +70,52 @@ fn cinema_spectacle(c: &ContratDeclare) -> bool {
         && c.emploi.code_emploi_ft.as_ref().is_some_and(|e| !e.est_permanent())
 }
 
+/// LE CONTRAT D'USAGE DEJA DECLARE ARRIVE A SON TERME, tel que la DSN le declare : sa fin au motif du circuit derogatoire
+/// (`Nature::circuit_ouvert_au_motif`, le 031 d'un CDDU) mais ecrite « 02 - Non application du circuit dérogatoire »
+/// (S21.G00.62.017). Le France Travail simule n'en fabrique pas l'attestation depuis la mensuelle : la meme regle que
+/// `documents::aer::due` (une INFERENCE, ecrite la), qui attend pour lui l'attestation du signalement. Les motifs du
+/// circuit sont ceux de la nature du contrat declare (`nature_declaree`).
+fn a_son_terme_hors_du_circuit(c: &ContratDeclare) -> R<bool> {
+    if c.modalite_fin != Some(droit::natures::ModaliteDeDeclarationDeFin::SansCircuitDerogatoire) {
+        return Ok(false);
+    }
+    Ok(nature_declaree(c)?.proprietes()?.circuit_ouvert_au_motif(Some(motif_de_fin(c)?)))
+}
+
+/// Le motif de la fin d'un contrat (S21.G00.62.002), que le bloc 62 doit dire.
+fn motif_de_fin(c: &ContratDeclare) -> R<droit::natures::MotifDeRupture> {
+    c.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))
+}
+
+/// LA NATURE DU CONTRAT DECLARE, lue sur ce que la DSN en ecrit (`contrats-base.json`, `cpf_cdd::codes_de` dans l'autre
+/// sens) : sa nature (S21.G00.40.007), et son motif de recours (S21.G00.40.021), celui que la nature fixe (le CDDU : 02
+/// et 05) ou l'un de ceux qu'elle accepte (le CDD : 02 et sa liste). Aucune nature, ou plus d'une : refus.
+fn nature_declaree(c: &ContratDeclare) -> R<droit::natures::NatureDeContrat> {
+    let code = exigee(&c.nature_dsn, "la nature d'un contrat", droit::rubrique!("S21.G00.40.007"))?;
+    let dite = droit::natures::NatureDuContratDsn::du_code(code);
+    let mut lues = Vec::new();
+    for n in droit::natures::NatureDeContrat::TOUTES {
+        let p = n.proprietes()?;
+        let motif = match p.motif_recours_fixe() {
+            Some(fixe) => c.motif_recours == Some(fixe),
+            None => c.motif_recours.is_none_or(|m| p.motif_recours_refuse(m, "").is_none()),
+        };
+        if dite.is_some() && p.nature_dsn()? == dite && motif {
+            lues.push(n);
+        }
+    }
+    match lues.as_slice() {
+        [n] => Ok(*n),
+        _ => Err(socle::echec::cle(
+            match c.motif_recours {
+                Some(m) => format!("La DSN déclare un contrat de nature {} (motif de recours {}) qu'aucune nature de contrats-base.json ne dit seule.", code, m),
+                None => format!("La DSN déclare un contrat de nature {} sans motif de recours, qu'aucune nature de contrats-base.json ne dit seule.", code),
+            },
+            "S21.G00.40.007",
+        )),
+    }
+}
+
 // ------------------------------------------------------------------ les periodes
 
 /// Une colonne du cadre 4 : une periode d'emploi d'un contrat, dans un mois ; `contrat` n'est porte que par la colonne
@@ -545,10 +591,15 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let idcc = ent.idcc.dite();
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
-        let mut finis: Vec<&ContratDeclare> = d.contrats_de(ind.identite.nir.as_ref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
+        let mut finis: Vec<&ContratDeclare> = Vec::new();
+        for c in d.contrats_de(ind.identite.nir.as_ref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()) {
+            if !a_son_terme_hors_du_circuit(c)? {
+                finis.push(c);
+            }
+        }
         finis.sort_by_key(|c| c.periode);
         let Some(dernier) = finis.last() else { continue };
-        let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;
+        let motif = motif_de_fin(dernier)?;
         let mut toutes: Vec<ColonneDuCadre4> = Vec::new();
         for c in &finis {
             toutes.extend(periodes(ctx, &lignes, &d, le_mois, c)?);

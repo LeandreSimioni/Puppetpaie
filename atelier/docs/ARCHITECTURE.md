@@ -83,14 +83,22 @@ que par la structure :
   `AuMois` ensemble (`ChampsEntreprise::metier`). La représentation du personnel ne s'ouvre que par
   `droit::contexte::UnCsePossible`, que seul l'effectif donne quand un comité peut exister (`EffectifsParAnnee::cse`) ;
   l'exemption de la CASC-SVP, par `droit::fiche::ExemptionCasc`, que seuls cinquante salariés
-  (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. Ce que la fiche
+  (`EffectifsParAnnee::cinquante`) et un CSE dit donnent. La reprise des cumuls de l'année (`ChampsSalarie::reprise`)
+  ne s'ouvre que par `droit::fiche::RepriseDesCumuls`, que seule une paie reprise d'un ancien logiciel donne
+  (`engagement::importe::PaieVersee::reprise_des_cumuls`). Cette clé-là n'est pas tenue par la structure : la paie
+  reprise vit au-dessus de `droit`, la clé y a un constructeur public, et toute crate au-dessus de `droit` peut l'appeler ;
+  c'est la relecture du diff qui le tient. Ce que la fiche
   montre s'en déduit (`routes::fiches::montres`) : la pièce d'un permanent, sur la fiche d'un salarié, par un de ses
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
-  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
-  ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
+  du métier de chacun de ses engagements ; celles de l'effectif, par lui ; la reprise des cumuls, par une paie reprise
+  du salarié d'une année qu'un de ses engagements d'ici touche (`engagement::importe::reprise_des_cumuls_de`) ; une
+  pièce qu'aucun engagement ni l'effectif ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
   `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
   (`droit::fiche::CaseDePiece`) ; la mécanique de toutes les cases (la table, l'écriture datée) les nomme ensemble
-  (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  (`droit::fiche::CaseDeFiche`). Ce que le moteur garde d'une fiche pour lui seul est une mémoire de sa fiche datée
+  (la section `memoires` de `fiche!`, un champ facultatif de la seule fiche datée) : ni une case ni une note, elle
+  n'est ni dans la fiche à un jour (`au()`), ni dans la plate, ni dans `changer` ni dans `cases()` ; rien de ce qui lit
+  une fiche ne la voit, et une saisie ne la pose pas. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -364,9 +372,10 @@ un libellé, chacun sa forme.
 | nombre du certificat Congés Spectacles (sa case « NB JOURS OU CACHETS », une seule colonne : les cachets d'un contrat qui en paie, sinon ses jours) | `NombreDuCertificat` (des cachets ou des jours, chacun sa grandeur) | `documents/src/conges_spectacles.rs` |
 | quantité d'une ligne de paie | `QuantiteDeLigne` (l'une des quantités, ou la part du mois payée ; une ligne en pourcentage n'en a pas, elle paie une part de sa base) | `engagement/src/ligne.rs` |
 | taux d'une ligne de paie | `TauxDeLigne` (un montant unitaire, ou la part de sa base qu'une ligne en pourcentage paie : un coefficient) | `engagement/src/ligne.rs` |
-| effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; le banc le compte des DSN déposées, `envois::organismes_simules`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
+| effectif, un nombre de personnes, éventuellement moyen (celui que l'Urssaf calcule, A01 à A07 du 118 ; les bénéficiaires, les manquants et l'ECAP de l'OETH ; les alternants de la CSA ; un seuil d'effectif d'un texte, d'un barème ou d'une ligne du bordereau) | `Effectif` (effectif × taux = effectif, effectif × coefficient = effectif, effectif / effectif = coefficient, effectif × montant unitaire = montant ; une moyenne, `reparti_sur` ; écrit en 13.003 et dans le 118 que le banc rend par `norme::quantite` ; R. 130-1 le compte par `droit::effectif`, des DSN déposées pour le banc, `envois::organismes_simules`, des paies reprises pour « Pour démarrer », `engagement::effectif_repris`, chaque jour d'une personne une part, un `Coefficient`) | `socle/src/grandeurs.rs` |
 | mesure d'activité (S21.G00.53.002, dans l'unité que dit 53.003) | `MesureDActivite` (des jours, des cachets, des heures ou des unités — la pige, la vacation, la tâche —, chacun sa grandeur, comme le dit la mesure de la nature ; lue d'une DSN dans la grandeur de son unité, `MesureDActivite::lue` ; écrite par `norme::quantite`) | `declarations/src/dsn.rs` |
 | quotité d'un contrat (S21.G00.40.012, .013, dans l'unité que dit 40.011 : des jours d'un contrat d'usage, des heures par mois d'un salarié au mois) | `QuotiteDuContrat` (des heures ou des jours ; une DSN lue la dit en jours quand 40.011 dit des jours, en heures sinon ; le plafond de 40.012 et 40.013 d'une nature en est une, lu une fois dans l'unité de 40.011 ; l'unité d'un contrat, la seule source, est celle de sa nature, `Nature::selon_l_unite` ; dite dans une phrase par `QuotiteDuContrat::dite`) | `droit/src/natures.rs` |
+| durée du travail imprimée (l'en-tête d'un bulletin, « Durée du travail : 151,67 h » : le nombre d'heures de travail auquel le salaire se rapporte, C. trav. R. 3243-1, 5° ; la comparaison et l'effectif repris la prennent pour les heures par mois du contrat d'un salarié au mois, d'un mois payé entier et sans DSN (`engagement::ecarts::couvre_le_mois`) : une inférence, le texte ne dit que les heures du salaire payé) | `Heures` (lue par la table de lecture, `import::bulletin_lu::BulletinLu.duree_du_travail`, gardée dans la paie importée, `engagement::importe::PaieVersee.duree_du_travail`) | `socle/src/grandeurs.rs` |
 | quotité et son plafond (40.012 ou 40.013, et le plafond de sa nature dans la même unité : CCH-12, CCH-13 du bloc 40) | `QuotitePlafonnee` (des jours et des jours, ou des heures et des heures : `depasse` ne compare jamais deux unités ; elle ne se fait que du plafond que la nature donne dans son unité, `PlafondDeLaQuotite<G>`, une clé que seule `Nature::selon_l_unite` rend, par `PlafondDeLaQuotite::plafonne`) | `droit/src/natures.rs` |
 | paiement d'une ligne de paie (sa quantité et son taux, qui vont ensemble) | `PaiementDeLigne` (l'unité de sa rubrique les dit, à un seul endroit ; quantité × taux = montant) | `engagement/src/ligne.rs` |
 | décompte de la part du mois (la part payée d'un salaire mensuel, ses jours, sa règle, ses fériés non payés) | `DecompteDuMois` ; la part seule est un Coefficient (socle) | `droit/src/periodes.rs` |
@@ -479,6 +488,7 @@ un libellé, chacun sa forme.
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
 | numéro de contrat | `NumeroContrat` | `engagement/src/numeros.rs` |
+| numéros de contrat déjà pris d'une année (le plus haut de chaque salarié, et tous ceux que portent les engagements, d'ici ou repris, que l'ancien logiciel a déclarés ou sous lesquels quelque chose est parti : `former` n'en redonne aucun) | `engagement::numeros::Pris` | `engagement/src/numeros.rs` |
 | clé d'une paie versée | `CleDePaieVersee` | `engagement/src/importe.rs` |
 | numéro de bulletin | `NumeroDeBulletin` | `engagement/src/numeros.rs` |
 | numéro d'un certificat Congés Spectacles (N CE, le premier d'une paie partie) | `NumeroDeCertificat` | `engagement/src/numeros.rs` |
@@ -503,7 +513,7 @@ un libellé, chacun sa forme.
 | couleur d'une compagnie | `CouleurDeCompagnie` | `compagnie/src/installation.rs` |
 | PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
 | code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
-| matricule | `Matricule` | `droit/src/fiche.rs` |
+| matricule ; celui que le moteur a donné d'office à une fiche neuve, que la fiche datée garde (`matricule_d_office`, une de ses mémoires : ni case ni note, hors de la fiche à un jour) | `Matricule` | `droit/src/fiche.rs` |
 | licence | du texte : la norme ne lui donne qu'une longueur | — |
 | nationalité déclarée | `CodeNationalite` | `droit/src/fiche.rs` |
 | code NAF, code postal | `CodeNaf`, `CodePostal` | `droit/src/fiche.rs` |
@@ -525,11 +535,14 @@ un libellé, chacun sa forme.
 | système | `Systeme` | `compagnie/src/maj.rs` |
 | clé d'archive | `CleDArchive` | `compagnie/src/maj.rs` |
 | état du bridage | `EtatDuBridage` | `compagnie/src/bridage.rs` |
+| porte d'un dépôt chez un organisme (joué, ou envoyé au monde) | `envois::branchement::Porte` | `envois/src/branchement.rs` |
+| dépôt ouvert le jour réel de la machine (sans lui, le transport d'un dépôt ne part pas) | `envois::branchement::AuJourDuJour` | `envois/src/branchement.rs` |
 | sorte d'une copie | `SorteDeCopie` | `compagnie/src/installation.rs` |
 | clé d'incident | `CleDIncident` | `compagnie/src/incidents.rs` |
 | canal d'un incident de la page | `CanalDeLaPage` | `compagnie/src/incidents.rs` |
 | origine d'un appel | `OrigineDeLAppel` | `compagnie/src/diagnostic.rs` |
 | numéro de poste | `NumeroDePoste` | `compagnie/src/incidents.rs` |
+| origine de l'identité du poste | `OrigineDeLIdentite` | `compagnie/src/editeur.rs` |
 | secret | `Secret` | `socle/src/secret.rs` |
 | numéro de retour | `NumeroDeRetour` | `compagnie/src/editeur.rs` |
 | identifiant d'un message | `IdDeMessage` | `compagnie/src/problemes.rs` |
@@ -546,6 +559,7 @@ un libellé, chacun sa forme.
 | dossier de la sauvegarde dans le Drive | `compagnie::sauvegarde::DossierDuDrive` | `compagnie/src/sauvegarde.rs` |
 | entrée mise de côté au tri d'un import | `import::tri::MiseDeCote` | `import/src/tri.rs` |
 | raison d'une mise de côté | `import::tri::RaisonDeMiseDeCote` | `import/src/tri.rs` |
+| titre d'un contrat que PuppetPaie fabrique (celui d'un modèle de base, ce qui reconnaît un contrat à l'import) | `documents::contrat_ecrit::TitreDeContrat` | `documents/src/contrat_ecrit.rs` |
 | clé de dépôt du banc | `routes::scenario::CleDeDepot` | `routes/src/scenario.rs` |
 | fichier d'une pièce du banc | `routes::scenario::FichierDeLaPiece` | `routes/src/scenario.rs` |
 | empreinte | `Empreinte` | `socle/src/fichiers.rs` |
@@ -558,6 +572,7 @@ un libellé, chacun sa forme.
 | identifiant d'un envoi | `IdDEnvoi` | `envois/src/journal.rs` |
 | nature d'un retour | `NatureDuRetour` | `envois/src/retours.rs` |
 | format d'une pièce de retour | `FormatDuRetour` | `envois/src/retours.rs` |
+| pièce de retour qui ne se lit pas | `PieceIllisible` | `envois/src/retours.rs` |
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
@@ -718,8 +733,9 @@ un libellé, chacun sa forme.
   couleur d'une pastille (`socle::ecran`) est une autre notion.
 - **PCS-ESE** : la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de
   l'Insee. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un
-  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le
-  contrat de la liste nominative d'une régularisation CASC-SVP.
+  bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`). Il
+  ne fonde un statut (artiste, technicien) que pour un code dont la fiche de l'Insee est déposée et le dit
+  (`CodePcsEse::statut_de_sa_fiche`).
 - **code emploi déclaré** : le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code
   de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne
   nomme pas toujours un métier. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un
@@ -796,6 +812,11 @@ un libellé, chacun sa forme.
 - **numéro de poste** : le numéro que le serveur du filet donne à ce poste (`POST /poste`) ; 32 hexadécimaux minuscules
   (`RE_POSTE` du serveur). Que portent `config/diagnostic.json`, l'identité rendue par le serveur, le client du filet, ce
   qui part (`poste`) et une année de paies partie. La clé du poste, à côté, est un secret.
+- **origine de l'identité du poste** : d'où le client du filet tient le numéro et la clé du poste : `config/diagnostic.json`
+  de la compagnie qui la porte (le serveur l'y a donnée, `POST /poste`), ou, dans le seul binaire de l'atelier,
+  l'environnement du nuage, qui porte l'identité du poste de l'éditeur (`PUPPETPAIE_ATELIER_POSTE`,
+  `PUPPETPAIE_ATELIER_CLE_POSTE`, pour le seul serveur de l'éditeur, écrite nulle part ; `docs/COMPAGNIE-D-ESSAI.md`).
+  Ce qu'il y a à faire quand le serveur ne la reconnaît plus en dépend.
 - **secret** : un mot de passe (du logiciel, d'un organisme, de la boîte, de l'administrateur), un jeton (d'une session
   net-entreprises, de Google, de la fenêtre), une clé (celle du poste chez le serveur du filet, le secret de
   l'application Google, la graine de publication). Opaque ; `{:?}` écrit « [secret] », ni `Display` ni `Serialize` ; il
@@ -1086,7 +1107,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 |---|---|---|
 | engagement | `Engagement` | `engagement/src/lib.rs` |
 | contrat (ce que l'engagement fait signer) | aucun type : ce n'est pas une donnée, c'est le document qu'on fabrique depuis l'engagement validé (`Engagement`), comme le bulletin depuis la paie (le contrat, l'avenant, le certificat et l'AER lisent la `Paie` et son engagement ; l'ancien texte d'un avenant, la paie que la version partie a écrite, `etats::paie_ecrite_relue`). Ce que seule la saisie dit du contrat écrit : `engagement::ContratEcrit` ; ses formes : la paie écrite, `FormeDEngagement`, et le contrat parti, `envois::ligne::ContratParti`. Ce qu'une pièce ou un organisme dit d'un contrat est une autre notion : « contrat déclaré ou attesté », qui suit | — |
-| contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`, et le calendrier des mois passés dans la sienne, `routes::mois::Atteste`. Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat, par un seul découpage, `Importe::mois_par_mois`) | `ContratDeclare` | — |
+| contrat déclaré ou attesté (ce qu'une pièce ou un organisme en dit ; une forme par pièce, à sa porte : le bloc 40 d'une DSN lue, `declarations::dsn_lue::ContratDeclare`, et ce que la dernière DSN reprise en déclare pour un contrat de permanent dont la nature est à dire, son `ContratDeclare` avec la nature et le salaire d'un mois entier, `routes::importation::nature::DeclareParLaDsn`, celui qu'une DSN partie a écrit, `changements_contrat::Declare`, ce qu'une AEM, un bulletin ou un certificat atteste, `engagement::importe::ContratAtteste`, avec ses bornes dans la ligne de l'import, `ContratLu`, `ContratRelu`, l'enregistrement AEM, `import::dsn_aem::ContratAtteste`, la colonne d'une AER, `aer::Ligne` ; le registre de l'import le lit dans sa ligne, `import::attestes::Atteste`, et le calendrier des mois passés dans la sienne, `routes::mois::Atteste`. Le contrat d'un permanent s'atteste mois par mois, aux dates du mois dans le contrat, par un seul découpage, `Importe::mois_par_mois`) | `ContratDeclare` | — |
 | acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
@@ -1125,6 +1146,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | paie calculée d'un engagement (sa forme écrite, celle du fichier `paies` et des empreintes, est `PaieEcrite`, `FormeDePaie`) | `engagement::calcul::Paie` | `engagement/src/calcul.rs` |
 | paie d'un mois importé (ce que les pièces disent, rien de calculé ; sa forme écrite, celle de la zone `importe` d'un engagement, est `PaieVersee` ; une ligne de l'aperçu d'import, `PaieLue`, `PaieRelue`) | `engagement::importe::PaieImportee` | `engagement/src/importe.rs` |
 | paie du mois qu'un état lit (une paie calculée validée, ou une paie importée ; ses sommes rendent leurs grandeurs) | `engagement::etats::PaieDuMois` | `engagement/src/etats.rs` |
+| paie d'un autre mois qu'un calcul lit (ce que l'employeur a versé au salarié : une paie validée, ou une paie reprise d'un ancien logiciel telle que ses pièces la disent, sans rien ranger ni calculer d'elle ; chaque calcul y lit sa grandeur, vide quand les pièces la taisent) | `engagement::etats::PaieAnterieure` | `engagement/src/etats.rs` |
+| paie reprise qu'un calcul d'un autre mois lit (ce qui a été versé, tel que les pièces le disent, `PaieVersee`, et le numéro du contrat qu'elle paie) | `engagement::importe::PaieReprise` | `engagement/src/importe.rs` |
+| cumuls de l'année à la reprise (ce qu'un ancien logiciel avait cumulé pour un salarié dans l'année civile, avant le jour où PuppetPaie paie, et que ses pièces ne disent pas : la déduction forfaitaire spécifique pratiquée, les heures supplémentaires payées, le net des heures en plus exonéré d'impôt ; la case `cumuls_reprise` de sa fiche, dans la pièce que seule une paie reprise ouvre, `RepriseDesCumuls`) | `droit::fiche::CumulsReprise` | `droit/src/fiche.rs` |
 | contrat qu'un certificat Congés Spectacles couvre (l'engagement du contrat entier, celui de son seul mois ou recomposé sur tous ses mois, son brut, la fiche du salarié, et les mois payés d'un contrat au mois ; `decouper` le coupe au 31 mars) | `documents::conges_spectacles::ContratDuCertificat` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
@@ -1140,12 +1164,26 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
+| pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
+| ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
+| ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
 | nature d'une AEM qui corrige | `NatureDUneAem` | `import/src/aem_lu.rs` |
 | avertissement d'un bulletin lu | `import::bulletin_lu::Avertissement` | `import/src/bulletin_lu.rs` |
 | sorte d'un message à l'éditeur | `SorteDeMessage` | `routes/src/import.rs` |
+| question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
+| réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
+| réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
+| les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
+| questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
+| valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
+| matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
+| sort de cette valeur (complétée, remplacée, ou gardée : l'engagement est validé ou déjà déclaré d'ici, le matricule est engagé d'ici ou n'a pas été donné d'office, une de ces fiches le porte, ou les pièces le donnent à plus d'un salarié) | `SortDeLaValeur` | `import/src/reponse.rs` |
+| ce que l'import en dit (le salarié, la valeur, son sort, sa phrase) | `ValeurDeLaDsn` | `import/src/reponse.rs` |
 | image de l'identité de la compagnie | `SorteDImage` | `documents/src/lib.rs` |
 | format d'une image posée | `FormatDImage` | `fabrique-pdf/src/alleger.rs` |
 | numéro du format d'une description donnée à la fabrique (FORMAT.md, son champ `format` : un document, un remplissage, un ajout de champs ; celui que le logiciel écrit, `fabrique_pdf::FORMAT`) | `NumeroDuFormat` (lu tel qu'il est écrit ; la fabrique dit si elle le lit, ou le refuse en le citant) | `fabrique-pdf/src/description.rs` |
@@ -1177,8 +1215,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte d'un envoi au journal des envois | `documents::Acte` | `documents/src/lib.rs` |
 | place où se dit la remise | `PlaceDeLaRemise` | `envois/src/etats.rs` |
 | place du mois dans un contrat | `engagement::PlaceDuMois` | `engagement/src/lib.rs` |
+| ce que la DSN sait d'un contrat (infra DSN mensuelle, ou déjà déclaré) | `droit::natures::ConnuDeLaDsn` | `droit/src/natures.rs` |
+| une fin de la liste des fins à signaler : lue, ou sur une carte à corriger | `routes::imprevus::FinASignaler` (`FinLue`, `FinACorriger`) | `routes/src/imprevus.rs` |
 | début d'un contrat au mois d'une étape | `routes::etapes::DebutDansLeMois` | `routes/src/etapes.rs` |
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
+| mémoire d'une fiche datée (ce que le moteur garde d'une fiche pour lui seul, ni case ni note : la section `memoires` de `fiche!` ; le matricule donné d'office, `matricule_d_office`) | un champ facultatif de la fiche datée d'un salarié (celle que range `Salaries`), du type de ce qu'il garde | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
 | ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
@@ -1235,10 +1276,20 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | rang d'un contrat sous l'individu dans une DSN | `RangDuContrat` | `declarations/src/dsn.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
+| contrat dans l'effectif (un contrat tel que L. 130-1 et R. 130-1 CSS le comptent : sa personne, ses dates, et la part qu'un jour du contrat compte, aucune quand il est exclu du décompte, un CDD de remplacement ou un dispositif de L. 1111-3 du code du travail, `ContratDansLEffectif::de` ; le temps de travail, la part entière ou le rapport des quotités d'un temps partiel, une référence nulle refusée ; la seule règle, `droit::effectif::effectif_du_mois`, `effectif_au_jour` et `effectif_annuel`, que lisent l'Urssaf simulée depuis les DSN et l'effectif repris) | `droit::effectif::ContratDansLEffectif`, `droit::effectif::TempsDansLEffectif` | `droit/src/effectif.rs` |
+| effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou ce qui manque pour le calculer, et sa phrase ; « Pour démarrer » le propose sur la ligne de l'effectif, la route `effectif` le confirme) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
+| limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
+| régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
+| tranches du plafond (les bornes des tranches d'une paie en nombre de plafonds, chacune avec son texte : la tranche 2 de la retraite complémentaire, ANI Agirc-Arrco art. 32 ; la tranche 2 de la prévoyance conventionnelle, CCNEAC XII.2 ; le chômage et l'AGS, règlement Unédic art. 49 ; l'Apec, Audiens) | `droit::forme_bareme::TranchesDuPlafond` | `droit/src/forme_bareme.rs` |
+| limite des tranches journalières d'un intermittent (le plafond journalier par jour du contrat, « dans la limite du plafond mensuel » : Audiens 2026, absente en 2025 ; le plafond qui limite) | `droit::forme_bareme::LimiteDuPlafondJournalier`, `droit::forme_bareme::PlafondQuiLimite` | `droit/src/forme_bareme.rs` |
+| jours sans rémunération d'une paie (les jours d'absence que l'employeur ne maintient pas, qui réduisent le plafond d'un permanent : CSS R. 242-2, I, al. 4 ; BOSS § 820-920 ; `engagement::conges::lignes_du_mois` les dit, l'engagement les porte, `Engagement::sans_remuneration`) | `droit::plafond::JoursSansRemuneration` | `droit/src/plafond.rs` |
+| assiettes plafonnées d'une paie (celles qui se régularisent : tranches 1 et 2, T2 conventionnelle, T1 + T2, CET, part abattue de la CSG, `Regularisees` ; et le brut dans la limite des plafonds du chômage, `chomage`, qui ne se régularise pas ; le seul calcul, `droit::plafond::assiettes_plafonnees`, qui exige le plafonnement) | `droit::plafond::AssiettesPlafonnees`, `droit::plafond::Regularisees` | `droit/src/plafond.rs` |
+| bascule de la contribution d'équilibre technique (la paie où la rémunération de l'année passe au-dessus de la somme de ses plafonds, ou repasse dessous : la CET de l'année devient due, ou se rend ; jugée par `BasculeDeLaCet::entre` sur l'année avant la paie et l'année jusqu'à elle, un mois découpé entre l'année avant sa première période et l'année après sa dernière, dite par un avis de la paie du mois, `calcul::avis_de_la_bascule`) ; l'année de part et d'autre d'une période qui se régularise ou dont la retraite se compte sur le plafond de l'année, interne au calcul ; le plafond auquel la rémunération de l'année se compare (la somme des plafonds des paies d'un salarié au mois, ou le plafond annuel de la retraite d'un intermittent) | `droit::plafond::BasculeDeLaCet`, `engagement::calcul::AnneeDeLaPeriode`, `engagement::calcul::PlafondDeLAnnee` | `droit/src/plafond.rs`, `engagement/src/calcul.rs` |
+| ce qui précède une paie dans l'année (la somme des rémunérations, des plafonds et des assiettes appliquées des paies qui se régularisent, depuis le 1er janvier ou l'embauche ; lue par `conges::plafonds_des_mois_anterieurs` et les contrats précédents du mois ; pour la retraite complémentaire d'un intermittent, ses paies d'intermittent de l'année sous le plafond annuel, `AnneeAnterieure::sous_le_plafond_annuel`, lues par `conges::retraite_des_mois_anterieurs`) ; le plafonnement d'une paie (régularisé sur elle, ou par paie) | `droit::plafond::AnneeAnterieure`, `droit::plafond::Plafonnement` | `droit/src/plafond.rs` |
 | assujettissement à la taxe sur les salaires (ce que la compagnie déclare : sa TVA, la part de ses recettes soumise, la franchise, l'association de 1679 A) | `droit::fiche::AssujettissementALaTaxe` | `droit/src/fiche.rs` |
 | genre d'un imprévu | `engagement::imprevus::GenreDImprevu` | `engagement/src/imprevus.rs` |
-| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
+| maintien de salaire (ce qu'un texte, la loi ou la convention, garantit pour un arrêt, à l'ancienneté du salarié : sa base, sa carence, ses tranches, son plafond net, la subrogation que la convention donne) | `droit::maintien::MaintienDeSalaire` ; ses pièces : `Droit` (il est dû, ou pourquoi pas), `Tranche` (sa durée, `DureeDUneTranche`, et son taux), `Origine` (maladie, accident du travail, maladie professionnelle, trajet), `Base` (brut ou net), `droit::clauses::Subrogation` (la subrogation que la convention donne : à tout salarié) ; la ligne de paie du maintien est `engagement::ligne::Maintien`, une variante de `LignePaie` ; les sommes d'un mois, internes au calcul : `engagement::maintien::DuMois`, `AuNet`, `Reconstitution` ; ce que la reconstitution d'un maintien en net rend au calcul (son montant, son avis, les jours que son complement maintient) : `engagement::maintien::Reconstitue` | `droit/src/maintien.rs`, `droit/src/clauses.rs`, `engagement/src/ligne.rs`, `engagement/src/maintien.rs` |
 
 **Le détail**
 
@@ -1441,6 +1492,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **note d'une fiche** : un texte qu'une fiche porte et qui n'est pas une case (d'où elle vient, le titre que l'import
   propose à un spectacle), nommée par `fiche!` seul ; que lisent l'import qui complète une fiche (`notes_dites`,
   `prendre_la_note`).
+- **mémoire d'une fiche datée** : ce que le moteur garde d'une fiche pour lui seul, qui n'est ni une case ni une note
+  (la section `memoires` de `fiche!`) : un champ facultatif de la fiche datée, écrit à plat dans son fichier, absent de
+  la fiche à un jour, de la plate, des changements et des cases ; seul le moteur la pose (`SorteDeFiche::memoriser`, à
+  la création, ou l'import), et seul celui qui l'a posée la lit. Aujourd'hui le matricule donné d'office
+  (`matricule_d_office`), que lit `routes::importation::matricules`.
 - **ce qu'une case écrit** : vide, un mot (un texte, un nombre écrit), oui ou non, une structure ; la valeur typée dans
   l'écriture de son fichier (`socle::ecriture::mot`), ce que lisent les règles de `champs-base.json` (`si`, `exige_si`,
   `avance`, la norme, la longueur).
@@ -1503,6 +1559,18 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   la DPAE ; le dernier, le bloc 62 et le certificat Congés Spectacles ; hors du seul mois, le contrat est « à cheval ».
   Écrite `seul`, `premier`, `dernier`, `milieu` (`place`), dans la forme canonique d'un engagement et ce que rendent la
   paie d'un mois et la carte d'un engagement.
+- **ce que la DSN sait d'un contrat** : rien encore (« infra DSN mensuelle », fiche net-entreprises 1741 : il commence
+  dans le mois déclaré : une hypothèse, la paie du moteur se fermant au mois civil, que la fiche 1741 ne dit pas
+  « calendaire ») ou déjà déclaré (il a commencé avant : la DSN de son premier mois l'a porté). Décidé au seul
+  calendrier, sur le début du contrat et le mois de l'engagement (`ConnuDeLaDsn::du_contrat`), que lisent la mensuelle,
+  sa correction, le FCTU, les attestations attendues, la liste des fins et la carte : ce que le moteur a écrit hier se
+  redécide aujourd'hui de la même façon, sans relire ce qui est parti ; une correction d'une fin redit donc le choix
+  « précédemment transmis » (fiche 1902). Le premier ouvre le circuit dérogatoire d'un CDDU
+  (`Nature::circuit_derogatoire_pour`) ; il ne s'écrit dans aucun fichier.
+- **une fin à signaler** : lue (son salarié et son contrat dits : son obligation, ce qui manque pour la signaler) ou
+  sur une carte validée qui ne se lit plus (son contrat finit avant de commencer, son salarié n'est plus dit) : celle-ci
+  ne dit que quoi corriger et où, reste listée seule, et ne ferme ni la liste, ni les rappels, ni l'horloge. Écrite
+  `lue`, `a_corriger` (`lecture`) dans la réponse de `fins-de-contrat`.
 - **début d'un contrat au mois d'une étape** : ce mois-ci (l'embauche : la DPAE, le contrat à signer) ou avant ; ce
   qu'en sait un engagement à compléter, dont la fin n'est pas sûre, et qu'un engagement complet tire de sa place.
   Écrit `ce_mois`, `avant` (`debut`), dans la carte d'un engagement à compléter.
@@ -1564,8 +1632,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   règle datée sont des décisions de l'éditeur (`decision_de_l_editeur`) : elles seules refont une paie partie.
 - **cotisation de la DSN** : une ligne du bloc 81, par son code S21.G00.81.001. Que portent `cotisations_dsn` (`code81`,
   `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version
-  de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) :
-  `CleDeCotisationDsn` (même fichier).
+  de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) ou la
+  base 78 qui la porte (`131/43`, le 131 de la tranche 1 d'un intermittent) : `CleDeCotisationDsn` (même fichier).
 - **clé de totalisation** : le versement (bloc S21.G00.20) dont le montant (20.005) compte une cotisation de la DSN : son
   code 81.001 et, quand ce code va à deux versements, qui le recouvre, écrits `code` ou `code:recouvreur`
   (`018:urssaf`, `018:chomage`, `040:urssaf`) ; une cotisation que le barème ne clé pas se totalise sous son code. Son
@@ -1865,14 +1933,42 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   en saisie) ; aucun ne recalcule. Deux états de plus, à part :
   - **importé** (`engagement/src/importe.rs`, la clé `importe`) : tiré par l'import des pièces d'un autre logiciel,
     validé et documents partis (ce qui en est parti, c'est l'import lui-même). Il se lit, ne se modifie pas et ne se
-    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul, aucune
-    déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
+    recalcule jamais : il ne touche aucun mois de la saisie (`stock::Objet::couvre`), donc aucun calcul ne le refait,
+    aucune déclaration ni aucun document ne le prend, et l'écran ne peut ni le réécrire ni en poser un double. Son numéro de
     contrat est celui que la DSN déposée lui a donné (S21.G00.40.009). Il compte dans les cumuls des annexes 8 et 10
-    (`engagement/src/cumul.rs`) et dans les numéros pris.
+    (`engagement/src/cumul.rs`) et dans les numéros pris. Ce qu'il a versé compte comme ce que versent les paies
+    validées pour les calculs qui lisent le salaire d'un autre mois, par un seul lecteur (`etats::paies_du_salarie`,
+    `conges::paies_versees`, qui rendent `etats::PaieAnterieure`) : le salaire des indemnités journalières d'un arrêt,
+    le salaire de référence et la rémunération du contrat du solde de tout compte, les cumuls de l'année civile
+    (déduction forfaitaire spécifique, heures supplémentaires, exonération des heures en plus). Ce lecteur prend ses
+    paies telles que les pièces les disent (`importe::PaieReprise`), sans les ranger ni rien calculer d'elles : une
+    nature encore à dire, le barème ou la convention de leur mois ne font refuser aucun de ces calculs. Le calcul qui les
+    lit note leur empreinte (`reprises <mois> <salarié>`, comme `paies <mois> <salarié>` pour les validées, et `paies-au-mois <mois> <salarié>` pour les seules
+    validées de ses contrats payés au mois, que la régularisation du plafond lit sans calculer les autres, et
+    `paies-intermittentes <mois> <salarié>` pour celles de ses contrats d'intermittent, que l'année de sa retraite
+    complémentaire lit) : un
+    réimport, un bulletin qui complète une paie de DSN, une ligne rattachée font recalculer la paie validée qui les a
+    lues. Une paie reprise et une paie validée du même contrat le même mois refusent, en nommant le mois et le contrat :
+    une paie ne se compte pas deux fois. Une grandeur que ses pièces ne disent pas (son brut, la déduction qu'il a
+    retenue) ne se devine pas : le calcul refuse en nommant le mois ; pour les cumuls de l'année, la fiche du salarié
+    dit ce que l'ancien logiciel avait cumulé à la reprise (`cumuls_reprise`, `droit::fiche::CumulsReprise`), qui vaut
+    pour les mois d'avant sa date. Le compteur de congés ne le lit pas : la fiche reprend celui de l'ancien logiciel
+    (`conges_reprise`).
   - **non actif** (`etats::NonActif`, la clé `non_actif`) : un engagement dont quelque chose est parti ne se supprime
     plus ; « Retirer cet engagement » (route `retirer-engagement`) le rend non actif. Il garde ses versions, ne se calcule
     plus, n'entre dans aucun document ni aucune déclaration ; le moteur dit ce que sa désactivation rend faux (un mois
-    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro.
+    déclaré à corriger). Un engagement dont rien n'est parti se supprime, même validé, et rend son numéro. Dans un mois
+    dont la DSN ne se remplace plus, la DSN suivante en annule les montants (`produire_regularisations::annulations`) :
+    un versement de correction daté de la fin de son propre mois, la différence de RNF en S21.G00.50.002, ses
+    rémunérations et ses bases déclarées reprises en négatif à leurs périodes, un bloc 56 de type 03 pour un indu
+    seulement. Ce n'est pas la forme que la fiche net-entreprises 898 demande pour un contrat déclaré à tort (blocs 41
+    et 40 à la nature 90, bloc 62 au jour du début, motif 999 ; montants datés du mois de l'erreur ; RNF et PAS par un
+    bloc 56 de type 01, fiche 1821), qui ne s'écrit pas : la norme dit la date de S21.G00.41.001 (« la date de
+    survenance du changement de caractéristique du Contrat »), mais aucun texte déposé ne dit ce que porte le bloc 40
+    d'un contrat de nature 90. Une fin corrigée se déclare par un bloc 62 dans la DSN suivante (fiche 1722), et la
+    correction l'écrit ; mais seul un engagement non actif voit annulé ce qu'une DSN a déclaré pour un mois.
+    « Modifier l'engagement » refuse donc d'en changer le salarié ou de le sortir d'un tel mois, et dit quoi faire
+    (`routes::regularisation::refus_non_declarable`).
 - **Les versions datées** : tant que rien n'est parti d'un engagement, il se modifie librement, sans historique. Dès
   qu'un envoi est parti sur sa version, une revalidation qui le change garde la version d'avant dans l'engagement
   (`versions`, sa saisie), datée, ses paies sous son numéro dans le fichier de leur mois ; le présent prend le numéro suivant. Ce qui est à refaire (`etats::a_refaire` : avenant, DPAE,
@@ -2100,7 +2196,12 @@ le module la dit avec ses textes (`atelier/reference/sources/`) :
   le PSS mensuel au prorata des jours rémunérés de la paie, mois par mois (la
   tolérance du BOSS, § 1090, appliquée : le BOSS est opposable) ;
 - un **permanent** : le PSS au prorata des jours de sa période de paie
-  couverts par le contrat (CSS R. 242-2) ; à **temps partiel**, proratisé
+  couverts par le contrat (CSS R. 242-2), moins les jours d'absence que
+  l'employeur ne rémunère pas (R. 242-2, I, al. 4 ; BOSS § 820-920 : une
+  suspension non rémunérée, les jours d'un arrêt où le maintien ne verse aucun
+  complément, `maintien::DuMois::jours_maintenus` ; aucun dans un mois sans jour
+  travaillé où une prime de la carte est versée, § 860 et 920 :
+  `conges::plafond_du_mois`) ; à **temps partiel**, proratisé
   aussi à sa quotité (CSS L. 242-8), sauf si la fiche entreprise dit que
   l'établissement y renonce (`plafond_temps_partiel` : « entier ») ; un
   artiste à temps partiel garde le plafond entier (BOSS § 1090). Le choix se
@@ -2111,6 +2212,36 @@ Sur ce plafond s'assoient, pour un intermittent, la vieillesse plafonnée, le
 FNAL (`brut_plafonne`, `brut_x115_plafonne`) et le chômage, dans la limite de
 quatre plafonds (`brut_chomage`) ; pour un permanent, les tranches et le
 chômage, dans la limite de quatre plafonds de la période (`brut_chomage`).
+
+**Le plafond se régularise sur l'année civile** (CSS R. 242-2, II ; BOSS,
+assiette générale, § 1220-1250) : les assiettes plafonnées d'une paie se
+calculent à un seul endroit, `droit::plafond::assiettes_plafonnees`, qui ne se
+calcule pas sans son plafonnement. Une paie qui se régularise (un permanent qui
+n'est pas artiste : `regularisation_du_plafond` du barème) prend la somme des
+rémunérations sous la somme des plafonds, depuis le 1er janvier ou l'embauche,
+moins ce que les paies d'avant ont appliqué (lues dans les paies validées de
+l'année, `conges::plafonds_des_mois_anterieurs`, puis les contrats précédents du
+mois) : la vieillesse plafonnée, le FNAL, les tranches de la retraite
+complémentaire et de la prévoyance, et la part que la CSG abat
+(`part_abattue_csg`, un champ de la paie, pas une assiette : rien ne s'y
+assoit, la DSN ne la déclare pas ; une paie qui ne l'écrit pas a abattu
+toutes ses rubriques soumises, ce que dit sa base de CSG, son brut soumis
+abattu plus la prévoyance patronale : sa part abattue est son brut,
+`FormeDePaie::part_abattue_csg`). Une tranche
+régularisée peut être négative, la DSN la déclare signée. L'artiste et le
+technicien intermittent gardent le plafond de chaque paie ; les paies reprises
+d'un ancien logiciel n'entrent pas dans le cumul (la régularisation commence
+au premier mois payé ici) ; le chômage, l'AGS et l'Apec ne se régularisent pas.
+Une paie corrigée (une saisie d'un mois passé) n'est pas reprise par les
+suivantes : la suivante lit ce qu'elle a appliqué et rattrape l'écart. Au
+passage d'une version qui change le calcul, chaque mois fini se recalcule
+(`etats::corriger_les_mois_finis`) : une paie partie dont un montant payé,
+cotisé ou déclaré change (comparé par `etats::chiffres_egaux`, sans ses
+avertissements ni sa part abattue) devient un bulletin rectificatif et une
+correction due à la DSN suivante (`etats::correction_due`), qui déclare la
+différence sans réécrire la DSN déposée ; une paie dont aucun montant ne
+change garde ses numéros et s'écrit avec sa part abattue, sans rectificatif ni
+correction.
 
 **Une valeur du barème peut être datée** : le SMIC (`smic_horaire`, liste de `{depuis, valeur}`), et toute autre
 valeur — un taux, un plafond —, parce que le droit change en cours d'année (AGS 0,20 → 0,25 au 01/07/2024,
@@ -2157,7 +2288,12 @@ Trois subtilités, chacune trouvée en cherchant pourquoi un centime manquait.
 
 **L'assiette CSG n'est pas 98,25 % du brut.** Elle vaut
 `arrondi(brut × 0,9825) + part patronale de prévoyance`, soit
-255,45 + 2,89 = 258,34 pour 260 € de brut, et 510,90 + 5,77 = 516,67 pour 520 €.
+255,45 + 2,89 = 258,34 pour 260 € de brut, et 510,90 + 5,77 = 516,67 pour 520 €. L'abattement ne vaut que sous
+quatre plafonds de la paie (CSS L. 136-2, I ; le plafond de la vieillesse, BOSS § 290 : `limite_abattement_csg` du
+barème), régularisés sur l'année comme lui : au-dessus, le brut entre entier (`droit::forme_bareme::Pile::assiette_csg`,
+sur la part abattue que la paie écrit, `part_abattue_csg`, réparti entre les rubriques au prorata de leur montant).
+La taxe sur les salaires reprend l'assiette de la CSG sans la réduction (CGI 231, 1) : l'abattement de cette part lui
+est rendu (`documents::taxe_sur_les_salaires`).
 
 **Une ligne du bulletin peut cacher deux cotisations.** La ligne
 « autres contributions 0,680 % » sur 286,00 € affiche 1,95 € alors que
@@ -2343,9 +2479,73 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   « A COMPLETER » (`importation/completer.rs`), le reste étant signalé (`ecarts`), jamais appliqué ; les engagements
   importés, chacun dans `engagements/AAAA-MM.json`, le fichier du mois où il commence (le contrat qu'une AEM ou un
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
-  `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage.
+  `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
+  et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier, on relance
+  `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
+- **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
+  par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
+  fiche sans NIR (même nom, même premier prénom, même date de naissance quand les deux la disent), ne se crée pas :
+  l'import le met de côté (ni fiche, ni contrat, ni paie) et demande si c'est la même personne
+  (`QuestionDIdentite`, dans la réponse d'`importer` et dans `importation-etat`, avec ses gestes) ; la ressemblance
+  pose la question, elle ne décide rien. `importation-identite` y répond : la même, la fiche reçoit le NIR et l'import
+  rejoué la complète ; une autre, la réponse se garde avec la configuration (`config/import-identites.json`) et
+  l'import rejoué crée sa fiche.
+- **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
+  l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
+  mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
+- **Ce qu'une DSN pourrait donner** : chaque ligne de « Pour démarrer » dit la pièce qui la porterait
+  (`declarations::dsn_lue::PieceQuiLaPorte`), jugée sur la case déclarée, pas sur sa forme lisible : une DSN quand
+  l'import la remplit de toute DSN mensuelle (chaque forme lue range chacun de ses champs, `EntrepriseDeclaree`,
+  `IndividuDeclare`, `EmploiDeclare` : un champ que la norme ne rend pas obligatoire, ou que la lecture ne garde que
+  sous condition, n'y est pas), aucune sinon ; un salarié sans NIR ne se rattache à aucune DSN, rien de lui n'y est.
+  L'import ne complète qu'une case vide : une case d'une structure déjà entamée (une de ses cases dite) se saisit.
+  Quand l'import a repris des pièces sans aucune DSN (`declarations::demarrage::CeQueLImportARepris`,
+  `importation::parametrage::ce_que_l_import_a_repris`, qui reconnaît une DSN reprise au nom de sa copie), ce qu'une
+  DSN pourrait donner se dit à part, au seul endroit que la page lit (`pour-demarrer`, `dsn` : `ParUneDsn`), sous la
+  phrase qui dit de l'ajouter au dossier et de relancer l'import ; avec une DSN reprise, ce qui manque encore se saisit.
+  Le taux AT/MP de l'année n'y entre que si l'import a repris une paie de cette année (une DSN ne déclare que celui de
+  la sienne) ; la nature d'un contrat de permanent à dire y entre pour le salarié dont la fiche a un NIR, et reste à dire
+  à sa place. Le titre compte toutes les cases exigées, où qu'elles soient rangées. Ce qui ne se lit pas est une panne :
+  elle remonte.
 - **La nature à dire** (`importation/nature.rs`) : un bulletin sans marque du spectacle est celui d'un permanent ; la page
-  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit.
+  demande sa nature (CDI ou CDD), la route `importation-nature` l'écrit. Ce que la dernière DSN reprise déclare du
+  contrat ne se demande pas (`nature::DeclareParLaDsn`) : `importation-etat` ne propose que la nature qu'elle déclare et
+  ne demande que ce qu'elle tait (le salaire seul, le plus souvent), et `importation-nature` prend sur elle ce que sa
+  charge tait ; tout déclaré, l'import l'écrit de lui-même. Le contrat déclaré est celui à dire, retrouvé comme
+  `la_dsn_fait_foi` le retrouve : par le numéro sous lequel la DSN a déclaré une paie que l'import lui a rattachée, au
+  dernier mois où elle en déclare une ; deux numéros ce mois-là, ou aucune paie rattachée, et la DSN n'en déclare rien :
+  tout se demande. Une DSN reprise qui ne se relit plus ne déclare rien non plus, et la route le dit sur le salarié
+  (`dsn_non_relue`) ; une panne remonte. Son salaire mensuel, seulement d'un mois que sa paie couvre
+  entier : une seule ligne de
+  salaire de base (51 de type 010) dont la période est le mois, sous un contrat qui le couvre
+  (`dsn_lue::Mesures::salaire_habituel_du_mois`) ; plusieurs lignes 010 sont chacune le salaire d'une période
+  élémentaire de paie (norme, chapitre 2, § 2.1.3.3), et le salaire se demande. Le type 029 (« Rémunération habituelle
+  mois complet hors éléments non affectés par l'absence ») ne se lit pas pour lui : la norme ne le définit que comme
+  l'évolution qui proratise le SMIC de la réduction générale (`texte-2027/chapitre-2-principes-de-constitution.txt`,
+  P25V01), il compte tout ce que l'absence touche, pas le seul salaire de base. **La DSN fait foi** (Léandre,
+  18/11/2026) : quand une DSN qui arrive avec un import déclare le début, la fin, le numéro ou la nature d'un contrat de
+  permanent autrement que sa carte, la carte prend les valeurs déclarées et l'import dit chacune (`ValeurDeLaDsn`,
+  `nature::la_dsn_fait_foi`) ; seule la carte change (`engagement::importe::completer`). Un engagement validé, ou dont
+  quelque chose est parti d'ici, garde sa carte (règle 4 : son numéro déclaré ne se recalcule pas) et l'import dit
+  l'écart. Un import rejoué sur le même dossier n'apporte aucune paie déclarée neuve, et ne remplace rien de nouveau.
+- **Le matricule que déclare une DSN qui arrive** (`importation/matricules.rs` ; Léandre, 18/11/2026) : une fiche neuve
+  dont personne n'a dit le matricule reçoit le suivant, et sa fiche datée le garde comme donné d'office
+  (`matricule_d_office`, une mémoire du moteur : ni case ni note, rien de ce qui lit une fiche ne la voit). Quand une DSN
+  qui arrive avec un import déclare pour son salarié un autre matricule (S21.G00.30.019), la fiche prend celui de la
+  DSN, de tout temps, et l'import le dit (`ValeurDuMatricule`) : les bulletins puis la DSN donnent les matricules de
+  l'import en une fois. Ne se remplacent pas, et se disent : le matricule que ce qui est fait d'ici a engagé (une DSN ou
+  un signalement partis, que dit le journal ; un numéro de contrat que le moteur a formé avec lui,
+  `engagement::numeros::formes` : le numéro dit le matricule, et ne se recalcule pas), celui qui n'a pas été donné
+  d'office, celui qu'une de ces fiches porte ou a porté, celui
+  que les pièces reprises donnent à plus d'un salarié (aucun ne le prend). Tout se décide sur l'état final puis s'écrit
+  en une fois, avant les fiches neuves : deux matricules d'office s'échangent sans doublon, et un matricule d'office que
+  la DSN (ou le bulletin qui crée une fiche neuve : c'est le même logiciel qui parle) déclare pour un autre salarié se
+  cède (sa fiche prend le suivant) ; chaque phrase nomme la pièce (`import::reponse::Source`). Une fiche a un seul sort.
+  Le matricule de chaque fiche neuve se décide aussi sur l'état final : celui de ses pièces s'il se pose, sinon le
+  suivant, d'office, qu'aucune autre ne prend ; celle dont le matricule ne se pose pas le dit. Une fiche sans matricule
+  que la pièce complète passe par la même décision (celle dont le matricule ne se pose pas reste sans, et le dit) : rien
+  ne se refuse en bloc (règle 1), et aucun import n'écrit deux fiches au même matricule.
+  `importation-apercu` dit ce qu'`importer` ferait.
 - **Le mois importé** (`import/mois.rs`) : un mois qu'aucun engagement de la saisie ne touche et que des engagements
   importés touchent. La page Paie le montre par ses engagements, une carte fermée « importé » chacun, sans geste ;
   une case qu'aucune pièce ne porte reste vide et dit pourquoi. Sa DSN est celle de l'ancien logiciel (le journal des
@@ -2363,12 +2563,33 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
-  sans couche, une ligne sans rubrique).
+  sans couche, une ligne sans rubrique). La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
+  déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
+  carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le
+  salaire mensuel est le montant de sa ligne de salaire. Les heures par mois sont la quotité que la DSN déclare pour le
+  contrat (S21.G00.40.013, « la durée contractuelle de travail ») quand elle la déclare (Léandre, 18/11/2026) ; sinon
+  celles que le bulletin imprime (« le nombre d'heures de travail auxquels se rapporte le salaire », C. trav. R. 3243-1,
+  5°) : sur une ligne en heures (« Heures », « Heure de travail »), ou en en-tête (« Durée du travail », une mention
+  de la table de lecture gardée dans la paie importée, `PaieVersee::duree_du_travail`) sous une ligne « Salaire mensuel
+  de base » qui ne les dit pas. Le mois payé entier : une paie qu'un bulletin seul déclare a la période de ce bulletin,
+  qui couvre le mois ; une paie que la DSN déclare a les dates du contrat, et le mois qu'elle paie se lit sur sa ligne
+  (des heures égales à la quotité déclarée, ou le mois). Un bulletin qui n'imprime ses heures nulle part sans DSN qui
+  les déclare, une ligne en heures qui n'en paie pas la quotité déclarée (une absence, des congés), un mois partiel, le
+  mois où le contrat finit ou une autre ligne que ses repas et ses nuitées (ses congés, ses absences, ses primes, qui se
+  disent en cases) ne se comparent pas, et la raison dit ce qui manque. Les bulletins des fictives disent ce que le moteur calcule de leur paie
+  (`moteur-atelier remplir-bulletins`, par `engagement::ecarts::calculee`, le même chemin) : leur rejeu exige que
+  chaque paie importée se compare, la compagnie complète, sans écart, au taux AT/MP de la compagnie (celui que la DSN
+  reprise déclare) (`moteur/tests/rejeu.rs`) ; un écart y est une régression du calcul.
 - **Le document accepté mais pas lu** (`importation/incident.rs`) : à chaque import, un PDF à texte que l'import n'a pas repris
   part en incident, en silence, un seul par famille (même suite de mots du vocabulaire sur sa première page, même
   logiciel) ; son texte, masqué par liste blanche (les mots de la table de lecture et des pièces, les codes de rubrique
   DSN restent ; toute autre lettre devient `X`, tout chiffre `9`), jamais le fichier. Un scan et un fichier qui n'est
-  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident.
+  ni PDF, ni DSN, ni AEM se refusent à l'écran avec leur raison (`import/tri.rs`), sans incident. Un contrat que
+  PuppetPaie a fait se dit « contrat, non lu », sans incident : aucun texte ne fixe la forme d'un contrat, il ne se lit
+  pas, et ne se reconnaît qu'à la marque de la fabrique dans ses propriétés (`/Producer` : `fabrique_pdf::PRODUCTEUR`)
+  avec le titre d'un modèle de base de contrat ou d'avenant (`documents::contrat_ecrit::titres_des_contrats`,
+  `import::tri::Sorte::Contrat`). Un contrat d'un autre logiciel reste un document non lu.
 
 ## La DSN
 
@@ -2384,7 +2605,8 @@ fabrication décide par elles des rubriques qu'une version a retirées (`06.003`
 tables P27V01 sont relevées des classeurs 2027.1.2 de net-entreprises (fiches
 3357 et 3358) par `moteur-atelier extraire usages` et `moteur-atelier extraire formats` (`atelier/src/extraire/`).
 La part patronale de la CET se déclare en `146` en P26V01 et en `148` en P27V01,
-sous la base 78 du `131` (type 23), à l'Urssaf (fiche net-entreprises 2556 ;
+sous la base 78 du `131` qui la porte (type 23 d'un intermittent, cadre ou non ; 03, avec la tranche 2, d'un permanent : la CET
+« entièrement sous l'assiette déplafonnée »), à l'Urssaf (fiche net-entreprises 2556 ;
 `cotisation_cet_patronale` de la donnée). Le code APE de la fiche entreprise se
 saisit en NAF rév. 2 ou en NAF 2025 (`logiciel/donnees/naf-base.json`, relevé
 de l'INSEE) ; un fichier P27V01 refuse un code NAF rév. 2 et dit vers quels codes
@@ -2460,8 +2682,10 @@ lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
 défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
 mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
-certificat CS (`paie_du_contrat_entier`) retire le planning des lignes :
-chaque mois a payé le sien.
+certificat CS (`paie_du_contrat_entier`) est le même engagement sur les
+lignes de tous ses mois (`Engagement::sur_tout_le_contrat` : ses termes, sa
+nature, ses bornes) ; il retire le planning des lignes : chaque mois a payé
+le sien.
 
 Le barème et le SMIC (`engagement::calcul`) sont ceux de `fin_periode`, pas de
 `fin` : un contrat de décembre à février se paie en décembre au barème de
@@ -2659,8 +2883,28 @@ administratrice en CDI, elle lui donnerait des plafonds à la journée et la
 prévoyance de quelqu'un d'autre, en silence.
 `droit::bareme::bareme_cadre` lit `par_categorie.cadre_permanent` quand le contrat est
 mensuel, et refuse si la section n'est pas vérifiée (`verifie`) : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
-quatre plafonds **du mois** et la CET sur des tranches mensuelles. Sa
-prévoyance, elle, vient de la convention.
+quatre plafonds **du mois**. Sa prévoyance, elle, vient de la convention.
+
+**La CET est due par tout permanent, cadre ou non** (ANI Agirc-Arrco du 17/11/2017, art. 37 : « Pour les participants
+dont la rémunération excède le plafond » ; le tableau des permanents d'Audiens) : la ligne `cet` est de
+`par_nature.permanent`, sur `cet_mensuelle` (`droit::plafond::Regularisees`), régularisée sur l'année et dite à sa
+bascule (`droit::plafond::BasculeDeLaCet`) ; nulle, elle n'est pas au bulletin. Un cadre intermittent la paie fondue
+dans ses tranches journalières (`cet_si_depasse`, `Assiette::Cet`).
+
+**La retraite complémentaire d'un intermittent non cadre se compte sur l'année** (Audiens, Paramètres : « ce sont les
+plafonds annuels qui doivent être retenus, quelle que soit la durée du travail » ; circulaire Agirc-Arrco 2018-09-DC,
+annexe A, art. 1 : « dans les limites annuelles des assiettes T1 et T2 ») : ses lignes `retraite_t1`, `retraite_t2` et
+`cet` (le corps du barème et `par_statut.technicien`) sont sur `t1_annuelle`, `t2_annuelle` et `cet_annuelle`, ses
+tranches de l'année chez la compagnie sous le plafond annuel (`plafond_securite_sociale.annuel`), calculées par le même
+chemin qu'une paie qui se régularise (`droit::plafond::tranches_sous_le_plafond_annuel`) sur ses paies d'intermittent
+validées des mois d'avant (`conges::retraite_des_mois_anterieurs` ; une paie reprise d'un ancien logiciel n'y entre
+pas : l'année commence au premier mois payé ici), et les contrats précédents du mois. Le plafond de la Sécurité sociale de ses
+paies, lui, ne se régularise pas. Sous le plafond annuel, la tranche 1 de chaque rubrique est son brut : rien ne change.
+Le 131 de sa tranche 1 (sa ligne `retraite_t1`) se déclare sous la base 43, `t1_annuelle` ; celui de sa tranche 2 et
+de sa CET (`retraite_t2`, `cet`) sous la base 23. Seule la paie dont le barème pose `retraite_t1` sur `t1_annuelle`
+écrit les tranches de l'année : un cadre intermittent retire la tranche 2 et la CET de l'année
+(`par_categorie.cadre.rubriques_retirees`) et cotise sur ses tranches journalières, limitées en 2026 au plafond mensuel
+pour le mois civil (`limite_du_plafond_journalier`) ; un permanent les retire de même (`par_nature.permanent`).
 
 `logiciel/donnees/contrats-base.json` porte ce que la DSN écrit de la **structure** d'un
 contrat, par nature. Trois
@@ -2678,12 +2922,12 @@ Ce qui sépare un permanent d'un intermittent, en une page :
 | numéro d'objet (40.050) | oui | **INTERDIT** — CCH-11 ne l'autorise que pour les natures 02 et 10 |
 | congés payés | caisse des Congés Spectacles (40.022, cotisation 15,5 %), sauf un CDDU de douze mois ou plus | chez l'employeur : compteur, indemnité, solde ; sauf le CDD de droit commun de moins de douze mois d'un artiste, déclaré à la caisse (`caisse_conges::affilie`) |
 | assiettes FNAL / taxe d'apprentissage | brut **majoré** de 11,5 % et de 10 % (CSS L. 243-1-3, D. 243-0-2), pour un contrat déclaré à la caisse des Congés Spectacles | brut nu ; tranche 1 majorée de 11,5 % (FNAL) et brut majoré de 11,5 % (taxe d'apprentissage) pour un contrat déclaré à la caisse (`par_caisse_conges.affilie` du barème) |
-| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) |
+| plafond de Sécurité sociale | par paie : 12 × le PSS horaire par journée pour un artiste engagé moins de cinq jours, sinon le PSS au prorata des jours rémunérés (`plafond.rs`) ; pas de régularisation | la période de paie (R. 242-2), proratisé à la quotité d'un temps partiel sauf renonciation de l'établissement (`40.084` en P27V01) ; régularisé sur l'année civile, sauf un artiste |
 | chômage | 9,75 / 2,40 dans la limite de quatre plafonds, recouvré par **France Travail** | 4,00 + AGS 0,25 dans la limite de quatre plafonds de la période, recouvré par l'**Urssaf** (CTP 772, 937) |
 | retraite complémentaire | taux Audiens, tranches **journalières** | droit commun, tranches **mensuelles** |
 | formation professionnelle | 2,00 % (CTP 983) | 0,55 % (CTP 959) |
 | mutuelle santé | aucune | **obligatoire** (ANI, art. L911-7) |
-| fin du contrat | à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra-mensuel, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…) : 62.017 = 02 et **signalement nature 07** (CCH-12, fiche 2062 ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU) |
+| fin du contrat | contrat infra DSN mensuelle à son terme (031) : DSN mensuelle, circuit dérogatoire 62.017 = 01 (la norme le réserve au contrat infra DSN mensuelle, p. 277) ; un FCTU si le salarié le demande. Rompu avant son terme (036, 037, 084…), ou déjà déclaré par la DSN d'un mois précédent : 62.017 = 02 et **signalement nature 07**, sous cinq jours ouvrés (CCH-12, fiche 2062 ; `Nature::signalement_fctu`) | **signalement nature 07** (FCTU), sous cinq jours ouvrés |
 | blocs 51 | les quatre valent le brut | 001 brut, 002 assiette chômage, 003 salaire rétabli, 010 salaire de base |
 | bloc 53 | jours (12), cachets (37), heures (35) | heures (10), absences en type 02 |
 
@@ -2790,6 +3034,21 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
 
 - **Une compagnie neuve** n'a qu'à renseigner `premiere_embauche` sur sa fiche :
   avant elle, aucun salarié, et pendant cinq ans aucun seuil ne peut être franchi.
+- **Une compagnie venue d'un autre logiciel** se voit proposer, sur la ligne de l'effectif de « Pour démarrer », celui
+  de chaque année demandée dont des paies sont reprises, calculé selon R. 130-1 (`droit::effectif`, la règle même de
+  l'Urssaf simulée) depuis les contrats que ces paies paient (`engagement::effectif_repris`) ; la moyenne ne prend que
+  les mois dont une paie est reprise, et la phrase nomme les autres. Rien ne se pose sans le geste qui le confirme (la
+  route `effectif`, qui reste aussi sous « Avancé » : `pour-demarrer` rend, pour chaque année que la ligne demande, `effectifs` et
+  leurs `gestes`, « Confirmer » la valeur proposée ou « Dire l'effectif » dans sa boîte, que `js/avance.js` dessine). Une
+  proposition est juste ou ne se fait pas, et sa phrase dit pourquoi : une paie dont le contrat ne se compte pas (sa
+  nature, son motif de recours d'un CDD, les heures d'un permanent : aucune pièce ne les dit) fait taire l'année de sa
+  paie ; un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime, celle que l'import
+  lui donne partout, et la phrase le dit (trop haut si elle dépasse le contrat, jamais trop bas) ; une année dont un mois se paie ici, celle de la première embauche
+  sans paie reprise du mois de l'embauche (L. 130-1, I, troisième alinéa : l'effectif présent le dernier jour de ce mois,
+  qui se propose quand ce mois est repris), et, sans date de première embauche, celle de la plus ancienne paie reprise
+  (peut-être celle de l'embauche) ne se proposent pas. Ce qu'aucune paie reprise ne distingue (les exclus de L. 1111-3
+  du code du travail) se dit avec la valeur. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
+  dans `manques`.
 - Ces seuils-là (formation, FNAL, échéance de la DSN) sont ceux du code de la
   sécurité sociale ; ceux du CSE (CCNEAC, 11 et 50) relèvent du code du travail,
   et le moteur ne les tranche pas avec l'effectif de l'Urssaf : la représentation
@@ -2886,13 +3145,23 @@ décident. Les articles sont relevés et datés dans
   de la rupture** (L3141-28). Le compteur se **dérive des saisies**, jamais
   stocké — même règle que les 507 heures d'un intermittent ;
 - **précarité** : 10 % (L1243-8), **pas due pour un contrat d'usage**
-  (L1243-10 1°, qui renvoie au 3° de L1242-2) ;
+  (L1243-10 1°, qui renvoie au 3° de L1242-2), sur la rémunération de chaque
+  mois du contrat ;
 - **préavis** : L1234-1, et **rien sous six mois d'ancienneté** — la loi y
   renvoie à la convention ou aux usages, et le moteur demande plutôt que
   d'inventer ;
 - **indemnité de licenciement** : huit mois d'ancienneté (L1234-9), un quart
   puis un tiers de mois (R1234-2), salaire de référence le plus favorable des
-  deux formules (R1234-4). Un montant **supra-légal est refusé** : son régime
+  deux formules (R1234-4), sur les mois du service du salarié, douze au
+  plus, depuis le début du contrat de la carte, comme l'ancienneté de
+  l'indemnité elle-même : inférence, le texte ne dit pas si un contrat
+  antérieur dans l'entreprise y entre. Un mois du contrat sans paie connue
+  n'est pas un zéro : le salaire de référence et la précarité refusent en le
+  nommant, et lisent leurs mois par un seul chemin
+  (`solde::brut_d_un_mois_de_service`) : les mois de l'engagement lui-même,
+  encore en saisie, s'y calculent comme sa validation les calculera ; un autre
+  engagement du même salarié encore en saisie se lit à l'écran et pas à la
+  validation. Un montant **supra-légal est refusé** : son régime
   social est autre, et le moteur ne sait pas l'assujettir ;
 - **les trois autres fins d'un CDI** — et c'est le
   **motif de rupture** qui choisit, jamais la ressemblance :
@@ -3026,14 +3295,56 @@ l'identifiant technique d'affiliation (`70.012`) et le bloc 71 — et à
 l'inverse, elle **exige** le code APET (`11.002`), que le signalement d'arrêt
 interdit — en P26V01 : la norme P27V01 le retire.
 
-**Un CDDU du spectacle n'a pas besoin de FCTU** : la même page donne une
-dérogation aux artistes et techniciens du spectacle, et la fin d'un contrat
-d'usage part dans la **DSN mensuelle** avec le circuit dérogatoire
-`S21.G00.62.017 = '01'` — une rubrique justement **interdite** dans un FCTU.
-Le moteur en émet un quand même si le salarié le demande (la norme le permet,
-p. 68 et p. 107), en le disant par un avertissement (`fctu.rs`, « La
-dérogation du spectacle ») ; la mensuelle qui suit écrit alors encore
-62.017 = 01.
+**Un CDDU contenu dans une seule DSN n'a pas besoin de FCTU** : à son terme
+(031), la fin d'un contrat d'usage **infra DSN mensuelle** part dans la **DSN
+mensuelle** avec le circuit dérogatoire `S21.G00.62.017 = '01'` — une
+rubrique justement **interdite** dans un FCTU. Le moteur en émet un quand même
+si le salarié le demande (la norme le permet, p. 68 et p. 107), en le disant
+par un avertissement (`fctu.rs`) ; la mensuelle qui suit écrit alors encore
+62.017 = 01 (fiche 1902). **Un CDDU qu'une DSN précédente a déclaré** (il a
+commencé un mois d'avant, `droit::natures::ConnuDeLaDsn`) n'a pas cette
+dérogation : « le circuit dérogatoire ne peut être utilisé que pour un contrat
+d'usage qui n'a pas encore fait l'objet d'une déclaration dans une précédente
+DSN mensuelle validée » (bloc 62, 62.017 ; § 2.5.3 : « Dans les autres cas, le
+déclarant doit procéder selon la procédure de droit commun (signalement) » ;
+fiche 2062 : « la dérogation n'est applicable en DSN que pour les contrats CDDU
+infra-DSN »). Sa fin se signale, et la mensuelle écrit 62.017 = 02. Une seule
+règle (`Nature::signalement_fctu`, `Nature::codes_fin`, avec ce que la DSN sait
+du contrat, au calendrier : `ConnuDeLaDsn::du_contrat`), que lisent la
+mensuelle, le FCTU, les fins à signaler et leurs rappels, l'attestation et la
+carte d'un engagement (`contrat.rupture`).
+
+**Le délai du signalement d'un contrat d'usage** est celui de toute fin qui se
+signale : cinq jours ouvrés. CSS R. 133-14, II, 2° écarte les cinq jours
+« conformément aux modalités mises en œuvre pour l'application des articles
+R. 1234-9 à R. 1234-12 », et ces modalités, pour un contrat d'usage, sont le
+circuit dérogatoire de la fiche 2062 et du § 2.5.3, qui renvoient tout autre
+cas à « la procédure de droit commun (signalement) » ; la fiche 1902 dit
+« dans les 5 jours » même pour un 031 que le salarié refuse de voir au circuit
+dérogatoire. Signaler sous cinq jours ouvrés est juste dans les deux lectures ;
+`obligations-base.json`, `signalement_fin_contrat`, `inferences`, dit ce qui
+reste ouvert (la lettre du décret, plus large). **Rien de ce qui est parti ne
+se relit pour le décider** : le moteur écrit 62.017 au calendrier, et le bloc 62
+d'une mensuelle qui redéclare une fin redit ce que le calendrier dit, c'est-à-dire
+ce que la DSN de son mois avait écrit (le choix « précédemment transmis » se
+reporte, fiche 1902). **L'attestation
+attendue** reste l'AER de la mensuelle pour tout intermittent dont le contrat
+finit (`aer::due`), sauf pour le contrat d'usage déjà déclaré arrivé à son
+terme, qui attend celle du signalement (`aer::attestation_fctu`) : une
+INFÉRENCE, écrite sur `aer::due` (la phrase de la fiche 1902 vise un CDDU-D
+corrigé, et aucun texte déposé ne dit quelle attestation revient d'un FCTU
+d'intermittent).
+
+**INFÉRENCE : la dérogation « AEM » du § 5.2 ne joue plus.** Le § 5.2 compte
+parmi les dérogations au signalement les artistes, ouvriers et techniciens du
+spectacle « (AEM) », et la fiche 2062 exclut des FCTU les contrats « faisant
+l'objet d'une attestation employeur mensuelle (AEM) », désignés par le motif
+d'exclusion 40.025. Ce qui la porte : le courriel de France Travail du
+28/05/2026 dit que ce motif « doit rester vide » depuis le 100 % DSN (il n'est
+qu'au dépôt privé) ; le logiciel ne l'écrit donc pas, et la règle générale des
+CDDU s'applique à l'intermittent. Ce qui s'y oppose : le cahier technique
+2027.1.1 garde le § 5.2 mot pour mot, et aucun texte public ne dit la
+dérogation retirée.
 
 **Ce que l'arborescence tranche, et que le tableau des usages ne dit pas.**
 Le tableau dit qu'une rubrique a le droit d'être là ; il ne dit pas si son

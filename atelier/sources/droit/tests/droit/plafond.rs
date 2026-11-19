@@ -170,18 +170,13 @@ fn les_dates_et_le_mensuel() {
         assert_eq!(lu, montant(voulu), "{}", quoi);
     }
     for (debut, fin, voulu) in &c.mensuel {
-        // Le contrat d'un permanent ne se lit pas : celui de sa periode.
-        let e = EngagementPlafond {
-            mensuelle: true,
-            artiste: true,
-            periode: du_au(*debut, *fin),
-            contrat: du_au(*debut, *fin), dates_travail: vec![], jours: jours(0),
-        };
-        assert_eq!(pour_paie(&e, &pss).unwrap(), montant(voulu), "{:?} {:?}", debut, fin);
+        // Le plafond d'un permanent, sans absence ni temps partiel : le prorata calendaire de sa periode.
+        let lu = droit::plafond::plafond_permanent(&du_au(*debut, *fin), &droit::plafond::JoursSansRemuneration::aucun(), None, &pss).unwrap();
+        assert_eq!(lu, montant(voulu), "{:?} {:?}", debut, fin);
     }
     // pour_paie d'un intermittent = plafond_urssaf avec ses dates.
     let e = EngagementPlafond {
-        mensuelle: false, artiste: true, periode: du_au(j("2026-05-20"), j("2026-05-23")),
+        artiste: true, periode: du_au(j("2026-05-20"), j("2026-05-23")),
         contrat: du_au(j("2026-05-20"), j("2026-05-23")),
         dates_travail: vec![j("2026-05-20"), j("2026-05-22")], jours: jours(2),
     };
@@ -196,7 +191,7 @@ fn les_dates_et_le_mensuel() {
     // Une paie de janvier d'un contrat du 20/01 au 10/02/2026 ne compte que ses jours (R. 242-2, « pour
     // chaque paie ») ; une date hors de la periode de paie refuse.
     let janvier = EngagementPlafond {
-        mensuelle: false, artiste: true, periode: du_au(j("2026-01-20"), j("2026-01-31")),
+        artiste: true, periode: du_au(j("2026-01-20"), j("2026-01-31")),
         contrat: du_au(j("2026-01-20"), j("2026-02-10")), dates_travail: vec![j("2026-01-20"), j("2026-01-22"), j("2026-01-24")], jours: jours(3),
     };
     assert_eq!(pour_paie(&janvier, &pss).unwrap(), montant("387.58"));

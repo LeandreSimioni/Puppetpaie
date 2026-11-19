@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
+use droit::fiche::{CaseDeFiche, CaseDeclarantDsn, CaseEntreprise, CaseSalarie, NomDeCase, NomDeFiche};
 use droit::fiche::{Bic, Civilite, CodeMedecine, CodeNaf, CodeNationalite, CodePostal, Courriel, DepartementNaissance, Iban, Idcc, Nic, Nir, NumeroObjetSpectacle, Sexe, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::{Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
+use droit::natures::{DispositifDePolitiquePublique, Fraction, IdentifiantDeDeclaration, ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NumeroDOrdre, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::type_taux_pas::TypeDeTauxPas;
 use droit::pas::TauxDePas;
 use socle::grandeurs::{Cachets, Heures, Jours, Montant, Taux};
@@ -132,6 +133,7 @@ const S21_50_006: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.006");
 const S21_50_008: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.008");
 const S21_50_009: RubriqueDeLaNorme = droit::rubrique!("S21.G00.50.009");
 const S21_51_001: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.001");
+const S21_51_002: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.002");
 const S21_51_010: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.010");
 const S21_51_011: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.011");
 const S21_51_013: RubriqueDeLaNorme = droit::rubrique!("S21.G00.51.013");
@@ -327,6 +329,8 @@ pub struct ContratDeclare {
     pub emploi: EmploiDeclare,
     /// .007, la nature du contrat.
     pub nature_dsn: Option<String>,
+    /// .008, le dispositif de politique publique.
+    pub dispositif: Option<DispositifDePolitiquePublique>,
     /// .009.
     pub numero: Option<NumeroContrat>,
     /// .011, l'unite de la quotite ; .012, la quotite de reference de la categorie ; .013, celle du contrat, dans
@@ -353,6 +357,8 @@ pub struct ContratDeclare {
     /// S21.G00.62.001 et .002 : la fin que la DSN declare, et son motif.
     pub fin_declaree: Option<Jour>,
     pub motif_fin: Option<droit::natures::MotifDeRupture>,
+    /// S21.G00.62.017 : la modalite de declaration de la fin d'un contrat d'usage (le circuit derogatoire, ou non).
+    pub modalite_fin: Option<droit::natures::ModaliteDeDeclarationDeFin>,
 }
 
 /// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002, lue dans la
@@ -365,12 +371,14 @@ pub struct Activite {
 }
 
 /// UNE REMUNERATION (bloc S21.G00.51), « contrepartie de l'activite de l'individu dans le cadre du contrat »
-/// (`norme-dsn/texte/bloc-S21.G00.51.txt` l. 22) : sa periode de paie (.001, « date de debut de periode a laquelle la
-/// remuneration est rattachee », l. 38-40), LE CONTRAT QU'ELLE PAIE (.010, « identique a la valeur renseignee dans une
-/// rubrique Numéro du contrat - S21.G00.40.009 », CCH-11, l. 91-98), son type (.011), son montant (.013), ses activites.
+/// (`norme-dsn/texte/bloc-S21.G00.51.txt` l. 22) : sa periode de paie (.001 et .002, « date de debut [de fin] de
+/// periode a laquelle la remuneration est rattachee », l. 38-44), LE CONTRAT QU'ELLE PAIE (.010, « identique a la
+/// valeur renseignee dans une rubrique Numéro du contrat - S21.G00.40.009 », CCH-11, l. 91-98), son type (.011), son
+/// montant (.013), ses activites.
 #[derive(Clone, Debug, Default)]
 pub struct Remuneration {
     pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
     pub contrat: Option<NumeroContrat>,
     pub genre: Option<TypeDeRemuneration>,
     pub montant: Option<Montant>,
@@ -457,6 +465,7 @@ impl ContratDeclare {
             periode,
             emploi: EmploiDeclare::default(),
             nature_dsn: None,
+            dispositif: None,
             numero: None,
             unite_quotite: None,
             quotite_reference: None,
@@ -472,6 +481,7 @@ impl ContratDeclare {
             dernier_jour_travaille: None,
             fin_declaree: None,
             motif_fin: None,
+            modalite_fin: None,
         }
     }
 }
@@ -528,16 +538,34 @@ pub struct Adhesion {
 }
 
 /// Ce qu'un contrat declare pour des periodes de paie : son brut (51 de type 001, « remuneration brute non plafonnee » ;
-/// `None` : aucun), son salaire habituel (51 de type 010, « la remuneration brute habituelle du salarie »,
-/// `bloc-S21.G00.51.txt` : le salaire du contrat d'un permanent) et son activite (53 de type 01).
+/// `None` : aucun), ses lignes de salaire de base (51 de type 010, « la remuneration brute habituelle du salarie »,
+/// `bloc-S21.G00.51.txt` : le salaire du contrat d'un permanent ; `salaire_habituel_du_mois`) et son activite (53 de
+/// type 01).
 #[derive(Clone, Debug)]
 pub struct Mesures {
     pub brut: Option<Montant>,
-    pub salaire_habituel: Option<Montant>,
+    /// Les remunerations de type 010 qui disent leur montant, chacune avec sa periode (51.001, .002).
+    salaires_de_base: Vec<Remuneration>,
     pub jours: Jours,
     pub cachets: Cachets,
     pub heures: Heures,
     pub remunere: bool,
+}
+
+impl Mesures {
+    /// LE SALAIRE HABITUEL DU CONTRAT, D'UN MOIS QUE SA PAIE COUVRE ENTIER : le montant de sa ligne de salaire de base
+    /// (51 de type 010), quand il n'en a qu'une et que sa periode (51.001, .002) est le mois `mois` entier. Les elements
+    /// du bloc Remuneration « sont declares par periode elementaire de paie », sous-partie de la periode de paie qu'un
+    /// changement des parametres du calcul decoupe, et une paie infra-mensuelle en a plusieurs dans le mois
+    /// (`norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 500-512, § 2.1.3.3 l. 543-546) : plusieurs lignes
+    /// 010 sont chacune le salaire d'une partie du mois, et une ligne d'une partie du mois (une embauche, un depart)
+    /// n'est que la part qu'elle paie. Ni l'une ni l'autre ne dit le salaire mensuel du contrat : `None`.
+    pub fn salaire_habituel_du_mois(&self, mois: Mois) -> Option<Montant> {
+        match self.salaires_de_base.as_slice() {
+            [r] if r.debut == Some(mois.premier_jour()) && r.fin == Some(mois.dernier_jour()) => r.montant,
+            _ => None,
+        }
+    }
 }
 
 /// CE QUE DECLARE UNE DSN DEPOSEE.
@@ -657,12 +685,12 @@ impl DsnLue {
     }
 
     /// CE QUE LE CONTRAT `numero` DE L'INDIVIDU `nir` DECLARE, pour le mois (`rappel` faux) ou en rappel d'un mois deja
-    /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, le salaire
-    /// habituel de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en jours, 12 ;
-    /// en cachets, 37).
+    /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, les lignes de
+    /// salaire de base de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en
+    /// jours, 12 ; en cachets, 37).
     pub fn mesures(&self, nir: Option<&Nir>, numero: &NumeroContrat, rappel: bool) -> Mesures {
         // Les sommes du contrat, a zero avant sa premiere remuneration.
-        let mut m = Mesures { brut: None, salaire_habituel: None, jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
+        let mut m = Mesures { brut: None, salaires_de_base: Vec::new(), jours: Jours::ZERO, cachets: Cachets::ZERO, heures: Heures::ZERO, remunere: false };
         for r in self.versements_de(nir).flat_map(|v| v.remunerations.iter()) {
             if r.contrat.as_ref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
                 continue;
@@ -671,7 +699,7 @@ impl DsnLue {
                 m.remunere = true;
                 match r.genre {
                     Some(TypeDeRemuneration::Brute) => m.brut = Some(m.brut.into_iter().sum::<Montant>() + montant),
-                    Some(TypeDeRemuneration::SalaireDeBase) => m.salaire_habituel = Some(montant),
+                    Some(TypeDeRemuneration::SalaireDeBase) => m.salaires_de_base.push(r.clone()),
                     _ => {}
                 }
             }
@@ -781,6 +809,137 @@ impl EntrepriseDeclaree {
         prendre(&mut self.france_travail_dossier_recouvrement, &r.france_travail_dossier_recouvrement);
         prendre(&mut self.declarant_dsn, &r.declarant_dsn);
         prendre(&mut self.medecine_travail, &r.medecine_travail);
+    }
+
+    /// LES CASES DE LA FICHE ENTREPRISE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE D'UN EMPLOYEUR DU SPECTACLE
+    /// REMPLIT, sans autre condition (`import::dsn_aem::fiche_entreprise` les passe a la fiche, `routes::import::
+    /// fiche_entreprise` y ajoute le Siret et la licence ; une fiche qui existe les recoit si elles y sont vides,
+    /// `routes::importation::completer`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas : un champ de
+    /// plus ne compile pas ici tant qu'il n'est pas range. Le contact (`declarant_dsn`) se juge case par case
+    /// (`PieceQuiLaPorte::de_la_case`).
+    fn cases_remplies() -> Vec<CaseEntreprise> {
+        let _chaque_champ_est_range = |e: &EntrepriseDeclaree| {
+            let EntrepriseDeclaree {
+                naf: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                idcc: _,
+                // « 97 puis le numero d'adherent » (S21.G00.40.022), que la norme impose a la caisse Conges Spectacles
+                // (CRE-11) ; « Pour demarrer » ne le demande qu'a une compagnie qui engage des intermittents.
+                adherent_conges_spectacles: _,
+                // Celle de l'emetteur (S10.G00.01.003, obligatoire), quand l'emetteur est l'entreprise : la DSN que
+                // la compagnie depose elle-meme ; celle qu'un cabinet depose porte le nom du cabinet, que la lecture ne
+                // prend pas.
+                raison_sociale: _,
+                // S21.G00.40.049, que la DSN porte quand la licence est exigee (`demarrage::licence_exigee`).
+                licence: _,
+                // Le Siren et le NIC : « Pour demarrer » demande le Siret qu'ils font (`Siret` ci-dessous).
+                siren: _,
+                nic: _,
+                // Le compte qui paie : la DSN ne le porte que pour un prelevement (« Si la rubrique "Mode de paiement -
+                // S21.G00.20.010" est renseignée avec la valeur "05 - prélèvement SEPA", alors la rubrique "IBAN -
+                // S21.G00.20.004" est obligatoire », CCH-12, `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`
+                // l. 425-426), et la lecture ne le garde que si tous les versements disent le meme : pas de toute DSN.
+                banque: _,
+                // La medecine du travail : la lecture ne garde que la medecine interne (« MT01 », S21.G00.11.025) ; un
+                // service externe ne se reprend pas.
+                medecine_travail: _,
+                // Rien de « Pour demarrer » ne le demande.
+                france_travail_dossier_recouvrement: _,
+                // Le contact (S20.G00.07, obligatoire) : case par case, sa civilite exceptee (`de_la_case`).
+                declarant_dsn: _,
+            } = e;
+        };
+        use CaseEntreprise::*;
+        // Le taux AT/MP de l'annee : S21.G00.40.043, obligatoire hors du code risque 999ZZ (SIG-11,
+        // `bloc-S21.G00.40.txt` l. 1311-1313), pose par `routes::importation::parametrage::poser_atmp` pour l'annee de la
+        // DSN quand tous ses contrats disent le meme.
+        vec![Naf, Adresse, CodePostal, Commune, Idcc, CongesspectaclesAdherent, RaisonSociale, LicenceSpectacle, Siret, TauxAtmp]
+    }
+}
+
+impl IndividuDeclare {
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE LA DSN MENSUELLE REMPLIT
+    /// (`import::dsn_aem::SalarieDeclare::fiche`, `routes::import::fiche_salarie`), pour un salarie que l'import rattache
+    /// a sa DSN : par son NIR (`routes::import`, « Les salaries, par NIR ») ; une fiche sans NIR ne recoit rien d'une DSN
+    /// (`demarrage::manques`). Le motif nomme chaque champ et dit pourquoi un champ n'y est pas.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |i: &IndividuDeclare| {
+            let IndividuDeclare {
+                // Le nom, les prenoms, la naissance : obligatoires (S21.G00.30.002, .004, .006) ; le NIR rattache, il
+                // ne se remplit pas (une fiche qui le porte ne le demande pas) ; le NTT n'a pas de case.
+                identite: IdentiteDeclaree { nom: _, prenoms: _, naissance: _, nir: _, ntt: _ },
+                // Le lieu, obligatoire pour un salarie ne en France (CCH-11 de S21.G00.30.007) ; le departement, le pays
+                // et la nationalite, obligatoires (.013 a .015, `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`).
+                lieu_naissance: _,
+                departement_naissance: _,
+                pays_naissance: _,
+                code_nationalite_dsn: _,
+                adresse: _,
+                code_postal: _,
+                commune: _,
+                // « Il est à renseigner si différent du sexe porté par le NIR ou si le NIR est absent » (S21.G00.30.005,
+                // `bloc-S21.G00.30.txt`) : la fiche ne le demande que sans NIR, et une fiche sans NIR ne se rattache pas.
+                sexe: _,
+                // « Le renseignement de cette rubrique est conditionné à l'accord explicite » du salarie (S21.G00.30.018).
+                email: _,
+                // Rien de « Pour demarrer » ne le demande.
+                code_salarie: _,
+            } = i;
+        };
+        use CaseSalarie::*;
+        vec![Nom, Prenom, DateNaissance, LieuNaissance, DepartementNaissance, PaysNaissance, CodeNationaliteDsn, Adresse, CodePostal, Commune]
+    }
+}
+
+impl EmploiDeclare {
+    /// LES CASES DE LA FICHE D'UN SALARIE QUE « POUR DEMARRER » DEMANDE ET QUE L'EMPLOI D'UN CONTRAT REMPLIT : le libelle
+    /// et le code PCS-ESE (S21.G00.40.006, .004, obligatoires), le code emploi (.005, celui de la nomenclature des
+    /// emplois du spectacle pour un intermittent, CCH-18). Le motif nomme chaque champ.
+    fn cases_remplies() -> Vec<CaseSalarie> {
+        let _chaque_champ_est_range = |e: &EmploiDeclare| {
+            // Les statuts (.002, .003) : rien de « Pour demarrer » ne les demande.
+            let EmploiDeclare { emploi: _, pcs_ese: _, code_emploi_ft: _, statut_conventionnel: _, statut_categoriel_rc: _ } = e;
+        };
+        use CaseSalarie::*;
+        vec![Emploi, PcsEse, CodeEmploiFt]
+    }
+}
+
+// ------------------------------------------------------------------ ce qu'une DSN donne a la configuration
+
+/// LA PIECE QUI PORTERAIT CE QUI MANQUE A LA CONFIGURATION : une DSN deposee, que l'import reprend et dont il pose ce
+/// qu'elle dit (`Dsn`), ou aucune piece (`Aucune`) : cela se saisit. Ecrit `dsn`, `aucune`. Ce n'est pas
+/// `import::reponse::Source`, la piece d'ou une valeur reprise EST venue : celle-ci dit ce qu'une piece pourrait encore
+/// donner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PieceQuiLaPorte {
+    Dsn,
+    Aucune,
+}
+
+impl PieceQuiLaPorte {
+    /// LA PIECE QUI PORTE la case declaree `chemin` de la fiche `fiche` (la case que les listes nomment, pas sa forme
+    /// lisible) : une DSN quand l'import la remplit de toute DSN mensuelle (`EntrepriseDeclaree::cases_remplies`,
+    /// `IndividuDeclare::cases_remplies`, `EmploiDeclare::cases_remplies`), aucune sinon. Du contact DSN, la civilite
+    /// n'est lue que par inference (celle du contact de l'emetteur quand il est l'entreprise et porte le meme nom) :
+    /// aucune. Un spectacle : aucune, l'import cree la fiche d'un numero d'objet declare, il ne complete jamais un
+    /// spectacle qui existe sans numero.
+    pub fn de_la_case(fiche: NomDeFiche, chemin: &crate::champs::CheminDeFiche) -> PieceQuiLaPorte {
+        let remplies: Vec<CaseDeFiche> = match fiche {
+            NomDeFiche::Entreprise => EntrepriseDeclaree::cases_remplies().into_iter().map(CaseDeFiche::from).collect(),
+            NomDeFiche::Salarie => IndividuDeclare::cases_remplies().into_iter().chain(EmploiDeclare::cases_remplies()).map(CaseDeFiche::from).collect(),
+            NomDeFiche::Spectacle => Vec::new(),
+        };
+        let contact = chemin.champ == CaseDeFiche::from(CaseEntreprise::DeclarantDsn)
+            && chemin.dans.as_ref().is_none_or(|d| d.nom != NomDeCase::from(CaseDeclarantDsn::Civilite));
+        if (fiche == NomDeFiche::Entreprise && contact) || remplies.contains(&chemin.champ) {
+            PieceQuiLaPorte::Dsn
+        } else {
+            PieceQuiLaPorte::Aucune
+        }
     }
 }
 
@@ -1037,6 +1196,10 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let m = fautes.code(rub, &v);
                 contrat.into_iter().for_each(|c| c.motif_recours = m);
             }
+            DispositifDePolitiquePublique::RUBRIQUE => {
+                let d = fautes.code(rub, &v);
+                contrat.into_iter().for_each(|c| c.dispositif = d);
+            }
             S21_60_002 => {
                 let jour = fautes.jour(rub, &v);
                 contrat.into_iter().for_each(|c| c.dernier_jour_travaille = jour);
@@ -1250,6 +1413,12 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                     c.motif_fin = m;
                 }
             }
+            droit::natures::ModaliteDeDeclarationDeFin::RUBRIQUE => {
+                let m = fautes.code(rub, &v);
+                if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
+                    c.modalite_fin = m;
+                }
+            }
             S21_50_001 => {
                 let Some(i) = individu else { continue };
                 let verse_le = fautes.jour(rub, &v);
@@ -1291,9 +1460,10 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
                 let debut = fautes.jour(rub, &v);
                 x.remunerations.push(Remuneration { debut, ..Remuneration::default() });
             }
-            S21_51_010 | S21_51_011 | S21_51_013 => {
+            S21_51_002 | S21_51_010 | S21_51_011 | S21_51_013 => {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 match rub {
+                    S21_51_002 => r.fin = fautes.jour(rub, &v),
                     S21_51_010 => r.contrat = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire),
                     S21_51_011 => r.genre = TypeDeRemuneration::du_code(&v),
                     _ => r.montant = fautes.euros(rub, &v),

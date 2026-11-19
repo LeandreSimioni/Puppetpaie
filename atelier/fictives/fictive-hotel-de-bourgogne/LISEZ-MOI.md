@@ -45,7 +45,9 @@ permanents.
   social et économique (procès-verbal de carence).
 - Contact : contact@hotel-bourgogne.exemple.invalid, 01 40 00 00 12. Hortense Champmeslé, administratrice, signe les
   contrats et les déclarations (par délégation de la présidente).
-- Banque du Marais, agence de la rue Étienne-Marcel ; BIC **BDMRFR2AXXX**, IBAN **FR76 1234 5678 9000 0777 8880 147**.
+- Le compte des dépôts de test (`atelier/docs/COMPAGNIE-D-ESSAI.md`) : un vrai couple banque et guichet, que la
+  plate-forme connaît, et un numéro de compte fait de zéros, qui n'est le compte de personne ; BIC **BDFEFRPPCCT**,
+  IBAN **FR76 3000 1000 6400 0000 0000 040**.
 - **Santé au travail** : service interentreprises de Paris, code **MT075**.
 - **Congés Spectacles** : numéro d'adhérent **1842960731B**.
 - **Prévoyance et santé des permanents** : Audiens (P0983), « PREVOYANCE CCNEAC » et « SANTE CCNEAC ».
@@ -90,6 +92,11 @@ Tous de nationalité française, nés en France.
 - **Gaspard Marivaux** : temps plein, depuis le 05/09/2022, 2 487,39 € (16,40 € de l'heure).
 - **Philomène Clairon** : temps partiel à 80 % (28 h par semaine, 121,33 h par mois ; lundi, mardi, jeudi et vendredi,
   de 9 h à 16 h 30), depuis le 08/01/2024, 1 941,28 € (16,00 € de l'heure).
+- **Anselme Molière**, comédien intermittent non cadre, passe le plafond annuel de sa retraite complémentaire (48 060 €
+  en 2026) : ses six représentations du festival de juin 2026 sont payées 7 500 € le cachet. Sa rémunération de l'année
+  passe de 5 550 € à 50 550 € à la paie de juin : la tranche 2 de l'année (2 490 €) et la CET sur toute la rémunération
+  de l'année (50 550 €) y entrent, puis chaque paie suivante est toute en tranche 2, CET comprise (Audiens, Paramètres :
+  les plafonds annuels des non-cadres).
 - Cachet de représentation : Molière 175 €, Dorval 165 €, Lemaître 170 € ; un service de répétition de 4 heures, 64 €,
   deux par jour. Lekain : 17,50 € de l'heure, sept heures par jour de jeu. Talma : 17,50 € de l'heure, huit heures
   par jour de jeu (le moteur refuse un service pour un technicien) : les textes de la 1285 ne définissent le service que pour les artistes
@@ -176,9 +183,14 @@ Août : les permanents seuls.
   chacun à sa date ; le repas du 17 ne fait pas un jour du contrat. Les 8 heures supplémentaires de Marivaux, saisies
   le 18. Le 26, la fiche d'Apolline Vilar se crée ; son CDD (1er juin au 31 octobre) se valide, sa DPAE part (test
   puis réel), son contrat part à la signature.
-- **Juin** : la démission de Clairon, remise le 2 (préavis du 3 juin au 2 juillet, son dernier jour).
+- **Juin** : la démission de Clairon, remise le 2 (préavis du 3 juin au 2 juillet, son dernier jour). Le même jour,
+  avec la série du festival, l'engagement de Copeau pour la reprise des Fausses Confidences avant Avignon : un contrat
+  d'usage à cheval sur deux mois, 2 cachets de 1 500 € les 29 et 30 juin, et au planning les 1er et 2 juillet ; sa
+  DPAE et son contrat partent avec ceux de la série. La DSN de juin le déclare, sans fin.
 - **Juillet** : le congé de Champmeslé du 20 au 31 ; le 3, le signalement de fin du contrat de Clairon (test puis réel)
-  et ses documents de fin ; le 31, les 6 heures complémentaires de Vilar.
+  et ses documents de fin ; le lundi 6, le signalement de fin du contrat de Copeau, arrivé à son terme le 2 (la DSN de
+  juin l'a déjà déclaré : sa fin se signale dans les cinq jours ouvrés, et la DSN de juillet écrit 62.017 = 02), test
+  puis réel, et ses documents de fin ; le 31, les 6 heures complémentaires de Vilar.
 - **Août** : sans intermittent ; Champmeslé en congé du 1er au 7, Marivaux du 10 au 28.
 - **Septembre** : l'augmentation de Champmeslé, décidée le 7, à 4 100,00 € au 1er septembre, et son avenant à la
   signature ; le même jour, l'augmentation de Vilar à 7 000 € au 16 septembre, et son avenant à la signature ; le 29,
@@ -207,6 +219,7 @@ rentre dormir chez soi, sauf pendant la tournée de mai. Les lettres sont celles
 | mer. 13 au sam. 16 mai | Les Fausses Confidences, tournée de Bretagne | Rennes, Lorient, Quimper | M, D, L, K, T |
 | ven. 22, sam. 23 mai | Le Barbier de Séville, 2 représentations | Paris, théâtre du Marais-Neuf | M, D, K |
 | ven. 5 au dim. 7, ven. 12 au dim. 14 juin | Le Barbier de Séville, festival, 6 représentations | Paris, parc de Bagatelle | M, D, L, K, T |
+| lun. 29 juin au jeu. 2 juillet | répétitions de reprise, Les Fausses Confidences ; Copeau, 4 cachets | Paris | C |
 | ven. 3 au dim. 5 juillet | Les Fausses Confidences, 3 représentations | Avignon | M, D, L, K, T |
 | ven. 10, sam. 11 juillet | Les Fausses Confidences, 2 représentations | Villeneuve-lès-Avignon | D, L, K |
 | lun. 7 au ven. 11 septembre | répétitions, Les Plaideurs | Paris | M, D, L |

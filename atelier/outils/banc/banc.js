@@ -35,9 +35,11 @@ const MOTEUR_PAR_DEFAUT = [
   path.join(DEPOT, "atelier/sources/target/essais/moteur-atelier"),
   path.join(DEPOT, "atelier/sources/target-atelier/essais/moteur-atelier"),
 ].filter(Boolean);
-// Les secrets du poste ne vont jamais à la fenêtre du banc.
+// Les secrets du poste ne vont jamais à la fenêtre du banc, ni l'identité du poste de l'éditeur : le banc ne sort pas
+// de la machine, il n'a pas à parler au filet.
 const RETIREES = ["NET_ENTREPRISES_MOTDEPASSE", "URSSAF_MOTDEPASSE", "COURRIEL_COMPTE", "COURRIEL_MOTDEPASSE",
-  "PUPPETPAIE_MOTDEPASSE", "PUPPETPAIE_CODE", "PUPPETPAIE_AUJOURDHUI", "PUPPETPAIE_INCIDENTS"];
+  "PUPPETPAIE_MOTDEPASSE", "PUPPETPAIE_CODE", "PUPPETPAIE_AUJOURDHUI", "PUPPETPAIE_INCIDENTS",
+  "PUPPETPAIE_ATELIER_POSTE", "PUPPETPAIE_ATELIER_CLE_POSTE"];
 
 function dire(t) { process.stdout.write(t + "\n"); }
 function mourir(t) { process.stderr.write(t + "\n"); process.exit(1); }

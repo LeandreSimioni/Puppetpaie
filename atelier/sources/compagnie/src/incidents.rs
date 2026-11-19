@@ -29,7 +29,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 
 use crate::diagnostic::{Ecriture, Machine};
-use crate::editeur::{Client, ErreurFilet};
+use crate::editeur::{Client, ErreurFilet, OrigineDeLIdentite};
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::Classe;
@@ -521,7 +521,8 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
 }
 
 /// Note les incidents qu'un rattachement des retours a releves (`envois::etats::AvecIncidents`), meme quand il s'est
-/// arrete sur une erreur, puis rend son resultat. Un incident qui ne s'ecrit pas se refuse.
+/// arrete sur une erreur, et les pieces qu'il n'a pas lues (`noter_retour_illisible`), puis rend son resultat. Un incident
+/// qui ne s'ecrit pas se refuse.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
         let canal = match i.canal {
@@ -530,7 +531,25 @@ pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<
         };
         noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
     }
+    for p in &r.illisibles {
+        noter_retour_illisible(racine, p)?;
+    }
     r.resultat
+}
+
+/// UN RETOUR D'ORGANISME QUE SON LECTEUR NE LIT PAS : une piece de la norme qui n'est pas celle que ses textes decrivent
+/// (le guide de l'API DSN, la specification des retours). L'editeur le sait par le journal des incidents, a l'endroit
+/// `retour-<nature>/<archive>`, avec ce que le lecteur en a dit (le resume), pour lui apprendre a la lire ; la compagnie
+/// n'en voit rien. La piece reste a sa place et se relit a chaque releve : elle se note UNE FOIS PAR ARCHIVE (l'endroit
+/// la nomme, l'empreinte la reconnait dans le journal, envoye ou non). La seule facon de le noter, quelle que soit la
+/// nature.
+pub fn noter_retour_illisible(racine: &Path, p: &envois::retours::PieceIllisible) -> R<()> {
+    let ou = format!("retour-{}/{}", p.nature, p.archive);
+    let quoi = p.echec.classe_notee();
+    if lignes(&chemin(racine))?.iter().any(|l| l.empreinte == empreinte(LOGICIEL, &ou, quoi)) {
+        return Ok(());
+    }
+    noter(racine, &Note { nature: LOGICIEL, ou: &ou, quoi, resume: &p.echec.phrase, detail: (), trace: None, sans_contexte: true }).map(|_| ())
 }
 
 /// Le meme incident revu dans ce delai se compte dans sa ligne (`noter`).
@@ -541,11 +560,11 @@ const FIL_PAR_INCIDENT: usize = 100;
 const ECRITURES_PAR_INCIDENT: usize = 3;
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
-/// situation d'usage, pas un defaut du logiciel.
-const REFUS_PAR_CLASSE: [Classe; 15] = [
+/// situation d'usage, pas un defaut du logiciel ; l'effectif et le taux AT/MP qui manquent aussi : la compagnie les dit.
+const REFUS_PAR_CLASSE: [Classe; 17] = [
     Classe::Refuse, Classe::SaisieIncomplete, Classe::PreuveInsuffisante, Classe::FabriqueRefus, Classe::FicheRefusee,
     Classe::DsnDejaDeposee, Classe::RepetitionManquante, Classe::VersionExigee, Classe::CompteursVerrouilles,
-    Classe::Manque, Classe::Illisible, Classe::FichierAbsent,
+    Classe::Manque, Classe::TauxAtmpAbsent, Classe::EffectifAbsent, Classe::Illisible, Classe::FichierAbsent,
     Classe::Coffre, Classe::Google, Classe::ModificationNonDeclarable,
 ];
 
@@ -1068,15 +1087,66 @@ fn cle_de_poste(cle: &socle::secret::Secret) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// LE NUMERO DU POSTE DE L'EDITEUR, que lit le binaire de l'atelier (`identite_de_l_atelier`).
+#[cfg(feature = "atelier")]
+pub(crate) const VARIABLE_POSTE: &str = "PUPPETPAIE_ATELIER_POSTE";
+/// LA CLE DU POSTE DE L'EDITEUR, que lit le binaire de l'atelier (`identite_de_l_atelier`). Un secret : elle ne se
+/// montre ni ne s'ecrit nulle part.
+#[cfg(feature = "atelier")]
+pub(crate) const VARIABLE_CLE_POSTE: &str = "PUPPETPAIE_ATELIER_CLE_POSTE";
+
+/// Ce que dit le binaire de l'atelier quand le serveur ne reconnait pas l'identite de l'environnement (un 401).
+#[cfg(feature = "atelier")]
+pub(crate) fn identite_de_l_atelier_refusee() -> String {
+    format!(
+        "Le serveur ne reconnaît pas le poste de {} et {} : les reposer dans les réglages de l'environnement, tels que config/diagnostic.json du poste de l'éditeur les porte.",
+        VARIABLE_POSTE, VARIABLE_CLE_POSTE
+    )
+}
+
+/// L'IDENTITE DU POSTE DE L'EDITEUR, dans le binaire de l'atelier (le nuage, jamais livre) : le numero et la cle de ce
+/// poste, poses par l'editeur dans l'environnement (`VARIABLE_POSTE`, `VARIABLE_CLE_POSTE`). Le serveur ne plafonne pas
+/// ce poste (`FILET_POSTE_EDITEUR` du serveur) : une fictive rejouee dans le nuage parle au filet sans demander une
+/// identite neuve (`POST /poste`, au plus 50 par jour pour tous). `None` : aucune des deux n'est posee. Une seule
+/// posee, ou l'une mal formee : refus, qui nomme la variable et jamais sa valeur -- jamais `POST /poste` a la place.
+#[cfg(feature = "atelier")]
+fn identite_de_l_atelier() -> R<Option<(NumeroDePoste, socle::secret::Secret)>> {
+    let lue = |variable: &str| -> R<Option<String>> {
+        match std::env::var_os(variable) {
+            None => Ok(None),
+            Some(v) => v.into_string().map(Some).map_err(|_| socle::refus!("{} n'est pas écrite en texte : la reposer dans les réglages de l'environnement.", variable)),
+        }
+    };
+    let (numero, cle) = match (lue(VARIABLE_POSTE)?, lue(VARIABLE_CLE_POSTE)?) {
+        (None, None) => return Ok(None),
+        (Some(n), Some(k)) => (n, socle::secret::Secret::nouveau(k)),
+        (Some(_), None) => return Err(socle::refus!("{} est posée sans {} : poser les deux, ou aucune.", VARIABLE_POSTE, VARIABLE_CLE_POSTE)),
+        (None, Some(_)) => return Err(socle::refus!("{} est posée sans {} : poser les deux, ou aucune.", VARIABLE_CLE_POSTE, VARIABLE_POSTE)),
+    };
+    let numero = NumeroDePoste::lire(&numero).map_err(|_| socle::refus!("{} n'est pas un numéro de poste : il s'écrit en 32 chiffres hexadécimaux minuscules.", VARIABLE_POSTE))?;
+    if !cle_de_poste(&cle) {
+        return Err(socle::refus!("{} n'est pas une clé de poste : elle s'écrit en 64 chiffres hexadécimaux minuscules.", VARIABLE_CLE_POSTE));
+    }
+    Ok(Some((numero, cle)))
+}
+
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
-/// l'identite de ce poste. Elle se lit dans `config/diagnostic.json` de `ou`
+/// l'identite de ce poste. Dans le binaire de l'atelier, l'identite de l'environnement (`identite_de_l_atelier`)
+/// vaut pour le seul serveur de l'editeur (`editeur::SERVEUR_PAR_DEFAUT`), et ne s'ecrit nulle part ; un autre
+/// serveur (le faux serveur local d'un essai) ne la recoit jamais. Sinon elle se lit dans `config/diagnostic.json` de `ou`
 /// (`poste`, `cle`, `serveur`) ; absente, incomplete, ou donnee par un autre
 /// serveur, elle se DEMANDE au serveur (`POST /poste`) et s'ecrit, une fois pour
 /// toutes. Une panne du serveur (reseau, 429) se rend
 /// telle quelle : l'appelant laisse tout en attente.
 pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet>> {
-    let mut c = lire_config(ou)?;
     let serveur = Url::lire(serveur.texte().trim_end_matches('/'))?;
+    #[cfg(feature = "atelier")]
+    if let Some((numero, cle)) = identite_de_l_atelier()? {
+        if serveur == crate::editeur::SERVEUR_PAR_DEFAUT {
+            return Ok(Ok(Client::du_poste(&serveur, &numero, &cle, OrigineDeLIdentite::Atelier)));
+        }
+    }
+    let mut c = lire_config(ou)?;
     let connue = match (&c.poste, &c.cle, &c.serveur) {
         (Some(n), Some(k), Some(s)) if cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
         _ => None,
@@ -1098,7 +1168,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
             (r.poste, r.cle)
         }
     };
-    Ok(Ok(Client::du_poste(&serveur, &numero, &cle)))
+    Ok(Ok(Client::du_poste(&serveur, &numero, &cle, OrigineDeLIdentite::Diagnostic)))
 }
 
 /// `EDITEUR.json`, que le paquet livre a cote du code : le serveur de l'editeur.

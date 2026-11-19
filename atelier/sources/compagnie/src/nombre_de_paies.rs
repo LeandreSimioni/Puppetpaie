@@ -78,6 +78,12 @@ fn retenir(racine: &Path, annee: Annee, paies: usize, poste: &NumeroDePoste) -> 
 
 /// Pourquoi rien ne part de cette compagnie, ou `None` si elle peut envoyer.
 fn empechement(racine: &Path) -> R<Option<&'static str>> {
+    // Le binaire de l'atelier ne porte jamais de compagnie reelle (regle 9) : il n'a aucune paie a compter, et il peut
+    // parler au filet sous le numero du poste de l'editeur (`incidents::identite_de_l_atelier`), dont il ecraserait le
+    // compte.
+    if cfg!(feature = "atelier") {
+        return Ok(Some("binaire de l'atelier"));
+    }
     Ok(if crate::installation::est_fictive(racine)? {
         Some("compagnie fictive")
     } else if crate::installation::est_copie(racine) {

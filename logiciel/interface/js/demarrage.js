@@ -36,7 +36,7 @@ async function relireEtat() {
   return poserEtat(await api("etat"));
 }
 
-/** Le bandeau : les erreurs de configuration et les compteurs. */
+/** Le bandeau : les erreurs de configuration, ce qui manque pour payer aujourd'hui, et les compteurs. */
 function peindreEtatGlobal() {
   // Une option VIDE en tete, et c'est elle le defaut. Un deroulant montre
   // toujours quelque chose : sans elle, le premier spectacle de la liste a
@@ -47,6 +47,7 @@ function peindreEtatGlobal() {
   // Les erreurs de configuration, comptées par le moteur (`configuration`, `erreurs`).
   const html = `
     ${pastilleDeLEtat(c.erreurs)}
+    ${c.pour_payer ? `<div>${echapper(c.pour_payer)}</div>` : ""}
     ${c.compteurs_dit ? `<div>${echapper(c.compteurs_dit)}</div>` : ""}`;
   const el = document.getElementById("etat-global");
   if (el.dataset.peint !== html) { el.dataset.peint = html; el.innerHTML = html; }

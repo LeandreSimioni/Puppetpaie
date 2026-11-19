@@ -305,9 +305,9 @@ function dessinerConfig() {
 }
 
 /* ---------------------------------------------------- reprendre l'historique
-   Deux temps, et jamais un seul : l'aperçu dit ce qui serait créé et ce que
-   les DSN disaient autrement que les fiches ; le bouton n'écrit qu'après.
-   Une fiche existante reçoit seulement ce qui y est vide ou « A COMPLETER »
+   « Importer » reprend d'un geste, et se rejoue ; l'aperçu (sous « Avancé »)
+   dit, sans rien écrire, ce qui serait créé et ce que les DSN disaient
+   autrement que les fiches. Une fiche existante reçoit seulement ce qui y est vide ou « A COMPLETER »
    (`import::completer`) ; tout champ rempli fait foi, l'écart
    est signalé, un changement se date à la main.
 
@@ -334,12 +334,15 @@ const fenetreDuPoste = () => !!window.fenetrePuppetPaie;
 
 /* REPRENDRE L'HISTORIQUE : une
    logique simple : ils mettent tout dans import/, ou ils choisissent un
-   dossier avec tout dedans. La page ne sert qu'une fois : le jour où une
-   compagnie arrive avec l'historique d'un autre logiciel. Un dossier, celui
+   dossier avec tout dedans. Un dossier, celui
    de la compagnie prérempli ; « Parcourir… » pour en prendre un autre ;
-   « Ouvrir le dossier » pour y déposer les fichiers ; puis l'aperçu. Aucun
-   logiciel n'est nommé. Si l'historique est repris, l'état le dit en une
-   ligne, et « Relire un dossier » reste pour ce qui manquait. */
+   « Ouvrir le dossier » pour y déposer les fichiers ; puis « Importer ».
+   Aucun logiciel n'est nommé. UN SEUL CHEMIN, avant comme après une
+   première reprise : on ajoute au dossier et on relance l'import, qui ne
+   reprend que le neuf (`guide.rejouer`, du moteur). Une fois l'historique
+   repris, l'état le dit en une ligne, ce qui reste à dire se peint
+   au-dessus, et le guide se replie. L'aperçu, qui n'écrit rien, est hors
+   du chemin simple (`guide.avance`). */
 async function dessinerImportation(cible) {
   let e;
   try { e = await api("importation-etat"); } catch (err) {
@@ -348,44 +351,32 @@ async function dessinerImportation(cible) {
   }
   if (!IMPORT_DOSSIER) IMPORT_DOSSIER = e.dossier;
   const deja = e.reprises.length || e.contrats;
-  const dossier = `<div class="e-contrat-champs">
-      <label style="flex:1">Le dossier
-        <span style="display:flex;gap:6px">
-          <input type="text" id="import-dossier" style="flex:1" title="${aideDe("import_dossier")}"
-                 value="${echapper(IMPORT_DOSSIER)}">
-          <button type="button" class="secondaire" id="import-parcourir">Parcourir…</button>
-          ${fenetreDuPoste() ? `<button type="button" class="secondaire" id="import-ouvrir">Ouvrir le dossier</button>` : ""}
-        </span>
-      </label>
-      ${deja ? `<button class="secondaire" id="import-apercu">Aperçu</button>` : ""}
-    </div>`;
-  if (deja) {
-    cible.innerHTML = `
-    <div class="carte">
-      <div id="import-etat">${vueEtatImportation(e)}</div>
-      <details class="relire"><summary>Relire un dossier <span class="discret">— ${aideDe("import_relire")}</span></summary>
-          <p class="note">${aideDe("import_relire_note")}</p>
-          <p class="intro">${aideDe("import_relire_intro")}</p>
-          ${dossier}
-          <div id="import-resultat"></div>
-        </details>
-    </div>`;
-  } else {
-    // RIEN N'EST ENCORE REPRIS : le guide (`importation-etat`, `guide`, du moteur), le dossier, et « Importer », qui
-    // reprend tout d'un geste. Ce qui reste à dire (`import-etat`, `import-demarrage`) se peint au-dessus après lui.
-    cible.innerHTML = `
+  const guide = vueGuideImport(e.guide);
+  cible.innerHTML = `
     <div class="carte">
       <div id="import-etat">${vueEtatImportation(e)}</div>
       <div id="import-demarrage"></div>
-      <div id="import-guide">${vueGuideImport(e.guide)}
-        ${dossier}
-        <p><button class="primaire" id="import-tout">Importer</button>
-          <button type="button" class="lien" id="import-apercu">Aperçu d'abord</button></p>
+      <div id="import-guide">${deja ? `<details class="relire"><summary>${echapper(e.guide.replie)}</summary>${guide}</details>` : guide}</div>
+      <p class="note">${echapper(e.guide.rejouer)}</p>
+      <div class="e-contrat-champs">
+        <label style="flex:1">Le dossier
+          <span style="display:flex;gap:6px">
+            <input type="text" id="import-dossier" style="flex:1" title="${aideDe("import_dossier")}"
+                   value="${echapper(IMPORT_DOSSIER)}">
+            <button type="button" class="secondaire" id="import-parcourir">Parcourir…</button>
+            ${fenetreDuPoste() ? `<button type="button" class="secondaire" id="import-ouvrir">Ouvrir le dossier</button>` : ""}
+          </span>
+        </label>
       </div>
+      <p><button class="primaire" id="import-tout">Importer</button></p>
+      <details><summary>${echapper(e.guide.avance)}</summary>
+        <button type="button" class="lien" id="import-apercu">${echapper(e.guide.apercu)}</button></details>
       <div id="import-resultat"></div>
     </div>`;
-    document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
-  }
+  document.getElementById("import-tout").onclick = () => importerDepuisLeGuide();
+  brancherIdentites(document.getElementById("import-etat"), e);
+  // Ce qui reste à dire pour la configuration (`pour-demarrer`), dès qu'il y a un historique repris.
+  if (deja) peindreDemarrage(document.getElementById("import-demarrage"));
   document.getElementById("import-apercu").onclick = () => apercuImportation();
   // L'EXPLORATEUR : la boîte du système, ouverte par la fenêtre.
   document.getElementById("import-parcourir").onclick = async () => {
@@ -399,30 +390,36 @@ async function dessinerImportation(cible) {
   if (ouvrir) ouvrir.onclick = () => ouvrirEtDire(document.getElementById("import-dossier").value.trim() || e.dossier, "", true);
 }
 
-/* LE GUIDE DE L'IMPORT (`import::guide`, du moteur) : ce qu'on met dans le
-   dossier, ce que le logiciel lit de chaque pièce, ce qui restera à dire. La
-   page le montre tel quel. */
+/* LE GUIDE DE L'IMPORT (`import::guide`, du moteur) : l'essentiel d'abord
+   (les bulletins, une DSN déposée, un dossier), puis ce qu'on peut mettre si
+   des documents manquent ; ce que le logiciel lit de chaque pièce se déplie.
+   La page le montre tel quel. */
 function vueGuideImport(g) {
-  const pieces = g.pieces.map((p) => `<div class="guide-piece">
+  const piece = (p) => `<div class="guide-piece">
       <b>${echapper(p.quoi)}</b>
       <div class="note">${echapper(p.ou)}</div>
-      ${p.lu.length ? `<ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
-    </div>`).join("");
+      ${p.lu.length ? `<details><summary>${echapper(g.ce_qui_s_en_lit)}</summary><ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul></details>` : ""}
+    </div>`;
   return `<h3>Reprendre votre passé</h3>
-    <p class="intro">${aideDe("import_intro")}</p>
-    ${g.a_quoi_sert.length ? `<ul>${g.a_quoi_sert.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
+    <ul>${g.essentiel.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>
+    <div class="guide-pieces">${g.essentielles.map(piece).join("")}</div>
+    <p class="intro">${echapper(g.si_manquent)}</p>
+    <div class="guide-pieces">${g.autres.map(piece).join("")}</div>
     <p class="note">${echapper(g.accepte)}</p>
-    <div class="guide-pieces">${pieces}</div>
     <p class="note">${echapper(g.reste)}</p>
     <p class="note">${echapper(g.rien_n_est_perdu)}</p>`;
 }
 
-/* « IMPORTER », D'UN GESTE : le moteur reprend tout (`importer`), puis la page
-   montre, au-dessus, ce qui reste à dire — la nature des contrats repris, les
-   congés à reprendre (`importation-etat`) et ce qui manque encore pour
-   démarrer (`pour-demarrer`) — et, dessous, ce qui a été repris. */
-async function importerDepuisLeGuide() {
-  IMPORT_DOSSIER = document.getElementById("import-dossier").value.trim();
+/* « IMPORTER », D'UN GESTE, la première fois comme les suivantes : le moteur
+   reprend le neuf (`importer`), puis la page se redessine — au-dessus, ce
+   qui reste à dire (la nature des contrats repris, `importation-etat` ; ce
+   qu'une DSN donnerait et ce qui se saisit, `pour-demarrer`) — et, dessous,
+   ce qui a été repris. */
+async function importerDepuisLeGuide(dossier) {
+  // `dossier` : celui que l'aperçu a lu (« Reprendre » reprend ce qu'il a montré) ; sinon, celui de la case.
+  const champ = document.getElementById("import-dossier");
+  if (dossier !== undefined) champ.value = dossier;
+  IMPORT_DOSSIER = champ.value.trim();
   const rendre = occupe(document.getElementById("import-tout"), "Import…");
   await ecrireImportation();
   rendre();
@@ -431,7 +428,7 @@ async function importerDepuisLeGuide() {
   try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
   if (!(etat.reprises.length || etat.contrats)) return;
   const guide = document.getElementById("import-guide");
-  if (guide) guide.hidden = true;
+  if (guide) guide.innerHTML = `<details class="relire"><summary>${echapper(etat.guide.replie)}</summary>${vueGuideImport(etat.guide)}</details>`;
   const demarrage = document.getElementById("import-demarrage");
   if (demarrage) await peindreDemarrage(demarrage);
   document.getElementById("import-etat").scrollIntoView({ block: "start" });
@@ -453,8 +450,35 @@ function vueEtatImportation(e) {
       <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
-  return repris + vueNaturesADire(e.a_dire)
+  return repris + vueIdentitesADire(e.identites) + vueNaturesADire(e.a_dire)
     + (editeur ? `<h3>Ce qui attend l'éditeur</h3>${editeur}` : "");
+}
+
+/* LA PERSONNE QU'UNE DSN DÉCLARE ET QUI RESSEMBLE À UNE FICHE SANS NUMÉRO
+   DE SÉCURITÉ SOCIALE (`import::identite`) : le moteur pose la question
+   (`identites.questions`), la page la montre avec ses deux gestes (`gestes`,
+   dessinés depuis la fiche de leur route : `js/avance.js`) ; ce qui ne s'est
+   pas relu pour les poser se dit (`identites.non_relues`). */
+function vueIdentitesADire(identites) {
+  const liste = identites.questions;
+  const non = identites.non_relues ? `<p class="note">${echapper(identites.non_relues)}</p>` : "";
+  if (!liste.length) return non;
+  return `<h3>Est-ce la même personne ?</h3>${non}${liste.map((q, k) => `<div class="rang">
+      <div class="rang-infos"><b class="rang-nom">${echapper(q.qui)}</b>${echapper(q.question)}</div>
+      <div class="rang-etat" data-identite="${k}">${boutonsDesGestes(q.gestes)}</div>
+    </div>`).join("")}`;
+}
+
+/* Les gestes des questions d'identité de `e`, dessinés dans `cible` ; après la réponse, l'état se relit. */
+function brancherIdentites(cible, e) {
+  cible.querySelectorAll("[data-identite]").forEach((b) => {
+    const q = e.identites.questions[+b.dataset.identite];
+    brancherLesGestes(b, q.gestes, { titre: q.qui, dit: q.question }, async () => {
+      await relireEtat();
+      rafraichirReferentiels();
+      await rafraichirEtatImportation();
+    });
+  });
 }
 
 /* LA NATURE DES CONTRATS REPRIS QU'AUCUN BULLETIN NE DIT
@@ -475,21 +499,26 @@ function vueNaturesADire(liste) {
     quotite: (x) => `<label title="${aideDe("import_quotite")}">Heures par mois
         <input type="text" inputmode="decimal" data-nature-champ="quotite" placeholder="celle du contrat signé"></label>`,
   };
-  const lignes = liste.map((x) => `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
+  // Une seule nature proposée (celle que la DSN reprise déclare) : elle est
+  // choisie, et ses cases se montrent d'emblée.
+  const lignes = liste.map((x) => { const seule = x.natures.length === 1 ? x.natures[0] : null;
+    const montre = (c) => !!seule && seule.demande.includes(c);
+    return `<div class="rang" data-nature-rang="${echapper(x.salarie)}">
       <div class="rang-infos"><b class="rang-nom">${echapper(x.nom)}</b>
         ${echapper(x.dit)}
         ${x.en_cours_dit ? `<div class="note">${echapper(x.en_cours_dit)}</div>` : ""}
-        <div class="e-contrat-champs" data-nature-cases hidden>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
-          `<span data-nature-case="${c}" hidden>${CASES[c](x)}</span>`).join("")}</div></div>
+        ${x.dsn_non_relue ? `<div class="note">${echapper(x.dsn_non_relue)}</div>` : ""}
+        <div class="e-contrat-champs" data-nature-cases${seule && seule.demande.length ? "" : " hidden"}>${["debut", "fin", "numero", "salaire", "quotite"].map((c) =>
+          `<span data-nature-case="${c}"${montre(c) ? "" : " hidden"}>${CASES[c](x)}</span>`).join("")}</div></div>
       <div class="rang-etat" style="display:flex;gap:6px;align-items:center">
         <select data-nature-choix aria-label="${echapper(x.choix_dit)}">
-          <option value="" data-demande="">— choisir —</option>
-          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"
+          ${seule ? "" : `<option value="" data-demande="">— choisir —</option>`}
+          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"${seule ? " selected" : ""}
              data-demande="${echapper(n.demande.join(" "))}">${echapper(n.libelle)}</option>`).join("")}
         </select>
         <button type="button" class="petit" data-nature-salarie="${echapper(x.salarie)}">Enregistrer</button>
       </div>
-    </div>`).join("");
+    </div>`; }).join("");
   return `<h3>Nature de ces contrats</h3>
     <p class="note">${aideDe("import_natures")}</p>${lignes}`;
 }
@@ -655,7 +684,11 @@ function vueNonRepris(nr, pastilles) {
 async function rafraichirEtatImportation() {
   const cible = document.getElementById("import-etat");
   if (!cible) return;
-  try { cible.innerHTML = vueEtatImportation(await api("importation-etat")); } catch (e) { dire(e.message, "erreur"); }
+  try {
+    const e = await api("importation-etat");
+    cible.innerHTML = vueEtatImportation(e);
+    brancherIdentites(cible, e);
+  } catch (e) { dire(e.message, "erreur"); }
 }
 
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les
@@ -667,13 +700,20 @@ function vueImportation(r) {
   const couleur = r.encart ? ENCART_DE_COULEUR[r.encart.couleur] : "";
   const pose = r.parametrage.length
     ? `<p class="note">Posé dans la configuration</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
+  // Ce que la DSN reprise déclare d'un contrat repris autrement que sa carte (`dsn_fait_foi`, du moteur, phrases comprises).
+  const remplace = r.dsn_fait_foi.length
+    ? `<p class="note">La DSN fait foi</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
+  // Les personnes mises de côté, chacune sa question (`identites`, du moteur) :
+  // elles se répondent dans l'état de l'import.
+  const questions = r.identites.length
+    ? `<div class="encart attention"><b>Est-ce la même personne ?</b><ul>${r.identites.map((q) => `<li>${echapper(q.question)}</li>`).join("")}</ul></div>` : "";
   const bouton = r.ecrit
     ? `<div class="encart ${couleur}"><b>Repris</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
-        ${pose}
+        ${pose}${remplace}
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
-      ? `<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
-      : `<p><button class="primaire" id="import-ecrire">Reprendre</button>
+      ? `${questions}<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
+      : `${questions}<p><button class="primaire" id="import-ecrire">Reprendre</button>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
   return `${vueNonRepris(r.tri.non_repris, r.pastilles)}
@@ -692,9 +732,10 @@ function vueImportation(r) {
     ${bouton}`;
 }
 
-function brancherImportation() {
+function brancherImportation(dossier) {
   const b = document.getElementById("import-ecrire");
-  if (b) b.onclick = () => ecrireImportation();
+  // « Reprendre », sous l'aperçu, est le même geste qu'« Importer », sur le dossier que l'aperçu a lu.
+  if (b) b.onclick = () => importerDepuisLeGuide(dossier);
 }
 
 async function apercuImportation() {
@@ -705,9 +746,10 @@ async function apercuImportation() {
   cible.innerHTML = `<p class="discret">Lecture…</p>`;
   try {
     // Un dossier vide part absent : la boîte import/ de la compagnie.
-    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER || null });
+    const lu = IMPORT_DOSSIER;
+    const r = await api("importation-apercu", { dossier: lu || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(lu);
   } catch (e) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
   } finally {
@@ -722,7 +764,7 @@ async function ecrireImportation() {
   try {
     const r = await api("importer", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
-    brancherImportation();
+    brancherImportation(IMPORT_DOSSIER);
     // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
     // dans les déroulants de la saisie, sans recharger la page.
     await relireEtat();
@@ -1360,6 +1402,12 @@ function SANTE_HTML() {
   if (ETAT.sante_hors_fiche) {
     return `<div class="encart" id="config-sante">
       <div class="aide">${echapper(ETAT.sante_hors_fiche)}</div>
+    </div>`;
+  }
+  // Un barème du jour qui ne se compose pas ne dit aucun niveau (`niveaux_sante` nul) : le moteur dit pourquoi.
+  if (!ETAT.niveaux_sante) {
+    return `<div class="encart" id="config-sante">
+      <div class="aide">${echapper(ETAT.configuration.pour_payer)}</div>
     </div>`;
   }
   return `<div class="encart" id="config-sante">

@@ -153,8 +153,8 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
     }
     // APRES UNE ECRITURE, les etats de tous les mois se verifient en fond, le mois affiche
     // d'abord : une ecriture d'un mois peut changer les suivants (un contrat en cours, une numerotation, un cumul). Meme
-    // refusee, une ecriture a pu toucher un fichier ; un mois deja juste ne coute que son empreinte. La reponse le dit
-    // (`ecrit`) : la page oublie alors ce qu'elle a lu.
+    // refusee : un envoi qui echoue note sa tentative au journal ; un mois deja juste ne coute que son empreinte. La
+    // reponse dit si la route a ecrit (`ecrit`) : la page oublie alors ce qu'elle a lu.
     if let Some(f) = etats {
         if routes::est_une_ecriture(nom) {
             f.tout_verifier();

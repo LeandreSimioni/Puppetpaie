@@ -198,7 +198,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                         let mut reparti = Montant::ZERO;
                         for (part, id_org, quoi) in [(rg.urssaf, MALADIE, "part Urssaf"), (rg.chomage, CHOMAGE, "part chômage"), (rg.agirc_arrco, RETRAITE_T1, "part retraite")] {
                             if !part.est_nul() {
-                                let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
+                                let o = org_de(&RegroupementDeComparaison::Cotisation(id_org.clone())).ok_or_else(|| socle::fichiers::manque(id_org.as_str()))?;
                                 ajouter(m, &o, id, &format!("{} — {}", l.libelle, quoi), None, None, None, None, Some(-part))?;
                                 reparti += part;
                             }
@@ -322,24 +322,40 @@ fn dsn_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, dsn_du_moi
         ));
     }
     let principal = ctx.entreprise.nic_principal();
+    // Un mois dont la DSN ne se fait pas (une case que la compagnie n'a pas dite) ne coupe pas l'etat : il est dit, les
+    // autres mois se rendent ; une panne remonte.
+    let mut a_dire: Vec<String> = Vec::new();
     for &m in p.mois.iter().filter(|m| !importes.contains(m)) {
-        let mut une = false;
+        let (mut une, mut refusee) = (false, false);
         for nic in ctx.entreprise.nics().map_err(|e| e.reclasser(Classe::Refuse))? {
             let etablissement = if Some(&nic) == principal { None } else { Some(&nic) };
-            if let Some((f, partie)) = dsn_du_mois(ctx, m, etablissement).map_err(|e| e.reclasser(Classe::Refuse))? {
-                out.push((m, nic, f, partie));
-                une = true;
+            match dsn_du_mois(ctx, m, etablissement) {
+                Ok(Some((f, partie))) => {
+                    out.push((m, nic, f, partie));
+                    une = true;
+                }
+                Ok(None) => {}
+                Err(e) if e.dit_un_manque() => {
+                    a_dire.push(format!("La DSN de {} ne se fait pas, et ce mois n'est pas dans l'état : {}", libelle_mois(m), e.phrase));
+                    refusee = true;
+                }
+                Err(e) => return Err(e),
             }
         }
-        if !une {
+        if !une && !refusee {
             sans.push(m.to_string());
         }
     }
+    let refusees = !a_dire.is_empty();
+    avert.extend(a_dire);
     if !sans.is_empty() {
         avert.push(format!("Aucune DSN partie ni paie validée pour {} : ces mois ne sont pas dans l'état.", sans.join(", ")));
     }
     if out.is_empty() {
-        // Seuls des mois repris : la raison qu'ils n'y sont pas est la reponse.
+        // Seuls des mois repris, ou dont la DSN ne se fait pas : la raison qu'ils n'y sont pas est la reponse.
+        if sans.is_empty() && refusees {
+            return Err(refus(avert.join(" ")));
+        }
         if sans.is_empty() {
             if let Some(repris) = avert.pop() {
                 return Err(refus(repris));
@@ -625,13 +641,14 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let mut cpnef = Montant::ZERO;
         if let Some(c) = &hb.cpnef_dialogue_social {
             let brut_cpnef = masse.fois_taux(c.taux).au_centime();
-            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque));
+            // Le socle livre (`hors_bulletin`) qui ne porte pas sa borne : un defaut du logiciel, rien que la compagnie dise.
+            let borne = |b: Option<Montant>, cle: &str| b.ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::DefautDuLogiciel));
             cpnef = plus_grand(borne(c.plancher, "plancher")?, plus_petit(borne(c.plafond, "plafond")?, brut_cpnef));
         }
         let tranches = &hb
             .contribution_conventionnelle_permanents
             .as_ref()
-            .ok_or_else(|| socle::fichiers::absent("contribution_conventionnelle_permanents").reclasser(Classe::Manque))?
+            .ok_or_else(|| socle::fichiers::absent("contribution_conventionnelle_permanents").reclasser(Classe::DefautDuLogiciel))?
             .par_effectif;
         // LE TAUX DES PERMANENTS SE LIT A L'EFFECTIF DE L'ANNEE (retours de nature 118) : sans lui, il ne se devine pas
         // (regle 1) ; sans masse de permanents, il n'y a rien a calculer.
@@ -640,7 +657,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 tranches
                     .iter()
                     .find(|x| x.jusqu_a.is_none_or(|j| eff <= j))
-                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::Manque))?
+                    .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::DefautDuLogiciel))?
                     .taux,
             ),
             None if masse_permanents.est_nul() => None,

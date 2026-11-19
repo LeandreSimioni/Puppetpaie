@@ -60,9 +60,17 @@ fn mul(a: &Mat, b: &Mat) -> Mat {
     ]
 }
 
-/// La translation de (`x`, `y`).
-fn translation(x: Mesure, y: Mesure) -> Mat {
-    [Mesure::UN, Z, Z, Mesure::UN, x, y]
+/// La translation de (`x`, `y`) puis `m` : `mul(&[UN, Z, Z, UN, x, y], m)`, sans ses produits par 1 et par 0 (`UN * v`
+/// vaut `v`, `Z * v` vaut zéro et `v + Z` vaut `v`, exactement) ; restent les produits de la translation, ajoutés dans
+/// le même ordre.
+fn translatee(x: Mesure, y: Mesure, m: &Mat) -> Mat {
+    [m[0], m[1], m[2], m[3], x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]]
+}
+
+/// `mul(&[sx, Z, Z, sy, Z, rise], m)` (la matrice de rendu d'un glyphe, ISO 32000-1, 9.4.4), sans ses produits par 0 :
+/// `Z * v` vaut zéro et `v + Z`, `Z + v` valent `v`, exactement.
+fn mise_a_l_echelle(sx: Mesure, sy: Mesure, rise: Mesure, m: &Mat) -> Mat {
+    [sx * m[0], sx * m[1], sy * m[2], sy * m[3], rise * m[2] + m[4], rise * m[3] + m[5]]
 }
 
 fn point(m: &Mat, x: Mesure, y: Mesure) -> (Mesure, Mesure) {
@@ -486,7 +494,8 @@ pub(crate) struct Place {
 impl Place {
     /// La place d'un glyphe d'avance `x0`..`x1` sous la matrice de rendu `m`.
     fn du_glyphe(m: &Mat, x0: Mesure, x1: Mesure, hauteurs: Option<Hauteurs>) -> Place {
-        Place { base: englobante(m, x0, Z, x1, Z), boite: hauteurs.map(|h| englobante(m, x0, -h.desc, x1, h.asc)) }
+        let x = abscisses(m, x0, x1);
+        Place { base: coins(m, &x, Z, Z), boite: hauteurs.map(|h| coins(m, &x, -h.desc, h.asc)) }
     }
 
     /// La place de deux signes réunis : leurs lignes de base, et leur boîte si chacun a la sienne.
@@ -504,7 +513,25 @@ impl Place {
 
 /// La boîte englobante du rectangle (x0, y0)-(x1, y1) transformé par `m`.
 fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite {
-    let p = [point(m, x0, y0), point(m, x1, y0), point(m, x0, y1), point(m, x1, y1)];
+    coins(m, &abscisses(m, x0, x1), y0, y1)
+}
+
+/// Les produits des abscisses `x0`, `x1` d'un rectangle par `m` (`m[0] * x0`, `m[0] * x1`, `m[1] * x0`, `m[1] * x1`),
+/// faits une fois pour ses quatre coins, et pour la ligne de base comme pour la boîte d'un glyphe.
+fn abscisses(m: &Mat, x0: Mesure, x1: Mesure) -> [Mesure; 4] {
+    [m[0] * x0, m[0] * x1, m[1] * x0, m[1] * x1]
+}
+
+/// La boîte englobante des coins (`x0`, `y0`), (`x1`, `y0`), (`x0`, `y1`), (`x1`, `y1`) transformés par `m`, chacun
+/// `point(m, x, y)` (les mêmes produits, ajoutés dans le même ordre), les produits des abscisses donnés (`abscisses`).
+fn coins(m: &Mat, x: &[Mesure; 4], y0: Mesure, y1: Mesure) -> Boite {
+    let y = [m[2] * y0, m[2] * y1, m[3] * y0, m[3] * y1];
+    let p = [
+        (x[0] + y[0] + m[4], x[2] + y[2] + m[5]),
+        (x[1] + y[0] + m[4], x[3] + y[2] + m[5]),
+        (x[0] + y[1] + m[4], x[2] + y[3] + m[5]),
+        (x[1] + y[1] + m[4], x[3] + y[3] + m[5]),
+    ];
     let mut b = [Mesure::MAX, Mesure::MAX, Mesure::MIN, Mesure::MIN];
     for (x, y) in p {
         b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
@@ -1614,10 +1641,12 @@ impl<'a> Interprete<'a> {
             return;
         };
         let n = a.texte.chars().count().max(1) as i64;
+        // La part de chaque caractère, la même pour tous.
+        let part = a.adv.divisee_par(n);
         for (k, c) in a.texte.chars().enumerate() {
             let decalage = (k * a.adv).divisee_par(n);
-            let place = Place::du_glyphe(&trm, decalage, decalage + a.adv.divisee_par(n), hauteurs);
-            self.mise.caractere(SigneDuTexte::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv.divisee_par(n)), place);
+            let place = Place::du_glyphe(&trm, decalage, decalage + part, hauteurs);
+            self.mise.caractere(SigneDuTexte::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(part), place);
         }
     }
 
@@ -1724,12 +1753,12 @@ impl<'a> Interprete<'a> {
                     e.taille = num(1)?;
                 }
                 "Td" => {
-                    tlm = mul(&translation(num(0)?, num(1)?), &tlm);
+                    tlm = translatee(num(0)?, num(1)?, &tlm);
                     tm = tlm;
                 }
                 "TD" => {
                     e.tl = -num(1)?;
-                    tlm = mul(&translation(num(0)?, num(1)?), &tlm);
+                    tlm = translatee(num(0)?, num(1)?, &tlm);
                     tm = tlm;
                 }
                 "Tm" => {
@@ -1737,7 +1766,7 @@ impl<'a> Interprete<'a> {
                     tm = tlm;
                 }
                 "T*" => {
-                    tlm = mul(&translation(Z, -e.tl), &tlm);
+                    tlm = translatee(Z, -e.tl, &tlm);
                     tm = tlm;
                 }
                 "Tj" | "'" | "\"" => {
@@ -1746,7 +1775,7 @@ impl<'a> Interprete<'a> {
                             e.tw = num(0)?;
                             e.tc = num(1)?;
                         }
-                        tlm = mul(&translation(Z, -e.tl), &tlm);
+                        tlm = translatee(Z, -e.tl, &tlm);
                         tm = tlm;
                     }
                     match a.last() {
@@ -1765,8 +1794,7 @@ impl<'a> Interprete<'a> {
                                 let n = lecture::element(doc, x, "un décalage de TJ", lecture::nombre)?;
                                 let vertical = police_choisie(&e)?.vertical;
                                 let t = (-(n * e.taille)).divisee_par(1000);
-                                let d = if vertical { translation(Z, t) } else { translation(t * e.th, Z) };
-                                tm = mul(&d, &tm);
+                                tm = if vertical { translatee(Z, t, &tm) } else { translatee(t * e.th, Z, &tm) };
                             }
                             _ => return illisible("un élément de TJ n'est ni une chaîne ni un nombre"),
                         }
@@ -1891,9 +1919,10 @@ impl<'a> Interprete<'a> {
         }
     }
 
-    /// Pose les signes d'un code (ou d'une chaîne entière que rien ne découpe) à la position du texte, d'avance `w0`.
-    fn poser(&mut self, police: &Police, e: &Etat, tm: &Mat, signes: Vec<SigneDuTexte>, w0: Mesure) -> Result<(), Refus> {
-        let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
+    /// Pose les signes d'un code (ou d'une chaîne entière que rien ne découpe) à la position du texte, d'avance `w0` ;
+    /// `echelle` est `e.taille * e.th`, que la chaîne fait une fois pour tous ses glyphes.
+    fn poser(&mut self, police: &Police, e: &Etat, echelle: Mesure, tm: &Mat, signes: Vec<SigneDuTexte>, w0: Mesure) -> Result<(), Refus> {
+        let trm = mise_a_l_echelle(echelle, e.taille, e.rise, &mul(tm, &e.ctm));
         let visible = self.dans_le_cadre(&trm, w0);
         let boite = Place::du_glyphe(&trm, Z, w0, police.hauteurs);
         // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
@@ -1918,6 +1947,7 @@ impl<'a> Interprete<'a> {
     /// ne découpe en codes est un seul caractère inconnu, qui n'avance pas le texte (sa largeur n'est pas lue).
     fn montrer(&mut self, e: &Etat, tm: &mut Mat, chaine: &[u8]) -> Result<(), Refus> {
         let police = police_choisie(e)?.clone();
+        let echelle = e.taille * e.th;
         let codes = match police.codes(chaine)? {
             Decoupe::Codes(codes) => codes,
             Decoupe::CmapNonDepose(cmap) => {
@@ -1926,7 +1956,7 @@ impl<'a> Interprete<'a> {
                     cmap
                 );
                 let inconnu = SigneDuTexte::Inconnu(Inconnu { police: police.nom.clone(), code: code_ecrit(chaine), pourquoi });
-                return self.poser(&police, e, tm, vec![inconnu], Z);
+                return self.poser(&police, e, echelle, tm, vec![inconnu], Z);
             }
         };
         let mut debut = 0;
@@ -1934,16 +1964,12 @@ impl<'a> Interprete<'a> {
             let w0 = police.largeur(code);
             let signes = police.signes(code, &chaine[debut..debut + n]);
             debut += n;
-            self.poser(&police, e, tm, signes, w0)?;
+            self.poser(&police, e, echelle, tm, signes, w0)?;
             let mut tx = w0 * e.taille + e.tc;
             if n == 1 && code == 32 {
                 tx += e.tw;
             }
-            *tm = if police.vertical {
-                mul(&translation(Z, -tx.abs()), tm)
-            } else {
-                mul(&translation(tx * e.th, Z), tm)
-            };
+            *tm = if police.vertical { translatee(Z, -tx.abs(), tm) } else { translatee(tx * e.th, Z, tm) };
         }
         Ok(())
     }

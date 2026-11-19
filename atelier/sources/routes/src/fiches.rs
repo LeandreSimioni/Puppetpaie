@@ -37,7 +37,7 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -183,6 +183,8 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[OPERATION, FORME, ILLISIBLE],
         acte: Acte::Ecrit,
         phrase: 300,
+        // Sous « Avancé », d'ou l'effectif d'une annee se dit et se corrige toujours ; « Pour démarrer » (`pour-demarrer`,
+        // `routes::rappels::ManqueVu`) la rend aussi en geste, sur la ligne qui demande l'effectif.
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire ou poser l'effectif")),
     },
     Fiche {
@@ -408,12 +410,14 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 }
 
 /// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
-#[derive(Debug, serde::Deserialize)]
+/// Le geste de « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa boite la fait saisir.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-struct ChargeEffectif {
+pub(crate) struct ChargeEffectif {
     #[serde(default)]
-    annee: Option<Annee>,
-    valeur: Option<Effectif>,
+    pub(crate) annee: Option<Annee>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+    pub(crate) valeur: Option<Effectif>,
 }
 
 /// Ce que rend `effectif` : l'annee, son effectif et d'ou il vient (l'Urssaf, la compagnie, la premiere embauche), les
@@ -479,7 +483,8 @@ fn permanents_de(entreprise: &ChampsEntreprise) -> bool {
 /// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
-/// page ne montre que ces cases-la.
+/// reprise des cumuls de l'annee, sur la fiche d'un salarie enregistre, par une paie reprise de lui d'une annee qu'un
+/// engagement d'ici touche (`engagement::importe::reprise_des_cumuls_de`). La page ne montre que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, p: &engagement::permanents::Permanents) -> R<Montres> {
     let nom = donnees.nom();
     let au_mois = match nom {
@@ -496,19 +501,24 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     };
     let du_metier = cases_des_metiers(ctx, nom, cle, code_emploi)?;
     let (cse, casc) = if nom == NomDeFiche::Entreprise { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
+    let reprise = match (nom, cle) {
+        (NomDeFiche::Salarie, Some(c)) => engagement::importe::reprise_des_cumuls_de(&ctx.racine, c)?.is_some(),
+        _ => false,
+    };
     let ouverte = |piece: Piece, case: CaseDeFiche| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
         Piece::Metier | Piece::MetierAuMois => du_metier.contains(&case),
         Piece::Cse => cse,
         Piece::Casc => casc,
+        Piece::Reprise => reprise,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
     let cases = champs::fiche(nom)?.iter().filter(|c| donnees.montre(c, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
     // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
     let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
-    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
+    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc), (Piece::Reprise, reprise)]
         .into_iter()
         .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
         .collect();
@@ -655,17 +665,23 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         None => ctx.entreprise.clone(),
     };
     // LES PLAFONDS DE LA FRANCHISE, CHIFFRES : ceux du bareme de l'annee des salaires -- `annee` dans la
-    // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants.
+    // charge, sinon l'annee en cours. Une annee sans socle livre ne fait pas refuser : la question se pose sans montants ;
+    // de meme tant que le bareme attend ce que la compagnie n'a pas encore dit (son effectif, son taux AT/MP).
     let annee = match charge.annee {
         None => ctx.aujourdhui.annee(),
         Some(a) if (socle::annee!("1900")..=socle::annee!("2999")).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
     let bar = match droit::contexte::socle_livre_lu(annee)? {
-        Some(_) => Some(ctx.bareme(&annee.premier_jour())?),
+        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
+        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
+            Ok(b) => Some(b),
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        },
         None => None,
     };
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_deref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
     // La conclusion nomme les deux plafonds.
     use documents::taxe_sur_les_salaires::Decision;
     let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
@@ -775,7 +791,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
     let phrase = match &c {
         ChargeActiver::Salarie { cle, actif } => {
-            let qui = match ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?.nomme() {
+            let qui = match ctx.fiche_de(cle)?.nomme() {
                 Some(n) => n,
                 None => cle.to_string(),
             };
@@ -1016,11 +1032,11 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     let mois = socle::temps::jour_de_paris().mois_civil();
     verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
 
-    let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string();
-    let sg = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
+    let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::manque("raison_sociale"))?.to_string();
+    let sg = ctx.entreprise.signataire.exigee("signataire")?;
     let signataire = match sg.prenom_affichage.remplie() {
         Some(p) => p.to_string(),
-        None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
+        None => capitaliser(sg.prenom.ecrite("prenom")?),
     };
     let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;

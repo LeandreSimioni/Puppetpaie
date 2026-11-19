@@ -34,12 +34,18 @@ pub struct Suites {
     pub taux_atmp: Vec<(Annonce, PathBuf)>,
     /// Un depot refuse.
     pub depot_refuse: Option<DepotRefuse>,
+    /// Les pieces de retour que leur lecteur n'a pas lues : a noter chez l'editeur.
+    pub illisibles: Vec<crate::retours::PieceIllisible>,
+    /// Les retours du canal DSN que les suites lisent (`taux_pas`, `taux_atmp`) : ils se notent vus une fois lus
+    /// (`releve_retours::noter_vus`) ; une piece que son lecteur ne lit pas reste neuve, et le releve suivant la relit.
+    pub vus_une_fois_lus: Vec<Annonce>,
 }
 
 impl Suites {
-    /// Le resultat d'un `AvecIncidents`, ses incidents gardes pour l'appelant.
+    /// Le resultat d'un `AvecIncidents`, ses incidents et ses pieces illisibles gardes pour l'appelant.
     pub fn garder<T>(&mut self, r: crate::etats::AvecIncidents<T>) -> socle::echec::R<T> {
         self.incidents_des_retours.extend(r.incidents);
+        self.illisibles.extend(r.illisibles);
         r.resultat
     }
 }

@@ -220,6 +220,14 @@ impl Echec {
         classe_notee(self.classe)
     }
 
+    /// CE REFUS DIT-IL UNE CHOSE QUE LA COMPAGNIE N'A PAS ENCORE DITE (une case d'une fiche, l'effectif, le taux AT/MP,
+    /// une saisie pas finie, un refus ordinaire du metier), et non une panne (le disque, un fichier livre, une valeur
+    /// illisible, un calcul impossible) ? Une route qui lit rend le premier a sa place, dans sa reponse, et laisse
+    /// remonter la seconde : regarder n'est jamais refuse, une panne ne se deguise pas en manque.
+    pub fn dit_un_manque(&self) -> bool {
+        matches!(self.classe, None | Some(Classe::Refuse | Classe::Manque | Classe::TauxAtmpAbsent | Classe::EffectifAbsent | Classe::SaisieIncomplete))
+    }
+
     /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a
     /// part restent, l'endroit ou il est ne aussi.
     pub fn reformuler(self, f: impl FnOnce(&str) -> String) -> Echec {
@@ -508,6 +516,13 @@ pub fn cle(phrase: impl Into<String>, cle: &str) -> Echec {
 
 /// Une paie ecrite (ce que la validation d'un engagement a garde) qui ne se relit pas : la cle va a part (`a_la_cle`).
 pub const PAIE_ILLISIBLE: &str = "Une paie écrite ne se relit pas : revalider l'engagement.";
+
+/// UNE PAIE ECRITE QUI NE SE RELIT PAS, a la cle `cle` : une panne (`Classe::Illisible`), pas une case que la compagnie
+/// aurait a dire (`Echec::dit_un_manque`).
+#[track_caller]
+pub fn paie_illisible(cle: &str) -> Echec {
+    self::cle(PAIE_ILLISIBLE, cle).reclasser(Classe::Illisible)
+}
 
 /// UN FICHIER DE LA COMPAGNIE QUI NE PORTE PAS CE QU'IL DEVRAIT (une forme inattendue) : la phrase en mots, le chemin et ce
 /// qui ne va pas a part.

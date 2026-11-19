@@ -7,6 +7,7 @@ refuse le conteneur du nuage) :
 |---|---|---|
 | `dgfip-frais-de-mission-etranger-20261103.csv` | <https://data.economie.gouv.fr/explore/dataset/dgfip-frais-de-mission-etranger/> | l'indemnité journalière de mission par pays (`code_pays`, `nom_pays`), en monnaie locale (`code_monnaie`), et sa date d'effet (`date`) ; 961 lignes |
 | `dgfip-taux-de-change-20261103.csv` | <https://data.economie.gouv.fr/explore/dataset/dgfip-taux-de-change/> (INFÉRENCE : l'identifiant du jeu suit le nom du fichier exporté ; à confirmer à son premier relevé) | le taux de chancellerie d'une monnaie (`monnaie_source`) pour un pays (`code_pays`), en euros pour une unité (`taux`), daté (`date`, le 1er ou le 16 du mois, quand il change) ; 24 168 lignes |
+| `dgfip-taux-de-change-20261119.csv` | le même jeu, exporté le 19/11/2026 par Léandre sur son poste (le fichier servi se nomme `dgfip-taux-de-change.csv` : l'identifiant du jeu est donc bien celui-là) | les mêmes colonnes ; 24 256 lignes. Il ne dit pas plus que le premier de quel jour est le taux d'une mission : l'inférence ci-dessous reste une inférence |
 | `dgfip-webpays-20261103.txt`, `dgfip-webmonn-20261103.txt` | (les mêmes, tables annexes) | les pays et les monnaies, avec leurs remplacements |
 
 **Ce qu'on en lit.**
@@ -39,5 +40,6 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 
 - `dgfip-frais-de-mission-etranger-20261103.csv` : `aed19085ff268e6bb54b84f82bf57e0068884d1a6e1f56ddd9e2b32233ac2331`
 - `dgfip-taux-de-change-20261103.csv` : `014055d4673e435af915c3432ad0545fb605cd630b426551b48131c25cef533c`
+- `dgfip-taux-de-change-20261119.csv` : `8711735a535b42634db97eb4b67c4a500477527cb0da3445a7bf37934d652cd0`
 - `dgfip-webmonn-20261103.txt` : `a6754bb13254b28adfcd1b12528671f91dc669942bd14e163c9cde2c57983990`
 - `dgfip-webpays-20261103.txt` : `a52d5f31fb1b6d8d63f366cfdee062736e1ff836af9d498eef6cd5f46be33bb9`

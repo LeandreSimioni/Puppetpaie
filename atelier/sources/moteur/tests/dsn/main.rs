@@ -10,6 +10,5 @@
 #[path = "../outils/mod.rs"]
 pub mod outils;
 
-mod agirc_arrco;
 mod brouillon;
 mod preavis;

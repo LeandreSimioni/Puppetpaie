@@ -46,6 +46,14 @@ assiettes! {
     Apec = "apec",
     ApecT2Journaliere = "apec_t2_journaliere",
     Cet = "cet",
+    /// Les tranches de la retraite complementaire d'un intermittent sur le plafond de l'annee, et sa CET (Audiens,
+    /// Parametres : « ce sont les plafonds annuels qui doivent etre retenus, quelle que soit la duree du travail » ;
+    /// circulaire Agirc-Arrco 2018-09-DC, annexe A, art. 1 : « dans les limites annuelles des assiettes T1 et T2 ») :
+    /// `droit::plafond::tranches_sous_le_plafond_annuel`, sur la remuneration que la retraite compte, abattue quand la
+    /// deduction forfaitaire specifique abat la retraite.
+    T1Annuelle = "t1_annuelle",
+    T2Annuelle = "t2_annuelle",
+    CetAnnuelle = "cet_annuelle",
     /// Les tranches d'un salarie paye au mois, sur le plafond de sa periode.
     T1Mensuelle = "t1_mensuelle",
     T1MensuelleX115 = "t1_mensuelle_x115",
@@ -86,11 +94,14 @@ impl Assiette {
     }
 
     /// UNE ASSIETTE PAR RUBRIQUE DE SALAIRE se calcule sur chaque rubrique soumise (le calcul, §7.4), et une cotisation
-    /// s'y somme rubrique par rubrique, chacune arrondie ; toute autre est globale : une seule valeur pour la paie.
+    /// s'y somme rubrique par rubrique, chacune arrondie ; toute autre est globale : une seule valeur pour la paie. La
+    /// tranche 1 de l'annee d'un intermittent l'est aussi : sous le plafond, c'est le brut de chaque rubrique, et sa
+    /// retraite se compte, rubrique par rubrique, comme sur son brut.
     pub fn par_rubrique(self) -> bool {
         matches!(
             self,
             Assiette::Brut
+                | Assiette::T1Annuelle
                 | Assiette::BrutCs
                 | Assiette::BrutX115
                 | Assiette::BrutX110
@@ -102,9 +113,12 @@ impl Assiette {
 
     /// SA FORME APRES LA DEDUCTION FORFAITAIRE SPECIFIQUE, quand elle en a une : le brut abattu, et les assiettes
     /// majorees et plafonnees qui partent de lui (lettre circulaire Acoss 2013-019, annexe 1, R6 ;
-    /// `atelier/reference/sources/majoration-caisses-conges/`, `atelier/reference/sources/dfs/`).
+    /// `atelier/reference/sources/majoration-caisses-conges/`, `atelier/reference/sources/dfs/`). Les tranches de l'annee
+    /// d'un intermittent sont leur propre forme abattue : elles se comptent deja sur la remuneration que la retraite
+    /// compte, abattue quand la deduction abat la retraite (`engagement::calcul`, 7.6).
     pub fn abattue(self) -> Option<Assiette> {
         match self {
+            Assiette::T1Annuelle | Assiette::T2Annuelle | Assiette::CetAnnuelle => Some(self),
             Assiette::Brut => Some(Assiette::BrutDfs),
             Assiette::BrutX115 => Some(Assiette::BrutX115Dfs),
             Assiette::BrutX110 => Some(Assiette::BrutX110Dfs),
