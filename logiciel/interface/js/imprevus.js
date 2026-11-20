@@ -253,7 +253,7 @@ async function allerALaCase(f, champ) {
   if (!div) return;
   // La carte ne montre pas cette case (sa nature ne l'a pas) : la phrase du manque reste à l'écran, qui dit quoi faire.
   const m = f.a_saisir.find((x) => x.champ === champ);
-  if (!ouvrirLaFin(div, champ)) dire(`${m.case} : ${m.dire}`, "erreur");
+  if (!ouvrirLaFin(div, champ) && m) dire(`${m.case} : ${m.dire}`, "erreur");
 }
 
 /* --------------------------------------------------------- LA PORTE

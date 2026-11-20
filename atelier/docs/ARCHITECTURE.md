@@ -1132,7 +1132,15 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
-| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
+| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
+| fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
+| carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
+| ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, durée du travail, pré-remplissage) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
+| ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
+| durée du travail d'un contrat payé au mois, pour sa carte (temps plein, temps partiel) | `routes::mois::TempsDuContrat` | `routes/src/mois.rs` |
+| partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
+| clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `Ouverture` | `engagement/src/carte.rs` |
 | place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
 | case ouverte pour un engagement (sa clé, sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
@@ -1948,9 +1956,21 @@ place** (`si Ouverture => PlaceDeLaCase` : une case qui ne le dit pas ne compile
 engagement, les seules cases ouvertes pour lui et leur place (`carte.cases` de chaque paie de l'aperçu,
 `CarteValide::cases_ouvertes`, les faits lus du moteur par `routes::mois::carte_rendue`) : de base, sous « Avancé »,
 derrière « Imprévu… » (la fin d'un contrat qui finit ce mois : son motif, puis ce que le motif appelle), ou rendue (le
-début, la fin et les jours travaillés d'un CDDU, tirés des jours cochés). Une case qu'aucun fait n'ouvre n'est pas
-rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Une grandeur s'écrit elle-même dans la réponse (des cachets en entier) ; la page montre ce
-qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
+début, la fin et les jours travaillés d'un CDDU, tirés des jours cochés : montrés, pas saisis). Avant tout aperçu, la
+page montre les cases de toute carte de sa nature (`ouverte` : « toujours », `natures[].carte`). Une case qu'aucun fait
+n'ouvre n'est pas rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Un fait qui ne se lit pas
+pour un engagement fait la `faute` de sa carte rendue, et d'elle seule : l'aperçu des autres reste. Ce qu'offrent les
+cases qui se choisissent vient sous la clé de leur case : `choix` de la route etat (les fiches, les métiers sous leur
+famille, la transaction, le type d'un préavis), de la nature (`natures[].choix` : ses motifs de recours), d'une carte
+neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
+la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
+est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
+jour du versement, le début, la fin, les jours, le cadre du métier) ; la page le montre, il ne s'écrit pas. Une valeur
+faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties
+sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Les jours d'une ligne partent tous
+dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
+qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
+cachets en entier) ; la page montre ce qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 
@@ -2141,9 +2161,12 @@ datée, vérifiable**.
   **Le métier est celui de l'engagement**, pas de la personne : la carte le choisit dans les métiers de la compagnie
   (Configuration › Métiers, `routes::metiers::metiers`, la liste que la route etat rend), un autre se refuse en disant
   d'aller l'y ajouter (`engagement::carte::Changements::appliquer`) ; une carte de CDDU qui nomme son salarié prend le
-  métier de son dernier contrat (`engagement::carte::metier_du_dernier_contrat`), sinon la paie prend l'emploi de sa
-  fiche. Le cadre, la PCS-ESE, le code France Travail et les statuts d'un CDDU se lisent de son métier, jamais de sa
-  carte.
+  métier de son dernier contrat, d'ici ou repris d'un ancien logiciel, quand il est dans ces métiers
+  (`engagement::carte::metier_du_dernier_contrat` : le début le plus tard, puis le fichier du mois le plus tard, puis
+  le rang ; un contrat qui ne se lit pas est passé, sans rien refuser), sinon la paie prend l'emploi de sa fiche. La
+  PCS-ESE, le code France Travail et les statuts d'un CDDU se lisent de son métier, jamais de sa carte ; le cadre aussi,
+  tant que la carte ne le dit pas (sa case est sous « Avancé », pré-remplie de ce que dit le métier : tant qu'un métier
+  propre à la compagnie ne se crée pas, elle seule dit qu'un métier du catalogue est tenu ici pour cadre).
 - `logiciel/donnees/minima-conventionnels.json` — les grilles de la **3090** (annexes
   1, 2, 4, 5 et clauses communes) et de la **1285** (cachet, répétition,
   cirque, musiciens, lyrique, chœur ; les accords suivants sous `accords`, chacun avec sa grille entière et la date où il lie la compagnie, `droit::minima::lie_depuis`).

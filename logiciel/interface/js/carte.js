@@ -2,10 +2,12 @@
  *
  * Ce que la carte montre et fait saisir : les cases de sa nature (`natures[].carte` de la route etat), chacune sa forme et
  * son libellé, la valeur que la carte écrit (la saisie du mois, route `saisie` ; puis le brouillon que rend chaque
- * écriture, route `enregistrer-saisie`). Chaque case est à la place que la route dit : obligatoire, en haut ; ouverte par
- * un fait que l'aperçu nomme (le contrat écrit, `contrat.ecrits` ; un contrat au mois, `faits_avances` ; la fin du
- * contrat, `contrat.rupture`), dans sa branche ; les autres sous « Avancé ». Sous les lignes, ce que l'aperçu dit du
- * contrat ; puis sa paie, le montant qu'on vise (route `ajuster`), son état (`etat-par-engagement`) et ses gestes.
+ * écriture, route `enregistrer-saisie`). Les cases ouvertes et leur place, la route les dit pour chaque carte (`carte`
+ * de sa paie dans l'aperçu : `cases`, chacune `base`, `avance`, `imprevu` ou `rendue`) ; avant tout aperçu, celles de
+ * toute carte de sa nature (`ouverte` : « toujours »). Ce qu'offrent les cases qui se choisissent : `choix` de l'état, de
+ * sa nature, d'une carte neuve et de sa paie, sous la clé de leur case ; ce que le moteur prend pour une case vide :
+ * `prerempli`. Sous les lignes, ce que l'aperçu dit du contrat ; puis sa paie, le montant qu'on vise (route `ajuster`),
+ * son état (`etat-par-engagement`) et ses gestes.
  *
  * Chaque case changée part seule à la route (`enregistrer-saisie`, `changements`) ; la carte se redessine de ce que la
  * route rend. Un engagement validé se montre en une ligne ; ouvert, ses changements partent à « Modifier l'engagement »
@@ -22,36 +24,19 @@ const dite = (v) => v != null && v !== "" && !(Array.isArray(v) && !v.length);
 
 /* ------------------------------------------------ ce que les cases offrent */
 
-/** CE QUE LES CASES DE LA CARTE QUI SE CHOISISSENT OFFRENT, sous la clé de leur case : `choix` de la route etat (les
- *  fiches, les métiers, les établissements) ; et, tant que la route ne les rend pas sous `choix`, les listes qu'elle rend à
- *  côté, sous un autre nom que leur case (la seule table de la page qui nomme des cases : elle disparaît quand la route
- *  les rend sous `choix`) : les familles des métiers (`emplois`, `familles_emplois`), les motifs de recours et de
- *  rupture d'une nature (`natures[]`, la ligne vide de la fin dite par `contrat.rupture.motif_vide_dit`), la transaction
- *  (`transaction`), les modèles de contrat (`contrat.modeles` de l'aperçu), la nature d'une carte neuve
- *  (`nouvelle_carte` de la route saisie). */
+/** La carte que la route rend pour cette carte (`carte` de sa paie dans l'aperçu), ou rien avant tout aperçu. */
+function rendueDe(div) {
+  return (div._paie && div._paie.carte) || null;
+}
+
+/** CE QUE LES CASES DE LA CARTE QUI SE CHOISISSENT OFFRENT, sous la clé de leur case, tel que les routes le rendent :
+ *  `choix` de l'état (les fiches, les métiers sous leur famille, les établissements, la transaction, le type d'un
+ *  préavis), de sa nature (ses motifs de recours), d'une carte neuve (`nouvelle_carte` de la route saisie : la nature),
+ *  et de sa paie (le motif de la fin, les modèles de contrat). */
 function choixDeLaCarte(div) {
   const n = natureDe(div._carte.nature);
-  const contrat = div._paie && div._paie.contrat;
-  const rupture = contrat && contrat.rupture;
-  const familles = ETAT.familles_emplois;
-  const famille = (code) => { const m = ETAT.emplois.find((x) => x.code === code); return m ? m.famille : null; };
-  const rang = (c) => { const k = familles.indexOf(famille(c.code)); return k < 0 ? familles.length : k; };
-  const choix = {
-    ...ETAT.choix,
-    metier: ETAT.choix.metier.map((c) => ({ ...c, groupe: famille(c.code) })).sort((a, b) => rang(a) - rang(b)),
-    motif_recours: n.motifs_recours.map((m) => ({ code: m.code, libelle: m.libelle })),
-    motif_rupture: [...(rupture ? [{ code: "", libelle: rupture.motif_vide_dit }] : []),
-      ...n.motifs_rupture.map((m) => ({ code: m.code, libelle: m.libelle, dit: m.dit }))],
-    transaction: ETAT.transaction.map((t) => ({ code: t.code, libelle: t.libelle })),
-  };
-  if (contrat && contrat.modeles && contrat.modeles.length) {
-    choix.modele_contrat = contrat.modeles.map((m) => ({ code: m.id == null ? "" : m.id, libelle: m.nom }));
-  }
-  if (NOUVELLE_CARTE.nature_au_choix) {
-    choix.nature = ETAT.natures.filter((x) => NOUVELLE_CARTE.natures.includes(x.cle) || x.cle === div._carte.nature)
-      .map((x) => ({ code: x.cle, libelle: x.libelle }));
-  }
-  return choix;
+  const r = rendueDe(div);
+  return { ...ETAT.choix, ...(n ? n.choix : {}), ...NOUVELLE_CARTE.choix, ...(r ? r.choix : {}) };
 }
 
 /** Ce que les choix d'une ligne de paie offrent à toutes les lignes de la carte : les rubriques que la carte propose
@@ -66,63 +51,50 @@ function proposeDe(div) {
   return (div._paie && div._paie.propose) || NOUVELLE_CARTE.propose[div._carte.nature] || { rubriques: [], par_defaut: null };
 }
 
-/** La forme d'une case : celle que la route dit ; une case décrite « texte » dont la route rend la liste se choisit dans
- *  cette liste (la forme est à corriger dans la route). */
-function formeDe(d, choix) {
-  return d.forme === "texte" && choix[d.cle] ? "choix_rendu" : d.forme;
-}
-
 /* ------------------------------------------------ les cases, à leur place */
 
-/** Les cases d'une carte : la nature quand elle se choisit (`nouvelle_carte`), celles de sa nature, puis celles que son
- *  motif de recours porte. */
+/** Les cases d'une carte, telles que les routes les décrivent : celles qu'une carte neuve montre en plus
+ *  (`nouvelle_carte.cases` : la nature, quand elle se choisit), celles de sa nature, puis celles que son motif de recours
+ *  porte. */
 function casesDeLaCarte(div) {
   const c = div._carte;
   const n = natureDe(c.nature).carte;
   const m = n.motifs_recours.find((x) => x.code === c.motif_recours);
-  const nature = NOUVELLE_CARTE.nature_au_choix ? [{ cle: "nature", libelle: "Nature", exige: "obligatoire", forme: "choix_rendu" }] : [];
-  return [...nature, ...n.cases, ...(m ? m.cases : [])];
+  return [...NOUVELLE_CARTE.cases, ...n.cases, ...(m ? m.cases : [])];
 }
 
-/** LES CASES DE LA FIN DU CONTRAT, quand l'aperçu dit qu'elle a un sens ici (`contrat.rupture`) : son motif, ce que le
- *  motif choisi demande (`faits_de_rupture` de sa nature ; sans motif, `faits_sans_motif`), et, quand cette fin se
- *  signale (`signalement_par_motif`, `signalement_fctu`), les cases d'une fin (`cases_de_la_fin` de la fiche de la route
- *  qui les écrit). */
-function casesDeLaFin(div, rupture) {
-  const n = natureDe(div._carte.nature);
-  const motif = div._carte.motif_rupture;
-  const signale = motif ? !!rupture.signalement_par_motif[motif] : rupture.signalement_fctu;
-  const faits = motif ? n.faits_de_rupture[motif] || [] : n.faits_sans_motif;
-  const dela = signale ? CATALOGUE["enregistrer-saisie"].cases_de_la_fin.map((c) => c.nom) : ["motif_rupture"];
-  return { cles: [...new Set([...dela, ...faits])], signale };
-}
-
-/** LA PLACE DE CHAQUE CASE, d'après ce que les routes disent : les lignes ; une case obligatoire, en haut ; une case
- *  qu'un fait ouvre, dans sa branche (la fin du contrat quand elle est ouverte, le contrat écrit, les faits qu'un contrat
- *  au mois appelle, une case qu'un manque désigne) ; les autres sous « Avancé ». */
+/** LA PLACE DE CHAQUE CASE, telle que la route la dit : pour une case de sa nature, celle que la carte rendue donne
+ *  (`carte.cases` de sa paie : une case qu'elle ne rend pas est fermée) ; sans carte rendue, et pour une case qui n'est
+ *  pas de sa nature (la nature, ce qu'un motif de recours porte), celle de sa description quand elle est de toute carte
+ *  (`ouverte` : « toujours »). Les lignes, par leur forme, ont leur rangée. */
 function placesDesCases(div) {
-  const c = div._carte;
-  const p = div._paie;
-  const contrat = p && p.contrat;
-  const rupture = contrat && contrat.rupture;
-  const fin = rupture ? casesDeLaFin(div, rupture) : { cles: [], signale: false };
-  const finOuverte = !!rupture && (!!div._finOuverte || fin.cles.some((k) => dite(c[k])));
-  const ecrits = contrat ? contrat.ecrits : [];
-  const appeles = [...((p && p.faits_avances) || []), ...(div._demandees || [])];
-  const places = { base: [], lignes: [], fin: [], contrat: [], faits: [], avance: [] };
+  const r = rendueDe(div);
+  const ouvertes = new Map((r ? r.cases : []).map((x) => [x.cle, x.place]));
+  const deSaNature = new Set(natureDe(div._carte.nature).carte.cases.map((d) => d.cle));
+  const places = { base: [], lignes: [], avance: [], imprevu: [], rendue: [] };
   casesDeLaCarte(div).forEach((d) => {
+    const place = r && deSaNature.has(d.cle) ? ouvertes.get(d.cle) : d.ouverte === "toujours" ? d.place : undefined;
+    if (!place) return;
     if (d.forme === "lignes") places.lignes.push(d);
-    else if (d.exige === "obligatoire") places.base.push(d);
-    else if (finOuverte && fin.cles.includes(d.cle)) places.fin.push(d);
-    else if (ecrits.includes(d.cle)) places.contrat.push(d);
-    else if (appeles.includes(d.cle)) places.faits.push(d);
-    else places.avance.push(d);
+    else places[place].push(d);
   });
-  return { places, rupture: finOuverte ? { ...rupture, signale: fin.signale } : null };
+  return places;
+}
+
+/** Une case rendue (`rendue`) : montrée, pas saisie ; sa valeur, celle que la carte écrit, sinon celle que le moteur
+ *  pose (`prerempli`). Sans valeur, elle ne se montre pas. */
+function caseRendue(div, d) {
+  const r = rendueDe(div);
+  const v = dite(div._carte[d.cle]) ? div._carte[d.cle] : r && r.prerempli[d.cle];
+  if (!dite(v)) return "";
+  const aide = ETAT.aides[d.cle];
+  return `<span class="case rendue" data-rendue="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}>
+    <span class="case-libelle">${echapper(d.libelle)}</span><b>${echapper(d.forme === "date" ? jjmmaaaa(v) : objetEnClair(v))}</b></span>`;
 }
 
 /** Une case de la carte : son libellé, l'aide que la route etat en donne (`aides`, sous la clé de la case), ce que le
- *  dessinateur en dessine, et ce que la valeur choisie dit d'elle-même (`dit` : un motif de rupture). */
+ *  dessinateur en dessine (ce que le moteur prend pour elle quand elle est vide : `prerempli`), et ce que la valeur
+ *  choisie dit d'elle-même (`dit` : un motif de rupture). */
 function caseDeLaCarte(div, d, choix) {
   const v = div._carte[d.cle];
   if (d.forme === "lignes") {
@@ -134,8 +106,10 @@ function caseDeLaCarte(div, d, choix) {
   const aide = ETAT.aides[d.cle];
   const offerts = choix[d.cle] || [];
   const choisi = offerts.find((o) => o.code !== "" && o.code === String(v));
+  const r = rendueDe(div);
+  const prerempli = r ? r.prerempli[d.cle] : null;
   return `<label class="case" data-cle="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}><span class="case-libelle">${echapper(d.libelle)}</span>
-    ${caseDeForme(formeDe(d, choix), v, { choix: choix[d.cle] })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}</label>`;
+    ${caseDeForme(d.forme, v, { choix: choix[d.cle], prerempli, parties: ETAT.parties[d.cle] })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}</label>`;
 }
 
 /** Ce que les cases d'une ligne de frais offrent, le moteur le dit (`cases` de sa paie, ligne par ligne) ; sans aperçu,
@@ -176,20 +150,22 @@ function dessinerLaCarte(div) {
   div.classList.toggle("en-modification", !!div._modif);
   if (carteFermee(div)) { dessinerLaLigne(div); return; }
   const choix = choixDeLaCarte(div);
-  const { places, rupture } = placesDesCases(div);
+  const places = placesDesCases(div);
+  const r = rendueDe(div);
+  const rupture = ruptureDuBloc(div);
   const cases = (liste) => liste.map((d) => caseDeLaCarte(div, d, choix)).join("");
-  const branche = (liste) => (liste.length ? `<div class="branche"><div class="e-cases">${cases(liste)}</div></div>` : "");
-  // « Avancé » s'ouvre de lui-même quand une de ses cases est remplie : rien de saisi ne se cache.
+  // La fin du contrat (les cases « imprevu ») s'ouvre par la porte « Imprévu… », ou d'elle-même quand une de ses cases
+  // est remplie ; « Avancé » s'ouvre de lui-même quand une de ses cases l'est : rien de saisi ne se cache.
+  const finOuverte = !!rupture && places.imprevu.length > 0 && (!!div._finOuverte || places.imprevu.some((d) => dite(div._carte[d.cle])));
   const avanceOuvert = div._avance != null ? div._avance : places.avance.some((d) => dite(div._carte[d.cle]));
   div.innerHTML = `
-    <div class="e-cases">${cases(places.base)}</div>
+    ${r && r.faute ? `<div class="encart attention">${echapper(r.faute)}</div>` : ""}
+    <div class="e-cases">${cases(places.base)}${places.rendue.map((d) => caseRendue(div, d)).join("")}</div>
     ${cases(places.lignes)}
-    ${branche(places.contrat)}
-    ${branche(places.faits)}
-    ${rupture ? `<div class="branche e-fin">
+    ${finOuverte ? `<div class="branche e-fin">
       <h3>${echapper(rupture.porte)}</h3>
-      <p class="discret">${echapper(ETAT.aides[rupture.signale ? "fin_signalee" : "fin_derogatoire"])}</p>
-      <div class="e-cases">${cases(places.fin)}</div></div>` : ""}
+      <p class="discret">${echapper(ETAT.aides[rupture.signalee ? "fin_signalee" : "fin_derogatoire"])}</p>
+      <div class="e-cases">${cases(places.imprevu)}</div></div>` : ""}
     ${places.avance.length ? `<details class="e-avance"${avanceOuvert ? " open" : ""}><summary>Avancé</summary>
       <div class="e-cases">${cases(places.avance)}</div></details>` : ""}
     <div class="e-paie"></div>
@@ -299,15 +275,15 @@ function poserLesChevrons(div) {
   });
 }
 
-/** Sous les lignes : ce que l'aperçu a compris du contrat (`contrat_dit`), ses jours travaillés (`jours`), et, pour un
- *  mois sans paie, ce qu'il en dit (`contrat.sans_paie`). */
+/** Sous les lignes : ce que l'aperçu a compris du contrat (`contrat_dit`), et, pour un mois sans paie, ce qu'il en dit
+ *  (`contrat.sans_paie`). Ses jours travaillés sont une case rendue de la carte. */
 function peindreLeContrat(div) {
   const cible = div.querySelector(".e-montre");
   if (!cible) return;
   const p = div._paie;
   if (!p || p.a_completer) { cible.innerHTML = ""; return; }
-  cible.innerHTML = `<span${p.numero_contrat ? ` title="${echapper(ETAT.aides.numero_contrat)}"` : ""}>${echapper(p.contrat_dit)}</span>
-    · <b>${echapper(String(p.jours))}</b> jours travaillés${p.contrat.sans_paie ? ` · ${aideDe("sans_cachet")}` : ""}`;
+  cible.innerHTML = `<span${p.numero_contrat ? ` title="${echapper(ETAT.aides.numero_contrat)}"` : ""}>${echapper(p.contrat_dit)}</span>${
+    p.contrat.sans_paie ? ` · ${aideDe("sans_cachet")}` : ""}`;
 }
 
 /** Sous les cases : ce qui manque à l'engagement, ou ce que le moteur a compris de lui, son net, son brut et son coût, et
@@ -347,7 +323,7 @@ function poserLesPaies(a) {
     // Ce que la carte propose, ce qui ouvre ses branches et ce qu'elle offre de choisir viennent de sa paie : la carte se
     // redessine quand ils changent, sinon seule sa paie se repeint (une case qu'on tape ne se redessine pas sous les
     // doigts).
-    const forme = (x) => JSON.stringify(x ? [x.propose, x.contrat, x.cases, x.faits_avances, !x.a_completer] : null);
+    const forme = (x) => JSON.stringify(x ? [x.propose, x.contrat, x.cases, x.carte, !x.a_completer] : null);
     try {
       if (forme(avant) !== forme(div._paie) && !div.contains(document.activeElement) && !CALENDRIER_OUVERT) dessinerCarte(div);
       else if (carteFermee(div)) dessinerLaLigne(div);
@@ -378,7 +354,7 @@ function dessinerLeVise(div) {
   cible.innerHTML = `<details class="e-viser-branche"${vise.ouvert ? " open" : ""}><summary>${echapper(f.geste)}</summary>
     <div class="branche">
       <div class="e-cases">${casesDesChamps(champs, vise.valeurs, {})}</div>
-      <p><button type="button" class="secondaire v-viser">Calculer</button></p>
+      <p><button type="button" class="secondaire v-viser">${echapper(f.bouton)}</button></p>
       ${vise.phrase ? `<p class="${vise.erreur ? "erreur" : "discret"}">${echapper(vise.phrase)}</p>` : ""}
     </div></details>`;
   const d = cible.querySelector("details");
@@ -572,11 +548,10 @@ function modificationsAuMoteur() {
 
 /** LA FIN D'UN CONTRAT, OUVERTE DEPUIS UN IMPRÉVU (la porte de la rupture, ou la case d'un manque de fin) : la carte
  *  s'ouvre (rouverte à la modification si elle est validée), sa branche de fin aussi, et la case `champ` (sinon la
- *  première de la fin) vient sous le curseur. */
+ *  première de la fin) vient sous le curseur ; une case que la carte n'ouvre pas ne se trouve pas (rend `false`). */
 function ouvrirLaFin(div, champ) {
   if (carteFermee(div)) ouvrirEnModification(div);
   div._finOuverte = true;
-  if (champ) div._demandees = [champ];
   dessinerCarte(div);
   const cas = champ ? div.querySelector(`.case[data-cle="${champ}"]`) : div.querySelector(".e-fin .case");
   if (!cas) return false;
@@ -589,8 +564,10 @@ function ouvrirLaFin(div, champ) {
 }
 
 /** RETIRER DES JOURS PAYÉS PENDANT UN IMPRÉVU (`jours` : `{rubrique, iso}`, ce que la route `imprevus` nomme) : chaque
- *  jour quitte la ligne de sa rubrique qui le porte, et les lignes partent à la route, comme décochées au calendrier.
- *  Rend le nombre de jours retirés : aucun quand la carte est validée et fermée, ou qu'aucune ligne ne les porte. */
+ *  jour quitte la ligne de sa rubrique qui le porte, et les lignes partent à la route, comme décochées au calendrier ; la
+ *  route fait suivre la quantité d'une ligne qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`), et la
+ *  carte se redessine de ce qu'elle rend. Rend le nombre de jours retirés : aucun quand la carte est validée et fermée,
+ *  ou qu'aucune ligne ne les porte. */
 async function retirerDesJours(div, jours) {
   if (carteFermee(div)) return 0;
   const lignes = (div._carte[caseDesLignes(div).cle] || []).map((l) => ({ ...l }));
@@ -622,9 +599,10 @@ function salarieDuBloc(div) {
   return div._carte.salarie || undefined;
 }
 
-/** Le début du contrat d'une carte : celui qu'elle écrit, sinon celui que l'aperçu rend de ses jours. */
+/** Le début du contrat d'une carte : celui qu'elle écrit, sinon celui que le moteur tire de ses jours (`prerempli`). */
 function debutDuBloc(div) {
-  return div._carte.debut || (div._paie && div._paie.bornes ? div._paie.bornes.du : undefined);
+  const r = rendueDe(div);
+  return div._carte.debut || (r && r.prerempli.debut) || undefined;
 }
 
 /** Le numéro du contrat d'une carte : celui que l'aperçu rend (`numero_contrat`), sinon celui qu'elle écrit. */
