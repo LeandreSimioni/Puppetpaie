@@ -1300,7 +1300,28 @@ pub(crate) struct RubriqueDeLaPage {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct CleDeLaLigne {
     cle: &'static str,
+    libelle: &'static str,
     forme: Forme,
+}
+
+/// Ce que l'ecran ecrit au-dessus de la case d'une cle d'une ligne de paie.
+fn libelle_de_la_cle(c: engagement::ligne::Cle) -> &'static str {
+    use engagement::ligne::Cle as C;
+    match c {
+        C::Rubrique => "Rubrique",
+        C::Quantite => "Quantité",
+        C::Taux => "Taux",
+        C::Heures => "Heures",
+        C::Base => "Base",
+        C::TauxMajoration => "Pourcentage",
+        C::Montant => "Montant",
+        C::Genre => "Genre",
+        C::Territoire => "Hors métropole",
+        C::Cases => "Cases",
+        C::Lieu => "Lieu",
+        C::Dates => "Jours",
+        C::Planning => "Mois suivants",
+    }
 }
 
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
@@ -1308,7 +1329,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
-    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), forme: Forme::de_la_cle(*c) }).collect();
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c) }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),

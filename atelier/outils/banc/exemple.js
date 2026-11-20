@@ -134,18 +134,20 @@ function etape(t) { console.log(`\n== ${t}`); }
   etape("l'engagement : deux cachets, les 20 et 21/11/2026");
   await page.click("button[data-vue=paie]"); await page.waitForTimeout(1500);
   await page.click("text=+ un engagement"); await page.waitForTimeout(1500);
+  // La carte se redessine de ce que la route rend après chaque case : chaque geste la relit.
   const bloc = page.locator(".engagement").last();
-  await bloc.locator("text=— cocher —").click(); await page.waitForTimeout(400);
-  await bloc.locator(".e-qui-case").first().check(); await page.waitForTimeout(400);
-  await page.mouse.click(5, 300);
-  await bloc.locator(".e-spectacle").selectOption({ index: 1 });
-  await bloc.locator(".r-code").first().selectOption("cachet");
-  await bloc.locator(".r-jours-btn").first().click(); await page.waitForTimeout(400);
-  await page.click(".cal .c-jour[data-iso$='-20']"); await page.click(".cal .c-jour[data-iso$='-21']");
-  await page.click(".cal .c-ok");
-  await bloc.locator(".r-taux").first().fill("150");
-  await bloc.locator(".r-lieu").first().fill("Salle fictive de Rezé");
-  await bloc.locator(".r-lieu").first().press("Tab");
+  const ligne = (cle) => bloc.locator(`.ligne-paie [data-cle="${cle}"]`).first();
+  await bloc.locator('[data-cle="salarie"] select').selectOption({ index: 1 }); await page.waitForTimeout(1500);
+  await bloc.locator('[data-cle="spectacle"] select').selectOption({ index: 1 }); await page.waitForTimeout(1500);
+  if (!await bloc.locator(".ligne-paie").count()) { await bloc.locator(".ajouter-ligne").click(); await page.waitForTimeout(1500); }
+  await ligne("rubrique").selectOption("cachet"); await page.waitForTimeout(1500);
+  await ligne("dates").click(); await page.waitForTimeout(400);
+  await page.click(".cal .c-jour[data-jour$='-20']"); await page.click(".cal .c-jour[data-jour$='-21']");
+  await page.mouse.click(5, 300); await page.waitForTimeout(1500);
+  await ligne("quantite").fill("2"); await ligne("quantite").press("Tab"); await page.waitForTimeout(1500);
+  await ligne("taux").fill("150"); await ligne("taux").press("Tab"); await page.waitForTimeout(1500);
+  await ligne("lieu").fill("Salle fictive de Rezé");
+  await ligne("lieu").press("Tab");
   await page.waitForTimeout(3000);
   await banc.capture(page, C + "p06-engagement.png");
   t = await texte(page);

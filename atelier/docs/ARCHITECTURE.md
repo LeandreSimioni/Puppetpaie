@@ -1927,6 +1927,22 @@ le courriel de France Travail du 28/05/2026 (`reference-privee/sources/francetra
 francetravail-courriel-fin-phase-pilote-100-dsn-20260528.pdf`, dépôt privé) — fin des AEM, AE Cinéma Spectacle remise
 au salarié, `S21.G00.40.025` vide ; la date vaut pour la compagnie qui l'a reçu, une autre reçoit la sienne.
 
+## La page affiche les routes
+
+La page lit ce que les routes rendent et fait saisir ce qu'elles attendent, depuis la forme que le moteur dit de chaque
+case (`routes::catalogue::Forme`), par un seul dessinateur (`js/avance.js`) : une table, à chaque forme sa case — un
+jour, le calendrier ; des jours, le calendrier où l'on coche (`js/calendrier.js`, le seul) ; une quantité, sa case dans
+l'unité de sa rubrique ; un nombre, un texte, sa case ; un oui-non, une coche ; une liste fermée, un choix (celle que la
+fiche porte, ou celle que la route rend sous la clé de la case : `choix` de la route etat, `rubriques[].choix`) ; des
+lignes de paie, des rangées aux colonnes fixes, une colonne par clé de leur rubrique ; une valeur composée, telle quelle ;
+un geste, un bouton. Il dessine les champs d'une fiche de route (« Avancé », la boîte d'un geste) et la carte d'un
+engagement (`js/carte.js`) : les cases de sa nature (`natures[].carte` de la route etat), la valeur que la carte écrit
+(route `saisie`, puis le brouillon que rend `enregistrer-saisie`, chaque case changée envoyée seule), ce que l'aperçu dit
+de sa paie, son état et ses gestes. Aucune case n'y est écrite à la main, aucune ne se montre ou se cache par son nom :
+une case obligatoire se montre, une facultative remplie ou que le contrat écrit appelle (`contrat.ecrits`) aussi, les
+autres sont sous « Plus ». Une grandeur s'écrit elle-même dans la réponse (des cachets en entier) ; la page montre ce
+qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
+
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 
 L'engagement est au centre (crate `engagement`, `atelier/sources/engagement/`). Il vit dans

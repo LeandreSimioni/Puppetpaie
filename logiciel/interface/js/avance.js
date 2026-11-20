@@ -1,80 +1,167 @@
-/* L'AFFICHAGE TIRÉ DES FICHES : sous « Avancé » de chaque place, et la boîte d'un geste qu'une route rend.
+/* LE DESSINATEUR DE LA PAGE : il dessine ce qu'une route rend et fait saisir ce qu'une route attend, depuis la forme que
+ * le moteur dit de chaque case (`forme`), et rien d'autre. Une table, une case par forme (`CASES`) ; les lignes de paie
+ * (`lignes`), chacune les clés de sa rubrique ; les gestes, un bouton chacun.
  *
- * Une route sans écran dessiné porte, dans sa fiche, la place où elle se montre (`ecran`, `affichage: "auto"`) et son
- * bouton (`bouton`) : la page l'affiche ici depuis sa fiche. Chaque champ de la charge dit ce que l'écran en montre
- * (`libelle`) et sa forme (`forme` : une liste se tape élément par élément, un oui/non se coche, un nombre, un mois ou une
- * valeur d'une liste fermée, `choix`, se choisissent, une date dans le calendrier, `js/calendrier.js` ; le reste se
- * tape). Puis la phrase rendue (ou ses lignes, `phrases`), ou le refus. La page ne
- * compose ni ne décide rien : chaque mot et chaque forme viennent de la fiche ou de la réponse. Une place sans route
- * automatique ne montre rien.
- *
- * Un geste qu'une route rend (`gestes` : sa route, sa charge, son libellé, les cases que sa boîte fait saisir, ce qu'elles
- * montrent d'abord, leurs choix et ce que la boîte dit) se dessine de même : son bouton, puis, s'il fait saisir, sa boîte,
- * faite des champs de la fiche de sa route. La page ne nomme aucune route : elle lit le geste et la fiche. */
+ * Il sert partout de même : les champs d'une fiche de route sous « Avancé » de chaque place, la boîte d'un geste qu'une
+ * route rend, la carte d'un engagement (`js/carte.js`). La page ne compose ni ne décide rien : chaque mot, chaque forme,
+ * chaque liste où l'on choisit viennent de la fiche ou de la réponse. */
 "use strict";
 
 /** La valeur de départ d'une case, pour un attribut. */
 const valeurDeDepart = (v) => (v == null ? "" : ` value="${echapper(String(v))}"`);
 
-const SAISIES = {
-  oui_non: (j, v) => `<input type="checkbox" data-j="${j}"${v ? " checked" : ""}>`,
-  mois: (j, v) => `<input type="month" data-j="${j}"${valeurDeDepart(v)}>`,
-  // Un jour se choisit dans le calendrier (`js/calendrier.js`, `poserLesCalendriers`).
-  date: (j, v) => `<input data-j="${j}" data-calendrier="1"${valeurDeDepart(v)}>`,
-  // Un nombre se tape tel quel (« 40,89 ») : la route le convertit, et le refuse en nommant la case.
-  nombre: (j, v) => `<input type="text" inputmode="decimal" data-j="${j}"${valeurDeDepart(v)}>`,
-  liste: (j) => `<span data-liste="${j}"><input type="text" data-element></span> <button type="button" class="lien" data-plus="${j}">+</button>`,
+/** Un texte tapé, ou `null` pour une case vide. */
+const tape = (x) => (x.value.trim() === "" ? null : x.value.trim());
+
+/** Les options d'un choix : une case vide d'abord (rien de choisi ne part), puis chaque valeur offerte ; une valeur
+ *  posée que la liste n'offre pas reste offerte telle quelle (une fiche mise de côté). */
+function optionsDuChoix(v, choix) {
+  const offerts = choix || [];
+  const garde = v != null && v !== "" && !offerts.some((o) => o.code === String(v)) ? [{ code: String(v), libelle: String(v) }] : [];
+  return `<option value=""></option>${[...offerts, ...garde].map((o) => `<option value="${echapper(o.code)}"${
+    o.code === String(v) ? " selected" : ""}>${echapper(o.libelle)}</option>`).join("")}`;
+}
+
+/** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
+ *  l'unité d'une quantité) et sa lecture (`lire`, la valeur que la route lit ; `null` : une case vide). Chaque case porte
+ *  `data-case`. Un jour et des jours s'ouvrent dans le calendrier (`js/calendrier.js`, `poserLesCalendriers`). */
+const CASES = {
+  texte: { html: (v) => `<input type="text" data-case${valeurDeDepart(v)}>`, lire: tape },
+  nombre: { html: (v) => `<input type="text" inputmode="decimal" data-case${valeurDeDepart(v)}>`, lire: tape },
+  quantite: {
+    html: (v, o) => `<input type="text" inputmode="numeric" data-case data-unite="${echapper(o.unite)}"${
+      valeurDeDepart(v == null ? null : v[o.unite])}>`,
+    lire: (x) => (tape(x) == null ? null : { [x.dataset.unite]: tape(x) }),
+  },
+  oui_non: { html: (v) => `<input type="checkbox" data-case${v ? " checked" : ""}>`, lire: (x) => (x.checked ? true : null) },
+  mois: { html: (v) => `<input type="month" data-case${valeurDeDepart(v)}>`, lire: tape },
+  date: {
+    html: (v) => `<input type="text" data-case data-calendrier="jour" placeholder="jj/mm/aaaa" autocomplete="off"${
+      valeurDeDepart(v == null ? null : jjmmaaaa(v))}>`,
+    lire: lireUnJour,
+  },
+  jours: {
+    html: (v) => `<button type="button" class="jours-coches" data-case data-calendrier="jours"
+      data-valeur="${echapper(JSON.stringify(v || []))}">${echapper(joursDits(v || []))}</button>`,
+    lire: (x) => JSON.parse(x.dataset.valeur),
+  },
+  liste: {
+    html: (v, o) => (o.choix
+      ? `<span data-case data-liste="coches">${o.choix.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}>
+          <input type="checkbox" value="${echapper(c.code)}"${(v || []).includes(c.code) ? " checked" : ""}> ${echapper(c.libelle)}</label>`).join("")}</span>`
+      : `<span data-case data-liste="textes">${[...(v || []), ""].map((t) => `<input type="text"${valeurDeDepart(t)}>`).join("")}
+          <button type="button" class="lien" data-plus>+</button></span>`),
+    lire: (x) => [...x.querySelectorAll(x.dataset.liste === "coches" ? "input:checked" : "input")]
+      .map((c) => c.value.trim()).filter(Boolean),
+  },
+  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
+  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
+  // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
+  objet: { html: (v) => `<span class="case-objet" data-case>${echapper(v == null ? "—" : JSON.stringify(v))}</span>`, lire: () => undefined },
 };
 
-/** La saisie d'un champ selon sa forme ; `valeur` : ce qu'elle montre d'abord ; `choix` : la liste où il se choisit (celle
- *  que le geste rend, sinon celle de la fiche : une liste fermée, `forme: "choix"`, s'ouvre sur une case vide, qui ne
- *  part pas). */
-function saisieDuChamp(forme, j, valeur, choix) {
-  if (choix) {
-    const vide = forme === "choix" && valeur == null ? `<option value="" selected></option>` : "";
-    return `<select data-j="${j}">${vide}${choix.map((o) => `<option value="${echapper(o.code)}"${
-      o.code === valeur ? " selected" : ""}>${echapper(o.libelle)}</option>`).join("")}</select>`;
-  }
-  return (SAISIES[forme] || ((k, v) => `<input type="text" data-j="${k}"${valeurDeDepart(v)}>`))(j, valeur);
+/** Un jour tapé : JJ/MM/AAAA (un ou deux chiffres pour le jour et le mois) devient AAAA-MM-JJ ; ce qui ne se lit pas
+ *  comme un jour part tel quel, et le moteur le refuse en nommant sa case. */
+function lireUnJour(x) {
+  const t = x.value.trim();
+  if (!t) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : t;
 }
 
-/** Les cases de `champs` (des champs d'une fiche) : chacune son libellé et sa saisie, ce que `valeurs` en dit d'abord, ses
- *  `choix` (une case qu'ils ne nomment pas : rien d'abord, et elle se tape). */
-function casesDesChamps(champs, valeurs, choix) {
-  return champs.map((c, j) => `<label class="champ-boite">${echapper(c.libelle)}
-      ${saisieDuChamp(c.forme, j, valeurs[c.nom], choix[c.nom] || c.choix)}</label>`).join("");
+/** Ce que dit le bouton des jours cochés : « 12, 13 nov. », ou l'invitation. */
+function joursDits(jours) {
+  if (!jours.length) return "— jours —";
+  const isos = jours.map(jourDe).sort();
+  return joursEnClair(isos) + " " + MOIS_ABR[+isos[0].slice(5, 7) - 1];
 }
 
-/** Le « + » d'une liste : un élément de plus à taper. */
-function brancherLesListes(bloc) {
+/** LA CASE d'une forme, sans libellé ; une forme que la table n'a pas est une faute de la page : elle se dit. */
+function caseDeForme(forme, v, o = {}) {
+  const c = CASES[forme];
+  if (!c) throw new Error(`La forme « ${forme} » n'a pas de case dans la page : le signaler au développeur.`);
+  return c.html(v, o).replace("data-case", `data-case data-forme="${forme}"`);
+}
+
+/** La valeur d'une case (l'élément qui porte `data-case`), lue par sa forme. */
+function lireLaCase(x) {
+  return CASES[x.dataset.forme].lire(x);
+}
+
+/** Branche ce qu'une case fait seule dans `bloc` : le « + » d'une liste, les calendriers. */
+function brancherLesCases(bloc) {
   bloc.querySelectorAll("[data-plus]").forEach((b) => {
     b.onclick = () => {
       const x = document.createElement("input");
       x.type = "text";
-      bloc.querySelector(`[data-liste="${b.dataset.plus}"]`).appendChild(x);
+      b.before(x);
       x.focus();
     };
   });
+  poserLesCalendriers(bloc);
 }
 
-/** La valeur d'un champ, selon sa forme ; vide, le champ ne part pas. */
-function valeurDuChamp(bloc, forme, j) {
-  if (forme === "liste") {
-    const v = [...bloc.querySelectorAll(`[data-liste="${j}"] input`)].map((x) => x.value.trim()).filter(Boolean);
-    return v.length ? v : undefined;
-  }
-  const x = bloc.querySelector(`[data-j="${j}"]`);
-  if (forme === "oui_non") return x.checked ? true : undefined;
-  const v = x.value.trim();
-  return v || undefined;
+/* ------------------------------------------------ les lignes de paie */
+
+/** La rubrique de code `code`, telle que la route etat la décrit (`rubriques`). */
+function rubriqueDe(code) {
+  return ETAT.rubriques.find((r) => r.code === code);
+}
+
+/** LA LIGNE QUE LA ROUTE LIT, depuis la ligne `l` telle qu'elle est écrite : sa rubrique et chacune des clés que sa rubrique
+ *  dit (`cles`), rien d'autre ; une clé qu'elle ne porte pas encore est vide (`null`, `[]` pour des jours ou une liste). */
+function ligneDonnee(l, rubrique) {
+  const vide = (c) => (c.forme === "jours" || c.forme === "liste" ? [] : null);
+  return Object.fromEntries(rubrique.cles.map((c) => [c.cle, l[c.cle] === undefined ? vide(c) : l[c.cle]]));
+}
+
+/** DES LIGNES DE PAIE, une par rangée, aux colonnes fixes : la rubrique (un choix parmi `offertes`, des codes), puis
+ *  chaque clé que sa rubrique dit, chacune sa case et son libellé ; le bouton qui retire la ligne au bout. `choixDe(i)` :
+ *  ce que les choix de la ligne `i` offrent en plus de ceux de sa rubrique. */
+function lignesDePaie(lignes, offertes, choixDe) {
+  const rubriques = offertes.map((code) => ({ code, libelle: rubriqueDe(code) ? rubriqueDe(code).libelle : code }));
+  return `<div class="lignes-paie">${lignes.map((l, i) => {
+    const r = rubriqueDe(l.rubrique);
+    const autres = r ? r.cles.filter((c) => c.cle !== "rubrique") : [];
+    const choix = { ...(r ? r.choix : {}), ...choixDe(i) };
+    return `<div class="ligne-paie" data-ligne="${i}">
+      <label class="colonne">${r ? echapper(r.cles.find((c) => c.cle === "rubrique").libelle) : ""} ${caseDeForme("choix_rendu", l.rubrique, { choix: rubriques }).replace("data-case", 'data-case data-cle="rubrique"')}</label>
+      ${autres.map((c) => `<label class="colonne">${echapper(c.libelle)} ${caseDeForme(c.forme, l[c.cle], {
+        unite: r.quantite, choix: choix[c.cle] }).replace("data-case", `data-case data-cle="${c.cle}"`)}</label>`).join("")}
+      <button type="button" class="lien retirer-ligne" title="retirer cette ligne">&times;</button>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+/** Les lignes que montrent les rangées de `bloc`, telles que la route les lit. Une ligne dont on vient de changer la
+ *  rubrique garde les clés que la nouvelle dit aussi. */
+function lireLesLignes(bloc) {
+  return [...bloc.querySelectorAll(".ligne-paie")].map((rangee) => {
+    const lu = {};
+    rangee.querySelectorAll("[data-case][data-cle]").forEach((x) => {
+      const v = lireLaCase(x);
+      if (v !== undefined) lu[x.dataset.cle] = v;
+    });
+    const r = rubriqueDe(lu.rubrique);
+    return r ? ligneDonnee(lu, r) : lu;
+  });
+}
+
+/* ------------------------------------------------ les champs d'une fiche de route */
+
+/** Les cases de `champs` (des champs d'une fiche) : chacune son libellé et sa case, ce que `valeurs` en dit d'abord, ses
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche). */
+function casesDesChamps(champs, valeurs, choix) {
+  return champs.map((c, j) => `<label class="champ-boite" data-j="${j}">${echapper(c.libelle)}
+      ${caseDeForme(c.forme, valeurs[c.nom], { choix: choix[c.nom] || c.choix })}</label>`).join("");
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */
 function lireLesChamps(bloc, champs) {
   const lu = {};
   champs.forEach((c, j) => {
-    const v = valeurDuChamp(bloc, c.forme, j);
-    if (v !== undefined) lu[c.nom] = v;
+    const v = lireLaCase(bloc.querySelector(`[data-j="${j}"] [data-case]`));
+    if (v != null && !(Array.isArray(v) && !v.length)) lu[c.nom] = v;
   });
   return lu;
 }
@@ -87,7 +174,8 @@ function phrasesDe(r) {
   return p;
 }
 
-/** Dessine dans `cible` (porteuse de `data-auto`, le nom d'une place) les routes automatiques de cette place. */
+/** Dessine dans `cible` (porteuse de `data-auto`, le nom d'une place) les routes automatiques de cette place, chacune
+ *  depuis sa fiche (`ecran`, `affichage: "auto"`, `bouton`, ses champs). Une place sans route automatique ne montre rien. */
 function dessinerAvance(cible) {
   if (!cible) return;
   const place = cible.dataset.auto;
@@ -102,8 +190,7 @@ function dessinerAvance(cible) {
     </div>`).join("");
   cible.querySelectorAll(".avance-route").forEach((bloc) => {
     const f = routes[+bloc.dataset.i];
-    brancherLesListes(bloc);
-    poserLesCalendriers(bloc);
+    brancherLesCases(bloc);
     bloc.querySelector("[data-faire]").onclick = async () => {
       const rendu = bloc.querySelector("[data-rendu]");
       try {
@@ -174,8 +261,7 @@ async function faireLeGeste(g, entete, apres) {
       <button class="primaire" id="geste-ok">Enregistrer</button>
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
-  brancherLesListes(bloc);
-  poserLesCalendriers(bloc);
+  brancherLesCases(bloc);
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).
   document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
 }
