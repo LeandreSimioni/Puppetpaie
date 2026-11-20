@@ -439,9 +439,9 @@ fn numeroter(ctx: &Contexte, data: &engagement::saisie::VueDuMois, paies: &mut [
 
 
 
-/// Le contrat d'un seul mois, tel que son certificat le couvre : sa paie, au brut du calcul a deux decimales.
-pub(crate) fn contrat_du_certificat(p: &Paie) -> ContratDuCertificat {
-    ContratDuCertificat { engagement: p.engagement.clone(), salarie: p.salarie.champs.clone(), mois_payes: vec![MoisPaye::de(&p.engagement, p.brut)] }
+/// Le contrat d'un seul mois, tel que son certificat le couvre : sa paie, au brut et a la base conge du calcul.
+pub(crate) fn contrat_du_certificat(p: &Paie) -> R<ContratDuCertificat> {
+    Ok(ContratDuCertificat { engagement: p.engagement.clone(), salarie: p.salarie.champs.clone(), mois_payes: vec![MoisPaye::de(p)?] })
 }
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
@@ -458,7 +458,13 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
         return None;
     }
     let jours = socle::grandeurs::Jours::de_dates(dates.len());
-    Some(MoisPaye { fin: mois.dernier_jour(), dates_travail: dates, cachets, jours, heures: None, brut: brut.au_centime() })
+    // Sa base conge : celle que sa DSN a declaree (base 27, S21.G00.78) ; sans elle, la regle generale, le brut (Audiens,
+    // fiche « Plafonds conventionnels » : « À défaut, il convient d'appliquer la règle générale »).
+    let base_conge = match p.bases.get(&droit::base_assujettie::BaseAssujettie::CongesSpectacles) {
+        Some(b) => *b,
+        None => brut,
+    };
+    Some(MoisPaye { fin: mois.dernier_jour(), dates_travail: dates, cachets, jours, heures: None, brut: brut.au_centime(), base_conge: base_conge.au_centime() })
 }
 
 /// `paie_du_contrat_entier` : le contrat sur tous ses mois, pour son certificat, lu sans recalcul : chaque mois d'avant
@@ -479,7 +485,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
             None => None,
         };
         let lu = match ecrite {
-            Some(x) => Some(MoisPaye::de_la_paie_ecrite(&x.paie)),
+            Some(x) => Some(MoisPaye::de_la_paie_ecrite(&x.paie)?),
             None => importe.as_ref().and_then(|i| verse_par_l_ancien_logiciel(i, m)),
         };
         match lu {
@@ -487,7 +493,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
             None => manquants.push(m),
         }
     }
-    mois_payes.push(MoisPaye::de(eng, p.brut));
+    mois_payes.push(MoisPaye::de(p)?);
     Ok((ContratDuCertificat { engagement: eng.clone(), salarie: p.salarie.champs.clone(), mois_payes }, manquants))
 }
 
@@ -517,7 +523,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
         if let engagement::PlaceDuMois::Premier | engagement::PlaceDuMois::Milieu = place {
             poser(&mut dus, cle, debut, None);
         } else if place == engagement::PlaceDuMois::Seul {
-            poser(&mut dus, cle, debut, Some(contrat_du_certificat(p)));
+            poser(&mut dus, cle, debut, Some(contrat_du_certificat(p)?));
         } else {
             let (entier, manquants) = paie_du_contrat_entier(ctx, p)?;
             poser(&mut dus, cle, debut, Some(entier));

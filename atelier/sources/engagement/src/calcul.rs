@@ -1774,6 +1774,31 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         retraite_de_l_annee = Some((avant, droit::plafond::Regularisees { t1, ..t }));
     }
 
+    // L'assiette des Conges Spectacles dans la limite du plafond journalier que l'accord de la convention ecrit pour
+    // l'emploi, quand la compagnie dit qu'il la lie (`clauses::plafond_conges_spectacles` ; C. trav. D. 7121-37),
+    // multiplie par les jours travailles de la paie. Chaque rubrique en garde sa part, au prorata, la derniere prenant
+    // l'arrondi : la ligne de la caisse, le 066 de la DSN et le certificat lisent cette seule base.
+    let plafond_cs = droit::clauses::plafond_conges_spectacles(
+        ctx.entreprise.idcc.dite(),
+        ctx.entreprise.plafond_conges_spectacles,
+        sal.code_emploi_ft.dite().filter(|c| !c.est_permanent()),
+    )?;
+    if let Some(p) = plafond_cs {
+        let plafond = (jours * p).au_centime();
+        let total = par_rubrique.iter().fold(zero, |a, b| a + b.brut_cs);
+        if total > plafond {
+            let mut reste = plafond;
+            let derniere = par_rubrique.iter().rposition(|b| !b.brut_cs.est_nul());
+            for (i, b) in par_rubrique.iter_mut().enumerate() {
+                if b.brut_cs.est_nul() {
+                    continue;
+                }
+                b.brut_cs = if Some(i) == derniere { reste } else { plafond.prorata(b.brut_cs, total).au_centime() };
+                reste -= b.brut_cs;
+            }
+        }
+    }
+
     // 7.6 : les bases globales.
     let mut plafond_intermittent = None;
     let mut bases: BTreeMap<Assiette, Montant> = BTreeMap::new();

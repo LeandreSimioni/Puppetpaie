@@ -3063,6 +3063,7 @@ fiche! {
         Secteur2121(Secteur2121) = "secteur_2121" => secteur_2121,
         TypeRadio1922(TypeRadio1922) = "type_radio_1922" => type_radio_1922,
         CinquanteSalaries3241(bool) = "cinquante_salaries_3241" => cinquante_salaries_3241,
+        PlafondCongesSpectacles(bool) = "plafond_conges_spectacles" => plafond_conges_spectacles,
         UrssafCompte(String) = "urssaf_compte" => urssaf_compte,
         MedecineTravail(CodeMedecine) = "medecine_travail" => medecine_travail,
         ContactSanteTravail(ContactSanteTravail) = "contact_sante_travail" => contact_sante_travail,

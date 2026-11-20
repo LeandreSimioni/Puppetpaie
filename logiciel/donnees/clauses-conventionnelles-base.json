@@ -340,6 +340,57 @@
     },
     "1285": {
       "libelle": "Convention collective nationale des entreprises artistiques et culturelles du 1er janvier 1984 (CCNEAC)",
+      "plafond_conges_spectacles": {
+        "quoi": "Accord du 4 mai 2017 relatif aux plafonds des congés spectacles (non étendu), art. 1er : le plafond journalier des emplois que la convention ne dote pas de minima.",
+        "par_emploi": [
+          {
+            "emplois": ["MET040", "CHO010", "MAI010"],
+            "par_jour": 375,
+            "source": {
+              "fichier": "atelier/reference/sources/plafond-conges-spectacles/kali-1285-accord-plafonds-conges-spectacles-20170504-20261119.md",
+              "emetteur": "convention",
+              "article": "Accord du 4 mai 2017, art. 1er (KALIARTI000035657635)",
+              "citation": "metteur(se) en scène, chorégraphe, maître(sse) de ballet : 375 €"
+            },
+            "note": "Metteur en scène (MET040), chorégraphe (CHO010), maître de ballet (MAI010) : les codes de la nomenclature des emplois du spectacle qui portent ces noms (`nomenclature-emplois-ft.json`). L'assistant metteur en scène (MET042) n'est pas nommé."
+          },
+          {
+            "emplois": ["CHE190", "CHE510", "MUS070"],
+            "par_jour": 860,
+            "source": {
+              "fichier": "atelier/reference/sources/plafond-conges-spectacles/kali-1285-accord-plafonds-conges-spectacles-20170504-20261119.md",
+              "emetteur": "convention",
+              "article": "Accord du 4 mai 2017, art. 1er (KALIARTI000035657635)",
+              "citation": "chef(fe) d'orchestre, concertiste soliste : 860 €"
+            },
+            "note": "Chef d'orchestre (CHE190), chef d'orchestre symphonique (CHE510), musicien soliste concertiste (MUS070). INFERENCE : le chef d'orchestre symphonique est un chef d'orchestre ; le « musicien soliste concertiste » de la nomenclature est le concertiste soliste de l'accord."
+          }
+        ],
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/sources/conseils/legi-travail-D7121-28-a-41-et-L3141-3-a-5-20261021.md",
+              "emetteur": "loi",
+              "article": "C. trav. D. 7121-37",
+              "citation": "Le montant de l'indemnité journalière ne peut excéder le chiffre maximum fixé dans les conventions collectives de travail"
+            },
+            {
+              "fichier": "atelier/reference/sources/audiens-dsn/audiens-fiche-pratique-plafonds-conges-spectacles-202507.txt",
+              "emetteur": "audiens",
+              "article": "Audiens, fiche pratique « Plafonds conventionnels », juillet 2025",
+              "citation": "En pratique, ce montant s’entend de la base de calcul de la cotisation due à la caisse des Congés Spectacles."
+            },
+            {
+              "fichier": "atelier/reference/sources/audiens-dsn/audiens-fiche-pratique-plafonds-conges-spectacles-202507.txt",
+              "emetteur": "audiens",
+              "article": "Audiens, fiche pratique « Plafonds conventionnels », juillet 2025",
+              "citation": "L’application de tels plafonds par un employeur relève de sa responsabilité"
+            }
+          ],
+          "raisonnement": "La loi borne l'indemnité journalière de congé au chiffre de la convention ; Audiens dit que ce montant est la base de la cotisation, par jour, et que son application relève de l'employeur. L'accord du 4 mai 2017 n'est pas étendu (VIGUEUR_NON_ETEN) : il ne lie que les adhérents des organisations signataires, ce que seule la compagnie sait (la case `plafond_conges_spectacles` de sa fiche). La base plafonnée est le brut des rubriques de l'assiette, dans la limite du plafond multiplié par les jours travaillés de la paie : D. 7121-37 parle d'« indemnité journalière » et de « rémunération journalière moyenne », Audiens d'un « plafond de cotisation applicable par jour »."
+        },
+        "note": "Non relevé : l'article 2 de l'accord (« trois fois les minima des cachets existants ») : le minimum qui s'applique à un engagement dépend de son palier (le nombre de cachets, sur le mois ou sur trois mois) et de la jauge, que le moteur ne sait pas toujours ; ses minima prennent exprès le plus bas (`minima-conventionnels.json`, `note`), ce qui baisserait à tort la base de la caisse. Pour ces emplois, la base reste le brut, ce que la case dit."
+      },
       "note": "Base KALI de la DILA : la base complète du 13/07/2025 (conteneur KALICONT000005635964, texte KALITEXT000005662413) et les livraisons jusqu'au 23/09/2026, qui republient V.8, V.11 et V.12 sous les mêmes identifiants, au texte identique.",
       "heures_supplementaires": {
         "quoi": "VI.9 et VI.12 : le contingent annuel d'heures supplémentaires et ses paliers de majoration.",

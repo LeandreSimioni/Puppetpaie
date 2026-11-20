@@ -351,6 +351,27 @@
    "ecran": true
   },
   {
+   "note": "LE PLAFOND DE LA BASE CONGES SPECTACLES : l'accord du 4 mai 2017 de\nla 1285 (non etendu) le fixe par jour pour des emplois qu'il nomme\n(`clauses-conventionnelles-base.json`, `plafond_conges_spectacles`) ;\nnon etendu, il ne lie que les adherents des organisations signataires,\nce que seule la compagnie sait ; Audiens : son application << releve de\nsa responsabilite >>. Non cochee : la base est le brut.",
+   "cle": "plafond_conges_spectacles",
+   "libelle": "Plafond Congés Spectacles de l'accord du 4 mai 2017",
+   "forme": "booleen",
+   "aide": "À cocher si l'accord du 4 mai 2017 sur les plafonds des congés spectacles vous lie (vous adhérez à une organisation qui l'a signé) et que vous l'appliquez. La cotisation à la caisse se calcule alors, par jour travaillé, sur au plus 375 € pour un metteur en scène, un chorégraphe ou un maître de ballet, et 860 € pour un chef d'orchestre ou un concertiste soliste. Pour les autres emplois, la base reste le brut.",
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si": {
+    "idcc": [
+     "1285"
+    ]
+   },
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "ecran": true
+  },
+  {
    "note": "LA JAUGE DE LA SALLE : l'annexe I de la\n3090 fixe le salaire conventionnel de ses techniciens par jauge, et la\nprime d'anciennete (art. 3.11) en est un pourcentage.",
    "cle": "jauge_annexe_1",
    "libelle": "Jauge de la salle (annexe 1)",
