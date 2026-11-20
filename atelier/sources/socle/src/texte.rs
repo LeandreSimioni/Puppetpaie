@@ -249,6 +249,17 @@ pub fn chiffres_en_euros<E: EnEuros>(x: E) -> String {
     chiffres(x.decimal_ecrit(scelle::JETON))
 }
 
+/// UN MONTANT TEL QUE SA CASE LE MONTRE A L'ECRAN (le taux d'une ligne de paie, devant « € ») : écrit comme `euros`,
+/// « 1 234,50 », sans « € », mais aucune décimale perdue (un taux de « 11,8813 » se montre ainsi : une case relue puis
+/// renvoyée ne change pas sa valeur). La saisie le relit tel quel (`grandeurs::lu::tapee`).
+pub fn montant_dans_sa_case<E: EnEuros>(x: E) -> String {
+    let mut d = x.decimal_ecrit(scelle::JETON).normalize();
+    if d.scale() < 2 {
+        d.rescale(2);
+    }
+    aux_centimes(d.is_sign_negative(), d.abs(), '\u{a0}')
+}
+
 /// DES HEURES DANS UNE COLONNE DE MONTANTS DU BULLETIN (la base d'une ligne de cotisation qui compte des heures), écrites
 /// comme `chiffres_en_euros` : « 1 234,50 », au centième, sans unité.
 pub fn chiffres_d_heures(h: crate::grandeurs::Heures) -> String {

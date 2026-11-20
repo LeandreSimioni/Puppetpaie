@@ -368,8 +368,11 @@ pub enum Forme {
     Nombre,
     /// AAAA-MM.
     Mois,
-    /// AAAA-MM-JJ.
+    /// AAAA-MM-JJ : l'ecran la fait choisir dans son calendrier (`js/calendrier.js`), d'un jour.
     Date,
+    /// Des jours, chacun AAAA-MM-JJ : l'ecran les fait cocher dans le meme calendrier, plusieurs a la fois (les jours
+    /// d'une ligne de paie).
+    Jours,
     /// Une liste de textes.
     Liste,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
@@ -403,6 +406,7 @@ impl Forme {
             Forme::Nombre => "nombre",
             Forme::Mois => "mois",
             Forme::Date => "date",
+            Forme::Jours => "jours",
             Forme::Liste => "liste",
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
@@ -413,9 +417,74 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Liste | Forme::Objet => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Objet => None,
         }
     }
+
+    /// LA FORME D'UNE CASE DE LA CARTE, tiree du type de son champ (`engagement::saisie::Carte`) : un jour se choisit
+    /// dans le calendrier, un nombre se tape, un oui-non se coche ; une valeur composee (les lignes, les conges, le
+    /// preavis) se decrit ailleurs (les lignes : `rubriques[].cles` de la route etat). Chaque champ y est classe : un
+    /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite.
+    pub fn de_la_case(c: engagement::saisie::Champ) -> Forme {
+        use engagement::saisie::Champ as C;
+        match c {
+            C::Debut | C::Fin | C::DatePaiement | C::NotificationRupture | C::EngagementLicenciement | C::SignatureConvention | C::DernierJourPaye | C::DateModification => Forme::Date,
+            C::QuotiteContrat
+            | C::QuotiteReference
+            | C::SalaireMensuel
+            | C::PeriodeEssaiJours
+            | C::Jours
+            | C::TauxCachet
+            | C::HeuresSupplementaires
+            | C::HeuresSupplementairesA50
+            | C::HeuresComplementaires
+            | C::IndemniteLicenciement
+            | C::PreavisMois
+            | C::JoursContrat => Forme::Nombre,
+            C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
+            C::Salarie
+            | C::Spectacle
+            | C::Nature
+            | C::Numero
+            | C::Etablissement
+            | C::Metier
+            | C::Lieu
+            | C::MotifRecours
+            | C::ModaliteTempsTravail
+            | C::Emploi
+            | C::PcsEse
+            | C::CodeEmploiFt
+            | C::Statut
+            | C::StatutConventionnel
+            | C::StatutCategorielRc
+            | C::PersonneRemplacee
+            | C::RepartitionHoraire
+            | C::ClausesParticulieres
+            | C::ModeleContrat
+            | C::MotifRupture
+            | C::Transaction
+            | C::PrecaritePourquoi => Forme::Texte,
+            C::Lignes | C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
+        }
+    }
+
+    /// LA FORME D'UNE CLE D'UNE LIGNE DE PAIE (`engagement::ligne::Cle`) : ses jours (`dates`, et ceux des mois suivants,
+    /// `planning`) se cochent dans le calendrier, ses nombres se tapent, ses cases de frais se cochent.
+    pub fn de_la_cle(c: engagement::ligne::Cle) -> Forme {
+        use engagement::ligne::Cle as C;
+        match c {
+            C::Dates | C::Planning => Forme::Jours,
+            C::Quantite | C::Taux | C::Heures | C::Base | C::TauxMajoration | C::Montant => Forme::Nombre,
+            C::Cases => Forme::Liste,
+            C::Rubrique | C::Genre | C::Territoire | C::Lieu => Forme::Texte,
+        }
+    }
+}
+
+/// LES NATURES D'UNE CARTE ET LEURS CASES, chacune sa forme (`Forme::de_la_case`) : ce que le catalogue et la route etat
+/// en disent.
+pub fn natures_des_cartes() -> R<Vec<NatureDecrite>> {
+    CarteValide::natures(|c| Forme::de_la_case(c).mot())
 }
 
 /// Un champ de la charge : son nom, ce que l'ecran en montre (`libelle`) et sa forme, son sens pour le LLM, et s'il est
@@ -498,7 +567,7 @@ fn cases_de_la_fin(charge: &[Champ]) -> &'static [Champ] {
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
 /// la charge porte une carte ; aucune sinon.
 fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite>> {
-    if porte_une_carte(charge) { CarteValide::natures() } else { Ok(Vec::new()) }
+    if porte_une_carte(charge) { natures_des_cartes() } else { Ok(Vec::new()) }
 }
 
 /// Un refus : sa classe, et ce qu'il faut corriger.

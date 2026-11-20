@@ -318,6 +318,34 @@ pub enum LignePaie {
     Maintien(Maintien),
 }
 
+/// CE QUE LES TROIS CASES D'UNE LIGNE SAISIE MONTRENT A L'ECRAN, ecrit par le moteur : sa quantite (la base d'une ligne
+/// en pourcentage), son taux (le montant d'une ligne au montant, le pourcentage d'une ligne en pourcentage), ses heures
+/// par unite. Un nombre sans zero inutile, la virgule decimale (`socle::texte::virgule` : « 2 » cachets, « 1,5 ») ; un
+/// montant comme tout montant (`socle::texte::montant_dans_sa_case` : « 140,00 »). La saisie relit chacune telle quelle
+/// (`socle::grandeurs::lu::tapee`), sans perte. Une ligne que le moteur compose n'a pas de case : rien.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CasesMontrees {
+    pub quantite: Option<String>,
+    pub taux: Option<String>,
+    pub heures: Option<String>,
+}
+
+impl LignePaie {
+    /// Ce que ses cases montrent (`CasesMontrees`).
+    pub fn cases_montrees(&self) -> CasesMontrees {
+        use socle::texte::{montant_dans_sa_case as montant, virgule};
+        let (quantite, taux, heures) = match self {
+            LignePaie::Unites(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
+            LignePaie::UnitesEtHeures(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), l.heures.map(virgule)),
+            LignePaie::Frais(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
+            LignePaie::Pourcentage(l) => (l.base.map(montant), l.taux_majoration.map(virgule), None),
+            LignePaie::Montant(AuMontant { montant: m, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant: m, .. }) => (None, m.map(montant), None),
+            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => (None, None, None),
+        };
+        CasesMontrees { quantite, taux, heures }
+    }
+}
+
 /// CE QUE LE MOTEUR POSE SUR UNE LIGNE DE FRAIS CALCULEE, pour l'ecran (`frais_au_dela`) : son rang parmi les lignes de
 /// la carte, les cases qui ont lieu d'etre et leur aide, et le taux saisi avant que sa part au-dela de la limite s'en
 /// detache.
@@ -624,11 +652,6 @@ impl QuantiteDeLigne {
     /// TELLE QU'UNE PHRASE LA DIT, sans son unite (« 151,67 », « 2 »).
     pub fn dit(self) -> String {
         chaque_quantite!(self, q => socle::texte::virgule(q))
-    }
-
-    /// Dans sa forme la plus courte, une decimale au moins (`socle::grandeurs::courte`), comme la ligne l'ecrit.
-    pub fn courte(self) -> QuantiteDeLigne {
-        chaque_quantite_devient!(self, q => courte(q))
     }
 
     /// LES HEURES QU'ELLE FAIT COMPTER, a `par_unite` heures par unite (`Rubrique::heures_par_unite` : le forfait de sa
@@ -1381,12 +1404,7 @@ impl FormeSaisie {
         }))
     }
 
-    /// Les noms des cles qu'une ligne de cette forme dit (la route etat les donne a la page, `rubriques[].cles`).
-    pub fn noms(self) -> Vec<&'static str> {
-        self.cles().iter().map(|c| c.nom()).collect()
-    }
-
-    /// Les cles qu'une ligne de cette forme peut dire, dans l'ordre de la ligne : celles de `Cle::facultative` peuvent
+    /// Les cles qu'une ligne de cette forme peut dire (la route etat les donne a la page, `rubriques[].cles`), dans l'ordre de la ligne : celles de `Cle::facultative` peuvent
     /// s'omettre, les autres se donnent (`null` tant que la case est vide). Une autre cle n'existe pas pour cette forme.
     pub fn cles(self) -> &'static [Cle] {
         use Cle::*;

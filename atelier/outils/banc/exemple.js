@@ -141,8 +141,8 @@ function etape(t) { console.log(`\n== ${t}`); }
   await bloc.locator(".e-spectacle").selectOption({ index: 1 });
   await bloc.locator(".r-code").first().selectOption("cachet");
   await bloc.locator(".r-jours-btn").first().click(); await page.waitForTimeout(400);
-  await page.click(".calendrier .c-jour[data-j='20']"); await page.click(".calendrier .c-jour[data-j='21']");
-  await page.click(".calendrier .c-ok");
+  await page.click(".cal .c-jour[data-iso$='-20']"); await page.click(".cal .c-jour[data-iso$='-21']");
+  await page.click(".cal .c-ok");
   await bloc.locator(".r-taux").first().fill("150");
   await bloc.locator(".r-lieu").first().fill("Salle fictive de Rezé");
   await bloc.locator(".r-lieu").first().press("Tab");

@@ -110,7 +110,9 @@ function peindreCases(r, cases) {
   });
 }
 
-function ligneRubrique(l = {}, propose) {
+/** `montree` : ce que ses cases montrent, écrit par le moteur (`montrees` de la route saisie : « 2 » cachets,
+ *  « 140,00 ») ; une ligne neuve n'en a pas. */
+function ligneRubrique(l = {}, propose, montree) {
   const div = document.createElement("div");
   div.className = "rubrique";
   // LA RUBRIQUE D'UNE LIGNE NEUVE, le moteur la dit ; tant qu'on ne l'a pas
@@ -132,6 +134,7 @@ function ligneRubrique(l = {}, propose) {
   // UNE LIGNE AU MONTANT (prime, acompte, indemnité, avantage en nature) : le fichier dit `montant`, que le champ du
   // taux montre.
   if (l.montant !== undefined) l = { ...l, taux: l.montant };
+  if (montree) l = { ...l, quantite: montree.quantite, taux: montree.taux, heures: montree.heures };
   if (l.taux == null) l = { ...l, taux: tauxParDefaut(code) };
   /* TOUT SUR LA MÊME LIGNE, et elle se lit comme une phrase :
 
@@ -198,9 +201,11 @@ function ligneRubrique(l = {}, propose) {
     const r = rubriqueDe(div.querySelector(".r-code").value);
     // Sans rubrique au catalogue (le déroulant est vide), rien ne se règle sur elle.
     if (!r) return;
-    // Les cases de la ligne sont celles que le moteur dit de sa rubrique (`cles`).
-    const cles = r.cles;
+    // Les cases de la ligne sont celles que le moteur dit de sa rubrique (`cles`), chacune sa forme : ses jours (forme
+    // `jours`) se cochent dans le calendrier.
+    const cles = r.cles.map((c) => c.cle);
     const veutHeures = cles.includes("heures");
+    div.querySelector(".r-jours-btn").classList.toggle("cachee", !r.cles.some((c) => c.forme === "jours"));
     // `.cachee` et non l'attribut `hidden` : la feuille de style pose
     // `input { display: block }`, qui l'emporterait sur le defaut du
     // navigateur. Le champ resterait visible sans qu'on comprenne pourquoi.
@@ -211,7 +216,6 @@ function ligneRubrique(l = {}, propose) {
     const montant = cles.includes("montant");
     const q = div.querySelector(".r-quantite");
     q.classList.toggle("cachee", montant);
-    div.querySelector(".r-jours-btn").classList.toggle("cachee", montant);
     div.querySelector(".r-lieu").classList.toggle("cachee", montant);
     div.querySelector(".r-mot").classList.toggle("cachee", montant);
     div.querySelector(".r-taux").placeholder = montant ? "montant" : "taux";
@@ -226,7 +230,6 @@ function ligneRubrique(l = {}, propose) {
     if (pct) {
       q.placeholder = "base €";
       div.querySelector(".r-taux").placeholder = "%";
-      div.querySelector(".r-jours-btn").classList.add("cachee");
       div.querySelector(".r-lieu").classList.add("cachee");
     } else {
       q.placeholder = "qté";
@@ -300,7 +303,7 @@ function ligneRubrique(l = {}, propose) {
   div.dataset.planning = JSON.stringify(l.planning ? l.planning.map(jourDe).filter(Boolean) : []);
   div.querySelector(".r-jours-btn").onclick = (ev) => {
     ev.preventDefault();
-    ouvrirCalendrier(div);
+    ouvrirLesJours(div);
   };
   majJoursBouton(div);
   majAffichage();
@@ -353,36 +356,12 @@ function majJoursBouton(ligne) {
   ligne.querySelectorAll(".r-lieu-jour").forEach((c) => { c.closest("label").hidden = !coches.has(c.dataset.iso); });
 }
 
-/** Les cases d'un mois PASSÉ : une plage de contrat en gris, un jour joué
- *  connu en gris plein, le libellé au survol. Partagé entre le calendrier
- *  d'une ligne et la vue du mois. */
-function casesMoisPasse(vue, contrats, avecNom) {
-  const an = +vue.slice(0, 4), mo = +vue.slice(5, 7);
-  const nb = new Date(an, mo, 0).getDate();
-  const premier = (new Date(an, mo - 1, 1).getDay() + 6) % 7;
-  const plage = new Map(), joue = new Map();
-  const ajouter = (carte, iso, libelle) => {
-    if (!carte.has(iso)) carte.set(iso, []);
-    carte.get(iso).push(libelle);
-  };
-  contrats.forEach((c) => {
-    const libelle = libelleDuPasse(c, avecNom);
-    c.dates.forEach((iso) => ajouter(joue, iso, libelle));
-    for (let j = 1; j <= nb; j++) {
-      const iso = `${vue}-${String(j).padStart(2, "0")}`;
-      if (iso >= c.periode.du && iso <= c.periode.au) ajouter(plage, iso, libelle);
-    }
-  });
-  let cases = "";
-  for (let i = 0; i < premier; i++) cases += `<span class="c-vide"></span>`;
-  for (let j = 1; j <= nb; j++) {
-    const iso = `${vue}-${String(j).padStart(2, "0")}`;
-    const cls = joue.has(iso) ? "hist-joue" : (plage.has(iso) ? "hist" : "");
-    const dits = joue.get(iso) || plage.get(iso);
-    const titre = dits ? dits.join(" / ") : "";
-    cases += `<span class="c-jour lu ${cls}" ${titre ? `title="${echapper(titre)}"` : ""}>${j}</span>`;
-  }
-  return JOURS_SEMAINE.map((x) => `<span class="c-sem">${x}</span>`).join("") + cases;
+/** Un jour d'un mois PASSÉ, en lecture : dans une plage de contrat en gris, joué en gris plein, le libellé au survol. */
+function jourDuPasse(iso, contrats, avecNom) {
+  const joues = contrats.filter((c) => c.dates.includes(iso));
+  const plages = contrats.filter((c) => iso >= c.periode.du && iso <= c.periode.au);
+  const dits = (joues.length ? joues : plages).map((c) => libelleDuPasse(c, avecNom));
+  return { lu: true, classe: joues.length ? "hist-joue" : (plages.length ? "hist" : ""), titre: dits.join(" / ") };
 }
 
 /** Ce qu'un contrat passé dit de lui : le prénom quand plusieurs salariés se montrent, et son titre quand il en a un. */
@@ -399,12 +378,9 @@ function ligneContratPasse(c, avecNom) {
     </div>`;
 }
 
-function fermerCalendriers() {
-  document.querySelectorAll(".calendrier").forEach((c) => c.remove());
-}
-
-function ouvrirCalendrier(ligne, moisForce) {
-  fermerCalendriers();
+/** LES JOURS D'UNE LIGNE, dans le calendrier (`js/calendrier.js`) : ceux du mois de la saisie se cochent comme jours
+ *  joués, ceux des mois suivants sont son planning, ceux des mois passés se lisent. */
+function ouvrirLesJours(ligne, moisForce) {
   // `moisForce` : la correction d'un mois deja depose se coche dans SON mois,
   // pas dans celui qu'affiche l'ecran de paie.
   const mois = moisForce || document.getElementById("mois").value;
@@ -412,49 +388,45 @@ function ouvrirCalendrier(ligne, moisForce) {
   const bloc = ligne.closest(".engagement");
   const enCours = bloc && bloc.classList.contains("en-cours");
   const fin = bloc ? bloc.querySelector(".e-fin").value : "";
-  const cal = document.createElement("div");
-  cal.className = "calendrier";
-  ligne.appendChild(cal);
-  // Sous le bouton des jours, sans déborder de la ligne.
-  const btn = ligne.querySelector(".r-jours-btn");
-  cal.style.left = Math.max(0, Math.min(btn.offsetLeft, ligne.clientWidth - 272)) + "px";
-  let vue = mois;                       // le mois affiché, AAAA-MM
   let attente = null;                   // un jour de planning qui attend « Valider »
   // Les contrats passés, par mois affiché, chargés à la demande. `null`
   // tant qu'on attend le serveur : la grille se dessine sans, puis se redessine ;
   // un refus (`erreur`) se dit sous la grille.
   const passes = new Map();
   const salarie = (bloc && salarieDuBloc(bloc)) || null;
+  let cal = null;
   const chargerPasses = (m) => {
     if (passes.has(m)) return;
     passes.set(m, null);
     api("contrats-passes", { mois: m, salarie }).then((r) => { passes.set(m, r); }, (e) => { passes.set(m, { erreur: e.message }); })
-      .then(() => { if (vue === m && cal.isConnected) dessiner(); });
+      .then(() => { if (cal) cal.redessiner(); });
   };
-
-  const dessiner = () => {
-    const an = +vue.slice(0, 4), mo = +vue.slice(5, 7);
-    const nb = new Date(an, mo, 0).getDate();
-    const premier = (new Date(an, mo - 1, 1).getDay() + 6) % 7;   // lundi = 0
-    const jours = new Set(joursDe(ligne.querySelector(".r-jours")));
-    const plan = new Set(planningDe(ligne));
+  // Ce qui est lu d'un mois passé : rien encore (`null`), un refus, ou ses contrats.
+  const luDu = (vue) => (vue < mois ? passes.get(vue) : null);
+  const contratsDu = (vue) => { const lu = luDu(vue); return lu && !lu.erreur ? lu.contrats : []; };
+  const jour = (iso, vue) => {
+    if (vue < mois) { chargerPasses(vue); return jourDuPasse(iso, contratsDu(vue), !salarie); }
     const ici = vue === mois;
-    const passe = vue < mois;
-    if (passe) chargerPasses(vue);
-    // Ce qui est lu du mois passé : rien encore (`null`), un refus, ou ses contrats.
-    const lu = passe ? passes.get(vue) : null;
-    const contrats = lu && !lu.erreur ? lu.contrats : [];
-    let cases = "";
-    for (let i = 0; i < premier && !passe; i++) cases += `<span class="c-vide"></span>`;
-    for (let j = 1; j <= nb && !passe; j++) {
-      const iso = `${vue}-${String(j).padStart(2, "0")}`;
-      const coche = ici ? jours.has(j) : plan.has(iso);
-      const horsContrat = enCours && fin && iso > fin;
-      cases += `<button type="button" class="c-jour ${coche ? (ici ? "joue" : "prevu") : ""}
-        ${horsContrat ? "hors" : ""}" data-iso="${iso}" data-j="${j}"
-        ${horsContrat ? "disabled title=\"après la fin du contrat\"" : ""}>${j}</button>`;
+    const coche = ici ? joursDe(ligne.querySelector(".r-jours")).includes(+iso.slice(8)) : planningDe(ligne).includes(iso);
+    const hors = !!(enCours && fin && iso > fin);
+    return { classe: coche ? (ici ? "joue" : "prevu") : "", hors, titre: hors ? "après la fin du contrat" : "" };
+  };
+  const choisir = (iso, vue, c) => {
+    if (vue === mois) {
+      basculerJour(ligne, +iso.slice(8));
+    } else {
+      const dejaPluri = (bloc && bloc.dataset.pluriOk === "1") || enCours
+        || planningDuBloc(bloc).length || (fin && fin.slice(0, 7) > mois);
+      if (!planningDe(ligne).includes(iso) && !dejaPluri) { attente = iso; c.redessiner(); return; }
+      basculerPlanning(ligne, iso);
     }
-    const nJoues = jours.size, nPlan = plan.size;
+    c.redessiner();
+  };
+  const dessous = (vue) => {
+    const passe = vue < mois, ici = vue === mois;
+    const lu = luDu(vue);
+    const contrats = contratsDu(vue);
+    const nJoues = joursDe(ligne.querySelector(".r-jours")).length, nPlan = planningDe(ligne).length;
     const listePasses = !passe ? "" : (lu === null
       ? `<div class="c-passes discret">…</div>`
       : lu.erreur ? `<div class="c-passes erreur">${echapper(lu.erreur)}</div>`
@@ -463,17 +435,7 @@ function ouvrirCalendrier(ligne, moisForce) {
           : `<span class="discret">${echapper(lu.rien_dit)}</span>`}
           ${lu.non_lus.map((x) => `<div class="discret">${echapper(x)}</div>`).join("")}
         </div>`);
-    cal.innerHTML = `
-      <div class="c-tete">
-        <button type="button" class="c-prec" title="mois précédent">‹</button>
-        <b>${echapper(moisEnClair(vue))}</b>
-        <button type="button" class="c-suiv" title="mois suivant">›</button>
-      </div>
-      <div class="c-grille">
-        ${passe ? casesMoisPasse(vue, contrats, !salarie)
-                : JOURS_SEMAINE.map((x) => `<span class="c-sem">${x}</span>`).join("") + cases}
-      </div>
-      ${listePasses}
+    return `${listePasses}
       ${attente ? `
         <div class="c-avert">
           <b>Contrat sur plusieurs mois</b>
@@ -494,50 +456,23 @@ function ouvrirCalendrier(ligne, moisForce) {
           </span>
           <button type="button" class="secondaire c-ok">OK</button>
         </div>`}`;
-    cal.querySelector(".c-prec").onclick = () => { vue = moisPrecedent(vue); attente = null; dessiner(); };
-    cal.querySelector(".c-suiv").onclick = () => { vue = moisSuivant(vue); attente = null; dessiner(); };
-    const ok = cal.querySelector(".c-ok");
-    if (ok) ok.onclick = fermerCalendriers;
-    const valider = cal.querySelector(".c-valider");
+  };
+  const brancher = (dom, _, c) => {
+    const ok = dom.querySelector(".c-ok");
+    if (ok) ok.onclick = c.fermer;
+    const valider = dom.querySelector(".c-valider");
     if (valider) valider.onclick = () => {
       bloc.dataset.pluriOk = "1";
       const iso = attente; attente = null;
       basculerPlanning(ligne, iso);
-      dessiner();
+      c.redessiner();
     };
-    const annuler = cal.querySelector(".c-annuler");
-    if (annuler) annuler.onclick = () => { attente = null; dessiner(); };
-    cal.querySelectorAll(".c-jour:not([disabled])").forEach((b) => {
-      b.onclick = () => {
-        if (ici) {
-          basculerJour(ligne, +b.dataset.j);
-        } else {
-          const iso = b.dataset.iso;
-          const dejaPluri = (bloc && bloc.dataset.pluriOk === "1") || enCours
-            || planningDuBloc(bloc).length || (fin && fin.slice(0, 7) > mois);
-          if (!planningDe(ligne).includes(iso) && !dejaPluri) { attente = iso; dessiner(); return; }
-          basculerPlanning(ligne, iso);
-        }
-        dessiner();
-      };
-    });
+    const annuler = dom.querySelector(".c-annuler");
+    if (annuler) annuler.onclick = () => { attente = null; c.redessiner(); };
   };
-  dessiner();
-  // Fermer en cliquant ailleurs, ou à la touche Échap.
-  setTimeout(() => {
-    const dehors = (ev) => {
-      if (!cal.isConnected) { document.removeEventListener("click", dehors); return; }
-      // `composedPath` et non `contains` : un clic sur un jour redessine la
-      // grille, et le bouton cliqué n'est déjà plus dans la page quand on
-      // arrive ici -- `contains` dirait « dehors » et refermerait tout.
-      const chemin = ev.composedPath ? ev.composedPath() : [];
-      if (!chemin.includes(cal) && ev.target !== ligne.querySelector(".r-jours-btn")) {
-        fermerCalendriers(); document.removeEventListener("click", dehors);
-      }
-    };
-    document.addEventListener("click", dehors);
-  }, 0);
-  cal.onkeydown = (ev) => { if (ev.key === "Escape") fermerCalendriers(); };
+  cal = ouvrirLeCalendrier(ligne.querySelector(".r-jours-btn"), {
+    vue: mois, jour, choisir, dessous, brancher, changer: () => { attente = null; },
+  });
 }
 
 /** Coche ou décoche un jour du mois de la saisie : la ligne compte ses
@@ -674,6 +609,19 @@ function poserRares(div, e) {
            ${c.type === "number" ? `inputmode="decimal"` : ""} value="${echapper(String(valeurRare(e, c)))}"></label>`).join("");
   cible.hidden = !cible.children.length;
   cible.querySelectorAll(".e-rare").forEach((c) => { c.onchange = rafraichirApercu; c.oninput = rafraichirApercu; });
+}
+
+/** LES CASES DE LA CARTE QUE LE MOTEUR DIT ÊTRE UN JOUR (`forme` « date » des cases de sa nature,
+ *  `natures[].carte.cases` de la route etat) se choisissent dans le calendrier (`js/calendrier.js`). La nature est
+ *  celle de la carte, sinon celle d'une carte neuve du mois. */
+function calendriersDeLaCarte(div) {
+  const nat = natureDe(div.querySelector(".e-nature").value || NOUVELLE_CARTE.nature);
+  if (!nat) return;
+  const jours = new Set(nat.carte.cases.filter((c) => c.forme === "date").map((c) => c.cle));
+  div.querySelectorAll("input[data-case-carte]").forEach((c) => {
+    if (jours.has(c.dataset.caseCarte)) c.dataset.calendrier = "1";
+  });
+  poserLesCalendriers(div);
 }
 
 /** Ce que les champs rares du formulaire écrivent. */
@@ -1037,7 +985,7 @@ function construireCarte(div, e) {
            compagnie a choisi dans sa configuration (droit::versement). Vide :
            celui de la configuration. -->
       <label title="${aideDe("date_paiement")}">Payé le
-        <input type="date" class="e-rare e-paye-le" data-cle="date_paiement" data-type="date"></label>
+        <input class="e-rare e-paye-le" data-cle="date_paiement" data-case-carte="date_paiement" data-type="date"></label>
       </div>
       <div class="e-options-ligne e-rares" hidden></div>
     <!-- LE CONTRAT, replié : ses bornes, préréglées sur
@@ -1048,8 +996,8 @@ function construireCarte(div, e) {
     <details class="e-contrat">
       <summary></summary>
       <div class="e-contrat-champs">
-        <label class="e-borne">Début du contrat <input type="date" class="e-debut"></label>
-        <label class="e-borne">Fin du contrat <input type="date" class="e-fin"></label>
+        <label class="e-borne">Début du contrat <input class="e-debut" data-case-carte="debut"></label>
+        <label class="e-borne">Fin du contrat <input class="e-fin" data-case-carte="fin"></label>
         <span class="e-numero discret" hidden>n° <span></span></span>
       </div>
       <!-- LE MOTIF DE RECOURS (S21.G00.40.021). Seul un CDD ordinaire en a
@@ -1106,12 +1054,12 @@ function construireCarte(div, e) {
              rupture conventionnelle, la transaction après un litige. -->
         <label data-fait="engagement_licenciement" hidden
                title="${aideDe("engagement_licenciement")}">Procédure engagée le
-          <input type="date" class="e-engagement-licenciement"></label>
+          <input class="e-engagement-licenciement" data-case-carte="engagement_licenciement"></label>
         <label data-fait="notification_rupture" hidden>Notifiée le
-          <input type="date" class="e-notification"></label>
+          <input class="e-notification" data-case-carte="notification_rupture"></label>
         <label data-fait="signature_convention" hidden
                title="${aideDe("signature_convention")}">Convention signée le
-          <input type="date" class="e-signature-convention"></label>
+          <input class="e-signature-convention" data-case-carte="signature_convention"></label>
         <label>Préavis
           <select class="e-preavis-type"></select></label>
         <label class="e-preavis-dates">du
@@ -1121,7 +1069,7 @@ function construireCarte(div, e) {
         <label data-fait="transaction" hidden>Transaction
           <select class="e-transaction"></select></label>
         <label title="${aideDe("dernier_paye")}">Dernier jour payé
-          <input type="date" class="e-dernier-paye" placeholder="la fin du contrat"></label>
+          <input class="e-dernier-paye" data-case-carte="dernier_jour_paye" placeholder="la fin du contrat"></label>
         <!-- LES FAITS DU MOTIF : le moteur dit, motif par motif,
              ce qu'il doit savoir (permanents.faits_de_rupture) ; la page ne
              montre que ceux-là. Sans eux, une rupture conventionnelle était
@@ -1209,7 +1157,9 @@ function construireCarte(div, e) {
   cadre.onchange = rafraichirApercu;
   // --- les lignes de paie
   const cible = div.querySelector(".rubriques");
-  lignesDe(e, natureDe(selNat.value)).forEach((l) => cible.appendChild(ligneRubrique(l, proposeDuBloc(div))));
+  // Ce que les cases de chaque ligne montrent, le moteur l'écrit (`montrees`, dans l'ordre des lignes).
+  lignesDe(e, natureDe(selNat.value)).forEach((l, j) =>
+    cible.appendChild(ligneRubrique(l, proposeDuBloc(div), e.montrees ? e.montrees[j] : undefined)));
   div.querySelector(".ajouter-rubrique").onclick = (ev) => {
     ev.preventDefault();
     cible.appendChild(ligneRubrique({}, proposeDuBloc(div)));
@@ -1244,6 +1194,7 @@ function construireCarte(div, e) {
   div.querySelectorAll(".e-salaire, .e-quotite").forEach((c) => { c.onchange = rafraichirApercu; });
   poserRares(div, e);
   poserEcrit(div, e);
+  calendriersDeLaCarte(div);
   remplirFaits(div, e);
   poserFaitsAvances(div, e);
   div.querySelectorAll(".ajouter-fait").forEach((b) => {
@@ -1752,7 +1703,7 @@ function lignesDuBloc(div, mois) {
       planning: planningDe(r).map(date),
     };
     // Une rubrique que le catalogue ne connaît pas part seule : le moteur dit ce qui lui manque.
-    return Object.fromEntries(((rr && rr.cles) || ["rubrique"]).map((k) => [k, valeurs[k]]));
+    return Object.fromEntries((rr ? rr.cles.map((c) => c.cle) : ["rubrique"]).map((k) => [k, valeurs[k]]));
   }).filter(Boolean);
 }
 

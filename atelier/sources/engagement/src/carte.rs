@@ -381,12 +381,14 @@ pub struct NatureDecrite {
     pub motifs_recours: Vec<MotifDecrit>,
 }
 
-/// Une case d'une nature : sa cle sur la carte, son libelle, ce qu'elle est.
+/// Une case d'une nature : sa cle sur la carte, son libelle, ce qu'elle est, et sa forme (ce que l'ecran en saisit : une
+/// date, un nombre… ; le catalogue la dit, `routes::catalogue::Forme::de_la_case`).
 #[derive(Debug, Clone, Serialize)]
 pub struct CaseDecrite {
     pub cle: &'static str,
     pub libelle: &'static str,
     pub exige: Exige,
+    pub forme: &'static str,
 }
 
 /// Un motif de recours : son code, et les cases qu'il porte en plus de celles de sa nature.
@@ -415,11 +417,11 @@ impl CarteValide {
         }
     }
 
-    /// Chaque nature et ses cases, tirees du type ; ses motifs de recours, et ce que chacun porte, de
-    /// `contrats-base.json`.
-    pub fn natures() -> R<Vec<NatureDecrite>> {
+    /// Chaque nature et ses cases, tirees du type, chacune sa forme (`forme`) ; ses motifs de recours, et ce que chacun
+    /// porte, de `contrats-base.json`.
+    pub fn natures(forme: fn(Champ) -> &'static str) -> R<Vec<NatureDecrite>> {
         let decrire = |cases: &'static [(Champ, Exige)]| -> Vec<CaseDecrite> {
-            cases.iter().map(|(c, e)| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: *e }).collect()
+            cases.iter().map(|(c, e)| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: *e, forme: forme(*c) }).collect()
         };
         let mut out = Vec::new();
         for n in NatureDeContrat::TOUTES {
@@ -431,7 +433,7 @@ impl CarteValide {
                 .map(|m| MotifDecrit {
                     code: m.code,
                     cases: if nat.motif_de_remplacement(m.code) {
-                        CarteValide::du_motif_de(n).iter().map(|c| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: Exige::Facultatif }).collect()
+                        CarteValide::du_motif_de(n).iter().map(|c| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: Exige::Facultatif, forme: forme(*c) }).collect()
                     } else {
                         Vec::new()
                     },

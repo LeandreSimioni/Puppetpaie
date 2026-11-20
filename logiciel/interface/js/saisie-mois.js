@@ -561,7 +561,7 @@ async function chargerMois(mois, repeint = false) {
   // laisse tomber, sinon il repeindrait l'écran par-dessus le bon.
   if (DEMANDE_MOIS !== mois) return;
   // L'identité de chaque engagement, dans l'ordre de `engagements` : ce par quoi sa carte le désigne.
-  SAISIE = { ...r.saisie, identites: r.identites };
+  SAISIE = { ...r.saisie, identites: r.identites, montrees: r.montrees };
   IMPORTES = r.importes;
   NOUVELLE_CARTE = r.nouvelle_carte;
   MOIS_AFFICHE = mois;
@@ -602,7 +602,8 @@ async function chargerMois(mois, repeint = false) {
   }
   cible.innerHTML = "";
   // Une carte par engagement : une carte porte un salarié.
-  const groupes = SAISIE.engagements.map((e, i) => ({ ...e, id: SAISIE.identites[i] }));
+  // Avec ce que les cases de ses lignes montrent (`montrees`, écrit par le moteur).
+  const groupes = SAISIE.engagements.map((e, i) => ({ ...e, id: SAISIE.identites[i], montrees: SAISIE.montrees[i] }));
   const ouvertes = avant.length === groupes.length ? avant.map((div) => !carteFermee(div)) : [];
   groupes.forEach((g, i) => cible.appendChild(ligneEngagement(g, { fermee: !ouvertes[i] })));
   if (deplies) {
@@ -832,7 +833,7 @@ function carteImportee(p, i, moisCourt) {
  * on y remet l'ancien mois le temps de les lire, sans quoi les engagements d'août partiraient dans le fichier de
  * septembre — la case du mois est ce qui date les jours joués. */
 document.getElementById("mois").onchange = (e) => {
-  fermerCalendriers();
+  fermerLesCalendriers();
   const neuf = e.target.value;
   let attente = [];
   if (MOIS_AFFICHE && MOIS_AFFICHE !== neuf) {
@@ -1074,16 +1075,17 @@ async function ecrireLaCarte(div, carte, mois, appel = api) {
   if (!changements.length) { div._ecrite = JSON.stringify(carte); return null; }
   const r = await appel("enregistrer-saisie", { mois, carte: carteVisee(div, carte), changements });
   div.dataset.engagement = JSON.stringify(r.engagement);
-  montrerLeConverti(div, carte, r.brouillon, mois);
+  montrerLeConverti(div, carte, r.brouillon, r.montrees, mois);
   div._ecrite = JSON.stringify(carte);
   return r;
 }
 
 /* CE QUE LA ROUTE A COMPRIS D'UN NOMBRE TAPÉ s'affiche dans sa case quand on l'a quittée : la valeur que le brouillon
  * écrit (`brouillon` d'`enregistrer-saisie`), jamais une conversion de la page. Une case où le curseur est encore, ou qui
- * a changé depuis l'envoi, garde ce qu'on y tape ; `carte` (ce qui est parti) prend ce que la case montre désormais. */
+ * a changé depuis l'envoi, garde ce qu'on y tape ; `carte` (ce qui est parti) prend ce que la case montre désormais. Les
+ * cases d'une ligne montrent ce que le moteur en écrit (`montrees` : « 2 », « 140,00 »). */
 const CASES_NOMBRE = { salaire_mensuel: ".e-salaire", quotite_contrat: ".e-quotite" };
-function montrerLeConverti(div, carte, b, mois) {
+function montrerLeConverti(div, carte, b, montrees, mois) {
   if (!b) return;
   const avant = carteAEcrire(div, mois);
   if (!avant) return;
@@ -1100,11 +1102,11 @@ function montrerLeConverti(div, carte, b, mois) {
     b.lignes.forEach((l, i) => {
       const r = rangs[i];
       if (!r) return;
-      const q = l.quantite && typeof l.quantite === "object" ? Object.values(l.quantite)[0] : l.base;
+      const m = montrees[i];
       const taux = l.taux ?? l.montant ?? l.taux_majoration;
-      poser(r.querySelector(".r-quantite"), q);
-      poser(r.querySelector(".r-taux"), taux);
-      poser(r.querySelector(".r-heures"), l.heures);
+      poser(r.querySelector(".r-quantite"), m.quantite);
+      poser(r.querySelector(".r-taux"), m.taux);
+      poser(r.querySelector(".r-heures"), m.heures);
       // Le taux tapé, converti par la route : celui de la prochaine ligne de la même rubrique.
       if (r.dataset.tauxTape && taux != null) {
         delete r.dataset.tauxTape;
