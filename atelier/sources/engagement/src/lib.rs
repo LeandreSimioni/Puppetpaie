@@ -2121,8 +2121,14 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
         // (`caisse_conges::hors_de_l_annexe8`, `cddu_hors_des_annexes`).
         // L'AER Cinema Spectacle suit le contrat d'intermittent (`documents::aer::due`, `caisse_conges::intermittent`) :
         // un CDDU l'a, le CDD de droit commun de ce technicien non.
+        // Sans convention dite, la liste ne se lit pas : l'avis ne se dit pas, et c'est le calcul de la paie qui en a
+        // besoin qui le refuse (`caisse_conges::cddu_hors_des_annexes`, `intermittent`), pas le chargement du mois.
         let nat = p.engagement.nat()?;
-        if let Some((metier, idcc)) = droit::caisse_conges::hors_de_l_annexe8(&nat, &p.salarie)? {
+        let hors_liste = match p.salarie.idcc_de_l_employeur {
+            Some(_) => droit::caisse_conges::hors_de_l_annexe8(&nat, &p.salarie)?,
+            None => None,
+        };
+        if let Some((metier, idcc)) = hors_liste {
             let aer = if nat.mensuelle() { ", sans AER spectacle" } else { "" };
             let texte = format!(
                 "{} : {} n'est pas sur la liste de l'annexe 8 de la convention {} ; son chômage est celui du droit \
