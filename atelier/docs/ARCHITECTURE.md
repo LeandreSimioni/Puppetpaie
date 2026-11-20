@@ -1136,6 +1136,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
+| ce qu'une ligne neuve d'une rubrique prend (le taux d'un cachet), sous le code de sa rubrique | `routes::mois::LignePreremplie`, `routes::mois::LignesPreremplies` | `routes/src/mois.rs` |
+| fin du contrat telle que la route la rend (aucune, la rupture lue, ou une rupture qui ne se lit pas) | `routes::mois::FinDuContrat` | `routes/src/mois.rs` |
 | ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, durée du travail, pré-remplissage) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
 | durée du travail d'un contrat payé au mois, pour sa carte (temps plein, temps partiel) | `routes::mois::TempsDuContrat` | `routes/src/mois.rs` |
@@ -1956,7 +1958,9 @@ place** (`si Ouverture => PlaceDeLaCase` : une case qui ne le dit pas ne compile
 engagement, les seules cases ouvertes pour lui et leur place (`carte.cases` de chaque paie de l'aperçu,
 `CarteValide::cases_ouvertes`, les faits lus du moteur par `routes::mois::carte_rendue`) : de base, sous « Avancé »,
 derrière « Imprévu… » (la fin d'un contrat qui finit ce mois : son motif, puis ce que le motif appelle), ou rendue (le
-début, la fin et les jours travaillés d'un CDDU, tirés des jours cochés : montrés, pas saisis). Avant tout aperçu, la
+début, la fin et les jours travaillés d'un CDDU, tirés des jours cochés : montrés, pas saisis, et lus une seule fois,
+sous les lignes, dans la phrase du contrat : `contrat_dit`, « Du 04/12/2026 au 05/12/2026 · 2 jours travaillés »,
+composée par `routes::mois::bornes_dites`). Avant tout aperçu, la
 page montre les cases de toute carte de sa nature (`ouverte` : « toujours », `natures[].carte`). Une case qu'aucun fait
 n'ouvre n'est pas rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Un fait qui ne se lit pas
 pour un engagement fait la `faute` de sa carte rendue, et d'elle seule : l'aperçu des autres reste. Ce qu'offrent les
@@ -1965,7 +1969,13 @@ famille, la transaction, le type d'un préavis), de la nature (`natures[].choix`
 neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
 la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
 est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
-jour du versement, le début, la fin, les jours, le cadre du métier) ; la page le montre, il ne s'écrit pas. Une valeur
+jour du versement, le début, la fin, les jours, le métier que la paie applique, le cadre) et ce qu'une ligne neuve
+prend (`lignes`, sous le code de sa rubrique : le taux du cachet, celui du dernier cachet du mois, sinon le dernier
+saisi du dossier) ; avant toute paie, une carte neuve a celui de `nouvelle_carte.prerempli` (ses lignes). La page le
+montre, il ne s'écrit pas tant qu'on ne le change pas ; un oui-non pré-rempli (le cadre, rendu même quand la carte le
+dit) se change dans les deux sens, et y revenir n'écrit rien. Un montant (le taux d'une ligne, sa base, son montant,
+le salaire du mois) a sa forme (`Forme::Montant`) : la page l'écrit comme ses montants (« 140,00 »), et il se tape
+avec une virgule ou un point. Une valeur
 faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties
 sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Les jours d'une ligne partent tous
 dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne

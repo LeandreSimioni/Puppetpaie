@@ -369,6 +369,9 @@ pub enum Forme {
     Texte,
     OuiNon,
     Nombre,
+    /// UN MONTANT (des euros, ou des euros par unite : le taux d'une ligne de paie) : il se montre comme la page ecrit un
+    /// montant, et se tape avec une virgule ou un point (`socle::grandeurs::lu::tapee`).
+    Montant,
     /// AAAA-MM.
     Mois,
     /// AAAA-MM-JJ : l'ecran la fait choisir dans son calendrier (`js/calendrier.js`), d'un jour.
@@ -465,6 +468,7 @@ impl Forme {
             Forme::Texte => "texte",
             Forme::OuiNon => "oui_non",
             Forme::Nombre => "nombre",
+            Forme::Montant => "montant",
             Forme::Mois => "mois",
             Forme::Date => "date",
             Forme::Jours => "jours",
@@ -482,7 +486,7 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) => None,
         }
     }
 
@@ -498,15 +502,14 @@ impl Forme {
             C::Debut | C::Fin | C::DatePaiement | C::NotificationRupture | C::EngagementLicenciement | C::SignatureConvention | C::DernierJourPaye | C::DateModification => Forme::Date,
             C::QuotiteContrat
             | C::QuotiteReference
-            | C::SalaireMensuel
             | C::PeriodeEssaiJours
             | C::Jours
             | C::HeuresSupplementaires
             | C::HeuresSupplementairesA50
             | C::HeuresComplementaires
-            | C::IndemniteLicenciement
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
+            C::SalaireMensuel | C::IndemniteLicenciement => Forme::Montant,
             C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
             C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat | C::Nature | C::MotifRecours => {
                 Forme::ChoixRendu
@@ -538,7 +541,8 @@ impl Forme {
         match c {
             C::Dates | C::Planning => Forme::Jours,
             C::Quantite => Forme::Quantite,
-            C::Taux | C::Heures | C::Base | C::TauxMajoration | C::Montant => Forme::Nombre,
+            C::Heures | C::TauxMajoration => Forme::Nombre,
+            C::Taux | C::Base | C::Montant => Forme::Montant,
             C::Cases => Forme::Liste,
             C::Rubrique | C::Genre | C::Territoire => Forme::ChoixRendu,
             C::Lieu => Forme::Texte,

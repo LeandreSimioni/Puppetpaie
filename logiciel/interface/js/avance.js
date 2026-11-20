@@ -40,10 +40,14 @@ function objetEnClair(v) {
 }
 
 /** Les formes qui se tapent ou se choisissent d'une valeur simple : une valeur composée ne s'y écrit pas. */
-const FORMES_SIMPLES = new Set(["texte", "nombre", "oui_non", "mois", "date", "choix", "choix_rendu"]);
+const FORMES_SIMPLES = new Set(["texte", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
 
 /** Ce que le moteur prend pour une case vide (`o.prerempli`), montré dans la case sans y être écrit. */
 const prerempliDe = (o, enClair = String) => (o.prerempli == null ? "" : ` placeholder="${echapper(enClair(o.prerempli))}"`);
+
+/** UN MONTANT DANS SA CASE s'écrit comme la page écrit un montant (`euros`, « 1 053,08 »), sans l'euro (la ligne le dit
+ *  après lui) ; il se tape avec une virgule ou un point, et le moteur le lit. */
+const montantEcrit = (v) => (v == null || v === "" ? null : enEuros(v));
 
 /** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
  *  l'unité d'une quantité, `o.prerempli` : ce que le moteur prend pour elle vide, `o.parties` : les parties d'une valeur
@@ -52,16 +56,25 @@ const prerempliDe = (o, enClair = String) => (o.prerempli == null ? "" : ` place
 const CASES = {
   texte: { html: (v, o) => `<input type="text" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
   nombre: { html: (v, o) => `<input type="text" inputmode="decimal" data-case${valeurDeDepart(v)}${prerempliDe(o)}>`, lire: tape },
+  // Un montant montré tel qu'il s'écrit (`montantEcrit`) ; laissé tel quel, il repart tel que le moteur l'a écrit.
+  montant: {
+    html: (v, o) => `<input type="text" inputmode="decimal" data-case${valeurDeDepart(montantEcrit(v))}${
+      v == null ? "" : ` data-ecrit="${echapper(String(v))}"`}${prerempliDe(o, montantEcrit)}>`,
+    lire: (x) => (x.dataset.ecrit != null && tape(x) === montantEcrit(x.dataset.ecrit) ? x.dataset.ecrit : tape(x)),
+  },
   quantite: {
     html: (v, o) => `<input type="text" inputmode="numeric" data-case data-unite="${echapper(o.unite)}"${
       valeurDeDepart(v == null ? null : v[o.unite])}>`,
     lire: (x) => (tape(x) == null ? null : { [x.dataset.unite]: tape(x) }),
   },
-  // Un oui-non vide que le moteur prend pour oui ou non le dit à côté, entre parenthèses (`o.prerempli`).
+  // UN OUI-NON PRÉ-REMPLI (`o.prerempli` : ce que le moteur prend sans lui) se montre tel que le moteur le prend, et se
+  // change dans les deux sens : ce qui diffère du pré-rempli s'écrit, y revenir n'écrit rien. Sans pré-rempli, coché
+  // s'écrit oui, décoché n'écrit rien.
   oui_non: {
-    html: (v, o) => `<input type="checkbox" data-case${v ? " checked" : ""}>${
-      v == null && o.prerempli != null ? `<small class="case-prerempli">(${o.prerempli ? "oui" : "non"})</small>` : ""}`,
-    lire: (x) => (x.checked ? true : null),
+    html: (v, o) => `<input type="checkbox" data-case${(v == null ? o.prerempli : v) ? " checked" : ""}${
+      o.prerempli == null ? "" : ` data-prerempli="${o.prerempli ? "oui" : "non"}"`}>`,
+    lire: (x) => (x.dataset.prerempli == null ? (x.checked ? true : null)
+      : x.checked === (x.dataset.prerempli === "oui") ? null : x.checked),
   },
   mois: { html: (v) => `<input type="month" data-case${valeurDeDepart(v)}>`, lire: tape },
   date: {
@@ -93,8 +106,10 @@ const CASES = {
     lire: (x) => [...x.querySelectorAll(x.dataset.liste === "coches" ? "input:checked" : "input")]
       .map((c) => c.value.trim()).filter(Boolean),
   },
-  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
-  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
+  // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend ;
+  // choisir le vide n'écrit rien, et le pré-rempli revient.
+  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? o.prerempli : v, o.choix)}</select>`, lire: (x) => x.value || null },
+  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? o.prerempli : v, o.choix)}</select>`, lire: (x) => x.value || null },
   // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
   objet: { html: (v) => `<span class="case-objet" data-case>${echapper(objetEnClair(v))}</span>`, lire: () => undefined },
   // UNE VALEUR FAITE DE PARTIES (`o.parties` : chacune sa clé, son libellé, sa forme) : chaque partie sa case ; celle
@@ -213,7 +228,7 @@ function colonnesDesLignes(lignes, communs) {
 /** La largeur d'une colonne, par sa forme : une liste où l'on choisit et un texte s'élargissent, un nombre reste court. */
 const LARGEUR_DE_COLONNE = {
   choix_rendu: "minmax(8rem, 1.4fr)", choix: "minmax(8rem, 1.4fr)", texte: "minmax(8rem, 2fr)",
-  quantite: "minmax(4rem, .5fr)", nombre: "minmax(4.5rem, .6fr)", jours: "minmax(7rem, 1fr)",
+  quantite: "minmax(4rem, .5fr)", nombre: "minmax(4.5rem, .6fr)", montant: "minmax(4.5rem, .6fr)", jours: "minmax(7rem, 1fr)",
 };
 
 /** DES LIGNES DE PAIE, une par rangée, aux colonnes fixes et titrées une fois : chaque clé que sa rubrique dit, chacune
@@ -231,7 +246,7 @@ function lignesDePaie(lignes, choixDe, o) {
     const cles = clesDeLaLigne(r, o.choix);
     const choix = { ...o.choix, ...(r ? r.choix : {}), ...choixDe(i) };
     // Les nombres de la ligne, que les mots de sa rubrique suivent : le premier et le second, ou le seul.
-    const nombres = cles.filter((c) => c.forme === "quantite" || c.forme === "nombre").map((c) => c.cle);
+    const nombres = cles.filter((c) => c.forme === "quantite" || c.forme === "nombre" || c.forme === "montant").map((c) => c.cle);
     const mot = (cle) => {
       if (!r || !nombres.includes(cle)) return "";
       const k = nombres.length > 1 ? nombres.indexOf(cle) : 1;

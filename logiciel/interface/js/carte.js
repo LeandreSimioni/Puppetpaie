@@ -66,7 +66,8 @@ function casesDeLaCarte(div) {
 /** LA PLACE DE CHAQUE CASE, telle que la route la dit : pour une case de sa nature, celle que la carte rendue donne
  *  (`carte.cases` de sa paie : une case qu'elle ne rend pas est fermée) ; sans carte rendue, et pour une case qui n'est
  *  pas de sa nature (la nature, ce qu'un motif de recours porte), celle de sa description quand elle est de toute carte
- *  (`ouverte` : « toujours »). Les lignes, par leur forme, ont leur rangée. */
+ *  (`ouverte` : « toujours »). Les lignes, par leur forme, ont leur rangée. Une case `rendue` ne se dessine pas dans la
+ *  grille : elle se lit sous les lignes, dans ce que l'aperçu dit du contrat (`peindreLeContrat`). */
 function placesDesCases(div) {
   const r = rendueDe(div);
   const ouvertes = new Map((r ? r.cases : []).map((x) => [x.cle, x.place]));
@@ -81,15 +82,16 @@ function placesDesCases(div) {
   return places;
 }
 
-/** Une case rendue (`rendue`) : montrée, pas saisie ; sa valeur, celle que la carte écrit, sinon celle que le moteur
- *  pose (`prerempli`). Sans valeur, elle ne se montre pas. */
-function caseRendue(div, d) {
+/** Ce que la carte pré-remplit (`prerempli` de sa carte rendue ; avant tout aperçu, celui d'une carte neuve,
+ *  `nouvelle_carte` de la route saisie). */
+function ceQuiPreremplit(div) {
   const r = rendueDe(div);
-  const v = dite(div._carte[d.cle]) ? div._carte[d.cle] : r && r.prerempli[d.cle];
-  if (!dite(v)) return "";
-  const aide = ETAT.aides[d.cle];
-  return `<span class="case rendue" data-rendue="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}>
-    <span class="case-libelle">${echapper(d.libelle)}</span><b>${echapper(d.forme === "date" ? jjmmaaaa(v) : objetEnClair(v))}</b></span>`;
+  return r ? r.prerempli : NOUVELLE_CARTE.prerempli;
+}
+
+/** Ce qu'une ligne neuve de la rubrique `code` prend (`prerempli.lignes` : le taux d'un cachet), sous ses clés. */
+function ligneNeuve(div, code) {
+  return ceQuiPreremplit(div).lignes[code] || {};
 }
 
 /** Une case de la carte : son libellé, l'aide que la route etat en donne (`aides`, sous la clé de la case), ce que le
@@ -160,7 +162,7 @@ function dessinerLaCarte(div) {
   const avanceOuvert = div._avance != null ? div._avance : places.avance.some((d) => dite(div._carte[d.cle]));
   div.innerHTML = `
     ${r && r.faute ? `<div class="encart attention">${echapper(r.faute)}</div>` : ""}
-    <div class="e-cases">${cases(places.base)}${places.rendue.map((d) => caseRendue(div, d)).join("")}</div>
+    <div class="e-cases">${cases(places.base)}</div>
     ${cases(places.lignes)}
     ${finOuverte ? `<div class="branche e-fin">
       <h3>${echapper(rupture.porte)}</h3>
@@ -180,7 +182,7 @@ function dessinerLaCarte(div) {
     b.onclick = () => {
       const bloc = b.closest(".case-lignes");
       const r = rubriqueDe(proposeDe(div).par_defaut);
-      const neuve = r ? ligneDonnee({ rubrique: r.code }, r) : {};
+      const neuve = r ? ligneDonnee({ ...ligneNeuve(div, r.code), rubrique: r.code }, r) : {};
       changer(div, [{ case: bloc.dataset.cle, valeur: [...lireLesLignes(bloc), neuve] }]);
     };
   });
@@ -198,10 +200,19 @@ function dessinerLaCarte(div) {
 }
 
 /** Une case a changé : sa valeur, lue par sa forme, part à la route. Une case des lignes : toutes les lignes, telles que
- *  la route les lit. Une case qui n'est pas de la carte (le montant visé) n'écrit rien. */
+ *  la route les lit ; une ligne qui change de rubrique prend, dans ses clés vides, ce qu'une ligne neuve de sa rubrique
+ *  prend (`ligneNeuve`). Une case qui n'est pas de la carte (le montant visé) n'écrit rien. */
 function caseChangee(div, x) {
   const bloc = x.closest(".case-lignes");
-  if (bloc) { changer(div, [{ case: bloc.dataset.cle, valeur: lireLesLignes(bloc) }]); return; }
+  if (bloc) {
+    const lignes = lireLesLignes(bloc);
+    if (x.dataset.cle === "rubrique") {
+      const l = lignes[+x.closest(".ligne-paie").dataset.ligne];
+      Object.entries(ligneNeuve(div, l.rubrique)).forEach(([k, v]) => { if (k in l && l[k] == null) l[k] = v; });
+    }
+    changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
+    return;
+  }
   const c = x.closest(".case[data-cle]");
   if (!c) return;
   const v = lireLaCase(c.querySelector("[data-case]"));
@@ -275,13 +286,15 @@ function poserLesChevrons(div) {
   });
 }
 
-/** Sous les lignes : ce que l'aperçu a compris du contrat (`contrat_dit`), et, pour un mois sans paie, ce qu'il en dit
- *  (`contrat.sans_paie`). Ses jours travaillés sont une case rendue de la carte. */
+/** SOUS LES LIGNES : ce que l'aperçu dit du contrat (`contrat_dit` : ses bornes et ses jours travaillés, les cases que
+ *  la carte rend sans les faire saisir, lues là seulement ; son numéro), et, pour un mois sans paie, ce qu'il en dit
+ *  (`contrat.sans_paie`). Une carte à compléter, ses bornes quand elle les sait. */
 function peindreLeContrat(div) {
   const cible = div.querySelector(".e-montre");
   if (!cible) return;
   const p = div._paie;
-  if (!p || p.a_completer) { cible.innerHTML = ""; return; }
+  if (p && p.a_completer) { cible.innerHTML = p.contrat_dit ? echapper(p.contrat_dit) : ""; return; }
+  if (!p) { cible.innerHTML = ""; return; }
   cible.innerHTML = `<span${p.numero_contrat ? ` title="${echapper(ETAT.aides.numero_contrat)}"` : ""}>${echapper(p.contrat_dit)}</span>${
     p.contrat.sans_paie ? ` · ${aideDe("sans_cachet")}` : ""}`;
 }
@@ -349,8 +362,10 @@ function dessinerLeVise(div) {
   const cible = div.querySelector(".e-viser");
   const f = CATALOGUE.ajuster;
   if (!cible || !f || !div.dataset.engagement || !div._paie || div._paie.a_completer) { if (cible) cible.innerHTML = ""; return; }
-  const vise = div._vise || (div._vise = { ouvert: false, valeurs: {}, phrase: null, erreur: false });
   const champs = f.charge.filter((c) => !(c.nom in contexteDuVise(div)));
+  // Une liste de la fiche s'ouvre sur sa première valeur, celle que la fiche range en tête (ce qui se vise : le net).
+  const premieres = Object.fromEntries(champs.filter((c) => c.choix && c.choix.length).map((c) => [c.nom, c.choix[0].code]));
+  const vise = div._vise || (div._vise = { ouvert: false, valeurs: premieres, phrase: null, erreur: false });
   cible.innerHTML = `<details class="e-viser-branche"${vise.ouvert ? " open" : ""}><summary>${echapper(f.geste)}</summary>
     <div class="branche">
       <div class="e-cases">${casesDesChamps(champs, vise.valeurs, {})}</div>
