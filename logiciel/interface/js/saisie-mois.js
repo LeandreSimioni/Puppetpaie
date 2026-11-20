@@ -63,12 +63,6 @@ async function calculerApercu(lu) {
 let MOIS_AFFICHE = null;        // le mois REELLEMENT charge dans l'ecran
 let DEMANDE_MOIS = null;
 
-/** Le taux d'une ligne de cachet neuve que la route dit (`defauts.taux_cachet` de `saisie`). */
-function afficherRappelsMois(defauts) {
-  document.getElementById("rappels-mois").innerHTML =
-    `<span>Cachet par défaut</span> <b>${defauts.taux_cachet == null ? "—" : echapper(euros(defauts.taux_cachet))}</b>`;
-}
-
 /** Lit le mois et le dessine : ses cartes, ses importés, ses contrats repris, l'aperçu, les étapes, les imprévus, l'état
  *  de chaque engagement. `repeint` : l'état frais d'un mois déjà affiché, après une écriture. Rend la fin des lectures
  *  (le démarrage l'attend pour montrer la page peinte). */
@@ -88,7 +82,6 @@ async function chargerMois(mois, repeint = false) {
   MOIS_AFFICHE = mois;
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
-  afficherRappelsMois(r.defauts);
   const defilement = window.scrollY;
   poserLesCartes(r);
   cible.classList.remove("en-lecture");

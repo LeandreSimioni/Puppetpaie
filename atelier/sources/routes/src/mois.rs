@@ -75,7 +75,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, defauts (taux_cachet), nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -253,13 +253,6 @@ struct SexeDeLaFiche {
 
 // ------------------------------------------------------------------ les reponses
 
-/// Ce que la page propose quand la saisie ne le dit pas : le taux d'une ligne de cachet neuve.
-#[derive(Debug, Serialize)]
-struct Defauts {
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    taux_cachet: Option<MontantUnitaire>,
-}
-
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
 /// intermittents, un permanent s'ajoute rarement. Les natures qu'elle peut prendre sont celles que le mois propose
 /// (`engagement::permanents::Permanents::natures_neuves`) : un CDI ou un CDD neuf seulement quand la fiche Entreprise dit
@@ -291,7 +284,6 @@ struct SaisieDuMois {
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
-    defauts: Defauts,
     nouvelle_carte: NouvelleCarte,
     /// La vue du mois (`engagement::stock::vue_du_mois`), les lignes des permanents calculees (`avec_les_lignes_calculees_des_permanents`).
     saisie: VueDuMois,
@@ -596,17 +588,6 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     Ok(out)
 }
 
-/// Ce que la page propose quand la saisie ne le dit pas : `taux_cachet`, le taux d'une ligne de cachet neuve, celui
-/// du dernier cachet de CE mois, sinon son `taux_cachet`, sinon le dernier taux saisi du dossier (`dernier_taux`),
-/// sinon rien (`null`).
-fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
-    let taux_cachet = match taux_du_mois(ctx, saisie)? {
-        Some(t) => Some(t),
-        None => dernier_taux(ctx)?,
-    };
-    Ok(Defauts { taux_cachet })
-}
-
 /// La route `saisie`.
 fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let existe = engagement::stock::a_une_saisie(&ctx.racine, mois)?;
@@ -616,7 +597,6 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         Some(vue) => vue,
         None => squelette(ctx, mois)?,
     };
-    let defauts = defauts_de_la_saisie(ctx, &saisie)?;
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
@@ -670,7 +650,6 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         importes_dit: format!("{} de l'ancien logiciel", socle::ecran::compte(n_importes, "engagement", "engagements")),
         importes,
         ferme_aux_neufs: ferme,
-        defauts,
         nouvelle_carte,
         saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
