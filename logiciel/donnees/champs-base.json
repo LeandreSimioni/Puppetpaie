@@ -1311,7 +1311,7 @@
    "avance": "cas_particulier",
    "libelle": "Nom d'usage",
    "forme": "officiel",
-   "aide": "Seulement s'il porte un autre nom que son nom de famille (celui d'un conjoint, par exemple). En capitales, sans accents, 32 caractères au plus.",
+   "aide": "Seulement s'il porte un autre nom que son nom de famille (celui d'un conjoint, par exemple). En capitales, sans accents, 80 caractères au plus, ce que la DSN écrit.",
    "longueur": null,
    "exemple": "",
    "choix": [],
