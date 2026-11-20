@@ -477,6 +477,7 @@ fn embauche_dpae(p: &Paie, spectacle: bool) -> Embauche {
         contrat: p.engagement.contrat(),
         nature: p.engagement.nature.clone(),
         spectacle: p.spectacle.clone().filter(|_| spectacle),
+        periode_essai: p.engagement.ecrit.periode_essai_jours,
     }
 }
 

@@ -337,6 +337,8 @@ pub struct Embauche {
     /// Sa nature de contrat.
     pub nature: natures::NatureDeContrat,
     pub spectacle: Option<droit::fiche::Spectacle>,
+    /// La periode d'essai que le contrat stipule (sa carte, `engagement::ContratEcrit`) ; `None` : aucune.
+    pub periode_essai: Option<socle::date::Duree<socle::date::EnJours>>,
 }
 
 impl Embauche {
@@ -475,12 +477,21 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     }
     // LA PERIODE D'ESSAI, en chiffres ou rien : trois blancs valent le code
     // retour 99 (guide << API DPAE, principes de fonctionnement >>, p. 8-9).
-    // Le contrat CDDU que le logiciel redige (`modeles/contrat-cddu.modele`)
-    // n'en prevoit aucune : `000` est exact. Un CDI ou un CDD, le logiciel ne
-    // redige pas le contrat et n'en connait pas l'essai : la zone reste a
-    // blanc plutot que devinee, et la DPAE est enregistree en 99.
+    // La zone N_JJ_ESSAI (positions 885-887) dit << la duree de la periode
+    // d'essai (en jours) >> (`atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`).
+    // Un CDDU peut en comporter une (code du travail L. 1242-10,
+    // `atelier/reference/sources/code-du-travail/articles-20261110.md`), que
+    // le contrat stipule : celle de sa carte, que le contrat CDDU imprime
+    // (`modeles/contrat-cddu.modele`, << Période d'essai >>), en jours ;
+    // aucune stipulee : `000`. Un CDI ou un CDD, le logiciel ne redige pas le
+    // contrat et n'en connait pas l'essai : la zone reste a blanc plutot que
+    // devinee, et la DPAE est enregistree en 99.
     let essai = match nat.cle {
-        natures::NatureDeContrat::CdduSpectacle => "000".to_string(),
+        natures::NatureDeContrat::CdduSpectacle => match e.periode_essai {
+            None => "000".to_string(),
+            // Plus de trois chiffres ne tient pas dans la zone : son ecriture le refuse (`ecrire_zone`).
+            Some(d) => format!("{:03}", d.jours_a_ecrire()),
+        },
         natures::NatureDeContrat::Cdi | natures::NatureDeContrat::Cdd => " ".repeat(3),
     };
     poser(&mut buf, "jours_essai", &essai)?;
@@ -1130,6 +1141,7 @@ mod tests {
             contrat: PeriodeOuverte::du(j("2026-10-01"), fin).unwrap(),
             nature,
             spectacle: None,
+            periode_essai: None,
         }
     }
 

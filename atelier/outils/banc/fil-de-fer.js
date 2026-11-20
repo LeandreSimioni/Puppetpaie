@@ -107,10 +107,10 @@ const caseDe = (page, etape) => page.locator("#actions-mois .kase", { hasText: e
 
   // 5. Décembre : les cartes du Grand Fil à Dijon sont là, non validées ; celle de Solène Marchetot se valide.
   await vers("2026-12");
-  const carte = page.locator(".engagement", { has: page.locator(".e-qui-case[value=MARCHETOT]:checked") }).first();
+  const carte = page.locator(".engagement", { has: page.locator('[data-cle="salarie"] option[value=MARCHETOT]:checked') }).first();
   await carte.waitFor();
   await capture(page, "07-decembre-cartes.png");
-  await carte.locator(".v-basculer").click();
+  await carte.locator(".v-valider").click();
   await calme(page);
   await page.waitForFunction(() => /DPAE/.test(document.getElementById("actions-mois").innerText));
   const dec = await panneau(page);

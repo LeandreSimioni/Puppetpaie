@@ -133,6 +133,9 @@ pub struct Frais {
     pub taux: Option<MontantUnitaire>,
     pub territoire: Option<LieuDeFrais>,
     pub cases: Vec<CaseDeFrais>,
+    /// UNE CLE GARDEE, QUI N'EST PAS UNE CASE (`FormeSaisie::gardees`) : le lieu qu'une ligne de frais disait. Rien ne le
+    /// lit (un frais ne fait aucun jour du contrat ; le lieu qui change la limite d'un repas ou d'une nuitee est son
+    /// territoire) ; une ligne ecrite le porte, et elle se relit telle quelle.
     pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
     pub planning: Vec<DateDeLigne>,
@@ -316,42 +319,6 @@ pub enum LignePaie {
     RetenueArret(RetenueArret),
     IndemniteJournaliere(IndemniteJournaliere),
     Maintien(Maintien),
-}
-
-/// CE QUE LES TROIS CASES D'UNE LIGNE SAISIE MONTRENT A L'ECRAN, ecrit par le moteur : sa quantite (la base d'une ligne
-/// en pourcentage), son taux (le montant d'une ligne au montant, le pourcentage d'une ligne en pourcentage), ses heures
-/// par unite. Un nombre sans zero inutile, la virgule decimale (`socle::texte::virgule` : « 2 » cachets, « 1,5 ») ; un
-/// montant comme tout montant (`socle::texte::montant_dans_sa_case` : « 140,00 »). La saisie relit chacune telle quelle
-/// (`socle::grandeurs::lu::tapee`), sans perte. Une ligne que le moteur compose n'a pas de case : rien.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CasesMontrees {
-    pub quantite: Option<String>,
-    pub taux: Option<String>,
-    pub heures: Option<String>,
-}
-
-impl LignePaie {
-    /// Ce que ses cases montrent (`CasesMontrees`).
-    pub fn cases_montrees(&self) -> CasesMontrees {
-        use socle::texte::{montant_dans_sa_case as montant, virgule};
-        let (quantite, taux, heures) = match self {
-            LignePaie::Unites(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
-            LignePaie::UnitesEtHeures(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), l.heures.map(virgule)),
-            LignePaie::Frais(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
-            LignePaie::Pourcentage(l) => (l.base.map(montant), l.taux_majoration.map(virgule), None),
-            LignePaie::Montant(AuMontant { montant: m, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant: m, .. }) => (None, m.map(montant), None),
-            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => (None, None, None),
-        };
-        CasesMontrees { quantite, taux, heures }
-    }
-}
-
-impl CasesMontrees {
-    /// Une ligne qui ne dit encore que son taux (la ligne de cachet neuve, celle d'un contrat repris) : ce que ses cases
-    /// montrent, ecrit comme celui d'une ligne saisie.
-    pub fn d_un_taux(taux: Option<MontantUnitaire>) -> CasesMontrees {
-        CasesMontrees { quantite: None, taux: taux.map(socle::texte::montant_dans_sa_case), heures: None }
-    }
 }
 
 /// CE QUE LE MOTEUR POSE SUR UNE LIGNE DE FRAIS CALCULEE, pour l'ecran (`frais_au_dela`) : son rang parmi les lignes de
@@ -559,6 +526,17 @@ impl QuantiteDeLigne {
             Unite::Forfait => QuantiteDeLigne::Unites(q.grandeur()),
             Unite::Pourcentage => return Ok(None),
         }))
+    }
+
+    /// UNE PAR DATE, `n` dates : des cachets, des journees ou des services, qui se comptent ainsi ; `None` pour une
+    /// autre unite (des heures ne se deduisent pas d'un nombre de jours).
+    pub fn par_dates(unite: Unite, n: usize) -> Option<QuantiteDeLigne> {
+        match unite {
+            Unite::Cachet => Some(QuantiteDeLigne::Cachets(socle::grandeurs::Cachets::de_dates(n))),
+            Unite::Jour => Some(QuantiteDeLigne::Jours(Jours::de_dates(n))),
+            Unite::Service => Some(QuantiteDeLigne::Services(socle::grandeurs::Services::comptes(n))),
+            Unite::Heure | Unite::Semaine | Unite::Mois | Unite::Forfait | Unite::Pourcentage => None,
+        }
     }
 
     /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer) ; `None` :
@@ -1175,6 +1153,45 @@ impl LignePaie {
         l
     }
 
+    /// SES JOURS RANGES PAR MOIS, ceux de `mois` et d'avant en dates, ceux d'apres au planning, quelle que soit la cle qui
+    /// les donne (la page les donne en une seule cle : `ranger`) ; une ligne sans jours reste ce qu'elle est.
+    pub fn jours_ranges(&self, mois: Mois) -> LignePaie {
+        let tous: Vec<DateDeLigne> = self.dates().iter().chain(self.planning()).cloned().collect();
+        let (dates, planning): (Vec<DateDeLigne>, Vec<DateDeLigne>) = tous.into_iter().partition(|d| d.jour().mois_civil() <= mois);
+        self.avec_les_jours(dates, planning)
+    }
+
+    /// LA QUANTITE QUI SUIT SES JOURS : la ligne telle qu'elle etait (`avant`, de meme rubrique, d'unite `unite`) comptait
+    /// un cachet, une journee ou un service par date du mois (`QuantiteDeLigne::par_dates`, comme le planning,
+    /// `crate::lignes_du_planning`), et seuls ses jours changent : sa quantite suit leur nombre. Une quantite dite autrement
+    /// (deux cachets un meme jour), ou changee en meme temps, reste celle qui est dite.
+    pub fn quantite_qui_suit(self, avant: &LignePaie, unite: Unite) -> LignePaie {
+        fn dite(l: &LignePaie) -> Option<&Option<QuantiteDeLigne>> {
+            match l {
+                LignePaie::Unites(x) => Some(&x.quantite),
+                LignePaie::UnitesEtHeures(x) => Some(&x.quantite),
+                LignePaie::Frais(x) => Some(&x.quantite),
+                _ => None,
+            }
+        }
+        let suit = self.rubrique() == avant.rubrique()
+            && self.dates().len() != avant.dates().len()
+            && dite(&self).is_some_and(|q| Some(q) == dite(avant))
+            && QuantiteDeLigne::par_dates(unite, avant.dates().len()).is_some_and(|q| dite(avant) == Some(&Some(q)));
+        if !suit {
+            return self;
+        }
+        let quantite = QuantiteDeLigne::par_dates(unite, self.dates().len());
+        let mut l = self;
+        match &mut l {
+            LignePaie::Unites(x) => x.quantite = quantite,
+            LignePaie::UnitesEtHeures(x) => x.quantite = quantite,
+            LignePaie::Frais(x) => x.quantite = quantite,
+            _ => {}
+        }
+        l
+    }
+
     /// La ligne sans sa quantite (celle d'une ligne coupee a la fin d'un contrat, `crate::lignes_coupees_a_la_fin`) ; une
     /// ligne dont la quantite n'est pas une case telle quelle.
     pub fn sans_quantite(&self) -> LignePaie {
@@ -1202,7 +1219,6 @@ impl LignePaie {
         match self {
             LignePaie::Unites(l) => l.lieu.as_deref(),
             LignePaie::UnitesEtHeures(l) => l.lieu.as_deref(),
-            LignePaie::Frais(l) => l.lieu.as_deref(),
             _ => None,
         }
     }
@@ -1366,6 +1382,16 @@ impl Cle {
             Cle::Planning => "planning",
         }
     }
+
+    /// SA PLACE SUR LA LIGNE : le territoire d'un repas ou d'une nuitee (hors de la metropole, une cle que seule une
+    /// ligne de frais a limite porte, `FormeSaisie::Frais`) est sous « Avancé » ; les autres cles de sa forme sont de base.
+    pub fn place(self) -> crate::carte::PlaceDeLaCase {
+        use crate::carte::PlaceDeLaCase as P;
+        match self {
+            Cle::Territoire => P::Avance,
+            Cle::Rubrique | Cle::Quantite | Cle::Taux | Cle::Heures | Cle::Base | Cle::TauxMajoration | Cle::Montant | Cle::Genre | Cle::Cases | Cle::Lieu | Cle::Dates | Cle::Planning => P::Base,
+        }
+    }
 }
 
 /// LA FORME QUE LE CATALOGUE DEMANDE D'UNE LIGNE DE SA RUBRIQUE : ce que dit sa `saisie`, et sa nature.
@@ -1419,11 +1445,23 @@ impl FormeSaisie {
         match self {
             FormeSaisie::Unites => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
             FormeSaisie::UnitesEtHeures => &[Rubrique, Quantite, Taux, Heures, Lieu, Dates, Planning],
-            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Lieu, Dates, Planning],
-            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
+            // Une ligne de frais n'a pas de case de lieu (`gardees`) : le lieu d'un repas ou d'une nuitee hors de la
+            // metropole, qui change sa limite, est son territoire.
+            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Dates, Planning],
+            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Dates, Planning],
             FormeSaisie::Pourcentage => &[Rubrique, Base, TauxMajoration],
             FormeSaisie::Montant => &[Rubrique, Montant],
             FormeSaisie::AvantageEnNature => &[Rubrique, Montant, Genre],
+        }
+    }
+
+    /// LES CLES GARDEES de cette forme : une ligne peut les dire (facultatives) et les garde telles qu'elles sont
+    /// ecrites, mais aucune case ne les montre ni ne les saisit (elles ne sont pas dans `cles`). Le lieu d'une ligne de
+    /// frais : rien ne le lit, et une ligne ecrite le porte.
+    pub fn gardees(self) -> &'static [Cle] {
+        match self {
+            FormeSaisie::Frais | FormeSaisie::FraisSansLimite => &[Cle::Lieu],
+            FormeSaisie::Unites | FormeSaisie::UnitesEtHeures | FormeSaisie::Pourcentage | FormeSaisie::Montant | FormeSaisie::AvantageEnNature => &[],
         }
     }
 }
@@ -1542,7 +1580,7 @@ impl LigneDonnee {
         let voulues = forme.cles();
         let dites = self.dites();
         let manquent: Vec<&str> = voulues.iter().filter(|c| !c.facultative() && !dites.contains(c)).map(|c| c.nom()).collect();
-        let de_trop: Vec<&str> = dites.iter().filter(|c| !voulues.contains(c)).map(|c| c.nom()).collect();
+        let de_trop: Vec<&str> = dites.iter().filter(|c| !voulues.contains(c) && !forme.gardees().contains(c)).map(|c| c.nom()).collect();
         if !manquent.is_empty() || !de_trop.is_empty() {
             let liste = |l: &[&str]| l.iter().map(|c| format!("« {} »", c)).collect::<Vec<_>>().join(", ");
             let mut quoi = Vec::new();
@@ -1632,8 +1670,9 @@ impl LigneDonnee {
 }
 
 /// LES LIGNES QU'UN APPELANT DONNE A UNE CARTE DE `mois`, RANGEES (`LigneDonnee::ranger`) : chacune sa rubrique lue au
-/// catalogue de la compagnie a son jour (`LigneDonnee::jour`). Le premier refus nomme le salarie (`qui`) et la ligne ;
-/// rien ne s'ecrit.
+/// catalogue de la compagnie a son jour (`LigneDonnee::jour`), ses jours ranges par le mois de la carte
+/// (`LignePaie::jours_ranges` : l'appelant peut tous les donner dans `dates`). Le premier refus nomme le salarie
+/// (`qui`) et la ligne ; rien ne s'ecrit.
 pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qui: &str) -> R<Vec<LignePaie>> {
     let mut out = Vec::new();
     for (i, l) in lignes.into_iter().enumerate() {
@@ -1642,7 +1681,7 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
             return Err(dans_la_ligne(refus("elle dit sa rubrique (« rubrique »).")));
         };
         let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois)).map_err(dans_la_ligne)?;
-        out.push(l.ranger(&r).map_err(dans_la_ligne)?);
+        out.push(l.ranger(&r).map_err(dans_la_ligne)?.jours_ranges(mois));
     }
     Ok(out)
 }

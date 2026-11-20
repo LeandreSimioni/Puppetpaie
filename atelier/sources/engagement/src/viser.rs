@@ -11,13 +11,31 @@ use socle::echec::Echec;
 use crate::ligne::{QuantiteDeLigne, TauxDeLigne};
 use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
 
-/// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
+/// CE QUI SE VISE : le brut ; le net a payer et le cout employeur, chacun avec ou sans les indemnites de frais (les
+/// lignes de frais hors assiette : repas et nuitees dans leur limite, defraiements, `HorsAssiette::Frais`). Le net a
+/// payer les compte (`Paie::net_a_payer`), le cout employeur non (`Paie::cout_employeur`) ; le brut n'en a jamais.
+/// L'acompte, une avance et non une indemnite, reste ce qu'il est : retire du net, hors du cout. La charge du montant
+/// vise le dit `brut`, `net`, `net_sans_frais`, `cout`, `cout_avec_frais`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Cible {
     Brut,
     Cout,
+    CoutAvecFrais,
     Net,
+    NetSansFrais,
+}
+
+/// Les indemnites de frais de la paie `p` : ses lignes hors assiette qui remboursent un frais (`HorsAssiette::Frais`).
+fn frais_de(ctx: &Contexte, p: &Paie) -> R<Montant> {
+    let mut total = Montant::ZERO;
+    for l in p.remuneration.iter().filter(|l| !l.soumis) {
+        let r = droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au).map_err(RefusVisee::Refus)?;
+        if r.hors_assiette().map_err(RefusVisee::Refus)? == droit::catalogue::HorsAssiette::Frais {
+            total += l.montant;
+        }
+    }
+    Ok(total)
 }
 
 /// Pourquoi la recherche n'aboutit pas : un refus de la recherche elle-meme, ou le calcul de la saisie qui refuse.
@@ -156,15 +174,17 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Coefficient) -> R<bool> {
 
 /// La `cible` additionnee des paies des engagements de rangs `rangs` : le calcul du mois rend une paie par engagement de
 /// la saisie `data`, dans son ordre.
-fn somme(data: &VueDuMois, paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Montant> {
+fn somme(ctx: &Contexte, data: &VueDuMois, paies: &[Paie], rangs: &[RangDansLeMois], cible: Cible) -> R<Montant> {
     let mut total = socle::grandeurs::Montant::ZERO;
     let mut vues = 0;
     for (_, p) in RangDansLeMois::de_chacun(&data.engagements).zip(paies).filter(|((i, _), _)| rangs.contains(i)) {
         vues += 1;
         total += match cible {
             Cible::Net => p.net_a_payer,
+            Cible::NetSansFrais => p.net_a_payer - frais_de(ctx, p)?,
             Cible::Brut => p.brut,
             Cible::Cout => p.cout_employeur,
+            Cible::CoutAvecFrais => p.cout_employeur + frais_de(ctx, p)?,
         };
     }
     if vues != rangs.len() {
@@ -200,7 +220,7 @@ pub fn viser(ctx: &Contexte, data: &VueDuMois, rangs: &[RangDansLeMois], cible: 
             ));
         }
         let paies = crate::charger_donnees(ctx, &d).map_err(RefusVisee::Calcul)?.paies;
-        let atteint = somme(&d, &paies, rangs, cible)?;
+        let atteint = somme(ctx, &d, &paies, rangs, cible)?;
         Ok((d, paies, atteint))
     };
 

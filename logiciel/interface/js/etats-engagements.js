@@ -1,18 +1,12 @@
-/* L'écran de l'engagement : la carte en saisie, la ligne validée et ses trois carrés, le non actif.
+/* L'état des engagements du mois (`etat-par-engagement`) : ses trois carrés, ses pièces, ses versions, le non actif, et
+   les boîtes qu'il ouvre (la DPAE, l'avertissement d'une modification). La carte qui les montre est `js/carte.js`.
 
-   L'état est celui des engagements enregistrés (`etat-par-engagement`) : un engagement qu'on vient d'ajouter ou de
-   changer n'en a pas encore, et sa carte n'en montre pas. Les carrés, leurs phrases et leurs gestes viennent du
-   moteur ; un clic ouvre l'envoi que le moteur nomme, rien ne part d'un clic sans sa boîte. */
+   L'état est celui des engagements enregistrés : un engagement qu'on vient d'ajouter n'en a pas encore, et sa carte n'en
+   montre pas. Les carrés, leurs phrases et leurs gestes viennent du moteur ; un clic ouvre l'envoi que le moteur nomme,
+   rien ne part d'un clic sans sa boîte. */
 "use strict";
 
 let ETATS_ENGAGEMENTS = null;      // les lignes d'`etat-par-engagement`, par identité d'engagement ; null = pas lu
-
-/** La ligne d'`etat-par-engagement` d'une carte : celle de son identité (`data-engagement`), que le moteur rend avec
- *  chaque ligne. Une carte que le moteur n'a pas encore écrite n'a pas d'identité, donc pas d'état. */
-function etatDeLaCarte(div) {
-  if (!ETATS_ENGAGEMENTS || !div.dataset.engagement) return undefined;
-  return ETATS_ENGAGEMENTS.get(div.dataset.engagement);
-}
 
 /* LES TROIS CARRÉS DE LA LIGNE VALIDÉE : DPAE, Contrat, Documents. Le moteur
    rend chacun (`etat-par-engagement`, `carres`) : son nom, sa couleur, ce qui
@@ -123,64 +117,8 @@ async function boitePieces(ligne, acte) {
   });
 }
 
-/** Pose les états d'une carte, seulement s'ils ont changé. Le champ qu'on quitte en cliquant « Valider » se
- *  relit (`change`) et repeint la carte entre l'appui et le relâché du bouton : refait, le bouton n'aurait pas
- *  reçu le clic. */
-function poserEtats(cible, html) {
-  if (cible._etatsPeints === html) return;
-  cible.innerHTML = html;
-  cible._etatsPeints = html;
-}
-
-/** Peint les états sur les blocs. Rappelée après chaque frappe : changer le
- *  salarié ou les jours change l'engagement que le bloc désigne. */
-function peindreEtats() {
-  document.querySelectorAll(".engagement").forEach((div) => {
-    const cible = div.querySelector(".etats");
-    if (!cible) return;
-    // UNE CARTE OUVERTE POUR ÊTRE MODIFIÉE désigne l'engagement validé qu'elle a ouvert, quoi qu'on y tape (son
-    // salarié, ses dates) : son bandeau reste celui de la modification jusqu'à « Modifier l'engagement » ou « Annuler ».
-    if (div.classList.contains("en-modification") && div._ligne) {
-      const ligne = etatDeLaCarte(div) || div._ligne;
-      div._ligne = ligne;
-      poserEtats(cible, quiEtPourQuoi(ligne) + bandeauEtats(ligne) + bandeauValidation(ligne));
-      brancherValidation(div, ligne);
-      brancherRecu(div);
-      return;
-    }
-    const ligne = etatDeLaCarte(div);
-    const connue = !!ligne;
-    div.classList.toggle("enregistree", connue);
-    if (!ETATS_ENGAGEMENTS) { poserEtats(cible, ""); return; }
-    if (!connue) {
-      fermerEdition(div, false);
-      if (!salarieDuBloc(div)) {
-        // Sans salarié, ce bloc n'est pas un engagement : il n'est même pas
-        // enregistré. Le dire, plutôt que de laisser un bloc muet qu'on
-        // ne peut ni valider ni faire partir.
-        poserEtats(cible, `<p class="etats-absent">${aideDe("qui_engage")}</p>
-           <div class="validation"><span class="boutons">${BOUTON_RETIRER}</span></div>`);
-        brancherRetirer(div);
-        return;
-      }
-      // Un engagement qu'on vient d'ajouter ou de changer : pas de pastille (une pastille, même grise, se lit comme un
-      // état connu), mais le geste « Valider l'engagement » tout de suite : `valider-engagement` écrit la carte et la
-      // valide, ou dit le fait qui lui manque sans rien écrire.
-      poserEtats(cible, bandeauValidation({}));
-      brancherValidation(div, {});
-      return;
-    }
-    // Un contrat sur plusieurs mois : son chevron est au bord de la case.
-    div._ligne = ligne;
-    poserEtats(cible, quiEtPourQuoi(ligne) + bandeauEtats(ligne) + bandeauValidation(ligne));
-    brancherValidation(div, ligne);
-    brancherRecu(div);
-    fermerEdition(div, !!ligne.valide);
-  });
-}
-
-/** Lit `etat-par-engagement` et repeint. Pendant la lecture, les cartes gardent les états qu'elles montrent : une
- *  frappe qui repeint entre-temps ne leur retire pas leurs boutons. */
+/** Lit `etat-par-engagement` et le pose sur les cartes (`peindreEtats`, `js/carte.js`). Un refus se dit, et les cartes
+ *  restent comme elles sont. */
 async function dessinerEtatsDesEngagements(mois) {
   if (!mois) { ETATS_ENGAGEMENTS = null; peindreEtats(); return; }
   try {
@@ -189,132 +127,40 @@ async function dessinerEtatsDesEngagements(mois) {
     r.engagements.forEach((l) => { ETATS_ENGAGEMENTS.set(JSON.stringify(l.engagement), l); });
     peindreNonActifs(r.non_actifs);
   } catch (e) {
-    // On ne sait rien des engagements : les cartes restent comme elles sont, et le refus se dit.
-    // Un état vide les ouvrait TOUTES en formulaire, validées comprises.
     ETATS_ENGAGEMENTS = null;
     dire(e.message, "erreur");
   }
   peindreEtats();
 }
 
-/* ------------------------------------------------ valider un engagement
-   Validé, l'engagement est vert, sur le bloc entier, et ses champs sont en lecture seule pour de vrai (`disabled`).
-   Un clic sur sa carte l'ouvre, toutes ses cases modifiables ; ce qui est parti et ce que le changement entraîne, le
-   moteur le dit à « Modifier l'engagement » (`modifierLaCarte`). */
-
-/** Ferme ou ouvre les champs d'un bloc. Le bouton de validation, lui, reste
- *  actif — sinon on ne pourrait plus rouvrir. */
-function fermerEdition(div, ferme) {
-  // Une carte fermée qui doit s'ouvrir se construit ici, une fois (ouvrirCarte).
-  if (!ferme) ouvrirCarte(div);
-  div.classList.toggle("validee", ferme);
-  peindreCarte(div);
-  div.querySelectorAll("input, select, button").forEach((c) => {
-    if (c.classList.contains("v-basculer") || c.classList.contains("retirer-engagement")) return;
-    if (c.classList.contains("verrou")) return;    // un contrat en cours
-    if (c.closest(".e-resume")) return;            // la ligne de l'engagement validé
-    if (c.closest(".e-imprevus")) return;          // ses imprévus : la reprise, le maintien se disent après la paie
-    if (c.classList.contains("chevron-pluri")) return;  // le chevron du contrat sur plusieurs mois
-    c.disabled = ferme;
-  });
-  // Ses imprévus se redisent : sur un engagement validé, un jour payé pendant
-  // l'arrêt ne se retire plus d'un clic (js/imprevus.js).
-  peindreImprevusDesCartes();
+/* UN ENGAGEMENT VALIDÉ DONT LA PAIE S'EST RECALCULÉE D'ELLE-MÊME : le moteur dit quand et pourquoi (`recalcul` de
+ * `etat-par-engagement`) ; la carte le montre tel quel. */
+function recalculDe(ligne) {
+  return ligne && ligne.recalcul ? `<div class="encart carte-recalcul">${echapper(ligne.recalcul)}</div>` : "";
 }
 
-/* RETIRER UN ENGAGEMENT : un vrai bouton, en bas à droite, à côté de « Valider ».
-   L'avertissement n'est là que quand il y a quelque chose à perdre : un
-   engagement validé, un contrat envoyé à la signature ou revenu signé, une DPAE
-   partie. Sinon le bloc s'en va, et l'enregistrement suit. */
-const BOUTON_RETIRER = `<button class="lien retirer-engagement">Retirer cet engagement</button>`;
-
-/** Le bandeau de validation d'un bloc, sous les quatre pastilles. Un engagement validé ne le montre qu'ouvert pour être
- *  modifié : ses pièces, ses versions, et « Annuler » à côté de « Modifier l'engagement ». */
-function bandeauValidation(ligne) {
-  if (ligne.valide) {
-    return `${recalculDe(ligne)}<div class="validation faite">
-      <span><b>Engagement validé</b> ${ligne.valide_dit ? echapper(ligne.valide_dit) : ""}
-        ${ligne.carres.filter((c) => c.lien).map((c) =>
-          ` · <button class="lien v-pieces" data-acte="${echapper(c.cle)}">${echapper(c.lien)}</button>`).join("")}
-        ${ligne.versions ? ` · ${versionsDe(ligne)}` : ""}</span>
-      <span class="boutons">
-        ${BOUTON_RETIRER}
-        <button class="secondaire v-annuler">Annuler</button>
-        <button class="primaire v-modifier">Modifier l'engagement</button>
-      </span>
-    </div>`;
-  }
-  return `<div class="validation">
-    <span class="boutons">
-      ${BOUTON_RETIRER}
-      <button class="primaire v-basculer" data-valide="1">Valider l'engagement</button>
-    </span>
-  </div>`;
+/* UN ENGAGEMENT MODIFIÉ APRÈS UN ENVOI : la ligne que le moteur écrit (« Modifié le 12/11, après l'envoi du contrat »,
+ * `versions.phrase` d'`etat-par-engagement`) ouvre la frise de ses versions. Jamais modifié après un envoi : rien. */
+function versionsDe(ligne) {
+  return ligne && ligne.versions
+    ? `<button class="lien carte-versions">${echapper(ligne.versions.phrase)}</button>` : "";
 }
 
-/** Branche le bouton d'un bloc, une fois le bandeau posé. */
-function brancherValidation(div, ligne) {
-  const b = div.querySelector(".v-basculer");
-  if (b) b.onclick = (ev) => {
-    ev.preventDefault();
-    validerLaCarte(div);
-  };
-  const m = div.querySelector(".v-modifier");
-  if (m) m.onclick = (ev) => { ev.preventDefault(); modifierLaCarte(div); };
-  const a = div.querySelector(".v-annuler");
-  if (a) a.onclick = (ev) => { ev.preventDefault(); annulerLaModification(div); };
-  div.querySelectorAll(".v-pieces").forEach((p) => {
-    p.onclick = (ev) => { ev.preventDefault(); boitePieces(ligne, p.dataset.acte); };
-  });
-  const frise = div.querySelector(".etats .carte-versions");
-  if (frise) frise.onclick = (ev) => { ev.preventDefault(); boiteFrise(ligne); };
-  brancherRetirer(div);
-}
-
-/** « Valider l'engagement » : ce qui a changé sur la carte s'écrit d'abord, case par case, sans attendre
- *  l'enregistrement automatique ; puis le brouillon écrit se valide (`valider-engagement`, son identité). Il lui manque
- *  un fait : le moteur dit lequel, et la carte reste en saisie. */
-async function validerLaCarte(div) {
-  clearTimeout(MINUTEUR_SAISIE);
-  const mois = document.getElementById("mois").value;
-  if (!carteAEcrire(div, mois)) { dire(ETAT.aides.qui_engage, "erreur"); return; }
-  try {
-    await aSonTour(async () => {
-      const attente = ecrituresEnAttente().find(([d]) => d === div);
-      if (attente) await ecrireLaCarte(div, attente[1], mois);
-    });
-    const r = await aSonTour(() => api("valider-engagement", { mois, engagement: JSON.parse(div.dataset.engagement) }));
-    dire(r.phrase);
-  } catch (e) { dire(e.message, "erreur"); }
-  await rafraichirActions();
-}
-
-/** Le bouton « Retirer cet engagement » d'une carte, quel que soit son état. Le moteur décide (`retirer-engagement`,
- *  la carte désignée par son identité) : rien de parti, l'engagement s'efface ; un envoi parti, il avertit sans rien
- *  écrire (`avertissement`), et la page propose de le rendre non actif (`confirme`). Une carte jamais écrite
- *  n'a rien dans le moteur : elle s'efface de l'écran. Ce qui attend s'écrit
- *  d'abord, puis le mois se relit. */
-function brancherRetirer(div) {
-  const b = div.querySelector(".retirer-engagement");
-  if (!b) return;
-  b.onclick = async (ev) => {
-    ev.preventDefault();
-    const mois = document.getElementById("mois").value;
-    clearTimeout(MINUTEUR_SAISIE);
-    await enregistrerSaisie(true);
-    if (!div.dataset.engagement) { div.remove(); rafraichirApercu(); dire(ETAT.aides.engagement_retire); return; }
-    const charge = { mois, engagement: JSON.parse(div.dataset.engagement), confirme: false };
-    try {
-      let r = await api("retirer-engagement", charge);
-      if (r.avertissement) {
-        if (!await boiteNonActif(r.avertissement)) return;
-        r = await api("retirer-engagement", { ...charge, confirme: true });
-      }
-      dire(r.phrase);
-      div.remove();
-      await chargerMois(mois, true);
-    } catch (e) { dire(e.message, "erreur"); }
-  };
+/** La frise : par version, sa date, ce qui a changé depuis la précédente, et ce qui est parti sur elle. */
+function boiteFrise(ligne) {
+  const vs = ligne.versions.versions;
+  ouvrirBoite(`
+    <h3>${echapper(ligne.nom)}</h3>
+    <p class="discret">${echapper([pourQuoi(ligne), ligne.periode_dit].filter(Boolean).join(", "))}</p>
+    <ol class="frise">${vs.map((v) => `
+      <li>
+        <b>${echapper(v.titre_dit)}</b> <span class="discret">— ${echapper(v.jour_dit)}</span>
+        ${v.changements.length ? `<ul class="frise-changements">${v.changements.map((c) =>
+          `<li>${echapper(c)}</li>`).join("")}</ul>` : ""}
+        ${v.partis.length ? `<p class="frise-partis">Parti : ${v.partis.map(echapper).join(" ; ")}</p>` : ""}
+      </li>`).join("")}
+    </ol>
+    <div class="actions"><button class="secondaire" onclick="fermerBoite()">Fermer</button></div>`);
 }
 
 /** La phrase du moteur, et le choix : rendre l'engagement non actif, ou le garder. */
@@ -352,67 +198,6 @@ function peindreNonActifs(liste) {
   });
 }
 
-
-/* UN CLIC SUR LA CARTE D'UN ENGAGEMENT VALIDÉ L'OUVRE, toutes ses cases modifiables. Rien ne s'écrit tant qu'on n'a
- * pas cliqué « Modifier l'engagement » : la carte reste ouverte avec ce qu'on y a tapé, « Annuler » la referme telle
- * qu'elle est enregistrée. */
-function ouvrirEnModification(div) {
-  if (!div._ligne || !div._ligne.valide) return;
-  div.classList.add("en-modification");
-  fermerEdition(div, false);
-  // Ce que la carte montre à son ouverture : ce qu'on y change se dit case par case depuis lui (`changementsOuverts`).
-  div._ouverte = JSON.stringify(carteOuverte(div));
-  peindreEtats();
-}
-
-/** Ce que montre une carte ouverte pour être modifiée. */
-function carteOuverte(div) {
-  LIRE_LES_MODIFICATIONS = true;
-  try { return engagementDuBloc(div, document.getElementById("mois").value); } finally { LIRE_LES_MODIFICATIONS = false; }
-}
-
-/** CE QU'ON A CHANGÉ SUR UNE CARTE OUVERTE POUR ÊTRE MODIFIÉE, case par case depuis son ouverture : les changements que
- *  « Modifier l'engagement » écrit, et que l'aperçu et le montant visé calculent avant. */
-function changementsOuverts(div) {
-  return changementsDeCases(JSON.parse(div._ouverte), carteOuverte(div));
-}
-
-/** Referme la carte telle qu'elle est enregistrée : le mois se relit, ce qu'on y a tapé s'efface. */
-async function refermerLaCarte(div) {
-  const mois = document.getElementById("mois").value;
-  div.classList.remove("en-modification");
-  div._ouverte = undefined;
-  clearTimeout(MINUTEUR_SAISIE);
-  await enregistrerSaisie(true);
-  await chargerMois(mois, true);
-}
-
-async function annulerLaModification(div) {
-  await refermerLaCarte(div);
-}
-
-/* « MODIFIER L'ENGAGEMENT » : la page envoie ce qu'on a changé sur la carte ouverte, case par case ; le moteur dit si
- * rien n'a changé (la carte se referme), écrit ce qui a changé, ou rend son avertissement quand ce qui est parti le
- * demande. La page le montre tel quel ; « Annuler » revient à la carte avec ce qu'on y a tapé, la confirmation renvoie
- * la demande. */
-async function modifierLaCarte(div) {
-  const mois = document.getElementById("mois").value;
-  const changements = changementsOuverts(div);
-  if (!changements.length) { await refermerLaCarte(div); return; }
-  const charge = { mois, engagement: JSON.parse(div.dataset.engagement), changements, confirme: false, jour: null };
-  try {
-    let r = await api("modifier-engagement", charge);
-    while (r && r.avertissement) {
-      const reponse = await boiteAvertissement(r.avertissement);
-      if (!reponse) return;
-      r = await api("modifier-engagement", { ...charge, confirme: true, jour: reponse.jour });
-    }
-    if (r && r.change) dire(r.phrase);
-    await refermerLaCarte(div);
-    await rafraichirActions();
-  } catch (e) { dire(e.message, "erreur"); }
-}
-
 /** L'avertissement du moteur : chaque engagement nommé une fois, une ligne par ce que le changement entraîne, et,
  *  quand un terme change dans le mois de la carte, d'où il vaut (`jour`) avec le jour, le 1er tant qu'on n'en dit pas
  *  d'autre. Rend la réponse (`{jour}`) à la confirmation, `null` à « Annuler ». */
@@ -435,13 +220,6 @@ function boiteAvertissement(a) {
     };
   });
 }
-
-/* PLUS DE CASE DE SÉLECTION NI DE BARRE D'ACTIONS GROUPÉES :
- * « on pourrait enlever la petite coche de sélection, tout se fait
- * directement quand on clique sur le bouton déposer DPAE ou demander les
- * signatures ». Les deux boîtes de la colonne de droite listent chaque
- * contrat du mois avec sa case, cochée d'avance sur ce qui reste à faire :
- * c'est là que l'on choisit, et rien ne part sans y être passé. */
 
 /* LA BOÎTE DPAE, comme celle des signatures : une liste déroulante.
  * Chaque contrat du mois enregistré, une case ; cochée
@@ -511,4 +289,3 @@ async function boiteDpae(mois) {
     rendre();
   };
 }
-

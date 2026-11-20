@@ -411,7 +411,9 @@ renouvellement (L1221-21) n'est pas jugé : l'engagement ne porte que la périod
 **Où le moteur s'en sert** : `atelier/sources/droit/src/essai.rs` (`plafond`, `refuser_au_dela`), appelé par
 `engagement/src/calcul.rs` (`essai_dans_son_plafond`) : un engagement dont la période d'essai dépasse son plafond ne se
 calcule pas ; il s'enregistre à compléter, et sa validation refuse en citant le texte. Test :
-`droit/tests/droit/essai.rs`.
+`droit/tests/droit/essai.rs`. Et `atelier/sources/declarations/src/dpae.rs` (`enregistrement`, la zone N_JJ_ESSAI) :
+la DPAE d'un CDDU porte, en jours, la période d'essai que sa carte stipule (L1242-10 le permet à tout CDD ; texte cité
+depuis `articles-20261110.md`), `000` sans essai ; la zone : `../../norme-dpae/LISEZ-MOI.md`.
 
 ## La durée maximale du travail et le repos quotidien (relevé du 30/10/2026, séance 8, lot P2)
 

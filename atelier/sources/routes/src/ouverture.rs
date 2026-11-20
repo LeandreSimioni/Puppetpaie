@@ -23,7 +23,6 @@ use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
 use droit::natures::{self, MotifDeRupture};
-use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
@@ -42,7 +41,7 @@ const AIDES: &[(&str, &str)] = &[
     ("net", "Ce que le salarié touche sur son compte."),
     ("cout", "Le brut et les cotisations patronales : ce que l'employeur sort."),
     ("viser", "Écrire dans une case : les taux se recalculent pour y tomber."),
-    ("metier", "Le métier de ce contrat, s'il diffère de la fiche."),
+    ("metier", "Le métier de ce contrat ; une carte neuve prend celui du dernier contrat du salarié."),
     ("recours", "Pourquoi ce CDD est conclu : la DSN le déclare (motif de recours)."),
     ("periode_essai_jours", "La durée de la période d'essai que le contrat prévoit ; vide : aucune."),
     ("personne_remplacee", "Le contrat d'un remplacement nomme la personne remplacée et sa qualification (L. 1242-12, 1°)."),
@@ -58,8 +57,7 @@ const AIDES: &[(&str, &str)] = &[
     ("precarite_due", "L1243-10 : deux cas ne se lisent pas dans le contrat, l'étudiant pendant ses vacances et le salarié qui refuse un CDI ; dire lequel."),
     ("date_paiement", "Le jour du virement de ce contrat, s'il diffère de celui de la configuration."),
     ("lieu", "Le lieu que le contrat imprime quand une ligne de paie n'en dit pas."),
-    ("taux_cachet", "Le taux du cachet de ce contrat quand aucune ligne de cachet ne le dit."),
-    ("jours", "Les jours travaillés que la DSN déclare (sinon les jours cochés)."),
+    ("jours", "Les jours travaillés que la DSN déclare : ceux que les jours cochés disent, pour un CDDU."),
     ("quotite_reference", "La durée de référence de l'entreprise pour ce contrat (S21.G00.40.012)."),
     ("indemnite_licenciement", "Le montant retenu, entre l'indemnité légale et la conventionnelle."),
     ("faute_grave", "Une fin de période d'essai pour faute grave : pas d'indemnité du délai de prévenance (L1221-25)."),
@@ -1226,20 +1224,73 @@ fn genre_en_clair(a: AutreElementDeRevenuBrut) -> Option<&'static str> {
 /// L'aide du choix « Lieu » d'une ligne de frais.
 const LIEU_AIDE: &str = "Où dort et mange le salarié : hors de la métropole, la limite exonérée change ; à l'étranger, c'est l'indemnité du pays pour la nuitée et les repas du jour.";
 
-/// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais).
+/// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais, un
+/// metier, un motif) ; ce que le choix dit de lui-meme une fois choisi (`dit` : un motif de rupture) ; le groupe sous
+/// lequel il se range dans la liste (`groupe` : la famille d'un metier), la liste etant deja dans l'ordre des groupes.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Choix {
     code: String,
     libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     defaut: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    groupe: Option<String>,
+    /// Les parties d'une valeur faite de parties que ce choix ouvre (`catalogue::Forme::Parties`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ouvre: Option<Vec<&'static str>>,
+}
+
+impl Choix {
+    /// Un code et son libelle, sans defaut.
+    pub(crate) fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
+        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None }
+    }
+
+    /// Ce que le choix dit de lui-meme une fois choisi.
+    pub(crate) fn disant(self, dit: Option<String>) -> Choix {
+        Choix { dit, ..self }
+    }
+
+    /// Le groupe ou il se range.
+    pub(crate) fn sous(self, groupe: Option<String>) -> Choix {
+        Choix { groupe, ..self }
+    }
+}
+
+/// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES DONNEES OFFRENT (`Forme::ChoixRendu`), sous la cle de leur
+/// case : les salaries et les spectacles courants, les metiers du deroulant (ceux de Configuration › Métiers, la seule
+/// liste : `metiers::metiers`), les etablissements autres que le siege (aucun choisi : le siege), la transaction d'une
+/// fin de contrat (S21.G00.62.008), le type d'un preavis (ceux qui se saisissent, S21.G00.62.006 ; chacun ouvre les dates
+/// quand il en a). Le motif de la fin et les modeles de contrat, propres au contrat, sont rendus avec la carte de chaque
+/// paie (`mois::CarteRendue`) ; les motifs de recours, avec la nature (`NatureDeLaPage::choix`).
+#[derive(Debug, Clone, serde::Serialize)]
+struct ChoixDesCases {
+    salarie: Vec<Choix>,
+    spectacle: Vec<Choix>,
+    metier: Vec<Choix>,
+    etablissement: Vec<Choix>,
+    transaction: Vec<Choix>,
+    preavis: Vec<Choix>,
+}
+
+/// LES PARTIES DES CASES D'UNE CARTE FAITES DE PARTIES, sous la cle de leur case, tirees de leur forme
+/// (`catalogue::Forme::de_la_case`).
+fn parties_des_cases() -> BTreeMap<&'static str, Vec<crate::catalogue::PartieEcrite>> {
+    engagement::saisie::Champ::TOUS
+        .iter()
+        .filter_map(|c| match Forme::de_la_case(*c) {
+            Forme::Parties(p) => Some((c.nom(), p.iter().map(crate::catalogue::Partie::ecrite).collect())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// UNE RUBRIQUE QUI PAIE, telle que la carte d'un engagement la propose : ce que le catalogue en dit, et ce que la page en
 /// tire sans rien decider (ses genres, ses lieux, ses formes, ce qu'elle promet sans que rien ne le tienne, ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct RubriqueDeLaPage {
-    lieux: Vec<Choix>,
     lieu_aide: Option<&'static str>,
     code: droit::catalogue::CodeDeRubrique,
     libelle: String,
@@ -1262,7 +1313,9 @@ pub(crate) struct RubriqueDeLaPage {
     plafond_mensuel: Option<socle::grandeurs::Cachets>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: droit::catalogue::OrigineDeRubrique,
-    genres: Vec<Choix>,
+    /// CE QUE SES CLES QUI SE CHOISISSENT OFFRENT (`Forme::ChoixRendu`), sous le nom de la cle : le genre d'un avantage en
+    /// nature, le lieu d'une ligne de nuitee ou de repas ; une cle qu'elle ne dit pas n'y est pas.
+    choix: BTreeMap<&'static str, Vec<Choix>>,
     /// CE QUE LA RUBRIQUE PROMET SANS QUE RIEN NE LE TIENNE.
     non_appliques: Vec<&'static str>,
     source: String,
@@ -1277,11 +1330,34 @@ pub(crate) struct RubriqueDeLaPage {
     quantite: Option<&'static str>,
 }
 
-/// Une cle d'une ligne de paie telle que la page la saisit : son nom, et sa forme (`Forme::de_la_cle`).
+/// Une cle d'une ligne de paie telle que la page la saisit : son nom, sa forme (`Forme::de_la_cle`) et sa place
+/// (`engagement::ligne::Cle::place` : le territoire d'un repas ou d'une nuitee sous « Avancé »).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct CleDeLaLigne {
     cle: &'static str,
+    libelle: &'static str,
     forme: Forme,
+    place: engagement::carte::PlaceDeLaCase,
+}
+
+/// Ce que l'ecran ecrit au-dessus de la case d'une cle d'une ligne de paie.
+fn libelle_de_la_cle(c: engagement::ligne::Cle) -> &'static str {
+    use engagement::ligne::Cle as C;
+    match c {
+        C::Rubrique => "Rubrique",
+        C::Quantite => "Quantité",
+        C::Taux => "Taux",
+        C::Heures => "Heures",
+        C::Base => "Base",
+        C::TauxMajoration => "Pourcentage",
+        C::Montant => "Montant",
+        C::Genre => "Genre",
+        C::Territoire => "Hors métropole",
+        C::Cases => "Cases",
+        C::Lieu => "Lieu",
+        C::Dates => "Jours",
+        C::Planning => "Mois suivants",
+    }
 }
 
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
@@ -1289,7 +1365,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
-    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), forme: Forme::de_la_cle(*c) }).collect();
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c), place: c.place() }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
@@ -1305,14 +1381,14 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     let genres: Vec<Choix> = if avec_genre {
         AutreElementDeRevenuBrut::TOUS
             .iter()
-            .filter_map(|g| genre_en_clair(*g).map(|libelle| Choix { code: g.code().to_string(), libelle: libelle.to_string(), defaut: Some(Some(*g) == r.dsn_autres_bruts) }))
+            .filter_map(|g| genre_en_clair(*g).map(|libelle| Choix { defaut: Some(Some(*g) == r.dsn_autres_bruts), ..Choix::de(g.code(), libelle) }))
             .collect()
     } else {
         vec![]
     };
     // LE LIEU D'UNE LIGNE DE NUITEE OU DE REPAS (`engagement::LignePaie::territoire`), sous « Avancé » : la metropole d'abord (rien
     // a choisir), l'outre-mer et Monaco, puis chaque lieu de la table des missions a l'etranger (`droit::missions::lieux`).
-    let choix = |code: &str, libelle: &str| Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None };
+    let choix = |code: &str, libelle: &str| Choix::de(code, libelle);
     let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code) {
         std::iter::once(choix("", "Métropole"))
             .chain(engagement::TerritoireHorsMetropole::TOUS.into_iter().map(|t| choix(t.texte(), t.dit())))
@@ -1321,11 +1397,19 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     } else {
         vec![]
     };
+    let mut offerts = BTreeMap::new();
+    if !genres.is_empty() {
+        offerts.insert(engagement::ligne::Cle::Genre.nom(), genres);
+    }
+    let lieu_aide = (!lieux.is_empty()).then_some(LIEU_AIDE);
+    if !lieux.is_empty() {
+        offerts.insert(engagement::ligne::Cle::Territoire.nom(), lieux);
+    }
     Ok(RubriqueDeLaPage {
         quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| saisie.contains(&engagement::ligne::Cle::Quantite)),
         cles,
-        lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
-        lieux,
+        lieu_aide,
+        choix: offerts,
         code: r.code.clone(),
         libelle: r.libelle.clone(),
         unite: r.unite,
@@ -1345,7 +1429,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         plafond_mensuel: r.plafond_mensuel,
         plafond_annuel_heures: r.plafond_annuel_heures,
         origine: r.origine,
-        genres,
         non_appliques,
         source: r.source.clone(),
         dit: r.dit.clone(),
@@ -1369,13 +1452,11 @@ struct NatureDeLaPage {
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
     /// et 10 (CCH-11).
     spectacle: bool,
-    motifs_rupture: Vec<natures::RuptureOfferte>,
-    /// Les faits que chaque motif appelle (`permanents::faits_de_rupture`), et ceux du choix vide (`faits_sans_motif` :
-    /// ceux du motif par defaut de la nature) : la page montre ces cases, et elles seules.
-    faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
-    faits_sans_motif: Vec<&'static str>,
     motif_rupture_defaut: Option<MotifDeRupture>,
-    motifs_recours: Vec<natures::RecoursOffert>,
+    /// Ce qu'offrent les cases de sa carte qui se choisissent dans sa nature, sous la cle de leur case : ses motifs de
+    /// recours (`motif_recours`). Le motif de la fin, qui depend du contrat, est rendu avec la carte de chaque paie
+    /// (`mois::CarteRendue`), les faits que ce motif appelle aussi (ses cases ouvertes).
+    choix: BTreeMap<&'static str, Vec<Choix>>,
     motif_recours_exige: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     quotite_defaut: Option<socle::grandeurs::Heures>,
@@ -1394,10 +1475,9 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
     for n in toutes.iter() {
-        let motifs = n.motifs_rupture();
-        let mut faits = BTreeMap::new();
-        for m in motifs {
-            faits.insert(m.code, permanents::faits_de_rupture(n, Some(m.code))?);
+        let mut choix = BTreeMap::new();
+        if let Some(motifs) = n.motifs_recours() {
+            choix.insert(engagement::saisie::Champ::MotifRecours.nom(), motifs.iter().map(|m| Choix::de(m.code, &m.libelle)).collect());
         }
         let carte = cartes
             .iter()
@@ -1412,11 +1492,8 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
-            motifs_rupture: motifs.to_vec(),
-            faits_de_rupture: faits,
-            faits_sans_motif: permanents::faits_de_rupture(n, None)?,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
-            motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
+            choix,
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
             temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
@@ -1534,14 +1611,15 @@ pub(crate) struct EtatDeLaPage {
     historique: Vec<MoisDuBilan>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
+    choix: ChoixDesCases,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
-    types_preavis: Vec<droit::preavis::TypePreavis>,
+    /// Les parties de chaque case faite de parties (`catalogue::Forme::Parties`), sous la cle de sa case.
+    parties: BTreeMap<&'static str, Vec<crate::catalogue::PartieEcrite>>,
     aides: Aides,
-    transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
     niveaux_sante: Option<Vec<NiveauDeSante>>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
@@ -1565,7 +1643,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // reste dans `configuration`, ou on peut la relire et la reactiver.
     let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
     cles.sort();
-    let salaries = cles
+    let salaries: Vec<SalarieDeLaListe> = cles
         .into_iter()
         .map(|k| SalarieDeLaListe { cle: k.clone(), libelle: ctx.nomme(k) })
         .collect();
@@ -1578,16 +1656,39 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
             Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;
+    let emplois = super::metiers::metiers(ctx)?;
+    let choix = ChoixDesCases {
+        salarie: salaries.iter().map(|s: &SalarieDeLaListe| Choix::de(&s.cle, &s.libelle)).collect(),
+        spectacle: spectacles.iter().map(|s: &SpectacleDeLaListe| Choix::de(&s.cle, &s.titre)).collect(),
+        // Les metiers, deja dans l'ordre de leurs familles (`metiers::metiers`), chacun sous la sienne.
+        metier: emplois.iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))).collect(),
+        etablissement: choix_d_etablissement(ctx)?
+            .into_iter()
+            .flatten()
+            .filter_map(|e| {
+                let libelle = [Some(e.nom.clone()), e.periode_dit.clone()].into_iter().flatten().collect::<Vec<_>>().join(" — ");
+                e.nic.map(|n| Choix::de(n, libelle))
+            })
+            .collect(),
+        transaction: droit::preavis::base()?.transaction.codes.iter().map(|c| Choix { defaut: c.defaut, ..Choix::de(c.code, &c.libelle) }).collect(),
+        // Le type d'un preavis, parmi ceux qui se saisissent : un type qui a des dates ouvre les parties du preavis qui
+        // ne sont pas de toujours (`catalogue::PARTIES_DU_PREAVIS`).
+        preavis: droit::preavis::base()?
+            .types_preavis
+            .codes
+            .iter()
+            .filter(|t| t.saisissable)
+            .map(|t| Choix {
+                ouvre: t.dates.then(|| crate::catalogue::PARTIES_DU_PREAVIS.iter().filter(|p| !p.toujours).map(|p| p.cle).collect()),
+                ..Choix::de(t.code, &t.libelle)
+            })
+            .collect(),
+    };
 
     // Le catalogue qui paie, deja dans l'ordre ou le proposer.
     let cat = catalogue::catalogue(&ctx.racine, &ctx.lue_au)?;
     // Une rubrique que le moteur pose (`saisie` vide) ne se propose pas.
     let rubriques: Vec<RubriqueDeLaPage> = cat.iter().filter(|r| !r.saisie.is_empty()).map(rubrique_de_la_page).collect::<R<_>>()?;
-    // LA FIN D'UN CONTRAT, telle qu'elle se saisit. Les types de preavis
-    // SAISISSABLES seulement.
-    let fctu = droit::preavis::base()?;
-    let types_preavis: Vec<droit::preavis::TypePreavis> = fctu.types_preavis.codes.iter().filter(|c| c.saisissable).cloned().collect();
-    let transaction = fctu.transaction.codes.clone();
 
     // Les organismes de recouvrement, pour que le code Urssaf de la DPAE se
     // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
@@ -1623,18 +1724,18 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         historique,
         salaries,
         spectacles,
+        choix,
         rubriques,
         // Le catalogue des metiers, deja dans l'ordre des familles.
-        emplois: super::metiers::metiers(ctx)?,
+        emplois,
         familles_emplois: emplois::familles()?,
         // Les metiers des autres conventions : on les AJOUTE a son deroulant,
         // ils n'y sont pas d'office.
         emplois_autres: super::metiers::metiers_autres_conventions(ctx)?,
         // LES NATURES DE CONTRAT : celles que la compagnie engage (une carte dit toujours la sienne).
         natures: natures()?,
-        types_preavis,
+        parties: parties_des_cases(),
         aides: Aides(AIDES),
-        transaction,
         // Les niveaux de complementaire sante, pour la fiche d'un permanent.
         niveaux_sante,
         // Ou, quand la convention ne la fait pas choisir sur la fiche, d'ou elle vient (`bareme::sante_hors_fiche`).

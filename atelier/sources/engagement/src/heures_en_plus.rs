@@ -1,6 +1,6 @@
 //! LES HEURES EN PLUS D'UN SALARIE PAYE AU MOIS : ses heures supplementaires (temps plein) ou complementaires (temps
-//! partiel) du mois, des faits de sa carte (`HEURES_SUPPLEMENTAIRES`, `HEURES_SUPPLEMENTAIRES_A_50`,
-//! `HEURES_COMPLEMENTAIRES`), dont le moteur fait les lignes du bulletin (`lignes`, une par majoration :
+//! partiel) du mois, des faits de sa carte (`heures_supplementaires`, `heures_supplementaires_a_50`,
+//! `heures_complementaires`), dont le moteur fait les lignes du bulletin (`lignes`, une par majoration :
 //! `droit::heures_en_plus`) et ce qui les suit au calcul (`apres_les_cotisations`) : la reduction de cotisations
 //! salariales (CSS L241-17, D241-21), la deduction forfaitaire patronale des heures supplementaires (L241-18, L241-18-1,
 //! D241-24) et l'exoneration d'impot sur le revenu (CGI 81 quater) qui sort leur montant net de la remuneration nette
@@ -23,11 +23,6 @@ use socle::mois::Mois;
 use socle::grandeurs::{courte, Heures, Montant, MontantUnitaire, Taux};
 use socle::texte::virgule;
 
-/// Les faits du mois, sur la carte d'un salarie paye au mois.
-pub const HEURES_SUPPLEMENTAIRES: &str = "heures_supplementaires";
-pub const HEURES_SUPPLEMENTAIRES_A_50: &str = "heures_supplementaires_a_50";
-pub const HEURES_COMPLEMENTAIRES: &str = "heures_complementaires";
-
 /// Les rubriques que le moteur compose (`rubriques-base.json`).
 pub const HEURE_SUPPLEMENTAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure_supplementaire");
 pub const HEURE_COMPLEMENTAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure_complementaire");
@@ -36,19 +31,11 @@ pub const HEURE_COMPLEMENTAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("heur
 pub const REDUCTION: IdDeCotisation = IdDeCotisation::du_moteur("reduction_heures_en_plus");
 pub const DEDUCTION: IdDeCotisation = IdDeCotisation::du_moteur("deduction_heures_supplementaires");
 
-/// LES FAITS QU'APPELLE UN CONTRAT PAYE AU MOIS, ceux que sa carte montre sous « Avancé » : un temps partiel ses heures
-/// complementaires ; un temps plein ses heures supplementaires, et, quand la convention ne fixe pas leurs paliers (la
-/// loi les decompte par semaine, C. trav. L3121-29 et L3121-36), celles qui passent la huitieme d'une semaine.
-pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
-    if partiel {
-        return Ok(vec![HEURES_COMPLEMENTAIRES]);
-    }
-    let idcc = ctx.entreprise.idcc.dite();
-    Ok(if droit::heures_en_plus::paliers_conventionnels(idcc)? {
-        vec![HEURES_SUPPLEMENTAIRES]
-    } else {
-        vec![HEURES_SUPPLEMENTAIRES, HEURES_SUPPLEMENTAIRES_A_50]
-    })
+/// LES HEURES SUPPLEMENTAIRES SE DECOMPTENT-ELLES PAR SEMAINE pour la compagnie : quand sa convention ne fixe pas leurs
+/// paliers, la loi les decompte par semaine (C. trav. L3121-29 et L3121-36), et celles qui passent la huitieme d'une
+/// semaine se disent a part (`carte::FaitQuiOuvre::HeuresDecompteesParSemaine`).
+pub fn decomptees_par_semaine(ctx: &Contexte) -> R<bool> {
+    Ok(!droit::heures_en_plus::paliers_conventionnels(ctx.entreprise.idcc.dite())?)
 }
 
 
