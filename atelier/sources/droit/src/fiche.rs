@@ -2472,6 +2472,16 @@ choix! {
     pub enum StatutConventionnel { Cadre03 = "03", Cadre04 = "04", AgentDeMaitrise = "05", Employe06 = "06", Employe07 = "07" }
 }
 
+impl StatutConventionnel {
+    /// Les classements d'un emploi non cadre (cahier technique DSN 2026.1, p. 182 : 03 cadre dirigeant, 04 autre cadre).
+    pub const NON_CADRES: [StatutConventionnel; 3] = [StatutConventionnel::AgentDeMaitrise, StatutConventionnel::Employe06, StatutConventionnel::Employe07];
+
+    /// Un classement de cadre (03, 04) ?
+    pub fn cadre(self) -> bool {
+        !StatutConventionnel::NON_CADRES.contains(&self)
+    }
+}
+
 choix! {
     /// S21.G00.40.003.
     pub enum StatutCategorielRc { Cadre = "01", Extension = "02", NonCadre = "04" }

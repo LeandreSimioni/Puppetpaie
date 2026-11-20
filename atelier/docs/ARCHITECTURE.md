@@ -1134,7 +1134,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
-| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée, métier écrit sur la carte, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
+| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
@@ -1143,7 +1143,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, modalité du temps de travail d'un contrat payé au mois, `droit::natures::ModaliteDuTempsDeTravail`, pré-remplissage et ce qui ne se pré-remplit pas) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
-| clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
+| clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le cadre qu'une carte disait de son métier, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
+| avenant d'un engagement (les termes qui changent à partir d'un jour, et ceux qui se retirent ; sa forme écrite, `AvenantEcrit`, dont chaque retiré, `Retire`, est un champ de la carte ou la clé gardée `cadre`) | `engagement::stock::Avenant` | `engagement/src/stock.rs` |
 | ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
 | place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
 | case ouverte pour un engagement (sa clé, un `saisie::Champ` ; sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
@@ -1218,7 +1219,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | contrat repris qu'une AEM, un bulletin ou un certificat et la DSN datent autrement : la DSN vaut, la pièce part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
-| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
+| geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases, ce qu'elles montrent d'abord et ce qu'elles offrent) : celui d'un imprévu, d'une question d'identité, de l'onglet Métiers (créer un métier, sa charge `AucunMetier` ; modifier un métier créé, `MetierDesigne` ; leurs cases montrent `ValeursDuMetier` et offrent `ChoixDuMetier`) | `GesteDeRoute` | `routes/src/imprevus.rs` |
 | ce que la DSN reprise déclare autrement que le logiciel : une valeur d'un contrat repris, ou un matricule | `ValeurDeclaree` | `import/src/reponse.rs` |
 | valeur d'un contrat repris que la DSN reprise déclare autrement que sa carte (la nature, le début, la fin, le numéro : ce que la carte porte, ce qu'elle déclare) | `ValeurDuContrat` | `import/src/reponse.rs` |
 | matricule qu'une DSN qui arrive déclare autrement que la fiche (ce que la fiche porte, ce que la DSN déclare), ou matricule donné d'office qu'une fiche cède au salarié pour qui la DSN le déclare (et le suivant qu'elle prend) | `ValeurDuMatricule` | `import/src/reponse.rs` |
@@ -1283,7 +1284,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
 | emploi écrit (les six champs de l'emploi qu'une carte écrit à la main ou qu'un bulletin importé imprime, sans libellé lisible ; un emploi qui n'en dit aucun n'est pas écrit, sa case est vide, `EmploiEcrit::dit`. La carte le porte en une case, `engagement::saisie::Carte.emploi`, et un changement de la carte l'écrit entier, `{"case": "emploi", "valeur": {…}}` ; chacun de ses champs reste un champ de la carte, `saisie::Champ`, qu'un avenant change et retire seul ; l'import y pose l'emploi qu'un bulletin imprime, `EmploiEngagement.ecrit`) | `EmploiEcrit` | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
-| métier créé (copié d'un métier par la compagnie, puis modifié ; son fichier, `MetiersCrees`, une forme) | `MetierCree` | `droit/src/emplois.rs` |
+| métier créé (copié d'un métier par la compagnie, puis modifié ; son fichier, `MetiersCrees`, une forme ; le code de la nomenclature qu'il fait déclarer, `code_declare`) | `MetierCree` | `droit/src/emplois.rs` |
+| ce que la compagnie a dit de ses métiers, lu pour une lecture (cochés, décochés, créés ; un fichier qui ne se lit pas ne ferme rien, sa faute se dit) | `DitsDeLaCompagnie` | `routes/src/metiers.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
@@ -1992,8 +1994,10 @@ montre celui que la paie applique (`prerempli.metier`, celui de la fiche), et ri
 choisit pas. **La carte n'a pas de case « Cadre »** (Léandre, 20/11/2026 : « J'enlève la case cadre. Si quelqu'un un
 jour veut créer un marionnettiste cadre, il peut toujours le créer dans le métier ») : le cadre se lit du métier
 (`droit::emplois::resoudre`), et un métier cadre se crée dans Configuration › Métiers. La clé `cadre` d'une carte
-écrite avant reste gardée (`#[garde]` de `engagement::saisie::Carte`) : elle se relit telle quelle, et le calcul la lit
-avec le métier qu'elle accompagnait (`Carte::reprendre_le_cadre`, `stock::Objet::vue`). Un montant (le taux d'une ligne, sa base, son montant,
+écrite avant reste gardée (`#[garde]` de `engagement::saisie::Carte`) : elle se relit telle quelle, chaque mois la porte
+comme un terme, avenants compris (`stock::Objet::vue`), et la carte se calcule comme elle se calculait ; un métier
+choisi ensuite la retire (`Carte::reprendre_le_cadre` au premier mois, l'avenant qui change le métier après lui), et le
+cadre se lit alors de lui seul. Un montant (le taux d'une ligne, sa base, son montant,
 le salaire du mois) a sa forme (`Forme::Montant`) : la page l'écrit comme ses montants (« 140,00 »), et il se tape
 avec une virgule ou un point. Une valeur
 faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties

@@ -567,8 +567,13 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, d
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 let emploi = t.emploi.as_ref();
+                // Une carte dont le metier ne se lit pas (un metier cree absent, son fichier illisible) ne demande rien a
+                // la fiche : sa faute reste sur elle, que son calcul dit ; la fiche se lit (« le logiciel est doux »).
                 let du_metier = match &t.metier {
-                    Some(m) => Some(m.metier(&ctx.racine)?.code_emploi_ft()),
+                    Some(m) => match m.metier(&ctx.racine) {
+                        Ok(lu) => Some(lu.code_emploi_ft()),
+                        Err(_) => continue,
+                    },
                     None => None,
                 };
                 if let Some(code) = emploi.and_then(|e| e.code_emploi_ft.clone()).or(du_metier).or_else(|| du_salarie.clone()) {

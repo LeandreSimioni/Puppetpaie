@@ -204,16 +204,16 @@ impl CodeEmploi {
         };
         // Le calcul qui lit un metier cree depend de ce qu'il dit : son fichier se note dans l'empreinte de la paie.
         socle::fichiers::noter_si_besoin(&METIERS_CREES.dans(racine));
-        Ok(Metier { code: self.clone(), declare: m.code_emploi_ft.clone(), fiche: FicheDuMetier::Catalogue(m.fiche.clone()) })
+        Ok(m.metier())
     }
 
     /// Le metier d'un code de la nomenclature : celui du catalogue, sinon celui de la nomenclature.
     fn du_catalogue_ou_de_la_nomenclature(&self) -> R<Metier> {
         if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| c == self) {
-            return Ok(Metier { code: self.clone(), declare: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
+            return Ok(Metier { code: self.clone(), code_declare: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
         }
         let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree(&NOMENCLATURE, &self.0))?;
-        Ok(Metier { code: self.clone(), declare: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
+        Ok(Metier { code: self.clone(), code_declare: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
     }
 }
 
@@ -425,7 +425,7 @@ pub struct Metier {
     pub code: CodeEmploi,
     /// Le code de la nomenclature qu'il fait declarer (S21.G00.40.005) : le sien, sauf pour un metier cree.
     #[serde(skip)]
-    declare: CodeEmploi,
+    code_declare: CodeEmploi,
     #[serde(flatten)]
     pub fiche: FicheDuMetier,
 }
@@ -442,7 +442,7 @@ impl Metier {
     /// LE CODE EMPLOI QU'IL FAIT DECLARER (S21.G00.40.005) : un code de la nomenclature des emplois du spectacle, la
     /// table ART (CCH-18, `fiche::CodeEmploiFt`), le sien ou, pour un metier cree, celui que la compagnie lui a donne.
     pub fn code_emploi_ft(&self) -> CodeEmploiFt {
-        CodeEmploiFt::du_metier(&self.declare)
+        CodeEmploiFt::du_metier(&self.code_declare)
     }
 
     /// Sa fiche du catalogue, ou `None` hors catalogue.
@@ -814,7 +814,7 @@ pub struct MetiersCrees {
 }
 
 /// Ce que dit le fichier des metiers crees (`MetiersCrees::quoi`).
-pub const QUOI_METIERS_CREES: &str = "Les metiers que cette compagnie a crees dans Configuration > Metiers : chacun copie d'un metier (copie_de), puis modifie. Son code (CIE- et un numero) ne se declare pas : la DSN declare son code_emploi_ft, un code de la nomenclature des emplois du spectacle. Sa fiche a la forme d'un metier du catalogue (donnees/emplois-base.json).";
+pub const QUOI_METIERS_CREES: &str = "Les metiers que cette compagnie a crees dans Configuration > Metiers : chacun copie d'un metier (copie_de), puis modifie. Son code (CIE- et un numero) ne se declare pas : la DSN declare son code_declare, un code de la nomenclature des emplois du spectacle. Sa fiche a la forme d'un metier du catalogue (donnees/emplois-base.json).";
 
 /// UN METIER QUE LA COMPAGNIE A CREE (Leandre, 20/11/2026 : « On copie et on modifie ») : son code (`CodeEmploi::cree`),
 /// le metier dont il est la copie (du catalogue, ou deja cree), le code de la nomenclature qu'il fait declarer
@@ -825,11 +825,34 @@ pub const QUOI_METIERS_CREES: &str = "Les metiers que cette compagnie a crees da
 pub struct MetierCree {
     pub code: CodeEmploi,
     pub copie_de: CodeEmploi,
-    pub code_emploi_ft: CodeEmploi,
+    /// Le code de la nomenclature qu'il fait declarer (S21.G00.40.005), qui n'est jamais un code cree.
+    pub code_declare: CodeEmploi,
     pub fiche: FicheDuCatalogue,
 }
 
 impl MetierCree {
+    /// Son metier, tel que le moteur le lit (`CodeEmploi::metier`).
+    pub fn metier(&self) -> Metier {
+        Metier { code: self.code.clone(), code_declare: self.code_declare.clone(), fiche: FicheDuMetier::Catalogue(self.fiche.clone()) }
+    }
+
+    /// UN METIER NON CADRE SE DECLARE AVEC UN CLASSEMENT NON CADRE (S21.G00.40.002) : celui que la DSN lit de lui
+    /// (`Metier::statut_non_cadre`, comme pour un metier du catalogue) est 05, 06 ou 07. Sinon -- la copie non cadre d'un
+    /// metier cadre, un classement 03 -- la DSN le refuserait ou le declarerait cadre dirigeant non cadre : il se refuse
+    /// ici, en disant quoi choisir.
+    pub fn classement_qui_se_declare(&self) -> R<()> {
+        if self.fiche.cadre_par_defaut || self.metier().statut_non_cadre()?.is_some_and(|s| !s.cadre()) {
+            return Ok(());
+        }
+        let choix: Vec<&str> = StatutConventionnel::NON_CADRES.iter().map(|s| s.as_str()).collect();
+        Err(socle::refus!(
+            "Le métier {} ({}) n'est pas cadre : son classement conventionnel (DSN) se choisit parmi {}, sous « Avancé » ; ou il est cadre. Rien n'est écrit.",
+            self.fiche.libelle,
+            self.code,
+            choix.join(", ")
+        ))
+    }
+
     /// LA COPIE du metier `de` (du catalogue, ou deja cree) sous le code `code` : nommee `libelle` (au feminin aussi, qui
     /// se change ensuite), cadre ou non (`cadre`) dans toute convention ; le reste est celui de `de`, le code qu'il fait
     /// declarer compris. Un metier de la seule nomenclature n'a pas de fiche a copier.
@@ -842,7 +865,7 @@ impl MetierCree {
         fiche.libelle = libelle;
         fiche.cadre_par_defaut = cadre;
         fiche.cadre_selon_la_convention = None;
-        Ok(MetierCree { code, copie_de: de.code.clone(), code_emploi_ft: de.declare.clone(), fiche })
+        Ok(MetierCree { code, copie_de: de.code.clone(), code_declare: de.code_declare.clone(), fiche })
     }
 
     /// Cadre ou non, dans toute convention.
@@ -881,21 +904,25 @@ impl MetierCree {
                 f.conventions_hors_liste = None;
             }
         }
-        self.code_emploi_ft = code;
+        self.code_declare = code;
         Ok(())
     }
 }
 
-const CREES_ILLISIBLES: &str = "Les métiers créés par la compagnie ne se lisent pas : leur fichier (config/metiers-crees.json) a été changé à la main ; le remettre tel que le logiciel l'a écrit.";
+/// La faute d'un fichier des metiers crees qui ne se lit pas : une phrase de l'onglet Metiers (`routes::metiers`), sans
+/// chemin ; le fichier, `METIERS_CREES`.
+const CREES_ILLISIBLES: &str = "Les métiers créés par la compagnie ne se lisent pas : leur fichier a été changé à la main ; le remettre tel que le logiciel l'a écrit.";
 
 /// LA SEULE LECTURE de `config/metiers-crees.json` sous `racine` : aucun sans le fichier. Chaque code est celui d'un
-/// metier cree, une seule fois ; le code qu'il fait declarer est de la nomenclature.
+/// metier cree, une seule fois ; le code qu'il fait declarer est de la nomenclature. Un fichier qui ne se lit pas, ou
+/// qui ne tient pas cela, est `Classe::Illisible` : une lecture le passe et le dit (`routes::metiers`).
 pub fn metiers_crees(racine: &Path) -> R<Vec<MetierCree>> {
-    let Some(lus) = socle::forme::partagee::<MetiersCrees>(&METIERS_CREES.dans(racine), CREES_ILLISIBLES)? else { return Ok(Vec::new()) };
+    let illisible = |e: socle::echec::Echec| e.reclasser(socle::echec::Classe::Illisible);
+    let Some(lus) = socle::forme::partagee::<MetiersCrees>(&METIERS_CREES.dans(racine), CREES_ILLISIBLES).map_err(illisible)? else { return Ok(Vec::new()) };
     let mut vus = std::collections::BTreeSet::new();
     for m in &lus.metiers {
-        if m.code.numero_cree().is_none() || m.code_emploi_ft.numero_cree().is_some() || !vus.insert(m.code.clone()) {
-            return Err(socle::refus!("{} (métier {})", CREES_ILLISIBLES, m.code));
+        if m.code.numero_cree().is_none() || m.code_declare.numero_cree().is_some() || !vus.insert(m.code.clone()) {
+            return Err(illisible(socle::refus!("{} (métier {})", CREES_ILLISIBLES, m.code)));
         }
     }
     Ok(lus.metiers.clone())
@@ -926,14 +953,14 @@ pub struct MetierDuDeroulant {
     pub copie_de: Option<CodeEmploi>,
     /// Le code qu'il fait declarer (S21.G00.40.005), pour un metier que la compagnie a cree.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_emploi_ft: Option<CodeEmploi>,
+    pub code_declare: Option<CodeEmploi>,
 }
 
-/// Le catalogue du spectacle vivant puis les metiers que la compagnie a crees (sous `racine`), le cadre de chaque metier
-/// lu dans la convention `idcc`, pour un deroulant, dans l'ordre des fichiers.
-pub fn catalogue(idcc: Option<&Idcc>, racine: &Path) -> R<Vec<MetierDuDeroulant>> {
+/// Le catalogue du spectacle vivant puis les metiers que la compagnie a crees (`crees`, lus par `metiers_crees`), le cadre
+/// de chaque metier lu dans la convention `idcc`, pour un deroulant, dans l'ordre des fichiers.
+pub fn catalogue(idcc: Option<&Idcc>, crees: &[MetierCree]) -> R<Vec<MetierDuDeroulant>> {
     let du_deroulant = |code: &CodeEmploi, f: &FicheDuCatalogue, cree: Option<&MetierCree>| -> R<MetierDuDeroulant> {
-        let m = Metier { code: code.clone(), declare: code.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) };
+        let m = Metier { code: code.clone(), code_declare: code.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) };
         Ok(MetierDuDeroulant {
             cadre_par_defaut: m.cadre_par_defaut(idcc).ok_or_else(|| socle::refus!("Metier {} : le catalogue ne dit pas s'il est cadre.", repr(code.as_str())))?,
             code: code.clone(),
@@ -949,12 +976,12 @@ pub fn catalogue(idcc: Option<&Idcc>, racine: &Path) -> R<Vec<MetierDuDeroulant>
                 None => f.conventions.iter().flatten().cloned().collect(),
             },
             copie_de: cree.map(|c| c.copie_de.clone()),
-            code_emploi_ft: cree.map(|c| c.code_emploi_ft.clone()),
+            code_declare: cree.map(|c| c.code_declare.clone()),
         })
     };
     let mut out = base()?.emplois.iter().map(|(code, f)| du_deroulant(code, f, None)).collect::<R<Vec<_>>>()?;
-    for c in metiers_crees(racine)? {
-        out.push(du_deroulant(&c.code, &c.fiche, Some(&c))?);
+    for c in crees {
+        out.push(du_deroulant(&c.code, &c.fiche, Some(c))?);
     }
     Ok(out)
 }

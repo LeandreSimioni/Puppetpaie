@@ -701,18 +701,18 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
     }
     // Cadre : l'engagement le dit, sinon la fiche (son statut categoriel, S21.G00.40.003) ; ni l'un ni l'autre, la
     // categorie ne se lit pas.
-    let est_cadre = match (e.cadre, fiche.statut_categoriel_rc.dite()) {
-        (Some(c), _) => c,
-        (None, Some(rc)) => *rc == crate::fiche::StatutCategorielRc::Cadre,
+    let (est_cadre, dit_par) = match (e.cadre, fiche.statut_categoriel_rc.dite()) {
+        (Some(c), _) => (c, "l'engagement"),
+        (None, Some(rc)) => (*rc == crate::fiche::StatutCategorielRc::Cadre, "le statut catégoriel de la fiche"),
         (None, None) => return Ok(profil(None, "ni l'engagement ni la fiche (statut catégoriel) ne disent si le salarié est cadre".into())),
     };
     let niveau = c3090.map(|c| c.niveau.clone());
     let selon_niveau = sec.and_then(|s| s.par_niveau_3090.as_ref().zip(niveau.as_ref()).and_then(|(m, n)| m.get(n)));
     if est_cadre {
-        return Ok(profil(Some(CategorieConventionnelle::Cadre), "la case cadre".into()));
+        return Ok(profil(Some(CategorieConventionnelle::Cadre), format!("cadre selon {}", dit_par)));
     }
     if sec.is_some_and(|s| s.cadre_ou_non_cadre == Some(true)) {
-        return Ok(profil(Some(CategorieConventionnelle::NonCadre), "la case cadre, non cochée".into()));
+        return Ok(profil(Some(CategorieConventionnelle::NonCadre), format!("non cadre selon {}", dit_par)));
     }
     if let (Some(c), Some(code), Some(niveau)) = (selon_niveau, code.as_deref(), niveau.as_ref()) {
         if *c == CategorieConventionnelle::Cadre {

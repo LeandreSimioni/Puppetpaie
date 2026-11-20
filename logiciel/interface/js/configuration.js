@@ -1090,12 +1090,13 @@ let FICHE_COURANTE = null;
 
 /* LE MÉTIER, en tête du bloc « Emploi ». Un seul
  * déroulant, qui montre le métier de la fiche (son code France Travail). La liste est celle des métiers cochés ;
- * on en ajoute dans l'onglet Métiers, pas ici. */
+ * on en ajoute dans l'onglet Métiers, pas ici. Un métier créé (`copie_de`) n'y est pas : il se choisit sur la
+ * carte d'un engagement, la route « emploi » le refuse sur une fiche. */
 function METIER_HTML(fiche) {
   const code = fiche.donnees.code_emploi_ft;
   return `<div class="champ" id="config-metier">
     <label>Métier
-      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —")}</select></label>
+      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —", ETAT.emplois.filter((m) => !m.copie_de))}</select></label>
     <div class="discret petit"><button type="button" class="lien" id="aller-metiers">Ajouter un métier</button></div>
   </div>`;
 }

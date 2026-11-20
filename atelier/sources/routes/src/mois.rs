@@ -87,7 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, le cadre, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -1035,7 +1035,18 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// Un metier du catalogue traduit en champs de fiche, pour le formulaire salarie. LE METIER AU FEMININ pour une
 /// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
+///
+/// UN METIER CREE NE VA PAS SUR UNE FICHE : la fiche ne porte que le code France Travail et les statuts qu'elle declare,
+/// et sa case « Métier » montre le metier que ce code nomme (`metier_de_la_fiche`, celui que la carte montre aussi
+/// quand elle n'en dit pas) ; les statuts d'un metier cree sous le code de sa copie y montreraient un autre metier que
+/// celui que la paie applique. Le metier est celui de l'engagement : un metier cree se choisit sur la carte.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
+    if c.metier.numero_cree().is_some() {
+        return Err(refus(format!(
+            "Le métier {} est un métier créé par la compagnie : il se choisit sur la carte d'un engagement ; la fiche d'un salarié prend un métier du catalogue. Rien n'est écrit.",
+            c.metier
+        )));
+    }
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
     let champs = emplois::resoudre(&c.metier.metier(&ctx.racine)?, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
@@ -1182,18 +1193,25 @@ pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: Mois, id: &Identite) -> R<Br
     Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))
 }
 
+/// UNE ECRITURE A LA FOIS, celle d'un engagement (`avant_d_ecrire`) ou des metiers de la compagnie (`metiers`) : la
+/// fenetre sert ses routes en parallele, et deux ecritures qui relisent puis recrivent le meme fichier en perdraient
+/// une. Le verrou rendu se garde jusqu'a la fin de l'ecriture.
+pub(crate) fn une_ecriture_a_la_fois() -> std::sync::MutexGuard<'static, ()> {
+    static ECRITURE_EN_COURS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Une ecriture tombee en tenant le verrou ne le garde pas : il se reprend.
+    match ECRITURE_EN_COURS.lock() {
+        Ok(v) => v,
+        Err(tombe) => tombe.into_inner(),
+    }
+}
+
 /// AVANT TOUTE ECRITURE D'UN ENGAGEMENT (saisir, valider, modifier, retirer) : une ecriture a la fois (la fenetre sert
 /// ses routes en parallele, et la page enregistre une seconde apres la derniere frappe, meme si l'enregistrement d'avant
 /// n'a pas fini), puis les trois refus du mois : des paies importees (`refuser_si_importe`), un exercice clos
 /// (`refuser_si_clos`), un mois d'avant la premiere embauche (`refuser_si_avant_la_premiere_embauche`). Le verrou rendu
 /// se garde jusqu'a la fin de l'ecriture.
 pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: Mois) -> R<std::sync::MutexGuard<'static, ()>> {
-    static ECRITURE_EN_COURS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    // Une ecriture tombee en tenant le verrou ne le garde pas : il se reprend.
-    let verrou = match ECRITURE_EN_COURS.lock() {
-        Ok(v) => v,
-        Err(tombe) => tombe.into_inner(),
-    };
+    let verrou = une_ecriture_a_la_fois();
     refuser_si_importe(ctx, mois)?;
     refuser_si_clos(ctx, mois)?;
     refuser_si_avant_la_premiere_embauche(ctx, mois)?;
