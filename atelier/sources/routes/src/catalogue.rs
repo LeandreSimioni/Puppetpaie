@@ -60,6 +60,7 @@ routes! {
         ContratsEnCours = "contrats-en-cours",
         ContratsPasses = "contrats-passes",
         Emploi = "emploi",
+        ConventionDuMetier = "convention-du-metier",
         EnregistrerSaisie = "enregistrer-saisie",
         Ajuster = "ajuster",
         MoisAOuvrir = "mois-a-ouvrir",
@@ -786,10 +787,11 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 29] = [
+pub const FICHES: [&[Fiche]; 30] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
+    crate::convention_du_metier::ROUTES,
     crate::etapes::ROUTES,
     crate::imprevus::ROUTES,
     crate::dossier_salarie::ROUTES,
