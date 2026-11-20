@@ -156,6 +156,8 @@ routes! {
         RetirerIdentite = "retirer-identite",
         MetiersCatalogue = "metiers-catalogue",
         MetierRetenu = "metier-retenu",
+        MetierCree = "metier-cree",
+        MetierModifie = "metier-modifie",
         BulletinModeles = "bulletin-modeles",
         BulletinModeleApercu = "bulletin-modele-apercu",
         BulletinModeleChoisir = "bulletin-modele-choisir",
@@ -510,7 +512,7 @@ impl Forme {
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
             C::SalaireMensuel | C::IndemniteLicenciement => Forme::Montant,
-            C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
+            C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
             C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat | C::Nature | C::MotifRecours => {
                 Forme::ChoixRendu
             }

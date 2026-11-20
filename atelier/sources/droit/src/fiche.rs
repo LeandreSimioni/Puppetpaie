@@ -502,10 +502,11 @@ impl CodeEmploiFt {
     }
 }
 
-/// Le code d'un metier est un code de la nomenclature des emplois du spectacle, la table ART de 40.005 (CCH-18,
-/// ci-dessus) : il se declare tel quel. Ses codes ont six caracteres (`nomenclature-emplois-ft.json`).
-impl From<&crate::emplois::CodeEmploi> for CodeEmploiFt {
-    fn from(c: &crate::emplois::CodeEmploi) -> CodeEmploiFt {
+impl CodeEmploiFt {
+    /// Le code de la nomenclature des emplois du spectacle qu'un metier fait declarer (`emplois::Metier::code_emploi_ft`),
+    /// la table ART de 40.005 (CCH-18, ci-dessus) : il se declare tel quel. Ses codes ont six caracteres
+    /// (`nomenclature-emplois-ft.json`).
+    pub(crate) fn du_metier(c: &crate::emplois::CodeEmploi) -> CodeEmploiFt {
         CodeEmploiFt(c.as_str().to_string())
     }
 }

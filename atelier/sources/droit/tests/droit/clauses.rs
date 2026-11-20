@@ -106,7 +106,8 @@ pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
 pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    let metier = dite(&e.metier).map(|c| droit::emplois::CodeEmploi::lire(&c)).transpose()?;
+    // Les codes de l'oracle sont du catalogue : ils ne lisent aucune compagnie.
+    let metier = dite(&e.metier).map(|c| droit::emplois::CodeEmploi::lire(&c).and_then(|c| c.metier(std::path::Path::new("")))).transpose()?;
     let de_la_fiche = |c: &str| <droit::fiche::CategorieConventionnelle as droit::fiche::FormeDeCase>::VALEURS.contains(&c);
     let categorie_conventionnelle = dite(&e.categorie_conventionnelle).map(|c| match droit::fiche::CategorieConventionnelle::du_code(&c).filter(|_| de_la_fiche(&c)) {
         Some(cat) => cat,

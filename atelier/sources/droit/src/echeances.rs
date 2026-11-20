@@ -120,7 +120,7 @@ pub fn remise_du_contrat(debut: &Jour, idcc: Option<&crate::fiche::Idcc>, code_e
     let loi = REMISE_SELON_LA_LOI.apres(*debut, feries)?;
     let selon_la_loi = || Echeance::du_jour(loi, Tournure::AuPlusTardLe, "Code du travail, art. L. 1242-13 (atelier/reference/sources/code-du-travail/xml/L1242-13.xml)".into());
     let Some(r) = crate::clauses::releve(idcc)?.and_then(|c| c.remise_du_contrat) else { return Ok(selon_la_loi()) };
-    if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| crate::fiche::CodeEmploiFt::from(m) == *c)) {
+    if code_emploi.is_some_and(|c| r.metiers.iter().any(|m| m.as_str() == c.as_str())) {
         let jour = r.jours_ouvrables_avant.avant(*debut, feries)?;
         if jour < loi {
             return Ok(Echeance::du_jour(jour, Tournure::AuPlusTardLe, format!("{}, art. {}", crate::clauses::nom(idcc), r.article)));

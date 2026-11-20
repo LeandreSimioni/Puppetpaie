@@ -1090,12 +1090,13 @@ pub(crate) fn engagements(
         }
         lignes_dites(ctx, carte.lignes(), &qui)?;
         // Le metier de ce contrat : six champs declares, que l'engagement
-        // ecrit par-dessus, et son libelle lisible (`emploi_affichage`).
+        // ecrit par-dessus, et son libelle lisible (`emploi_affichage`). Le cadre est celui du metier ; seule la cle
+        // gardee d'une carte ecrite avant le dit autrement (`saisie::Carte.cadre`).
         let declare = match &carte.metier {
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
                 let feminin = salarie.sexe() == Some(droit::fiche::Sexe::Feminin);
-                Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.dite()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
+                Some(code.metier(&ctx.racine).and_then(|m| emplois::resoudre(&m, carte.cadre, feminin, ctx.entreprise.idcc.dite())).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
             }
             None => None,
         };
@@ -2094,14 +2095,15 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
         avis.extend(crate::minima::sous_le_smic(ctx, p)?);
         p.ecrire().avertissements.extend(avis);
     }
-    // La case cadre decochee sur un metier habituellement cadre : on le dit.
+    // Une carte ecrite avant, dont la cle gardee dit non cadre un metier habituellement cadre (`saisie::Carte.cadre`) : on
+    // le dit.
     let tous = &data.engagements;
     for (p, e) in paies.iter_mut().zip(tous) {
-        let m = match &e.metier {
-            Some(metier) => Some((metier, metier.metier()?)),
-            None => None,
+        let m = match (&e.metier, e.cadre) {
+            (Some(metier), Some(false)) => Some((metier, metier.metier(&ctx.racine)?)),
+            _ => None,
         };
-        if let Some((metier, m)) = m.filter(|(_, m)| e.cadre == Some(false) && m.cadre_par_defaut(ctx.entreprise.idcc.dite()) == Some(true)) {
+        if let Some((metier, m)) = m.filter(|(_, m)| m.cadre_par_defaut(ctx.entreprise.idcc.dite()) == Some(true)) {
             fn texte<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
                 c.remplie().map(str::to_string)
             }
@@ -2111,9 +2113,9 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
                 None => metier.to_string(),
             };
             let msg = format!(
-                "{} {}, {} : case cadre decochee, alors que ce metier est \
-                 habituellement cadre. Si c'est voulu, rien a faire ; sinon, \
-                 la cocher -- la retraite complementaire en depend.",
+                "{} {}, {} : sa carte, ecrite quand une case disait le cadre, le dit non cadre, alors que ce metier est \
+                 habituellement cadre. Si c'est voulu, rien a faire ; sinon, choisir un autre metier, ou en creer un dans \
+                 Configuration › Métiers -- la retraite complementaire en depend.",
                 texte(&p.salarie.nom).ok_or_else(|| socle::fichiers::absent("nom"))?,
                 texte(&p.salarie.prenom_affichage).or_else(|| texte(&p.salarie.prenom)).ok_or_else(|| socle::fichiers::absent("prenom"))?,
                 libelle

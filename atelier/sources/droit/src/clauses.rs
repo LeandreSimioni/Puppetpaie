@@ -640,8 +640,9 @@ fn non_relevees(idcc: Option<&Idcc>) -> String {
 pub struct DitParLEngagement {
     pub categorie_conventionnelle: Option<CategorieConventionnelle>,
     pub statut: Option<Statut>,
-    /// Le code emploi (`metier`).
-    pub metier: Option<emplois::CodeEmploi>,
+    /// Le metier qu'il choisit, lu (`emplois::CodeEmploi::metier`).
+    pub metier: Option<emplois::Metier>,
+    /// La cle gardee `cadre` d'une carte ecrite avant que le cadre ne se lise que du metier (`saisie::Carte.cadre`).
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
 }
@@ -650,7 +651,7 @@ impl DitParLEngagement {
     /// Le metier que l'engagement choisit, sinon celui que nomme le code emploi de la fiche (`emplois::metier`).
     fn metier_lu(&self, fiche: &ChampsSalarie) -> R<Option<emplois::Metier>> {
         match &self.metier {
-            Some(code) => code.metier().map(Some),
+            Some(m) => Ok(Some(m.clone())),
             None => Ok(fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten()),
         }
     }
@@ -671,7 +672,7 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
-    let code = e.metier.as_ref().map(CodeEmploiFt::from).or_else(|| fiche.code_emploi_ft.dite().cloned());
+    let code = e.metier.as_ref().map(emplois::Metier::code_emploi_ft).or_else(|| fiche.code_emploi_ft.dite().cloned());
     let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());

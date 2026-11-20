@@ -1037,7 +1037,7 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
-    let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
+    let champs = emplois::resoudre(&c.metier.metier(&ctx.racine)?, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
         Some(code) => socle::phrase!("Métier : {} ({}).", champs.emploi_affichage, code),
         None => socle::phrase!("Métier : {}.", champs.emploi_affichage),
@@ -1695,11 +1695,6 @@ pub(crate) struct Prerempli {
     /// salarie (`droit::emplois::CodeEmploi::du_code_declare`, `engagement::lib` : sans metier sur la carte, l'emploi est
     /// celui de la fiche). Montre, il ne s'ecrit que si on le choisit.
     metier: Option<droit::emplois::CodeEmploi>,
-    /// CADRE OU NON, ce que la paie prend sans la case : ce que le catalogue dit du metier ecrit sur la carte, sous la
-    /// convention de la compagnie (`Metier::cadre_par_defaut` ; rien hors du catalogue). La case ne s'ouvre qu'avec un
-    /// metier ecrit (`FaitQuiOuvre::MetierEcrit`) : la meme regle, que la carte soit calculee ou a completer. Rendu meme
-    /// quand la carte le dit : un oui-non pre-rempli se change dans les deux sens, et revenir au pre-rempli n'ecrit rien.
-    cadre: Option<bool>,
     /// CE QU'UNE LIGNE NEUVE DE CHAQUE RUBRIQUE PREND, sous son code (`lignes_preremplies`) : une ligne de cachet, le
     /// taux du cachet du mois ou du dossier.
     lignes: LignesPreremplies,
@@ -1873,7 +1868,6 @@ fn carte_lue(
             F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
-            F::MetierEcrit => e.metier.is_some(),
             F::TempsPlein => plein,
             F::HeuresDecompteesParSemaine => par_semaine,
             F::TempsPartiel => partiel,
@@ -1891,15 +1885,6 @@ fn carte_lue(
         choix.insert(engagement::saisie::Champ::ModeleContrat.nom(), crate::modeles_contrat::au_choix(ctx, n)?.iter().map(|m| m.en_choix()).collect());
     }
     Ok((cases, choix))
-}
-
-/// Ce que le catalogue dit du metier de la carte `e` sous la convention de la compagnie (`Metier::cadre_par_defaut`,
-/// `Prerempli::cadre`) ; rien sans metier, ou pour un metier hors du catalogue.
-fn cadre_du_metier(ctx: &Contexte, e: &SaisieCarte) -> R<Option<bool>> {
-    Ok(match &e.metier {
-        Some(m) => m.metier()?.cadre_par_defaut(ctx.entreprise.idcc.dite()),
-        None => None,
-    })
 }
 
 /// Le salarie d'une paie a l'ecran : sa cle, son nom, son prenom (celui d'usage s'il en a un).
@@ -2137,7 +2122,6 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         debut: brut.debut.is_none().then(|| e.contrat().debut()),
         // Sans metier sur la carte, la paie prend l'emploi de la fiche (`s`, qu'aucune case de la carte ne change).
         metier: if brut.metier.is_none() { ou_vide(metier_de_la_fiche(s.code_emploi_ft.dite()), f) } else { None },
-        cadre: ou_vide(cadre_du_metier(ctx, brut), f),
         lignes: lignes_ou_vide(lignes, f),
     };
     metier_du_dernier_contrat_illisible(ctx, brut, &mut ne_se_preremplit);
@@ -2564,15 +2548,13 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             Some(m) => {
                 let rupture = rupture_en_saisie(e, mois);
                 // Rien ne pre-remplit le jour du versement tant que la paie ne se calcule pas : le debut est celui que
-                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme ; le cadre, celui du
-                // metier qu'elle ecrit (la meme regle qu'une carte calculee).
+                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme.
                 let mut ne_se_preremplit = Vec::new();
                 let f = &mut ne_se_preremplit;
                 let fiche = e.salarie.as_ref().and_then(|s| ctx.salaries.get(s));
                 let prerempli = Prerempli {
                     debut: if e.debut.is_none() { e.debut_lu() } else { None },
                     metier: if e.metier.is_none() { ou_vide(metier_de_la_fiche(fiche.and_then(|x| x.code_emploi_ft.dite())), f) } else { None },
-                    cadre: ou_vide(cadre_du_metier(ctx, e), f),
                     lignes: lignes_ou_vide(lignes, f),
                     ..Prerempli::default()
                 };

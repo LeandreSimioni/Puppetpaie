@@ -567,7 +567,11 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, d
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 let emploi = t.emploi.as_ref();
-                if let Some(code) = emploi.and_then(|e| e.code_emploi_ft.clone()).or_else(|| t.metier.as_ref().map(CodeEmploiFt::from)).or_else(|| du_salarie.clone()) {
+                let du_metier = match &t.metier {
+                    Some(m) => Some(m.metier(&ctx.racine)?.code_emploi_ft()),
+                    None => None,
+                };
+                if let Some(code) = emploi.and_then(|e| e.code_emploi_ft.clone()).or(du_metier).or_else(|| du_salarie.clone()) {
                     metiers.insert((code, emploi.and_then(|e| e.statut), jour.clone(), salarie.clone()));
                 }
             }

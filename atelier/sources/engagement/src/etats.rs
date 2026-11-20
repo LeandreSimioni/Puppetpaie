@@ -1961,10 +1961,10 @@ fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: M
 /// Ce que dit le contrat, dans la saisie d'un engagement : ses parties, son objet, ses dates, sa remuneration, sa nature
 /// et son emploi. INFERENCE : la liste suit les marqueurs du modele de contrat (`donnees/modeles/`) ; les lignes d'un
 /// contrat paye au mois se composent chaque mois et ne sont pas des clauses.
-pub(crate) const CLAUSES: [Champ; 17] = [
+pub(crate) const CLAUSES: [Champ; 16] = [
     Champ::Salarie, Champ::Spectacle, Champ::Debut, Champ::Fin, Champ::Numero, Champ::Lignes, Champ::Lieu, Champ::Nature,
     Champ::MotifRecours, Champ::QuotiteContrat, Champ::QuotiteReference, Champ::ModaliteTempsTravail, Champ::SalaireMensuel,
-    Champ::Emploi, Champ::Metier, Champ::Cadre, Champ::Statut,
+    Champ::Emploi, Champ::Metier, Champ::Statut,
 ];
 
 /// Les clauses d'une carte (`CLAUSES`), sans les lignes d'un contrat paye au mois.
@@ -1986,7 +1986,7 @@ fn clauses_de_la_saisie(s: &stock::Saisie, mensuel: bool) -> stock::Saisie {
     let avenants = s
         .avenants
         .iter()
-        .map(|a| stock::Avenant { depuis: a.depuis, termes: clauses_de(&a.termes, mensuel), retires: a.retires.iter().copied().filter(|c| CLAUSES.contains(c)).collect() })
+        .map(|a| stock::Avenant { depuis: a.depuis, termes: clauses_de(&a.termes, mensuel), retires: a.retires.iter().copied().filter(|c| CLAUSES.contains(c)).collect(), retire_le_cadre: false })
         .filter(|a| !a.retires.is_empty() || !a.termes.muette())
         .collect();
     stock::Saisie { carte: clauses_de(&s.carte, mensuel), avenants, faits: s.faits.iter().map(|(m, f)| (*m, clauses_de(f, mensuel))).collect() }
