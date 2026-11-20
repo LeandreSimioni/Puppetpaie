@@ -1072,6 +1072,12 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: Mois) 
 /// mois, `engagement::stock::Objet::vue`) prend chaque changement dans l'ordre, tout ou rien (`Changements::appliquer`),
 /// puis s'ecrit entier (`ecrire_une_carte`). Rend l'identite de l'engagement ecrit, le brouillon tel qu'il est ecrit, et
 /// ce qui lui manque pour etre valide.
+/// LES METIERS QU'UNE CARTE CHOISIT : ceux de la compagnie (Configuration › Métiers, `metiers::metiers`), la liste que
+/// la route etat rend (`choix.metier`).
+pub(crate) fn metiers_de_la_compagnie(ctx: &Contexte) -> R<Vec<emplois::CodeEmploi>> {
+    Ok(crate::metiers::metiers(ctx)?.into_iter().map(|m| m.code).collect())
+}
+
 fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let mois = c.mois;
     let _verrou = avant_d_ecrire(ctx, mois)?;
@@ -1079,7 +1085,13 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         CarteVisee::Neuve(n) => (Brouillon::neuf(n), None),
         CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, mois, &id)?, Some(id)),
     };
-    c.changements.appliquer(ctx, mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let nomme = c.changements.nomment_le_salarie();
+    c.changements.appliquer(ctx, mois, &mut brouillon, &metiers_de_la_compagnie(ctx)?, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    // Une carte qui nomme son salarie prend le metier de son dernier contrat, si elle n'en dit pas.
+    if nomme {
+        let ecrit = id.as_ref().map(|i| engagement::stock::designe(&ctx.racine, mois, i)).transpose()?.map(|(_, o)| o);
+        brouillon.preremplir_le_metier(&ctx.racine, ecrit.as_ref())?;
+    }
     let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, mois, &id)?;
     let (k, _) = engagement::stock::designe(&ctx.racine, mois, &id)?;
@@ -1370,7 +1382,7 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
             )));
         }
         let mut b = Brouillon::de_la_carte(&ecrit, &qui_de_la_carte(ctx, &ecrit)).map_err(|e| e.reclasser(Classe::Refuse))?;
-        m.changements.appliquer(ctx, mois, &mut b, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|e| e.reclasser(Classe::Refuse))?;
+        m.changements.appliquer(ctx, mois, &mut b, &metiers_de_la_compagnie(ctx)?, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|e| e.reclasser(Classe::Refuse))?;
         let saisie = engagement::stock::en_forme(&b.en_carte()).map_err(|e| e.reclasser(Classe::Refuse))?;
         // L'avenant du mois se deduit des termes dates de l'engagement ecrit (`stock::Objet::vue`) : le brouillon ne le
         // porte pas.

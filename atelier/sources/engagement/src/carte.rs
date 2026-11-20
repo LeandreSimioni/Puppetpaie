@@ -727,6 +727,48 @@ impl Brouillon {
     }
 }
 
+impl Brouillon {
+    /// LE METIER D'UNE CARTE DE CDDU QUI VIENT DE NOMMER SON SALARIE, PRE-REMPLI : celui du dernier contrat de ce
+    /// salarie (`metier_du_dernier_contrat`), quand la carte n'en dit pas. Le metier est lie a l'engagement, pas a la
+    /// personne : c'est un pre-remplissage, qui se change sur la carte. Sans dernier contrat, ou si ce contrat ne disait pas
+    /// de metier, la carte n'en dit pas et la paie prend l'emploi de la fiche du salarie (`droit::emplois::emploi_de`).
+    /// `sauf` : l'engagement de cette carte, deja ecrit, qui n'est pas son propre dernier contrat.
+    pub fn preremplir_le_metier(&mut self, racine: &std::path::Path, sauf: Option<&crate::stock::Objet>) -> R<()> {
+        let Brouillon::CdduSpectacle(b) = self else { return Ok(()) };
+        let (Some(s), None) = (&b.salarie, &b.metier) else { return Ok(()) };
+        b.metier = metier_du_dernier_contrat(racine, s, sauf)?;
+        Ok(())
+    }
+}
+
+/// LE METIER DU DERNIER CONTRAT DU SALARIE `s` : l'engagement d'ici de debut le plus tard (ni importe, ni non actif ;
+/// `sauf` mis a part), au metier de son dernier mois ; `None` sans aucun, ou s'il n'en disait pas.
+pub fn metier_du_dernier_contrat(racine: &std::path::Path, s: &IdSalarie, sauf: Option<&crate::stock::Objet>) -> R<Option<droit::emplois::CodeEmploi>> {
+    let mut dernier: Option<(Jour, crate::stock::Objet)> = None;
+    for o in crate::stock::objets(racine)? {
+        let c = o.carte();
+        if c.salarie.as_ref() != Some(s) || o.est_importe() || o.est_non_actif() {
+            continue;
+        }
+        if sauf.is_some_and(|x| x.premier_mois() == o.premier_mois() && x.carte() == c) {
+            continue;
+        }
+        let Some(debut) = c.debut_lu() else { continue };
+        if dernier.as_ref().is_none_or(|(d, _)| debut > *d) {
+            dernier = Some((debut, o));
+        }
+    }
+    let Some((_, o)) = dernier else { return Ok(None) };
+    let mois = match o.dernier_mois()? {
+        Some(m) => m,
+        None => o.premier_mois(),
+    };
+    Ok(match o.vue(mois)? {
+        Some(v) => v.metier,
+        None => o.carte().metier.clone(),
+    })
+}
+
 /// LES CHANGEMENTS D'UNE CASE, declares une fois : chaque case qui se saisit (ni ce que la vue deduit, ni ce qu'elle dit
 /// de l'engagement ecrit), sa cle, son type (`null` : la case se vide) et son champ de la carte. Les lignes de paie
 /// arrivent telles que l'appelant les donne (`L` : `LigneDonnee`), et se rangent a la porte (`Changement::ranger`) avant
@@ -857,6 +899,11 @@ changements! {
 pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
 impl Changements {
+    /// Un de ses changements nomme-t-il le salarie de la carte ?
+    pub fn nomment_le_salarie(&self) -> bool {
+        self.0.iter().any(|c| matches!(c, Changement::Salarie(Some(_))))
+    }
+
     /// CHAQUE CHANGEMENT APPLIQUE AU BROUILLON `b` d'une carte de `mois`, dans l'ordre (`Brouillon::changer`), tout ou
     /// rien : ses lignes se rangent d'abord, chacune lue au catalogue de la compagnie (`racine`, `ligne::ranger`) ; le
     /// premier refus (il nomme sa case, ou sa ligne) laisse `b` tel qu'il etait. `qui` : le salarie que le refus nomme,
@@ -866,10 +913,22 @@ impl Changements {
     /// chaque fait de la fin que le motif de rupture n'appelle pas (`droit::permanents::faits_de_rupture` ; sans motif dit,
     /// ceux du motif par defaut de la nature) s'en va. Il ne reste pas ecrit sans se voir, et rien ne le controle (une date
     /// de notification posee sous un 034, puis le motif devient 031 : elle s'en va).
-    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> R<()> {
+    ///
+    /// UN METIER SE CHOISIT DANS CEUX DE LA COMPAGNIE (`metiers` : ceux de Configuration › Métiers, la liste que la route
+    /// etat rend) : un autre se refuse en disant d'aller l'y ajouter.
+    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, metiers: &[droit::emplois::CodeEmploi], qui: impl Fn(&Brouillon) -> String) -> R<()> {
         let mut essai = b.clone();
         for ch in self.0 {
             let q = qui(&essai);
+            if let Changement::Metier(Some(m)) = &ch {
+                if !metiers.contains(m) {
+                    return Err(socle::refus!(
+                        "{} : le métier {} n'est pas dans les métiers de la compagnie : ajoutez-le d'abord dans Configuration › Métiers. Rien n'est écrit.",
+                        q,
+                        m
+                    ));
+                }
+            }
             let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
             essai.changer(ch, &q)?;
         }
