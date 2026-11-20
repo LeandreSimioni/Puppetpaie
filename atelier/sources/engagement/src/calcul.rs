@@ -1078,6 +1078,18 @@ pub(crate) fn bareme_du_salarie(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Na
     pile(ctx, sal, nat, fin, caisse, cpf_cdd, majoration, false)
 }
 
+/// LE PLAFOND JOURNALIER DE LA BASE CONGES SPECTACLES d'un contrat (`droit::clauses::plafond_conges_spectacles`) : sur la
+/// convention du contrat, celle que la DSN declare (S21.G00.40.017) et que le bulletin imprime
+/// (`minima::idcc_du_contrat`), la case de la fiche Entreprise et le metier de la fiche. La paie (`calculer_periode`) et le
+/// certificat d'un mois importe (`routes::dossier_salarie`) le lisent ici.
+pub fn plafond_conges_spectacles(ctx: &Contexte, spectacle: Option<&droit::fiche::Spectacle>, sal: &SalarieDuContrat) -> R<Option<socle::grandeurs::MontantUnitaire>> {
+    let idcc_du_contrat = match ctx.entreprise.idcc.dite() {
+        Some(i) => Some(crate::minima::idcc_du_contrat(i, spectacle, sal)?),
+        None => None,
+    };
+    droit::clauses::plafond_conges_spectacles(idcc_du_contrat.as_ref(), ctx.entreprise.plafond_conges_spectacles, sal.code_emploi_ft.dite().filter(|c| !c.est_permanent()))
+}
+
 /// La pile d'une paie IMPORTEE, qui ne range que ses bases : ses taux se lisent sur ses pieces
 /// (`bareme::EntrepriseLue::taux_lus`).
 pub(crate) fn bareme_pour_ranger(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Nature, fin: &Jour, caisse: bool, majoration: bool) -> R<Arc<Pile>> {
@@ -1778,17 +1790,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // l'emploi, quand la compagnie dit qu'il la lie (`clauses::plafond_conges_spectacles` ; C. trav. D. 7121-37),
     // multiplie par les jours travailles de la paie. Chaque rubrique en garde sa part, au prorata, la derniere prenant
     // l'arrondi : la ligne de la caisse, le 066 de la DSN et le certificat lisent cette seule base.
-    // La convention du contrat, celle que la DSN declare (S21.G00.40.017) et que le bulletin imprime.
-    let idcc_du_contrat = match ctx.entreprise.idcc.dite() {
-        Some(i) => Some(crate::minima::idcc_du_contrat(i, spec.as_ref(), &sal)?),
-        None => None,
-    };
-    let plafond_cs = droit::clauses::plafond_conges_spectacles(
-        idcc_du_contrat.as_ref(),
-        ctx.entreprise.plafond_conges_spectacles,
-        sal.code_emploi_ft.dite().filter(|c| !c.est_permanent()),
-    )?;
-    if let Some(p) = plafond_cs {
+    if let Some(p) = plafond_conges_spectacles(ctx, spec.as_ref(), &sal)? {
         let plafond = (jours * p).au_centime();
         let total = par_rubrique.iter().fold(zero, |a, b| a + b.brut_cs);
         if total > plafond {

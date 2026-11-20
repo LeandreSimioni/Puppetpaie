@@ -446,8 +446,9 @@ pub(crate) fn contrat_du_certificat(p: &Paie) -> R<ContratDuCertificat> {
 
 /// Ce que l'ancien logiciel a verse en `mois` pour un contrat qui continue ici : le brut, les cachets (une ligne, aux
 /// jours que le bulletin imprime) et les jours travailles. `None` sans bulletin qui donne ses jours et ses cachets : le
-/// mois reste parmi les manquants (rien ne se devine).
-fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois) -> Option<MoisPaye> {
+/// mois reste parmi les manquants (rien ne se devine). `plafonne` : un plafond de la convention s'applique a ce contrat
+/// (`engagement::calcul::plafond_conges_spectacles`).
+fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mois::Mois, plafonne: bool) -> Option<MoisPaye> {
     let p = i.paies().get(&mois)?;
     let brut = p.brut?;
     let dates: Vec<Jour> = p.dates.iter().flat_map(|d| d.jours()).collect();
@@ -458,11 +459,13 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
         return None;
     }
     let jours = socle::grandeurs::Jours::de_dates(dates.len());
-    // Sa base conge : celle que sa DSN a declaree (base 27, S21.G00.78) ; sans elle, la regle generale, le brut (Audiens,
-    // fiche « Plafonds conventionnels » : « À défaut, il convient d'appliquer la règle générale »).
+    // Sa base conge : celle que sa DSN a declaree (base 27, S21.G00.78). Sans elle, le brut quand aucun plafond ne
+    // s'applique au contrat : c'est alors la regle (Audiens, fiche « Plafonds conventionnels » : « À défaut, il convient
+    // d'appliquer la règle générale ») ; sous un plafond, la base ne se lit pas : le mois reste parmi les manquants.
     let base_conge = match p.bases.get(&droit::base_assujettie::BaseAssujettie::CongesSpectacles) {
         Some(b) => *b,
-        None => brut,
+        None if !plafonne => brut,
+        None => return None,
     };
     Some(MoisPaye { fin: mois.dernier_jour(), dates_travail: dates, cachets, jours, heures: None, brut: brut.au_centime(), base_conge: base_conge.au_centime() })
 }
@@ -478,6 +481,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
     let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.contrat().debut()), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let plafonne = engagement::calcul::plafond_conges_spectacles(ctx, p.spectacle.as_ref(), &p.salarie)?.is_some();
     let mut mois_payes: Vec<MoisPaye> = Vec::new();
     for &m in eng.mois_du_contrat()?.iter().filter(|m| **m < eng.mois) {
         let ecrite = match eng.numero.as_ref() {
@@ -486,7 +490,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(ContratDuCertificat, V
         };
         let lu = match ecrite {
             Some(x) => Some(MoisPaye::de_la_paie_ecrite(&x.paie)?),
-            None => importe.as_ref().and_then(|i| verse_par_l_ancien_logiciel(i, m)),
+            None => importe.as_ref().and_then(|i| verse_par_l_ancien_logiciel(i, m, plafonne)),
         };
         match lu {
             Some(mp) => mois_payes.push(mp),
