@@ -1119,19 +1119,18 @@ pub(crate) fn metiers_de_la_compagnie(ctx: &Contexte) -> R<Vec<emplois::CodeEmpl
 
 /// LE METIER QU'UNE CARTE DE CDDU ECRIT QUAND ELLE NOMME LE SALARIE `s` (`engagement::carte::Brouillon::preremplir_le_metier`) :
 /// celui de son dernier contrat (`engagement::carte::metier_du_dernier_contrat`, sans l'engagement `id` de la carte,
-/// deja ecrit), sinon celui que nomme le code emploi de sa fiche ; seulement un metier de la compagnie (`metiers` :
-/// ceux que la carte offre au choix). L'erreur dit pourquoi rien ne se pre-remplit : elle ne refuse rien.
+/// deja ecrit) ; seulement un metier de la compagnie (`metiers` : ceux que la carte offre au choix). Sans dernier
+/// contrat qui en dise un, RIEN NE S'ECRIT : la paie applique l'emploi de la fiche du salarie, tel que la fiche le dit
+/// (ses statuts, sa PCS-ESE), et la case le montre (`Prerempli::metier`). Ecrire a sa place le metier du catalogue que
+/// nomme son code changerait la paie : le rejeu des fictives le montre. L'erreur dit pourquoi rien ne se pre-remplit :
+/// elle ne refuse rien.
 fn metier_a_preremplir(ctx: &Contexte, mois: Mois, id: Option<&Identite>, s: &IdSalarie, metiers: &[emplois::CodeEmploi]) -> R<Option<emplois::CodeEmploi>> {
     let ecrit = match id {
         Some(i) => Some(engagement::stock::designe(&ctx.racine, mois, i)?.1),
         None => None,
     };
     let offert = |m: &emplois::CodeEmploi| metiers.contains(m);
-    if let Some(m) = engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, ecrit.as_ref())?.filter(offert) {
-        return Ok(Some(m));
-    }
-    let fiche = ctx.salaries.get(s);
-    Ok(metier_de_la_fiche(fiche.and_then(|f| f.code_emploi_ft.dite()))?.filter(offert))
+    Ok(engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, ecrit.as_ref())?.filter(offert))
 }
 
 fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {

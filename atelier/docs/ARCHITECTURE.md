@@ -1978,10 +1978,12 @@ n'écrit rien ; un choix pré-rempli (le métier) le montre dans sa case vide, e
 celle qui est montrée comprise. **Un pré-remplissage ne refuse ni ne ferme rien** : celui qui ne se lit pas laisse sa
 case vide, la `faute` de la carte dit pourquoi (la phrase de la route `saisie` pour une carte neuve), et l'écriture
 d'une carte n'en dépend jamais. **Le métier est sur l'engagement, et il s'écrit** : une carte de CDDU qui nomme son
-salarié sans dire de métier écrit celui de son dernier contrat, sinon celui de sa fiche (`routes::mois`,
-`metier_a_preremplir`), un des métiers de la compagnie ; le dernier contrat dont le métier ne se lit pas arrête la
-recherche, et rien ne s'écrit. Une carte déjà écrite sans métier montre celui que la paie applique (`prerempli.metier`,
-celui de la fiche), et rien ne s'y écrit tant qu'on ne le choisit pas. **La case « Cadre » ne s'ouvre qu'avec un
+salarié sans dire de métier écrit celui de son dernier contrat (`routes::mois`, `metier_a_preremplir`), un des
+métiers de la compagnie ; le dernier contrat dont le métier ne se lit pas arrête la recherche, et rien ne s'écrit.
+Sans dernier contrat qui en dise un, rien ne s'écrit non plus : la paie applique l'emploi de la fiche du salarié, tel
+que la fiche le dit, et l'écrire à sa place par le métier du catalogue changerait la paie. Une carte sans métier
+montre celui que la paie applique (`prerempli.metier`, celui de la fiche), et rien ne s'y écrit tant qu'on ne le
+choisit pas. **La case « Cadre » ne s'ouvre qu'avec un
 métier écrit sur la carte** (`FaitQuiOuvre::MetierEcrit`) : c'est le seul cas où le calcul la lit
 (`droit::emplois::resoudre`) ; son pré-rempli est ce que le catalogue dit de ce métier, que la carte soit calculée ou à
 compléter. Un montant (le taux d'une ligne, sa base, son montant,
