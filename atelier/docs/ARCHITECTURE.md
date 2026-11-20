@@ -1286,6 +1286,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
+| ce que la convention fixe au métier pour une rubrique de paie (le nom qu'elle lui donne, la situation, chaque montant et ce qu'il paie, `MontantFixe`, le texte en clair ; la bulle d'une ligne de paie, route `convention-du-metier`) ; ce que la table des minima en relève, métier par métier, est sa forme : `droit::minima::MetierDansLaConvention`, `CeQueFixeLaConvention` | `CeQueFixe` | `engagement/src/minima.rs` |
 | catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
 | annexe de la convention 3090 | `AnnexeConvention` | `droit/src/fiche.rs` |
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
@@ -2205,6 +2206,13 @@ datée, vérifiable**.
   (`poste_depuis`) partout où un minimum en dépend (la grille administrative
   de la 3090, les conditions `anciennete` des grilles) ; sans la case, le
   calcul refuse en la nommant, jamais « aucune ancienneté ».
+  **Ce que la convention fixe au métier** (la bulle d'une ligne de paie, un « i » au bout de la ligne) : `metiers` d'une
+  convention de cette table nomme, par le code du métier, le nom que la convention lui donne et chaque rubrique pour
+  laquelle un texte déposé fixe un montant (sa situation, ce que paie le montant, le texte en clair et sa `source`). Les
+  montants ne s'y écrivent pas : ils se lisent où le calcul les lit (la grille du métier dans l'annexe, la répétition de
+  l'annexe, le tarif du barème : `engagement::minima::ce_que_fixe_la_convention`), au premier jour du mois de la carte.
+  Ajouter un métier, c'est ajouter son entrée ; une rubrique sans lecteur (autre que cachet, répétition, repas,
+  nuitée) est un défaut de la table livrée.
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,
   éditeur, URL, description, version et d'où on la lit, date de relevé,
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le
