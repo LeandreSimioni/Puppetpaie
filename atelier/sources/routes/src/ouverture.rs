@@ -23,7 +23,6 @@ use droit::catalogue::{self, Rubrique};
 use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
 use droit::natures::{self, MotifDeRupture};
-use droit::permanents;
 use engagement::{self};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
@@ -1225,19 +1224,35 @@ fn genre_en_clair(a: AutreElementDeRevenuBrut) -> Option<&'static str> {
 /// L'aide du choix « Lieu » d'une ligne de frais.
 const LIEU_AIDE: &str = "Où dort et mange le salarié : hors de la métropole, la limite exonérée change ; à l'étranger, c'est l'indemnité du pays pour la nuitée et les repas du jour.";
 
-/// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais).
+/// Un code et son libelle, dans une liste ou l'on choisit (le genre d'un avantage, le lieu d'une ligne de frais, un
+/// metier, un motif) ; ce que le choix dit de lui-meme une fois choisi (`dit` : un motif de rupture) ; le groupe sous
+/// lequel il se range dans la liste (`groupe` : la famille d'un metier), la liste etant deja dans l'ordre des groupes.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Choix {
     code: String,
     libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     defaut: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    groupe: Option<String>,
 }
 
 impl Choix {
     /// Un code et son libelle, sans defaut.
     pub(crate) fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
-        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None }
+        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None }
+    }
+
+    /// Ce que le choix dit de lui-meme une fois choisi.
+    pub(crate) fn disant(self, dit: Option<String>) -> Choix {
+        Choix { dit, ..self }
+    }
+
+    /// Le groupe ou il se range.
+    pub(crate) fn sous(self, groupe: Option<String>) -> Choix {
+        Choix { groupe, ..self }
     }
 }
 
@@ -1349,14 +1364,14 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     let genres: Vec<Choix> = if avec_genre {
         AutreElementDeRevenuBrut::TOUS
             .iter()
-            .filter_map(|g| genre_en_clair(*g).map(|libelle| Choix { code: g.code().to_string(), libelle: libelle.to_string(), defaut: Some(Some(*g) == r.dsn_autres_bruts) }))
+            .filter_map(|g| genre_en_clair(*g).map(|libelle| Choix { defaut: Some(Some(*g) == r.dsn_autres_bruts), ..Choix::de(g.code(), libelle) }))
             .collect()
     } else {
         vec![]
     };
     // LE LIEU D'UNE LIGNE DE NUITEE OU DE REPAS (`engagement::LignePaie::territoire`), sous « Avancé » : la metropole d'abord (rien
     // a choisir), l'outre-mer et Monaco, puis chaque lieu de la table des missions a l'etranger (`droit::missions::lieux`).
-    let choix = |code: &str, libelle: &str| Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None };
+    let choix = |code: &str, libelle: &str| Choix::de(code, libelle);
     let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code) {
         std::iter::once(choix("", "Métropole"))
             .chain(engagement::TerritoireHorsMetropole::TOUS.into_iter().map(|t| choix(t.texte(), t.dit())))
@@ -1420,13 +1435,11 @@ struct NatureDeLaPage {
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
     /// et 10 (CCH-11).
     spectacle: bool,
-    motifs_rupture: Vec<natures::RuptureOfferte>,
-    /// Les faits que chaque motif appelle (`permanents::faits_de_rupture`), et ceux du choix vide (`faits_sans_motif` :
-    /// ceux du motif par defaut de la nature) : la page montre ces cases, et elles seules.
-    faits_de_rupture: BTreeMap<MotifDeRupture, Vec<&'static str>>,
-    faits_sans_motif: Vec<&'static str>,
     motif_rupture_defaut: Option<MotifDeRupture>,
-    motifs_recours: Vec<natures::RecoursOffert>,
+    /// Ce qu'offrent les cases de sa carte qui se choisissent dans sa nature, sous la cle de leur case : ses motifs de
+    /// recours (`motif_recours`). Le motif de la fin, qui depend du contrat, est rendu avec la carte de chaque paie
+    /// (`mois::CarteRendue`), les faits que ce motif appelle aussi (ses cases ouvertes).
+    choix: BTreeMap<&'static str, Vec<Choix>>,
     motif_recours_exige: bool,
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     quotite_defaut: Option<socle::grandeurs::Heures>,
@@ -1445,10 +1458,9 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
     for n in toutes.iter() {
-        let motifs = n.motifs_rupture();
-        let mut faits = BTreeMap::new();
-        for m in motifs {
-            faits.insert(m.code, permanents::faits_de_rupture(n, Some(m.code))?);
+        let mut choix = BTreeMap::new();
+        if let Some(motifs) = n.motifs_recours() {
+            choix.insert(engagement::saisie::Champ::MotifRecours.nom(), motifs.iter().map(|m| Choix::de(m.code, &m.libelle)).collect());
         }
         let carte = cartes
             .iter()
@@ -1463,11 +1475,8 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
             spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
-            motifs_rupture: motifs.to_vec(),
-            faits_de_rupture: faits,
-            faits_sans_motif: permanents::faits_de_rupture(n, None)?,
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
-            motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
+            choix,
             motif_recours_exige: n.motif_recours_exige(),
             quotite_defaut: n.quotite_reference_defaut(),
             temps_plein_dit: n.quotite_reference_defaut().map(|h| format!("temps plein {} h", socle::texte::virgule(h))),
@@ -1634,7 +1643,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let choix = ChoixDesCases {
         salarie: salaries.iter().map(|s: &SalarieDeLaListe| Choix::de(&s.cle, &s.libelle)).collect(),
         spectacle: spectacles.iter().map(|s: &SpectacleDeLaListe| Choix::de(&s.cle, &s.titre)).collect(),
-        metier: emplois.iter().map(|m| Choix::de(&m.code, &m.libelle)).collect(),
+        // Les metiers, deja dans l'ordre de leurs familles (`metiers::metiers`), chacun sous la sienne.
+        metier: emplois.iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))).collect(),
         etablissement: choix_d_etablissement(ctx)?
             .into_iter()
             .flatten()

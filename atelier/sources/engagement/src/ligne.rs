@@ -528,6 +528,17 @@ impl QuantiteDeLigne {
         }))
     }
 
+    /// UNE PAR DATE, `n` dates : des cachets, des journees ou des services, qui se comptent ainsi ; `None` pour une
+    /// autre unite (des heures ne se deduisent pas d'un nombre de jours).
+    pub fn par_dates(unite: Unite, n: usize) -> Option<QuantiteDeLigne> {
+        match unite {
+            Unite::Cachet => Some(QuantiteDeLigne::Cachets(socle::grandeurs::Cachets::de_dates(n))),
+            Unite::Jour => Some(QuantiteDeLigne::Jours(Jours::de_dates(n))),
+            Unite::Service => Some(QuantiteDeLigne::Services(socle::grandeurs::Services::comptes(n))),
+            Unite::Heure | Unite::Semaine | Unite::Mois | Unite::Forfait | Unite::Pourcentage => None,
+        }
+    }
+
     /// RIEN, dans l'unite `unite` (une ligne du planning dont aucune date ne compte la quantite, a completer) ; `None` :
     /// le pourcentage, qui n'a pas de quantite.
     pub fn nulle(unite: Unite) -> Option<QuantiteDeLigne> {
@@ -1142,6 +1153,45 @@ impl LignePaie {
         l
     }
 
+    /// SES JOURS RANGES PAR MOIS, ceux de `mois` et d'avant en dates, ceux d'apres au planning, quelle que soit la cle qui
+    /// les donne (la page les donne en une seule cle : `ranger`) ; une ligne sans jours reste ce qu'elle est.
+    pub fn jours_ranges(&self, mois: Mois) -> LignePaie {
+        let tous: Vec<DateDeLigne> = self.dates().iter().chain(self.planning()).cloned().collect();
+        let (dates, planning): (Vec<DateDeLigne>, Vec<DateDeLigne>) = tous.into_iter().partition(|d| d.jour().mois_civil() <= mois);
+        self.avec_les_jours(dates, planning)
+    }
+
+    /// LA QUANTITE QUI SUIT SES JOURS : la ligne telle qu'elle etait (`avant`, de meme rubrique, d'unite `unite`) comptait
+    /// un cachet, une journee ou un service par date du mois (`QuantiteDeLigne::par_dates`, comme le planning,
+    /// `crate::lignes_du_planning`), et seuls ses jours changent : sa quantite suit leur nombre. Une quantite dite autrement
+    /// (deux cachets un meme jour), ou changee en meme temps, reste celle qui est dite.
+    pub fn quantite_qui_suit(self, avant: &LignePaie, unite: Unite) -> LignePaie {
+        fn dite(l: &LignePaie) -> Option<&Option<QuantiteDeLigne>> {
+            match l {
+                LignePaie::Unites(x) => Some(&x.quantite),
+                LignePaie::UnitesEtHeures(x) => Some(&x.quantite),
+                LignePaie::Frais(x) => Some(&x.quantite),
+                _ => None,
+            }
+        }
+        let suit = self.rubrique() == avant.rubrique()
+            && self.dates().len() != avant.dates().len()
+            && dite(&self).is_some_and(|q| Some(q) == dite(avant))
+            && QuantiteDeLigne::par_dates(unite, avant.dates().len()).is_some_and(|q| dite(avant) == Some(&Some(q)));
+        if !suit {
+            return self;
+        }
+        let quantite = QuantiteDeLigne::par_dates(unite, self.dates().len());
+        let mut l = self;
+        match &mut l {
+            LignePaie::Unites(x) => x.quantite = quantite,
+            LignePaie::UnitesEtHeures(x) => x.quantite = quantite,
+            LignePaie::Frais(x) => x.quantite = quantite,
+            _ => {}
+        }
+        l
+    }
+
     /// La ligne sans sa quantite (celle d'une ligne coupee a la fin d'un contrat, `crate::lignes_coupees_a_la_fin`) ; une
     /// ligne dont la quantite n'est pas une case telle quelle.
     pub fn sans_quantite(&self) -> LignePaie {
@@ -1620,8 +1670,9 @@ impl LigneDonnee {
 }
 
 /// LES LIGNES QU'UN APPELANT DONNE A UNE CARTE DE `mois`, RANGEES (`LigneDonnee::ranger`) : chacune sa rubrique lue au
-/// catalogue de la compagnie a son jour (`LigneDonnee::jour`). Le premier refus nomme le salarie (`qui`) et la ligne ;
-/// rien ne s'ecrit.
+/// catalogue de la compagnie a son jour (`LigneDonnee::jour`), ses jours ranges par le mois de la carte
+/// (`LignePaie::jours_ranges` : l'appelant peut tous les donner dans `dates`). Le premier refus nomme le salarie
+/// (`qui`) et la ligne ; rien ne s'ecrit.
 pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qui: &str) -> R<Vec<LignePaie>> {
     let mut out = Vec::new();
     for (i, l) in lignes.into_iter().enumerate() {
@@ -1630,7 +1681,7 @@ pub fn ranger(racine: &std::path::Path, mois: Mois, lignes: Vec<LigneDonnee>, qu
             return Err(dans_la_ligne(refus("elle dit sa rubrique (« rubrique »).")));
         };
         let r = droit::catalogue::rubrique_a_saisir(racine, &code, &l.jour(mois)).map_err(dans_la_ligne)?;
-        out.push(l.ranger(&r).map_err(dans_la_ligne)?);
+        out.push(l.ranger(&r).map_err(dans_la_ligne)?.jours_ranges(mois));
     }
     Ok(out)
 }

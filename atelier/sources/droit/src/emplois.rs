@@ -147,6 +147,13 @@ impl CodeEmploi {
         Ok(nomenclature()?.emplois.contains_key(&code).then_some(code))
     }
 
+    /// LE METIER QUE NOMME UN CODE EMPLOI DECLARE (S21.G00.40.005, `CodeEmploiFt`) : celui de la nomenclature de meme
+    /// code, quand il y est (un code de la table ART) ; `None` pour un code qui n'en nomme aucun (« 999SPT », un autre
+    /// code de la norme).
+    pub fn du_code_declare(c: &crate::fiche::CodeEmploiFt) -> R<Option<CodeEmploi>> {
+        CodeEmploi::de_la_nomenclature(c.as_str())
+    }
+
     /// Le texte saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord, en capitales.
     pub fn rangee(texte: &str) -> String {
         socle::texte::en_capitales(texte)

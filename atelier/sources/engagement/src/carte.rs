@@ -155,8 +155,8 @@ pub enum FaitQuiOuvre {
     FinCeMois,
     /// Le contrat finit ce mois sur un motif autre que celui d'une fin a son terme (le motif par defaut de la nature).
     MotifAvantTerme,
-    /// Le motif de la fin appelle ce fait (`droit::permanents::faits_de_rupture`, la cle du fait).
-    DuMotif(&'static str),
+    /// Le motif de la fin appelle ce fait (`droit::permanents::faits_de_rupture`).
+    DuMotif(droit::permanents::FaitDeRupture),
     /// Le contrat finit ce mois par une fin de periode d'essai a l'initiative de l'employeur (034 : L. 1221-25, le delai de
     /// prevenance et la faute grave qui en prive).
     FinDEssaiParLEmployeur,
@@ -165,6 +165,15 @@ pub enum FaitQuiOuvre {
     PreavisNonEffectue,
     /// La carte est celle d'une paie importee d'un ancien logiciel (`Carte::importe`) : ce que son bulletin imprime s'y lit.
     Importee,
+    /// Un contrat paye au mois a temps plein : ses heures supplementaires du mois (L. 3121-28).
+    TempsPlein,
+    /// Un contrat paye au mois a temps plein, sous une convention qui ne fixe pas les paliers des heures supplementaires :
+    /// la loi les decompte par semaine (L. 3121-29 et L. 3121-36), celles qui passent la huitieme se disent a part
+    /// (`engagement::heures_en_plus::decomptees_par_semaine`).
+    HeuresDecompteesParSemaine,
+    /// Un contrat paye au mois a temps partiel (modalite 20 de S21.G00.40.014) : ses heures complementaires (L. 3123-20) et
+    /// la repartition de ses horaires (L. 3123-6, 1°).
+    TempsPartiel,
 }
 
 /// QUAND UNE CASE EXISTE POUR UN ENGAGEMENT : toujours, ou si un fait est vrai pour lui.
@@ -178,6 +187,7 @@ pub enum Ouverture {
 /// Une case de toute carte de sa nature.
 const TOUJOURS: Ouverture = Ouverture::Toujours;
 
+use droit::permanents::FaitDeRupture as D;
 use FaitQuiOuvre as F;
 
 /// LA PLACE D'UNE CASE OUVERTE SUR LA CARTE : de base (sur la carte), sous « Avancé », derriere la porte « Imprévu… »
@@ -280,8 +290,10 @@ nature! {
     /// (cachets, heures). Son debut, sa fin et ses jours travailles se tirent de ses jours coches (les jours coches sont
     /// les jours travailles) : la carte les rend, elle ne les fait pas saisir ; un mois du contrat sans cachet
     /// (`lignes: []`) et un contrat repris d'un ancien logiciel les ecrivent. Le metier est toujours sur la carte (il est
-    /// lie a l'engagement, pas a la personne) ; le cadre, la PCS-ESE, le code France Travail et les statuts se lisent du
-    /// metier (`droit::emplois::resoudre`), l'emploi ecrit ne vient que du bulletin d'une paie importee
+    /// lie a l'engagement, pas a la personne) ; la PCS-ESE, le code France Travail et les statuts se lisent du metier
+    /// (`droit::emplois::resoudre`), le cadre aussi tant que la carte ne le dit pas (sous « Avancé » : un metier propre a
+    /// la compagnie ne se cree pas encore, la case dit qu'un metier du catalogue est tenu ici pour cadre ou non, et
+    /// change les cotisations), l'emploi ecrit ne vient que du bulletin d'une paie importee
     /// (`ecarts::refaire`). La fin d'un contrat qui finit ce mois passe par la porte « Imprévu… » : son motif, puis ce que
     /// le motif appelle. Ce que rien ne lit pour un CDDU n'est pas sur sa carte : ni lieu (celui des lignes le dit), ni
     /// taux du cachet (celui de sa ligne), ni primes (une ligne de rubrique `prime`), ni ce que seul le solde de tout
@@ -299,6 +311,7 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si Ouverture::Si(F::NumeroADire) => Base,
             etablissement: droit::fiche::Nic = Etablissement si Ouverture::Si(F::PlusieursEtablissements) => Base,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Base,
+            cadre: bool = Cadre si TOUJOURS => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si Ouverture::Si(F::Importee) => Rendue,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::ContratEcrit) => Avance,
             clauses_particulieres: String = ClausesParticulieres si Ouverture::Si(F::ContratEcrit) => Avance,
@@ -307,10 +320,10 @@ nature! {
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Rendue,
             faute_grave: bool = FauteGrave si Ouverture::Si(F::FinDEssaiParLEmployeur) => Imprevu,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
-            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif("notification_rupture")) => Imprevu,
-            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif("engagement_licenciement")) => Imprevu,
+            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif(D::NotificationRupture)) => Imprevu,
+            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif(D::EngagementLicenciement)) => Imprevu,
             preavis: Preavis = Preavis si Ouverture::Si(F::MotifAvantTerme) => Imprevu,
-            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif("transaction")) => Imprevu,
+            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif(D::Transaction)) => Imprevu,
             dernier_jour_paye: Jour = DernierJourPaye si Ouverture::Si(F::PreavisNonEffectue) => Imprevu,
         }
         du_motif {}
@@ -337,7 +350,7 @@ nature! {
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si TOUJOURS => Avance,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si TOUJOURS => Avance,
-            repartition_horaire: String = RepartitionHoraire si TOUJOURS => Avance,
+            repartition_horaire: String = RepartitionHoraire si Ouverture::Si(F::TempsPartiel) => Avance,
             clauses_particulieres: String = ClausesParticulieres si TOUJOURS => Avance,
             modele_contrat: IdDeModele = ModeleContrat si TOUJOURS => Avance,
             lignes: Vec<LignePaie> = Lignes si TOUJOURS => Avance,
@@ -345,23 +358,23 @@ nature! {
             primes: Vec<Prime> = Primes si TOUJOURS => Avance,
             date_paiement: Jour = DatePaiement si TOUJOURS => Avance,
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
+            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::TempsPlein) => Avance,
+            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::HeuresDecompteesParSemaine) => Avance,
+            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::TempsPartiel) => Avance,
             indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             faute_grave: bool = FauteGrave si TOUJOURS => Avance,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
-            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif("notification_rupture")) => Imprevu,
-            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif("engagement_licenciement")) => Imprevu,
-            signature_convention: Jour = SignatureConvention si Ouverture::Si(F::DuMotif("signature_convention")) => Imprevu,
+            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif(D::NotificationRupture)) => Imprevu,
+            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif(D::EngagementLicenciement)) => Imprevu,
+            signature_convention: Jour = SignatureConvention si Ouverture::Si(F::DuMotif(D::SignatureConvention)) => Imprevu,
             preavis: Preavis = Preavis si Ouverture::Si(F::MotifAvantTerme) => Imprevu,
-            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif("transaction")) => Imprevu,
+            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif(D::Transaction)) => Imprevu,
             dernier_jour_paye: Jour = DernierJourPaye si Ouverture::Si(F::PreavisNonEffectue) => Imprevu,
-            en_droit_a_la_retraite: bool = EnDroitALaRetraite si Ouverture::Si(F::DuMotif("en_droit_a_la_retraite")) => Imprevu,
-            preavis_non_effectue: bool = PreavisNonEffectue si Ouverture::Si(F::DuMotif("preavis_non_effectue")) => Imprevu,
-            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::DuMotif("preavis_non_effectue")) => Imprevu,
-            precarite_due: bool = PrecariteDue si Ouverture::Si(F::DuMotif("precarite_due")) => Imprevu,
-            precarite_pourquoi: String = PrecaritePourquoi si Ouverture::Si(F::DuMotif("precarite_due")) => Imprevu,
+            en_droit_a_la_retraite: bool = EnDroitALaRetraite si Ouverture::Si(F::DuMotif(D::EnDroitALaRetraite)) => Imprevu,
+            preavis_non_effectue: bool = PreavisNonEffectue si Ouverture::Si(F::DuMotif(D::PreavisNonEffectue)) => Imprevu,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::DuMotif(D::PreavisNonEffectue)) => Imprevu,
+            precarite_due: bool = PrecariteDue si Ouverture::Si(F::DuMotif(D::PrecariteDue)) => Imprevu,
+            precarite_pourquoi: String = PrecaritePourquoi si Ouverture::Si(F::DuMotif(D::PrecariteDue)) => Imprevu,
         }
         du_motif {}
     }
@@ -389,7 +402,7 @@ nature! {
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si TOUJOURS => Avance,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si TOUJOURS => Avance,
-            repartition_horaire: String = RepartitionHoraire si TOUJOURS => Avance,
+            repartition_horaire: String = RepartitionHoraire si Ouverture::Si(F::TempsPartiel) => Avance,
             clauses_particulieres: String = ClausesParticulieres si TOUJOURS => Avance,
             modele_contrat: IdDeModele = ModeleContrat si TOUJOURS => Avance,
             lignes: Vec<LignePaie> = Lignes si TOUJOURS => Avance,
@@ -397,23 +410,23 @@ nature! {
             primes: Vec<Prime> = Primes si TOUJOURS => Avance,
             date_paiement: Jour = DatePaiement si TOUJOURS => Avance,
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
-            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
+            heures_supplementaires: Heures = HeuresSupplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::TempsPlein) => Avance,
+            heures_supplementaires_a_50: Heures = HeuresSupplementairesA50 ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::HeuresDecompteesParSemaine) => Avance,
+            heures_complementaires: Heures = HeuresComplementaires ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::TempsPartiel) => Avance,
             indemnite_licenciement: Montant = IndemniteLicenciement ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             faute_grave: bool = FauteGrave si TOUJOURS => Avance,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
-            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif("notification_rupture")) => Imprevu,
-            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif("engagement_licenciement")) => Imprevu,
-            signature_convention: Jour = SignatureConvention si Ouverture::Si(F::DuMotif("signature_convention")) => Imprevu,
+            notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif(D::NotificationRupture)) => Imprevu,
+            engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif(D::EngagementLicenciement)) => Imprevu,
+            signature_convention: Jour = SignatureConvention si Ouverture::Si(F::DuMotif(D::SignatureConvention)) => Imprevu,
             preavis: Preavis = Preavis si Ouverture::Si(F::MotifAvantTerme) => Imprevu,
-            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif("transaction")) => Imprevu,
+            transaction: droit::preavis::TransactionEnCours = Transaction si Ouverture::Si(F::DuMotif(D::Transaction)) => Imprevu,
             dernier_jour_paye: Jour = DernierJourPaye si Ouverture::Si(F::PreavisNonEffectue) => Imprevu,
-            en_droit_a_la_retraite: bool = EnDroitALaRetraite si Ouverture::Si(F::DuMotif("en_droit_a_la_retraite")) => Imprevu,
-            preavis_non_effectue: bool = PreavisNonEffectue si Ouverture::Si(F::DuMotif("preavis_non_effectue")) => Imprevu,
-            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::DuMotif("preavis_non_effectue")) => Imprevu,
-            precarite_due: bool = PrecariteDue si Ouverture::Si(F::DuMotif("precarite_due")) => Imprevu,
-            precarite_pourquoi: String = PrecaritePourquoi si Ouverture::Si(F::DuMotif("precarite_due")) => Imprevu,
+            en_droit_a_la_retraite: bool = EnDroitALaRetraite si Ouverture::Si(F::DuMotif(D::EnDroitALaRetraite)) => Imprevu,
+            preavis_non_effectue: bool = PreavisNonEffectue si Ouverture::Si(F::DuMotif(D::PreavisNonEffectue)) => Imprevu,
+            preavis_mois: Coefficient = PreavisMois ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::DuMotif(D::PreavisNonEffectue)) => Imprevu,
+            precarite_due: bool = PrecariteDue si Ouverture::Si(F::DuMotif(D::PrecariteDue)) => Imprevu,
+            precarite_pourquoi: String = PrecaritePourquoi si Ouverture::Si(F::DuMotif(D::PrecariteDue)) => Imprevu,
         }
         du_motif {
             personne_remplacee: String = PersonneRemplacee,
@@ -501,6 +514,11 @@ impl CarteValide {
             }
         }
         Ok(out)
+    }
+
+    /// Les cases que toute carte de nature `n` ouvre, sans aucun fait (`Ouverture::Toujours`).
+    pub fn cases_toujours_ouvertes(n: NatureDeContrat) -> Vec<CaseOuverte> {
+        CarteValide::ouvertures_de(n).iter().filter(|(_, o, _)| *o == Ouverture::Toujours).map(|(c, _, place)| CaseOuverte { cle: c.nom(), place: *place }).collect()
     }
 
     /// Les cases qu'un motif de recours de la nature `n` porte en plus des siennes.
@@ -730,42 +748,56 @@ impl Brouillon {
 impl Brouillon {
     /// LE METIER D'UNE CARTE DE CDDU QUI VIENT DE NOMMER SON SALARIE, PRE-REMPLI : celui du dernier contrat de ce
     /// salarie (`metier_du_dernier_contrat`), quand la carte n'en dit pas. Le metier est lie a l'engagement, pas a la
-    /// personne : c'est un pre-remplissage, qui se change sur la carte. Sans dernier contrat, ou si ce contrat ne disait pas
-    /// de metier, la carte n'en dit pas et la paie prend l'emploi de la fiche du salarie (`droit::emplois::emploi_de`).
-    /// `sauf` : l'engagement de cette carte, deja ecrit, qui n'est pas son propre dernier contrat.
-    pub fn preremplir_le_metier(&mut self, racine: &std::path::Path, sauf: Option<&crate::stock::Objet>) -> R<()> {
+    /// personne : c'est un pre-remplissage, qui se change sur la carte. Il n'ecrit qu'un metier de la compagnie
+    /// (`metiers` : ceux de Configuration › Métiers, ceux qu'une carte choisit) : un dernier metier qu'elle a retire depuis
+    /// laisse la carte sans metier, comme un dernier contrat qui n'en disait pas, ou aucun dernier contrat ; la paie prend
+    /// alors l'emploi de la fiche du salarie (`droit::emplois::emploi_de`). Un pre-remplissage est facultatif : il ne
+    /// refuse rien (`metier_du_dernier_contrat`). `sauf` : l'engagement de cette carte, deja ecrit, qui n'est pas son
+    /// propre dernier contrat.
+    pub fn preremplir_le_metier(&mut self, racine: &std::path::Path, sauf: Option<&crate::stock::Objet>, metiers: &[droit::emplois::CodeEmploi]) -> R<()> {
         let Brouillon::CdduSpectacle(b) = self else { return Ok(()) };
         let (Some(s), None) = (&b.salarie, &b.metier) else { return Ok(()) };
-        b.metier = metier_du_dernier_contrat(racine, s, sauf)?;
+        b.metier = metier_du_dernier_contrat(racine, s, sauf)?.filter(|m| metiers.contains(m));
         Ok(())
     }
 }
 
-/// LE METIER DU DERNIER CONTRAT DU SALARIE `s` : l'engagement d'ici de debut le plus tard (ni importe, ni non actif ;
-/// `sauf` mis a part), au metier de son dernier mois ; `None` sans aucun, ou s'il n'en disait pas.
+/// LE METIER DU DERNIER CONTRAT DU SALARIE `s`, d'ici ou repris d'un ancien logiciel (l'historique du salarie est d'un
+/// seul tenant) : le contrat actif de debut le plus tard (`sauf` mis a part) ; a debut egal, celui du fichier du mois le
+/// plus tard, puis du rang le plus haut dans ce fichier (le dernier ecrit). Son metier est celui de son dernier mois ;
+/// celui d'un contrat repris, qui n'ecrit pas de metier, est celui que nomme le code emploi que son bulletin imprime
+/// (`CodeEmploi::du_code_declare`), quand il en nomme un. `None` sans aucun contrat, ou s'il ne dit pas de metier. Un
+/// contrat qui ne se lit pas n'est pas un dernier contrat : il est passe, il ne refuse rien ; seul refuse le stock qui ne
+/// se lit pas.
 pub fn metier_du_dernier_contrat(racine: &std::path::Path, s: &IdSalarie, sauf: Option<&crate::stock::Objet>) -> R<Option<droit::emplois::CodeEmploi>> {
-    let mut dernier: Option<(Jour, crate::stock::Objet)> = None;
+    let mut dernier: Option<((Jour, socle::mois::Mois, usize), Option<droit::emplois::CodeEmploi>)> = None;
     for o in crate::stock::objets(racine)? {
         let c = o.carte();
-        if c.salarie.as_ref() != Some(s) || o.est_importe() || o.est_non_actif() {
+        if c.salarie.as_ref() != Some(s) || o.est_non_actif() {
             continue;
         }
-        if sauf.is_some_and(|x| x.premier_mois() == o.premier_mois() && x.carte() == c) {
+        if sauf.is_some_and(|x| x.premier_mois() == o.premier_mois() && x.rang == o.rang) {
             continue;
         }
         let Some(debut) = c.debut_lu() else { continue };
-        if dernier.as_ref().is_none_or(|(d, _)| debut > *d) {
-            dernier = Some((debut, o));
+        let cle = (debut, o.premier_mois(), o.rang);
+        if dernier.as_ref().is_some_and(|(d, _)| cle <= *d) {
+            continue;
         }
+        let Ok(metier) = metier_de(&o) else { continue };
+        dernier = Some((cle, metier));
     }
-    let Some((_, o)) = dernier else { return Ok(None) };
-    let mois = match o.dernier_mois()? {
-        Some(m) => m,
-        None => o.premier_mois(),
-    };
-    Ok(match o.vue(mois)? {
-        Some(v) => v.metier,
-        None => o.carte().metier.clone(),
+    Ok(dernier.and_then(|(_, m)| m))
+}
+
+/// Le metier du contrat `o` a son dernier mois (`metier_du_dernier_contrat`).
+fn metier_de(o: &crate::stock::Objet) -> R<Option<droit::emplois::CodeEmploi>> {
+    let mois = o.dernier_mois()?.unwrap_or(o.premier_mois());
+    let v = o.vue(mois)?.unwrap_or_else(|| o.carte().clone());
+    Ok(match (v.metier, v.emploi.and_then(|e| e.code_emploi_ft)) {
+        (Some(m), _) => Some(m),
+        (None, Some(ft)) => droit::emplois::CodeEmploi::du_code_declare(&ft)?,
+        (None, None) => None,
     })
 }
 
@@ -930,6 +962,24 @@ impl Changements {
                 }
             }
             let ch = ch.ranger(&|l| crate::ligne::ranger(&ctx.racine, mois, l, &q), &|nom| salarie_nomme(ctx, nom), &|nom| Ok(ctx.spectacle(nom)?.cle))?;
+            // Une ligne dont seuls les jours changent garde une quantite d'un par date (`LignePaie::quantite_qui_suit`).
+            let ch = match ch {
+                Changement::Lignes(Some(lignes)) => {
+                    let avant = essai.en_carte().lignes.unwrap_or_default();
+                    let mut suivies = Vec::new();
+                    for (i, l) in lignes.into_iter().enumerate() {
+                        suivies.push(match avant.get(i) {
+                            Some(a) => {
+                                let unite = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &mois.dernier_jour())?.unite;
+                                l.quantite_qui_suit(a, unite)
+                            }
+                            None => l,
+                        });
+                    }
+                    Changement::Lignes(Some(suivies))
+                }
+                autre => autre,
+            };
             essai.changer(ch, &q)?;
         }
         sans_les_faits_que_le_motif_n_a_pas(&mut essai, &qui)?;
@@ -944,30 +994,30 @@ fn sans_les_faits_que_le_motif_n_a_pas(b: &mut Brouillon, qui: &impl Fn(&Brouill
     let nat = b.nature().proprietes()?;
     let mut c = b.en_carte();
     let faits = droit::permanents::faits_de_rupture(&nat, c.motif_rupture)?;
-    let garde = |f: &str| faits.contains(&f);
+    let garde = |f: D| faits.contains(&f);
     let mut vide = false;
-    if !garde("notification_rupture") {
+    if !garde(D::NotificationRupture) {
         vide |= c.notification_rupture.take().is_some();
     }
-    if !garde("engagement_licenciement") {
+    if !garde(D::EngagementLicenciement) {
         vide |= c.engagement_licenciement.take().is_some();
     }
-    if !garde("signature_convention") {
+    if !garde(D::SignatureConvention) {
         vide |= c.signature_convention.take().is_some();
     }
-    if !garde("transaction") {
+    if !garde(D::Transaction) {
         vide |= c.transaction.take().is_some();
     }
-    if !garde("en_droit_a_la_retraite") {
+    if !garde(D::EnDroitALaRetraite) {
         vide |= c.en_droit_a_la_retraite.take().is_some();
     }
-    // La duree du preavis non effectue, et le pourquoi de l'indemnite ecartee, suivent leur case (la page les montre
+    // La duree du preavis non effectue, et le pourquoi de l'indemnite ecartee, suivent leur case (la carte les ouvre
     // avec elle).
-    if !garde("preavis_non_effectue") {
+    if !garde(D::PreavisNonEffectue) {
         vide |= c.preavis_non_effectue.take().is_some();
         vide |= c.preavis_mois.take().is_some();
     }
-    if !garde("precarite_due") {
+    if !garde(D::PrecariteDue) {
         vide |= c.precarite_due.take().is_some();
         vide |= c.precarite_pourquoi.take().is_some();
     }

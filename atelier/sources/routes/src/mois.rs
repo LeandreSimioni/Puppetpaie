@@ -1101,11 +1101,12 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, mois, &id)?, Some(id)),
     };
     let nomme = c.changements.nomment_le_salarie();
-    c.changements.appliquer(ctx, mois, &mut brouillon, &metiers_de_la_compagnie(ctx)?, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let metiers = metiers_de_la_compagnie(ctx)?;
+    c.changements.appliquer(ctx, mois, &mut brouillon, &metiers, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
     // Une carte qui nomme son salarie prend le metier de son dernier contrat, si elle n'en dit pas.
     if nomme {
         let ecrit = id.as_ref().map(|i| engagement::stock::designe(&ctx.racine, mois, i)).transpose()?.map(|(_, o)| o);
-        brouillon.preremplir_le_metier(&ctx.racine, ecrit.as_ref())?;
+        brouillon.preremplir_le_metier(&ctx.racine, ecrit.as_ref(), &metiers)?;
     }
     let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, mois, &id)?;
@@ -1474,16 +1475,16 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
 
 /// LA RUPTURE d'un engagement, telle que la page la propose (« Un imprévu… ») : le libelle de la porte et la fin du
 /// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets) ; si cette fin se signale, au motif
-/// par defaut et motif par motif (`Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un CDDU a son terme
-/// part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja declare, au
-/// calendrier : `ConnuDeLaDsn::du_contrat`) ; et le choix vide des motifs (le defaut d'une fin qui ne se signale pas). La
-/// page ne decide rien.
+/// que dit la carte (au motif par defaut sans lui ; `Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un
+/// CDDU a son terme part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja
+/// declare, au calendrier : `ConnuDeLaDsn::du_contrat`) ; et le choix vide des motifs (le defaut d'une fin qui ne se
+/// signale pas), que la carte offre en tete de ses motifs (`CarteRendue`). La page ne decide rien.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Rupture {
     porte: &'static str,
     fin: Option<Jour>,
-    signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<droit::natures::MotifDeRupture, bool>,
+    signalee: bool,
+    #[serde(skip)]
     motif_vide_dit: String,
 }
 
@@ -1497,7 +1498,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     let connu = droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois);
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(rupture_pour(nat, connu, e.contrat().fin())));
+        return Ok(Some(rupture_pour(nat, connu, e.contrat().fin(), e.motif_rupture)));
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
@@ -1508,7 +1509,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
         Some(f) => f,
         None => e.periode_payee()?.fin(),
     };
-    Ok(Some(rupture_pour(nat, connu, Some(fin))))
+    Ok(Some(rupture_pour(nat, connu, Some(fin), e.motif_rupture)))
 }
 
 /// LA RUPTURE D'UNE CARTE QUI NE SE CALCULE PAS ENCORE (`a_completer`), lue sur sa saisie `e` du mois `mois` : le bloc de
@@ -1524,135 +1525,158 @@ fn rupture_en_saisie(e: &SaisieCarte, mois: Mois) -> R<Option<Rupture>> {
     }
     let connu = droit::natures::ConnuDeLaDsn::du_contrat(debut, mois);
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(rupture_pour(&nat, connu, e.fin)));
+        return Ok(Some(rupture_pour(&nat, connu, e.fin, e.motif_rupture)));
     }
     match e.fin_lue() {
         Some(f) if f.mois_civil() > mois => Ok(None),
-        fin => Ok(Some(rupture_pour(&nat, connu, fin))),
+        fin => Ok(Some(rupture_pour(&nat, connu, fin, e.motif_rupture))),
     }
 }
 
-/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` : si cette fin se
-/// signale, au motif par defaut et motif par motif (`Nature::signalement_fctu`), et le choix vide des motifs.
-fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>) -> Rupture {
+/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` au motif `motif` : si
+/// cette fin se signale (`Nature::signalement_fctu`), et le choix vide des motifs.
+fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>, motif: Option<droit::natures::MotifDeRupture>) -> Rupture {
     let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
-    let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
-    let signalement_fctu = nat.signalement_fctu(None, connu);
     let motif_vide_dit = match nat.motif_rupture_par_defaut() {
-        Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
+        Some(d) if !nat.signalement_fctu(None, connu) => format!("— {}, à son terme —", d),
         _ => "— à choisir —".to_string(),
     };
-    Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit }
+    Rupture { porte, fin, signalee: nat.signalement_fctu(motif, connu), motif_vide_dit }
 }
 
 
-/// LA CASE DU NUMERO DEJA DECLARE EN DSN d'un contrat commence avant le logiciel : un numero ne se recalcule pas, il se lit
-/// (regle 4) ; celui que l'ancien logiciel a declare (S21.G00.40.009) reste le sien, la saisie le porte en `numero`
-/// (`engagement::numeros::a_la_validation` le garde). Vide, le logiciel en donne un.
-const NUMERO_DIT: &str = "numero";
-
-/// La case du numero, sauf pour un contrat dont une DSN de l'ancien logiciel a declare le numero : il est lu
-/// (`engagement::importe::numero_declare_du_contrat`), il ne se dit pas.
-fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<Vec<&'static str>> {
-    Ok(if engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)? { Vec::new() } else { vec![NUMERO_DIT] })
+/// CE QUE LE CONTRAT ECRIT DE CET ENGAGEMENT APPELLE SUR SA CARTE, les faits qui en ouvrent les cases
+/// (`engagement::carte::FaitQuiOuvre::{ContratEcrit, ModelesAuChoix, NumeroADire}`) :
+/// - `ecrit` : le contrat se fait signer ici (`engagement::contrat_a_signer`) ; sa carte dit sa periode d'essai et ses
+///   clauses particulieres (`engagement::ContratEcrit`) ;
+/// - `modeles` : la compagnie a des modeles speciaux de sa nature (`modeles_contrat::au_choix`) ;
+/// - `numero` : un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`), signe ailleurs,
+///   dont aucune DSN importee ne dit le numero (`engagement::importe::numero_declare_du_contrat`) : un numero ne se
+///   recalcule pas, il se lit (regle 4) ; celui que l'ancien logiciel a declare (S21.G00.40.009) se dit dans sa case
+///   (`engagement::numeros::a_la_validation` le garde). Vide, le logiciel en donne un.
+#[derive(Debug, Clone, Copy, Default)]
+struct ContratAppelle {
+    ecrit: bool,
+    modeles: bool,
+    numero: bool,
 }
 
-/// LES CASES DU CONTRAT ECRIT QUE CET ENGAGEMENT APPELLE (`engagement::ContratEcrit`), et elles seules : la
-/// periode d'essai et les clauses particulieres de tout contrat ecrit, son modele quand la compagnie a des modeles
-/// speciaux de sa nature (`modeles_contrat::au_choix`) ; la personne remplacee d'un CDD de remplacement
-/// (L1242-12, 1° ; `Nature::motif_de_remplacement`) ; la repartition des horaires d'un temps partiel (L3123-6, 1° : la
-/// modalite 20 de S21.G00.40.014, `Engagement::modalite_temps_travail`). Un engagement dont le contrat ne se fait pas
-/// signer ici (`engagement::contrat_a_signer`) n'en a aucune.
-/// Un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`) a ete signe ailleurs : il
-/// n'appelle que la case de son numero deja declare en DSN (`NUMERO_DIT`).
-fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Vec<&'static str>> {
+/// Ce qu'appelle le contrat d'un contrat commence avant le logiciel : la case de son numero, s'il n'est pas deja lu.
+fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<ContratAppelle> {
+    Ok(ContratAppelle { numero: !engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)?, ..ContratAppelle::default() })
+}
+
+/// `ContratAppelle` d'un engagement calcule `e`, de nature `nat`.
+fn contrat_appelle(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<ContratAppelle> {
     if engagement::stock::commence_avant_le_logiciel(&ctx.racine, e.contrat().debut(), e.mois)? {
         return numero_a_dire(ctx, &e.salarie, e.contrat().debut());
     }
     if !engagement::contrat_a_signer(&ctx.racine, e)? {
-        return Ok(Vec::new());
+        return Ok(ContratAppelle::default());
     }
-    let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
-        v.push("personne_remplacee");
-    }
-    if nat.mensuelle() && e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel {
-        v.push("repartition_horaire");
-    }
-    v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
-        v.push("modele_contrat");
-    }
-    Ok(v)
+    Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty(), numero: false })
 }
 
-/// `champs_du_contrat_ecrit` d'un engagement qui ne se calcule pas encore (`a_completer`), lu sur sa saisie `e` : la
-/// periode d'essai et les clauses se disent avant que le reste soit complet. La repartition des horaires attend la
-/// duree du travail calculee.
-/// Une carte qui ne nomme pas encore son salarie ou sa nature n'appelle encore aucune case.
-fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<Vec<&'static str>> {
-    Ok(e.salarie.as_ref().map(|cle| champs_du_contrat_de(ctx, e, cle, mois)).transpose()?.into_iter().flatten().collect())
-}
-
-fn champs_du_contrat_de(ctx: &Contexte, e: &SaisieCarte, cle: &IdSalarie, mois: Mois) -> R<Vec<&'static str>> {
+/// `ContratAppelle` d'un engagement qui ne se calcule pas encore (`a_completer`), lu sur sa saisie `e` de `mois` : la
+/// periode d'essai et les clauses se disent avant que le reste soit complet. Une carte qui ne nomme pas encore son
+/// salarie ou sa nature n'appelle encore rien ; un contrat repris d'un ancien logiciel (sa date de debut dite) ne se
+/// refait pas.
+fn contrat_appelle_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<ContratAppelle> {
+    let Some(cle) = e.salarie.as_ref() else { return Ok(ContratAppelle::default()) };
     let debut = e.debut_lu();
     if let Some(d) = debut {
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {
             return numero_a_dire(ctx, cle, d);
         }
     }
-    if e.nature.is_none() {
-        return Ok(Vec::new());
+    let Some(n) = e.nature else { return Ok(ContratAppelle::default()) };
+    if n.proprietes()?.modele_contrat().is_none() {
+        return Ok(ContratAppelle::default());
     }
-    let nat = e.nature_lue()?;
-    if nat.modele_contrat().is_none() {
-        return Ok(Vec::new());
-    }
-    // Un contrat repris d'un ancien logiciel (sa date de debut dite) ne se refait pas.
     if let Some(d) = debut {
         if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
-            return Ok(Vec::new());
+            return Ok(ContratAppelle::default());
         }
     }
-    let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
-        v.push("personne_remplacee");
-    }
-    v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
-        v.push("modele_contrat");
-    }
-    Ok(v)
+    Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, n)?.is_empty(), numero: false })
 }
 
 /// LA CARTE D'UN ENGAGEMENT TELLE QUE LA ROUTE LA REND : les cases ouvertes pour lui, chacune sa place
-/// (`engagement::carte::CarteValide::cases_ouvertes`), ce qu'offrent celles de ses cases a choix contraint qui dependent
-/// de lui (le motif de la fin : ceux de sa nature ; les modeles de contrat sont `contrat.modeles`), et ce qui pre-remplit
-/// une case qu'il ne dit pas (le jour du versement que dit la configuration).
+/// (`engagement::carte::CarteValide::cases_ouvertes`), ce qu'offrent celles de ses cases a choix qui dependent de lui
+/// (le motif de la fin, le choix vide dit en tete ; les modeles de contrat), sous la cle de leur case, et ce qui
+/// pre-remplit une case qu'il ne dit pas (`Prerempli`). Un fait qui ne se lit pas pour lui ne ferme ni sa carte ni
+/// l'apercu des autres (« le logiciel est doux ») : sa carte montre ses cases de toujours et dit ce qui ne se lit pas
+/// (`faute`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct CarteRendue {
     cases: Vec<engagement::carte::CaseOuverte>,
     choix: BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
     prerempli: Prerempli,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    faute: Option<String>,
 }
 
-/// Ce que la route pose dans une case que la carte ne dit pas : la carte le montre, il ne s'ecrit pas.
-#[derive(Debug, Clone, Serialize)]
+/// CE QUE LA ROUTE POSE DANS UNE CASE QUE LA CARTE NE DIT PAS, le seul pre-remplissage d'une carte : ce que le moteur
+/// prend pour elle quand elle est vide. La carte le montre, il ne s'ecrit pas ; `None` : la carte le dit, ou le moteur
+/// ne le sait pas encore (une paie a completer).
+#[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Prerempli {
-    /// Le jour du versement que dit la configuration (`droit::versement::Versement::de_la_fiche`) ; `None` : la carte le
-    /// dit, ou la paie ne se calcule pas encore.
+    /// Le jour du versement que dit la configuration (`Engagement::date_du_versement`).
     date_paiement: Option<Jour>,
+    /// Le debut et la fin du contrat, que ses jours coches disent (`Engagement::contrat` ; a completer, `debut_lu`,
+    /// `fin_lue`).
+    debut: Option<Jour>,
+    fin: Option<Jour>,
+    /// Les jours travailles que la DSN declare (`Engagement::jours`).
+    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
+    jours: Option<Jours>,
+    /// Cadre ou non, comme le metier le dit (`droit::emplois::resoudre`, la fiche du salarie sans metier).
+    cadre: Option<bool>,
 }
 
-/// LES CASES OUVERTES DE LA CARTE `e` (sans nature : aucune), lues des faits que le moteur sait d'elle
-/// (`engagement::carte::FaitQuiOuvre`) : la configuration (ses etablissements), le contrat ecrit qu'elle appelle
-/// (`ecrits`, `champs_du_contrat_ecrit`), sa fin ce mois (`rupture`, `rupture_de`), son motif et son preavis.
-fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, ecrits: &[&'static str], rupture: Option<&Rupture>, date_paiement: Option<Jour>) -> R<CarteRendue> {
-    use engagement::carte::FaitQuiOuvre as F;
+/// La duree du travail d'un contrat paye au mois, qui ouvre ses heures en plus (`FaitQuiOuvre::{TempsPlein,
+/// TempsPartiel}`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TempsDuContrat {
+    Plein,
+    Partiel,
+}
+
+/// CE QUE LE MOTEUR SAIT D'UN ENGAGEMENT ET QUE SA CARTE LIT (`carte_rendue`), chaque chose telle qu'elle se lit : une qui
+/// ne se lit pas fait la `faute` de sa carte, et d'elle seule.
+struct CeQueLeMoteurSait<'a> {
+    contrat: R<ContratAppelle>,
+    rupture: &'a R<Option<Rupture>>,
+    /// La duree du travail d'un contrat paye au mois ; `None` pour un autre, ou tant qu'elle ne se calcule pas.
+    temps: R<Option<TempsDuContrat>>,
+    prerempli: R<Prerempli>,
+}
+
+/// LA CARTE RENDUE DE LA SAISIE `e` (`CarteRendue`).
+fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, sait: CeQueLeMoteurSait) -> CarteRendue {
     let Some(n) = e.nature else {
-        return Ok(CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli { date_paiement: None } });
+        return CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli::default(), faute: None };
     };
+    match carte_lue(ctx, e, n, sait) {
+        Ok(c) => c,
+        Err(faute) => CarteRendue {
+            cases: engagement::carte::CarteValide::cases_toujours_ouvertes(n),
+            choix: BTreeMap::new(),
+            prerempli: Prerempli::default(),
+            faute: Some(faute.phrase),
+        },
+    }
+}
+
+/// Les cases ouvertes de la carte `e` de nature `n`, lues des faits que le moteur sait d'elle
+/// (`engagement::carte::FaitQuiOuvre`) : la configuration (ses etablissements), ce que son contrat ecrit appelle, sa fin
+/// ce mois (`rupture`), son motif et son preavis, sa duree du travail, son origine (une paie importee).
+fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat, sait: CeQueLeMoteurSait) -> R<CarteRendue> {
+    use engagement::carte::FaitQuiOuvre as F;
     let nat = n.proprietes()?;
+    let rupture = sait.rupture.as_ref().map_err(Clone::clone)?.as_ref();
+    let contrat = sait.contrat?;
+    let temps = sait.temps?;
     let fin_ce_mois = rupture.is_some();
     let faits = droit::permanents::faits_de_rupture(&nat, e.motif_rupture)?;
     let plusieurs = crate::ouverture::choix_d_etablissement(ctx)?.is_some();
@@ -1660,26 +1684,49 @@ fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, ecrits: &[&'static str], ruptur
         Some(p) => declarations::fctu::preavis_non_effectue(p.genre)?,
         None => false,
     };
+    let par_semaine = match temps {
+        Some(TempsDuContrat::Plein) => engagement::heures_en_plus::decomptees_par_semaine(ctx)?,
+        Some(TempsDuContrat::Partiel) | None => false,
+    };
     let vrai = |f: F| -> R<bool> {
         Ok(match f {
             F::PlusieursEtablissements => plusieurs,
-            F::ContratEcrit => ecrits.contains(&"periode_essai_jours"),
-            F::ModelesAuChoix => ecrits.contains(&"modele_contrat"),
-            F::NumeroADire => ecrits.contains(&NUMERO_DIT),
+            F::ContratEcrit => contrat.ecrit,
+            F::ModelesAuChoix => contrat.modeles,
+            F::NumeroADire => contrat.numero,
             F::FinCeMois => fin_ce_mois,
             F::MotifAvantTerme => fin_ce_mois && e.motif_rupture.is_some_and(|m| Some(m) != nat.motif_rupture_par_defaut()),
             F::DuMotif(fait) => fin_ce_mois && faits.contains(&fait),
             F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
+            F::TempsPlein => temps == Some(TempsDuContrat::Plein),
+            F::HeuresDecompteesParSemaine => par_semaine,
+            F::TempsPartiel => temps == Some(TempsDuContrat::Partiel),
         })
     };
     let cases = engagement::carte::CarteValide::cases_ouvertes(n, &vrai)?;
+    let ouverte = |c: engagement::saisie::Champ| cases.iter().any(|x| x.cle == c.nom());
     let mut choix = BTreeMap::new();
-    if cases.iter().any(|c| c.cle == "motif_rupture") {
-        choix.insert("motif_rupture", nat.motifs_rupture().iter().map(|m| crate::ouverture::Choix::de(m.code, &m.libelle)).collect());
+    if let (true, Some(r)) = (ouverte(engagement::saisie::Champ::MotifRupture), rupture) {
+        let vide = crate::ouverture::Choix::de("", &r.motif_vide_dit);
+        let motifs = nat.motifs_rupture().iter().map(|m| crate::ouverture::Choix::de(m.code, &m.libelle).disant(m.dit.clone()));
+        choix.insert(engagement::saisie::Champ::MotifRupture.nom(), std::iter::once(vide).chain(motifs).collect());
     }
-    Ok(CarteRendue { cases, choix, prerempli: Prerempli { date_paiement: date_paiement.filter(|_| e.date_paiement.is_none()) } })
+    if ouverte(engagement::saisie::Champ::ModeleContrat) {
+        choix.insert(engagement::saisie::Champ::ModeleContrat.nom(), crate::modeles_contrat::au_choix(ctx, n)?.iter().map(|m| m.en_choix()).collect());
+    }
+    Ok(CarteRendue { cases, choix, prerempli: sait.prerempli?, faute: None })
+}
+
+/// Ce qui pre-remplit le cadre d'une carte qui ne le dit pas, avant que sa paie se calcule : ce que le catalogue dit de
+/// son metier sous la convention de la compagnie (`Metier::cadre_par_defaut`) ; rien sans metier, ou pour un metier
+/// hors du catalogue.
+fn cadre_du_metier(ctx: &Contexte, e: &SaisieCarte) -> R<Option<bool>> {
+    Ok(match (&e.cadre, &e.metier) {
+        (None, Some(m)) => m.metier()?.cadre_par_defaut(ctx.entreprise.idcc.dite()),
+        _ => None,
+    })
 }
 
 /// Le salarie d'une paie a l'ecran : sa cle, son nom, son prenom (celui d'usage s'il en a un).
@@ -1722,9 +1769,6 @@ pub(crate) struct ContratVu {
     jusqu_a: Mois,
     /// La periode de paie du contrat dans le mois.
     periode: socle::date::Periode,
-    ecrits: Vec<&'static str>,
-    /// Les modeles de contrat que sa case `modele_contrat` offre (`modeles_contrat::au_choix`).
-    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
     rupture: Option<Rupture>,
 }
 
@@ -1787,7 +1831,6 @@ pub(crate) struct VuePaie {
     taux_cachet: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::option::serialize")]
     heures: Option<Heures>,
-    faits_avances: Vec<&'static str>,
     /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).
     propose: engagement::proposees::Proposees,
     cases: Vec<CaseDeFrais>,
@@ -1910,9 +1953,29 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         t
     };
     let trop_courte = || socle::echec::refus(socle::fichiers::trop_courte("les mois du contrat"));
-    let ecrits = champs_du_contrat_ecrit(ctx, e, &nat)?;
-    let rupture = rupture_de(e, &nat)?;
-    let carte = carte_rendue(ctx, brut, &ecrits, rupture.as_ref(), Some(e.date_du_versement()?))?;
+    let rupture = rupture_de(e, &nat);
+    let temps = || -> R<Option<TempsDuContrat>> {
+        if !nat.mensuelle() {
+            return Ok(None);
+        }
+        // Le temps partiel (modalite 20) dit des heures complementaires (L. 3123-20) ; les autres modalites, des heures
+        // supplementaires, comme le calcul les lit (`engagement::heures_en_plus::lignes`).
+        let partiel = e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel;
+        Ok(Some(if partiel { TempsDuContrat::Partiel } else { TempsDuContrat::Plein }))
+    };
+    let prerempli = || -> R<Prerempli> {
+        Ok(Prerempli {
+            date_paiement: if brut.date_paiement.is_none() { Some(e.date_du_versement()?) } else { None },
+            debut: brut.debut.is_none().then(|| e.contrat().debut()),
+            fin: if brut.fin.is_none() { e.contrat().fin() } else { None },
+            jours: brut.jours.is_none().then_some(e.jours),
+            cadre: brut.cadre.is_none().then(|| droit::bareme::est_cadre(s)),
+        })
+    };
+    let carte = carte_rendue(ctx, brut, CeQueLeMoteurSait { contrat: contrat_appelle(ctx, e, &nat), rupture: &rupture, temps: temps(), prerempli: prerempli() });
+    // Une rupture qui ne se lit pas est la faute de la carte, qui la dit (`CarteRendue::faute`) : l'apercu des autres
+    // n'en est pas ferme.
+    let rupture = rupture.unwrap_or(None);
     Ok(VuePaie {
         carte,
         resolu_dit,
@@ -1932,17 +1995,12 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
             jusqu_a: mois_du_contrat.last().copied().ok_or_else(trop_courte)?,
             periode: e.periode_payee()?,
-            ecrits,
-            modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
             rupture,
         },
         dates_travail: e.dates_travail.clone(),
         cachets: e.cachets,
         taux_cachet,
         heures: e.heures,
-        // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
-        // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
-        faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
         propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.dite(), &data.mois.premier_jour())?,
@@ -2090,16 +2148,12 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    /// Ses dates, les cases de sa saisie, chacune facultative (`engagement::Assemble`) : son debut lu
-    /// (`Carte::debut_lu`) et sa fin ecrite ; une carte a completer peut ecrire une fin avant son debut, c'est alors ce
-    /// qui lui manque (`a_completer`).
-    debut_lu: Option<Jour>,
-    fin_ecrite: Option<Jour>,
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,
-    /// Les cases que sa carte ouvre deja, lues sur sa saisie (`carte_rendue`) : rien ne pre-remplit le jour du versement
-    /// tant que la paie ne se calcule pas.
+    /// Les cases que sa carte ouvre deja, lues sur sa saisie (`carte_rendue`) ; son debut et sa fin lus de ses jours
+    /// (`prerempli`) : une carte a completer peut ecrire une fin avant son debut, c'est alors ce qui lui manque
+    /// (`a_completer`).
     carte: CarteRendue,
     /// Les rubriques que sa carte propose deja, lues sur sa saisie (`engagement::proposees::de_la_carte`).
     propose: engagement::proposees::Proposees,
@@ -2113,10 +2167,6 @@ struct CleEcrite {
 
 #[derive(Debug, Serialize)]
 struct EcritsSeuls {
-    ecrits: Vec<&'static str>,
-    /// Les modeles que sa case `modele_contrat` offre ; vide tant que la carte ne dit pas sa nature : les modeles sont
-    /// ceux d'une nature.
-    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
     /// Sa rupture, lue sur sa saisie (`rupture_en_saisie`) : le bloc de fin se dessine avant que la paie se calcule.
     rupture: Option<Rupture>,
 }
@@ -2340,22 +2390,27 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 r.blocs.push(calcules.next().flatten());
             }
             Some(m) => {
-                let ecrits = champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?;
-                let rupture = rupture_en_saisie(e, mois)?;
-                let carte = carte_rendue(ctx, e, &ecrits, rupture.as_ref(), None)?;
+                let rupture = rupture_en_saisie(e, mois);
+                // Rien ne pre-remplit le jour du versement, les jours ni le cadre tant que la paie ne se calcule pas : le
+                // debut et la fin sont ceux que ses jours coches disent.
+                let prerempli = || -> R<Prerempli> {
+                    Ok(Prerempli {
+                        debut: if e.debut.is_none() { e.debut_lu() } else { None },
+                        fin: if e.fin.is_none() { e.fin_lue() } else { None },
+                        cadre: cadre_du_metier(ctx, e)?,
+                        ..Prerempli::default()
+                    })
+                };
+                let sait = CeQueLeMoteurSait { contrat: contrat_appelle_en_saisie(ctx, e, mois), rupture: &rupture, temps: Ok(None), prerempli: prerempli() };
+                let carte = carte_rendue(ctx, e, sait);
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     carte,
                     a_completer: m.phrase.clone(),
                     salarie: CleEcrite { cle: e.salarie.clone() },
-                    debut_lu: e.debut_lu(),
-                    fin_ecrite: e.fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls {
-                        ecrits,
-                        modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() },
-                        rupture,
-                    },
+                    // Une rupture qui ne se lit pas est la faute de la carte, qui la dit (`CarteRendue::faute`).
+                    contrat: EcritsSeuls { rupture: rupture.unwrap_or(None) },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

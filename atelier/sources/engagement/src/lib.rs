@@ -906,13 +906,12 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
             continue;
         }
         let unite = rubrique(racine, l.rubrique(), &mois.dernier_jour())?.unite;
-        let quantite = match unite {
-            droit::catalogue::Unite::Cachet => Some(ligne::QuantiteDeLigne::Cachets(Cachets::de_dates(dedans.len()))),
-            droit::catalogue::Unite::Jour => Some(ligne::QuantiteDeLigne::Jours(Jours::de_dates(dedans.len()))),
-            droit::catalogue::Unite::Service => Some(ligne::QuantiteDeLigne::Services(socle::grandeurs::Services::comptes(dedans.len()))),
-            autre => ligne::QuantiteDeLigne::nulle(autre),
+        let par_dates = ligne::QuantiteDeLigne::par_dates(unite, dedans.len());
+        let par_date = par_dates.is_some();
+        let quantite = match par_dates {
+            Some(q) => Some(q),
+            None => ligne::QuantiteDeLigne::nulle(unite),
         };
-        let par_date = matches!(unite, droit::catalogue::Unite::Cachet | droit::catalogue::Unite::Jour | droit::catalogue::Unite::Service);
         lignes.push(match l.avec_les_jours(dedans, apres) {
             LignePaie::Unites(x) => LignePaie::Unites(ligne::Unites { quantite, ..x }),
             LignePaie::UnitesEtHeures(x) => {
@@ -1236,7 +1235,7 @@ fn notifiee_pendant_le_contrat(e: &saisie::Carte, eng: &Engagement) -> R<()> {
     let Some(n) = e.notification_rupture else { return Ok(()) };
     // Une case que le motif n'appelle pas (`droit::permanents::faits_de_rupture`, au motif de la carte ou, sans lui, au
     // defaut de la nature) ne se juge pas.
-    if !droit::permanents::faits_de_rupture(&*eng.nat()?, e.motif_rupture)?.contains(&"notification_rupture") {
+    if !droit::permanents::faits_de_rupture(&*eng.nat()?, e.motif_rupture)?.contains(&droit::permanents::FaitDeRupture::NotificationRupture) {
         return Ok(());
     }
     if eng.contrat().contient(&n) {

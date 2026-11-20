@@ -495,6 +495,11 @@ impl CodeEmploiFt {
     pub fn est_permanent(&self) -> bool {
         self.0 == "999SPT"
     }
+
+    /// Le code tel qu'il s'ecrit.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Le code d'un metier est un code de la nomenclature des emplois du spectacle, la table ART de 40.005 (CCH-18,
