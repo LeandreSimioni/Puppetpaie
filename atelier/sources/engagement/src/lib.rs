@@ -2119,14 +2119,18 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
         }
         // Un technicien que la liste de l'annexe 8 de la convention ne nomme pas (CDD ou CDDU) : on dit ce qui en suit
         // (`caisse_conges::hors_de_l_annexe8`, `cddu_hors_des_annexes`).
+        // L'AER Cinema Spectacle suit le contrat d'intermittent (`documents::aer::due`, `caisse_conges::intermittent`) :
+        // un CDDU l'a, le CDD de droit commun de ce technicien non.
         let nat = p.engagement.nat()?;
         if let Some((metier, idcc)) = droit::caisse_conges::hors_de_l_annexe8(&nat, &p.salarie)? {
+            let aer = if nat.mensuelle() { ", sans AER spectacle" } else { "" };
             let texte = format!(
                 "{} : {} n'est pas sur la liste de l'annexe 8 de la convention {} ; son chômage est celui du droit \
-                 commun (4 %, à l'Urssaf), sans AER spectacle.",
+                 commun (4 %, à l'Urssaf){}.",
                 qui_de(&p.salarie)?,
                 metier,
-                idcc
+                idcc,
+                aer
             );
             p.ecrire().avertissements.push(Avis { info: true, texte });
         }
