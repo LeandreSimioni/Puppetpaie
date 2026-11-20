@@ -99,7 +99,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats déclarés d'un mois importé.",
         charge: &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé d'un salarié, pour ne lire que les siens ; null : tous", avance: true }],
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
-        rend: "contrats : ceux que les engagements importés attestent",
+        rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
         acte: Acte::Lit,
         phrase: 0,
@@ -381,6 +381,8 @@ struct ContratsPasses {
     phrase: Phrase,
     mois: Mois,
     contrats: Vec<Passe>,
+    /// Les contrats repris qui ne se lisent pas, une phrase chacun : ils ne ferment pas le reste.
+    non_lus: Vec<String>,
     rien_dit: &'static str,
 }
 
@@ -814,10 +816,9 @@ fn dit_du_contrat(periode: &Periode, cachets: Option<Cachets>, heures: Option<He
     dit
 }
 
-/// UNE LIGNE DU CALENDRIER : un contrat qu'un engagement importe atteste (`engagement::importe::Importe::contrat_lu`) ;
-/// celui d'un permanent, et celui que ses seules DSN declarent, mois par mois, comme le registre de l'import l'atteste
-/// (`Importe::mois_par_mois`) : chaque mois verse, aux dates du mois dans le contrat, avec l'activite que les pieces
-/// disent du mois (`Importe::activite_du_mois`). Ce que les pieces ne disent pas reste vide.
+/// UNE LIGNE DU CALENDRIER : un mois verse d'un engagement importe, aux dates du mois dans le contrat, comme le registre
+/// de l'import l'atteste (`Importe::mois_par_mois`), ou le contrat entier que rien ne paie ; avec l'activite que les
+/// pieces disent du mois (`Importe::activite_du_mois`). Ce que les pieces ne disent pas reste vide.
 struct Atteste {
     salarie: IdSalarie,
     periode: Periode,
@@ -827,44 +828,55 @@ struct Atteste {
     jours: Option<Jours>,
 }
 
-/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois.
-fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
-    let mut out = Vec::new();
+/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois. LE
+/// CALENDRIER SE LIT TOUJOURS : un engagement importe dont la carte ne se lit pas ne ferme que lui, et se dit (la
+/// seconde liste : une phrase par engagement) ; une panne remonte.
+fn historique(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
+    let (mut out, mut non_lus) = (Vec::new(), Vec::new());
     for i in engagement::importe::tous(&ctx.racine)? {
-        let c = i.contrat_lu()?;
-        // Le contrat entier qu'une piece atteste (une AEM, un certificat, le bulletin d'un contrat d'usage).
-        if let (Some(c), false) = (&c, i.permanent()) {
-            if let Some(periode) = c.periode.and_then(|o| o.fermee()) {
-                out.push(Atteste {
-                    salarie: c.salarie.clone(),
-                    periode,
-                    numero_objet: c.contrat.numero_objet.clone(),
-                    cachets: c.contrat.cachets,
-                    heures: c.contrat.heures,
-                    jours: c.contrat.jours,
-                });
-            }
-            continue;
-        }
-        // Un permanent, ou un contrat que ses seules DSN declarent : mois par mois. Celui dont l'engagement ne dit pas le
-        // debut ne se place dans aucun mois (le registre de l'import le dit muet).
         let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
-        let Some(contrat) = i.objet().carte().contrat()? else { continue };
-        // Le calendrier se lit toujours : un mois verse que les dates du contrat ne touchent pas ne s'y place pas.
-        for (mois, p) in i.paies() {
-            let Some(periode) = contrat.croise(&Periode::du_mois(*mois)) else { continue };
-            let a = i.activite_du_mois(*mois);
-            let numero_objet = c.as_ref().and_then(|c| c.contrat.numero_objet.clone()).or_else(|| p.numero_objet.clone());
-            out.push(Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours });
+        match attestes_par(&i, &salarie) {
+            Ok(a) => out.extend(a),
+            Err(e) if e.dit_un_manque() => non_lus.push(format!("Un contrat repris de {} ne se lit pas : {}", ctx.nomme(&salarie), e.phrase)),
+            Err(e) => return Err(e),
         }
     }
-    Ok(out)
+    Ok((out, non_lus))
+}
+
+/// Ce que l'engagement importe `i` du salarie `salarie` atteste, pour le calendrier : chaque mois verse, aux dates du
+/// mois dans le contrat (`Importe::mois_par_mois`) ; un mois verse que les dates du contrat ne touchent pas (la DSN de
+/// fevrier paie un CDDU de fin janvier : le mois d'une paie est celui de sa DSN), et un contrat que rien ne paie (une
+/// AEM, un certificat), le contrat entier. L'activite est celle que les pieces
+/// disent du mois (`Importe::activite_du_mois`), la seule regle, que les etats lisent aussi.
+fn attestes_par(i: &engagement::importe::Importe, salarie: &IdSalarie) -> R<Vec<Atteste>> {
+    let objet = i.contrat().and_then(|c| c.numero_objet.clone());
+    let atteste = |periode: Periode, mois: Mois, numero_objet: Option<NumeroObjetSpectacle>| {
+        let a = i.activite_du_mois(mois);
+        Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours }
+    };
+    let entier = i.objet().carte().contrat()?.and_then(|o| o.fermee());
+    if i.paies().is_empty() {
+        return Ok(entier.map(|p| atteste(p, p.debut().mois_civil(), objet)).into_iter().collect());
+    }
+    Ok(i.mois_par_mois()?
+        .into_iter()
+        .filter_map(|(mois, periode, p)| {
+            let objet = objet.clone().or_else(|| p.numero_objet.clone());
+            match periode {
+                Some(periode) => Some(atteste(periode, mois, objet)),
+                // Verse un mois que ses dates ne touchent pas (la DSN du mois suivant le paie) : le contrat entier.
+                None => entier.map(|e| atteste(e, mois, objet)),
+            }
+        })
+        .collect())
 }
 
 /// LES CONTRATS QUI TOUCHENT `mois`, pour le calendrier des mois passes. Deux sources : un mois qui a son fichier de paie
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
-fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
+/// Rend aussi ce qui ne s'est pas lu de l'historique (`historique`).
+fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<(Vec<Passe>, Vec<String>)> {
     let le_mois = Periode::du_mois(mois);
     let voulu = |cle: &IdSalarie| salarie.is_none_or(|s| s == cle);
     let spectacles = Spectacles::nouveau(ctx);
@@ -936,7 +948,8 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             }
         }
     }
-    for a in historique(ctx)? {
+    let (attestes, non_lus) = historique(ctx)?;
+    for a in attestes {
         if a.periode.croise(&le_mois).is_none() {
             continue;
         }
@@ -963,15 +976,16 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         });
     }
     out.sort_by(|a, b| (&a.salarie, &a.periode).cmp(&(&b.salarie, &b.periode)));
-    Ok(out)
+    Ok((out, non_lus))
 }
 
 fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsPasses> {
-    let contrats = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
+    let (contrats, non_lus) = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
     Ok(ContratsPasses {
         phrase: socle::phrase!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
         mois: c.mois,
         contrats,
+        non_lus,
         // Ce que la liste dit quand elle est vide : rien de declare pour ce salarie, ou aucun salarie choisi.
         rien_dit: if c.salarie.is_some() { "aucun contrat déclaré" } else { "aucun salarié coché" },
     })

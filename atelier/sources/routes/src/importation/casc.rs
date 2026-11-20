@@ -58,8 +58,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let cle = &p.salarie;
         let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let periode = p.paie.periode;
-        // L'activite du mois que les pieces disent (`Importe::activite_du_mois`) : le contrat atteste qui tient dans le
-        // mois, sinon ce que la paie du mois declare (la DSN, ou le bulletin d'un permanent).
+        // L'activite du mois que les pieces disent, la seule regle (`Importe::activite_du_mois`).
         let activite = i.activite_du_mois(mois).non_nulle();
         let numero = p.paie.contrat.numero_declare().cloned();
         let statut = p.paie.emploi_imprime.as_ref().and_then(|e| e.ecrit.statut).or_else(|| salarie.champs.statut.dite().copied());

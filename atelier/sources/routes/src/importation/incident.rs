@@ -17,6 +17,9 @@
 //! Spectacles et des AER, les mots de liaison) reste, un code de rubrique DSN (`S21.G00.40.001`) reste, toute autre
 //! lettre devient `X` et tout chiffre `9`. Un nom, un NIR, un montant, une adresse n'y survivent pas, qu'on les
 //! connaisse ou non. LE PDF LUI-MEME NE PART JAMAIS, ni son nom (le fichier se dit par sa sorte et sa forme).
+//!
+//! UN CONTRAT QU'UNE PIECE ET LA DSN DISENT AUTREMENT part de meme, en silence, une fois par sorte
+//! (`ContratDitAutrement`) : la DSN vaut, et l'editeur voit que deux pieces d'un logiciel se lisent autrement.
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::OnceLock;
@@ -173,6 +176,56 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
         incidents::envoyer(&ctx.racine);
     }
     Ok(notes)
+}
+
+/// UN CONTRAT QU'UNE AEM, UN BULLETIN OU UN CERTIFICAT ET LA DSN DATENT AUTREMENT : un bulletin dont la periode ne tient
+/// pas dans le contrat que la DSN declare, une AEM ou un certificat qui ressemble a un contrat declare sans en avoir les
+/// dates (`importation::ecrite::engagements_importes`). La DSN vaut, rien ne se demande a la compagnie (Léandre,
+/// 19/11/2026 : « a priori, ça n'existe pas […] ce qu'il faut, c'est juste qu'on ait des retours ») : la piece part chez
+/// l'editeur, rien d'autre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct ContratDitAutrement {
+    pub(crate) piece: engagement::importe::Attestation,
+}
+
+/// A l'ecriture d'un import : chaque piece qui date autrement un contrat (`dits`), une fois au journal des incidents,
+/// puis l'envoi ordinaire. Une sorte deja au journal ne se note plus. Rien ne refuse l'import : un journal qui ne se lit
+/// pas, ou un incident qui ne s'ecrit pas, se dit et l'import continue. Rend le nombre d'incidents notes.
+pub(crate) fn noter_les_contrats_dits_autrement(ctx: &Contexte, dits: &[ContratDitAutrement]) -> usize {
+    use engagement::importe::Attestation;
+    if dits.is_empty() {
+        return 0;
+    }
+    let deja: BTreeSet<incidents::CleDIncident> = match incidents::lire(&ctx.racine, None, false) {
+        Ok(lignes) => lignes.iter().map(|l| l.empreinte.clone()).collect(),
+        Err(e) => {
+            eprintln!("Le journal des incidents ne se lit pas : un contrat daté autrement ne s'y note pas : {}", e.en_lignes());
+            return 0;
+        }
+    };
+    let mut notes = 0;
+    for d in dits {
+        let piece = match d.piece {
+            Attestation::Aem => "une AEM",
+            Attestation::Bulletin => "un bulletin",
+            Attestation::Certificat => "un certificat Congés Spectacles",
+        };
+        let genre = format!("contrat dit autrement : ses dates ({})", piece);
+        if deja.contains(&incidents::empreinte(incidents::LOGICIEL, OU, &genre)) {
+            continue;
+        }
+        let resume = format!("Import : {} et la DSN datent autrement un même contrat ; la DSN vaut.", piece);
+        let note = incidents::Note { nature: incidents::LOGICIEL, resume: &resume, ou: OU, quoi: &genre, detail: d, trace: None, sans_contexte: true };
+        match incidents::noter(&ctx.racine, &note) {
+            Ok(Some(_)) => notes += 1,
+            Ok(None) => {}
+            Err(e) => eprintln!("Un contrat dit autrement ne se note pas au journal des incidents : {}", e.en_lignes()),
+        }
+    }
+    if notes > 0 && incidents::envoi_actif(&ctx.racine) {
+        incidents::envoyer(&ctx.racine);
+    }
+    notes
 }
 
 /// Ce que l'incident dit d'un document non lu : son sort, le logiciel reconnu, ses pages, sa forme page par page et la
