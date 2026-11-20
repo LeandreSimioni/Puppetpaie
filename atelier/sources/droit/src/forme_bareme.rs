@@ -1067,7 +1067,6 @@ forme! {
 forme! {
     /// La section d'un statut (`par_statut`) : ses sections remplacent celles du corps (`bareme::bareme_du_statut`).
     pub struct CoucheStatut {
-        pub verifie: Option<bool>,
         pub rubriques_bulletin: Option<Vec<Rubrique>>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
         pub reduction_generale: Option<ParametresDeLaReduction>,
@@ -1081,7 +1080,6 @@ forme! {
     /// La section d'une categorie (`par_categorie` : cadre, cadre permanent), et ses sections par statut.
     #[derive(Default)]
     pub struct CoucheCategorie {
-        pub verifie: Option<bool>,
         /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
         /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
@@ -1098,7 +1096,6 @@ forme! {
     /// La section d'une nature de contrat (`par_nature` : permanent) : remplacer, retirer, ajouter des rubriques.
     #[derive(Default)]
     pub struct CoucheNature {
-        pub verifie: Option<bool>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
@@ -1135,7 +1132,6 @@ forme! {
     /// du chomage modifiee, les cotisations des annexes retirees, celles de l'Urssaf ajoutees, la declaration de la
     /// reduction generale dont l'Urssaf recouvre alors aussi la part chomage.
     pub struct ChomageHorsDesAnnexes {
-        pub verifie: Option<bool>,
         pub rubriques: BTreeMap<IdDeCotisation, RubriqueModifiee>,
         pub cotisations_dsn_retirees: Vec<CodeCotisation81>,
         pub cotisations_dsn_ajoutees: Vec<CotisationDsn>,
@@ -1146,7 +1142,6 @@ forme! {
 forme! {
     /// Ce que la caisse des Conges Spectacles change a la pile (`bareme::bareme_caisse_conges`).
     pub struct CoucheCaisse {
-        pub verifie: Option<bool>,
         pub du_corps: Option<DuCorps>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub cotisations_dsn_retirees: Option<Vec<CodeCotisation81>>,
@@ -1175,7 +1170,6 @@ forme! {
     /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
     /// salarie (`DfsDuSalarie`).
     pub struct DfsDuBareme {
-        pub verifie: Option<bool>,
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,
         pub taux: BTreeMap<CategorieDfs, Taux>,

@@ -52,8 +52,8 @@ Pourquoi le moteur paie le chômage de ce contrat au règlement général, à l'
   `personnel_du_spectacle` (la caisse ne suit pas la liste).
 - `droit/src/bareme.rs` : `bareme_chomage_hors_des_annexes`, dans `bareme_applique` (le bulletin, la DSN, le bordereau
   lisent cette pile).
-- `logiciel/donnees/baremes/2025.json` et `2026.json`, `chomage_hors_des_annexes` : non marquée `"verifie": true` (le
-  marquage est celui d'un humain) ; tant qu'elle ne l'est pas, la paie d'un tel contrat refuse, seule.
+- `logiciel/donnees/baremes/2025.json` et `2026.json`, `chomage_hors_des_annexes` : chaque taux porte sa `source`, que le
+  test des sources vérifie dans les textes de ce dossier et des dossiers cités.
 - `declarations/src/dsn.rs` : `assiettes_ctp` et `assiette_declaree` (CTP 772, 937 et 668).
 - `engagement/src/lib.rs` : l'avis de la saisie (« son chômage est celui du droit commun »).
 

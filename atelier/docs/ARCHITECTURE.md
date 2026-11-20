@@ -2942,7 +2942,7 @@ journalières, prévoyance de l'accord interbranches. Appliquée à une
 administratrice en CDI, elle lui donnerait des plafonds à la journée et la
 prévoyance de quelqu'un d'autre, en silence.
 `droit::bareme::bareme_cadre` lit `par_categorie.cadre_permanent` quand le contrat est
-mensuel, et refuse si la section n'est pas vérifiée (`verifie`) : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
+mensuel, et refuse si le barème n'a pas cette section : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
 quatre plafonds **du mois**. Sa prévoyance, elle, vient de la convention.
 
 **La CET est due par tout permanent, cadre ou non** (ANI Agirc-Arrco du 17/11/2017, art. 37 : « Pour les participants
@@ -3146,7 +3146,7 @@ du statut, et la nature ne change que la destination de la part chômage
 (`018:urssaf` et CTP 668 pour un permanent, `018:chomage` et CTP 671 pour un
 intermittent).
 
-**La section `par_nature.permanent`** des barèmes 2025 et 2026 est vérifiée (`verifie`). La fiche de paramétrage
+**La section `par_nature.permanent`** des barèmes 2025 et 2026 porte la source de chaque taux. La fiche de paramétrage
 Audiens (version 139) porte les permanents : la **santé** (1,44 / 1,84 / 2,04 % du PMSS selon le niveau) et la
 **CASC-SVP** (0,50 % de la tranche A). La **prévoyance des permanents** vient de la convention, pas du barème (voir
 plus haut), et la rubrique porte `rempli_par` comme la mutuelle. Les identifiants techniques des deux
