@@ -86,7 +86,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; contrat.rupture : sa fin et si elle se signale, motif par motif, à compléter ou non ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli), et faute quand un fait ne se lit pas ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -166,7 +166,7 @@ pub const ROUTES: &[Fiche] = &[
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
         acte: Acte::Lit,
         phrase: 200,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvecBouton(Place::Paie, Affiche::new("Calculer")),
     },
 ];
 
@@ -269,7 +269,10 @@ struct Defauts {
 struct NouvelleCarte {
     nature: NatureDeContrat,
     natures: Vec<NatureDeContrat>,
-    nature_au_choix: bool,
+    /// Les cases qu'une carte neuve montre en plus de celles de sa nature : la nature, quand plus d'une se choisit ce mois.
+    cases: Vec<engagement::carte::CaseDecrite<crate::catalogue::Forme>>,
+    /// Ce qu'elles offrent, sous la cle de leur case : les natures qu'une carte neuve peut prendre ce mois.
+    choix: std::collections::BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
     /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
     /// propose ou en paie un.
     aide_vide: &'static str,
@@ -628,14 +631,31 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
     let mut neuves = Vec::new();
+    let mut offertes = Vec::new();
     let mut propose = std::collections::BTreeMap::new();
     for n in p.natures_neuves()?.iter() {
         neuves.push(n.cle);
+        offertes.push(crate::ouverture::Choix::de(n.cle, &n.libelle));
         propose.insert(n.cle, engagement::proposees::proposees(ctx, Some(n.mensuelle()), None, None, &mois.premier_jour())?);
     }
+    // La case de la nature, quand plus d'une se choisit ce mois : de base, en tete de la carte.
+    let au_choix = neuves.len() > 1;
+    let nature = engagement::saisie::Champ::Nature;
     let nouvelle_carte = NouvelleCarte {
         nature: NatureDeContrat::CdduSpectacle,
-        nature_au_choix: neuves.len() > 1,
+        cases: if au_choix {
+            vec![engagement::carte::CaseDecrite {
+                cle: nature.nom(),
+                libelle: engagement::carte::libelle(nature),
+                exige: engagement::carte::Exige::Obligatoire,
+                forme: crate::catalogue::Forme::de_la_case(nature),
+                ouverte: engagement::carte::Ouverture::Toujours,
+                place: engagement::carte::PlaceDeLaCase::Base,
+            }]
+        } else {
+            Vec::new()
+        },
+        choix: if au_choix { std::collections::BTreeMap::from([(nature.nom(), offertes)]) } else { std::collections::BTreeMap::new() },
         natures: neuves,
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
         propose,

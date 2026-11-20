@@ -144,7 +144,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         if let Some(b) = f["bouton"].as_str() {
             voir(format!("le bouton de {}", nom), b, COURT, true);
         }
-        for c in ["charge", "cases", "cases_de_la_fin"].iter().flat_map(|k| f[*k].as_array().unwrap()) {
+        for c in f["charge"].as_array().unwrap() {
             voir(format!("le libellé de {}.{}", nom, c["nom"].as_str().unwrap()), c["libelle"].as_str().unwrap(), COURT, true);
         }
     }

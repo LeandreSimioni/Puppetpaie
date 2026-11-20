@@ -308,6 +308,9 @@ impl Place {
 pub enum Ecran {
     /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine).
     Dessine(Place),
+    /// Le chemin simple : la page de cette place l'appelle (son ecran est dessine), par ce bouton (viser un montant
+    /// sur la carte).
+    DessineAvecBouton(Place, Affiche),
     /// Avancee : la page de cette place l'appelle (son ecran est dessine), hors du chemin simple.
     DessineAvance(Place),
     /// Le chemin simple : une autre route de cette place la rend en geste (sa route, sa charge, son libelle, les cases
@@ -327,7 +330,7 @@ pub enum Ecran {
 impl Ecran {
     pub fn place(self) -> Option<Place> {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
+            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) | Ecran::Geste(p) | Ecran::GesteAvance(p) | Ecran::Auto(p, _) => Some(p),
             Ecran::Lecture | Ecran::LectureAvancee => None,
         }
     }
@@ -335,14 +338,14 @@ impl Ecran {
     /// La route est-elle « avancee » (hors du chemin simple) ?
     pub fn avance(self) -> bool {
         match self {
-            Ecran::Dessine(_) | Ecran::Geste(_) | Ecran::Lecture => false,
+            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::Geste(_) | Ecran::Lecture => false,
             Ecran::DessineAvance(_) | Ecran::GesteAvance(_) | Ecran::Auto(..) | Ecran::LectureAvancee => true,
         }
     }
 
     fn mot(self) -> &'static str {
         match self {
-            Ecran::Dessine(_) | Ecran::DessineAvance(_) => "dessine",
+            Ecran::Dessine(_) | Ecran::DessineAvecBouton(..) | Ecran::DessineAvance(_) => "dessine",
             Ecran::Geste(_) | Ecran::GesteAvance(_) => "geste",
             Ecran::Auto(..) => "auto",
             Ecran::Lecture | Ecran::LectureAvancee => "lecture",
@@ -352,7 +355,7 @@ impl Ecran {
     /// Ce que `moteur routes` en dit.
     pub fn texte(self) -> String {
         match self {
-            Ecran::Dessine(p) | Ecran::DessineAvance(p) => p.nom().to_string(),
+            Ecran::Dessine(p) | Ecran::DessineAvecBouton(p, _) | Ecran::DessineAvance(p) => p.nom().to_string(),
             Ecran::Geste(p) | Ecran::GesteAvance(p) => format!("{} (un geste qu'une route rend)", p.nom()),
             Ecran::Auto(p, _) => format!("{} › Avancé", p.nom()),
             Ecran::Lecture | Ecran::LectureAvancee => "(une lecture des écrans)".to_string(),
@@ -390,7 +393,46 @@ pub enum Forme {
     /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
     /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,
+    /// UNE VALEUR FAITE DE PARTIES, chacune sa cle, son libelle et sa forme simple (`Partie`) : la route etat les rend
+    /// sous la cle de la case (`parties`) ; la partie qui se choisit offre ce que la route rend sous la meme cle
+    /// (`choix`), et chaque valeur offerte dit les parties qu'elle ouvre (`ouvre`) : une partie qui n'est pas de toujours
+    /// ne se saisit que si la valeur choisie l'ouvre. Le preavis d'une fin de contrat : son type, puis ses dates quand
+    /// le type en a.
+    Parties(&'static [Partie]),
 }
+
+/// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
+/// est de toujours (sinon, la valeur choisie d'une autre partie l'ouvre).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Partie {
+    pub cle: &'static str,
+    pub libelle: Affiche,
+    pub forme: Forme,
+    pub toujours: bool,
+}
+
+/// Une partie, telle que la route etat l'ecrit.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct PartieEcrite {
+    cle: &'static str,
+    libelle: &'static str,
+    forme: Forme,
+    toujours: bool,
+}
+
+impl Partie {
+    pub(crate) fn ecrite(&self) -> PartieEcrite {
+        PartieEcrite { cle: self.cle, libelle: self.libelle.texte(), forme: self.forme, toujours: self.toujours }
+    }
+}
+
+/// LES PARTIES DU PREAVIS D'UNE FIN DE CONTRAT (`engagement::saisie::Preavis`, S21.G00.62.006 a 008) : son type, au
+/// choix parmi ceux qui se saisissent (`droit::preavis::TypePreavis`), puis son debut et sa fin quand le type en a.
+pub const PARTIES_DU_PREAVIS: &[Partie] = &[
+    Partie { cle: "type", libelle: Affiche::new("Type"), forme: Forme::ChoixRendu, toujours: true },
+    Partie { cle: "debut", libelle: Affiche::new("Du"), forme: Forme::Date, toujours: false },
+    Partie { cle: "fin", libelle: Affiche::new("Au"), forme: Forme::Date, toujours: false },
+];
 
 /// UNE FORME S'ECRIT PAR SON MOT (`Forme::mot`) : la page et le LLM la lisent ainsi ; les valeurs d'une liste fermee
 /// s'ecrivent a cote (`ChampEcrit.choix`).
@@ -432,6 +474,7 @@ impl Forme {
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
             Forme::ChoixRendu => "choix_rendu",
+            Forme::Parties(_) => "parties",
         }
     }
 
@@ -439,7 +482,7 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) => None,
         }
     }
 
@@ -448,7 +491,7 @@ impl Forme {
     /// se choisit dans ce que la route etat rend (`choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
     /// etat) ; une autre valeur composee (les conges, le preavis) est un objet. Chaque champ y est classe : un
     /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite. C'est la seule declaration de la forme d'une
-    /// case de la carte : les cases que les fiches nomment (`CASES_D_UN_MOIS_PAYE`, `CASES_DE_LA_FIN`) la prennent ici.
+    /// case de la carte.
     pub const fn de_la_case(c: engagement::saisie::Champ) -> Forme {
         use engagement::saisie::Champ as C;
         match c {
@@ -465,11 +508,11 @@ impl Forme {
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
             C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
-            C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat => Forme::ChoixRendu,
-            C::Nature
-            | C::Numero
+            C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat | C::Nature | C::MotifRecours => {
+                Forme::ChoixRendu
+            }
+            C::Numero
             | C::Lieu
-            | C::MotifRecours
             | C::ModaliteTempsTravail
             | C::Emploi
             | C::PcsEse
@@ -482,7 +525,8 @@ impl Forme {
             | C::ClausesParticulieres
             | C::PrecaritePourquoi => Forme::Texte,
             C::Lignes => Forme::Lignes,
-            C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
+            C::Preavis => Forme::Parties(PARTIES_DU_PREAVIS),
+            C::CongesPris | C::Primes | C::Avant | C::Valide => Forme::Objet,
         }
     }
 
@@ -537,66 +581,9 @@ impl Champ {
     }
 }
 
-/// UNE CASE DE LA CARTE QU'UNE FICHE NOMME : son nom et sa forme sont ceux de son champ (`engagement::saisie::Champ::nom`,
-/// `Forme::de_la_case`), declares une fois ; la fiche n'y ajoute que son libelle, son sens et sa place.
-const fn case_de_la_carte(c: engagement::saisie::Champ, libelle: Affiche, sens: &'static str, avance: bool) -> Champ {
-    Champ { nom: c.nom(), libelle, forme: Forme::de_la_case(c), sens, avance }
-}
-
-/// LES CASES DE LA CARTE D'UN CONTRAT PAYE AU MOIS, cases de la charge `changements` (les faits du mois et ses termes). La marque
-/// « avancé » range l'ecran et le catalogue a la fois : la page met sous « Avancé » de la carte les cases marquees, et
-/// seulement celles que l'engagement appelle (`faits_avances` de la route apercu, `engagement::heures_en_plus::faits_appeles`).
-pub(crate) const CASES_D_UN_MOIS_PAYE: &[Champ] = {
-    use engagement::saisie::Champ as C;
-    &[
-        case_de_la_carte(C::SalaireMensuel, Affiche::new("Salaire mensuel brut"), "le salaire mensuel brut du contrat", false),
-        case_de_la_carte(C::QuotiteContrat, Affiche::new("Heures par mois"), "ses heures par mois", false),
-        case_de_la_carte(C::CongesPris, Affiche::new("Congés pris"), "les congés pris du mois : [{debut, fin}]", false),
-        case_de_la_carte(C::Primes, Affiche::new("Primes"), "les primes du mois : [{montant, rubrique, libelle}]", false),
-        case_de_la_carte(
-            C::Lignes,
-            Affiche::new("Repas et nuitées"),
-            "ses repas et nuitées du mois, comme les lignes d'un intermittent : [{rubrique « repas » ou « nuitee », quantite, taux, dates}], aux mêmes limites",
-            false,
-        ),
-        case_de_la_carte(C::HeuresSupplementaires, Affiche::new("Heures supplémentaires"), "un temps plein : ses heures supplémentaires du mois, que le moteur majore", true),
-        case_de_la_carte(
-            C::HeuresSupplementairesA50,
-            Affiche::new("Dont à 50 %"),
-            "dont celles au-delà de la huitième d'une semaine (majorées de 50 % quand la convention ne fixe pas les paliers)",
-            true,
-        ),
-        case_de_la_carte(C::HeuresComplementaires, Affiche::new("Heures complémentaires"), "un temps partiel : ses heures complémentaires du mois, que le moteur majore", true),
-    ]
-};
-
-/// LES CASES DE LA FIN DU CONTRAT, cases de la charge `changements` : les faits du mois ou il finit (`engagement::stock::DE_LA_FIN`),
-/// la ou le moteur les ecrit quel que soit le mois de la carte. Ce que chaque motif appelle : `faits_de_rupture` des
-/// `natures` de la route etat.
-pub(crate) const CASES_DE_LA_FIN: &[Champ] = {
-    use engagement::saisie::Champ as C;
-    &[
-        case_de_la_carte(C::Fin, Affiche::new("Dernier jour du contrat"), "le dernier jour du contrat, AAAA-MM-JJ", false),
-        case_de_la_carte(C::MotifRupture, Affiche::new("Motif de la fin"), "le code du motif, \"059\" pour une démission : `motifs_rupture` des `natures` de la route etat", false),
-        case_de_la_carte(C::NotificationRupture, Affiche::new("Notifiée le"), "le jour où la rupture a été notifiée, AAAA-MM-JJ", false),
-        case_de_la_carte(C::Preavis, Affiche::new("Préavis"), "{type, debut, fin} : type de `types_preavis` de la route etat (\"90\" sans préavis), ses dates s'il en a", false),
-        case_de_la_carte(C::DernierJourPaye, Affiche::new("Dernier jour payé"), "le dernier jour payé, s'il n'est pas la fin", false),
-    ]
-};
-
 /// La charge de la fiche porte-t-elle les changements d'une carte (`changements`) ?
 fn porte_une_carte(charge: &[Champ]) -> bool {
     charge.iter().any(|c| c.nom == "changements")
-}
-
-/// Les cases d'une carte que porte la charge de la fiche, s'il y en a.
-fn cases(charge: &[Champ]) -> &'static [Champ] {
-    if porte_une_carte(charge) { CASES_D_UN_MOIS_PAYE } else { &[] }
-}
-
-/// Les cases de la fin du contrat que porte la charge de la fiche, s'il y en a.
-fn cases_de_la_fin(charge: &[Champ]) -> &'static [Champ] {
-    if porte_une_carte(charge) { CASES_DE_LA_FIN } else { &[] }
 }
 
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
@@ -626,8 +613,6 @@ pub struct FicheEcrite {
     nom: &'static str,
     geste: &'static str,
     charge: Vec<ChampEcrit>,
-    cases: Vec<ChampEcrit>,
-    cases_de_la_fin: Vec<ChampEcrit>,
     natures: Vec<NatureDecrite<Forme>>,
     exemple: Charge,
     rend: &'static str,
@@ -687,8 +672,6 @@ impl Fiche {
             nom: self.nom(),
             geste: self.geste,
             charge: self.charge.iter().map(Champ::ecrit).collect(),
-            cases: cases(self.charge).iter().map(Champ::ecrit).collect(),
-            cases_de_la_fin: cases_de_la_fin(self.charge).iter().map(Champ::ecrit).collect(),
             natures: natures_de_la_carte(self.charge)?,
             exemple,
             rend: self.rend,
@@ -703,7 +686,7 @@ impl Fiche {
             ecran: self.ecran.place().map(Place::nom),
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
-                Ecran::Auto(_, b) => Some(b.texte()),
+                Ecran::Auto(_, b) | Ecran::DessineAvecBouton(_, b) => Some(b.texte()),
                 Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
         })
@@ -714,22 +697,13 @@ impl Fiche {
         for c in self.charge {
             t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
         }
-        if !cases(self.charge).is_empty() {
-            t.push_str("  Cases de la carte d'un contrat au mois (chacune une case de changements) :\n");
-            for c in cases(self.charge) {
-                t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
-            }
-        }
-        if !cases_de_la_fin(self.charge).is_empty() {
-            t.push_str("  Cases de la fin du contrat (cases de changements, sur la carte de n'importe quel mois du contrat) :\n");
-            for c in cases_de_la_fin(self.charge) {
-                t.push_str(&format!("    {} : {}\n", c.nom, c.sens));
-            }
-        }
         for n in natures_de_la_carte(self.charge)? {
-            t.push_str(&format!("  Cases d'une carte {} (cases de changements, carte neuve \"{}\") :\n", n.nature, n.nature));
+            t.push_str(&format!(
+                "  Cases d'une carte {} (cases de changements, carte neuve \"{}\" ; celles qu'un fait ouvre, et la place de chacune : `carte.cases` de chaque paie de la route apercu) :\n",
+                n.nature, n.nature
+            ));
             for c in &n.cases {
-                t.push_str(&format!("    {} ({}) : {}\n", c.cle, c.libelle, if c.exige == Exige::Obligatoire { "obligatoire" } else { "facultative, null si rien n'est dit" }));
+                t.push_str(&format!("    {} ({}, {}) : {}\n", c.cle, c.libelle, c.forme.mot(), if c.exige == Exige::Obligatoire { "obligatoire" } else { "facultative, null si rien n'est dit" }));
             }
             for m in &n.motifs_recours {
                 let en_plus: Vec<&str> = m.cases.iter().map(|c| c.cle).collect();
