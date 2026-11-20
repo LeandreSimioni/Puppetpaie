@@ -101,7 +101,8 @@ function caseDeLaCarte(div, d, choix) {
   const v = div._carte[d.cle];
   if (d.forme === "lignes") {
     return `<div class="case case-lignes" data-cle="${d.cle}"><span class="case-libelle">${echapper(d.libelle)}</span>
-      ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null })}
+      ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null,
+        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div) })}
       <button type="button" class="lien ajouter-ligne">+ une ligne</button>
       <p class="e-montre discret"></p></div>`;
   }
@@ -112,6 +113,41 @@ function caseDeLaCarte(div, d, choix) {
   const prerempli = r ? r.prerempli[d.cle] : null;
   return `<label class="case" data-cle="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}><span class="case-libelle">${echapper(d.libelle)}</span>
     ${caseDeForme(d.forme, v, { choix: choix[d.cle], prerempli, parties: ETAT.parties[d.cle] })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}</label>`;
+}
+
+/* ------------------------------------------------ ce que la convention fixe au métier */
+
+/** Ce que la route `convention-du-metier` a rendu, par mois et par métier, sous le code de chaque rubrique : elle ne
+ *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. */
+const CONVENTION_DU_METIER = new Map();
+
+/** Le métier d'une carte : celui qu'elle écrit, sinon celui que sa case montre (`prerempli`). */
+function metierDeLaCarte(div) {
+  return div._carte.metier || ceQuiPreremplit(div).metier || null;
+}
+
+/** Les rangs des lignes de la carte dont la bulle est ouverte. */
+function bullesOuvertes(div) {
+  return div._bulles || (div._bulles = new Set());
+}
+
+/** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route). Avant sa
+ *  réponse, rien : elle redessine la carte quand elle arrive avec quelque chose à dire (pas sous les doigts). */
+function bullesDeLaCarte(div) {
+  const metier = metierDeLaCarte(div);
+  if (!metier) return {};
+  const mois = MOIS_AFFICHE;
+  const cle = `${mois} ${metier}`;
+  if (CONVENTION_DU_METIER.has(cle)) return CONVENTION_DU_METIER.get(cle) || {};
+  CONVENTION_DU_METIER.set(cle, null);
+  api("convention-du-metier", { mois, metier }).then((r) => {
+    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique, x])));
+    if (r.rubriques.length && div.isConnected && !div.contains(document.activeElement) && !CALENDRIER_OUVERT) dessinerCarte(div);
+  }, (e) => {
+    CONVENTION_DU_METIER.set(cle, {});
+    dire(e.message, "erreur");
+  });
+  return {};
 }
 
 /** Ce que les cases d'une ligne de frais offrent, le moteur le dit (`cases` de sa paie, ligne par ligne) ; sans aperçu,
@@ -175,6 +211,7 @@ function dessinerLaCarte(div) {
     <div class="e-imprevus"></div>
     <div class="etats"></div>`;
   brancherLesCases(div, { passes: (mois, salarie) => api("contrats-passes", { mois, salarie }) });
+  brancherLesBulles(div, bullesOuvertes(div));
   const avance = div.querySelector(".e-avance");
   if (avance) avance.ontoggle = () => { div._avance = avance.open; };
   div.onchange = (ev) => caseChangee(div, ev.target);

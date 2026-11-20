@@ -240,11 +240,15 @@ const LARGEUR_DE_COLONNE = {
  *  sont offertes : sans elles, rien ne se coche et la valeur reste), et ce que sa rubrique dit d'elle-même (`dit`). Les
  *  mots de la rubrique (`mots` : « à », « € ») suivent ses nombres. `o.choix` : ce que les choix offrent à toutes les
  *  lignes (la rubrique) ; `choixDe(i)` : ce qu'ils offrent en plus à la ligne `i` ; `o.mois`, `o.salarie` : ceux de ses
- *  jours (la case des jours). */
+ *  jours (la case des jours). `o.bulles` : ce qu'une route dit d'une rubrique (`bulleDeLaLigne`), sous son code ; une
+ *  ligne dont la rubrique en a une porte un « i » au bout, qui ouvre sa bulle sous elle (`o.ouvertes` : les rangs des
+ *  lignes dont la bulle est ouverte). */
 function lignesDePaie(lignes, choixDe, o) {
   const colonnes = colonnesDesLignes(lignes, o.choix);
-  const gabarit = colonnes.map((c) => LARGEUR_DE_COLONNE[c.forme] || "minmax(6rem, 1fr)").concat("2rem").join(" ");
-  const tete = `<div class="ligne-paie tete">${colonnes.map((c) => `<span>${echapper(c.libelle)}</span>`).join("")}<span></span></div>`;
+  const bulleDe = (l) => (o.bulles && l.rubrique ? o.bulles[l.rubrique] : null);
+  const avecBulles = lignes.some(bulleDe);
+  const gabarit = colonnes.map((c) => LARGEUR_DE_COLONNE[c.forme] || "minmax(6rem, 1fr)").concat("2rem", avecBulles ? ["1.5rem"] : []).join(" ");
+  const tete = `<div class="ligne-paie tete">${colonnes.map((c) => `<span>${echapper(c.libelle)}</span>`).join("")}<span></span>${avecBulles ? "<span></span>" : ""}</div>`;
   return `<div class="lignes-paie" style="--colonnes: ${gabarit}">${lignes.length ? tete : ""}${lignes.map((l, i) => {
     const r = rubriqueDe(l.rubrique);
     const cles = clesDeLaLigne(r, o.choix);
@@ -281,12 +285,43 @@ function lignesDePaie(lignes, choixDe, o) {
       avance,
       r && r.dit ? `<span class="discret">${echapper(r.dit)}</span>` : "",
     ].filter(Boolean);
+    const bulle = bulleDe(l);
+    const ouverte = !!(bulle && o.ouvertes && o.ouvertes.has(i));
+    const porte = !avecBulles ? "" : bulle
+      ? `<button type="button" class="lien bulle-i" data-bulle="${i}" aria-expanded="${ouverte}" title="${echapper(bulle.nom)}">i</button>`
+      : "<span></span>";
     return `<div class="ligne-paie" data-ligne="${i}" data-valeur="${echapper(JSON.stringify(l))}">
       ${colonnes.map(cellule).join("")}
       <button type="button" class="lien retirer-ligne" title="retirer cette ligne" aria-label="retirer cette ligne">&times;</button>
+      ${porte}
       ${sous.length ? `<div class="ligne-sous">${sous.join("")}</div>` : ""}
+      ${bulle ? bulleDeLaLigne(bulle, ouverte) : ""}
     </div>`;
   }).join("")}</div>`;
+}
+
+/** LA BULLE D'UNE LIGNE : ce que la route dit de sa rubrique (`nom`, `situation`, `montants` : chacun sa `condition` et
+ *  son `montant`, `texte`), telle qu'elle le rend. Elle n'est pas une case : elle n'écrit rien. Fermée, elle est cachée. */
+function bulleDeLaLigne(b, ouverte) {
+  return `<div class="ligne-bulle"${ouverte ? "" : " hidden"}>
+    <div><b>${echapper(b.nom)}</b>${b.situation ? ` <span class="discret">${echapper(b.situation)}</span>` : ""}</div>
+    <table>${b.montants.map((m) => `<tr><td>${echapper(m.condition)}</td><td class="montant">${echapper(euros(m.montant))}</td></tr>`).join("")}</table>
+    <span class="bulle-texte">${echapper(b.texte)}</span>
+  </div>`;
+}
+
+/** Le « i » d'une ligne ouvre sa bulle, un second clic la ferme ; `ouvertes` garde les rangs des bulles ouvertes, pour
+ *  qu'elles le restent quand les lignes se redessinent. */
+function brancherLesBulles(bloc, ouvertes) {
+  bloc.querySelectorAll(".bulle-i").forEach((b) => {
+    b.onclick = () => {
+      const i = +b.dataset.bulle;
+      const bulle = b.closest(".ligne-paie").querySelector(".ligne-bulle");
+      bulle.hidden = !bulle.hidden;
+      b.setAttribute("aria-expanded", String(!bulle.hidden));
+      if (bulle.hidden) ouvertes.delete(i); else ouvertes.add(i);
+    };
+  });
 }
 
 /** Les lignes que montrent les rangées de `bloc`, telles que la route les lit : ce que chaque case dit, par-dessus la

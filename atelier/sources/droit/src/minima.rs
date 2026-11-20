@@ -75,7 +75,42 @@ forme_notee! {
         pub artistes: Option<Artistes3097>,
         pub complement: Option<Complement3097>,
         pub permanents_mensuel: Option<Permanents3097>,
+        /// CE QUE LA CONVENTION FIXE POUR CHAQUE METIER QU'ELLE NOMME, rubrique par rubrique (la bulle d'une ligne de
+        /// paie, `engagement::minima::ce_que_fixe_la_convention`) : un metier absent n'a rien de releve. Les montants ne
+        /// s'y ecrivent pas : ils se lisent la ou le calcul les lit (la grille du metier, la repetition de l'annexe, le
+        /// tarif du bareme), un seul chemin.
+        pub metiers: Option<BTreeMap<crate::emplois::CodeEmploi, MetierDansLaConvention>>,
     }
+}
+
+/// UN METIER TEL QUE LA CONVENTION LE NOMME (`metiers` d'une convention) : le nom qu'elle lui donne, et chaque rubrique
+/// de paie pour laquelle un texte depose fixe un montant.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetierDansLaConvention {
+    /// Le nom que la convention donne au metier (« Artiste marionnettiste »).
+    pub nom: String,
+    pub rubriques: Vec<CeQueFixeLaConvention>,
+    pub note: Option<String>,
+}
+
+/// UNE RUBRIQUE DE PAIE POUR LAQUELLE LA CONVENTION FIXE UN MONTANT AU METIER : la rubrique (cachet, repetition, repas,
+/// nuitee : chacune a son lecteur, `engagement::minima::ce_que_fixe_la_convention`, qui en refuse une autre), l'annexe
+/// de la 3090 dont la grille et la repetition se lisent, la situation et ce que paie le montant en peu de mots, le texte
+/// en clair et sa source, que le test des sources verifie dans le texte depose.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CeQueFixeLaConvention {
+    pub rubrique: crate::catalogue::CodeDeRubrique,
+    /// L'annexe de la 3090 ou se lisent la grille du metier et la repetition ; une convention sans annexes n'en dit pas.
+    pub annexe: Option<crate::fiche::AnnexeConvention>,
+    /// La situation ou le texte fixe le montant, en peu de mots (« en tournée »).
+    pub situation: Option<String>,
+    /// Ce que paie le montant d'une rubrique qui n'en a qu'un (« par repas principal ») ; un cachet dit ses paliers.
+    pub condition: Option<String>,
+    /// Le texte, en clair (« Avenant du 21/07/2025, annexe 4 »), que la source cite.
+    pub texte: String,
+    pub source: crate::source::Fondement,
 }
 
 forme_notee! {
@@ -633,6 +668,10 @@ pub const ADMINISTRATIF: CleDeGrille = CleDeGrille::du_moteur("administratif");
 pub const ACTEUR: CleDeGrille = CleDeGrille::du_moteur("acteur");
 /// La ligne de minima d'un artiste de cirque de la 1285.
 pub const CIRQUE: CleDeGrille = CleDeGrille::du_moteur("cirque");
+/// La periode d'une grille de cachets dont les paliers comptent les representations du mois (`periode`).
+pub const PERIODE_MOIS: CleDeGrille = CleDeGrille::du_moteur("mois");
+/// La periode d'une grille de cachets dont les paliers comptent les representations sur trois mois (`periode`).
+pub const PERIODE_TRIMESTRE: CleDeGrille = CleDeGrille::du_moteur("trimestre");
 
 crate::cle_opaque! {
     /// L'IDENTIFIANT D'UN ACCORD DE SALAIRES (`kali-1285-accord-salaires-20260701`) : l'`id` d'un accord de

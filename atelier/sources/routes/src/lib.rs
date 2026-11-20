@@ -69,6 +69,7 @@ mod modeles_contrat;
 pub mod fiches;
 mod identite;
 mod metiers;
+mod convention_du_metier;
 pub mod bulletin;
 mod etablissements;
 mod atmp;
@@ -269,6 +270,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         _ if dans(crate::etat_garde::ROUTES) => crate::etat_garde::route(o, &porte, charge),
         // Un geste de l'ecran, une route : un module par geste.
         _ if dans(mois::ROUTES) => mois::route(&porte, charge),
+        _ if dans(convention_du_metier::ROUTES) => convention_du_metier::route(&porte, charge),
         _ if dans(etapes::ROUTES) => etapes::route(&porte, charge),
         _ if dans(engagement::ROUTES) => engagement::route(&porte, charge),
         _ if dans(contrats::ROUTES) => contrats::route(&porte, charge),
