@@ -59,6 +59,15 @@ const MODIFICATIONS: Champ = Champ {
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 
+/// Ce qui se vise (`engagement::viser::Cible`) : le net et le cout, chacun avec ou sans les indemnites de frais, et le brut.
+const CIBLES: &[crate::catalogue::Choix] = &[
+    crate::catalogue::Choix { code: "net", libelle: Affiche::new("Net, indemnités comprises") },
+    crate::catalogue::Choix { code: "net_sans_frais", libelle: Affiche::new("Net, sans les indemnités") },
+    crate::catalogue::Choix { code: "brut", libelle: Affiche::new("Brut") },
+    crate::catalogue::Choix { code: "cout", libelle: Affiche::new("Coût, sans les indemnités") },
+    crate::catalogue::Choix { code: "cout_avec_frais", libelle: Affiche::new("Coût, indemnités comprises") },
+];
+
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
@@ -143,7 +152,13 @@ pub const ROUTES: &[Fiche] = &[
             MOIS,
             MODIFICATIONS,
             super::engagement::IDENTITE,
-            Champ { nom: "cible", libelle: Affiche::new("Net, brut ou coût"), forme: Forme::Texte, sens: "net, brut ou cout", avance: false },
+            Champ {
+                nom: "cible",
+                libelle: Affiche::new("Ce qui se vise"),
+                forme: Forme::Choix(CIBLES),
+                sens: "net (indemnités de frais comprises : repas, nuitées, défraiements), net_sans_frais, brut, cout (sans les indemnités) ou cout_avec_frais ; l'acompte reste retiré du net",
+                avance: false,
+            },
             Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
         ],
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
@@ -1266,9 +1281,11 @@ fn salaire_qui_change<S: serde::Serializer>(s: &Option<Option<MontantUnitaire>>,
 /// Ce que la phrase du montant vise dit de la cible.
 fn cible_dite(c: Cible) -> &'static str {
     match c {
-        Cible::Net => "Net salarié",
+        Cible::Net => "Net salarié, indemnités comprises",
+        Cible::NetSansFrais => "Net salarié, sans les indemnités",
         Cible::Brut => "Brut",
-        Cible::Cout => "Coût entreprise",
+        Cible::Cout => "Coût entreprise, sans les indemnités",
+        Cible::CoutAvecFrais => "Coût entreprise, indemnités comprises",
     }
 }
 
@@ -1323,7 +1340,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         format!(" ({}{} : un taux se paie au centime)", if ecart > Montant::ZERO { "+" } else { "" }, socle::texte::euros(ecart))
     };
     Ok(Ajuste {
-        phrase: socle::phrase!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
+        phrase: socle::phrase!("{} : visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
         cible: c.cible,
         vise,
         atteint,
