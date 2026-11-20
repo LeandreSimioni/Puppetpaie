@@ -321,7 +321,7 @@ nature! {
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::ContratEcrit) => Avance,
             clauses_particulieres: String = ClausesParticulieres si Ouverture::Si(F::ContratEcrit) => Avance,
             modele_contrat: IdDeModele = ModeleContrat si Ouverture::Si(F::ModelesAuChoix) => Base,
-            date_paiement: Jour = DatePaiement si TOUJOURS => Base,
+            date_paiement: Jour = DatePaiement si TOUJOURS => Avance,
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Rendue,
             faute_grave: bool = FauteGrave si Ouverture::Si(F::FinDEssaiParLEmployeur) => Imprevu,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
