@@ -804,14 +804,6 @@ silence vaut accord >>). Dire lequel ({}, {}) ou son refus ({}). Rien n'est calc
             }
         },
     }
-    if dfs.verifie != Some(true) {
-        return Err(refus_detaille("Le barème de l'année ne paie pas encore la déduction forfaitaire spécifique : ses taux ne sont pas vérifiés.", None, format!(
-            "Deduction forfaitaire specifique de {} ({}) : la section deduction_forfaitaire du bareme {} n'est pas \
-marquee verifiee (\"verifie\": true). Le moteur refuse de payer plutot que d'inventer -- comme pour un statut sans \
-section verifiee.",
-            qui, profession, annee
-        )));
-    }
     let categorie = fiche_prof.categorie.clone();
     // Le taux de l'annee : celui de la profession quand l'arrete lui donne un calendrier a part (art. 9, III, pour les
     // professions hors spectacle vivant), sinon celui de sa categorie (art. 9, II).
@@ -1076,6 +1068,18 @@ fn pss_du_contexte(ctx: &Contexte) -> impl Fn(socle::mois::Annee) -> socle::eche
 /// chaque paie, et c'etait l'essentiel du temps de calcul.
 pub(crate) fn bareme_du_salarie(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Nature, fin: &Jour, caisse: bool, cpf_cdd: bool, majoration: bool) -> R<Arc<Pile>> {
     pile(ctx, sal, nat, fin, caisse, cpf_cdd, majoration, false)
+}
+
+/// LE PLAFOND JOURNALIER DE LA BASE CONGES SPECTACLES d'un contrat (`droit::clauses::plafond_conges_spectacles`) : sur la
+/// convention du contrat, celle que la DSN declare (S21.G00.40.017) et que le bulletin imprime
+/// (`minima::idcc_du_contrat`), la case de la fiche Entreprise et le metier de la fiche. La paie (`calculer_periode`) et le
+/// certificat d'un mois importe (`routes::dossier_salarie`) le lisent ici.
+pub fn plafond_conges_spectacles(ctx: &Contexte, spectacle: Option<&droit::fiche::Spectacle>, sal: &SalarieDuContrat) -> R<Option<socle::grandeurs::MontantUnitaire>> {
+    let idcc_du_contrat = match ctx.entreprise.idcc.dite() {
+        Some(i) => Some(crate::minima::idcc_du_contrat(i, spectacle, sal)?),
+        None => None,
+    };
+    droit::clauses::plafond_conges_spectacles(idcc_du_contrat.as_ref(), ctx.entreprise.plafond_conges_spectacles, sal.code_emploi_ft.dite().filter(|c| !c.est_permanent()))
 }
 
 /// La pile d'une paie IMPORTEE, qui ne range que ses bases : ses taux se lisent sur ses pieces
@@ -1772,6 +1776,26 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         }
         let t1 = par_rubrique.iter().filter_map(|r| r.t1_annuelle).fold(Montant::ZERO, |a, x| a + x);
         retraite_de_l_annee = Some((avant, droit::plafond::Regularisees { t1, ..t }));
+    }
+
+    // L'assiette des Conges Spectacles dans la limite du plafond journalier que l'accord de la convention ecrit pour
+    // l'emploi, quand la compagnie dit qu'il la lie (`clauses::plafond_conges_spectacles` ; C. trav. D. 7121-37),
+    // multiplie par les jours travailles de la paie. Chaque rubrique en garde sa part, au prorata, la derniere prenant
+    // l'arrondi : la ligne de la caisse, le 066 de la DSN et le certificat lisent cette seule base.
+    if let Some(p) = plafond_conges_spectacles(ctx, spec.as_ref(), &sal)? {
+        let plafond = (jours * p).au_centime();
+        let total = par_rubrique.iter().fold(zero, |a, b| a + b.brut_cs);
+        if total > plafond {
+            let mut reste = plafond;
+            let derniere = par_rubrique.iter().rposition(|b| !b.brut_cs.est_nul());
+            for (i, b) in par_rubrique.iter_mut().enumerate() {
+                if b.brut_cs.est_nul() {
+                    continue;
+                }
+                b.brut_cs = if Some(i) == derniere { reste } else { plafond.prorata(b.brut_cs, total).au_centime() };
+                reste -= b.brut_cs;
+            }
+        }
     }
 
     // 7.6 : les bases globales.

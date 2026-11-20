@@ -483,7 +483,8 @@ un libellé, chacun sa forme.
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
 | date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
 | employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
-| nom déclaré, prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
+| nom déclaré (de famille), prénom déclaré (les cases de la fiche d'un salarié, bornées par la DPAE) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
+| nom d'usage d'un salarié (la case de sa fiche, bornée par la DSN, S21.G00.30.003) | `NomDUsage` | `droit/src/fiche.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -1276,6 +1277,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
+| plafond de la base Congés Spectacles d'une convention (le montant journalier qu'un accord écrit pour des emplois qu'il nomme, C. trav. D. 7121-37 ; la case `plafond_conges_spectacles` de la fiche Entreprise dit si l'accord lie la compagnie) | `PlafondCongesSpectacles` ; ses montants par emplois : `PlafondDesEmplois` | `droit/src/clauses.rs` |
+| chômage du CDD d'usage hors des annexes (la section du barème qui paie au règlement général, à l'Urssaf, le CDDU d'un technicien que la liste de l'annexe 8 de sa convention ne nomme pas ; qui en relève : `caisse_conges::cddu_hors_des_annexes`) | `ChomageHorsDesAnnexes` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
 | contribution de branche | `ContributionDeBranche` | `droit/src/forme_bareme.rs` |
@@ -2939,7 +2942,7 @@ journalières, prévoyance de l'accord interbranches. Appliquée à une
 administratrice en CDI, elle lui donnerait des plafonds à la journée et la
 prévoyance de quelqu'un d'autre, en silence.
 `droit::bareme::bareme_cadre` lit `par_categorie.cadre_permanent` quand le contrat est
-mensuel, et refuse si la section n'est pas vérifiée (`verifie`) : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
+mensuel, et refuse si le barème n'a pas cette section : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
 quatre plafonds **du mois**. Sa prévoyance, elle, vient de la convention.
 
 **La CET est due par tout permanent, cadre ou non** (ANI Agirc-Arrco du 17/11/2017, art. 37 : « Pour les participants
@@ -3143,7 +3146,7 @@ du statut, et la nature ne change que la destination de la part chômage
 (`018:urssaf` et CTP 668 pour un permanent, `018:chomage` et CTP 671 pour un
 intermittent).
 
-**La section `par_nature.permanent`** des barèmes 2025 et 2026 est vérifiée (`verifie`). La fiche de paramétrage
+**La section `par_nature.permanent`** des barèmes 2025 et 2026 porte la source de chaque taux. La fiche de paramétrage
 Audiens (version 139) porte les permanents : la **santé** (1,44 / 1,84 / 2,04 % du PMSS selon le niveau) et la
 **CASC-SVP** (0,50 % de la tranche A). La **prévoyance des permanents** vient de la convention, pas du barème (voir
 plus haut), et la rubrique porte `rempli_par` comme la mutuelle. Les identifiants techniques des deux

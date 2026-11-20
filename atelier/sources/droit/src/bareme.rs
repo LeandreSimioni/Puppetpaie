@@ -166,7 +166,7 @@ fn cotisation_par_dessus(base: &mut CotisationModifiee, m: &CotisationModifiee) 
 
 /// Le bareme applicable a ce statut, ou une erreur qui dit ce qui manque.
 /// Trois issues : le statut du corps (on rend le bareme), une section
-/// `par_statut` verifiee et sans trou (ses sections remplacent celles du
+/// `par_statut` sans trou (ses sections remplacent celles du
 /// corps), sinon un refus qui nomme tout ce qui bloque.
 pub fn bareme_du_statut(mut bar: Pile, statut: Statut) -> R<Pile> {
     let statuts = bar.statuts.clone();
@@ -206,31 +206,16 @@ Ajouter une section par_statut['{}'] au bareme.",
             trous.push(format!("{} ({})", r.id, pourquoi));
         }
     }
-    if !trous.is_empty() || section.verifie != Some(true) {
-        let mut detail: Vec<String> = Vec::new();
-        if !trous.is_empty() {
-            detail.push(format!("{} rubrique(s) sans taux :\n    - {}", trous.len(), trous.join("\n    - ")));
-        }
-        let detail = if detail.is_empty() {
-            "(rien de precis n'est signale)".to_string()
-        } else {
-            detail.join("\n  ")
-        };
+    if !trous.is_empty() {
         return Err(refus(
-            format!("Le barème {} ne paie pas encore ce statut : ses taux ne sont pas vérifiés.", annee(&bar)),
+            format!("Le barème {} ne paie pas encore ce statut : des taux lui manquent.", annee(&bar)),
             format!(
-                "Statut '{}', bareme {} : refus de payer.\n  {}\n  {}\n  \
-Rien de tout cela ne se devine : un taux se releve (Urssaf, \
-BOSS, fiche de parametrage Audiens, bulletin de reference), un \
-mecanisme se decide. Tant que la section n'est pas marquee \
-\"verifie\": true par un humain, le moteur refuse.",
+                "Statut '{}', bareme {} : refus de payer.\n  {} rubrique(s) sans taux :\n    - {}\n  \
+Rien de tout cela ne se devine : un taux se releve dans un texte depose, et entre avec sa source.",
                 statut,
                 annee(&bar),
-                match dit(&section.note) {
-                    Some(note) => note,
-                    None => "Section non marquee verifiee.",
-                },
-                detail
+                trous.len(),
+                trous.join("\n    - ")
             ),
         ));
     }
@@ -251,7 +236,7 @@ mecanisme se decide. Tant que la section n'est pas marquee \
 // --------------------------------------------------- la nature du contrat
 
 /// Le bareme du statut, avec la surcouche de la NATURE DU CONTRAT
-/// (`par_nature`). Sans section verifiee et sans trou, on REFUSE.
+/// (`par_nature`). Sans section, ou avec un taux qui manque, on REFUSE.
 pub fn bareme_de_la_nature(bar: Pile, nat: &Nature) -> R<Pile> {
     let Some(section) = nat.bareme() else { return Ok(bar) };
     let nom = section.population();
@@ -288,23 +273,16 @@ donnerait des cotisations fausses sans que rien ne le signale.",
             uniques.push(t);
         }
     }
-    if !uniques.is_empty() || sec.verifie != Some(true) {
+    if !uniques.is_empty() {
         return Err(refus(
-            format!("Le barème {} ne paie pas encore cette nature de contrat : ses taux ne sont pas vérifiés.", annee(&bar)),
+            format!("Le barème {} ne paie pas encore cette nature de contrat : des taux lui manquent.", annee(&bar)),
             format!(
-                "Contrat de nature '{}', bareme {} : refus de payer.\n  {}\n  A remplir : {}\n  \
-Un taux se releve (BOSS, Agirc-Arrco, contrat de mutuelle, \
-fiche de parametrage Audiens), il ne se devine pas. Tant que la \
-section par_nature['{}'] n'est pas marquee \"verifie\": true \
-par un humain, le moteur refuse.",
+                "Contrat de nature '{}', bareme {}, section par_nature['{}'] : refus de payer.\n  A remplir : {}\n  \
+Un taux se releve dans un texte depose et entre avec sa source ; il ne se devine pas.",
                 nat.cle,
                 annee(&bar),
-                match dit(&sec.note) {
-                    Some(note) => note,
-                    None => "Section non marquee verifiee.",
-                },
-                if uniques.is_empty() { "(rien de precis)".to_string() } else { uniques.join(", ") },
-                nom
+                nom,
+                uniques.join(", ")
             ),
         ));
     }
@@ -387,6 +365,56 @@ pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     let avant = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0;
     r.taux_pat = Some(TauxDate(courte(avant - sec.taux)));
     bar.cotisations_dsn.retain(|c| c.code81 != Some(sec.code81));
+    Ok(bar)
+}
+
+/// LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes` : le technicien en CDDU que la
+/// liste de l'annexe 8 de la convention ne nomme pas). Le corps paie le chomage des annexes 8 et 10 (4 % + 5 % patronal,
+/// 2,40 % salarial, la majoration du CDDU court, a France Travail) ; ce contrat paie celui du reglement general, a
+/// l'Urssaf (`chomage_hors_des_annexes` du bareme : la ligne du chomage, les cotisations 040, 048 et 041 des annexes
+/// retirees, 040 et 048 de l'Urssaf ajoutees, la part chomage de la reduction generale a l'Urssaf et ses CTP 668 et
+/// 669). Les textes : `atelier/reference/sources/cddu-hors-annexe8/LISEZ-MOI.md`. Sans section : refus, pour ce
+/// contrat seul.
+pub fn bareme_chomage_hors_des_annexes(mut bar: Pile, hors_des_annexes: bool) -> R<Pile> {
+    if !hors_des_annexes {
+        return Ok(bar);
+    }
+    let Some(sec) = bar.chomage_hors_des_annexes.clone() else {
+        return Err(refus(
+            format!(
+                "Le barème {} ne sait pas payer le CDD d'usage d'un technicien que la liste de l'annexe 8 de la convention ne nomme pas : le signaler au développeur.",
+                annee(&bar)
+            ),
+            format!(
+                "Bareme {} : pas de section chomage_hors_des_annexes. Ce contrat n'est pas \
+de l'annexe 8 (art. 1er, § 2) : son chomage est celui du reglement general (4 %, a l'Urssaf), pas celui des annexes \
+(9 % patronal, 2,40 % salarial, a France Travail). Le payer comme le corps le decrit donnerait un chomage faux. Refus.",
+                annee(&bar)
+            ),
+        ));
+    };
+    bar = empiler(
+        bar,
+        Couche {
+            retirees: None,
+            rubriques: Some(&sec.rubriques),
+            ajoutees: None,
+            cotisations_dsn: None,
+            prevoyance_retraite_supp: None,
+            sante_patronale: None,
+            majoration_conges_115: None,
+            majoration_conges_110: None,
+            reduction_generale: Some(&sec.reduction_generale),
+        },
+    );
+    bar.cotisations_dsn.retain(|c| !c.code81.is_some_and(|code| sec.cotisations_dsn_retirees.contains(&code)));
+    for c in &sec.cotisations_dsn_ajoutees {
+        // Dans l'ordre des blocs 78 : avant le premier bloc de type superieur.
+        match bar.cotisations_dsn.iter().position(|x| x.bloc78 > c.bloc78) {
+            Some(i) => bar.cotisations_dsn.insert(i, c.clone()),
+            None => bar.cotisations_dsn.push(c.clone()),
+        }
+    }
     Ok(bar)
 }
 
@@ -910,19 +938,19 @@ pub struct AvantLaNature {
 /// majorations d'assiette) ; un CDD de droit commun de moins de douze mois d'un artiste l'est
 /// (`affilie` : la ligne et le 066 reprises du statut tel qu'il etait avant la nature -- `avant_la_nature` --, et les
 /// majorations). Qui est declare : `caisse_conges::affilie` ; les textes : la section du bareme et
-/// `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`. Sans section verifiee : refus.
+/// `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`. Sans section : refus.
 pub fn bareme_caisse_conges(bar: Pile, avant_la_nature: Option<&AvantLaNature>, nat: &Nature, affilie: bool) -> R<Pile> {
     if affilie == crate::caisse_conges::par_defaut(nat) {
         return Ok(bar);
     }
     let cle = if affilie { "affilie" } else { "non_affilie" };
     let sec = bar.par_caisse_conges.as_ref().map(|p| if affilie { p.affilie.clone() } else { p.non_affilie.clone() });
-    let Some(sec) = sec.filter(|s| s.verifie == Some(true)) else {
+    let Some(sec) = sec else {
         return Err(refus(
             format!("Le barème {} ne sait pas payer ce contrat avec les Congés Spectacles : le signaler au développeur.", annee(&bar)),
             format!(
                 "Contrat de nature '{}' {} la caisse des Conges Spectacles, et le bareme {} n'a pas de section \
-par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le decrit donnerait {}. Refus.",
+par_caisse_conges['{}']. Le payer comme sa nature le decrit donnerait {}. Refus.",
                 nat.cle,
                 if affilie { "declare a" } else { "non declare a" },
                 annee(&bar),
@@ -1129,6 +1157,9 @@ pub fn bareme_applique(
     bar = bareme_caisse_conges(bar, avant_la_nature.as_ref(), nat, caisse_conges)?;
     bar = bareme_cpf_cdd(bar, nat, cpf_cdd)?;
     bar = bareme_majoration_chomage(bar, majoration_chomage)?;
+    // Une paie importee a ete payee et declaree par l'ancien logiciel : ses taux se lisent sur ses pieces
+    // (`EntrepriseLue::taux_lus`), son chomage ne se rejoue pas.
+    bar = bareme_chomage_hors_des_annexes(bar, !ent.taux_lus && crate::caisse_conges::cddu_hors_des_annexes(nat, sal)?)?;
     bar = bareme_taxe_apprentissage(bar, fiche, fin_periode)?;
     bar = bareme_convention(bar, ent, Some(nat))?;
     bar = bareme_casc(bar, ent);
@@ -1681,12 +1712,12 @@ pub fn bareme_cadre(mut bar: Pile, sal: &SalarieDuContrat, nat: Option<&Nature>)
     }
     let mensuelle = mensuelle(nat);
     let nom = if mensuelle { CADRE_PERMANENT } else { CADRE };
-    let Some(mut sec) = bar.par_categorie.get(&nom).filter(|s| s.verifie == Some(true)).cloned() else {
+    let Some(mut sec) = bar.par_categorie.get(&nom).cloned() else {
         return Err(refus(
             "Le barème de l'année ne sait pas payer un cadre : le signaler au développeur.",
             format!(
                 "Cadre (statut categoriel 01){} : le bareme {} n'a pas de section \
-par_categorie['{}'] verifiee. Prevoyance, retraite et Apec d'un \
+par_categorie['{}']. Prevoyance, retraite et Apec d'un \
 cadre ne sont pas celles d'un non-cadre{}.",
                 if mensuelle { " en contrat permanent" } else { "" },
                 annee(&bar),

@@ -70,30 +70,24 @@ le 10/10/2026, lot V2f (`prive/journal/archives/2026-10-08-lots/norme/correction
 4. **Un CDD de droit commun de moins de douze mois d'un ARTISTE** : déclaré. L'artiste est le salarié dont le métier
    (`code_emploi_ft` tel que la paie le lit) est un emploi de l'annexe 10 de la nomenclature des emplois du spectacle.
    « Personnel artistique » (D. 7121-40), « artiste » (fiche Audiens) : pas de doute.
-5. **Un CDD de droit commun de moins de douze mois d'un TECHNICIEN de la liste** : déclaré. L'annexe 8, art. 1er, § 2
-   (`../plafond-intermittents/unedic-annexe8-convention-20241115.txt`, l. 16-22), range « les ouvriers et techniciens
-   engagés dans le cadre d'un contrat à durée déterminée, pour assurer l'une des fonctions énumérées dans la liste
-   figurant au titre XIV, [...] dans les domaines d'activité ou dans les entreprises énumérés dans la même liste »,
-   domaines « définis par les numéros d'identifiant des conventions collectives (IDCC) et la nomenclature des activités
-   françaises (NAF) » : dans les mêmes termes que l'artiste de l'annexe 10, sans distinguer CDD et CDDU ; D. 7121-38
-   (« le personnel artistique et technique employé de façon intermittente »), D. 7121-40 et D. 7121-41 ne distinguent pas
-   non plus. Le technicien est le salarié dont le métier est au catalogue (`emplois-base.json`) et dont la fonction est
-   nommée par la liste de la convention de l'employeur (`droit::emplois::Metier::nomme_par_l_annexe8` : `conventions` sans
-   `conventions_hors_liste` ; la liste 6 pour la 1285, la 7 pour la 3090, circulaire Unedic 2016-25,
-   `../unedic-circulaire-2016-25-annexes-8-10.txt`, l. 567-573 ; le staffeur, le bottier ou le serrurier ne sont que sur
-   la 6, le poursuiteur ou le directeur artistique que sur la 7). L'administrateur,
-   le chargé et l'attaché de production d'une compagnie du spectacle vivant sont sur cette liste (liste 6 et 7, n° 2 et
-   7) : leur CDD de moins de douze mois est déclaré, et la caisse leur paie leurs congés. *Inférence* : l'employeur est
-   dans le domaine de sa convention (pour le spectacle vivant, les trois catégories de la liste couvrent tout employeur
-   qui fait jouer un spectacle ; les codes NAF des autres domaines ne sont pas confrontés). Un métier hors catalogue ne
-   dit pas sur quelle liste il est : non déclaré.
+5. **Un CDD de droit commun de moins de douze mois d'un TECHNICIEN du spectacle** : déclaré, que la liste de l'annexe 8
+   de sa convention nomme sa fonction ou non (lot K2, 19/11/2026, `caisse_conges::personnel_du_spectacle`) : D. 7121-38,
+   D. 7121-40 et D. 7121-41 disent « le personnel artistique et technique », Audiens « artistes et techniciens [...]
+   quelle que soit [...] la nature du contrat de travail (CDD de droit commun, CDD d'usage, etc) » ; aucun ne renvoie à
+   la liste. Le technicien est le salarié dont le métier est un emploi technique (annexe 8) de la nomenclature des
+   emplois du spectacle (*inférence* : un emploi de cette nomenclature est du personnel technique du spectacle). La
+   liste ne décide que de l'assurance chômage (annexe 8 ou règlement général : `../cddu-hors-annexe8/LISEZ-MOI.md`),
+   du code emploi en DSN et de l'AER Cinéma Spectacle (`caisse_conges::intermittent` : la liste 6 pour la 1285, la 7
+   pour la 3090, `droit::emplois::Metier::nomme_par_l_annexe8` ; le staffeur, le bottier ou le serrurier ne sont que sur
+   la 6, le poursuiteur ou le directeur artistique que sur la 7). Un emploi permanent (999SPT) ou sans code : non
+   déclaré.
 
 Ce qui en découle, par la pile (`par_caisse_conges` du barème) :
 
 - `non_affilie` (CDDU de douze mois ou plus) : ni la ligne de la caisse, ni la cotisation 066, ni les majorations
   d'assiette (1,0 : FNAL, versement mobilité, taxe d'apprentissage sur le brut — R5) ; ni 40.022, ni certificat Congés
   Spectacles ; pas de majoration de la réduction générale (D. 241-10, que le calcul déduit de l'assiette de la caisse).
-- `affilie` (CDD de droit commun d'un artiste ou d'un technicien de la liste) : par-dessus `par_nature.permanent`, la ligne de la caisse et le 066 du corps, le
+- `affilie` (CDD de droit commun d'un artiste ou d'un technicien du spectacle) : par-dessus `par_nature.permanent`, la ligne de la caisse et le 066 du corps, le
   40.022, les majorations à 11,5 % — FNAL plafonné (`t1_mensuelle_x115`, R2), versement mobilité, et taxe
   d'apprentissage **à 11,5 % et non 10 %** (D. 243-0-2 : le 10 % vise les intermittents de L. 6331-55, c'est-à-dire le
   CDD d'usage ; *lecture*). Au bordereau : 992 sur la somme des `brut_x110`, 332 des permanents sur `t1_x115_permanent`.
@@ -125,10 +119,9 @@ Textes : `../code-du-travail/articles-20261102.md` (XML : `../code-du-travail/xm
   l'entreprise ne lui permet pas de les prendre effectivement ».
 
 *Lecture* : le salarié que l'employeur déclare à la caisse (`caisse_conges::affilie`) reçoit ses congés de la caisse ;
-l'employeur ne lui doit pas d'indemnité compensatrice. Celui qu'il ne déclare pas (CDD de douze mois ou plus, technicien en
-CDD de droit commun, CDI) la reçoit de l'employeur (L. 3141-28, L. 1242-16), comme la CCN 3090, art. 10.1.1, le dit du
+l'employeur ne lui doit pas d'indemnité compensatrice. Celui qu'il ne déclare pas (CDD de douze mois ou plus, CDD
+de droit commun d'un salarié qui n'est ni artiste ni technicien du spectacle, CDI) la reçoit de l'employeur (L. 3141-28, L. 1242-16), comme la CCN 3090, art. 10.1.1, le dit du
 salarié occupé douze mois.
-
 **Où le moteur s'en sert** : `engagement/src/solde.rs`, `solde_de_tout_compte` (l'indemnité compensatrice ne se compose
 que pour un contrat que l'employeur ne déclare pas), qui le demande à `calcul::saisie_declaree_a_la_caisse_des_conges`
 (la fiche telle que la paie la lit au dernier jour du contrat, puis `caisse_conges::affilie`).

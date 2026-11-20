@@ -1841,6 +1841,10 @@ struct SalarieLu {
     #[serde(skip_serializing_if = "Option::is_none")]
     prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    nom_usage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pseudonyme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     num_conges_spectacles: Option<String>,
@@ -1866,6 +1870,8 @@ impl SalarieLu {
             nir_cle: None,
             nom: None,
             prenom: None,
+            nom_usage: None,
+            pseudonyme: None,
             date_naissance: None,
             num_conges_spectacles: None,
             emploi: None,
@@ -2322,6 +2328,10 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
         nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir)),
         nom: dernier(&|c| c.identite.nom.clone()),
         prenom: dernier(&|c| c.identite.prenoms.clone()),
+        // Le nom d'usage, que le certificat et l'AEM impriment ; le pseudonyme, le certificat seul.
+        nom_usage: dernier(&|c| c.nom_usage.clone())
+            .or_else(|| ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.nom_usage.clone()).filter(|x| !x.trim().is_empty()))),
+        pseudonyme: dernier(&|c| c.pseudonyme.clone()),
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.
         date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.identite.naissance).and_then(|n| n.jour())),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),

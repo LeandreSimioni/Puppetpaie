@@ -351,6 +351,27 @@
    "ecran": true
   },
   {
+   "note": "LE PLAFOND DE LA BASE CONGES SPECTACLES : l'accord du 4 mai 2017 de\nla 1285 (non etendu) le fixe par jour pour des emplois qu'il nomme\n(`clauses-conventionnelles-base.json`, `plafond_conges_spectacles`) ;\nnon etendu, il ne lie que les adherents des organisations signataires,\nce que seule la compagnie sait ; Audiens : son application << releve de\nsa responsabilite >>. Non cochee : la base est le brut.",
+   "cle": "plafond_conges_spectacles",
+   "libelle": "Plafond Congés Spectacles de l'accord du 4 mai 2017",
+   "forme": "booleen",
+   "aide": "À cocher si l'accord du 4 mai 2017 sur les plafonds des congés spectacles vous lie (vous adhérez à une organisation qui l'a signé) et que vous l'appliquez. La cotisation à la caisse se calcule alors, par jour travaillé, sur au plus 375 € pour un metteur en scène, un chorégraphe ou un maître de ballet, et 860 € pour un chef d'orchestre ou un concertiste soliste. Pour les autres emplois, la base reste le brut.",
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": false,
+   "derive_de": null,
+   "rubrique": null,
+   "si": {
+    "idcc": [
+     "1285"
+    ]
+   },
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "ecran": true
+  },
+  {
    "note": "LA JAUGE DE LA SALLE : l'annexe I de la\n3090 fixe le salaire conventionnel de ses techniciens par jauge, et la\nprime d'anciennete (art. 3.11) en est un pourcentage.",
    "cle": "jauge_annexe_1",
    "libelle": "Jauge de la salle (annexe 1)",
@@ -1285,6 +1306,24 @@
    "ecran": true
   },
   {
+   "note": "Le nom d'usage (S21.G00.30.003, « la possibilité pour une personne de porter un nom qu'elle n'a pas acquis selon les règles d'acquisition du nom de famille », usage C : `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 138-144 ; l'éditorial des identités, `texte/chapitre-4-controles.txt`, § 4.4.8, préfère « nom d'usage » à « nom d'époux »). La DSN l'écrit quand il est dit ; le certificat Congés Spectacles l'imprime, le nom déclaré sinon. Une DSN importée le porte à la fiche.",
+   "cle": "nom_usage",
+   "avance": "cas_particulier",
+   "libelle": "Nom d'usage",
+   "forme": "officiel",
+   "aide": "Seulement s'il porte un autre nom que son nom de famille (celui d'un conjoint, par exemple). En capitales, sans accents, 80 caractères au plus, ce que la DSN écrit.",
+   "longueur": null,
+   "exemple": "",
+   "choix": [],
+   "declare": true,
+   "derive_de": null,
+   "rubrique": "S21.G00.30.003",
+   "si": null,
+   "si_etablissements": false,
+   "si_entreprise": null,
+   "ecran": true
+  },
+  {
    "cle": "prenom_affichage",
    "libelle": "Prénom",
    "forme": "affichage",
@@ -1320,6 +1359,7 @@
   {
    "note": "Le pseudonyme du certificat d'emploi de la caisse des Congés Spectacles (`documents::conges_spectacles`), et rien d'autre : aucune déclaration ne le porte.",
    "cle": "pseudonyme",
+   "avance": "cas_particulier",
    "libelle": "Pseudonyme",
    "forme": "texte",
    "aide": "Le nom de scène, s'il en a un.",
