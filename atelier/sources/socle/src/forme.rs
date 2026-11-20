@@ -1147,13 +1147,26 @@ fn garder_dans_le_geste(cle: (PathBuf, TypeId), f: Option<Forme>) {
 }
 
 /// Le geste vient d'ecrire ou d'effacer `chemin` (`ecriture::ecrire_json`, `ecriture::effacer`) : ce qu'il en avait lu
-/// ne vaut plus, il le relit.
+/// ne vaut plus, il le relit ; un calcul sur un dossier qui le contient (`une_fois_par_geste`) se refait.
 pub(crate) fn change_pendant_le_geste(chemin: &Path) {
     GESTE.with(|g| {
         if let Some(l) = g.borrow_mut().as_mut() {
-            l.retain(|(p, _), _| p != chemin);
+            l.retain(|(p, _), _| p != chemin && !chemin.starts_with(p));
         }
     });
+}
+
+/// UN CALCUL SUR CE QUE PORTE LE DOSSIER `dossier`, FAIT UNE FOIS PAR GESTE (`geste`), rangé par son type `T` : le
+/// premier appel du geste le fait, les suivants rendent le meme ; ce que le geste ecrit ou efface sous `dossier` le
+/// defait (`change_pendant_le_geste`). Hors d'un geste, il se fait a chaque appel. Un calcul qui echoue ne se garde pas.
+pub fn une_fois_par_geste<T: Send + Sync + 'static>(dossier: &Path, calcul: impl FnOnce() -> R<T>) -> R<Arc<T>> {
+    let cle = (dossier.to_path_buf(), TypeId::of::<T>());
+    if let Some(Some(f)) = GESTE.with(|g| g.borrow().as_ref().and_then(|l| l.get(&cle).cloned())) {
+        return f.downcast::<T>().map_err(|_| crate::echec::refus("Un calcul du geste n'a pas le type de sa lecture : le signaler au développeur."));
+    }
+    let t = Arc::new(calcul()?);
+    garder_dans_le_geste(cle, Some(t.clone()));
+    Ok(t)
 }
 
 /// UN GESTE (une route, l'etat d'un mois refait) LIT UNE FOIS ce que la compagnie porte et que `partagee` sert (les

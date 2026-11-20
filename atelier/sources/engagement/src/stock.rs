@@ -603,6 +603,19 @@ impl Objet {
         }
     }
 
+    /// LES TERMES DU CONTRAT A SON DERNIER AVENANT : ceux du premier mois, et chacun de ses avenants, du plus ancien au plus
+    /// recent. Un contrat sans avenant a les termes de son premier mois.
+    pub fn derniers_termes(&self) -> Carte {
+        let mut v = self.carte().du_groupe(&[Groupe::Terme]);
+        for a in self.avenants() {
+            v.recouvrir(&a.termes);
+            for c in &a.retires {
+                v.ote(*c);
+            }
+        }
+        v
+    }
+
     /// Les termes du contrat au `jour` : ceux du premier mois, et chaque avenant venu jusqu'a lui.
     fn termes_a(&self, jour: &Jour) -> Carte {
         let mut v = self.carte().du_groupe(&[Groupe::Terme]);

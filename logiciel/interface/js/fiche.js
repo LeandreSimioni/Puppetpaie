@@ -1032,12 +1032,18 @@ const CRAYON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 
    la boite de depot DSN disait « 210.80 € » a cote d'un apercu en
    « 1 053,08 € ». Ce qui n'est pas un nombre repart tel quel. */
 function euros(v) {
+  const c = enEuros(v, 2);
+  return c === v.toString().trim() ? c : c + " €";
+}
+
+/* LES CHIFFRES D'UN MONTANT, tels que `euros` les écrit (« 1 053,08 ») : deux décimales au moins, au plus `max` (sans
+   borne, aucune décimale saisie ne se perd : le montant d'une case). Ce qui n'est pas un nombre repart tel quel. */
+function enEuros(v, max = 20) {
   // Un montant absent ne se met pas en forme : il lève (`toString` d'un absent) ; ce qui peut manquer se teste avant.
   const t = v.toString().trim();
   const n = typeof v === "number" ? v : Number(t);
   if (t === "" || !isFinite(n)) return t;
-  return n.toLocaleString("fr-FR", { minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2 }) + " €";
+  return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: max });
 }
 
 function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIGINE) {

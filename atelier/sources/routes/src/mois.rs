@@ -33,7 +33,6 @@ use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
 use droit::natures::NatureDeContrat;
 use engagement::carte::{Brouillon, Changements};
-use engagement::ligne::CasesMontrees;
 use engagement::saisie::{Carte as SaisieCarte, RangDansLeMois, VueDuMois};
 use engagement::stock::Identite;
 use engagement::viser::Cible;
@@ -60,6 +59,16 @@ const MODIFICATIONS: Champ = Champ {
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Paie);
 
+/// Ce qui se vise (`engagement::viser::Cible`) : le net et le cout, chacun avec ou sans les indemnites de frais, et le brut.
+/// Le premier, le net a payer, est celui sur lequel la liste s'ouvre.
+const CIBLES: &[crate::catalogue::Choix] = &[
+    crate::catalogue::Choix { code: "net", libelle: Affiche::new("Net, indemnités comprises") },
+    crate::catalogue::Choix { code: "net_sans_frais", libelle: Affiche::new("Net, sans les indemnités") },
+    crate::catalogue::Choix { code: "brut", libelle: Affiche::new("Brut") },
+    crate::catalogue::Choix { code: "cout", libelle: Affiche::new("Coût, sans les indemnités") },
+    crate::catalogue::Choix { code: "cout_avec_frais", libelle: Affiche::new("Coût, indemnités comprises") },
+];
+
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
     Fiche {
@@ -67,7 +76,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), montrees (pour chacun, ce que les cases de ses lignes montrent : quantite, taux, heures), importes, ferme_aux_neufs, defauts (taux_cachet, et cachet_neuf : ce que les cases d'une ligne de cachet neuve montrent), nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -78,7 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; contrat.ecrits : les cases que son contrat écrit appelle, à remplir avant de le faire signer, et contrat.modeles : les modèles que sa case modele_contrat offre, null tant que sa nature n'est pas dite ; contrat.rupture : sa fin et si elle se signale, motif par motif, à compléter ou non ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; faits_avances : les cases « avancé » de la carte d'un contrat au mois qu'il appelle, `cases` de valider-engagement ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, le cadre, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -89,7 +98,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats d'un mois passé qui courent encore ce mois.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "contrats : chacun avec l'engagement qui le reprend, et montrees (ce que les cases de ses lignes montrent : quantite, taux, heures)",
+        rend: "contrats : chacun avec l'engagement qui le reprend",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -131,7 +140,7 @@ pub const ROUTES: &[Fiche] = &[
             super::engagement::CHANGEMENTS,
         ],
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
-        rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie), montrees (ce que les cases de ses lignes montrent : quantite, taux, heures), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
+        rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie ; chaque grandeur écrite par elle-même), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
         refus: &[OPERATION, FORME, MANQUE],
         acte: Acte::Ecrit,
         phrase: 0,
@@ -144,15 +153,21 @@ pub const ROUTES: &[Fiche] = &[
             MOIS,
             MODIFICATIONS,
             super::engagement::IDENTITE,
-            Champ { nom: "cible", libelle: Affiche::new("Net, brut ou coût"), forme: Forme::Texte, sens: "net, brut ou cout", avance: false },
+            Champ {
+                nom: "cible",
+                libelle: Affiche::new("Ce qui se vise"),
+                forme: Forme::Choix(CIBLES),
+                sens: "net (indemnités de frais comprises : repas, nuitées, défraiements), net_sans_frais, brut, cout (sans les indemnités) ou cout_avec_frais ; l'acompte reste retiré du net",
+                avance: false,
+            },
             Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
         ],
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
-        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent, et ce que la case de chacun montre : montree), paies ; rien n'est écrit",
+        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
         acte: Acte::Lit,
         phrase: 200,
-        ecran: ECRAN,
+        ecran: Ecran::DessineAvecBouton(Place::Paie, Affiche::new("Calculer")),
     },
 ];
 
@@ -239,15 +254,6 @@ struct SexeDeLaFiche {
 
 // ------------------------------------------------------------------ les reponses
 
-/// Ce que la page propose quand la saisie ne le dit pas : le taux d'une ligne de cachet neuve.
-#[derive(Debug, Serialize)]
-struct Defauts {
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-    taux_cachet: Option<MontantUnitaire>,
-    /// Ce que les cases d'une ligne de cachet neuve montrent : ce taux, ecrit (`engagement::ligne::CasesMontrees`).
-    cachet_neuf: CasesMontrees,
-}
-
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
 /// intermittents, un permanent s'ajoute rarement. Les natures qu'elle peut prendre sont celles que le mois propose
 /// (`engagement::permanents::Permanents::natures_neuves`) : un CDI ou un CDD neuf seulement quand la fiche Entreprise dit
@@ -257,13 +263,18 @@ struct Defauts {
 struct NouvelleCarte {
     nature: NatureDeContrat,
     natures: Vec<NatureDeContrat>,
-    nature_au_choix: bool,
+    /// Les cases qu'une carte neuve montre en plus de celles de sa nature : la nature, quand plus d'une se choisit ce mois.
+    cases: Vec<engagement::carte::CaseDecrite<crate::catalogue::Forme>>,
+    /// Ce qu'elles offrent, sous la cle de leur case : les natures qu'une carte neuve peut prendre ce mois.
+    choix: std::collections::BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
     /// L'aide d'un mois vide (`ouverture::AIDES`) : celle qui nomme le salaire mensuel d'un permanent quand le mois en
     /// propose ou en paie un.
     aide_vide: &'static str,
     /// Les rubriques qu'une carte neuve propose avant de nommer son salarie, nature par nature (`natures`) : celles de sa
     /// nature (`engagement::proposees`).
     propose: std::collections::BTreeMap<NatureDeContrat, engagement::proposees::Proposees>,
+    /// Ce qu'une carte neuve pre-remplit avant sa premiere paie (`Prerempli`) : ses lignes neuves.
+    prerempli: Prerempli,
 }
 
 /// LE MOIS TEL QUE L'ECRAN L'OUVRE (`saisie`).
@@ -276,7 +287,6 @@ struct SaisieDuMois {
     importes_titre: &'static str,
     importes_dit: String,
     ferme_aux_neufs: Option<String>,
-    defauts: Defauts,
     nouvelle_carte: NouvelleCarte,
     /// La vue du mois (`engagement::stock::vue_du_mois`), les lignes des permanents calculees (`avec_les_lignes_calculees_des_permanents`).
     saisie: VueDuMois,
@@ -285,9 +295,6 @@ struct SaisieDuMois {
     /// Ce qui manque a chaque engagement de `saisie.engagements` pour se lire, dans son ordre (`null` : rien) : la case
     /// de la fiche de son salarie, une saisie pas finie (`avec_les_lignes_calculees_des_permanents`).
     a_completer: Vec<Option<String>>,
-    /// Ce que les cases de chaque ligne de chaque engagement de `saisie.engagements` montrent, dans leur ordre
-    /// (`engagement::ligne::CasesMontrees`) : la page les pose telles quelles.
-    montrees: Vec<Vec<CasesMontrees>>,
 }
 
 /// Une carte ecrite (`enregistrer-saisie`).
@@ -297,8 +304,6 @@ struct CarteEcrite {
     engagement: Identite,
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
-    /// Ce que les cases de chacune de ses lignes montrent, dans leur ordre (`engagement::ligne::CasesMontrees`).
-    montrees: Vec<CasesMontrees>,
     a_completer: Option<String>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     enregistre_a: socle::paris::Moment,
@@ -318,8 +323,6 @@ struct EnCours {
     taux_cachet: Option<MontantUnitaire>,
     deja_repris: bool,
     engagement: Reprise,
-    /// Ce que les cases de chacune de ses lignes montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
-    montrees: [CasesMontrees; 1],
 }
 
 /// L'ENGAGEMENT D'UN CONTRAT EN COURS, pour le fichier du mois : le contrat tel qu'il a ete signe, et une ligne de
@@ -413,8 +416,6 @@ struct TauxQuiChange {
     taux_avant: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     taux: Option<MontantUnitaire>,
-    /// Ce que les cases de la ligne ajustee montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
-    montree: CasesMontrees,
 }
 
 /// Ce qui a change, pour l'engagement ajuste : son salaire du mois s'il change, ses lignes dont le taux change.
@@ -491,16 +492,23 @@ pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
 
 /// Le taux du cachet le plus recemment saisi : une ligne de cachet d'abord, le `taux_cachet` du mois a defaut ; `None` si
 /// aucun mois n'en dit rien -- aucun texte ne fixe un taux de cachet (regle 1, R12), la compagnie saisit le sien.
+/// Il se lit une fois par geste, dans la lecture du geste (`socle::forme::une_fois_par_geste`, sur le dossier de la
+/// compagnie) : le geste qui ecrit une carte le refait.
 pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<MontantUnitaire>> {
-    let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
-    mois.reverse();
-    for m in mois {
-        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, m)? else { continue };
-        if let Some(t) = taux_du_mois(ctx, &data)? {
-            return Ok(Some(t));
+    /// Le dernier taux de cachet du dossier, tel que le geste l'a lu.
+    struct DernierTaux(Option<MontantUnitaire>);
+    let lu = socle::forme::une_fois_par_geste(&ctx.racine, || -> R<DernierTaux> {
+        let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
+        mois.reverse();
+        for m in mois {
+            let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, m)? else { continue };
+            if let Some(t) = taux_du_mois(ctx, &data)? {
+                return Ok(DernierTaux(Some(t)));
+            }
         }
-    }
-    Ok(None)
+        Ok(DernierTaux(None))
+    })?;
+    Ok(lu.0)
 }
 
 /// Le taux du dernier cachet de la saisie `data`, sinon son `taux_cachet` (un taux nul ne dit rien).
@@ -575,7 +583,6 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     let mut out = Vec::new();
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
-        // Ce que ses cases en montrent, le moteur l'ecrit (`LignePaie::cases_montrees`).
         let quantite = l.paiement.quantite();
         let taux = match saisi {
             Some(t) => Some(t),
@@ -591,27 +598,24 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     Ok(out)
 }
 
-/// Ce que la page propose quand la saisie ne le dit pas : `taux_cachet`, le taux d'une ligne de cachet neuve, celui
-/// du dernier cachet de CE mois, sinon son `taux_cachet`, sinon le dernier taux saisi du dossier (`dernier_taux`),
-/// sinon rien (`null`).
-fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
-    let taux_cachet = match taux_du_mois(ctx, saisie)? {
-        Some(t) => Some(t),
-        None => dernier_taux(ctx)?,
-    };
-    Ok(Defauts { taux_cachet, cachet_neuf: CasesMontrees::d_un_taux(taux_cachet) })
-}
-
 /// La route `saisie`.
 fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let existe = engagement::stock::a_une_saisie(&ctx.racine, mois)?;
     // Un mois neuf s'ouvre VIDE, avec le dernier taux saisi (`squelette`) ; un mois que des engagements touchent, tel qu'ils
     // le montrent.
+    // Ce qui ne se pre-remplit pas ne ferme pas le mois : la phrase de la route le dit (`ne_se_preremplit`).
+    let mut ne_se_preremplit = Vec::new();
     let saisie = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(vue) => vue,
-        None => squelette(ctx, mois)?,
+        None => match squelette(ctx, mois) {
+            Ok(vue) => vue,
+            Err(e) => {
+                ne_se_preremplit.push(e.phrase);
+                VueDuMois::vide(mois)
+            }
+        },
     };
-    let defauts = defauts_de_la_saisie(ctx, &saisie)?;
+    let lignes_neuves = lignes_ou_vide(&lignes_preremplies(ctx, &saisie), &mut ne_se_preremplit);
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
@@ -623,20 +627,43 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         (None, true) => Phrase::fixe("Saisie chargée. L'enregistrement est automatique."),
         (None, false) => Phrase::fixe("Nouveau mois — l'enregistrement est automatique dès la première saisie."),
     };
+    let phrase = match ne_se_preremplit.is_empty() {
+        true => phrase,
+        false => Phrase::jointes([phrase, socle::phrase!("Le taux d'un cachet neuf ne se pré-remplit pas : {}", ne_se_preremplit.join(" "))], " "),
+    };
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
     let mut neuves = Vec::new();
+    let mut offertes = Vec::new();
     let mut propose = std::collections::BTreeMap::new();
     for n in p.natures_neuves()?.iter() {
         neuves.push(n.cle);
+        offertes.push(crate::ouverture::Choix::de(n.cle, &n.libelle));
         propose.insert(n.cle, engagement::proposees::proposees(ctx, Some(n.mensuelle()), None, None, &mois.premier_jour())?);
     }
+    // La case de la nature, quand plus d'une se choisit ce mois : de base, en tete de la carte.
+    let au_choix = neuves.len() > 1;
+    let nature = engagement::saisie::Champ::Nature;
     let nouvelle_carte = NouvelleCarte {
         nature: NatureDeContrat::CdduSpectacle,
-        nature_au_choix: neuves.len() > 1,
+        cases: if au_choix {
+            vec![engagement::carte::CaseDecrite {
+                cle: nature.nom(),
+                libelle: engagement::carte::libelle(nature),
+                exige: engagement::carte::Exige::Obligatoire,
+                forme: crate::catalogue::Forme::de_la_case(nature),
+                ouverte: engagement::carte::Ouverture::Toujours,
+                place: engagement::carte::PlaceDeLaCase::Base,
+            }]
+        } else {
+            Vec::new()
+        },
+        choix: if au_choix { std::collections::BTreeMap::from([(nature.nom(), offertes)]) } else { std::collections::BTreeMap::new() },
         natures: neuves,
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
         propose,
+        // Une carte neuve n'a pas encore de paie ni de carte rendue : seules ses lignes neuves se pre-remplissent.
+        prerempli: Prerempli { lignes: lignes_neuves, ..Prerempli::default() },
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
@@ -648,19 +675,13 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         importes_dit: format!("{} de l'ancien logiciel", socle::ecran::compte(n_importes, "engagement", "engagements")),
         importes,
         ferme_aux_neufs: ferme,
-        defauts,
         nouvelle_carte,
-        montrees: saisie.engagements.iter().map(|e| montrees(e.lignes())).collect(),
         saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
         a_completer,
     })
 }
 
-/// Ce que les cases des lignes `lignes` montrent, dans leur ordre.
-fn montrees(lignes: &[LignePaie]) -> Vec<CasesMontrees> {
-    lignes.iter().map(LignePaie::cases_montrees).collect()
-}
 // ------------------------------------------------------- les jours d'un engagement
 
 /// Les jours travailles d'un engagement brut, AAAA-MM-JJ, tries : ceux de ses lignes de travail
@@ -746,7 +767,6 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             taux_cachet,
             deja_repris: false,
             engagement,
-            montrees: [CasesMontrees::d_un_taux(taux)],
         });
     }
     let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
@@ -1091,6 +1111,28 @@ pub(crate) fn refuser_si_avant_la_premiere_embauche(ctx: &Contexte, mois: Mois) 
 /// mois, `engagement::stock::Objet::vue`) prend chaque changement dans l'ordre, tout ou rien (`Changements::appliquer`),
 /// puis s'ecrit entier (`ecrire_une_carte`). Rend l'identite de l'engagement ecrit, le brouillon tel qu'il est ecrit, et
 /// ce qui lui manque pour etre valide.
+/// LES METIERS QU'UNE CARTE CHOISIT : ceux de la compagnie (Configuration › Métiers, `metiers::metiers`), la liste que
+/// la route etat rend (`choix.metier`).
+pub(crate) fn metiers_de_la_compagnie(ctx: &Contexte) -> R<Vec<emplois::CodeEmploi>> {
+    Ok(crate::metiers::metiers(ctx)?.into_iter().map(|m| m.code).collect())
+}
+
+/// LE METIER QU'UNE CARTE DE CDDU ECRIT QUAND ELLE NOMME LE SALARIE `s` (`engagement::carte::Brouillon::preremplir_le_metier`) :
+/// celui de son dernier contrat (`engagement::carte::metier_du_dernier_contrat`, sans l'engagement `id` de la carte,
+/// deja ecrit) ; seulement un metier de la compagnie (`metiers` : ceux que la carte offre au choix). Sans dernier
+/// contrat qui en dise un, RIEN NE S'ECRIT : la paie applique l'emploi de la fiche du salarie, tel que la fiche le dit
+/// (ses statuts, sa PCS-ESE), et la case le montre (`Prerempli::metier`). Ecrire a sa place le metier du catalogue que
+/// nomme son code changerait la paie : le rejeu des fictives le montre. L'erreur dit pourquoi rien ne se pre-remplit :
+/// elle ne refuse rien.
+fn metier_a_preremplir(ctx: &Contexte, mois: Mois, id: Option<&Identite>, s: &IdSalarie, metiers: &[emplois::CodeEmploi]) -> R<Option<emplois::CodeEmploi>> {
+    let ecrit = match id {
+        Some(i) => Some(engagement::stock::designe(&ctx.racine, mois, i)?.1),
+        None => None,
+    };
+    let offert = |m: &emplois::CodeEmploi| metiers.contains(m);
+    Ok(engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, ecrit.as_ref())?.filter(offert))
+}
+
 fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let mois = c.mois;
     let _verrou = avant_d_ecrire(ctx, mois)?;
@@ -1098,7 +1140,19 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         CarteVisee::Neuve(n) => (Brouillon::neuf(n), None),
         CarteVisee::Ecrite(id) => (brouillon_ecrit(ctx, mois, &id)?, Some(id)),
     };
-    c.changements.appliquer(ctx, mois, &mut brouillon, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let nomme = c.changements.nomment_le_salarie();
+    let metiers = metiers_de_la_compagnie(ctx)?;
+    c.changements.appliquer(ctx, mois, &mut brouillon, &metiers, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
+    // Une carte qui nomme son salarie ecrit son metier, si elle n'en dit pas (`metier_a_preremplir`). Un pre-remplissage
+    // ne refuse jamais l'ecriture d'une carte : s'il ne se lit pas, la carte s'ecrit sans metier, et sa carte rendue dit
+    // pourquoi (`faute`, `carte_lue`).
+    if nomme {
+        if let Some(s) = brouillon.salarie_sans_metier().cloned() {
+            if let Ok(m) = metier_a_preremplir(ctx, mois, id.as_ref(), &s, &metiers) {
+                brouillon.preremplir_le_metier(m);
+            }
+        }
+    }
     let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, mois, &id)?;
     let (k, _) = engagement::stock::designe(&ctx.racine, mois, &id)?;
@@ -1112,7 +1166,6 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
             None => Phrase::fixe("Carte enregistrée."),
         },
         engagement: id,
-        montrees: montrees(brouillon.en_carte().lignes()),
         brouillon,
         a_completer,
         enregistre_dit: format!("Enregistré à {}", socle::paris::ecrit::heure_minute(a, ":")),
@@ -1256,7 +1309,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMo
             continue; // restee sans taux : rien a ecrire
         }
         if ta != tb {
-            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb, montree: b.cases_montrees() });
+            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
         }
     }
     let change = avant.salaire_mensuel != apres.salaire_mensuel;
@@ -1274,9 +1327,11 @@ fn salaire_qui_change<S: serde::Serializer>(s: &Option<Option<MontantUnitaire>>,
 /// Ce que la phrase du montant vise dit de la cible.
 fn cible_dite(c: Cible) -> &'static str {
     match c {
-        Cible::Net => "Net salarié",
+        Cible::Net => "Net salarié, indemnités comprises",
+        Cible::NetSansFrais => "Net salarié, sans les indemnités",
         Cible::Brut => "Brut",
-        Cible::Cout => "Coût entreprise",
+        Cible::Cout => "Coût entreprise, sans les indemnités",
+        Cible::CoutAvecFrais => "Coût entreprise, indemnités comprises",
     }
 }
 
@@ -1302,7 +1357,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         (Some(a), Some((b, p))) => (a, b, p),
         _ => return Err(socle::refus!("{} : l'engagement visé n'a pas de paie calculée.", texte)),
     };
-    let vue = vue_paie(ctx, paie, apres, &v.saisie)?;
+    let vue = vue_paie(ctx, paie, apres, &v.saisie, &lignes_preremplies(ctx, &v.saisie))?;
     let atteint = v.atteint.au_centime();
     let change = ce_qui_a_change(avant, apres, i);
     // Le taux qu'il faudrait : chaque ligne qui change, puis le salaire du mois s'il change.
@@ -1331,7 +1386,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         format!(" ({}{} : un taux se paie au centime)", if ecart > Montant::ZERO { "+" } else { "" }, socle::texte::euros(ecart))
     };
     Ok(Ajuste {
-        phrase: socle::phrase!("{} visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
+        phrase: socle::phrase!("{} : visé {} → {}{}{}.", cible_dite(c.cible), socle::texte::euros(vise), socle::texte::euros(atteint), pres, avec),
         cible: c.cible,
         vise,
         atteint,
@@ -1390,7 +1445,7 @@ fn mois_designe(ctx: &Contexte, mois: Mois, modifications: Vec<ModificationEnCou
             )));
         }
         let mut b = Brouillon::de_la_carte(&ecrit, &qui_de_la_carte(ctx, &ecrit)).map_err(|e| e.reclasser(Classe::Refuse))?;
-        m.changements.appliquer(ctx, mois, &mut b, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|e| e.reclasser(Classe::Refuse))?;
+        m.changements.appliquer(ctx, mois, &mut b, &metiers_de_la_compagnie(ctx)?, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|e| e.reclasser(Classe::Refuse))?;
         let saisie = engagement::stock::en_forme(&b.en_carte()).map_err(|e| e.reclasser(Classe::Refuse))?;
         // L'avenant du mois se deduit des termes dates de l'engagement ecrit (`stock::Objet::vue`) : le brouillon ne le
         // porte pas.
@@ -1465,17 +1520,37 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
 
 /// LA RUPTURE d'un engagement, telle que la page la propose (« Un imprévu… ») : le libelle de la porte et la fin du
 /// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets) ; si cette fin se signale, au motif
-/// par defaut et motif par motif (`Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un CDDU a son terme
-/// part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja declare, au
-/// calendrier : `ConnuDeLaDsn::du_contrat`) ; et le choix vide des motifs (le defaut d'une fin qui ne se signale pas). La
-/// page ne decide rien.
+/// que dit la carte (au motif par defaut sans lui ; `Nature::signalement_fctu`, avec ce que la DSN sait du contrat : un
+/// CDDU a son terme part dans la mensuelle s'il est infra DSN mensuelle, il se signale s'il est rompu avant ou deja
+/// declare, au calendrier : `ConnuDeLaDsn::du_contrat`) ; et le choix vide des motifs (le defaut d'une fin qui ne se
+/// signale pas), que la carte offre en tete de ses motifs (`CarteRendue`). La page ne decide rien.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Rupture {
     porte: &'static str,
     fin: Option<Jour>,
-    signalement_fctu: bool,
-    signalement_par_motif: BTreeMap<droit::natures::MotifDeRupture, bool>,
+    signalee: bool,
+    #[serde(skip)]
     motif_vide_dit: String,
+}
+
+/// LA FIN DU CONTRAT TELLE QUE LA ROUTE LA REND (`contrat.rupture`) : aucune (`null` : elle n'a pas de sens ici), la
+/// rupture lue, ou une rupture qui ne se lit pas (`illisible`, sa phrase). Celle-la n'est jamais rendue comme « pas de
+/// rupture » : la carte dit aussi ce qui ne se lit pas (`CarteRendue::faute`), et la page n'ouvre aucune fin qu'elle ne
+/// sait pas dire ; l'apercu des autres reste.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(crate) enum FinDuContrat {
+    Lue(Option<Rupture>),
+    Illisible { illisible: String },
+}
+
+impl FinDuContrat {
+    fn de(r: R<Option<Rupture>>) -> FinDuContrat {
+        match r {
+            Ok(r) => FinDuContrat::Lue(r),
+            Err(e) => FinDuContrat::Illisible { illisible: e.phrase },
+        }
+    }
 }
 
 /// LA RUPTURE de cet engagement : `None` quand elle n'a pas de sens ici -- une nature sans motif de rupture
@@ -1488,7 +1563,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
     let connu = droit::natures::ConnuDeLaDsn::du_contrat(e.contrat().debut(), e.mois);
     // Un contrat paye au mois (CDI, CDD) dit sa fin dans sa case : elle se tape, le mois ou elle a lieu.
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(rupture_pour(nat, connu, e.contrat().fin())));
+        return Ok(Some(rupture_pour(nat, connu, e.contrat().fin(), e.motif_rupture)));
     }
     // Un contrat aux cachets finit son dernier jour travaille ; le bloc 62 s'ecrit ce mois-la et lui seul (fiche n° 3344,
     // `fin_de_contrat` de `contrats-base.json`) : sa rupture se dit ce mois-la.
@@ -1499,7 +1574,7 @@ fn rupture_de(e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Opt
         Some(f) => f,
         None => e.periode_payee()?.fin(),
     };
-    Ok(Some(rupture_pour(nat, connu, Some(fin))))
+    Ok(Some(rupture_pour(nat, connu, Some(fin), e.motif_rupture)))
 }
 
 /// LA RUPTURE D'UNE CARTE QUI NE SE CALCULE PAS ENCORE (`a_completer`), lue sur sa saisie `e` du mois `mois` : le bloc de
@@ -1515,105 +1590,316 @@ fn rupture_en_saisie(e: &SaisieCarte, mois: Mois) -> R<Option<Rupture>> {
     }
     let connu = droit::natures::ConnuDeLaDsn::du_contrat(debut, mois);
     if nat.duree_indeterminee || nat.mensuelle() {
-        return Ok(Some(rupture_pour(&nat, connu, e.fin)));
+        return Ok(Some(rupture_pour(&nat, connu, e.fin, e.motif_rupture)));
     }
     match e.fin_lue() {
         Some(f) if f.mois_civil() > mois => Ok(None),
-        fin => Ok(Some(rupture_pour(&nat, connu, fin))),
+        fin => Ok(Some(rupture_pour(&nat, connu, fin, e.motif_rupture))),
     }
 }
 
-/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` : si cette fin se
-/// signale, au motif par defaut et motif par motif (`Nature::signalement_fctu`), et le choix vide des motifs.
-fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>) -> Rupture {
+/// La rupture d'un contrat de nature `nat`, que la DSN connait comme `connu`, qui finit le `fin` au motif `motif` : si
+/// cette fin se signale (`Nature::signalement_fctu`), et le choix vide des motifs.
+fn rupture_pour(nat: &droit::natures::Nature, connu: droit::natures::ConnuDeLaDsn, fin: Option<Jour>, motif: Option<droit::natures::MotifDeRupture>) -> Rupture {
     let porte = if nat.duree_indeterminee { "La fin du contrat (licenciement, démission…)" } else { "Une rupture avant terme" };
-    let signalement_par_motif = nat.motifs_rupture().iter().map(|m| (m.code, nat.signalement_fctu(Some(m.code), connu))).collect();
-    let signalement_fctu = nat.signalement_fctu(None, connu);
     let motif_vide_dit = match nat.motif_rupture_par_defaut() {
-        Some(d) if !signalement_fctu => format!("— {}, à son terme —", d),
+        Some(d) if !nat.signalement_fctu(None, connu) => format!("— {}, à son terme —", d),
         _ => "— à choisir —".to_string(),
     };
-    Rupture { porte, fin, signalement_fctu, signalement_par_motif, motif_vide_dit }
+    Rupture { porte, fin, signalee: nat.signalement_fctu(motif, connu), motif_vide_dit }
 }
 
 
-/// LA CASE DU NUMERO DEJA DECLARE EN DSN d'un contrat commence avant le logiciel : un numero ne se recalcule pas, il se lit
-/// (regle 4) ; celui que l'ancien logiciel a declare (S21.G00.40.009) reste le sien, la saisie le porte en `numero`
-/// (`engagement::numeros::a_la_validation` le garde). Vide, le logiciel en donne un.
-const NUMERO_DIT: &str = "numero";
-
-/// La case du numero, sauf pour un contrat dont une DSN de l'ancien logiciel a declare le numero : il est lu
-/// (`engagement::importe::numero_declare_du_contrat`), il ne se dit pas.
-fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<Vec<&'static str>> {
-    Ok(if engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)? { Vec::new() } else { vec![NUMERO_DIT] })
+/// CE QUE LE CONTRAT ECRIT DE CET ENGAGEMENT APPELLE SUR SA CARTE, les faits qui en ouvrent les cases
+/// (`engagement::carte::FaitQuiOuvre::{ContratEcrit, ModelesAuChoix, NumeroADire}`) :
+/// - `ecrit` : le contrat se fait signer ici (`engagement::contrat_a_signer`) ; sa carte dit sa periode d'essai et ses
+///   clauses particulieres (`engagement::ContratEcrit`) ;
+/// - `modeles` : la compagnie a des modeles speciaux de sa nature (`modeles_contrat::au_choix`) ;
+/// - `numero` : un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`), signe ailleurs,
+///   dont aucune DSN importee ne dit le numero (`engagement::importe::numero_declare_du_contrat`) : un numero ne se
+///   recalcule pas, il se lit (regle 4) ; celui que l'ancien logiciel a declare (S21.G00.40.009) se dit dans sa case
+///   (`engagement::numeros::a_la_validation` le garde). Vide, le logiciel en donne un.
+#[derive(Debug, Clone, Copy, Default)]
+struct ContratAppelle {
+    ecrit: bool,
+    modeles: bool,
+    numero: bool,
 }
 
-/// LES CASES DU CONTRAT ECRIT QUE CET ENGAGEMENT APPELLE (`engagement::ContratEcrit`), et elles seules : la
-/// periode d'essai et les clauses particulieres de tout contrat ecrit, son modele quand la compagnie a des modeles
-/// speciaux de sa nature (`modeles_contrat::au_choix`) ; la personne remplacee d'un CDD de remplacement
-/// (L1242-12, 1° ; `Nature::motif_de_remplacement`) ; la repartition des horaires d'un temps partiel (L3123-6, 1° : la
-/// modalite 20 de S21.G00.40.014, `Engagement::modalite_temps_travail`). Un engagement dont le contrat ne se fait pas
-/// signer ici (`engagement::contrat_a_signer`) n'en a aucune.
-/// Un contrat commence avant le logiciel (`engagement::stock::commence_avant_le_logiciel`) a ete signe ailleurs : il
-/// n'appelle que la case de son numero deja declare en DSN (`NUMERO_DIT`).
-fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<Vec<&'static str>> {
+/// Ce qu'appelle le contrat d'un contrat commence avant le logiciel : la case de son numero, s'il n'est pas deja lu.
+fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<ContratAppelle> {
+    Ok(ContratAppelle { numero: !engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)?, ..ContratAppelle::default() })
+}
+
+/// `ContratAppelle` d'un engagement calcule `e`, de nature `nat`.
+fn contrat_appelle(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natures::Nature) -> R<ContratAppelle> {
     if engagement::stock::commence_avant_le_logiciel(&ctx.racine, e.contrat().debut(), e.mois)? {
         return numero_a_dire(ctx, &e.salarie, e.contrat().debut());
     }
     if !engagement::contrat_a_signer(&ctx.racine, e)? {
-        return Ok(Vec::new());
+        return Ok(ContratAppelle::default());
     }
-    let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
-        v.push("personne_remplacee");
-    }
-    if nat.mensuelle() && e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel {
-        v.push("repartition_horaire");
-    }
-    v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
-        v.push("modele_contrat");
-    }
-    Ok(v)
+    Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty(), numero: false })
 }
 
-/// `champs_du_contrat_ecrit` d'un engagement qui ne se calcule pas encore (`a_completer`), lu sur sa saisie `e` : la
-/// periode d'essai et les clauses se disent avant que le reste soit complet. La repartition des horaires attend la
-/// duree du travail calculee.
-/// Une carte qui ne nomme pas encore son salarie ou sa nature n'appelle encore aucune case.
-fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<Vec<&'static str>> {
-    Ok(e.salarie.as_ref().map(|cle| champs_du_contrat_de(ctx, e, cle, mois)).transpose()?.into_iter().flatten().collect())
-}
-
-fn champs_du_contrat_de(ctx: &Contexte, e: &SaisieCarte, cle: &IdSalarie, mois: Mois) -> R<Vec<&'static str>> {
+/// `ContratAppelle` d'un engagement qui ne se calcule pas encore (`a_completer`), lu sur sa saisie `e` de `mois` : la
+/// periode d'essai et les clauses se disent avant que le reste soit complet. Une carte qui ne nomme pas encore son
+/// salarie ou sa nature n'appelle encore rien ; un contrat repris d'un ancien logiciel (sa date de debut dite) ne se
+/// refait pas.
+fn contrat_appelle_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<ContratAppelle> {
+    let Some(cle) = e.salarie.as_ref() else { return Ok(ContratAppelle::default()) };
     let debut = e.debut_lu();
     if let Some(d) = debut {
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {
             return numero_a_dire(ctx, cle, d);
         }
     }
-    if e.nature.is_none() {
-        return Ok(Vec::new());
+    let Some(n) = e.nature else { return Ok(ContratAppelle::default()) };
+    if n.proprietes()?.modele_contrat().is_none() {
+        return Ok(ContratAppelle::default());
     }
-    let nat = e.nature_lue()?;
-    if nat.modele_contrat().is_none() {
-        return Ok(Vec::new());
-    }
-    // Un contrat repris d'un ancien logiciel (sa date de debut dite) ne se refait pas.
     if let Some(d) = debut {
         if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
-            return Ok(Vec::new());
+            return Ok(ContratAppelle::default());
         }
     }
-    let mut v = vec!["periode_essai_jours"];
-    if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
-        v.push("personne_remplacee");
+    Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, n)?.is_empty(), numero: false })
+}
+
+/// LA CARTE D'UN ENGAGEMENT TELLE QUE LA ROUTE LA REND : les cases ouvertes pour lui, chacune sa place
+/// (`engagement::carte::CarteValide::cases_ouvertes`), ce qu'offrent celles de ses cases a choix qui dependent de lui
+/// (le motif de la fin, le choix vide dit en tete ; les modeles de contrat), sous la cle de leur case, et ce qui
+/// pre-remplit une case qu'il ne dit pas (`Prerempli`). Un fait qui ne se lit pas pour lui ne ferme ni sa carte ni
+/// l'apercu des autres (« le logiciel est doux ») : sa carte montre ses cases de toujours et dit ce qui ne se lit pas
+/// (`faute`).
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct CarteRendue {
+    cases: Vec<engagement::carte::CaseOuverte>,
+    choix: BTreeMap<&'static str, Vec<crate::ouverture::Choix>>,
+    prerempli: Prerempli,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    faute: Option<String>,
+}
+
+/// CE QUE LA ROUTE POSE DANS UNE CASE QUE LA CARTE NE DIT PAS, le seul pre-remplissage d'une carte : ce que le moteur
+/// prend pour elle quand elle est vide. La carte le montre, il ne s'ecrit pas tant qu'on ne le change pas ; `None` : la
+/// carte le dit, ou le moteur ne le sait pas (encore).
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct Prerempli {
+    /// Le jour du versement que dit la configuration (`Engagement::date_du_versement`).
+    date_paiement: Option<Jour>,
+    /// Le debut du contrat, que ses jours coches disent (`Engagement::contrat` ; a completer, `debut_lu`) : la porte
+    /// « Imprévu… » le lit (le debut d'un contrat dont la fin se dit). La fin et les jours se lisent dans `contrat_dit`.
+    debut: Option<Jour>,
+    /// Le metier que la paie applique quand la carte n'en dit pas : celui que nomme le code emploi de la fiche du
+    /// salarie (`droit::emplois::CodeEmploi::du_code_declare`, `engagement::lib` : sans metier sur la carte, l'emploi est
+    /// celui de la fiche). Montre, il ne s'ecrit que si on le choisit.
+    metier: Option<droit::emplois::CodeEmploi>,
+    /// CADRE OU NON, ce que la paie prend sans la case : ce que le catalogue dit du metier ecrit sur la carte, sous la
+    /// convention de la compagnie (`Metier::cadre_par_defaut` ; rien hors du catalogue). La case ne s'ouvre qu'avec un
+    /// metier ecrit (`FaitQuiOuvre::MetierEcrit`) : la meme regle, que la carte soit calculee ou a completer. Rendu meme
+    /// quand la carte le dit : un oui-non pre-rempli se change dans les deux sens, et revenir au pre-rempli n'ecrit rien.
+    cadre: Option<bool>,
+    /// CE QU'UNE LIGNE NEUVE DE CHAQUE RUBRIQUE PREND, sous son code (`lignes_preremplies`) : une ligne de cachet, le
+    /// taux du cachet du mois ou du dossier.
+    lignes: LignesPreremplies,
+}
+
+/// Ce qu'une ligne neuve de chaque rubrique prend, sous son code (`Prerempli::lignes`).
+pub(crate) type LignesPreremplies = BTreeMap<droit::catalogue::CodeDeRubrique, LignePreremplie>;
+
+/// Ce qu'une ligne neuve d'une rubrique prend (`Prerempli::lignes`), sous la cle de la ligne : son taux.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LignePreremplie {
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    taux: MontantUnitaire,
+}
+
+/// LE TAUX D'UNE LIGNE DE CACHET NEUVE, un pre-remplissage : celui du dernier cachet du mois `data`, sinon le dernier
+/// taux saisi du dossier (`dernier_taux`) ; rien quand aucun cachet n'en dit (regle 1 : aucun texte ne fixe un taux de
+/// cachet, la compagnie saisit le sien). Chaque rubrique de cachet du catalogue de la compagnie le prend. Un mois du
+/// dossier qui ne se lit pas fait la faute de chaque carte (`CarteRendue::faute`, par `Prerempli`), pas de l'apercu.
+pub(crate) fn lignes_preremplies(ctx: &Contexte, data: &VueDuMois) -> R<LignesPreremplies> {
+    let taux = match taux_du_mois(ctx, data)? {
+        Some(t) => t,
+        None => match dernier_taux(ctx)? {
+            Some(t) => t,
+            None => return Ok(BTreeMap::new()),
+        },
+    };
+    Ok(droit::catalogue::catalogue(&ctx.racine, &data.mois.premier_jour())?
+        .iter()
+        .filter(|r| r.unite == droit::catalogue::Unite::Cachet)
+        .map(|r| (r.code.clone(), LignePreremplie { taux }))
+        .collect())
+}
+
+/// LES BORNES ET LES JOURS DU CONTRAT, tels qu'ils se lisent une fois, sous les lignes de la carte (`contrat_dit`) :
+/// « Du 04/12/2026 au 05/12/2026 · 2 jours travaillés ». Ce sont les cases que la carte rend sans les faire saisir
+/// (`PlaceDeLaCase::Rendue` : le debut, la fin, les jours travailles), lues la et nulle part ailleurs. Un contrat sans
+/// fin se dit par son debut, et `sans_terme` (un contrat paye au mois) le dit ; `jours` : ceux que la DSN declare, quand
+/// la paie les connait.
+fn bornes_dites(debut: Jour, fin: Option<Jour>, sans_terme: bool, jours: Option<Jours>) -> String {
+    let mut t = match fin {
+        Some(f) => format!("Du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
+        None if sans_terme => format!("Du {}, sans terme", debut.jj_mm_aaaa()),
+        None => format!("Du {}", debut.jj_mm_aaaa()),
+    };
+    if let Some(j) = jours {
+        let mot = if j > Jours::de_dates(1) { "jours travaillés" } else { "jour travaillé" };
+        t.push_str(&format!(" · {} {}", socle::texte::virgule(j), mot));
     }
-    v.push("clauses_particulieres");
-    if !crate::modeles_contrat::au_choix(ctx, nat.cle)?.is_empty() {
-        v.push("modele_contrat");
+    t
+}
+
+/// Le metier que nomme le code emploi `code` d'une fiche (`Prerempli::metier`).
+fn metier_de_la_fiche(code: Option<&droit::fiche::CodeEmploiFt>) -> R<Option<droit::emplois::CodeEmploi>> {
+    match code {
+        Some(c) => droit::emplois::CodeEmploi::du_code_declare(c),
+        None => Ok(None),
     }
-    Ok(v)
+}
+
+/// CE QUE LE MOTEUR SAIT D'UN ENGAGEMENT ET QUE SA CARTE LIT (`carte_rendue`), chaque chose telle qu'elle se lit : une qui
+/// ne se lit pas fait la `faute` de sa carte, et d'elle seule.
+struct CeQueLeMoteurSait<'a> {
+    contrat: R<ContratAppelle>,
+    rupture: &'a R<Option<Rupture>>,
+    /// La modalite du temps de travail d'un contrat paye au mois, qui ouvre ses heures en plus
+    /// (`FaitQuiOuvre::{TempsPlein, TempsPartiel}`) ; `None` pour un autre.
+    temps: R<Option<droit::natures::ModaliteDuTempsDeTravail>>,
+    /// Son pre-remplissage, chaque case le sien : un qui ne se lit pas laisse sa case vide (`ou_vide`).
+    prerempli: Prerempli,
+    /// Pourquoi une case ne se pre-remplit pas : la `faute` de la carte le dit, et aucune case ne se ferme pour lui.
+    ne_se_preremplit: Vec<String>,
+}
+
+/// UN PRE-REMPLISSAGE QUI NE SE LIT PAS LAISSE SA CASE VIDE, et rien d'autre ne bouge : sa raison va a `fautes`
+/// (`CeQueLeMoteurSait::ne_se_preremplit`, que la carte dit dans sa `faute`).
+fn ou_vide<T>(r: R<Option<T>>, fautes: &mut Vec<String>) -> Option<T> {
+    match r {
+        Ok(v) => v,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    }
+}
+
+/// Ce qu'une ligne neuve prend, pour une carte (`ou_vide`) : rien quand il ne se lit pas, et sa raison va a `fautes`.
+fn lignes_ou_vide(lignes: &R<LignesPreremplies>, fautes: &mut Vec<String>) -> LignesPreremplies {
+    match lignes {
+        Ok(l) => l.clone(),
+        Err(e) => {
+            fautes.push(e.phrase.clone());
+            BTreeMap::new()
+        }
+    }
+}
+
+/// POURQUOI UNE CARTE DE CDDU QUI NE DIT PAS SON METIER N'A PAS RECU CELUI DU DERNIER CONTRAT DE SON SALARIE, quand il ne
+/// se lit pas (`metier_a_preremplir`, qui n'ecrit alors rien et ne refuse rien) : la carte le dit dans sa `faute`.
+fn metier_du_dernier_contrat_illisible(ctx: &Contexte, e: &SaisieCarte, fautes: &mut Vec<String>) {
+    let (Some(NatureDeContrat::CdduSpectacle), None, Some(s)) = (e.nature, &e.metier, &e.salarie) else { return };
+    if let Err(m) = engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, None) {
+        fautes.push(format!("Le métier du dernier contrat ne se lit pas, la carte ne le reprend pas : {}", m.phrase));
+    }
+}
+
+/// LA CARTE RENDUE DE LA SAISIE `e` (`CarteRendue`). Ses cases se lisent des faits ; un fait qui ne se lit pas ne laisse
+/// que les cases de toute carte, et le dit (`faute`), avec ce qui ne se pre-remplit pas.
+fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, sait: CeQueLeMoteurSait) -> CarteRendue {
+    let Some(n) = e.nature else {
+        return CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli::default(), faute: None };
+    };
+    let CeQueLeMoteurSait { contrat, rupture, temps, prerempli, ne_se_preremplit } = sait;
+    let dite = |avant: Option<String>| -> Option<String> {
+        let toutes: Vec<String> = avant.into_iter().chain(ne_se_preremplit.iter().cloned()).collect();
+        (!toutes.is_empty()).then(|| toutes.join(" "))
+    };
+    match carte_lue(ctx, e, n, contrat, rupture, temps) {
+        Ok((cases, choix)) => CarteRendue { cases, choix, prerempli, faute: dite(None) },
+        Err(faute) => CarteRendue {
+            cases: engagement::carte::CarteValide::cases_toujours_ouvertes(n),
+            choix: BTreeMap::new(),
+            prerempli,
+            faute: dite(Some(faute.phrase)),
+        },
+    }
+}
+
+/// Les choix des cases d'une carte qui dependent d'elle, sous la cle de leur case.
+type ChoixDeLaCarte = BTreeMap<&'static str, Vec<crate::ouverture::Choix>>;
+
+/// Les cases ouvertes de la carte `e` de nature `n`, lues des faits que le moteur sait d'elle
+/// (`engagement::carte::FaitQuiOuvre`) : la configuration (ses etablissements), ce que son contrat ecrit appelle, sa fin
+/// ce mois (`rupture`), son motif et son preavis, sa duree du travail, son metier ecrit, son origine (une paie
+/// importee) ; et les choix qui dependent d'elle.
+fn carte_lue(
+    ctx: &Contexte,
+    e: &SaisieCarte,
+    n: droit::natures::NatureDeContrat,
+    contrat: R<ContratAppelle>,
+    rupture: &R<Option<Rupture>>,
+    temps: R<Option<droit::natures::ModaliteDuTempsDeTravail>>,
+) -> R<(Vec<engagement::carte::CaseOuverte>, ChoixDeLaCarte)> {
+    use engagement::carte::FaitQuiOuvre as F;
+    let nat = n.proprietes()?;
+    let rupture = rupture.as_ref().map_err(Clone::clone)?.as_ref();
+    let contrat = contrat?;
+    let temps = temps?;
+    let fin_ce_mois = rupture.is_some();
+    let faits = droit::permanents::faits_de_rupture(&nat, e.motif_rupture)?;
+    let plusieurs = crate::ouverture::choix_d_etablissement(ctx)?.is_some();
+    let non_effectue = match &e.preavis {
+        Some(p) => declarations::fctu::preavis_non_effectue(p.genre)?,
+        None => false,
+    };
+    // Le temps partiel (modalite 20) dit des heures complementaires (L. 3123-20) ; les autres modalites, des heures
+    // supplementaires, comme le calcul les lit (`engagement::heures_en_plus::lignes`).
+    use droit::natures::ModaliteDuTempsDeTravail::TempsPartiel;
+    let plein = temps.is_some_and(|m| m != TempsPartiel);
+    let partiel = temps == Some(TempsPartiel);
+    let par_semaine = plein && engagement::heures_en_plus::decomptees_par_semaine(ctx)?;
+    let vrai = |f: F| -> R<bool> {
+        Ok(match f {
+            F::PlusieursEtablissements => plusieurs,
+            F::ContratEcrit => contrat.ecrit,
+            F::ModelesAuChoix => contrat.modeles,
+            F::NumeroADire => contrat.numero,
+            F::FinCeMois => fin_ce_mois,
+            F::MotifAvantTerme => fin_ce_mois && e.motif_rupture.is_some_and(|m| Some(m) != nat.motif_rupture_par_defaut()),
+            F::DuMotif(fait) => fin_ce_mois && faits.contains(&fait),
+            F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
+            F::PreavisNonEffectue => fin_ce_mois && non_effectue,
+            F::Importee => e.importe == Some(true),
+            F::MetierEcrit => e.metier.is_some(),
+            F::TempsPlein => plein,
+            F::HeuresDecompteesParSemaine => par_semaine,
+            F::TempsPartiel => partiel,
+        })
+    };
+    let cases = engagement::carte::CarteValide::cases_ouvertes(n, &vrai)?;
+    let ouverte = |c: engagement::saisie::Champ| cases.iter().any(|x| x.cle == c);
+    let mut choix = BTreeMap::new();
+    if let (true, Some(r)) = (ouverte(engagement::saisie::Champ::MotifRupture), rupture) {
+        let vide = crate::ouverture::Choix::de("", &r.motif_vide_dit);
+        let motifs = nat.motifs_rupture().iter().map(|m| crate::ouverture::Choix::de(m.code, &m.libelle).disant(m.dit.clone()));
+        choix.insert(engagement::saisie::Champ::MotifRupture.nom(), std::iter::once(vide).chain(motifs).collect());
+    }
+    if ouverte(engagement::saisie::Champ::ModeleContrat) {
+        choix.insert(engagement::saisie::Champ::ModeleContrat.nom(), crate::modeles_contrat::au_choix(ctx, n)?.iter().map(|m| m.en_choix()).collect());
+    }
+    Ok((cases, choix))
+}
+
+/// Ce que le catalogue dit du metier de la carte `e` sous la convention de la compagnie (`Metier::cadre_par_defaut`,
+/// `Prerempli::cadre`) ; rien sans metier, ou pour un metier hors du catalogue.
+fn cadre_du_metier(ctx: &Contexte, e: &SaisieCarte) -> R<Option<bool>> {
+    Ok(match &e.metier {
+        Some(m) => m.metier()?.cadre_par_defaut(ctx.entreprise.idcc.dite()),
+        None => None,
+    })
 }
 
 /// Le salarie d'une paie a l'ecran : sa cle, son nom, son prenom (celui d'usage s'il en a un).
@@ -1656,10 +1942,7 @@ pub(crate) struct ContratVu {
     jusqu_a: Mois,
     /// La periode de paie du contrat dans le mois.
     periode: socle::date::Periode,
-    ecrits: Vec<&'static str>,
-    /// Les modeles de contrat que sa case `modele_contrat` offre (`modeles_contrat::au_choix`).
-    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
-    rupture: Option<Rupture>,
+    rupture: FinDuContrat,
 }
 
 /// Une case qu'une ligne de frais appelle : le rang de la ligne dans la saisie, la case, ce qu'elle dit, son aide.
@@ -1697,6 +1980,8 @@ pub(crate) struct EmploiVu {
 /// UNE PAIE POUR L'ECRAN (`apercu`, `ajuster`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct VuePaie {
+    /// Les cases que sa carte ouvre, et leur place (`carte_rendue`).
+    carte: CarteRendue,
     resolu_dit: String,
     contrat_dit: String,
     /// Ce que la carte validee dit de la paie : ce qu'elle paye, en bref, son bulletin.
@@ -1719,7 +2004,6 @@ pub(crate) struct VuePaie {
     taux_cachet: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::option::serialize")]
     heures: Option<Heures>,
-    faits_avances: Vec<&'static str>,
     /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).
     propose: engagement::proposees::Proposees,
     cases: Vec<CaseDeFrais>,
@@ -1750,8 +2034,9 @@ pub(crate) struct VuePaie {
     a_dire: Option<[declarations::demarrage::Manque; 1]>,
 }
 
-/// Une paie pour l'ecran. `brut` : la carte de l'engagement ; `data` : la saisie du mois (son `taux_cachet`).
-pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueDuMois) -> R<VuePaie> {
+/// Une paie pour l'ecran. `brut` : la carte de l'engagement ; `data` : la saisie du mois (son `taux_cachet`) ; `lignes` :
+/// ce qu'une ligne neuve prend (`lignes_preremplies`), lu une fois pour le mois.
+pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueDuMois, lignes: &R<LignesPreremplies>) -> R<VuePaie> {
     let e = &p.engagement;
     let nat = e.nat()?;
     let s = &p.salarie;
@@ -1772,8 +2057,8 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         None => None,
     };
     let mois_du_contrat = e.mois_du_contrat()?;
-    // Le taux du cachet, tel que le contrat l'imprime : celui de la premiere ligne a l'unite « cachet » ; sans cachet, la
-    // valeur ecrite, telle quelle, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
+    // Le taux du cachet, tel que le contrat l'imprime : celui de la premiere ligne a l'unite « cachet » ; sans cachet, le
+    // cachet par defaut du mois, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
     let mut premier_cachet = None;
     for l in &e.lignes {
         if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite == droit::catalogue::Unite::Cachet {
@@ -1783,7 +2068,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     }
     let taux_cachet = match premier_cachet {
         Some(l) => Some(l.taux().and_then(engagement::ligne::TauxDeLigne::par_unite).ok_or_else(|| socle::fichiers::manque("taux"))?),
-        None => brut.taux_cachet.or(data.taux_cachet),
+        None => data.taux_cachet,
     };
     let lieu = brut.lieu.clone();
     // Le net paye : le net a payer moins le prelevement a la source que la validation a calcule ; une paie que rien n'a
@@ -1818,15 +2103,11 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         m.push(format!("brut {}", socle::texte::euros(p.brut)));
         m.join(" · ")
     };
-    // LA LIGNE REPLIEE DU CONTRAT : ses bornes, son numero, et ce qu'il fait par rapport au mois (en cours depuis un
-    // mois passe, se poursuit au mois suivant) ; un contrat sans terme se dit par son debut.
+    // LA LIGNE DU CONTRAT, SOUS SES LIGNES DE PAIE : ses bornes et ses jours travailles (`bornes_dites`), son numero, et
+    // ce qu'il fait par rapport au mois (en cours depuis un mois passe, se poursuit au mois suivant).
     let contrat_dit = {
         let debut = e.contrat().debut();
-        let mut t = match e.contrat().fin() {
-            Some(f) => format!("Contrat du {} au {}", debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
-            None if nat.mensuelle() => format!("Contrat du {}, sans terme", debut.jj_mm_aaaa()),
-            None => format!("Contrat du {}", debut.jj_mm_aaaa()),
-        };
+        let mut t = bornes_dites(debut, e.contrat().fin(), nat.mensuelle(), Some(e.jours));
         if let Some(n) = &e.numero {
             t.push_str(&format!(" · n° {}", n));
         }
@@ -1842,7 +2123,29 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         t
     };
     let trop_courte = || socle::echec::refus(socle::fichiers::trop_courte("les mois du contrat"));
+    let rupture = rupture_de(e, &nat);
+    let temps = || -> R<Option<droit::natures::ModaliteDuTempsDeTravail>> {
+        if !nat.mensuelle() {
+            return Ok(None);
+        }
+        Ok(Some(e.modalite_temps_travail()?))
+    };
+    let mut ne_se_preremplit = Vec::new();
+    let f = &mut ne_se_preremplit;
+    let prerempli = Prerempli {
+        date_paiement: if brut.date_paiement.is_none() { ou_vide(e.date_du_versement().map(Some), f) } else { None },
+        debut: brut.debut.is_none().then(|| e.contrat().debut()),
+        // Sans metier sur la carte, la paie prend l'emploi de la fiche (`s`, qu'aucune case de la carte ne change).
+        metier: if brut.metier.is_none() { ou_vide(metier_de_la_fiche(s.code_emploi_ft.dite()), f) } else { None },
+        cadre: ou_vide(cadre_du_metier(ctx, brut), f),
+        lignes: lignes_ou_vide(lignes, f),
+    };
+    metier_du_dernier_contrat_illisible(ctx, brut, &mut ne_se_preremplit);
+    let sait = CeQueLeMoteurSait { contrat: contrat_appelle(ctx, e, &nat), rupture: &rupture, temps: temps(), prerempli, ne_se_preremplit };
+    let carte = carte_rendue(ctx, brut, sait);
+    let rupture = FinDuContrat::de(rupture);
     Ok(VuePaie {
+        carte,
         resolu_dit,
         contrat_dit,
         paye_dit: p.paye_en_bref(),
@@ -1860,17 +2163,12 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
             depuis: mois_du_contrat.first().copied().ok_or_else(trop_courte)?,
             jusqu_a: mois_du_contrat.last().copied().ok_or_else(trop_courte)?,
             periode: e.periode_payee()?,
-            ecrits: champs_du_contrat_ecrit(ctx, e, &nat)?,
-            modeles: crate::modeles_contrat::au_choix(ctx, nat.cle)?,
-            rupture: rupture_de(e, &nat)?,
+            rupture,
         },
         dates_travail: e.dates_travail.clone(),
         cachets: e.cachets,
         taux_cachet,
         heures: e.heures,
-        // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
-        // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
-        faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
         propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.dite(), &data.mois.premier_jour())?,
@@ -2018,14 +2316,16 @@ struct ParSalarie {
 struct PaieACompleter {
     a_completer: String,
     salarie: CleEcrite,
-    /// Ses dates, les cases de sa saisie, chacune facultative (`engagement::Assemble`) : son debut lu
-    /// (`Carte::debut_lu`) et sa fin ecrite ; une carte a completer peut ecrire une fin avant son debut, c'est alors ce
-    /// qui lui manque (`a_completer`).
-    debut_lu: Option<Jour>,
-    fin_ecrite: Option<Jour>,
     avertissements: [String; 0],
     informations: [String; 0],
     contrat: EcritsSeuls,
+    /// Ses bornes, lues de ce que sa carte dit ou de ses jours coches (`bornes_dites`, sans ses jours travailles que la
+    /// paie seule connait) ; rien tant qu'elle ne dit pas son debut.
+    contrat_dit: Option<String>,
+    /// Les cases que sa carte ouvre deja, lues sur sa saisie (`carte_rendue`) ; son debut et sa fin lus de ses jours
+    /// (`prerempli`) : une carte a completer peut ecrire une fin avant son debut, c'est alors ce qui lui manque
+    /// (`a_completer`).
+    carte: CarteRendue,
     /// Les rubriques que sa carte propose deja, lues sur sa saisie (`engagement::proposees::de_la_carte`).
     propose: engagement::proposees::Proposees,
 }
@@ -2038,12 +2338,8 @@ struct CleEcrite {
 
 #[derive(Debug, Serialize)]
 struct EcritsSeuls {
-    ecrits: Vec<&'static str>,
-    /// Les modeles que sa case `modele_contrat` offre ; vide tant que la carte ne dit pas sa nature : les modeles sont
-    /// ceux d'une nature.
-    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
     /// Sa rupture, lue sur sa saisie (`rupture_en_saisie`) : le bloc de fin se dessine avant que la paie se calcule.
-    rupture: Option<Rupture>,
+    rupture: FinDuContrat,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2244,7 +2540,8 @@ fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie
 
 /// Les paies de l'apercu de `data`, une par engagement, dans son ordre.
 fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
-    let refus = match apercu_de(ctx, data) {
+    let lignes = &lignes_preremplies(ctx, data);
+    let refus = match apercu_de(ctx, data, lignes) {
         Ok(c) => return Ok(c),
         Err(refus) => refus,
     };
@@ -2254,7 +2551,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     }
     let tous = &data.engagements;
     let complete = VueDuMois { engagements: tous.iter().zip(&manques).filter(|(_, m)| m.is_none()).map(|(e, _)| e.clone()).collect(), ..data.clone() };
-    let mut r = apercu_de(ctx, &complete)?;
+    let mut r = apercu_de(ctx, &complete, lignes)?;
     let mut calculees = std::mem::take(&mut r.paies).into_iter();
     let mut calcules = std::mem::take(&mut r.blocs).into_iter();
     let mois = data.mois;
@@ -2265,18 +2562,32 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 r.blocs.push(calcules.next().flatten());
             }
             Some(m) => {
+                let rupture = rupture_en_saisie(e, mois);
+                // Rien ne pre-remplit le jour du versement tant que la paie ne se calcule pas : le debut est celui que
+                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme ; le cadre, celui du
+                // metier qu'elle ecrit (la meme regle qu'une carte calculee).
+                let mut ne_se_preremplit = Vec::new();
+                let f = &mut ne_se_preremplit;
+                let fiche = e.salarie.as_ref().and_then(|s| ctx.salaries.get(s));
+                let prerempli = Prerempli {
+                    debut: if e.debut.is_none() { e.debut_lu() } else { None },
+                    metier: if e.metier.is_none() { ou_vide(metier_de_la_fiche(fiche.and_then(|x| x.code_emploi_ft.dite())), f) } else { None },
+                    cadre: ou_vide(cadre_du_metier(ctx, e), f),
+                    lignes: lignes_ou_vide(lignes, f),
+                    ..Prerempli::default()
+                };
+                metier_du_dernier_contrat_illisible(ctx, e, &mut ne_se_preremplit);
+                let sait = CeQueLeMoteurSait { contrat: contrat_appelle_en_saisie(ctx, e, mois), rupture: &rupture, temps: Ok(None), prerempli, ne_se_preremplit };
+                let carte = carte_rendue(ctx, e, sait);
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
+                    carte,
                     a_completer: m.phrase.clone(),
                     salarie: CleEcrite { cle: e.salarie.clone() },
-                    debut_lu: e.debut_lu(),
-                    fin_ecrite: e.fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls {
-                        ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?,
-                        modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() },
-                        rupture: rupture_en_saisie(e, mois)?,
-                    },
+                    contrat: EcritsSeuls { rupture: FinDuContrat::de(rupture) },
+                    // Sa nature n'est pas encore lue : un contrat sans fin s'y dit par son debut seul.
+                    contrat_dit: e.debut_lu().map(|d| bornes_dites(d, e.fin_lue(), false, None)),
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.
@@ -2300,8 +2611,9 @@ fn phrase_du_mois(paies: &[PaieVue], aucun_chiffre: bool) -> Option<String> {
     }
 }
 
-/// L'apercu de la saisie `data` : chaque engagement se calcule.
-fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
+/// L'apercu de la saisie `data` : chaque engagement se calcule. `lignes` : ce qu'une ligne neuve prend
+/// (`lignes_preremplies`, de la saisie entiere).
+fn apercu_de(ctx: &Contexte, data: &VueDuMois, lignes: &R<LignesPreremplies>) -> R<Calcul> {
     let mois = data.mois;
     let lu = data.mois;
     let montrees = paies_de_l_ecran(ctx, data, mois)?;
@@ -2312,7 +2624,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
     let carte = |i: usize| tous.get(i).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une paie de l'aperçu n'a pas sa carte."));
     let mut vues = Vec::new();
     for (i, p) in paies.iter().enumerate() {
-        vues.push(vue_paie(ctx, p, carte(i)?, data)?);
+        vues.push(vue_paie(ctx, p, carte(i)?, data, lignes)?);
     }
     // LES CONSEILS DE SAISIE : au plus un par carte, quand l'option de la compagnie est cochee, pour un
     // engagement en saisie seulement. Ils ne vivent qu'ici, dans la vue de l'ecran : ni dans les avertissements de la

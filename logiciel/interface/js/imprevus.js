@@ -15,8 +15,8 @@
      sur un engagement validé). Elle propose un arrêt de travail, une absence
      (congé parental, sans solde, sabbatique… : une suspension du contrat,
      bloc 65), et, quand la carte sait déjà dire une fin, la rupture avant
-     terme — qui n'est pas une boîte de plus : elle ouvre le « Contrat » de
-     la carte, où la fin se saisit depuis toujours. Le salarié et le contrat
+     terme — qui n'est pas une boîte de plus : elle ouvre la branche de la
+     fin, sur la carte (`ouvrirLaFin`, js/carte.js). Le salarié et le contrat
      sont ceux de la carte : on ne les redemande pas. Sous la carte, une ligne
      par imprévu qui la touche ce mois-ci, avec ses gestes (la reprise, les
      indemnités journalières, retirer) et les jours payés pendant l'imprévu, à
@@ -189,7 +189,7 @@ function brancherObligation(r, a, o) {
    sa fin part dans la mensuelle ; rompu avant (036, 037…), ou déjà déclaré le
    mois d'avant, il se signale (fiche 2062). C'est le
    moteur qui tranche (`Nature::signalement_fctu`, route `fins-de-contrat`).
-   Ce qui manque au signalement se tape dans la carte, sous « Contrat » :
+   Ce qui manque au signalement se tape dans la carte, dans sa fin :
    proposer un bouton qui refuse serait pire que ne rien proposer. Le
    moteur dit chaque manque par le nom de sa case et ce qu'on y met
    (`a_saisir`) ; il se lit sans rien déplier, et « La dire… » mène à la
@@ -225,14 +225,8 @@ function brancherFin(r, mois, f) {
 
 /* LA CASE D'UN MANQUE, dans la carte de l'engagement : le mois de la fin,
    la carte du salarié, rouverte à la modification si elle est validée (le
-   chemin de toujours, « Modifier l'engagement… »), le bloc « Contrat »
-   déplié, la case sous le curseur. */
-const CASES_DE_FIN = {
-  motif_rupture: ".e-motif-rupture",
-  notification_rupture: ".e-notification",
-  preavis: ".e-preavis-type",
-  dernier_jour_paye: ".e-dernier-paye",
-};
+   chemin de toujours, « Modifier l'engagement… »), sa fin ouverte, la case
+   que le manque nomme (`champ`, la clé de sa case) sous le curseur. */
 
 /** Attend que `test()` rende quelque chose (au plus `ms`) ; rend ce qu'il rend, ou null. */
 async function attendre(test, ms) {
@@ -255,19 +249,11 @@ async function allerALaCase(f, champ) {
       .filter((d) => memeSalarie(salarieDuBloc(d), f.salarie));
     return siennes.find((d) => carteDe(d).numero === f.numero || carteDe(d).debut === f.contrat.du) || siennes[0] || null;
   };
-  let div = await attendre(carte, 15000);
+  const div = await attendre(carte, 15000);
   if (!div) return;
-  if (div.classList.contains("validee") && div._ligne) ouvrirEnModification(div);
-  else ouvrirCarte(div);
-  const options = div.querySelector(".e-options");
-  if (options) options.hidden = false;
-  const contrat = div.querySelector(".e-contrat");
-  if (contrat) contrat.open = true;
-  const caseDeFin = CASES_DE_FIN[champ] && div.querySelector(CASES_DE_FIN[champ]);
-  const cible = caseDeFin ? caseQuiMontre(caseDeFin) : div.querySelector(".e-contrat");
-  if (!cible) return;
-  cible.scrollIntoView({ block: "center" });
-  cible.focus();
+  // La carte ne montre pas cette case (sa nature ne l'a pas) : la phrase du manque reste à l'écran, qui dit quoi faire.
+  const m = f.a_saisir.find((x) => x.champ === champ);
+  if (!ouvrirLaFin(div, champ) && m) dire(`${m.case} : ${m.dire}`, "erreur");
 }
 
 /* --------------------------------------------------------- LA PORTE
@@ -280,22 +266,17 @@ function majPorteImprevu(div) {
   if (b) b.hidden = !salarieDuBloc(div);
 }
 
-/** Ce que la carte sait de son contrat : le salarié, le numéro s'il est figé, le début. */
+/** Ce que la carte sait de son contrat : le salarié, son numéro (celui que l'aperçu rend, ou qu'elle écrit), le début. */
 function carteDe(div) {
-  const salarie = salarieDuBloc(div);
-  return {
-    div, salarie,
-    // Sans numéro figé, la carte n'en a pas (absent, pas vide).
-    numero: div.dataset.numeroDe === salarie && div.dataset.numero ? div.dataset.numero : undefined,
-    debut: debutDuBloc(div),
-  };
+  return { div, salarie: salarieDuBloc(div), numero: numeroDuBloc(div), debut: debutDuBloc(div) };
 }
 
-/** La rupture se propose quand le moteur dit qu'elle a un sens pour cet engagement (`contrat.rupture` de l'aperçu, posé
- *  sur la carte) ; elle se saisit dans une carte ouverte. */
+/** La rupture se propose quand le moteur dit qu'elle a un sens pour cet engagement (`contrat.rupture` de l'aperçu) ;
+ *  elle se saisit dans une carte ouverte. */
 function ruptureOuverte(div) {
   if (carteFermee(div) || div.classList.contains("validee")) return null;    // une carte fermée, un engagement validé
-  return div._rupture ? div._rupture.porte : null;
+  const r = ruptureDuBloc(div);
+  return r ? r.porte : null;
 }
 
 let MENU_IMPREVU = null;
@@ -316,8 +297,7 @@ function menuImprevu(ancre, ou) {
       <span class="discret">maladie, accident, maternité</span></button>
     <button type="button" data-choix="absence">Une absence
       <span class="discret">congé parental, sans solde</span></button>
-    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}
-      <span class="discret">se saisit sous « Contrat »</span></button>` : ""}`;
+    ${rupture ? `<button type="button" data-choix="rupture">${echapper(rupture)}</button>` : ""}`;
   document.body.appendChild(menu);
   const r = ancre.getBoundingClientRect();
   menu.style.top = `${window.scrollY + r.bottom + 4}px`;
@@ -326,7 +306,7 @@ function menuImprevu(ancre, ou) {
   menu.querySelector('[data-choix="arret"]').onclick = () => { fermerMenuImprevu(); boiteArret(ou); };
   menu.querySelector('[data-choix="absence"]').onclick = () => { fermerMenuImprevu(); boiteAbsence(ou); };
   const r2 = menu.querySelector('[data-choix="rupture"]');
-  if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirRupture(ou.div); };
+  if (r2) r2.onclick = () => { fermerMenuImprevu(); ouvrirLaFin(ou.div); };
   setTimeout(() => {
     const dehors = (ev) => {
       if (MENU_IMPREVU && !MENU_IMPREVU.contains(ev.target)) {
@@ -338,17 +318,6 @@ function menuImprevu(ancre, ou) {
   }, 0);
   menu.onkeydown = (ev) => { if (ev.key === "Escape") fermerMenuImprevu(); };
   menu.querySelector("button").focus();
-}
-
-/** La rupture : la fin se saisit dans la carte, sous « Contrat », comme toujours. On y va. */
-function ouvrirRupture(div) {
-  div.querySelector(".e-options").hidden = false;
-  const contrat = div.querySelector(".e-contrat");
-  contrat.open = true;
-  const fin = div.querySelector(".e-fin");
-  const cible = fin.value || (div._rupture && div._rupture.fin) ? div.querySelector(".e-motif-rupture") : caseQuiMontre(fin);
-  cible.scrollIntoView({ block: "center" });
-  cible.focus();
 }
 
 /* -------------------------------------------- sous la carte : ses imprévus
@@ -392,29 +361,15 @@ function peindreImprevusDeLaCarte(div, liste) {
   liste.forEach((i, k) => {
     const r = cible.querySelector(`[data-imprevu="${k}"]`);
     brancherGestesImprevu(r, i, rafraichirImprevus);
+    // Le jour quitte la ligne de la carte qui le porte (`retirerDesJours`, js/carte.js), qui s'écrit.
     r.querySelectorAll("[data-retirer]").forEach((b) => {
       b.onclick = async () => {
-        if (!retirerJour(div, b.dataset.rubrique, b.dataset.retirer)) {
+        if (!await retirerDesJours(div, [{ rubrique: b.dataset.rubrique, iso: b.dataset.retirer }])) {
           dire(ETAT.aides.jour_hors_ligne, "erreur");
-        } else {
-          await avantDeQuitter();
         }
       };
     });
   });
-}
-
-/** Décoche `iso` sur la ligne de paie de `rubrique` qui le porte, dans la carte : la ligne recompte ses cachets et la
- *  saisie s'enregistre, comme au calendrier. Rend false si aucune ligne ouverte ne le porte. */
-function retirerJour(div, rubrique, iso) {
-  if (iso.slice(0, 7) !== MOIS_AFFICHE) return false;
-  const j = parseInt(iso.slice(8, 10), 10);
-  const ligne = [...div.querySelectorAll(".rubrique")].find((r) =>
-    r.querySelector(".r-code").value === rubrique && joursDe(r.querySelector(".r-jours")).includes(j)
-    && !r.querySelector(".r-jours").disabled);
-  if (!ligne) return false;
-  basculerJour(ligne, j);
-  return true;
 }
 
 /** Les gestes d'un imprévu, les mêmes sur la carte et dans le dossier du salarié : ceux que le moteur rend (`gestes`),
@@ -700,12 +655,9 @@ async function etapeSuite(i, p, phrase) {
       try { await api(g.route, charge); }
       catch (e) { dire(e.message, "erreur"); return; }
     }
-    let retires = 0;
-    document.querySelectorAll("#boite [data-jour]:checked").forEach((x) => {
-      const c = jours[+x.dataset.jour];
-      if (retirerJour(div, c.rubrique, x.value)) retires++;
-    });
-    if (retires) await avantDeQuitter();
+    const retirer = [...document.querySelectorAll("#boite [data-jour]:checked")]
+      .map((x) => ({ rubrique: jours[+x.dataset.jour].rubrique, iso: x.value }));
+    if (retirer.length && !(div && await retirerDesJours(div, retirer))) dire(ETAT.aides.jour_hors_ligne, "erreur");
     await finir();
   };
 }

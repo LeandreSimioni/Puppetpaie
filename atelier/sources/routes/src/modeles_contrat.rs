@@ -1033,6 +1033,17 @@ pub(crate) struct ModeleAuChoix {
     nom: String,
 }
 
+impl ModeleAuChoix {
+    /// Le modele tel que la case `modele_contrat` d'une carte l'offre : son id, le code vide pour le defaut de la nature.
+    pub(crate) fn en_choix(&self) -> crate::ouverture::Choix {
+        match &self.id {
+            Some(id) => crate::ouverture::Choix::de(id.texte(), &self.nom),
+            // Le defaut de la nature : le choix vide, qui n'ecrit rien sur la carte.
+            None => crate::ouverture::Choix::de("", &self.nom),
+        }
+    }
+}
+
 /// CE QUE L'ECRAN DES MODELES DE CONTRAT DIT (`ecran` de `modeles-contrat`) : a quoi sert un modele, comment faire
 /// celui de la compagnie, le francais.
 fn ecran_des_modeles() -> EcranDesModeles {
