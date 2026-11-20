@@ -1778,8 +1778,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // l'emploi, quand la compagnie dit qu'il la lie (`clauses::plafond_conges_spectacles` ; C. trav. D. 7121-37),
     // multiplie par les jours travailles de la paie. Chaque rubrique en garde sa part, au prorata, la derniere prenant
     // l'arrondi : la ligne de la caisse, le 066 de la DSN et le certificat lisent cette seule base.
+    // La convention du contrat, celle que la DSN declare (S21.G00.40.017) et que le bulletin imprime.
+    let idcc_du_contrat = match ctx.entreprise.idcc.dite() {
+        Some(i) => Some(crate::minima::idcc_du_contrat(i, spec.as_ref(), &sal)?),
+        None => None,
+    };
     let plafond_cs = droit::clauses::plafond_conges_spectacles(
-        ctx.entreprise.idcc.dite(),
+        idcc_du_contrat.as_ref(),
         ctx.entreprise.plafond_conges_spectacles,
         sal.code_emploi_ft.dite().filter(|c| !c.est_permanent()),
     )?;
