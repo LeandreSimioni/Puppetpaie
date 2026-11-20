@@ -1230,6 +1230,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | durée d'un préavis | `DureeDuPreavis` | `engagement/src/solde.rs` |
 | préavis d'une fin de contrat (son type, S21.G00.63.001, et ses dates, que la carte saisit) | `Preavis` | `engagement/src/saisie.rs` |
 | préavis que le solde compte (sa durée, ce qu'en donnent la loi et la convention, et ce qui le dit en mots) | `PreavisCompte` | `engagement/src/solde.rs` |
+| ce que L1221-25 décide d'une fin d'essai à l'initiative de l'employeur, quel que soit le paiement du contrat (rien à payer et pourquoi, ou le délai de prévenance non respecté et sa part non effectuée) | `DelaiDePrevenanceDecide` | `engagement/src/solde.rs` |
 | préavis que la convention dit pour un salarié (sa durée en mois de salaire, en jours quand elle le dit ainsi, son article, ou pourquoi elle n'en donne pas ; ce que la convention en écrit est une forme de `clauses-base.json`, `SectionDuPreavis`, et ce que la loi en dit, une forme de `permanents-base.json`, `droit::permanents::ReglesDuPreavis`) | `PreavisDit` | `droit/src/clauses.rs` |
 | fiche saisie (une fiche que la table des cases juge) | `FicheSaisie` | `droit/src/fiche.rs` |
 | faute d'une case saisie | `FauteDeCase` | `droit/src/fiche.rs` |

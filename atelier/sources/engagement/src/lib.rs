@@ -1102,23 +1102,18 @@ pub(crate) fn engagements(
         // Les jours travailles d'un contrat paye au mois : ceux que le moteur tire du mois (`conges::lignes_du_mois`).
         let mut jours_du_mois: Option<Jours> = None;
         let mut sans_remuneration = None;
-        let lignes = if nat.mensuelle() {
+        let (lignes, mut avis_de_la_carte) = if nat.mensuelle() {
             let (lignes, avis, jours_travailles, sans) = lignes_permanent(ctx, carte, mois_dit)?;
-            dits.push(avis);
             jours_du_mois = jours_travailles;
             sans_remuneration = sans;
-            Some(lignes)
+            (Some(lignes), avis)
         } else {
             match &carte.lignes {
                 Some(l) => {
                     let (lignes, avis) = frais_au_dela(ctx, carte.salarie.as_ref(), l.clone(), mois_dit, &qui)?;
-                    dits.push(avis);
-                    Some(lignes)
+                    (Some(lignes), avis)
                 }
-                None => {
-                    dits.push(Vec::new());
-                    None
-                }
+                None => (None, Vec::new()),
             }
         };
         // Un contrat d'usage commence dans l'ancien logiciel et continue ici : les jours du contrat entier comptent ceux
@@ -1193,6 +1188,14 @@ pub(crate) fn engagements(
         };
         let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         eng.sans_remuneration = sans_remuneration;
+        // Un contrat paye a l'activite qui finit ce mois par une fin d'essai a l'initiative de l'employeur : le delai de
+        // prevenance de L1221-25 (un contrat paye au mois le trouve dans son solde de tout compte).
+        if !nat.mensuelle() {
+            let (ligne, avis) = solde::delai_de_prevenance_a_l_activite(ctx, carte, &eng, &qui)?;
+            eng.lignes.extend(ligne);
+            avis_de_la_carte.extend(avis);
+        }
+        dits.push(avis_de_la_carte);
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {

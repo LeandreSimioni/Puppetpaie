@@ -160,6 +160,10 @@ pub enum FaitQuiOuvre {
     /// Le contrat finit ce mois par une fin de periode d'essai a l'initiative de l'employeur (034 : L. 1221-25, le delai de
     /// prevenance et la faute grave qui en prive).
     FinDEssaiParLEmployeur,
+    /// La periode d'essai du contrat se demande : le contrat se fait signer ici (son modele l'imprime), ou il finit ce mois
+    /// par une fin de periode d'essai a l'initiative de l'employeur (034 : L. 1221-25 ne donne le delai de prevenance a un
+    /// contrat a duree determinee que s'il stipule un essai d'au moins une semaine).
+    EssaiADire,
     /// Le preavis de la fin n'est pas effectue (`declarations::fctu::preavis_non_effectue`) : le dernier jour paye
     /// precede la fin.
     PreavisNonEffectue,
@@ -318,12 +322,13 @@ nature! {
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Base,
             cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si Ouverture::Si(F::Importee) => Rendue,
-            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::ContratEcrit) => Avance,
+            periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::EssaiADire) => Avance,
             clauses_particulieres: String = ClausesParticulieres si Ouverture::Si(F::ContratEcrit) => Avance,
             modele_contrat: IdDeModele = ModeleContrat si Ouverture::Si(F::ModelesAuChoix) => Base,
             date_paiement: Jour = DatePaiement si TOUJOURS => Avance,
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Rendue,
             faute_grave: bool = FauteGrave si Ouverture::Si(F::FinDEssaiParLEmployeur) => Imprevu,
+            indemnite_delai_prevenance: Montant = IndemniteDelaiPrevenance ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si Ouverture::Si(F::FinDEssaiParLEmployeur) => Imprevu,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
             notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif(D::NotificationRupture)) => Imprevu,
             engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif(D::EngagementLicenciement)) => Imprevu,
@@ -921,6 +926,7 @@ changements! {
     HeuresComplementaires(Heures) ="heures_complementaires" => heures_complementaires,
     IndemniteLicenciement(Montant) = "indemnite_licenciement" => indemnite_licenciement,
     FauteGrave(bool) = "faute_grave" => faute_grave,
+    IndemniteDelaiPrevenance(Montant) = "indemnite_delai_prevenance" => indemnite_delai_prevenance,
     MotifRupture(MotifDeRupture) = "motif_rupture" => motif_rupture,
     NotificationRupture(Jour) = "notification_rupture" => notification_rupture,
     EngagementLicenciement(Jour) = "engagement_licenciement" => engagement_licenciement,
@@ -1115,6 +1121,7 @@ pub fn libelle(c: Champ) -> &'static str {
         Champ::HeuresComplementaires => "Heures complémentaires",
         Champ::IndemniteLicenciement => "Indemnité de licenciement",
         Champ::FauteGrave => "Faute grave",
+        Champ::IndemniteDelaiPrevenance => "Indemnité du délai de prévenance",
         Champ::MotifRupture => "Motif de la fin",
         Champ::NotificationRupture => "Notifiée le",
         Champ::EngagementLicenciement => "Procédure engagée le",

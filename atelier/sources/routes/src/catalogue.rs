@@ -510,7 +510,7 @@ impl Forme {
             | C::HeuresComplementaires
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
-            C::SalaireMensuel | C::IndemniteLicenciement => Forme::Montant,
+            C::SalaireMensuel | C::IndemniteLicenciement | C::IndemniteDelaiPrevenance => Forme::Montant,
             C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
             C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat | C::Nature | C::MotifRecours => {
                 Forme::ChoixRendu

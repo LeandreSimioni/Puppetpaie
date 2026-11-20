@@ -163,9 +163,22 @@ le dit). À confirmer par l'orchestrateur ou Léandre : une circulaire ou une ju
 
 **Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `preavis.delai_de_prevenance` (`tranches`, `_lecture`,
 `_cdd`, `_faute_grave`) ; `rubriques-base.json`, `indemnite_delai_prevenance` ; `permanents.rs` (`regle_du_delai_de_prevenance`,
-`delai_de_prevenance`) ; `solde.rs` (`delai_de_prevenance`). Tests : `tests/calcul/permanents.rs` (une tranche par test,
-`une_fin_d_essai_…`, `le_delai_de_prevenance_ne_se_devine_pas`, `une_fin_d_essai_a_l_initiative_du_salarie_ne_lui_donne_rien`),
-`tests/dsn/preavis.rs` (`l_indemnite_du_delai_de_prevenance_se_declare_en_017`).
+`delai_de_prevenance`) ; `solde.rs` (`delai_de_prevenance_decide`, la décision, quel que soit le paiement du contrat ;
+`delai_de_prevenance`, le montant d'un contrat payé au mois ; `delai_de_prevenance_a_l_activite`, celui d'un CDDU). Tests :
+`tests/calcul/permanents.rs` (une tranche par test, `une_fin_d_essai_…`, `le_delai_de_prevenance_ne_se_devine_pas`,
+`une_fin_d_essai_a_l_initiative_du_salarie_ne_lui_donne_rien`), `tests/dsn/preavis.rs`
+(`l_indemnite_du_delai_de_prevenance_se_declare_en_017`) ; pour un CDDU, le test nommé ci-dessous.
+
+**Un CDDU (lot V, 20/11/2026)** : L1221-25 vise « l'article L. 1242-10 pour les contrats stipulant une période d'essai d'au
+moins une semaine », et L1242-10 (« Le contrat de travail à durée déterminée peut comporter une période d'essai ») vaut pour
+tout CDD, le CDDU (L1242-2, 3°) compris. La décision est celle d'un CDD payé au mois. Le montant, « les salaires et
+avantages que le salarié aurait perçus s'il avait accompli son travail jusqu'à l'expiration du délai », ne se tire pas d'un
+salaire mensuel : un CDDU est payé à ses cachets et heures des jours travaillés, ses jours après la fin ne sont pas sur sa
+carte. Seule la compagnie le connaît : la carte le dit (`indemnite_delai_prevenance`, ouverte avec « Faute grave » au motif
+034, comme la période d'essai), ou le calcul refuse en la nommant et en disant les dates du délai non effectué. Inférence :
+qu'un montant saisi soit la seule façon de ne rien deviner (aucun texte déposé ne dit comment compter les cachets qu'un
+intermittent aurait faits). Test : `moteur/tests/routes/fin_d_essai_d_un_cddu.rs`
+(`le_delai_de_prevenance_d_un_cddu_suit_l1221_25`).
 
 ## L'effectif de la formation professionnelle : L6331-1, L6331-1 A, L6331-3 (relevé LEGI du 13/10/2026, lot F1)
 
