@@ -1179,7 +1179,9 @@ pub fn bareme_applique(
     bar = bareme_caisse_conges(bar, avant_la_nature.as_ref(), nat, caisse_conges)?;
     bar = bareme_cpf_cdd(bar, nat, cpf_cdd)?;
     bar = bareme_majoration_chomage(bar, majoration_chomage)?;
-    bar = bareme_chomage_hors_des_annexes(bar, crate::caisse_conges::cddu_hors_des_annexes(nat, sal)?)?;
+    // Une paie importee a ete payee et declaree par l'ancien logiciel : ses taux se lisent sur ses pieces
+    // (`EntrepriseLue::taux_lus`), son chomage ne se rejoue pas.
+    bar = bareme_chomage_hors_des_annexes(bar, !ent.taux_lus && crate::caisse_conges::cddu_hors_des_annexes(nat, sal)?)?;
     bar = bareme_taxe_apprentissage(bar, fiche, fin_periode)?;
     bar = bareme_convention(bar, ent, Some(nat))?;
     bar = bareme_casc(bar, ent);
