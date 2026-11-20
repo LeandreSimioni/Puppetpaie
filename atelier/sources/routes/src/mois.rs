@@ -1723,21 +1723,14 @@ fn metier_de_la_fiche(code: Option<&droit::fiche::CodeEmploiFt>) -> R<Option<dro
     }
 }
 
-/// La duree du travail d'un contrat paye au mois, qui ouvre ses heures en plus (`FaitQuiOuvre::{TempsPlein,
-/// TempsPartiel}`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TempsDuContrat {
-    Plein,
-    Partiel,
-}
-
 /// CE QUE LE MOTEUR SAIT D'UN ENGAGEMENT ET QUE SA CARTE LIT (`carte_rendue`), chaque chose telle qu'elle se lit : une qui
 /// ne se lit pas fait la `faute` de sa carte, et d'elle seule.
 struct CeQueLeMoteurSait<'a> {
     contrat: R<ContratAppelle>,
     rupture: &'a R<Option<Rupture>>,
-    /// La duree du travail d'un contrat paye au mois ; `None` pour un autre, ou tant qu'elle ne se calcule pas.
-    temps: R<Option<TempsDuContrat>>,
+    /// La modalite du temps de travail d'un contrat paye au mois, qui ouvre ses heures en plus
+    /// (`FaitQuiOuvre::{TempsPlein, TempsPartiel}`) ; `None` pour un autre.
+    temps: R<Option<droit::natures::ModaliteDuTempsDeTravail>>,
     prerempli: R<Prerempli>,
 }
 
@@ -1773,10 +1766,12 @@ fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat
         Some(p) => declarations::fctu::preavis_non_effectue(p.genre)?,
         None => false,
     };
-    let par_semaine = match temps {
-        Some(TempsDuContrat::Plein) => engagement::heures_en_plus::decomptees_par_semaine(ctx)?,
-        Some(TempsDuContrat::Partiel) | None => false,
-    };
+    // Le temps partiel (modalite 20) dit des heures complementaires (L. 3123-20) ; les autres modalites, des heures
+    // supplementaires, comme le calcul les lit (`engagement::heures_en_plus::lignes`).
+    use droit::natures::ModaliteDuTempsDeTravail::TempsPartiel;
+    let plein = temps.is_some_and(|m| m != TempsPartiel);
+    let partiel = temps == Some(TempsPartiel);
+    let par_semaine = plein && engagement::heures_en_plus::decomptees_par_semaine(ctx)?;
     let vrai = |f: F| -> R<bool> {
         Ok(match f {
             F::PlusieursEtablissements => plusieurs,
@@ -1789,13 +1784,13 @@ fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat
             F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
-            F::TempsPlein => temps == Some(TempsDuContrat::Plein),
+            F::TempsPlein => plein,
             F::HeuresDecompteesParSemaine => par_semaine,
-            F::TempsPartiel => temps == Some(TempsDuContrat::Partiel),
+            F::TempsPartiel => partiel,
         })
     };
     let cases = engagement::carte::CarteValide::cases_ouvertes(n, &vrai)?;
-    let ouverte = |c: engagement::saisie::Champ| cases.iter().any(|x| x.cle == c.nom());
+    let ouverte = |c: engagement::saisie::Champ| cases.iter().any(|x| x.cle == c);
     let mut choix = BTreeMap::new();
     if let (true, Some(r)) = (ouverte(engagement::saisie::Champ::MotifRupture), rupture) {
         let vide = crate::ouverture::Choix::de("", &r.motif_vide_dit);
@@ -2039,14 +2034,11 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     };
     let trop_courte = || socle::echec::refus(socle::fichiers::trop_courte("les mois du contrat"));
     let rupture = rupture_de(e, &nat);
-    let temps = || -> R<Option<TempsDuContrat>> {
+    let temps = || -> R<Option<droit::natures::ModaliteDuTempsDeTravail>> {
         if !nat.mensuelle() {
             return Ok(None);
         }
-        // Le temps partiel (modalite 20) dit des heures complementaires (L. 3123-20) ; les autres modalites, des heures
-        // supplementaires, comme le calcul les lit (`engagement::heures_en_plus::lignes`).
-        let partiel = e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel;
-        Ok(Some(if partiel { TempsDuContrat::Partiel } else { TempsDuContrat::Plein }))
+        Ok(Some(e.modalite_temps_travail()?))
     };
     let prerempli = || -> R<Prerempli> {
         Ok(Prerempli {

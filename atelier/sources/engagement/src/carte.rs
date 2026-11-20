@@ -469,7 +469,7 @@ pub struct CaseDecrite<F> {
 /// UNE CASE OUVERTE POUR UN ENGAGEMENT (`CarteValide::cases_ouvertes`) : sa cle et sa place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct CaseOuverte {
-    pub cle: &'static str,
+    pub cle: Champ,
     pub place: PlaceDeLaCase,
 }
 
@@ -510,7 +510,7 @@ impl CarteValide {
                 Ouverture::Si(f) => vrai(*f)?,
             };
             if ouverte {
-                out.push(CaseOuverte { cle: c.nom(), place: *place });
+                out.push(CaseOuverte { cle: *c, place: *place });
             }
         }
         Ok(out)
@@ -518,7 +518,7 @@ impl CarteValide {
 
     /// Les cases que toute carte de nature `n` ouvre, sans aucun fait (`Ouverture::Toujours`).
     pub fn cases_toujours_ouvertes(n: NatureDeContrat) -> Vec<CaseOuverte> {
-        CarteValide::ouvertures_de(n).iter().filter(|(_, o, _)| *o == Ouverture::Toujours).map(|(c, _, place)| CaseOuverte { cle: c.nom(), place: *place }).collect()
+        CarteValide::ouvertures_de(n).iter().filter(|(_, o, _)| *o == Ouverture::Toujours).map(|(c, _, place)| CaseOuverte { cle: *c, place: *place }).collect()
     }
 
     /// Les cases qu'un motif de recours de la nature `n` porte en plus des siennes.

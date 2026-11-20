@@ -1138,14 +1138,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
 | ce qu'une ligne neuve d'une rubrique prend (le taux d'un cachet), sous le code de sa rubrique | `routes::mois::LignePreremplie`, `routes::mois::LignesPreremplies` | `routes/src/mois.rs` |
 | fin du contrat telle que la route la rend (aucune, la rupture lue, ou une rupture qui ne se lit pas) | `routes::mois::FinDuContrat` | `routes/src/mois.rs` |
-| ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, durée du travail, pré-remplissage) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
+| ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, modalité du temps de travail d'un contrat payé au mois, `droit::natures::ModaliteDuTempsDeTravail`, pré-remplissage) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
-| durée du travail d'un contrat payé au mois, pour sa carte (temps plein, temps partiel) | `routes::mois::TempsDuContrat` | `routes/src/mois.rs` |
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
-| ouverture d'une case (toujours, ou si un fait) | `Ouverture` | `engagement/src/carte.rs` |
+| ouverture d'une case (toujours, ou si un fait) | `engagement::carte::Ouverture` | `engagement/src/carte.rs` |
 | place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
-| case ouverte pour un engagement (sa clé, sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
+| case ouverte pour un engagement (sa clé, un `saisie::Champ` ; sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
