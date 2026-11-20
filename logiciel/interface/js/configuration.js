@@ -1141,7 +1141,10 @@ async function peindreCoutAnnee() {
  * propose dans la fiche d'un salarié et dans un engagement ; rien d'autre
  * ne change, aucun calcul. Par famille, repliée, avec son compte ; la
  * recherche ouvre ce qu'elle trouve. Les métiers des autres conventions ne
- * se montrent que si on le demande. */
+ * se montrent que si on le demande. Un métier qui manque se crée en en
+ * copiant un, et un métier créé se modifie : ce sont les gestes que la
+ * route rend (`gestes`, et `modifier` de chaque métier créé), que le
+ * dessinateur commun dessine (`js/avance.js`). */
 let METIERS_TOUS = false;
 let METIERS_FILTRE = "";
 
@@ -1164,12 +1167,17 @@ async function dessinerMetiers(cible) {
       return `<details class="metiers-famille" data-famille="${echapper(f)}"${filtre ? " open" : ""}>
         <summary><b>${echapper(f)}</b> <span class="discret">${n} / ${dedans.length}</span></summary>
         <div class="metiers-colonnes">${dedans.map((m) => `
-          <label class="coche" title="${echapper(m.code)}${m.de ? " — " + echapper(m.de) : ""}">
+          <span><label class="coche" title="${echapper(m.code)}${m.de ? " — " + echapper(m.de) : ""}">
             <input type="checkbox" data-code="${echapper(m.code)}"${m.retenu ? " checked" : ""}>
             ${echapper(m.libelle)}${m.de ? ` <span class="discret">· autre convention</span>` : ""}
-          </label>`).join("")}</div>
+          </label>${m.modifier ? ` <span data-gestes-du="${echapper(m.code)}">${boutonsDesGestes([m.modifier])}</span>` : ""}</span>`).join("")}</div>
       </details>`;
     }).join("") : `<p class="discret">Aucun métier</p>`;
+    // Les gestes d'un métier créé : chacun dans sa place, branché seul.
+    r.metiers.filter((m) => m.modifier).forEach((m) => {
+      const place = document.querySelector(`[data-gestes-du="${CSS.escape(m.code)}"]`);
+      if (place) brancherLesGestes(place, [m.modifier], { titre: m.libelle, modifie: true }, apresUnGeste);
+    });
     document.querySelectorAll("#metiers-liste input[data-code]").forEach((c) => {
       c.onchange = async () => {
         try {
@@ -1198,8 +1206,15 @@ async function dessinerMetiers(cible) {
           autres conventions aussi</label>
         <span id="metiers-compte" class="discret"></span>
       </div>
+      <p id="metiers-gestes">${boutonsDesGestes(r.gestes)}</p>
       <div id="metiers-liste"></div>
     </div>`;
+  // Après un geste, l'état relu (la carte propose les métiers de la route etat), puis l'onglet redessiné.
+  const apresUnGeste = async () => {
+    try { await relireEtat(); } catch (e) { dire(e.message, "erreur"); }
+    await dessinerMetiers(cible);
+  };
+  brancherLesGestes(document.getElementById("metiers-gestes"), r.gestes, {}, apresUnGeste);
   document.getElementById("metiers-filtre").oninput = (e) => { METIERS_FILTRE = e.target.value; peindre(); };
   document.getElementById("metiers-tous").onchange = (e) => { METIERS_TOUS = e.target.checked; peindre(); };
   peindre();

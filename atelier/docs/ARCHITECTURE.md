@@ -746,7 +746,8 @@ un libellé, chacun sa forme.
   de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne
   nomme pas toujours un métier. Que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un
   bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 ; le métier qu'il nomme : `emplois::metier` ;
-  un code d'un métier se déclare tel quel (`From<&CodeEmploi>`).
+  celui qu'un métier fait déclarer : `Metier::code_emploi_ft` (le sien, ou pour un métier créé celui que la compagnie
+  lui donne).
 - **matricule** : le numéro d'un salarié dans la compagnie (S21.G00.30.019, « X [1,30] », que l'employeur choisit). Que
   portent la fiche du salarié (`code_salarie`), l'identité qu'une DSN partie a déclarée
   (`changements_individu::Declaree`), l'individu d'une DSN lue ; ce qu'un bulletin d'autrui imprime reste son texte.
@@ -1282,6 +1283,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
 | emploi écrit (les six champs de l'emploi qu'une carte écrit à la main ou qu'un bulletin importé imprime, sans libellé lisible ; un emploi qui n'en dit aucun n'est pas écrit, sa case est vide, `EmploiEcrit::dit`. La carte le porte en une case, `engagement::saisie::Carte.emploi`, et un changement de la carte l'écrit entier, `{"case": "emploi", "valeur": {…}}` ; chacun de ses champs reste un champ de la carte, `saisie::Champ`, qu'un avenant change et retire seul ; l'import y pose l'emploi qu'un bulletin imprime, `EmploiEngagement.ecrit`) | `EmploiEcrit` | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
+| métier créé (copié d'un métier par la compagnie, puis modifié ; son fichier, `MetiersCrees`, une forme) | `MetierCree` | `droit/src/emplois.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
@@ -1688,10 +1690,14 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **emploi** : ce que fait le salarié.
 - **code d'un métier** : un code de la nomenclature des emplois du spectacle de France Travail
   (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est
-  un), sinon de la nomenclature. Que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et
-  celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier :
-  `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui
-  peut n'en nommer aucun (« 999SPT »).
+  un), sinon de la nomenclature ; ou celui d'un métier que la compagnie a créé, `CIE-` et un numéro, qui ne s'écrit
+  jamais comme un code de la nomenclature. Que portent le métier qu'une carte choisit (`metier`), la clé du catalogue,
+  un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie, un
+  métier créé et celui qu'il copie ; son métier : `CodeEmploi::metier`, le seul chemin. Le code emploi qu'une fiche
+  déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui peut n'en nommer aucun (« 999SPT »).
+- **métier créé** : un métier que la compagnie a créé dans Configuration › Métiers en copiant un métier, puis modifié :
+  son code, celui qu'il copie, le code de la nomenclature qu'il fait déclarer, et une fiche de la forme d'un métier du
+  catalogue (`FicheDuCatalogue`). Le moteur le lit comme un métier du catalogue (`CodeEmploi::metier`).
 - **famille d'un métier** : le groupe d'un métier du catalogue (« Artistes », « Son »…), qui ordonne le déroulant
   (`emplois::familles` : les artistes en tête) ; une liste du logiciel (`socle::noms_fermes!`), écrite par son nom dans
   `emplois-base.json` et `familles_costume` des clauses ; un métier hors du catalogue n'en a pas
@@ -1969,11 +1975,11 @@ famille, la transaction, le type d'un préavis), de la nature (`natures[].choix`
 neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
 la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
 est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
-jour du versement, le début que la porte « Imprévu… » lit, le métier que la paie applique, le cadre) et ce qu'une
+jour du versement, le début que la porte « Imprévu… » lit, le métier que la paie applique) et ce qu'une
 ligne neuve prend (`lignes`, sous le code de sa rubrique : le taux du cachet, celui du dernier cachet du mois, sinon le
 dernier saisi du dossier, lu une fois par geste : `socle::forme::une_fois_par_geste`) ; avant toute paie, une carte
 neuve a celui de `nouvelle_carte.prerempli` (ses lignes). La page le montre, il ne s'écrit pas tant qu'on ne le change
-pas ; un oui-non pré-rempli (le cadre, rendu même quand la carte le dit) se change dans les deux sens, et y revenir
+pas ; un oui-non pré-rempli se change dans les deux sens, et y revenir
 n'écrit rien ; un choix pré-rempli (le métier) le montre dans sa case vide, et choisir une valeur de la liste l'écrit,
 celle qui est montrée comprise. **Un pré-remplissage ne refuse ni ne ferme rien** : celui qui ne se lit pas laisse sa
 case vide, la `faute` de la carte dit pourquoi (la phrase de la route `saisie` pour une carte neuve), et l'écriture
@@ -1983,10 +1989,11 @@ métiers de la compagnie ; le dernier contrat dont le métier ne se lit pas arr�
 Sans dernier contrat qui en dise un, rien ne s'écrit non plus : la paie applique l'emploi de la fiche du salarié, tel
 que la fiche le dit, et l'écrire à sa place par le métier du catalogue changerait la paie. Une carte sans métier
 montre celui que la paie applique (`prerempli.metier`, celui de la fiche), et rien ne s'y écrit tant qu'on ne le
-choisit pas. **La case « Cadre » ne s'ouvre qu'avec un
-métier écrit sur la carte** (`FaitQuiOuvre::MetierEcrit`) : c'est le seul cas où le calcul la lit
-(`droit::emplois::resoudre`) ; son pré-rempli est ce que le catalogue dit de ce métier, que la carte soit calculée ou à
-compléter. Un montant (le taux d'une ligne, sa base, son montant,
+choisit pas. **La carte n'a pas de case « Cadre »** (Léandre, 20/11/2026 : « J'enlève la case cadre. Si quelqu'un un
+jour veut créer un marionnettiste cadre, il peut toujours le créer dans le métier ») : le cadre se lit du métier
+(`droit::emplois::resoudre`), et un métier cadre se crée dans Configuration › Métiers. La clé `cadre` d'une carte
+écrite avant reste gardée (`#[garde]` de `engagement::saisie::Carte`) : elle se relit telle quelle, et le calcul la lit
+avec le métier qu'elle accompagnait (`Carte::reprendre_le_cadre`, `stock::Objet::vue`). Un montant (le taux d'une ligne, sa base, son montant,
 le salaire du mois) a sa forme (`Forme::Montant`) : la page l'écrit comme ses montants (« 140,00 »), et il se tape
 avec une virgule ou un point. Une valeur
 faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties
@@ -2187,9 +2194,19 @@ datée, vérifiable**.
   métier de son dernier contrat, d'ici ou repris d'un ancien logiciel, quand il est dans ces métiers
   (`engagement::carte::metier_du_dernier_contrat` : le début le plus tard, puis le fichier du mois le plus tard, puis
   le rang ; un contrat qui ne se lit pas est passé, sans rien refuser), sinon la paie prend l'emploi de sa fiche. La
-  PCS-ESE, le code France Travail et les statuts d'un CDDU se lisent de son métier, jamais de sa carte ; le cadre aussi,
-  tant que la carte ne le dit pas (sa case est sous « Avancé », pré-remplie de ce que dit le métier : tant qu'un métier
-  propre à la compagnie ne se crée pas, elle seule dit qu'un métier du catalogue est tenu ici pour cadre).
+  PCS-ESE, le code France Travail, les statuts et le cadre se lisent de son métier, jamais de sa carte.
+  **Un métier de la compagnie se crée en copiant un métier** (Léandre, 20/11/2026 : « On copie et on modifie ») :
+  `metier-cree` copie un métier du catalogue ou déjà créé, le nomme et dit s'il est cadre ; `metier-modifie` change
+  ensuite son nom, son féminin, le cadre, et sous « Avancé » l'emploi déclaré, la PCS-ESE, le code France Travail (que
+  l'annexe et le statut suivent, `MetierCree::declarer`) et le classement conventionnel ; un métier du catalogue ne se
+  modifie pas. Le métier créé (`droit::emplois::MetierCree`, `config/metiers-crees.json`, lu par
+  `emplois::metiers_crees`) a la fiche d'un métier du catalogue et se lit par le même chemin (`CodeEmploi::metier`,
+  qui note son fichier dans l'empreinte de la paie) ; son code, `CIE-` et un numéro, ne s'écrit jamais comme un code de
+  la nomenclature, et ne masque donc aucun métier du catalogue ; la DSN déclare son code France Travail
+  (`Metier::code_emploi_ft`). Il se propose d'office dans les cartes, et se retire comme les autres (décoché). Il garde
+  le rattachement aux minima de sa copie ; aucun texte déposé n'interdit d'employer sur un métier hors des listes des
+  annexes 8 et 10 (elles disent qui relève de l'assurance chômage des intermittents, `caisse_conges::hors_de_l_annexe8`),
+  et rien ne se refuse de plus.
 - `logiciel/donnees/minima-conventionnels.json` — les grilles de la **3090** (annexes
   1, 2, 4, 5 et clauses communes) et de la **1285** (cachet, répétition,
   cirque, musiciens, lyrique, chœur ; les accords suivants sous `accords`, chacun avec sa grille entière et la date où il lie la compagnie, `droit::minima::lie_depuis`).

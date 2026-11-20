@@ -311,10 +311,19 @@ function lireLesLignes(bloc) {
 /* ------------------------------------------------ les champs d'une fiche de route */
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune son libellé et sa case, ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche). */
-function casesDesChamps(champs, valeurs, choix) {
-  return champs.map((c, j) => `<label class="champ-boite" data-j="${j}">${echapper(c.libelle)}
-      ${caseDeForme(c.forme, valeurs[c.nom], { choix: choix[c.nom] || c.choix })}</label>`).join("");
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche). `o.modifie` : la boîte modifie une chose qui existe ; un
+ *  oui-non y montre ce qu'elle dit comme un pré-rempli (le changer l'écrit, le laisser n'écrit rien : `CASES.oui_non`),
+ *  et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
+function casesDesChamps(champs, valeurs, choix, o = {}) {
+  const une = (c, j) => {
+    const ouiNon = o.modifie && c.forme === "oui_non";
+    return `<label class="champ-boite" data-j="${j}">${echapper(c.libelle)}
+      ${caseDeForme(c.forme, ouiNon ? null : valeurs[c.nom], { choix: choix[c.nom] || c.choix, prerempli: ouiNon ? valeurs[c.nom] : undefined })}</label>`;
+  };
+  if (!o.modifie) return champs.map(une).join("");
+  const avancees = champs.map((c, j) => (c.avance ? une(c, j) : "")).join("");
+  return champs.map((c, j) => (c.avance ? "" : une(c, j))).join("")
+    + (avancees ? `<details class="geste-avance"><summary>Avancé</summary>${avancees}</details>` : "");
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */
@@ -381,10 +390,10 @@ function champsDuGeste(g) {
   return CATALOGUE[g.route].charge.filter((c) => g.cases.includes(c.nom));
 }
 
-/** Ce que la boîte d'un geste dit (`phrases`), puis ses cases. */
-function casesDuGeste(g) {
+/** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
+function casesDuGeste(g, o = {}) {
   return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix)}`;
+    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, o)}`;
 }
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
@@ -395,7 +404,8 @@ function chargeDuGeste(bloc, g) {
 
 /** Branche les boutons des gestes de `cible` : un geste sans case part avec sa charge ; un autre ouvre sa boîte.
  *  `entete` : ce que la boîte dit de quoi il s'agit (`titre`, à la suite du libellé ; `dit`, dessous) ; `pardessus` :
- *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme. `apres` : après la réponse. */
+ *  la boîte s'ouvre par-dessus celle qui est ouverte, qui revient quand elle se ferme ; `modifie` : la boîte modifie une
+ *  chose qui existe (`casesDesChamps`). `apres` : après la réponse. */
 function brancherLesGestes(cible, gestes, entete, apres) {
   cible.querySelectorAll("[data-geste]").forEach((b) => {
     const g = gestes[+b.dataset.geste];
@@ -416,7 +426,7 @@ async function faireLeGeste(g, entete, apres) {
   ouvrirBoite(`
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
     ${entete.dit ? `<p class="discret">${echapper(entete.dit)}</p>` : ""}
-    <div id="geste-cases">${casesDuGeste(g)}</div>
+    <div id="geste-cases">${casesDuGeste(g, { modifie: entete.modifie })}</div>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="primaire" id="geste-ok">Enregistrer</button>
