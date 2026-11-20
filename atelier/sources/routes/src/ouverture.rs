@@ -42,7 +42,7 @@ const AIDES: &[(&str, &str)] = &[
     ("net", "Ce que le salarié touche sur son compte."),
     ("cout", "Le brut et les cotisations patronales : ce que l'employeur sort."),
     ("viser", "Écrire dans une case : les taux se recalculent pour y tomber."),
-    ("metier", "Le métier de ce contrat, s'il diffère de la fiche."),
+    ("metier", "Le métier de ce contrat ; une carte neuve prend celui du dernier contrat du salarié."),
     ("recours", "Pourquoi ce CDD est conclu : la DSN le déclare (motif de recours)."),
     ("periode_essai_jours", "La durée de la période d'essai que le contrat prévoit ; vide : aucune."),
     ("personne_remplacee", "Le contrat d'un remplacement nomme la personne remplacée et sa qualification (L. 1242-12, 1°)."),
@@ -58,7 +58,6 @@ const AIDES: &[(&str, &str)] = &[
     ("precarite_due", "L1243-10 : deux cas ne se lisent pas dans le contrat, l'étudiant pendant ses vacances et le salarié qui refuse un CDI ; dire lequel."),
     ("date_paiement", "Le jour du virement de ce contrat, s'il diffère de celui de la configuration."),
     ("lieu", "Le lieu que le contrat imprime quand une ligne de paie n'en dit pas."),
-    ("taux_cachet", "Le taux du cachet de ce contrat quand aucune ligne de cachet ne le dit."),
     ("jours", "Les jours travaillés que la DSN déclare (sinon les jours cochés)."),
     ("quotite_reference", "La durée de référence de l'entreprise pour ce contrat (S21.G00.40.012)."),
     ("indemnite_licenciement", "Le montant retenu, entre l'indemnité légale et la conventionnelle."),
@@ -1237,20 +1236,23 @@ pub(crate) struct Choix {
 
 impl Choix {
     /// Un code et son libelle, sans defaut.
-    fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
+    pub(crate) fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
         Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None }
     }
 }
 
 /// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES DONNEES OFFRENT (`Forme::ChoixRendu`), sous la cle de leur
-/// case : les salaries et les spectacles courants, les metiers du deroulant, les etablissements autres que le siege
-/// (aucun choisi : le siege).
+/// case : les salaries et les spectacles courants, les metiers du deroulant (ceux de Configuration › Métiers, la seule
+/// liste : `metiers::metiers`), les etablissements autres que le siege (aucun choisi : le siege), la transaction d'une
+/// fin de contrat (S21.G00.62.008). Le motif de la fin, propre a la nature, est rendu avec la carte de chaque paie
+/// (`mois::CarteRendue`), les modeles de contrat aussi (`contrat.modeles`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct ChoixDesCases {
     salarie: Vec<Choix>,
     spectacle: Vec<Choix>,
     metier: Vec<Choix>,
     etablissement: Vec<Choix>,
+    transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
 }
 
 /// UNE RUBRIQUE QUI PAIE, telle que la carte d'un engagement la propose : ce que le catalogue en dit, et ce que la page en
@@ -1639,6 +1641,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
                 e.nic.map(|n| Choix::de(n, libelle))
             })
             .collect(),
+        transaction: droit::preavis::base()?.transaction.codes.clone(),
     };
 
     // Le catalogue qui paie, deja dans l'ordre ou le proposer.

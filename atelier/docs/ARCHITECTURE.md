@@ -1132,6 +1132,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
+| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
+| ouverture d'une case (toujours, ou si un fait) | `Ouverture` | `engagement/src/carte.rs` |
+| place d'une case ouverte (de base, « Avancé », « Imprévu… », rendue) | `PlaceDeLaCase` | `engagement/src/carte.rs` |
+| case ouverte pour un engagement (sa clé, sa place) | `CaseOuverte` | `engagement/src/carte.rs` |
 | modèle du bulletin | `ModeleBulletin` | `droit/src/fiche.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | sorte d'une pièce produite | `documents::SorteDePieceProduite` | `documents/src/lib.rs` |
@@ -1939,8 +1943,13 @@ un geste, un bouton. Il dessine les champs d'une fiche de route (« Avancé », 
 engagement (`js/carte.js`) : les cases de sa nature (`natures[].carte` de la route etat), la valeur que la carte écrit
 (route `saisie`, puis le brouillon que rend `enregistrer-saisie`, chaque case changée envoyée seule), ce que l'aperçu dit
 de sa paie, son état et ses gestes. Aucune case n'y est écrite à la main, aucune ne se montre ou se cache par son nom :
-une case obligatoire se montre, une facultative remplie ou que le contrat écrit appelle (`contrat.ecrits`) aussi, les
-autres sont sous « Plus ». Une grandeur s'écrit elle-même dans la réponse (des cachets en entier) ; la page montre ce
+**chaque case de la carte dit, dans sa nature (`nature!` de `engagement/src/carte.rs`), le fait qui l'ouvre et sa
+place** (`si Ouverture => PlaceDeLaCase` : une case qui ne le dit pas ne compile pas). La route rend, pour chaque
+engagement, les seules cases ouvertes pour lui et leur place (`carte.cases` de chaque paie de l'aperçu,
+`CarteValide::cases_ouvertes`, les faits lus du moteur par `routes::mois::carte_rendue`) : de base, sous « Avancé »,
+derrière « Imprévu… » (la fin d'un contrat qui finit ce mois : son motif, puis ce que le motif appelle), ou rendue (le
+début, la fin et les jours travaillés d'un CDDU, tirés des jours cochés). Une case qu'aucun fait n'ouvre n'est pas
+rendue ; ce que rien ne lit pour une nature n'est pas une de ses cases. Une grandeur s'écrit elle-même dans la réponse (des cachets en entier) ; la page montre ce
 qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois

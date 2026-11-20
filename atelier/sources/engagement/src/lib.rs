@@ -985,10 +985,8 @@ impl Termes {
         match v {
             carte::CarteValide::CdduSpectacle(c) => Termes {
                 spectacle: Some(c.spectacle.clone()),
-                taux_cachet: match c.taux_cachet {
-                    Some(t) => Some(t),
-                    None => cachet_du_mois,
-                },
+                // Le taux d'un cachet est celui de sa ligne (`Engagement::nouveau`) ; sans ligne de cachet, celui du mois.
+                taux_cachet: cachet_du_mois,
                 quotite_contrat: None,
                 quotite_reference: None,
                 modalite_temps_travail: None,

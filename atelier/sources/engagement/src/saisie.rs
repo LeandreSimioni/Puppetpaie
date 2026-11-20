@@ -208,9 +208,6 @@ carte! {
         #[champ(Fait, Jours)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub jours: Option<Jours>,
-        #[champ(Fait, TauxCachet)]
-        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-        pub taux_cachet: Option<MontantUnitaire>,
         #[champ(Fait, HeuresSupplementaires)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub heures_supplementaires: Option<Heures>,

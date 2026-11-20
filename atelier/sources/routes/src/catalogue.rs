@@ -458,7 +458,6 @@ impl Forme {
             | C::SalaireMensuel
             | C::PeriodeEssaiJours
             | C::Jours
-            | C::TauxCachet
             | C::HeuresSupplementaires
             | C::HeuresSupplementairesA50
             | C::HeuresComplementaires
@@ -466,7 +465,7 @@ impl Forme {
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
             C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
-            C::Salarie | C::Spectacle | C::Etablissement | C::Metier => Forme::ChoixRendu,
+            C::Salarie | C::Spectacle | C::Etablissement | C::Metier | C::MotifRupture | C::Transaction | C::ModeleContrat => Forme::ChoixRendu,
             C::Nature
             | C::Numero
             | C::Lieu
@@ -481,9 +480,6 @@ impl Forme {
             | C::PersonneRemplacee
             | C::RepartitionHoraire
             | C::ClausesParticulieres
-            | C::ModeleContrat
-            | C::MotifRupture
-            | C::Transaction
             | C::PrecaritePourquoi => Forme::Texte,
             C::Lignes => Forme::Lignes,
             C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
