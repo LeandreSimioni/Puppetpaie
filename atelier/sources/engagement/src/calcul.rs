@@ -479,7 +479,8 @@ pub struct Contenu {
     pub total_pat: Montant,
     pub total_sal: Montant,
     /// Ce qui se paie au salarie avant impot : le brut, moins les cotisations salariales, plus ou moins TOUTES les
-    /// lignes hors assiette (defraiements, acompte retenu, indemnites).
+    /// lignes hors assiette (defraiements, acompte retenu, indemnites), moins les avantages en nature, recus en nature
+    /// (C. trav. R. 3243-1, 10° : « la somme effectivement reçue »).
     pub net_a_payer: Montant,
     /// Le montant net social (S21.G00.58.004 de type 03, « Montant net social » du bulletin) : voir `calculer`
     /// (7.10). Le brut, moins les cotisations salariales, plus les lignes hors assiette qui sont un revenu ; ni
@@ -2072,7 +2073,20 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.10 : la sortie. Ce qui est hors assiette se paie ou se retient quand meme.
     let hors_assiette = lb.iter().filter(|l| !l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
-    let net = brut - tot_sal + hors_assiette;
+    // L'avantage en nature est dans le brut (il est soumis), et le salarie l'a recu en nature, pas en argent : le net a
+    // payer, « le montant de la somme effectivement reçue par le salarié » (C. trav. R. 3243-1, 10°,
+    // `atelier/reference/sources/code-du-travail/xml/R3243-1.xml`), ne le compte pas ; le bulletin l'imprime en deduction
+    // (8° b), `documents::bulletin`). Le net social, le net imposable et le net verse de la DSN le gardent : le montant net
+    // social compte « les avantages et accessoires en nature ou en argent » (arrete du 25/02/2016, art. 1er, II, 1°,
+    // `atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md`), et le net verse part de la
+    // remuneration nette fiscale (S21.G00.50.004).
+    let mut en_nature = Montant::ZERO;
+    for l in lb.iter() {
+        if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
+            en_nature += l.montant;
+        }
+    }
+    let net = brut - tot_sal + hors_assiette - en_nature;
     // La remuneration nette fiscale (S21.G00.50.002) part du brut soumis, deduit les cotisations salariales et
     // reintegre la CSG/CRDS non deductible et la sante patronale (`reintegrations`). Des lignes hors assiette, elle ne
     // prend que celles que le catalogue dit imposables : la norme (2026.1, § 2.3.2, p. 60-61) fait « DEDUIRE les sommes

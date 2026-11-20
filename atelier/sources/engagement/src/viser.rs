@@ -14,6 +14,7 @@ use socle::grandeurs::{Coefficient, Montant, MontantUnitaire};
 /// CE QUI SE VISE : le brut ; le net a payer et le cout employeur, chacun avec ou sans les indemnites de frais (les
 /// lignes de frais hors assiette : repas et nuitees dans leur limite, defraiements, `HorsAssiette::Frais`). Le net a
 /// payer les compte (`Paie::net_a_payer`), le cout employeur non (`Paie::cout_employeur`) ; le brut n'en a jamais.
+/// Le net a payer ne compte pas les avantages en nature (R. 3243-1, 10°) : viser un net, c'est viser l'argent recu.
 /// L'acompte, une avance et non une indemnite, reste ce qu'il est : retire du net, hors du cout. La charge du montant
 /// vise le dit `brut`, `net`, `net_sans_frais`, `cout`, `cout_avec_frais`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
