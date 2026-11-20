@@ -1241,3 +1241,138 @@ pub fn cases_du_metier(ctx: &Contexte, code: &droit::fiche::CodeEmploiFt, jour: 
     }
     Ok(lues)
 }
+
+// ------------------------------------------------------------ ce que la convention fixe au metier
+
+/// UN MONTANT QUE LA CONVENTION FIXE, et ce qu'il paie, en peu de mots (« 1 à 7 représentations dans le mois »).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MontantFixe {
+    pub condition: String,
+    #[serde(serialize_with = "socle::grandeurs::ecrit::texte::serialize")]
+    pub montant: MontantUnitaire,
+}
+
+/// CE QUE LA CONVENTION FIXE AU METIER POUR UNE RUBRIQUE DE PAIE, a un jour : le nom qu'elle lui donne, la situation, les
+/// montants et ce que chacun paie, le texte en clair. Les montants sont ceux que le calcul lit (la grille du metier et la
+/// repetition de l'annexe, `minima-conventionnels.json` ; le tarif du bareme, `tarif_conventionnel`) : la bulle et les
+/// avertissements ne disent jamais deux montants pour la meme chose.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CeQueFixe {
+    pub rubrique: CodeDeRubrique,
+    pub nom: String,
+    pub situation: Option<String>,
+    pub montants: Vec<MontantFixe>,
+    pub texte: String,
+}
+
+/// LES PALIERS D'UNE GRILLE DE CACHETS, dits : « 1 à 7 représentations dans le mois », « 8 à 11 », « 16 et plus » ; la
+/// jauge de la grille, quand elle en a une, a la suite.
+fn paliers_dits(g: &droit::minima::GrilleDeCachets) -> Vec<MontantFixe> {
+    let periode = match &g.periode {
+        Some(p) if *p == droit::minima::PERIODE_MOIS => " dans le mois",
+        Some(p) if *p == droit::minima::PERIODE_TRIMESTRE => " sur 3 mois",
+        _ => "",
+    };
+    let jauge: String = g.jauge.iter().map(|j| format!(", salle {}", j)).collect();
+    let mut depuis = Cachets::UN;
+    let mut dits = Vec::new();
+    for (i, p) in g.paliers.iter().enumerate() {
+        let condition = match (i, p.jusqu_a) {
+            (0, Some(j)) if j == Cachets::UN => format!("1 représentation{}", periode),
+            (0, Some(j)) => format!("1 à {} représentations{}", virgule(j), periode),
+            (0, None) => "par représentation".to_string(),
+            (_, Some(j)) if j == depuis => virgule(j),
+            (_, Some(j)) => format!("{} à {}", virgule(depuis), virgule(j)),
+            (_, None) => format!("{} et plus", virgule(depuis)),
+        };
+        if let Some(j) = p.jusqu_a {
+            depuis = j + Cachets::UN;
+        }
+        dits.push(MontantFixe { condition: format!("{}{}", condition, jauge), montant: p.montant });
+    }
+    dits
+}
+
+/// La grille de cachets du metier `m` dans la grille de la convention `grille` : celle de sa ligne dans l'annexe `annexe`
+/// de la 3090 (`minima.3090` du metier), ou celle de sa ligne d'une convention qui n'en a qu'une. Une ligne ou une grille
+/// qui manque est un defaut de la table livree (`cle` : le metier dans la convention).
+fn grille_de_cachets<'a>(grille: &'a Convention, idcc: &Idcc, m: &emplois::Metier, annexe: Option<AnnexeConvention>, cle: &str) -> R<&'a droit::minima::GrilleDeCachets> {
+    let fiche = m.au_catalogue();
+    match annexe {
+        Some(a) => {
+            let ligne = fiche.and_then(|f| f.minima.ccn_3090.as_ref()).and_then(|l| l.get(&a)).ok_or_else(|| manque(cle))?;
+            let annexes = grille.annexes.as_ref().and_then(|x| x.get(&a));
+            annexes.and_then(|x| x.cachets.as_ref()).and_then(|c| c.get(ligne)).ok_or_else(|| manque(&format!("{}.annexes.{}.cachets.{}", idcc, a, ligne)))
+        }
+        None => {
+            let ligne = fiche.and_then(|f| f.minima.ligne(idcc)).ok_or_else(|| manque(cle))?;
+            grille.cachets.as_ref().and_then(|c| c.get(ligne)).ok_or_else(|| manque(&format!("{}.cachets.{}", idcc, ligne)))
+        }
+    }
+}
+
+/// La repetition que la convention fixe au metier `m` : le cachet de repetition de l'annexe `annexe` de la 3090, ou le
+/// service de la convention (celui de la ligne du metier quand elle en a un propre).
+fn repetition_fixee(grille: &Convention, idcc: &Idcc, m: &emplois::Metier, annexe: Option<AnnexeConvention>) -> R<MontantUnitaire> {
+    match annexe {
+        Some(a) => {
+            let r = grille.annexes.as_ref().and_then(|x| x.get(&a)).and_then(|x| x.repetition.as_ref());
+            r.and_then(|r| r.cachet).ok_or_else(|| manque(&format!("{}.annexes.{}.repetition.cachet", idcc, a)))
+        }
+        None => {
+            let r = grille.repetition.as_ref().ok_or_else(|| manque(&format!("{}.repetition", idcc)))?;
+            let propre = m.au_catalogue().and_then(|f| f.minima.ligne(idcc)).and_then(|l| r.par_categorie.as_ref().and_then(|p| p.get(l)));
+            Ok(match propre {
+                Some(p) => p.service,
+                None => r.service,
+            })
+        }
+    }
+}
+
+/// CE QUE LA CONVENTION DE LA COMPAGNIE FIXE AU METIER `code`, rubrique par rubrique, au `jour` : ce que la table livree
+/// en a releve (`metiers` de la convention), avec les montants qui valent a ce jour (la grille de l'accord qui lie la
+/// compagnie, `grille_au`, quand elle est en vigueur ; le tarif du bareme de ce jour). Rien de releve pour le metier, ou
+/// une compagnie sans convention : rien. Une rubrique que la table nomme sans qu'un lecteur la sache lire, ou dont le
+/// montant manque, est un defaut de la table livree.
+pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jour: Jour) -> R<Vec<CeQueFixe>> {
+    let ent = ctx.entreprise_au(&jour);
+    let Some(idcc) = ent.idcc.dite() else { return Ok(Vec::new()) };
+    let tab = table()?;
+    let t: &Table = &tab;
+    let Some(releve) = t.convention(idcc).and_then(|c| c.metiers.as_ref()).and_then(|m| m.get(code)) else { return Ok(Vec::new()) };
+    let organisation = ctx.organisation_reconnue(jour.annee(), ent.organisation_patronale.dite())?;
+    let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_ref(), Some(jour)) else { return Ok(Vec::new()) };
+    // Une grille dont les minima n'entrent en vigueur qu'apres ce jour ne dit rien de lui.
+    let grille_en_vigueur = grille.en_vigueur.is_none_or(|d| d <= jour);
+    let metier = code.metier()?;
+    let cle = format!("conventions.{}.metiers.{}", idcc, code);
+    let un_seul = |r: &droit::minima::CeQueFixeLaConvention, montant: MontantUnitaire| -> R<Vec<MontantFixe>> {
+        let condition = r.condition.clone().ok_or_else(|| manque(&format!("{}.{}.condition", cle, r.rubrique)))?;
+        Ok(vec![MontantFixe { condition, montant }])
+    };
+    let mut fixes = Vec::new();
+    for r in &releve.rubriques {
+        let montants = if r.rubrique == droit::catalogue::CACHET {
+            if !grille_en_vigueur {
+                continue;
+            }
+            paliers_dits(grille_de_cachets(grille, idcc, &metier, r.annexe, &cle)?)
+        } else if r.rubrique == REPETITION {
+            if !grille_en_vigueur {
+                continue;
+            }
+            un_seul(r, repetition_fixee(grille, idcc, &metier, r.annexe)?)?
+        } else if r.rubrique == crate::REPAS || r.rubrique == crate::NUITEE {
+            // Le tarif du bareme de ce jour : celui que la ligne prend quand elle ne dit pas son taux.
+            match crate::tarif_conventionnel(ctx, &r.rubrique, &jour)? {
+                Some(m) => un_seul(r, m)?,
+                None => continue,
+            }
+        } else {
+            return Err(manque(&format!("{}.{}", cle, r.rubrique)));
+        };
+        fixes.push(CeQueFixe { rubrique: r.rubrique.clone(), nom: releve.nom.clone(), situation: r.situation.clone(), montants, texte: r.texte.clone() });
+    }
+    Ok(fixes)
+}
