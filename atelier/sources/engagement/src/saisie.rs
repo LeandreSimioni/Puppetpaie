@@ -40,7 +40,8 @@ pub enum Groupe {
 /// `#[champ(Groupe, Champ)]`, son nom (`Champ`), son groupe, et ce qui le lit et l'ecrit sans passer par son nom de cle.
 /// Une case faite de plusieurs champs (l'emploi, `droit::emplois::EmploiEcrit`) se marque
 /// `#[champs(Groupe Champ => sous_champ, …)]` : chacun de ses sous-champs est un champ, de son nom, qu'un avenant change
-/// et retire seul ; la case se vide quand plus aucun ne dit rien.
+/// et retire seul ; la case se vide quand plus aucun ne dit rien. Une cle marquee `#[garde]` n'est pas un champ : la
+/// carte la lit et l'ecrit telle qu'elle est ecrite, aucune case ne la montre ni ne la saisit, et rien ne la compose.
 macro_rules! carte {
     (@nom (champ $f:ident)) => { stringify!($f) };
     (@nom (sous $f:ident $s:ident)) => { stringify!($s) };
@@ -69,6 +70,9 @@ macro_rules! carte {
     };
     (@lire $tete:tt {$($s:tt)*} {$($c:tt)*} #[champs($($g:ident $v:ident => $sf:ident),* $(,)?)] $(#[$attr:meta])* pub $f:ident : Option<$t:ty>, $($reste:tt)*) => {
         carte!(@lire $tete {$($s)* $(#[$attr])* pub $f: Option<$t>,} {$($c)* $([$g $v (sous $f $sf)])*} $($reste)*);
+    };
+    (@lire $tete:tt {$($s:tt)*} {$($c:tt)*} #[garde] $(#[$attr:meta])* pub $f:ident : Option<$t:ty>, $($reste:tt)*) => {
+        carte!(@lire $tete {$($s)* $(#[$attr])* pub $f: Option<$t>,} {$($c)*} $($reste)*);
     };
     (@lire [$(#[$sattr:meta])* $carte:ident] {$($s:tt)*} {$([$groupe:ident $variante:ident $acces:tt])*}) => {
         $(#[$sattr])*
@@ -208,6 +212,13 @@ carte! {
         #[champ(Fait, Jours)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub jours: Option<Jours>,
+        #[garde]
+        /// UNE CLE GARDEE, QUI N'EST PAS UNE CASE : le taux du cachet que la carte d'un CDDU disait quand aucune ligne de
+        /// cachet ne le disait. Aucune case ne le montre ni ne le saisit plus (le taux d'un cachet est celui de sa ligne) ;
+        /// toute carte ecrite le porte (`null`), et une carte ecrite se relit telle quelle, de meme empreinte
+        /// (`stock::empreinte_de_saisie`).
+        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
+        pub taux_cachet: Option<MontantUnitaire>,
         #[champ(Fait, HeuresSupplementaires)]
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub heures_supplementaires: Option<Heures>,

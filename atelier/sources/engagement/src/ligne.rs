@@ -133,6 +133,10 @@ pub struct Frais {
     pub taux: Option<MontantUnitaire>,
     pub territoire: Option<LieuDeFrais>,
     pub cases: Vec<CaseDeFrais>,
+    /// UNE CLE GARDEE, QUI N'EST PAS UNE CASE (`FormeSaisie::gardees`) : le lieu qu'une ligne de frais disait. Rien ne le
+    /// lit (un frais ne fait aucun jour du contrat ; le lieu qui change la limite d'un repas ou d'une nuitee est son
+    /// territoire) ; une ligne ecrite le porte, et elle se relit telle quelle.
+    pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
     pub planning: Vec<DateDeLigne>,
     /// Ce que le moteur pose sur elle pour l'ecran ; rien ne s'ecrit.
@@ -1391,13 +1395,23 @@ impl FormeSaisie {
         match self {
             FormeSaisie::Unites => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
             FormeSaisie::UnitesEtHeures => &[Rubrique, Quantite, Taux, Heures, Lieu, Dates, Planning],
-            // Une ligne de frais n'a pas de lieu : il ne fait aucun jour du contrat et rien ne le lit (le lieu d'un repas
-            // ou d'une nuitee hors de la metropole, qui change sa limite, est son territoire).
+            // Une ligne de frais n'a pas de case de lieu (`gardees`) : le lieu d'un repas ou d'une nuitee hors de la
+            // metropole, qui change sa limite, est son territoire.
             FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Dates, Planning],
             FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Dates, Planning],
             FormeSaisie::Pourcentage => &[Rubrique, Base, TauxMajoration],
             FormeSaisie::Montant => &[Rubrique, Montant],
             FormeSaisie::AvantageEnNature => &[Rubrique, Montant, Genre],
+        }
+    }
+
+    /// LES CLES GARDEES de cette forme : une ligne peut les dire (facultatives) et les garde telles qu'elles sont
+    /// ecrites, mais aucune case ne les montre ni ne les saisit (elles ne sont pas dans `cles`). Le lieu d'une ligne de
+    /// frais : rien ne le lit, et une ligne ecrite le porte.
+    pub fn gardees(self) -> &'static [Cle] {
+        match self {
+            FormeSaisie::Frais | FormeSaisie::FraisSansLimite => &[Cle::Lieu],
+            FormeSaisie::Unites | FormeSaisie::UnitesEtHeures | FormeSaisie::Pourcentage | FormeSaisie::Montant | FormeSaisie::AvantageEnNature => &[],
         }
     }
 }
@@ -1516,7 +1530,7 @@ impl LigneDonnee {
         let voulues = forme.cles();
         let dites = self.dites();
         let manquent: Vec<&str> = voulues.iter().filter(|c| !c.facultative() && !dites.contains(c)).map(|c| c.nom()).collect();
-        let de_trop: Vec<&str> = dites.iter().filter(|c| !voulues.contains(c)).map(|c| c.nom()).collect();
+        let de_trop: Vec<&str> = dites.iter().filter(|c| !voulues.contains(c) && !forme.gardees().contains(c)).map(|c| c.nom()).collect();
         if !manquent.is_empty() || !de_trop.is_empty() {
             let liste = |l: &[&str]| l.iter().map(|c| format!("« {} »", c)).collect::<Vec<_>>().join(", ");
             let mut quoi = Vec::new();
@@ -1581,6 +1595,7 @@ impl LigneDonnee {
                     taux: dit(self.taux),
                     territoire: self.territoire.flatten(),
                     cases,
+                    lieu: texte(self.lieu),
                     dates: jours(self.dates),
                     planning: jours(self.planning),
                     marques: Marques::default(),
@@ -1592,6 +1607,7 @@ impl LigneDonnee {
                 taux: dit(self.taux),
                 territoire: None,
                 cases: Vec::new(),
+                lieu: texte(self.lieu),
                 dates: jours(self.dates),
                 planning: jours(self.planning),
                 marques: Marques::default(),

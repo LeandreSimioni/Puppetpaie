@@ -45,7 +45,7 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
     let paie = |frais: &[(&str, &[&str])]| -> Value {
         let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, cases) in frais {
-            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": 2}, "taux": null, "territoire": null, "cases": cases, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": 2}, "taux": null, "territoire": null, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };
@@ -90,7 +90,7 @@ fn le_repas_et_la_nuitee_au_dela_de_leur_limite_entrent_dans_l_assiette() {
         let mut lignes = vec![json!({"rubrique": "cachet", "quantite": {"cachets": 2}, "taux": 150, "lieu": null, "dates": jours, "planning": []})];
         for (rubrique, taux, lieu, cases) in frais {
             let q = if *rubrique == "repas" { 4 } else { 2 };
-            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": q}, "taux": taux, "territoire": lieu, "cases": cases, "dates": jours, "planning": []}));
+            lignes.push(json!({"rubrique": rubrique, "quantite": {"unites": q}, "taux": taux, "territoire": lieu, "cases": cases, "lieu": null, "dates": jours, "planning": []}));
         }
         apercu_de(lignes)
     };
