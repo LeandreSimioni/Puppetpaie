@@ -196,6 +196,11 @@ jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` 
 
 **On développe dans le nuage, et seulement là** : le poste de Léandre est une installation ordinaire.
 
+**Une case de base change la paie ou une déclaration** (Léandre, 20/11/2026 : « si c'est juste pour informer, ça
+doit pas être une case de base »). Une case que ni le calcul, ni le contrat, ni une déclaration ne lit n'est pas sur
+la carte : si elle ne sert qu'à renseigner, elle se pose dans l'infobulle, quand on l'ouvre. Avant de mettre une case
+sur une carte, on nomme son lecteur dans le moteur.
+
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.
