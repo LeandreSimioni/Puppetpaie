@@ -980,12 +980,18 @@ struct Termes {
 }
 
 impl Termes {
-    fn de(v: &carte::CarteValide, cachet_du_mois: Option<MontantUnitaire>) -> Termes {
+    /// `ecrit` : le `taux_cachet` que la carte ecrite porte (`saisie::Carte`, cle gardee), qu'aucune case ne saisit plus
+    /// mais qu'une carte ecrite avant peut dire : il passe avant celui du mois.
+    fn de(v: &carte::CarteValide, ecrit: Option<MontantUnitaire>, cachet_du_mois: Option<MontantUnitaire>) -> Termes {
         match v {
             carte::CarteValide::CdduSpectacle(c) => Termes {
                 spectacle: Some(c.spectacle.clone()),
-                // Le taux d'un cachet est celui de sa ligne (`Engagement::nouveau`) ; sans ligne de cachet, celui du mois.
-                taux_cachet: cachet_du_mois,
+                // Le taux d'un cachet est celui de sa ligne (`Engagement::nouveau`) ; sans ligne de cachet, celui que la
+                // carte ecrit, sinon celui du mois.
+                taux_cachet: match ecrit {
+                    Some(t) => Some(t),
+                    None => cachet_du_mois,
+                },
                 quotite_contrat: None,
                 quotite_reference: None,
                 modalite_temps_travail: None,
@@ -1044,7 +1050,7 @@ pub(crate) fn engagements(
         // sa nature n'a pas (`carte::CarteValide::depuis`). Ce qui depend de la nature se lit de sa variante.
         let valide = carte::CarteValide::depuis(carte, &qui)?;
         let nat = valide.nature().proprietes().map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
-        let termes = Termes::de(&valide, defaut_taux);
+        let termes = Termes::de(&valide, carte.taux_cachet, defaut_taux);
         let tarifee;
         let carte = match if nat.mensuelle() { None } else { lignes_au_tarif(ctx, carte.lignes(), mois_dit)? } {
             Some(lignes) => {

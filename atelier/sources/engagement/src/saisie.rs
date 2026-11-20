@@ -216,7 +216,7 @@ carte! {
         /// UNE CLE GARDEE, QUI N'EST PAS UNE CASE : le taux du cachet que la carte d'un CDDU disait quand aucune ligne de
         /// cachet ne le disait. Aucune case ne le montre ni ne le saisit plus (le taux d'un cachet est celui de sa ligne) ;
         /// toute carte ecrite le porte (`null`), et une carte ecrite se relit telle quelle, de meme empreinte
-        /// (`stock::empreinte_de_saisie`).
+        /// (`stock::empreinte_de_saisie`). Le calcul le lit encore (`Termes::de`) : une carte qui le dit garde son calcul.
         #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
         pub taux_cachet: Option<MontantUnitaire>,
         #[champ(Fait, HeuresSupplementaires)]
