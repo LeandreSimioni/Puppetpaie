@@ -1648,21 +1648,12 @@ fn contrat_appelle(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natu
 /// refait pas.
 fn contrat_appelle_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<ContratAppelle> {
     let Some(cle) = e.salarie.as_ref() else { return Ok(ContratAppelle::default()) };
-    let debut = e.debut_lu();
-    if let Some(d) = debut {
+    if let Some(d) = e.debut_lu() {
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {
             return numero_a_dire(ctx, cle, d);
         }
     }
-    let Some(n) = e.nature else { return Ok(ContratAppelle::default()) };
-    if n.proprietes()?.modele_contrat().is_none() {
-        return Ok(ContratAppelle::default());
-    }
-    if let Some(d) = debut {
-        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
-            return Ok(ContratAppelle::default());
-        }
-    }
+    let Some(n) = engagement::carte::contrat_redige_ici(&ctx.racine, e, mois)? else { return Ok(ContratAppelle::default()) };
     Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, n)?.is_empty(), numero: false })
 }
 

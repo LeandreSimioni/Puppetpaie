@@ -1002,20 +1002,65 @@ impl Changements {
             };
             essai.changer(ch, &q)?;
         }
-        sans_les_faits_que_le_motif_n_a_pas(&mut essai, &qui)?;
+        sans_les_faits_que_le_motif_n_a_pas(&ctx.racine, mois, &mut essai, &qui)?;
         *b = essai;
         Ok(())
     }
 }
 
-/// Le brouillon `b`, sans les faits de la fin que son motif n'appelle pas (`Changements::appliquer`). `qui` : le salarie
-/// que le refus nomme.
-fn sans_les_faits_que_le_motif_n_a_pas(b: &mut Brouillon, qui: &impl Fn(&Brouillon) -> String) -> R<()> {
+/// LE CONTRAT D'UNE CARTE EN SAISIE `e` DE `mois` SE REDIGE-T-IL ICI, depuis son modele ? Sa nature, s'il se redige ici ;
+/// `None` sinon : une carte qui ne nomme pas encore son salarie ou sa nature, une nature sans modele de contrat, un
+/// contrat signe ailleurs (`crate::signe_ailleurs_de`, quand la carte dit son debut). La carte qu'une route rend
+/// (`routes::mois`, `FaitQuiOuvre::ContratEcrit`) et les cases qu'une carte vide (`Changements::appliquer`) le lisent ici.
+pub fn contrat_redige_ici(racine: &std::path::Path, e: &Carte, mois: socle::mois::Mois) -> R<Option<NatureDeContrat>> {
+    let Some(cle) = e.salarie.as_ref() else { return Ok(None) };
+    let Some(n) = e.nature else { return Ok(None) };
+    let nat = n.proprietes()?;
+    if nat.modele_contrat().is_none() {
+        return Ok(None);
+    }
+    if let Some(d) = e.debut_lu() {
+        if crate::signe_ailleurs_de(racine, &nat, cle, d, e.numero.as_ref(), mois)? {
+            return Ok(None);
+        }
+    }
+    Ok(Some(n))
+}
+
+/// Le brouillon `b`, d'une carte de `mois`, sans les faits de la fin que son motif n'appelle pas
+/// (`Changements::appliquer`), ni les cases que la fin d'essai a l'initiative de l'employeur (034) ouvre quand le motif
+/// n'est plus le 034 (`FaitQuiOuvre::FinDEssaiParLEmployeur`, `FaitQuiOuvre::EssaiADire`), sauf la periode d'essai d'un
+/// contrat qui se redige ici (`contrat_redige_ici`), que le contrat imprime. `qui` : le salarie que le refus nomme.
+fn sans_les_faits_que_le_motif_n_a_pas(racine: &std::path::Path, mois: socle::mois::Mois, b: &mut Brouillon, qui: &impl Fn(&Brouillon) -> String) -> R<()> {
     let nat = b.nature().proprietes()?;
     let mut c = b.en_carte();
+    // Les cases qu'ouvre le 034, sur la nature de la carte : celles dont le fait n'est plus vrai se ferment, et se vident.
+    let fin_d_essai = c.motif_rupture == Some(MotifDeRupture::FinDEssaiParLEmployeur);
+    let ouverture = |champ: Champ| CarteValide::ouvertures_de(b.nature()).iter().find(|(x, _, _)| *x == champ).map(|(_, o, _)| *o);
+    let fermee_par_le_motif = |champ: Champ| -> R<bool> {
+        Ok(match ouverture(champ) {
+            Some(Ouverture::Si(F::FinDEssaiParLEmployeur)) => !fin_d_essai,
+            Some(Ouverture::Si(F::EssaiADire)) => !fin_d_essai && contrat_redige_ici(racine, &c, mois)?.is_none(),
+            // Une case de toujours, ou qu'un autre fait ouvre : ce n'est pas le motif qui la ferme ; une case que la nature
+            // n'a pas n'est pas sur la carte.
+            Some(Ouverture::Toujours) | Some(Ouverture::Si(_)) | None => false,
+        })
+    };
+    let sans_faute_grave = c.faute_grave.is_some() && fermee_par_le_motif(Champ::FauteGrave)?;
+    let sans_indemnite = c.indemnite_delai_prevenance.is_some() && fermee_par_le_motif(Champ::IndemniteDelaiPrevenance)?;
+    let sans_essai = c.periode_essai_jours.is_some() && fermee_par_le_motif(Champ::PeriodeEssaiJours)?;
+    let mut vide = false;
+    if sans_faute_grave {
+        vide |= c.faute_grave.take().is_some();
+    }
+    if sans_indemnite {
+        vide |= c.indemnite_delai_prevenance.take().is_some();
+    }
+    if sans_essai {
+        vide |= c.periode_essai_jours.take().is_some();
+    }
     let faits = droit::permanents::faits_de_rupture(&nat, c.motif_rupture)?;
     let garde = |f: D| faits.contains(&f);
-    let mut vide = false;
     if !garde(D::NotificationRupture) {
         vide |= c.notification_rupture.take().is_some();
     }
