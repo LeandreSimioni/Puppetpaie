@@ -346,6 +346,14 @@ impl LignePaie {
     }
 }
 
+impl CasesMontrees {
+    /// Une ligne qui ne dit encore que son taux (la ligne de cachet neuve, celle d'un contrat repris) : ce que ses cases
+    /// montrent, ecrit comme celui d'une ligne saisie.
+    pub fn d_un_taux(taux: Option<MontantUnitaire>) -> CasesMontrees {
+        CasesMontrees { quantite: None, taux: taux.map(socle::texte::montant_dans_sa_case), heures: None }
+    }
+}
+
 /// CE QUE LE MOTEUR POSE SUR UNE LIGNE DE FRAIS CALCULEE, pour l'ecran (`frais_au_dela`) : son rang parmi les lignes de
 /// la carte, les cases qui ont lieu d'etre et leur aide, et le taux saisi avant que sa part au-dela de la limite s'en
 /// detache.

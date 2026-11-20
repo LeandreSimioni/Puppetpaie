@@ -9,11 +9,6 @@ function rubriqueDe(code) {
   return ETAT.rubriques.find((r) => r.code === code);
 }
 
-/** Le nombre d'une quantité de ligne, telle que le moteur l'écrit dans l'unité de sa rubrique (`{"cachets": "2"}`) ;
- *  rien quand la case est vide. */
-function nombreDeLaQuantite(q) {
-  return q == null ? q : Object.values(q)[0];
-}
 
 /** Le déroulant des rubriques, dans l'ordre où le moteur les rend. CE QUE LA CARTE PROPOSE, LE MOTEUR LE DIT
  *  (`propose.rubriques` : de l'aperçu pour un engagement, de `nouvelle_carte` pour une carte qui ne nomme pas encore
@@ -110,9 +105,16 @@ function peindreCases(r, cases) {
   });
 }
 
-/** `montree` : ce que ses cases montrent, écrit par le moteur (`montrees` de la route saisie : « 2 » cachets,
- *  « 140,00 ») ; une ligne neuve n'en a pas. */
+/** UNE LIGNE DE PAIE DE LA CARTE. `l` : la ligne telle que l'engagement l'écrit (une ligne neuve : `{}`) ;
+ *  `montree` : CE QUE SES TROIS CASES DE NOMBRE MONTRENT, ÉCRIT PAR LE MOTEUR, et lui seul (`montrees` des routes
+ *  saisie, enregistrer-saisie et contrats-en-cours : « 2 » cachets, « 140,00 » ; une ligne en pourcentage, sa base et
+ *  son pourcentage ; une ligne au montant, sa somme dans la case du taux). Une ligne qui vient d'un engagement (elle
+ *  dit sa rubrique) l'a toujours ; une ligne neuve n'en a pas, et part du dernier taux que le moteur a écrit pour sa
+ *  rubrique (`tauxParDefaut`). */
 function ligneRubrique(l = {}, propose, montree) {
+  if (l.rubrique && !montree) {
+    throw new Error(`La ligne « ${l.rubrique} » arrive sans ce que ses cases montrent (montrees) : le signaler au développeur.`);
+  }
   const div = document.createElement("div");
   div.className = "rubrique";
   // LA RUBRIQUE D'UNE LIGNE NEUVE, le moteur la dit ; tant qu'on ne l'a pas
@@ -122,20 +124,8 @@ function ligneRubrique(l = {}, propose, montree) {
   // Une ligne neuve part du dernier taux donné, pas d'un champ vide : c'est
   // là que « on met de base le dernier taux » se voit. Le dernier taux DE SA
   // RUBRIQUE : « le cachet c'est le cachet, les heures c'est les heures ».
-  // UNE LIGNE EN POURCENTAGE (majoration, précarité) : le
-  // fichier dit `base` et `taux_majoration` ; les deux mêmes champs les
-  // montrent, « 120 € à 25 % ».
-  // UNE LIGNE EN UNITÉS : le moteur écrit sa quantité dans l'unité de sa rubrique (`{"cachets": "2"}`) ; le champ en
-  // montre le nombre.
-  l = { ...l, quantite: nombreDeLaQuantite(l.quantite) };
-  if (l.base !== undefined || l.taux_majoration !== undefined) {
-    l = { ...l, quantite: l.base, taux: l.taux_majoration };
-  }
-  // UNE LIGNE AU MONTANT (prime, acompte, indemnité, avantage en nature) : le fichier dit `montant`, que le champ du
-  // taux montre.
-  if (l.montant !== undefined) l = { ...l, taux: l.montant };
-  if (montree) l = { ...l, quantite: montree.quantite, taux: montree.taux, heures: montree.heures };
-  if (l.taux == null) l = { ...l, taux: tauxParDefaut(code) };
+  const m = montree || { quantite: null, taux: tauxParDefaut(code), heures: null };
+  l = { ...l, quantite: m.quantite, taux: m.taux, heures: m.heures };
   /* TOUT SUR LA MÊME LIGNE, et elle se lit comme une phrase :
 
        1 cachet à 130 €   Théâtre de la Ville   le 12
@@ -380,10 +370,8 @@ function ligneContratPasse(c, avecNom) {
 
 /** LES JOURS D'UNE LIGNE, dans le calendrier (`js/calendrier.js`) : ceux du mois de la saisie se cochent comme jours
  *  joués, ceux des mois suivants sont son planning, ceux des mois passés se lisent. */
-function ouvrirLesJours(ligne, moisForce) {
-  // `moisForce` : la correction d'un mois deja depose se coche dans SON mois,
-  // pas dans celui qu'affiche l'ecran de paie.
-  const mois = moisForce || document.getElementById("mois").value;
+function ouvrirLesJours(ligne) {
+  const mois = document.getElementById("mois").value;
   if (!mois) return;
   const bloc = ligne.closest(".engagement");
   const enCours = bloc && bloc.classList.contains("en-cours");
@@ -541,7 +529,9 @@ function lignesDe(e, nat) {
 }
 
 /* LE DERNIER TAUX DONNÉ À CHAQUE RUBRIQUE : celui d'une ligne neuve de la même rubrique, à l'écran seulement ; rien
-   ne l'enregistre. Celui du cachet part de ce que le MOTEUR dit (route `saisie`, `defauts.taux_cachet`). */
+   ne l'enregistre. Chacun tel que le MOTEUR l'écrit dans sa case (« 140,00 ») : celui du cachet part de la route
+   `saisie` (`defauts.cachet_neuf`), les autres des lignes du mois (`montrees`) et de ce que la route a écrit d'un taux
+   tapé (`montrerLeConverti`). */
 const TAUX_PAR_RUBRIQUE = {};
 function tauxParDefaut(code) {
   return TAUX_PAR_RUBRIQUE[code];
@@ -611,15 +601,20 @@ function poserRares(div, e) {
   cible.querySelectorAll(".e-rare").forEach((c) => { c.onchange = rafraichirApercu; c.oninput = rafraichirApercu; });
 }
 
-/** LES CASES DE LA CARTE QUE LE MOTEUR DIT ÊTRE UN JOUR (`forme` « date » des cases de sa nature,
- *  `natures[].carte.cases` de la route etat) se choisissent dans le calendrier (`js/calendrier.js`). La nature est
- *  celle de la carte, sinon celle d'une carte neuve du mois. */
+/** LES CASES DE LA CARTE QUE LE MOTEUR DIT ÊTRE UN JOUR (`forme` « date » des cases des natures et de leurs motifs,
+ *  `natures[].carte` de la route etat) se choisissent dans le calendrier (`js/calendrier.js`). La forme d'une case est
+ *  celle de son champ, la même dans chaque nature : une carte qui change de nature garde ses calendriers. Une case que
+ *  la page nomme (`data-case-carte`) et que le moteur ne décrit pas est une faute de la page : elle se dit. */
 function calendriersDeLaCarte(div) {
-  const nat = natureDe(div.querySelector(".e-nature").value || NOUVELLE_CARTE.nature);
-  if (!nat) return;
-  const jours = new Set(nat.carte.cases.filter((c) => c.forme === "date").map((c) => c.cle));
+  const formes = new Map();
+  ETAT.natures.forEach((n) => [n.carte.cases, ...n.carte.motifs_recours.map((m) => m.cases)]
+    .forEach((cases) => cases.forEach((c) => formes.set(c.cle, c.forme))));
   div.querySelectorAll("input[data-case-carte]").forEach((c) => {
-    if (jours.has(c.dataset.caseCarte)) c.dataset.calendrier = "1";
+    const forme = formes.get(c.dataset.caseCarte);
+    if (forme === undefined) {
+      throw new Error(`La case « ${c.dataset.caseCarte} » de la carte n'est dans aucune nature que le moteur décrit : le signaler au développeur.`);
+    }
+    if (forme === "date") c.dataset.calendrier = "1";
   });
   poserLesCalendriers(div);
 }
@@ -818,7 +813,7 @@ function ligneEngagement(e = {}, { fermee = false } = {}) {
  *  reste : l'enregistrement automatique ne réécrit pas le fichier pour rien. */
 function ouvrirCarte(div) {
   if (!carteFermee(div)) return;
-  construireCarte(div, engagementLu(div));
+  construireCarte(div, engagementMontre(div));
   if (div._paies) peindreChiffres(div, div._total);
   // Les cases du contrat écrit que le moteur a demandées pour cet engagement, au dernier aperçu.
   const p = div._paies ? div._paies[0] : undefined;
@@ -1157,9 +1152,10 @@ function construireCarte(div, e) {
   cadre.onchange = rafraichirApercu;
   // --- les lignes de paie
   const cible = div.querySelector(".rubriques");
-  // Ce que les cases de chaque ligne montrent, le moteur l'écrit (`montrees`, dans l'ordre des lignes).
+  // Ce que les cases de chaque ligne montrent, le moteur l'écrit (`montrees`, dans l'ordre des lignes) ; une ligne de
+  // l'engagement qui n'en a pas se dit (`ligneRubrique`).
   lignesDe(e, natureDe(selNat.value)).forEach((l, j) =>
-    cible.appendChild(ligneRubrique(l, proposeDuBloc(div), e.montrees ? e.montrees[j] : undefined)));
+    cible.appendChild(ligneRubrique(l, proposeDuBloc(div), e.montrees?.[j])));
   div.querySelector(".ajouter-rubrique").onclick = (ev) => {
     ev.preventDefault();
     cible.appendChild(ligneRubrique({}, proposeDuBloc(div)));
@@ -1746,8 +1742,9 @@ async function poserContratsEnCours(mois) {
     // coché son planning. Sinon une ligne de cachets, à dater.
     // Le moteur rend toujours une ligne de cachets, sans quantité, avec le taux
     // du contrat ou le dernier saisi (`engagement_de_reprise`).
+    // Ce que les cases de sa ligne montrent, le moteur l'écrit (`montrees`).
     const e = { ...c.engagement, salarie: c.salarie, spectacle: c.spectacle,
-                debut: c.contrat.du, fin: c.contrat.au, numero: c.numero };
+                debut: c.contrat.du, fin: c.contrat.au, numero: c.numero, montrees: c.montrees };
     // Ce que l'engagement repris porte d'autre (la durée de référence,
     // l'emploi et les statuts déclarés…) se montre dans son formulaire
     // (`CHAMPS_RARES`), et s'écrit de là.

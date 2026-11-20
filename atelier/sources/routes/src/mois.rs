@@ -67,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), montrees (pour chacun, ce que les cases de ses lignes montrent : quantite, taux, heures), importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), montrees (pour chacun, ce que les cases de ses lignes montrent : quantite, taux, heures), importes, ferme_aux_neufs, defauts (taux_cachet, et cachet_neuf : ce que les cases d'une ligne de cachet neuve montrent), nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -89,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats d'un mois passé qui courent encore ce mois.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "contrats : chacun avec l'engagement qui le reprend",
+        rend: "contrats : chacun avec l'engagement qui le reprend, et montrees (ce que les cases de ses lignes montrent : quantite, taux, heures)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -148,7 +148,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
         ],
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
-        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
+        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent, et ce que la case de chacun montre : montree), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
         acte: Acte::Lit,
         phrase: 200,
@@ -244,6 +244,8 @@ struct SexeDeLaFiche {
 struct Defauts {
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     taux_cachet: Option<MontantUnitaire>,
+    /// Ce que les cases d'une ligne de cachet neuve montrent : ce taux, ecrit (`engagement::ligne::CasesMontrees`).
+    cachet_neuf: CasesMontrees,
 }
 
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
@@ -316,6 +318,8 @@ struct EnCours {
     taux_cachet: Option<MontantUnitaire>,
     deja_repris: bool,
     engagement: Reprise,
+    /// Ce que les cases de chacune de ses lignes montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
+    montrees: [CasesMontrees; 1],
 }
 
 /// L'ENGAGEMENT D'UN CONTRAT EN COURS, pour le fichier du mois : le contrat tel qu'il a ete signe, et une ligne de
@@ -409,6 +413,8 @@ struct TauxQuiChange {
     taux_avant: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     taux: Option<MontantUnitaire>,
+    /// Ce que les cases de la ligne ajustee montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
+    montree: CasesMontrees,
 }
 
 /// Ce qui a change, pour l'engagement ajuste : son salaire du mois s'il change, ses lignes dont le taux change.
@@ -593,7 +599,7 @@ fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
         Some(t) => Some(t),
         None => dernier_taux(ctx)?,
     };
-    Ok(Defauts { taux_cachet })
+    Ok(Defauts { taux_cachet, cachet_neuf: CasesMontrees::d_un_taux(taux_cachet) })
 }
 
 /// La route `saisie`.
@@ -740,6 +746,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             taux_cachet,
             deja_repris: false,
             engagement,
+            montrees: [CasesMontrees::d_un_taux(taux)],
         });
     }
     let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
@@ -1249,7 +1256,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMo
             continue; // restee sans taux : rien a ecrire
         }
         if ta != tb {
-            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
+            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb, montree: b.cases_montrees() });
         }
     }
     let change = avant.salaire_mensuel != apres.salaire_mensuel;

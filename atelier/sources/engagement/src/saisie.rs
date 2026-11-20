@@ -85,7 +85,7 @@ macro_rules! carte {
             pub const TOUS: &'static [Champ] = &[ $( Champ::$variante, )* ];
 
             /// Son nom de cle (celui d'un sous-champ : `statut` de l'emploi).
-            pub fn nom(self) -> &'static str {
+            pub const fn nom(self) -> &'static str {
                 match self { $( Champ::$variante => carte!(@nom $acces), )* }
             }
 

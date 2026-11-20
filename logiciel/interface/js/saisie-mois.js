@@ -18,6 +18,15 @@ function engagementLu(div) {
   return i < 0 ? undefined : SAISIE.engagements[i];
 }
 
+/** CE QU'UNE CARTE MONTRE EN S'OUVRANT : l'engagement lu (`engagementLu`), avec ce que les cases de ses lignes montrent,
+ *  que le moteur écrit (`montrees` de la route saisie, dans l'ordre des engagements). Par tous les chemins qui ouvrent
+ *  une carte fermée : le chargement du mois, « Modifier », un imprévu. Ce n'est pas ce que la carte écrit. */
+function engagementMontre(div) {
+  const i = SAISIE.identites.findIndex((id) => JSON.stringify(id) === div.dataset.engagement);
+  if (i < 0) throw new Error("Une carte fermée désigne un engagement que la saisie lue ne montre pas : recharger le mois.");
+  return { ...SAISIE.engagements[i], montrees: SAISIE.montrees[i] };
+}
+
 /** Une carte fermée : son formulaire n'est pas construit. */
 function carteFermee(div) {
   return !div.querySelector(".ligne1");
@@ -503,9 +512,10 @@ function appliquerAjustement(div, r) {
   // Les lignes que la carte a enregistrées (`lignesDuBloc`), dans le même ordre : une ligne vide n'est pas partie,
   // donc elle ne compte pas dans les rangs.
   const rangs = [...div.querySelectorAll(".rubrique")].filter(ligneEnvoyee);
+  // Le taux tel que le moteur l'écrit dans sa case (`montree`).
   e.lignes.forEach((l) => {
     const cible = rangs[l.rang];
-    if (cible) cible.querySelector(".r-taux").value = l.taux;
+    if (cible) cible.querySelector(".r-taux").value = l.montree.taux;
   });
   if (e.salaire_mensuel != null) div.querySelector(".e-salaire").value = e.salaire_mensuel;
   rafraichirApercu();
@@ -538,10 +548,10 @@ let MOIS_AFFICHE = null;        // le mois REELLEMENT charge dans l'ecran
 
 function afficherRappelsMois() {
   const t = TAUX_PAR_RUBRIQUE.cachet;
-  // Le taux du cachet d'une ligne neuve (le dernier tapé, tel que la route l'a converti, ou celui que le moteur dit) : une
-  // case et sa valeur.
+  // Le taux du cachet d'une ligne neuve (le dernier tapé, ou celui que le moteur dit), tel que le moteur l'écrit dans
+  // sa case : une case et sa valeur.
   document.getElementById("rappels-mois").innerHTML =
-    `<span>Cachet par défaut</span> <b>${echapper(t == null ? "—" : euros(t))}</b> · ${aideDe("lieu_jours")}`;
+    `<span>Cachet par défaut</span> <b>${t == null ? "—" : `${echapper(t)} €`}</b> · ${aideDe("lieu_jours")}`;
 }
 
 let DEMANDE_MOIS = null;
@@ -567,14 +577,16 @@ async function chargerMois(mois, repeint = false) {
   MOIS_AFFICHE = mois;
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
-  // LE TAUX DU CACHET D'UNE LIGNE NEUVE, LE MOTEUR LE DIT (`defauts.taux_cachet`) ; chaque autre rubrique part du
+  // LE TAUX DU CACHET D'UNE LIGNE NEUVE, LE MOTEUR LE DIT (`defauts.cachet_neuf`) ; chaque autre rubrique part du
   // dernier taux que le mois lui donne. Ce n'est qu'une commodité de saisie, à l'écran.
   const defauts = r.defauts;
-  if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
+  // Tels que le moteur les écrit dans leur case (`defauts.cachet_neuf`, `montrees`) : une ligne neuve montre « 140,00 »
+  // comme les autres.
+  if (defauts.cachet_neuf.taux != null) TAUX_PAR_RUBRIQUE.cachet = defauts.cachet_neuf.taux;
   // Une carte sans ligne de paie n'en écrit pas (`lignes` absent).
-  SAISIE.engagements.forEach((e) => e.lignes && e.lignes.forEach((l) => {
+  SAISIE.engagements.forEach((e, i) => e.lignes && e.lignes.forEach((l, j) => {
     if (!(+l.taux > 0) || !l.rubrique || l.rubrique === "cachet") return;
-    TAUX_PAR_RUBRIQUE[l.rubrique] = +l.taux;
+    TAUX_PAR_RUBRIQUE[l.rubrique] = SAISIE.montrees[i][j].taux;
   }));
   afficherRappelsMois();
   const cible = document.getElementById("engagements");
@@ -691,7 +703,7 @@ async function repeindreLeMois(mois, ancien, frais) {
     const r = await api("saisie", { mois });
     if (MOIS_AFFICHE !== mois) return;
     const defauts = r.defauts;
-    if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
+    if (defauts.cachet_neuf.taux != null) TAUX_PAR_RUBRIQUE.cachet = defauts.cachet_neuf.taux;
     afficherRappelsMois();
     IMPORTES = r.importes;
     NOUVELLE_CARTE = r.nouvelle_carte;
@@ -1103,15 +1115,14 @@ function montrerLeConverti(div, carte, b, montrees, mois) {
       const r = rangs[i];
       if (!r) return;
       const m = montrees[i];
-      const taux = l.taux ?? l.montant ?? l.taux_majoration;
       poser(r.querySelector(".r-quantite"), m.quantite);
       poser(r.querySelector(".r-taux"), m.taux);
       poser(r.querySelector(".r-heures"), m.heures);
-      // Le taux tapé, converti par la route : celui de la prochaine ligne de la même rubrique.
-      if (r.dataset.tauxTape && taux != null) {
+      // Le taux tapé, tel que le moteur l'écrit : celui de la prochaine ligne de la même rubrique.
+      if (r.dataset.tauxTape && m.taux != null) {
         delete r.dataset.tauxTape;
         const code = r.querySelector(".r-code").value;
-        TAUX_PAR_RUBRIQUE[code] = taux;
+        TAUX_PAR_RUBRIQUE[code] = m.taux;
         if (code === "cachet") afficherRappelsMois();
       }
     });

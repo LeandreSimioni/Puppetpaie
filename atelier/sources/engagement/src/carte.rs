@@ -374,28 +374,29 @@ pub enum CarteValide {
 
 /// UNE NATURE DECRITE pour l'appelant (`natures` de la fiche des routes qui ecrivent une carte, et de la route etat) :
 /// sa cle, chacune de ses cases (obligatoire ou facultative), et, pour un CDD, ses motifs et ce que chacun porte en plus.
+/// `F` est la forme d'une case (`routes::catalogue::Forme`, au-dessus : celui qui decrit la nomme).
 #[derive(Debug, Clone, Serialize)]
-pub struct NatureDecrite {
+pub struct NatureDecrite<F> {
     pub nature: NatureDeContrat,
-    pub cases: Vec<CaseDecrite>,
-    pub motifs_recours: Vec<MotifDecrit>,
+    pub cases: Vec<CaseDecrite<F>>,
+    pub motifs_recours: Vec<MotifDecrit<F>>,
 }
 
 /// Une case d'une nature : sa cle sur la carte, son libelle, ce qu'elle est, et sa forme (ce que l'ecran en saisit : une
-/// date, un nombre… ; le catalogue la dit, `routes::catalogue::Forme::de_la_case`).
+/// date, un nombre… ; `routes::catalogue::Forme::de_la_case`).
 #[derive(Debug, Clone, Serialize)]
-pub struct CaseDecrite {
+pub struct CaseDecrite<F> {
     pub cle: &'static str,
     pub libelle: &'static str,
     pub exige: Exige,
-    pub forme: &'static str,
+    pub forme: F,
 }
 
 /// Un motif de recours : son code, et les cases qu'il porte en plus de celles de sa nature.
 #[derive(Debug, Clone, Serialize)]
-pub struct MotifDecrit {
+pub struct MotifDecrit<F> {
     pub code: MotifDeRecours,
-    pub cases: Vec<CaseDecrite>,
+    pub cases: Vec<CaseDecrite<F>>,
 }
 
 impl CarteValide {
@@ -419,8 +420,8 @@ impl CarteValide {
 
     /// Chaque nature et ses cases, tirees du type, chacune sa forme (`forme`) ; ses motifs de recours, et ce que chacun
     /// porte, de `contrats-base.json`.
-    pub fn natures(forme: fn(Champ) -> &'static str) -> R<Vec<NatureDecrite>> {
-        let decrire = |cases: &'static [(Champ, Exige)]| -> Vec<CaseDecrite> {
+    pub fn natures<F>(forme: fn(Champ) -> F) -> R<Vec<NatureDecrite<F>>> {
+        let decrire = |cases: &'static [(Champ, Exige)]| -> Vec<CaseDecrite<F>> {
             cases.iter().map(|(c, e)| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: *e, forme: forme(*c) }).collect()
         };
         let mut out = Vec::new();

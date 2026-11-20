@@ -293,7 +293,8 @@ fn au_centime(d: rust_decimal::Decimal) -> rust_decimal::Decimal {
 }
 
 /// Les chiffres d'un montant au centime `c`, positif, precedes de « - » si `negatif`, les milliers separes par
-/// `separateur`, la virgule decimale : l'ecriture de `euros` et de `chiffres_en_euros`.
+/// `separateur`, la virgule decimale : l'ecriture de `euros`, de `chiffres_en_euros` et de `montant_dans_sa_case` (qui
+/// lui passe toutes ses decimales, au moins deux).
 fn aux_centimes(negatif: bool, c: rust_decimal::Decimal, separateur: char) -> String {
     let t = c.to_string();
     let (entier, centimes) = match t.split_once('.') {

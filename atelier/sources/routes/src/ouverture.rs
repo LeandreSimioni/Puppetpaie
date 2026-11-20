@@ -1281,7 +1281,7 @@ pub(crate) struct RubriqueDeLaPage {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct CleDeLaLigne {
     cle: &'static str,
-    forme: &'static str,
+    forme: Forme,
 }
 
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
@@ -1289,7 +1289,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
-    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), forme: Forme::de_la_cle(*c).mot() }).collect();
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), forme: Forme::de_la_cle(*c) }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
@@ -1363,7 +1363,7 @@ struct NatureDeLaPage {
     /// Les cases de sa carte, obligatoires ou facultatives, et ce que chaque motif de recours porte en plus, tirees du
     /// type (`crate::catalogue::natures_des_cartes`), chacune sa forme : ce que la page montre, et seulement cela ; une
     /// case de forme `date` s'y choisit dans le calendrier.
-    carte: engagement::carte::NatureDecrite,
+    carte: engagement::carte::NatureDecrite<Forme>,
     mensuelle: bool,
     duree_indeterminee: bool,
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
