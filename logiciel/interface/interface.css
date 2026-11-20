@@ -41,6 +41,10 @@
 
 * { box-sizing: border-box; }
 
+/* CE QUE LE MOTEUR NE DONNE PAS À CHOISIR NE SE VOIT PAS : `hidden` cache, partout, quelle que soit la règle
+   d'affichage de la case (une grille, un `label` en bloc). */
+[hidden] { display: none !important; }
+
 /* UN DÉPLIANT FERMÉ NE MONTRE QUE SON TITRE, partout. Le navigateur de la
    fenêtre sous Windows (WebView2) peut peindre le contenu d'un <details> fermé
    par-dessus la carte : on ne s'en remet pas à la façon dont un navigateur
@@ -246,7 +250,7 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .choix-mois { position: relative; width: 15rem; }
 .choix-mois-lib { display: block; font-size: 12px; color: var(--discret); }
 .mois-maj { font-style: italic; }
-.mois-maj[hidden] { display: inline; visibility: hidden; }  /* sa place reste prise : rien ne bouge */
+.mois-maj[hidden] { display: inline !important; visibility: hidden; }  /* sa place reste prise : rien ne bouge */
 .choix-mois-case {
   display: flex; align-items: stretch; margin-top: 3px;
   border: 1px solid var(--bord); border-radius: 3px; background: var(--carte);
