@@ -22,7 +22,10 @@ function fermerLesCalendriers() {
 
 /** OUVRE LE CALENDRIER sous `ancre`. `o.vue` : le mois montré d'abord, AAAA-MM ; `o.pris(iso)` : le jour est-il pris ?
  *  Un jour : `o.choisir(iso)`, et il se ferme. Des jours : `o.coches` (les jours cochés, AAAA-MM-JJ), `o.changer(coches)`
- *  à chaque jour coché ou décoché, et `o.fermer()` quand il se ferme. */
+ *  à chaque jour coché ou décoché, et `o.fermer()` quand il se ferme. `o.lecture(mois)` : ce mois se lit, rien ne s'y
+ *  coche ; `o.marque(iso)` : ce qu'un jour d'un mois qui se lit montre (`{classe, titre}`) ; `o.dessous(mois)` : ce qui
+ *  se lit sous la grille de ce mois. `o.redessiner` reçoit de quoi redessiner le calendrier ouvert (ce qui se lit est
+ *  arrivé). */
 function ouvrirLeCalendrier(ancre, o) {
   fermerLesCalendriers();
   const cal = document.createElement("div");
@@ -34,6 +37,8 @@ function ouvrirLeCalendrier(ancre, o) {
   const pris = (iso) => (o.coches ? coches.has(iso) : o.pris(iso));
   let annee = +o.vue.slice(0, 4), mois = +o.vue.slice(5, 7) - 1, montre = "jours", glisse = null;
   const deux = (n) => String(n).padStart(2, "0");
+  const vueDe = () => `${annee}-${deux(mois + 1)}`;
+  const lecture = () => !!(o.lecture && o.lecture(vueDe()));
   const fleche = (sens, titre, faire) =>
     `<button type="button" class="c-fleche" data-pas="${sens}" data-quoi="${faire}" aria-label="${titre}">${sens < 0 ? "‹" : "›"}</button>`;
   const dessiner = () => {
@@ -48,13 +53,17 @@ function ouvrirLeCalendrier(ancre, o) {
     } else {
       const nb = new Date(annee, mois + 1, 0).getDate();
       const premier = (new Date(annee, mois, 1).getDay() + 6) % 7;   // lundi = 0
+      const lu = lecture();
       let cases = JOURS_SEMAINE.map((x) => `<span class="c-sem">${x}</span>`).join("");
       for (let i = 0; i < premier; i++) cases += `<span></span>`;
       for (let j = 1; j <= nb; j++) {
         const iso = `${annee}-${deux(mois + 1)}-${deux(j)}`;
-        cases += `<button type="button" class="c-jour${pris(iso) ? " pris" : ""}" data-jour="${iso}">${j}</button>`;
+        const m = lu && o.marque ? o.marque(iso) : null;
+        cases += lu
+          ? `<span class="c-jour lu${m && m.classe ? " " + m.classe : ""}"${m && m.titre ? ` title="${echapper(m.titre)}"` : ""}>${j}</span>`
+          : `<button type="button" class="c-jour${pris(iso) ? " pris" : ""}" data-jour="${iso}">${j}</button>`;
       }
-      grille = `<div class="c-grille c-jours">${cases}</div>`;
+      grille = `<div class="c-grille c-jours">${cases}</div>${o.dessous ? `<div class="c-dessous">${o.dessous(vueDe())}</div>` : ""}`;
     }
     cal.innerHTML = `
       <div class="c-tete">
@@ -113,15 +122,20 @@ function ouvrirLeCalendrier(ancre, o) {
   };
   const lacher = () => { glisse = null; };
   document.addEventListener("pointerup", lacher);
+  // SOUS SA CASE, SANS SORTIR DE L'ÉCRAN, NI À DROITE NI À GAUCHE : recalé vers la gauche si la place manque à droite,
+  // jamais avant le bord gauche ; au-dessus si la place manque dessous. Sa largeur ne dépasse pas l'écran (CSS).
+  const placer = () => {
+    const a = ancre.getBoundingClientRect(), r = cal.getBoundingClientRect();
+    const large = document.documentElement.clientWidth, haut = document.documentElement.clientHeight;
+    const gauche = Math.max(8, Math.min(a.left, large - r.width - 8));
+    const dessus = a.bottom + r.height + 4 > haut && a.top - r.height - 4 > 0 ? a.top - r.height - 4 : a.bottom + 4;
+    cal.style.left = (gauche + window.scrollX) + "px";
+    cal.style.top = (dessus + window.scrollY) + "px";
+  };
   dessiner();
-  // SOUS SA CASE, SANS SORTIR DE L'ÉCRAN : à gauche de sa case si la place manque à droite, au-dessus si elle manque
-  // dessous.
-  const a = ancre.getBoundingClientRect(), r = cal.getBoundingClientRect();
-  const large = document.documentElement.clientWidth, haut = document.documentElement.clientHeight;
-  const gauche = Math.max(8, Math.min(a.left, large - r.width - 8));
-  const dessus = a.bottom + r.height + 4 > haut && a.top - r.height - 4 > 0 ? a.top - r.height - 4 : a.bottom + 4;
-  cal.style.left = (gauche + window.scrollX) + "px";
-  cal.style.top = (dessus + window.scrollY) + "px";
+  placer();
+  // Ce qui se lit d'un mois arrive après : le calendrier ouvert se redessine, à sa place.
+  if (o.redessiner) o.redessiner(() => { if (cal.isConnected && !glisse) { dessiner(); placer(); } });
   // Fermer en cliquant ailleurs, ou à la touche Échap.
   const dehors = (ev) => {
     if (!cal.isConnected) { document.removeEventListener("pointerdown", dehors); document.removeEventListener("pointerup", lacher); return; }
@@ -140,9 +154,50 @@ function moisDOuverture(iso) {
   return iso ? iso.slice(0, 7) : (ecran && ecran.value) || aujourdhuiIso().slice(0, 7);
 }
 
+/** CE QUE LE CALENDRIER DES JOURS D'UNE CASE DIT DES MOIS AUTOUR DU SIEN (`data-mois`) : un mois d'avant se lit, avec
+ *  les contrats que l'écran lit (`o.passes(mois, salarie)` : la réponse de sa route, ses `contrats`, `non_lus`,
+ *  `rien_dit`), en jours grisés et une ligne chacun ; un mois d'après dit ce que cocher y fait (`aides.plusieurs_mois`).
+ *  Sans mois, rien de tout cela. */
+function moisAutour(c, o) {
+  const sien = c.dataset.mois;
+  if (!sien) return {};
+  const lus = new Map();
+  let redessiner = () => {};
+  const lire = (m) => {
+    if (lus.has(m) || !o.passes) return;
+    lus.set(m, null);
+    o.passes(m, c.dataset.salarie || null).then((r) => lus.set(m, r), (e) => lus.set(m, { erreur: e.message })).then(() => redessiner());
+  };
+  const contrats = (m) => { const r = lus.get(m); return r && !r.erreur ? r.contrats : []; };
+  return {
+    lecture: (m) => m < sien,
+    redessiner: (f) => { redessiner = f; },
+    marque: (iso) => {
+      const cs = contrats(iso.slice(0, 7));
+      const joues = cs.filter((x) => x.dates.includes(iso));
+      const plages = cs.filter((x) => iso >= x.periode.du && (x.periode.au == null || iso <= x.periode.au));
+      const dits = (joues.length ? joues : plages).map((x) => [x.nom, x.titre].filter(Boolean).join(" · "));
+      return { classe: joues.length ? "joue" : plages.length ? "plage" : "", titre: dits.join(" / ") };
+    },
+    dessous: (m) => {
+      if (m > sien) return `<p class="discret">${echapper(ETAT.aides.plusieurs_mois)}</p>`;
+      if (m === sien) return "";
+      lire(m);
+      const r = lus.get(m);
+      if (!r) return o.passes ? `<p class="discret">…</p>` : "";
+      if (r.erreur) return `<p class="erreur">${echapper(r.erreur)}</p>`;
+      return `${r.contrats.length ? r.contrats.map((x) => `<p class="c-passe"${x.numero_objet || x.spectacle
+        ? ` title="${echapper(x.numero_objet || x.spectacle)}"` : ""}><b>${echapper([x.nom, x.titre].filter(Boolean).join(" · "))}</b>
+        <span class="discret">${echapper(x.dit)}</span></p>`).join("") : `<p class="discret">${echapper(r.rien_dit)}</p>`}
+        ${r.non_lus.map((x) => `<p class="discret">${echapper(x)}</p>`).join("")}`;
+    },
+  };
+}
+
 /** Branche le calendrier de chaque case de `racine` dont la forme le demande (`data-calendrier`, posé par le
- *  dessinateur) : un jour, qui se tape aussi ; des jours, qui se cochent. Chaque case dit `change` quand sa valeur change. */
-function poserLesCalendriers(racine) {
+ *  dessinateur) : un jour, qui se tape aussi ; des jours, qui se cochent. Chaque case dit `change` quand sa valeur change.
+ *  `o.passes` : ce que l'écran lit des contrats d'un mois passé (`moisAutour`). */
+function poserLesCalendriers(racine, o = {}) {
   racine.querySelectorAll("[data-calendrier]").forEach((x) => {
     if (x.dataset.calendrierPose) return;
     x.dataset.calendrierPose = "1";
@@ -158,23 +213,26 @@ function poserLesCalendriers(racine) {
       });
       return;
     }
+    // Des jours : la case (`data-case`) tient leur valeur, le bouton ouvre le calendrier.
+    const c = x.closest("[data-case]");
     x.addEventListener("click", () => {
       if (x.disabled) return;
       // Chaque jour garde ce qu'il disait (un jour qui dit son propre lieu) tant qu'il reste coché. La case dit `change`
       // quand le calendrier se ferme : les jours cochés partent ensemble.
-      const avant = JSON.parse(x.dataset.valeur);
+      const avant = JSON.parse(c.dataset.valeur);
       const isos = avant.map(jourDe);
       let change = false;
       ouvrirLeCalendrier(x, {
-        vue: moisDOuverture(isos.slice().sort()[0]),
+        ...moisAutour(c, o),
+        vue: c.dataset.mois || moisDOuverture(isos.slice().sort()[0]),
         coches: isos,
         changer: (coches) => {
           const v = coches.map((iso) => avant.find((d) => jourDe(d) === iso) || iso);
-          x.dataset.valeur = JSON.stringify(v);
+          c.dataset.valeur = JSON.stringify(v);
           x.textContent = joursDits(v);
           change = true;
         },
-        fermer: () => { if (change) x.dispatchEvent(new Event("change", { bubbles: true })); },
+        fermer: () => { if (change) c.dispatchEvent(new Event("change", { bubbles: true })); },
       });
     });
   });

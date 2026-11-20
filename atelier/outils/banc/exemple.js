@@ -141,7 +141,8 @@ function etape(t) { console.log(`\n== ${t}`); }
   await bloc.locator('[data-cle="spectacle"] select').selectOption({ index: 1 }); await page.waitForTimeout(1500);
   if (!await bloc.locator(".ligne-paie").count()) { await bloc.locator(".ajouter-ligne").click(); await page.waitForTimeout(1500); }
   await ligne("rubrique").selectOption("cachet"); await page.waitForTimeout(1500);
-  await ligne("dates").click(); await page.waitForTimeout(400);
+  // Les jours de la ligne (ceux du mois et ceux des mois suivants) : une case, son bouton ouvre le calendrier.
+  await ligne("dates").locator(".jours-coches").click(); await page.waitForTimeout(400);
   await page.click(".cal .c-jour[data-jour$='-20']"); await page.click(".cal .c-jour[data-jour$='-21']");
   await page.mouse.click(5, 300); await page.waitForTimeout(1500);
   await ligne("quantite").fill("2"); await ligne("quantite").press("Tab"); await page.waitForTimeout(1500);

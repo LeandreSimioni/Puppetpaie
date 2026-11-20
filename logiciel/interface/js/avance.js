@@ -13,14 +13,34 @@ const valeurDeDepart = (v) => (v == null ? "" : ` value="${echapper(String(v))}"
 /** Un texte tapé, ou `null` pour une case vide. */
 const tape = (x) => (x.value.trim() === "" ? null : x.value.trim());
 
-/** Les options d'un choix : une case vide d'abord (rien de choisi ne part), puis chaque valeur offerte ; une valeur
- *  posée que la liste n'offre pas reste offerte telle quelle (une fiche mise de côté). */
+/** Les options d'un choix : une case vide d'abord (rien de choisi ne part ; son libellé est celui de la valeur offerte
+ *  de code vide, quand la route en offre une : « à son terme », « modèle de base »), puis chaque valeur offerte, sous
+ *  son groupe quand elle en dit un (`groupe`, dans l'ordre où ils viennent) ; une valeur posée que la liste n'offre pas
+ *  reste offerte telle quelle (une fiche mise de côté). */
 function optionsDuChoix(v, choix) {
   const offerts = choix || [];
-  const garde = v != null && v !== "" && !offerts.some((o) => o.code === String(v)) ? [{ code: String(v), libelle: String(v) }] : [];
-  return `<option value=""></option>${[...offerts, ...garde].map((o) => `<option value="${echapper(o.code)}"${
-    o.code === String(v) ? " selected" : ""}>${echapper(o.libelle)}</option>`).join("")}`;
+  const vide = offerts.find((o) => o.code === "");
+  const pleins = offerts.filter((o) => o.code !== "");
+  const garde = v != null && v !== "" && !pleins.some((o) => o.code === String(v)) ? [{ code: String(v), libelle: String(v) }] : [];
+  const option = (o) => `<option value="${echapper(o.code)}"${o.code === String(v) ? " selected" : ""}>${echapper(o.libelle)}</option>`;
+  const groupes = [...new Set(pleins.map((o) => o.groupe))];
+  const corps = groupes.map((g) => (g == null ? pleins.filter((o) => o.groupe == null).map(option).join("")
+    : `<optgroup label="${echapper(g)}">${pleins.filter((o) => o.groupe === g).map(option).join("")}</optgroup>`)).join("");
+  return `<option value="">${vide ? echapper(vide.libelle) : ""}</option>${corps}${garde.map(option).join("")}`;
 }
+
+/** Une valeur composée, en lecture : ses parties dites, « clé : valeur », ou une ligne par élément d'une liste. */
+function objetEnClair(v) {
+  if (v == null) return "—";
+  if (Array.isArray(v)) return v.length ? v.map(objetEnClair).join(" ; ") : "—";
+  if (typeof v === "object") {
+    return Object.entries(v).filter(([, x]) => x != null && x !== "").map(([k, x]) => `${k} : ${objetEnClair(x)}`).join(" · ") || "—";
+  }
+  return String(v);
+}
+
+/** Les formes qui se tapent ou se choisissent d'une valeur simple : une valeur composée ne s'y écrit pas. */
+const FORMES_SIMPLES = new Set(["texte", "nombre", "oui_non", "mois", "date", "choix", "choix_rendu"]);
 
 /** LA TABLE : à chaque forme, sa case (`html`, ce qu'elle montre de `v` ; `o.choix` : ce qu'un choix offre, `o.unite` :
  *  l'unité d'une quantité) et sa lecture (`lire`, la valeur que la route lit ; `null` : une case vide). Chaque case porte
@@ -40,10 +60,20 @@ const CASES = {
       valeurDeDepart(v == null ? null : jjmmaaaa(v))}>`,
     lire: lireUnJour,
   },
+  // Des jours : le bouton qui les dit ouvre le calendrier où l'on coche ; un jour qui dit son propre lieu (`{jour, lieu}`)
+  // a sa case à côté, tant qu'il reste coché. `o.mois` : le mois dont les jours se cochent ici (ceux d'avant se lisent,
+  // ceux d'après sont ceux des mois suivants) ; `o.salarie` : de qui le calendrier montre les contrats passés.
   jours: {
-    html: (v) => `<button type="button" class="jours-coches" data-case data-calendrier="jours"
-      data-valeur="${echapper(JSON.stringify(v || []))}">${echapper(joursDits(v || []))}</button>`,
-    lire: (x) => JSON.parse(x.dataset.valeur),
+    html: (v, o) => `<span class="jours-case" data-case data-valeur="${echapper(JSON.stringify(v || []))}"${
+      o.mois ? ` data-mois="${echapper(o.mois)}"` : ""}${o.salarie ? ` data-salarie="${echapper(o.salarie)}"` : ""}>
+      <button type="button" class="jours-coches" data-calendrier="jours">${echapper(joursDits(v || []))}</button>${
+      lieuxDesJours(v || [])}</span>`,
+    lire: (x) => JSON.parse(x.dataset.valeur).map((d) => {
+      const iso = jourDe(d);
+      const c = x.querySelector(`[data-lieu-jour="${iso}"]`);
+      if (!c) return d;
+      return c.value.trim() ? { jour: iso, lieu: c.value.trim() } : iso;
+    }),
   },
   liste: {
     html: (v, o) => (o.choix
@@ -57,8 +87,15 @@ const CASES = {
   choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
   choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix)}</select>`, lire: (x) => x.value || null },
   // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
-  objet: { html: (v) => `<span class="case-objet" data-case>${echapper(v == null ? "—" : JSON.stringify(v))}</span>`, lire: () => undefined },
+  objet: { html: (v) => `<span class="case-objet" data-case>${echapper(objetEnClair(v))}</span>`, lire: () => undefined },
 };
+
+/** Les jours qui disent leur propre lieu (`{jour, lieu}`) : une case chacun, le lieu du jour. */
+function lieuxDesJours(jours) {
+  const propres = jours.filter((d) => d && typeof d === "object" && d.lieu);
+  return propres.map((d) => `<label class="lieu-du-jour">${echapper(jjmmaaaa(d.jour).slice(0, 5))}
+    <input type="text" data-lieu-jour="${echapper(d.jour)}"${valeurDeDepart(d.lieu)}></label>`).join("");
+}
 
 /** Un jour tapé : JJ/MM/AAAA (un ou deux chiffres pour le jour et le mois) devient AAAA-MM-JJ ; ce qui ne se lit pas
  *  comme un jour part tel quel, et le moteur le refuse en nommant sa case. */
@@ -76,11 +113,14 @@ function joursDits(jours) {
   return joursEnClair(isos) + " " + MOIS_ABR[+isos[0].slice(5, 7) - 1];
 }
 
-/** LA CASE d'une forme, sans libellé ; une forme que la table n'a pas est une faute de la page : elle se dit. */
+/** LA CASE d'une forme, sans libellé ; une forme que la table n'a pas est une faute de la page : elle se dit. Une valeur
+ *  composée que la route rend sous une forme simple (l'emploi d'une carte, un objet décrit « texte ») se montre en
+ *  lecture, comme un objet : elle ne s'écrit pas dans une case de texte. */
 function caseDeForme(forme, v, o = {}) {
-  const c = CASES[forme];
-  if (!c) throw new Error(`La forme « ${forme} » n'a pas de case dans la page : le signaler au développeur.`);
-  return c.html(v, o).replace("data-case", `data-case data-forme="${forme}"`);
+  const f = v != null && typeof v === "object" && FORMES_SIMPLES.has(forme) ? "objet" : forme;
+  const c = CASES[f];
+  if (!c) throw new Error(`La forme « ${f} » n'a pas de case dans la page : le signaler au développeur.`);
+  return c.html(v, o).replace("data-case", `data-case data-forme="${f}"`);
 }
 
 /** La valeur d'une case (l'élément qui porte `data-case`), lue par sa forme. */
@@ -88,8 +128,9 @@ function lireLaCase(x) {
   return CASES[x.dataset.forme].lire(x);
 }
 
-/** Branche ce qu'une case fait seule dans `bloc` : le « + » d'une liste, les calendriers. */
-function brancherLesCases(bloc) {
+/** Branche ce qu'une case fait seule dans `bloc` : le « + » d'une liste, les calendriers (`o` : ce que le calendrier lit
+ *  des mois passés, `o.passes(mois, salarie)`, quand l'écran qui l'appelle le sait). */
+function brancherLesCases(bloc, o = {}) {
   bloc.querySelectorAll("[data-plus]").forEach((b) => {
     b.onclick = () => {
       const x = document.createElement("input");
@@ -98,7 +139,7 @@ function brancherLesCases(bloc) {
       x.focus();
     };
   });
-  poserLesCalendriers(bloc);
+  poserLesCalendriers(bloc, o);
 }
 
 /* ------------------------------------------------ les lignes de paie */
@@ -115,32 +156,98 @@ function ligneDonnee(l, rubrique) {
   return Object.fromEntries(rubrique.cles.map((c) => [c.cle, l[c.cle] === undefined ? vide(c) : l[c.cle]]));
 }
 
-/** DES LIGNES DE PAIE, une par rangée, aux colonnes fixes : la rubrique (un choix parmi `offertes`, des codes), puis
- *  chaque clé que sa rubrique dit, chacune sa case et son libellé ; le bouton qui retire la ligne au bout. `choixDe(i)` :
- *  ce que les choix de la ligne `i` offrent en plus de ceux de sa rubrique. */
-function lignesDePaie(lignes, offertes, choixDe) {
-  const rubriques = offertes.map((code) => ({ code, libelle: rubriqueDe(code) ? rubriqueDe(code).libelle : code }));
-  return `<div class="lignes-paie">${lignes.map((l, i) => {
+/** Les clés d'une ligne : celles que sa rubrique dit (`cles`) ; une ligne sans rubrique ne dit que les clés dont les
+ *  valeurs sont offertes à toutes les lignes (`communs` : la rubrique, parmi celles que la carte propose). */
+function clesDeLaLigne(r, communs) {
+  return r ? r.cles : ETAT.rubriques[0].cles.filter((c) => communs[c.cle]);
+}
+
+/** LES COLONNES DES LIGNES : chaque clé que leurs rubriques disent, dans l'ordre où elle vient, une colonne chacune ;
+ *  les clés de jours d'une rubrique (`jours` : ceux du mois, puis ceux des mois suivants) en une seule colonne, qui se
+ *  coche dans un seul calendrier. Une liste à cocher (les cases d'une ligne de frais) ne fait pas de colonne : elle se
+ *  pose sous sa ligne. */
+function colonnesDesLignes(lignes, communs) {
+  const colonnes = [];
+  const jours = { cle: null, cles: [], forme: "jours", libelle: "" };
+  (lignes.length ? lignes : [{}]).forEach((l) => clesDeLaLigne(rubriqueDe(l.rubrique), communs).forEach((c) => {
+    if (c.forme === "liste") return;
+    if (c.forme === "jours") {
+      if (!jours.cle) { jours.cle = c.cle; jours.libelle = c.libelle; colonnes.push(jours); }
+      if (!jours.cles.includes(c.cle)) jours.cles.push(c.cle);
+      return;
+    }
+    if (!colonnes.some((x) => x.cle === c.cle)) colonnes.push({ cle: c.cle, cles: [c.cle], forme: c.forme, libelle: c.libelle });
+  }));
+  return colonnes;
+}
+
+/** La largeur d'une colonne, par sa forme : une liste où l'on choisit et un texte s'élargissent, un nombre reste court. */
+const LARGEUR_DE_COLONNE = {
+  choix_rendu: "minmax(8rem, 1.4fr)", choix: "minmax(8rem, 1.4fr)", texte: "minmax(8rem, 2fr)",
+  quantite: "minmax(4rem, .5fr)", nombre: "minmax(4.5rem, .6fr)", jours: "minmax(7rem, 1fr)",
+};
+
+/** DES LIGNES DE PAIE, une par rangée, aux colonnes fixes et titrées une fois : chaque clé que sa rubrique dit, chacune
+ *  sa case, puis la croix qui retire la ligne, au bout. Sous la ligne : ses cases à cocher (une liste, quand des valeurs
+ *  sont offertes : sans elles, rien ne se coche et la valeur reste), et ce que sa rubrique dit d'elle-même (`dit`). Les
+ *  mots de la rubrique (`mots` : « à », « € ») suivent ses nombres. `o.choix` : ce que les choix offrent à toutes les
+ *  lignes (la rubrique) ; `choixDe(i)` : ce qu'ils offrent en plus à la ligne `i` ; `o.mois`, `o.salarie` : ceux de ses
+ *  jours (la case des jours). */
+function lignesDePaie(lignes, choixDe, o) {
+  const colonnes = colonnesDesLignes(lignes, o.choix);
+  const gabarit = colonnes.map((c) => LARGEUR_DE_COLONNE[c.forme] || "minmax(6rem, 1fr)").concat("2rem").join(" ");
+  const tete = `<div class="ligne-paie tete">${colonnes.map((c) => `<span>${echapper(c.libelle)}</span>`).join("")}<span></span></div>`;
+  return `<div class="lignes-paie" style="--colonnes: ${gabarit}">${lignes.length ? tete : ""}${lignes.map((l, i) => {
     const r = rubriqueDe(l.rubrique);
-    const autres = r ? r.cles.filter((c) => c.cle !== "rubrique") : [];
-    const choix = { ...(r ? r.choix : {}), ...choixDe(i) };
-    return `<div class="ligne-paie" data-ligne="${i}">
-      <label class="colonne">${r ? echapper(r.cles.find((c) => c.cle === "rubrique").libelle) : ""} ${caseDeForme("choix_rendu", l.rubrique, { choix: rubriques }).replace("data-case", 'data-case data-cle="rubrique"')}</label>
-      ${autres.map((c) => `<label class="colonne">${echapper(c.libelle)} ${caseDeForme(c.forme, l[c.cle], {
-        unite: r.quantite, choix: choix[c.cle] }).replace("data-case", `data-case data-cle="${c.cle}"`)}</label>`).join("")}
-      <button type="button" class="lien retirer-ligne" title="retirer cette ligne">&times;</button>
+    const cles = clesDeLaLigne(r, o.choix);
+    const choix = { ...o.choix, ...(r ? r.choix : {}), ...choixDe(i) };
+    // Les nombres de la ligne, que les mots de sa rubrique suivent : le premier et le second, ou le seul.
+    const nombres = cles.filter((c) => c.forme === "quantite" || c.forme === "nombre").map((c) => c.cle);
+    const mot = (cle) => {
+      if (!r || !nombres.includes(cle)) return "";
+      const k = nombres.length > 1 ? nombres.indexOf(cle) : 1;
+      return k < 2 ? `<span class="mot">${echapper(r.mots[k])}</span>` : "";
+    };
+    const cellule = (col) => {
+      const siennes = cles.filter((c) => col.cles.includes(c.cle));
+      if (!siennes.length) return `<span class="colonne vide"></span>`;
+      const c = siennes[0];
+      const marque = (h) => h.replace("data-case", `data-case data-cle="${c.cle}" data-cles="${siennes.map((x) => x.cle).join(" ")}"`);
+      const v = c.forme === "jours" ? siennes.flatMap((x) => l[x.cle] || []) : l[c.cle];
+      // Les choix de la rubrique s'expliquent au survol, quand elle dit leur aide (`lieu_aide`).
+      const aide = r && r.lieu_aide && r.choix[c.cle] ? ` title="${echapper(r.lieu_aide)}"` : "";
+      return `<label class="colonne"${aide}><span class="colonne-libelle">${echapper(c.libelle)}</span>${marque(caseDeForme(c.forme, v, {
+        unite: r ? r.quantite : null, choix: choix[c.cle], mois: siennes.length > 1 ? o.mois : null, salarie: o.salarie }))}${mot(c.cle)}</label>`;
+    };
+    const coches = cles.filter((c) => c.forme === "liste" && choix[c.cle] && choix[c.cle].length);
+    const sous = [
+      ...coches.map((c) => `<span class="colonne">${caseDeForme(c.forme, l[c.cle], { choix: choix[c.cle] })
+        .replace("data-case", `data-case data-cle="${c.cle}"`)}</span>`),
+      r && r.dit ? `<span class="discret">${echapper(r.dit)}</span>` : "",
+    ].filter(Boolean);
+    return `<div class="ligne-paie" data-ligne="${i}" data-valeur="${echapper(JSON.stringify(l))}">
+      ${colonnes.map(cellule).join("")}
+      <button type="button" class="lien retirer-ligne" title="retirer cette ligne" aria-label="retirer cette ligne">&times;</button>
+      ${sous.length ? `<div class="ligne-sous">${sous.join("")}</div>` : ""}
     </div>`;
   }).join("")}</div>`;
 }
 
-/** Les lignes que montrent les rangées de `bloc`, telles que la route les lit. Une ligne dont on vient de changer la
- *  rubrique garde les clés que la nouvelle dit aussi. */
+/** Les lignes que montrent les rangées de `bloc`, telles que la route les lit : ce que chaque case dit, par-dessus la
+ *  ligne telle qu'elle était écrite (une clé qui ne se dessine pas garde sa valeur). Les jours d'une colonne se rangent
+ *  dans leurs clés : ceux du mois de leur case (`data-mois`) et d'avant dans la première, ceux d'après dans la suivante.
+ *  Une ligne dont on vient de changer la rubrique garde les clés que la nouvelle dit aussi. */
 function lireLesLignes(bloc) {
-  return [...bloc.querySelectorAll(".ligne-paie")].map((rangee) => {
-    const lu = {};
+  return [...bloc.querySelectorAll(".ligne-paie[data-ligne]")].map((rangee) => {
+    const lu = JSON.parse(rangee.dataset.valeur);
     rangee.querySelectorAll("[data-case][data-cle]").forEach((x) => {
       const v = lireLaCase(x);
-      if (v !== undefined) lu[x.dataset.cle] = v;
+      if (v === undefined) return;
+      const cles = (x.dataset.cles || x.dataset.cle).split(" ");
+      const mois = x.dataset.mois;
+      if (cles.length === 1 || !mois) { lu[cles[0]] = v; return; }
+      lu[cles[0]] = v.filter((d) => jourDe(d).slice(0, 7) <= mois);
+      lu[cles[1]] = v.filter((d) => jourDe(d).slice(0, 7) > mois);
     });
     const r = rubriqueDe(lu.rubrique);
     return r ? ligneDonnee(lu, r) : lu;
