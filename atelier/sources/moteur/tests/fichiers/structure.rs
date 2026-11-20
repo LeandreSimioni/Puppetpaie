@@ -147,6 +147,13 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         for c in f["charge"].as_array().unwrap() {
             voir(format!("le libellé de {}.{}", nom, c["nom"].as_str().unwrap()), c["libelle"].as_str().unwrap(), COURT, true);
         }
+        // Les cases de la carte, telles que la page les montre (`natures[].cases`, et celles qu'un motif de recours porte).
+        for n in f["natures"].as_array().unwrap() {
+            let motifs = n["motifs_recours"].as_array().unwrap().iter().flat_map(|m| m["cases"].as_array().unwrap());
+            for c in n["cases"].as_array().unwrap().iter().chain(motifs) {
+                voir(format!("le libellé de {}, case {} de {}", nom, c["cle"].as_str().unwrap(), n["nature"]), c["libelle"].as_str().unwrap(), COURT, true);
+            }
+        }
     }
     fn cases<'a>(v: &'a Value, ou: &str, out: &mut Vec<(String, &'a Value)>) {
         match v {
