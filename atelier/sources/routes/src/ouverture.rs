@@ -1298,12 +1298,14 @@ pub(crate) struct RubriqueDeLaPage {
     quantite: Option<&'static str>,
 }
 
-/// Une cle d'une ligne de paie telle que la page la saisit : son nom, et sa forme (`Forme::de_la_cle`).
+/// Une cle d'une ligne de paie telle que la page la saisit : son nom, sa forme (`Forme::de_la_cle`) et sa place
+/// (`engagement::ligne::Cle::place` : le territoire d'un repas ou d'une nuitee sous « Avancé »).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct CleDeLaLigne {
     cle: &'static str,
     libelle: &'static str,
     forme: Forme,
+    place: engagement::carte::PlaceDeLaCase,
 }
 
 /// Ce que l'ecran ecrit au-dessus de la case d'une cle d'une ligne de paie.
@@ -1331,7 +1333,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
-    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c) }).collect();
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), libelle: libelle_de_la_cle(*c), forme: Forme::de_la_cle(*c), place: c.place() }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),

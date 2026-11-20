@@ -133,7 +133,6 @@ pub struct Frais {
     pub taux: Option<MontantUnitaire>,
     pub territoire: Option<LieuDeFrais>,
     pub cases: Vec<CaseDeFrais>,
-    pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
     pub planning: Vec<DateDeLigne>,
     /// Ce que le moteur pose sur elle pour l'ecran ; rien ne s'ecrit.
@@ -1166,7 +1165,6 @@ impl LignePaie {
         match self {
             LignePaie::Unites(l) => l.lieu.as_deref(),
             LignePaie::UnitesEtHeures(l) => l.lieu.as_deref(),
-            LignePaie::Frais(l) => l.lieu.as_deref(),
             _ => None,
         }
     }
@@ -1330,6 +1328,16 @@ impl Cle {
             Cle::Planning => "planning",
         }
     }
+
+    /// SA PLACE SUR LA LIGNE : le territoire d'un repas ou d'une nuitee (hors de la metropole, une cle que seule une
+    /// ligne de frais a limite porte, `FormeSaisie::Frais`) est sous « Avancé » ; les autres cles de sa forme sont de base.
+    pub fn place(self) -> crate::carte::PlaceDeLaCase {
+        use crate::carte::PlaceDeLaCase as P;
+        match self {
+            Cle::Territoire => P::Avance,
+            Cle::Rubrique | Cle::Quantite | Cle::Taux | Cle::Heures | Cle::Base | Cle::TauxMajoration | Cle::Montant | Cle::Genre | Cle::Cases | Cle::Lieu | Cle::Dates | Cle::Planning => P::Base,
+        }
+    }
 }
 
 /// LA FORME QUE LE CATALOGUE DEMANDE D'UNE LIGNE DE SA RUBRIQUE : ce que dit sa `saisie`, et sa nature.
@@ -1383,8 +1391,10 @@ impl FormeSaisie {
         match self {
             FormeSaisie::Unites => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
             FormeSaisie::UnitesEtHeures => &[Rubrique, Quantite, Taux, Heures, Lieu, Dates, Planning],
-            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Lieu, Dates, Planning],
-            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Lieu, Dates, Planning],
+            // Une ligne de frais n'a pas de lieu : il ne fait aucun jour du contrat et rien ne le lit (le lieu d'un repas
+            // ou d'une nuitee hors de la metropole, qui change sa limite, est son territoire).
+            FormeSaisie::Frais => &[Rubrique, Quantite, Taux, Territoire, Cases, Dates, Planning],
+            FormeSaisie::FraisSansLimite => &[Rubrique, Quantite, Taux, Dates, Planning],
             FormeSaisie::Pourcentage => &[Rubrique, Base, TauxMajoration],
             FormeSaisie::Montant => &[Rubrique, Montant],
             FormeSaisie::AvantageEnNature => &[Rubrique, Montant, Genre],
@@ -1571,7 +1581,6 @@ impl LigneDonnee {
                     taux: dit(self.taux),
                     territoire: self.territoire.flatten(),
                     cases,
-                    lieu: texte(self.lieu),
                     dates: jours(self.dates),
                     planning: jours(self.planning),
                     marques: Marques::default(),
@@ -1583,7 +1592,6 @@ impl LigneDonnee {
                 taux: dit(self.taux),
                 territoire: None,
                 cases: Vec::new(),
-                lieu: texte(self.lieu),
                 dates: jours(self.dates),
                 planning: jours(self.planning),
                 marques: Marques::default(),

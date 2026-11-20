@@ -2095,7 +2095,8 @@ Ce que ça impose au moteur :
 - `jours_des_lignes` (`engagement/src/lib.rs`) est le **seul endroit** qui sache où
   chercher les jours d'un engagement : dans ses lignes de travail (une ligne de frais n'en fait
   aucun, `LignePaie::frais`), et nulle part
-  ailleurs. La lecture d'un engagement (`Engagement::nouveau`) passe par lui, et le décompte des droits (`cumul.rs`)
+  ailleurs. Une ligne de frais n'a donc pas de lieu (rien ne le lirait) ; un repas ou une nuitée hors de la
+  métropole dit son territoire, qui change sa limite (`ligne::Frais::territoire`, sous « Avancé » : `ligne::Cle::place`). La lecture d'un engagement (`Engagement::nouveau`) passe par lui, et le décompte des droits (`cumul.rs`)
   lit ce qu'elle a lu.
 - **Une seule écriture.** `Engagement` exige
   `lignes` ; `cachets` et `heures` en sont **dérivés** (l'AEM, le bloc 53 de
