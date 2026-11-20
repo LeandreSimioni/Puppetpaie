@@ -4593,7 +4593,7 @@
     "note": "Qui passe par la caisse des Congés Spectacles quand le contrat n'est pas ce que sa nature décrit : un CDD de droit commun de moins de douze mois d'un artiste y est déclaré (la ligne, le 066, les majorations d'assiette de 11,5 %, y compris pour la taxe d'apprentissage : il n'est pas intermittent au sens de L. 6331-55) ; un CDDU de douze mois ou plus n'y est pas déclaré.\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste ou d'un technicien du spectacle l'est (`affilie`). Un CDI ne l'est jamais."
   },
   "chomage_hors_des_annexes": {
-    "verifie": false,
+    "verifie": true,
     "rubriques": {
       "chomage": {
         "base": "brut_chomage",
@@ -4747,7 +4747,7 @@
       ],
       "raisonnement": "Comme en 2026 (`baremes/2026.json`, `chomage_hors_des_annexes`) : l'annexe 8 ne range que les fonctions de sa liste ; hors d'elle, le règlement général, recouvré par l'Urssaf."
     },
-    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES : voir le barème 2026, même section. Non marquée vérifiée : ce marquage est celui d'un humain ; tant qu'il manque, la paie d'un tel contrat refuse, seule."
+    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES : voir le barème 2026, même section."
   },
   "risques_atmp": {
     "arrete": "l'arrêté du 29 avril 2025 relatif à la tarification des risques d'accidents du travail et de maladies professionnelles pour l'année 2025",

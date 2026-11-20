@@ -4590,7 +4590,7 @@
     "note": "Qui passe par la caisse quand le contrat n'est pas ce que sa nature décrit : voir n. 61 (majorations 11,5 %, y compris taxe d'apprentissage, pour le CDD de droit commun d'un artiste déclaré).\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste ou d'un technicien du spectacle l'est (`affilie`). Un CDI ne l'est jamais."
   },
   "chomage_hors_des_annexes": {
-    "verifie": false,
+    "verifie": true,
     "rubriques": {
       "chomage": {
         "base": "brut_chomage",
@@ -4714,7 +4714,7 @@
       ],
       "raisonnement": "Le CDD d'usage est permis dans les spectacles (D. 1242-1, 6°) pour les fonctions que la convention nomme (1285 : accord du 24/06/2008, annexe C, qui nomme le poursuiteur ou le prompteur, que la liste 6 de l'annexe 8 ne nomme pas) ; l'annexe 8 ne range que les fonctions de sa liste ; hors d'elle, le règlement général s'applique, et le chômage est recouvré par l'Urssaf (L. 5427-1)."
     },
-    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes`, `bareme::bareme_chomage_hors_des_annexes`) : le technicien en CDDU dont la fonction n'est pas sur la liste de l'annexe 8 de la convention de l'employeur. Par-dessus le corps tel que le statut, la caisse et la majoration l'ont laissé : la ligne du chômage du règlement général, les cotisations des annexes (040 à 11,40, 048 et 041 à France Travail) remplacées par 040 et 048 à l'Urssaf, la part chômage de la réduction générale à l'Urssaf (CTP 668 et 669 au lieu de 671 et 801). Le reste du CDDU ne change pas : Congés Spectacles (D. 7121-40, D. 7121-41), formation à 2 % (L. 6331-55), prévoyance de l'accord interbranche (art. 2.2 : fonction de la liste CDD d'usage de la convention), retraite des intermittents. Textes : atelier/reference/sources/cddu-hors-annexe8/LISEZ-MOI.md. Non marquée vérifiée : ce marquage est celui d'un humain ; tant qu'il manque, la paie d'un tel contrat refuse, seule."
+    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes`, `bareme::bareme_chomage_hors_des_annexes`) : le technicien en CDDU dont la fonction n'est pas sur la liste de l'annexe 8 de la convention de l'employeur. Par-dessus le corps tel que le statut, la caisse et la majoration l'ont laissé : la ligne du chômage du règlement général, les cotisations des annexes (040 à 11,40, 048 et 041 à France Travail) remplacées par 040 et 048 à l'Urssaf, la part chômage de la réduction générale à l'Urssaf (CTP 668 et 669 au lieu de 671 et 801). Le reste du CDDU ne change pas : Congés Spectacles (D. 7121-40, D. 7121-41), formation à 2 % (L. 6331-55), prévoyance de l'accord interbranche (art. 2.2 : fonction de la liste CDD d'usage de la convention), retraite des intermittents. Textes : atelier/reference/sources/cddu-hors-annexe8/LISEZ-MOI.md."
   },
   "risques_atmp": {
     "arrete": "l'arrêté du 30 décembre 2025 relatif à la tarification des risques d'accidents du travail et de maladies professionnelles pour l'année 2026",
