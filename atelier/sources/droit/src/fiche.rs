@@ -553,12 +553,19 @@ texte_borne! {
 }
 
 texte_borne! {
-    /// LE NOM DECLARE d'un salarie : 32 caracteres au plus. La DPAE en ecrit 32 (L_NOM_PATRO_SAL, positions 284-315 :
-    /// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 293-300) ; la DSN, 80 (S21.G00.30.002, X [1,80] :
-    /// `logiciel/donnees/formats-dsn-base.json`).
+    /// LE NOM DECLARE d'un salarie, son nom de famille (`nom`) : 32 caracteres au plus. La DPAE en ecrit 32
+    /// (L_NOM_PATRO_SAL, positions 284-315 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 293-300) ; la DSN,
+    /// 80 (S21.G00.30.002, X [1,80] : `logiciel/donnees/formats-dsn-base.json`).
     pub struct NomDeclare : AuPlus 32 "caractères" par caracteres,
         "« {texte} » a {n} caractères : un nom déclaré en a {max} au plus, ce que la DPAE écrit (norme DPAE v5.3, \
 zone « Nom du salarié »). Abrégez-le";
+}
+
+texte_borne! {
+    /// LE NOM D'USAGE d'un salarie (`nom_usage`) : 80 caracteres au plus, ce que la DSN en ecrit (S21.G00.30.003, X [1,80] :
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 138-144). La DPAE ne l'ecrit pas.
+    pub struct NomDUsage : AuPlus 80 "caractères" par caracteres,
+        "« {texte} » a {n} caractères : un nom d'usage en a {max} au plus, ce que la DSN écrit (S21.G00.30.003). Abrégez-le";
 }
 
 texte_borne! {
@@ -2962,6 +2969,7 @@ fiche! {
         InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         Nom(NomDeclare) = "nom" => nom,
+        NomUsage(NomDUsage) = "nom_usage" => nom_usage,
         PrenomAffichage(String) = "prenom_affichage" => prenom_affichage,
         Prenom(PrenomDeclare) = "prenom" => prenom,
         Pseudonyme(String) = "pseudonyme" => pseudonyme,
@@ -3061,6 +3069,7 @@ fiche! {
         Secteur2121(Secteur2121) = "secteur_2121" => secteur_2121,
         TypeRadio1922(TypeRadio1922) = "type_radio_1922" => type_radio_1922,
         CinquanteSalaries3241(bool) = "cinquante_salaries_3241" => cinquante_salaries_3241,
+        PlafondCongesSpectacles(bool) = "plafond_conges_spectacles" => plafond_conges_spectacles,
         UrssafCompte(String) = "urssaf_compte" => urssaf_compte,
         MedecineTravail(CodeMedecine) = "medecine_travail" => medecine_travail,
         ContactSanteTravail(ContactSanteTravail) = "contact_sante_travail" => contact_sante_travail,

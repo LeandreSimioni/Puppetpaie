@@ -25,3 +25,11 @@
   renseigner), « BASE DEPLAFONNEE » (`tpcode="D"`, taux 9.38), « BASE PLAFONNEE » (`tpcode="P"`, taux 10.82) : la
   structure d'un CTP de format A. La lettre B elle-même n'y est pas définie.
 - Les valeurs de `fmtco` relevées : `000` (623), `DED` (105), `EXO` (94), `CLO` (7), `BFI` (6).
+- **Ce que le XML dit du CTP 313** (« ARTISTES CAS GENERAL ABATTEMENT 30% AL », effet au 01/01/2026) : la même base
+  plafonnée que le 312 (10.82), et une base déplafonnée « ALSACE MOSELLE » à 10.29 dont la part salariale (`tauxpo`)
+  est 1.19, contre 9.38 et 0.28 au 312 : 0,91 de plus, tout salarial, le régime local de l'artiste. **Où le moteur s'en
+  sert** : la source des lignes 313 du bordereau (`logiciel/donnees/organismes-base.json`, `ctp_urssaf`), qui
+  remplacent le 312 pour un artiste intermittent d'un établissement du Bas-Rhin, du Haut-Rhin ou de la Moselle, sans
+  le 381 (`declarations::dsn::assiettes_ctp`).
+- **Le CTP 992** s'intitule « TA PRINCIPALE HORS ALSACE MOSELLE » (0.59) ; le 993, « TA ALSACE MOSELLE » (0.44). Le
+  moteur ne déclare que le 992, pour tout établissement : la taxe d'apprentissage d'Alsace-Moselle n'est pas portée.

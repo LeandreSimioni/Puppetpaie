@@ -221,8 +221,8 @@ pub struct PaieVersee {
     /// « valorise par periode de paie » et « rattache a un et un seul contrat » ; lu par `declarations::dsn_lue::Mesures`,
     /// le rappel d'une periode anterieure hors du compte), tel qu'elle l'ecrit, au centieme pres : des heures en unites
     /// 10 (« heure ») et 35 (« heures intermittents du spectacle »), des jours en unite 12 (« journee »), des cachets en
-    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par ce
-    /// qu'il imprime (il fait foi sur ce qu'il imprime : `routes::importation::bulletins`). Ce que l'AEM, le bulletin ou
+    /// unites 36, 37 et 39 (« cachets groupes », « cachets isoles », « cachet ») ; une mesure nulle ne dit rien. Le bulletin du mois d'un permanent les remplace par
+    /// ce qu'il imprime (`routes::importation::bulletins`) ; celui d'un intermittent n'y remplit que ce que la DSN tait. Ce que l'AEM, le bulletin ou
     /// le certificat d'un contrat d'usage atteste est au contrat entier (`ContratAtteste`) ; lequel l'emporte pour un
     /// mois, `activite_du_mois` le dit.
     #[serde(default, serialize_with = "socle::grandeurs::ecrit::texte::option::serialize", deserialize_with = "socle::grandeurs::lu::nombre_ou_texte::option::deserialize")]
@@ -525,12 +525,14 @@ impl ActiviteDuMois {
 
 /// L'ACTIVITE QUE LES PIECES DISENT D'UN CONTRAT REPRIS POUR `mois` (`ActiviteDuMois`), chacune vide quand elles la
 /// taisent. Une seule regle, pour ce qui lit l'activite d'un mois repris :
-/// - le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en dit
-///   quelque chose : la piece du contrat compte le contrat entier, qui est ici celui du mois. L'AEM est « l'attestation
-///   employeur mensuelle » du contrat (S21.G00.40.025, `bloc-S21.G00.40.txt`) ; la DSN valorise la meme activite « par
-///   periode de paie » (`bloc-S21.G00.53.txt`) : la piece du contrat l'emporte ;
-/// - sinon, la paie du mois (`paie`) : le bulletin du mois d'un permanent, ou ce que la DSN declare pour le mois
-///   (`PaieVersee::heures`). Un contrat qui deborde du mois ne dit pas ce qui est de ce mois : la paie le dit.
+/// - ce que la DSN declare pour le mois (`PaieVersee::heures`, `cachets`, `jours`) : quand deux pieces disent le meme
+///   contrat, la DSN vaut (Léandre, 19/11/2026 : « ce qu'on déclare, c'est ce qui est valable pour France Travail ») ;
+///   la piece du contrat n'y ajoute que ce qu'elle tait. La DSN valorise l'activite « par periode de paie »
+///   (`bloc-S21.G00.53.txt`) ;
+/// - sans DSN, le contrat qu'une AEM, un bulletin ou un certificat atteste (`contrat`), quand il tient dans `mois` et en
+///   dit quelque chose : la piece du contrat compte le contrat entier, qui est ici celui du mois ;
+/// - sinon, le bulletin du mois (`paie`). Un contrat qui deborde du mois ne dit pas ce qui est de ce mois : la paie le
+///   dit.
 ///
 /// `debut` et `fin` : les bornes de l'engagement qui porte le contrat (`Importe::activite_du_mois` les lit sur lui).
 pub fn activite_du_mois(
@@ -538,9 +540,10 @@ pub fn activite_du_mois(
 ) -> ActiviteDuMois {
     let tient = [debut, fin].iter().all(|j| j.is_some_and(|j| j.mois_civil() == mois));
     let atteste = contrat.filter(|_| tient).map(|c| ActiviteDuMois { cachets: c.cachets, heures: c.heures, jours: c.jours }).filter(|a| !a.est_muette());
-    match (atteste, paie) {
-        (Some(a), _) => a,
-        (None, Some(p)) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
+    match (paie, atteste) {
+        (Some(p), Some(a)) if !p.contrat.d_un_bulletin() => ActiviteDuMois { cachets: p.cachets.or(a.cachets), heures: p.heures.or(a.heures), jours: p.jours.or(a.jours) },
+        (_, Some(a)) => a,
+        (Some(p), None) => ActiviteDuMois { cachets: p.cachets, heures: p.heures, jours: p.jours },
         (None, None) => ActiviteDuMois::default(),
     }
 }
@@ -570,12 +573,12 @@ impl ContratAtteste {
     }
 }
 
-/// LA NATURE D'UN ENGAGEMENT IMPORTE, sur sa carte et ses pieces : celle qui a ete dite (la carte), sinon celle que la
-/// piece du contrat atteste, sinon le contrat d'usage que la derniere DSN deposee qui declare une de ses paies declare
-/// (`PaieVersee::nature`) ; `None` : elle reste a dire. La seule regle, que lisent `Importe::nature` et ce qui ecrit la
-/// nature dite (`routes::importation::nature`).
+/// LA NATURE D'UN ENGAGEMENT IMPORTE, sur sa carte et ses pieces : celle qui a ete dite (la carte), sinon le contrat
+/// d'usage que la derniere DSN deposee qui declare une de ses paies declare (`PaieVersee::nature` : la DSN vaut), sinon
+/// celle que la piece du contrat atteste ; `None` : elle reste a dire. La seule regle, que lisent `Importe::nature` et ce
+/// qui ecrit la nature dite (`routes::importation::nature`).
 pub fn nature_de(carte: &Carte, pieces: &Pieces) -> Option<NatureDeContrat> {
-    carte.nature.or_else(|| pieces.contrat.as_ref().and_then(|c| c.nature)).or_else(|| pieces.paies.values().rev().find_map(|p| p.nature))
+    carte.nature.or_else(|| pieces.paies.values().rev().find_map(|p| p.nature)).or_else(|| pieces.contrat.as_ref().and_then(|c| c.nature))
 }
 
 // ------------------------------------------------------------------ l'engagement importe
@@ -631,12 +634,14 @@ impl Importe {
         &self.pieces().paies
     }
 
-    /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste : chaque mois
-    /// verse, aux dates du mois dans le contrat (`crate::contrat_dans_le_mois`, qui refuse un mois verse hors de ses
-    /// dates), avec la paie de ce mois. `contrat` : ses dates (`ContratLu::periode`, lues de l'engagement : `contrat_lu`) ;
-    /// `qui` : le contrat tel qu'un refus le nomme. Le registre de l'import et le calendrier des mois passes le lisent.
-    pub fn mois_par_mois(&self, contrat: &PeriodeOuverte, qui: &str) -> R<Vec<(socle::date::Periode, &PaieVersee)>> {
-        self.paies().iter().map(|(m, p)| Ok((crate::contrat_dans_le_mois(contrat, *m, qui)?, p))).collect()
+    /// LE CONTRAT D'UN PERMANENT S'ATTESTE MOIS PAR MOIS (`permanent`), comme ses bulletins l'ont atteste, et celui que
+    /// ses seules DSN declarent : chaque mois verse, avec ses dates dans le contrat (celui de l'engagement :
+    /// `Carte::contrat`) et la paie de ce mois. `None` : un mois verse que les dates du contrat ne touchent pas -- il se
+    /// lit, et chaque lecteur dit ce qu'il en fait. Vide : l'engagement ne dit pas son debut. Le seul chemin, que lisent
+    /// le registre de l'import et le calendrier des mois passes.
+    pub fn mois_par_mois(&self) -> R<Vec<(Mois, Option<socle::date::Periode>, &PaieVersee)>> {
+        let Some(contrat) = self.carte().contrat()? else { return Ok(Vec::new()) };
+        Ok(self.paies().iter().map(|(m, p)| (*m, contrat.croise(&socle::date::Periode::du_mois(*m)), p)).collect())
     }
 
     /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste

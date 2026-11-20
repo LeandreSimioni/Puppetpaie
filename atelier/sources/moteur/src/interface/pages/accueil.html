@@ -409,6 +409,8 @@
   // `appel` rend toujours `{ok, resultat}` ou `{ok: false, refus}` (la cale de la fenêtre).
   const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r.ok) throw new Error(r.refus.phrase); return r.resultat; });
 </script>
+<script src="/js/dates.js?v={{EMPREINTE}}"></script>
+<script src="/js/calendrier.js?v={{EMPREINTE}}"></script>
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
 <script>
   document.getElementById("avance-accueil").addEventListener("mousedown", (e) => e.stopPropagation());

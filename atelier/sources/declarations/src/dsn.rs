@@ -359,6 +359,11 @@ pub fn emplois_multiples(p: &Paie, autres: &[&Paie]) -> &'static str {
 pub fn bloc_individu(f: &mut Fichier, s: &droit::fiche::ChampsSalarie, courriel: bool) -> R<()> {
     crate::ntt::poser_nir(f, s)?;
     f.add_case(droit::rubrique!("S21.G00.30.002"), &s.nom, "nom")?;
+    // Le nom d'usage, rubrique conditionnelle (usage C : `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`,
+    // l. 169), quand la fiche le dit.
+    if let Some(usage) = s.nom_usage.remplie() {
+        f.add(droit::rubrique!("S21.G00.30.003"), usage);
+    }
     f.add_case(droit::rubrique!("S21.G00.30.004"), &s.prenom, "prenom")?;
     f.add(droit::rubrique!("S21.G00.30.006"), s.date_naissance.exigee("date_naissance")?.jjmmaaaa());
     f.add_case(droit::rubrique!("S21.G00.30.007"), &s.lieu_naissance, "lieu_naissance")?;
@@ -3286,6 +3291,8 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
     let caisse = mensuelle && p.declaree_a_la_caisse_des_conges()?;
     let tech = !mensuelle && technicien(p);
     let art = !mensuelle && !tech;
+    let a_l_urssaf = droit::caisse_conges::chomage_a_l_urssaf(&*p.engagement.nat()?, &p.salarie)?;
+    let zone = bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie);
     let l = lecture(p, bar)?;
     let (b78, l81) = lignes_declarees(&r.declare)?;
     let brut = r.declare.brut;
@@ -3304,7 +3311,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Assiette(A::CsgPermanent) => si(mensuelle, &|| base(Assiette::Csg)),
         CleCtp::Assiette(A::T1Permanent) => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
         // La base 07 deposee (78.004 sous le bloc 07), comme `base_07` pour le corrige.
-        CleCtp::Assiette(A::ChomagePermanent) => si(mensuelle, &|| {
+        CleCtp::Assiette(A::ChomagePermanent) => si(a_l_urssaf, &|| {
             let v: Vec<Montant> = b78.iter().filter(|(b, _)| *b == BaseAssujettie::AssuranceChomage).map(|(_, v)| *v).collect();
             match v.first() {
                 None => Ok(Montant::ZERO),
@@ -3313,7 +3320,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
             }
         }),
         CleCtp::Assiette(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
-        CleCtp::Montant(M::ReductionGeneralePermanent) => si(mensuelle, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Montant(M::ReductionGeneralePermanent) => si(a_l_urssaf, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 81.003 de la cotisation 129 deposee (aucune, pour un mois depose sans elles : la correction declare
         // alors toute la contribution, qui etait due).
         CleCtp::Assiette(A::CpfCdd) => Ok(somme_81(CODE81_CPF_CDD, &|x| x.base)),
@@ -3326,7 +3333,10 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Assiette(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115)),
         CleCtp::Assiette(A::BrutArtiste) => si(art, &|| Ok(brut)),
         CleCtp::Assiette(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115)),
-        CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Assiette(A::BrutArtisteHorsAlsaceMoselle) => si(art && !zone, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutArtisteAlsaceMoselle) => si(art && zone, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutRegimeLocal) => si(zone && !art, &|| Ok(brut)),
+        CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech && !a_l_urssaf, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 114 et 021 deposes, signes '-' au nominatif : le montant de la ligne 23 est leur oppose.
         CleCtp::Montant(M::ReductionHeuresEnPlus) => Ok(Montant::ZERO - somme_81(CODE81_REDUCTION_HEURES, &|x| x.montant)),
         CleCtp::Montant(M::DeductionHeuresSupplementaires) => Ok(Montant::ZERO - somme_81(CODE81_DEDUCTION_HEURES, &|x| x.montant)),
@@ -3335,6 +3345,8 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
         CleCtp::Plafonnee(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
         CleCtp::Plafonnee(A::BrutArtiste) => si(art, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115Plafonne)),
+        CleCtp::Plafonnee(A::BrutArtisteHorsAlsaceMoselle) => si(art && !zone, &|| base(Assiette::BrutPlafonne)),
+        CleCtp::Plafonnee(A::BrutArtisteAlsaceMoselle) => si(art && zone, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutTechnicien) => si(tech, &|| base(Assiette::BrutPlafonne)),
         CleCtp::Plafonnee(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115Plafonne)),
         autre @ CleCtp::Plafonnee(_) => return Err(refus!("assiette inconnue : {}", socle::fichiers::repr(&autre.to_string()))),
@@ -3546,13 +3558,14 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
         };
     }
     out.insert(CleCtp::Assiette(A::T1Permanent), t1);
-    // Le chomage et l'AGS des permanents (CTP 772 et 937, qualifiant 920) : la somme des bases 07 que leur nominatif
-    // declare (`base_07`). Le tableau d'equivalence de l'Urssaf rattache ces deux CTP a la base 07 (040 et 048) sous le
-    // qualifiant 920 (atelier/reference/sources/chomage-permanents/urssaf-equivalence-dida-20260611.csv, lignes 1640 et
-    // 280) ; c'est le brut dans la limite de quatre plafonds
-    // de la periode.
+    // Le chomage et l'AGS que l'Urssaf recouvre (CTP 772 et 937, qualifiant 920 ; `caisse_conges::chomage_a_l_urssaf` :
+    // les permanents et le CDD d'usage hors des annexes) : la somme des bases 07 que leur nominatif declare (`base_07`).
+    // Le tableau d'equivalence de l'Urssaf rattache ces deux CTP a la base 07 (040 et 048) sous le qualifiant 920
+    // (atelier/reference/sources/chomage-permanents/urssaf-equivalence-dida-20260611.csv, lignes 1640 et 280) ; c'est le
+    // brut dans la limite de quatre plafonds de la periode.
+    let a_l_urssaf: Vec<bool> = paies.iter().map(|p| droit::caisse_conges::chomage_a_l_urssaf(&*p.engagement.nat()?, &p.salarie)).collect::<R<_>>()?;
     let mut chomage = Montant::ZERO;
-    for i in (0..paies.len()).filter(|i| perm(*i)) {
+    for i in (0..paies.len()).filter(|i| a_l_urssaf[*i]) {
         chomage += base_07(paies[i], bar)?;
     }
     out.insert(CleCtp::Assiette(A::ChomagePermanent), chomage);
@@ -3577,11 +3590,12 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     }
     out.insert(CleCtp::Assiette(A::CfpPermanent), cfp);
     // La reduction generale que l'Urssaf recouvre (`reduction_a_l_urssaf`) : pour un permanent, CTP 668 « reduction
-    // generale etendue », sa part securite sociale ET sa part chomage ; pour un technicien intermittent, CTP 671, la
-    // seule part securite sociale (France Travail recouvre son chomage).
+    // generale etendue », sa part securite sociale ET sa part chomage, comme pour le CDD d'usage hors des annexes, dont
+    // l'Urssaf recouvre aussi le chomage (`chomage_a_l_urssaf`) ; pour un technicien intermittent des annexes, CTP 671,
+    // la seule part securite sociale (France Travail recouvre son chomage).
     let (mut rg_perm, mut rg_tech) = (Montant::ZERO, Montant::ZERO);
     for i in 0..paies.len() {
-        if perm(i) {
+        if a_l_urssaf[i] {
             rg_perm += reduction_a_l_urssaf(paies[i], bar)?;
         } else if technicien(paies[i]) {
             rg_tech += reduction_a_l_urssaf(paies[i], bar)?;
@@ -3602,10 +3616,21 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     out.insert(CleCtp::Assiette(A::BrutX115Technicien), somme(&tech, &|i| assiette(&b[i], Assiette::BrutX115)));
     out.insert(CleCtp::Assiette(A::BrutArtiste), somme(&art, &|i| assiette(&b[i], Assiette::Brut)));
     out.insert(CleCtp::Assiette(A::BrutX115Artiste), somme(&art, &|i| assiette(&b[i], Assiette::BrutX115)));
+    // L'Alsace-Moselle (l'etablissement du salarie, `bareme::alsace_moselle`) : l'artiste intermittent y releve du CTP
+    // 313, dont le taux deplafonne porte son regime local (0,91 : 10,29 contre 9,38 au 312, la part salariale 1,19
+    // contre 0,28 ; table des CTP de l'Urssaf, `atelier/reference/sources/urssaf-codes-types-personnel-20261029.xml`),
+    // les autres salaries de la zone du CTP 381 (1,30), sur la meme assiette que la cotisation 115 du nominatif.
+    let zone: Vec<bool> = paies.iter().map(|p| bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie)).collect();
+    let art_hors_zone = |i: usize| art(i) && !zone[i];
+    let art_zone = |i: usize| art(i) && zone[i];
+    let regime_local = |i: usize| zone[i] && !art(i);
+    out.insert(CleCtp::Assiette(A::BrutArtisteHorsAlsaceMoselle), somme(&art_hors_zone, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutArtisteAlsaceMoselle), somme(&art_zone, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutRegimeLocal), somme(&regime_local, &|i| assiette(&b[i], Assiette::Brut)));
     out.insert(CleCtp::Montant(MontantDuBordereau::ReductionGeneraleUrssaf), rg_tech);
     // Sous le qualifiant 921 (« Assiette plafonnee », cahier technique 2026.1, p. 168), une population porte son assiette
     // PLAFONNEE : celle du bulletin et de la base 02 de chaque contrat (point 22). La cle de la table des CTP reste
-    // celle de la population (`brut_artiste` sous 312/921) ; c'est le qualifiant qui dit plafonnee.
+    // celle de la population (`brut_artiste_hors_alsace_moselle` sous 312/921) ; c'est le qualifiant qui dit plafonnee.
     let base = |i: usize, a: Assiette| b[i].get(&a).copied().ok_or_else(|| socle::fichiers::absent(a.nom()));
     let plaf = |f: &dyn Fn(usize) -> bool, a: Assiette| -> R<Montant> {
         (0..paies.len()).filter(|i| f(*i)).try_fold(Montant::ZERO, |s, i| Ok(s + base(i, a)?))
@@ -3614,6 +3639,8 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Monta
     out.insert(CleCtp::Plafonnee(A::T1X115Permanent), t1_x115);
     out.insert(CleCtp::Plafonnee(A::BrutArtiste), plaf(&art, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutX115Artiste), plaf(&art, Assiette::BrutX115Plafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutArtisteHorsAlsaceMoselle), plaf(&art_hors_zone, Assiette::BrutPlafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutArtisteAlsaceMoselle), plaf(&art_zone, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutTechnicien), plaf(&tech, Assiette::BrutPlafonne)?);
     out.insert(CleCtp::Plafonnee(A::BrutX115Technicien), plaf(&tech, Assiette::BrutX115Plafonne)?);
     // Les heures en plus : la reduction salariale (CTP 003) et la deduction patronale (CTP 004, 005), en montant, comme
@@ -3765,7 +3792,8 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
-        if (ctp.statut.is_some() || ctp.population.is_some()) && valeur.est_nul() {
+        let d_une_population = ctp.statut.is_some() || ctp.population.is_some() || ctp.assiette.is_some_and(AssietteDuBordereau::de_l_alsace_moselle);
+        if d_une_population && valeur.est_nul() {
             continue;
         }
         let v = valeur.a_l_euro();
@@ -3797,21 +3825,6 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             }
             lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(vm.taux.au_pair(2))), Some(assiette.a_l_euro()), None, Some(vm.code_insee.clone())));
         }
-    }
-    let mut local = Montant::ZERO;
-    for p in paies {
-        if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
-            local += assiette(&bases(p, &*bareme_de(p, bar)?)?, Assiette::Brut);
-        }
-    }
-    if !local.est_nul() {
-        // Le CTP que le bareme dit pour le regime local (« 381 », avec sa source).
-        let code = bar
-            .regime_local_alsace_moselle
-            .as_ref()
-            .map(|r| r.ctp.clone())
-            .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "regime_local_alsace_moselle.ctp"))?;
-        lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, None, Some(local.a_l_euro()), None, None));
     }
     if let Some(s) = solde_ta {
         lignes.push(ligne(CodeCtp::du_moteur("995"), QualifiantDAssiette::AutreAssiette, None, Some(s.assiette), None, None));

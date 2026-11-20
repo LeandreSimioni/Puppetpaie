@@ -33,6 +33,7 @@ use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
 use droit::natures::NatureDeContrat;
 use engagement::carte::{Brouillon, Changements};
+use engagement::ligne::CasesMontrees;
 use engagement::saisie::{Carte as SaisieCarte, RangDansLeMois, VueDuMois};
 use engagement::stock::Identite;
 use engagement::viser::Cible;
@@ -66,7 +67,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, defauts, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
+        rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), montrees (pour chacun, ce que les cases de ses lignes montrent : quantite, taux, heures), importes, ferme_aux_neufs, defauts (taux_cachet, et cachet_neuf : ce que les cases d'une ligne de cachet neuve montrent), nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, et nature par nature les rubriques qu'elle propose avant de nommer son salarié), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -88,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats d'un mois passé qui courent encore ce mois.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "contrats : chacun avec l'engagement qui le reprend",
+        rend: "contrats : chacun avec l'engagement qui le reprend, et montrees (ce que les cases de ses lignes montrent : quantite, taux, heures)",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -99,7 +100,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Lire les contrats déclarés d'un mois importé.",
         charge: &[MOIS, Champ { nom: "salarie", libelle: Affiche::new("Salarié"), forme: Forme::Texte, sens: "la clé d'un salarié, pour ne lire que les siens ; null : tous", avance: true }],
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
-        rend: "contrats : ceux que les engagements importés attestent",
+        rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
         acte: Acte::Lit,
         phrase: 0,
@@ -130,7 +131,7 @@ pub const ROUTES: &[Fiche] = &[
             super::engagement::CHANGEMENTS,
         ],
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
-        rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
+        rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie), montrees (ce que les cases de ses lignes montrent : quantite, taux, heures), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
         refus: &[OPERATION, FORME, MANQUE],
         acte: Acte::Ecrit,
         phrase: 0,
@@ -147,7 +148,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "montant", libelle: Affiche::new("Montant voulu"), forme: Forme::Nombre, sens: "le montant voulu, en euros", avance: false },
         ],
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
-        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
+        rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent, et ce que la case de chacun montre : montree), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
         acte: Acte::Lit,
         phrase: 200,
@@ -243,6 +244,8 @@ struct SexeDeLaFiche {
 struct Defauts {
     #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     taux_cachet: Option<MontantUnitaire>,
+    /// Ce que les cases d'une ligne de cachet neuve montrent : ce taux, ecrit (`engagement::ligne::CasesMontrees`).
+    cachet_neuf: CasesMontrees,
 }
 
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
@@ -282,6 +285,9 @@ struct SaisieDuMois {
     /// Ce qui manque a chaque engagement de `saisie.engagements` pour se lire, dans son ordre (`null` : rien) : la case
     /// de la fiche de son salarie, une saisie pas finie (`avec_les_lignes_calculees_des_permanents`).
     a_completer: Vec<Option<String>>,
+    /// Ce que les cases de chaque ligne de chaque engagement de `saisie.engagements` montrent, dans leur ordre
+    /// (`engagement::ligne::CasesMontrees`) : la page les pose telles quelles.
+    montrees: Vec<Vec<CasesMontrees>>,
 }
 
 /// Une carte ecrite (`enregistrer-saisie`).
@@ -291,6 +297,8 @@ struct CarteEcrite {
     engagement: Identite,
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
+    /// Ce que les cases de chacune de ses lignes montrent, dans leur ordre (`engagement::ligne::CasesMontrees`).
+    montrees: Vec<CasesMontrees>,
     a_completer: Option<String>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     enregistre_a: socle::paris::Moment,
@@ -310,6 +318,8 @@ struct EnCours {
     taux_cachet: Option<MontantUnitaire>,
     deja_repris: bool,
     engagement: Reprise,
+    /// Ce que les cases de chacune de ses lignes montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
+    montrees: [CasesMontrees; 1],
 }
 
 /// L'ENGAGEMENT D'UN CONTRAT EN COURS, pour le fichier du mois : le contrat tel qu'il a ete signe, et une ligne de
@@ -381,6 +391,8 @@ struct ContratsPasses {
     phrase: Phrase,
     mois: Mois,
     contrats: Vec<Passe>,
+    /// Les contrats repris qui ne se lisent pas, une phrase chacun : ils ne ferment pas le reste.
+    non_lus: Vec<String>,
     rien_dit: &'static str,
 }
 
@@ -401,6 +413,8 @@ struct TauxQuiChange {
     taux_avant: Option<MontantUnitaire>,
     #[serde(serialize_with = "socle::grandeurs::ecrit::texte::option::serialize")]
     taux: Option<MontantUnitaire>,
+    /// Ce que les cases de la ligne ajustee montrent (`engagement::ligne::CasesMontrees`) : la page les pose.
+    montree: CasesMontrees,
 }
 
 /// Ce qui a change, pour l'engagement ajuste : son salaire du mois s'il change, ses lignes dont le taux change.
@@ -561,11 +575,11 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     let mut out = Vec::new();
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
-        // La quantite que l'ecran montre : sa forme la plus courte.
-        let quantite = l.paiement.quantite().map(engagement::ligne::QuantiteDeLigne::courte);
+        // Ce que ses cases en montrent, le moteur l'ecrit (`LignePaie::cases_montrees`).
+        let quantite = l.paiement.quantite();
         let taux = match saisi {
             Some(t) => Some(t),
-            None => l.paiement.taux().par_unite().map(socle::grandeurs::courte),
+            None => l.paiement.taux().par_unite(),
         };
         out.push(match src.clone() {
             LignePaie::Unites(x) => LignePaie::Unites(engagement::ligne::Unites { quantite, taux, ..x }),
@@ -585,7 +599,7 @@ fn defauts_de_la_saisie(ctx: &Contexte, saisie: &VueDuMois) -> R<Defauts> {
         Some(t) => Some(t),
         None => dernier_taux(ctx)?,
     };
-    Ok(Defauts { taux_cachet })
+    Ok(Defauts { taux_cachet, cachet_neuf: CasesMontrees::d_un_taux(taux_cachet) })
 }
 
 /// La route `saisie`.
@@ -636,10 +650,16 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         ferme_aux_neufs: ferme,
         defauts,
         nouvelle_carte,
+        montrees: saisie.engagements.iter().map(|e| montrees(e.lignes())).collect(),
         saisie,
         identites: engagement::stock::identites(&engagement::stock::objets_du_mois(&ctx.racine, mois)?),
         a_completer,
     })
+}
+
+/// Ce que les cases des lignes `lignes` montrent, dans leur ordre.
+fn montrees(lignes: &[LignePaie]) -> Vec<CasesMontrees> {
+    lignes.iter().map(LignePaie::cases_montrees).collect()
 }
 // ------------------------------------------------------- les jours d'un engagement
 
@@ -726,6 +746,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             taux_cachet,
             deja_repris: false,
             engagement,
+            montrees: [CasesMontrees::d_un_taux(taux)],
         });
     }
     let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
@@ -814,10 +835,9 @@ fn dit_du_contrat(periode: &Periode, cachets: Option<Cachets>, heures: Option<He
     dit
 }
 
-/// UNE LIGNE DU CALENDRIER : un contrat qu'un engagement importe atteste (`engagement::importe::Importe::contrat_lu`) ;
-/// celui d'un permanent, et celui que ses seules DSN declarent, mois par mois, comme le registre de l'import l'atteste
-/// (`Importe::mois_par_mois`) : chaque mois verse, aux dates du mois dans le contrat, avec l'activite que les pieces
-/// disent du mois (`Importe::activite_du_mois`). Ce que les pieces ne disent pas reste vide.
+/// UNE LIGNE DU CALENDRIER : un mois verse d'un engagement importe, aux dates du mois dans le contrat, comme le registre
+/// de l'import l'atteste (`Importe::mois_par_mois`), ou le contrat entier que rien ne paie ; avec l'activite que les
+/// pieces disent du mois (`Importe::activite_du_mois`). Ce que les pieces ne disent pas reste vide.
 struct Atteste {
     salarie: IdSalarie,
     periode: Periode,
@@ -827,44 +847,55 @@ struct Atteste {
     jours: Option<Jours>,
 }
 
-/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois.
-fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
-    let mut out = Vec::new();
+/// Les contrats que les engagements importes attestent ; un contrat sans ses bornes ne se place dans aucun mois. LE
+/// CALENDRIER SE LIT TOUJOURS : un engagement importe dont la carte ne se lit pas ne ferme que lui, et se dit (la
+/// seconde liste : une phrase par engagement) ; une panne remonte.
+fn historique(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
+    let (mut out, mut non_lus) = (Vec::new(), Vec::new());
     for i in engagement::importe::tous(&ctx.racine)? {
-        let c = i.contrat_lu()?;
-        // Le contrat entier qu'une piece atteste (une AEM, un certificat, le bulletin d'un contrat d'usage).
-        if let (Some(c), false) = (&c, i.permanent()) {
-            if let Some(periode) = c.periode.and_then(|o| o.fermee()) {
-                out.push(Atteste {
-                    salarie: c.salarie.clone(),
-                    periode,
-                    numero_objet: c.contrat.numero_objet.clone(),
-                    cachets: c.contrat.cachets,
-                    heures: c.contrat.heures,
-                    jours: c.contrat.jours,
-                });
-            }
-            continue;
-        }
-        // Un permanent, ou un contrat que ses seules DSN declarent : mois par mois. Celui dont l'engagement ne dit pas le
-        // debut ne se place dans aucun mois (le registre de l'import le dit muet).
         let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
-        let Some(contrat) = i.objet().carte().contrat()? else { continue };
-        // Le calendrier se lit toujours : un mois verse que les dates du contrat ne touchent pas ne s'y place pas.
-        for (mois, p) in i.paies() {
-            let Some(periode) = contrat.croise(&Periode::du_mois(*mois)) else { continue };
-            let a = i.activite_du_mois(*mois);
-            let numero_objet = c.as_ref().and_then(|c| c.contrat.numero_objet.clone()).or_else(|| p.numero_objet.clone());
-            out.push(Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours });
+        match attestes_par(&i, &salarie) {
+            Ok(a) => out.extend(a),
+            Err(e) if e.dit_un_manque() => non_lus.push(format!("Un contrat repris de {} ne se lit pas : {}", ctx.nomme(&salarie), e.phrase)),
+            Err(e) => return Err(e),
         }
     }
-    Ok(out)
+    Ok((out, non_lus))
+}
+
+/// Ce que l'engagement importe `i` du salarie `salarie` atteste, pour le calendrier : chaque mois verse, aux dates du
+/// mois dans le contrat (`Importe::mois_par_mois`) ; un mois verse que les dates du contrat ne touchent pas (la DSN de
+/// fevrier paie un CDDU de fin janvier : le mois d'une paie est celui de sa DSN), et un contrat que rien ne paie (une
+/// AEM, un certificat), le contrat entier. L'activite est celle que les pieces
+/// disent du mois (`Importe::activite_du_mois`), la seule regle, que les etats lisent aussi.
+fn attestes_par(i: &engagement::importe::Importe, salarie: &IdSalarie) -> R<Vec<Atteste>> {
+    let objet = i.contrat().and_then(|c| c.numero_objet.clone());
+    let atteste = |periode: Periode, mois: Mois, numero_objet: Option<NumeroObjetSpectacle>| {
+        let a = i.activite_du_mois(mois);
+        Atteste { salarie: salarie.clone(), periode, numero_objet, cachets: a.cachets, heures: a.heures, jours: a.jours }
+    };
+    let entier = i.objet().carte().contrat()?.and_then(|o| o.fermee());
+    if i.paies().is_empty() {
+        return Ok(entier.map(|p| atteste(p, p.debut().mois_civil(), objet)).into_iter().collect());
+    }
+    Ok(i.mois_par_mois()?
+        .into_iter()
+        .filter_map(|(mois, periode, p)| {
+            let objet = objet.clone().or_else(|| p.numero_objet.clone());
+            match periode {
+                Some(periode) => Some(atteste(periode, mois, objet)),
+                // Verse un mois que ses dates ne touchent pas (la DSN du mois suivant le paie) : le contrat entier.
+                None => entier.map(|e| atteste(e, mois, objet)),
+            }
+        })
+        .collect())
 }
 
 /// LES CONTRATS QUI TOUCHENT `mois`, pour le calendrier des mois passes. Deux sources : un mois qui a son fichier de paie
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
-fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
+/// Rend aussi ce qui ne s'est pas lu de l'historique (`historique`).
+fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<(Vec<Passe>, Vec<String>)> {
     let le_mois = Periode::du_mois(mois);
     let voulu = |cle: &IdSalarie| salarie.is_none_or(|s| s == cle);
     let spectacles = Spectacles::nouveau(ctx);
@@ -936,7 +967,8 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             }
         }
     }
-    for a in historique(ctx)? {
+    let (attestes, non_lus) = historique(ctx)?;
+    for a in attestes {
         if a.periode.croise(&le_mois).is_none() {
             continue;
         }
@@ -963,15 +995,16 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         });
     }
     out.sort_by(|a, b| (&a.salarie, &a.periode).cmp(&(&b.salarie, &b.periode)));
-    Ok(out)
+    Ok((out, non_lus))
 }
 
 fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsPasses> {
-    let contrats = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
+    let (contrats, non_lus) = contrats_passes(ctx, c.mois, c.salarie.as_ref())?;
     Ok(ContratsPasses {
         phrase: socle::phrase!("Contrats déclarés dans ce mois importé : {}.", contrats.len()),
         mois: c.mois,
         contrats,
+        non_lus,
         // Ce que la liste dit quand elle est vide : rien de declare pour ce salarie, ou aucun salarie choisi.
         rien_dit: if c.salarie.is_some() { "aucun contrat déclaré" } else { "aucun salarié coché" },
     })
@@ -1079,6 +1112,7 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
             None => Phrase::fixe("Carte enregistrée."),
         },
         engagement: id,
+        montrees: montrees(brouillon.en_carte().lignes()),
         brouillon,
         a_completer,
         enregistre_dit: format!("Enregistré à {}", socle::paris::ecrit::heure_minute(a, ":")),
@@ -1222,7 +1256,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: RangDansLeMo
             continue; // restee sans taux : rien a ecrire
         }
         if ta != tb {
-            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb });
+            lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().clone(), taux_avant: ta, taux: tb, montree: b.cases_montrees() });
         }
     }
     let change = avant.salaire_mensuel != apres.salaire_mensuel;

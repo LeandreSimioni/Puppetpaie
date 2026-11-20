@@ -61,7 +61,41 @@ forme! {
         pub heures_supplementaires: Option<HeuresSupplementaires>,
         pub heures_complementaires: Option<HeuresComplementaires>,
         pub remise_du_contrat: Option<RemiseDuContrat>,
+        pub plafond_conges_spectacles: Option<PlafondCongesSpectacles>,
     }
+}
+
+forme! {
+    /// LE PLAFOND JOURNALIER DE LA BASE CONGES SPECTACLES qu'un accord de la convention fixe (C. trav. D. 7121-37 : « Le
+    /// montant de l'indemnité journalière ne peut excéder le chiffre maximum fixé dans les conventions collectives » ;
+    /// Audiens : « ce montant s'entend de la base de calcul de la cotisation », par jour). Seuls les montants que l'accord
+    /// ecrit pour des emplois qu'il nomme sont releves (`par_emploi`) ; un plafond qui se calcule d'un minimum de la
+    /// grille ne l'est pas, le moteur ne sachant pas toujours quel minimum s'applique. L'accord n'etant pas etendu, seule
+    /// la compagnie sait s'il la lie : la case `plafond_conges_spectacles` de sa fiche, que seule une convention qui en a
+    /// un ouvre (`champs-base.json`, `si`).
+    pub struct PlafondCongesSpectacles {
+        pub par_emploi: Vec<PlafondDesEmplois>,
+    }
+}
+
+forme! {
+    /// Le plafond journalier que l'accord ecrit pour ces emplois (les codes de la nomenclature des emplois du spectacle).
+    pub struct PlafondDesEmplois {
+        pub emplois: Vec<CodeEmploiFt>,
+        pub par_jour: socle::grandeurs::MontantUnitaire,
+    }
+}
+
+/// LE PLAFOND JOURNALIER DE LA BASE CONGES SPECTACLES du salarie dont le metier est `code`, quand la compagnie dit que
+/// l'accord de sa convention la lie (`applique`, la case de sa fiche) : celui que l'accord ecrit pour cet emploi.
+/// `None` : la compagnie ne le dit pas (la base reste le brut : Audiens, « À défaut, il convient d'appliquer la règle
+/// générale »), la convention n'a pas de plafond releve, ou l'accord n'ecrit pas de montant pour cet emploi.
+pub fn plafond_conges_spectacles(idcc: Option<&Idcc>, applique: Option<bool>, code: Option<&CodeEmploiFt>) -> R<Option<socle::grandeurs::MontantUnitaire>> {
+    if applique != Some(true) {
+        return Ok(None);
+    }
+    let (Some(conv), Some(code)) = (releve(idcc)?, code) else { return Ok(None) };
+    Ok(conv.plafond_conges_spectacles.and_then(|p| p.par_emploi.into_iter().find(|e| e.emplois.contains(code)).map(|e| e.par_jour)))
 }
 
 impl Convention {

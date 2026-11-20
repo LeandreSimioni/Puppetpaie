@@ -262,6 +262,7 @@ forme! {
         #[serde(deserialize_with = "crate::natures::population::cles::deserialize")]
         pub par_nature: BTreeMap<Paie, CoucheNature>,
         pub par_caisse_conges: Option<CaisseConges>,
+        pub chomage_hors_des_annexes: Option<ChomageHorsDesAnnexes>,
         pub risques_atmp: Option<RisquesAtmp>,
         pub seuils_effectif: Option<SeuilsEffectif>,
         pub regime_local_alsace_moselle: Option<RegimeLocal>,
@@ -1066,10 +1067,12 @@ forme! {
 forme! {
     /// La section d'un statut (`par_statut`) : ses sections remplacent celles du corps (`bareme::bareme_du_statut`).
     pub struct CoucheStatut {
-        pub verifie: Option<bool>,
         pub rubriques_bulletin: Option<Vec<Rubrique>>,
         pub cotisations_dsn: Option<Vec<CotisationDsn>>,
         pub reduction_generale: Option<ParametresDeLaReduction>,
+        /// Le regime local d'Alsace-Moselle du statut, qui remplace celui du corps (l'artiste, au taux abattu de 30 %) :
+        /// exige, un statut ne prend jamais le taux d'un autre.
+        pub regime_local_alsace_moselle: RegimeLocal,
     }
 }
 
@@ -1077,7 +1080,6 @@ forme! {
     /// La section d'une categorie (`par_categorie` : cadre, cadre permanent), et ses sections par statut.
     #[derive(Default)]
     pub struct CoucheCategorie {
-        pub verifie: Option<bool>,
         /// Les rubriques du corps que la categorie retire avant d'ajouter les siennes (`rubriques_ajoutees`) : un cadre
         /// intermittent retire la tranche 2 et la CET de l'annee des non-cadres, ses tranches etant journalieres.
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
@@ -1094,7 +1096,6 @@ forme! {
     /// La section d'une nature de contrat (`par_nature` : permanent) : remplacer, retirer, ajouter des rubriques.
     #[derive(Default)]
     pub struct CoucheNature {
-        pub verifie: Option<bool>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
@@ -1126,9 +1127,21 @@ forme! {
 }
 
 forme! {
+    /// LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes`) : ce que l'assurance chomage du
+    /// reglement general change au CDDU que l'annexe 8 ne range pas (`bareme::bareme_chomage_hors_des_annexes`). La ligne
+    /// du chomage modifiee, les cotisations des annexes retirees, celles de l'Urssaf ajoutees, la declaration de la
+    /// reduction generale dont l'Urssaf recouvre alors aussi la part chomage.
+    pub struct ChomageHorsDesAnnexes {
+        pub rubriques: BTreeMap<IdDeCotisation, RubriqueModifiee>,
+        pub cotisations_dsn_retirees: Vec<CodeCotisation81>,
+        pub cotisations_dsn_ajoutees: Vec<CotisationDsn>,
+        pub reduction_generale: ParametresDeLaReduction,
+    }
+}
+
+forme! {
     /// Ce que la caisse des Conges Spectacles change a la pile (`bareme::bareme_caisse_conges`).
     pub struct CoucheCaisse {
-        pub verifie: Option<bool>,
         pub du_corps: Option<DuCorps>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub cotisations_dsn_retirees: Option<Vec<CodeCotisation81>>,
@@ -1157,7 +1170,6 @@ forme! {
     /// (`engagement::calcul::DeductionForfaitaire`) : `engagement::calcul::deduction_forfaitaire` en tire celle d'un
     /// salarie (`DfsDuSalarie`).
     pub struct DfsDuBareme {
-        pub verifie: Option<bool>,
         pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,
         pub taux: BTreeMap<CategorieDfs, Taux>,
@@ -1409,11 +1421,12 @@ forme! {
 }
 
 forme! {
+    /// Le regime local d'Alsace-Moselle d'un statut : son taux salarial et son code au nominatif. Ses CTP du bordereau
+    /// (313 pour l'artiste intermittent, 381 pour les autres) sont dans la table des CTP (`organismes-base.json`).
     pub struct RegimeLocal {
         #[serde(deserialize_with = "socle::grandeurs::lu::court::deserialize")]
         pub taux_sal: Taux,
         pub code81: CodeCotisation81,
-        pub ctp: crate::organismes::CodeCtp,
     }
 }
 

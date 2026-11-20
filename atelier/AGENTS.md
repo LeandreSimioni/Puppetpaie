@@ -96,6 +96,12 @@ ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket
 chose est faite quand la route la fait. La page ne parle au moteur que par `/api/<route>`, qui sert la même chose ; le
 pont de la fenêtre ne fait que ses listes `NOMS_ACCUEIL` et `NOMS_LOGICIEL` (`moteur/src/interface/mod.rs`).
 
+**L'écran sert le logiciel, et reste le plus simple possible** (Léandre, 20/11/2026 : « il y a un logiciel et après,
+il y a un écran qui sert le logiciel. Mais il doit être le plus simple possible »). Un lot d'écran (une mise en page,
+un calendrier, une case) ne crée pas de route et ne change pas ce qu'une route lit ou refuse : ce que le moteur
+vérifiait déjà, l'écran ne le lui redemande pas par un autre chemin. Si l'écran a besoin que le moteur dise quelque
+chose de plus, cela se présente à Léandre avant, en une ligne.
+
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
 catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à
@@ -193,6 +199,46 @@ jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` 
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.
+
+## L'import : deux logiciels collés bout à bout
+
+Ce que Léandre veut de l'import, dit le 19/11/2026 ; tout agent qui y touche le lit d'abord, et ne le complique pas.
+
+- **Le but, c'est l'historique du salarié.** « C'est comme si on collait deux logiciels les uns aux autres. […] Dans
+  un logiciel, ce qui est important, c'est aussi l'historique du salarié. » On voit d'un seul tenant ce qui vient de
+  l'ancien logiciel et ce qui se fait ici : le brut total d'un salarié, son dossier avec toutes ses fiches de paie,
+  celles de l'ancien logiciel comprises.
+- **Le geste de la compagnie est simple.** Elle arrive, on lui dit : prends tous tes bulletins, et une DSN pour la
+  configuration. Elle les met dans le dossier `import/`. Elle n'a plus qu'à poser ses codes et elle se sert du
+  logiciel. Si une pièce lui manque, on en accepte d'autres (une AEM), sans en faire une affaire.
+- **Un seul dossier, `import/`, et pas de choix.** « Ça me paraît évident qu'on lui dit de mettre dans ce
+  dossier-là. […] Il faut des routes simples. » La route d'import ne propose aucun autre dossier ; c'est le
+  logiciel qui, depuis ce dossier, donne accès à tout de l'intérieur.
+- **Les pièces sont en lecture seule.** « On ne réécrit pas les pièces. On ne corrige pas une DSN qui est du
+  passé. » C'est la seule limite : tout le reste peut entrer.
+- **Le dossier `import/` garde tout, pour toujours.** On ne le vide pas ; les pièces restent accessibles ; la
+  sauvegarde sur le Drive peut le prendre. Parce que les pièces restent, un logiciel amélioré les relit et en tire
+  davantage : rien de ce qu'on n'a pas su lire aujourd'hui n'est perdu.
+- **On prend tout ce que la fiche de paie dit**, puisqu'on sait la lire, et on la compare à notre calcul (« Les
+  écarts de calcul »).
+- **L'ancien logiciel est un vrai logiciel de paie.** Les gens font leurs paies avec ; ses pièces sont justes a
+  priori, et une DSN importée a été acceptée. On ne le traite jamais en château de sable : normalement il n'y a
+  pas de conflit entre deux pièces : « A priori, ça n'existe pas. C'est là-dessus qu'on part. » On n'invente donc
+  pas de problèmes et on ne construit rien pour les trancher. Ce qui est déclaré (la DSN) est ce qui vaut pour
+  France Travail ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait.
+- **On part de l'idée que tout est juste, et on regarde ce qui casse** : « Il faut présupposer que tout est juste et
+  voir les problèmes. Pas présupposer qu'il va y avoir des problèmes pour recréer des problèmes par-dessus. Sinon
+  on ne s'en sort jamais. » Il y a quatre sortes de pièces (bulletin, DSN, AEM, certificat) ; chacune dit ce
+  qu'elle dit : un bulletin la période de sa paie, une DSN et une AEM le contrat.
+- **Deux pièces justes ne s'effacent jamais l'une l'autre.** C'est le seul vrai danger de l'import : une règle de
+  rapprochement qui fond deux contrats distincts, ou fait perdre ce qu'une pièce atteste, est fausse.
+- **Ce qui ne rentre pas fait un incident, et on avise.** « Les gens vont mettre leurs pièces. S'il y a des choses
+  qui ne rentrent pas dans notre logiciel, on a un incident, on pourra le traiter petit à petit. » Comme pour un
+  écart de calcul : l'éditeur le reçoit, améliore le lecteur, et comme la pièce est restée dans `import/`, le
+  logiciel la retraite à la version suivante. Rien n'est demandé à la compagnie, rien ne lui est fermé : elle voit
+  son historique.
+- **Une règle de l'import tient en une phrase qu'un administrateur comprend.** Si elle demande un cas particulier,
+  un refus de plus ou un mot de plomberie pour s'expliquer, elle est fausse : on revient à ce qui précède.
 
 ## Les sources : tout texte qu'on lit se dépose
 

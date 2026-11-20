@@ -234,7 +234,8 @@ pub struct ContratDuCertificat {
 }
 
 /// Un mois paye d'un contrat, tel que sa paie validee le porte : son dernier jour, ses dates travaillees, ses cachets,
-/// ses jours, ses heures et son brut.
+/// ses jours, ses heures, son brut et sa base conge (l'assiette des Conges Spectacles de la paie, `Assiette::BrutCs` :
+/// le brut de ses rubriques, dans la limite du plafond de la convention quand la compagnie l'applique).
 #[derive(Debug, Clone)]
 pub struct MoisPaye {
     pub fin: Jour,
@@ -243,18 +244,26 @@ pub struct MoisPaye {
     pub jours: Jours,
     pub heures: Option<Heures>,
     pub brut: Montant,
+    pub base_conge: Montant,
+}
+
+/// L'assiette des Conges Spectacles d'une paie (ses `bases`) : le calcul la pose toujours ; absente, la paie ne se lit pas.
+fn base_conge_de(bases: &std::collections::BTreeMap<droit::assiette::Assiette, engagement::calcul::BaseDeCotisation>) -> R<Montant> {
+    let a = droit::assiette::Assiette::BrutCs;
+    Ok(bases.get(&a).ok_or_else(|| socle::echec::paie_illisible(a.nom()))?.en_euros(a)?.au_centime())
 }
 
 impl MoisPaye {
-    /// Le mois que l'engagement `e` paie, au brut `brut` de sa paie : ce que la paie porte, rien ne se recalcule.
-    pub fn de(e: &Engagement, brut: Montant) -> MoisPaye {
-        MoisPaye { fin: e.fin_mois(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: brut.au_centime() }
+    /// Le mois que la paie `p` paie : ce que la paie porte, rien ne se recalcule.
+    pub fn de(p: &engagement::calcul::Paie) -> R<MoisPaye> {
+        let e = &p.engagement;
+        Ok(MoisPaye { fin: e.fin_mois(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: p.brut.au_centime(), base_conge: base_conge_de(&p.bases)? })
     }
 
     /// Le mois d'une paie validee, telle qu'elle est ecrite dans le fichier de son mois (`PaieEcrite::paie`).
-    pub fn de_la_paie_ecrite<A>(p: &engagement::paie_ecrite::FormeDePaie<A>) -> MoisPaye {
+    pub fn de_la_paie_ecrite<A>(p: &engagement::paie_ecrite::FormeDePaie<A>) -> R<MoisPaye> {
         let e = &p.engagement;
-        MoisPaye { fin: e.mois.dernier_jour(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: p.brut.au_centime() }
+        Ok(MoisPaye { fin: e.mois.dernier_jour(), dates_travail: e.dates_travail.clone(), cachets: e.cachets, jours: e.jours, heures: e.heures, brut: p.brut.au_centime(), base_conge: base_conge_de(&p.bases)? })
     }
 }
 
@@ -268,6 +277,26 @@ impl ContratDuCertificat {
     pub fn brut(&self) -> Montant {
         self.mois_payes.iter().fold(Montant::ZERO, |a, m| a + m.brut)
     }
+
+    /// Sa base conge, la somme de celles de ses mois.
+    pub fn base_conge(&self) -> Montant {
+        self.mois_payes.iter().fold(Montant::ZERO, |a, m| a + m.base_conge)
+    }
+}
+
+/// La base conge d'une part `brut` d'un contrat de brut `brut_du_contrat` et de base conge `base_du_contrat` : la base
+/// entiere quand la part est le contrat ; sinon sa part au prorata du brut. Un contrat ne se coupe au 31 mars qu'a un
+/// cachet par date travaillee (`decouper`) : chaque date paie le meme montant, et la limite du plafond, qui se compte par
+/// jour travaille (C. trav. D. 7121-37), lui retire la meme part ; le prorata est donc la base de ces dates.
+fn base_de_la_part(brut: Montant, brut_du_contrat: Montant, base_du_contrat: Montant) -> Montant {
+    if brut == brut_du_contrat {
+        return base_du_contrat;
+    }
+    // Un contrat sans brut n'a pas de base a repartir.
+    if brut_du_contrat.est_nul() {
+        return base_du_contrat;
+    }
+    base_du_contrat.prorata(brut, brut_du_contrat).au_centime()
 }
 
 /// Le contrat, tel qu'un refus le nomme : « FA1.26.13 », ou « sans numero ».
@@ -400,13 +429,13 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
     let e = &paie.engagement;
     if e.nat()?.mensuelle() {
         let mut out = Vec::new();
-        for (numero, ((periode, _dates, nb), brut)) in premier_numero.suite().zip(periodes_au_mois(paie.periode()?, &paie.mois_payes)?) {
+        for (numero, ((periode, _dates, nb), (brut, base))) in premier_numero.suite().zip(periodes_au_mois(paie.periode()?, &paie.mois_payes)?) {
             out.push(Certificat {
                 numero,
                 periode,
                 nb_jours_ou_cachets: nb,
                 brut,
-                base: brut,
+                base,
                 emission: periode.fin(),
             });
         }
@@ -414,6 +443,7 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
     }
     let parts = decouper(paie)?;
     let brut_du_contrat = paie.brut();
+    let base_du_contrat = paie.base_conge();
     let mut out = Vec::new();
     for (numero, (periode, dates, nb)) in premier_numero.suite().zip(&parts) {
         let brut = if parts.len() == 1 {
@@ -443,7 +473,7 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
             periode: *periode,
             nb_jours_ou_cachets: *nb,
             brut,
-            base: brut,
+            base: base_de_la_part(brut, brut_du_contrat, base_du_contrat),
             emission: periode.fin(),
         });
     }
@@ -467,12 +497,12 @@ pub fn certificats(paie: &ContratDuCertificat, premier_numero: NumeroDeCertifica
 }
 
 
-/// Les periodes d'un contrat paye au mois, et leur brut. « Pour les activites en cours au 31 mars, l'employeur etablit
+/// Les periodes d'un contrat paye au mois, et leur brut et leur base conge. « Pour les activites en cours au 31 mars, l'employeur etablit
 /// deux certificats d'emploi » (Audiens, « Conges et spectacles employeur - Mode d'emploi », article 4 du reglement du
 /// regime, `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`,
 /// l. 201-206) : le 31 mars finit un mois, et chaque periode porte les jours travailles et le brut des mois qu'elle
 /// couvre, sans repartition.
-fn periodes_au_mois(periode: Periode, mois_payes: &[MoisPaye]) -> R<Vec<((Periode, Vec<Jour>, NombreDuCertificat), Montant)>> {
+fn periodes_au_mois(periode: Periode, mois_payes: &[MoisPaye]) -> R<Vec<((Periode, Vec<Jour>, NombreDuCertificat), (Montant, Montant))>> {
     let fin = periode.fin();
     let mut bornes = bornes_31_mars(&periode);
     bornes.push(fin);
@@ -481,7 +511,8 @@ fn periodes_au_mois(periode: Periode, mois_payes: &[MoisPaye]) -> R<Vec<((Period
     for borne in bornes {
         let couverts: Vec<&MoisPaye> = mois_payes.iter().filter(|m| debut <= m.fin && (m.fin <= borne || borne == fin)).collect();
         let jours = NombreDuCertificat::Jours(couverts.iter().map(|m| m.jours).sum::<Jours>());
-        out.push(((Periode::du_au(debut, borne)?, Vec::new(), jours), couverts.iter().fold(Montant::ZERO, |a, m| a + m.brut)));
+        let somme = |f: fn(&MoisPaye) -> Montant| couverts.iter().fold(Montant::ZERO, |a, m| a + f(m));
+        out.push(((Periode::du_au(debut, borne)?, Vec::new(), jours), (somme(|m| m.brut), somme(|m| m.base_conge))));
         debut = borne.apres(socle::date::Duree::jours(1))?;
     }
     Ok(out)
@@ -536,8 +567,13 @@ fn valeurs(c: &Certificat, p: &ContratDuCertificat, ent: &ChampsEntreprise) -> R
     }
     out.push(("raison_sociale", texte_requis(&ent.raison_sociale, "raison_sociale")?));
     out.push(("nom_naissance", texte_requis(&s.nom, "nom")?));
-    // Le nom d'usage : le nom declare, comme le modele du certificat de la caisse le repete quand il n'y en a pas d'autre.
-    out.push(("nom_usage", texte_requis(&s.nom, "nom")?));
+    // Le nom d'usage de la fiche quand elle le dit (celui que la DSN declare, S21.G00.30.003) ; sinon le nom declare, que
+    // le modele du certificat de la caisse repete quand il n'y en a pas d'autre.
+    let usage = match s.nom_usage.remplie() {
+        Some(u) => u.to_string(),
+        None => texte_requis(&s.nom, "nom")?,
+    };
+    out.push(("nom_usage", usage));
     out.push(("emploi", texte_requis(&s.emploi, "emploi")?));
     // Le modele du certificat de la caisse porte la zone « cadre » ; la lire comme le statut de retraite complementaire
     // (S21.G00.40.003 cadre, `bareme::est_cadre`) est une INFERENCE : la seule notion de cadre des textes deposes (fiche

@@ -212,6 +212,7 @@ fn pile_sans_taux(annee: socle::mois::Annee) ->droit::forme_bareme::Pile {
         par_categorie: BTreeMap::new(),
         par_nature: BTreeMap::new(),
         par_caisse_conges: None,
+        chomage_hors_des_annexes: None,
         risques_atmp: None,
         seuils_effectif: None,
         regime_local_alsace_moselle: None,

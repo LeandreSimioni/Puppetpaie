@@ -2264,6 +2264,19 @@ pub struct Declaree {
     pub paie: Paie,
 }
 
+/// LE TAUX DE PAS INITIALEMENT UTILISE pour un mois, ce que `declarees` (`paies_declarees`, dans l'ordre) disent : celui
+/// du versement que la DSN de ce mois a declare (S21.G00.50.006 de la premiere paie declaree), que le trop-verse d'une
+/// correction reprend, quelle que soit la correction et quel que soit le bulletin parti avant elle : « le taux de
+/// prelevement qui avait ete applique lors du versement de l'indu de remuneration, a savoir le taux de prelevement
+/// initialement utilise » (BOFiP, BOI-IR-PAS-30-10-50, § 90,
+/// `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`) ; « Taux declare le mois de
+/// l'erreur » (S21.G00.56.006, `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.56.txt`). Le seul chemin de ce taux,
+/// pour la DSN (`declarations::versement_declare::dernier_declare`) comme pour le bulletin rectificatif
+/// (`routes::gestes::depart`). `None` : aucune DSN n'a declare ce mois, ou son versement n'a pas de taux.
+pub fn taux_de_pas_initial(declarees: &[Declaree]) -> Option<droit::pas::TauxDePas> {
+    declarees.first().and_then(|d| d.paie.pas.as_ref()).map(|p| p.taux)
+}
+
 /// CE QUI A ETE DECLARE POUR `mois`, DANS L'ORDRE, par les DSN des mois anterieurs a `avant` (`None` : par toutes les
 /// DSN parties) : la paie de la version sur
 /// laquelle la DSN de ce mois est partie (la derniere : un annule-et-remplace remplace la precedente), puis celle de

@@ -60,6 +60,12 @@ majoré) `effectif_au_moins: 50` ; `dsn::Seuils` lit l'effectif de `config/effec
 (`dsn::fnal_des_artistes`). **Inférence** : à cinquante, le 316 *remplace* le 334 (la page donne un seul taux par tranche).
 Preuve : `tests/plafond_intermittents.rs` (`a_cinquante_salaries_…`).
 
+**Alsace-Moselle (#483)** : « Cotisation maladie supplémentaire pour les départements du Haut-Rhin, Bas-Rhin et de la
+Moselle 0,91 % » (l. 127-128), sous les artistes, là où les autres professions de la page ont 1,30 % : la cotisation du
+régime local de l'artiste, `regime_local_alsace_moselle` du corps des barèmes 2025 et 2026 (`droit::bareme::bareme_regime_local`),
+avec l'arrêté du 24/01/1975, art. 1, et les CTP 313 et 312 de la table de l'Urssaf ; le technicien garde 1,30
+(`par_statut.technicien`).
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).

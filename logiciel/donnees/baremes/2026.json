@@ -2056,7 +2056,6 @@
   ],
   "par_statut": {
     "technicien": {
-      "verifie": true,
       "rubriques_bulletin": [
         {
           "id": "maladie",
@@ -3036,6 +3035,52 @@
           }
         }
       ],
+      "regime_local_alsace_moselle": {
+        "taux_sal": 1.3,
+        "code81": "115",
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+              "emetteur": "urssaf",
+              "article": "CTP 381, taux déplafonné 1.3 depuis le 2022-01-04, l. 4158",
+              "citation": "'381';MAJO ALSACE MOSELLE - SECTEUR PRIVE AL;MAJ ALS MOS PR;E;;1.3;;2022-01-04;;"
+            },
+            {
+              "fichier": "atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt",
+              "emetteur": "gip_mds",
+              "article": "S21.G00.81.001, code 115",
+              "citation": "115 - Cotisation Assurance Maladie pour le Régime Local Alsace Moselle"
+            },
+            {
+              "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
+              "emetteur": "loi",
+              "article": "L242-13",
+              "citation": "Une cotisation à la charge des assurés mentionnés aux 1° à 3° du II de l'article L. 325-1, assise sur leurs revenus d'activité tels qu'ils sont pris en compte pour la détermination de l'assiette des cotisations définie à l'article L. 242-1, précomptée par leurs employeurs au bénéfice de ce régime"
+            },
+            {
+              "fichier": "atelier/reference/sources/regime-local-alsace-moselle/regime-local-cotisation-20261104.txt",
+              "emetteur": "regime_local",
+              "article": "page « Cotisation »",
+              "citation": "Une cotisation de 1,3% depuis le 1er avril 2022"
+            },
+            {
+              "fichier": "atelier/reference/sources/regime-local-alsace-moselle/regime-local-cotisation-20261104.txt",
+              "emetteur": "regime_local",
+              "article": "page « Cotisation »",
+              "citation": "La cotisation est uniquement salariale, il n’y a pas de cotisation patronale."
+            },
+            {
+              "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+              "emetteur": "urssaf",
+              "article": "Urssaf, artistes du spectacle, salariés concernés",
+              "citation": "Seuls les artistes du spectacle sont concernés par l’application des taux réduits. Les techniciens ne sont pas concernés."
+            }
+          ],
+          "raisonnement": "Loi (L. 242-13, cotisation salariale sur les revenus de L. 242-1, taux du conseil d'administration) et Urssaf (CTP 381, 1,3) ; norme DSN code 115. Le technicien n'a pas l'abattement des artistes (Urssaf)."
+        },
+        "note": "Régime local d'Alsace-Moselle du technicien : cotisation salariale de 1,3 % sur les revenus déplafonnés, DSN 115, CTP 381."
+      },
       "note": "La section du technicien intermittent : retraite complémentaire Audiens de sa population, taux Urssaf de droit commun sans abattement (BOSS), prévoyance et Congés Spectacles comme l'artiste.\nTaux pleins 2026 (13,00 et 5,25 : les taux reduits n'existent plus), ccn source (CASC-SVP 0,50), Agirc-Arrco techniciens (5,23 + 4,79), RGDU calculee contrat par contrat (D. 241-7) et declaree en 018 Urssaf, 018 France Travail et 106 (CTP 671). Non verifie sur un compte rendu : la repartition 2026 de la RGDU entre Urssaf, chomage et retraite (prorata des points de T). A lire sur le compte-rendu Urssaf de la premiere DSN avec un technicien.\nAnnexe 8 (techniciens, ouvriers et cadres du spectacle)\nChaque source se verifie des DEUX cotes. Audiens donne les artistes (4,45 + 1,29 = 5,74 patronale ; 4,44 + 0,86 = 5,30 salariale) : ce sont exactement les taux artistes de ce bareme, obtenus jadis par retro-ingenierie d'un bulletin. Et le BOSS donne 13,00 et 5,25, dont 70 % font 9,10 et 3,68, egalement les taux artistes. La section technicien n'est donc pas une reconstruction plausible : c'est la meme table, lue une fois avec abattement et une fois sans.\nS21.G00.40.002 et .003 sont des champs de fiche. Le << 204 >> de mai 2025 est l'affectation du second contrat du salarie dans le mois, pas un code annexe 8 ; la regle par versement le produit deja. Plus d'AEM depuis le 01/06/2026 (100 % DSN).\n`cotisations_dsn` : Meme structure de blocs que l'artiste (les blocs 02/03/04/07/23/27/31/43), avec les taux pleins : 049 FNAL 0,10 sur brut x 1,115 ; 074 + 102 = 3,45 + 1,80 = 5,25 AF et 075 + 907 = 7,00 + 6,00 = 13,00 maladie -- la DSN 2026 des artistes garde cette decomposition taux reduit / complement (074 2,42 + 102 1,26 ; 075 4,90 + 907 4,20), on la garde donc pour le technicien ; 130 et 128 identiques ; 040/048/041 chomage identiques (annexes 8 et 10 partagent le taux) ; 131 Agirc-Arrco 10,02 = 5,23 + 4,79 (Audiens 2026, techniciens non-cadres) ; 066 Conges Spectacles 15,5 ; 059 Thalie 0,42 (202) et prevoyance 1,23 (203), meme population ETAM que les artistes (fiche de parametrage Audiens). Un << 204 >> n'est pas un code annexe 8 : c'est l'affectation du DEUXIEME contrat du meme salarie dans le mois (202 pour le premier, 204 pour le second), la regle par versement."
     }
   },
@@ -3175,12 +3220,10 @@
       "retraite_t1",
       "versement_mobilite"
     ],
-    "verifie": true,
     "note": "Deduction forfaitaire specifique pour frais professionnels (DFS, << abattement >>) : arrete du 4 septembre 2025 relatif aux frais professionnels deductibles, art. 9 (base LEGI, atelier/reference/sources/dfs/arrete-2025-frais-professionnels/), qui a abroge et remplace l'arrete du 20/12/2002 le 07/09/2025. Une OPTION DE L'EMPLOYEUR (fiche entreprise, `deduction_forfaitaire_option`) : un accord collectif qui l'a explicitement prevue, l'accord du CE, du CSE ou des delegues du personnel, ou, a defaut, l'accord de chaque salarie (contrat ou avenant, a defaut un consentement annuel recueilli par tout moyen, le silence valant accord). La fiche salarie dit la PROFESSION (`deduction_forfaitaire`) : elle donne la categorie, le taux de l'annee et les frais que l'annexe 2 de l'arrete laisse hors de l'assiette. Decision : `calcul::deduction_forfaitaire` ; calcul : `calcul::abattement_dfs`, `droit::reduction::reduction_generale_sous_dfs` ; DSN : `dsn::cle_abattue`. Textes et ce qui manque : atelier/reference/sources/dfs/LISEZ-MOI.md.\n`professions` : Les professions et leur categorie : article 5 de l'annexe IV du CGI dans sa redaction en vigueur au 31/12/2000 (version LEGIARTI000006300240 du 31/03/2000 au 31/03/2002, atelier/reference/sources/dfs/cgi-annexe4-art5/) : << Artistes dramatiques, lyriques, cinematographiques ou choregraphiques : 25 %. Artistes musiciens. Choristes. Chefs d'orchestre. Regisseurs de theatre : 20 %. >> ; l'arrete du 4 septembre 2025, art. 9, I, y renvoie, et son annexe 1 les reprend (elle y ajoute le << personnel de creation de l'industrie cinematographique >>, 20 %, qui n'est pas du spectacle vivant et n'est pas propose ici). `frais_hors_assiette` : les remboursements de frais que l'annexe 2 de l'arrete laisse hors de l'assiette : I, 2° << les indemnites journalieres de \"defraiement\" versees aux artistes dramatiques, lyriques, choregraphiques ainsi qu'aux regisseurs de theatre, qui participent a des tournees theatrales >> (le defraiement au forfait du catalogue ; un remboursement au reel n'est pas une indemnite journaliere) ; I, 5° << les allocations et remboursements de frais percus par les chefs d'orchestre, musiciens et choristes a l'occasion de leurs deplacements professionnels en France et a l'etranger >> (les deux). INFERENCE, ecrite comme telle : un defraiement du catalogue paye a ces professions est celui d'une tournee ou d'un deplacement. Rien pour les artistes cinematographiques. Tout autre remboursement de frais se reintegrerait dans l'assiette avant l'abattement (art. 9, I, al. 4) : la tolerance du BOSS (§ 2320, `frais_cumulables`) l'en dispense pour le spectacle vivant et le spectacle enregistre.\n`frais_cumulables` : BOSS, Frais professionnels, chapitre 9, § 2320 (version en vigueur au 01/01/2026, imprimee le 13/10/2026 : atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt, l. 2917-2921) : << Par tolerance, a compter de ces memes dates et pour ces huit secteurs, pour accompagner l'extinction du dispositif et la mise en place de modalites de remboursement des frais professionnels de droit commun, l'ensemble des remboursements de frais professionnels definis par l'arrete du 4 septembre 2025 peut faire l'objet d'un cumul avec la deduction forfaitaire specifique. Le cas echeant, l'integration dans l'assiette des cotisations sociales des remboursements de frais professionnels et des prises en charge directes par l'employeur n'est pas obligatoire avant l'application de la deduction forfaitaire specifique. >> Les huit secteurs (§ 2300) comptent << le spectacle vivant et le spectacle enregistre >> ; les << memes dates >> (§ 2310) : le 1er janvier 2023 pour eux. Vrai : tout remboursement de frais professionnels (une rubrique de nature `frais`, du catalogue ou de la compagnie) reste hors de l'assiette abattue, et pas seulement ceux de l'annexe 2 (`frais_hors_assiette`) ; faux : l'art. 9, I, al. 4 de l'arrete seul, et un remboursement que l'annexe ne nomme pas refuse (`calcul::dfs_applicable`). Le BOSS est opposable ; le moteur applique la tolerance sans option, la reintegration que l'employeur pourrait encore choisir n'est pas portee. La tolerance ne couvre que les remboursements de frais au sens de l'arrete : rescrit BOSS-RES-000010 (§ 2325, l. 2923-2934), << l'indemnite de transport prevue par une CCN [...] ne constitue pas un remboursement de frais professionnels au sens de l'arrete du 4 septembre 2025. En consequence, elle n'est pas cumulable avec la DFS [...] Il faut donc l'integrer dans l'assiette des cotisations et contributions sociales des le 1er euro prealablement a l'application de l'abattement. >> INFERENCE, ecrite comme telle : l'artiste cinematographique releve du spectacle enregistre, l'un des huit secteurs.\n`taux` : Taux 2026 par categorie, arrete du 4 septembre 2025, art. 9, II : << pour les professions relevant du spectacle vivant qui beneficient d'un taux de deduction forfaitaire specifique au 31 decembre 2023 de 25 %, a compter du 1er janvier 2024, le taux [...] est reduit de 2 points au 1er janvier de chaque annee puis, a compter du 1er janvier 2026, de 3 points [...] et devient nul a compter du 1er janvier 2032 >> (23, 21, 18 en 2026, 15, 12, 9, 6, 3, 0) ; 20 % : << reduit de 1 point [...] puis, a compter du 1er janvier 2026, de 2 points [...] et, a compter du 1er janvier 2029, de 3 points [...] jusqu'a devenir nul a compter du 1er janvier 2032 >> (19, 18, 16 en 2026, 14, 12, 9, 6, 3, 0). Recoupe par Audiens, webconference << Nouveautes reglementaires 2026 >> p. 22 (atelier/reference/fiches-parametrage/Audiens-Webconf-Nouveautes-2026.txt). Une profession qui porte son propre `taux` le prend (art. 9, III).\n<< Cette deduction est, dans la limite de 7 600 euros par annee civile, calculee en fonction des taux [...] >> (arrete du 4 septembre 2025, art. 9, I, al. 1). Suivi par salarie et par annee civile : `calcul::dfs_deja_deduite` (les mois anterieurs de l'annee recalcules depuis leurs saisies, puis les contrats precedents du mois) ; au-dela, `calcul::abattement_dfs` ramene la deduction et le dit sur la paie.\nLes lignes abattues : les cotisations de securite sociale (CSS R. 242-1, al. 3, qui renvoie aux arretes de frais professionnels ; arrete du 4 septembre 2025, art. 1er : << de l'assiette des cotisations de securite sociale >>) et ce qui s'assoit sur leur assiette (FNAL, CSA, versement mobilite, dialogue social ; la formation, C. trav. L. 6331-1 et L. 6331-55 ; la taxe d'apprentissage, L. 6241-1-1 ; l'assiette majoree du FNAL, du versement mobilite et de l'apprentissage d'un intermittent part du brut abattu, lettre circulaire Acoss 2013-019, annexe 1, R6), et la retraite complementaire Agirc-Arrco (cahier d'aide a la codification Agirc-Arrco CT2026, l. 3490-3498 : << La solution ainsi retenue pour le regime general de la Securite sociale s'applique en principe au regime AGIRC-ARRCO >>). PAS le chomage ni l'AGS d'un intermittent (annexes VIII et X du 15/11/2024, art. 49 : << avant application de l'abattement >>), ni la CSG/CRDS (leur propre abattement, CSS L. 136-1-1 ; BOSS assiette generale § 240), ni les Conges Spectacles (norme DSN, bloc 78 : << avant toute deduction forfaitaire specifique >>), ni la prevoyance des intermittents ni les contributions conventionnelles (CASC, FNAS : << avant abattement >> pour la 1285) : leurs textes ne renvoient pas a l'assiette de la securite sociale. Le plafond de la vieillesse et de la base 02 limite le brut abattu (`brut_plafonne_dfs`). La reduction generale d'un technicien se calcule sur le brut abattu dans la limite de 130 % de celle du brut entier (arrete du 4 decembre 2019, art. 1er ; `droit::reduction::reduction_generale_sous_dfs`). Un contrat au mois, un cadre : refuses (`calcul::dfs_applicable`).\nVerifiee contre les textes deposes le 11/10/2026, pas contre un bulletin reel : aucun bulletin de l'historique ne porte la DFS. Ce que les textes ne disent pas reste refuse avec une phrase qui dit quoi (`calcul::dfs_applicable`, `dsn::cle_abattue`)."
   },
   "par_categorie": {
     "cadre": {
-      "verifie": true,
       "rubriques_retirees": [
         "retraite_t2",
         "cet"
@@ -3421,7 +3464,6 @@
       "note": "Un cadre intermittent est payé en artiste avec la prévoyance et la retraite des cadres, sur des tranches journalières : T1 = 220 € par jour travaillé en 2026, T2 jusqu'à 8 plafonds, Apec dans la limite de 4 plafonds (Paramètres Audiens 2026, p. 1 à 3).\nAudiens, Parametres 2026 p. 2 : la T2 journaliere court de 1 a 8 plafonds journaliers (T1 = 220, T2 = 7 x 220 au-dela, donc jusqu'a 8 x T1) ; l'Apec est assise sur 4 plafonds (T1 x 4).\nAudiens, Parametres 2026 p. 2 : << intermittents du spectacle cadres : les plafonds applicables sont les plafonds journaliers >>, 220 EUR x jours travailles pour la T1, 7 x 220 au-dela pour la T2. Pour les non-cadres, ce sont les plafonds annuels (`t1_annuelle`, `t2_annuelle`, `cet_annuelle` du corps) : la section les retire (`rubriques_retirees` : la tranche 2 et la CET de l'annee) et pose ses tranches journalieres. Sa base 43 est sa tranche 1 journaliere, « la T1 a retenir » (cahier Agirc-Arrco CT2026, l. 635), sous laquelle se declare le 131 de sa tranche 1 (`131/43`)."
     },
     "cadre_permanent": {
-      "verifie": true,
       "cotisations_ajoutees": [
         {
           "apres": "131",
@@ -3499,7 +3541,6 @@
   },
   "par_nature": {
     "permanent": {
-      "verifie": true,
       "rubriques": {
         "chomage": {
           "base": "brut_chomage",
@@ -4493,7 +4534,6 @@
   },
   "par_caisse_conges": {
     "affilie": {
-      "verifie": true,
       "du_corps": {
         "rubriques_bulletin": [
           "conges_spec"
@@ -4504,10 +4544,9 @@
       },
       "majoration_conges_115": 1.115,
       "majoration_conges_110": 1.115,
-      "note": "Un CDD de droit commun de moins de douze mois d'un intermittent : un ARTISTE (annexe 10), ou un technicien d'une fonction que la liste de l'annexe 8 nomme pour la convention de l'employeur (`caisse_conges::intermittent`). Par-dessus `par_nature.permanent` : la ligne de la caisse et la cotisation 066 (bloc 78 de type 27) reprises du corps tel que le statut l'a laisse, et les majorations d'assiette des employeurs affilies a une caisse de conges (CSS L. 243-1-3), que les assiettes du permanent portent deja (`t1_mensuelle_x115`, `brut_x110`, `brut_x115` du versement mobilite et de la formation, `autres_4`) avec une majoration de 1,0.\n`majoration_conges_110` : 11,5 % et non 10 % : CSS D. 243-0-2 (atelier/reference/sources/code-de-la-securite-sociale/articles-20261010.md), 1° : << Le taux des majorations prevues a l'article L. 243-1-3 est fixe a 11,5 % >> ; 2° : 10 % pour la taxe d'apprentissage << des salaries intermittents du spectacle mentionnes a l'article L. 6331-55 >> -- ceux des secteurs << pour lesquels il est d'usage constant de ne pas recourir au contrat a duree indeterminee >>, les mots memes du CDD d'usage (L. 1242-2, 3°). Un CDD de droit commun (L. 1242-2, 1° ou 2°) n'en est pas : sa taxe d'apprentissage se majore de 11,5 %. LECTURE : D. 243-0-2 ne nomme pas le CDD de droit commun ; la cle garde son nom (`_110`), c'est celle de la taxe d'apprentissage.\nLa contribution a la formation professionnelle de droit commun (L. 6331-1, par L. 6131-2) et la contribution CPF-CDD (L. 6331-6) se majorent aussi (L. 243-1-3, 1°) : leur ligne du bulletin (`par_nature.permanent.rubriques_ajoutees[autres_4]`) et leurs 81.003 (128, 129) sont sur `brut_x115`, que la majoration de 1,115 porte ici. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md, << La CPF-CDD d'un CDD declare a la caisse >>."
+      "note": "Un CDD de droit commun de moins de douze mois d'un intermittent : un ARTISTE ou un TECHNICIEN du spectacle, que la liste de l'annexe 8 nomme sa fonction ou non (`caisse_conges::personnel_du_spectacle` : D. 7121-40, D. 7121-41 et Audiens disent « le personnel artistique et technique », sans liste). Par-dessus `par_nature.permanent` : la ligne de la caisse et la cotisation 066 (bloc 78 de type 27) reprises du corps tel que le statut l'a laisse, et les majorations d'assiette des employeurs affilies a une caisse de conges (CSS L. 243-1-3), que les assiettes du permanent portent deja (`t1_mensuelle_x115`, `brut_x110`, `brut_x115` du versement mobilite et de la formation, `autres_4`) avec une majoration de 1,0.\n`majoration_conges_110` : 11,5 % et non 10 % : CSS D. 243-0-2 (atelier/reference/sources/code-de-la-securite-sociale/articles-20261010.md), 1° : << Le taux des majorations prevues a l'article L. 243-1-3 est fixe a 11,5 % >> ; 2° : 10 % pour la taxe d'apprentissage << des salaries intermittents du spectacle mentionnes a l'article L. 6331-55 >> -- ceux des secteurs << pour lesquels il est d'usage constant de ne pas recourir au contrat a duree indeterminee >>, les mots memes du CDD d'usage (L. 1242-2, 3°). Un CDD de droit commun (L. 1242-2, 1° ou 2°) n'en est pas : sa taxe d'apprentissage se majore de 11,5 %. LECTURE : D. 243-0-2 ne nomme pas le CDD de droit commun ; la cle garde son nom (`_110`), c'est celle de la taxe d'apprentissage.\nLa contribution a la formation professionnelle de droit commun (L. 6331-1, par L. 6131-2) et la contribution CPF-CDD (L. 6331-6) se majorent aussi (L. 243-1-3, 1°) : leur ligne du bulletin (`par_nature.permanent.rubriques_ajoutees[autres_4]`) et leurs 81.003 (128, 129) sont sur `brut_x115`, que la majoration de 1,115 porte ici. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md, << La CPF-CDD d'un CDD declare a la caisse >>."
     },
     "non_affilie": {
-      "verifie": true,
       "rubriques_retirees": [
         "conges_spec"
       ],
@@ -4541,7 +4580,133 @@
       ],
       "raisonnement": "Comme n. 61."
     },
-    "note": "Qui passe par la caisse quand le contrat n'est pas ce que sa nature décrit : voir n. 61 (majorations 11,5 %, y compris taxe d'apprentissage, pour le CDD de droit commun d'un artiste déclaré).\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste l'est (`affilie`). Un CDI ne l'est jamais."
+    "note": "Qui passe par la caisse quand le contrat n'est pas ce que sa nature décrit : voir n. 61 (majorations 11,5 %, y compris taxe d'apprentissage, pour le CDD de droit commun d'un artiste déclaré).\nLA CAISSE DES CONGES SPECTACLES, un etage de la pile pose juste apres la nature du contrat (`bareme::bareme_caisse_conges`). Le corps de ce bareme decrit un CDDU declare a la caisse, `par_nature.permanent` un salarie que l'employeur paie de ses conges. Deux contrats ne sont pas ce que leur nature decrit, et `caisse_conges::affilie` les reconnait a leurs dates : un CDDU de DOUZE MOIS OU PLUS n'est pas declare a la caisse (`non_affilie`) ; un CDD DE DROIT COMMUN DE MOINS DE DOUZE MOIS d'un artiste ou d'un technicien du spectacle l'est (`affilie`). Un CDI ne l'est jamais."
+  },
+  "chomage_hors_des_annexes": {
+    "rubriques": {
+      "chomage": {
+        "base": "brut_chomage",
+        "taux_pat": 4.25,
+        "efface": [
+          "taux_sal"
+        ],
+        "composants": [
+          4,
+          0.25
+        ],
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/sources/chomage-permanents/unedic-reglement-general-convention-20241115.txt",
+              "emetteur": "unedic",
+              "article": "Règlement général annexé à la convention du 15/11/2024, art. 50-1, § 1er",
+              "citation": "Sous réserve des dispositions prévues aux articles 50-2 à 51, le taux de la contribution à la charge des employeurs est fixé à 4%."
+            },
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "BOSS, COT_CH_UN_METROP (2026)",
+              "citation": ";4;01/01/2026;//;OK"
+            },
+            {
+              "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+              "emetteur": "urssaf",
+              "article": "table des CTP, 937 AGS",
+              "citation": "'937';COTISATIONS AGS CAS GENERAL U2;COTIS.AGS CAS GENER.;E;;0.25;;2024-01-07;;"
+            }
+          ],
+          "raisonnement": "Unédic (règlement général, art. 50-1 § 1er : 4 % ; le § 2, 4,50 % pour un CDD d'usage court, ne vise que les dockers occasionnels), BOSS (4 %) et Urssaf (AGS 0,25) : 4,25 en somme, rien de salarial (art. 50 : les contributions salariales ne sont que celles des annexes VIII, IX et X)."
+        },
+        "note": "Le chômage du CDD d'usage d'un technicien que la liste de l'annexe 8 de la convention ne nomme pas : celui du règlement général, comme d'un permanent (`par_nature.permanent.rubriques.chomage`), sur la même base (le brut dans la limite de quatre plafonds : règlement général, art. 49, al. 2, mêmes mots que l'annexe 8, art. 49)."
+      }
+    },
+    "cotisations_dsn_retirees": [
+      "040",
+      "048",
+      "041"
+    ],
+    "cotisations_dsn_ajoutees": [
+      {
+        "bloc78": "07",
+        "code81": "040",
+        "org": "78861779300013",
+        "base": "brut_chomage",
+        "taux": 4,
+        "base78": "brut_chomage",
+        "cle_total": "040:urssaf",
+        "source": {
+          "sources": [
+            {
+              "fichier": "atelier/reference/boss-table-parametres-2026.csv",
+              "emetteur": "boss",
+              "article": "COT_CH_UN_METROP (2026)",
+              "citation": ";4;01/01/2026;//;OK"
+            },
+            {
+              "fichier": "atelier/reference/sources/cddu-hors-annexe8/legi-travail-D1242-1-L5424-20-L5427-1-20261119.md",
+              "emetteur": "loi",
+              "article": "C. trav. L. 5427-1, al. 3 et e)",
+              "citation": "Le recouvrement des contributions mentionnées aux 1° à 3° de l'article L. 5422-9 et à l'article L. 5422-11 est assuré, pour le compte de cet organisme, par les unions pour le recouvrement des cotisations de sécurité sociale et d'allocations familiales"
+            }
+          ],
+          "raisonnement": "Le BOSS donne 4 % ; le code du travail confie le recouvrement à l'Urssaf, France Travail ne recouvrant que pour les salariés du spectacle « lorsque l'activité exercée bénéficie de l'aménagement des conditions d'indemnisation » (L. 5427-1, e), ce que l'annexe 8 refuse à une fonction hors de sa liste."
+        },
+        "note": "Cotisation AC du CDD d'usage hors des annexes, 4,00 %, à l'Urssaf (81.002 et `cle_total`), comme d'un permanent."
+      },
+      {
+        "bloc78": "07",
+        "code81": "048",
+        "org": "78861779300013",
+        "base": "brut_chomage",
+        "taux": 0.25,
+        "base78": "brut_chomage",
+        "cle_total": "048:urssaf",
+        "source": {
+          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "emetteur": "urssaf",
+          "article": "table des CTP, 937 AGS",
+          "citation": "'937';COTISATIONS AGS CAS GENERAL U2;COTIS.AGS CAS GENER.;E;;0.25;;2024-01-07;;"
+        },
+        "note": "Cotisation AGS, 0,25 %, recouvrée par l'Urssaf comme le chômage."
+      }
+    ],
+    "reduction_generale": {
+      "dsn": {
+        "cle_total_chomage": "018:urssaf",
+        "ctp": "668",
+        "ctp_regularisation": "669"
+      }
+    },
+    "source": {
+      "sources": [
+        {
+          "fichier": "atelier/reference/sources/plafond-intermittents/unedic-annexe8-convention-20241115.txt",
+          "emetteur": "unedic",
+          "article": "Annexe VIII, art. 1er, § 2",
+          "citation": "Les bénéficiaires de la présente annexe sont les ouvriers et techniciens engagés dans le cadre d'un contrat à durée déterminée, pour assurer l'une des fonctions énumérées dans la liste figurant au titre XIV"
+        },
+        {
+          "fichier": "atelier/reference/sources/cddu-hors-annexe8/legi-travail-D1242-1-L5424-20-L5427-1-20261119.md",
+          "emetteur": "loi",
+          "article": "C. trav. D. 1242-1, 6°",
+          "citation": "6° Les spectacles, l'action culturelle, l'audiovisuel, la production cinématographique, l'édition phonographique ;"
+        },
+        {
+          "fichier": "atelier/reference/sources/cddu-hors-annexe8/legi-travail-D1242-1-L5424-20-L5427-1-20261119.md",
+          "emetteur": "loi",
+          "article": "C. trav. L. 5427-1, e)",
+          "citation": "e) Par l'opérateur France Travail, lorsqu'elles sont dues au titre des salariés engagés à titre temporaire qui relèvent des professions de la production cinématographique, de l'audiovisuel ou du spectacle et lorsque l'activité exercée bénéficie de l'aménagement des conditions d'indemnisation mentionné à l'article L. 5424-20 ;"
+        },
+        {
+          "fichier": "atelier/reference/sources/cddu-hors-annexe8/kali-1285-politique-contractuelle-20080624-art3-3-annexe-c-20261119.md",
+          "emetteur": "convention",
+          "article": "IDCC 1285, accord du 24/06/2008, art. 3.3.1",
+          "citation": "La liste des fonctions des emplois artistiques, administratifs et techniques figurant dans l'annexe C du présent accord, qui sont des fonctions pour lesquelles le recours au CDD dit d'usage est autorisé"
+        }
+      ],
+      "raisonnement": "Le CDD d'usage est permis dans les spectacles (D. 1242-1, 6°) pour les fonctions que la convention nomme (1285 : accord du 24/06/2008, annexe C, qui nomme le poursuiteur ou le prompteur, que la liste 6 de l'annexe 8 ne nomme pas) ; l'annexe 8 ne range que les fonctions de sa liste ; hors d'elle, le règlement général s'applique, et le chômage est recouvré par l'Urssaf (L. 5427-1)."
+    },
+    "note": "LE CHOMAGE DU CDD D'USAGE HORS DES ANNEXES (`caisse_conges::cddu_hors_des_annexes`, `bareme::bareme_chomage_hors_des_annexes`) : le technicien en CDDU dont la fonction n'est pas sur la liste de l'annexe 8 de la convention de l'employeur. Par-dessus le corps tel que le statut, la caisse et la majoration l'ont laissé : la ligne du chômage du règlement général, les cotisations des annexes (040 à 11,40, 048 et 041 à France Travail) remplacées par 040 et 048 à l'Urssaf, la part chômage de la réduction générale à l'Urssaf (CTP 668 et 669 au lieu de 671 et 801). Le reste du CDDU ne change pas : Congés Spectacles (D. 7121-40, D. 7121-41), formation à 2 % (L. 6331-55), prévoyance de l'accord interbranche (art. 2.2 : fonction de la liste CDD d'usage de la convention), retraite des intermittents. Textes : atelier/reference/sources/cddu-hors-annexe8/LISEZ-MOI.md."
   },
   "risques_atmp": {
     "arrete": "l'arrêté du 30 décembre 2025 relatif à la tarification des risques d'accidents du travail et de maladies professionnelles pour l'année 2026",
@@ -4766,22 +4931,27 @@
     "note": "CE QUE L'EFFECTIF DE L'ENTREPRISE CHANGE DANS CE SOCLE, ecrit pour etre LU par le moteur : il lit cette section, la confronte a l'effectif que l'Urssaf calcule et renvoie en CRM de nature 118 (config/effectifs.json ; un seuil n'est franchi qu'apres cinq annees consecutives), et REFUSE de payer plutot que de produire un bulletin faux et muet.\nCe socle est ecrit pour une entreprise de MOINS DE ONZE salaries -- le plus petit palier, et le seul que nos declarations reelles eprouvent. Une entreprise plus grande surcharge, dans son propre fichier (`config/baremes/<annee>.json`), les chemins listes ci-dessous.\n`chemins` donne, pour chaque valeur, l'endroit exact du bareme et LA VALEUR QUE LE SOCLE Y PORTE. Le controle est celui-la : si l'effectif declare atteint `seuil` et que la valeur fondue est encore celle du socle, personne ne l'a surchargee -- refus. Une valeur surchargee est tenue pour DECIDEE : le moteur verifie qu'une decision a ete prise, pas laquelle, comme pour le taux AT/MP qu'il ne peut pas connaitre.\nLe jour ou la DSN est due suit le meme seuil que le FNAL (le 15, le 5 a partir de cinquante salaries -- art. R. 243-6 CSS), et il ne vit pas dans le bareme : `entreprise.echeance_dsn` le deduit de l'effectif (le 15 quand il est inconnu)."
   },
   "regime_local_alsace_moselle": {
-    "taux_sal": 1.3,
+    "taux_sal": 0.91,
     "code81": "115",
-    "ctp": "381",
     "source": {
       "sources": [
         {
-          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
           "emetteur": "urssaf",
-          "article": "CTP 381, taux déplafonné 1.3 depuis le 2022-01-04, l. 4158",
-          "citation": "'381';MAJO ALSACE MOSELLE - SECTEUR PRIVE AL;MAJ ALS MOS PR;E;;1.3;;2022-01-04;;"
+          "article": "Urssaf, artistes du spectacle, cotisations concernées",
+          "citation": "Cotisation maladie supplémentaire pour les départements du 0,91 %"
         },
         {
-          "fichier": "atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt",
-          "emetteur": "gip_mds",
-          "article": "S21.G00.81.001, code 115",
-          "citation": "115 - Cotisation Assurance Maladie pour le Régime Local Alsace Moselle"
+          "fichier": "atelier/reference/sources/urssaf-taux-reduits-artistes/urssaf-taux-reduits-cas-particuliers-20260715.txt",
+          "emetteur": "urssaf",
+          "article": "Urssaf, artistes du spectacle, cotisations concernées",
+          "citation": "La réduction de taux est de 30 %."
+        },
+        {
+          "fichier": "atelier/reference/sources/arrete-1975-artistes-du-spectacle/articles-20261110.md",
+          "emetteur": "loi",
+          "article": "arrêté du 24/01/1975, art. 1",
+          "citation": "Les taux des cotisations d'assurances sociales, d'accidents du travail et de maladies professionnelles et d'allocations familiales dues au titre de l'emploi des artistes du spectacle visés au 15° de l'article L. 311-3 du code de la sécurité sociale, sont fixés à raison de 70 % des taux du régime général des salariés."
         },
         {
           "fichier": "atelier/reference/sources/legi-entrepot/articles.jsonl.gz#securite-sociale",
@@ -4796,15 +4966,27 @@
           "citation": "Une cotisation de 1,3% depuis le 1er avril 2022"
         },
         {
-          "fichier": "atelier/reference/sources/regime-local-alsace-moselle/regime-local-cotisation-20261104.txt",
-          "emetteur": "regime_local",
-          "article": "page « Cotisation »",
-          "citation": "La cotisation est uniquement salariale, il n’y a pas de cotisation patronale."
+          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "emetteur": "urssaf",
+          "article": "CTP 313, artistes en Alsace-Moselle, 10,29 depuis le 2026-01-01",
+          "citation": "'313';ARTISTES CAS GENERAL ABATTEMENT 30% AL;ARTISTES;A;10.82;10.29;0.0;2026-01-01;;"
+        },
+        {
+          "fichier": "atelier/reference/sources/urssaf-codes-types-personnel-20261013.csv",
+          "emetteur": "urssaf",
+          "article": "CTP 312, artistes hors Alsace-Moselle, 9,38 depuis le 2026-01-01",
+          "citation": "'312';ARTISTES CAS GENERAL ABATTEMENT 30%;ARTISTES 30%;A;10.82;9.38;0.0;2026-01-01;;"
+        },
+        {
+          "fichier": "atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt",
+          "emetteur": "gip_mds",
+          "article": "S21.G00.81.001, code 115",
+          "citation": "115 - Cotisation Assurance Maladie pour le Régime Local Alsace Moselle"
         }
       ],
-      "raisonnement": "Loi (L. 242-13, cotisation salariale sur les revenus de L. 242-1, taux du conseil d'administration) et Urssaf (CTP 381, 1,3) ; norme DSN code 115."
+      "raisonnement": "La loi abat de 30 % les taux des cotisations d'assurances sociales du régime général pour l'artiste (arrêté du 24/01/1975, art. 1) ; la cotisation du régime local est une cotisation d'assurance maladie du régime général, au chapitre de ses cotisations (CSS L. 242-13), de 1,3 % (le régime local). 1,3 × 70 % = 0,91. L'Urssaf dit 0,91 % pour l'artiste (la page des taux réduits des artistes, où la même cotisation vaut 1,30 % pour les autres professions qu'elle liste), et sa table des CTP le confirme : le cas général des artistes en Alsace-Moselle (313, 10,29) passe celui d'ailleurs (312, 9,38) de 0,91 exactement. Norme DSN : code 115."
     },
-    "note": "Régime local d'Alsace-Moselle : cotisation salariale unique de 1,3 % sur les revenus déplafonnés, DSN 115, CTP 381.\nINFERENCE : le taux plein pour un artiste. L'abattement de 30 % des artistes (arrete du 24/01/1975) porte sur les taux du regime general ; celui du regime local est fixe par son conseil d'administration (L242-13, II), et aucune source lue ne le reduit. L'assiette est celle des cotisations de securite sociale (L242-1), la meme que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
+    "note": "Régime local d'Alsace-Moselle de l'ARTISTE (le corps de ce barème) : cotisation salariale de 0,91 % (1,3 % abattu de 30 %) sur les revenus déplafonnés, DSN 115 ; au bordereau, l'artiste intermittent la paie dans le CTP 313, qui remplace le 312 (`organismes-base.json`), et non sous le 381. Le technicien cotise au taux plein (`par_statut.technicien.regime_local_alsace_moselle`, 1,3 %). L'assiette est celle des cotisations de sécurité sociale (L242-1), la même que la maladie 075.\nLe salarie dont l'etablissement est dans le Bas-Rhin, le Haut-Rhin ou la Moselle (code postal 67, 68, 57 de son etablissement, `bareme::alsace_moselle`). Non porte : l'itinerant d'un etablissement hors zone dont le contrat prevoit un travail en Alsace-Moselle, le frontalier."
   },
   "par_organisation_patronale": {
     "SYNDEAC": {

@@ -483,7 +483,8 @@ un libellé, chacun sa forme.
 | identité déclarée d'une personne (nom, prénoms, naissance, NIR ou NTT) | `IdentiteDeclaree` | `declarations/src/identite.rs` |
 | date de naissance déclarée (un jour, ou le jour ou le mois inconnus) | `NaissanceDeclaree` | `declarations/src/identite.rs` |
 | employeur lu d'une pièce (sa raison sociale, son SIRET) | `EmployeurLu` | `declarations/src/identite.rs` |
-| nom déclaré, prénom déclaré (les cases de la fiche d'un salarié) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
+| nom déclaré (de famille), prénom déclaré (les cases de la fiche d'un salarié, bornées par la DPAE) | `NomDeclare`, `PrenomDeclare` | `droit/src/fiche.rs` |
+| nom d'usage d'un salarié (la case de sa fiche, bornée par la DSN, S21.G00.30.003) | `NomDUsage` | `droit/src/fiche.rs` |
 | case d'identité | `CaseDIdentite` | `declarations/src/changements_individu.rs` |
 | SIREN, NIC, SIRET | `Siren`, `Nic`, `Siret` | `droit/src/fiche.rs` |
 | IBAN, BIC | `Iban`, `Bic` | `droit/src/fiche.rs` |
@@ -1174,6 +1175,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | mois payé d'un contrat, tel que sa paie validée le porte (dernier jour, dates travaillées, cachets, jours, heures, brut), que le certificat Congés Spectacles somme | `documents::conges_spectacles::MoisPaye` | `documents/src/conges_spectacles.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
+| ce que les cases d'une ligne de paie montrent à l'écran (sa quantité, son taux ou son montant, ses heures, écrits par le moteur : « 2 » cachets, « 140,00 » ; la saisie les relit telles quelles ; une ligne qui ne dit encore que son taux, la ligne de cachet neuve, celle d'un contrat repris, `CasesMontrees::d_un_taux`. Une écriture d'une ligne pour l'écran, parallèle à la ligne qu'elle montre : `montrees` des routes saisie, enregistrer-saisie, contrats-en-cours, `montree` d'ajuster, `defauts.cachet_neuf`) | `engagement::ligne::CasesMontrees` | `engagement/src/ligne.rs` |
+| forme d'une case (ce qu'on y saisit : un texte, un nombre, un mois, un jour, des jours, un oui-non, une liste, un objet, une valeur d'une liste fermée, que la fiche porte ou que la route rend à côté ; écrite par son mot. Une case de la carte la tient de son champ, à un seul endroit, `Forme::de_la_case`, que prennent les cases que les fiches nomment ; une clé d'une ligne de paie, `Forme::de_la_cle`. La portent le champ d'une fiche, `routes::catalogue::Champ`, la case d'une nature décrite, générique sur sa forme parce qu'`engagement` est au-dessous des routes, et la clé d'une ligne que la route etat rend) | `routes::catalogue::Forme` (ses porteurs : `engagement::carte::CaseDecrite`, `routes::ouverture::CleDeLaLigne`) | `routes/src/catalogue.rs`, `engagement/src/carte.rs`, `routes/src/ouverture.rs` |
 | ligne de rémunération (ce qu'une ligne de paie paie, sa rubrique et son montant. Celle que le calcul rend dit toujours ce qu'elle paie, `LigneBrut` (son paiement obligatoire) ; celle d'un bulletin importé que l'import a rattachée à sa rubrique garde son montant lu, et ce qu'elle paie quand il l'imprime, `LigneRattachee` (la même ligne, son paiement facultatif : un forfait imprimé à son seul montant) ; un seul rattachement, `importe::LigneImprimee::rattachee` : une rubrique et un montant ; elle n'est pas une ligne de paie (`LignePaie`). Ses formes : la paie écrite, la ligne du calcul elle-même (son paiement écrit sans zéro, `EcritSansZero`) ; la zone `importe`, `LigneImprimee`, qu'une ligne non rattachée garde. Un état la lit d'une paie du mois sans recopie, `etats::RemunerationDuMois` : la ligne calculée, la ligne rattachée, ou ce que le bulletin importé imprime) | `engagement::calcul::LigneBrut`, `engagement::calcul::LigneRattachee` | `engagement/src/calcul.rs` |
 | ligne de cotisation (celle que le calcul rend ; la forme de la zone `importe`, la ligne qu'un bulletin importé imprime, `importe::CotisationImprimee`, ce qu'il ne dit pas vide ; la forme écrite, la ligne du calcul elle-même, lue sa base en nombre puis relue (`LigneCotisation::relue`). Un état la lit d'une paie du mois sans recopie, `etats::CotisationDuMois` : la ligne calculée, ou celle du bulletin importé) | `engagement::calcul::LigneCotisation` | `engagement/src/calcul.rs` |
 | versement mobilité (son taux, la commune de l'établissement, l'autorité qui l'institue ; ses formes : la case d'une fiche, `droit::fiche::VersementMobilite`, ce que la surcouche du barème écrit, `forme_bareme::VersementMobiliteEcrit`, `VersementMobiliteTaux`) | `droit::bareme::VersementMobilite` | `droit/src/bareme.rs` |
@@ -1198,6 +1201,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | question d'identité de l'import (un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte ressemble au salarié d'une fiche sans NIR : est-ce la même personne ? rien de lui ne se reprend avant la réponse) | `QuestionDIdentite` | `import/src/reponse.rs` |
 | réponse à une question d'identité (la même personne : la fiche reçoit le NIR ; une autre : elle se garde) | `ReponseDIdentite` | `routes/src/importation/identite.rs` |
 | réponse « ce n'est pas la même personne », gardée (le NIR déclaré, la fiche) | `PasLaMemePersonne` | `routes/src/importation/identite.rs` |
+| contrat repris qu'une AEM, un bulletin ou un certificat et la DSN datent autrement : la DSN vaut, la pièce part chez l'éditeur | `ContratDitAutrement` | `routes/src/importation/incident.rs` |
 | les réponses gardées (`config/import-identites.json` : sa note, les paires) | `ReponsesDIdentite` | `routes/src/importation/identite.rs` |
 | questions d'identité qui attendent la compagnie, et ce qui ne s'est pas relu pour les poser (`importation-etat`) | `IdentitesEnAttente` | `routes/src/importation/identite.rs` |
 | geste qu'une route rend et que la page dessine en bouton (sa route, sa charge, son libellé, ses cases) : celui d'un imprévu, d'une question d'identité | `GesteDeRoute` | `routes/src/imprevus.rs` |
@@ -1275,6 +1279,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | répartition de la tranche 1 | `RepartitionDeLaTrancheUne` | `droit/src/bareme.rs` |
 | majoration de la caisse des congés | `MajorationCaisseConges` | `droit/src/forme_bareme.rs` |
+| plafond de la base Congés Spectacles d'une convention (le montant journalier qu'un accord écrit pour des emplois qu'il nomme, C. trav. D. 7121-37 ; la case `plafond_conges_spectacles` de la fiche Entreprise dit si l'accord lie la compagnie) | `PlafondCongesSpectacles` ; ses montants par emplois : `PlafondDesEmplois` | `droit/src/clauses.rs` |
+| chômage du CDD d'usage hors des annexes (la section du barème qui paie au règlement général, à l'Urssaf, le CDDU d'un technicien que la liste de l'annexe 8 de sa convention ne nomme pas ; qui en relève : `caisse_conges::cddu_hors_des_annexes`) | `ChomageHorsDesAnnexes` | `droit/src/forme_bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
 | rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
 | contribution de branche | `ContributionDeBranche` | `droit/src/forme_bareme.rs` |
@@ -2583,11 +2589,29 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   dépôts, à défaut la DSN importée) : rien ne propose de la refaire.
 - **L'activité d'un mois repris** (`engagement::importe::activite_du_mois`) : la DSN déposée déclare, pour chaque
   contrat et chaque mois, ses heures, ses cachets et ses jours de travail rémunéré (S21.G00.53 de type 01, hors rappel) ;
-  l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Le bulletin du
-  mois d'un permanent les remplace par ce qu'il imprime ; le contrat qu'une AEM, un bulletin ou un certificat atteste
-  l'emporte quand il tient dans le mois ; sinon, la paie du mois dit son activité. Une seule règle
-  (`ActiviteDuMois`), que lisent la carte du mois importé, la comparaison, la CASC-SVP et la paie importée
-  (`PaieImportee::activite`, que les états lisent par `PaieDuMois::activite`).
+  l'import les garde dans la paie versée, au centième près (`PaieVersee::heures`, `cachets`, `jours`). Ce que la DSN
+  déclare l'emporte ; la pièce du contrat (AEM, bulletin, certificat) et le bulletin du mois d'un intermittent n'ajoutent
+  que ce qu'elle tait (le bulletin du mois d'un permanent remplace ce qu'il imprime). Sans DSN, le contrat qu'une pièce atteste dit l'activité quand il tient dans le mois ; sinon, le bulletin du
+  mois. Une seule règle (`ActiviteDuMois`), que lisent la carte du mois importé, le calendrier des mois passés, la
+  comparaison, la CASC-SVP et la paie importée (`PaieImportee::activite`, que les états lisent par
+  `PaieDuMois::activite`).
+- **Deux pièces, le même contrat : la DSN vaut** (Léandre, 19/11/2026 : « ce qu'on déclare, c'est ce qui est valable
+  pour France Travail » ; « a priori, ça n'existe pas ») : deux pièces du même salarié disent le même contrat quand
+  elles ont les mêmes dates, ou portent le même numéro de contrat. Un bulletin, qui imprime la période de sa paie, est
+  aussi du contrat que la DSN déclare quand il commence le même jour ou que sa période y tient (le bulletin d'un mois
+  d'un CDDU sur deux mois) ; une AEM ou un certificat attestent le contrat entier : les mêmes dates ou le même numéro
+  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats ; un contrat qu'une paie déclarée dit
+  par ses dates ou son numéro ne se prend pas par une ressemblance plus faible ; une paie d'un autre mois ne se
+  complète qu'aux mêmes dates (`ecrite::les_plus_proches`). La règle est `importation::ecrite::meme_contrat`, que
+  lisent la paie qu'une page de bulletin complète à l'aperçu (`importation::bulletins`, DSN de l'aperçu et de
+  l'historique), celle de l'écriture (`rapprocher`) et l'engagement (`engagements_importes`) : l'aperçu et l'écriture
+  lisant la même règle, un import rejoué ne trouve rien à faire. Un seul engagement, une seule paie par mois, aux
+  dates de la DSN, quel que soit l'ordre des imports ; l'AEM ou le bulletin n'ajoutent que ce qu'elle tait. Rien ne
+  se demande à la compagnie : un bulletin dont la période ne tient pas dans le contrat déclaré, une AEM ou un
+  certificat qui ressemble à un contrat déclaré sans en avoir les dates (il reste un engagement à part), part chez
+  l'éditeur, en silence, une fois par sorte de pièce (`importation::incident::ContratDitAutrement`) ; un journal des
+  incidents illisible ne fait pas refuser l'import. Le contrat d'un permanent suit la DSN qui
+  arrive (« La DSN fait foi », plus haut).
 - **La CASC-SVP des mois importés** (`importation/casc.rs`) : un mois tenu dans un autre logiciel a pu partir sans elle ;
   `exporter regularisation-casc-svp` prépare la régularisation depuis les engagements importés, `casc-regularise`
   note l'année faite. L'alerte qui suit un import (`importation::ecrite::alerte_apres_import`) ne calcule rien
@@ -2920,7 +2944,7 @@ journalières, prévoyance de l'accord interbranches. Appliquée à une
 administratrice en CDI, elle lui donnerait des plafonds à la journée et la
 prévoyance de quelqu'un d'autre, en silence.
 `droit::bareme::bareme_cadre` lit `par_categorie.cadre_permanent` quand le contrat est
-mensuel, et refuse si la section n'est pas vérifiée (`verifie`) : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
+mensuel, et refuse si le barème n'a pas cette section : mêmes taux Agirc-Arrco (le régime est unifié), mais l'Apec sur
 quatre plafonds **du mois**. Sa prévoyance, elle, vient de la convention.
 
 **La CET est due par tout permanent, cadre ou non** (ANI Agirc-Arrco du 17/11/2017, art. 37 : « Pour les participants
@@ -3124,7 +3148,7 @@ du statut, et la nature ne change que la destination de la part chômage
 (`018:urssaf` et CTP 668 pour un permanent, `018:chomage` et CTP 671 pour un
 intermittent).
 
-**La section `par_nature.permanent`** des barèmes 2025 et 2026 est vérifiée (`verifie`). La fiche de paramétrage
+**La section `par_nature.permanent`** des barèmes 2025 et 2026 porte la source de chaque taux. La fiche de paramétrage
 Audiens (version 139) porte les permanents : la **santé** (1,44 / 1,84 / 2,04 % du PMSS selon le niveau) et la
 **CASC-SVP** (0,50 % de la tranche A). La **prévoyance des permanents** vient de la convention, pas du barème (voir
 plus haut), et la rubrique porte `rempli_par` comme la mutuelle. Les identifiants techniques des deux

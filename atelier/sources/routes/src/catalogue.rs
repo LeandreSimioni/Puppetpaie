@@ -368,14 +368,28 @@ pub enum Forme {
     Nombre,
     /// AAAA-MM.
     Mois,
-    /// AAAA-MM-JJ.
+    /// AAAA-MM-JJ : l'ecran la fait choisir dans son calendrier (`js/calendrier.js`), d'un jour.
     Date,
+    /// Des jours, chacun AAAA-MM-JJ : l'ecran les fait cocher dans le meme calendrier, plusieurs a la fois (les jours
+    /// d'une ligne de paie).
+    Jours,
     /// Une liste de textes.
     Liste,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
     Objet,
     /// Une valeur d'une liste fermee : ses valeurs et leurs libelles ; l'ecran la fait choisir.
     Choix(&'static [Choix]),
+    /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees (les genres d'un avantage en nature, les
+    /// lieux d'une ligne de frais : `rubriques[].genres`, `rubriques[].lieux` de la route etat) ; l'ecran la fait choisir.
+    ChoixRendu,
+}
+
+/// UNE FORME S'ECRIT PAR SON MOT (`Forme::mot`) : la page et le LLM la lisent ainsi ; les valeurs d'une liste fermee
+/// s'ecrivent a cote (`ChampEcrit.choix`).
+impl serde::Serialize for Forme {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.mot())
+    }
 }
 
 /// Une valeur d'une liste fermee (`Forme::Choix`) : ce que la charge ecrit (`code`) et ce que l'ecran en montre.
@@ -403,9 +417,11 @@ impl Forme {
             Forme::Nombre => "nombre",
             Forme::Mois => "mois",
             Forme::Date => "date",
+            Forme::Jours => "jours",
             Forme::Liste => "liste",
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
+            Forme::ChoixRendu => "choix_rendu",
         }
     }
 
@@ -413,9 +429,77 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Liste | Forme::Objet => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Objet | Forme::ChoixRendu => None,
         }
     }
+
+    /// LA FORME D'UNE CASE DE LA CARTE, tiree du type de son champ (`engagement::saisie::Carte`) : un jour se choisit
+    /// dans le calendrier, un nombre se tape, un oui-non se coche ; une valeur composee (les lignes, les conges, le
+    /// preavis) se decrit ailleurs (les lignes : `rubriques[].cles` de la route etat). Chaque champ y est classe : un
+    /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite. C'est la seule declaration de la forme d'une
+    /// case de la carte : les cases que les fiches nomment (`CASES_D_UN_MOIS_PAYE`, `CASES_DE_LA_FIN`) la prennent ici.
+    pub const fn de_la_case(c: engagement::saisie::Champ) -> Forme {
+        use engagement::saisie::Champ as C;
+        match c {
+            C::Debut | C::Fin | C::DatePaiement | C::NotificationRupture | C::EngagementLicenciement | C::SignatureConvention | C::DernierJourPaye | C::DateModification => Forme::Date,
+            C::QuotiteContrat
+            | C::QuotiteReference
+            | C::SalaireMensuel
+            | C::PeriodeEssaiJours
+            | C::Jours
+            | C::TauxCachet
+            | C::HeuresSupplementaires
+            | C::HeuresSupplementairesA50
+            | C::HeuresComplementaires
+            | C::IndemniteLicenciement
+            | C::PreavisMois
+            | C::JoursContrat => Forme::Nombre,
+            C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
+            C::Salarie
+            | C::Spectacle
+            | C::Nature
+            | C::Numero
+            | C::Etablissement
+            | C::Metier
+            | C::Lieu
+            | C::MotifRecours
+            | C::ModaliteTempsTravail
+            | C::Emploi
+            | C::PcsEse
+            | C::CodeEmploiFt
+            | C::Statut
+            | C::StatutConventionnel
+            | C::StatutCategorielRc
+            | C::PersonneRemplacee
+            | C::RepartitionHoraire
+            | C::ClausesParticulieres
+            | C::ModeleContrat
+            | C::MotifRupture
+            | C::Transaction
+            | C::PrecaritePourquoi => Forme::Texte,
+            C::Lignes | C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
+        }
+    }
+
+    /// LA FORME D'UNE CLE D'UNE LIGNE DE PAIE (`engagement::ligne::Cle`) : ses jours (`dates`, et ceux des mois suivants,
+    /// `planning`) se cochent dans le calendrier, ses nombres se tapent, ses cases de frais se cochent, son genre et son
+    /// lieu hors de la metropole se choisissent dans ce que la route etat rend de sa rubrique.
+    pub fn de_la_cle(c: engagement::ligne::Cle) -> Forme {
+        use engagement::ligne::Cle as C;
+        match c {
+            C::Dates | C::Planning => Forme::Jours,
+            C::Quantite | C::Taux | C::Heures | C::Base | C::TauxMajoration | C::Montant => Forme::Nombre,
+            C::Cases => Forme::Liste,
+            C::Genre | C::Territoire => Forme::ChoixRendu,
+            C::Rubrique | C::Lieu => Forme::Texte,
+        }
+    }
+}
+
+/// LES NATURES D'UNE CARTE ET LEURS CASES, chacune sa forme (`Forme::de_la_case`) : ce que le catalogue et la route etat
+/// en disent.
+pub fn natures_des_cartes() -> R<Vec<NatureDecrite<Forme>>> {
+    CarteValide::natures(Forme::de_la_case)
 }
 
 /// Un champ de la charge : son nom, ce que l'ecran en montre (`libelle`) et sa forme, son sens pour le LLM, et s'il est
@@ -434,7 +518,7 @@ pub struct Champ {
 pub struct ChampEcrit {
     nom: &'static str,
     libelle: &'static str,
-    forme: &'static str,
+    forme: Forme,
     #[serde(skip_serializing_if = "Option::is_none")]
     choix: Option<Vec<ChoixEcrit>>,
     sens: &'static str,
@@ -443,42 +527,56 @@ pub struct ChampEcrit {
 
 impl Champ {
     pub fn ecrit(&self) -> ChampEcrit {
-        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme.mot(), choix: self.forme.choix(), sens: self.sens, avance: self.avance }
+        ChampEcrit { nom: self.nom, libelle: self.libelle.texte(), forme: self.forme, choix: self.forme.choix(), sens: self.sens, avance: self.avance }
     }
+}
+
+/// UNE CASE DE LA CARTE QU'UNE FICHE NOMME : son nom et sa forme sont ceux de son champ (`engagement::saisie::Champ::nom`,
+/// `Forme::de_la_case`), declares une fois ; la fiche n'y ajoute que son libelle, son sens et sa place.
+const fn case_de_la_carte(c: engagement::saisie::Champ, libelle: Affiche, sens: &'static str, avance: bool) -> Champ {
+    Champ { nom: c.nom(), libelle, forme: Forme::de_la_case(c), sens, avance }
 }
 
 /// LES CASES DE LA CARTE D'UN CONTRAT PAYE AU MOIS, cases de la charge `changements` (les faits du mois et ses termes). La marque
 /// « avancé » range l'ecran et le catalogue a la fois : la page met sous « Avancé » de la carte les cases marquees, et
 /// seulement celles que l'engagement appelle (`faits_avances` de la route apercu, `engagement::heures_en_plus::faits_appeles`).
-pub(crate) const CASES_D_UN_MOIS_PAYE: &[Champ] = &[
-    Champ { nom: "salaire_mensuel", libelle: Affiche::new("Salaire mensuel brut"), forme: Forme::Nombre, sens: "le salaire mensuel brut du contrat", avance: false },
-    Champ { nom: "quotite_contrat", libelle: Affiche::new("Heures par mois"), forme: Forme::Nombre, sens: "ses heures par mois", avance: false },
-    Champ { nom: "conges_pris", libelle: Affiche::new("Congés pris"), forme: Forme::Objet, sens: "les congés pris du mois : [{debut, fin}]", avance: false },
-    Champ { nom: "primes", libelle: Affiche::new("Primes"), forme: Forme::Objet, sens: "les primes du mois : [{montant, rubrique, libelle}]", avance: false },
-    Champ {
-        nom: "lignes", libelle: Affiche::new("Repas et nuitées"), forme: Forme::Objet,
-        sens: "ses repas et nuitées du mois, comme les lignes d'un intermittent : [{rubrique « repas » ou « nuitee », quantite, taux, dates}], aux mêmes limites",
-        avance: false,
-    },
-    Champ { nom: "heures_supplementaires", libelle: Affiche::new("Heures supplémentaires"), forme: Forme::Nombre, sens: "un temps plein : ses heures supplémentaires du mois, que le moteur majore", avance: true },
-    Champ {
-        nom: "heures_supplementaires_a_50", libelle: Affiche::new("Dont à 50 %"), forme: Forme::Nombre,
-        sens: "dont celles au-delà de la huitième d'une semaine (majorées de 50 % quand la convention ne fixe pas les paliers)",
-        avance: true,
-    },
-    Champ { nom: "heures_complementaires", libelle: Affiche::new("Heures complémentaires"), forme: Forme::Nombre, sens: "un temps partiel : ses heures complémentaires du mois, que le moteur majore", avance: true },
-];
+pub(crate) const CASES_D_UN_MOIS_PAYE: &[Champ] = {
+    use engagement::saisie::Champ as C;
+    &[
+        case_de_la_carte(C::SalaireMensuel, Affiche::new("Salaire mensuel brut"), "le salaire mensuel brut du contrat", false),
+        case_de_la_carte(C::QuotiteContrat, Affiche::new("Heures par mois"), "ses heures par mois", false),
+        case_de_la_carte(C::CongesPris, Affiche::new("Congés pris"), "les congés pris du mois : [{debut, fin}]", false),
+        case_de_la_carte(C::Primes, Affiche::new("Primes"), "les primes du mois : [{montant, rubrique, libelle}]", false),
+        case_de_la_carte(
+            C::Lignes,
+            Affiche::new("Repas et nuitées"),
+            "ses repas et nuitées du mois, comme les lignes d'un intermittent : [{rubrique « repas » ou « nuitee », quantite, taux, dates}], aux mêmes limites",
+            false,
+        ),
+        case_de_la_carte(C::HeuresSupplementaires, Affiche::new("Heures supplémentaires"), "un temps plein : ses heures supplémentaires du mois, que le moteur majore", true),
+        case_de_la_carte(
+            C::HeuresSupplementairesA50,
+            Affiche::new("Dont à 50 %"),
+            "dont celles au-delà de la huitième d'une semaine (majorées de 50 % quand la convention ne fixe pas les paliers)",
+            true,
+        ),
+        case_de_la_carte(C::HeuresComplementaires, Affiche::new("Heures complémentaires"), "un temps partiel : ses heures complémentaires du mois, que le moteur majore", true),
+    ]
+};
 
 /// LES CASES DE LA FIN DU CONTRAT, cases de la charge `changements` : les faits du mois ou il finit (`engagement::stock::DE_LA_FIN`),
 /// la ou le moteur les ecrit quel que soit le mois de la carte. Ce que chaque motif appelle : `faits_de_rupture` des
 /// `natures` de la route etat.
-pub(crate) const CASES_DE_LA_FIN: &[Champ] = &[
-    Champ { nom: "fin", libelle: Affiche::new("Dernier jour du contrat"), forme: Forme::Date, sens: "le dernier jour du contrat, AAAA-MM-JJ", avance: false },
-    Champ { nom: "motif_rupture", libelle: Affiche::new("Motif de la fin"), forme: Forme::Texte, sens: "le code du motif, \"059\" pour une démission : `motifs_rupture` des `natures` de la route etat", avance: false },
-    Champ { nom: "notification_rupture", libelle: Affiche::new("Notifiée le"), forme: Forme::Date, sens: "le jour où la rupture a été notifiée, AAAA-MM-JJ", avance: false },
-    Champ { nom: "preavis", libelle: Affiche::new("Préavis"), forme: Forme::Objet, sens: "{type, debut, fin} : type de `types_preavis` de la route etat (\"90\" sans préavis), ses dates s'il en a", avance: false },
-    Champ { nom: "dernier_jour_paye", libelle: Affiche::new("Dernier jour payé"), forme: Forme::Date, sens: "le dernier jour payé, s'il n'est pas la fin", avance: false },
-];
+pub(crate) const CASES_DE_LA_FIN: &[Champ] = {
+    use engagement::saisie::Champ as C;
+    &[
+        case_de_la_carte(C::Fin, Affiche::new("Dernier jour du contrat"), "le dernier jour du contrat, AAAA-MM-JJ", false),
+        case_de_la_carte(C::MotifRupture, Affiche::new("Motif de la fin"), "le code du motif, \"059\" pour une démission : `motifs_rupture` des `natures` de la route etat", false),
+        case_de_la_carte(C::NotificationRupture, Affiche::new("Notifiée le"), "le jour où la rupture a été notifiée, AAAA-MM-JJ", false),
+        case_de_la_carte(C::Preavis, Affiche::new("Préavis"), "{type, debut, fin} : type de `types_preavis` de la route etat (\"90\" sans préavis), ses dates s'il en a", false),
+        case_de_la_carte(C::DernierJourPaye, Affiche::new("Dernier jour payé"), "le dernier jour payé, s'il n'est pas la fin", false),
+    ]
+};
 
 /// La charge de la fiche porte-t-elle les changements d'une carte (`changements`) ?
 fn porte_une_carte(charge: &[Champ]) -> bool {
@@ -497,8 +595,8 @@ fn cases_de_la_fin(charge: &[Champ]) -> &'static [Champ] {
 
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
 /// la charge porte une carte ; aucune sinon.
-fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite>> {
-    if porte_une_carte(charge) { CarteValide::natures() } else { Ok(Vec::new()) }
+fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite<Forme>>> {
+    if porte_une_carte(charge) { natures_des_cartes() } else { Ok(Vec::new()) }
 }
 
 /// Un refus : sa classe, et ce qu'il faut corriger.
@@ -524,7 +622,7 @@ pub struct FicheEcrite {
     charge: Vec<ChampEcrit>,
     cases: Vec<ChampEcrit>,
     cases_de_la_fin: Vec<ChampEcrit>,
-    natures: Vec<NatureDecrite>,
+    natures: Vec<NatureDecrite<Forme>>,
     exemple: Charge,
     rend: &'static str,
     refus: Vec<RefusEcrit>,
