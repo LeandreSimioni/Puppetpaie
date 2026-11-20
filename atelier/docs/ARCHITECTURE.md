@@ -143,8 +143,9 @@ que par la structure :
   - `chaque_route_dit_brievement_ce_qu_elle_fait` : chaque route du catalogue a sa fiche, une seule ;
   - `l_exemple_de_chaque_fiche_est_accepte` : l'exemple de chaque fiche, joué par `moteur route`, est accepté et rend sa
     phrase ;
-  - `ce_que_l_ecran_affiche_est_fait_pour_l_ecran` : les boutons, libellés, aides et choix du catalogue et de
-    `champs-base.json` sont brefs et en mots ;
+  - `ce_que_l_ecran_affiche_est_fait_pour_l_ecran` : les boutons, libellés (ceux de la charge, et ceux des cases de la
+    carte que les natures d'une fiche décrivent), aides et choix du catalogue et de `champs-base.json` sont brefs et en
+    mots ;
   - `champs_base_et_les_fiches_ont_les_memes_cases` : `champs-base.json` et la forme des fiches disent les mêmes choix
     et longueurs ;
   - `la_carte_valide_a_une_variante_par_nature` : une variante par nature de `contrats-base.json` ;
@@ -1132,13 +1133,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
 | marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
-| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
+| fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, fin d'essai par l'employeur, préavis non effectué, paie importée, métier écrit sur la carte, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
 | ce qu'une ligne neuve d'une rubrique prend (le taux d'un cachet), sous le code de sa rubrique | `routes::mois::LignePreremplie`, `routes::mois::LignesPreremplies` | `routes/src/mois.rs` |
 | fin du contrat telle que la route la rend (aucune, la rupture lue, ou une rupture qui ne se lit pas) | `routes::mois::FinDuContrat` | `routes/src/mois.rs` |
-| ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, modalité du temps de travail d'un contrat payé au mois, `droit::natures::ModaliteDuTempsDeTravail`, pré-remplissage) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
+| ce que le moteur sait d'un engagement pour rendre sa carte (contrat appelé, rupture, modalité du temps de travail d'un contrat payé au mois, `droit::natures::ModaliteDuTempsDeTravail`, pré-remplissage et ce qui ne se pré-remplit pas) | `routes::mois::CeQueLeMoteurSait` | `routes/src/mois.rs` |
 | ce que le contrat écrit d'un engagement appelle sur sa carte (contrat signé ici, modèles au choix, numéro à dire) | `routes::mois::ContratAppelle` | `routes/src/mois.rs` |
 | partie d'une valeur faite de parties (le type et les dates d'un préavis) | `routes::catalogue::Partie` | `routes/src/catalogue.rs` |
 | clé gardée d'une carte ou d'une ligne (écrite et relue telle quelle, sans case : le taux du cachet d'une carte, le lieu d'une ligne de frais) | aucun type : la marque `#[garde]` de `saisie::carte!`, et `ligne::FormeSaisie::gardees` | `engagement/src/saisie.rs`, `engagement/src/ligne.rs` |
@@ -1968,11 +1969,22 @@ famille, la transaction, le type d'un préavis), de la nature (`natures[].choix`
 neuve (`nouvelle_carte.choix` de la route saisie : la nature, qui est alors une case de `nouvelle_carte.cases`) et de
 la paie (`carte.choix` : le motif de la fin, le choix vide en tête ; les modèles de contrat). **Le seul pré-remplissage**
 est `carte.prerempli` (`routes::mois::Prerempli`) : ce que le moteur prend pour une case que la carte ne dit pas (le
-jour du versement, le début, la fin, les jours, le métier que la paie applique, le cadre) et ce qu'une ligne neuve
-prend (`lignes`, sous le code de sa rubrique : le taux du cachet, celui du dernier cachet du mois, sinon le dernier
-saisi du dossier) ; avant toute paie, une carte neuve a celui de `nouvelle_carte.prerempli` (ses lignes). La page le
-montre, il ne s'écrit pas tant qu'on ne le change pas ; un oui-non pré-rempli (le cadre, rendu même quand la carte le
-dit) se change dans les deux sens, et y revenir n'écrit rien. Un montant (le taux d'une ligne, sa base, son montant,
+jour du versement, le début que la porte « Imprévu… » lit, le métier que la paie applique, le cadre) et ce qu'une
+ligne neuve prend (`lignes`, sous le code de sa rubrique : le taux du cachet, celui du dernier cachet du mois, sinon le
+dernier saisi du dossier, lu une fois par geste : `socle::forme::une_fois_par_geste`) ; avant toute paie, une carte
+neuve a celui de `nouvelle_carte.prerempli` (ses lignes). La page le montre, il ne s'écrit pas tant qu'on ne le change
+pas ; un oui-non pré-rempli (le cadre, rendu même quand la carte le dit) se change dans les deux sens, et y revenir
+n'écrit rien ; un choix pré-rempli (le métier) le montre dans sa case vide, et choisir une valeur de la liste l'écrit,
+celle qui est montrée comprise. **Un pré-remplissage ne refuse ni ne ferme rien** : celui qui ne se lit pas laisse sa
+case vide, la `faute` de la carte dit pourquoi (la phrase de la route `saisie` pour une carte neuve), et l'écriture
+d'une carte n'en dépend jamais. **Le métier est sur l'engagement, et il s'écrit** : une carte de CDDU qui nomme son
+salarié sans dire de métier écrit celui de son dernier contrat, sinon celui de sa fiche (`routes::mois`,
+`metier_a_preremplir`), un des métiers de la compagnie ; le dernier contrat dont le métier ne se lit pas arrête la
+recherche, et rien ne s'écrit. Une carte déjà écrite sans métier montre celui que la paie applique (`prerempli.metier`,
+celui de la fiche), et rien ne s'y écrit tant qu'on ne le choisit pas. **La case « Cadre » ne s'ouvre qu'avec un
+métier écrit sur la carte** (`FaitQuiOuvre::MetierEcrit`) : c'est le seul cas où le calcul la lit
+(`droit::emplois::resoudre`) ; son pré-rempli est ce que le catalogue dit de ce métier, que la carte soit calculée ou à
+compléter. Un montant (le taux d'une ligne, sa base, son montant,
 le salaire du mois) a sa forme (`Forme::Montant`) : la page l'écrit comme ses montants (« 140,00 »), et il se tape
 avec une virgule ou un point. Une valeur
 faite de parties (le préavis : son type, puis ses dates quand le type en a) a sa forme (`Forme::Parties`, ses parties

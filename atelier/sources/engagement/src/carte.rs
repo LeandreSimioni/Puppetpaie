@@ -165,6 +165,9 @@ pub enum FaitQuiOuvre {
     PreavisNonEffectue,
     /// La carte est celle d'une paie importee d'un ancien logiciel (`Carte::importe`) : ce que son bulletin imprime s'y lit.
     Importee,
+    /// La carte ecrit son metier : le calcul ne lit la case « Cadre » qu'avec lui (`droit::emplois::resoudre`, le metier
+    /// de la carte tenu ici pour cadre ou non) ; sans metier sur la carte, le cadre est celui de la fiche du salarie.
+    MetierEcrit,
     /// Un contrat paye au mois a temps plein : ses heures supplementaires du mois (L. 3121-28).
     TempsPlein,
     /// Un contrat paye au mois a temps plein, sous une convention qui ne fixe pas les paliers des heures supplementaires :
@@ -290,10 +293,12 @@ nature! {
     /// (cachets, heures). Son debut, sa fin et ses jours travailles se tirent de ses jours coches (les jours coches sont
     /// les jours travailles) : la carte les rend, elle ne les fait pas saisir ; un mois du contrat sans cachet
     /// (`lignes: []`) et un contrat repris d'un ancien logiciel les ecrivent. Le metier est toujours sur la carte (il est
-    /// lie a l'engagement, pas a la personne) ; la PCS-ESE, le code France Travail et les statuts se lisent du metier
-    /// (`droit::emplois::resoudre`), le cadre aussi tant que la carte ne le dit pas (sous « Avancé » : un metier propre a
-    /// la compagnie ne se cree pas encore, la case dit qu'un metier du catalogue est tenu ici pour cadre ou non, et
-    /// change les cotisations), l'emploi ecrit ne vient que du bulletin d'une paie importee
+    /// lie a l'engagement, pas a la personne : une carte qui nomme son salarie l'ecrit, celui de son dernier contrat ou de
+    /// sa fiche, et il se change) ; la PCS-ESE, le code France Travail et les statuts se lisent du metier
+    /// (`droit::emplois::resoudre`), le cadre aussi tant que la carte ne le dit pas (sous « Avancé », ouverte par un
+    /// metier ecrit sur la carte, la seule que le calcul lit : un metier propre a la compagnie ne se cree pas encore, la
+    /// case dit qu'un metier du catalogue est tenu ici pour cadre ou non, et change les cotisations), l'emploi ecrit ne
+    /// vient que du bulletin d'une paie importee
     /// (`ecarts::refaire`). La fin d'un contrat qui finit ce mois passe par la porte « Imprévu… » : son motif, puis ce que
     /// le motif appelle. Ce que rien ne lit pour un CDDU n'est pas sur sa carte : ni lieu (celui des lignes le dit), ni
     /// taux du cachet (celui de sa ligne), ni primes (une ligne de rubrique `prime`), ni ce que seul le solde de tout
@@ -311,7 +316,7 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si Ouverture::Si(F::NumeroADire) => Base,
             etablissement: droit::fiche::Nic = Etablissement si Ouverture::Si(F::PlusieursEtablissements) => Base,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Base,
-            cadre: bool = Cadre si TOUJOURS => Avance,
+            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si Ouverture::Si(F::Importee) => Rendue,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::ContratEcrit) => Avance,
             clauses_particulieres: String = ClausesParticulieres si Ouverture::Si(F::ContratEcrit) => Avance,
@@ -344,7 +349,7 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si TOUJOURS => Avance,
             etablissement: droit::fiche::Nic = Etablissement si TOUJOURS => Avance,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Avance,
-            cadre: bool = Cadre si TOUJOURS => Avance,
+            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             lieu: String = Lieu si TOUJOURS => Avance,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
@@ -396,7 +401,7 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si TOUJOURS => Avance,
             etablissement: droit::fiche::Nic = Etablissement si TOUJOURS => Avance,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Avance,
-            cadre: bool = Cadre si TOUJOURS => Avance,
+            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             lieu: String = Lieu si TOUJOURS => Avance,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
@@ -746,19 +751,25 @@ impl Brouillon {
 }
 
 impl Brouillon {
-    /// LE METIER D'UNE CARTE DE CDDU QUI VIENT DE NOMMER SON SALARIE, PRE-REMPLI : celui du dernier contrat de ce
-    /// salarie (`metier_du_dernier_contrat`), quand la carte n'en dit pas. Le metier est lie a l'engagement, pas a la
-    /// personne : c'est un pre-remplissage, qui se change sur la carte. Il n'ecrit qu'un metier de la compagnie
-    /// (`metiers` : ceux de Configuration › Métiers, ceux qu'une carte choisit) : un dernier metier qu'elle a retire depuis
-    /// laisse la carte sans metier, comme un dernier contrat qui n'en disait pas, ou aucun dernier contrat ; la paie prend
-    /// alors l'emploi de la fiche du salarie (`droit::emplois::emploi_de`). Un pre-remplissage est facultatif : il ne
-    /// refuse rien (`metier_du_dernier_contrat`). `sauf` : l'engagement de cette carte, deja ecrit, qui n'est pas son
-    /// propre dernier contrat.
-    pub fn preremplir_le_metier(&mut self, racine: &std::path::Path, sauf: Option<&crate::stock::Objet>, metiers: &[droit::emplois::CodeEmploi]) -> R<()> {
-        let Brouillon::CdduSpectacle(b) = self else { return Ok(()) };
-        let (Some(s), None) = (&b.salarie, &b.metier) else { return Ok(()) };
-        b.metier = metier_du_dernier_contrat(racine, s, sauf)?.filter(|m| metiers.contains(m));
-        Ok(())
+    /// Le salarie d'une carte de CDDU qui ne dit pas son metier : celle dont le metier se pre-remplit
+    /// (`preremplir_le_metier`).
+    pub fn salarie_sans_metier(&self) -> Option<&IdSalarie> {
+        match self {
+            Brouillon::CdduSpectacle(b) if b.metier.is_none() => b.salarie.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// LE METIER D'UNE CARTE DE CDDU QUI VIENT DE NOMMER SON SALARIE, PRE-REMPLI ET ECRIT AVEC ELLE : `metier`, celui que
+    /// la route a trouve pour ce salarie (celui de son dernier contrat, `metier_du_dernier_contrat`, sinon celui de sa
+    /// fiche), quand la carte n'en dit pas. Le metier est lie a l'engagement, pas a la personne : il se change sur la
+    /// carte. Un pre-remplissage ne refuse rien : sans metier trouve, la carte reste sans metier.
+    pub fn preremplir_le_metier(&mut self, metier: Option<droit::emplois::CodeEmploi>) {
+        if let Brouillon::CdduSpectacle(b) = self {
+            if b.salarie.is_some() && b.metier.is_none() {
+                b.metier = metier;
+            }
+        }
     }
 }
 
@@ -766,11 +777,11 @@ impl Brouillon {
 /// seul tenant) : le contrat actif de debut le plus tard (`sauf` mis a part) ; a debut egal, celui du fichier du mois le
 /// plus tard, puis du rang le plus haut dans ce fichier (le dernier ecrit). Son metier est celui de son dernier mois ;
 /// celui d'un contrat repris, qui n'ecrit pas de metier, est celui que nomme le code emploi que son bulletin imprime
-/// (`CodeEmploi::du_code_declare`), quand il en nomme un. `None` sans aucun contrat, ou s'il ne dit pas de metier. Un
-/// contrat qui ne se lit pas n'est pas un dernier contrat : il est passe, il ne refuse rien ; seul refuse le stock qui ne
-/// se lit pas.
+/// (`CodeEmploi::du_code_declare`), quand il en nomme un. `None` sans aucun contrat, ou s'il ne dit pas de metier. Le
+/// dernier contrat dont le metier ne se lit pas arrete la recherche : un contrat plus ancien n'est pas le dernier, et
+/// l'erreur dit pourquoi rien ne se pre-remplit (l'appelant ne refuse rien pour elle).
 pub fn metier_du_dernier_contrat(racine: &std::path::Path, s: &IdSalarie, sauf: Option<&crate::stock::Objet>) -> R<Option<droit::emplois::CodeEmploi>> {
-    let mut dernier: Option<((Jour, socle::mois::Mois, usize), Option<droit::emplois::CodeEmploi>)> = None;
+    let mut dernier: Option<((Jour, socle::mois::Mois, usize), crate::stock::Objet)> = None;
     for o in crate::stock::objets(racine)? {
         let c = o.carte();
         if c.salarie.as_ref() != Some(s) || o.est_non_actif() {
@@ -784,10 +795,12 @@ pub fn metier_du_dernier_contrat(racine: &std::path::Path, s: &IdSalarie, sauf: 
         if dernier.as_ref().is_some_and(|(d, _)| cle <= *d) {
             continue;
         }
-        let Ok(metier) = metier_de(&o) else { continue };
-        dernier = Some((cle, metier));
+        dernier = Some((cle, o));
     }
-    Ok(dernier.and_then(|(_, m)| m))
+    match dernier {
+        Some((_, o)) => metier_de(&o),
+        None => Ok(None),
+    }
 }
 
 /// Le metier du contrat `o` a son dernier avenant (`metier_du_dernier_contrat`) : le metier et l'emploi sont des termes

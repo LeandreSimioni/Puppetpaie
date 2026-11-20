@@ -16,17 +16,21 @@ const tape = (x) => (x.value.trim() === "" ? null : x.value.trim());
 /** Les options d'un choix : une case vide d'abord (rien de choisi ne part ; son libellé est celui de la valeur offerte
  *  de code vide, quand la route en offre une : « à son terme », « modèle de base »), puis chaque valeur offerte, sous
  *  son groupe quand elle en dit un (`groupe`, dans l'ordre où ils viennent) ; une valeur posée que la liste n'offre pas
- *  reste offerte telle quelle (une fiche mise de côté). */
-function optionsDuChoix(v, choix) {
+ *  reste offerte telle quelle (une fiche mise de côté). Une case vide que le moteur pré-remplit (`prerempli`) porte
+ *  le libellé de ce qu'il prend : rien n'est choisi, et choisir cette valeur dans la liste l'écrit. */
+function optionsDuChoix(v, choix, prerempli) {
   const offerts = choix || [];
   const vide = offerts.find((o) => o.code === "");
   const pleins = offerts.filter((o) => o.code !== "");
   const garde = v != null && v !== "" && !pleins.some((o) => o.code === String(v)) ? [{ code: String(v), libelle: String(v) }] : [];
+  const montre = v == null && prerempli != null
+    ? (pleins.find((o) => o.code === String(prerempli)) || { libelle: String(prerempli) }).libelle : null;
   const option = (o) => `<option value="${echapper(o.code)}"${o.code === String(v) ? " selected" : ""}>${echapper(o.libelle)}</option>`;
   const groupes = [...new Set(pleins.map((o) => o.groupe))];
   const corps = groupes.map((g) => (g == null ? pleins.filter((o) => o.groupe == null).map(option).join("")
     : `<optgroup label="${echapper(g)}">${pleins.filter((o) => o.groupe === g).map(option).join("")}</optgroup>`)).join("");
-  return `<option value="">${vide ? echapper(vide.libelle) : ""}</option>${corps}${garde.map(option).join("")}`;
+  const libelleDuVide = montre != null ? montre : vide ? vide.libelle : "";
+  return `<option value="">${echapper(libelleDuVide)}</option>${corps}${garde.map(option).join("")}`;
 }
 
 /** Une valeur composée, en lecture : ses parties dites, « clé : valeur », ou une ligne par élément d'une liste. */
@@ -106,10 +110,10 @@ const CASES = {
     lire: (x) => [...x.querySelectorAll(x.dataset.liste === "coches" ? "input:checked" : "input")]
       .map((c) => c.value.trim()).filter(Boolean),
   },
-  // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend ;
-  // choisir le vide n'écrit rien, et le pré-rempli revient.
-  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? o.prerempli : v, o.choix)}</select>`, lire: (x) => x.value || null },
-  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? o.prerempli : v, o.choix)}</select>`, lire: (x) => x.value || null },
+  // Un choix vide que le moteur pré-remplit (`o.prerempli` : le métier que la paie applique) montre ce qu'il prend dans
+  // sa case vide ; choisir une valeur de la liste l'écrit, celle qui est montrée comprise ; le vide n'écrit aucune valeur : la carte n'en dit pas, et le pré-rempli se montre.
+  choix: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
+  choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
   // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
   objet: { html: (v) => `<span class="case-objet" data-case>${echapper(objetEnClair(v))}</span>`, lire: () => undefined },
   // UNE VALEUR FAITE DE PARTIES (`o.parties` : chacune sa clé, son libellé, sa forme) : chaque partie sa case ; celle

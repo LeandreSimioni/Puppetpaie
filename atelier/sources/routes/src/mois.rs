@@ -492,16 +492,23 @@ pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
 
 /// Le taux du cachet le plus recemment saisi : une ligne de cachet d'abord, le `taux_cachet` du mois a defaut ; `None` si
 /// aucun mois n'en dit rien -- aucun texte ne fixe un taux de cachet (regle 1, R12), la compagnie saisit le sien.
+/// Il se lit une fois par geste, dans la lecture du geste (`socle::forme::une_fois_par_geste`, sur le dossier de la
+/// compagnie) : le geste qui ecrit une carte le refait.
 pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<MontantUnitaire>> {
-    let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
-    mois.reverse();
-    for m in mois {
-        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, m)? else { continue };
-        if let Some(t) = taux_du_mois(ctx, &data)? {
-            return Ok(Some(t));
+    /// Le dernier taux de cachet du dossier, tel que le geste l'a lu.
+    struct DernierTaux(Option<MontantUnitaire>);
+    let lu = socle::forme::une_fois_par_geste(&ctx.racine, || -> R<DernierTaux> {
+        let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
+        mois.reverse();
+        for m in mois {
+            let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, m)? else { continue };
+            if let Some(t) = taux_du_mois(ctx, &data)? {
+                return Ok(DernierTaux(Some(t)));
+            }
         }
-    }
-    Ok(None)
+        Ok(DernierTaux(None))
+    })?;
+    Ok(lu.0)
 }
 
 /// Le taux du dernier cachet de la saisie `data`, sinon son `taux_cachet` (un taux nul ne dit rien).
@@ -596,10 +603,19 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
     let existe = engagement::stock::a_une_saisie(&ctx.racine, mois)?;
     // Un mois neuf s'ouvre VIDE, avec le dernier taux saisi (`squelette`) ; un mois que des engagements touchent, tel qu'ils
     // le montrent.
+    // Ce qui ne se pre-remplit pas ne ferme pas le mois : la phrase de la route le dit (`ne_se_preremplit`).
+    let mut ne_se_preremplit = Vec::new();
     let saisie = match engagement::stock::vue_du_mois(&ctx.racine, mois)? {
         Some(vue) => vue,
-        None => squelette(ctx, mois)?,
+        None => match squelette(ctx, mois) {
+            Ok(vue) => vue,
+            Err(e) => {
+                ne_se_preremplit.push(e.phrase);
+                VueDuMois::vide(mois)
+            }
+        },
     };
+    let lignes_neuves = lignes_ou_vide(&lignes_preremplies(ctx, &saisie), &mut ne_se_preremplit);
     // LES ENGAGEMENTS IMPORTES QUI TOUCHENT LE MOIS, en cartes fermees : ils se lisent, rien ne les calcule
     // (`import::mois`). Un mois qui en porte ne recoit pas d'engagement neuf : `ferme_aux_neufs` est la phrase qui le
     // dit (`null` : le mois en recoit).
@@ -610,6 +626,10 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         (Some(f), _) => socle::phrase!("{}", f),
         (None, true) => Phrase::fixe("Saisie chargée. L'enregistrement est automatique."),
         (None, false) => Phrase::fixe("Nouveau mois — l'enregistrement est automatique dès la première saisie."),
+    };
+    let phrase = match ne_se_preremplit.is_empty() {
+        true => phrase,
+        false => Phrase::jointes([phrase, socle::phrase!("Le taux d'un cachet neuf ne se pré-remplit pas : {}", ne_se_preremplit.join(" "))], " "),
     };
     // CE QUE LE MOIS PROPOSE D'UNE CARTE NEUVE : ses natures, lues sur le mois (`engagement::permanents`).
     let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_mois(mois))?;
@@ -643,7 +663,7 @@ fn saisie(ctx: &Contexte, mois: Mois) -> R<SaisieDuMois> {
         aide_vide: if p.ouverts() { "apercu_vide_permanents" } else { "apercu_vide" },
         propose,
         // Une carte neuve n'a pas encore de paie ni de carte rendue : seules ses lignes neuves se pre-remplissent.
-        prerempli: Prerempli { lignes: lignes_preremplies(ctx, &saisie)?, ..Prerempli::default() },
+        prerempli: Prerempli { lignes: lignes_neuves, ..Prerempli::default() },
     };
     // L'en-tete des cartes importees : son titre, et combien d'engagements viennent de l'ancien logiciel.
     let n_importes = importes.len();
@@ -1097,6 +1117,23 @@ pub(crate) fn metiers_de_la_compagnie(ctx: &Contexte) -> R<Vec<emplois::CodeEmpl
     Ok(crate::metiers::metiers(ctx)?.into_iter().map(|m| m.code).collect())
 }
 
+/// LE METIER QU'UNE CARTE DE CDDU ECRIT QUAND ELLE NOMME LE SALARIE `s` (`engagement::carte::Brouillon::preremplir_le_metier`) :
+/// celui de son dernier contrat (`engagement::carte::metier_du_dernier_contrat`, sans l'engagement `id` de la carte,
+/// deja ecrit), sinon celui que nomme le code emploi de sa fiche ; seulement un metier de la compagnie (`metiers` :
+/// ceux que la carte offre au choix). L'erreur dit pourquoi rien ne se pre-remplit : elle ne refuse rien.
+fn metier_a_preremplir(ctx: &Contexte, mois: Mois, id: Option<&Identite>, s: &IdSalarie, metiers: &[emplois::CodeEmploi]) -> R<Option<emplois::CodeEmploi>> {
+    let ecrit = match id {
+        Some(i) => Some(engagement::stock::designe(&ctx.racine, mois, i)?.1),
+        None => None,
+    };
+    let offert = |m: &emplois::CodeEmploi| metiers.contains(m);
+    if let Some(m) = engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, ecrit.as_ref())?.filter(offert) {
+        return Ok(Some(m));
+    }
+    let fiche = ctx.salaries.get(s);
+    Ok(metier_de_la_fiche(fiche.and_then(|f| f.code_emploi_ft.dite()))?.filter(offert))
+}
+
 fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let mois = c.mois;
     let _verrou = avant_d_ecrire(ctx, mois)?;
@@ -1107,10 +1144,15 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let nomme = c.changements.nomment_le_salarie();
     let metiers = metiers_de_la_compagnie(ctx)?;
     c.changements.appliquer(ctx, mois, &mut brouillon, &metiers, |b| qui_de_la_carte(ctx, &b.en_carte())).map_err(|m| m.reclasser(Classe::Refuse))?;
-    // Une carte qui nomme son salarie prend le metier de son dernier contrat, si elle n'en dit pas.
+    // Une carte qui nomme son salarie ecrit son metier, si elle n'en dit pas (`metier_a_preremplir`). Un pre-remplissage
+    // ne refuse jamais l'ecriture d'une carte : s'il ne se lit pas, la carte s'ecrit sans metier, et sa carte rendue dit
+    // pourquoi (`faute`, `carte_lue`).
     if nomme {
-        let ecrit = id.as_ref().map(|i| engagement::stock::designe(&ctx.racine, mois, i)).transpose()?.map(|(_, o)| o);
-        brouillon.preremplir_le_metier(&ctx.racine, ecrit.as_ref(), &metiers)?;
+        if let Some(s) = brouillon.salarie_sans_metier().cloned() {
+            if let Ok(m) = metier_a_preremplir(ctx, mois, id.as_ref(), &s, &metiers) {
+                brouillon.preremplir_le_metier(m);
+            }
+        }
     }
     let id = ecrire_une_carte(ctx, mois, id.as_ref(), &brouillon.en_carte())?;
     let brouillon = brouillon_ecrit(ctx, mois, &id)?;
@@ -1647,21 +1689,17 @@ pub(crate) struct CarteRendue {
 pub(crate) struct Prerempli {
     /// Le jour du versement que dit la configuration (`Engagement::date_du_versement`).
     date_paiement: Option<Jour>,
-    /// Le debut et la fin du contrat, que ses jours coches disent (`Engagement::contrat` ; a completer, `debut_lu`,
-    /// `fin_lue`).
+    /// Le debut du contrat, que ses jours coches disent (`Engagement::contrat` ; a completer, `debut_lu`) : la porte
+    /// « Imprévu… » le lit (le debut d'un contrat dont la fin se dit). La fin et les jours se lisent dans `contrat_dit`.
     debut: Option<Jour>,
-    fin: Option<Jour>,
-    /// Les jours travailles que la DSN declare (`Engagement::jours`).
-    #[serde(serialize_with = "socle::grandeurs::ecrit::entier::option::serialize")]
-    jours: Option<Jours>,
     /// Le metier que la paie applique quand la carte n'en dit pas : celui que nomme le code emploi de la fiche du
     /// salarie (`droit::emplois::CodeEmploi::du_code_declare`, `engagement::lib` : sans metier sur la carte, l'emploi est
-    /// celui de la fiche).
+    /// celui de la fiche). Montre, il ne s'ecrit que si on le choisit.
     metier: Option<droit::emplois::CodeEmploi>,
-    /// CADRE OU NON, ce que la paie prend sans la case : avec un metier sur la carte, ce que le catalogue en dit sous la
-    /// convention de la compagnie (`Metier::cadre_par_defaut` ; rien hors du catalogue) ; sans, ce que la fiche du
-    /// salarie dit (`droit::bareme::est_cadre`). Rendu meme quand la carte le dit : un oui-non pre-rempli se change dans
-    /// les deux sens, et revenir au pre-rempli n'ecrit rien.
+    /// CADRE OU NON, ce que la paie prend sans la case : ce que le catalogue dit du metier ecrit sur la carte, sous la
+    /// convention de la compagnie (`Metier::cadre_par_defaut` ; rien hors du catalogue). La case ne s'ouvre qu'avec un
+    /// metier ecrit (`FaitQuiOuvre::MetierEcrit`) : la meme regle, que la carte soit calculee ou a completer. Rendu meme
+    /// quand la carte le dit : un oui-non pre-rempli se change dans les deux sens, et revenir au pre-rempli n'ecrit rien.
     cadre: Option<bool>,
     /// CE QU'UNE LIGNE NEUVE DE CHAQUE RUBRIQUE PREND, sous son code (`lignes_preremplies`) : une ligne de cachet, le
     /// taux du cachet du mois ou du dossier.
@@ -1731,34 +1769,86 @@ struct CeQueLeMoteurSait<'a> {
     /// La modalite du temps de travail d'un contrat paye au mois, qui ouvre ses heures en plus
     /// (`FaitQuiOuvre::{TempsPlein, TempsPartiel}`) ; `None` pour un autre.
     temps: R<Option<droit::natures::ModaliteDuTempsDeTravail>>,
-    prerempli: R<Prerempli>,
+    /// Son pre-remplissage, chaque case le sien : un qui ne se lit pas laisse sa case vide (`ou_vide`).
+    prerempli: Prerempli,
+    /// Pourquoi une case ne se pre-remplit pas : la `faute` de la carte le dit, et aucune case ne se ferme pour lui.
+    ne_se_preremplit: Vec<String>,
 }
 
-/// LA CARTE RENDUE DE LA SAISIE `e` (`CarteRendue`).
+/// UN PRE-REMPLISSAGE QUI NE SE LIT PAS LAISSE SA CASE VIDE, et rien d'autre ne bouge : sa raison va a `fautes`
+/// (`CeQueLeMoteurSait::ne_se_preremplit`, que la carte dit dans sa `faute`).
+fn ou_vide<T>(r: R<Option<T>>, fautes: &mut Vec<String>) -> Option<T> {
+    match r {
+        Ok(v) => v,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    }
+}
+
+/// Ce qu'une ligne neuve prend, pour une carte (`ou_vide`) : rien quand il ne se lit pas, et sa raison va a `fautes`.
+fn lignes_ou_vide(lignes: &R<LignesPreremplies>, fautes: &mut Vec<String>) -> LignesPreremplies {
+    match lignes {
+        Ok(l) => l.clone(),
+        Err(e) => {
+            fautes.push(e.phrase.clone());
+            BTreeMap::new()
+        }
+    }
+}
+
+/// POURQUOI UNE CARTE DE CDDU QUI NE DIT PAS SON METIER N'A PAS RECU CELUI DU DERNIER CONTRAT DE SON SALARIE, quand il ne
+/// se lit pas (`metier_a_preremplir`, qui n'ecrit alors rien et ne refuse rien) : la carte le dit dans sa `faute`.
+fn metier_du_dernier_contrat_illisible(ctx: &Contexte, e: &SaisieCarte, fautes: &mut Vec<String>) {
+    let (Some(NatureDeContrat::CdduSpectacle), None, Some(s)) = (e.nature, &e.metier, &e.salarie) else { return };
+    if let Err(m) = engagement::carte::metier_du_dernier_contrat(&ctx.racine, s, None) {
+        fautes.push(format!("Le métier du dernier contrat ne se lit pas, la carte ne le reprend pas : {}", m.phrase));
+    }
+}
+
+/// LA CARTE RENDUE DE LA SAISIE `e` (`CarteRendue`). Ses cases se lisent des faits ; un fait qui ne se lit pas ne laisse
+/// que les cases de toute carte, et le dit (`faute`), avec ce qui ne se pre-remplit pas.
 fn carte_rendue(ctx: &Contexte, e: &SaisieCarte, sait: CeQueLeMoteurSait) -> CarteRendue {
     let Some(n) = e.nature else {
         return CarteRendue { cases: Vec::new(), choix: BTreeMap::new(), prerempli: Prerempli::default(), faute: None };
     };
-    match carte_lue(ctx, e, n, sait) {
-        Ok(c) => c,
+    let CeQueLeMoteurSait { contrat, rupture, temps, prerempli, ne_se_preremplit } = sait;
+    let dite = |avant: Option<String>| -> Option<String> {
+        let toutes: Vec<String> = avant.into_iter().chain(ne_se_preremplit.iter().cloned()).collect();
+        (!toutes.is_empty()).then(|| toutes.join(" "))
+    };
+    match carte_lue(ctx, e, n, contrat, rupture, temps) {
+        Ok((cases, choix)) => CarteRendue { cases, choix, prerempli, faute: dite(None) },
         Err(faute) => CarteRendue {
             cases: engagement::carte::CarteValide::cases_toujours_ouvertes(n),
             choix: BTreeMap::new(),
-            prerempli: Prerempli::default(),
-            faute: Some(faute.phrase),
+            prerempli,
+            faute: dite(Some(faute.phrase)),
         },
     }
 }
 
+/// Les choix des cases d'une carte qui dependent d'elle, sous la cle de leur case.
+type ChoixDeLaCarte = BTreeMap<&'static str, Vec<crate::ouverture::Choix>>;
+
 /// Les cases ouvertes de la carte `e` de nature `n`, lues des faits que le moteur sait d'elle
 /// (`engagement::carte::FaitQuiOuvre`) : la configuration (ses etablissements), ce que son contrat ecrit appelle, sa fin
-/// ce mois (`rupture`), son motif et son preavis, sa duree du travail, son origine (une paie importee).
-fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat, sait: CeQueLeMoteurSait) -> R<CarteRendue> {
+/// ce mois (`rupture`), son motif et son preavis, sa duree du travail, son metier ecrit, son origine (une paie
+/// importee) ; et les choix qui dependent d'elle.
+fn carte_lue(
+    ctx: &Contexte,
+    e: &SaisieCarte,
+    n: droit::natures::NatureDeContrat,
+    contrat: R<ContratAppelle>,
+    rupture: &R<Option<Rupture>>,
+    temps: R<Option<droit::natures::ModaliteDuTempsDeTravail>>,
+) -> R<(Vec<engagement::carte::CaseOuverte>, ChoixDeLaCarte)> {
     use engagement::carte::FaitQuiOuvre as F;
     let nat = n.proprietes()?;
-    let rupture = sait.rupture.as_ref().map_err(Clone::clone)?.as_ref();
-    let contrat = sait.contrat?;
-    let temps = sait.temps?;
+    let rupture = rupture.as_ref().map_err(Clone::clone)?.as_ref();
+    let contrat = contrat?;
+    let temps = temps?;
     let fin_ce_mois = rupture.is_some();
     let faits = droit::permanents::faits_de_rupture(&nat, e.motif_rupture)?;
     let plusieurs = crate::ouverture::choix_d_etablissement(ctx)?.is_some();
@@ -1784,6 +1874,7 @@ fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat
             F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
+            F::MetierEcrit => e.metier.is_some(),
             F::TempsPlein => plein,
             F::HeuresDecompteesParSemaine => par_semaine,
             F::TempsPartiel => partiel,
@@ -1800,7 +1891,7 @@ fn carte_lue(ctx: &Contexte, e: &SaisieCarte, n: droit::natures::NatureDeContrat
     if ouverte(engagement::saisie::Champ::ModeleContrat) {
         choix.insert(engagement::saisie::Champ::ModeleContrat.nom(), crate::modeles_contrat::au_choix(ctx, n)?.iter().map(|m| m.en_choix()).collect());
     }
-    Ok(CarteRendue { cases, choix, prerempli: sait.prerempli?, faute: None })
+    Ok((cases, choix))
 }
 
 /// Ce que le catalogue dit du metier de la carte `e` sous la convention de la compagnie (`Metier::cadre_par_defaut`,
@@ -2040,19 +2131,19 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
         Ok(Some(e.modalite_temps_travail()?))
     };
-    let prerempli = || -> R<Prerempli> {
-        Ok(Prerempli {
-            date_paiement: if brut.date_paiement.is_none() { Some(e.date_du_versement()?) } else { None },
-            debut: brut.debut.is_none().then(|| e.contrat().debut()),
-            fin: if brut.fin.is_none() { e.contrat().fin() } else { None },
-            jours: brut.jours.is_none().then_some(e.jours),
-            metier: if brut.metier.is_none() { metier_de_la_fiche(s.code_emploi_ft.dite())? } else { None },
-            // Sans metier sur la carte, la paie prend l'emploi de la fiche (`s`, qu'aucune case de la carte ne change).
-            cadre: if brut.metier.is_some() { cadre_du_metier(ctx, brut)? } else { Some(droit::bareme::est_cadre(s)) },
-            lignes: lignes.as_ref().map_err(Clone::clone)?.clone(),
-        })
+    let mut ne_se_preremplit = Vec::new();
+    let f = &mut ne_se_preremplit;
+    let prerempli = Prerempli {
+        date_paiement: if brut.date_paiement.is_none() { ou_vide(e.date_du_versement().map(Some), f) } else { None },
+        debut: brut.debut.is_none().then(|| e.contrat().debut()),
+        // Sans metier sur la carte, la paie prend l'emploi de la fiche (`s`, qu'aucune case de la carte ne change).
+        metier: if brut.metier.is_none() { ou_vide(metier_de_la_fiche(s.code_emploi_ft.dite()), f) } else { None },
+        cadre: ou_vide(cadre_du_metier(ctx, brut), f),
+        lignes: lignes_ou_vide(lignes, f),
     };
-    let carte = carte_rendue(ctx, brut, CeQueLeMoteurSait { contrat: contrat_appelle(ctx, e, &nat), rupture: &rupture, temps: temps(), prerempli: prerempli() });
+    metier_du_dernier_contrat_illisible(ctx, brut, &mut ne_se_preremplit);
+    let sait = CeQueLeMoteurSait { contrat: contrat_appelle(ctx, e, &nat), rupture: &rupture, temps: temps(), prerempli, ne_se_preremplit };
+    let carte = carte_rendue(ctx, brut, sait);
     let rupture = FinDuContrat::de(rupture);
     Ok(VuePaie {
         carte,
@@ -2473,21 +2564,21 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             }
             Some(m) => {
                 let rupture = rupture_en_saisie(e, mois);
-                // Rien ne pre-remplit le jour du versement ni les jours tant que la paie ne se calcule pas : le debut et
-                // la fin sont ceux que ses jours coches disent ; le metier et le cadre, ceux de la fiche du salarie
-                // qu'elle nomme, ou de son metier.
-                let prerempli = || -> R<Prerempli> {
-                    let fiche = e.salarie.as_ref().and_then(|s| ctx.salaries.get(s));
-                    Ok(Prerempli {
-                        debut: if e.debut.is_none() { e.debut_lu() } else { None },
-                        fin: if e.fin.is_none() { e.fin_lue() } else { None },
-                        metier: if e.metier.is_none() { metier_de_la_fiche(fiche.and_then(|f| f.code_emploi_ft.dite()))? } else { None },
-                        cadre: cadre_du_metier(ctx, e)?,
-                        lignes: lignes.as_ref().map_err(Clone::clone)?.clone(),
-                        ..Prerempli::default()
-                    })
+                // Rien ne pre-remplit le jour du versement tant que la paie ne se calcule pas : le debut est celui que
+                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme ; le cadre, celui du
+                // metier qu'elle ecrit (la meme regle qu'une carte calculee).
+                let mut ne_se_preremplit = Vec::new();
+                let f = &mut ne_se_preremplit;
+                let fiche = e.salarie.as_ref().and_then(|s| ctx.salaries.get(s));
+                let prerempli = Prerempli {
+                    debut: if e.debut.is_none() { e.debut_lu() } else { None },
+                    metier: if e.metier.is_none() { ou_vide(metier_de_la_fiche(fiche.and_then(|x| x.code_emploi_ft.dite())), f) } else { None },
+                    cadre: ou_vide(cadre_du_metier(ctx, e), f),
+                    lignes: lignes_ou_vide(lignes, f),
+                    ..Prerempli::default()
                 };
-                let sait = CeQueLeMoteurSait { contrat: contrat_appelle_en_saisie(ctx, e, mois), rupture: &rupture, temps: Ok(None), prerempli: prerempli() };
+                metier_du_dernier_contrat_illisible(ctx, e, &mut ne_se_preremplit);
+                let sait = CeQueLeMoteurSait { contrat: contrat_appelle_en_saisie(ctx, e, mois), rupture: &rupture, temps: Ok(None), prerempli, ne_se_preremplit };
                 let carte = carte_rendue(ctx, e, sait);
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     carte,
