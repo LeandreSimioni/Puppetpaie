@@ -96,6 +96,12 @@ ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket
 chose est faite quand la route la fait. La page ne parle au moteur que par `/api/<route>`, qui sert la même chose ; le
 pont de la fenêtre ne fait que ses listes `NOMS_ACCUEIL` et `NOMS_LOGICIEL` (`moteur/src/interface/mod.rs`).
 
+**L'écran sert le logiciel, et reste le plus simple possible** (Léandre, 20/11/2026 : « il y a un logiciel et après,
+il y a un écran qui sert le logiciel. Mais il doit être le plus simple possible »). Un lot d'écran (une mise en page,
+un calendrier, une case) ne crée pas de route et ne change pas ce qu'une route lit ou refuse : ce que le moteur
+vérifiait déjà, l'écran ne le lui redemande pas par un autre chemin. Si l'écran a besoin que le moteur dise quelque
+chose de plus, cela se présente à Léandre avant, en une ligne.
+
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
 catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à
