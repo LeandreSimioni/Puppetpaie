@@ -872,37 +872,52 @@ input.x-court { width: auto; }
 .rubrique .r-jours-btn.planning { border-color: var(--alerte); }
 .rubrique .r-jours-btn:hover { border-color: var(--action); }
 
-/* LE CALENDRIER d'une ligne de paie : un mois, sept colonnes, et on coche.
-   Les jours joués du mois en rouge plein ; le planning des mois suivants en
-   orange — payé dans son mois, pas ici. */
-.calendrier {
+/* LE CALENDRIER, UN SEUL (js/calendrier.js) : un mois, sept colonnes, et on
+   clique. Les jours joués du mois d'une ligne de paie en rouge plein, comme le
+   jour choisi d'une date ; le planning des mois suivants en orange — payé dans
+   son mois, pas ici. Il s'ouvre sous sa case, dans ce qui la porte. */
+.cal-porte { position: relative; }
+.cal {
   position: absolute; z-index: 20; top: 100%; left: 0; margin-top: 4px;
   width: 268px; background: var(--carte); border: 1px solid var(--bord);
   border-radius: 4px; box-shadow: 0 6px 20px rgba(0,0,0,.12); padding: 8px 10px 10px;
   font-size: 13px;
+  display: flex; flex-direction: column; gap: 4px;
 }
-.calendrier .c-tete { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.calendrier .c-tete button {
+.cal button { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--bord);
+  background: var(--carte); color: var(--texte); border-radius: 4px; cursor: pointer; min-width: 38px; }
+.cal button:disabled { opacity: .35; cursor: default; }
+.cal .c-tete { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.cal .c-tete button {
   border: 1px solid var(--bord); background: var(--fond); color: var(--texte);
   width: 28px; height: 26px; padding: 0; border-radius: 3px; cursor: pointer; font-size: 16px; line-height: 1;
 }
-.calendrier .c-tete button:disabled { opacity: .35; cursor: default; }
-.calendrier .c-grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.calendrier .c-sem { text-align: center; font-size: 11px; color: var(--discret); }
-.calendrier .c-jour {
+.cal .c-tete button:disabled { opacity: .35; cursor: default; }
+.cal .c-grille { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.cal .c-sem { text-align: center; font-size: 11px; color: var(--discret); }
+.cal .c-jour {
   height: 28px; padding: 0; border: 1px solid transparent; border-radius: 3px;
   background: var(--fond); color: var(--texte); cursor: pointer; font-variant-numeric: tabular-nums;
 }
-.calendrier .c-jour:hover { border-color: var(--action); }
-.calendrier .c-jour.joue { background: var(--action); color: var(--blanc); font-weight: bold; }
-.calendrier .c-jour.prevu { background: var(--alerte); color: var(--blanc); font-weight: bold; }
-.calendrier .c-jour.hors, .calendrier .c-jour:disabled { opacity: .3; cursor: default; }
+.cal .c-jour:hover { border-color: var(--action); }
+.cal .c-jour.joue { background: var(--action); color: var(--blanc); font-weight: bold; }
+.cal .c-jour.prevu { background: var(--alerte); color: var(--blanc); font-weight: bold; }
+.cal .c-jour.hors, .cal .c-jour:disabled { opacity: .3; cursor: default; }
 /* Les mois passés : lecture seule. Une plage de contrat en gris, un jour joué
    connu en gris soutenu. */
-.calendrier .c-jour.lu { display: inline-flex; align-items: center; justify-content: center;
+.cal .c-jour.lu { display: inline-flex; align-items: center; justify-content: center;
   cursor: default; border-color: transparent; color: var(--discret); }
-.calendrier .c-jour.lu.hist { background: var(--bord); color: var(--texte); border-radius: 0; }
-.calendrier .c-jour.lu.hist-joue { background: var(--discret); color: var(--blanc); font-weight: bold; }
+.cal .c-jour.lu.hist { background: var(--bord); color: var(--texte); border-radius: 0; }
+.cal .c-jour.lu.hist-joue { background: var(--discret); color: var(--blanc); font-weight: bold; }
+/* L'année du mois montré se tape : une année lointaine sans cliquer mois par
+   mois. */
+.cal .c-tete .c-titre { display: inline-flex; align-items: center; gap: 6px; }
+.cal .c-tete .c-annee { display: inline-block; width: 6ch; margin: 0; padding: 2px 4px; font-weight: bold;
+  font-variant-numeric: tabular-nums; text-align: center; }
+/* La case d'un jour : on y tape JJ/MM/AAAA, et un clic y ouvre le calendrier
+   à côté. Sa largeur suit ce qu'elle montre (`size`, js/calendrier.js) : ni
+   le jour ni ce qu'elle dit vide ne se coupent. */
+.cal-jour-saisie { font-variant-numeric: tabular-nums; width: auto; }
 .c-passes { margin-top: 8px; font-size: 12px; display: grid; gap: 3px; align-content: start; }
 .c-passe { display: flex; justify-content: space-between; gap: 8px; }
 /* UN MOIS TENU AVANT PUPPETPAIE : une carte par paie, comme une
@@ -929,14 +944,14 @@ input.x-court { width: auto; }
 .ci-lignes { margin-top: 10px; font-size: 12px; border-collapse: collapse; }
 .ci-lignes th, .ci-lignes td { padding: 2px 8px; text-align: left; }
 .ci-lignes .nombre { text-align: right; }
-.calendrier .c-pied { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; }
-.calendrier .c-pied button { padding: 3px 10px; }
-.calendrier .c-avert {
+.cal .c-pied { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 12px; }
+.cal .c-pied button { padding: 3px 10px; }
+.cal .c-avert {
   margin-top: 8px; padding: 8px; font-size: 12px; line-height: 1.4;
   background: var(--alerte-leger); border-left: 3px solid var(--alerte); border-radius: 3px;
 }
-.calendrier .c-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-.calendrier .c-actions button { padding: 3px 10px; }
+.cal .c-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.cal .c-actions button { padding: 3px 10px; }
 
 .pastille.archive { background: var(--archive-fond); color: var(--archive-texte); }
 

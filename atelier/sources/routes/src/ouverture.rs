@@ -1269,19 +1269,27 @@ pub(crate) struct RubriqueDeLaPage {
     dit: Option<String>,
     /// Les mots entre les cases de sa ligne : « quantité à taux € », ou « base € à taux % » pour un pourcentage.
     mots: [&'static str; 2],
-    /// LES CLES QU'UNE LIGNE DE CETTE RUBRIQUE DIT, toutes et seules (`engagement::ligne::FormeSaisie`) : la page les
-    /// ecrit, `null` pour une case vide.
-    cles: Vec<&'static str>,
+    /// LES CLES QU'UNE LIGNE DE CETTE RUBRIQUE DIT, toutes et seules (`engagement::ligne::FormeSaisie`), chacune sa
+    /// forme : la page les ecrit, `null` pour une case vide, et fait cocher ses jours dans le calendrier.
+    cles: Vec<CleDeLaLigne>,
     /// LA CLE DE SA QUANTITE, dans l'unite de la rubrique (`engagement::ligne::QuantiteDeLigne::cle` : `{"cachets": 2}`),
     /// quand une ligne en dit une (`cles`).
     quantite: Option<&'static str>,
 }
 
+/// Une cle d'une ligne de paie telle que la page la saisit : son nom, et sa forme (`Forme::de_la_cle`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct CleDeLaLigne {
+    cle: &'static str,
+    forme: Forme,
+}
+
 pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
-    let cles = match engagement::ligne::FormeSaisie::de(r)? {
-        Some(f) => f.noms(),
+    let saisie = match engagement::ligne::FormeSaisie::de(r)? {
+        Some(f) => f.cles(),
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
+    let cles: Vec<CleDeLaLigne> = saisie.iter().map(|c| CleDeLaLigne { cle: c.nom(), forme: Forme::de_la_cle(*c) }).collect();
     let non_appliques: Vec<&'static str> = [
         ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
@@ -1314,7 +1322,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         vec![]
     };
     Ok(RubriqueDeLaPage {
-        quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| cles.contains(&engagement::ligne::Cle::Quantite.nom())),
+        quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| saisie.contains(&engagement::ligne::Cle::Quantite)),
         cles,
         lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
         lieux,
@@ -1353,8 +1361,9 @@ struct NatureDeLaPage {
     libelle: String,
     aide: String,
     /// Les cases de sa carte, obligatoires ou facultatives, et ce que chaque motif de recours porte en plus, tirees du
-    /// type (`engagement::carte::CarteValide::natures`) : ce que la page montre, et seulement cela.
-    carte: engagement::carte::NatureDecrite,
+    /// type (`crate::catalogue::natures_des_cartes`), chacune sa forme : ce que la page montre, et seulement cela ; une
+    /// case de forme `date` s'y choisit dans le calendrier.
+    carte: engagement::carte::NatureDecrite<Forme>,
     mensuelle: bool,
     duree_indeterminee: bool,
     /// Un permanent ne se rattache a AUCUN spectacle : le numero d'objet (S21.G00.40.050) est INTERDIT hors des natures 02
@@ -1381,7 +1390,7 @@ struct NatureDeLaPage {
 /// PROPOSE se dit au mois (`mois::NouvelleCarte`, `engagement::permanents::Permanents::natures_neuves`).
 fn natures() -> R<Vec<NatureDeLaPage>> {
     let toutes = natures::natures()?;
-    let cartes = engagement::carte::CarteValide::natures()?;
+    let cartes = crate::catalogue::natures_des_cartes()?;
     // L'ordre est celui du fichier.
     let mut sortie = Vec::new();
     for n in toutes.iter() {

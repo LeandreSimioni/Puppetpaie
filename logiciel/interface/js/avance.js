@@ -2,8 +2,9 @@
  *
  * Une route sans écran dessiné porte, dans sa fiche, la place où elle se montre (`ecran`, `affichage: "auto"`) et son
  * bouton (`bouton`) : la page l'affiche ici depuis sa fiche. Chaque champ de la charge dit ce que l'écran en montre
- * (`libelle`) et sa forme (`forme` : une liste se tape élément par élément, un oui/non se coche, un nombre, un mois, une
- * date ou une valeur d'une liste fermée, `choix`, se choisissent ; le reste se tape). Puis la phrase rendue (ou ses lignes, `phrases`), ou le refus. La page ne
+ * (`libelle`) et sa forme (`forme` : une liste se tape élément par élément, un oui/non se coche, un nombre, un mois ou une
+ * valeur d'une liste fermée, `choix`, se choisissent, une date dans le calendrier, `js/calendrier.js` ; le reste se
+ * tape). Puis la phrase rendue (ou ses lignes, `phrases`), ou le refus. La page ne
  * compose ni ne décide rien : chaque mot et chaque forme viennent de la fiche ou de la réponse. Une place sans route
  * automatique ne montre rien.
  *
@@ -18,7 +19,8 @@ const valeurDeDepart = (v) => (v == null ? "" : ` value="${echapper(String(v))}"
 const SAISIES = {
   oui_non: (j, v) => `<input type="checkbox" data-j="${j}"${v ? " checked" : ""}>`,
   mois: (j, v) => `<input type="month" data-j="${j}"${valeurDeDepart(v)}>`,
-  date: (j, v) => `<input type="date" data-j="${j}"${valeurDeDepart(v)}>`,
+  // Un jour se choisit dans le calendrier (`js/calendrier.js`, `poserLesCalendriers`).
+  date: (j, v) => `<input data-j="${j}" data-calendrier="1"${valeurDeDepart(v)}>`,
   // Un nombre se tape tel quel (« 40,89 ») : la route le convertit, et le refuse en nommant la case.
   nombre: (j, v) => `<input type="text" inputmode="decimal" data-j="${j}"${valeurDeDepart(v)}>`,
   liste: (j) => `<span data-liste="${j}"><input type="text" data-element></span> <button type="button" class="lien" data-plus="${j}">+</button>`,
@@ -101,6 +103,7 @@ function dessinerAvance(cible) {
   cible.querySelectorAll(".avance-route").forEach((bloc) => {
     const f = routes[+bloc.dataset.i];
     brancherLesListes(bloc);
+    poserLesCalendriers(bloc);
     bloc.querySelector("[data-faire]").onclick = async () => {
       const rendu = bloc.querySelector("[data-rendu]");
       try {
@@ -172,6 +175,7 @@ async function faireLeGeste(g, entete, apres) {
     </div>`, rendre);
   const bloc = document.getElementById("geste-cases");
   brancherLesListes(bloc);
+  poserLesCalendriers(bloc);
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).
   document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
 }

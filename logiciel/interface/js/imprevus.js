@@ -263,7 +263,8 @@ async function allerALaCase(f, champ) {
   if (options) options.hidden = false;
   const contrat = div.querySelector(".e-contrat");
   if (contrat) contrat.open = true;
-  const cible = (CASES_DE_FIN[champ] && div.querySelector(CASES_DE_FIN[champ])) || div.querySelector(".e-contrat");
+  const caseDeFin = CASES_DE_FIN[champ] && div.querySelector(CASES_DE_FIN[champ]);
+  const cible = caseDeFin ? caseQuiMontre(caseDeFin) : div.querySelector(".e-contrat");
   if (!cible) return;
   cible.scrollIntoView({ block: "center" });
   cible.focus();
@@ -345,7 +346,7 @@ function ouvrirRupture(div) {
   const contrat = div.querySelector(".e-contrat");
   contrat.open = true;
   const fin = div.querySelector(".e-fin");
-  const cible = fin.value || (div._rupture && div._rupture.fin) ? div.querySelector(".e-motif-rupture") : fin;
+  const cible = fin.value || (div._rupture && div._rupture.fin) ? div.querySelector(".e-motif-rupture") : caseQuiMontre(fin);
   cible.scrollIntoView({ block: "center" });
   cible.focus();
 }
