@@ -2138,6 +2138,12 @@ datée, vérifiable**.
   lui-même (un `emploi` écrit à la main ne garde pas le libellé du métier) ;
   `emplois::emploi_de` les reporte sur la fiche de cet engagement, et le contrat lit
   le libellé de là. Le cadre se combine au statut.
+  **Le métier est celui de l'engagement**, pas de la personne : la carte le choisit dans les métiers de la compagnie
+  (Configuration › Métiers, `routes::metiers::metiers`, la liste que la route etat rend), un autre se refuse en disant
+  d'aller l'y ajouter (`engagement::carte::Changements::appliquer`) ; une carte de CDDU qui nomme son salarié prend le
+  métier de son dernier contrat (`engagement::carte::metier_du_dernier_contrat`), sinon la paie prend l'emploi de sa
+  fiche. Le cadre, la PCS-ESE, le code France Travail et les statuts d'un CDDU se lisent de son métier, jamais de sa
+  carte.
 - `logiciel/donnees/minima-conventionnels.json` — les grilles de la **3090** (annexes
   1, 2, 4, 5 et clauses communes) et de la **1285** (cachet, répétition,
   cirque, musiciens, lyrique, chœur ; les accords suivants sous `accords`, chacun avec sa grille entière et la date où il lie la compagnie, `droit::minima::lie_depuis`).
