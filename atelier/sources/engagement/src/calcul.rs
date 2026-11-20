@@ -480,7 +480,7 @@ pub struct Contenu {
     pub total_sal: Montant,
     /// Ce qui se paie au salarie avant impot : le brut, moins les cotisations salariales, plus ou moins TOUTES les
     /// lignes hors assiette (defraiements, acompte retenu, indemnites), moins les avantages en nature, recus en nature
-    /// (C. trav. R. 3243-1, 10° : « la somme effectivement reçue »).
+    /// (C. trav. R. 3243-1, 9° : « la somme qui aurait été versée au salarié en l'absence de retenue à la source »).
     pub net_a_payer: Montant,
     /// Le montant net social (S21.G00.58.004 de type 03, « Montant net social » du bulletin) : voir `calculer`
     /// (7.10). Le brut, moins les cotisations salariales, plus les lignes hors assiette qui sont un revenu ; ni
@@ -2074,9 +2074,11 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.10 : la sortie. Ce qui est hors assiette se paie ou se retient quand meme.
     let hors_assiette = lb.iter().filter(|l| !l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
     // L'avantage en nature est dans le brut (il est soumis), et le salarie l'a recu en nature, pas en argent : le net a
-    // payer, « le montant de la somme effectivement reçue par le salarié » (C. trav. R. 3243-1, 10°,
-    // `atelier/reference/sources/code-du-travail/xml/R3243-1.xml`), ne le compte pas ; le bulletin l'imprime en deduction
-    // (8° b), `documents::bulletin`). Le net social, le net imposable et le net verse de la DSN le gardent : le montant net
+    // payer avant impot, « la somme qui aurait été versée au salarié en l'absence de retenue à la source » (C. trav.
+    // R. 3243-1, 9°, `atelier/reference/sources/code-du-travail/xml/R3243-1.xml`), ne le compte pas, ni donc ce net moins
+    // l'impot preleve, « la somme effectivement reçue par le salarié » (10°). Qu'une valeur fournie en nature ne soit pas
+    // une somme versee est une inference. Le bulletin l'imprime en deduction (`documents::bulletin`, `Jeu::en_nature`).
+    // Le net social, le net imposable et le net verse de la DSN le gardent : le montant net
     // social compte « les avantages et accessoires en nature ou en argent » (arrete du 25/02/2016, art. 1er, II, 1°,
     // `atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md`), et le net verse part de la
     // remuneration nette fiscale (S21.G00.50.004).
@@ -2123,8 +2125,16 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             "rubriques_bulletin.csg_crds_nd",
         ));
     }
-    let (base_51, retabli, chomage_51) = if nat.remunerations_au_brut() {
-        (brut, brut, brut)
+    // S21.G00.51.011 = 002, le salaire brut servant aux calculs des droits de l'Assurance chomage, « doit contenir
+    // uniquement les éléments de salaire. Il ne doit pas inclure les primes et indemnités relatives à la rupture du
+    // contrat de travail déclarées dans le bloc « Prime, gratification et indemnité - S21.G00.52 » » (cahier technique
+    // 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.51.txt`, Type) ; la grille « Indemnités » de net-entreprises
+    // le redit pour chacune (« intégration au salaire brut soumis à contributions Assurance Chômage « Non » »,
+    // `atelier/reference/norme-dsn/netentreprises-grille-aide-remplissage-indemnites.txt`). Quelle que soit la nature, un
+    // CDDU compris (l'indemnite du delai de prevenance d'une fin d'essai, `solde::delai_de_prevenance_a_l_activite`).
+    let chomage_51 = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
+    let (base_51, retabli) = if nat.remunerations_au_brut() {
+        (brut, brut)
     } else {
         let base_51 = lb.iter().filter(|l| l.salaire_de_base).fold(Montant::ZERO, |a, l| a + l.montant);
         // S21.G00.51.011 = 003, « Salaire rétabli – reconstitué », qui « doit toujours être déclaré pour la période de paie
@@ -2133,8 +2143,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // l'ont reduit (les rubriques `retabli`). Un mois entierement suspendu declare donc 001 a 0.00 et 003 au salaire du
         // mois.
         let retabli = brut - lb.iter().filter(|l| l.retabli).fold(Montant::ZERO, |a, l| a + l.montant);
-        let chomage = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
-        (base_51, retabli, chomage)
+        (base_51, retabli)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, plafond_urssaf, abattue_appliquee, smic, heures, tp);

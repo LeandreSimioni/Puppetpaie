@@ -215,7 +215,7 @@
         "quoi": "Les blocs S21.G00.51 d'une paie. Les quatre types 001, 002, 003 et 010 sont OBLIGATOIRES en DSN mensuelle (cahier technique §2.1.3.3).",
         "types": ["001", "002", "003", "010"],
         "toutes_au_brut": true,
-        "note": "Sur un CDDU, les quatre valent le même montant : le brut du mois. Il n'y a ni salaire de base distinct (la rémunération EST l'activité du mois), ni absence à reconstituer — donc le salaire rétabli vaut le brut. C'est ce que CoolPaie déclarait, accepté cinquante fois."
+        "note": "Sur un CDDU, 001, 003 et 010 valent le brut du mois. Il n'y a ni salaire de base distinct (la rémunération EST l'activité du mois), ni absence à reconstituer — donc le salaire rétabli vaut le brut. C'est ce que CoolPaie déclarait, accepté cinquante fois. 002 vaut le brut aussi, sauf une indemnité du bloc 52 (l'indemnité du délai de prévenance d'une fin d'essai, 017) : le salaire brut servant aux calculs des droits de l'Assurance chômage « ne doit pas inclure les primes et indemnités relatives à la rupture du contrat de travail déclarées dans le bloc « Prime, gratification et indemnité - S21.G00.52 » » (cahier technique 2026.1, atelier/reference/norme-dsn/texte/bloc-S21.G00.51.txt, Type), comme pour toute nature. Ce que 001, 003 et 010 font d'une telle indemnité, aucun texte déposé ne le dit pour un CDDU : elle y reste, dans le brut."
       },
       "activites": {
         "quoi": "Les blocs S21.G00.53 sous la rémunération de type 002. Cahier technique : « pour les congés spectacles, il est nécessaire pour calculer les droits de renseigner à la fois une unité de mesure jours et cachets ».",

@@ -1034,16 +1034,17 @@ pub type LignesPermanent<'a> =
 /// Les engagements d'un fichier de mois,
 /// construits avant tout calcul. `lignes_permanent` fournit les lignes d'un
 /// engagement paye au mois ; les avertissements rendus vont avec, un jeu par
-/// engagement (vide hors des permanents).
+/// engagement ; et, un par engagement, ce qui manque a son seul calcul (l'indemnite du delai de prevenance d'un
+/// contrat paye a l'activite), que seul le calcul refuse (`charger_donnees`).
 pub(crate) fn engagements(
     ctx: &Contexte,
     data: &saisie::VueDuMois,
     lignes_permanent: LignesPermanent,
-) -> R<(Vec<Engagement>, Vec<Vec<Avis>>)> {
+) -> R<(Vec<Engagement>, Vec<Vec<Avis>>, Vec<Option<Echec>>)> {
     let mois_dit = data.mois;
     // Le taux du mois, s'il en ecrit un ; sinon rien (regle 1).
     let defaut_taux = data.taux_cachet;
-    let (mut out, mut dits) = (Vec::new(), Vec::new());
+    let (mut out, mut dits, mut manques_du_calcul) = (Vec::new(), Vec::new(), Vec::new());
     for carte in &data.engagements {
         let qui = salarie_nomme(ctx, carte.salarie.as_ref());
         // Seule une carte valide entre dans le calcul : sa nature dite, ses cases obligatoires remplies, aucune case que
@@ -1189,13 +1190,22 @@ pub(crate) fn engagements(
         let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         eng.sans_remuneration = sans_remuneration;
         // Un contrat paye a l'activite qui finit ce mois par une fin d'essai a l'initiative de l'employeur : le delai de
-        // prevenance de L1221-25 (un contrat paye au mois le trouve dans son solde de tout compte).
+        // prevenance de L1221-25 (un contrat paye au mois le trouve dans son solde de tout compte). Ce qui manque a son
+        // indemnite (le montant, l'essai stipule, la notification) ne manque qu'a son calcul : `charger_donnees` le dit,
+        // et l'ecran le montre sur cette carte, « à compléter » ; une lecture qui ne calcule pas (les contrats passes, la
+        // DPAE, la saisie lue sans paie) lit l'engagement sans cette ligne, et rien ne lui est ferme.
+        let mut manque = None;
         if !nat.mensuelle() {
-            let (ligne, avis) = solde::delai_de_prevenance_a_l_activite(ctx, carte, &eng, &qui)?;
-            eng.lignes.extend(ligne);
-            avis_de_la_carte.extend(avis);
+            match solde::delai_de_prevenance_a_l_activite(ctx, carte, &eng, &qui) {
+                Ok((ligne, avis)) => {
+                    eng.lignes.extend(ligne);
+                    avis_de_la_carte.extend(avis);
+                }
+                Err(m) => manque = Some(m),
+            }
         }
         dits.push(avis_de_la_carte);
+        manques_du_calcul.push(manque);
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -1214,7 +1224,7 @@ pub(crate) fn engagements(
         }
         out.push(eng);
     }
-    Ok((out, dits))
+    Ok((out, dits, manques_du_calcul))
 }
 
 /// Le refus du jour du versement de `eng` que les textes interdisent (`droit::versement::refus`) ; `None` : il passe.
@@ -2074,7 +2084,11 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     let salaries: Vec<&IdSalarie> = data.engagements.iter().filter_map(|e| e.salarie.as_ref()).collect();
     let _comme_a_la_validation = crate::etats::CommeALaValidation::ouvrir(ctx, mois, &salaries)?;
     let lignes: LignesPermanent = &crate::conges::lignes_du_mois;
-    let (engs, dits) = engagements(ctx, data, lignes)?;
+    let (engs, dits, manques_du_calcul) = engagements(ctx, data, lignes)?;
+    // Ce qui manque au calcul d'un engagement (`engagements`) refuse ici, et seulement ici.
+    if let Some(m) = manques_du_calcul.into_iter().flatten().next() {
+        return Err(m);
+    }
     let mut paies = Vec::new();
     for e in &engs {
         let p = crate::calcul::calculer_apres(ctx, e, &paies)?;

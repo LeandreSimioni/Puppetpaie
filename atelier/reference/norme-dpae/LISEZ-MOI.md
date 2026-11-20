@@ -19,17 +19,17 @@ URL de téléchargement n'ont pas été notées au dépôt : chacun se retrouve 
 - `atelier/sources/declarations/src/dpae.rs` : l'enregistrement de la DPAE, zone par zone, selon le Format 120
   (`v5.3_FormatDPAE_EMAIL.txt`). La zone N_JJ_ESSAI (positions 885-887, l. 474-478 : « Durée de la période d'essai (en
   jours) ») porte, pour un CDDU, la période d'essai que sa carte stipule (code du travail L1242-10,
-  `../sources/code-du-travail/LISEZ-MOI.md`, « La période d'essai ») ; `000` sans essai ; trois blancs pour un CDI ou un
+  `../sources/code-du-travail/LISEZ-MOI.md`, « La période d'essai et sa durée maximale ») ; `000` sans essai ; trois blancs pour un CDI ou un
   CDD, dont le logiciel ne connaît pas l'essai (code retour 99, `5491-API-DPAE-Fonctionnement.pdf`, p. 8-9). Le code
   du travail ne demande cette mention que pour « les contrats à durée indéterminée et les contrats à durée déterminée
   dont le terme ou la durée minimale excède six mois » (R1221-1, 4°, `../sources/code-du-travail/articles-20261023.md`,
-  l. 788 ; `xml/R1221-1.xml`) ; la fiche 3300 de net-entreprises aussi (« à renseigner obligatoirement pour les CDI et
+  l. 788 ; `../sources/code-du-travail/xml/R1221-1.xml`) ; la fiche 3300 de net-entreprises aussi (« à renseigner obligatoirement pour les CDI et
   les CDD de plus de 6 mois »,
   `../sources/net-entreprises-base-connaissances/net-entreprises-fiche3300-dpae-en-dsn-20261015.txt`, l. 143). Une DPAE
   transmise ne se corrige pas : « absence de fonction annule et remplace » (`5491-API-DPAE-Fonctionnement.pdf`, p. 3 et
   5) ; une seconde DPAE de la même embauche est rejetée en doublon (98), « si les éléments fournis dans la DPAE initiale
   conviennent, aucune action n'est à opérer » (p. 9). L'essai d'un CDDU de six mois au plus, changé après le départ de
-  sa DPAE, ne la rend donc pas fausse : rien ne la redemande (`engagement/src/etats.rs`, `ARefaire::Dpae`, ne compare
+  sa DPAE, ne la rend donc pas fausse : rien ne la redemande (`atelier/sources/engagement/src/etats.rs`, `ARefaire::Dpae`, ne compare
   que le début).
 - `atelier/sources/declarations/src/urssaf.rs` : les codes des organismes (annexe II.1 du Format 120).
 - `atelier/sources/droit/src/fiche.rs` : la longueur et les caractères des zones que la fiche d'un salarié ou de

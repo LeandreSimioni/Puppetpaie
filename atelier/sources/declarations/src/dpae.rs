@@ -476,7 +476,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
         poser(&mut buf, "date_fin", &" ".repeat(8))?;
     }
     // LA PERIODE D'ESSAI, en chiffres ou rien : trois blancs valent le code
-    // retour 99 (guide << API DPAE, principes de fonctionnement >>, p. 8-9).
+    // retour 99 (guide << API DPAE, principes de fonctionnement >>, p. 8-9,
+    // `atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`).
     // La zone N_JJ_ESSAI (positions 885-887) dit << la duree de la periode
     // d'essai (en jours) >> (`atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`).
     // Le code du travail ne la demande qu'a certains contrats : la DPAE comporte
@@ -490,14 +491,15 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     // Un CDDU peut en comporter une (code du travail L. 1242-10,
     // `atelier/reference/sources/code-du-travail/articles-20261110.md`), que
     // le contrat stipule : celle de sa carte, que le contrat CDDU imprime
-    // (`modeles/contrat-cddu.modele`, << Période d'essai >>), en jours ;
+    // (`logiciel/donnees/modeles/contrat-cddu.modele`, << Période d'essai >>), en jours ;
     // aucune stipulee : `000`. Un CDI ou un CDD, le logiciel ne redige pas le
     // contrat et n'en connait pas l'essai : la zone reste a blanc plutot que
     // devinee, et la DPAE est enregistree en 99. Une DPAE transmise ne se
     // corrige pas : le flux n'a pas d'<< annule et remplace >>, et une seconde
     // DPAE de la meme embauche est rejetee en doublon (98) ; << si les elements
     // fournis dans la DPAE initiale conviennent, aucune action n'est a operer >>
-    // (`5491-API-DPAE-Fonctionnement.pdf`, p. 3, 5 et 9). Un essai change apres
+    // (`atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 3, 5
+    // et 9). Un essai change apres
     // le depart de la DPAE d'un contrat de six mois au plus ne la rend donc pas
     // fausse au sens de R. 1221-1, 4° : rien ne la redemande.
     let essai = match nat.cle {

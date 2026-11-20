@@ -724,7 +724,12 @@ fn delai_de_prevenance(
 /// carte (les jours coches sont les jours travailles) : ce montant, seule la compagnie le connait. La carte le dit
 /// (`indemnite_delai_prevenance`), ou le calcul refuse en nommant la case et les dates du delai non effectue. La ligne :
 /// ce montant, en une fois, dans la rubrique du delai (DSN 52 « 017 »). Rend la ligne, s'il y en a une, et ce qui le dit.
+/// Seul un contrat qui finit ce mois au motif 034 lit quelque chose (les regles du delai) ; ce que le montant comprend se
+/// dit partout dans les memes mots (`CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE`), sans lire la fiche du salarie.
 pub(crate) fn delai_de_prevenance_a_l_activite(ctx: &Contexte, e: &Carte, eng: &crate::Engagement, qui: &str) -> R<(Option<LignePaie>, Vec<Avis>)> {
+    if e.motif_rupture != Some(MotifDeRupture::FinDEssaiParLEmployeur) {
+        return Ok((None, Vec::new()));
+    }
     let contrat = eng.contrat();
     let Some(fin) = contrat.fin().filter(|f| f.mois_civil() == eng.mois) else {
         return Ok((None, Vec::new()));
@@ -741,13 +746,13 @@ pub(crate) fn delai_de_prevenance_a_l_activite(ctx: &Contexte, e: &Carte, eng: &
             "{} : {} ; le contrat finit le {} : le délai n'est pas respecté, {}. L1221-25 doit au salarié, sauf faute grave, \
              « le montant des salaires et avantages [qu'il] aurait perçus s'il avait accompli son travail jusqu'à l'expiration \
              du délai de prévenance, indemnité compensatrice de congés payés comprise ». Saisissez dans sa carte ce qu'il \
-             aurait perçu {}, cachets, heures et avantages compris (« {} ») ; s'il a commis une faute grave, cochez « {} » : \
-             rien n'est dû.",
+             aurait perçu {}, {} (« {} ») ; s'il a commis une faute grave, cochez « {} » : rien n'est dû.",
             qui,
             dit,
             fin.jj_mm_aaaa(),
             du_au,
             du_au,
+            CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE,
             crate::carte::libelle(crate::saisie::Champ::IndemniteDelaiPrevenance),
             crate::carte::libelle(crate::saisie::Champ::FauteGrave)
         ), "indemnite_delai_prevenance"));
@@ -760,15 +765,6 @@ pub(crate) fn delai_de_prevenance_a_l_activite(ctx: &Contexte, e: &Carte, eng: &
             du_au
         ), "indemnite_delai_prevenance"));
     }
-    // Les conges de ces jours : L1221-25 les compte dans l'indemnite ; un salarie dont la caisse des Conges Spectacles
-    // paie les conges n'en a pas chez l'employeur (L3141-30).
-    let ctx_fin = ctx.au(&fin)?;
-    let fiche = crate::calcul::fiche_de_l_engagement(&ctx_fin, eng)?;
-    let conges = if droit::caisse_conges::affilie(&nat, &fiche, &contrat)? {
-        "Ses congés sont payés par la caisse des Congés Spectacles (L3141-30) : rien à y ajouter."
-    } else {
-        "L1221-25 la veut « indemnité compensatrice de congés payés comprise » : le montant saisi les comprend."
-    };
     // Une indemnite nulle ne s'ecrit pas : la norme refuse `0.00`.
     if montant.est_nul() {
         return Ok((None, vec![info(format!(
@@ -783,15 +779,24 @@ pub(crate) fn delai_de_prevenance_a_l_activite(ctx: &Contexte, e: &Carte, eng: &
     let l = ligne_unique(ctx, &rubrique, montant)?;
     Ok((Some(l), vec![avertir(format!(
         "{} : {} ; le contrat finit le {} : délai non effectué {}, payé {} tel que saisi (L1221-25, indemnité compensatrice ; \
-         DSN 52 : 017). {}",
+         DSN 52 : 017), {}.",
         qui,
         dit,
         fin.jj_mm_aaaa(),
         du_au,
         euros(montant),
-        conges
+        CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE
     ))]))
 }
+
+/// CE QUE COMPREND L'INDEMNITE DU DELAI DE PREVENANCE D'UN CONTRAT PAYE A L'ACTIVITE, que la compagnie saisit : L1221-25
+/// la veut « égale au montant des salaires et avantages que le salarié aurait perçus [...], indemnité compensatrice de
+/// congés payés comprise » ; L3141-30 rend l'indemnite compensatrice de conges (L3141-28) inapplicable « lorsque
+/// l'employeur est tenu d'adhérer à une caisse de congés » (la lecture, avec ses textes : `permanents-base.json`,
+/// `preavis.delai_de_prevenance.note`). Les memes mots au refus qui demande le montant, a l'avis qui le paie, et dans
+/// l'aide de la case (`routes::ouverture`, `AIDES`).
+pub(crate) const CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE: &str =
+    "cachets, heures, avantages et congés payés compris, sauf les congés que paie la caisse des Congés Spectacles (L1221-25, L3141-30)";
 
 /// LE SALAIRE D'UN JOUR OUVRABLE au maintien (L3141-24, II) : le salaire mensuel `salaire` reparti sur les jours
 /// ouvrables du mois entier `mois` (`droit::conges::jours_ouvrables`). Un mois en compte toujours (six jours par semaine,

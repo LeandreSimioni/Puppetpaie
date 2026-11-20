@@ -61,7 +61,7 @@ const AIDES: &[(&str, &str)] = &[
     ("quotite_reference", "La durée de référence de l'entreprise pour ce contrat (S21.G00.40.012)."),
     ("indemnite_licenciement", "Le montant retenu, entre l'indemnité légale et la conventionnelle."),
     ("faute_grave", "Une fin de période d'essai pour faute grave : pas d'indemnité du délai de prévenance (L1221-25)."),
-    ("indemnite_delai_prevenance", "Ce qu'il aurait perçu jusqu'à la fin du délai de prévenance non respecté, cachets, heures et avantages compris (L1221-25)."),
+    ("indemnite_delai_prevenance", "Ce qu'il aurait perçu jusqu'à la fin du délai de prévenance non respecté, cachets, heures, avantages et congés payés compris, sauf les congés que paie la caisse des Congés Spectacles (L1221-25, L3141-30)."),
     ("bornes_au_mois", "Un contrat payé au mois n'a pas de jour coché : ses bornes se disent ici. La date de fin d'un CDD est celle qui déclenche le signalement de fin de contrat (nature 07) : son délai et sa date butoir se lisent sous « Fin de contrat »."),
     ("bornes_au_calendrier", "Le contrat va du premier au dernier jour coché, planning compris, quand on a coché des jours dans les mois suivants depuis le calendrier d'une ligne. Ses cachets suivants se paient dans le mois suivant (le mois venu, le contrat y est repris, ses jours cochés) ; la DPAE et le contrat imprimé ne partent qu'avec ce mois-ci, le certificat Congés Spectacles à la fin du contrat."),
     ("fin_signalee", "Ce que le signalement de fin de contrat (nature 07) déclarera."),

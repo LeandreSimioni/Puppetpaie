@@ -916,9 +916,11 @@ pub struct Jeu<'a> {
     /// montant net social, Q 39). Vide : toutes les lignes sont au-dessus du brut.
     pub remboursements: Vec<usize>,
     /// Les indices, dans `paie.remuneration`, des avantages en nature : comptes dans le brut, recus en nature, ils
-    /// s'impriment aussi en deduction sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES » (C. trav. R. 3243-1, 8° b),
-    /// « La nature et le montant des versements et retenues [...] effectués sur la période »), pour qu'on passe du
-    /// montant net social au net a payer, qui ne les compte pas (R. 3243-1, 10°, `engagement::calcul`).
+    /// s'impriment aussi en deduction sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES », pour qu'on passe du montant net
+    /// social au net a payer avant impot, qui ne les compte pas (R. 3243-1, 9°, `engagement::calcul`). Les ranger la est
+    /// une inference : C. trav. R. 3243-1, 8° b) demande « La nature et le montant des versements et retenues autres que
+    /// celles mentionnées au a effectués sur la période », et le modele de l'arrete du 25/02/2016 (art. 1, I) place cette
+    /// section entre ces deux nets, sans nommer l'avantage en nature.
     pub en_nature: Vec<usize>,
     /// Les garanties de prevoyance de la paie (`engagement::calcul::garanties_de_prevoyance`) : leurs lignes sont
     /// facultatives.

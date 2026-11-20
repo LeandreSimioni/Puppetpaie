@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use crate::outils::rejeu::{rejouer_dossier, scenario};
 use socle::grandeurs::Montant;
 
-use crate::outils::{dossier_de_test, grandeur, identite, le_mois, refus, reussi, route};
+use crate::outils::{dossier_de_test, grandeur, identite, le_mois, reussi, route};
 
 #[test]
 fn le_delai_de_prevenance_d_un_cddu_suit_l1221_25() {
@@ -31,9 +31,11 @@ fn le_delai_de_prevenance_d_un_cddu_suit_l1221_25() {
         reussi(&route(&c, "enregistrer-saisie", json!({"mois": "2026-11", "carte": carte, "changements": changements}), jour)).clone()
     };
     let apercu = || route(&c, "apercu", json!({"mois": "2026-11", "modifications": []}), jour);
+    let paie_de_fuller = |r: &Value| -> Value {
+        reussi(r)["paies"].as_array().unwrap().iter().find(|p| p["salarie"]["cle"] == "FULLER").expect("la paie de FULLER").clone()
+    };
     let indemnite = |r: &Value| -> Option<Montant> {
-        let paies = reussi(r)["paies"].as_array().unwrap().clone();
-        let fuller = paies.iter().find(|p| p["salarie"]["cle"] == "FULLER").expect("la paie de FULLER");
+        let fuller = paie_de_fuller(r);
         fuller["remuneration"].as_array().unwrap().iter().find(|l| l["rubrique"] == "indemnite_delai_prevenance").map(|l| grandeur(l["montant"].as_str().unwrap()))
     };
 
@@ -42,9 +44,10 @@ fn le_delai_de_prevenance_d_un_cddu_suit_l1221_25() {
         {"case": "notification_rupture", "valeur": "2026-11-21"},
         {"case": "periode_essai_jours", "valeur": 7},
     ]));
-    // Due, et le montant n'est pas dit : le calcul refuse en nommant la case et le delai non effectue.
-    let (_, phrase) = refus(&apercu());
-    assert!(phrase.contains("FULLER") && phrase.contains("Indemnité du délai de prévenance") && phrase.contains("du 22/11/2026 au 22/11/2026"), "{}", phrase);
+    // Due, et le montant n'est pas dit : sa carte est a completer, en nommant la case et le delai non effectue ; le mois
+    // se regarde quand meme (« le logiciel est doux »).
+    let a_completer = paie_de_fuller(&apercu())["a_completer"].as_str().expect("la carte de FULLER a completer").to_string();
+    assert!(a_completer.contains("Indemnité du délai de prévenance") && a_completer.contains("du 22/11/2026 au 22/11/2026"), "{}", a_completer);
 
     // Dit : la ligne le paie.
     changer(json!([{"case": "indemnite_delai_prevenance", "valeur": 150}]));

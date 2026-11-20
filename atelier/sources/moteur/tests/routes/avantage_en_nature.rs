@@ -1,5 +1,7 @@
-//! L'AVANTAGE EN NATURE N'EST PAS UNE SOMME RECUE : le bulletin porte « Le montant de la somme effectivement reçue par
-//! le salarié » (C. trav. R. 3243-1, 10°, `atelier/reference/sources/code-du-travail/xml/R3243-1.xml`). L'avantage entre
+//! L'AVANTAGE EN NATURE N'EST PAS UNE SOMME VERSEE : le bulletin porte « la somme qui aurait été versée au salarié en
+//! l'absence de retenue à la source » (C. trav. R. 3243-1, 9°, le net a payer avant impot) et « Le montant de la somme
+//! effectivement reçue par le salarié » (10°, ce net moins l'impot preleve), `atelier/reference/sources/code-du-travail/
+//! xml/R3243-1.xml` ; qu'un repas fourni ne soit pas une somme est une inference. L'avantage entre
 //! dans le brut et dans le montant net social, qui compte « les avantages et accessoires en nature ou en argent » (arrete
 //! du 25/02/2016, art. 1er, II, 1°, `atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md`) ; le
 //! net a payer, non. Le banc des Treteaux : FULLER, deux cachets en novembre 2026, et un repas fourni de 20 €.
@@ -30,7 +32,8 @@ fn le_net_a_payer_ne_compte_pas_l_avantage_en_nature() {
     reussi(&route(&c, "enregistrer-saisie", json!({"mois": "2026-11", "carte": carte, "changements": [{"case": "lignes", "valeur": lignes}]}), jour));
     reussi(&valider_la_carte(&c, mois, "FULLER", jour));
 
-    let p = paie_ecrite(&c, "2026-11", "FULLER", None);
+    // La paie ecrite porte ses montants sous `paie` (`engagement::paie_ecrite::PaieEcrite`).
+    let p = paie_ecrite(&c, "2026-11", "FULLER", None)["paie"].clone();
     let m = |cle: &str| grandeur::<Montant>(p[cle].as_str().unwrap_or_else(|| panic!("{} : {}", cle, p)));
     let avantage = grandeur::<Montant>("20");
     let remuneration = p["remuneration"].as_array().unwrap();

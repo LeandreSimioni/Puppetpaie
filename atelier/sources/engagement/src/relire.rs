@@ -40,7 +40,8 @@ pub fn engagements_ecrits(ctx: &Contexte, data: &crate::saisie::VueDuMois, paies
         let ecrit = &paies.get(rang).ok_or_else(|| socle::echec::paie_illisible("lignes"))?.engagement;
         Ok((ecrit.lignes.clone(), Vec::new(), Some(ecrit.jours), None))
     };
-    let (mut engs, _) = crate::engagements(ctx, data, &lignes)?;
+    // Ce qui manquerait au calcul d'un engagement ne se juge pas : la paie ecrite se relit, elle ne se recalcule pas.
+    let (mut engs, _, _) = crate::engagements(ctx, data, &lignes)?;
     if engs.len() != paies.len() {
         return Err(socle::echec::paie_illisible("paies"));
     }
