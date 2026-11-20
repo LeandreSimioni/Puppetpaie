@@ -1487,6 +1487,26 @@ pub(crate) struct Rupture {
     motif_vide_dit: String,
 }
 
+/// LA FIN DU CONTRAT TELLE QUE LA ROUTE LA REND (`contrat.rupture`) : aucune (`null` : elle n'a pas de sens ici), la
+/// rupture lue, ou une rupture qui ne se lit pas (`illisible`, sa phrase). Celle-la n'est jamais rendue comme « pas de
+/// rupture » : la carte dit aussi ce qui ne se lit pas (`CarteRendue::faute`), et la page n'ouvre aucune fin qu'elle ne
+/// sait pas dire ; l'apercu des autres reste.
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(crate) enum FinDuContrat {
+    Lue(Option<Rupture>),
+    Illisible { illisible: String },
+}
+
+impl FinDuContrat {
+    fn de(r: R<Option<Rupture>>) -> FinDuContrat {
+        match r {
+            Ok(r) => FinDuContrat::Lue(r),
+            Err(e) => FinDuContrat::Illisible { illisible: e.phrase },
+        }
+    }
+}
+
 /// LA RUPTURE de cet engagement : `None` quand elle n'a pas de sens ici -- une nature sans motif de rupture
 /// (S21.G00.62.002, CCH-11 : `Nature::motifs_rupture`), ou un contrat a terme qui ne finit pas ce mois-ci. Les motifs et
 /// ce que chacun demande viennent de `natures`.
@@ -1768,7 +1788,7 @@ pub(crate) struct ContratVu {
     jusqu_a: Mois,
     /// La periode de paie du contrat dans le mois.
     periode: socle::date::Periode,
-    rupture: Option<Rupture>,
+    rupture: FinDuContrat,
 }
 
 /// Une case qu'une ligne de frais appelle : le rang de la ligne dans la saisie, la case, ce qu'elle dit, son aide.
@@ -1972,9 +1992,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         })
     };
     let carte = carte_rendue(ctx, brut, CeQueLeMoteurSait { contrat: contrat_appelle(ctx, e, &nat), rupture: &rupture, temps: temps(), prerempli: prerempli() });
-    // Une rupture qui ne se lit pas est la faute de la carte, qui la dit (`CarteRendue::faute`) : l'apercu des autres
-    // n'en est pas ferme.
-    let rupture = rupture.unwrap_or(None);
+    let rupture = FinDuContrat::de(rupture);
     Ok(VuePaie {
         carte,
         resolu_dit,
@@ -2167,7 +2185,7 @@ struct CleEcrite {
 #[derive(Debug, Serialize)]
 struct EcritsSeuls {
     /// Sa rupture, lue sur sa saisie (`rupture_en_saisie`) : le bloc de fin se dessine avant que la paie se calcule.
-    rupture: Option<Rupture>,
+    rupture: FinDuContrat,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2408,8 +2426,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     salarie: CleEcrite { cle: e.salarie.clone() },
                     avertissements: [],
                     informations: [],
-                    // Une rupture qui ne se lit pas est la faute de la carte, qui la dit (`CarteRendue::faute`).
-                    contrat: EcritsSeuls { rupture: rupture.unwrap_or(None) },
+                    contrat: EcritsSeuls { rupture: FinDuContrat::de(rupture) },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

@@ -790,10 +790,10 @@ pub fn metier_du_dernier_contrat(racine: &std::path::Path, s: &IdSalarie, sauf: 
     Ok(dernier.and_then(|(_, m)| m))
 }
 
-/// Le metier du contrat `o` a son dernier mois (`metier_du_dernier_contrat`).
+/// Le metier du contrat `o` a son dernier avenant (`metier_du_dernier_contrat`) : le metier et l'emploi sont des termes
+/// du contrat (`saisie::Groupe::Terme`), qui valent jusqu'a ce qu'un avenant les change (`stock::Objet::derniers_termes`).
 fn metier_de(o: &crate::stock::Objet) -> R<Option<droit::emplois::CodeEmploi>> {
-    let mois = o.dernier_mois()?.unwrap_or(o.premier_mois());
-    let v = o.vue(mois)?.unwrap_or_else(|| o.carte().clone());
+    let v = o.derniers_termes();
     Ok(match (v.metier, v.emploi.and_then(|e| e.code_emploi_ft)) {
         (Some(m), _) => Some(m),
         (None, Some(ft)) => droit::emplois::CodeEmploi::du_code_declare(&ft)?,
@@ -965,10 +965,11 @@ impl Changements {
             // Une ligne dont seuls les jours changent garde une quantite d'un par date (`LignePaie::quantite_qui_suit`).
             let ch = match ch {
                 Changement::Lignes(Some(lignes)) => {
-                    let avant = essai.en_carte().lignes.unwrap_or_default();
+                    // Une carte qui ne disait aucune ligne n'en a aucune a suivre.
+                    let avant = essai.en_carte().lignes;
                     let mut suivies = Vec::new();
                     for (i, l) in lignes.into_iter().enumerate() {
-                        suivies.push(match avant.get(i) {
+                        suivies.push(match avant.as_ref().and_then(|a| a.get(i)) {
                             Some(a) => {
                                 let unite = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &mois.dernier_jour())?.unite;
                                 l.quantite_qui_suit(a, unite)

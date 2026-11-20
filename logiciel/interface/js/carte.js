@@ -610,9 +610,11 @@ function numeroDuBloc(div) {
   return (div._paie && div._paie.numero_contrat) || div._carte.numero || undefined;
 }
 
-/** La fin du contrat d'une carte, quand l'aperçu dit qu'elle a un sens ici (`contrat.rupture`) ; aucune sinon. */
+/** La fin du contrat d'une carte, quand l'aperçu dit qu'elle a un sens ici (`contrat.rupture`) ; aucune sinon, ni quand
+ *  elle ne se lit pas (`illisible` : la carte le dit, `faute`). */
 function ruptureDuBloc(div) {
-  return (div._paie && div._paie.contrat && div._paie.contrat.rupture) || null;
+  const r = div._paie && div._paie.contrat && div._paie.contrat.rupture;
+  return r && !r.illisible ? r : null;
 }
 
 /** Ce qu'un engagement dit de lui-même en une ligne : son spectacle, ou la nature de son contrat. */
