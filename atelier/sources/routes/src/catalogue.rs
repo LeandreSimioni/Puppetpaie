@@ -375,12 +375,20 @@ pub enum Forme {
     Jours,
     /// Une liste de textes.
     Liste,
+    /// UNE QUANTITE D'UNE LIGNE DE PAIE, dans l'unite de sa rubrique : `{"cachets": 2}`, la cle que dit `quantite` de la
+    /// rubrique (route etat) ; la grandeur s'ecrit elle-meme (des cachets en entier).
+    Quantite,
+    /// DES LIGNES DE PAIE : chacune dit les cles de sa rubrique (`rubriques[].cles` de la route etat), chaque cle sa forme ;
+    /// l'ecran les montre en lignes, une colonne par cle.
+    Lignes,
     /// Une valeur composee (un objet, une liste d'objets) : le `sens` la decrit ; l'ecran ne la saisit pas d'une case.
     Objet,
     /// Une valeur d'une liste fermee : ses valeurs et leurs libelles ; l'ecran la fait choisir.
     Choix(&'static [Choix]),
-    /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees (les genres d'un avantage en nature, les
-    /// lieux d'une ligne de frais : `rubriques[].genres`, `rubriques[].lieux` de la route etat) ; l'ecran la fait choisir.
+    /// Une valeur d'une liste fermee que la route rend a cote, tiree des donnees, sous la cle de la case : les salaries,
+    /// les spectacles, les metiers et les etablissements d'une carte (`choix` de la route etat), le genre d'un avantage en
+    /// nature et le lieu d'une ligne de frais (`rubriques[].choix`), la rubrique d'une ligne (celles que la carte propose,
+    /// `propose`) ; l'ecran la fait choisir.
     ChoixRendu,
 }
 
@@ -419,6 +427,8 @@ impl Forme {
             Forme::Date => "date",
             Forme::Jours => "jours",
             Forme::Liste => "liste",
+            Forme::Quantite => "quantite",
+            Forme::Lignes => "lignes",
             Forme::Objet => "objet",
             Forme::Choix(_) => "choix",
             Forme::ChoixRendu => "choix_rendu",
@@ -429,13 +439,14 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Objet | Forme::ChoixRendu => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu => None,
         }
     }
 
     /// LA FORME D'UNE CASE DE LA CARTE, tiree du type de son champ (`engagement::saisie::Carte`) : un jour se choisit
-    /// dans le calendrier, un nombre se tape, un oui-non se coche ; une valeur composee (les lignes, les conges, le
-    /// preavis) se decrit ailleurs (les lignes : `rubriques[].cles` de la route etat). Chaque champ y est classe : un
+    /// dans le calendrier, un nombre se tape, un oui-non se coche, une fiche (salarie, spectacle, metier, etablissement)
+    /// se choisit dans ce que la route etat rend (`choix`) ; les lignes sont des lignes (`rubriques[].cles` de la route
+    /// etat) ; une autre valeur composee (les conges, le preavis) est un objet. Chaque champ y est classe : un
     /// champ neuf de la carte ne compile pas tant que sa forme n'est pas dite. C'est la seule declaration de la forme d'une
     /// case de la carte : les cases que les fiches nomment (`CASES_D_UN_MOIS_PAYE`, `CASES_DE_LA_FIN`) la prennent ici.
     pub const fn de_la_case(c: engagement::saisie::Champ) -> Forme {
@@ -455,12 +466,9 @@ impl Forme {
             | C::PreavisMois
             | C::JoursContrat => Forme::Nombre,
             C::Cadre | C::FauteGrave | C::EnDroitALaRetraite | C::PreavisNonEffectue | C::PrecariteDue | C::Importe => Forme::OuiNon,
-            C::Salarie
-            | C::Spectacle
-            | C::Nature
+            C::Salarie | C::Spectacle | C::Etablissement | C::Metier => Forme::ChoixRendu,
+            C::Nature
             | C::Numero
-            | C::Etablissement
-            | C::Metier
             | C::Lieu
             | C::MotifRecours
             | C::ModaliteTempsTravail
@@ -477,7 +485,8 @@ impl Forme {
             | C::MotifRupture
             | C::Transaction
             | C::PrecaritePourquoi => Forme::Texte,
-            C::Lignes | C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
+            C::Lignes => Forme::Lignes,
+            C::CongesPris | C::Primes | C::Preavis | C::Avant | C::Valide => Forme::Objet,
         }
     }
 
@@ -488,10 +497,11 @@ impl Forme {
         use engagement::ligne::Cle as C;
         match c {
             C::Dates | C::Planning => Forme::Jours,
-            C::Quantite | C::Taux | C::Heures | C::Base | C::TauxMajoration | C::Montant => Forme::Nombre,
+            C::Quantite => Forme::Quantite,
+            C::Taux | C::Heures | C::Base | C::TauxMajoration | C::Montant => Forme::Nombre,
             C::Cases => Forme::Liste,
-            C::Genre | C::Territoire => Forme::ChoixRendu,
-            C::Rubrique | C::Lieu => Forme::Texte,
+            C::Rubrique | C::Genre | C::Territoire => Forme::ChoixRendu,
+            C::Lieu => Forme::Texte,
         }
     }
 }

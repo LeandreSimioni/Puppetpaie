@@ -1235,11 +1235,28 @@ pub(crate) struct Choix {
     defaut: Option<bool>,
 }
 
+impl Choix {
+    /// Un code et son libelle, sans defaut.
+    fn de(code: impl std::fmt::Display, libelle: impl std::fmt::Display) -> Choix {
+        Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None }
+    }
+}
+
+/// CE QUE LES CASES D'UNE CARTE QUI SE CHOISISSENT DANS LES DONNEES OFFRENT (`Forme::ChoixRendu`), sous la cle de leur
+/// case : les salaries et les spectacles courants, les metiers du deroulant, les etablissements autres que le siege
+/// (aucun choisi : le siege).
+#[derive(Debug, Clone, serde::Serialize)]
+struct ChoixDesCases {
+    salarie: Vec<Choix>,
+    spectacle: Vec<Choix>,
+    metier: Vec<Choix>,
+    etablissement: Vec<Choix>,
+}
+
 /// UNE RUBRIQUE QUI PAIE, telle que la carte d'un engagement la propose : ce que le catalogue en dit, et ce que la page en
 /// tire sans rien decider (ses genres, ses lieux, ses formes, ce qu'elle promet sans que rien ne le tienne, ses mots).
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct RubriqueDeLaPage {
-    lieux: Vec<Choix>,
     lieu_aide: Option<&'static str>,
     code: droit::catalogue::CodeDeRubrique,
     libelle: String,
@@ -1262,7 +1279,9 @@ pub(crate) struct RubriqueDeLaPage {
     plafond_mensuel: Option<socle::grandeurs::Cachets>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
     origine: droit::catalogue::OrigineDeRubrique,
-    genres: Vec<Choix>,
+    /// CE QUE SES CLES QUI SE CHOISISSENT OFFRENT (`Forme::ChoixRendu`), sous le nom de la cle : le genre d'un avantage en
+    /// nature, le lieu d'une ligne de nuitee ou de repas ; une cle qu'elle ne dit pas n'y est pas.
+    choix: BTreeMap<&'static str, Vec<Choix>>,
     /// CE QUE LA RUBRIQUE PROMET SANS QUE RIEN NE LE TIENNE.
     non_appliques: Vec<&'static str>,
     source: String,
@@ -1321,11 +1340,19 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     } else {
         vec![]
     };
+    let mut offerts = BTreeMap::new();
+    if !genres.is_empty() {
+        offerts.insert(engagement::ligne::Cle::Genre.nom(), genres);
+    }
+    let lieu_aide = (!lieux.is_empty()).then_some(LIEU_AIDE);
+    if !lieux.is_empty() {
+        offerts.insert(engagement::ligne::Cle::Territoire.nom(), lieux);
+    }
     Ok(RubriqueDeLaPage {
         quantite: engagement::ligne::QuantiteDeLigne::cle(r.unite).filter(|_| saisie.contains(&engagement::ligne::Cle::Quantite)),
         cles,
-        lieu_aide: (!lieux.is_empty()).then_some(LIEU_AIDE),
-        lieux,
+        lieu_aide,
+        choix: offerts,
         code: r.code.clone(),
         libelle: r.libelle.clone(),
         unite: r.unite,
@@ -1345,7 +1372,6 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         plafond_mensuel: r.plafond_mensuel,
         plafond_annuel_heures: r.plafond_annuel_heures,
         origine: r.origine,
-        genres,
         non_appliques,
         source: r.source.clone(),
         dit: r.dit.clone(),
@@ -1534,6 +1560,7 @@ pub(crate) struct EtatDeLaPage {
     historique: Vec<MoisDuBilan>,
     salaries: Vec<SalarieDeLaListe>,
     spectacles: Vec<SpectacleDeLaListe>,
+    choix: ChoixDesCases,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<emplois::FamilleDeMetier>,
@@ -1565,7 +1592,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // reste dans `configuration`, ou on peut la relire et la reactiver.
     let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
     cles.sort();
-    let salaries = cles
+    let salaries: Vec<SalarieDeLaListe> = cles
         .into_iter()
         .map(|k| SalarieDeLaListe { cle: k.clone(), libelle: ctx.nomme(k) })
         .collect();
@@ -1578,6 +1605,20 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
             Ok(SpectacleDeLaListe { cle: k.clone(), titre, numero_objet: v.numero_objet.clone() })
         })
         .collect::<R<Vec<_>>>()?;
+    let emplois = super::metiers::metiers(ctx)?;
+    let choix = ChoixDesCases {
+        salarie: salaries.iter().map(|s: &SalarieDeLaListe| Choix::de(&s.cle, &s.libelle)).collect(),
+        spectacle: spectacles.iter().map(|s: &SpectacleDeLaListe| Choix::de(&s.cle, &s.titre)).collect(),
+        metier: emplois.iter().map(|m| Choix::de(&m.code, &m.libelle)).collect(),
+        etablissement: choix_d_etablissement(ctx)?
+            .into_iter()
+            .flatten()
+            .filter_map(|e| {
+                let libelle = [Some(e.nom.clone()), e.periode_dit.clone()].into_iter().flatten().collect::<Vec<_>>().join(" — ");
+                e.nic.map(|n| Choix::de(n, libelle))
+            })
+            .collect(),
+    };
 
     // Le catalogue qui paie, deja dans l'ordre ou le proposer.
     let cat = catalogue::catalogue(&ctx.racine, &ctx.lue_au)?;
@@ -1623,9 +1664,10 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         historique,
         salaries,
         spectacles,
+        choix,
         rubriques,
         // Le catalogue des metiers, deja dans l'ordre des familles.
-        emplois: super::metiers::metiers(ctx)?,
+        emplois,
         familles_emplois: emplois::familles()?,
         // Les metiers des autres conventions : on les AJOUTE a son deroulant,
         // ils n'y sont pas d'office.

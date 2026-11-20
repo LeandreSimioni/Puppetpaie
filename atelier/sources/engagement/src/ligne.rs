@@ -318,42 +318,6 @@ pub enum LignePaie {
     Maintien(Maintien),
 }
 
-/// CE QUE LES TROIS CASES D'UNE LIGNE SAISIE MONTRENT A L'ECRAN, ecrit par le moteur : sa quantite (la base d'une ligne
-/// en pourcentage), son taux (le montant d'une ligne au montant, le pourcentage d'une ligne en pourcentage), ses heures
-/// par unite. Un nombre sans zero inutile, la virgule decimale (`socle::texte::virgule` : « 2 » cachets, « 1,5 ») ; un
-/// montant comme tout montant (`socle::texte::montant_dans_sa_case` : « 140,00 »). La saisie relit chacune telle quelle
-/// (`socle::grandeurs::lu::tapee`), sans perte. Une ligne que le moteur compose n'a pas de case : rien.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CasesMontrees {
-    pub quantite: Option<String>,
-    pub taux: Option<String>,
-    pub heures: Option<String>,
-}
-
-impl LignePaie {
-    /// Ce que ses cases montrent (`CasesMontrees`).
-    pub fn cases_montrees(&self) -> CasesMontrees {
-        use socle::texte::{montant_dans_sa_case as montant, virgule};
-        let (quantite, taux, heures) = match self {
-            LignePaie::Unites(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
-            LignePaie::UnitesEtHeures(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), l.heures.map(virgule)),
-            LignePaie::Frais(l) => (l.quantite.map(QuantiteDeLigne::dit), l.taux.map(montant), None),
-            LignePaie::Pourcentage(l) => (l.base.map(montant), l.taux_majoration.map(virgule), None),
-            LignePaie::Montant(AuMontant { montant: m, .. }) | LignePaie::AvantageEnNature(AvantageEnNature { montant: m, .. }) => (None, m.map(montant), None),
-            LignePaie::Composee(_) | LignePaie::RetenueArret(_) | LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => (None, None, None),
-        };
-        CasesMontrees { quantite, taux, heures }
-    }
-}
-
-impl CasesMontrees {
-    /// Une ligne qui ne dit encore que son taux (la ligne de cachet neuve, celle d'un contrat repris) : ce que ses cases
-    /// montrent, ecrit comme celui d'une ligne saisie.
-    pub fn d_un_taux(taux: Option<MontantUnitaire>) -> CasesMontrees {
-        CasesMontrees { quantite: None, taux: taux.map(socle::texte::montant_dans_sa_case), heures: None }
-    }
-}
-
 /// CE QUE LE MOTEUR POSE SUR UNE LIGNE DE FRAIS CALCULEE, pour l'ecran (`frais_au_dela`) : son rang parmi les lignes de
 /// la carte, les cases qui ont lieu d'etre et leur aide, et le taux saisi avant que sa part au-dela de la limite s'en
 /// detache.
