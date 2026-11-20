@@ -308,27 +308,75 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case input[type="checkbox"] { width: auto; align-self: flex-start; }
 .case-lignes { grid-column: 1 / -1; }
 .case-objet { font-size: 12px; overflow-wrap: anywhere; }
-.e-plus { margin-top: 8px; font-size: 13px; }
-.e-plus > summary { cursor: pointer; color: var(--discret); }
-.e-plus > .e-cases { margin-top: 8px; }
-.e-paie { margin-top: 8px; font-size: 12px; }
+.case-dit { font-size: 12px; color: var(--discret); }
+/* « Avancé », replié : ce que la route ne met pas à la base de la carte. */
+.e-avance { margin-top: 10px; font-size: 13px; }
+.e-avance > summary { cursor: pointer; color: var(--discret); }
+.e-avance > .e-cases { margin-top: 8px; }
+/* UNE BRANCHE : ce qu'un fait a ouvert (le contrat écrit, la fin du contrat, le montant qu'on vise), sur un fond à elle. */
+.branche { background: var(--fond); border-left: 3px solid var(--action); border-radius: 3px; padding: 10px 12px; margin-top: 10px; }
+.branche h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--discret); }
+.branche > .discret { margin: 0 0 8px; font-size: 12px; }
+.e-viser-branche { margin-top: 6px; font-size: 13px; }
+.e-viser-branche > summary { cursor: pointer; color: var(--discret); text-decoration: underline; }
+.e-viser-branche .branche p { margin: 8px 0 0; }
+.e-paie { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bord); font-size: 12px; }
 .e-paie .e-resolu { margin: 0; color: var(--discret); }
-.e-paie .e-net { margin: 4px 0 0; font-size: 13px; }
-.e-paie .e-cout { margin-left: 12px; color: var(--discret); }
+.e-paie .e-net { margin: 4px 0 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+.e-paie .e-cout { color: var(--discret); }
 .e-paie .encart { margin-top: 6px; }
 .a-reprendre { border: 1px dashed var(--bord); border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; }
-/* UNE LIGNE DE PAIE PAR RANGÉE : la rubrique, puis chaque clé que sa rubrique dit, puis la croix qui la retire. Les
-   rangées ne se tassent pas : elles passent à la ligne. */
-.lignes-paie { display: grid; gap: 6px; margin: 2px 0 4px; }
-.ligne-paie { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
-.ligne-paie .colonne { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--discret); }
-.ligne-paie .colonne input[inputmode] { width: 6rem; }
-.ligne-paie .retirer-ligne { color: var(--erreur); font-size: 18px; align-self: center; }
+/* UNE LIGNE DE PAIE PAR RANGÉE, AUX COLONNES FIXES (js/avance.js, `lignesDePaie`) : les colonnes titrées une fois, la
+   croix qui retire la ligne au bout de sa ligne ; sous elle, ses cases à cocher et ce que sa rubrique dit. Les largeurs
+   viennent de la forme de chaque colonne (`--colonnes`). */
+.lignes-paie { display: grid; gap: 6px; margin: 4px 0; }
+.ligne-paie { display: grid; grid-template-columns: var(--colonnes); gap: 6px; align-items: center; }
+.ligne-paie.tete { font-size: 11px; color: var(--discret); }
+.ligne-paie .colonne { display: flex; align-items: center; gap: 4px; min-width: 0; font-size: 12px; color: var(--discret); }
+.ligne-paie .colonne > [data-case] { flex: 1; min-width: 0; color: var(--texte); }
+.ligne-paie .colonne input[type="text"], .ligne-paie .colonne select { width: 100%; min-width: 0; }
+.ligne-paie .colonne-libelle { display: none; }
+.ligne-paie .mot { flex: none; font-size: 12px; }
+.ligne-paie .retirer-ligne { border: 0; color: var(--erreur); font-size: 18px; justify-self: center; }
+.ligne-sous { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; padding: 0 0 4px 8px; }
+.ligne-sous .coche { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; color: var(--texte); }
+.ligne-sous input[type="checkbox"] { width: auto; }
+/* Au téléphone, la ligne se replie sans rien couper : chaque case porte son libellé, la croix reste au bout. */
+@media (max-width: 620px) {
+  .ligne-paie { display: flex; flex-wrap: wrap; align-items: end; border-bottom: 1px solid var(--bord); padding-bottom: 6px; }
+  .ligne-paie.tete { display: none; }
+  .ligne-paie .colonne { flex: 1 1 8rem; flex-direction: column; align-items: stretch; }
+  .ligne-paie .colonne.vide { display: none; }
+  .ligne-paie .colonne-libelle { display: block; font-size: 11px; }
+  .ligne-paie .retirer-ligne { margin-left: auto; }
+  .ligne-sous { flex-basis: 100%; }
+}
+.jours-case { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .jours-coches {
   font-variant-numeric: tabular-nums; text-align: left; padding: .3rem .5rem; border: 1px solid var(--bord);
   background: var(--carte); color: var(--texte); border-radius: 3px; cursor: pointer; font-size: 13px;
+  max-width: 100%; white-space: normal;
 }
 .jours-coches:hover { border-color: var(--action); }
+.lieu-du-jour { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--discret); }
+.lieu-du-jour input { width: 9rem; }
+/* Sous les lignes : ce que l'aperçu a compris du contrat, rendu, jamais saisi. */
+.e-montre { margin: 4px 0 0; font-size: 12px; }
+.e-montre:empty { display: none; }
+/* UN CONTRAT SUR PLUSIEURS MOIS : un chevron au bord de la carte, du côté où il déborde ; un clic mène au mois voisin. */
+.engagement { position: relative; }
+.chevron-pluri {
+  position: absolute; top: 50%; transform: translateY(-50%); width: 18px; height: 36px; padding: 0;
+  border: 1px solid var(--bord); border-radius: 3px; background: var(--carte); color: var(--action);
+  font-size: 16px; cursor: pointer;
+}
+.chevron-pluri.avant { left: -10px; }
+.chevron-pluri.apres { right: -10px; }
+/* Les cases du contrat d'autres écrans (Configuration, Exports). */
+.e-contrat-champs { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin: 4px 0; }
+.e-contrat-champs label { font-size: 12px; color: var(--discret); }
+.e-contrat-champs input { display: block; padding: .3rem .4rem; }
+.e-contrat-champs label[hidden] { display: none; }
 .supprimer { color: var(--erreur); border: none; background: none; font-size: 18px; }
 
 .actions { display: flex; gap: 10px; margin-top: 18px; }
@@ -745,7 +793,7 @@ input.x-court { width: auto; }
    entre leurs flèches ; dessous, les jours, les douze mois ou des années, dans la même hauteur. Il s'ouvre sous sa case,
    par-dessus la page, sans en sortir. */
 .cal {
-  position: absolute; z-index: 30; width: 272px; box-sizing: border-box;
+  position: absolute; z-index: 30; width: 272px; max-width: calc(100vw - 16px); box-sizing: border-box;
   background: var(--carte); border: 1px solid var(--bord); border-radius: 4px;
   box-shadow: 0 6px 20px rgba(0,0,0,.12); padding: 8px 10px 10px; font-size: 13px;
   display: flex; flex-direction: column; gap: 6px; user-select: none; -webkit-user-select: none;
@@ -765,6 +813,13 @@ input.x-court { width: auto; }
 .cal .c-jour { font-variant-numeric: tabular-nums; }
 .cal button:hover { border-color: var(--action); }
 .cal button.pris { background: var(--action); color: var(--blanc); font-weight: bold; }
+/* Un mois qui se lit (un mois passé) : ses jours ne se cochent pas ; ceux d'un contrat déclaré se grisent, joués en plein. */
+.cal .c-jour.lu { display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--discret); border-radius: 3px; }
+.cal .c-jour.lu.plage { background: var(--fond); }
+.cal .c-jour.lu.joue { background: var(--bord); color: var(--texte); font-weight: bold; }
+.cal .c-dessous { font-size: 12px; max-height: 120px; overflow-y: auto; }
+.cal .c-dessous:empty { display: none; }
+.cal .c-dessous p { margin: 2px 0; }
 /* UN MOIS TENU AVANT PUPPETPAIE : une carte par paie, comme une
    paie validée (la ligne d'agenda `.e-resume`), et ses cases sous « Voir les
    cases ». Une carte où l'import n'a pas tout lu porte un trait orange et dit
