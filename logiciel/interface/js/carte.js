@@ -118,8 +118,15 @@ function caseDeLaCarte(div, d, choix) {
 /* ------------------------------------------------ ce que la convention fixe au métier */
 
 /** Ce que la route `convention-du-metier` a rendu, par mois et par métier, sous le code de chaque rubrique : elle ne
- *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. */
+ *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. Il s'oublie quand un mois
+ *  se lit (pas quand il se repeint après une écriture) et au retour sur Paie (`oublierLesBulles`) : la convention ou
+ *  l'annexe ont pu changer. */
 const CONVENTION_DU_METIER = new Map();
+
+/** Oublie ce que la route a rendu : la carte qui se redessine la redemande. */
+function oublierLesBulles() {
+  CONVENTION_DU_METIER.clear();
+}
 
 /** Le métier d'une carte : celui qu'elle écrit, sinon celui que sa case montre (`prerempli`). */
 function metierDeLaCarte(div) {
@@ -131,8 +138,9 @@ function bullesOuvertes(div) {
   return div._bulles || (div._bulles = new Set());
 }
 
-/** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route). Avant sa
- *  réponse, rien : elle redessine la carte quand elle arrive avec quelque chose à dire (pas sous les doigts). */
+/** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route), chacune
+ *  avec la tête de sa bulle (la `phrase` de la route : le nom que la convention donne au métier). Avant sa réponse, rien :
+ *  elle redessine la carte quand elle arrive avec quelque chose à dire (pas sous les doigts). */
 function bullesDeLaCarte(div) {
   const metier = metierDeLaCarte(div);
   if (!metier) return {};
@@ -141,7 +149,7 @@ function bullesDeLaCarte(div) {
   if (CONVENTION_DU_METIER.has(cle)) return CONVENTION_DU_METIER.get(cle) || {};
   CONVENTION_DU_METIER.set(cle, null);
   api("convention-du-metier", { mois, metier }).then((r) => {
-    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique, x])));
+    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique, { ...x, tete: r.phrase }])));
     if (r.rubriques.length && div.isConnected && !div.contains(document.activeElement) && !CALENDRIER_OUVERT) dessinerCarte(div);
   }, (e) => {
     CONVENTION_DU_METIER.set(cle, {});
@@ -226,7 +234,13 @@ function dessinerLaCarte(div) {
   div.querySelectorAll(".retirer-ligne").forEach((b) => {
     b.onclick = () => {
       const bloc = b.closest(".case-lignes");
-      const lignes = lireLesLignes(bloc).filter((_, i) => i !== +b.closest(".ligne-paie").dataset.ligne);
+      const retiree = +b.closest(".ligne-paie").dataset.ligne;
+      const lignes = lireLesLignes(bloc).filter((_, i) => i !== retiree);
+      // Une bulle ouverte reste sur sa ligne : celles d'après remontent d'un rang.
+      const ouvertes = bullesOuvertes(div);
+      const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
+      ouvertes.clear();
+      restees.forEach((i) => ouvertes.add(i));
       changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
     };
   });

@@ -288,7 +288,7 @@ function lignesDePaie(lignes, choixDe, o) {
     const bulle = bulleDe(l);
     const ouverte = !!(bulle && o.ouvertes && o.ouvertes.has(i));
     const porte = !avecBulles ? "" : bulle
-      ? `<button type="button" class="lien bulle-i" data-bulle="${i}" aria-expanded="${ouverte}" title="${echapper(bulle.nom)}">i</button>`
+      ? `<button type="button" class="lien bulle-i" data-bulle="${i}" aria-expanded="${ouverte}" title="${echapper(bulle.tete)}" aria-label="ce que la convention fixe : ${echapper(bulle.tete)}">i</button>`
       : "<span></span>";
     return `<div class="ligne-paie" data-ligne="${i}" data-valeur="${echapper(JSON.stringify(l))}">
       ${colonnes.map(cellule).join("")}
@@ -300,11 +300,11 @@ function lignesDePaie(lignes, choixDe, o) {
   }).join("")}</div>`;
 }
 
-/** LA BULLE D'UNE LIGNE : ce que la route dit de sa rubrique (`nom`, `situation`, `montants` : chacun sa `condition` et
- *  son `montant`, `texte`), telle qu'elle le rend. Elle n'est pas une case : elle n'écrit rien. Fermée, elle est cachée. */
+/** LA BULLE D'UNE LIGNE : ce que la route dit de sa rubrique (`tete`, `montants` : chacun sa `condition` et son
+ *  `montant`, `texte`), telle qu'elle le rend. Elle n'est pas une case : elle n'écrit rien. Fermée, elle est cachée. */
 function bulleDeLaLigne(b, ouverte) {
   return `<div class="ligne-bulle"${ouverte ? "" : " hidden"}>
-    <div><b>${echapper(b.nom)}</b>${b.situation ? ` <span class="discret">${echapper(b.situation)}</span>` : ""}</div>
+    <div><b>${echapper(b.tete)}</b></div>
     <table>${b.montants.map((m) => `<tr><td>${echapper(m.condition)}</td><td class="montant">${echapper(euros(m.montant))}</td></tr>`).join("")}</table>
     <span class="bulle-texte">${echapper(b.texte)}</span>
   </div>`;

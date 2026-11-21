@@ -80,6 +80,7 @@ async function chargerMois(mois, repeint = false) {
   IMPORTES = r.importes;
   NOUVELLE_CARTE = r.nouvelle_carte;
   MOIS_AFFICHE = mois;
+  if (!repeint) oublierLesBulles();
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
   const defilement = window.scrollY;
