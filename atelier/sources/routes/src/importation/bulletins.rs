@@ -899,7 +899,6 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let sp = SpectacleDesPieces {
             titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
-            alias: Vec::new(),
             actif: dernier >= seuil,
             note: format!("bulletins de {} a {} ({} bulletin(s))", premier, dernier, rangs.len()),
             code_analytique: analytique.clone(),
@@ -935,7 +934,6 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let sp = SpectacleDesPieces {
             titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
-            alias: Vec::new(),
             actif: dernier >= seuil,
             note: format!("AEM de {} a {} ({} contrat(s))", premier, dernier, mois.len()),
             code_analytique: None,

@@ -98,7 +98,10 @@ que par la structure :
   (`droit::fiche::CaseDeFiche`). Ce que le moteur garde d'une fiche pour lui seul est une mémoire de sa fiche datée
   (la section `memoires` de `fiche!`, un champ facultatif de la seule fiche datée) : ni une case ni une note, elle
   n'est ni dans la fiche à un jour (`au()`), ni dans la plate, ni dans `changer` ni dans `cases()` ; rien de ce qui lit
-  une fiche ne la voit, et une saisie ne la pose pas. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  une fiche ne la voit, et une saisie ne la pose pas. Une case retirée qu'une installation posée a pu écrire dans son
+  fichier est une clé non lue de la fiche datée (la section `non_lues` de `fiche!`, une `socle::forme::NonLue`) : elle
+  se lit et ne dit rien, pour que la compagnie s'ouvre après sa mise à jour ; elle ne se réécrit pas, et ni la plate ni
+  une charge ne l'ont. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,

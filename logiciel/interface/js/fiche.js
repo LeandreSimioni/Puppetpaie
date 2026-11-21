@@ -258,20 +258,6 @@ function champDeFiche(c, fiche, nom) {
         ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
       </div>`;
     }
-    // LES AUTRES NOMS D'UN SPECTACLE : une liste de mots, qui
-    // s'affichait en JSON, crochets et guillemets compris. Une ligne, les
-    // noms separes par des virgules ; `lireFormulaire` refait la liste.
-    if (c.cle === "alias" && nom === "spectacle"
-        && (v == null || (Array.isArray(v) && v.every((x) => typeof x === "string")))) {
-      return `<div class="champ pleine">
-        <label>${echapper(c.libelle)} ${aideHtml(c.cle, c.aide)}
-          <input data-cle="${c.cle}" data-liste-textes="1" value="${v ? echapper(v.join(", ")) : ""}"
-                 placeholder="zerbinette, aaah">
-        </label>
-        ${aideCorps(c.cle, c.aide)}
-        ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-      </div>`;
-    }
     // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit ; une fiche qui ne dit rien, le
     // calcul la refuse en nommant la case. Les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
     if (c.cle === "jours_travailles" && nom === "salarie") {
@@ -1087,8 +1073,6 @@ function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIG
     if (c.dataset.jours) {
       d[c.dataset.cle] = [...c.querySelectorAll("[data-jour]")].filter((x) => x.checked)
         .map((x) => x.dataset.jour);
-    } else if (c.dataset.listeTextes) {
-      d[c.dataset.cle] = c.value.split(",").map((x) => x.trim()).filter(Boolean);
     } else if (c.dataset.structure) {
       try { d[c.dataset.cle] = JSON.parse(c.value); }
       catch (e) { c.classList.add("faute"); }

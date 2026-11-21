@@ -1972,7 +1972,8 @@ macro_rules! fiche {
     ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident, cles $cles:ident { $( $(#[$fm:meta])* $var:ident ( $t:ty ) = $ecrit:literal => $champ:ident ),* $(,)? }
      pieces $pcles:ident { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $ouvre:ty { $( $(#[$pfm:meta])* $pvar:ident ( $pt:ty ) = $pecrit:literal => $pchamp:ident ),* $(,)? } )* }
      $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?
-     $( memoires { $( $(#[$mm:meta])* $memoire:ident : $mt:ty = $mecrit:literal ),* $(,)? } )?) => {
+     $( memoires { $( $(#[$mm:meta])* $memoire:ident : $mt:ty = $mecrit:literal ),* $(,)? } )?
+     $( non_lues { $( $(#[$um:meta])* $non_lue:ident = $uecrit:literal ),* $(,)? } )?) => {
         $( cases! { @ecrites $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt = $pecrit ),* } } )*
 
         cles! { $cles { $( $var = $ecrit, )* } }
@@ -2221,6 +2222,9 @@ macro_rules! fiche {
         /// Ses MEMOIRES (`memoires`) sont ce que le moteur garde de la fiche pour lui seul : ni des cases ni des notes, elles
         /// ne sont pas de la fiche a un jour (`au`), et rien de ce qui lit une fiche (le calcul, la paie gardee, les
         /// documents, les declarations, l'ecran) ne les voit.
+        /// Ses CLES NON LUES (`non_lues`) sont celles qu'une installation posee a pu ecrire dans le fichier et que la forme
+        /// n'a plus : elles se lisent et ne disent rien (`socle::forme::NonLue`), pour que la compagnie s'ouvre apres sa
+        /// mise a jour ; elles ne se reecrivent pas, et aucune charge ne les accepte (la fiche a un jour ne les a pas).
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $datee {
@@ -2228,6 +2232,7 @@ macro_rules! fiche {
             $( $( #[serde(rename = $pecrit, skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
             $( $( $(#[$mm])* #[serde(rename = $mecrit, skip_serializing_if = "Option::is_none")] pub $memoire: Option<$mt>, )* )?
+            $( $( $(#[$um])* #[serde(rename = $uecrit, default, deserialize_with = "socle::forme::non_lue", skip_serializing)] $non_lue: socle::forme::NonLue, )* )?
         }
 
         impl $datee {
@@ -3288,7 +3293,6 @@ fiche! {
         EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,
         FormatCinema(FormatCinema) = "format_cinema" => format_cinema,
         DerogationAnnexeIii3097(bool) = "derogation_annexe_iii_3097" => derogation_annexe_iii_3097,
-        Alias(Vec<String>) = "alias" => alias,
         Actif(bool) = "actif" => actif,
     }
     pieces CasePieceSpectacle {}
@@ -3297,6 +3301,11 @@ fiche! {
         note,
         titre_propose,
         titre_lu_dans,
+    }
+    memoires {}
+    non_lues {
+        /// LES AUTRES NOMS D'UN SPECTACLE, une case retiree : l'import d'une installation posee l'a ecrite, vide.
+        alias = "alias",
     }
 }
 

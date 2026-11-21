@@ -393,7 +393,6 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, periode: Option<socle::date::Periode
 pub(crate) struct SpectacleDesPieces {
     pub(crate) titre: &'static str,
     pub(crate) numero_objet: NumeroObjetSpectacle,
-    pub(crate) alias: Vec<String>,
     pub(crate) actif: bool,
     pub(crate) note: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -589,7 +588,6 @@ pub(crate) fn apercu_lu(
         let sp = SpectacleDesPieces {
             titre: import::proposee::A_COMPLETER,
             numero_objet: o.numero.clone(),
-            alias: Vec::new(),
             actif: o.dernier >= seuil,
             note: format!("{} de {} a {} ({} contrat(s))", source, o.premier, o.dernier, o.contrats),
             code_analytique: None,

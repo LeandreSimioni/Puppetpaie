@@ -2425,7 +2425,7 @@
    "exige_par": ["bulletin"],
    "libelle": "Numéro d'objet",
    "forme": "texte",
-   "aide": "France Travail en délivre un NOUVEAU chaque année : 216Z... = 2021, 266Z... = 2026. Celui d'une nouvelle année se pose par « Numéro 2027… » sur la ligne du spectacle, pas ici : ici, on corrige une faute de frappe.",
+   "aide": "Le numéro que France Travail a délivré pour ce spectacle. Il est reporté sur les bulletins, et sur les contrats.",
    "longueur": 12,
    "exemple": "",
    "choix": [],
@@ -2544,22 +2544,6 @@
     ]
    },
    "ecran": true
-  },
-  {
-   "cle": "alias",
-   "libelle": "Autres noms",
-   "forme": "structure",
-   "aide": "Ce qu'on peut écrire dans le chat pour désigner ce spectacle, séparé par des virgules.",
-   "longueur": null,
-   "exemple": "",
-   "choix": [],
-   "declare": false,
-   "derive_de": null,
-   "rubrique": null,
-   "si": null,
-   "si_etablissements": false,
-   "si_entreprise": null,
-   "ecran": false
   },
   {
    "cle": "actif",
