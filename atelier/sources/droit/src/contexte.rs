@@ -1052,7 +1052,7 @@ impl From<SalarieDesigne> for String {
 }
 
 /// LA CLE D'UN SPECTACLE : celle de sa fiche dans `config/spectacles.json`, interne au logiciel. Elle se retrouve d'un nom
-/// (titre, alias, numero d'objet) par `Contexte::spectacle`, ou se lit d'un fichier, d'une charge (`lire`, ou `serde` :
+/// (titre, numero d'objet) par `Contexte::spectacle`, ou se lit d'un fichier, d'une charge (`lire`, ou `serde` :
 /// la meme chaine) ; un type a part, pour qu'elle ne se confonde pas avec un autre texte. Jamais vide.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]
@@ -1921,7 +1921,7 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
         Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")))
     }
 
-    /// Par cle, titre, alias ou numero d'objet, puis par inclusion dans un sens ou l'autre. Rend la fiche et sa cle, ou le
+    /// Par cle, titre ou numero d'objet, puis par inclusion dans un sens ou l'autre. Rend la fiche et sa cle, ou le
     /// refus : un nom qui designe plusieurs spectacles (archives compris) se refuse en les nommant.
     /// Un nom vide (ou blanc) ne designe AUCUN spectacle : la recherche par inclusion le trouverait
     /// dans tous (« » est dans tout titre) -- c'est ainsi qu'un permanent repris se rattachait a un
@@ -1953,11 +1953,7 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
         if let Some((cle, _)) = self.spectacles.get_key_value(net) {
             return Ok(trouve(cle));
         }
-        let noms_de = |cle: &str, sp: &ChampsSpectacle| -> R<Vec<String>> {
-            let mut noms = vec![cle.to_string(), sp.titre.ecrite("titre")?.to_string()];
-            noms.extend(sp.alias.dite().into_iter().flatten().cloned());
-            Ok(noms)
-        };
+        let noms_de = |cle: &str, sp: &ChampsSpectacle| -> R<[String; 2]> { Ok([cle.to_string(), sp.titre.ecrite("titre")?.to_string()]) };
         // Un nom qui n'a pas la forme d'un numero d'objet ne designe aucun numero.
         let objet = match crate::fiche::NumeroObjetSpectacle::lire(net) {
             Ok(n) => Some(n),

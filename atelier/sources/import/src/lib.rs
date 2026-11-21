@@ -12,6 +12,7 @@ pub mod attestes;
 pub mod bulletin_lu;
 pub mod certificat_lu;
 pub mod caviardage;
+pub mod derniere_piece;
 pub mod dsn_aem;
 pub mod ecarts;
 pub mod guide;

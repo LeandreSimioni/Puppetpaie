@@ -734,6 +734,12 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
             l.effectifs = repris.iter().filter(|e| l.annees_d_effectif.contains(&e.annee)).cloned().collect();
             if l.qui.is_none() && l.champ == premiere_embauche {
                 l.propose = embauche.as_ref().map(|e| ValeurProposee::Jour(e.jour));
+                // Sans date de premiere embauche et sans aucune paie reprise de ces annees, la date suffit : l'effectif
+                // ne se demande que pour les annees depuis l'embauche, que la ligne de l'effectif dira une fois la date
+                // ecrite.
+                if !l.effectifs.iter().any(|e| e.paies_reprises) {
+                    l.effectifs.clear();
+                }
             }
         }
     }

@@ -21,7 +21,7 @@ use serde::de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
 use droit::fiche::{
-    dit, CaseDeFiche, CaseEntreprise, CasePieceEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
+    dit, CaseDeFiche, CaseEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
     Lue as _, MotEcrit, NomDeCase, NomDeFiche, Piece,
 };
 use droit::natures::RubriqueDeLaNorme;
@@ -49,8 +49,30 @@ pub enum Forme {
     Pays,
     Booleen,
     CodeAtmp,
+    /// Du HTML colle depuis une messagerie (la signature des courriels) : le moteur le nettoie a l'ecriture et a l'ecran
+    /// (`envois::signature_courriel::nettoyer`), et n'en verifie que le poids (`trop_lourde`).
+    Html,
     Structure,
     Histoire,
+}
+
+/// LA LARGEUR D'UNE CASE A L'ECRAN (`largeur` de `champs-base.json`) : toute la ligne, ou la moitie (deux cases cote a
+/// cote, le code postal et la commune « comme sur une enveloppe »).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Largeur {
+    Pleine,
+    Demie,
+}
+
+/// UNE CASE QUI NE S'OUVRE QUE SI UNE AUTRE EST TROP LONGUE (`si_plus_long` de `champs-base.json`) : le complement
+/// d'adresse, quand l'adresse tapee (`case`) depasse ce que la declaration admet (`longueur`, en caracteres, que la note
+/// de la case cite dans la norme), ou quand il est deja dit.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlusLong {
+    pub case: CaseDeFiche,
+    pub longueur: usize,
 }
 
 impl Forme {
@@ -68,6 +90,7 @@ impl Forme {
             Forme::Pays => "un pays de la liste (code ISO a deux lettres)",
             Forme::Booleen => "oui ou non",
             Forme::CodeAtmp => "un code risque AT/MP de l'arrete de l'annee",
+            Forme::Html => "du HTML colle, nettoye par le moteur, 150 Ko au plus",
             Forme::Structure => "sous-objet ou liste : edition libre",
             Forme::Histoire => "ce que ce champ valait avant, et jusqu'a quand",
         }
@@ -242,20 +265,42 @@ fn comme_la_page(v: MotEcrit) -> VueDeLaPage {
 }
 
 impl Condition {
+    /// Les cases qu'elle nomme.
+    fn noms(&self) -> Vec<NomDeCase> {
+        match self {
+            Condition::Toutes(l) => l.iter().map(|(k, _)| *k).collect(),
+            Condition::UneDe(l) => l.iter().flat_map(Condition::noms).collect(),
+        }
+    }
+
     /// LA CONDITION REMPLIE PAR LA FICHE `donnees` : la meme regle que la page applique pour replier un champ ; un manque de
     /// « Pour demarrer » et un refus de la DSN se jugent sur ce que l'ecran montre.
     pub fn remplie(&self, donnees: &impl FicheSaisie) -> bool {
+        self.remplie_par(&|k| donnees.ecrite(CaseDeFiche::Case(k)))
+    }
+
+    /// LA CONDITION REMPLIE PAR CE QU'ECRIT CHAQUE CASE QU'ELLE NOMME (`ecrite`) : celle d'une fiche (`remplie`), ou celle
+    /// d'une case d'une structure, que les autres cases de sa structure ouvrent (le numero du jour du versement).
+    pub fn remplie_par(&self, ecrite: &dyn Fn(NomDeCase) -> MotEcrit) -> bool {
         match self {
-            Condition::UneDe(l) => l.iter().any(|c| c.remplie(donnees)),
+            Condition::UneDe(l) => l.iter().any(|c| c.remplie_par(ecrite)),
             Condition::Toutes(l) => l.iter().all(|(k, vals)| {
                 let admet = |t: &str| vals.iter().any(|x| x == t);
-                match comme_la_page(donnees.ecrite(CaseDeFiche::Case(*k))) {
+                match comme_la_page(ecrite(*k)) {
                     VueDeLaPage::Vide => admet(""),
                     VueDeLaPage::Mot(v) => admet(&v) || (admet("*") && !v.is_empty() && v != "false"),
                     VueDeLaPage::Structure => admet("*"),
                 }
             }),
         }
+    }
+}
+
+/// La longueur, en caracteres, d'un texte ecrit tel qu'on l'a tape (sans les blancs autour) ; aucun texte : zero.
+fn longueur_ecrite(m: &MotEcrit) -> usize {
+    match m {
+        MotEcrit::Mot(t) => t.trim().chars().count(),
+        MotEcrit::Vide | MotEcrit::Nombre(_) | MotEcrit::OuiNon(_) | MotEcrit::Structure | MotEcrit::StructureVide => 0,
     }
 }
 
@@ -285,6 +330,13 @@ pub enum Avance {
 #[serde(deny_unknown_fields)]
 pub struct Champ {
     pub cle: CaseDeFiche,
+    /// LE BLOC TITRE OU LA CASE SE RANGE A L'ECRAN (`bloc`) : un des blocs que la table declare pour sa fiche (`blocs`),
+    /// dans leur ordre ; `""`, un bloc sans titre.
+    pub bloc: String,
+    /// Sa largeur a l'ecran (`largeur`).
+    pub largeur: Largeur,
+    /// Elle ne s'ouvre que si une autre case est trop longue (`si_plus_long`).
+    pub si_plus_long: Option<PlusLong>,
     pub libelle: String,
     pub forme: Forme,
     pub aide: String,
@@ -349,6 +401,10 @@ pub struct Case {
     pub boutons: Option<bool>,
     /// La case ne se montre que si la configuration le dit (`si_configuration` : un drapeau de la route `etat`).
     pub si_configuration: Option<String>,
+    /// La case ne se montre que si les autres cases de sa structure le disent (`si`, la forme d'une condition : chaque
+    /// case nommee, de la meme structure, vaut l'une des valeurs listees) : le numero du jour du versement, pour un jour
+    /// du mois ou du mois suivant.
+    pub si: Option<Condition>,
 }
 
 /// Ce qu'un champ et une case d'une structure ont en commun : leur nom, et la case dont ils se deduisent.
@@ -421,6 +477,7 @@ impl Champ {
             && entreprise.is_none_or(|e| condition_remplie(self.si_entreprise.as_ref(), e))
             && self.piece.is_none_or(|p| ouverte(p, self.cle))
             && !(self.si_etablissements && !etablissements)
+            && self.si_plus_long.as_ref().is_none_or(|p| donnees.dite(self.cle) || longueur_ecrite(&donnees.ecrite(p.case)) > p.longueur)
     }
 
     /// La case du tiroir « Avancé » s'ecarte-t-elle du cas ordinaire dans la fiche `donnees` (`Avance`) ? `du_code_postal` :
@@ -468,6 +525,7 @@ impl Champ {
     fn description(&self) -> Description<'_> {
         Description {
             cle: self.cle,
+            largeur: self.largeur,
             libelle: &self.libelle,
             forme: self.forme,
             aide: &self.aide,
@@ -526,6 +584,7 @@ impl Case {
             libelles: self.libelles.as_ref(),
             boutons: self.boutons,
             si_configuration: self.si_configuration.as_deref(),
+            si: self.si.as_ref(),
         }
     }
 }
@@ -535,6 +594,7 @@ impl Case {
 #[derive(Debug, Clone, Serialize)]
 pub struct Description<'a> {
     pub cle: CaseDeFiche,
+    pub largeur: Largeur,
     pub libelle: &'a str,
     pub forme: Forme,
     pub aide: &'a str,
@@ -605,12 +665,24 @@ pub struct DescriptionDeCase<'a> {
     pub boutons: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub si_configuration: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub si: Option<&'a Condition>,
+}
+
+/// LES BLOCS TITRES DE CHAQUE FICHE, dans l'ordre ou l'ecran les montre (`blocs` de la table) ; chaque case en nomme un.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Blocs {
+    entreprise: Vec<String>,
+    salarie: Vec<String>,
+    spectacle: Vec<String>,
 }
 
 /// La table des trois fiches.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Table {
+    blocs: Blocs,
     entreprise: Vec<Champ>,
     salarie: Vec<Champ>,
     spectacle: Vec<Champ>,
@@ -635,13 +707,19 @@ fn feuilles(declarees: &[Declaree], devant: &[NomDeCase], out: &mut Vec<Chemin>)
 /// d'une structure que la ligne decrit (`champs`) ; sinon la table ne se lit pas. CHAQUE CASE DANS SA PIECE : celle que sa
 /// forme lui donne, et nulle autre : la table n'a pas de mot pour la dire (`deny_unknown_fields`).
 fn ranger(mut t: Table) -> R<Table> {
-    let fiches: [(NomDeFiche, &mut Vec<Champ>, Vec<Declaree<CaseDeFiche>>); 3] = [
-        (NomDeFiche::Entreprise, &mut t.entreprise, droit::fiche::ChampsEntreprise::cases()),
-        (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases()),
-        (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases()),
+    let fiches: [(NomDeFiche, &mut Vec<Champ>, Vec<Declaree<CaseDeFiche>>, &[String]); 3] = [
+        (NomDeFiche::Entreprise, &mut t.entreprise, droit::fiche::ChampsEntreprise::cases(), &t.blocs.entreprise),
+        (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases(), &t.blocs.salarie),
+        (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases(), &t.blocs.spectacle),
     ];
     let faute = |ou: String| socle::echec::livree(&BASE, &ou);
-    for (nom, champs, declarees) in fiches {
+    for (nom, champs, declarees, blocs) in fiches {
+        // CHAQUE CASE DANS UN BLOC DECLARE, et la table rangee bloc par bloc, dans l'ordre des blocs : dans un bloc, l'ordre
+        // de la table. L'ecran et la route `fiche` lisent cet ordre-la.
+        if let Some(c) = champs.iter().find(|c| !blocs.contains(&c.bloc)) {
+            return Err(faute(format!("{}.{} : le bloc « {} » n'est pas un bloc de la fiche", nom, c.cle, c.bloc)));
+        }
+        champs.sort_by_key(|c| blocs.iter().position(|b| *b == c.bloc));
         for c in champs.iter_mut().filter(|c| c.cle != CaseDeFiche::Case(NomDeCase::HISTORIQUE)) {
             let Some(d) = declarees.iter().find(|d| d.cle == c.cle) else {
                 return Err(faute(format!("{}.{} : la fiche {} ne declare pas cette case", nom, c.cle, nom)));
@@ -654,6 +732,12 @@ fn ranger(mut t: Table) -> R<Table> {
                 }
                 if let Some(x) = declares.iter().find(|x| !cases.iter().any(|s| s.cle == **x)) {
                     return Err(faute(format!("{}.{}.{} : une case de la structure sans sa ligne", nom, c.cle, x)));
+                }
+                // La condition d'une case (`si`) ne nomme que des cases de sa structure.
+                for s in cases {
+                    if let Some(n) = s.si.iter().flat_map(Condition::noms).find(|n| !declares.contains(&Chemin::de(*n))) {
+                        return Err(faute(format!("{}.{}.{} : sa condition nomme {}, hors de la structure", nom, c.cle, s.cle, n)));
+                    }
                 }
             }
             c.piece = c.cle.piece();
@@ -1545,8 +1629,8 @@ fn verifier_champ(c: Regle<'_>, valeur: MotEcrit) -> R<Option<String>> {
         return Ok(None);
     }
     let brut = brut.as_str();
-    // La signature des courriels est du HTML colle : sa seule regle est son poids (150 Ko, images comprises).
-    if est(CaseEntreprise::CourrielSignature.into()) {
+    // Du HTML colle (la signature des courriels) : sa seule regle est son poids (150 Ko, images comprises).
+    if c.forme == Forme::Html {
         return Ok(trop_lourde(brut));
     }
     let v = strip(brut);
@@ -1599,11 +1683,6 @@ fn verifier_champ(c: Regle<'_>, valeur: MotEcrit) -> R<Option<String>> {
         if let Some(faute) = documents::conges_spectacles::faute_adherent(&documents::conges_spectacles::forme_adherent(v)) {
             return Ok(Some(faute));
         }
-    }
-    // LE JOUR DU VERSEMENT DES SALAIRES, des permanents comme des intermittents, se lit comme la paie le lira
-    // (`droit::versement`).
-    if est(CasePieceEntreprise::DateDeVersementPermanents.into()) || est(CaseEntreprise::DateDeVersementIntermittents.into()) {
-        return Ok(droit::versement::Versement::lire(v).err().map(|e| e.phrase));
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.

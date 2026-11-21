@@ -309,8 +309,18 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case-lignes { grid-column: 1 / -1; }
 .case-objet { font-size: 12px; overflow-wrap: anywhere; }
 .case-dit { font-size: 12px; color: var(--discret); }
+.case-dits .case-dit { display: block; }
 .case-parties { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .case-parties .partie { display: inline-flex; gap: 4px; align-items: center; }
+/* Une fiche rendue : deux cases par ligne, une case « pleine » sur toute la ligne, un titre à chaque bloc. */
+.e-cases.fiche-cases { grid-template-columns: 1fr 1fr; align-items: start; }
+.fiche-cases > .pleine, .fiche-cases > .bloc-titre { grid-column: 1 / -1; }
+.fiche-cases > .bloc-titre { margin: 12px 0 0; font-size: 14px; color: var(--texte); }
+.case-rangees { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.case-rangees .rangee { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.case-html { min-height: 4em; border: 1px solid var(--bord); border-radius: 4px; padding: 8px; background: var(--fond); color: var(--texte); }
+.case-html:empty::before { content: attr(data-exemple); color: var(--discret); }
+.boutons-choix { display: flex; flex-direction: column; gap: 2px; }
 .ligne-avance summary { cursor: pointer; color: var(--discret); }
 .ligne-avance .colonne { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; }
 /* « Avancé », replié : ce que la route ne met pas à la base de la carte. */
@@ -614,9 +624,9 @@ details.historique-fiche > summary {
   cursor: pointer; font-size: 12px; color: var(--discret);
 }
 details.historique-fiche[open] > summary { margin-bottom: 8px; }
-.champ .anomalie { font-size: 12px; margin-top: 3px; }
-.champ .anomalie.erreur { color: var(--erreur); }
-.champ .anomalie.avertissement { color: var(--alerte); }
+.champ .anomalie, .case > .anomalie { font-size: 12px; margin-top: 3px; }
+.champ .anomalie.erreur, .case > .anomalie.erreur { color: var(--erreur); }
+.champ .anomalie.avertissement, .case > .anomalie.avertissement { color: var(--alerte); }
 .champ .corriger { font-size: 11px; margin-top: 4px; padding: 2px 8px; }
 
 /* ------------------------------------------------------------ historique */
@@ -775,7 +785,7 @@ details.mois-hist[open] > summary { border-bottom-left-radius: 0; border-bottom-
   .colonnes { grid-template-columns: 1fr; }
   .col-apercu { position: static; }
   .grille-mois { grid-template-columns: repeat(2, 1fr); }
-  .champs { grid-template-columns: 1fr; }
+  .champs, .e-cases.fiche-cases { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   main { padding: 12px; }

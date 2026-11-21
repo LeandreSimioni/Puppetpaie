@@ -1,5 +1,5 @@
 //! Configuration › Entreprise, Salariés, Spectacles : les fiches des salaries, des spectacles et de l'entreprise
-//! (`verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
+//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
@@ -37,7 +37,9 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
-pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+mod rendue;
+pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -53,6 +55,21 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Fiches);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
+    Fiche {
+        route: Route::Fiche,
+        geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
+        charge: &[
+            NOM_FICHE,
+            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
+            Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
+        ],
+        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        refus: &[MANQUE, FORME],
+        acte: Acte::Lit,
+        phrase: 0,
+        ecran: ECRAN,
+    },
     Fiche {
         route: Route::Permanents,
         geste: "Dire les cases que montre la fiche en cours de saisie.",
@@ -229,6 +246,7 @@ pub const ROUTES: &[Fiche] = &[
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
+        Route::Fiche => en_json(rendue::fiche(ctx, charge.lire()?)?),
         Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => {
@@ -448,12 +466,12 @@ pub(crate) struct Permanents {
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
+    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
     // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
     let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
-        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &p)?, &donnees.fiche),
-        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &p)?, &ctx.entreprise),
-        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &p)?, &ctx.entreprise),
+        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &dus)?, &donnees.fiche),
+        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &dus)?, &ctx.entreprise),
+        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &dus)?, &ctx.entreprise),
     };
     Ok(Permanents {
         phrase: Phrase::fixe(if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." }),
@@ -481,15 +499,16 @@ fn permanents_de(entreprise: &ChampsEntreprise) -> bool {
 /// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par la nature d'un engagement paye au mois : sur la
 /// fiche d'un salarie, un des siens (`engagement::permanents::cle_du_salarie`) ; sur celle de l'entreprise, quand elle
 /// dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose) ou qu'un engagement paye au
-/// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
+/// mois est du (`dus` : les permanents du jour de l'ecran en doivent un, `engagement::permanents::Permanents`, lus
+/// seulement pour l'entreprise, qui seule en a l'usage). Celle d'une compagnie qui emploie des permanents, par sa case
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// reprise des cumuls de l'annee, sur la fiche d'un salarie enregistre, par une paie reprise de lui d'une annee qu'un
 /// engagement d'ici touche (`engagement::importe::reprise_des_cumuls_de`). La page ne montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, p: &engagement::permanents::Permanents) -> R<Montres> {
+pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, dus: &dyn Fn() -> R<bool>) -> R<Montres> {
     let nom = donnees.nom();
     let au_mois = match nom {
-        NomDeFiche::Entreprise => permanents_de(entreprise) || !p.dus.is_empty(),
+        NomDeFiche::Entreprise => permanents_de(entreprise) || dus()?,
         // Un salarie pas encore enregistre n'a aucun engagement.
         NomDeFiche::Salarie => cle.map(|c| engagement::permanents::cle_du_salarie(ctx, c)).transpose()?.flatten().is_some(),
         // Un spectacle n'a pas la piece d'un permanent.
@@ -691,19 +710,8 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         Some(a) if (socle::annee!("1900")..=socle::annee!("2999")).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
-    let bar = match droit::contexte::socle_livre_lu(annee)? {
-        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
-        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
-            Ok(b) => Some(b),
-            Err(e) if e.dit_un_manque() => None,
-            Err(e) => return Err(e),
-        },
-        None => None,
-    };
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
-    // La conclusion nomme les deux plafonds.
+    let (q, r) = regime_de_la_taxe(ctx, &ent, annee)?;
     use documents::taxe_sur_les_salaires::Decision;
-    let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
         phrase: r.consequence.clone(),
         franchise: Franchise {
@@ -721,6 +729,24 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
             _ => None,
         },
     })
+}
+
+/// LA QUESTION DE LA FRANCHISE ET LA CONCLUSION DU MOTEUR pour la fiche `ent` (CGI art. 231, 1), les salaires de
+/// `annee` : `taxe-sur-les-salaires-regime`, et la case de la taxe que rend la route `fiche`.
+pub(crate) fn regime_de_la_taxe(ctx: &Contexte, ent: &ChampsEntreprise, annee: Annee) -> R<(documents::taxe_sur_les_salaires::QuestionFranchise, documents::taxe_sur_les_salaires::RegimeTaxeSalaires)> {
+    let bar = match droit::contexte::socle_livre_lu(annee)? {
+        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
+        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
+            Ok(b) => Some(b),
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        },
+        None => None,
+    };
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
+    // La conclusion nomme les deux plafonds.
+    let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, q.plafonds);
+    Ok((q, r))
 }
 
 // ------------------------------------------------------------------ outils
@@ -904,7 +930,12 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&I
 /// (`dernier_mois_parti`) : ce qui est parti garde ce qu'il a dit, le reste prend la valeur nouvelle. Aucun mois parti :
 /// le premier jour du mois en cours. Une autre date se choisit, dans le passe aussi : ce qui est parti se corrige alors.
 pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>) -> R<(Jour, String)> {
-    let qui = if nom == NomDeFiche::Entreprise { "" } else { " pour ce salarié" };
+    // Un salarie : ce qui est parti pour lui ; l'entreprise, ce qui est parti pour quiconque ; un spectacle n'en a pas
+    // (`dernier_mois_parti`).
+    let qui = match nom {
+        NomDeFiche::Salarie => " pour ce salarié",
+        NomDeFiche::Entreprise | NomDeFiche::Spectacle => "",
+    };
     Ok(match dernier_mois_parti(ctx, nom, cle)? {
         Some(m) => {
             let phrase = format!(
@@ -916,7 +947,13 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSala
         }
         None => {
             let mois = ctx.aujourdhui.mois_civil();
-            let phrase = format!("Proposé : le premier jour de {}, rien n'étant encore parti{}.", mois.libelle(socle::mois::Graphie::Accentuee), qui);
+            // Un spectacle n'a pas de mois parti a lui (`dernier_mois_parti`) : ce qui l'a deja declare se compte a part
+            // (`deja_declare`), et la phrase ne dit pas que rien n'est parti.
+            let parti = match nom {
+                NomDeFiche::Spectacle => String::new(),
+                NomDeFiche::Salarie | NomDeFiche::Entreprise => format!(", rien n'étant encore parti{}", qui),
+            };
+            let phrase = format!("Proposé : le premier jour de {}{}.", mois.libelle(socle::mois::Graphie::Accentuee), parti);
             (mois.premier_jour(), phrase)
         }
     })
@@ -1030,6 +1067,9 @@ struct DemandeDeFiche {
     adresse: droit::fiche::Courriel,
 }
 
+/// Le geste de `fiche-demander`, tel que la demande du mot de passe le dit (la configuration la rend a la page).
+pub(crate) const GESTE_DEMANDER_FICHE: &str = "envoyer par courriel à la personne la demande de remplir sa fiche";
+
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
 fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&socle::secret::Secret>) -> R<DemandeDeFiche> {
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -1048,8 +1088,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         Some(c) => c,
         None => ouverte.insert(client_courriel(ctx)?).as_mut(),
     };
-    let mois = socle::temps::jour_de_paris().mois_civil();
-    verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
+    verifier_preuve(ctx, Some(preuve), &crate::coffre::demande(&ctx.racine, GESTE_DEMANDER_FICHE)?)?;
 
     let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::manque("raison_sociale"))?.to_string();
     let sg = ctx.entreprise.signataire.exigee("signataire")?;

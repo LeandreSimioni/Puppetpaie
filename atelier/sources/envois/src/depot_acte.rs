@@ -111,7 +111,7 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<CheminRelatif> {
 /// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu. Une ligne que le
 /// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
-    suites.depot_refuse = Some(DepotRefuse { quoi, mode: d.mode, classe: e.classe, message: e.phrase.clone(), repetition: d.repetition.cloned() });
+    suites.depot_refuse = Some(DepotRefuse { quoi, mode: d.mode, classe: e.classe, message: e.phrase.clone(), a_part: e.a_part.clone(), repetition: d.repetition.cloned() });
     match noter(ctx, d, ligne) {
         Ok(_) => e,
         Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),

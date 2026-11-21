@@ -31,6 +31,9 @@ pub struct SalarieDeclare {
     pub mois: Mois,
     pub initiales: String,
     pub premier_contrat: Option<Jour>,
+    /// La derniere fois que les DSN le portent : le mois de la derniere qui le declare, et la fin de ses contrats quand
+    /// une DSN la dit (S21.G00.62.001, a defaut .40.010).
+    pub derniere_piece: crate::derniere_piece::DernierePiece,
 }
 
 impl SalarieDeclare {
@@ -206,6 +209,8 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
     let mut index_salaries: HashMap<Option<Nir>, usize> = HashMap::new();
     let mut index_objets: HashMap<droit::fiche::NumeroObjetSpectacle, usize> = HashMap::new();
+    // La fin de chaque contrat (son salarie, son numero, son debut), telle que la plus recente DSN qui le declare la dit.
+    let mut fins: BTreeMap<(Option<Nir>, Option<engagement::numeros::NumeroContrat>, Jour), Option<Jour>> = BTreeMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());
@@ -234,6 +239,13 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         let mut dernier_contrat: HashMap<Option<&Nir>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
             dernier_contrat.insert(c.nir.as_ref(), c);
+            // La fin d'un contrat qu'une DSN a dite reste dite : une DSN suivante qui le redeclare sans sa fin (un rappel
+            // apres la rupture) ne le fait pas courir de nouveau.
+            let fin = c.fin_declaree.or(c.periode.fin());
+            let dite = fins.entry((c.nir.clone(), c.numero.clone(), c.periode.debut())).or_insert(fin);
+            if fin.is_some() {
+                *dite = fin;
+            }
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
@@ -268,6 +280,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 mois,
                 initiales,
                 premier_contrat: premier,
+                derniere_piece: crate::derniere_piece::DernierePiece::Aucune,
             };
             match index_salaries.get(&nir) {
                 Some(&i) => out.salaries[i] = decl,
@@ -277,6 +290,17 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 }
             }
         }
+    }
+    for ((nir, _, _), fin) in fins {
+        if let Some(&i) = index_salaries.get(&nir) {
+            if let Some(f) = fin {
+                out.salaries[i].derniere_piece.contrat(f);
+            }
+        }
+    }
+    // Le mois de la derniere DSN qui declare le salarie le date aussi : elle le paie, quelle que soit la fin de ses contrats.
+    for s in out.salaries.iter_mut() {
+        s.derniere_piece.porte(s.mois);
     }
     Ok(out)
 }

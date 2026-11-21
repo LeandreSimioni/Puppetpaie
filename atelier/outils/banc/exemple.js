@@ -19,16 +19,22 @@ async function ouvrir() {
   await voile(o.page);
   return o;
 }
-async function champ(page, cle, v) {
-  const s = `#config-formulaire [data-cle="${cle}"]`;
+// Une case de route (la fiche Entreprise, un spectacle) porte sa clé sur sa `.case`, son contrôle dedans (`[data-case]`) ;
+// une case de la fiche d'un salarié la porte sur son contrôle.
+async function remplir(page, s, v) {
   const tag = await page.$eval(s, (e) => e.tagName);
   if (tag === "SELECT") await page.selectOption(s, String(v));
   else if (await page.$eval(s, (e) => e.type) === "checkbox") { if (v) await page.check(s); else await page.uncheck(s); }
   else await page.fill(s, String(v));
 }
+async function champ(page, cle, v) {
+  const s = `#config-formulaire [data-cle="${cle}"]`;
+  await remplir(page, (await page.$(`${s} > [data-case]`)) ? `${s} > [data-case]` : s, v);
+}
+// Une partie d'une case de route (`[data-partie]`), ou une case d'une structure de la fiche d'un salarié (`data-sous-de`).
 async function sous(page, de, cle, v) {
-  const s = `#config-formulaire [data-sous-de="${de}"][data-sous-cle="${cle}"]`;
-  if (await page.$eval(s, (e) => e.tagName) === "SELECT") await page.selectOption(s, String(v)); else await page.fill(s, String(v));
+  const r = `#config-formulaire .case[data-cle="${de}"] [data-partie="${cle}"] [data-case]`;
+  await remplir(page, (await page.$(r)) ? r : `#config-formulaire [data-sous-de="${de}"][data-sous-cle="${cle}"]`, v);
 }
 const texte = (page) => page.$eval("body", (b) => b.innerText);
 function etape(t) { console.log(`\n== ${t}`); }
@@ -58,12 +64,16 @@ function etape(t) { console.log(`\n== ${t}`); }
   await champ(page, "idcc", "3090"); await page.waitForTimeout(800);
   for (const [k, v] of Object.entries({ siret: "32520440200011", naf: "9001Z", licence_spectacle: "PLATESV-D-2024-000352",
     premiere_embauche: "2026-11-20", adresse_affichage: "12 quai de la Fosse", code_postal: "44000", commune_affichage: "Nantes",
-    urssaf_compte: "5200000000", congesspectacles_adherent: "0000052000F", affiliation_france_travail: "80000052008" })) await champ(page, k, v);
+    urssaf_compte: "5200000000", congesspectacles_adherent: "0000052000F" })) await champ(page, k, v);
+  // Sous « Avancé » : le tiroir s'ouvre.
+  await page.$eval('#config-formulaire .case[data-cle="affiliation_france_travail"]', (c) => { const d = c.closest("details"); if (d) d.open = true; });
+  await champ(page, "affiliation_france_travail", "80000052008");
   for (const [k, v] of Object.entries({ prenom_affichage: "Adolphe", nom_affichage: "Appia", fonction: "Gérant", tel: "0100000052", email: "direction@les-treteaux.invalid" })) await sous(page, "signataire", k, v);
   await sous(page, "declarant_dsn", "civilite", "01");
   for (const [k, v] of Object.entries({ nom_prenom_affichage: "Appia Adolphe", tel: "0100000052", email: "direction@les-treteaux.invalid" })) await sous(page, "declarant_dsn", k, v);
   await sous(page, "banque", "iban", "FR7612345007943252044000023"); await sous(page, "banque", "bic", "BANQFRPPXXX");
-  await page.fill("#atmp-valeur", "1,10"); await page.fill("#atmp-code", "923AD");
+  await sous(page, "taux_atmp", "valeur", "1,10"); await sous(page, "taux_atmp", "code_risque", "923AD");
+  await sous(page, "taux_atmp", "depuis", "01/01/2027");
   await banc.capture(page, C + "p03-entreprise-remplie.png");
   await page.click("#config-enregistrer"); await page.waitForTimeout(2500);
   let t = await texte(page);

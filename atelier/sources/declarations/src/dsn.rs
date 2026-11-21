@@ -248,7 +248,7 @@ fn type_du_contact(decl: &DeclarantDsn) -> &str {
 /// L'IDENTIFIANT DU SERVICE DE PREVENTION ET DE SANTE AU TRAVAIL DE L'ETABLISSEMENT (S21.G00.11.025 : « Cette rubrique doit
 /// etre renseignee par l'identifiant du service de prevention et de sante au travail (SPST). La definition de cet
 /// identifiant est precisee dans la fiche consigne dediee », `X [1,14]`, conditionnelle en mensuelle ; cahier 2027.1.1,
-/// `norme-dsn/texte-2027/bloc-S21.G00.11.txt` l. 232-237 ; la norme 2026 ne l'a pas). La fiche consigne est la 3370 de
+/// `norme-dsn/texte-2027/bloc-S21.G00.11.txt` l. 232-237 ; la norme 2026 a deja la rubrique, `norme-dsn/texte/bloc-S21.G00.11.txt` l. 38). La fiche consigne est la 3370 de
 /// net-entreprises (`atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche3370-spst-dsn-
 /// mensuelle-20260826.txt`) : la declaration est « attendue en DSN à partir de la version de norme P27V01 » (l. 2) ;
 /// « Les rubriques permettant de renseigner le SPST en DSN doivent être renseignées à partir des valeurs disponibles en

@@ -98,7 +98,10 @@ que par la structure :
   (`droit::fiche::CaseDeFiche`). Ce que le moteur garde d'une fiche pour lui seul est une mémoire de sa fiche datée
   (la section `memoires` de `fiche!`, un champ facultatif de la seule fiche datée) : ni une case ni une note, elle
   n'est ni dans la fiche à un jour (`au()`), ni dans la plate, ni dans `changer` ni dans `cases()` ; rien de ce qui lit
-  une fiche ne la voit, et une saisie ne la pose pas. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  une fiche ne la voit, et une saisie ne la pose pas. Une case retirée qu'une installation posée a pu écrire dans son
+  fichier est une clé non lue de la fiche datée (la section `non_lues` de `fiche!`, une `socle::forme::NonLue`) : elle
+  se lit et ne dit rien, pour que la compagnie s'ouvre après sa mise à jour ; elle ne se réécrit pas, et ni la plate ni
+  une charge ne l'ont. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -532,6 +535,8 @@ un libellé, chacun sa forme.
 | version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
 | version de la forme du coffre (`coffre.bin`, `version` : seule celle de ce logiciel se lit, une autre se refuse) | `compagnie::coffre::VersionDuCoffre` | `compagnie/src/coffre.rs` |
 | paramètres de la dérivation du mot de passe du logiciel (scrypt : `n`, `r`, `p`, que `coffre.bin` écrit en nombres) | `compagnie::coffre::ParametresDuCoffre` (bornés à leur lecture, les refus dans l'ordre d'OpenSSL ; ceux de la bibliothèque, `scrypt::Params`) | `compagnie/src/coffre.rs` |
+| qui ouvre le coffre d'une compagnie, donc le seul mot de passe du logiciel qu'elle accepte (elle, ou l'administrateur auquel elle est rattachée ; `routes::coffre::qui_ouvre` le dit) | `compagnie::demande::QuiOuvre` | `compagnie/src/demande.rs` |
+| demande du mot de passe du logiciel (lequel, de qui, pour quel geste ; la même dans la page, la fenêtre du système et le terminal, et dans le refus d'un mot de passe faux ; composée par `routes::coffre::demande`) | `compagnie::demande::DemandeDuMotDePasse` | `compagnie/src/demande.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
 | numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |
@@ -1065,7 +1070,7 @@ un libellé, chacun sa forme.
 - **code Urssaf de la DPAE** : l'organisme de recouvrement que la DPAE vise en C_URSSAF (positions 133-136, annexe II.1
   du Format 120) : trois chiffres, s'écrit et se trie comme son texte ; ceux qui existent sont ceux de
   `urssaf-dpae-base.json` (`existe`). Que portent un organisme de la table et celui du territoire d'un département,
-  les paramètres d'une DPAE, ce que la page propose (`urssaf_deduit`) ; celui que la fiche Entreprise tape
+  les paramètres d'une DPAE, ce que la route `fiche` dit du code postal tapé (le choix vide de la case) ; celui que la fiche Entreprise tape
   (`code_urssaf`, du texte) se lit par `dpae::code_urssaf_saisi`, qui nomme la case.
 - **code du service de santé au travail, identifiant d'un SPST** : le service de prévention et de santé au travail
   auquel la compagnie adhère. La DPAE l'écrit en C_MT_DCL, « MT » et trois chiffres, et MT999 pour une médecine interne
@@ -1145,6 +1150,13 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
+| fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
+| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix, ses parties, ce que le moteur dit sous elle, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
+| case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
+| en-tête d'une fiche rendue (son titre, ce qui le suit, sa note, le coût de l'année qu'elle montre, si « Annuler » ramène à la liste) | `routes::fiches::EnteteDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| coût de l'année qu'une fiche rendue montre en tête (où le lire dans la route `couts` : le côté et la clé de la fiche, un spectacle par son titre) | `routes::fiches::CoutDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
 | ce qu'une ligne neuve d'une rubrique prend (le taux d'un cachet), sous le code de sa rubrique | `routes::mois::LignePreremplie`, `routes::mois::LignesPreremplies` | `routes/src/mois.rs` |
 | fin du contrat telle que la route la rend (aucune, la rupture lue, ou une rupture qui ne se lit pas) | `routes::mois::FinDuContrat` | `routes/src/mois.rs` |
@@ -1212,6 +1224,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
+| dernière fois que les pièces reprises portent un salarié (le dernier mois qu'elles datent, un contrat qui court encore, ou aucune), qui range sa fiche neuve active ou archivée | `import::derniere_piece::DernierePiece` | `import/src/derniere_piece.rs` |
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
@@ -1321,6 +1334,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | DFS d'un salarié (sa profession, son taux, ses lignes abattues, son plafond) | `DfsDuSalarie` | `engagement/src/calcul.rs` |
 | déduction forfaitaire spécifique d'une paie (sa catégorie, sa profession, son taux, ses lignes abattues, ce qu'elle retient, ce que l'année avait déjà déduit) | `DeductionForfaitaire` | `engagement/src/calcul.rs` |
 | option de l'employeur pour la DFS (une case de sa fiche, une condition de la DFS d'un salarié) | `droit::fiche::OptionDfs` | `droit/src/fiche.rs` |
+| jour du versement des salaires que la compagnie choisit (à la fin du mois, à la fin du contrat, un jour du mois, un jour du mois suivant ; les cases `date_de_versement_permanents` et `date_de_versement_intermittents` de la fiche entreprise l'écrivent dans sa forme, `droit::fiche::VersementEcrit` : un choix, `droit::fiche::QuandDuVersement`, et le numéro du jour pour les deux derniers) | `droit::versement::Versement` | `droit/src/versement.rs` |
 | taux de PAS reçu (son taux, son type, son identifiant, l'instant de sa mise à disposition, la DSN mensuelle à laquelle il répond ; la case `taux_pas` de la fiche d'un salarié le porte, qui ne se saisit pas ; il se reçoit pour un salarié, la clé de sa fiche à côté ; la paie applique celui en vigueur, `taux_dgfip`. Ses formes, à leur porte : ce qu'un compte rendu de nature 94 dit, `envois::retours::ReleveTauxPas` ; ce qu'un scénario du banc annonce, `envois::organismes_simules::TauxPasAnnonce` ; la situation du taux d'un salarié, `Situation`) | `droit::pas::TauxRecu` | `droit/src/pas.rs` |
 | prélèvement d'un versement (le taux appliqué, son type et son identifiant, l'abattement, le montant soumis, l'impôt prélevé : S21.G00.50.006 à .013 ; ce que les pièces d'une paie importée en disent, sans abattement ni montant soumis, `engagement::importe::PasImporte`) | `droit::pas::Versement` | `droit/src/pas.rs` |
 | taux de PAS que la dernière DSN déposée d'un salarié dit (un taux transmis, qui se reçoit, ou un taux illisible, qui ne pose rien) | `compagnie::taux_pas::TauxDUneDsn` | `compagnie/src/taux_pas.rs` |
@@ -2019,7 +2033,28 @@ faite de parties (le préavis : son type, puis ses dates quand le type en a) a s
 sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Les jours d'une ligne partent tous
 dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
 qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
-cachets en entier) ; la page montre ce qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
+cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
+(`routes::fiches::rendue`) rend une fiche telle qu'on la saisit (`{nom, cle, changements}` : ce qui est saisi, posé sur
+la fiche enregistrée comme à l'écriture et comme sur la carte, une case qu'on ne nomme pas gardant sa valeur ; sans
+`changements`, telle qu'elle est enregistrée, ses anomalies comptées comme la pastille de sa ligne), ses seules cases
+ouvertes (`fiches::montres`), dans l'ordre de `champs-base.json`, chacune son
+libellé, sa forme, sa place (de base, ou « Avancé » quand la table la dit avancée), son aide, sa valeur, ses choix (les
+`libelles` de la table), ses temps et sa faute, en mots ; son en-tête entier (titre, note, où lire le coût de l'année,
+« Annuler ») et l'encart de ses erreurs ; l'historique de ses cases datées, en mots. Une case de route n'a qu'un dessin,
+`caseDeRoute` (`js/avance.js`), que la carte, la fiche, la boîte d'un geste et « Pour démarrer » appellent avec leurs
+données, dans la grille de la carte ; la page relit les cases par `lireLesCases` ; ce qu'on
+tape repart à la même route, qui redit les cases, leurs fautes et l'encart : un seul appel, à la place de `permanents` et de
+`verifier-fiche`. L'écriture reste `enregistrer-fiche`. La fiche d'un spectacle et celle de l'entreprise passent par
+là, et la case d'un spectacle ou de l'entreprise que « Pour démarrer » fait remplir (`case_rendue` de `pour-demarrer`) ;
+celle d'un salarié suivra. **La mise en page est dans la donnée** : chaque case de `champs-base.json` nomme son bloc
+(`bloc`, un des `blocs` déclarés pour sa fiche, dans leur ordre : la table se range bloc par bloc) et sa largeur
+(`largeur`, `declarations::champs::Largeur`) ; la route les rend, avec l'exemple d'une case vide, et le dessin pose un
+titre quand le bloc change. Une case faite de cases rend ses parties (`routes::fiches::PartieDeLaFiche` : chacune ses
+choix, son aide, si elle est ouverte ; une clé que la route ne décrit pas se garde à l'écriture), une liste de cases
+ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `prerempli`, ses choix) : la convention et
+l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
+salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle.
+Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 
@@ -2643,6 +2678,16 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
+- **Active ou archivée** (`import::derniere_piece` ; Léandre, 21/11/2026 : « tous les salariés qui viennent des années
+  précédentes […] ils doivent être mis comme archivés ») : une fiche de salarié ou de spectacle que l'import crée est
+  active si une pièce reprise la porte dans les douze derniers mois (`recente`, le seul seuil), archivée sinon. Pour un
+  salarié, toutes ses pièces comptent, une fois lues (`DernierePiece`, `importation::bulletins::ranger_les_salaries`) :
+  un bulletin, la période de sa paie ; une DSN, son mois, et la fin de chaque contrat quand elle la dit
+  (S21.G00.62.001, à défaut .40.010 ; une fin à venir date encore) ; une AEM, son mois, et la fin du contrat quand elle
+  la dit ; un certificat, la période qu'il atteste. Un contrat sans fin ne date rien de plus : tant qu'il court, chaque
+  DSN mensuelle le déclare, et c'est son mois qui date le salarié. Une fiche qu'aucune
+  pièce ne date garde la case vide. Une fiche qui existe n'est jamais rangée par l'import (`completer`) ; une fiche
+  archivée garde tout son historique, et « Pour démarrer » ne lui demande rien.
 - **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
   par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
   fiche sans NIR (même nom, même premier prénom, même date de naissance quand les deux la disent), ne se crée pas :
@@ -3251,7 +3296,9 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   (peut-être celle de l'embauche) ne se proposent pas. Ce que la compagnie valide avec les valeurs (les exclus de
   L. 1111-3 du code du travail, qu'aucune paie reprise ne distingue ; le contrat connu par son seul bulletin ; les mois
   sans paie reprise hors de la moyenne : `EffectifRepris::reserves`) se dit une fois, sur la ligne. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
-  dans `manques`.
+  dans `manques`. Sans date de première embauche et sans aucune paie reprise des années demandées, la ligne de la
+  première embauche ne montre aucune case d'effectif (`EffectifRepris::paies_reprises`) : la date suffit, et la ligne de
+  l'effectif dit les années à remplir une fois la date écrite.
 - **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
   le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;
   une DSN, une AEM ou un certificat Congés Spectacles dit le contrat, un bulletin seulement la période qu'il paie ; la

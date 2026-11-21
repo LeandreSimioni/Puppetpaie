@@ -774,89 +774,13 @@ async function ecrireImportation() {
   }
 }
 
-/*  LA FICHE ENTREPRISE SE LIT
- *
- *  Elle etait une liste plate de trente cases, des accolades JSON a taper
- *  pour le signataire et la banque, une etiquette « DÉCLARÉ » sous chacune,
- *  et le SIREN, le NIC et le SIRET demandes trois fois de suite. L'editeur :
- *  « tout est un peu mélangé (...) pas très friendly pour ceux qui
- *  comprennent pas le code ».
- *
- *  Quatre decisions, et aucune ne touche au moteur :
- *
- *   - des SECTIONS (SECTIONS_FICHE) : on cherche « ma banque », pas « le
- *     champ 27 » ;
- *   - les structures se saisissent case par case (`structureDecrite`), une case
- *     par valeur, un « + » pour une liste. Les clefs qu'on ne montre pas
- *     (`note`, `nom_aem`...) sont relues telles quelles a l'enregistrement
- *     — voir `lireFormulaire` : on ne perd pas ce qu'on n'affiche pas ;
- *   - ce que la machine DEDUIT ne se saisit pas : le SIREN et le NIC sont
- *     les 9 et les 5 chiffres du SIRET, poses en cases cachees (CACHES) ;
- *   - l'aide tient derriere un « ? » : presente pour qui la cherche,
- *     absente pour qui ne la cherche pas. Et l'etiquette « déclaré » ne
- *     s'affiche plus : savoir ce qui part en DSN est le travail du moteur.
- *
- *  `donnees/champs-base.json` (lu par `champs.rs`) reste la seule description des champs : ces tables ne
- *  disent que l'ORDRE et la MISE EN PAGE. Un champ nouveau qui n'y figure
- *  pas s'affiche quand meme, dans la derniere section.
+/*  LA FICHE D'UN SALARIÉ, ses sections (`SECTIONS_FICHE`) : l'ordre et la mise en page, en attendant qu'elle passe par
+ *  la route `fiche` comme celles de l'entreprise et d'un spectacle. Les structures se saisissent case par case
+ *  (`structureDecrite`) ; les clefs qu'on ne montre pas sont relues telles quelles à l'enregistrement (`lireFormulaire`).
+ *  Un champ qui n'y figure pas s'affiche quand même, dans la dernière section.
  */
 const SECTIONS_FICHE = {
-  // LA FICHE ENTREPRISE : on demande le minimum d'information aux gens, puis on traite l'information pour qu'elle rentre
-  // dans la DSN. Six blocs, dans l'ordre ou l'on cherche : qui
-  // l'on est, ou l'on est, sous quelle convention, ses numeros, qui signe,
-  // le compte. Les cases que le moteur deduit sont nommees ici pour que
-  // leur case cachee soit posee dans le bloc de la valeur dont elles
-  // viennent (voir CACHES).
-  entreprise: [
-    // La date de la première embauche sort de l'« Avancé » :
-    // pour une compagnie de moins de cinq ans, sans elle l'effectif est
-    // inconnu et le premier mois ne se calcule pas.
-    ["La compagnie", ["nom_affichage", "siret", "siren", "nic", "naf",
-                      "licence_spectacle", "premiere_embauche"]],
-    ["Adresse", ["adresse_affichage", "code_postal", "commune_affichage"]],
-    ["Convention collective", ["idcc",
-                               "annexe_convention",
-                               "jauge_annexe_1", "type_radio_1922",
-                               "cinquante_salaries_3241"]],
-    // LE CURSEUR DES PERMANENTS SORT DE L'« AVANCÉ ».
-    // C'est la question qui commande tout ce qui ne vaut que pour les
-    // salariés au mois (natures CDI/CDD, santé et prévoyance, organismes) :
-    // elle se pose en clair, datée. Le moteur la lit (`Contexte::emploie_des_permanents_pendant`).
-    // Les conseils « Le saviez-vous ? » :
-    // une option qui parle de vos salariés, elle se pose avec eux.
-    ["Vos salariés", ["emploie_des_permanents", "date_de_versement_permanents", "date_de_versement_intermittents", "conseils"]],
-    // LE CODE DU SERVICE DE SANTÉ AU TRAVAIL N'EST PAS DANS L'« AVANCÉ » (le tiroir
-    // replié) : chaque DPAE l'exige (`dpae::medecine_de`) et
-    // « Pour démarrer » le demande. Un champ exigé est visible là où on l'exige.
-    ["Numéros chez les organismes",
-     ["urssaf_compte", "congesspectacles_adherent",
-      "affiliation_france_travail",
-      "france_travail_dossier_recouvrement", "medecine_travail"], { atmp: true }],
-    // Le taux AT/MP se pose en tête de ce bloc (`ATMP_HTML`).
-    // Le contact de la médecine du travail interne ne se montre que si le code du
-    // service de santé au travail vaut MT999 (`si` de champs-base.json) ; la DSN
-    // l'écrit alors en S20.G00.07 de type 17.
-    ["Qui signe, qui répond", ["signataire", "declarant_dsn", "contact_sante_travail"]],
-    ["Paiement des cotisations", ["banque"]],
-    // LA TAXE SUR LES SALAIRES : la DSN de décembre
-    // déclare chaque année si la compagnie la doit (bloc S21.G00.44), et ne
-    // se fait pas sans réponse. Le moteur ne connaît pas sa TVA.
-    ["Taxe sur les salaires", ["taxe_sur_les_salaires"]],
-    // L'AVANCE : sa place et son ordre. Ce qui est avancé, et ce qui y est le cas ordinaire, le moteur le dit
-    // (`avance` de la description, `ecarts` de la fiche) : le bloc s'ouvre de lui-meme pour une case qui s'en ecarte.
-    ["Avancé — cas particuliers", ["jours_feries_chomes", "plafond_temps_partiel",
-      "deduction_forfaitaire_option",
-      "prevoyance_permanents", "sante_permanents", "subrogation_ij",
-      "organisation_patronale", "organisation_patronale_depuis",
-      "representation_personnel", "casc_svp_exemptee",
-      "cinquante_salaries_et_plus",
-      "taxe_apprentissage_motif_non_assujettissement",
-      "code_urssaf", "retraite_complementaire", "etablissements"],
-     { avance: true }],
-    // Sans titre : l'historique se replie derriere un lien (`histoireDuChamp`).
-    ["", ["historique"]],
-  ],
-  // LA FICHE SALARIE, sur le modele de l'entreprise.
+  // LA FICHE SALARIE.
   // Dans l'ordre ou on la remplit, papiers en main : la carte Vitale, la
   // piece d'identite, l'adresse ; puis ce que l'employeur decide, l'emploi.
   // Chaque champ est lu par le moteur : le taux de
@@ -904,22 +828,9 @@ const SECTIONS_FICHE = {
 /* Les jours de la semaine, tels que la fiche d'un permanent les ecrit (`socle::date::JourDeLaSemaine::NOMS`). */
 const JOURS_DE_LA_SEMAINE = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
-/* Les champs que la machine deduit d'un autre, ou qu'elle connait sans
- * qu'on les lui dise : ils restent dans le formulaire — donc ils repartent
- * a l'enregistrement avec leur valeur — mais en case cachee.
- *
- *  - `siren`, `nic` : le SIRET (le moteur, `routes::fiches::deriver`).
- *
- *  Le code Urssaf et la caisse de retraite, eux, sont de VRAIS choix : ils
- *  vont dans l'avance, vides par defaut -- le moteur prend alors l'Urssaf
- *  du code postal et Audiens. L'editeur : « il ne faut pas enlever de
- *  l'interface les choix que peut faire l'entreprise ». */
-const CACHES = {
-  entreprise: ["siren", "nic"],
-  // `sante_svp` se remplit par les trois cases de la complementaire sante : gardé tel quel, jamais demandé.
-  salarie: ["sante_svp"],
-  spectacle: [],
-};
+/* Les champs qui restent dans le formulaire d'un salarié — donc ils repartent a l'enregistrement avec leur valeur — mais
+ * en case cachee : `sante_svp` se remplit par les trois cases de la complementaire sante. */
+const CACHES = ["sante_svp"];
 
 /* Les structures telles qu'elles etaient AVANT la saisie : `lireFormulaire`
  * en repart pour ne pas perdre les clefs qu'on n'affiche pas. */
@@ -941,49 +852,26 @@ function aideCorps(cle, aide) {
   </div>`;
 }
 
-/*  UNE STRUCTURE SE SAISIT CASE PAR CASE, PAS EN ACCOLADES.
- *
- *  Deux formes : un objet (le signataire, la banque) rendu en une rangee de
- *  cases ; une liste (les licences, les etablissements) rendue en lignes,
- *  avec un « + » pour en ajouter une et une croix pour en retirer une. Ce
- *  que la table ne nomme pas n'est pas affiche, et n'est pas perdu.
+/*  UNE STRUCTURE SE SAISIT CASE PAR CASE, PAS EN ACCOLADES : un objet (la banque) rendu en une rangee de cases. Ce que
+ *  la table ne nomme pas n'est pas affiche, et n'est pas perdu.
  */
-function structureHtml(c, v, sous, a, temps) {
+function structureHtml(c, v, sous, a) {
   const tete = `<label class="titre-structure">${echapper(c.libelle)}
       ${aideHtml(c.cle, c.aide)}</label>
     ${aideCorps(c.cle, c.aide)}`;
-  let corps;
-  if (sous.liste) {
-    const lignes = Array.isArray(v) ? v : (v ? [v] : []);
-    // Les temps des cases de chaque ligne, que le moteur range par la clé de la ligne (le NIC d'un établissement).
-    const deLaLigne = (l) => (temps ? temps.lignes.find((x) => l && x.cle === l.nic) : undefined);
-    corps = `<div class="liste-structure" data-liste="${echapper(c.cle)}">
-        ${lignes.map((l, i) => ligneStructure(c.cle, sous, l, i, deLaLigne(l))).join("")}
-      </div>
-      <button type="button" class="secondaire ajouter-ligne"
-        data-ajouter="${echapper(c.cle)}">${echapper(sous.ajouter)}</button>`;
-  } else {
-    const o = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
-    corps = `<div class="sous-champs">${sous.champs.map(([k, lib, aide, genre = {}]) => {
-      const bouton = aide ? `<button type="button" class="aide-bouton"
-             data-aide="${echapper(c.cle + "." + k)}" title="aide">?</button>` : "";
-      // Des boutons à cocher (`boutons`) : chaque réponse est une phrase
-      // entière, qu'une liste déroulante couperait. Le libellé
-      // n'est pas un <label> : il en contiendrait plusieurs.
-      const haut = genre.boutons
-        ? `<div class="libelle-boutons">${echapper(lib)} ${bouton}</div>
-           ${caseSousChamp(c.cle, k, valeurEn(o, k), genre)}`
-        : `<label>${echapper(lib)}
-          ${bouton}
-          ${caseSousChamp(c.cle, k, valeurEn(o, k), genre)}</label>`;
-      return `
-      <div class="sous-champ${genre.boutons ? " sous-champ-large" : ""}">
-        ${haut}
-        ${aide ? `<div class="aide" data-aide-corps="${echapper(c.cle + "." + k)}" hidden>
-            <p>${echapper(aide)}</p></div>` : ""}
-      </div>`;
-    }).join("")}</div>`;
-  }
+  const o = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
+  const corps = `<div class="sous-champs">${sous.champs.map(([k, lib, aide, genre = {}]) => {
+    const bouton = aide ? `<button type="button" class="aide-bouton"
+           data-aide="${echapper(c.cle + "." + k)}" title="aide">?</button>` : "";
+    return `
+    <div class="sous-champ">
+      <label>${echapper(lib)}
+        ${bouton}
+        ${caseSousChamp(c.cle, k, valeurEn(o, k), genre)}</label>
+      ${aide ? `<div class="aide" data-aide-corps="${echapper(c.cle + "." + k)}" hidden>
+          <p>${echapper(aide)}</p></div>` : ""}
+    </div>`;
+  }).join("")}</div>`;
   return `<div class="champ pleine structure">
     ${tete}
     ${corps}
@@ -1001,21 +889,6 @@ function valeurEn(o, chemin) {
  * l'enregistrement (`lireFormulaire`). */
 function caseSousChamp(parent, k, val, genre) {
   const attrs = `data-sous-de="${echapper(parent)}" data-sous-cle="${echapper(k)}"`;
-  if (genre.choix && genre.boutons) {
-    // Les boutons à cocher : la valeur est dans une case cachée, que tout
-    // le reste de la page lit comme une liste de choix (`lireFormulaire`) ;
-    // cocher l'écrit (`cocherUnBouton`). Le choix vide (« à dire ») n'est
-    // pas un bouton : rien de coché.
-    const type = genre.booleen ? "booleen" : "choix";
-    const nom = `bouton-${parent}-${k}`;
-    return `<div class="boutons-choix" role="radiogroup">
-      <input type="hidden" ${attrs} data-sous-type="${type}"${valeurDeDepart(val)}>
-      ${Object.entries(genre.choix).filter(([v]) => v !== "").map(([v, lib]) => `
-      <label class="coche"><input type="radio" name="${echapper(nom)}" value="${echapper(v)}"
-        ${val != null && String(val) === v ? "checked" : ""}>
-        <span data-choix-libelle="${echapper(v)}">${echapper(lib)}</span></label>`).join("")}
-    </div>`;
-  }
   if (genre.choix) {
     // Un oui/non (`booleen`) se choisit comme un choix et s'enregistre en
     // vrai booleen (`lireFormulaire`).
@@ -1032,49 +905,6 @@ function caseSousChamp(parent, k, val, genre) {
     return `<input type="date" ${attrs}${valeurDeDepart(val)}>`;
   }
   return `<input ${attrs}${valeurDeDepart(val)}>`;
-}
-
-/* Cocher un bouton écrit sa valeur dans la case cachée du groupe, et la
- * case le dit comme si on l'avait tapée (`input`). En capture : la case est
- * à jour avant que le bouton lui-même ne relise le formulaire. */
-function cocherUnBouton(e) {
-  const r = e.target;
-  if (!(r instanceof HTMLInputElement) || r.type !== "radio") return;
-  const groupe = r.closest(".boutons-choix");
-  const caseCachee = groupe && groupe.querySelector('input[type="hidden"][data-sous-cle]');
-  if (!caseCachee) return;
-  caseCachee.value = r.value;
-  caseCachee.dispatchEvent(new Event("input", { bubbles: true }));
-}
-document.addEventListener("input", cocherUnBouton, true);
-
-/* Une ligne d'une liste. `temps` : ceux de ses cases (`lignes` des temps de la liste) ; chacune montre sous elle sa
- * valeur d'avant et celle à venir, une case faite de cases (« versement_mobilite ») sous la première des siennes. */
-function ligneStructure(cle, sous, ligne, i, temps) {
-  const o = ligne && typeof ligne === "object" ? ligne : {};
-  const montres = new Set();
-  const sousLaCase = (k) => {
-    const t = temps && temps.cases.find((x) => (x.champ === k || k.startsWith(x.champ + ".")) && !montres.has(x.champ));
-    if (!t) return "";
-    montres.add(t.champ);
-    return lignesDuTemps(t, valeurLisible);
-  };
-  return `<div class="ligne-structure" data-index="${i}">
-    ${sous.champs.filter(([, , , genre]) => !genre.si || ETAT.configuration[genre.si]).map(([k, lib, aide, genre]) => {
-      const val = valeurEn(o, k);
-      const attrs = `data-liste-de="${echapper(cle)}" data-liste-index="${i}"
-          data-sous-cle="${echapper(k)}" ${aide ? `placeholder="${echapper(aide)}"` : ""}`;
-      const v = valeurDeDepart(val);
-      const champ = genre.date && (val == null || /^(\d{4}-\d{2}-\d{2})?$/.test(String(val)))
-        ? `<input type="date" ${attrs}${v}>`
-        : genre.codesAtmp ? `<input ${attrs} list="codes-atmp" maxlength="7"${v}>`
-        : genre.decimal ? `<input ${attrs} inputmode="decimal"${v}>`
-        : `<input ${attrs}${v}>`;
-      return `<label>${echapper(lib)} ${champ}${sousLaCase(k)}</label>`;
-    }).join("")}
-    <button type="button" class="retirer-ligne" title="retirer cette ligne">✕</button>
-    ${o.nic ? `<p class="aide ligne-dit" data-ligne-nic="${echapper(o.nic)}"></p>` : ""}
-  </div>`;
 }
 
 /* La fiche que le formulaire montre en ce moment : `quitterLaFiche` en a
@@ -1117,7 +947,7 @@ async function peindreCoutAnnee() {
     if (!d || (!d.bulletins && !Number(d.prevu))) return "";
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
-  el.innerHTML = `<span class="discret">Coût…</span>`;
+  el.innerHTML = `<span class="discret">${aideDe("cout_attente")}</span>`;
   let cette, avant;
   // Un refus se dit à la place du coût, et l'année se redemande à la prochaine fiche ouverte.
   try { [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]); } catch (e) {
@@ -1280,124 +1110,9 @@ function DFS_HTML() {
   </div>`;
 }
 
-/* Ouvre la fiche de l'entreprise sur l'option de la déduction forfaitaire. */
-async function ouvrirOptionDfs() {
-  await ouvrirFicheImportee("entreprise");
-  const champ = document.querySelector('[data-cle="deduction_forfaitaire_option"]');
-  if (!champ) return;
-  const tiroir = champ.closest("details");
-  if (tiroir) tiroir.open = true;
-  champ.scrollIntoView({ behavior: "smooth", block: "center" });
-  champ.focus();
-}
-
-/* LE CODE RISQUE ET LE TAUX AT/MP, en tête du bloc « Numéros chez les
- * organismes » : une case de la fiche (`taux_atmp`), datée. Le moteur
- * (`taux-atmp`) dit le taux en vigueur, celui d'avant et celui à venir,
- * chacun avec sa phrase, ce qui manque, le risque tel que l'arrêté l'écrit,
- * où le lire et la date à proposer ; la page l'affiche. « Inscrire le taux
- * d'une notification » écrit une ligne par le geste ordinaire de la fiche
- * (`enregistrer-fiche`), à la date tapée ; l'avertissement du moteur se
- * confirme comme celui de toute fiche. */
-function ATMP_HTML() {
-  return `<div class="encart" id="config-atmp">
-    <h4>Accidents du travail (AT/MP)</h4>
-    <div id="atmp-dit"></div>
-    <details id="atmp-inscrire"><summary id="atmp-bouton"></summary>
-      <div class="ligne-champs">
-        <label>Code risque
-          <input id="atmp-code" class="hors-fiche" list="codes-atmp" maxlength="7"></label>
-        <label>Taux (%)
-          <input id="atmp-valeur" class="hors-fiche" inputmode="decimal"></label>
-        <label>À partir du
-          <input id="atmp-depuis" class="hors-fiche" type="date"></label>
-      </div>
-      <div class="actions"><button class="petit" id="atmp-enregistrer">Inscrire</button>
-        <span id="atmp-etat"></span></div>
-    </details>
-  </div>`;
-}
-
-/* Les lignes d'une case (en vigueur, à venir, avant), telles que le moteur
- * les dit, chacune avec d'où elle vient quand sa ligne le dit, dans `ou`. */
-function peindreLignesAtmp(ou, r) {
-  const ligne = (l, forme) => l ? [[l.dit, forme], [l.note, "aide discret"]] : [];
-  ou.replaceChildren(...[
-    [r.phrase, "b"],
-    [r.risque ? `« ${r.risque.libelle} »` : "", ""],
-    ...ligne(r.maintenant, ""),
-    ...ligne(r.a_venir, ""),
-    ...ligne(r.avant, "aide"),
-    [r.explication, "aide"],
-  ].filter(([t]) => t).map(([t, forme]) => {
-    const p = document.createElement("p");
-    if (forme === "b") p.appendChild(document.createElement("b")).textContent = t;
-    else { p.className = forme; p.textContent = t; }
-    return p;
-  }));
-}
-
-async function brancherAtmp() {
-  const bloc = document.getElementById("config-atmp");
-  if (!bloc) return;
-  const $ = (id) => document.getElementById(id);
-  const [code, valeur, depuis, etat] = ["atmp-code", "atmp-valeur", "atmp-depuis", "atmp-etat"].map($);
-  // Ces cases ne sont pas la fiche : elles ne la marquent pas modifiée.
-  [code, valeur, depuis].forEach((c) => { c.oninput = null; });
-  const peindre = (r) => {
-    peindreLignesAtmp($("atmp-dit"), r);
-    $("atmp-bouton").textContent = r.inscrire;
-    const ou = document.createElement("p");
-    ou.className = "aide";
-    ou.textContent = r.ou_le_lire;
-    $("atmp-dit").appendChild(ou);
-    if (!depuis.value) depuis.value = r.propose_depuis;
-    const codes = r.codes;
-    // Les codes que la case et les autres établissements proposent, et ce
-    // que le moteur applique à chacun, sous sa ligne.
-    let liste = document.getElementById("codes-atmp");
-    if (!liste) {
-      liste = document.createElement("datalist");
-      liste.id = "codes-atmp";
-      document.body.appendChild(liste);
-    }
-    liste.innerHTML = codes.map((c) =>
-      `<option value="${echapper(c.code)}">${echapper(c.code_arrete || c.code)} — ${echapper(c.libelle)}</option>`).join("");
-    // Sous la ligne de chaque autre établissement, ses lignes à lui.
-    // Un établissement sans NIC n'a pas de ligne où se dire.
-    r.etablissements.filter((e) => e.nic).forEach((e) => {
-      const p = document.querySelector(`[data-ligne-nic="${CSS.escape(e.nic)}"]`);
-      if (p) peindreLignesAtmp(p, e);
-    });
-  };
-  const lire = async () => {
-    // La fiche quittée avant la réponse n'a plus ces cases : rien à peindre.
-    try { const r = await api("taux-atmp", {}); if (bloc.isConnected) peindre(r); }
-    catch (e) { etat.textContent = e.message; }
-  };
-  $("atmp-enregistrer").onclick = async (ev) => {
-    ev.preventDefault();
-    // Le taux part tel qu'il est tapé (« 1,5 % ») : la route le convertit, et le refuse en nommant la case.
-    const ligne = { code_risque: code.value.trim() || null, valeur: valeur.value.trim() || null, depuis: depuis.value || null };
-    const charge = { nom: "entreprise", changements: [{ case: "taux_atmp", valeur: ligne }] };
-    try {
-      let r = await api("enregistrer-fiche", charge);
-      if (r.avertissement) {
-        const rendre = mettreDeCote();
-        const reponse = await demanderDateDEffet(r.avertissement);
-        if (rendre) rendre();
-        if (!reponse) { etat.textContent = ETAT.aides.rien_enregistre; return; }
-        r = await api("enregistrer-fiche", { ...charge, ...reponse, confirme: true });
-      }
-      etat.textContent = r.phrase;
-      code.value = ""; valeur.value = ""; depuis.value = "";
-      await relireEtat();
-      await lire();
-    } catch (e) {
-      etat.textContent = e.message;
-    }
-  };
-  await lire();
+/* Ouvre la fiche de l'entreprise sur l'option de la déduction forfaitaire (le lien par sa clé, `allerAuManque`). */
+function ouvrirOptionDfs() {
+  return allerAuManque("deduction_forfaitaire_option", "entreprise");
 }
 
 /* LA COMPLÉMENTAIRE SANTÉ D'UN PERMANENT, en tete du bloc
@@ -1530,8 +1245,8 @@ async function boiteSuppression() {
   };
   document.getElementById("sup-confirmer").onclick = async () => {
     let mdp = "";
-    if (q.mot_de_passe) {
-      mdp = await demanderMotDePasse("Supprimer définitivement");
+    if (q.demande) {
+      mdp = await demanderMotDePasse(q.demande);
       if (mdp === null) return;
     }
     try {

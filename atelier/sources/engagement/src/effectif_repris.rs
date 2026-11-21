@@ -29,6 +29,8 @@ pub struct EffectifRepris {
     pub valeur: Option<Effectif>,
     pub phrase: String,
     pub reserves: Vec<&'static str>,
+    /// Une paie de cette annee est reprise : sans aucune, la compagnie n'a rien repris de cette annee, et il n'y a rien a en dire.
+    pub paies_reprises: bool,
 }
 
 /// LA PREMIERE EMBAUCHE QUE LES PIECES REPRISES DISENT, que « Pour démarrer » propose dans la case de la premiere
@@ -254,10 +256,10 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
     let plus_ancien = repris.iter().next().copied();
     let mut out = Vec::new();
     for an in annees {
-        let rien = |phrase: String| EffectifRepris { annee: *an, valeur: None, phrase, reserves: Vec::new() };
+        let rien = |phrase: String| EffectifRepris { annee: *an, valeur: None, phrase, reserves: Vec::new(), paies_reprises: true };
         let mois_repris: Vec<Mois> = an.les_mois().into_iter().filter(|m| repris.contains(m)).collect();
         if mois_repris.is_empty() {
-            out.push(rien(format!("{} : aucune paie de cette année n'est reprise.", an)));
+            out.push(EffectifRepris { paies_reprises: false, ..rien(format!("{} : aucune paie de cette année n'est reprise.", an)) });
             continue;
         }
         // Ce que la compagnie valide avec la valeur.
@@ -315,6 +317,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
                 out.push(EffectifRepris {
                     annee: *an,
                     valeur: Some(e),
+                    paies_reprises: true,
                     phrase: format!(
                         "{} : {} présent le {}, le dernier jour du mois de la première embauche, d'après les paies reprises de {} (pour cette année-là, c'est lui qui compte, pas une moyenne : L. 130-1, I, CSS).",
                         an,
@@ -359,7 +362,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
             }
         };
         out.push(match droit::effectif::effectif_annuel(par_mois) {
-            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("{} : {}, d'après les paies reprises{}.", an, dit(e), manquent), reserves },
+            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("{} : {}, d'après les paies reprises{}.", an, dit(e), manquent), reserves, paies_reprises: true },
             None => rien(format!("{} : les paies reprises ne comptent aucun salarié employé{}.", an, manquent)),
         });
     }

@@ -88,16 +88,14 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
     let mdp = mot_de_passe_de_consultation(ctx, nom)?;
     match authentifier(ctx, nom, mdp) {
         Ok(()) => Ok(Verdict::de(nom, true, "session ouverte".into(), None)),
+        // La phrase de l'organisme dit deja qui, ce que cela peut etre et quoi faire (`envois::transport::panne_dite`) ; le
+        // detail technique est a part, et la route `coffre-verifier` ne refuse pas : il part chez l'editeur ici.
         Err(p) if p.echec.classe == Some(Classe::Organisme) => {
-            let premiere: String = socle::texte::lignes_du_texte(&p.echec.phrase).first().map(|l| l.to_string()).into_iter().collect();
-            let conseil = if premiere.contains("422") {
-                Some("Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le.")
-            } else if premiere.contains("403") {
-                Some("Le service répond 403 : le compte est bloqué un temps (trop de tentatives). N'essayez plus, attendez.")
-            } else {
-                None
-            };
-            Ok(Verdict::de(nom, false, premiere, conseil))
+            let nature = p.dit_un_refus().then_some(crate::incidents::REFUS);
+            if let Err(n) = crate::incidents::depuis_exception(&ctx.racine, p.echec.classe, &p.echec.phrase, nature, "coffre-verifier", p.echec.a_part.as_ref(), None) {
+                crate::diagnostic::noter_moteur(&format!("La vérification d'un mot de passe ne s'est pas notée au journal des incidents : {}", n.phrase));
+            }
+            Ok(Verdict::de(nom, false, p.echec.phrase, None))
         }
         Err(autre) => Err(autre.en_echec()),
     }

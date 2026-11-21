@@ -15,6 +15,8 @@ pub struct DepotRefuse {
     pub mode: socle::mode::Mode,
     pub classe: Option<socle::echec::Classe>,
     pub message: String,
+    /// Ce que le refus porte a part (le detail technique d'une reponse de l'organisme : `transport::panne_dite`).
+    pub a_part: Option<socle::echec::APart>,
     /// Ce qui a ouvert le depot reel (`None` pour un test).
     pub repetition: Option<crate::journal::Ouverture>,
 }
@@ -68,12 +70,23 @@ pub struct Suites {
     /// rétrocompatibilité », l'URL le remplace) et le refus qui l'a dit. Notes vus, ils ne reviendront pas ; ils se notent
     /// chez l'editeur.
     pub retires: Vec<(crate::retours::NatureDuRetour, socle::garde_reseau::Url, socle::echec::Echec)>,
+    /// LES PANNES D'UN ORGANISME rencontrees en chemin (`transport::panne_dite`) : la compagnie en lit la phrase, l'editeur
+    /// en recoit le detail technique (`a_part`), par le journal des incidents.
+    pub pannes: Vec<crate::transport::EchecApi>,
     /// Ce que l'envoi a deja a dire (les incidents de sa releve, ce que ses retours laissent a faire) : les suites y
     /// ajoutent le leur.
     pub dit: ADire,
 }
 
 impl Suites {
+    /// Une panne de l'organisme, a noter chez l'editeur (`pannes`) quand il a repondu (un statut) : un reseau injoignable
+    /// ne dit rien de l'organisme ni du logiciel, et la veille le reessaie seule.
+    pub fn panne(&mut self, p: crate::transport::EchecApi) {
+        if p.code.is_some() {
+            self.pannes.push(p);
+        }
+    }
+
     /// Le resultat d'un `AvecIncidents`, ses incidents et ses pieces illisibles gardes pour l'appelant.
     pub fn garder<T>(&mut self, r: crate::etats::AvecIncidents<T>) -> socle::echec::R<T> {
         self.incidents_des_retours.extend(r.incidents);
