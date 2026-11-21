@@ -767,14 +767,16 @@ impl ParLaGrille {
     }
 }
 
-/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, ou d'une unite de grille (la journee,
-/// la semaine, le mois).
+/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, d'une unite de grille (la journee,
+/// la semaine, le mois), ou ce que paie un jour de repetition, ses services ensemble (le cachet de repetition de la 3090,
+/// « pour un ou deux services de répétitions de quatre heures dans la même journée »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Par {
     Heure,
     Cachet,
     Service,
     Unite,
+    Jour,
 }
 
 /// Le minimum conventionnel d'une ligne de paie, tel que les avertissements le lisent : le montant, la grille d'ou il

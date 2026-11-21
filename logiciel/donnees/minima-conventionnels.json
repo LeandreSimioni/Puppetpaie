@@ -13,7 +13,7 @@
   "metiers": {
    "MAR010": {
     "nom": "Artiste marionnettiste",
-    "note": "Seule l'annexe 4 (tournee) nomme le marionnettiste : c'est elle qui est relevee. En annexe 1, le calcul compare son cachet a la grille << Role (artiste dramatique) >> (emplois-base.json, minima.3090.1), qu'aucun texte depose ne lui rattache : la bulle n'en dit rien.",
+    "note": "Seule l'annexe 4 (tournee) nomme le marionnettiste : c'est elle qui est relevee, et les avertissements de minimum la lisent comme la bulle, quelle que soit l'annexe de la fiche Entreprise.",
     "rubriques": [
      {"rubrique": "cachet", "annexe": "4"},
      {"rubrique": "repetition", "annexe": "4", "condition": "par jour, pour 1 ou 2 services de 4 h"},

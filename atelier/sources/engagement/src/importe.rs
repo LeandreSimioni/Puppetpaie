@@ -916,6 +916,7 @@ impl Importe {
             avant: None,
             periode: None,
             sans_remuneration: None,
+            metier: None,
             ecrit: crate::ContratEcrit::default(),
         };
         // Chaque ligne imprimee, avec sa ligne de remuneration quand elle est rattachee (`rattachee`).

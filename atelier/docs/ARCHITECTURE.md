@@ -2210,8 +2210,10 @@ datée, vérifiable**.
   `emplois::metiers_crees`) a la fiche d'un métier du catalogue et se lit par le même chemin (`CodeEmploi::metier`,
   qui note son fichier dans l'empreinte de la paie) ; son code, `CIE-` et un numéro, ne s'écrit jamais comme un code de
   la nomenclature, et ne masque donc aucun métier du catalogue ; la DSN déclare son code France Travail
-  (`Metier::code_emploi_ft`). Il se propose d'office dans les cartes, et se retire comme les autres (décoché). Il garde
-  le rattachement aux minima de sa copie ; aucun texte déposé n'interdit d'employer sur un métier hors des listes des
+  (`Metier::code_emploi_ft`). Il se propose d'office dans les cartes, et se retire comme les autres (décoché). Il n'a
+  pas de minimum relevé (Léandre, 21/11/2026 : « vide, c'est pas le métier original ») : ni la bulle ni l'avertissement
+  de minimum ne le comparent à la grille de sa copie (l'engagement garde le métier de sa carte, `Engagement::metier`) ;
+  aucun texte déposé n'interdit d'employer sur un métier hors des listes des
   annexes 8 et 10 (elles disent qui relève de l'assurance chômage des intermittents, `caisse_conges::hors_de_l_annexe8`),
   et rien ne se refuse de plus.
 - `logiciel/donnees/minima-conventionnels.json` — les grilles de la **3090** (annexes
@@ -2238,6 +2240,11 @@ datée, vérifiable**.
   du mois de la carte, et le texte affiché est l'article de la source de cette valeur qui cite chaque montant (un test
   des sources le tient, `chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source`). La lecture dit ce qu'elle sait :
   une rubrique dont la valeur ne se lit pas pour la compagnie ce jour-là ne se dit pas, et rien d'autre ne tombe.
+  **Un seul chemin** : pour un métier que `metiers` relève, l'avertissement de minimum lit la même grille que la bulle,
+  dans l'annexe que la table nomme, sans regarder l'annexe de la fiche Entreprise ; une rubrique que la table ne relève
+  pas ne s'avertit pas. La répétition se compare au jour (`droit::minima::Par::Jour`) : le cachet de répétition de
+  l'annexe vaut pour 1 ou 2 services dans la journée, et la journée la moins payée de la ligne (ses services au taux de
+  la ligne) s'y compare quand la ligne le dit (`engagement::minima::journee_la_moins_payee`) ; un musicien n'en a pas.
   Ajouter un métier, c'est ajouter son entrée (et la `source` de sa grille si elle n'en a pas) ; une rubrique sans
   lecteur (autre que cachet, répétition, repas, nuitée) ne se lit pas dans la table.
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,

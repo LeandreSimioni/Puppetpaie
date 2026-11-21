@@ -132,6 +132,10 @@ pub struct Engagement {
     /// (`conges::lignes_du_mois`, `calcul::plafond_de_l_engagement`) ; `None` : un engagement dont le moteur ne deduit
     /// pas le mois (au cachet, relu d'une paie ecrite, importe), dont le plafond ne se calcule pas.
     pub sans_remuneration: Option<droit::plafond::JoursSansRemuneration>,
+    /// Le metier que la carte du mois choisit (`saisie::Carte.metier`) ; `None` : la carte n'en choisit pas, ou
+    /// l'engagement est relu d'une paie ecrite ou importe. Les minima le lisent : un metier que la compagnie a cree n'a
+    /// pas de minimum releve (`minima`, Leandre, 21/11/2026 : « vide, c'est pas le metier original »).
+    pub metier: Option<emplois::CodeEmploi>,
     /// Ce que la saisie dit du contrat ECRIT et que rien d'autre ne porte (`ContratEcrit`) : la periode
     /// d'essai (L1242-12, 6° ; R1221-34, 7°), la personne remplacee (L1242-12, 1°), la repartition des horaires d'un
     /// temps partiel (L3123-6, 1°), les clauses particulieres de ce contrat. Vide : rien n'est dit.
@@ -529,6 +533,7 @@ impl Engagement {
             avant: v.avant.clone(),
             periode: None,
             sans_remuneration: None,
+            metier: None,
             ecrit: ContratEcrit {
                 periode_essai_jours: v.periode_essai_jours.filter(|j| !j.nulle()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
@@ -845,6 +850,7 @@ impl Engagement {
             avant: None,
             periode: None,
             sans_remuneration: None,
+            metier: None,
             // `canon` ne l'ecrit que dit : absent, rien n'etait dit.
             ecrit: match &f.contrat_ecrit {
                 Some(c) => c.clone(),
@@ -1194,6 +1200,7 @@ pub(crate) fn engagements(
         };
         let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         eng.sans_remuneration = sans_remuneration;
+        eng.metier = carte.metier.clone();
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -2096,6 +2103,7 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     for p in paies.iter_mut() {
         let mut avis = crate::minima::avertissements(ctx, p)?;
         avis.extend(crate::minima::sous_le_smic(ctx, p)?);
+        avis.extend(crate::calcul::net_negatif(ctx, p)?);
         p.ecrire().avertissements.extend(avis);
     }
     // Une carte ecrite avant, dont la cle gardee dit non cadre un metier habituellement cadre (`saisie::Carte.cadre`) : on
