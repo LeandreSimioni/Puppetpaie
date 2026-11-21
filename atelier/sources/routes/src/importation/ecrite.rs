@@ -975,16 +975,24 @@ pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
         (0, s) => format!(" Titre à dire pour {} spectacle(s) : les pièces ne portent que le numéro d'objet (Pour démarrer).", s),
         (p, s) => format!(" Titre à dire pour {} spectacle(s), dont {} proposé(s) d'après les bulletins (Pour démarrer).", p + s, p),
     };
+    // LES SALARIES CREES ARCHIVES (`import::derniere_piece`) : aucune piece ne les porte dans les douze derniers mois.
+    let archives = reponse.salaries.iter().filter(|f| f.etat == EtatFiche::Creee && f.donnees.salarie().is_some_and(|s| s.actif == Some(false))).count();
+    let archives = match archives {
+        0 => String::new(),
+        1 => " Un salarié créé est archivé : aucune pièce ne le paie depuis plus d'un an.".to_string(),
+        n => format!(" {} salariés créés sont archivés : aucune pièce ne les paie depuis plus d'un an.", n),
+    };
     // LES INDIVIDUS MIS DE COTE (`importation::identite`) : rien d'eux n'est repris, la phrase le dit, et chacun sa
     // question.
     let en_question = reponse.dire_les_identites();
     reponse.dire();
     let b = &reponse.bulletins;
     reponse.phrase = socle::phrase!(
-        "Repris : {}, {} ; fiches écrites : {}.{}{}{}",
+        "Repris : {}, {} ; fiches écrites : {}.{}{}{}{}",
         socle::ecran::compte(reponse.contrats_nouveaux + b.contrats_nouveaux, "contrat", "contrats"),
         socle::ecran::compte(b.paies_nouvelles + b.paies_completees, "bulletin", "bulletins"),
         if fiches.is_empty() { "aucune".to_string() } else { fiches.join(", ") },
+        archives,
         titres,
         en_question,
         remplacees
