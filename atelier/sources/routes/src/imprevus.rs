@@ -938,22 +938,30 @@ pub(crate) struct ResumeDeSuspension {
 /// UN GESTE QU'UNE ROUTE REND, que la page dessine en bouton et branche (`js/avance.js`, `brancherLesGestes`) : sa
 /// route, sa charge (`C` : ce qui designe un imprevu, une question d'identite de l'import...), son libelle, et ce que sa
 /// boite fait saisir : les cases de la fiche de sa route qu'elle montre (`cases` ; aucune : le geste part tel quel), ce
-/// qu'elles montrent d'abord (`valeurs`), les choix d'une case qui se choisit (`choix`) et ce que la boite dit au-dessus
-/// (`phrases`). Le moteur ne rend que ceux qu'il ouvre.
+/// qu'elles montrent d'abord (`valeurs`, `V` : celles d'un imprevu par defaut), les choix d'une case qui se choisit
+/// (`choix`, `X`) et ce que la boite dit au-dessus (`phrases`). Le moteur ne rend que ceux qu'il ouvre.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct GesteDeRoute<C> {
+pub(crate) struct GesteDeRoute<C, V = ValeursDeDepart, X = ChoixDesCases> {
     route: Route,
     charge: C,
     libelle: &'static str,
     cases: Vec<&'static str>,
-    valeurs: ValeursDeDepart,
-    choix: ChoixDesCases,
+    valeurs: V,
+    choix: X,
     phrases: Vec<String>,
+}
+
+impl<C, V, X> GesteDeRoute<C, V, X> {
+    /// Le geste dont la boite fait saisir les cases `cases` de la fiche de sa route, montrant d'abord `valeurs`, et
+    /// offrant `choix` aux cases qui se choisissent.
+    pub(crate) fn avec_cases(route: Route, charge: C, libelle: Affiche, cases: Vec<&'static str>, valeurs: V, choix: X) -> GesteDeRoute<C, V, X> {
+        GesteDeRoute { route, charge, libelle: libelle.texte(), cases, valeurs, choix, phrases: Vec::new() }
+    }
 }
 
 /// Ce que les cases d'un geste montrent d'abord : ce que l'imprevu dit deja, ou ce que le moteur propose.
 #[derive(Debug, Clone, Default, Serialize)]
-struct ValeursDeDepart {
+pub(crate) struct ValeursDeDepart {
     #[serde(skip_serializing_if = "Option::is_none")]
     fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -974,7 +982,7 @@ struct ValeursDeDepart {
 
 /// Les choix d'une case d'un geste qui se choisit dans une liste : le motif d'une reprise (nomenclature du bloc 60).
 #[derive(Debug, Clone, Default, Serialize)]
-struct ChoixDesCases {
+pub(crate) struct ChoixDesCases {
     #[serde(skip_serializing_if = "Option::is_none")]
     motif_reprise: Option<Vec<Choisi>>,
 }

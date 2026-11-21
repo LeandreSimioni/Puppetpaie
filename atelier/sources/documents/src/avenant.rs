@@ -417,7 +417,6 @@ fn terme_nomme(terme: Champ) -> (&'static str, &'static str) {
         Champ::ModaliteTempsTravail => ("Temps de travail", "la modalité du temps de travail"),
         Champ::Emploi => ("Emploi", "l'emploi"),
         Champ::Metier => ("Métier", "le métier"),
-        Champ::Cadre => ("Statut de cadre", "le statut de cadre"),
         Champ::Statut => ("Statut", "le statut"),
         Champ::Nature => ("Nature du contrat", "la nature du contrat"),
         Champ::MotifRecours => ("Motif de recours", "le motif de recours"),
@@ -451,20 +450,6 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: Champ, v
             Valeur::Heures(h) => format!("{} heures par mois", socle::texte::virgule(*h)),
             _ => return Err(socle::refus!("{} : une durée en heures est attendue, lu {}", terme.nom(), texte)),
         },
-        Champ::Cadre => {
-            let cadre = match v {
-                Valeur::Oui(b) => *b,
-                Valeur::Coefficient(c) => !c.est_nul(),
-                Valeur::Heures(h) => !h.est_nul(),
-                Valeur::Montant(m) => !m.est_nul(),
-                Valeur::MontantUnitaire(m) => !m.est_nul(),
-                Valeur::Jours(j) => !j.est_nul(),
-                Valeur::Duree(d) => !d.nulle(),
-                Valeur::Texte(s) => !s.is_empty(),
-                Valeur::Nature(_) => true,
-            };
-            if cadre { "cadre".into() } else { "non cadre".into() }
-        }
         Champ::MotifRecours => droit::natures::MotifDeRecours::du_code(&texte).and_then(|m| nat.libelle_motif_recours(m)).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", texte, nat.libelle))?,
         Champ::Spectacle => droit::fiche::Lue::ecrite(&ctx.spectacle(&texte)?.titre, "titre")?.to_string(),
         Champ::Emploi => format!("« {} »", texte),

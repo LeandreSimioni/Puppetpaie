@@ -104,19 +104,90 @@ pub struct Saisie {
     pub faits: BTreeMap<Mois, Carte>,
 }
 
-/// UN AVENANT : les termes qui changent a partir du jour `depuis`, et ceux qui se retirent.
+/// UN AVENANT : les termes qui changent a partir du jour `depuis`, et ceux qui se retirent. Ecrit par sa forme
+/// (`AvenantEcrit`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "AvenantEcrit", into = "AvenantEcrit")]
 pub struct Avenant {
     pub depuis: Jour,
     pub termes: Carte,
     pub retires: Vec<Champ>,
+    /// La cle gardee `cadre` (`saisie::Carte.cadre`) retiree ce jour-la : par l'avenant qui change le metier (`dater`), ou
+    /// par un avenant ecrit quand elle etait une case, qui se relit tel qu'il est ecrit.
+    pub retire_le_cadre: bool,
+}
+
+/// LA FORME ECRITE D'UN AVENANT : ses retires, chacun un champ de la carte ou la cle gardee `cadre`, dans l'ordre des
+/// champs ou elle etait une case (apres le metier).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AvenantEcrit {
+    depuis: Jour,
+    termes: Carte,
+    retires: Vec<Retire>,
+}
+
+/// Un retire tel qu'ecrit : un champ de la carte, ou la cle gardee `cadre`.
+#[derive(Clone, Copy, PartialEq)]
+enum Retire {
+    Champ(Champ),
+    Cadre,
+}
+
+/// Le nom ecrit de la cle gardee `cadre`.
+const CADRE: &str = "cadre";
+
+impl Serialize for Retire {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Retire::Champ(c) => c.serialize(s),
+            Retire::Cadre => s.serialize_str(CADRE),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Retire {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Retire, D::Error> {
+        let nom = String::deserialize(d)?;
+        if nom == CADRE {
+            return Ok(Retire::Cadre);
+        }
+        Champ::TOUS.iter().copied().find(|c| c.nom() == nom).map(Retire::Champ).ok_or_else(|| serde::de::Error::custom(format!("« {} » n'est pas un champ d'une carte", nom)))
+    }
+}
+
+impl From<AvenantEcrit> for Avenant {
+    fn from(a: AvenantEcrit) -> Avenant {
+        let retires = a
+            .retires
+            .iter()
+            .filter_map(|r| match r {
+                Retire::Champ(c) => Some(*c),
+                Retire::Cadre => None,
+            })
+            .collect();
+        Avenant { depuis: a.depuis, termes: a.termes, retires, retire_le_cadre: a.retires.contains(&Retire::Cadre) }
+    }
+}
+
+impl From<Avenant> for AvenantEcrit {
+    fn from(a: Avenant) -> AvenantEcrit {
+        let mut retires: Vec<Retire> = a.retires.iter().copied().map(Retire::Champ).collect();
+        if a.retire_le_cadre {
+            let ou = match a.retires.iter().position(|c| *c > Champ::Metier) {
+                Some(i) => i,
+                None => a.retires.len(),
+            };
+            retires.insert(ou, Retire::Cadre);
+        }
+        AvenantEcrit { depuis: a.depuis, termes: a.termes, retires }
+    }
 }
 
 impl Avenant {
     /// Il ne change rien.
     fn vide(&self) -> bool {
-        self.retires.is_empty() && self.termes.muette()
+        self.retires.is_empty() && !self.retire_le_cadre && self.termes.muette()
     }
 }
 
@@ -566,6 +637,7 @@ impl Objet {
             v
         };
         self.termes_au(&mut v, &mois.dernier_jour());
+        v.cadre = self.cadre_garde(&mois.dernier_jour());
         if mois > self.fichier && mensuel {
             self.avenant_du_mois(&mut v, mois)?;
         }
@@ -601,6 +673,21 @@ impl Objet {
                 v.ote(*c);
             }
         }
+    }
+
+    /// LA CLE GARDEE `cadre` AU `jour` (`saisie::Carte.cadre`) : celle du premier mois, puis chaque avenant venu qui la
+    /// redit ou la retire, comme un terme (`termes_au`), quel que soit le metier : une carte ecrite quand elle etait une
+    /// case se calcule comme alors. Un avenant neuf qui change le metier la retire (`dater`).
+    fn cadre_garde(&self, jour: &Jour) -> Option<bool> {
+        let mut cadre = self.carte().cadre;
+        for a in self.avenants().iter().filter(|a| a.depuis <= *jour) {
+            if a.retire_le_cadre {
+                cadre = None;
+            } else if a.termes.cadre.is_some() {
+                cadre = a.termes.cadre;
+            }
+        }
+        cadre
     }
 
     /// LES TERMES DU CONTRAT A SON DERNIER AVENANT : ceux du premier mois, et chacun de ses avenants, du plus ancien au plus
@@ -992,7 +1079,11 @@ pub fn ecrire_la_carte(ctx: &Contexte, mois: Mois, id: Option<&Identite>, saisie
             if let Some((_, o)) = &soi {
                 effacer(racine, o)?;
             }
-            let neuf = Ecrit { saisie: Saisie { carte: en_forme(saisie)?, ..Saisie::default() }, ..Ecrit::default() };
+            let mut carte = en_forme(saisie)?;
+            if let Some((_, o)) = &soi {
+                carte.reprendre_le_cadre(o.carte());
+            }
+            let neuf = Ecrit { saisie: Saisie { carte, ..Saisie::default() }, ..Ecrit::default() };
             let mut contenu = match lire_fichier(racine, fichier)? {
                 Some(c) => c,
                 None => FichierDuMois { mois: fichier, taux_cachet: defauts.taux_cachet.clone(), engagements: Vec::new() },
@@ -1148,22 +1239,12 @@ fn poser_sur(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) -> R<(
     poser_le_mois(o, mois, &saisie, le)
 }
 
-/// CE QU'UNE CARTE ECRIT, DANS LA FORME ECRITE : ni ce que le moteur tient seul ni ce qu'il deduit ; sa nature, toujours ;
-/// `cadre`
-/// seulement s'il s'ecarte du defaut du metier au catalogue (`emplois::metier`), et toujours pour un metier dont le
-/// defaut change d'une convention a l'autre (`emplois::Metier::cadre_selon_la_convention`). Une carte ecrite deux fois a
-/// l'identique s'ecrit donc de meme, et sa relecture ne voit aucun changement.
+/// CE QU'UNE CARTE ECRIT, DANS LA FORME ECRITE : ni ce que le moteur tient seul ni ce qu'il deduit ; sa nature, toujours.
+/// Une carte ecrite deux fois a l'identique s'ecrit donc de meme, et sa relecture ne voit aucun changement.
 /// L'apercu lit chaque carte dans cette forme aussi.
 pub fn en_forme(saisie: &Carte) -> R<Carte> {
     // Ce que le moteur deduit, ou tient seul.
     let mut saisie = saisie.sans(&[Groupe::Deduit, Groupe::Vue]);
-    let catalogue = match &saisie.metier {
-        Some(m) => Some(m.metier()?).filter(|f| !f.cadre_selon_la_convention()).and_then(|f| f.cadre_par_defaut(None)),
-        None => None,
-    };
-    if catalogue.is_some() && saisie.cadre == catalogue {
-        saisie.cadre = None;
-    }
     if !saisie.nature_lue()?.mensuelle() && saisie.lignes.is_none() && saisie.debut.is_some() && saisie.fin.is_some() {
         // UN MOIS DU CONTRAT SANS CACHET : un contrat aux bornes dites, sans ligne, s'ecrit `lignes: []` -- la DSN porte
         // le contrat avec un versement a zero, sans bulletin.
@@ -1200,6 +1281,7 @@ fn poser_le_mois(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) ->
         for k in Champ::des(&[Groupe::Partage]) {
             neuf.prendre(o.carte(), k);
         }
+        neuf.reprendre_le_cadre(o.carte());
         o.brut_mut().saisie.carte = neuf;
     } else {
         let depuis = match le {
@@ -1277,23 +1359,31 @@ fn dater(o: &mut Objet, terme: Champ, mois: Mois, depuis: Jour, saisie: &Carte) 
         for a in s.avenants.iter_mut().filter(|a| mois.contient(&a.depuis)) {
             a.termes.ote(terme);
             a.retires.retain(|c| *c != terme);
+            if terme == Champ::Metier {
+                a.retire_le_cadre = false;
+            }
         }
         s.avenants.retain(|a| !a.vide());
     }
-    let veille = o.termes_a(&depuis.avant(socle::date::Duree::jours(1))?);
+    let la_veille = depuis.avant(socle::date::Duree::jours(1))?;
+    let veille = o.termes_a(&la_veille);
     if veille.comparable_du(terme) == saisie.comparable_du(terme) {
         return Ok(());
     }
+    // La cle gardee `cadre` disait le cadre du metier qu'elle accompagnait : sous un autre metier, le cadre se lit de lui
+    // seul, et l'avenant qui change le metier la retire (`Objet::cadre_garde`).
+    let retire_le_cadre = terme == Champ::Metier && o.cadre_garde(&la_veille).is_some();
     let s = &mut o.brut_mut().saisie;
     let i = match s.avenants.iter().position(|a| a.depuis == depuis) {
         Some(i) => i,
         None => {
-            s.avenants.push(Avenant { depuis, termes: Carte::default(), retires: Vec::new() });
+            s.avenants.push(Avenant { depuis, termes: Carte::default(), retires: Vec::new(), retire_le_cadre: false });
             s.avenants.sort_by_key(|a| a.depuis);
             s.avenants.iter().position(|a| a.depuis == depuis).expect("l'avenant vient d'etre pose")
         }
     };
     let a = &mut s.avenants[i];
+    a.retire_le_cadre |= retire_le_cadre;
     if saisie.dit(terme) {
         a.termes.prendre(saisie, terme);
     } else {

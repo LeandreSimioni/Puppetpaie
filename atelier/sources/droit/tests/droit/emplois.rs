@@ -5,6 +5,11 @@ use crate::outils::typee::{cas_de, verifier, Ligne};
 use droit::emplois::{resoudre, CodeEmploi};
 use serde::{Deserialize, Serialize};
 
+/// Aucune compagnie : les codes de ces cas sont du catalogue ou de la nomenclature, qui ne lisent pas ses metiers crees.
+fn sans_compagnie() -> &'static std::path::Path {
+    std::path::Path::new("")
+}
+
 /// Un code, la case cadre de la fiche (vide, oui ou non), le feminin.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -34,7 +39,7 @@ enum Resolution {
 
 fn resolution(c: &CasResolu) -> Resolution {
     // Le code tel qu'une saisie le range, puis lu (`CodeEmploi`).
-    match CodeEmploi::lire(&CodeEmploi::rangee(&c.code)).and_then(|code| resoudre(&code, c.cadre, c.feminin, None)) {
+    match CodeEmploi::lire(&CodeEmploi::rangee(&c.code)).and_then(|code| code.metier(sans_compagnie())).and_then(|m| resoudre(&m, c.cadre, c.feminin, None)) {
         Ok(r) => Resolution::Champs {
             emploi: r.emploi,
             emploi_affichage: r.emploi_affichage,
@@ -57,7 +62,7 @@ fn resoudre_un_metier() {
     verifier("emplois-resolus.json", cas.into_iter().map(|c| Ligne { attendu: resolution(&c), cas: c }).collect());
     // Le dramaturge est cadre dans la 1285 (groupe B de la filiere artistique, art. XI.2.1) ; la grille 3090 ne le
     // nomme pas, le defaut du catalogue vaut.
-    let cadre = |idcc: &droit::fiche::Idcc| resoudre(&CodeEmploi::lire("DRA010").unwrap(), None, false, Some(idcc)).unwrap();
+    let cadre = |idcc: &droit::fiche::Idcc| resoudre(&CodeEmploi::lire("DRA010").unwrap().metier(sans_compagnie()).unwrap(), None, false, Some(idcc)).unwrap();
     let (ccneac, svp) = (droit::clauses::IDCC_CCNEAC, droit::fiche::IDCC_3090);
     assert_eq!((cadre(&ccneac).statut_conventionnel.map(|s| s.as_str()), cadre(&ccneac).statut_categoriel_rc.as_str()), (Some("04"), "01"));
     assert_eq!((cadre(&svp).statut_conventionnel.map(|s| s.as_str()), cadre(&svp).statut_categoriel_rc.as_str()), (Some("05"), "04"));

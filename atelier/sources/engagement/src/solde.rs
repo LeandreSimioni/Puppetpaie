@@ -89,14 +89,18 @@ fn idcc(ctx: &Contexte) -> Option<&droit::fiche::Idcc> {
 
 fn profil(ctx: &Contexte, e: &Carte) -> R<clauses::Profil> {
     let fiche = crate::fiche_du_salarie(ctx, e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?.champs;
-    clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?)
+    clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(ctx, e)?)
 }
 
 /// CE QUE L'ENGAGEMENT `e` DIT DU SALARIE la ou la fiche le dit aussi (`clauses::DitParLEngagement`) : son statut, son
-/// code emploi (`metier`), la case cadre, son debut. Une case vide ne
+/// metier (lu, `CodeEmploi::metier`), la cle gardee cadre d'une carte ecrite avant, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
-pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.emploi.as_ref().and_then(|x| x.statut), metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
+pub(crate) fn dit_par_l_engagement(ctx: &Contexte, e: &Carte) -> R<clauses::DitParLEngagement> {
+    let metier = match &e.metier {
+        Some(code) => Some(code.metier(&ctx.racine)?),
+        None => None,
+    };
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.emploi.as_ref().and_then(|x| x.statut), metier, cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age du salarie de `e` au dernier jour ecrit du contrat (ou aujourd'hui), en annees revolues ; `None` quand sa

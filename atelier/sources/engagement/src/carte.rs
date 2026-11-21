@@ -165,9 +165,6 @@ pub enum FaitQuiOuvre {
     PreavisNonEffectue,
     /// La carte est celle d'une paie importee d'un ancien logiciel (`Carte::importe`) : ce que son bulletin imprime s'y lit.
     Importee,
-    /// La carte ecrit son metier : le calcul ne lit la case « Cadre » qu'avec lui (`droit::emplois::resoudre`, le metier
-    /// de la carte tenu ici pour cadre ou non) ; sans metier sur la carte, le cadre est celui de la fiche du salarie.
-    MetierEcrit,
     /// Un contrat paye au mois a temps plein : ses heures supplementaires du mois (L. 3121-28).
     TempsPlein,
     /// Un contrat paye au mois a temps plein, sous une convention qui ne fixe pas les paliers des heures supplementaires :
@@ -294,11 +291,9 @@ nature! {
     /// les jours travailles) : la carte les rend, elle ne les fait pas saisir ; un mois du contrat sans cachet
     /// (`lignes: []`) et un contrat repris d'un ancien logiciel les ecrivent. Le metier est toujours sur la carte (il est
     /// lie a l'engagement, pas a la personne : une carte qui nomme son salarie l'ecrit, celui de son dernier contrat ou de
-    /// sa fiche, et il se change) ; la PCS-ESE, le code France Travail et les statuts se lisent du metier
-    /// (`droit::emplois::resoudre`), le cadre aussi tant que la carte ne le dit pas (sous « Avancé », ouverte par un
-    /// metier ecrit sur la carte, la seule que le calcul lit : un metier propre a la compagnie ne se cree pas encore, la
-    /// case dit qu'un metier du catalogue est tenu ici pour cadre ou non, et change les cotisations), l'emploi ecrit ne
-    /// vient que du bulletin d'une paie importee
+    /// sa fiche, et il se change) ; la PCS-ESE, le code France Travail, les statuts et le cadre se lisent du metier
+    /// (`droit::emplois::resoudre`) : la carte n'a pas de case « Cadre », un metier cadre se cree dans Configuration ›
+    /// Métiers (`droit::emplois::MetierCree`) ; l'emploi ecrit ne vient que du bulletin d'une paie importee
     /// (`ecarts::refaire`). La fin d'un contrat qui finit ce mois passe par la porte « Imprévu… » : son motif, puis ce que
     /// le motif appelle. Ce que rien ne lit pour un CDDU n'est pas sur sa carte : ni lieu (celui des lignes le dit), ni
     /// taux du cachet (celui de sa ligne), ni primes (une ligne de rubrique `prime`), ni ce que seul le solde de tout
@@ -316,7 +311,6 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si Ouverture::Si(F::NumeroADire) => Base,
             etablissement: droit::fiche::Nic = Etablissement si Ouverture::Si(F::PlusieursEtablissements) => Base,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Base,
-            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             emploi: droit::emplois::EmploiEcrit = Emploi + PcsEse + CodeEmploiFt + Statut + StatutConventionnel + StatutCategorielRc lue("droit::emplois::EmploiEcrit::dit") si Ouverture::Si(F::Importee) => Rendue,
             periode_essai_jours: Duree<EnJours> = PeriodeEssaiJours ecrite("socle::date::Duree::ecrite_en_jours_opt") lue("socle::date::Duree::en_jours_opt") si Ouverture::Si(F::ContratEcrit) => Avance,
             clauses_particulieres: String = ClausesParticulieres si Ouverture::Si(F::ContratEcrit) => Avance,
@@ -349,7 +343,6 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si TOUJOURS => Avance,
             etablissement: droit::fiche::Nic = Etablissement si TOUJOURS => Avance,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Avance,
-            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             lieu: String = Lieu si TOUJOURS => Avance,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
@@ -401,7 +394,6 @@ nature! {
             numero: crate::numeros::NumeroContrat = Numero si TOUJOURS => Avance,
             etablissement: droit::fiche::Nic = Etablissement si TOUJOURS => Avance,
             metier: droit::emplois::CodeEmploi = Metier si TOUJOURS => Avance,
-            cadre: bool = Cadre si Ouverture::Si(F::MetierEcrit) => Avance,
             lieu: String = Lieu si TOUJOURS => Avance,
             quotite_reference: Heures = QuotiteReference ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Avance,
             modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail si TOUJOURS => Avance,
@@ -896,7 +888,6 @@ changements! {
     Numero(crate::numeros::NumeroContrat) = "numero" => numero,
     Etablissement(droit::fiche::Nic) = "etablissement" => etablissement,
     Metier(droit::emplois::CodeEmploi) = "metier" => metier,
-    Cadre(bool) = "cadre" => cadre,
     Lieu(String) = "lieu" => lieu,
     MotifRecours(MotifDeRecours) = "motif_recours" => motif_recours,
     QuotiteContrat(Heures) = "quotite_contrat" => quotite_contrat,
@@ -1087,7 +1078,6 @@ pub fn libelle(c: Champ) -> &'static str {
         Champ::Numero => "Numéro du contrat",
         Champ::Etablissement => "Établissement",
         Champ::Metier => "Métier",
-        Champ::Cadre => "Cadre",
         Champ::Lieu => "Lieu",
         Champ::MotifRecours => "Motif du CDD",
         Champ::QuotiteContrat => "Heures par mois",
