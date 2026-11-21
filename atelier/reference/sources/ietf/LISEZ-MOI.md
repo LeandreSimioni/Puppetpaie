@@ -59,7 +59,12 @@
   dans le commentaire de `courriel_lecture::date_de` et de `parsedate_tz` ; elle ne perd pas le message (la règle du
   § 4), et un message sans `Date` lisible prend l'heure de la relève.
 
-## RFC 5321 : le transport du courriel (la casse d'une adresse)
+## RFC 5321 : le transport du courriel (la casse d'une adresse, les codes de réponse)
+
+`atelier/sources/envois/src/courriel.rs`, `envoi_refuse` : un 550, 551 ou 553 à l'envoi (§ 4.2.2-4.2.3, l. 2870-2930 :
+« mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », « User not local »,
+« mailbox name not allowed (e.g., mailbox syntax incorrect) ») dit de vérifier l'adresse du salarié destinataire ; un
+4xx est passager.
 
 | fichier | d'où | relevé |
 |---|---|---|

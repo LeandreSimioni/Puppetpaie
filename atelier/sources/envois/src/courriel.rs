@@ -144,13 +144,40 @@ fn dite(phrase: &str, detail: impl std::fmt::Display) -> Echec {
 /// refus que l'on ne reconnait pas ; le texte du serveur va a part (`dite`).
 #[track_caller]
 pub fn traduire(texte: &str) -> Echec {
-    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") || texte.contains("(535)") {
-        return dite(
-            "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
-            texte,
-        );
+    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") {
+        return mot_de_passe_refuse(texte);
     }
     dite("La boîte courriel a refusé la demande : vérifier l'adresse et le mot de passe d'application (Configuration › Mots de passe) ; nouvel essai plus tard.", texte)
+}
+
+/// La boite refuse le mot de passe (`detail` : ce que le serveur a ecrit).
+#[track_caller]
+fn mot_de_passe_refuse(detail: impl std::fmt::Display) -> Echec {
+    dite(
+        "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
+        detail,
+    )
+}
+
+/// UN MESSAGE QUE LE SERVEUR D'ENVOI (SMTP) N'A PAS PRIS, dit a l'administrateur ; le texte du serveur ou de la
+/// bibliotheque va a part (`dite`). Les codes sont ceux de la RFC 5321, § 4.2.2-4.2.3
+/// (`atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2870-2930) : 550
+/// « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », 551 « User not
+/// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » : la boite d'arrivee, donc l'adresse du
+/// destinataire ; un 4xx est passager. 535 reste reconnu pour le mot de passe refuse, comme il l'etait : le texte qui
+/// le dit (la RFC 4954, l'authentification SMTP) n'est pas depose.
+#[track_caller]
+fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
+    let detail = e.to_string();
+    match e.status().map(|c| c.to_string()).as_deref() {
+        Some("535") => mot_de_passe_refuse(detail),
+        Some("550" | "551" | "553") => dite("Le serveur d'envoi refuse une adresse du message (boîte introuvable, refusée ou mal écrite) : vérifier l'adresse courriel du salarié destinataire. Le message n'est pas parti.", detail),
+        _ if e.is_permanent() => dite("Le serveur d'envoi a refusé le message : il n'est pas parti. Nouvel essai plus tard.", detail),
+        _ if e.is_transient() => dite("Le serveur d'envoi refuse le message pour l'instant : nouvel essai plus tard.", detail),
+        _ if e.is_timeout() => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),
+        _ if e.is_tls() => tls(detail),
+        _ => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
+    }
 }
 
 /// La boite ne se joint pas (`e` : ce que le systeme en dit). « injoignable » : le mot que `sauvegarde::hors_ligne` lit.
@@ -485,13 +512,20 @@ fn premier_entete(entetes: &[mailparse::MailHeader], nom: &str) -> Option<String
 /// Les en-tetes qui portent les destinataires d'un message.
 const CHAMPS_DESTINATAIRES: [&str; 3] = ["To", "Cc", "Bcc"];
 
+/// Une adresse de destinataire qui ne se lit pas (`detail` : ce que la bibliotheque en dit, a part) : le message ne part
+/// pas.
+#[track_caller]
+fn destinataire_illisible(detail: impl std::fmt::Display) -> Echec {
+    dite("Une adresse de destinataire ne se lit pas : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail)
+}
+
 /// Les adresses de `To`, `Cc` et `Bcc` (le premier en-tete de chaque nom, comme `m.get`). Un en-tete qui ne se lit pas
 /// en adresses refuse : le message ne part pas sans une partie de ses destinataires.
 fn destinataires(entetes: &[mailparse::MailHeader]) -> R<Vec<String>> {
     let mut sortie = Vec::new();
     for champ in CHAMPS_DESTINATAIRES {
         let Some(valeur) = premier_entete(entetes, champ) else { continue };
-        let liste = mailparse::addrparse(&valeur).map_err(|e| erreur(format!("adresse de destinataire illisible : {}", e)))?;
+        let liste = mailparse::addrparse(&valeur).map_err(|e| destinataire_illisible(format!("{} : {}", champ, e)))?;
         for a in liste.iter() {
             match a {
                 mailparse::MailAddr::Single(s) => sortie.push(s.addr.clone()),
@@ -519,7 +553,7 @@ impl Courriel for Client {
         use lettre::transport::smtp::client::{Tls, TlsParameters};
         use lettre::{SmtpTransport, Transport};
 
-        let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| erreur(format!("message illisible : {}", e)))?;
+        let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| dite("Le message que le logiciel a assemblé ne se lit pas : il n'est pas parti.", e))?;
         let mut brut = message_mime.to_vec();
         let ident = match premier_entete(&entetes, "Message-ID").map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
             // Le message, le logiciel l'a assemble : son identifiant a la forme du sien.
@@ -538,9 +572,9 @@ impl Courriel for Client {
         };
         let destinataires = destinataires(&entetes)?;
         let adresses: Result<Vec<Address>, _> = destinataires.iter().map(|a| a.parse::<Address>()).collect();
-        let adresses = adresses.map_err(|e| erreur(format!("adresse de destinataire illisible : {}", e)))?;
-        let expediteur: Address = self.compte.parse().map_err(|e| erreur(format!("adresse de la boite illisible : {}", e)))?;
-        let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| erreur(e.to_string()))?;
+        let adresses = adresses.map_err(destinataire_illisible)?;
+        let expediteur: Address = self.compte.parse().map_err(|e| dite("L'adresse de la boîte courriel ne se lit pas : la reposer dans Configuration › Mots de passe. Le message n'est pas parti.", e))?;
+        let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| dite("Le message n'a aucun destinataire : vérifier l'adresse courriel du salarié. Il n'est pas parti.", e))?;
         let mdp = self.mot_de_passe.devoiler().to_string();
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
@@ -553,7 +587,7 @@ impl Courriel for Client {
             .timeout(Some(DELAI))
             .build();
         let sur_le_fil = donnees_du_fil(&brut);
-        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| traduire(&e.to_string()))?;
+        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| envoi_refuse(&e))?;
         Ok(ident)
     }
 
