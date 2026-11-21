@@ -162,8 +162,9 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
         FicheAJuger::Entreprise(e) => e,
         FicheAJuger::Salarie(_) | FicheAJuger::Spectacle(_) => &ctx.entreprise,
     };
-    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
-    let super::Montres { cases: montres, .. } = super::montres(ctx, F::a_juger(&plate), cle.as_ref().and_then(F::salarie), entreprise, &p)?;
+    // Les permanents du jour ne se lisent que pour la fiche qui en a l'usage (`fiches::montres`).
+    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
+    let super::Montres { cases: montres, .. } = super::montres(ctx, F::a_juger(&plate), cle.as_ref().and_then(F::salarie), entreprise, &dus)?;
     let table = champs::fiche(F::NOM)?;
     let historique = historique::<F>(ctx, cle.as_ref(), &table, &jour)?;
     let mut cases = Vec::new();
