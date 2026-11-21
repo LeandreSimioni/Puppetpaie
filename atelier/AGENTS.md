@@ -177,6 +177,11 @@ par son nom dans le JS : on lit sa fiche.
   s'occupe des règles des permanents ») : tant que le chemin d'une compagnie d'intermittents n'est pas droit de bout
   en bout (engager, payer, déclarer, relever), aucun ticket qui ne concerne que les permanents ne se traite ; ce
   qu'on découvre sur eux va dans un ticket, et y reste. Léandre dit quand cela change.
+- **L'administrateur central attend aussi** (Léandre, 21/11/2026 : « on a mis en attente les permanents, on peut
+  mettre en attente aussi l'administrateur central ») : ce qui ne concerne que l'administrateur de plusieurs
+  compagnies (le rattachement, son tableau, le dépôt groupé) ne se traite pas tant que le chemin d'une compagnie
+  seule n'est pas droit ; ce qu'on y découvre va dans un ticket, et y reste. Un lot ne casse pas ce qui existe pour
+  lui, mais ne s'y attarde pas.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
   ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.
