@@ -57,7 +57,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Fiches);
 pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Fiche,
-        geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes, dans l'ordre, et leurs fautes.",
+        geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes et leurs fautes.",
         charge: &[
             NOM_FICHE,
             Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
