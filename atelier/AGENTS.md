@@ -38,8 +38,12 @@ Trois rôles, trois méthodes (`journal/methodes/` du privé).
    de côté » se corrige dans la même PR, avant de dire de fusionner. Ne remonte à Léandre qu'une **décision d'éditeur**
    (argent, engagement envers un organisme, publication, ce qui change le produit pour toutes les compagnies) ou **un
    geste sur son poste**, en une ligne.
-2. **Pas de précautions de transition tant que Léandre est le seul utilisateur** : ni compatibilité, ni circuit
-   provisoire, quitte à tout casser.
+2. **Une mise à jour ne ferme jamais une compagnie** (Léandre, 21/11/2026 : « on va dire que le logiciel, il est là »,
+   « il faut qu'elle puisse ouvrir le logiciel »). Ce qu'une installation a écrit dans ses fichiers se lit encore après
+   la mise à jour : une forme qui change lit l'ancienne, telle qu'elle s'écrivait et rien d'autre, et la réécrit dans
+   la neuve au premier enregistrement ; une clé retirée se lit et ne dit rien (`fiche!`, `non_lues`). Chaque lot qui
+   change ou retire une forme écrite le prouve en jouant une compagnie qui porte l'ancienne. En dehors des fichiers
+   d'une compagnie, rien ne se garde : ni circuit provisoire, ni second chemin dans les routes ou la page.
 
 ## L'architecture s'impose, elle ne se raconte pas
 
