@@ -75,6 +75,26 @@ impl Versement {
         }
     }
 
+    /// Le texte qu'une installation ecrivait avant la liste a choix : « fin du mois », « fin du contrat », « le 25 »
+    /// (« le 1er »), « le 5 du mois suivant ». `None` : ce n'est pas l'un d'eux.
+    fn du_texte_d_avant(texte: &str) -> Option<Versement> {
+        match texte {
+            "fin du mois" => return Some(Versement::FinDuMois),
+            "fin du contrat" => return Some(Versement::FinDuContrat),
+            _ => {}
+        }
+        let (n, mois_suivant) = match texte.strip_prefix("le ")?.strip_suffix(" du mois suivant") {
+            Some(n) => (n, true),
+            None => (texte.strip_prefix("le ")?, false),
+        };
+        let quantieme: u32 = match (n, n.parse::<u32>()) {
+            ("1er", _) => 1,
+            (_, Ok(q)) => q,
+            (_, Err(_)) => return None,
+        };
+        (1..=31).contains(&quantieme).then_some(Versement::Fixe { quantieme, mois_suivant })
+    }
+
     /// Le choix tel que la case l'ecrit.
     fn ecrit(self) -> VersementEcrit {
         let (quand, jour) = match self {
@@ -144,7 +164,31 @@ impl Serialize for Versement {
 
 impl<'de> Deserialize<'de> for Versement {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        Versement::de_l_ecrit(&VersementEcrit::deserialize(d)?).map_err(serde::de::Error::custom)
+        d.deserialize_any(Lecteur)
+    }
+}
+
+/// La case se lit dans sa forme ecrite (`VersementEcrit`). Une installation posee avant la liste a choix l'a ecrite en
+/// texte (« fin du contrat », « le 5 du mois suivant ») : ce texte se lit encore, tel qu'il s'ecrivait alors et rien
+/// d'autre, pour que la compagnie s'ouvre apres sa mise a jour ; il se recrit dans la forme neuve au premier
+/// enregistrement de la fiche.
+struct Lecteur;
+
+impl<'de> serde::de::Visitor<'de> for Lecteur {
+    type Value = Versement;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("le jour du versement : un choix (quand) et, pour un jour du mois ou du mois suivant, son numéro (jour)")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Versement, A::Error> {
+        let ecrit = VersementEcrit::deserialize(serde::de::value::MapAccessDeserializer::new(m))?;
+        Versement::de_l_ecrit(&ecrit).map_err(serde::de::Error::custom)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, texte: &str) -> Result<Versement, E> {
+        Versement::du_texte_d_avant(texte)
+            .ok_or_else(|| E::custom(format!("Le jour du versement « {} » ne se lit pas : le choisir de nouveau.", texte)))
     }
 }
 
