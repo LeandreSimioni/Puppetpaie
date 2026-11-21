@@ -218,7 +218,8 @@ async function dessinerCoffre(cible) {
     const champ = document.getElementById("k-actuel");
     return { motdepasse: champ ? champ.value : "" };
   };
-  const ok = (texte) => { dire(texte); dessinerCoffre(cible); };
+  // Un geste qui pose ou oublie un accès change ce que le bandeau dit : il se relit tout de suite (`veille`).
+  const ok = (texte) => { dire(texte); dessinerCoffre(cible); suivreVeille(); };
   const raté = (e) => dire(e.message, "erreur");
   document.getElementById("k-changer").onclick = async () => {
     const nouveau = document.getElementById("k-nouveau").value;
@@ -272,6 +273,7 @@ async function dessinerCoffre(cible) {
         const etat = await api("coffre-poser", { service, valeur: carte.querySelector(".k-valeur").value,
           compte: compte ? compte.value : null, ...(nom ? { nom: nom.value, prenom: prenom.value } : {}), ...p });
         await dessinerCoffre(cible);
+        suivreVeille();
         dire(etat.phrase, etat.couleur);
       } catch (e) { raté(e); }
     };

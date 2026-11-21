@@ -25,7 +25,7 @@ use sha2::{Digest, Sha256};
 
 use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
-use crate::google::{encoder, lue, phrase_de_panne, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
+use crate::google::{encoder, lue, panne_de_google, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
 use crate::transport::{envoyer, Requete};
 
 /// CE QUE GOOGLE DIT DU COMPTE (`userinfo`) : son adresse. Une reponse de Google : les autres cles qu'il ecrit sont
@@ -217,10 +217,15 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Result<Connexion, Echec> {
 fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Echec> {
     match envoyer(requete) {
         Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| e.reclasser(Classe::Refuse)),
-        Err(panne) => match phrase_de_panne(panne) {
-            Ok(phrase) => Err(refus(phrase)),
-            Err(e) => Err(e.reformuler(|m| format!("Google ne repond pas : {}. Aucune autorisation enregistree.", m)).reclasser(Classe::Refuse)),
-        },
+        // Un refus de Google (un statut, le reseau injoignable) reste un refus ordinaire ; une panne brute se dit sans
+        // autorisation enregistree. La phrase dit deja Google ; le detail reste a part.
+        Err(panne) => {
+            let e = panne_de_google(requete.url, panne).echec;
+            match e.classe {
+                Some(Classe::Google) => Err(Echec { classe: None, ..e }),
+                _ => Err(e.reformuler(|m| format!("{} Aucune autorisation enregistrée.", m)).reclasser(Classe::Refuse)),
+            }
+        }
     }
 }
 

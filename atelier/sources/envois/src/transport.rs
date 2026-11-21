@@ -46,6 +46,43 @@ pub fn message_du_statut(code: http::StatusCode) -> Option<&'static str> {
     MESSAGES.iter().find(|(c, _)| *c == code).map(|(_, m)| *m)
 }
 
+/// UNE PANNE D'UN TIERS, DITE A L'ADMINISTRATEUR -- le seul endroit ou la reponse d'un organisme (net-entreprises,
+/// l'Urssaf) ou de Google devient une phrase que la compagnie lit. La phrase dit qui (`qui` : « net-entreprises »,
+/// « L'Urssaf (DPAE) », « Google »), ce que cela peut etre, et quoi faire ; elle ne porte ni adresse, ni code de
+/// reponse, ni corps. Le detail technique (le statut, l'adresse sans ses parametres, le debut du corps, ce que le systeme
+/// ou la bibliotheque a dit) va a part (`Lieu::detail`), que le journal des incidents porte a l'editeur ; il est aussi
+/// note dans la memoire des echecs (`socle::echec::noter_echec`). La classe est celle du statut (`classe_du_statut` :
+/// `Organisme` ou `DepotRefuse`), ou celle de la panne brute (un delai depasse reste `DelaiDepasse`) : rien ne change de
+/// ce qui est tente, accepte ou refuse.
+#[track_caller]
+pub fn panne_dite(qui: &str, classe_du_statut: Classe, url: &Url, p: Panne) -> EchecApi {
+    let (classe, phrase, detail, code) = match p {
+        Panne::Statut { code, corps } => {
+            let phrase = match code {
+                http::StatusCode::UNAUTHORIZED => format!("{} a refusé l'identification : vérifier les accès dans Configuration › Mots de passe.", qui),
+                http::StatusCode::FORBIDDEN => format!("{} refuse l'accès : le compte est peut-être bloqué un temps après trop d'essais. Attendre, puis réessayer.", qui),
+                http::StatusCode::UNPROCESSABLE_ENTITY => format!("{} refuse les identifiants envoyés : le plus souvent un mot de passe mal saisi, à reposer dans Configuration › Mots de passe.", qui),
+                http::StatusCode::TOO_MANY_REQUESTS => format!("{} demande d'espacer les appels : nouvel essai plus tard.", qui),
+                _ => format!("{} n'a pas répondu comme attendu : le service est peut-être indisponible, ou les accès ne conviennent plus. Réessayer plus tard ; si cela dure, vérifier les accès dans Configuration › Mots de passe.", qui),
+            };
+            (Some(classe_du_statut), phrase, phrase_du_statut(code, &format!("sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 800))), Some(code))
+        }
+        // « injoignable » : le mot que `sauvegarde::hors_ligne` lit pour dire que le reseau manque.
+        Panne::Reseau(r) => (Some(classe_du_statut), format!("{} injoignable : vérifier la connexion internet ; nouvel essai plus tard.", qui), format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None),
+        Panne::Brute(e) => {
+            let phrase = match e.classe {
+                Some(Classe::DelaiDepasse) => format!("{} n'a pas répondu à temps : nouvel essai plus tard.", qui),
+                Some(Classe::Reseau) => format!("{} a coupé sa réponse en chemin : nouvel essai plus tard.", qui),
+                _ => format!("{} a rendu une réponse que le logiciel ne lit pas : nouvel essai plus tard.", qui),
+            };
+            (e.classe, phrase, format!("{} : {}", sans_secret(url.texte()), e.phrase), None)
+        }
+    };
+    socle::echec::noter_echec(classe, &detail);
+    let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
+    EchecApi { echec: Echec { classe, phrase, a_part: Some(a_part.into()) }, code }
+}
+
 /// `HTTP <code> <ou>`, puis ce que le guide dit du statut et le debut du corps de la reponse, chacun sur sa ligne.
 fn phrase_du_statut(code: http::StatusCode, ou: &str, corps: Option<String>) -> String {
     let mut m = format!("HTTP {} {}", code.as_str(), ou);
@@ -93,6 +130,15 @@ impl EchecApi {
     /// Un refus de la plate-forme elle-meme (`Organisme`, `DepotRefuse`) : la releve le note et continue.
     pub fn est_api(&self) -> bool {
         matches!(self.echec.classe, Some(Classe::Organisme | Classe::DepotRefuse))
+    }
+
+    /// L'organisme refuse ce qu'on lui a envoye (les identifiants, le compte bloque, des appels trop rapproches : 401, 403,
+    /// 422, 429) : une situation d'usage, pas un defaut, pour le journal des incidents.
+    pub fn dit_un_refus(&self) -> bool {
+        matches!(
+            self.code,
+            Some(http::StatusCode::UNAUTHORIZED | http::StatusCode::FORBIDDEN | http::StatusCode::UNPROCESSABLE_ENTITY | http::StatusCode::TOO_MANY_REQUESTS)
+        )
     }
 
     /// La panne comme un refus de route.
@@ -620,31 +666,28 @@ fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> String {
     }
 }
 
-/// Une panne d'appel en `Organisme`.
-fn en_erreur_api(url: &Url, p: Panne) -> EchecApi {
-    match p {
-        Panne::Statut { code, corps } => {
-            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 400))), Some(code))
-        }
-        Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None),
-        brute => echec_brut(brute),
-    }
+/// Une panne d'appel a l'organisme du canal `canal`, dite a l'administrateur (`panne_dite`) : un statut ou un reseau
+/// injoignable en `Organisme`, une panne brute dans sa classe.
+#[track_caller]
+fn en_erreur_api(canal: crate::releve_retours::CanalDesRetours, url: &Url, p: Panne) -> EchecApi {
+    panne_dite(canal.organisme(), Classe::Organisme, url, p)
 }
 
-/// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
-pub fn appeler(url: &Url, jeton: Option<&socle::secret::Secret>) -> Result<(Vec<u8>, Entetes), EchecApi> {
+/// Un GET sous le jeton de la session, a l'organisme du canal `canal` : le corps et les en-tetes ; une panne en
+/// `Organisme`.
+pub fn appeler(canal: crate::releve_retours::CanalDesRetours, url: &Url, jeton: Option<&socle::secret::Secret>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
-    envoyer(&r).map_err(|p| en_erreur_api(url, p))
+    envoyer(&r).map_err(|p| en_erreur_api(canal, url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
-pub fn consulter(base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
+pub fn consulter(canal: crate::releve_retours::CanalDesRetours, base: &Url, jeton: Option<&socle::secret::Secret>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
     let mut suite = horodatage(debut);
     if let Some(fin) = fin {
         suite.push('/');
         suite.push_str(&horodatage(fin));
     }
-    appeler(&base.joindre(&suite), jeton).map(|(corps, _)| corps)
+    appeler(canal, &base.joindre(&suite), jeton).map(|(corps, _)| corps)
 }
 
 /// LE DECLARANT QUI S'AUTHENTIFIE : le SIRET, le nom et le prenom du compte ouvert pour le service (vides : la fiche ne
@@ -683,6 +726,8 @@ pub fn declarant(ent: &droit::fiche::ChampsEntreprise) -> Identite {
 /// Ce qu'une authentification envoie : le declarant inscrit au service, le mot de passe deja prepare par l'appelant, le
 /// service, et le jeton d'une session deja ouverte.
 pub struct Authentification<'a> {
+    /// Le canal de l'organisme qui authentifie : sa panne le nomme.
+    pub canal: crate::releve_retours::CanalDesRetours,
     pub url: &'a Url,
     pub declarant: &'a Identite,
     pub motdepasse: Option<&'a socle::secret::Secret>,
@@ -750,7 +795,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
         content_type: Some("application/xml"),
         ..Requete::get(url, DELAI_APPEL)
     };
-    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
+    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(a.canal, url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
     Ok(Session { jeton: socle::secret::Secret::nouveau(socle::texte::strip(&jeton).to_string()) })
 }
@@ -768,21 +813,17 @@ pub fn depot(_au_jour: &crate::branchement::AuJourDuJour, url: &Url, jeton: &soc
         post: true,
         ..Requete::get(url, delai)
     };
-    envoyer(&r).map_err(|p| match (forme, p) {
-            ("dsn", Panne::Statut { code, corps }) => match corps {
-                // Le corps de la reponse passe par `sans_secret`.
-                Ok(c) => EchecApi::nouveau(
-                    Classe::DepotRefuse,
-                    format!("Le point de depot a repondu {}.\n{}", code.as_str(), sans_secret(&debut(&utf8_remplace(&c), 800))),
-                    None,
-                ),
-                Err(p) => echec_brut(*p),
-            },
-            ("dsn", Panne::Reseau(r)) => EchecApi::nouveau(Classe::DepotRefuse, format!("Pas de reponse du point de depot : {}", r), None),
-            (_, Panne::Statut { code, corps }) => {
-                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 400))), None)
-            }
-            (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None),
-            (_, brute) => echec_brut(brute),
-        })
+    envoyer(&r).map_err(|p| {
+        let (canal, classe) = match forme {
+            "dsn" => (crate::releve_retours::CanalDesRetours::Dsn, Classe::DepotRefuse),
+            _ => (crate::releve_retours::CanalDesRetours::Dpae, Classe::Organisme),
+        };
+        let p = match (forme, p) {
+            // Le refus d'un depot DSN dont le corps ne se lit pas : la panne de sa lecture, dans sa classe.
+            ("dsn", Panne::Statut { corps: Err(illisible), .. }) => *illisible,
+            (_, p) => p,
+        };
+        // Un depot ne rend pas le statut : il se juge a sa classe.
+        EchecApi { code: None, ..panne_dite(canal.organisme(), classe, url, p) }
+    })
 }
