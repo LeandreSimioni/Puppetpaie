@@ -132,6 +132,10 @@ pub struct Engagement {
     /// (`conges::lignes_du_mois`, `calcul::plafond_de_l_engagement`) ; `None` : un engagement dont le moteur ne deduit
     /// pas le mois (au cachet, relu d'une paie ecrite, importe), dont le plafond ne se calcule pas.
     pub sans_remuneration: Option<droit::plafond::JoursSansRemuneration>,
+    /// Le metier que la carte du mois choisit (`saisie::Carte.metier`) ; `None` : la carte n'en choisit pas, ou
+    /// l'engagement est relu d'une paie ecrite ou importe. Les minima le lisent : un metier que la compagnie a cree n'a
+    /// pas de minimum releve (`minima`, Leandre, 21/11/2026 : « vide, c'est pas le metier original »).
+    pub metier: Option<emplois::CodeEmploi>,
     /// Ce que la saisie dit du contrat ECRIT et que rien d'autre ne porte (`ContratEcrit`) : la periode
     /// d'essai (L1242-12, 6° ; R1221-34, 7°), la personne remplacee (L1242-12, 1°), la repartition des horaires d'un
     /// temps partiel (L3123-6, 1°), les clauses particulieres de ce contrat. Vide : rien n'est dit.
@@ -529,6 +533,7 @@ impl Engagement {
             avant: v.avant.clone(),
             periode: None,
             sans_remuneration: None,
+            metier: None,
             ecrit: ContratEcrit {
                 periode_essai_jours: v.periode_essai_jours.filter(|j| !j.nulle()),
                 personne_remplacee: v.personne_remplacee.clone().filter(|t| !t.is_empty()),
@@ -845,6 +850,7 @@ impl Engagement {
             avant: None,
             periode: None,
             sans_remuneration: None,
+            metier: None,
             // `canon` ne l'ecrit que dit : absent, rien n'etait dit.
             ecrit: match &f.contrat_ecrit {
                 Some(c) => c.clone(),
@@ -1090,12 +1096,13 @@ pub(crate) fn engagements(
         }
         lignes_dites(ctx, carte.lignes(), &qui)?;
         // Le metier de ce contrat : six champs declares, que l'engagement
-        // ecrit par-dessus, et son libelle lisible (`emploi_affichage`).
+        // ecrit par-dessus, et son libelle lisible (`emploi_affichage`). Le cadre est celui du metier ; seule la cle
+        // gardee d'une carte ecrite avant le dit autrement (`saisie::Carte.cadre`).
         let declare = match &carte.metier {
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
                 let feminin = salarie.sexe() == Some(droit::fiche::Sexe::Feminin);
-                Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.dite()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
+                Some(code.metier(&ctx.racine).and_then(|m| emplois::resoudre(&m, carte.cadre, feminin, ctx.entreprise.idcc.dite())).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
             }
             None => None,
         };
@@ -1193,6 +1200,7 @@ pub(crate) fn engagements(
         };
         let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         eng.sans_remuneration = sans_remuneration;
+        eng.metier = carte.metier.clone();
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -1279,19 +1287,27 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 }
 
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
-/// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
-/// pas encore a ce jour ; le taux se saisit.
+/// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites), lu sans composer le bareme
+/// (`Contexte::tarifs_conventionnels`). `None` : la convention n'en fixe pas, ou pas encore a ce jour, ou le logiciel n'a
+/// pas le bareme de l'annee ; le taux se saisit.
 pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<MontantUnitaire>> {
-    let bar = ctx.bareme(jour)?;
-    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
-        if *code == REPAS {
-            t.repas.and_then(|n| n.0)
-        } else if *code == NUITEE {
-            t.nuitee.and_then(|n| n.0)
-        } else {
-            None
-        }
-    }))
+    Ok(tarif_et_ses_tarifs(ctx, code, jour)??.map(|(m, _)| m))
+}
+
+/// Le meme tarif, et les tarifs de la convention qui le portent (leur `source` le cite) : la seule lecture des tarifs
+/// d'une rubrique (`Contexte::tarifs_conventionnels`, sans composer le bareme). `Ok(Err)` : ce que la compagnie a pose
+/// empeche de les lire ; le calcul le refuse (`tarif_conventionnel`), la bulle le dit.
+pub(crate) fn tarif_et_ses_tarifs(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Result<Option<(MontantUnitaire, droit::contexte::TarifsLus)>, Echec>> {
+    if *code != REPAS && *code != NUITEE {
+        return Ok(Ok(None));
+    }
+    let lus = match ctx.tarifs_conventionnels(jour)? {
+        Ok(Some(lus)) => lus,
+        Ok(None) => return Ok(Ok(None)),
+        Err(e) => return Ok(Err(e)),
+    };
+    let tarif = if *code == REPAS { lus.tarifs.repas } else { lus.tarifs.nuitee };
+    Ok(Ok(tarif.and_then(|n| n.0).map(|m| (m, lus))))
 }
 
 /// Les lignes d'un engagement au cachet dont la rubrique a un tarif de la convention (`tarif_conventionnel`) et qui ne
@@ -2092,16 +2108,18 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     for p in paies.iter_mut() {
         let mut avis = crate::minima::avertissements(ctx, p)?;
         avis.extend(crate::minima::sous_le_smic(ctx, p)?);
+        avis.extend(crate::calcul::net_negatif(ctx, p)?);
         p.ecrire().avertissements.extend(avis);
     }
-    // La case cadre decochee sur un metier habituellement cadre : on le dit.
+    // Une carte ecrite avant, dont la cle gardee dit non cadre un metier habituellement cadre (`saisie::Carte.cadre`) : on
+    // le dit.
     let tous = &data.engagements;
     for (p, e) in paies.iter_mut().zip(tous) {
-        let m = match &e.metier {
-            Some(metier) => Some((metier, metier.metier()?)),
-            None => None,
+        let m = match (&e.metier, e.cadre) {
+            (Some(metier), Some(false)) => Some((metier, metier.metier(&ctx.racine)?)),
+            _ => None,
         };
-        if let Some((metier, m)) = m.filter(|(_, m)| e.cadre == Some(false) && m.cadre_par_defaut(ctx.entreprise.idcc.dite()) == Some(true)) {
+        if let Some((metier, m)) = m.filter(|(_, m)| m.cadre_par_defaut(ctx.entreprise.idcc.dite()) == Some(true)) {
             fn texte<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
                 c.remplie().map(str::to_string)
             }
@@ -2111,9 +2129,9 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
                 None => metier.to_string(),
             };
             let msg = format!(
-                "{} {}, {} : case cadre decochee, alors que ce metier est \
-                 habituellement cadre. Si c'est voulu, rien a faire ; sinon, \
-                 la cocher -- la retraite complementaire en depend.",
+                "{} {}, {} : sa carte, ecrite quand une case disait le cadre, le dit non cadre, alors que ce metier est \
+                 habituellement cadre. Si c'est voulu, rien a faire ; sinon, choisir un autre metier, ou en creer un dans \
+                 Configuration › Métiers -- la retraite complementaire en depend.",
                 texte(&p.salarie.nom).ok_or_else(|| socle::fichiers::absent("nom"))?,
                 texte(&p.salarie.prenom_affichage).or_else(|| texte(&p.salarie.prenom)).ok_or_else(|| socle::fichiers::absent("prenom"))?,
                 libelle

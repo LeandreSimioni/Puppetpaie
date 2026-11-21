@@ -551,8 +551,8 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &ChampsEntreprise) -> R<(boo
 fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, de_la_fiche: Option<CodeEmploiFt>) -> R<std::collections::BTreeSet<CaseDeFiche>> {
     let mut cases = std::collections::BTreeSet::new();
     // Le code emploi de la fiche en cours de saisie, type a sa porte ; hors de sa forme, sa faute le dit.
-    // (metier, statut dit par la carte, jour, salarie)
-    let mut metiers: std::collections::BTreeSet<(CodeEmploiFt, Option<droit::fiche::Statut>, Jour, IdSalarie)> = std::collections::BTreeSet::new();
+    // (metier, statut dit par la carte, jour, salarie, metier cree par la compagnie)
+    let mut metiers: std::collections::BTreeSet<(CodeEmploiFt, Option<droit::fiche::Statut>, Jour, IdSalarie, bool)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
@@ -567,14 +567,32 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, d
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 let emploi = t.emploi.as_ref();
-                if let Some(code) = emploi.and_then(|e| e.code_emploi_ft.clone()).or_else(|| t.metier.as_ref().map(CodeEmploiFt::from)).or_else(|| du_salarie.clone()) {
-                    metiers.insert((code, emploi.and_then(|e| e.statut), jour.clone(), salarie.clone()));
+                // Une carte dont le metier ne se lit pas (un metier cree absent, son fichier illisible) ne demande rien a
+                // la fiche : sa faute reste sur elle, que son calcul dit ; la fiche se lit (« le logiciel est doux »).
+                let du_metier = match &t.metier {
+                    Some(m) => match m.metier(&ctx.racine) {
+                        Ok(lu) => Some(lu.code_emploi_ft()),
+                        // Un metier cree absent (`Manque`), ou le fichier des metiers crees illisible (`Illisible`) ; une
+                        // autre panne (le disque, une donnee livree) remonte.
+                        Err(e) if matches!(e.classe, Some(socle::echec::Classe::Manque | socle::echec::Classe::Illisible)) => continue,
+                        Err(e) => return Err(e),
+                    },
+                    None => None,
+                };
+                let cree = t.metier.as_ref().is_some_and(|m| m.numero_cree().is_some());
+                if let Some(code) = emploi.and_then(|e| e.code_emploi_ft.clone()).or(du_metier).or_else(|| du_salarie.clone()) {
+                    metiers.insert((code, emploi.and_then(|e| e.statut), jour.clone(), salarie.clone(), cree));
                 }
             }
         }
     }
-    for (code, statut, jour, salarie) in &metiers {
+    for (code, statut, jour, salarie, cree) in &metiers {
         if nom == NomDeFiche::Salarie {
+            // Un metier cree n'a pas de minimum releve (`engagement::minima`) : aucune grille ne lit les cases de son
+            // metier.
+            if *cree {
+                continue;
+            }
             cases.extend(engagement::minima::cases_du_metier(ctx, code, jour)?.into_iter().map(CaseDeFiche::from));
             continue;
         }

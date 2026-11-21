@@ -205,6 +205,10 @@ le logiciel que si l'on a montré, fichier et ligne à l'appui, que plus rien ne
 chaque retrait avec cette preuve. On part de la liste entière de ce que le moteur déclare, les cases des lignes de
 paie comprises, jamais d'un dessin ni d'un souvenir ; ce qui a un lecteur reste, et l'on ne décide que de sa place.
 
+**Simple pour les simples, compliqué pour ceux qui veulent** (Léandre, 20/11/2026). Ce que presque tout le monde
+fait se voit d'emblée et tient en peu de cases ; ce que peu de gens changent reste possible, sous « Avancé », et ne
+pèse sur personne d'autre. On ne retire pas une possibilité pour faire simple : on la range.
+
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.

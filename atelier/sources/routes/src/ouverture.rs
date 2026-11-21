@@ -1614,6 +1614,8 @@ pub(crate) struct EtatDeLaPage {
     choix: ChoixDesCases,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
+    /// Les metiers que la fiche d'un salarie choisit (`metiers::metiers_d_une_fiche`).
+    emplois_d_une_fiche: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
@@ -1727,6 +1729,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         choix,
         rubriques,
         // Le catalogue des metiers, deja dans l'ordre des familles.
+        emplois_d_une_fiche: super::metiers::metiers_d_une_fiche(&emplois),
         emplois,
         familles_emplois: emplois::familles()?,
         // Les metiers des autres conventions : on les AJOUTE a son deroulant,

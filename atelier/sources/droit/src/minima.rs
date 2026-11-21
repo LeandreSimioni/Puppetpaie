@@ -75,6 +75,85 @@ forme_notee! {
         pub artistes: Option<Artistes3097>,
         pub complement: Option<Complement3097>,
         pub permanents_mensuel: Option<Permanents3097>,
+        /// CE QUE LA CONVENTION FIXE POUR CHAQUE METIER QU'ELLE NOMME, rubrique par rubrique (la bulle d'une ligne de
+        /// paie, `engagement::minima::ce_que_fixe_la_convention`) : un metier absent n'a rien de releve. Ni les montants
+        /// ni leur source ne s'y ecrivent : ils se lisent la ou le calcul les lit (la grille du metier, la repetition de
+        /// l'annexe, le tarif du bareme), chacun avec la source de sa valeur, un seul chemin.
+        pub metiers: Option<BTreeMap<crate::emplois::CodeEmploi, MetierDansLaConvention>>,
+    }
+}
+
+/// UN METIER TEL QUE LA CONVENTION LE NOMME (`metiers` d'une convention) : le nom qu'elle lui donne, et chaque rubrique
+/// de paie pour laquelle un texte depose fixe un montant.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MetierDansLaConvention {
+    /// Le nom que la convention donne au metier (« Artiste marionnettiste »).
+    pub nom: String,
+    pub rubriques: Vec<CeQueFixeLaConvention>,
+    pub note: Option<String>,
+}
+
+/// UNE RUBRIQUE DE PAIE POUR LAQUELLE LA CONVENTION FIXE UN MONTANT AU METIER, et ce qu'il faut pour le lire, rien de
+/// plus : chaque rubrique a son lecteur (`engagement::minima::ce_que_fixe_la_convention`), et une rubrique qui n'en a pas
+/// ne se lit pas dans la table. Le montant et le texte qui le fixe viennent de la valeur que le calcul lit.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "rubrique", rename_all = "lowercase", deny_unknown_fields)]
+pub enum CeQueFixeLaConvention {
+    /// La grille de cachets du metier : celle de sa ligne dans l'annexe `annexe` de la 3090 (`minima.3090` du metier),
+    /// ou celle de sa ligne d'une convention sans annexes (sans `annexe`). Ses paliers disent ce que paie chaque montant.
+    Cachet { annexe: Option<crate::fiche::AnnexeConvention> },
+    /// Le cachet de repetition de l'annexe `annexe` de la 3090, ou le service de repetition d'une convention sans annexes
+    /// (celui de la ligne du metier quand elle en a un propre) ; `condition` : ce qu'il paie, en peu de mots.
+    Repetition { annexe: Option<crate::fiche::AnnexeConvention>, condition: String },
+    /// Le tarif du repas que la convention fixe (le bareme, `tarifs_conventionnels`) ; `condition` : ce qu'il paie.
+    Repas { condition: String },
+    /// Le tarif de la nuitee que la convention fixe (le bareme, `tarifs_conventionnels`) ; `condition` : ce qu'il paie.
+    Nuitee { condition: String },
+}
+
+socle::noms_fermes! {
+    /// LA PERIODE SUR LAQUELLE LES PALIERS D'UNE GRILLE DE CACHETS COMPTENT LES REPRESENTATIONS (`periode`) : le mois de
+    /// paie (annexe 4 de la 3090), ou trois mois (annexe 1, theatre).
+    PeriodeDesPaliers, "Période des paliers" {
+        Mois = "mois",
+        Trimestre = "trimestre",
+    }
+}
+
+impl PeriodeDesPaliers {
+    /// Ce qu'elle dit apres le nombre de representations, en mots.
+    pub fn dite(self) -> &'static str {
+        match self {
+            PeriodeDesPaliers::Mois => "dans le mois",
+            PeriodeDesPaliers::Trimestre => "sur 3 mois",
+        }
+    }
+}
+
+socle::noms_fermes! {
+    /// LA JAUGE DE LA SALLE QU'UNE GRILLE DE CACHETS VISE (`jauge`), telle que la table l'ecrit.
+    JaugeDeLaGrille, "Jauge de la grille" {
+        JusquA200 = "<= 200 places",
+        AuPlus300 = "<= 300 places",
+        MoinsDe300 = "< 300 places",
+        De301A600 = "301 a 600 places",
+        PlusDe600 = "> 600 places",
+        AutresSalles = "autres salles",
+    }
+}
+
+impl JaugeDeLaGrille {
+    /// Elle, en mots, comme le libelle de sa grille la dit.
+    pub fn dite(self) -> &'static str {
+        match self {
+            JaugeDeLaGrille::JusquA200 => "salle jusqu'à 200 places",
+            JaugeDeLaGrille::AuPlus300 => "salle de 300 places au plus",
+            JaugeDeLaGrille::MoinsDe300 => "salle de moins de 300 places",
+            JaugeDeLaGrille::De301A600 => "salle de 301 à 600 places",
+            JaugeDeLaGrille::PlusDe600 => "salle de plus de 600 places",
+            JaugeDeLaGrille::AutresSalles => "autres salles",
+        }
     }
 }
 
@@ -141,10 +220,11 @@ forme_notee! {
     /// La grille des cachets d'un emploi : ses paliers sur le nombre de representations, et sa jauge quand elle en depend.
     pub struct GrilleDeCachets {
         pub libelle: String,
-        pub periode: Option<CleDeGrille>,
-        pub jauge: Option<CleDeGrille>,
+        pub periode: Option<PeriodeDesPaliers>,
+        pub jauge: Option<JaugeDeLaGrille>,
         pub paliers: Vec<Palier>,
-        pub autres_jauges: Option<BTreeMap<CleDeGrille, Vec<MontantUnitaire>>>,
+        /// Les montants des autres jauges, pour memoire : le metier pointe la grille de la plus basse.
+        pub autres_jauges: Option<BTreeMap<JaugeDeLaGrille, Vec<MontantUnitaire>>>,
     }
 }
 
@@ -694,14 +774,16 @@ impl ParLaGrille {
     }
 }
 
-/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, ou d'une unite de grille (la journee,
-/// la semaine, le mois).
+/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, d'une unite de grille (la journee,
+/// la semaine, le mois), ou ce que paie un jour de repetition, ses services ensemble (le cachet de repetition de la 3090,
+/// « pour un ou deux services de répétitions de quatre heures dans la même journée »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Par {
     Heure,
     Cachet,
     Service,
     Unite,
+    Jour,
 }
 
 /// Le minimum conventionnel d'une ligne de paie, tel que les avertissements le lisent : le montant, la grille d'ou il

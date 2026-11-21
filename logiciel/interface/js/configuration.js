@@ -1090,12 +1090,13 @@ let FICHE_COURANTE = null;
 
 /* LE MÉTIER, en tête du bloc « Emploi ». Un seul
  * déroulant, qui montre le métier de la fiche (son code France Travail). La liste est celle des métiers cochés ;
- * on en ajoute dans l'onglet Métiers, pas ici. */
+ * on en ajoute dans l'onglet Métiers, pas ici. La liste est celle que la route rend pour une fiche
+ * (`emplois_d_une_fiche`). */
 function METIER_HTML(fiche) {
   const code = fiche.donnees.code_emploi_ft;
   return `<div class="champ" id="config-metier">
     <label>Métier
-      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —")}</select></label>
+      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —", ETAT.emplois_d_une_fiche)}</select></label>
     <div class="discret petit"><button type="button" class="lien" id="aller-metiers">Ajouter un métier</button></div>
   </div>`;
 }
@@ -1141,7 +1142,10 @@ async function peindreCoutAnnee() {
  * propose dans la fiche d'un salarié et dans un engagement ; rien d'autre
  * ne change, aucun calcul. Par famille, repliée, avec son compte ; la
  * recherche ouvre ce qu'elle trouve. Les métiers des autres conventions ne
- * se montrent que si on le demande. */
+ * se montrent que si on le demande. Un métier qui manque se crée en en
+ * copiant un, et un métier créé se modifie : ce sont les gestes que la
+ * route rend (`gestes`, et `modifier` de chaque métier créé), que le
+ * dessinateur commun dessine (`js/avance.js`). */
 let METIERS_TOUS = false;
 let METIERS_FILTRE = "";
 
@@ -1164,17 +1168,23 @@ async function dessinerMetiers(cible) {
       return `<details class="metiers-famille" data-famille="${echapper(f)}"${filtre ? " open" : ""}>
         <summary><b>${echapper(f)}</b> <span class="discret">${n} / ${dedans.length}</span></summary>
         <div class="metiers-colonnes">${dedans.map((m) => `
-          <label class="coche" title="${echapper(m.code)}${m.de ? " — " + echapper(m.de) : ""}">
+          <span><label class="coche" title="${echapper(m.code)}${m.de ? " — " + echapper(m.de) : ""}">
             <input type="checkbox" data-code="${echapper(m.code)}"${m.retenu ? " checked" : ""}>
             ${echapper(m.libelle)}${m.de ? ` <span class="discret">· autre convention</span>` : ""}
-          </label>`).join("")}</div>
+          </label>${m.modifier ? ` <span data-gestes-du="${echapper(m.code)}">${boutonsDesGestes([m.modifier])}</span>` : ""}</span>`).join("")}</div>
       </details>`;
     }).join("") : `<p class="discret">Aucun métier</p>`;
+    // Les gestes d'un métier créé : chacun dans sa place, branché seul.
+    r.metiers.filter((m) => m.modifier).forEach((m) => {
+      const place = document.querySelector(`[data-gestes-du="${CSS.escape(m.code)}"]`);
+      if (place) brancherLesGestes(place, [m.modifier], { titre: m.libelle, modifie: true }, apresUnGeste);
+    });
     document.querySelectorAll("#metiers-liste input[data-code]").forEach((c) => {
       c.onchange = async () => {
         try {
           const x = await api("metier-retenu", { code: c.dataset.code, retenu: c.checked });
           ETAT.emplois = x.emplois;
+          ETAT.emplois_d_une_fiche = x.emplois_d_une_fiche;
           ETAT.emplois_autres = x.emplois_autres;
           const m = r.metiers.find((y) => y.code === c.dataset.code);
           if (m) m.retenu = c.checked;
@@ -1198,8 +1208,15 @@ async function dessinerMetiers(cible) {
           autres conventions aussi</label>
         <span id="metiers-compte" class="discret"></span>
       </div>
+      <p id="metiers-gestes">${boutonsDesGestes(r.gestes)}</p>
       <div id="metiers-liste"></div>
     </div>`;
+  // Après un geste, l'état relu (la carte propose les métiers de la route etat), puis l'onglet redessiné.
+  const apresUnGeste = async () => {
+    try { await relireEtat(); } catch (e) { dire(e.message, "erreur"); }
+    await dessinerMetiers(cible);
+  };
+  brancherLesGestes(document.getElementById("metiers-gestes"), r.gestes, {}, apresUnGeste);
   document.getElementById("metiers-filtre").oninput = (e) => { METIERS_FILTRE = e.target.value; peindre(); };
   document.getElementById("metiers-tous").onchange = (e) => { METIERS_TOUS = e.target.checked; peindre(); };
   peindre();

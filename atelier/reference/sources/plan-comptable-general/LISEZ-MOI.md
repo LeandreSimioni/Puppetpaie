@@ -11,8 +11,20 @@ Relevé le 11/10/2026 (séance « restes », lot R3 : l'export comptable n'écri
 - D'où : la page « Plan comptable général » de l'ANC, <https://www.anc.gouv.fr/plan-comptable-general-0>, lien
   « Plan de comptes 2026 » :
   <https://www.anc.gouv.fr/files/anc/files/1_Normes_fran%C3%A7aises/Plans%20comptables/2026/Plan-de-comptes-2026.pdf>.
-  La même page sert le recueil complet du règlement (`PCG--1er-janvier-2026.pdf`), qui n'est **pas** déposé : seule
-  la liste des comptes a servi.
+- `anc-plan-comptable-general-20260101.pdf` : le recueil complet du règlement ANC n° 2014-03, **version au
+  1er janvier 2026**, tel que servi le 21/11/2026 (183 pages, SHA-256
+  `002bbc6a5eca1079b895ba6c4b670f01db9820459cf834c375cfe021ca17db18`), lien « PCG » de la même page :
+  <https://www.anc.gouv.fr/files/anc/files/1_Normes_fran%C3%A7aises/Plans%20comptables/2026/PCG--1er-janvier-2026.pdf>.
+- `anc-plan-comptable-general-20260101.txt` : sa transcription (`pdftotext -layout`).
+
+## L'avantage en nature : ce que le recueil dit, et ce qu'il tait
+
+Le recueil ne contient nulle part les mots « avantage en nature » (cherché dans la transcription). Le seul article
+sur les charges de personnel est l'art. 1221-64 (ligne 9042 de la transcription) : « Sont inscrites au compte 641
+« Rémunérations du personnel » toutes les rémunérations du personnel ». Qu'un avantage en nature, qui est une
+rémunération (il entre dans le brut soumis), aille au 641 avec le brut est donc une **inférence** sur cet article ;
+le texte ne nomme ni sous-compte ni contrepartie pour la part qui ne se paie pas en argent. Aucune règle du moteur
+ne s'en réclame encore.
 
 ## Ce qu'on en lit
 
@@ -68,5 +80,7 @@ pourrait employer (lignes 391-418 et 733-749 de la transcription) :
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `anc-plan-comptable-general-20260101.pdf` : `002bbc6a5eca1079b895ba6c4b670f01db9820459cf834c375cfe021ca17db18`
+- `anc-plan-comptable-general-20260101.txt` : `da090a5f264daa44c6f0a2ce410959d859e39642ddb06cfacec617eb2b539ff9`
 - `anc-plan-de-comptes-20260101.pdf` : `e5d85249d348809bf5f4585d37ecdb9b7c37badd7bf86b371da27eef4bb8dd4a`
 - `anc-plan-de-comptes-20260101.txt` : `c09e9a67c62b65f8c96bc956a0290344fcc4ea56dc97beaf2380200fe36834c7`

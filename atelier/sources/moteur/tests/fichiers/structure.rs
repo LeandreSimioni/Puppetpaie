@@ -265,6 +265,8 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         ("enregistrer-fiche", entreprise),
         ("organismes-enregistrer", json!({"contrats": {"prevoyance_permanents": {"libelle": "PREVOYANCE", "organisme": "P0983"}, "sante_permanents": {"libelle": "SANTE", "organisme": "P0983"}}})),
         ("enregistrer-fiche", svoboda),
+        // Le metier cree (CIE-1) que modifie l'exemple de `metier-modifie`, qui se joue ainsi seul.
+        ("metier-cree", json!({"copie_de": "MAR010", "libelle": "Marionnettiste principal", "cadre": "non_cadre"})),
     ] {
         let r = route(&c, nom, charge, "2026-11-02");
         assert_eq!(r["ok"], json!(true), "le permanent des exemples : {} : {}", nom, r);

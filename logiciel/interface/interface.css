@@ -345,6 +345,17 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .ligne-sous { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; padding: 0 0 4px 8px; }
 .ligne-sous .coche { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; color: var(--texte); }
 .ligne-sous input[type="checkbox"] { width: auto; }
+/* Le « i » au bout d'une ligne, et la bulle qu'il ouvre sous elle : ce que la convention fixe au métier. */
+.ligne-paie .bulle-i { border: 1px solid var(--action); border-radius: 50%; width: 1.2rem; height: 1.2rem; padding: 0;
+  font: italic bold 11px Georgia, serif; color: var(--action); justify-self: center; text-decoration: none; }
+.ligne-paie .bulle-i[aria-expanded="true"] { background: var(--action); color: var(--blanc); }
+.ligne-bulle { grid-column: 1 / -1; flex-basis: 100%; display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+  background: var(--succes-fond); border-left: 3px solid var(--action); padding: 6px 10px; margin: 0 0 4px 8px; }
+.ligne-bulle[hidden] { display: none; }
+.ligne-bulle table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.ligne-bulle td { padding: 1px 0; vertical-align: baseline; }
+.ligne-bulle td.montant { font-weight: bold; text-align: right; padding-left: 16px; }
+.ligne-bulle .bulle-texte { font-style: italic; color: var(--discret); }
 /* Au téléphone, la ligne se replie sans rien couper : chaque case porte son libellé, la croix reste au bout. */
 @media (max-width: 620px) {
   .ligne-paie { display: flex; flex-wrap: wrap; align-items: end; border-bottom: 1px solid var(--bord); padding-bottom: 6px; }

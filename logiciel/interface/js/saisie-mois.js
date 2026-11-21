@@ -80,6 +80,7 @@ async function chargerMois(mois, repeint = false) {
   IMPORTES = r.importes;
   NOUVELLE_CARTE = r.nouvelle_carte;
   MOIS_AFFICHE = mois;
+  if (!repeint) oublierLesBulles();
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
   const defilement = window.scrollY;
@@ -380,10 +381,10 @@ function metierDe(code) {
   return ETAT.emplois.find((m) => m.code === code) || null;
 }
 
-function optionsMetiers(choisi, vide = "— celui de la fiche —") {
+function optionsMetiers(choisi, vide = "— celui de la fiche —", metiers = ETAT.emplois) {
   const familles = ETAT.familles_emplois;
   const parFamille = {};
-  ETAT.emplois.forEach((m) => { (parFamille[m.famille] ||= []).push(m); });
+  metiers.forEach((m) => { (parFamille[m.famille] ||= []).push(m); });
   let html = `<option value="">${echapper(vide)}</option>`;
   familles.forEach((f) => {
     if (!parFamille[f]) return;

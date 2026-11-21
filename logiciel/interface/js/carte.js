@@ -101,7 +101,8 @@ function caseDeLaCarte(div, d, choix) {
   const v = div._carte[d.cle];
   if (d.forme === "lignes") {
     return `<div class="case case-lignes" data-cle="${d.cle}"><span class="case-libelle">${echapper(d.libelle)}</span>
-      ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null })}
+      ${lignesDePaie(v || [], lignesChoixDe(div), { choix: choixDesLignes(div, v || []), mois: MOIS_AFFICHE, salarie: salarieDuBloc(div) || null,
+        bulles: bullesDeLaCarte(div), ouvertes: bullesOuvertes(div) })}
       <button type="button" class="lien ajouter-ligne">+ une ligne</button>
       <p class="e-montre discret"></p></div>`;
   }
@@ -112,6 +113,51 @@ function caseDeLaCarte(div, d, choix) {
   const prerempli = r ? r.prerempli[d.cle] : null;
   return `<label class="case" data-cle="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}><span class="case-libelle">${echapper(d.libelle)}</span>
     ${caseDeForme(d.forme, v, { choix: choix[d.cle], prerempli, parties: ETAT.parties[d.cle] })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}</label>`;
+}
+
+/* ------------------------------------------------ ce que la convention fixe au métier */
+
+/** Ce que la route `convention-du-metier` a rendu, par mois et par métier, sous le code de chaque rubrique : elle ne
+ *  s'appelle qu'une fois pour eux, jamais à chaque frappe. `null` : sa réponse est attendue. Il s'oublie quand un mois
+ *  se lit (pas quand il se repeint après une écriture) et au retour sur Paie (`oublierLesBulles`) : la convention ou
+ *  l'annexe ont pu changer. */
+const CONVENTION_DU_METIER = new Map();
+
+/** Oublie ce que la route a rendu : la carte qui se redessine la redemande. */
+function oublierLesBulles() {
+  CONVENTION_DU_METIER.clear();
+}
+
+/** Le métier d'une carte : celui qu'elle écrit, sinon celui que sa case montre (`prerempli`). */
+function metierDeLaCarte(div) {
+  return div._carte.metier || ceQuiPreremplit(div).metier || null;
+}
+
+/** Les rangs des lignes de la carte dont la bulle est ouverte. */
+function bullesOuvertes(div) {
+  return div._bulles || (div._bulles = new Set());
+}
+
+/** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route), chacune
+ *  avec la tête de sa bulle (la `phrase` de la route : le nom que la convention donne au métier), le nom du « i »
+ *  (`etiquette`) et ce qui ne se lit pas (`ne_se_lit_pas`), tels que la route les rend. Avant sa réponse, rien :
+ *  elle redessine la carte quand elle arrive avec quelque chose à dire (pas sous les doigts). */
+function bullesDeLaCarte(div) {
+  const metier = metierDeLaCarte(div);
+  if (!metier) return {};
+  const mois = MOIS_AFFICHE;
+  const cle = `${mois} ${metier}`;
+  if (CONVENTION_DU_METIER.has(cle)) return CONVENTION_DU_METIER.get(cle) || {};
+  CONVENTION_DU_METIER.set(cle, null);
+  api("convention-du-metier", { mois, metier }).then((r) => {
+    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique,
+      { ...x, tete: r.phrase, etiquette: r.etiquette, ne_se_lit_pas: r.ne_se_lit_pas }])));
+    if (r.rubriques.length && div.isConnected && !div.contains(document.activeElement) && !CALENDRIER_OUVERT) dessinerCarte(div);
+  }, (e) => {
+    CONVENTION_DU_METIER.set(cle, {});
+    dire(e.message, "erreur");
+  });
+  return {};
 }
 
 /** Ce que les cases d'une ligne de frais offrent, le moteur le dit (`cases` de sa paie, ligne par ligne) ; sans aperçu,
@@ -175,6 +221,7 @@ function dessinerLaCarte(div) {
     <div class="e-imprevus"></div>
     <div class="etats"></div>`;
   brancherLesCases(div, { passes: (mois, salarie) => api("contrats-passes", { mois, salarie }) });
+  brancherLesBulles(div, bullesOuvertes(div));
   const avance = div.querySelector(".e-avance");
   if (avance) avance.ontoggle = () => { div._avance = avance.open; };
   div.onchange = (ev) => caseChangee(div, ev.target);
@@ -189,7 +236,13 @@ function dessinerLaCarte(div) {
   div.querySelectorAll(".retirer-ligne").forEach((b) => {
     b.onclick = () => {
       const bloc = b.closest(".case-lignes");
-      const lignes = lireLesLignes(bloc).filter((_, i) => i !== +b.closest(".ligne-paie").dataset.ligne);
+      const retiree = +b.closest(".ligne-paie").dataset.ligne;
+      const lignes = lireLesLignes(bloc).filter((_, i) => i !== retiree);
+      // Une bulle ouverte reste sur sa ligne : celles d'après remontent d'un rang.
+      const ouvertes = bullesOuvertes(div);
+      const restees = [...ouvertes].filter((i) => i !== retiree).map((i) => (i > retiree ? i - 1 : i));
+      ouvertes.clear();
+      restees.forEach((i) => ouvertes.add(i));
       changer(div, [{ case: bloc.dataset.cle, valeur: lignes }]);
     };
   });

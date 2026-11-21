@@ -640,8 +640,9 @@ fn non_relevees(idcc: Option<&Idcc>) -> String {
 pub struct DitParLEngagement {
     pub categorie_conventionnelle: Option<CategorieConventionnelle>,
     pub statut: Option<Statut>,
-    /// Le code emploi (`metier`).
-    pub metier: Option<emplois::CodeEmploi>,
+    /// Le metier qu'il choisit, lu (`emplois::CodeEmploi::metier`).
+    pub metier: Option<emplois::Metier>,
+    /// La cle gardee `cadre` d'une carte ecrite avant que le cadre ne se lise que du metier (`saisie::Carte.cadre`).
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
 }
@@ -650,7 +651,7 @@ impl DitParLEngagement {
     /// Le metier que l'engagement choisit, sinon celui que nomme le code emploi de la fiche (`emplois::metier`).
     fn metier_lu(&self, fiche: &ChampsSalarie) -> R<Option<emplois::Metier>> {
         match &self.metier {
-            Some(code) => code.metier().map(Some),
+            Some(m) => Ok(Some(m.clone())),
             None => Ok(fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten()),
         }
     }
@@ -671,7 +672,7 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
-    let code = e.metier.as_ref().map(CodeEmploiFt::from).or_else(|| fiche.code_emploi_ft.dite().cloned());
+    let code = e.metier.as_ref().map(emplois::Metier::code_emploi_ft).or_else(|| fiche.code_emploi_ft.dite().cloned());
     let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());
@@ -700,18 +701,18 @@ pub fn profil(idcc: Option<&Idcc>, fiche: &ChampsSalarie, au_mois: Option<&AuMoi
     }
     // Cadre : l'engagement le dit, sinon la fiche (son statut categoriel, S21.G00.40.003) ; ni l'un ni l'autre, la
     // categorie ne se lit pas.
-    let est_cadre = match (e.cadre, fiche.statut_categoriel_rc.dite()) {
-        (Some(c), _) => c,
-        (None, Some(rc)) => *rc == crate::fiche::StatutCategorielRc::Cadre,
+    let (est_cadre, dit_par) = match (e.cadre, fiche.statut_categoriel_rc.dite()) {
+        (Some(c), _) => (c, "l'engagement"),
+        (None, Some(rc)) => (*rc == crate::fiche::StatutCategorielRc::Cadre, "le statut catégoriel de la fiche"),
         (None, None) => return Ok(profil(None, "ni l'engagement ni la fiche (statut catégoriel) ne disent si le salarié est cadre".into())),
     };
     let niveau = c3090.map(|c| c.niveau.clone());
     let selon_niveau = sec.and_then(|s| s.par_niveau_3090.as_ref().zip(niveau.as_ref()).and_then(|(m, n)| m.get(n)));
     if est_cadre {
-        return Ok(profil(Some(CategorieConventionnelle::Cadre), "la case cadre".into()));
+        return Ok(profil(Some(CategorieConventionnelle::Cadre), format!("cadre selon {}", dit_par)));
     }
     if sec.is_some_and(|s| s.cadre_ou_non_cadre == Some(true)) {
-        return Ok(profil(Some(CategorieConventionnelle::NonCadre), "la case cadre, non cochée".into()));
+        return Ok(profil(Some(CategorieConventionnelle::NonCadre), format!("non cadre selon {}", dit_par)));
     }
     if let (Some(c), Some(code), Some(niveau)) = (selon_niveau, code.as_deref(), niveau.as_ref()) {
         if *c == CategorieConventionnelle::Cadre {

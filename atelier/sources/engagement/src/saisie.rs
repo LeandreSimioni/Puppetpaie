@@ -160,7 +160,14 @@ carte! {
         pub etablissement: Option<droit::fiche::Nic>,
         #[champ(Terme, Metier)]
         pub metier: Option<droit::emplois::CodeEmploi>,
-        #[champ(Terme, Cadre)]
+        #[garde]
+        /// UNE CLE GARDEE, QUI N'EST PAS UNE CASE : cadre ou non, ce que la carte disait de son metier quand une case le
+        /// disait. Le cadre d'un engagement se lit de son metier (Leandre, 20/11/2026 : « J'enlève la case cadre. Si
+        /// quelqu'un un jour veut créer un marionnettiste cadre, il peut toujours le créer dans le métier ») ; toute carte
+        /// ecrite porte la cle (`null`), et une carte ecrite se relit telle quelle, de meme empreinte
+        /// (`stock::empreinte_de_saisie`). Le calcul la lit encore (`emplois::resoudre`), et chaque mois la porte comme
+        /// un terme (`stock::Objet::vue`) : une carte qui la dit garde son calcul. Le metier qui change la retire
+        /// (`Carte::reprendre_le_cadre`, `stock::dater`).
         pub cadre: Option<bool>,
         #[champ(Terme, Lieu)]
         pub lieu: Option<String>,
@@ -455,6 +462,15 @@ impl Carte {
             c.ote(x);
         }
         c
+    }
+
+    /// LA CLE GARDEE `cadre` de la carte ecrite `ecrite`, reprise sur celle-ci, qui la recrit (aucune case ne la saisit,
+    /// le brouillon ne la porte pas) : elle ne vaut qu'avec le metier qu'elle accompagnait ; sous un autre metier, le
+    /// cadre se lit de lui seul.
+    pub fn reprendre_le_cadre(&mut self, ecrite: &Carte) {
+        if self.cadre.is_none() && self.metier == ecrite.metier {
+            self.cadre = ecrite.cadre;
+        }
     }
 
     /// Chaque champ que `de` dit se pose sur la carte ; les autres restent ce qu'ils sont.

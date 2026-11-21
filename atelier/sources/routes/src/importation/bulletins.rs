@@ -1955,9 +1955,9 @@ fn metier_dit(
     e.statut = statut;
     e.statut_categoriel_rc = rc;
     let Some(intitule) = e.emploi.clone() else { return Ok(f) };
-    if let Some((code, feminin)) = droit::emplois::par_intitule(&intitule, compare).map_err(|m| m.reclasser(Classe::Refuse))? {
+    if let Some((metier, feminin)) = droit::emplois::par_intitule(&intitule, compare).map_err(|m| m.reclasser(Classe::Refuse))? {
         let cadre = e.statut_categoriel_rc.map(|s| s == droit::fiche::StatutCategorielRc::Cadre);
-        let r = droit::emplois::resoudre(&code, cadre, feminin || femme, idcc).map_err(|m| m.reclasser(Classe::Refuse))?;
+        let r = droit::emplois::resoudre(&metier, cadre, feminin || femme, idcc).map_err(|m| m.reclasser(Classe::Refuse))?;
         // Ce que le choix du metier donne ; le statut imprime prime.
         e.emploi = Some(r.emploi);
         e.pcs_ese = r.pcs_ese.or(e.pcs_ese.take());

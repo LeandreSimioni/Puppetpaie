@@ -563,6 +563,8 @@ document.querySelectorAll(".onglets button").forEach((b) => {
       // suite ; c'est lui qui dit si elle passe. Rien d'autre à écrire : on
       // relit seulement ce que le moteur dit du mois.
       if (MOIS_AFFICHE) {
+        // La convention ou l'annexe ont pu changer dans Configuration : une carte qui se redessine redemande sa bulle.
+        oublierLesBulles();
         const enAttente = !toutEstEcrit();
         if (enAttente) await enregistrerSaisie(true);
         else await rafraichirActions();

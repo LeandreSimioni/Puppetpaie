@@ -479,7 +479,8 @@ pub struct Contenu {
     pub total_pat: Montant,
     pub total_sal: Montant,
     /// Ce qui se paie au salarie avant impot : le brut, moins les cotisations salariales, plus ou moins TOUTES les
-    /// lignes hors assiette (defraiements, acompte retenu, indemnites).
+    /// lignes hors assiette (defraiements, acompte retenu, indemnites), moins les avantages en nature, recus en nature
+    /// (C. trav. R. 3243-1, 9° : « la somme qui aurait été versée au salarié en l'absence de retenue à la source »).
     pub net_a_payer: Montant,
     /// Le montant net social (S21.G00.58.004 de type 03, « Montant net social » du bulletin) : voir `calculer`
     /// (7.10). Le brut, moins les cotisations salariales, plus les lignes hors assiette qui sont un revenu ; ni
@@ -1430,7 +1431,11 @@ pub(crate) fn saisie_declaree_a_la_caisse_des_conges(ctx: &Contexte, e: &crate::
     }
     .ok_or_else(|| socle::fichiers::absent("debut"))?;
     let cle = e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
-    let code_emploi_ft = e.emploi.as_ref().and_then(|x| x.code_emploi_ft.clone()).or_else(|| e.metier.as_ref().map(droit::fiche::CodeEmploiFt::from));
+    let code_emploi_ft = match (e.emploi.as_ref().and_then(|x| x.code_emploi_ft.clone()), &e.metier) {
+        (Some(c), _) => Some(c),
+        (None, Some(m)) => Some(m.metier(&ctx.racine)?.code_emploi_ft()),
+        (None, None) => None,
+    };
     let emploi = EmploiEngagement { ecrit: EmploiEcrit { code_emploi_ft, ..Default::default() }, emploi_affichage: None };
     let fiche = convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, fin)?, &emploi)?);
     droit::caisse_conges::affilie(&nat, &fiche, &contrat)
@@ -2072,7 +2077,22 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.10 : la sortie. Ce qui est hors assiette se paie ou se retient quand meme.
     let hors_assiette = lb.iter().filter(|l| !l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
-    let net = brut - tot_sal + hors_assiette;
+    // L'avantage en nature est dans le brut (il est soumis), et le salarie l'a recu en nature, pas en argent : le net a
+    // payer avant impot, « la somme qui aurait été versée au salarié en l'absence de retenue à la source » (C. trav.
+    // R. 3243-1, 9°, `atelier/reference/sources/code-du-travail/xml/R3243-1.xml`), ne le compte pas, ni donc ce net moins
+    // l'impot preleve, « la somme effectivement reçue par le salarié » (10°). Qu'une valeur fournie en nature ne soit pas
+    // une somme versee est une inference. Le bulletin l'imprime en deduction (`documents::bulletin`, `Jeu::en_nature`).
+    // Le net social, le net imposable et le net verse de la DSN le gardent : le montant net
+    // social compte « les avantages et accessoires en nature ou en argent » (arrete du 25/02/2016, art. 1er, II, 1°,
+    // `atelier/reference/sources/montant-net-social/legi-arrete-20160225-bulletin.md`), et le net verse part de la
+    // remuneration nette fiscale (S21.G00.50.004).
+    let mut en_nature = Montant::ZERO;
+    for l in lb.iter() {
+        if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
+            en_nature += l.montant;
+        }
+    }
+    let net = brut - tot_sal + hors_assiette - en_nature;
     // La remuneration nette fiscale (S21.G00.50.002) part du brut soumis, deduit les cotisations salariales et
     // reintegre la CSG/CRDS non deductible et la sante patronale (`reintegrations`). Des lignes hors assiette, elle ne
     // prend que celles que le catalogue dit imposables : la norme (2026.1, § 2.3.2, p. 60-61) fait « DEDUIRE les sommes
@@ -2405,6 +2425,38 @@ fn tranches_de_l_annee_appliquees(p: &Paie) -> R<Option<(Montant, Montant, Monta
     }
     let lue = |a: Assiette| assiette_de_l_annee(p, a, LUE_PAR);
     Ok(Some((lue(Assiette::T1Annuelle)?, lue(Assiette::T2Annuelle)?, lue(Assiette::CetAnnuelle)?)))
+}
+
+/// UN NET A PAYER NEGATIF S'AVERTIT, rien ne le refuse (Leandre, 21/11/2026) : la carte dit ce qui s'est retire du brut,
+/// comme `calculer` compose le net (7.10) : les cotisations salariales, les avantages recus en nature, et les lignes hors
+/// assiette qui retiennent (un acompte retenu).
+pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
+    if p.net_a_payer >= Montant::ZERO {
+        return Ok(None);
+    }
+    let mut retires = vec![format!("les cotisations salariales ({})", euros(p.total_sal))];
+    let mut en_nature = Montant::ZERO;
+    for l in &p.remuneration {
+        if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
+            en_nature += l.montant;
+        }
+    }
+    if en_nature > Montant::ZERO {
+        retires.push(format!("les avantages reçus en nature ({})", euros(en_nature)));
+    }
+    for l in p.remuneration.iter().filter(|l| !l.soumis && l.montant < Montant::ZERO) {
+        retires.push(format!("{} ({})", l.designation(), euros(l.montant.abs())));
+    }
+    Ok(Some(Avis {
+        info: false,
+        texte: format!(
+            "{} : le net à payer est négatif ({}). Du brut ({}) se retirent {}.",
+            crate::qui_de(&p.salarie)?,
+            euros(p.net_a_payer),
+            euros(p.brut),
+            retires.join(", ")
+        ),
+    }))
 }
 
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la

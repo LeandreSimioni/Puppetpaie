@@ -87,7 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Calculer sans rien écrire les paies du mois, avec les modifications en cours.",
         charge: &[MOIS, MODIFICATIONS],
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
-        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, le cadre, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
+        rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -1035,9 +1035,20 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// Un metier du catalogue traduit en champs de fiche, pour le formulaire salarie. LE METIER AU FEMININ pour une
 /// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
+///
+/// UN METIER CREE NE VA PAS SUR UNE FICHE : la fiche ne porte que le code France Travail et les statuts qu'elle declare,
+/// et sa case « Métier » montre le metier que ce code nomme (`metier_de_la_fiche`, celui que la carte montre aussi
+/// quand elle n'en dit pas) ; les statuts d'un metier cree sous le code de sa copie y montreraient un autre metier que
+/// celui que la paie applique. Le metier est celui de l'engagement : un metier cree se choisit sur la carte.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
+    if c.metier.numero_cree().is_some() {
+        return Err(refus(format!(
+            "Le métier {} est un métier créé par la compagnie : il se choisit sur la carte d'un engagement ; la fiche d'un salarié prend un métier du catalogue. Rien n'est écrit.",
+            c.metier
+        )));
+    }
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
-    let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
+    let champs = emplois::resoudre(&c.metier.metier(&ctx.racine)?, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
         Some(code) => socle::phrase!("Métier : {} ({}).", champs.emploi_affichage, code),
         None => socle::phrase!("Métier : {}.", champs.emploi_affichage),
@@ -1182,18 +1193,25 @@ pub(crate) fn brouillon_ecrit(ctx: &Contexte, mois: Mois, id: &Identite) -> R<Br
     Brouillon::de_la_carte(&vue, &qui).map_err(|m| m.reclasser(Classe::Refuse))
 }
 
+/// UNE ECRITURE A LA FOIS, celle d'un engagement (`avant_d_ecrire`) ou des metiers de la compagnie (`metiers`) : la
+/// fenetre sert ses routes en parallele, et deux ecritures qui relisent puis recrivent le meme fichier en perdraient
+/// une. Le verrou rendu se garde jusqu'a la fin de l'ecriture.
+pub(crate) fn une_ecriture_a_la_fois() -> std::sync::MutexGuard<'static, ()> {
+    static ECRITURE_EN_COURS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Une ecriture tombee en tenant le verrou ne le garde pas : il se reprend.
+    match ECRITURE_EN_COURS.lock() {
+        Ok(v) => v,
+        Err(tombe) => tombe.into_inner(),
+    }
+}
+
 /// AVANT TOUTE ECRITURE D'UN ENGAGEMENT (saisir, valider, modifier, retirer) : une ecriture a la fois (la fenetre sert
 /// ses routes en parallele, et la page enregistre une seconde apres la derniere frappe, meme si l'enregistrement d'avant
 /// n'a pas fini), puis les trois refus du mois : des paies importees (`refuser_si_importe`), un exercice clos
 /// (`refuser_si_clos`), un mois d'avant la premiere embauche (`refuser_si_avant_la_premiere_embauche`). Le verrou rendu
 /// se garde jusqu'a la fin de l'ecriture.
 pub(crate) fn avant_d_ecrire(ctx: &Contexte, mois: Mois) -> R<std::sync::MutexGuard<'static, ()>> {
-    static ECRITURE_EN_COURS: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    // Une ecriture tombee en tenant le verrou ne le garde pas : il se reprend.
-    let verrou = match ECRITURE_EN_COURS.lock() {
-        Ok(v) => v,
-        Err(tombe) => tombe.into_inner(),
-    };
+    let verrou = une_ecriture_a_la_fois();
     refuser_si_importe(ctx, mois)?;
     refuser_si_clos(ctx, mois)?;
     refuser_si_avant_la_premiere_embauche(ctx, mois)?;
@@ -1695,11 +1713,6 @@ pub(crate) struct Prerempli {
     /// salarie (`droit::emplois::CodeEmploi::du_code_declare`, `engagement::lib` : sans metier sur la carte, l'emploi est
     /// celui de la fiche). Montre, il ne s'ecrit que si on le choisit.
     metier: Option<droit::emplois::CodeEmploi>,
-    /// CADRE OU NON, ce que la paie prend sans la case : ce que le catalogue dit du metier ecrit sur la carte, sous la
-    /// convention de la compagnie (`Metier::cadre_par_defaut` ; rien hors du catalogue). La case ne s'ouvre qu'avec un
-    /// metier ecrit (`FaitQuiOuvre::MetierEcrit`) : la meme regle, que la carte soit calculee ou a completer. Rendu meme
-    /// quand la carte le dit : un oui-non pre-rempli se change dans les deux sens, et revenir au pre-rempli n'ecrit rien.
-    cadre: Option<bool>,
     /// CE QU'UNE LIGNE NEUVE DE CHAQUE RUBRIQUE PREND, sous son code (`lignes_preremplies`) : une ligne de cachet, le
     /// taux du cachet du mois ou du dossier.
     lignes: LignesPreremplies,
@@ -1870,10 +1883,8 @@ fn carte_lue(
             F::FinCeMois => fin_ce_mois,
             F::MotifAvantTerme => fin_ce_mois && e.motif_rupture.is_some_and(|m| Some(m) != nat.motif_rupture_par_defaut()),
             F::DuMotif(fait) => fin_ce_mois && faits.contains(&fait),
-            F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
-            F::MetierEcrit => e.metier.is_some(),
             F::TempsPlein => plein,
             F::HeuresDecompteesParSemaine => par_semaine,
             F::TempsPartiel => partiel,
@@ -1891,15 +1902,6 @@ fn carte_lue(
         choix.insert(engagement::saisie::Champ::ModeleContrat.nom(), crate::modeles_contrat::au_choix(ctx, n)?.iter().map(|m| m.en_choix()).collect());
     }
     Ok((cases, choix))
-}
-
-/// Ce que le catalogue dit du metier de la carte `e` sous la convention de la compagnie (`Metier::cadre_par_defaut`,
-/// `Prerempli::cadre`) ; rien sans metier, ou pour un metier hors du catalogue.
-fn cadre_du_metier(ctx: &Contexte, e: &SaisieCarte) -> R<Option<bool>> {
-    Ok(match &e.metier {
-        Some(m) => m.metier()?.cadre_par_defaut(ctx.entreprise.idcc.dite()),
-        None => None,
-    })
 }
 
 /// Le salarie d'une paie a l'ecran : sa cle, son nom, son prenom (celui d'usage s'il en a un).
@@ -2137,7 +2139,6 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         debut: brut.debut.is_none().then(|| e.contrat().debut()),
         // Sans metier sur la carte, la paie prend l'emploi de la fiche (`s`, qu'aucune case de la carte ne change).
         metier: if brut.metier.is_none() { ou_vide(metier_de_la_fiche(s.code_emploi_ft.dite()), f) } else { None },
-        cadre: ou_vide(cadre_du_metier(ctx, brut), f),
         lignes: lignes_ou_vide(lignes, f),
     };
     metier_du_dernier_contrat_illisible(ctx, brut, &mut ne_se_preremplit);
@@ -2564,15 +2565,13 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
             Some(m) => {
                 let rupture = rupture_en_saisie(e, mois);
                 // Rien ne pre-remplit le jour du versement tant que la paie ne se calcule pas : le debut est celui que
-                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme ; le cadre, celui du
-                // metier qu'elle ecrit (la meme regle qu'une carte calculee).
+                // ses jours coches disent ; le metier, celui de la fiche du salarie qu'elle nomme.
                 let mut ne_se_preremplit = Vec::new();
                 let f = &mut ne_se_preremplit;
                 let fiche = e.salarie.as_ref().and_then(|s| ctx.salaries.get(s));
                 let prerempli = Prerempli {
                     debut: if e.debut.is_none() { e.debut_lu() } else { None },
                     metier: if e.metier.is_none() { ou_vide(metier_de_la_fiche(fiche.and_then(|x| x.code_emploi_ft.dite())), f) } else { None },
-                    cadre: ou_vide(cadre_du_metier(ctx, e), f),
                     lignes: lignes_ou_vide(lignes, f),
                     ..Prerempli::default()
                 };

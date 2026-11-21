@@ -34,3 +34,4 @@ mod second_contrat_au_mois;
 mod identite_qui_arrive;
 mod technicien_au_service;
 mod technicien_de_la_3090;
+mod avantage_en_nature;
