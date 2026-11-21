@@ -108,7 +108,12 @@ dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le l
 pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
 propose arrive par la route (`propose`), et « Enregistrer » la valide. Les fiches (Entreprise, Salarié, Spectacle)
 gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
-dans la page.
+dans la page. **Tout le logiciel suit, écran par écran** (Léandre, 21/11/2026 : « la même chose qu'on a fait pour la
+carte, il faut la faire pour tout le logiciel », « la page, il faut juste faire un petit peu de mise en forme »).
+**Avant de toucher à un écran, on relève tout ce qu'il a** (« regarder tout ce qu'avait la page pour voir qu'on ne
+perd rien ») : chaque case, bouton, phrase, condition d'affichage et geste, avec la ligne du JS qui le fait et ce que
+la route en dit déjà. Ce que le passage ferait perdre ne se retire ni ne se garde d'office : c'est une question à
+Léandre, une par chose (« on la garde ou pas, et si oui, comment »).
 
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
