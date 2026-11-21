@@ -360,7 +360,8 @@ function peindreLaPaie(div) {
   const cible = div.querySelector(".e-paie");
   if (!cible) return;
   const p = div._paie;
-  const manque = (p && p.a_completer) || div._aCompleter;
+  // La paie de la carte dit ce qui lui manque ; une carte sans paie (jamais calculée) garde ce que sa lecture en a dit.
+  const manque = p ? p.a_completer : div._aCompleter;
   if (manque) {
     cible.innerHTML = `<div class="encart attention"><b>À compléter</b> ${erreurEnClair(manque)}</div>`;
     return;
