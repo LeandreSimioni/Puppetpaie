@@ -443,11 +443,12 @@
    "ecran": true
   },
   {
+   "note": "LA CASE SE CHOISIT DANS LE REFERENTIEL DE L'URSSAF. Ses choix ne s'ecrivent pas ici : la lecture de la table les pose depuis `spst-base.json` (`declarations::champs::ranger`, `spst::BaseSpst::choix`), le referentiel « sst_dpae » que la page du jeu dit « qui doit être utilisée dans le cadre de la Déclaration Préalable à l'Embauche » et que la fiche consigne 3370 donne pour la DSN (`atelier/reference/sources/urssaf-sst-dpae/LISEZ-MOI.md`). L'aide ne dit que ce que les textes deposes disent : aucun texte depose ne dit sur quel document l'employeur lit le nom de son service.",
    "cle": "medecine_travail",
    "exige_par": ["dpae"],
-   "libelle": "Code du service de santé au travail",
-   "forme": "texte",
-   "aide": "Le code de votre service de prévention et de santé au travail (la médecine du travail), tel que la DPAE le demande : MT suivi de trois chiffres, MT542 par exemple. Il figure sur l'attestation d'adhésion que ce service vous a remise. Chaque DPAE le porte : sans lui, aucune embauche ne se déclare. MT999 : la compagnie a sa propre médecine du travail (service interne). 5 caractères, ce que la DPAE écrit.",
+   "libelle": "Service de santé au travail",
+   "forme": "choix",
+   "aide": "Le service de prévention et de santé au travail (la médecine du travail) auquel la compagnie adhère : choisissez-le par son nom dans la liste de l'Urssaf, celle que la DPAE et la DSN demandent. Thalie Santé (ex-CMB), que les conventions du spectacle nomment pour les intermittents, est en tête. Chaque DPAE porte son code (MT et trois chiffres, 5 caractères) : sans lui, aucune embauche ne se déclare. « MEDECINE INTERNE ETABLISSEMENT » : la compagnie a sa propre médecine du travail.",
    "longueur": null,
    "exemple": "MT542",
    "choix": [],

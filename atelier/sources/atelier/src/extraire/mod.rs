@@ -1,4 +1,4 @@
-//! `moteur-atelier extraire naf|usages|formats|urssaf <sources...> <sortie.json> [--remplacer]` (et `transcrire`, la lecture d'un
+//! `moteur-atelier extraire naf|usages|formats|urssaf|spst <sources...> <sortie.json> [--remplacer]` (et `transcrire`, la lecture d'un
 //! cahier technique en PDF, une fois : `Transcription`) : les releves de l'atelier, qui
 //! fabriquent des referentiels de `logiciel/donnees/` a partir des textes deposes dans `atelier/reference/`.
 //!
@@ -16,6 +16,7 @@
 
 pub mod formats;
 pub mod naf;
+pub mod spst;
 pub mod urssaf;
 pub mod usages;
 
@@ -77,6 +78,7 @@ const USAGE: &str = "usage : moteur-atelier extraire naf <structure.xlsx> <corre
 \x20       moteur-atelier extraireusages <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-usages.txt | dsn-tableau-des-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
 \x20       moteur-atelier extraireformats <dsn-cahier-technique-V.pdf | dsn-cahier-technique-V-formats.txt | dsn-tableaux-categories-controles-datatypes-usages-V-AAAAMMJJ.xlsx> <sortie.json> [--remplacer]\n\
 \x20       moteur-atelier extraireurssaf <urssaf-table-des-urssaf-AAAAMMJJ.csv> <urssaf-liste-des-sites-et-des-activites.csv> <insee-cog-2015-departements.zip> <sortie.json> [--remplacer]\n\
+\x20       moteur-atelier extraire spst <urssaf-sst-dpae-AAAAMMJJ.csv> <sortie.json> [--remplacer]\n\
 \x20       moteur-atelier extrairetranscrire <dsn-cahier-technique-V.pdf> <usages.txt> <formats.txt> [--remplacer]\n\
 La sortie se nomme toujours ; un fichier deja la ne se remplace qu'avec --remplacer.";
 
@@ -98,7 +100,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
     }
     let attendus = match pos.first().copied() {
         Some("naf") => 3,
-        Some("usages") | Some("formats") => 2,
+        Some("usages") | Some("formats") | Some("spst") => 2,
         Some("urssaf") => 4,
         _ => {
             eprintln!("{}", USAGE);
@@ -123,6 +125,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
         "naf" => naf::relever(&sources[0], &sources[1], &jour),
         "usages" => usages::relever(&sources[0], &jour),
         "formats" => formats::relever(&sources[0], &jour),
+        "spst" => spst::relever(&sources[0], &jour),
         _ => urssaf::relever(&sources[0], &sources[1], &sources[2], &jour),
     };
     let releve = match releve {

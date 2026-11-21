@@ -90,6 +90,11 @@ fn chaque_referentiel_livre_et_chaque_table_sont_ce_que_les_textes_deposes_donne
     let r = extraire::urssaf::relever(&reference(&format!("sources/{}", table)), &reference(&format!("sources/{}", sites)), &reference(&format!("sources/{}", cog)), &jour);
     redonne_le_livre(r.unwrap(), "urssaf-dpae-base.json", "moteur extraire urssaf", &[table, sites, cog]);
 
+    // Les services de sante au travail : le referentiel « sst_dpae » de l'Urssaf.
+    let x = "urssaf-sst-dpae-20261121.csv";
+    let r = extraire::spst::relever(&reference(&format!("sources/urssaf-sst-dpae/{}", x)), &jour);
+    redonne_le_livre(r.unwrap(), "spst-base.json", "moteur extraire spst", &[x]);
+
     // Les tables Unicode compilees dans le socle et les envois.
     let fichiers = generer(&reference("sources")).unwrap();
     let mut ecarts = Vec::new();
