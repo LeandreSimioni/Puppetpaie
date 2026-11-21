@@ -1345,7 +1345,7 @@ pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jou
     let Some((grille, _, _)) = grille_au(t, idcc, organisation.as_ref(), Some(jour)) else { return Ok(Vec::new()) };
     // Une grille dont les minima n'entrent en vigueur qu'apres ce jour ne dit rien de lui.
     let grille_en_vigueur = grille.en_vigueur.is_none_or(|d| d <= jour);
-    let metier = code.metier()?;
+    let metier = code.metier(&ctx.racine)?;
     let cle = format!("conventions.{}.metiers.{}", idcc, code);
     let un_seul = |r: &droit::minima::CeQueFixeLaConvention, montant: MontantUnitaire| -> R<Vec<MontantFixe>> {
         let condition = r.condition.clone().ok_or_else(|| manque(&format!("{}.{}.condition", cle, r.rubrique)))?;
