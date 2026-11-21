@@ -107,7 +107,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `editeur-dsn/guide-urssaf-regularisation.pdf` : `7be4aabb6c3b0c7f118d7232e22580e705e01d7d5d8b0080c3328de5a33c4456`
 - `editeur-dsn/guide-urssaf-regularisation.txt` : `58a110144a4d701024dad4cf8de846f40a6ae3e556e4cb0d6366d087ebb24a4b`
 - `editeur-dsn/mode-operatoire-procedure-editeur.pdf` : `7c19e2bf2284d372a60c616b929c0fc96b04b8b860083c7f3afc22160afaf146`
-- `francetravail-100-dsn/LISEZMOI.md` : `34fe17b27a0647e1cbd19f8a715e6a99252ac3392cc35edcd12884f91b4d7ba7`
+- `francetravail-100-dsn/LISEZMOI.md` : `5022f694bc70b65ccfa15d7809eda861bc7ce5d0df51440ffe340a43e99cb7fb`
 - `francetravail-100-dsn/comenolo-aer-cs.txt` : `20cf459d9015620fd35d647e66417f65d4462454e489821e422ebe002e0dc1cc`
 - `francetravail-100-dsn/mescachets-aem-aer-cs-20260903.txt` : `051dce93c2a90c01f2238293ef31091f67bd01bc20e16f62d3594d0b99d46354`
 - `francetravail-100-dsn/movinmotion-fin-des-aem-20260601.txt` : `8f0cc6482530b6a5ed271e73a9508a7ad82a37e422ccdc24c836a37cacaa8d2f`
@@ -170,7 +170,7 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `unedic-circulaire-2016-25-annexes-8-10.txt` : `d7959bc19982e8c3d8492e41ee9e813c5b9c8afa4c47bfe1086bbf5516fdeac7`
 - `urssaf-codes-types-personnel-20261013.LISEZ-MOI.md` : `4e4df5d86de57ea9ef50b68e354aac98d8588db02d5d38510ebd691d6951a95e`
 - `urssaf-codes-types-personnel-20261013.csv` : `00499ac0a3f9b4b314352f4b941445a3570d2f8789a6382c222d9db1430609b6`
-- `urssaf-codes-types-personnel-20261029.LISEZ-MOI.md` : `b4ef761c5fb24279f2c8047f371c87f403867cff14d729dc5d91f060d3cc2280`
+- `urssaf-codes-types-personnel-20261029.LISEZ-MOI.md` : `a3f118fffcef0fe855c5a25d3e1370dd05a7f83089b884bcb5493fad601efe1d`
 - `urssaf-codes-types-personnel-20261029.csv` : `523c21bbff70d747ebf6f0689ce3ef39790c6d7ad0158d716888084e45d6b75c`
 - `urssaf-codes-types-personnel-20261029.xml` : `0b226ebaa58b900d55d472a0fa57689f16df0b57ccf5f5ce07ca5eb3b17e1afb`
 - `urssaf-codes-types-personnel-historique-20261029.csv` : `4e68d20f2c6281ebaa3f71f1bf477f5e4e87dab8661f02a8607f2a43e769f1b9`
