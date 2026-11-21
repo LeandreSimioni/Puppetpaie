@@ -110,7 +110,9 @@ chose de plus, cela se présente à Léandre avant, en une ligne.
 en page », « regarde ce qu'on a fait pour la carte engagement »). La carte d'un engagement en est le modèle : un seul
 dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le libellé, les choix, ce qui est
 pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
-propose arrive par la route (`propose`), et « Enregistrer » la valide. Les fiches (Entreprise, Salarié, Spectacle)
+propose arrive par la route (`propose`), et « Enregistrer » la valide. La fiche d'un spectacle
+est le modèle des fiches : la route `fiche` la rend telle qu'on la saisit, et le même dessin d'une case (`caseDeRoute`,
+`js/avance.js`) sert à la carte et à la fiche. Les fiches Entreprise et Salarié
 gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
 dans la page. **Tout le logiciel suit, écran par écran** (Léandre, 21/11/2026 : « la même chose qu'on a fait pour la
 carte, il faut la faire pour tout le logiciel », « la page, il faut juste faire un petit peu de mise en forme »).
