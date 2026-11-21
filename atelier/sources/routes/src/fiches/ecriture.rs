@@ -1504,7 +1504,7 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
 /// (`SorteDeFiche::apres_ecriture`) ne tourne pas : rien d'autre ne s'ecrit pendant la demande.
 ///
 /// La case se juge sur la fiche telle que l'ecran la montre, ou elle vaut ce que l'entree illisible lui faisait valoir :
-/// vide. Une reponse apres laquelle cette entree est encore illisible refuse : elle ne rend jamais « Enregistré ».
+/// vide ; seules se jugent les cases que la reponse ecrit, jamais les autres cases de la fiche. Une reponse apres laquelle cette entree est encore illisible refuse : elle ne rend jamais « Enregistré ».
 fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec<F::Changement>, note: Option<&str>, forcer: bool, confirme: bool) -> R<FicheEnregistree<F::Cle>> {
     let absente = || refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.as_ref().map(F::cle_dite).into_iter().collect::<String>()));
     let montree = F::montree(ctx, cle.as_ref()).ok_or_else(absente)?;
@@ -1532,7 +1532,9 @@ fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec
             return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
         }
         let cases: Vec<CaseDeFiche> = std::iter::once(k).chain(F::differentes(&avant, &apres).into_iter().filter(|c| *c != k)).collect();
-        let jugees = champs::verifier_fiche(F::a_juger(&apres))?;
+        // Seules se jugent les cases que la reponse ecrit : une erreur qu'une autre case porte deja (forcee, ou posee « A
+        // COMPLETER » par l'import) n'est pas ce qu'on saisit, et ne bloque pas la reponse.
+        let jugees: Vec<Anomalie> = champs::verifier_fiche(F::a_juger(&apres))?.into_iter().filter(|a| cases.contains(&a.champ)).collect();
         if (if forcer { Forcer::Forme } else { Forcer::Rien }).refuse(&jugees) {
             return Err(fiche_refusee(F::NOM, &jugees)?);
         }
