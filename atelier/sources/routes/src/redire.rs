@@ -124,10 +124,16 @@ pub(crate) fn barrage(ctx: &Contexte, route: Route) -> R<()> {
     if crate::catalogue::catalogue().iter().any(|f| f.route == route && f.pendant_la_demande == PendantLaDemande::Servie) {
         return Ok(());
     }
-    match phrase_d_attente(ctx, &en_attente_toutes(ctx), "la saisir de nouveau, puis recommencer.")? {
-        Some(phrase) => Err(erreur(Classe::ValeurARedire, phrase)),
+    match refus_de_la_demande(ctx)? {
+        Some(e) => Err(e),
         None => Ok(()),
     }
+}
+
+/// LE REFUS QUI RENVOIE A LA DEMANDE, le meme partout (le barrage ; pendant la demande, une saisie d'`enregistrer-fiche`
+/// qui n'y repond pas : `fiches::ecriture`) ; aucun si rien n'attend.
+pub(crate) fn refus_de_la_demande(ctx: &Contexte) -> R<Option<socle::echec::Echec>> {
+    Ok(phrase_d_attente(ctx, &en_attente_toutes(ctx), "la saisir de nouveau, puis recommencer.")?.map(|phrase| erreur(Classe::ValeurARedire, phrase)))
 }
 
 /// LA CHARGE D'`enregistrer-fiche` QUI REDIT UNE VALEUR, sans ses `changements` (la case saisie, ou `null`) : la fiche et sa

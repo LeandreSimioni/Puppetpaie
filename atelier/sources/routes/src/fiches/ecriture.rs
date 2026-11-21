@@ -1449,11 +1449,16 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     if !fautes.is_empty() {
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
-    let illisibles = match F::brute(ctx, cle.as_ref()) {
-        Some(b) => droit::fiche::cases_illisibles(b),
-        None => Vec::new(),
-    };
-    if !changements.0.is_empty() && changements.0.iter().all(|ch| illisibles.contains(&F::case_changee(ch))) {
+    // PENDANT LA DEMANDE (`crate::redire`), la saisie ne sert qu'a y repondre : chaque changement redit une case
+    // illisible de cette fiche, sinon elle refuse comme le barrage, et aucun ecrivain du moteur ne tourne.
+    if let Some(attente) = crate::redire::refus_de_la_demande(ctx)? {
+        let illisibles = match F::brute(ctx, cle.as_ref()) {
+            Some(b) => droit::fiche::cases_illisibles(b),
+            None => Vec::new(),
+        };
+        if !changements.0.iter().all(|ch| illisibles.contains(&F::case_changee(ch))) {
+            return Err(attente);
+        }
         let note = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
         return redire::<F>(ctx, cle, changements.0, note, forcer == Some(true), confirme == Some(true));
     }
@@ -1507,6 +1512,10 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
 /// vide ; seules se jugent les cases que la reponse ecrit, jamais les autres cases de la fiche. Ce qui se derive de la
 /// case la suit, a la meme date, si l'entree redite est sa derniere ; sinon rien d'autre ne bouge. Une reponse apres laquelle cette entree est encore illisible refuse : elle ne rend jamais « Enregistré ».
 fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec<F::Changement>, note: Option<&str>, forcer: bool, confirme: bool) -> R<FicheEnregistree<F::Cle>> {
+    // Enregistrer sans rien changer n'est jamais une faute : rien ne s'ecrit.
+    if changements.is_empty() {
+        return Ok(FicheEnregistree::Ecrite { cle, ecrits: Vec::new(), enregistre_a: None, enregistre_dit: None, phrase: socle::texte::Phrase::fixe("Rien n'a changé : rien n'est écrit.") });
+    }
     let absente = || refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.as_ref().map(F::cle_dite).into_iter().collect::<String>()));
     let montree = F::montree(ctx, cle.as_ref()).ok_or_else(absente)?;
     let mut contenu = lire_fichier::<F>(ctx)?;
