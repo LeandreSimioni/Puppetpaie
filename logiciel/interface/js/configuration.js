@@ -976,8 +976,13 @@ function structureHtml(c, v, sous, a, temps) {
         : `<label>${echapper(lib)}
           ${bouton}
           ${caseSousChamp(c.cle, k, valeurEn(o, k), genre)}</label>`;
+      // Une case que ses voisines montrent (`siCases`) se replie d'emblée quand la valeur de la fiche ne la montre pas.
+      const si = genre.siCases
+        ? ` data-si-cases="${echapper(JSON.stringify(genre.siCases))}"${
+            conditionDeStructure(genre.siCases, (x) => valeurEn(o, x)) ? "" : " hidden"}`
+        : "";
       return `
-      <div class="sous-champ${genre.boutons ? " sous-champ-large" : ""}">
+      <div class="sous-champ${genre.boutons ? " sous-champ-large" : ""}"${si}>
         ${haut}
         ${aide ? `<div class="aide" data-aide-corps="${echapper(c.cle + "." + k)}" hidden>
             <p>${echapper(aide)}</p></div>` : ""}
