@@ -410,12 +410,20 @@ function contexteDuVise(div) {
 }
 
 /** VISER UN MONTANT (`ajuster`) : une branche repliée, que sa fiche nomme (`geste`) ; ses cases sont les champs de sa
- *  fiche que la carte ne dit pas ; la route rend ce qui est atteint et les taux qu'il faudrait, que la carte écrit. Une
- *  carte qui n'a pas encore d'identité ou de paie calculée n'a rien à viser. */
+ *  fiche que la carte ne dit pas ; la route rend ce qui est atteint et les taux qu'il faudrait, que la carte écrit. La
+ *  branche se montre dès que la carte a son identité : tant que sa paie ne se calcule pas, elle dit ce qui manque (la
+ *  phrase du moteur) à la place de ses cases. */
 function dessinerLeVise(div) {
   const cible = div.querySelector(".e-viser");
   const f = CATALOGUE.ajuster;
-  if (!cible || !f || !div.dataset.engagement || !div._paie || div._paie.a_completer) { if (cible) cible.innerHTML = ""; return; }
+  const p = div._paie;
+  const manque = p ? p.a_completer : div._aCompleter;
+  if (!cible || !f || !div.dataset.engagement || (!p && !manque)) { if (cible) cible.innerHTML = ""; return; }
+  if (manque) {
+    cible.innerHTML = `<details class="e-viser-branche"><summary>${echapper(f.geste)}</summary>
+      <div class="branche"><p class="discret">${erreurEnClair(manque)}</p></div></details>`;
+    return;
+  }
   const champs = f.charge.filter((c) => !(c.nom in contexteDuVise(div)));
   // Une liste de la fiche s'ouvre sur sa première valeur, celle que la fiche range en tête (ce qui se vise : le net).
   const premieres = Object.fromEntries(champs.filter((c) => c.choix && c.choix.length).map((c) => [c.nom, c.choix[0].code]));
