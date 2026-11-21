@@ -87,7 +87,7 @@ fn la_fiche(ctx: &Contexte, f: &FicheNommee) -> String {
 }
 
 /// Le libelle de la case, tel que la fiche le montre ; sa cle, si la table ne la decrit pas.
-fn libelle(nom: NomDeFiche, case: droit::fiche::CaseDeFiche) -> R<String> {
+pub(crate) fn libelle(nom: NomDeFiche, case: droit::fiche::CaseDeFiche) -> R<String> {
     Ok(match declarations::champs::champ(nom, case)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
         Some(l) => l,
         None => case.to_string(),
