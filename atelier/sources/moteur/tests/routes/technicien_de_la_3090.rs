@@ -77,7 +77,7 @@ fn taux(v: &Value) -> Taux {
 #[test]
 fn la_prime_d_anciennete_d_un_technicien_au_mois_de_l_annexe_1() {
     let c = les_treteaux_et_leur_regisseur("prime_d_anciennete");
-    let entreprise = json!([["annexe_convention", "1"], ["jauge_annexe_1", "<=200"], ["emploie_des_permanents", true], ["date_de_versement_permanents", "fin du mois"]]);
+    let entreprise = json!([["annexe_convention", "1"], ["jauge_annexe_1", "<=200"], ["emploie_des_permanents", true], ["date_de_versement_permanents", {"quand": "fin_du_mois"}]]);
     let changements: Vec<Value> = entreprise.as_array().unwrap().iter().map(|c| json!({"case": c[0], "valeur": c[1]})).collect();
     reussi(&route(&c, "enregistrer-fiche", json!({"nom": "entreprise", "cle": null, "confirme": true, "changements": changements}), JOUR));
     // Un permanent de la 3090 est affilie a la complementaire sante (L. 911-7) : son niveau se lit sur son adhesion.

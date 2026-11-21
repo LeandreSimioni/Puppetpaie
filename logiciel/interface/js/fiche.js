@@ -40,11 +40,44 @@ function sousChamps(c) {
     if (s.forme === "date") g.date = true;
     if (s.forme === "code_atmp") g.codesAtmp = true;
     if (s.si_configuration) g.si = s.si_configuration;
+    // Une case que les autres cases de sa structure montrent (`si` de la description : le numéro du jour du versement).
+    if (s.si) g.siCases = s.si;
     return g;
   };
   return { liste: !!c.ligne, ligne: c.ligne, ajouter: c.ajouter_dit,
     champs: c.champs.filter((s) => s.ecran !== false).map((s) => [s.cle, s.libelle, s.aide, genre(s)]) };
 }
+
+/* LA CONDITION D'UNE CASE DE STRUCTURE (`si` de sa description), remplie par les autres cases de la structure :
+ * `valeurDe(clé)` dit la valeur de chacune. Un objet : chaque case nommée vaut l'une des valeurs listées (`"*"` : toute
+ * valeur dite) ; une liste : l'une de ses conditions. La même règle que `declarations::champs::Condition`. */
+function conditionDeStructure(si, valeurDe) {
+  if (Array.isArray(si)) return si.some((c) => conditionDeStructure(c, valeurDe));
+  return Object.entries(si).every(([k, vals]) => {
+    const v = texteDeLaCase(valeurDe(k)).trim();
+    return vals.includes(v) || (vals.includes("*") && v !== "" && v !== "false");
+  });
+}
+
+/* Une case de structure change : les cases que ses voisines montrent (`data-si-cases`) se montrent ou se replient ; une
+ * case repliée se vide, et ne part pas (une case qui n'a pas de sens pour ce qu'on saisit n'existe pas). */
+function montrerLesCasesDeStructure(e) {
+  const c = e.target;
+  if (!(c instanceof HTMLElement) || !c.dataset.sousDe) return;
+  const bloc = c.closest(".structure");
+  if (!bloc) return;
+  const valeurDe = (k) => {
+    const x = bloc.querySelector(`[data-sous-de][data-sous-cle="${CSS.escape(k)}"]`);
+    return x ? x.value : "";
+  };
+  bloc.querySelectorAll(".sous-champ[data-si-cases]").forEach((s) => {
+    const ok = conditionDeStructure(JSON.parse(s.dataset.siCases), valeurDe);
+    s.hidden = !ok;
+    if (!ok) s.querySelectorAll("[data-sous-de]").forEach((x) => { x.value = ""; });
+  });
+}
+document.addEventListener("input", montrerLesCasesDeStructure);
+document.addEventListener("change", montrerLesCasesDeStructure);
 
 /* La structure `cle` de la fiche `nom` (par défaut, celle qu'on montre), case par case (`sousChamps`). */
 function structureDecrite(cle, nom = FICHE_ACTIVE) {

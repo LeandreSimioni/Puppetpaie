@@ -21,7 +21,7 @@ use serde::de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
 use droit::fiche::{
-    dit, CaseDeFiche, CaseEntreprise, CasePieceEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
+    dit, CaseDeFiche, CaseEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
     Lue as _, MotEcrit, NomDeCase, NomDeFiche, Piece,
 };
 use droit::natures::RubriqueDeLaNorme;
@@ -242,6 +242,14 @@ fn comme_la_page(v: MotEcrit) -> VueDeLaPage {
 }
 
 impl Condition {
+    /// Les cases qu'elle nomme.
+    fn noms(&self) -> Vec<NomDeCase> {
+        match self {
+            Condition::Toutes(l) => l.iter().map(|(k, _)| *k).collect(),
+            Condition::UneDe(l) => l.iter().flat_map(Condition::noms).collect(),
+        }
+    }
+
     /// LA CONDITION REMPLIE PAR LA FICHE `donnees` : la meme regle que la page applique pour replier un champ ; un manque de
     /// « Pour demarrer » et un refus de la DSN se jugent sur ce que l'ecran montre.
     pub fn remplie(&self, donnees: &impl FicheSaisie) -> bool {
@@ -349,6 +357,10 @@ pub struct Case {
     pub boutons: Option<bool>,
     /// La case ne se montre que si la configuration le dit (`si_configuration` : un drapeau de la route `etat`).
     pub si_configuration: Option<String>,
+    /// La case ne se montre que si les autres cases de sa structure le disent (`si`, la forme d'une condition : chaque
+    /// case nommee, de la meme structure, vaut l'une des valeurs listees) : le numero du jour du versement, pour un jour
+    /// du mois ou du mois suivant.
+    pub si: Option<Condition>,
 }
 
 /// Ce qu'un champ et une case d'une structure ont en commun : leur nom, et la case dont ils se deduisent.
@@ -526,6 +538,7 @@ impl Case {
             libelles: self.libelles.as_ref(),
             boutons: self.boutons,
             si_configuration: self.si_configuration.as_deref(),
+            si: self.si.as_ref(),
         }
     }
 }
@@ -605,6 +618,8 @@ pub struct DescriptionDeCase<'a> {
     pub boutons: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub si_configuration: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub si: Option<&'a Condition>,
 }
 
 /// La table des trois fiches.
@@ -654,6 +669,12 @@ fn ranger(mut t: Table) -> R<Table> {
                 }
                 if let Some(x) = declares.iter().find(|x| !cases.iter().any(|s| s.cle == **x)) {
                     return Err(faute(format!("{}.{}.{} : une case de la structure sans sa ligne", nom, c.cle, x)));
+                }
+                // La condition d'une case (`si`) ne nomme que des cases de sa structure.
+                for s in cases {
+                    if let Some(n) = s.si.iter().flat_map(Condition::noms).find(|n| !declares.contains(&Chemin::de(*n))) {
+                        return Err(faute(format!("{}.{}.{} : sa condition nomme {}, hors de la structure", nom, c.cle, s.cle, n)));
+                    }
                 }
             }
             c.piece = c.cle.piece();
@@ -1599,11 +1620,6 @@ fn verifier_champ(c: Regle<'_>, valeur: MotEcrit) -> R<Option<String>> {
         if let Some(faute) = documents::conges_spectacles::faute_adherent(&documents::conges_spectacles::forme_adherent(v)) {
             return Ok(Some(faute));
         }
-    }
-    // LE JOUR DU VERSEMENT DES SALAIRES, des permanents comme des intermittents, se lit comme la paie le lira
-    // (`droit::versement`).
-    if est(CasePieceEntreprise::DateDeVersementPermanents.into()) || est(CaseEntreprise::DateDeVersementIntermittents.into()) {
-        return Ok(droit::versement::Versement::lire(v).err().map(|e| e.phrase));
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.

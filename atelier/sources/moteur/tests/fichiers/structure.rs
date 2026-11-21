@@ -258,7 +258,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             ch["valeur"] = json!(true);
         }
     }
-    entreprise["changements"].as_array_mut().unwrap().push(json!({"case": "date_de_versement_permanents", "valeur": "fin du mois"}));
+    entreprise["changements"].as_array_mut().unwrap().push(json!({"case": "date_de_versement_permanents", "valeur": {"quand": "fin_du_mois"}}));
     entreprise["depuis"] = json!("2026-11-01");
     entreprise["confirme"] = json!(true);
     for (nom, charge) in [

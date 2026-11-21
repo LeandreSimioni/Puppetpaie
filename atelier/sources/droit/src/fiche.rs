@@ -2867,6 +2867,27 @@ cases! {
     }
 }
 
+choix! {
+    /// QUAND PART LE VERSEMENT DES SALAIRES : la case `quand` du jour du versement (`VersementEcrit`).
+    pub enum QuandDuVersement {
+        FinDuMois = "fin_du_mois",
+        FinDuContrat = "fin_du_contrat",
+        JourDuMois = "jour_du_mois",
+        JourDuMoisSuivant = "jour_du_mois_suivant",
+    }
+}
+
+cases! {
+    /// LE JOUR DU VERSEMENT TEL QUE LA CASE DE LA FICHE ENTREPRISE L'ECRIT (`date_de_versement_permanents`,
+    /// `date_de_versement_intermittents`) : quand, et le numero du jour pour un jour du mois ou du mois suivant. Seul
+    /// `crate::versement::Versement` le lit et l'ecrit.
+    pub struct VersementEcrit {
+        quand: QuandDuVersement,
+        #[serde(default, deserialize_with = "socle::grandeurs::lu::compte::option::deserialize")]
+        jour: usize,
+    }
+}
+
 cases! {
     /// Les conges a la reprise, lus sur le dernier bulletin de l'ancien logiciel.
     pub struct CongesReprise {
