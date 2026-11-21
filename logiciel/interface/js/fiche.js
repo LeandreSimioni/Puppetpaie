@@ -86,7 +86,7 @@ function structureDecrite(cle, nom = FICHE_ACTIVE) {
 
 /* UN CHAMP DE FICHE, DESSINÉ : celui que la fiche montre (`dessinerFormulaire`) et celui que « Pour démarrer » propose,
  * le même dessin. `c` : sa description ; `fiche` : `{donnees, anomalies}` ; `nom` : entreprise, salarie (un spectacle,
- * la route le rend et le dessinateur commun le dessine : `caseDeLaFiche`). */
+ * la route le rend et le dessinateur commun le dessine : `caseDeRoute`). */
 function champDeFiche(c, fiche, nom) {
   const desc = ETAT.configuration.description[nom];
   const anomalie = (cle) => fiche.anomalies.find((a) => a.champ === cle);
@@ -531,7 +531,7 @@ async function ouvrirLaFicheRendue(fiche) {
   const relire = async () => {
     const n = ++tour;
     let r2;
-    try { r2 = await api("fiche", { ...charge, donnees: lireLaFiche(cases) }); } catch (e) { dire(e.message, "erreur"); return; }
+    try { r2 = await api("fiche", { ...charge, donnees: lireLesCases(cases) }); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== tour || !cases.isConnected) return;
     poserLaFiche(cases, r2);
   };
@@ -548,10 +548,10 @@ async function ouvrirLaFicheRendue(fiche) {
   FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
 }
 
-/* Ce que dit la fiche ouverte : celle que la route rend (`lireLaFiche`), ou le formulaire fait main (`lireFormulaire`). */
+/* Ce que dit la fiche ouverte : celle que la route rend (`lireLesCases`), ou le formulaire fait main (`lireFormulaire`). */
 function lireLaFicheOuverte() {
   const rendue = document.querySelector("#config-formulaire [data-fiche-cases]");
-  return rendue ? lireLaFiche(rendue) : lireFormulaire();
+  return rendue ? lireLesCases(rendue) : lireFormulaire();
 }
 
 /* Le HTML colle, sans ce qui s'executerait dans la page : scripts, cadres,
