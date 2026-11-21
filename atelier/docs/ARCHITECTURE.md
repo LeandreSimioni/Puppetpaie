@@ -1068,7 +1068,7 @@ un libellé, chacun sa forme.
 - **code Urssaf de la DPAE** : l'organisme de recouvrement que la DPAE vise en C_URSSAF (positions 133-136, annexe II.1
   du Format 120) : trois chiffres, s'écrit et se trie comme son texte ; ceux qui existent sont ceux de
   `urssaf-dpae-base.json` (`existe`). Que portent un organisme de la table et celui du territoire d'un département,
-  les paramètres d'une DPAE, ce que la page propose (`urssaf_deduit`) ; celui que la fiche Entreprise tape
+  les paramètres d'une DPAE, ce que la route `fiche` dit du code postal tapé (le choix vide de la case) ; celui que la fiche Entreprise tape
   (`code_urssaf`, du texte) se lit par `dpae::code_urssaf_saisi`, qui nomme la case.
 - **code du service de santé au travail, identifiant d'un SPST** : le service de prévention et de santé au travail
   auquel la compagnie adhère. La DPAE l'écrit en C_MT_DCL, « MT » et trois chiffres, et MT999 pour une médecine interne
@@ -2042,8 +2042,16 @@ libellé, sa forme, sa place (de base, ou « Avancé » quand la table la dit av
 `caseDeRoute` (`js/avance.js`), que la carte, la fiche, la boîte d'un geste et « Pour démarrer » appellent avec leurs
 données, dans la grille de la carte ; la page relit les cases par `lireLesCases` ; ce qu'on
 tape repart à la même route, qui redit les cases, leurs fautes et l'encart : un seul appel, à la place de `permanents` et de
-`verifier-fiche`. L'écriture reste `enregistrer-fiche`. La fiche d'un spectacle passe par là, et la case d'un spectacle
-que « Pour démarrer » fait remplir (`case_rendue` de `pour-demarrer`) ; celles d'un salarié et de l'entreprise suivront.
+`verifier-fiche`. L'écriture reste `enregistrer-fiche`. La fiche d'un spectacle et celle de l'entreprise passent par
+là, et la case d'un spectacle ou de l'entreprise que « Pour démarrer » fait remplir (`case_rendue` de `pour-demarrer`) ;
+celle d'un salarié suivra. **La mise en page est dans la donnée** : chaque case de `champs-base.json` nomme son bloc
+(`bloc`, un des `blocs` déclarés pour sa fiche, dans leur ordre : la table se range bloc par bloc) et sa largeur
+(`largeur`, `declarations::champs::Largeur`) ; la route les rend, avec l'exemple d'une case vide, et le dessin pose un
+titre quand le bloc change. Une case faite de cases rend ses parties (`routes::fiches::PartieDeLaFiche` : chacune ses
+choix, son aide, si elle est ouverte ; une clé que la route ne décrit pas se garde à l'écriture), une liste de cases
+ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `prerempli`, ses choix) : la convention et
+l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
+salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle.
 Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois

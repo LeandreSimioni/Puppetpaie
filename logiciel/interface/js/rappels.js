@@ -98,9 +98,10 @@ function caseDuManque(m) {
     : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
   if (!fiche) return null;
   const [racine, ...reste] = m.case.split(".");
-  // LA CASE D'UN SPECTACLE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) : le dessinateur commun
-  // la dessine, comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa place.
-  if (nom === "spectacle") return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
+  // LA CASE D'UN SPECTACLE OU DE L'ENTREPRISE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) :
+  // le dessinateur commun la dessine, comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa
+  // place.
+  if (nom !== "salarie") return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
   let c = conf.description[nom].find((x) => x.cle === racine);
   if (!c || c.calcule || c.ecran === false) return null;
   if (reste.length) {
@@ -183,13 +184,13 @@ function htmlDemarrage(manques) {
 }
 let DEMARRAGE_LISTES = 0;   // chaque liste peinte a son numéro : ses cases se lisent chez elle
 
-/* Les cases dessinées d'une liste : leur aide, et la taxe sur les salaires
- * qui dit, sous ses cases, ce que le moteur en conclut. */
+/* Les cases dessinées d'une liste : leur aide (une case d'un salarié), ce qu'une case de route fait seule (un
+ * calendrier, une rangée). */
 function brancherDemarrage(conteneur) {
   conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => {
     const sel = `[data-demarrage-liste="${li.closest(".demarrage-liste").dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"]`;
     brancherAide(sel);
-    brancherTaxeSalaires(sel);
+    brancherLesCases(li);
   });
 }
 
@@ -374,9 +375,7 @@ async function allerAuManque(champ, onglet, nom, cle) {
     if (sous && !sous.classList.contains("actif")) sous.click();
   }
   if (fiche === "organismes" || fiche === "coffre" || !champ) return;
-  // Le taux AT/MP n'est pas une case du formulaire : son encart (`ATMP_HTML`).
-  const trouver = () => champ === "taux_atmp" ? document.getElementById("atmp-valeur")
-    : document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
+  const trouver = () => document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
       || document.querySelector(`#config-formulaire [data-sous-de="${CSS.escape(champ)}"]:not([type="hidden"])`);
   let essais = 0;
   const viser = () => {

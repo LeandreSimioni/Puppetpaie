@@ -90,8 +90,6 @@ const AIDES: &[(&str, &str)] = &[
     ("cloture", "Les saisies et les sorties de l'année ne se modifieront plus (rouvrir reste possible, depuis l'Historique). Tout ce qu'il faut garder (saisies, bulletins, contrats signés, DPAE, DSN, certificats, retours des organismes, journal des dépôts, fiches, export compta) est réuni dans l'archive de l'exercice."),
     ("cloture_refus", "La clôture vient après la dernière DSN de l'année : elle est refusée si un mois avec des paies n'a pas de DSN acceptée au journal."),
     ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple)."),
-    ("signature_lourde", "Trop lourde : une image collée pèse tout son poids, préférez une image en ligne."),
-    ("urssaf_changer", "D'après l'adresse de l'entreprise, vos déclarations vont à l'Urssaf de son code postal : c'est elle qui reçoit normalement DPAE et DSN. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations. Voulez-vous vraiment la changer ?"),
     ("historique_titre", "Historique des valeurs"),
     ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
@@ -1562,30 +1560,6 @@ fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
         .collect()))
 }
 
-/// Une convention collective que le bareme sait servir : son IDCC, son libelle, si sa couche de taux est RELEVEE
-/// (`applicable`), et l'option qui la propose.
-#[derive(Debug, Clone, serde::Serialize)]
-struct ConventionServie {
-    idcc: droit::fiche::Idcc,
-    libelle: String,
-    applicable: bool,
-    option_dit: String,
-}
-
-/// Les conventions collectives que le bareme sait servir, pour la fiche (`Contexte::conventions_servies`). La page ne les
-/// invente pas, et elle n'en invente pas le libelle.
-fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
-    Ok(ctx
-        .conventions_servies()?
-        .into_iter()
-        .map(|(idcc, c)| {
-            let libelle = if c.libelle.trim().is_empty() { idcc.to_string() } else { c.libelle };
-            let option_dit = format!("IDCC {} — {}{}", idcc, libelle, if c.applicable { "" } else { " (taux non relevés)" });
-            ConventionServie { idcc, libelle, applicable: c.applicable, option_dit }
-        })
-        .collect())
-}
-
 // -------------------------------------------------------------------- l'etat
 
 /// Un salarie des listes ou l'on choisit : sa cle et son nom. Ce que sa carte propose, la carte le dit
@@ -1602,13 +1576,6 @@ struct SpectacleDeLaListe {
     cle: droit::contexte::IdSpectacle,
     titre: String,
     numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
-}
-
-/// Un organisme de recouvrement que la DPAE fait choisir.
-#[derive(Debug, Clone, serde::Serialize)]
-struct OrganismeUrssaf {
-    code: declarations::urssaf::CodeUrssafDpae,
-    nom: String,
 }
 
 /// CE QUE LA PAGE LIT EN S'OUVRANT (`etat`) : la configuration verifiee et sa phrase, l'auteur, ce qu'une compagnie
@@ -1643,11 +1610,6 @@ pub(crate) struct EtatDeLaPage {
     niveaux_sante: Option<Vec<NiveauDeSante>>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
-    conventions: Vec<ConventionServie>,
-    organismes_urssaf: Vec<OrganismeUrssaf>,
-    urssaf_deduit_dit: String,
-    /// L'organisme Urssaf que le code postal de la fiche designe, s'il en designe un.
-    urssaf_deduit: Option<declarations::urssaf::CodeUrssafDpae>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     pays_naissance: Vec<socle::pays::PaysServi>,
 }
@@ -1710,12 +1672,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // Une rubrique que le moteur pose (`saisie` vide) ne se propose pas.
     let rubriques: Vec<RubriqueDeLaPage> = cat.iter().filter(|r| !r.saisie.is_empty()).map(rubrique_de_la_page).collect::<R<_>>()?;
 
-    // Les organismes de recouvrement, pour que le code Urssaf de la DPAE se
-    // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
-    // fiche n'en dit rien : l'organisme du territoire.
-    let urssaf = declarations::urssaf::base()?;
-    let deduit = ctx.entreprise.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp));
-    let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.iter().map(|o| OrganismeUrssaf { code: o.code.clone(), nom: o.nom.clone() }).collect();
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let joue = branchement.joue();
 
@@ -1763,14 +1719,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         sante_hors_fiche: droit::bareme::sante_hors_fiche(&ctx.entreprise)?,
         // Ce que la fiche d'un permanent dit de sa complementaire sante, sous le choix du niveau.
         sante_aide: "Obligatoire pour un salarié au mois (art. L911-7) : sans elle, le logiciel refuse de le payer plutôt que de cotiser moins que le contrat. Elle se lit sur son bulletin d'adhésion.",
-        // Les conventions collectives servies, pour la fiche entreprise.
-        conventions: conventions(ctx)?,
-        organismes_urssaf,
-        urssaf_deduit_dit: match &deduit {
-            Some(c) => format!("— code postal ({}) —", c),
-            None => "— code postal : aucun organisme ne s'en déduit —".to_string(),
-        },
-        urssaf_deduit: deduit,
         // LES PAYS : la liste livree, triee par nom, chacun avec la codification UE que le moteur en
         // deduit. Le pays de naissance et le pays de nationalite s'y choisissent.
         pays: droit::nationalite::servir()?,
