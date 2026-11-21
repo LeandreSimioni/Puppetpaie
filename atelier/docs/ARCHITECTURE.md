@@ -1207,6 +1207,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
+| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
@@ -1328,6 +1329,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | contrat dans l'effectif (un contrat tel que L. 130-1 et R. 130-1 CSS le comptent : sa personne, ses dates, et la part qu'un jour du contrat compte, aucune quand il est exclu du décompte, un CDD de remplacement ou un dispositif de L. 1111-3 du code du travail, `ContratDansLEffectif::de` ; le temps de travail, la part entière ou le rapport des quotités d'un temps partiel, une référence nulle refusée ; la seule règle, `droit::effectif::effectif_du_mois`, `effectif_au_jour` et `effectif_annuel`, que lisent l'Urssaf simulée depuis les DSN et l'effectif repris) | `droit::effectif::ContratDansLEffectif`, `droit::effectif::TempsDansLEffectif` | `droit/src/effectif.rs` |
 | effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou ce qui manque pour le calculer, et sa phrase ; « Pour démarrer » le propose sur la ligne de l'effectif, la route `effectif` le confirme) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
+| première embauche reprise (le plus ancien début de contrat que les pièces reprises disent, et la pièce qui le dit ; « Pour démarrer » le propose dans la case de la première embauche, la compagnie le valide ou le corrige) | `engagement::effectif_repris::PremiereEmbaucheReprise` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
 | régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
@@ -3232,6 +3234,11 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   (peut-être celle de l'embauche) ne se proposent pas. Ce qu'aucune paie reprise ne distingue (les exclus de L. 1111-3
   du code du travail) se dit avec la valeur. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
   dans `manques`.
+- **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
+  le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;
+  une DSN ou une AEM dit le contrat, un bulletin seulement la période qu'il paie, et la phrase dit laquelle). Rien ne
+  s'écrit sans le geste de la compagnie, qui la valide ou la corrige : le logiciel ne sait pas si les pièces reprises
+  sont toutes les siennes.
 - Ces seuils-là (formation, FNAL, échéance de la DSN) sont ceux du code de la
   sécurité sociale ; ceux du CSE (CCNEAC, 11 et 50) relèvent du code du travail,
   et le moteur ne les tranche pas avec l'effectif de l'Urssaf : la représentation
