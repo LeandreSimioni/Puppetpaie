@@ -55,6 +55,12 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<ADire> {
             Err(e) => faites.incidents.push(format!("Attestations France Travail recues mais non rangees : {}", e.phrase)),
         }
     }
+    // LES PANNES D'UN ORGANISME : la compagnie en a lu la phrase ; le detail technique (`a_part`) part chez l'editeur.
+    for p in &s.pannes {
+        if let Err(n) = noter_la_panne(&ctx.racine, "releve", &p.echec, p.dit_un_refus()) {
+            faites.incidents.push(format!("Une réponse d'organisme ne s'est pas notée au journal des incidents : {}", n.phrase));
+        }
+    }
     for (nature, url, echec) in &s.retires {
         if let Err(n) = compagnie::incidents::noter_retour_retire(&ctx.racine, *nature, url, echec) {
             faites.incidents.push(format!("Retour de nature {} retiré par l'organisme : l'incident ne s'est pas noté au journal des incidents : {}", nature, n.phrase));
@@ -196,6 +202,15 @@ fn appliquer_taux_atmp(
     Ok(a_faire)
 }
 
+/// UNE PANNE D'UN ORGANISME (`envois::transport::panne_dite`) au journal des incidents : sa phrase, sa classe, l'endroit
+/// `ou`, et ce qu'elle porte a part (le statut, l'adresse sans ses parametres, le debut du corps, ce que le systeme a
+/// dit). La veille la rencontre sans qu'aucune route ne refuse : sans cela, l'editeur n'en saurait rien. `refus` : l'organisme
+/// refuse ce qu'on lui a envoye (`EchecApi::dit_un_refus`), un refus d'usage ; sinon la nature se lit de la classe.
+pub(crate) fn noter_la_panne(racine: &std::path::Path, ou: &str, e: &socle::echec::Echec, refus: bool) -> R<()> {
+    let nature = refus.then_some(compagnie::incidents::REFUS);
+    compagnie::incidents::depuis_exception(racine, e.classe, &e.phrase, nature, ou, e.a_part.as_ref(), None).map(|_| ())
+}
+
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
 /// alors que la repetition etait conforme.
 fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {
@@ -207,7 +222,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
             ou: &format!("depot-{}", d.quoi.nom()),
             quoi: socle::echec::classe_notee(d.classe),
             resume: &d.message,
-            detail: DetailDuDepotRefuse { mode: d.mode, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
+            detail: DetailDuDepotRefuse { mode: d.mode, apres_test_conforme: apres_test, repetition: d.repetition.as_ref(), a_part: d.a_part.as_ref() },
             trace: None,
             sans_contexte: false,
         },
@@ -222,4 +237,7 @@ struct DetailDuDepotRefuse<'a> {
     mode: socle::mode::Mode,
     apres_test_conforme: bool,
     repetition: Option<&'a envois::journal::Ouverture>,
+    /// Le detail technique de la reponse de l'organisme, quand le refus en porte un.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a_part: Option<&'a socle::echec::APart>,
 }

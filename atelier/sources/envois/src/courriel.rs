@@ -128,20 +128,41 @@ pub fn serveurs(racine: &Path) -> R<Serveurs> {
     Ok(s)
 }
 
-/// Le message du serveur, en francais quand on le reconnait.
-pub fn traduire(texte: &str) -> String {
-    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") || texte.contains("(535)") {
-        return "La boite refuse le mot de passe. Pour Gmail il faut un mot de passe D'APPLICATION (validation en deux \
-                etapes activee, puis myaccount.google.com > Securite > Mots de passe des applications), pas celui du \
-                compte."
-            .to_string();
-    }
-    texte.to_string()
+/// CE QUE LA BOITE A REPONDU, OU CE QUE LE SYSTEME OU UNE BIBLIOTHEQUE DIT D'ELLE, dit a l'administrateur : `phrase`, en
+/// francais ; `detail` (le texte du serveur, du systeme ou de la bibliotheque) va a part (`Lieu::detail`), que le journal
+/// des incidents porte a l'editeur, et dans la memoire des echecs -- comme une panne d'organisme
+/// (`transport::panne_dite`).
+#[track_caller]
+fn dite(phrase: &str, detail: impl std::fmt::Display) -> Echec {
+    let detail = detail.to_string();
+    socle::echec::noter_echec(Some(Classe::Courriel), &detail);
+    let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
+    Echec { classe: Some(Classe::Courriel), phrase: phrase.to_string(), a_part: Some(a_part.into()) }
 }
 
+/// LE REFUS DU SERVEUR (`texte`, tel qu'il l'a ecrit), en francais : le mot de passe refuse, que l'on reconnait, ou un
+/// refus que l'on ne reconnait pas ; le texte du serveur va a part (`dite`).
+#[track_caller]
+pub fn traduire(texte: &str) -> Echec {
+    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") || texte.contains("(535)") {
+        return dite(
+            "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
+            texte,
+        );
+    }
+    dite("La boîte courriel a refusé la demande : vérifier l'adresse et le mot de passe d'application (Configuration › Mots de passe) ; nouvel essai plus tard.", texte)
+}
+
+/// La boite ne se joint pas (`e` : ce que le systeme en dit). « injoignable » : le mot que `sauvegarde::hors_ligne` lit.
 #[track_caller]
 fn injoignable(e: impl std::fmt::Display) -> Echec {
-    erreur(format!("Serveur injoignable : {}", e))
+    dite("La boîte courriel est injoignable : vérifier la connexion internet ; nouvel essai plus tard.", format!("Serveur injoignable : {}", e))
+}
+
+/// La connexion securisee a la boite ne s'etablit pas (`e` : ce que la bibliotheque TLS en dit).
+#[track_caller]
+fn tls(e: impl std::fmt::Display) -> Echec {
+    dite("La connexion sécurisée à la boîte courriel ne s'établit pas : nouvel essai plus tard.", format!("TLS : {}", e))
 }
 
 // ------------------------------------------------------------------------------------------------------- le TLS
@@ -178,9 +199,9 @@ fn configuration_tls() -> R<Arc<rustls::ClientConfig>> {
     let fournisseur = Arc::new(rustls::crypto::ring::default_provider());
     let config = rustls::ClientConfig::builder_with_provider(fournisseur)
         .with_safe_default_protocol_versions()
-        .map_err(|e| erreur(format!("TLS : {}", e)))?
+        .map_err(tls)?
         .with_platform_verifier()
-        .map_err(|e| erreur(format!("TLS : {}", e)))?
+        .map_err(tls)?
         .with_no_client_auth();
     Ok(Arc::new(config))
 }
@@ -188,7 +209,7 @@ fn configuration_tls() -> R<Arc<rustls::ClientConfig>> {
 fn ouvrir_tls(hote: &str, port: u16) -> R<Box<dyn Flux>> {
     let tcp = connecter(hote, port)?;
     let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| erreur(format!("nom de serveur illisible : {}", e)))?;
-    let connexion = rustls::ClientConnection::new(configuration_tls()?, nom).map_err(|e| erreur(format!("TLS : {}", e)))?;
+    let connexion = rustls::ClientConnection::new(configuration_tls()?, nom).map_err(tls)?;
     Ok(Box::new(rustls::StreamOwned::new(connexion, tcp)))
 }
 
@@ -237,7 +258,7 @@ fn es(e: std::io::Error) -> Echec {
     use std::io::ErrorKind::*;
     match e.kind() {
         TimedOut | WouldBlock => injoignable(format!("delai depasse ({})", e)),
-        _ => erreur(e.to_string()),
+        _ => dite("La boîte courriel a coupé l'échange en chemin : nouvel essai plus tard.", e),
     }
 }
 
@@ -247,7 +268,7 @@ impl<F: Read + Write> Imap<F> {
         let mut imap = Imap { flux, tampon: Vec::new(), numero: 0 };
         let accueil = imap.lire_unite()?;
         match Response::parse(&accueil) {
-            Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(erreur(traduire(String::from_utf8_lossy(&accueil).trim()))),
+            Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(traduire(String::from_utf8_lossy(&accueil).trim())),
             Ok(_) => {}
             Err(e) => return Err(erreur(format!("L'accueil du serveur ne se lit pas : {}", e))),
         }
@@ -315,7 +336,7 @@ impl<F: Read + Write> Imap<F> {
                     Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(reponse),
                     Ok((_, Response::Done { .. })) => {
                         let brut = String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim().to_string();
-                        Err(erreur(traduire(&brut)))
+                        Err(traduire(&brut))
                     }
                     _ => Err(erreur("Reponse du serveur illisible.")),
                 };
@@ -334,7 +355,7 @@ impl<F: Read + Write> Imap<F> {
                         }
                     }
                     Ok((_, Response::Data { status: Status::Bye, .. })) => {
-                        return Err(erreur(traduire(String::from_utf8_lossy(&unite).trim())));
+                        return Err(traduire(String::from_utf8_lossy(&unite).trim()));
                     }
                     // Le reste (FLAGS, EXISTS, CAPABILITY...) n'interesse pas ce dialogue ; une ligne que le
                     // parseur ne lit pas non plus.
@@ -380,7 +401,7 @@ impl<F: Read + Write> Imap<F> {
             }
             return match Response::parse(&unite) {
                 Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(()),
-                Ok((_, Response::Done { .. })) => Err(erreur(traduire(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim()))),
+                Ok((_, Response::Done { .. })) => Err(traduire(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim())),
                 _ => Err(erreur("Reponse du serveur illisible.")),
             };
         }
@@ -524,7 +545,7 @@ impl Courriel for Client {
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
         socle::garde_reseau::directe(&hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
-        let tls = TlsParameters::builder(hote.clone()).build_rustls().map_err(|e| erreur(format!("TLS : {}", e)))?;
+        let tls = TlsParameters::builder(hote.clone()).build_rustls().map_err(tls)?;
         let transport = SmtpTransport::builder_dangerous(hote.as_str())
             .port(port)
             .tls(if port == 587 { Tls::Required(tls) } else { Tls::Wrapper(tls) })
@@ -532,7 +553,7 @@ impl Courriel for Client {
             .timeout(Some(DELAI))
             .build();
         let sur_le_fil = donnees_du_fil(&brut);
-        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| erreur(traduire(&e.to_string())))?;
+        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| traduire(&e.to_string()))?;
         Ok(ident)
     }
 

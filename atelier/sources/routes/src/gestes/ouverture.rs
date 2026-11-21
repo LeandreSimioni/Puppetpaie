@@ -1019,6 +1019,16 @@ pub(crate) fn acces_pose(racine: &Path, service: &str) -> R<bool> {
     }
 }
 
+/// UN RELEVE QUI S'ARRETE (un delai depasse, une reponse coupee, un disque qui refuse) : la compagnie en lit la phrase
+/// (`quoi : phrase`) ; ce qu'il porte a part part chez l'editeur par le journal des incidents (`suites::noter_la_panne`),
+/// puisque l'ouverture ne refuse pas et qu'aucune route ne le notera.
+fn noter_le_releve_refuse(ctx: &Contexte, r: &mut Ouverture, quoi: &str, e: &socle::echec::Echec) {
+    r.incidents.push(format!("{} : {}", quoi, nomme(&ctx.racine, e)));
+    if let Err(n) = crate::gestes::suites::noter_la_panne(&ctx.racine, "ouverture", e, false) {
+        r.incidents.push(format!("{} : le journal des incidents ne l'a pas noté : {}", quoi, n.phrase));
+    }
+}
+
 /// Les retours DSN (net-entreprises) puis DPAE (Urssaf) : un secret absent est un manque, une panne est un incident.
 fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>, r: &mut Ouverture) -> R<()> {
     // Le canal DSN.
@@ -1049,7 +1059,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.dire(dit);
                     r.releve = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
+                Err(e) => noter_le_releve_refuse(ctx, r, "Retours", &e),
             }
             r.finir_l_etape();
         }
@@ -1088,7 +1098,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.dire(dit);
                     r.releve_dpae = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &e))),
+                Err(e) => noter_le_releve_refuse(ctx, r, "Retours DPAE", &e),
             }
             r.finir_l_etape();
         }
