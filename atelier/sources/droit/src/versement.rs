@@ -55,18 +55,18 @@ impl Versement {
     /// suivant, de 1 a 31, que les deux autres choix n'ont pas. `Err` : ce qu'il faut corriger.
     fn de_l_ecrit(e: &VersementEcrit) -> Result<Versement, String> {
         let Some(quand) = e.quand else {
-            return Err("Le jour du versement ne dit pas quand : choisir la fin du mois, la fin du contrat, un jour du mois ou \
+            return Err("Dire quand : choisir la fin du mois, la fin du contrat, un jour du mois ou \
                         un jour du mois suivant."
                 .to_string());
         };
         let fixe = |mois_suivant: bool| match e.jour {
             Some(n) if (1..=31).contains(&n) => u32::try_from(n).map(|quantieme| Versement::Fixe { quantieme, mois_suivant }).map_err(|x| x.to_string()),
-            Some(n) => Err(format!("Le jour du versement : le {} n'est pas un jour du mois ; dire un numéro de 1 à 31.", n)),
-            None => Err("Le jour du versement : dire le numéro du jour, de 1 à 31.".to_string()),
+            Some(n) => Err(format!("Le {} n'est pas un jour du mois ; dire un numéro de 1 à 31.", n)),
+            None => Err("Dire le numéro du jour, de 1 à 31.".to_string()),
         };
         match quand {
             QuandDuVersement::FinDuMois | QuandDuVersement::FinDuContrat if e.jour.is_some() => Err(
-                "Le jour du versement : un numéro de jour ne se dit qu'avec « un jour du mois » ou « un jour du mois suivant ».".to_string(),
+                "Un numéro de jour ne se dit qu'avec « un jour du mois » ou « un jour du mois suivant ».".to_string(),
             ),
             QuandDuVersement::FinDuMois => Ok(Versement::FinDuMois),
             QuandDuVersement::FinDuContrat => Ok(Versement::FinDuContrat),
