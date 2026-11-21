@@ -291,7 +291,7 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
     let mut jours: Vec<Jour> = frises.values().flat_map(|f| f.keys().copied()).collect();
     jours.sort();
     jours.dedup();
-    let mut datee = vec![Datee { depuis: None, valeur: Some(Vec::new()), note: None }];
+    let mut datee = vec![Datee::dite(None, Some(Vec::new()), None)];
     let mut precedente: Vec<Etablissement> = Vec::new();
     for j in jours {
         let mut ouverts_ce_jour: Vec<(Option<Jour>, Option<Nic>, Etablissement)> = frises.iter().filter_map(|(n, f)| au(f, &j).map(|v| (v.ouverture, n.clone(), v))).collect();
@@ -301,7 +301,7 @@ valeur, et la date ne se devine pas. Rien n'a été enregistré.",
             continue;
         }
         let note = note.map(str::trim).filter(|n| !n.is_empty() && Some(j) == depuis).map(str::to_string);
-        datee.push(Datee { depuis: Some(j), valeur: Some(valeur.clone()), note });
+        datee.push(Datee::dite(Some(j), Some(valeur.clone()), note));
         precedente = valeur;
     }
 

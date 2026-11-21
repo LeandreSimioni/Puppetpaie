@@ -169,9 +169,11 @@ impl<'de> Deserialize<'de> for Versement {
 }
 
 /// La case se lit dans sa forme ecrite (`VersementEcrit`). Une installation posee avant la liste a choix l'a ecrite en
-/// texte (« fin du contrat », « le 5 du mois suivant ») : ce texte se lit encore, tel qu'il s'ecrivait alors et rien
-/// d'autre, pour que la compagnie s'ouvre apres sa mise a jour ; il se recrit dans la forme neuve au premier
-/// enregistrement de la fiche.
+/// texte (« fin du contrat », « le 5 du mois suivant ») : ce texte se lit encore DANS SON FICHIER
+/// (`socle::forme::en_fichier_pose`), tel qu'il s'ecrivait alors et rien d'autre, pour que la compagnie s'ouvre apres sa
+/// mise a jour ; il se recrit dans la forme neuve au premier enregistrement de la fiche. Une charge, elle, ne dit que
+/// la forme neuve. Un texte d'avant que ce lecteur ne connait pas est une valeur illisible de la case
+/// (`fiche::Datee::illisible`).
 struct Lecteur;
 
 impl<'de> serde::de::Visitor<'de> for Lecteur {
@@ -187,6 +189,9 @@ impl<'de> serde::de::Visitor<'de> for Lecteur {
     }
 
     fn visit_str<E: serde::de::Error>(self, texte: &str) -> Result<Versement, E> {
+        if !socle::forme::en_fichier_pose() {
+            return Err(E::invalid_type(serde::de::Unexpected::Str(texte), &self));
+        }
         Versement::du_texte_d_avant(texte)
             .ok_or_else(|| E::custom(format!("Le jour du versement « {} » ne se lit pas : le choisir de nouveau.", texte)))
     }

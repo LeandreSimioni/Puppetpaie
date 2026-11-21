@@ -229,7 +229,7 @@ pub const PREFIXE_AJOUTEE: &str = "ajoutee-";
 
 /// La fiche entreprise telle qu'elle vaut aujourd'hui.
 fn fiche(racine: &Path) -> R<droit::fiche::ChampsEntreprise> {
-    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&droit::contexte::ENTREPRISE.dans(racine), droit::contexte::ENTREPRISE.texte())?;
+    let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fiche_posee(&droit::contexte::ENTREPRISE.dans(racine), droit::fiche::NomDeFiche::Entreprise)?;
     Ok(f.au(&droit::contexte::jour_reel()))
 }
 

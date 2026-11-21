@@ -387,6 +387,136 @@ pub fn non_lue<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NonLue, D::Erro
     <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d).map(|_| std::marker::PhantomData)
 }
 
+// ------------------------------------------------------------------ le fichier d'une installation posee
+
+thread_local! {
+    /// Vrai le temps de lire le fichier d'une installation posee (`lire_fichier_pose_en_phrase`).
+    static EN_FICHIER_POSE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Le temps d'une lecture du fichier d'une installation posee (`EN_FICHIER_POSE`) : l'etat d'avant revient en sortant,
+/// panique comprise.
+struct EnFichierPose(bool);
+
+impl EnFichierPose {
+    fn ouvert() -> EnFichierPose {
+        EnFichierPose(EN_FICHIER_POSE.replace(true))
+    }
+}
+
+impl Drop for EnFichierPose {
+    fn drop(&mut self) {
+        EN_FICHIER_POSE.set(self.0);
+    }
+}
+
+/// LE FICHIER D'UNE INSTALLATION POSEE (les fiches de la compagnie : `droit::fiche::lire_fiche_posee`), lu comme
+/// `lire_fichier_en_phrase`, a ceci pres : la valeur d'une case qui n'a plus la forme de son type se garde telle
+/// quelle et ne dit rien (`LueOuIllisible`), une cle que la forme ne connait pas se garde et ne dit rien
+/// (`ClesInconnues`). Le logiciel est doux : une valeur qu'une version precedente ou une main a ecrite ne ferme pas la
+/// compagnie. Un fichier qui n'est pas du JSON, ou dont la structure d'ensemble est fausse, se refuse comme ailleurs. Les
+/// donnees livrees et les charges des routes ne passent jamais par ici : elles restent strictes.
+#[track_caller]
+pub fn lire_fichier_pose_en_phrase<T: DeserializeOwned>(fichier: &Path, phrase: impl Fn(&str, &str) -> String) -> R<T> {
+    let _remise = EnFichierPose::ouvert();
+    lire_fichier_en_phrase(fichier, phrase)
+}
+
+/// Lit-on le fichier d'une installation posee (`lire_fichier_pose_en_phrase`) ? Ce qu'une installation a pu ecrire et
+/// que la forme neuve ne prend plus (le texte d'avant d'une case a choix, `droit::versement`) ne se lit que la.
+pub fn en_fichier_pose() -> bool {
+    EN_FICHIER_POSE.get()
+}
+
+/// UNE VALEUR ILLISIBLE : la valeur qu'une case d'un fichier pose porte et que son type ne lit pas, gardee telle
+/// qu'ecrite pour se reecrire telle quelle (rien ne s'ecrit par-dessus sans geste) ; elle ne dit rien au calcul.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ValeurIllisible(Value);
+
+impl ValeurIllisible {
+    /// La valeur telle qu'on peut la montrer : un texte tel quel, toute autre valeur dans son ecriture JSON.
+    pub fn ecrite(&self) -> String {
+        match &self.0 {
+            Value::String(t) => t.clone(),
+            v => v.to_string(),
+        }
+    }
+}
+
+/// Elle se reecrit telle qu'elle a ete lue.
+impl serde::Serialize for ValeurIllisible {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(s)
+    }
+}
+
+/// UNE VALEUR LUE EN `T`, OU ILLISIBLE : dans un fichier pose (`en_fichier_pose`), une valeur que `T` ne lit pas se
+/// garde (`ValeurIllisible`) ; partout ailleurs, elle refuse la lecture comme `T` le ferait. Absente, elle vaut ce que
+/// `T` vaut par defaut (une case absente : vide).
+#[derive(Debug, Clone, PartialEq)]
+pub enum LueOuIllisible<T> {
+    Lue(T),
+    Illisible(ValeurIllisible),
+}
+
+impl<T: Default> Default for LueOuIllisible<T> {
+    fn default() -> Self {
+        LueOuIllisible::Lue(T::default())
+    }
+}
+
+impl<'de, T: DeserializeOwned> serde::Deserialize<'de> for LueOuIllisible<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        if !EN_FICHIER_POSE.get() {
+            return T::deserialize(d).map(LueOuIllisible::Lue);
+        }
+        let v = <Value as serde::Deserialize>::deserialize(d)?;
+        // Relue dans son texte : un nombre n'y passe jamais par un flottant (`lire`).
+        let texte = v.to_string();
+        let mut lu = serde_json::Deserializer::from_str(&texte);
+        match T::deserialize(&mut lu) {
+            Ok(t) => Ok(LueOuIllisible::Lue(t)),
+            Err(_) => Ok(LueOuIllisible::Illisible(ValeurIllisible(v))),
+        }
+    }
+}
+
+/// LES CLES QU'UNE FORME NE CONNAIT PAS, dans un fichier pose : chacune gardee telle qu'ecrite, pour se reecrire telle
+/// quelle (`#[serde(flatten)]` a l'ecriture) ; elles ne disent rien au calcul. Partout ailleurs, une cle inconnue
+/// refuse la lecture (`garder`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ClesInconnues(Vec<(String, Value)>);
+
+impl ClesInconnues {
+    /// LA CLE `cle` QUE LA FORME NE CONNAIT PAS (ses cles : `connues`), sa valeur au bout de `m` : gardee dans un fichier
+    /// pose (`en_fichier_pose`), refusee partout ailleurs (« unknown field », comme `deny_unknown_fields`).
+    pub fn garder<'de, A: serde::de::MapAccess<'de>>(&mut self, cle: String, m: &mut A, connues: &'static [&'static str]) -> Result<(), A::Error> {
+        if !EN_FICHIER_POSE.get() {
+            return Err(<A::Error as serde::de::Error>::unknown_field(&cle, connues));
+        }
+        let v: Value = m.next_value()?;
+        self.0.push((cle, v));
+        Ok(())
+    }
+
+    /// Leurs noms, dans l'ordre du fichier.
+    pub fn noms(&self) -> Vec<&str> {
+        self.0.iter().map(|(k, _)| k.as_str()).collect()
+    }
+}
+
+/// Elles se reecrivent telles qu'elles ont ete lues, a cote des cles connues (`#[serde(flatten)]`).
+impl serde::Serialize for ClesInconnues {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut m = s.serialize_map(Some(self.0.len()))?;
+        for (k, v) in &self.0 {
+            m.serialize_entry(k, v)?;
+        }
+        m.end()
+    }
+}
+
 /// Le fichier JSON `fichier` lu en `T` (`lire_texte`, sa lecture notee au registre d'un calcul suivi :
 /// `fichiers::lire_texte`). Le disque qui refuse se dit par `echec::du_disque` ; une forme fausse par `phrase`, le
 /// chemin du fichier, la cle et le detail a part.

@@ -102,7 +102,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }
-            datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+            datees.push(droit::fiche::Datee::dite(version.depuis, valeur, version.note.clone()));
         }
     }
     let mut out = Vec::new();

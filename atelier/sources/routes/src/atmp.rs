@@ -173,7 +173,7 @@ fn case_d_un_etablissement(versions: &[&droit::fiche::Datee<Vec<Etablissement>>]
     for v in versions {
         for t in v.valeur.iter().flatten().filter(|x| x.nic.dite() == nic).filter_map(|x| x.taux_atmp.clone()).filter(|t| !t.est_vide()) {
             if !out.iter().any(|d| d.valeur.as_ref() == Some(&t)) {
-                out.push(droit::fiche::Datee { depuis: t.depuis, valeur: Some(t), note: v.note.clone() });
+                out.push(droit::fiche::Datee::dite(t.depuis, Some(t), v.note.clone()));
             }
         }
     }

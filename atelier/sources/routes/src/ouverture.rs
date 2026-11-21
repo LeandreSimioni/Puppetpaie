@@ -284,7 +284,7 @@ pub(crate) fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::J
     }
     impl droit::fiche::VoirListe for Toutes {
         fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), note: e.note.clone() })).collect();
+            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee::dite(e.depuis, ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), e.note.clone()))).collect();
             self.listes.push((cle, lue));
         }
     }
@@ -337,7 +337,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
                 if datees.last().is_some_and(|d| d.valeur == valeur) {
                     continue;
                 }
-                datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+                datees.push(droit::fiche::Datee::dite(version.depuis, valeur, version.note.clone()));
             }
         }
     }

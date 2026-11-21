@@ -673,7 +673,7 @@ pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
     if !chemin.exists() {
         return Ok(F::Fichier::default());
     }
-    droit::fiche::lire_fichier(&chemin, F::FICHIER.texte())
+    droit::fiche::lire_fiche_posee(&chemin, F::NOM)
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
