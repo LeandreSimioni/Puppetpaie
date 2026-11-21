@@ -21,7 +21,7 @@ use serde::de::{Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
 use droit::fiche::{
-    dit, CaseDeFiche, CaseEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
+    dit, CaseDeFiche, CaseEntreprise, CasePieceEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, Declaree, FicheSaisie,
     Lue as _, MotEcrit, NomDeCase, NomDeFiche, Piece,
 };
 use droit::natures::RubriqueDeLaNorme;
@@ -1566,6 +1566,13 @@ fn verifier_champ(c: Regle<'_>, valeur: MotEcrit) -> R<Option<String>> {
         return Ok(None);
     }
     let brut = brut.as_str();
+    // LE JOUR DU VERSEMENT SE CHOISIT : un texte n'en est pas une saisie. Seul le fichier d'une installation posee avant
+    // la liste a choix en porte encore un (`droit::versement`), qu'aucune route n'ecrit.
+    if est(CasePieceEntreprise::DateDeVersementPermanents.into()) || est(CaseEntreprise::DateDeVersementIntermittents.into()) {
+        return Ok(Some(
+            "se choisit dans la liste : à la fin du mois, à la fin du contrat, un jour du mois ou un jour du mois suivant".to_string(),
+        ));
+    }
     // La signature des courriels est du HTML colle : sa seule regle est son poids (150 Ko, images comprises).
     if est(CaseEntreprise::CourrielSignature.into()) {
         return Ok(trop_lourde(brut));
