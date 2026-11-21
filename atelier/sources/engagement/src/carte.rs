@@ -157,9 +157,6 @@ pub enum FaitQuiOuvre {
     MotifAvantTerme,
     /// Le motif de la fin appelle ce fait (`droit::permanents::faits_de_rupture`).
     DuMotif(droit::permanents::FaitDeRupture),
-    /// Le contrat finit ce mois par une fin de periode d'essai a l'initiative de l'employeur (034 : L. 1221-25, le delai de
-    /// prevenance et la faute grave qui en prive).
-    FinDEssaiParLEmployeur,
     /// Le preavis de la fin n'est pas effectue (`declarations::fctu::preavis_non_effectue`) : le dernier jour paye
     /// precede la fin.
     PreavisNonEffectue,
@@ -297,8 +294,9 @@ nature! {
     /// (`ecarts::refaire`). La fin d'un contrat qui finit ce mois passe par la porte « Imprévu… » : son motif, puis ce que
     /// le motif appelle. Ce que rien ne lit pour un CDDU n'est pas sur sa carte : ni lieu (celui des lignes le dit), ni
     /// taux du cachet (celui de sa ligne), ni primes (une ligne de rubrique `prime`), ni ce que seul le solde de tout
-    /// compte d'un contrat paye au mois lit (indemnite de licenciement, preavis non effectue, precarite : L. 1243-10, 1°),
-    /// ni ce que seule la rupture conventionnelle appelle.
+    /// compte d'un contrat paye au mois lit (indemnite de licenciement, preavis non effectue, precarite : L. 1243-10, 1°,
+    /// la faute grave qui prive du delai de prevenance d'une fin d'essai : L. 1221-25), ni ce que seule la rupture
+    /// conventionnelle appelle.
     Cddu / BrouillonCddu {
         obligatoire {
             salarie: IdSalarie = Salarie si TOUJOURS => Base,
@@ -317,7 +315,6 @@ nature! {
             modele_contrat: IdDeModele = ModeleContrat si Ouverture::Si(F::ModelesAuChoix) => Base,
             date_paiement: Jour = DatePaiement si TOUJOURS => Avance,
             jours: Jours = Jours ecrite("socle::grandeurs::ecrit::nombre_json::option::serialize") si TOUJOURS => Rendue,
-            faute_grave: bool = FauteGrave si Ouverture::Si(F::FinDEssaiParLEmployeur) => Imprevu,
             motif_rupture: MotifDeRupture = MotifRupture si Ouverture::Si(F::FinCeMois) => Imprevu,
             notification_rupture: Jour = NotificationRupture si Ouverture::Si(F::DuMotif(D::NotificationRupture)) => Imprevu,
             engagement_licenciement: Jour = EngagementLicenciement si Ouverture::Si(F::DuMotif(D::EngagementLicenciement)) => Imprevu,

@@ -915,6 +915,13 @@ pub struct Jeu<'a> {
     /// DIVERSES », entre le montant net social et le net a payer avant impot (arrete du 25/02/2016, art. 1, I ; BOSS,
     /// montant net social, Q 39). Vide : toutes les lignes sont au-dessus du brut.
     pub remboursements: Vec<usize>,
+    /// Les indices, dans `paie.remuneration`, des avantages en nature : comptes dans le brut, recus en nature, ils
+    /// s'impriment aussi en deduction sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES », pour qu'on passe du montant net
+    /// social au net a payer avant impot, qui ne les compte pas (R. 3243-1, 9°, `engagement::calcul`). Les ranger la est
+    /// une inference : C. trav. R. 3243-1, 8° b) demande « La nature et le montant des versements et retenues autres que
+    /// celles mentionnées au a effectués sur la période », et le modele de l'arrete du 25/02/2016 (art. 1, I) place cette
+    /// section entre ces deux nets, sans nommer l'avantage en nature.
+    pub en_nature: Vec<usize>,
     /// Les garanties de prevoyance de la paie (`engagement::calcul::garanties_de_prevoyance`) : leurs lignes sont
     /// facultatives.
     pub prevoyance: Vec<IdDeCotisation>,
@@ -1169,11 +1176,16 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
     // au 01/01/2026). Les libelles sont ceux du modele de l'arrete du 25/02/2016, art. 1, I
     // (`legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml`), ecrits avec les accents du francais, capitales comprises.
     corps.push(ligne_net("MONTANT NET SOCIAL", p.net_social, n));
-    if !j.remboursements.is_empty() {
+    if !j.remboursements.is_empty() || !j.en_nature.is_empty() {
         corps.push(ligne(vec![cel("REMBOURSEMENTS ET DÉDUCTIONS DIVERSES", n)], style_section()));
         for i in &j.remboursements {
             let l = &p.remuneration[*i];
             corps.push(ligne(vec![s(ligne_au_bulletin(l)), s(chiffres_en_euros(l.montant))], vec![]));
+        }
+        // L'avantage en nature, deja dans le brut, se deduit : le salarie l'a recu en nature.
+        for i in &j.en_nature {
+            let l = &p.remuneration[*i];
+            corps.push(ligne(vec![s(l.designation()), s(chiffres_en_euros(-l.montant))], vec![]));
         }
     }
     corps.push(ligne_net("MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU", p.net_a_payer, n));
@@ -1297,6 +1309,18 @@ pub fn remboursements(ctx: &Contexte, p: &Paie) -> R<Vec<usize>> {
     Ok(out)
 }
 
+/// Les lignes de remuneration d'une paie qui sont un avantage en nature (la nature de leur rubrique) : elles se deduisent
+/// sous « REMBOURSEMENTS ET DEDUCTIONS DIVERSES » (`Jeu::en_nature`).
+pub fn en_nature(ctx: &Contexte, p: &Paie) -> R<Vec<usize>> {
+    let mut out = Vec::new();
+    for (i, l) in p.remuneration.iter().enumerate() {
+        if droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
+            out.push(i);
+        }
+    }
+    Ok(out)
+}
+
 /// Ce que `bulletin.ecrire` prepare avant d'appeler la fabrique : la licence
 /// resolue, le prelevement a la source, les cumuls et le compteur de conges, le
 /// plafond ; les mois sans paie sont ecartes. `paies_du_mois` : TOUTES les
@@ -1357,6 +1381,7 @@ pub fn jeux_et_description(
             pas,
             rectificatif: rectificatifs.get(&i),
             remboursements: remboursements(ctx, p)?,
+            en_nature: en_nature(ctx, p)?,
             prevoyance: engagement::calcul::garanties_de_prevoyance(ctx, p)?,
         });
     }

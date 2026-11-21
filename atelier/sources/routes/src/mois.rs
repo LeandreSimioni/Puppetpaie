@@ -1883,7 +1883,6 @@ fn carte_lue(
             F::FinCeMois => fin_ce_mois,
             F::MotifAvantTerme => fin_ce_mois && e.motif_rupture.is_some_and(|m| Some(m) != nat.motif_rupture_par_defaut()),
             F::DuMotif(fait) => fin_ce_mois && faits.contains(&fait),
-            F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
             F::TempsPlein => plein,
