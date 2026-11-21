@@ -2605,7 +2605,9 @@ d'heures ».
 
 Une compagnie qui arrive d'un autre logiciel met tout ce qu'elle a dans sa boîte aux lettres `import/` (DSN, AEM,
 bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engagements importés**
-(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`).
+(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`). `importation-apercu` et `importer` ne lisent
+que cette boîte, sans charge (`routes::import::boite_d_import`, qui la crée vide si elle manque) ; la page l'ouvre par
+le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
 
 - **Le tri** (`import/tri.rs`) : chaque fichier reçoit une sorte, par son contenu, jamais par son nom (`dsn`, `aem`,
   `pdf_texte`, `pdf_sans_texte`, `archive`…). Une DSN d'une autre entreprise que la compagnie n'est pas lue.
@@ -2629,7 +2631,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés, chacun dans `engagements/AAAA-MM.json`, le fichier du mois où il commence (le contrat qu'une AEM ou un
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
-  et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier, on relance
+  et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
 - **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
   par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
@@ -2640,7 +2642,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   rejoué la complète ; une autre, la réponse se garde avec la configuration (`config/import-identites.json`) et
   l'import rejoué crée sa fiche.
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
-  l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
+  l'historique, une DSN déposée pré-remplit la configuration, tout dans le dossier d'import ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
 - **Ce qu'une DSN pourrait donner** : chaque ligne de « Pour démarrer » dit la pièce qui la porterait
   (`declarations::dsn_lue::PieceQuiLaPorte`), jugée sur la case déclarée, pas sur sa forme lisible : une DSN quand

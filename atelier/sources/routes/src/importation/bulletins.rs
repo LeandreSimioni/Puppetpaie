@@ -128,7 +128,7 @@ pub(crate) struct DossierLu {
     pub(crate) copies: BTreeMap<usize, NomDeFichier>,
 }
 
-/// `importation-apercu` avec `{"dossier": ...}`.
+/// `importation-apercu` sur la boite aux lettres `import/` (`crate::import::boite_d_import`).
 pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
     // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
     // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.

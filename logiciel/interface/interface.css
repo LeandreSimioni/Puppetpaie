@@ -1591,6 +1591,12 @@ details.pourquoi p, details.pourquoi ul { margin: 4px 0; }
 .fiche-imprevus-tete h3 { margin: 0; font-size: 14px; }
 .fiche-imprevus-tete .lien { font-size: 12px; color: var(--discret); }
 
+/* La tête de « Reprendre l'historique » (`dessinerImportation`) : le titre et l'essentiel à gauche, à droite le bouton
+   qui ouvre le dossier d'import (ou son chemin, hors de la fenêtre du poste). */
+.import-tete { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.import-tete h3 { margin-top: 0; }
+.import-tete > button { flex: none; }
+.import-chemin { overflow-wrap: anywhere; max-width: 100%; }
 /* Le guide de l'import (`vueGuideImport`) : une pièce, ce qu'elle est, où la trouver, ce qui s'en lit. */
 .guide-pieces { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin: 0 0 12px; }
 .guide-piece { border: 1px solid var(--bord); border-radius: 4px; padding: 10px 12px; background: var(--carte, #fff); }

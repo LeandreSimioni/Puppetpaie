@@ -96,8 +96,8 @@ const CALE: &str = r#"<script>
 ///   de l'editeur (le lien de l'auteur, `poste::ouvrir_site`, qui refuse toute autre adresse).
 const NOMS_ACCUEIL: &str = r#"["choisir", "verifier", "accueil", "fermer", "redemarrer", "maj", "site"]"#;
 /// Dans la page d'une compagnie : revenir aux compagnies, la mise a jour (`js/mise-a-jour.js`), ouvrir ce qu'une route a
-/// rendu et choisir un dossier (`poste.rs`), le site de l'editeur (`site`), la veille de la fenetre (`js/veille.js`).
-const NOMS_LOGICIEL: &str = r#"["accueil", "maj", "redemarrer", "site", "ouvrir", "choisir_dossier", "veille", "veille_etape", "veille_maintenant"]"#;
+/// rendu (`poste.rs`), le site de l'editeur (`site`), la veille de la fenetre (`js/veille.js`).
+const NOMS_LOGICIEL: &str = r#"["accueil", "maj", "redemarrer", "site", "ouvrir", "veille", "veille_etape", "veille_maintenant"]"#;
 
 /// UN ARGUMENT D'UN GESTE DE LA FENETRE (`window.pywebview.api.<nom>(...)`, poste en liste) : un texte, ou un oui-non.
 #[derive(Debug, Deserialize)]
@@ -131,8 +131,6 @@ enum Geste {
     /// Fait ; `recharger` : la fenetre revient sur `/`, le serveur sait quelle page montrer.
     Fait { ok: bool, recharger: bool },
     Dit { ok: bool, phrase: String },
-    /// Le dossier choisi ; aucun quand la boite a ete fermee.
-    Dossier { ok: bool, dossier: Option<String> },
     Veille { ok: bool, etat: Box<EtatDeLaVeille> },
     Etape { ok: bool, etat: veille::EtapeDeLaVeille },
     Maj { ok: bool, etat: compagnie::maj::EtatDeLaRecherche },
@@ -863,12 +861,11 @@ impl Fenetre {
                 self.fermer_le_logiciel();
                 Ok(fait(false))
             }
-            // LES GESTES DU POSTE (`poste.rs`) : ouvrir ce qu'une route a rendu (un chemin), choisir un dossier.
+            // LES GESTES DU POSTE (`poste.rs`) : ouvrir ce qu'une route a rendu (un chemin).
             ("ouvrir", Phase::Ouverte { racine, .. }) => {
                 let phrase = poste::ouvrir_pour_la_page(&racine, texte(args, 0)?, oui_non(args, 1)?)?;
                 Ok(Geste::Dit { ok: true, phrase })
             }
-            ("choisir_dossier", Phase::Ouverte { .. }) => Ok(Geste::Dossier { ok: true, dossier: poste::choisir_dossier(texte(args, 0)?)? }),
             // LA VEILLE DE LA FENETRE : son etat, l'etape du passage en cours, un passage tout de suite (un passage appelle
             // la route `ouverture`, qui releve et sauvegarde).
             ("veille", Phase::Ouverte { veille, .. }) => Ok(Geste::Veille { ok: true, etat: Box::new(veille.etat()) }),

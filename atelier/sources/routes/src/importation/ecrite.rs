@@ -1,6 +1,6 @@
 //! `importer` : ecrit ce que `importation-apercu` annonce.
 //!
-//! `{"dossier": ...}` : la boite aux lettres `import/` entiere, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
+//! La boite aux lettres `import/` entiere, et elle seule, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
 //! qui est repris (DSN, AEM, PDF dont une page au moins est reprise) est COPIE dans `historique/bulletins/`, sous le nom
 //! de sa copie (`<empreinte>.<pdf|dsn|txt>` : rien de personnel ; `importation::bulletins::nom_copie`) -- rien ne s'ecrase ;
 //! l'apercu est relu DANS ces copies, et c'est lui qui s'ecrit ; les fiches
@@ -846,11 +846,11 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
     Ok((Copie { copies, identiques, differents, dossier }, noms))
 }
 
-/// `importer` : `{"dossier": ...}`, la boite aux lettres `import/` (vide ou absent : celle de la compagnie) -- la copie
-/// de ce qui est repris, l'apercu relu dans la copie, l'ecriture.
-pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) -> R<Importation> {
+/// `importer` : la boite aux lettres `import/` de la compagnie -- la copie de ce qui est repris, l'apercu relu dans la
+/// copie, l'ecriture.
+pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
     let aujourdhui = ctx.date;
-    let dossier = crate::import::dossier_import(ctx, charge)?;
+    let dossier = crate::import::boite_d_import(ctx)?;
     // CE QUI EST PARTI D'ICI, que le journal dit, lu une fois pour le geste : il garde les matricules et les valeurs des
     // contrats qu'il a declares. Les depots que l'import reprend au journal (`depots_attestes_au_journal`) n'y changent
     // rien : leurs lignes ne portent aucune version d'engagement (`envois::reprise_journal`), et rien n'est parti d'eux
