@@ -94,9 +94,9 @@ function ligneNeuve(div, code) {
   return ceQuiPreremplit(div).lignes[code] || {};
 }
 
-/** Une case de la carte : son libellé, l'aide que la route etat en donne (`aides`, sous la clé de la case), ce que le
- *  dessinateur en dessine (ce que le moteur prend pour elle quand elle est vide : `prerempli`), et ce que la valeur
- *  choisie dit d'elle-même (`dit` : un motif de rupture). */
+/** Une case de la carte, dessinée comme toute case de route (`caseDeRoute`) de ce que la carte en sait : l'aide que la
+ *  route etat en donne (`aides`, sous la clé de la case), sa valeur, ses choix, ce que le moteur prend pour elle quand
+ *  elle est vide (`prerempli`) et ses parties ; ses lignes, en rangées (`lignesDePaie`). */
 function caseDeLaCarte(div, d, choix) {
   const v = div._carte[d.cle];
   if (d.forme === "lignes") {
@@ -106,13 +106,9 @@ function caseDeLaCarte(div, d, choix) {
       <button type="button" class="lien ajouter-ligne">+ une ligne</button>
       <p class="e-montre discret"></p></div>`;
   }
-  const aide = ETAT.aides[d.cle];
-  const offerts = choix[d.cle] || [];
-  const choisi = offerts.find((o) => o.code !== "" && o.code === String(v));
   const r = rendueDe(div);
-  const prerempli = r ? r.prerempli[d.cle] : null;
-  return `<label class="case" data-cle="${d.cle}"${aide ? ` title="${echapper(aide)}"` : ""}><span class="case-libelle">${echapper(d.libelle)}</span>
-    ${caseDeForme(d.forme, v, { choix: choix[d.cle], prerempli, parties: ETAT.parties[d.cle] })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}</label>`;
+  return caseDeRoute({ cle: d.cle, libelle: d.libelle, forme: d.forme, aide: ETAT.aides[d.cle], valeur: v, choix: choix[d.cle],
+    prerempli: r ? r.prerempli[d.cle] : null, parties: ETAT.parties[d.cle] });
 }
 
 /* ------------------------------------------------ ce que la convention fixe au métier */
@@ -430,7 +426,7 @@ function dessinerLeVise(div) {
   const vise = div._vise || (div._vise = { ouvert: false, valeurs: premieres, phrase: null, erreur: false });
   cible.innerHTML = `<details class="e-viser-branche"${vise.ouvert ? " open" : ""}><summary>${echapper(f.geste)}</summary>
     <div class="branche">
-      <div class="e-cases">${casesDesChamps(champs, vise.valeurs, {})}</div>
+      ${casesDesChamps(champs, vise.valeurs, {})}
       <p><button type="button" class="secondaire v-viser">${echapper(f.bouton)}</button></p>
       ${vise.phrase ? `<p class="${vise.erreur ? "erreur" : "discret"}">${echapper(vise.phrase)}</p>` : ""}
     </div></details>`;

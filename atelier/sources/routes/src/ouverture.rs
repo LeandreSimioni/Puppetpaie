@@ -28,7 +28,7 @@ use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
-use crate::fiches::{comblee, SorteDeFiche};
+use crate::fiches::{anomalies_enregistrees, comblee, SorteDeFiche};
 use crate::temps::TempsDeLaCase;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -374,7 +374,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let nom = F::NOM;
     let plate = F::retenue(plate);
     // La fiche se verifie telle qu'elle est ; sa forme lisible comblee n'est qu'un depart pour l'ecran.
-    let anomalies = champs::verifier_fiche(F::a_juger(&plate))?;
+    let anomalies = anomalies_enregistrees::<F>(&plate)?;
     let montree = comblee::<F>(&plate)?;
     let declare = champs::apercu_derive(&montree)?;
     // Sa pastille : archivee (une information), ses erreurs (a corriger, la compagnie le peut), ce qui est a verifier,
@@ -430,7 +430,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu(CaseSalarie::CodeSalarie.into()).filter(|_| nom == NomDeFiche::Salarie).map(|m| format!("matricule {}", m));
-    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, p)?;
+    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, &|| Ok(!p.dus.is_empty()))?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),

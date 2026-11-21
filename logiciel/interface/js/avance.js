@@ -344,32 +344,83 @@ function lireLesLignes(bloc) {
   });
 }
 
+/* ------------------------------------------------ une case qu'une route décrit */
+
+/** UNE CASE QU'UNE ROUTE DÉCRIT, et la seule façon d'en dessiner une (la carte d'un engagement, une fiche, la boîte d'un
+ *  geste, les champs d'une route) : `c.cle`, `c.libelle`, `c.forme`, `c.aide` (la bulle au survol), `c.valeur`,
+ *  `c.prerempli` (ce que le moteur prend pour elle vide), `c.choix`, `c.parties` (`caseDeForme`), `c.temps` (la valeur
+ *  d'avant et celle à venir, en mots). Sous la case : ce que la valeur choisie dit d'elle-même (`dit` d'un choix : un
+ *  motif de rupture), puis ses temps ; sa faute se pose à part (`fautesDesCases`), à chaque réponse. */
+function caseDeRoute(c) {
+  const choisi = (c.choix || []).find((o) => o.code !== "" && o.code === String(c.valeur));
+  const temps = c.temps ? [c.temps.avant, c.temps.a_venir].filter(Boolean).map((l) => `<small class="case-dit">${
+    echapper(l.valeur)} · ${echapper(l.dit)}${l.note ? ` · ${echapper(l.note)}` : ""}</small>`).join("") : "";
+  return `<label class="case" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
+    ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, parties: c.parties })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}</label>`;
+}
+
+/** Une case d'une chose qui existe (une fiche, la boîte qui modifie) : un oui-non y montre sa valeur comme un pré-rempli
+ *  (le changer l'écrit, le laisser n'écrit rien : `CASES.oui_non`, `lireLesCases`). */
+const modifiable = (c) => (c.forme === "oui_non" && c.valeur != null ? { ...c, valeur: null, prerempli: c.valeur } : c);
+
+/** Les cases en grille, comme sur la carte (`.e-cases`) : celles de base, puis celles que la route place sous « Avancé »,
+ *  repliées, ouvertes d'elles-mêmes quand `ouvert`. */
+function grilleDesCases(base, avancees, ouvert) {
+  return `<div class="e-cases">${base}</div>${avancees ? `<details class="e-avance"${ouvert ? " open" : ""}><summary>Avancé</summary>
+    <div class="e-cases">${avancees}</div></details>` : ""}`;
+}
+
+/** CE QUE LES CASES DE `bloc` DISENT, sous la clé de chacune (une case vidée : `null`). Comme sur la carte, une case qui
+ *  ne dit rien de plus que ce qu'elle montrait ne se nomme pas, et la route garde sa valeur : un oui-non qu'on n'a pas
+ *  changé (`modifiable`), une valeur composée qui ne se saisit pas. */
+function lireLesCases(bloc) {
+  const lu = {};
+  bloc.querySelectorAll(".case[data-cle]").forEach((c) => {
+    const x = c.querySelector(":scope > [data-case]");
+    const v = lireLaCase(x);
+    if (v === undefined || (v === null && x.dataset.prerempli != null)) return;
+    lu[c.dataset.cle] = v;
+  });
+  return lu;
+}
+
+/** LES FAUTES DES CASES de `cible`, telles que la route les rend (`anomalie` de chaque case de `cases`) : la case marquée,
+ *  le message dessous ; une case sans faute n'en dit rien. Un tiroir « Avancé » qui tient une erreur s'ouvre de lui-même. */
+function fautesDesCases(cible, cases) {
+  cases.forEach((c) => {
+    const bloc = cible.querySelector(`.case[data-cle="${CSS.escape(c.cle)}"]`);
+    if (!bloc) return;
+    const a = c.anomalie;
+    const x = bloc.querySelector(":scope > [data-case]");
+    x.classList.toggle("faute", !!a && a.gravite === "erreur");
+    x.classList.toggle("suspect", !!a && a.gravite === "avertissement");
+    const avant = bloc.querySelector(":scope > .anomalie");
+    if (avant) avant.remove();
+    if (a) bloc.insertAdjacentHTML("beforeend", `<small class="anomalie ${echapper(a.gravite)}">${echapper(a.message)}</small>`);
+    const tiroir = a && a.gravite === "erreur" ? bloc.closest("details") : null;
+    if (tiroir) tiroir.open = true;
+  });
+}
+
 /* ------------------------------------------------ les champs d'une fiche de route */
 
-/** Les cases de `champs` (des champs d'une fiche) : chacune son libellé et sa case, ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche). `o.modifie` : la boîte modifie une chose qui existe ; un
- *  oui-non y montre ce qu'elle dit comme un pré-rempli (le changer l'écrit, le laisser n'écrit rien : `CASES.oui_non`),
- *  et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
+/** Les cases de `champs` (des champs d'une fiche) : chacune sa case (`caseDeRoute`), ce que `valeurs` en dit d'abord, ses
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche). `o.modifie` : la boîte modifie une chose qui existe
+ *  (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
 function casesDesChamps(champs, valeurs, choix, o = {}) {
-  const une = (c, j) => {
-    const ouiNon = o.modifie && c.forme === "oui_non";
-    return `<label class="champ-boite" data-j="${j}">${echapper(c.libelle)}
-      ${caseDeForme(c.forme, ouiNon ? null : valeurs[c.nom], { choix: choix[c.nom] || c.choix, prerempli: ouiNon ? valeurs[c.nom] : undefined })}</label>`;
+  const une = (c) => {
+    const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix };
+    return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
-  if (!o.modifie) return champs.map(une).join("");
-  const avancees = champs.map((c, j) => (c.avance ? une(c, j) : "")).join("");
-  return champs.map((c, j) => (c.avance ? "" : une(c, j))).join("")
-    + (avancees ? `<details class="geste-avance"><summary>Avancé</summary>${avancees}</details>` : "");
+  const avance = (c) => !!o.modifie && !!c.avance;
+  return grilleDesCases(champs.filter((c) => !avance(c)).map(une).join(""), champs.filter(avance).map(une).join(""), false);
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */
 function lireLesChamps(bloc, champs) {
-  const lu = {};
-  champs.forEach((c, j) => {
-    const v = lireLaCase(bloc.querySelector(`[data-j="${j}"] [data-case]`));
-    if (v != null && !(Array.isArray(v) && !v.length)) lu[c.nom] = v;
-  });
-  return lu;
+  const lu = lireLesCases(bloc);
+  return Object.fromEntries(champs.filter((c) => lu[c.nom] != null && !(Array.isArray(lu[c.nom]) && !lu[c.nom].length))
+    .map((c) => [c.nom, lu[c.nom]]));
 }
 
 /** Ce que la réponse dit à lire : sa phrase, puis ses lignes (chaque route automatique rend sa phrase). */
@@ -475,30 +526,11 @@ async function faireLeGeste(g, entete, apres) {
 
 /* ------------------------------------------------ une fiche que la route rend */
 
-/** UNE CASE D'UNE FICHE, telle que la route `fiche` la rend (`c` : `cle`, `libelle`, `forme`, `place`, `aide`, `valeur`,
- *  `choix`, `temps`, `anomalie`) : son libellé et sa case (`caseDeForme`), l'aide en bulle au survol, comme sur la carte.
- *  Une case à cocher se lit comme une phrase : la case, puis son libellé. Sous la case, sa valeur d'avant et celle à venir
- *  (`temps`, en mots), puis sa faute (`fautesDeLaFiche`). Un oui-non montre sa valeur comme un pré-rempli : le changer
- *  l'écrit, le laisser la garde (`lireLaFiche`). Une case à cocher et une valeur composée prennent la ligne. */
-function caseDeLaFiche(c) {
-  const ouiNon = c.forme === "oui_non";
-  const controle = caseDeForme(c.forme, ouiNon ? null : c.valeur, { choix: c.choix, prerempli: ouiNon && c.valeur != null ? c.valeur : undefined })
-    .replace("data-case", `data-case data-cle="${echapper(c.cle)}"`);
-  const bulle = c.aide ? ` title="${echapper(c.aide)}"` : "";
-  const corps = ouiNon ? `<label class="coche"${bulle}>${controle} ${echapper(c.libelle)}</label>`
-    : `<label${bulle}>${echapper(c.libelle)} ${controle}</label>`;
-  const ligne = (l) => (l ? `<div class="aide temps-case">${echapper(l.valeur)} · ${echapper(l.dit)}${
-    l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "");
-  const temps = c.temps ? ligne(c.temps.avant) + ligne(c.temps.a_venir) : "";
-  return `<div class="champ${ouiNon || c.forme === "objet" ? " pleine" : ""}" data-case-de="${echapper(c.cle)}">
-    ${corps}${temps}<div class="anomalie" hidden></div></div>`;
-}
-
 /** L'HISTORIQUE D'UNE FICHE (`historique` de la route `fiche`) : replié, une rangée par valeur de chaque case datée, en
  *  mots, celle d'aujourd'hui en gras. Rien quand aucune case n'a changé. */
 function historiqueDeLaFiche(h) {
   if (!h.length) return "";
-  return `<details class="champ pleine historique-fiche">
+  return `<details class="champ historique-fiche">
     <summary>${aideDe("historique_titre")}</summary>
     <div class="aide">${aideDe("historique_fiche")}</div>
     <div class="histoire">${h.map((t) => t.valeurs.map((e) => `
@@ -511,70 +543,35 @@ function historiqueDeLaFiche(h) {
   </details>`;
 }
 
-/** LES CASES D'UNE FICHE RENDUE (`f`), dans l'ordre où la route les rend : celles de base, puis celles qu'elle place sous
- *  « Avancé », repliées (ouvertes d'elles-mêmes quand l'une dit quelque chose), puis l'historique. */
+/** LES CASES D'UNE FICHE RENDUE (`f`), dans l'ordre où la route les rend, chacune une case de route d'une chose qui existe
+ *  (`caseDeRoute`, `modifiable`) : la grille de base, puis celles qu'elle place sous « Avancé », ouvertes d'elles-mêmes
+ *  quand l'une dit quelque chose, puis l'historique. */
 function casesDeLaFiche(f) {
-  const de = (place) => f.cases.filter((c) => c.place === place).map(caseDeLaFiche).join("");
-  const base = de("base");
-  const avancees = de("avance");
+  const de = (place) => f.cases.filter((c) => c.place === place).map((c) => caseDeRoute(modifiable(c))).join("");
   const dit = (v) => v != null && v !== "" && v !== false && !(Array.isArray(v) && !v.length);
-  const ouvert = f.cases.some((c) => c.place === "avance" && dit(c.valeur));
-  return `<div class="champs">${base}</div>${avancees ? `<details class="bloc avance"${ouvert ? " open" : ""}>
-    <summary>Avancé</summary><div class="champs">${avancees}</div></details>` : ""}${historiqueDeLaFiche(f.historique)}`;
-}
-
-/** LES FAUTES DES CASES de `cible`, telles que la route les rend (`anomalie` de chaque case) : la case marquée, le message
- *  dessous ; une case sans faute n'en dit rien. Un tiroir « Avancé » qui tient une erreur s'ouvre de lui-même. */
-function fautesDeLaFiche(cible, cases) {
-  cases.forEach((c) => {
-    const bloc = cible.querySelector(`[data-case-de="${CSS.escape(c.cle)}"]`);
-    if (!bloc) return;
-    const a = c.anomalie;
-    const x = bloc.querySelector("[data-case]");
-    x.classList.toggle("faute", !!a && a.gravite === "erreur");
-    x.classList.toggle("suspect", !!a && a.gravite === "avertissement");
-    const note = bloc.querySelector(":scope > .anomalie");
-    note.hidden = !a;
-    note.className = a ? `anomalie ${a.gravite}` : "anomalie";
-    note.textContent = a ? a.message : "";
-    if (a && a.gravite === "erreur") {
-      const tiroir = bloc.closest("details");
-      if (tiroir) tiroir.open = true;
-    }
-  });
+  return grilleDesCases(de("base"), de("avance"), f.cases.some((c) => c.place === "avance" && dit(c.valeur)))
+    + historiqueDeLaFiche(f.historique);
 }
 
 /** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, ou quand la route rend d'autres cases, elle se dessine (ce
- *  qui est déjà tapé reste dans sa case, et le curseur aussi) ; sinon, seules ses fautes changent. */
+ *  qui est déjà tapé reste dans sa case, et le curseur aussi) ; sinon, seules ses fautes changent (`fautesDesCases`). */
 function poserLaFiche(cible, f) {
-  const avant = [...cible.querySelectorAll("[data-case-de]")].map((b) => b.dataset.caseDe).join(" ");
-  if (!cible.dataset.posee || avant !== f.cases.map((c) => c.cle).join(" ")) {
+  const controles = () => [...cible.querySelectorAll(".case[data-cle]")].map((c) => [c.dataset.cle, c.querySelector(":scope > [data-case]")]);
+  if (!cible.dataset.posee || controles().map(([k]) => k).join(" ") !== f.cases.map((c) => c.cle).join(" ")) {
     cible.dataset.posee = "1";
-    const tapees = new Map([...cible.querySelectorAll("[data-case][data-cle]")].map((x) => [x.dataset.cle, x]));
-    const actif = document.activeElement && cible.contains(document.activeElement) ? document.activeElement.dataset.cle : null;
+    const tapees = new Map(controles());
+    const ici = document.activeElement && cible.contains(document.activeElement) ? document.activeElement.closest(".case[data-cle]") : null;
+    const actif = ici ? ici.dataset.cle : null;
     cible.innerHTML = casesDeLaFiche(f);
-    cible.querySelectorAll("[data-case][data-cle]").forEach((x) => {
-      const t = tapees.get(x.dataset.cle);
+    controles().forEach(([k, x]) => {
+      const t = tapees.get(k);
       if (!t) return;
       if (x.type === "checkbox") x.checked = t.checked;
       else if ("value" in x) x.value = t.value;
     });
     brancherLesCases(cible);
-    const garde = actif ? cible.querySelector(`[data-cle="${CSS.escape(actif)}"]`) : null;
+    const garde = actif ? cible.querySelector(`.case[data-cle="${CSS.escape(actif)}"] > [data-case]`) : null;
     if (garde) garde.focus();
   }
-  fautesDeLaFiche(cible, f.cases);
-}
-
-/** CE QUE LES CASES D'UNE FICHE RENDUE DISENT, dans `cible`, sous la clé de chacune (une case vide : `null`) ; un oui-non
- *  qu'on n'a pas changé dit la valeur de la fiche. */
-function lireLaFiche(cible) {
-  const lu = {};
-  cible.querySelectorAll("[data-case][data-cle]").forEach((x) => {
-    let v = lireLaCase(x);
-    if (v === undefined) return;
-    if (v === null && x.dataset.prerempli != null) v = x.dataset.prerempli === "oui";
-    lu[x.dataset.cle] = v;
-  });
-  return lu;
+  fautesDesCases(cible, f.cases);
 }

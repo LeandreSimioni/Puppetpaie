@@ -39,7 +39,7 @@ use socle::texte::{capitaliser, strip};
 mod ecriture;
 mod rendue;
 pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
-pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -61,10 +61,10 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             NOM_FICHE,
             Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
-            Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche entière telle qu'on la saisit (les cases que la route configuration décrit) ; absente : la fiche telle qu'elle est enregistrée", avance: false },
+            Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
         ],
-        exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
-        rend: "titre, sous_titre et note de l'en-tête ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -466,12 +466,12 @@ pub(crate) struct Permanents {
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let jour = ctx.aujourdhui;
-    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
+    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
     // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
     let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
-        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &p)?, &donnees.fiche),
-        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &p)?, &ctx.entreprise),
-        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &p)?, &ctx.entreprise),
+        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &dus)?, &donnees.fiche),
+        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &dus)?, &ctx.entreprise),
+        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &dus)?, &ctx.entreprise),
     };
     Ok(Permanents {
         phrase: Phrase::fixe(if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." }),
@@ -499,15 +499,16 @@ fn permanents_de(entreprise: &ChampsEntreprise) -> bool {
 /// peut avoir un calcul qui l'ouvre. La piece d'un permanent s'ouvre par la nature d'un engagement paye au mois : sur la
 /// fiche d'un salarie, un des siens (`engagement::permanents::cle_du_salarie`) ; sur celle de l'entreprise, quand elle
 /// dit employer des permanents (telle qu'elle est saisie : un CDI ou un CDD neuf se propose) ou qu'un engagement paye au
-/// mois est du (`engagement::permanents::Permanents`). Celle d'une compagnie qui emploie des permanents, par sa case
+/// mois est du (`dus` : les permanents du jour de l'ecran en doivent un, `engagement::permanents::Permanents`, lus
+/// seulement pour l'entreprise, qui seule en a l'usage). Celle d'une compagnie qui emploie des permanents, par sa case
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// reprise des cumuls de l'annee, sur la fiche d'un salarie enregistre, par une paie reprise de lui d'une annee qu'un
 /// engagement d'ici touche (`engagement::importe::reprise_des_cumuls_de`). La page ne montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, p: &engagement::permanents::Permanents) -> R<Montres> {
+pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdSalarie>, entreprise: &ChampsEntreprise, dus: &dyn Fn() -> R<bool>) -> R<Montres> {
     let nom = donnees.nom();
     let au_mois = match nom {
-        NomDeFiche::Entreprise => permanents_de(entreprise) || !p.dus.is_empty(),
+        NomDeFiche::Entreprise => permanents_de(entreprise) || dus()?,
         // Un salarie pas encore enregistre n'a aucun engagement.
         NomDeFiche::Salarie => cle.map(|c| engagement::permanents::cle_du_salarie(ctx, c)).transpose()?.flatten().is_some(),
         // Un spectacle n'a pas la piece d'un permanent.
@@ -939,7 +940,13 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSala
         }
         None => {
             let mois = ctx.aujourdhui.mois_civil();
-            let phrase = format!("Proposé : le premier jour de {}, rien n'étant encore parti{}.", mois.libelle(socle::mois::Graphie::Accentuee), qui);
+            // Un spectacle n'a pas de mois parti a lui (`dernier_mois_parti`) : ce qui l'a deja declare se compte a part
+            // (`deja_declare`), et la phrase ne dit pas que rien n'est parti.
+            let parti = match nom {
+                NomDeFiche::Spectacle => String::new(),
+                NomDeFiche::Salarie | NomDeFiche::Entreprise => format!(", rien n'étant encore parti{}", qui),
+            };
+            let phrase = format!("Proposé : le premier jour de {}{}.", mois.libelle(socle::mois::Graphie::Accentuee), parti);
             (mois.premier_jour(), phrase)
         }
     })

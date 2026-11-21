@@ -238,8 +238,8 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
-  // Le nom du champ : la clé de fiche qu'il remplit (`data-cle` : `nir`, `adresse`…), son `name`, son `id`, son libellé, sinon sa première classe (`e-spectacle`, `r-taux`).
-  const nom = el.dataset.cle || el.name || el.id || el.getAttribute("aria-label") || el.placeholder || el.className.split(/\s+/)[0];
+  // Le nom du champ : la clé de fiche qu'il remplit (`data-cle` : `nir`, `adresse`… ; celle d'une case de route, sur son libellé), son `name`, son `id`, son libellé, sinon sa première classe (`e-spectacle`, `r-taux`).
+  const nom = el.dataset.cle || el.closest(".case[data-cle]")?.dataset.cle || el.name || el.id || el.getAttribute("aria-label") || el.placeholder || el.className.split(/\s+/)[0];
   const type = el.type || el.tagName.toLowerCase();
   // Un mot de passe ne voyage jamais, même jusqu'au moteur : seulement qu'il a été tapé.
   if (type === "password") return noterGeste({ quoi: "champ", nom, type, secret: true });

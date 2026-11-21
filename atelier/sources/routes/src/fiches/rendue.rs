@@ -12,44 +12,62 @@ use crate::ouverture::Choix;
 use crate::temps::{CaseDatee, TempsDeLaCase};
 use declarations::champs::{self, Anomalie, Champ, CheminDeFiche, FicheAJuger, Gravite};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::fiche::{CaseDeFiche, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheEntrepriseDatee, FicheSaisie, FicheSalarieDatee, FicheSpectacleDatee, MotEcrit, NomDeFiche, ValeurDeCase};
+use droit::fiche::{CaseDeFiche, Changements, ChampsEntreprise, FicheEntrepriseDatee, FicheSaisie, FicheSalarieDatee, FicheSpectacleDatee, MotEcrit, NomDeFiche, ValeurDeCase};
 use engagement::carte::PlaceDeLaCase;
 use socle::echec::{Classe, R};
 
-use super::ecriture::{anomalies_saisies, comblee, verdict, SorteDeFiche, Tapee};
+use super::ecriture::{anomalies_enregistrees, anomalies_saisies, comblee, verdict, SorteDeFiche, Tapee};
 
 /// LA FICHE A RENDRE (`fiche`) : `{"nom": …}`, sa cle pour une fiche enregistree (aucune : une fiche neuve, ou
-/// l'entreprise), et ce qui est saisi (`donnees`, la fiche entiere telle qu'on la tape, chaque case typee a la porte ;
-/// absentes : la fiche telle qu'elle est enregistree).
+/// l'entreprise), et ce qui est saisi (`changements`, comme a l'ecriture `enregistrer-fiche` et comme la carte : chacun
+/// lu seul dans le type de sa case, pose sur la fiche enregistree ; absents : la fiche telle qu'elle est enregistree).
 #[derive(Deserialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum FicheARendre {
     #[serde(rename = "entreprise")]
-    Entreprise { donnees: Option<Tapee<ChampsEntreprise>> },
+    Entreprise { changements: Option<socle::forme::Liste> },
     #[serde(rename = "salarie")]
-    Salarie { cle: Option<IdSalarie>, donnees: Option<Tapee<ChampsSalarie>> },
+    Salarie { cle: Option<IdSalarie>, changements: Option<socle::forme::Liste> },
     #[serde(rename = "spectacle")]
-    Spectacle { cle: Option<IdSpectacle>, donnees: Option<Tapee<ChampsSpectacle>> },
+    Spectacle { cle: Option<IdSpectacle>, changements: Option<socle::forme::Liste> },
 }
 
-/// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, et une note
-/// dessous ; une fiche qui n'en dit rien n'en a aucun.
+/// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, une note
+/// dessous, le cout de l'annee qu'elle montre (`cout`), et si « Annuler » ramene a la liste (`annuler` : l'entreprise
+/// n'a pas de liste) ; une fiche qui n'en dit rien n'a que son « Annuler ».
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnteteDeLaFiche {
     titre: Option<String>,
     sous_titre: Option<String>,
     note: Option<&'static str>,
+    cout: Option<CoutDeLaFiche>,
+    annuler: bool,
+}
+
+/// LE COUT DE L'ANNEE QU'UNE FICHE MONTRE EN TETE : ou le lire dans ce que rend la route `couts` (le cote, et la cle sous
+/// laquelle elle range cette fiche : un spectacle par son titre). La route `fiche` ne le calcule pas : `couts` lit l'annee
+/// entiere, une fois par annee et par seance (la page le garde), et la fiche se rend a chaque frappe.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "cote")]
+pub(crate) enum CoutDeLaFiche {
+    #[serde(rename = "spectacles")]
+    Spectacle { de: String },
 }
 
 impl EnteteDeLaFiche {
-    /// Un en-tete qui ne dit rien.
+    /// Un en-tete qui ne dit rien, « Annuler » ramenant a la liste.
     pub(crate) fn aucun() -> EnteteDeLaFiche {
-        EnteteDeLaFiche { titre: None, sous_titre: None, note: None }
+        EnteteDeLaFiche { titre: None, sous_titre: None, note: None, cout: None, annuler: true }
     }
 
-    /// Un titre, ce qui le suit, et sa note.
-    pub(crate) fn de(titre: String, sous_titre: Option<String>, note: Option<&'static str>) -> EnteteDeLaFiche {
-        EnteteDeLaFiche { titre: Some(titre), sous_titre, note }
+    /// Un en-tete qui ne dit rien, sans « Annuler » : une fiche sans liste ou revenir.
+    pub(crate) fn sans_liste() -> EnteteDeLaFiche {
+        EnteteDeLaFiche { annuler: false, ..EnteteDeLaFiche::aucun() }
+    }
+
+    /// Un titre, ce qui le suit, sa note et le cout de l'annee qu'il montre ; « Annuler » ramene a la liste.
+    pub(crate) fn de(titre: String, sous_titre: Option<String>, note: Option<&'static str>, cout: Option<CoutDeLaFiche>) -> EnteteDeLaFiche {
+        EnteteDeLaFiche { titre: Some(titre), sous_titre, note, cout, annuler: true }
     }
 }
 
@@ -105,39 +123,48 @@ impl Dite for FicheRendue {
 /// inconnue) ; une case que son type refuse est sa faute, et le reste se rend.
 pub(crate) fn fiche(ctx: &Contexte, charge: FicheARendre) -> R<FicheRendue> {
     match charge {
-        FicheARendre::Entreprise { donnees } => rendre::<FicheEntrepriseDatee>(ctx, None, donnees),
-        FicheARendre::Salarie { cle, donnees } => rendre::<FicheSalarieDatee>(ctx, cle, donnees),
-        FicheARendre::Spectacle { cle, donnees } => rendre::<FicheSpectacleDatee>(ctx, cle, donnees),
+        FicheARendre::Entreprise { changements } => rendre::<FicheEntrepriseDatee>(ctx, None, changements),
+        FicheARendre::Salarie { cle, changements } => rendre::<FicheSalarieDatee>(ctx, cle, changements),
+        FicheARendre::Spectacle { cle, changements } => rendre::<FicheSpectacleDatee>(ctx, cle, changements),
     }
 }
 
-/// LA FICHE `cle` RENDUE, telle qu'on la saisit (`donnees`) ou telle qu'elle est enregistree (sa forme lisible comblee,
-/// `comblee`), ou neuve (aucune cle) : ses anomalies comme a l'ecriture (`anomalies_saisies`), les cases que la fiche
-/// montre au jour de l'ecran (`fiches::montres`), dans l'ordre de la table, et ses temps.
-fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, donnees: Option<Tapee<F::Plate>>) -> R<FicheRendue> {
+/// LA FICHE `cle` RENDUE : l'enregistree (neuve sans cle), sa forme lisible comblee (`comblee`), et ce qui est saisi pose
+/// dessus (`changements`, comme a l'ecriture : une case qu'on ne nomme pas garde sa valeur, une case videe est vide) ;
+/// ses anomalies (sans saisie, la verification de sa pastille dans la liste, `anomalies_enregistrees` ; avec, comme a
+/// l'ecriture, `anomalies_saisies`), les cases que la fiche montre au jour de l'ecran (`fiches::montres`), dans l'ordre
+/// de la table, et ses temps.
+fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Option<socle::forme::Liste>) -> R<FicheRendue> {
     let jour = ctx.aujourdhui;
-    let tapee = match donnees {
-        Some(t) => t,
-        None => {
-            let plate = match (F::montree(ctx, cle.as_ref()), &cle) {
-                (Some(p), _) => comblee::<F>(&p)?,
-                (None, None) => F::retenue(F::Plate::default()),
-                (None, Some(c)) => return Err(socle::echec::erreur(Classe::Manque, format!("Aucune fiche {} « {} ».", F::NOM, F::cle_dite(c)))),
-            };
-            Tapee { fiche: plate, fautes: Vec::new() }
+    let enregistree = match (F::montree(ctx, cle.as_ref()), &cle) {
+        (Some(p), _) => p,
+        (None, None) => F::retenue(F::Plate::default()),
+        (None, Some(c)) => return Err(socle::echec::erreur(Classe::Manque, format!("Aucune fiche {} « {} ».", F::NOM, F::cle_dite(c)))),
+    };
+    let mut plate = comblee::<F>(&enregistree)?;
+    let anomalies = match changements {
+        None => anomalies_enregistrees::<F>(&enregistree)?,
+        Some(liste) => {
+            let (lus, fautes) = Changements::<F::Changement>::lire(&liste).map_err(|e| e.reclasser(Classe::MalFormee))?;
+            for ch in lus.0 {
+                F::appliquer(&mut plate, ch);
+            }
+            let tapee = Tapee { fiche: plate, fautes };
+            let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
+            plate = tapee.fiche;
+            anomalies
         }
     };
-    let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
     let (phrase, phrases) = verdict(&anomalies);
-    let plate = tapee.fiche;
     // L'entreprise d'une fiche de salarie ou de spectacle est celle de la compagnie ; celle de la fiche entreprise, la
     // fiche elle-meme, telle qu'on la saisit.
     let entreprise: &ChampsEntreprise = match F::a_juger(&plate) {
         FicheAJuger::Entreprise(e) => e,
         FicheAJuger::Salarie(_) | FicheAJuger::Spectacle(_) => &ctx.entreprise,
     };
-    let p = engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?;
-    let super::Montres { cases: montres, .. } = super::montres(ctx, F::a_juger(&plate), cle.as_ref().and_then(F::salarie), entreprise, &p)?;
+    // Les permanents du jour ne se lisent que pour la fiche qui en a l'usage (`fiches::montres`).
+    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
+    let super::Montres { cases: montres, .. } = super::montres(ctx, F::a_juger(&plate), cle.as_ref().and_then(F::salarie), entreprise, &dus)?;
     let table = champs::fiche(F::NOM)?;
     let historique = historique::<F>(ctx, cle.as_ref(), &table, &jour)?;
     let mut cases = Vec::new();
@@ -148,7 +175,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, donnees: Option<
         cases.push(case);
     }
     let (erreurs_titre, erreurs_note) = crate::ouverture::erreurs_dites(anomalies.iter().filter(|a| a.gravite == Gravite::Erreur).count());
-    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &plate), erreurs_titre, erreurs_note, cases, historique })
+    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &enregistree), erreurs_titre, erreurs_note, cases, historique })
 }
 
 /// LA CASE QUE LE MOTEUR PROPOSE DE REMPLIR (« Pour démarrer » : `routes::rappels`), sur la fiche `nom`, de valeur
