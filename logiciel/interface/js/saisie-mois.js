@@ -391,8 +391,9 @@ function optionsMetiers(choisi, vide = "— celui de la fiche —", metiers = ET
 }
 
 /** Une fiche neuve : le formulaire complet de Configuration, avec ses vérifications. Une seule façon de créer une
- *  fiche, et c'est là. */
-function nouvelleFiche(nom) {
+ *  fiche, et c'est là. Une fiche ouverte et modifiée demande d'abord, comme toute sortie de la fiche (`quitterLaFiche`). */
+async function nouvelleFiche(nom) {
+  if (!(await quitterLaFiche())) return;
   // Les onglets redessinent APRES coup (leurs gestionnaires attendent `quitterLaFiche`) : sans cette marque,
   // `dessinerConfig` effacait la fiche neuve qu'on venait d'ouvrir.
   const onglet = document.querySelector('.onglets button[data-vue="configuration"]');
@@ -402,7 +403,8 @@ function nouvelleFiche(nom) {
   CLE_ACTIVE = null;
   FICHE_NEUVE = true;
   dessinerConfig();
-  // Une fiche neuve n'a encore ni anomalie, ni écart, ni pièce ouverte ; ce qu'elle montre, la première réponse le dit.
+  // Une fiche neuve n'a encore ni anomalie, ni écart, ni pièce ouverte ; ce qu'elle montre, la première réponse le dit
+  // (celle de la route `fiche`, pour un spectacle).
   const donnees = { actif: true };
   dessinerFormulaire({ nom, cle: null, donnees, anomalies: [], ecarts: [], pieces_ouvertes: [] });
   document.getElementById("config-formulaire").scrollIntoView({ behavior: "smooth" });

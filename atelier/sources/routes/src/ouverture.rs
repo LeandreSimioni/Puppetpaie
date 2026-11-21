@@ -90,12 +90,28 @@ const AIDES: &[(&str, &str)] = &[
     ("cloture", "Les saisies et les sorties de l'année ne se modifieront plus (rouvrir reste possible, depuis l'Historique). Tout ce qu'il faut garder (saisies, bulletins, contrats signés, DPAE, DSN, certificats, retours des organismes, journal des dépôts, fiches, export compta) est réuni dans l'archive de l'exercice."),
     ("cloture_refus", "La clôture vient après la dernière DSN de l'année : elle est refusée si un mois avec des paies n'a pas de DSN acceptée au journal."),
     ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple)."),
-    ("fiche_cle", "La clé de la fiche se fabrique à l'enregistrement."),
     ("signature_lourde", "Trop lourde : une image collée pèse tout son poids, préférez une image en ligne."),
     ("urssaf_changer", "D'après l'adresse de l'entreprise, vos déclarations vont à l'Urssaf de son code postal : c'est elle qui reçoit normalement DPAE et DSN. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations. Voulez-vous vraiment la changer ?"),
     ("historique_titre", "Historique des valeurs"),
     ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
+    ("non_enregistres_titre", "Changements non enregistrés"),
+    ("garder_changements", "Enregistrer les changements"),
+    ("jeter_changements", "Annuler les changements"),
+    ("fiche_annuler", "Annuler"),
+    ("fiche_enregistrer", "Enregistrer"),
+    ("fiche_modifiee", "modifications non enregistrées"),
+    ("dater_titre", "Ce qui change"),
+    ("dater_metier", "Métier"),
+    ("dater_depuis", "À partir du"),
+    ("dater_note", "ajouter une note"),
+    ("dater_motif", "motif"),
+    ("valeur_vide", "vide"),
+    ("valeur_effacee", "effacé"),
+    ("refus_titre", "Enregistrement refusé"),
+    ("refus_corriger", "Corriger"),
+    ("refus_forcer", "Enregistrer quand même"),
+    ("cout_attente", "Coût…"),
     ("dater", "Ce que vous changez vaut à partir d'une date : la voici proposée, changez-la si besoin, puis enregistrez."),
     ("dater_avant", "Avant cette date, la fiche garde ce qu'elle disait."),
     ("rien_enregistre", "Rien n'est enregistré : vos saisies restent dans la fiche, à enregistrer quand vous voulez."),
@@ -226,7 +242,6 @@ pub(crate) struct VueFiche<P, K> {
     quoi_dit: String,
     geste_dit: &'static str,
     matricule_dit: Option<String>,
-    titre_dit: String,
     erreurs_titre: Option<String>,
     erreurs_note: &'static str,
     nom: NomDeFiche,
@@ -263,7 +278,7 @@ struct DonneesDeLaFiche<P> {
 
 /// LES TEMPS DE CHAQUE CASE DATEE de la fiche `brute` a `jour` (`droit::fiche::temps_au`), chaque valeur ecrite comme le
 /// fichier l'ecrit (`ValeurDeCase`) ; une case qui n'a qu'une valeur n'en a pas. La page les met en page.
-fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<ValeurDeCase>>> {
+pub(crate) fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<ValeurDeCase>>> {
     struct Toutes {
         listes: Vec<(CaseDeFiche, R<Vec<droit::fiche::Datee<ValeurDeCase>>>)>,
     }
@@ -402,20 +417,9 @@ fn fiche_verifiee<F: SorteDeFiche>(
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
     let lu = |k: NomDeCase| montree.ecrite(k.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == NomDeFiche::Spectacle && lu(CaseSpectacle::Titre.into()).is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
-    // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
-    let titre_dit = match (cle, lu(CaseSpectacle::Titre.into())) {
-        (None, _) => "Nouveau spectacle".to_string(),
-        (Some(_), _) if sans_titre => "Spectacle à nommer".to_string(),
-        (Some(_), Some(t)) => t,
-        (Some(c), None) => F::cle_dite(c),
-    };
-    let erreurs_titre = match erreurs {
-        0 => None,
-        1 => Some("Un champ à corriger".to_string()),
-        n => Some(format!("{} champs à corriger", n)),
-    };
-    let erreurs_note = if erreurs > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" };
+    let sans_titre = nom == NomDeFiche::Spectacle && a_nommer(lu(CaseSpectacle::Titre.into()).as_deref());
+    // Ce que l'en-tete de la fiche dit : les champs a corriger.
+    let (erreurs_titre, erreurs_note) = erreurs_dites(erreurs);
     let quoi = match nom {
         NomDeFiche::Salarie => [
             lu(CaseSalarie::EmploiAffichage.into()).or_else(|| lu(CaseSalarie::Emploi.into())),
@@ -437,7 +441,6 @@ fn fiche_verifiee<F: SorteDeFiche>(
         quoi_dit,
         geste_dit,
         matricule_dit,
-        titre_dit,
         erreurs_titre,
         erreurs_note,
         nom,
@@ -453,6 +456,22 @@ fn fiche_verifiee<F: SorteDeFiche>(
     })
 }
 
+/// UN SPECTACLE A NOMMER : l'import n'a lu que son numero d'objet, son titre est « A COMPLETER »
+/// (`import::proposee::A_COMPLETER`).
+pub(crate) fn a_nommer(titre: Option<&str>) -> bool {
+    titre.is_some_and(|t| t.trim().eq_ignore_ascii_case(import::proposee::A_COMPLETER))
+}
+
+/// Ce que l'en-tete d'une fiche dit de ses erreurs (`n`, celles de gravite « erreur ») : le titre de l'encart, aucun sans
+/// erreur, et sa note.
+pub(crate) fn erreurs_dites(n: usize) -> (Option<String>, &'static str) {
+    let titre = match n {
+        0 => None,
+        1 => Some("Un champ à corriger".to_string()),
+        n => Some(format!("{} champs à corriger", n)),
+    };
+    (titre, if n > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" })
+}
 
 /// Un etablissement qu'un engagement choisit : son NIC (vide : le siege), son nom, son ouverture et son dernier jour s'il
 /// est ferme, et ce que l'option en dit.

@@ -2455,8 +2455,9 @@
    "ecran": true
   },
   {
-   "note": "LE GENRE DU PROGRAMME : depuis le 01/07/2024,\nles minima des techniciens en CDDU de la production audiovisuelle\n(2642) dependent du genre -- fiction, flux, autre (avenants 17 et 19).\nVide : le moteur prend le plus bas, et le dit.",
+   "note": "LE GENRE DU PROGRAMME : depuis le 01/07/2024,\nles minima des techniciens en CDDU de la production audiovisuelle\n(2642) dependent du genre -- fiction, flux, autre (avenants 17 et 19).\nVide : le moteur prend le plus bas, et le dit. Les libelles sont les mots de l'avenant n° 19 du 8 juillet 2024 (atelier/reference/sources/kali-entrepot/articles.jsonl.gz#2642) : « la fiction audiovisuelle » (KALIARTI000050219962), « les programmes de flux s'entendent comme les programmes audiovisuels incluant les émissions de jeux, de divertissements et les magazines de plateaux » (KALIARTI000050219963), les autres genres « soit le documentaire et la captation de spectacle vivant » (KALIARTI000050219964).",
    "cle": "genre_audiovisuel",
+   "libelles": {"fiction": "Fiction audiovisuelle", "flux": "Programme de flux (jeux, divertissements, magazines de plateau)", "autre": "Documentaire, captation de spectacle vivant"},
    "libelle": "Genre du programme (audiovisuel)",
    "forme": "choix",
    "aide": "Seulement pour une production audiovisuelle (convention 2642) : fiction (scénario, comédiens, vidéomusiques), flux (jeux, divertissements, plateaux) ou autre (documentaire, captation de spectacle). Il fixe les salaires minimums des techniciens que le logiciel vous signale. Sans réponse, le logiciel prend le minimum le plus bas.",
@@ -2502,8 +2503,9 @@
    "ecran": true
   },
   {
-   "note": "LE FORMAT DU FILM ET LA DEROGATION DE L'ANNEXE III : les\nminima des artistes de la production cinematographique (3097) dependent\ndu format (titre III : long-metrage, court-metrage), et ceux des\ntechniciens d'un film a petit budget de la derogation accordee par la\ncommission paritaire (annexe III du titre II).",
+   "note": "LE FORMAT DU FILM ET LA DEROGATION DE L'ANNEXE III : les\nminima des artistes de la production cinematographique (3097) dependent\ndu format (titre III : long-metrage, court-metrage), et ceux des\ntechniciens d'un film a petit budget de la derogation accordee par la\ncommission paritaire (annexe III du titre II). Les libelles sont les mots de l'avenant du 1er août 2023 au titre III (atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3097) : « Salaires minima garantis pour les films de long-métrage » (KALIARTI000049095308), « Court-métrage » (KALIARTI000049095310).",
    "cle": "format_cinema",
+   "libelles": {"long": "Long-métrage", "court": "Court-métrage"},
    "libelle": "Format du film (cinéma)",
    "forme": "choix",
    "aide": "Seulement pour une production cinématographique (convention 3097) : long-métrage ou court-métrage. Il fixe les salaires minimums des comédiens et des acteurs de complément que le logiciel vous signale. Sans réponse, le logiciel prend le court-métrage, le minimum le plus bas.",

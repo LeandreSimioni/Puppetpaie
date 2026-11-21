@@ -139,6 +139,7 @@ routes! {
         ExportCompta = "export-compta",
         Archiver = "archiver",
         JournalReprise = "journal-reprise",
+        Fiche = "fiche",
         Permanents = "permanents",
         TaxeSurLesSalairesRegime = "taxe-sur-les-salaires-regime",
         VerifierFiche = "verifier-fiche",

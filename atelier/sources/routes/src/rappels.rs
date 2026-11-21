@@ -312,7 +312,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            let manques = d.manques.into_iter().map(ManqueVu::de).collect();
+            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, m)).collect::<socle::echec::R<Vec<_>>>()?;
             en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
@@ -1633,6 +1633,10 @@ struct ManqueVu {
     manque: Manque,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     a_enregistrer: Vec<GesteDEffectif>,
+    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE, dessinee comme dans sa fiche (`fiches::case_a_remplir`) : sa
+    /// valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    case_rendue: Option<crate::fiches::CaseDeLaFiche>,
 }
 
 /// L'EFFECTIF D'UNE ANNEE, en geste que « Enregistrer » joue, dans la forme que la page dessine (`js/avance.js`) : la
@@ -1664,7 +1668,17 @@ struct SansChoix {}
 impl ManqueVu {
     /// Chaque annee que la ligne demande (`Manque::effectifs`, un par annee) : sa case, pre-remplie de ce que les paies
     /// reprises donnent, et sa phrase.
-    fn de(mut manque: Manque) -> ManqueVu {
+    fn de(ctx: &Contexte, mut manque: Manque) -> socle::echec::R<ManqueVu> {
+        let case_rendue = match (&manque.spectacle, &manque.case) {
+            (Some(s), Some(chemin)) => {
+                let valeur = match &manque.propose {
+                    Some(p) => droit::fiche::ValeurDeCase::de(p),
+                    None => ctx.spectacles.get(s).and_then(|f| f.valeur_ecrite(chemin.champ)),
+                };
+                crate::fiches::case_a_remplir(droit::fiche::NomDeFiche::Spectacle, chemin, valeur)?
+            }
+            _ => None,
+        };
         let a_enregistrer = std::mem::take(&mut manque.effectifs)
             .into_iter()
             .map(|e| GesteDEffectif {
@@ -1677,7 +1691,7 @@ impl ManqueVu {
                 phrases: vec![e.phrase],
             })
             .collect();
-        ManqueVu { manque, a_enregistrer }
+        Ok(ManqueVu { manque, a_enregistrer, case_rendue })
     }
 }
 

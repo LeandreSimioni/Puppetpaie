@@ -918,7 +918,6 @@ const CACHES = {
   entreprise: ["siren", "nic"],
   // `sante_svp` se remplit par les trois cases de la complementaire sante : gardé tel quel, jamais demandé.
   salarie: ["sante_svp"],
-  spectacle: [],
 };
 
 /* Les structures telles qu'elles etaient AVANT la saisie : `lireFormulaire`
@@ -1122,7 +1121,7 @@ async function peindreCoutAnnee() {
     if (!d || (!d.bulletins && !Number(d.prevu))) return "";
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
-  el.innerHTML = `<span class="discret">Coût…</span>`;
+  el.innerHTML = `<span class="discret">${aideDe("cout_attente")}</span>`;
   let cette, avant;
   // Un refus se dit à la place du coût, et l'année se redemande à la prochaine fiche ouverte.
   try { [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]); } catch (e) {
