@@ -1506,8 +1506,41 @@ impl Contexte {
     /// les signataires d'un accord (`minima::signataire`). `None` : la fiche n'en dit pas, ou ce socle ne la couvre pas
     /// (le bareme la refuse alors, `controler_organisation_patronale`).
     pub fn organisation_reconnue(&self, an: Annee, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Option<crate::forme_bareme::OrganisationPatronale>> {
-        let Some(o) = o else { return Ok(None) };
-        Ok(self.socle_repris(an)??.organisation(o).map(|(k, _)| k.clone()))
+        Ok(self.organisation_dans_le_socle(an, o)??)
+    }
+
+    /// La meme, sans refuser l'annee dont le logiciel n'a pas le bareme : `Ok(Err)`, la fiche dit une organisation et
+    /// rien ne la reconnait (`BaremeAbsent`). Une lecture qui peut se passer de l'accord qui lie la compagnie la lit ici.
+    pub fn organisation_dans_le_socle(&self, an: Annee, o: Option<&crate::forme_bareme::OrganisationPatronale>) -> R<Result<Option<crate::forme_bareme::OrganisationPatronale>, BaremeAbsent>> {
+        let Some(o) = o else { return Ok(Ok(None)) };
+        Ok(self.socle_repris(an)?.map(|s| s.organisation(o).map(|(k, _)| k.clone())))
+    }
+
+    /// LES TARIFS DE LA CONVENTION QUE LA FICHE ENTREPRISE NOMME A `jour` (`tarifs_conventionnels`), lus dans le socle que
+    /// le bareme de l'annee reprend (`socle_de_l_annee`) et la couche de cette convention, comme le bareme les fond
+    /// (`fondre_la_convention`). Rien d'autre ne les change (ni la surcouche de la compagnie, ni son taux AT/MP, ni le
+    /// controle du bareme) : ils se lisent sans composer le bareme, et ce qui le ferait refuser ne les cache pas. `None` :
+    /// le logiciel n'a pas le bareme de l'annee, ou ni le socle ni la convention n'en fixent. Gardes tant que le socle et
+    /// la fiche sont les memes.
+    pub fn tarifs_conventionnels(&self, jour: &Jour) -> R<Option<crate::forme_bareme::Tarifs>> {
+        type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Option<crate::forme_bareme::Tarifs>>>>;
+        static CACHE: OnceLock<Cache> = OnceLock::new();
+        let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        let Ok((_, fichier)) = self.socle_de_l_annee(jour.annee())? else { return Ok(None) };
+        let ent = self.entreprise_au(jour);
+        let cle = format!("{}|{:?}|{}|{:?}|{:?}", fichier.display(), socle::fichiers::signature(&fichier)?, jour.iso(), ent.idcc, ent.organisation_patronale);
+        socle::fichiers::garde_notee(cache, cle, || {
+            let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
+            let de_la_convention = match ent.idcc.dite() {
+                Some(idcc) => convention(&socle_an, idcc)?.and_then(|c| c.tarifs_conventionnels.clone()),
+                None => None,
+            };
+            // La couche de la convention remplace les tarifs du socle, comme a la fonte.
+            Ok(match de_la_convention {
+                Some(t) => Some(t),
+                None => socle_an.tarifs_conventionnels,
+            })
+        })
     }
 
     /// LA SURCOUCHE DE L'ANNEE `an` ET LE FICHIER DU SOCLE QU'ELLE REPREND ; sans surcouche, la compagnie n'a rien change

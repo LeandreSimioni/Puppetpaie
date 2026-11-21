@@ -1280,19 +1280,22 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 }
 
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
-/// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
-/// pas encore a ce jour ; le taux se saisit.
+/// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites), lu sans composer le bareme
+/// (`Contexte::tarifs_conventionnels`). `None` : la convention n'en fixe pas, ou pas encore a ce jour, ou le logiciel n'a
+/// pas le bareme de l'annee ; le taux se saisit.
 pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<MontantUnitaire>> {
-    let bar = ctx.bareme(jour)?;
-    Ok(bar.tarifs_conventionnels.as_ref().and_then(|t| {
-        if *code == REPAS {
-            t.repas.and_then(|n| n.0)
-        } else if *code == NUITEE {
-            t.nuitee.and_then(|n| n.0)
-        } else {
-            None
-        }
-    }))
+    Ok(tarif_et_ses_tarifs(ctx, code, jour)?.map(|(m, _)| m))
+}
+
+/// Le meme tarif, et les tarifs de la convention qui le portent (leur `source` le cite) : la seule lecture des tarifs
+/// d'une rubrique (`Contexte::tarifs_conventionnels`, sans composer le bareme).
+pub(crate) fn tarif_et_ses_tarifs(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<(MontantUnitaire, droit::forme_bareme::Tarifs)>> {
+    if *code != REPAS && *code != NUITEE {
+        return Ok(None);
+    }
+    let Some(t) = ctx.tarifs_conventionnels(jour)? else { return Ok(None) };
+    let tarif = if *code == REPAS { t.repas } else { t.nuitee };
+    Ok(tarif.and_then(|n| n.0).map(|m| (m, t)))
 }
 
 /// Les lignes d'un engagement au cachet dont la rubrique a un tarif de la convention (`tarif_conventionnel`) et qui ne

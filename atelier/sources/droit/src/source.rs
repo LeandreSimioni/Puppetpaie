@@ -193,6 +193,21 @@ impl Fondement {
             Fondement::Texte(sources) | Fondement::Convergence { sources, .. } => sources.iter().collect(),
         }
     }
+
+    /// LE TEXTE QUI CITE LE NOMBRE `ecrit` (un montant tel que les textes l'impriment, `socle::texte::chiffres_en_euros` :
+    /// « 135,54 », « 2 094,16 ») : la premiere source dont la citation le porte entier, aux espaces insecables pres (ni
+    /// « 8,70 » dans « 98,70 », ni « 98,7 » dans « 98,70 »). Ce qui tient un montant affiche au texte qu'on affiche avec
+    /// lui (`engagement::minima::ce_que_fixe_la_convention`).
+    pub fn qui_cite(&self, ecrit: &str) -> Option<&Source> {
+        self.sources().into_iter().find(|s| {
+            let citation = s.citation.replace(['\u{a0}', '\u{202f}'], " ");
+            citation.match_indices(ecrit).any(|(i, _)| {
+                let avant = citation[..i].chars().next_back();
+                let apres = citation[i + ecrit.len()..].chars().next();
+                !avant.is_some_and(|c| c.is_ascii_digit() || c == ',') && !apres.is_some_and(|c| c.is_ascii_digit())
+            })
+        })
+    }
 }
 
 /// UN OBJET D'UN FICHIER LIVRE ET SES NOTES (atelier/AGENTS.md : `source`, `note`, `quoi`) : elles ne se lisent pas au

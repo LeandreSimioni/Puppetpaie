@@ -1290,7 +1290,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
-| ce que la convention fixe au métier pour une rubrique de paie (le nom qu'elle lui donne, la situation, chaque montant et ce qu'il paie, `MontantFixe`, le texte en clair ; la bulle d'une ligne de paie, route `convention-du-metier`) ; ce que la table des minima en relève, métier par métier, est sa forme : `droit::minima::MetierDansLaConvention`, `CeQueFixeLaConvention` | `CeQueFixe` | `engagement/src/minima.rs` |
+| période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
+| jauge de la salle qu'une grille de cachets vise | `JaugeDeLaGrille` | `droit/src/minima.rs` |
+| ce que la convention fixe au métier (le nom qu'elle lui donne, la tête de la bulle d'une ligne de paie, route `convention-du-metier`) et, pour une rubrique de paie, chaque montant et ce qu'il paie (`MontantFixe`), et le texte qui les fixe : l'article de la source de la valeur lue qui cite chaque montant (`droit::source::Fondement::qui_cite`) ; ce que la table des minima en relève, métier par métier, est sa forme, une variante par rubrique qui a son lecteur : `droit::minima::MetierDansLaConvention`, `CeQueFixeLaConvention` | `CeQueFixeAuMetier`, `CeQueFixe` | `engagement/src/minima.rs` |
 | catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
 | annexe de la convention 3090 | `AnnexeConvention` | `droit/src/fiche.rs` |
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
@@ -2229,11 +2231,15 @@ datée, vérifiable**.
   calcul refuse en la nommant, jamais « aucune ancienneté ».
   **Ce que la convention fixe au métier** (la bulle d'une ligne de paie, un « i » au bout de la ligne) : `metiers` d'une
   convention de cette table nomme, par le code du métier, le nom que la convention lui donne et chaque rubrique pour
-  laquelle un texte déposé fixe un montant (sa situation, ce que paie le montant, le texte en clair et sa `source`). Les
-  montants ne s'y écrivent pas : ils se lisent où le calcul les lit (la grille du métier dans l'annexe, la répétition de
-  l'annexe, le tarif du barème : `engagement::minima::ce_que_fixe_la_convention`), au premier jour du mois de la carte.
-  Ajouter un métier, c'est ajouter son entrée ; une rubrique sans lecteur (autre que cachet, répétition, repas,
-  nuitée) est un défaut de la table livrée.
+  laquelle un texte déposé fixe un montant, avec ce qu'il faut pour la lire et rien de plus (l'annexe d'un cachet ou
+  d'une répétition, ce que paie le montant d'une répétition, d'un repas, d'une nuitée). Ni les montants ni leur texte ne
+  s'y écrivent : ils se lisent où le calcul les lit (la grille du métier dans l'annexe, la répétition de l'annexe, le
+  tarif de la convention, lu sans composer le barème : `engagement::minima::ce_que_fixe_la_convention`), au premier jour
+  du mois de la carte, et le texte affiché est l'article de la source de cette valeur qui cite chaque montant (un test
+  des sources le tient, `chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source`). La lecture dit ce qu'elle sait :
+  une rubrique dont la valeur ne se lit pas pour la compagnie ce jour-là ne se dit pas, et rien d'autre ne tombe.
+  Ajouter un métier, c'est ajouter son entrée (et la `source` de sa grille si elle n'en a pas) ; une rubrique sans
+  lecteur (autre que cachet, répétition, repas, nuitée) ne se lit pas dans la table.
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,
   éditeur, URL, description, version et d'où on la lit, date de relevé,
   fichier de la copie (dans `atelier/reference/sources/`, versionnée dans le
