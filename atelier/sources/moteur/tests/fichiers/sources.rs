@@ -222,3 +222,90 @@ fn chaque_source_est_un_texte_depose_et_sa_citation_s_y_lit() {
     let fautes = verifier(&tous);
     assert!(fautes.is_empty(), "{} source(s) fausse(s) :\n{}", fautes.len(), fautes.join("\n"));
 }
+
+/// Le montant `m` (un nombre du fichier) est-il porte par une citation de `source`, avec son article
+/// (`Fondement::qui_cite`, la lecture de la bulle) ? Sinon, la faute, sous `ou`.
+fn montant_cite(ou: &str, source: &Value, m: &Value, fautes: &mut Vec<String>) {
+    let Ok(montant) = socle::forme::lire::<socle::grandeurs::MontantUnitaire>(m, "un montant") else {
+        return fautes.push(format!("{} : le montant manque ({})", ou, m));
+    };
+    let ecrit = socle::texte::chiffres_en_euros(montant);
+    let Ok(fondement) = socle::forme::lire::<Fondement>(source, "une source") else {
+        return fautes.push(format!("{} : {} n'a pas de source", ou, ecrit));
+    };
+    if !fondement.qui_cite(&ecrit).is_some_and(|s| s.article.is_some()) {
+        fautes.push(format!("{} : aucune citation de sa source, avec son article, ne porte {}", ou, ecrit));
+    }
+}
+
+/// CHAQUE MONTANT QUE LA BULLE D'UNE LIGNE DE PAIE PEUT RENDRE EST DANS LA CITATION DE LA SOURCE DE SA VALEUR, celle
+/// qu'elle affiche avec lui (`engagement::minima::ce_que_fixe_la_convention`) : pour chaque rubrique que `metiers` d'une
+/// convention releve, chaque palier de la grille de cachets du metier et le cachet ou le service de repetition, dans la
+/// convention et chacun de ses accords ; chaque tarif de repas et de nuitee de la convention dans les baremes livres, a
+/// chacune de ses dates. Un avenant qui change un montant sans sa citation ne passe pas.
+#[test]
+fn chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source() {
+    let (minima, emplois) = (lu("minima-conventionnels.json"), lu("emplois-base.json"));
+    let baremes = [("2025", lu("baremes/2025.json")), ("2026", lu("baremes/2026.json"))];
+    let mut fautes = Vec::new();
+    let mut vus = 0;
+    for (idcc, c) in minima["conventions"].as_object().unwrap() {
+        let Some(metiers) = c["metiers"].as_object() else { continue };
+        let grilles: Vec<&Value> = std::iter::once(c).chain(c["accords"].as_array().into_iter().flatten()).collect();
+        for (code, m) in metiers {
+            let lignes = &emplois["emplois"][code]["minima"][idcc];
+            for r in m["rubriques"].as_array().unwrap() {
+                let rubrique = r["rubrique"].as_str().unwrap();
+                let ou = format!("conventions.{}.metiers.{} {}", idcc, code, rubrique);
+                for g in &grilles {
+                    // La grille (ou la repetition) de l'annexe que la rubrique nomme, sinon celle de la convention.
+                    let (dans, ligne) = match r["annexe"].as_str() {
+                        Some(a) => (&g["annexes"][a], &lignes[a]),
+                        None => (*g, lignes),
+                    };
+                    match rubrique {
+                        "cachet" => {
+                            let grille = &dans["cachets"][ligne.as_str().unwrap()];
+                            let Some(paliers) = grille["paliers"].as_array() else {
+                                fautes.push(format!("{} : la grille de cachets {} manque", ou, ligne));
+                                continue;
+                            };
+                            for p in paliers {
+                                vus += 1;
+                                montant_cite(&ou, &grille["source"], &p["montant"], &mut fautes);
+                            }
+                        }
+                        "repetition" if r["annexe"].is_string() => {
+                            vus += 1;
+                            montant_cite(&ou, &dans["repetition"]["source"], &dans["repetition"]["cachet"], &mut fautes);
+                        }
+                        "repetition" => {
+                            let rep = &dans["repetition"];
+                            let propre = &rep["par_categorie"][ligne.as_str().unwrap()]["service"];
+                            vus += 1;
+                            montant_cite(&ou, &rep["source"], if propre.is_null() { &rep["service"] } else { propre }, &mut fautes);
+                        }
+                        _ => {}
+                    }
+                }
+                if rubrique == "repas" || rubrique == "nuitee" {
+                    for (an, b) in &baremes {
+                        let tarifs = &b["par_convention"][idcc]["bareme"]["tarifs_conventionnels"];
+                        let valeurs: Vec<&Value> = match &tarifs[rubrique] {
+                            Value::Array(datees) => datees.iter().map(|d| &d["valeur"]).filter(|v| !v.is_null()).collect(),
+                            Value::Null => Vec::new(),
+                            seule => vec![seule],
+                        };
+                        for v in valeurs {
+                            vus += 1;
+                            montant_cite(&format!("{} (barème {})", ou, an), &tarifs["source"], v, &mut fautes);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Ce que le test parcourt n'est jamais vide : une cle renommee le ferait reussir sans rien verifier.
+    assert!(vus > 0);
+    assert!(fautes.is_empty(), "{} montant(s) sans leur citation :\n{}", fautes.len(), fautes.join("\n"));
+}

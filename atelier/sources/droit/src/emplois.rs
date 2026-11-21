@@ -141,13 +141,19 @@ const PREFIXE_CREE: &str = "CIE-";
 impl CodeEmploi {
     /// Le code `texte`, s'il est de la nomenclature, ou celui d'un metier cree (`CIE-` et son numero).
     pub fn lire(texte: &str) -> R<CodeEmploi> {
-        if CodeEmploi::numero_de(texte).is_some() {
-            return Ok(CodeEmploi(texte.to_string()));
-        }
-        match CodeEmploi::de_la_nomenclature(texte)? {
+        match CodeEmploi::du_texte(texte)? {
             Some(c) => Ok(c),
             None => Err(socle::refus!("Métier {} inconnu : ni dans le catalogue des emplois, ni dans la nomenclature de France Travail.", repr(texte))),
         }
+    }
+
+    /// Le code `texte`, s'il est de la nomenclature ou celui d'un metier cree ; `None` sinon (une frappe en cours, un
+    /// code qu'aucune liste n'a). Une lecture, qui n'a rien a refuser d'un code inconnu, le lit ici.
+    pub fn du_texte(texte: &str) -> R<Option<CodeEmploi>> {
+        if CodeEmploi::numero_de(texte).is_some() {
+            return Ok(Some(CodeEmploi(texte.to_string())));
+        }
+        CodeEmploi::de_la_nomenclature(texte)
     }
 
     /// Le code du metier cree de numero `numero` : `CIE-1`, `CIE-2`...

@@ -1,12 +1,16 @@
 //! Ce que la convention de la compagnie fixe a un metier, rubrique par rubrique (`convention-du-metier`) : la bulle d'une
-//! ligne de paie de la carte. Une lecture : elle repond toujours, et un metier dont rien n'est releve rend une liste vide.
+//! ligne de paie de la carte. Une lecture : elle repond toujours, et un metier dont rien n'est releve, ou un code
+//! qu'aucune liste n'a (une frappe en cours), rend une liste vide.
 
 use serde::{Deserialize, Serialize};
+use socle::echec::Classe;
+use socle::forme::TexteDit;
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Route, FORME, MOIS};
+use crate::catalogue::{Acte, Affiche, Champ, Ecran, Fiche, Forme, Refus, Route, FORME, MOIS};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use droit::contexte::Contexte;
+use droit::emplois::CodeEmploi;
 use engagement::minima::{ce_que_fixe_la_convention, CeQueFixe};
 use socle::echec::R;
 
@@ -16,22 +20,23 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire ce que la convention fixe au métier, rubrique par rubrique.",
     charge: &[MOIS, Champ { nom: "metier", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier (MAR010…)", avance: false }],
     exemple: r#"{"mois":"2026-11","metier":"MAR010"}"#,
-    rend: "rubriques : pour chacune (rubrique), le nom que la convention donne au métier (nom), la situation, les montants et ce que chacun paie (condition, montant), le texte en clair",
-    refus: &[FORME],
+    rend: "phrase : le nom que la convention donne au métier (la tête de la bulle) ; rubriques : pour chacune (rubrique), les montants et ce que chacun paie (condition, montant), le texte qui les fixe",
+    refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le fichier que la phrase dit illisible" }],
     acte: Acte::Lit,
-    phrase: 0,
+    phrase: 80,
     ecran: Ecran::Lecture,
 }];
 
-/// La charge : le mois de la carte, et son metier.
+/// La charge : le mois de la carte, et le code de son metier, tel que la carte l'ecrit.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDuMetier {
     mois: Mois,
-    metier: droit::emplois::CodeEmploi,
+    metier: TexteDit,
 }
 
-/// Ce que la route rend : sa phrase, et ce que la convention fixe pour chaque rubrique.
+/// Ce que la route rend : sa phrase (le nom que la convention donne au metier, la tete de la bulle ; ou qu'elle ne fixe
+/// rien), et ce que la convention fixe pour chaque rubrique.
 #[derive(Debug, Serialize)]
 struct ConventionDuMetier {
     phrase: Phrase,
@@ -54,10 +59,12 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// `convention-du-metier` : ce qui vaut au premier jour du mois de la carte.
 fn convention_du_metier(ctx: &Contexte, c: ChargeDuMetier) -> R<ConventionDuMetier> {
-    let rubriques = ce_que_fixe_la_convention(ctx, &c.metier, c.mois.premier_jour())?;
-    let phrase = match rubriques.len() {
-        0 => Phrase::fixe("La convention ne fixe rien de relevé pour ce métier."),
-        n => socle::phrase!("Ce que la convention fixe pour ce métier : {} rubrique{}.", n, if n > 1 { "s" } else { "" }),
+    let fixe = match CodeEmploi::du_texte(&c.metier)? {
+        Some(code) => ce_que_fixe_la_convention(ctx, &code, c.mois.premier_jour())?,
+        None => None,
     };
-    Ok(ConventionDuMetier { phrase, rubriques })
+    Ok(match fixe {
+        Some(f) if !f.rubriques.is_empty() => ConventionDuMetier { phrase: socle::phrase!("{}", f.nom), rubriques: f.rubriques },
+        _ => ConventionDuMetier { phrase: Phrase::fixe("La convention ne fixe rien de relevé pour ce métier."), rubriques: Vec::new() },
+    })
 }

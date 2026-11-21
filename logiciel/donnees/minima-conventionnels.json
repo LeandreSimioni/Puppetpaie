@@ -13,40 +13,12 @@
   "metiers": {
    "MAR010": {
     "nom": "Artiste marionnettiste",
-    "note": "Hors tournee (annexe 1), aucune grille ne nomme le marionnettiste : rien n'est releve pour elle.",
+    "note": "Seule l'annexe 4 (tournee) nomme le marionnettiste : c'est elle qui est relevee. En annexe 1, le calcul compare son cachet a la grille << Role (artiste dramatique) >> (emplois-base.json, minima.3090.1), qu'aucun texte depose ne lui rattache : la bulle n'en dit rien.",
     "rubriques": [
-     {
-      "rubrique": "cachet",
-      "annexe": "4",
-      "situation": "en tournée",
-      "texte": "Avenant du 21/07/2025, annexe 4",
-      "source": {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "Artiste marionnettiste Marionnettiste 135,54 120,67 109,92 98,70"}
-     },
-     {
-      "rubrique": "repetition",
-      "annexe": "4",
-      "situation": "en tournée",
-      "condition": "par jour, pour 1 ou 2 services de 4 h",
-      "texte": "Annexe IV, art. 2.2.1 ; avenant du 21/07/2025, annexe 4",
-      "source": {"sources": [
-       {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3090", "emetteur": "convention", "article": "KALIARTI000028157829", "citation": "Le cachet de répétition est un cachet journalier indivisible, fixé au même montant, qu'il y ait 1 ou 2 services de répétition de 4 heures dans la même journée."},
-       {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "Le cachet de répétition est fixé à 94,34 euros (pour un ou deux services de répétitions de quatre heures dans la même journée)."}
-      ]}
-     },
-     {
-      "rubrique": "repas",
-      "situation": "en tournée",
-      "condition": "par repas principal",
-      "texte": "Avenant du 21/07/2025, annexe 4",
-      "source": {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "chaque repas principal 17,85 €. Ces défraiements s'appliquent aux artistes, techniciens et personnels administratifs en tournée."}
-     },
-     {
-      "rubrique": "nuitee",
-      "situation": "en tournée",
-      "condition": "par nuit, petit-déjeuner compris",
-      "texte": "Avenant du 21/07/2025, annexe 4",
-      "source": {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "soit chambre et petit déjeuner 70,28 € […] Ces défraiements s'appliquent aux artistes, techniciens et personnels administratifs en tournée."}
-     }
+     {"rubrique": "cachet", "annexe": "4"},
+     {"rubrique": "repetition", "annexe": "4", "condition": "par jour, pour 1 ou 2 services de 4 h"},
+     {"rubrique": "repas", "condition": "par repas principal"},
+     {"rubrique": "nuitee", "condition": "par nuit, petit-déjeuner compris"}
     ]
    }
   },
@@ -421,7 +393,8 @@
         "jusqu_a": null,
         "montant": 98.7
        }
-      ]
+      ],
+      "source": {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "Artiste marionnettiste Marionnettiste 135,54 120,67 109,92 98,70"}
      },
      "lyrique.premier_role": {
       "libelle": "Artiste lyrique, 1er rôle",
@@ -629,7 +602,11 @@
     },
     "repetition": {
      "cachet": 94.34,
-     "cachet_libelle": "cachet de repetition, 1 ou 2 services de 4 heures dans la meme journee"
+     "cachet_libelle": "cachet de repetition, 1 ou 2 services de 4 heures dans la meme journee",
+     "source": {"sources": [
+      {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "Le cachet de répétition est fixé à 94,34 euros (pour un ou deux services de répétitions de quatre heures dans la même journée)."},
+      {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3090", "emetteur": "convention", "article": "KALIARTI000028157829", "citation": "Le cachet de répétition est un cachet journalier indivisible, fixé au même montant, qu'il y ait 1 ou 2 services de répétition de 4 heures dans la même journée."}
+     ]}
     },
     "techniciens": {
      "note": "techniciens en tournee, taux horaire. La grille ne nomme que le cadre groupe 2 (20,27) : les groupes 1 et 3 prennent les clauses communes (17,53 et 15,57), le plus bas que le texte permet -- recopier 20,27 faisait crier a tort sur un conseiller technique (groupe 3), releve le 24/09/2026",
