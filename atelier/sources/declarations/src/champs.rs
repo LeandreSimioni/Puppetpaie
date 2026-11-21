@@ -663,6 +663,13 @@ fn ranger(mut t: Table) -> R<Table> {
             return Err(faute(format!("{}.{} : une case de la fiche sans sa ligne", nom, d.cle)));
         }
     }
+    // LE SERVICE DE SANTE AU TRAVAIL SE CHOISIT PAR SON NOM, dans le referentiel de l'Urssaf (`spst::BaseSpst::choix`) :
+    // la description de la case dit ses choix et ce que la page en montre.
+    let medecine: CaseDeFiche = droit::fiche::CaseEntreprise::MedecineTravail.into();
+    let c = t.entreprise.iter_mut().find(|c| c.cle == medecine).ok_or_else(|| faute(format!("entreprise.{} : sa ligne manque", medecine)))?;
+    let choix = crate::spst::base()?.choix()?;
+    c.choix = choix.iter().map(|(code, _)| code.clone()).collect();
+    c.libelles = Some(Libelles(choix));
     Ok(t)
 }
 

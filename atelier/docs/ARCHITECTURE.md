@@ -600,6 +600,8 @@ un libellé, chacun sa forme.
 | code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
 | groupe d'un risque AT/MP en Alsace-Moselle (le numéro de groupe de l'annexe 3 de l'arrêté de tarification, auquel l'annexe donne un taux) | `GroupeAlsaceMoselle` | `droit/src/bareme.rs` |
 | code Urssaf de la DPAE | `CodeUrssafDpae` | `declarations/src/urssaf.rs` |
+| code du service de santé au travail (celui de la DPAE, la case de la fiche) | `CodeMedecine` | `droit/src/fiche.rs` |
+| identifiant d'un service de prévention et de santé au travail (SPST) | `IdentifiantSpst` | `droit/src/fiche.rs` |
 | identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
 | accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
@@ -1065,6 +1067,12 @@ un libellé, chacun sa forme.
   `urssaf-dpae-base.json` (`existe`). Que portent un organisme de la table et celui du territoire d'un département,
   les paramètres d'une DPAE, ce que la page propose (`urssaf_deduit`) ; celui que la fiche Entreprise tape
   (`code_urssaf`, du texte) se lit par `dpae::code_urssaf_saisi`, qui nomme la case.
+- **code du service de santé au travail, identifiant d'un SPST** : le service de prévention et de santé au travail
+  auquel la compagnie adhère. La DPAE l'écrit en C_MT_DCL, « MT » et trois chiffres, et MT999 pour une médecine interne
+  (`CodeMedecine`, la case `medecine_travail` de la fiche) ; le référentiel « sst_dpae » de l'Urssaf
+  (`spst-base.json`, `declarations::spst`) et la DSN 2027 (S21.G00.11.025) l'écrivent `IdentifiantSpst`, MT01 pour la
+  médecine interne. On passe de l'un à l'autre par `CodeMedecine::du_referentiel` et `CodeMedecine::identifiant_spst`,
+  et nulle part ailleurs. Que portent la fiche, la DPAE, le référentiel livré, la DSN écrite et la DSN lue.
 - **identifiant du taux de PAS** : S21.G00.50.008, `-1|0|[1-9][0-9]{0,17}` ; `SansCrm` (« -1 », un contrat court sans
   compte rendu) ou le numéro que la DGFiP donne, écrit comme lu. Que portent un taux reçu de la fiche, le compte rendu
   PAS relevé (strict), le taux qui vaut, le prélèvement d'un versement, la paie versée d'un engagement importé, la DSN

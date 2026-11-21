@@ -402,6 +402,23 @@
         "urssaf-dpae-base.json"
       ]
     },
+    "urssaf-sst-dpae": {
+      "titre": "Services de prévention et de santé au travail (SPST)",
+      "editeur": "Urssaf Caisse nationale -- portail open data",
+      "url": "https://open.urssaf.fr/api/explore/v2.1/catalog/datasets/sst_dpae/exports/csv?delimiter=%3B",
+      "page": "https://open.urssaf.fr/explore/dataset/sst_dpae/",
+      "contenu": "Le referentiel « sst_dpae » : 411 lignes, une par service et par Urssaf (mt_code_ur), soit 321 services. Son identifiant (mt_lib_court : MT et trois chiffres, MT01 la medecine interne) est le code que la DPAE et la DSN 2027 (S21.G00.11.025, fiche consigne 3370 de net-entreprises) demandent ; on en tire un service par identifiant, avec son nom (mt_lib) et sa commune (mt_bur_dist). La page du jeu le dit la liste « qui doit être utilisée dans le cadre de la Déclaration Préalable à l'Embauche (DPAE) ».",
+      "version": "2026-11-12",
+      "version_lue_dans": "le champ `modified` des metadonnees du jeu (urssaf-sst-dpae-meta-20261121.json)",
+      "releve_le": "2026-11-21",
+      "fichier": "urssaf-sst-dpae/urssaf-sst-dpae-20261121.csv",
+      "sha256": "c2f717e90b3f42728dcbac667c8a456b9f93b227ab24ebdf71c9290ae54baf33",
+      "verification": "telechargement",
+      "encodage": "utf-8 avec BOM",
+      "nourrit": [
+        "spst-base.json"
+      ]
+    },
     "insee-cog-2015-departements": {
       "titre": "Code officiel géographique au 1er janvier 2015 -- Liste des départements",
       "editeur": "Insee",

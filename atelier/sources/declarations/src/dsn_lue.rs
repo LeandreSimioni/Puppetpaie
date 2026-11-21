@@ -849,8 +849,7 @@ impl EntrepriseDeclaree {
                 // S21.G00.20.004" est obligatoire », CCH-12, `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`
                 // l. 425-426), et la lecture ne le garde que si tous les versements disent le meme : pas de toute DSN.
                 banque: _,
-                // La medecine du travail : la lecture ne garde que la medecine interne (« MT01 », S21.G00.11.025) ; un
-                // service externe ne se reprend pas.
+                // La medecine du travail : l'identifiant du SPST (S21.G00.11.025), d'une DSN 2027 seulement.
                 medecine_travail: _,
                 // Rien de « Pour demarrer » ne le demande.
                 france_travail_dossier_recouvrement: _,
@@ -1555,12 +1554,13 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
         }
         e.declarant_dsn = Some(d);
     }
-    // LA MEDECINE DU TRAVAIL INTERNE : « MT01 - MEDECINE INTERNE ETABLISSEMENT » en S21.G00.11.025 (norme 2027,
-    // `dsn::spst_ecrit`) : la fiche garde le code de la DPAE, ou la medecine interne s'ecrit MT999
-    // (`CodeMedecine::INTERNE`). L'identifiant d'un service externe ne se reprend pas : sa definition est dans une fiche
-    // consigne non deposee, et qu'il soit le code de la DPAE serait une inference.
-    if spst == "MT01" {
-        e.medecine_travail = Some(CodeMedecine::lire(CodeMedecine::INTERNE)?);
+    // LE SERVICE DE SANTE AU TRAVAIL : l'identifiant du SPST en S21.G00.11.025 (norme 2027, `dsn::spst_ecrit`), une valeur
+    // du referentiel « sst_dpae » de l'Urssaf (fiche consigne 3370, l. 11), devient le code de la fiche
+    // (`CodeMedecine::du_referentiel` : MT01, la medecine interne, s'y ecrit MT999). Qu'il soit le code de la DPAE est une
+    // inference : les deux viennent du meme referentiel. Une DSN 2026 n'a pas la rubrique, et une valeur qui n'a pas la forme
+    // d'un identifiant du referentiel ne dit pas de service : la case reste vide, et « Pour demarrer » la demande.
+    if let Ok(id) = droit::fiche::IdentifiantSpst::lire(&spst) {
+        e.medecine_travail = Some(CodeMedecine::du_referentiel(&id)?);
     }
     Ok(DsnLue {
         logiciel,

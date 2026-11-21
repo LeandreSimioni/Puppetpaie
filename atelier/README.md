@@ -977,7 +977,8 @@ Quand une source a changé, le référentiel qu'elle nourrit se **relève** par
 `naf-base.json`), `usages` et `formats` (le classeur de net-entreprises ou le
 cahier technique en PDF → `usages-dsn-*.json`, `formats-dsn-*.json`), `urssaf`
 (la Table des Urssaf, la liste des sites, le COG 2015 →
-`urssaf-dpae-base.json`). Les sources, puis la sortie, se nomment toujours ;
+`urssaf-dpae-base.json`), `spst` (le référentiel « sst_dpae » de l'Urssaf →
+`spst-base.json`). Les sources, puis la sortie, se nomment toujours ;
 une sortie qui existe ne se remplace qu'avec `--remplacer`, et rien ne s'écrit
 avant que le relevé soit fait. La `note` du JSON nomme la commande, les
 fichiers déposés et le jour du relevé. Par exemple :
