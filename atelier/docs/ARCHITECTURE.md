@@ -1328,7 +1328,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | contrat dans l'effectif (un contrat tel que L. 130-1 et R. 130-1 CSS le comptent : sa personne, ses dates, et la part qu'un jour du contrat compte, aucune quand il est exclu du décompte, un CDD de remplacement ou un dispositif de L. 1111-3 du code du travail, `ContratDansLEffectif::de` ; le temps de travail, la part entière ou le rapport des quotités d'un temps partiel, une référence nulle refusée ; la seule règle, `droit::effectif::effectif_du_mois`, `effectif_au_jour` et `effectif_annuel`, que lisent l'Urssaf simulée depuis les DSN et l'effectif repris) | `droit::effectif::ContratDansLEffectif`, `droit::effectif::TempsDansLEffectif` | `droit/src/effectif.rs` |
-| effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou ce qui manque pour le calculer, et sa phrase ; « Pour démarrer » le propose sur la ligne de l'effectif, la route `effectif` le confirme) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
+| effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou pourquoi il ne se propose pas, sa phrase et ses réserves ; « Pour démarrer » le pré-remplit dans la case de son année, que son « Enregistrer » écrit par la route `effectif`) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
 | première embauche reprise (le plus ancien début de contrat que les pièces reprises disent, et la pièce qui le dit ; « Pour démarrer » le propose dans la case de la première embauche, la compagnie le valide ou le corrige) | `engagement::effectif_repris::PremiereEmbaucheReprise` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
@@ -3228,17 +3228,21 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
 - **Une compagnie venue d'un autre logiciel** se voit proposer, sur la ligne de l'effectif de « Pour démarrer », celui
   de chaque année demandée dont des paies sont reprises, calculé selon R. 130-1 (`droit::effectif`, la règle même de
   l'Urssaf simulée) depuis les contrats que ces paies paient (`engagement::effectif_repris`) ; la moyenne ne prend que
-  les mois dont une paie est reprise, et la phrase nomme les autres. Rien ne se pose sans le geste qui le confirme (la
-  route `effectif`, qui reste aussi sous « Avancé » : `pour-demarrer` rend, pour chaque année que la ligne demande, `effectifs` et
-  leurs `gestes`, « Confirmer » la valeur proposée ou « Dire l'effectif » dans sa boîte, que `js/avance.js` dessine). Une
+  les mois dont une paie est reprise, et la phrase nomme les autres. Chaque année que la ligne demande est une case,
+  pré-remplie de ce que les paies reprises donnent (vide sinon, et sa phrase courte dit pourquoi), que le même
+  « Enregistrer » que les cases des fiches écrit, comme si elle avait été tapée : `pour-demarrer` rend sur la ligne
+  `a_enregistrer`, les gestes de la route `effectif` (une année chacun, sa case, sa valeur de départ, sa phrase), que la
+  page dessine depuis la fiche de la route et joue après `enregistrer-fiche`, sans nommer l'effectif (`js/rappels.js`) ;
+  la route `effectif` vérifie et refuse comme toujours, et reste aussi sous « Avancé ». Une
   proposition est juste ou ne se fait pas, et sa phrase dit pourquoi : une paie dont le contrat ne se compte pas (sa
   nature, son motif de recours d'un CDD, les heures d'un permanent : aucune pièce ne les dit) fait taire l'année de sa
   paie ; un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime, celle que l'import
-  lui donne partout, et la phrase le dit (trop haut si elle dépasse le contrat, jamais trop bas) ; une année dont un mois se paie ici, celle de la première embauche
+  lui donne partout (trop haut si elle dépasse le contrat, jamais trop bas) ; une année sans paie reprise, une année dont un mois se paie ici, celle de la première embauche
   sans paie reprise du mois de l'embauche (L. 130-1, I, troisième alinéa : l'effectif présent le dernier jour de ce mois,
   qui se propose quand ce mois est repris), et, sans date de première embauche, celle de la plus ancienne paie reprise
-  (peut-être celle de l'embauche) ne se proposent pas. Ce qu'aucune paie reprise ne distingue (les exclus de L. 1111-3
-  du code du travail) se dit avec la valeur. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
+  (peut-être celle de l'embauche) ne se proposent pas. Ce que la compagnie valide avec les valeurs (les exclus de
+  L. 1111-3 du code du travail, qu'aucune paie reprise ne distingue ; le contrat connu par son seul bulletin ; les mois
+  sans paie reprise hors de la moyenne : `EffectifRepris::reserves`) se dit une fois, sur la ligne. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
   dans `manques`.
 - **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
   le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;

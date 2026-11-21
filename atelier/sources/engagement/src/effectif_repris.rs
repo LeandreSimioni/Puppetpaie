@@ -1,9 +1,10 @@
 //! L'EFFECTIF D'UNE ANNEE D'AVANT PUPPETPAIE, D'APRES SES PAIES REPRISES : ce que « Pour démarrer » propose a la
-//! compagnie venue d'un autre logiciel, qu'elle confirme par la route `effectif` (`declarations::demarrage::route`).
-//! Le calcul est celui de L. 130-1 et R. 130-1 du code de la securite sociale (`droit::effectif`, le meme que l'Urssaf
-//! simulee) ; ce module ne dit que les contrats que les pieces reprises portent, chaque paie versee
-//! (`importe::PaieVersee`) sous le contrat qu'elle paie. Une proposition est une valeur que la compagnie confirme d'un
-//! clic : elle est juste ou ne se fait pas, et sa phrase dit pourquoi (regle 1).
+//! compagnie venue d'un autre logiciel, dans la case de chaque annee, que son « Enregistrer » ecrit par la route
+//! `effectif` (`declarations::demarrage::route`, `routes::rappels::ManqueVu`). Le calcul est celui de L. 130-1 et
+//! R. 130-1 du code de la securite sociale (`droit::effectif`, le meme que l'Urssaf simulee) ; ce module ne dit que les
+//! contrats que les pieces reprises portent, chaque paie versee (`importe::PaieVersee`) sous le contrat qu'elle paie. Une
+//! proposition est une valeur que la compagnie valide ou corrige : elle est juste ou ne se fait pas, et sa phrase dit
+//! pourquoi (regle 1).
 
 use std::collections::BTreeSet;
 
@@ -19,14 +20,15 @@ use socle::mois::{Annee, Graphie, Mois};
 use crate::importe::{Attestation, Importe, PaieVersee};
 
 /// L'EFFECTIF D'UNE ANNEE D'APRES SES PAIES REPRISES : l'annee, l'effectif que L. 130-1 et R. 130-1 en tirent (`valeur`,
-/// au centieme), et la phrase qui dit d'ou il vient et ce que les pieces ne distinguent pas. Sans valeur, la phrase dit
-/// pourquoi il ne se propose pas.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+/// au centieme), et la phrase, courte, qui dit d'ou il vient. Sans valeur, la phrase dit pourquoi il ne se propose pas.
+/// Ce que les pieces ne distinguent pas, et que la compagnie valide avec la valeur (`reserves`), est le meme d'une annee
+/// a l'autre : la ligne qui demande l'effectif le dit une fois (`declarations::demarrage::route`).
+#[derive(Debug, Clone, PartialEq)]
 pub struct EffectifRepris {
     pub annee: Annee,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
     pub valeur: Option<Effectif>,
     pub phrase: String,
+    pub reserves: Vec<&'static str>,
 }
 
 /// LA PREMIERE EMBAUCHE QUE LES PIECES REPRISES DISENT, que « Pour démarrer » propose dans la case de la premiere
@@ -174,8 +176,12 @@ fn contrat_repris(ctx: &Contexte, i: &Importe, mois: Mois, p: &PaieVersee) -> R<
     Ok((ContratDansLEffectif::de(cle, periode, motif_recours, None, temps)?, du_bulletin_seul))
 }
 
-/// CE QUE LA COMPAGNIE CONFIRME AVEC LA VALEUR quand un contrat d'usage de l'annee n'est connu que par son bulletin.
+/// CE QUE LA COMPAGNIE VALIDE AVEC LA VALEUR quand un contrat d'usage de l'annee n'est connu que par son bulletin.
 const PAR_LE_BULLETIN_SEUL: &str = "Un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime : si elle est plus longue que le contrat, l'effectif est compté trop haut ; une DSN déposée donnerait ses dates.";
+
+/// CE QUE LA COMPAGNIE VALIDE AVEC LA VALEUR quand des mois de l'annee n'ont aucune paie reprise : un mois sans paie
+/// reprise n'est pas un mois sans salarie (R. 130-1, I), on ne sait pas s'il en avait.
+const MOIS_NON_REPRIS: &str = "La moyenne ne compte que les mois dont une paie est reprise : un mois sans paie reprise n'est pas un mois sans salarié.";
 
 /// L'effectif dit dans une phrase : au centieme, la virgule decimale, « salarié » au singulier sous deux.
 fn dit(e: Effectif) -> String {
@@ -188,9 +194,9 @@ fn mois_dits(m: &[Mois]) -> String {
     m.iter().map(|m| m.nom(Graphie::Accentuee)).collect::<Vec<_>>().join(", ")
 }
 
-/// LES EFFECTIFS DES ANNEES `annees`, D'APRES LES PAIES REPRISES (`EffectifRepris`) : une par annee dont une paie au
-/// moins est reprise d'un ancien logiciel ; les autres n'en ont pas. Une annee ne se propose pas, et sa phrase dit
-/// pourquoi :
+/// LES EFFECTIFS DES ANNEES `annees`, D'APRES LES PAIES REPRISES (`EffectifRepris`) : un par annee. Une annee ne se
+/// propose pas, et sa phrase dit pourquoi :
+/// - quand aucune de ses paies n'est reprise d'un ancien logiciel ;
 /// - quand un engagement d'ici touche un de ses mois : ses paies faites dans PuppetPaie ne sont pas des paies reprises,
 ///   et la moyenne des seules paies reprises ne serait pas celle de l'annee ;
 /// - quand c'est l'annee de la premiere embauche, et que le mois de cette embauche n'a pas de paie reprise : pour cette
@@ -203,8 +209,9 @@ fn mois_dits(m: &[Mois]) -> String {
 ///
 /// Sinon, l'effectif de chaque mois compte chaque contrat repris qui le touche (`droit::effectif::effectif_du_mois`) ; la
 /// moyenne ne prend que les mois dont une paie est reprise : un mois sans paie reprise n'est pas un mois sans salarie
-/// (R. 130-1, I), on ne sait pas s'il en avait, et la phrase le nomme (Léandre : « on propose quand même »). Ce qu'aucune
-/// paie reprise ne distingue (`SANS_L_1111_3`) se dit avec la valeur. Une panne remonte.
+/// (R. 130-1, I), on ne sait pas s'il en avait, et la phrase les nomme (Léandre : « on propose quand même »). Ce qu'aucune
+/// paie reprise ne distingue (`SANS_L_1111_3`, `PAR_LE_BULLETIN_SEUL`, `MOIS_NON_REPRIS`) va avec la valeur, dans ses
+/// `reserves`. Une panne remonte.
 ///
 /// Rendue avec, quand la date de la premiere embauche n'est pas dite, celle que les pieces reprises proposent
 /// (`PremiereEmbaucheReprise`) : « Pour démarrer » en remplit la case, que la compagnie valide ou corrige.
@@ -244,19 +251,21 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
         Some(_) => None,
         None => premiere_embauche_reprise(ctx, &importes)?,
     };
-    let Some(plus_ancien) = repris.iter().next().copied() else { return Ok((Vec::new(), proposee)) };
+    let plus_ancien = repris.iter().next().copied();
     let mut out = Vec::new();
     for an in annees {
+        let rien = |phrase: String| EffectifRepris { annee: *an, valeur: None, phrase, reserves: Vec::new() };
         let mois_repris: Vec<Mois> = an.les_mois().into_iter().filter(|m| repris.contains(m)).collect();
         if mois_repris.is_empty() {
+            out.push(rien(format!("{} : aucune paie de cette année n'est reprise.", an)));
             continue;
         }
-        let rien = |phrase: String| EffectifRepris { annee: *an, valeur: None, phrase };
-        // Ce que la compagnie confirme avec la valeur.
-        let a_savoir = match par_le_bulletin.contains(an) {
-            true => format!("{} {}", PAR_LE_BULLETIN_SEUL, SANS_L_1111_3),
-            false => SANS_L_1111_3.to_string(),
-        };
+        // Ce que la compagnie valide avec la valeur.
+        let mut reserves = Vec::new();
+        if par_le_bulletin.contains(an) {
+            reserves.push(PAR_LE_BULLETIN_SEUL);
+        }
+        reserves.push(SANS_L_1111_3);
         // Les mois que la saisie d'ici touche.
         let mut ici = Vec::new();
         for m in an.les_mois() {
@@ -270,7 +279,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
         }
         if !ici.is_empty() {
             out.push(rien(format!(
-                "L'effectif de {} ne se calcule pas d'après les paies reprises : {} {} se paient dans PuppetPaie, et la moyenne des seules paies reprises ne serait pas celle de l'année.",
+                "{} : ne se calcule pas d'après les paies reprises, {} {} se paient dans PuppetPaie (la moyenne des seules paies reprises ne serait pas celle de l'année).",
                 an,
                 mois_dits(&ici),
                 an
@@ -284,7 +293,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
             }
         }
         if !raisons.is_empty() {
-            out.push(rien(format!("L'effectif de {} ne se calcule pas d'après les paies reprises : {}.", an, raisons.join(" ; "))));
+            out.push(rien(format!("{} : ne se calcule pas d'après les paies reprises, {}.", an, raisons.join(" ; "))));
             continue;
         }
         match premiere {
@@ -295,7 +304,7 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
                 let dernier = m.dernier_jour();
                 if !repris.contains(&m) {
                     out.push(rien(format!(
-                        "{} est l'année de la première embauche : son effectif est celui présent le {}, le dernier jour du mois de cette embauche (L. 130-1, I, CSS), et aucune paie de {} n'est reprise.",
+                        "{} : l'année de la première embauche, dont l'effectif est celui présent le {}, le dernier jour du mois de cette embauche (L. 130-1, I, CSS) ; aucune paie de {} n'est reprise.",
                         an,
                         dernier.jj_mm_aaaa(),
                         m.libelle(Graphie::Accentuee)
@@ -307,50 +316,51 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
                     annee: *an,
                     valeur: Some(e),
                     phrase: format!(
-                        "D'après les paies reprises de {} : {} présent le {}, le dernier jour du mois de la première embauche ; pour cette année-là, c'est lui qui compte, pas une moyenne (L. 130-1, I, CSS). {}",
-                        m.libelle(Graphie::Accentuee),
+                        "{} : {} présent le {}, le dernier jour du mois de la première embauche, d'après les paies reprises de {} (pour cette année-là, c'est lui qui compte, pas une moyenne : L. 130-1, I, CSS).",
+                        an,
                         dit(e),
                         dernier.jj_mm_aaaa(),
-                        a_savoir
+                        m.libelle(Graphie::Accentuee)
                     ),
+                    reserves,
                 });
                 continue;
             }
+            Some(_) => {}
             // L'annee de la date proposee (la case de la premiere embauche dit d'ou elle vient, `demarrage::route`) ;
-            // sans proposition, celle de la plus ancienne paie reprise.
-            None if match &proposee {
-                Some(p) => p.jour.annee(),
-                None => plus_ancien.annee(),
-            } == *an =>
-            {
-                out.push(rien(match &proposee {
-                    Some(p) => format!(
-                        "{} est l'année de la première embauche proposée (le {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS). Validez ou corrigez la date de la première embauche : l'effectif de {} se proposera ensuite d'après elle.",
+            // sans proposition, celle de la plus ancienne paie reprise (une paie de l'annee est reprise : il y en a une).
+            None => {
+                let phrase = match (&proposee, plus_ancien) {
+                    (Some(p), _) if p.jour.annee() == *an => Some(format!(
+                        "{} : l'année de la première embauche proposée (le {}), dont l'effectif serait celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS) ; il se proposera une fois la date validée.",
                         an,
-                        p.jour.jj_mm_aaaa(),
-                        an
-                    ),
-                    None => format!(
-                        "{} est peut-être l'année de la première embauche (la plus ancienne paie reprise est de {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS). Dites la date de la première embauche : d'avant {}, l'effectif de {} se proposera d'après les paies reprises.",
+                        p.jour.jj_mm_aaaa()
+                    )),
+                    (None, Some(m)) if m.annee() == *an => Some(format!(
+                        "{} : peut-être l'année de la première embauche (la plus ancienne paie reprise est de {}), dont l'effectif serait celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS) ; il se proposera une fois la date dite.",
                         an,
-                        plus_ancien.libelle(Graphie::Accentuee),
-                        an,
-                        an
-                    ),
-                }));
-                continue;
+                        m.libelle(Graphie::Accentuee)
+                    )),
+                    (Some(_), _) | (None, _) => None,
+                };
+                if let Some(p) = phrase {
+                    out.push(rien(p));
+                    continue;
+                }
             }
-            Some(_) | None => {}
         }
         let par_mois: Vec<Option<Effectif>> = mois_repris.iter().map(|m| droit::effectif::effectif_du_mois(*m, &contrats)).collect();
         let sans_paie: Vec<Mois> = an.les_mois().into_iter().filter(|m| !repris.contains(m)).collect();
         let manquent = match sans_paie.len() {
             0 => String::new(),
-            _ => format!(" Aucune paie reprise en {} : la moyenne ne compte que les mois repris.", mois_dits(&sans_paie)),
+            _ => {
+                reserves.push(MOIS_NON_REPRIS);
+                format!(" (aucune paie en {})", mois_dits(&sans_paie))
+            }
         };
         out.push(match droit::effectif::effectif_annuel(par_mois) {
-            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("D'après les paies reprises de {} : {}.{} {}", an, dit(e), manquent, a_savoir) },
-            None => rien(format!("Les paies reprises de {} ne comptent aucun salarié employé.{}", an, manquent)),
+            Some(e) => EffectifRepris { annee: *an, valeur: Some(e), phrase: format!("{} : {}, d'après les paies reprises{}.", an, dit(e), manquent), reserves },
+            None => rien(format!("{} : les paies reprises ne comptent aucun salarié employé{}.", an, manquent)),
         });
     }
     Ok((out, proposee))

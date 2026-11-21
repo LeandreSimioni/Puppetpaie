@@ -55,11 +55,12 @@ pub struct Manque {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub propose: Option<ValeurProposee>,
     /// LES ANNEES DONT LA LIGNE DEMANDE L'EFFECTIF (`manques`) : chacune se dit par la route `effectif`, que
-    /// `pour-demarrer` rend en geste avec ce que les paies reprises en donnent (`effectifs`, `routes::rappels`).
+    /// `pour-demarrer` rend en case, pre-remplie de ce que les paies reprises en donnent, et que son « Enregistrer »
+    /// joue (`effectifs`, `routes::rappels::ManqueVu`).
     #[serde(skip)]
     pub annees_d_effectif: Vec<socle::mois::Annee>,
-    /// L'EFFECTIF QUE LES PAIES REPRISES DONNENT de ces annees (`engagement::effectif_repris`), que `route` calcule une
-    /// fois pour toutes les lignes ; `pour-demarrer` le rend avec ses gestes.
+    /// L'EFFECTIF QUE LES PAIES REPRISES DONNENT de ces annees (`engagement::effectif_repris`), un par annee, que `route`
+    /// calcule une fois pour toutes les lignes ; `pour-demarrer` en fait les cases de la ligne.
     #[serde(skip)]
     pub effectifs: Vec<engagement::effectif_repris::EffectifRepris>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,8 +409,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // calcule (L. 130-1, I) : celle qui arrive d'un autre logiciel n'a pas ses comptes rendus de nature 118.
     let an = ctx.aujourdhui.annee();
     let avant = an.precedente()?;
-    // Chaque ligne qui demande l'effectif dit ses annees (`annees_d_effectif`) : chacune se dit d'un geste (route
-    // `effectif`), et ce que les paies reprises en donnent s'y propose (`route`). Ce que l'Urssaf a renvoye et ce que la
+    // Chaque ligne qui demande l'effectif dit ses annees (`annees_d_effectif`) : chacune a sa case, que la route
+    // `effectif` ecrit, et ce que les paies reprises en donnent s'y propose (`route`). Ce que l'Urssaf a renvoye et ce que la
     // compagnie a dit ne se demandent pas : ils ne se proposent pas.
     let effectif = ctx.effectif()?;
     if !effectif.a_dire(an).is_empty() && effectif.premiere_embauche.is_none() {
@@ -429,7 +430,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             "l'effectif de toute paie (seuils de 11 et 50 salariés)",
             ENTREPRISE,
             None,
-            "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
+            "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante). Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
         );
         l.annees_d_effectif = manquent;
         out.push(l);
@@ -751,15 +752,24 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
             Some(p) => p.clone(),
             None => l.propose.iter().map(|p| format!(" Proposé : « {} ».", p.dite())).collect(),
         };
-        // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer.
+        // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer ; ce que la
+        // compagnie valide avec ces valeurs (`EffectifRepris::reserves`, le meme d'une annee a l'autre) se dit une fois.
         let effectifs: String = l.effectifs.iter().map(|e| format!(" {}", e.phrase)).collect();
-        l.phrase = Some(format!("{} › {} : {}.{}{}", l.ou, l.libelle, pour, propose, effectifs));
+        let mut reserves: Vec<&'static str> = Vec::new();
+        for r in l.effectifs.iter().flat_map(|e| e.reserves.iter().copied()) {
+            if !reserves.contains(&r) {
+                reserves.push(r);
+            }
+        }
+        let reserves: String = reserves.iter().map(|r| format!(" {}", r)).collect();
+        l.phrase = Some(format!("{} › {} : {}.{}{}{}", l.ou, l.libelle, pour, propose, effectifs, reserves));
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
-        // La page montre `pour` sous la case : la provenance de la date proposee s'y lit.
+        // La page montre `pour` sous la ligne : la provenance de la date proposee et ce que valident les effectifs
+        // proposes s'y lisent.
         l.pour = Some(match de_l_embauche {
-            Some(d) => format!("{}{}.{}", initiale, c.as_str(), d),
-            None => format!("{}{}.", initiale, c.as_str()),
+            Some(d) => format!("{}{}.{}{}", initiale, c.as_str(), d, reserves),
+            None => format!("{}{}.{}", initiale, c.as_str(), reserves),
         });
     }
     let (par_une_dsn, mut lignes): (Vec<Manque>, Vec<Manque>) = match repris {
