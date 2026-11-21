@@ -91,6 +91,7 @@ mod historique_mois;
 pub mod horloge;
 mod importation;
 mod metier;
+mod non_lus;
 mod obligations;
 mod regularisation;
 pub mod scenario;
@@ -259,6 +260,8 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         Some(m) => contexte(o)?.du_mois(m)?,
         None => contexte(o)?,
     };
+    // Ce que les fiches portent et ne lisent pas ne ferme rien : l'editeur l'apprend, une fois par chose (`non_lus`).
+    non_lus::noter(&ctx);
     let porte = Porte { route, ctx: &ctx, options: o };
     let dans = |l: &[catalogue::Fiche]| catalogue::dans(l, route).is_some();
     let rendu: R<Rendu> = match route {
