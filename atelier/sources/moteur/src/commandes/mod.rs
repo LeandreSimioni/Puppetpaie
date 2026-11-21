@@ -85,7 +85,11 @@ impl Cadre {
         eprintln!();
         eprintln!("Le coffre de ce poste ne s'ouvre pas avec sa cle. Ouverture de la seance : le mot de passe du logiciel, une");
         eprintln!("fois, pour {}.", socle::temps::ecrit::heures_dites(::compagnie::demande::DUREE_DE_LA_SEANCE));
-        if let ::compagnie::demande::Verdict::Refuse(e) = ::compagnie::demande::ouvrir_seance(&self.racine) {
+        let verdict = match ::routes::coffre::qui_ouvre(&self.racine) {
+            Ok(qui) => ::compagnie::demande::ouvrir_seance(&self.racine, &qui),
+            Err(e) => ::compagnie::demande::Verdict::Refuse(e),
+        };
+        if let ::compagnie::demande::Verdict::Refuse(e) = verdict {
             eprintln!("! {}", e.en_lignes());
         }
     }

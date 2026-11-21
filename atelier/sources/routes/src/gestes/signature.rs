@@ -733,12 +733,9 @@ fn aucun_contrat_a_envoyer(mois: Mois) -> String {
     format!("Aucun contrat a envoyer pour {}.", mois)
 }
 
-/// Ce que la demande dit d'elle-meme avant que rien ne parte : ce qu'elle dira (`avertissements`), le nombre de contrats
-/// qui partent, et combien en rappel.
+/// Ce que la demande dit d'elle-meme avant que rien ne parte : ce qu'elle dira (`avertissements`).
 pub(crate) struct DemandeVerifiee {
     pub avertissements: Vec<String>,
-    pub contrats: usize,
-    pub rappels: usize,
 }
 
 /// CE QUE LA DEMANDE REFUSE D'ELLE-MEME, avant la boite et avant le mot de passe : la preuve ne se demande que pour ce
@@ -750,12 +747,11 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
     let (_, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, d.mois, None, &departs)?;
     let (par_salarie, _) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
     let cles: Vec<(IdSalarie, Option<NumeroContrat>)> = par_salarie.iter().flat_map(|(k, ps, _)| ps.iter().map(|p| (k.clone(), p.engagement.numero.clone()))).collect();
-    let mut verifiee = DemandeVerifiee { avertissements: Vec::new(), contrats: cles.len(), rappels: 0 };
+    let mut verifiee = DemandeVerifiee { avertissements: Vec::new() };
     for (salarie, numero) in &cles {
         let numero = numero.as_ref();
         if d.rappel(salarie, numero) {
             verifier_rappel(d.etat(salarie, numero), numero)?;
-            verifiee.rappels += 1;
         } else if let Some(dit) = deja_parti_dit(d.etats_des_contrats, salarie, numero) {
             verifiee.avertissements.push(dit);
         }

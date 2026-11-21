@@ -306,7 +306,12 @@ pub fn deposer_dsn_dans(
         ));
     }
     if mode == Mode::Reel {
-        forme = verifier_preuve(ctx, preuve, apercu.confirmation_attendue()?, "depot REEL d'une DSN", "net-entreprises (la declaration part a l'Urssaf et aux organismes)")?;
+        let jour = match apercu.confirmation_attendue()? {
+            MoisOuJour::Jour(j) => Some(j),
+            MoisOuJour::Mois(_) => None,
+        };
+        let demande = crate::coffre::demande(&ctx.racine, &crate::depots::geste_dsn(apercu.nature()?, le_mois, jour))?;
+        forme = verifier_preuve(ctx, preuve, &demande)?;
         // PAS DEUX FOIS SANS LE VOULOIR. Une DSN reelle deja partie pour ce mois, et pas refusee, ne repart pas.
         // UN SIGNALEMENT N'EST PAS CONCERNE : plusieurs peuvent partir le meme mois.
         if !apercu.est_signalement() {
@@ -476,7 +481,7 @@ pub(crate) fn deposer_dpae_avec(
 
     let (mut forme, mut repetition) = (String::new(), None);
     if mode == Mode::Reel {
-        forme = verifier_preuve(ctx, preuve, MoisOuJour::Mois(le_mois), "depot REEL d'une DPAE", "l'Urssaf (declaration d'embauche)")?;
+        forme = verifier_preuve(ctx, preuve, &crate::coffre::demande(&ctx.racine, &crate::depots::geste_dpae(Some(le_mois)))?)?;
         // LA REPETITION, apres la preuve : le fichier sur le disque porte toujours l'indicateur reel, et c'est
         // NOUS qui le basculons en test juste en dessous.
         let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;

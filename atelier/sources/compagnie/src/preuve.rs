@@ -6,7 +6,7 @@ use socle::echec::Classe;
 
 use droit::contexte::Contexte;
 use socle::echec::{erreur, R};
-use socle::mois::MoisOuJour;
+use crate::demande::DemandeDuMotDePasse;
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
 #[derive(Default, Clone)]
@@ -51,22 +51,22 @@ fn exigee_en_attente(ctx: &Contexte) -> R<Option<String>> {
 /// DEUX FACONS DE LE PROUVER, et aucune autre : le mot de passe que la fenetre ou la page a fait taper et qui
 /// arrive dans la charge (`Preuve`) ; sinon LE MOTEUR LE DEMANDE LUI-MEME (`demande::autoriser_acte` : fenetre, terminal,
 /// ou refus). Ni la seance (`garder_ouverture`), ni `PUPPETPAIE_MOTDEPASSE`, ni le mot de passe retenu pour ouvrir le
-/// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `quand`, `quoi` et `a_qui` disent a l'humain
-/// ce qui va partir.
-pub fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, quand: MoisOuJour, quoi: &str, a_qui: &str) -> R<String> {
+/// coffre ne prouvent quoi que ce soit : ils ouvrent, ils n'autorisent pas. `demande` dit a l'humain quel mot de passe, de
+/// qui, pour quel geste ; un mot de passe refuse se dit avec ses mots.
+pub fn verifier_preuve(ctx: &Contexte, preuve: Option<&Preuve>, demande: &DemandeDuMotDePasse) -> R<String> {
     // Le binaire de l'ATELIER refuse tout acte reel, avant toute autre question (`atelier::redirection`). Un depot reel, un envoi,
     // une signature passent tous par ici.
     if let Some(forme) = preuve.and_then(|p| p.donnee.clone()) {
         return Ok(forme);
     }
     #[cfg(feature = "atelier")]
-    return refus_atelier(ctx, preuve, quand, quoi, a_qui);
+    return refus_atelier(ctx, preuve, demande);
     #[cfg(not(feature = "atelier"))]
-    verifier_preuve_du_logiciel(ctx, preuve, quand, quoi, a_qui)
+    verifier_preuve_du_logiciel(ctx, preuve, demande)
 }
 
 #[cfg(feature = "atelier")]
-fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _quand: MoisOuJour, _quoi: &str, _a_qui: &str) -> R<String> {
+fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _demande: &DemandeDuMotDePasse) -> R<String> {
     // UNE COMPAGNIE FICTIVE AUX ENVOIS SIMULES : son « acte reel » est joue (`FICTIF-…`), rien ne part -- comme dans le
     // binaire livre (`verifier_preuve_du_logiciel`). Le banc d'essai en vit : l'horloge y depose la DSN et la DPAE
     // « en reel ». Toute autre compagnie : refuse, mot de passe ou non (la commande `signatures` fait de meme).
@@ -77,7 +77,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _quand: MoisOuJour, _
 }
 
 #[cfg(not(feature = "atelier"))]
-fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: MoisOuJour, quoi: &str, a_qui: &str) -> R<String> {
+fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, demande: &DemandeDuMotDePasse) -> R<String> {
     // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
     if crate::bridage::branchement(&ctx.racine)?.joue() {
         return Ok("fictive".into());
@@ -95,8 +95,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
     }
     let Some(preuve) = preuve.filter(|p| p.motdepasse.as_ref().is_some_and(|m| !m.devoiler().is_empty())) else {
         // Rien n'a ete tape pour cette charge : c'est le moteur qui demande, a un humain, ou il refuse.
-        let acte = crate::demande::Acte::nouveau(quoi, Some(quand), a_qui);
-        return match crate::demande::autoriser_acte(&ctx.racine, &acte) {
+        return match crate::demande::autoriser_acte(&ctx.racine, demande) {
             crate::demande::Verdict::Accepte => Ok("mot de passe du logiciel".into()),
             crate::demande::Verdict::Refuse(e) => Err(e.reclasser(Classe::PreuveInsuffisante)),
         };
@@ -104,7 +103,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
     // Aucun mot de passe tape n'ouvre rien.
     let ouvre = preuve.motdepasse.as_ref().map(|m| coffre.verifier_ouverture(m)).transpose()?;
     if ouvre != Some(true) {
-        return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'est parti."));
+        return Err(erreur(Classe::PreuveInsuffisante, demande.refus("Rien n'est parti.")));
     }
     Ok("mot de passe du logiciel".into())
 }

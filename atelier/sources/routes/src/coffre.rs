@@ -284,6 +284,9 @@ pub(crate) struct ServiceDit {
     pastille: Pastille,
     #[serde(skip_serializing_if = "Option::is_none")]
     oublier: Option<String>,
+    /// Ce que la demande du mot de passe du logiciel dit avant « Poser » et avant « Oublier ».
+    demande_poser: compagnie::demande::DemandeDuMotDePasse,
+    demande_oublier: compagnie::demande::DemandeDuMotDePasse,
 }
 
 /// L'ETAT DU COFFRE : ce qui est pose, pour quel usage, depuis quand ; jamais les valeurs.
@@ -511,29 +514,58 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer. Decide
-/// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
-pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&socle::secret::Secret>, quoi: &str) -> R<()> {
+/// QUI OUVRE LE COFFRE DE `racine` : elle, ou l'administrateur auquel elle est rattachee (`administrateur::qui_ouvre`).
+pub fn qui_ouvre(racine: &Path) -> R<compagnie::demande::QuiOuvre> {
+    let inst = compagnie::installation::IdDeCompagnie::installation_de(racine);
+    crate::gestes::administrateur::qui_ouvre(&inst, racine)
+}
+
+/// LA DEMANDE DU MOT DE PASSE DU LOGICIEL de `racine`, pour `geste` : la seule facon de la composer. La route qui rend un
+/// geste a mot de passe la rend a la page ; la route qui le fait la pose elle-meme a un humain quand rien n'a ete tape.
+pub fn demande(racine: &Path, geste: &str) -> R<compagnie::demande::DemandeDuMotDePasse> {
+    Ok(compagnie::demande::DemandeDuMotDePasse::de(&qui_ouvre(racine)?, geste))
+}
+
+/// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer (`geste`,
+/// tel que la demande le dit). Decide ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
+pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&socle::secret::Secret>, geste: &str) -> R<()> {
     let coffre = compagnie::coffre::Coffre::du_poste(racine);
     if !coffre.ouverture_exigee()? {
         return Ok(());
     }
+    let demande = demande(racine, geste)?;
     let Some(mdp) = motdepasse else {
         // Rien n'a ete tape pour cette charge : le moteur demande lui-meme a un humain (fenetre, terminal), ou il refuse.
         // Un « oui » ne laisse que l'ouverture du coffre pour la suite de la commande ; la seance ne vaut pas ici.
-        let acte = compagnie::demande::Acte::nouveau(quoi, None, "");
-        return match compagnie::demande::autoriser_acte(racine, &acte) {
+        return match compagnie::demande::autoriser_acte(racine, &demande) {
             compagnie::demande::Verdict::Accepte => Ok(()),
-            compagnie::demande::Verdict::Refuse(e) => Err(e
-                .reformuler(|m| format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, m.replace("Rien n'est parti", "Rien n'a ete modifie")))
-                .reclasser(Classe::PreuveInsuffisante)),
+            compagnie::demande::Verdict::Refuse(e) => Err(e.reformuler(|m| m.replace("Rien n'est parti", "Rien n'a été modifié")).reclasser(Classe::PreuveInsuffisante)),
         };
     };
     if !coffre.verifier_ouverture(mdp)? {
-        return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'a ete modifie."));
+        return Err(erreur(Classe::PreuveInsuffisante, demande.refus("Rien n'a été modifié.")));
     }
     Ok(())
 }
+
+/// Le geste « Poser » d'un service du coffre, tel que la demande du mot de passe le dit : pour l'Urssaf, dont le compte se
+/// saisit sur la meme ligne (`Identifiant::ici`), le compte et le mot de passe.
+fn geste_poser(libelle: &str, ici: bool) -> String {
+    if ici {
+        format!("enregistrer le compte et le mot de passe {}", libelle)
+    } else {
+        format!("poser le mot de passe {}", libelle)
+    }
+}
+
+/// Le geste « Oublier » d'un service du coffre.
+fn geste_oublier(libelle: &str) -> String {
+    format!("retirer du coffre le mot de passe {}", libelle)
+}
+
+/// Les gestes du compte Google.
+const GESTE_GOOGLE_LIER: &str = "lier le compte Google de la sauvegarde";
+const GESTE_GOOGLE_OUBLIER: &str = "oublier le compte Google de la sauvegarde";
 
 /// Un secret a poser : celui de la charge (la page), sinon tape deux fois par un humain (`demande::saisir_deux_fois`).
 fn secret_a_poser(donne: Option<socle::secret::Secret>, titre: &str, lignes: &[String]) -> R<socle::secret::Secret> {
@@ -612,7 +644,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secr
         return Err(refus(format!("Tapez le mot de passe {} à poser : rien n'a été posé.", service.nom)));
     }
     let pose_un_secret = tape || donne;
-    exiger_mot_de_passe(&ctx.racine, mdp, if pose_un_secret { "poser un mot de passe" } else { "changer le compte qui depose les DPAE" })?;
+    exiger_mot_de_passe(&ctx.racine, mdp, &geste_poser(service.libelle, identifiant_du_compte(&ctx.entreprise, service.nom)?.ici))?;
     let lignes = [format!("Service : {}", service.libelle), "La frappe ne s'affiche pas : elle est scellée dans le coffre, nulle part ailleurs.".to_string()];
     let valeur = if pose_un_secret { Some(secret_a_poser(c.valeur, "PuppetPaie : poser un mot de passe", &lignes)?) } else { None };
     let valeur = valeur.filter(|v| !socle::texte::strip(v.devoiler()).is_empty());
@@ -644,8 +676,8 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&socle::secret::Secr
 
 /// `coffre-oublier` : retire un secret du coffre.
 fn coffre_oublier(ctx: &Contexte, c: ChargeService, mdp: Option<&socle::secret::Secret>) -> R<EtatDuCoffre> {
-    exiger_mot_de_passe(&ctx.racine, mdp, "retirer un mot de passe")?;
     let service = compagnie::coffre::service_connu(&c.service).map_err(en_operation)?;
+    exiger_mot_de_passe(&ctx.racine, mdp, &geste_oublier(service.libelle))?;
     coffre(ctx).oublier(service.nom).map_err(en_operation)?;
     coffre_etat(ctx)
 }
@@ -745,7 +777,7 @@ fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> 
 
 /// Efface le jeton local, sans reseau. L'acces reste accorde cote Google, et se retire sur myaccount.google.com.
 fn google_oublier(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<GoogleOublie> {
-    exiger_mot_de_passe(&ctx.racine, mdp, "oublier le compte Google")?;
+    exiger_mot_de_passe(&ctx.racine, mdp, GESTE_GOOGLE_OUBLIER)?;
     let p = socle::fichiers::JETON_GOOGLE.dans(&ctx.racine);
     let efface = p.exists();
     if efface {
@@ -928,7 +960,7 @@ fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
 /// et dit son adresse sur la sortie d'erreur (un terminal sans navigateur la copie), la personne accepte, Google renvoie
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, mdp: Option<&socle::secret::Secret>) -> R<String> {
-    exiger_mot_de_passe(&ctx.racine, mdp, "lier le compte Google")?;
+    exiger_mot_de_passe(&ctx.racine, mdp, GESTE_GOOGLE_LIER)?;
     let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
     let dire_url = |u: &socle::garde_reseau::Url| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
@@ -1087,6 +1119,7 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
     let secrets = coffre.services()?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = compagnie::bridage::branchement(racine)?.joue();
+    let qui = qui_ouvre(racine)?;
     let mut services = Vec::new();
     for s in secrets {
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
@@ -1114,6 +1147,8 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             compte: s.compte,
             avec_compte: s.avec_compte,
             bouton: if identifiant.ici { "Enregistrer" } else { "Poser" },
+            demande_poser: compagnie::demande::DemandeDuMotDePasse::de(&qui, &geste_poser(s.libelle, identifiant.ici)),
+            demande_oublier: compagnie::demande::DemandeDuMotDePasse::de(&qui, &geste_oublier(s.libelle)),
             identifiant,
             pastille,
             oublier: None,
@@ -1172,6 +1207,9 @@ struct EcranDuCoffre {
     google: &'static str,
     google_ouvert: &'static str,
     google_oublier: &'static str,
+    /// Ce que la demande du mot de passe du logiciel dit avant de lier ou d'oublier le compte Google.
+    demande_google_lier: compagnie::demande::DemandeDuMotDePasse,
+    demande_google_oublier: compagnie::demande::DemandeDuMotDePasse,
     diagnostic: &'static str,
 }
 
@@ -1196,16 +1234,16 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
     } else {
         None
     };
-    let demande = "demandé à l'ouverture et à chaque dépôt réel, envoi ou signature";
+    let quand = "demandé à l'ouverture et à chaque dépôt réel, envoi ou signature";
     Ok(EcranDuCoffre {
         intro: "Les mots de passe dont le logiciel a besoin pour déposer, relever et envoyer. La page ne voit jamais un mot de passe, seulement s'il est posé.",
         encart,
         logiciel: LigneDuLogiciel {
             nom: if rattachee { "Le mot de passe de l'administrateur" } else { "Le mot de passe du logiciel" },
             dit: if rattachee {
-                format!("il ouvre aussi {} ; {}", en_liste, demande)
+                format!("il ouvre aussi {} ; {}", en_liste, quand)
             } else if e.mot_de_passe_pose || fictive {
-                demande.to_string()
+                quand.to_string()
             } else {
                 "rien ne peut partir en réel tant qu'il n'est pas posé".to_string()
             },
@@ -1225,6 +1263,8 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
         google: "la sauvegarde du dossier privé et l'archivage des mois, dans son Drive ; rien d'autre",
         google_ouvert: "La fenêtre Google est ouverte dans votre navigateur : choisissez le compte, acceptez, puis revenez ici ; cette ligne se met à jour toute seule. Si Google dit que l'application n'est pas validée : Paramètres avancés › Accéder à PuppetPaie.",
         google_oublier: "Oublier le compte Google ? Le jeton local est effacé : plus de sauvegarde ni d'archivage jusqu'à ce qu'un Drive soit relié. L'accès accordé côté Google, lui, se retire sur myaccount.google.com › Sécurité › Vos connexions à des applications tierces.",
+        demande_google_lier: demande(&ctx.racine, GESTE_GOOGLE_LIER)?,
+        demande_google_oublier: demande(&ctx.racine, GESTE_GOOGLE_OUBLIER)?,
         diagnostic: "ce qui casse part chez l'éditeur, avec de quoi le reproduire (ses données, les 3 minutes d'avant, cet ordinateur), et une fois par an le nombre de paies faites ; les noms, NIR, adresses et coordonnées des salariés n'en partent pas",
     })
 }

@@ -792,6 +792,8 @@ struct Invitation {
     aide: &'static str,
     sans_boite: Option<&'static str>,
     ou: &'static str,
+    /// La demande du mot de passe avant d'envoyer la demande (`fiche-demander`).
+    demande: compagnie::demande::DemandeDuMotDePasse,
 }
 
 /// TOUTE LA CONFIGURATION, VERIFIEE (`configuration`, et `configuration` de `etat`), et ce que la page en tire sans un
@@ -950,6 +952,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
             sans_boite: (!boite_liee).then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
             ou: "Ou remplissez la fiche vous-même ci-dessous. Le matricule se donne à l'enregistrement.",
+            demande: crate::coffre::demande(&ctx.racine, crate::fiches::GESTE_DEMANDER_FICHE)?,
         },
         boite_liee,
         fiches_attendues,

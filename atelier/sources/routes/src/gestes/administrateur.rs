@@ -146,6 +146,15 @@ pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
     ecrire_registre(inst, &apres)
 }
 
+/// QUI OUVRE LE COFFRE DE `racine` (`compagnie::demande::QuiOuvre`) : rattachee, l'administrateur, avec les compagnies que
+/// son mot de passe ouvre ; sinon elle, par son nom. Une compagnie fictive n'est jamais rattachee.
+pub fn qui_ouvre(inst: &Path, racine: &Path) -> R<compagnie::demande::QuiOuvre> {
+    if !compagnies::est_fictive(racine)? && est_rattachee(inst, racine)? {
+        return Ok(compagnie::demande::QuiOuvre::Administrateur(en_liste(&noms_de(inst, &rattachees(inst)?)?)));
+    }
+    Ok(compagnie::demande::QuiOuvre::Compagnie(nom_de(inst, racine)?))
+}
+
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?
 pub fn est_rattachee(inst: &Path, racine: &Path) -> R<bool> {
     let parmi_les_rattachees = |rel: DossierRattache| -> R<bool> {
@@ -825,7 +834,7 @@ pub struct DeclarationDuTableau {
 }
 
 /// Ce que le depot groupe propose, en test ou en reel : combien de declarations, de compagnies, s'il se propose (au
-/// moins deux compagnies), son bouton, et le titre de la demande de mot de passe (en reel).
+/// moins deux compagnies), son bouton, et la demande du mot de passe (en reel).
 #[derive(Debug, Serialize)]
 pub struct Propose {
     pub declarations: usize,
@@ -833,7 +842,19 @@ pub struct Propose {
     pub propose: bool,
     pub bouton: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub titre: Option<String>,
+    pub demande: Option<compagnie::demande::DemandeDuMotDePasse>,
+}
+
+/// LA DEMANDE DU MOT DE PASSE DU DEPOT GROUPE REEL : celui de l'administrateur, pour `declarations` DSN dans `compagnies`
+/// compagnies. Le tableau la rend a l'accueil, le depot la pose lui-meme sans elle (`deposer`) : les memes mots.
+fn demande_du_depot_groupe(inst: &Path, declarations: usize, compagnies: usize) -> R<compagnie::demande::DemandeDuMotDePasse> {
+    let qui = compagnie::demande::QuiOuvre::Administrateur(en_liste(&noms_de(inst, &rattachees(inst)?)?));
+    let geste = format!(
+        "déposer en réel {}, dans {}",
+        socle::ecran::compte(declarations, "DSN prête", "DSN prêtes"),
+        socle::ecran::compte(compagnies, "compagnie", "compagnies")
+    );
+    Ok(compagnie::demande::DemandeDuMotDePasse::de(&qui, &geste))
 }
 
 /// Le depot groupe, en test et en reel.
@@ -910,8 +931,8 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
         // RIEN DE GROUPE tant qu'il n'y a pas au moins deux compagnies avec quelque chose de pret : sinon le depot se fait
         // comme d'habitude, dans la compagnie.
         groupe: Groupe {
-            test: Propose { declarations: test_n, compagnies: test_k, propose: test_k >= 2, bouton: format!("Tester les {} DSN écrites", test_n), titre: None },
-            reel: Propose { declarations: reel_n, compagnies: reel_k, propose: reel_k >= 2, bouton: format!("Déposer les {} DSN prêtes", reel_n), titre: Some(format!("Déposer {} DSN", reel_n)) },
+            test: Propose { declarations: test_n, compagnies: test_k, propose: test_k >= 2, bouton: format!("Tester les {} DSN écrites", test_n), demande: None },
+            reel: Propose { declarations: reel_n, compagnies: reel_k, propose: reel_k >= 2, bouton: format!("Déposer les {} DSN prêtes", reel_n), demande: Some(demande_du_depot_groupe(inst, reel_n, reel_k)?) },
         },
         garde,
     })
@@ -1111,19 +1132,15 @@ pub fn deposer(o: &Options, inst: &Path, mode: Mode, motdepasse: Option<socle::s
     }
     let mut mdp: Option<socle::secret::Secret> = None;
     if mode == Mode::Reel {
+        let mut compagnies_pretes: Vec<&PathBuf> = a_faire.iter().map(|(r, _, _)| r).collect();
+        compagnies_pretes.dedup();
+        let demande = demande_du_depot_groupe(inst, a_faire.len(), compagnies_pretes.len())?;
         let m = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
             Some(m) => m,
-            None => {
-                let acte = compagnie::demande::Acte::nouveau(
-                    format!("depot REEL de {} declaration(s), dans {} compagnie(s)", a_faire.len(), groupe.len()),
-                    None,
-                    "net-entreprises (les declarations partent a l'Urssaf et aux organismes)",
-                );
-                compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &acte).map_err(|e| e.reclasser(Classe::PreuveInsuffisante))?
-            }
+            None => compagnie::demande::mot_de_passe_de_l_acte(&a_faire[0].0, &demande).map_err(|e| e.reclasser(Classe::PreuveInsuffisante))?,
         };
         if !ouvre_une(&Poste::de_ce_poste(), &groupe, &m)? {
-            return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe de l'administrateur refusé. Rien n'est parti."));
+            return Err(erreur(Classe::PreuveInsuffisante, demande.refus("Rien n'est parti.")));
         }
         mdp = Some(m);
     }
