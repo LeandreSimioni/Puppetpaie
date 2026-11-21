@@ -552,15 +552,15 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&socle::secr
 /// saisit sur la meme ligne (`Identifiant::ici`), le compte et le mot de passe.
 fn geste_poser(libelle: &str, ici: bool) -> String {
     if ici {
-        format!("enregistrer le compte et le mot de passe {}", libelle)
+        format!("enregistrer le compte et le mot de passe {}", socle::texte::de(libelle))
     } else {
-        format!("poser le mot de passe {}", libelle)
+        format!("poser le mot de passe {}", socle::texte::de(libelle))
     }
 }
 
 /// Le geste « Oublier » d'un service du coffre.
 fn geste_oublier(libelle: &str) -> String {
-    format!("retirer du coffre le mot de passe {}", libelle)
+    format!("retirer du coffre le mot de passe {}", socle::texte::de(libelle))
 }
 
 /// Les gestes du compte Google.
