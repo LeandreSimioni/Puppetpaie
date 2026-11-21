@@ -53,10 +53,10 @@ pub enum QuiOuvre {
 }
 
 impl QuiOuvre {
-    /// De qui est le mot de passe, en mots : « de la compagnie Les Pupazzi », « de l'administrateur, qui ouvre A et B ».
+    /// De qui est le mot de passe, en mots : « de Compagnia UEUEUE », « de l'administrateur, qui ouvre A et B ».
     fn de_qui(&self) -> String {
         match self {
-            QuiOuvre::Compagnie(nom) => format!("de la compagnie {}", nom),
+            QuiOuvre::Compagnie(nom) => socle::texte::de(nom),
             QuiOuvre::Administrateur(compagnies) if compagnies.is_empty() => "de l'administrateur".to_string(),
             QuiOuvre::Administrateur(compagnies) => format!("de l'administrateur, qui ouvre {}", compagnies),
         }
@@ -871,7 +871,7 @@ mod tests {
         assert!(matches!(autoriser_acte(&m.racine, &demande("envoyer les documents de septembre 2026 à Ana, Bo et Cy")), Verdict::Accepte));
         let q = &f.questions()[0];
         let texte = format!("{} {}", q.titre, q.lignes.join(" | "));
-        for attendu in ["PuppetPaie : le mot de passe du logiciel", "de la compagnie La Compagnie d'essai", "envoyer les documents de septembre 2026 à Ana, Bo et Cy"] {
+        for attendu in ["PuppetPaie : le mot de passe du logiciel", "de La Compagnie d'essai", "envoyer les documents de septembre 2026 à Ana, Bo et Cy"] {
             assert!(texte.contains(attendu), "{}", texte);
         }
         assert!(!q.seance);
