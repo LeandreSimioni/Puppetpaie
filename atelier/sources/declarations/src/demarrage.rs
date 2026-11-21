@@ -53,7 +53,7 @@ pub struct Manque {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qui: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub propose: Option<String>,
+    pub propose: Option<ValeurProposee>,
     /// LES ANNEES DONT LA LIGNE DEMANDE L'EFFECTIF (`manques`) : chacune se dit par la route `effectif`, que
     /// `pour-demarrer` rend en geste avec ce que les paies reprises en donnent (`effectifs`, `routes::rappels`).
     #[serde(skip)]
@@ -71,6 +71,26 @@ pub struct Manque {
     /// elle ne s'ecrit pas.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub piece: Option<PieceQuiLaPorte>,
+}
+
+/// UNE VALEUR QUE LE MOTEUR PROPOSE pour la case d'une ligne, que la compagnie valide ou corrige : elle s'ecrit comme la
+/// case la tient, la page en remplit la case (un texte ; un jour en AAAA-MM-JJ), et se dit dans la phrase de la ligne
+/// (`dite` : un jour en JJ/MM/AAAA).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ValeurProposee {
+    Texte(String),
+    Jour(Jour),
+}
+
+impl ValeurProposee {
+    /// Ce que la phrase en dit.
+    fn dite(&self) -> String {
+        match self {
+            ValeurProposee::Texte(t) => t.clone(),
+            ValeurProposee::Jour(j) => j.jj_mm_aaaa(),
+        }
+    }
 }
 
 impl Manque {
@@ -367,7 +387,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         );
         l.spectacle = Some(cle.clone());
         l.qui = Some(format!("Numéro d'objet {}", objet));
-        l.propose = propose;
+        l.propose = propose.map(ValeurProposee::Texte);
         out.push(l);
     }
     // La licence d'entrepreneur de spectacles : la DSN l'ecrit dans chaque contrat (S21.G00.40.049) et refuse sans elle
@@ -698,14 +718,22 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         lignes.extend(natures_par_une_dsn(ctx, natures_a_dire));
     }
     // L'EFFECTIF QUE LES PAIES REPRISES DONNENT (`engagement::effectif_repris`), calcule une fois pour les annees que les
-    // lignes demandent, et rendu a chacune pour les siennes.
+    // lignes demandent, et rendu a chacune pour les siennes ; avec lui, la date de la premiere embauche que les pieces
+    // reprises disent, proposee dans sa case (la compagnie la valide ou la corrige : rien ne s'ecrit sans son geste).
     let mut demandees: Vec<socle::mois::Annee> = lignes.iter().flat_map(|l| l.annees_d_effectif.iter().copied()).collect();
     demandees.sort();
     demandees.dedup();
+    let premiere_embauche = Some(CaseDeFiche::from(CaseEntreprise::PremiereEmbauche));
+    // D'ou vient la date proposee pour la premiere embauche : la ligne de sa case le dit, a la page comme en ligne de commande.
+    let mut d_ou_l_embauche: Option<String> = None;
     if !demandees.is_empty() {
-        let repris = engagement::effectif_repris::effectifs_repris(ctx, &demandees)?;
+        let (repris, embauche) = engagement::effectif_repris::effectifs_repris(ctx, &demandees)?;
+        d_ou_l_embauche = embauche.as_ref().map(|e| e.d_ou.clone());
         for l in lignes.iter_mut() {
             l.effectifs = repris.iter().filter(|e| l.annees_d_effectif.contains(&e.annee)).cloned().collect();
+            if l.qui.is_none() && l.champ == premiere_embauche {
+                l.propose = embauche.as_ref().map(|e| ValeurProposee::Jour(e.jour));
+            }
         }
     }
     for l in lignes.iter_mut() {
@@ -715,13 +743,24 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
             _ => return Err(socle::refus!("La ligne « {} » de « Pour démarrer » ne dit ni ce qu'elle bloque ni ce qu'elle sert : le signaler au développeur.", l.libelle)),
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
-        let propose: String = l.propose.iter().map(|p| format!(" Proposé : « {} ».", p)).collect();
+        let de_l_embauche = match (&l.propose, &d_ou_l_embauche) {
+            (Some(p), Some(d)) if l.qui.is_none() && l.champ == premiere_embauche => Some(format!(" Proposé : « {} », {}. Validez-la ou corrigez-la.", p.dite(), d)),
+            _ => None,
+        };
+        let propose: String = match &de_l_embauche {
+            Some(p) => p.clone(),
+            None => l.propose.iter().map(|p| format!(" Proposé : « {} ».", p.dite())).collect(),
+        };
         // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer.
         let effectifs: String = l.effectifs.iter().map(|e| format!(" {}", e.phrase)).collect();
         l.phrase = Some(format!("{} › {} : {}.{}{}", l.ou, l.libelle, pour, propose, effectifs));
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
-        l.pour = Some(format!("{}{}.", initiale, c.as_str()));
+        // La page montre `pour` sous la case : la provenance de la date proposee s'y lit.
+        l.pour = Some(match de_l_embauche {
+            Some(d) => format!("{}{}.{}", initiale, c.as_str(), d),
+            None => format!("{}{}.", initiale, c.as_str()),
+        });
     }
     let (par_une_dsn, mut lignes): (Vec<Manque>, Vec<Manque>) = match repris {
         CeQueLImportARepris::SansDsn { .. } => lignes.into_iter().partition(|l| l.piece == Some(PieceQuiLaPorte::Dsn)),
