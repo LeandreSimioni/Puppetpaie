@@ -152,8 +152,18 @@ fn adresses_dsn(environnement: EnvironnementNetEntreprises) -> Adresses {
     }
 }
 
+/// LE SERVICE DE L'AUTHENTIFICATION A LA DPAE : « Pour un déclarant ou tiers déclarant, il convient de paramétrer le
+/// service 25. Pour un concentrateur, le service 98 doit être paramétré. » (FAQ de l'API DPAE,
+/// `atelier/reference/norme-dpae/5493-API-DPAE-FAQ.pdf`, « Quel service faut-il paramétrer dans le module API ? »). Une
+/// compagnie declare pour elle-meme : c'est 25. Sans lui, l'Urssaf repond 404 a l'authentification.
+const SERVICE_DPAE_DU_DECLARANT: &str = "25";
+
 fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
-    let service = compte.and_then(|c| c.service.dite()).filter(|s| !s.is_empty()).cloned();
+    // Le service que la fiche dit (un concentrateur dit le sien) ; une compagnie n'en dit pas : celui du declarant.
+    let service = match compte.and_then(|c| c.service.dite()).filter(|s| !s.is_empty()) {
+        Some(s) => Some(s.clone()),
+        None => Some(SERVICE_DPAE_DU_DECLARANT.to_string()),
+    };
     // L'atelier seulement : un faux Urssaf local (`redirection`).
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DPAE) {
