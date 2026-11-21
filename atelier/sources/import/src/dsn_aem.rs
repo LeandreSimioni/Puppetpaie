@@ -31,8 +31,8 @@ pub struct SalarieDeclare {
     pub mois: Mois,
     pub initiales: String,
     pub premier_contrat: Option<Jour>,
-    /// Ce que ses contrats disent de la derniere fois que les DSN le portent : chaque contrat tel que la plus recente DSN
-    /// qui le declare le dit, par sa fin (S21.G00.62.001, a defaut .40.010) ; sans fin, il court encore.
+    /// La derniere fois que les DSN le portent : le mois de la derniere qui le declare, et la fin de ses contrats quand
+    /// une DSN la dit (S21.G00.62.001, a defaut .40.010).
     pub derniere_piece: crate::derniere_piece::DernierePiece,
 }
 
@@ -293,7 +293,9 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     }
     for ((nir, _, _), fin) in fins {
         if let Some(&i) = index_salaries.get(&nir) {
-            out.salaries[i].derniere_piece.contrat(fin);
+            if let Some(f) = fin {
+                out.salaries[i].derniere_piece.contrat(f);
+            }
         }
     }
     // Le mois de la derniere DSN qui declare le salarie le date aussi : elle le paie, quelle que soit la fin de ses contrats.

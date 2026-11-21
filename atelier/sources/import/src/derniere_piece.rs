@@ -9,33 +9,29 @@ use socle::echec::R;
 use socle::mois::Mois;
 
 /// LA DERNIERE FOIS QUE LES PIECES REPRISES PORTENT UN SALARIE : le dernier mois qu'elles datent (un bulletin, la fin de
-/// la periode de sa paie ; une DSN, son mois et la fin du contrat ; une AEM, son mois et la fin du contrat quand elle la
-/// dit ; un certificat, la fin de sa periode), ou un contrat qui court encore (sans fin dans les DSN qui le declarent :
-/// un CDI). `Aucune` : aucune piece ne le date.
+/// la periode de sa paie ; une DSN, son mois, et la fin du contrat quand elle la dit ; une AEM, son mois, et la fin du
+/// contrat quand elle la dit ; un certificat, la fin de sa periode). Un contrat sans fin ne date rien de plus : tant
+/// qu'il court, chaque DSN mensuelle le declare, et c'est son mois qui date le salarie (Léandre, 21/11/2026 : « Un CDI,
+/// il est toujours présent dans les DSN »). `Aucune` : aucune piece ne le date.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DernierePiece {
     #[default]
     Aucune,
     Mois(Mois),
-    CourtEncore,
 }
 
 impl DernierePiece {
     /// Un mois qu'une piece porte : le plus recent l'emporte.
     pub fn porte(&mut self, m: Mois) {
         *self = match *self {
-            DernierePiece::CourtEncore => DernierePiece::CourtEncore,
             DernierePiece::Mois(d) if d >= m => DernierePiece::Mois(d),
             _ => DernierePiece::Mois(m),
         };
     }
 
-    /// Un contrat qu'une piece porte, par sa fin : le mois ou il finit ; sans fin, il court encore.
-    pub fn contrat(&mut self, fin: Option<Jour>) {
-        match fin {
-            Some(f) => self.porte(f.mois_civil()),
-            None => *self = DernierePiece::CourtEncore,
-        }
+    /// La fin d'un contrat qu'une piece dit : le mois ou il finit (a venir, il date encore le salarie).
+    pub fn contrat(&mut self, fin: Jour) {
+        self.porte(fin.mois_civil());
     }
 
     /// Ce que d'autres pieces disent du meme salarie.
@@ -43,7 +39,6 @@ impl DernierePiece {
         match autre {
             DernierePiece::Aucune => {}
             DernierePiece::Mois(m) => self.porte(m),
-            DernierePiece::CourtEncore => *self = DernierePiece::CourtEncore,
         }
     }
 
@@ -52,7 +47,6 @@ impl DernierePiece {
     pub fn active(&self, aujourdhui: Jour) -> R<Option<bool>> {
         match *self {
             DernierePiece::Aucune => Ok(None),
-            DernierePiece::CourtEncore => Ok(Some(true)),
             DernierePiece::Mois(m) => recente(m, aujourdhui).map(Some),
         }
     }

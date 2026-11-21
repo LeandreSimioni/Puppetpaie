@@ -2652,11 +2652,10 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   précédentes […] ils doivent être mis comme archivés ») : une fiche de salarié ou de spectacle que l'import crée est
   active si une pièce reprise la porte dans les douze derniers mois (`recente`, le seul seuil), archivée sinon. Pour un
   salarié, toutes ses pièces comptent, une fois lues (`DernierePiece`, `importation::bulletins::ranger_les_salaries`) :
-  un bulletin, la période de sa paie ; une DSN, son mois, et chaque contrat par sa fin (S21.G00.62.001, à défaut
-  .40.010 ; une fin dite reste dite, même si une DSN suivante redéclare le contrat sans elle) ; une AEM, son mois, et
-  la fin du contrat quand elle la dit (« en cours » dit que le contrat continue après ce mois, pas qu'il court
-  aujourd'hui) ; un certificat, la période qu'il atteste. Un contrat qu'aucune DSN ne dit fini (un CDI) court encore :
-  le salarié est actif. Une fiche qu'aucune
+  un bulletin, la période de sa paie ; une DSN, son mois, et la fin de chaque contrat quand elle la dit
+  (S21.G00.62.001, à défaut .40.010 ; une fin à venir date encore) ; une AEM, son mois, et la fin du contrat quand elle
+  la dit ; un certificat, la période qu'il atteste. Un contrat sans fin ne date rien de plus : tant qu'il court, chaque
+  DSN mensuelle le déclare, et c'est son mois qui date le salarié. Une fiche qu'aucune
   pièce ne date garde la case vide. Une fiche qui existe n'est jamais rangée par l'import (`completer`) ; une fiche
   archivée garde tout son historique, et « Pour démarrer » ne lui demande rien.
 - **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que

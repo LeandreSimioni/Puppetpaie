@@ -760,8 +760,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
 
     // 5c. Active ou archivee, chaque fiche de salarie a creer, de ce que toutes ses pieces disent de la derniere fois
-    // qu'elles le portent (`import::derniere_piece`) : un bulletin, la periode de sa paie ; une AEM, son mois et son
-    // contrat (« en cours », sans fin : il court encore) ; un certificat, le contrat qu'il atteste. Les DSN et les AEM
+    // qu'elles le portent (`import::derniere_piece`) : un bulletin, la periode de sa paie ; une AEM, son mois et la fin du
+    // contrat quand elle la dit ; un certificat, le contrat qu'il atteste. Les DSN et les AEM
     // deposees y sont deja (`ri::apercu_lu`).
     for l in &lus {
         ap.derniere_piece.entry(Some(l.nir.clone())).or_default().porte(l.mois);
@@ -775,11 +775,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         match &c.aem {
             // Une AEM « en cours » dit que le contrat continue apres son mois, pas qu'il court aujourd'hui : elle ne date
             // que son mois, deja porte.
-            Some(a) if a.fin_contrat.is_some() => d.contrat(a.fin_contrat),
-            Some(_) => {}
+            Some(a) => {
+                if let Some(f) = a.fin_contrat {
+                    d.contrat(f);
+                }
+            }
             None => {
                 if let Some(p) = c.c.periode {
-                    d.contrat(Some(p.fin()));
+                    d.contrat(p.fin());
                 }
             }
         }

@@ -546,7 +546,7 @@ pub(crate) fn apercu_lu(
         derniere_piece.entry(decl.individu.identite.nir.clone()).or_default().suivre(decl.derniere_piece);
     }
     for c in &contrats {
-        derniere_piece.entry(Some(c.nir.clone())).or_default().contrat(Some(c.periode.fin()));
+        derniere_piece.entry(Some(c.nir.clone())).or_default().contrat(c.periode.fin());
     }
     struct Objet {
         numero: NumeroObjetSpectacle,
