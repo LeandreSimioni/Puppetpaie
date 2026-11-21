@@ -584,8 +584,11 @@ impl IdentifiantSpst {
 
     /// L'identifiant `texte` : MT01, ou MT et trois chiffres, la forme de chaque valeur du referentiel.
     pub fn lire(texte: &str) -> R<IdentifiantSpst> {
-        let chiffres = texte.strip_prefix("MT").unwrap_or("");
-        if texte == Self::INTERNE || (chiffres.len() == 3 && chiffres.bytes().all(|b| b.is_ascii_digit())) {
+        let externe = match texte.strip_prefix("MT") {
+            Some(chiffres) => chiffres.len() == 3 && chiffres.bytes().all(|b| b.is_ascii_digit()),
+            None => false,
+        };
+        if texte == Self::INTERNE || externe {
             Ok(IdentifiantSpst(texte.to_string()))
         } else {
             Err(socle::refus!(

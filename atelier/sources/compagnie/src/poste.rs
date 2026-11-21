@@ -5,7 +5,9 @@
 //! (une adresse a ouvrir, une chaine PowerShell) : ils n'ont besoin de rien au-dessus de la compagnie.
 
 use std::path::{Component, Path};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::process::Stdio;
 
 use socle::echec::R;
 

@@ -65,7 +65,11 @@ pub fn relever(csv: &Path, jour: &Jour) -> R<Releve> {
     let fichier = NomDeFichier::du(csv)?.to_string();
     let octets = std::fs::read(csv).map_err(|e| refus!("{} illisible ({})", csv.display(), e))?;
     let texte = String::from_utf8(octets).map_err(|e| refus!("{} n'est pas en UTF-8 ({})", csv.display(), e))?;
-    let sans_bom = texte.strip_prefix('\u{feff}').unwrap_or(&texte);
+    // Le fichier tel que servi commence par une marque d'ordre des octets ; sans elle, il se lit tel quel.
+    let sans_bom = match texte.strip_prefix('\u{feff}') {
+        Some(reste) => reste,
+        None => &texte,
+    };
     let t = Table::lire(sans_bom, ';');
     let mut services: BTreeMap<IdentifiantSpst, (String, String)> = BTreeMap::new();
     for l in &t.rangs {
