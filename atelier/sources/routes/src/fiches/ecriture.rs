@@ -1525,9 +1525,9 @@ fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec
     let mut anomalies: Vec<Anomalie> = Vec::new();
     for ch in changements {
         let k = F::case_changee(&ch);
-        let libelle = crate::redire::libelle(F::NOM, k)?;
+        let libelle = crate::redire::libelle_dit(F::NOM, k)?;
         let Some(sienne) = droit::fiche::premiere_illisible(&*brute, k) else {
-            return Err(refus(format!("« {} » se lit : il n'y a rien à saisir de nouveau. Rien n'a été enregistré.", libelle)));
+            return Err(refus(format!("Rien à saisir de nouveau pour {} : sa valeur se lit. Rien n'a été enregistré.", libelle)));
         };
         let vide = F::changement(&F::Plate::default(), k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)))?;
         let mut avant = montree.clone();
@@ -1561,7 +1561,7 @@ fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec
         }
         if droit::fiche::premiere_illisible(&*brute, k) == Some(sienne) {
             return Err(refus(format!(
-                "« {} » ne se lit toujours pas après cette réponse : rien n'a été enregistré. Le dire au développeur par « Un problème, une idée ? ».",
+                "Après cette réponse, {} ne se lit toujours pas : rien n'a été enregistré. Le dire au développeur par « Un problème, une idée ? ».",
                 libelle
             )));
         }

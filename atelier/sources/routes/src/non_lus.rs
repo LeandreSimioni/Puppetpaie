@@ -1,8 +1,9 @@
 //! CE QUE LES FICHES D'UNE COMPAGNIE PORTENT ET QUE LE MOTEUR NE LIT PAS (`droit::fiche::NonLu` : une valeur datee
-//! illisible, une cle que la forme ne connait pas) : regarder repond (`droit::fiche::lire_fiche_posee`), calculer refuse
-//! en nommant la fiche et la case ; la compagnie le lit sur la case (`declarations::champs::illisibles`), et l'editeur l'apprend, EN
-//! SILENCE, par le journal des incidents (`compagnie::incidents`), pour que le lecteur de la case apprenne l'ecriture
-//! qu'il ne connait pas, comme un document que l'import n'a pas lu (`importation::incident`).
+//! illisible, une cle que la forme ne connait pas) : la compagnie s'ouvre (`droit::fiche::lire_fiche_posee`) ; une valeur
+//! illisible, la compagnie la saisit de nouveau, et rien ne se calcule d'ici la (`crate::redire`) ; une cle inconnue se
+//! garde et ne dit rien. L'editeur l'apprend, EN SILENCE, par le journal des incidents (`compagnie::incidents`), pour que
+//! le lecteur de la case apprenne l'ecriture qu'il ne connait pas, comme un document que l'import n'a pas lu
+//! (`importation::incident`).
 //!
 //! UN INCIDENT PAR SORTE DE FICHE ET PAR CASE (ou cle inconnue) : son genre ne dit que cela, et un genre deja au journal
 //! ne se note plus. CE QUI PART NE PORTE RIEN DE REEL (regle de fond 9) : ni la valeur, ni la cle de la fiche (un nom,
@@ -53,7 +54,7 @@ pub(crate) fn noter(ctx: &Contexte) {
         let (genre, resume, part) = match n {
             NonLu::Valeur { case, rang, .. } => (
                 format!("valeur illisible : fiche {}, case {}", fiche, case),
-                format!("Une valeur de la case {} d'une fiche {} ne se lit pas : le calcul qui la lit refuse.", case, fiche),
+                format!("Une valeur de la case {} d'une fiche {} ne se lit pas : la compagnie la saisit de nouveau, rien ne se calcule d'ici là.", case, fiche),
                 CeQuiPart { fiche, case: Some(case.to_string()), rang: Some(*rang), cle_inconnue: None },
             ),
             NonLu::Cle { cle, .. } => (

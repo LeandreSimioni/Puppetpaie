@@ -52,7 +52,7 @@ struct AttenteDUneValeur {
     fiche: FicheNommee,
     case: droit::fiche::CaseDeFiche,
     depuis: Option<Jour>,
-    ecrite: String,
+    valeur: socle::forme::ValeurIllisible,
 }
 
 /// Les valeurs des fiches de la compagnie qui ne se lisent plus, dans l'ordre des fichiers (`Contexte::non_lus`).
@@ -60,10 +60,34 @@ fn en_attente_toutes(ctx: &Contexte) -> Vec<AttenteDUneValeur> {
     ctx.non_lus()
         .into_iter()
         .filter_map(|n| match n {
-            NonLu::Valeur { fiche, case, depuis, ecrite, .. } => Some(AttenteDUneValeur { fiche, case, depuis, ecrite }),
+            NonLu::Valeur { fiche, case, depuis, valeur, .. } => Some(AttenteDUneValeur { fiche, case, depuis, valeur }),
             NonLu::Cle { .. } => None,
         })
         .collect()
+}
+
+/// CE QUI EST ECRIT ET NE SE LIT PLUS, tel que la compagnie le lit, court : un texte, un nombre, un oui-non tels
+/// qu'ecrits ; une liste par son nombre (« une liste de 3 établissements ») ; la ligne du taux AT/MP par ce qu'elle est ;
+/// d'autres cases ecrites ensemble par leurs valeurs (`ValeurIllisible::ecrite`), ou leur nombre si elles sont longues.
+fn ecrite_dite(case: droit::fiche::CaseDeFiche, v: &socle::forme::ValeurIllisible) -> String {
+    use droit::fiche::CaseEntreprise;
+    const LONGUE: usize = 60;
+    let (un, plusieurs) = if case == CaseEntreprise::Etablissements.into() { ("établissement", "établissements") } else { ("valeur", "valeurs") };
+    if let Some(n) = v.elements() {
+        return match n {
+            0 => "une liste vide".to_string(),
+            1 => format!("une liste d'un{} {}", if un == "valeur" { "e" } else { "" }, un),
+            n => format!("une liste de {} {}", n, plusieurs),
+        };
+    }
+    if v.est_un_objet() && case == CaseEntreprise::TauxAtmp.into() {
+        return "une ligne du taux AT/MP".to_string();
+    }
+    let ecrite = v.ecrite();
+    if v.est_un_objet() && ecrite.chars().count() > LONGUE {
+        return format!("{} valeurs écrites ensemble", ecrite.split(" · ").count());
+    }
+    ecrite
 }
 
 /// LA FICHE EN MOTS : « l'entreprise », le nom du salarie (sa cle, si sa fiche ne le nomme pas), le titre du spectacle.
@@ -86,11 +110,22 @@ fn la_fiche(ctx: &Contexte, f: &FicheNommee) -> String {
     }
 }
 
-/// Le libelle de la case, tel que la fiche le montre ; sa cle, si la table ne la decrit pas.
-pub(crate) fn libelle(nom: NomDeFiche, case: droit::fiche::CaseDeFiche) -> R<String> {
+/// Ce que dit une case que la table ne decrit pas : elle n'a pas de libelle, et sa cle est un nom interne.
+const SANS_LIBELLE: &str = "une case que la fiche ne montre pas";
+
+/// Le libelle de la case, tel que la fiche le montre ; `SANS_LIBELLE`, si la table ne la decrit pas.
+fn libelle(nom: NomDeFiche, case: droit::fiche::CaseDeFiche) -> R<String> {
     Ok(match declarations::champs::champ(nom, case)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
         Some(l) => l,
-        None => case.to_string(),
+        None => SANS_LIBELLE.to_string(),
+    })
+}
+
+/// La case dans une phrase : son libelle entre guillemets (« Code APE »), ou `SANS_LIBELLE`.
+pub(crate) fn libelle_dit(nom: NomDeFiche, case: droit::fiche::CaseDeFiche) -> R<String> {
+    Ok(match declarations::champs::champ(nom, case)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
+        Some(l) => format!("« {} »", l),
+        None => SANS_LIBELLE.to_string(),
     })
 }
 
@@ -149,7 +184,7 @@ struct ChargeDeLaReponse {
 /// qui est ecrit, depuis quand (aucun : de tout temps), la case a saisir (aucune : la table ne la decrit pas, elle ne peut
 /// que se dire vide), et la charge de la reponse ; `cle` : la case, telle que les `changements` de la reponse la nomment.
 #[derive(Debug, serde::Serialize)]
-struct ValeurARedire {
+struct ValeurDemandee {
     phrase: String,
     fiche: String,
     cle: droit::fiche::CaseDeFiche,
@@ -170,7 +205,7 @@ struct ValeursIllisibles {
     vide: &'static str,
     enregistrer: &'static str,
     confirmer: &'static str,
-    valeurs: Vec<ValeurARedire>,
+    valeurs: Vec<ValeurDemandee>,
 }
 
 impl Dite for ValeursIllisibles {
@@ -184,29 +219,29 @@ fn demande(ctx: &Contexte) -> R<ValeursIllisibles> {
     let mut valeurs = Vec::new();
     for a in en_attente_toutes(ctx) {
         let nom = a.fiche.nom();
-        let libelle = libelle(nom, a.case)?;
+        let ecrite = ecrite_dite(a.case, &a.valeur);
         let depuis_dit = match a.depuis {
             Some(j) => format!(" (à partir du {})", j.jj_mm_aaaa()),
             None => String::new(),
         };
         let phrase = format!(
-            "{}, « {} »{} : « {} » ne se lit plus. La saisir de nouveau, ou dire qu'elle est vide.",
+            "{}, {}{} : « {} » ne se lit plus. La saisir de nouveau, ou dire qu'elle est vide.",
             capitale(&la_fiche(ctx, &a.fiche)),
-            libelle,
+            libelle_dit(nom, a.case)?,
             depuis_dit,
-            a.ecrite
+            ecrite
         );
         let cle = match &a.fiche {
             FicheNommee::Entreprise => None,
             FicheNommee::Salarie(k) => Some(k.to_string()),
             FicheNommee::Spectacle(k) => Some(k.to_string()),
         };
-        valeurs.push(ValeurARedire {
+        valeurs.push(ValeurDemandee {
             phrase,
             fiche: fiche_dite(ctx, &a.fiche),
             cle: a.case,
-            libelle,
-            ecrite: a.ecrite,
+            libelle: libelle(nom, a.case)?,
+            ecrite,
             depuis: a.depuis,
             case: crate::fiches::case_a_redire(nom, a.case)?,
             enregistrer: ChargeDeLaReponse { nom, cle },

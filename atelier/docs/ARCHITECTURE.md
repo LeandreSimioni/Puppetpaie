@@ -105,8 +105,9 @@ que par la structure :
   installation posée (`socle::forme::lire_fichier_pose_en_phrase`) : une valeur datée que le type de sa case ne lit plus
   est illisible (`Datee::illisible`), jamais vide : elle se garde et se réécrit telle quelle, la compagnie s'ouvre, et le
   logiciel la demande (la route `valeurs-illisibles`, `routes::redire`) ; redite par `enregistrer-fiche`, saisie ou vide
-  exprès, elle est remplacée à son `depuis`, et elle seule (`droit::fiche::premiere_illisible`). **Tant qu'elle attend,
-  rien ne se calcule** : le barrage, un seul, là où une route ouvre la compagnie (`routes::service::contexte_de_la_route`,
+  exprès, elle est remplacée à son `depuis`, et elle seule (`droit::fiche::premiere_illisible`), quelle que soit la case ;
+  la réponse ne juge que la case redite, et ce qui s'en dérive ne la suit que si elle est la dernière entrée de sa case.
+  Pendant la demande, `enregistrer-fiche` ne sert qu'à y répondre. **Tant qu'elle attend, rien ne se calcule** : le barrage, un seul, là où une route ouvre la compagnie (`routes::service::contexte_de_la_route`,
   que prennent la porte et l'état gardé de la fenêtre), refuse toute route que sa fiche ne dit pas servie
   (`routes::catalogue::PendantLaDemande`, champ obligatoire de chaque fiche) en renvoyant à la demande
   (`Classe::ValeurARedire`) ; aucun calcul n'a donc de troisième état à connaître. Une clé que la forme ne connaît pas se
@@ -1231,6 +1232,9 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | ce qu'une fiche de la compagnie porte et que le moteur ne lit pas (une valeur datée que le type de sa case ne lit plus, gardée telle qu'écrite, `Datee::illisible` ; une clé que la forme ne connaît pas, gardée, qui ne dit rien) : la compagnie saisit la première de nouveau (`routes::redire`), l'éditeur apprend l'une et l'autre par un incident (`routes::non_lus`) | `droit::fiche::NonLu` | `droit/src/fiche.rs` |
 | ce qu'une route fait pendant qu'une valeur d'une fiche attend d'être saisie de nouveau : servie, ou refusée en renvoyant à la demande | `PendantLaDemande` | `routes/src/catalogue.rs` |
+| valeur illisible (ce qu'un fichier posé écrit et que le type de sa case ne lit plus, gardé tel qu'écrit pour se réécrire tel quel ; la demande la dit en mots, courte : `routes::redire`) | `socle::forme::ValeurIllisible` | `socle/src/forme.rs` |
+| valeur lue ou illisible (la porte d'une valeur dans un fichier posé : lue dans son type, ou gardée illisible ; partout ailleurs, stricte) | `socle::forme::LueOuIllisible` | `socle/src/forme.rs` |
+| clés inconnues d'une forme (gardées telles qu'écrites dans un fichier posé, réécrites telles quelles, elles ne disent rien ; partout ailleurs, une clé inconnue refuse) | `socle::forme::ClesInconnues` | `socle/src/forme.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | dernière fois que les pièces reprises portent un salarié (le dernier mois qu'elles datent, un contrat qui court encore, ou aucune), qui range sa fiche neuve active ou archivée | `import::derniere_piece::DernierePiece` | `import/src/derniere_piece.rs` |

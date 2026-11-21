@@ -2447,8 +2447,8 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 pub enum NonLu {
     /// UNE VALEUR DATEE ILLISIBLE (`Datee::illisible`) : la compagnie la saisit de nouveau avant tout autre geste, et rien
     /// ne se calcule d'ici la (`routes::redire`). `rang` : sa place dans la liste datee de la case, telle qu'ecrite (0 :
-    /// la premiere) ; `ecrite` : ce que le fichier porte, en mots (`socle::forme::ValeurIllisible::ecrite`).
-    Valeur { fiche: FicheNommee, case: CaseDeFiche, rang: usize, depuis: Option<Jour>, ecrite: String },
+    /// la premiere) ; `valeur` : ce que le fichier porte (`routes::redire` la dit en mots).
+    Valeur { fiche: FicheNommee, case: CaseDeFiche, rang: usize, depuis: Option<Jour>, valeur: socle::forme::ValeurIllisible },
     /// UNE CLE QUE LA FORME NE CONNAIT PAS : elle se garde, ne dit rien, ne demande rien, et seul l'editeur l'apprend.
     Cle { fiche: FicheNommee, cle: String },
 }
@@ -2473,7 +2473,7 @@ pub fn non_lus<F: FicheDatee>(f: &F, fiche: &FicheNommee) -> Vec<NonLu> {
         fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]) {
             for (rang, e) in liste.iter().enumerate() {
                 if let Some(v) = &e.illisible {
-                    self.out.push(NonLu::Valeur { fiche: self.fiche.clone(), case: cle, rang, depuis: e.depuis, ecrite: v.ecrite() });
+                    self.out.push(NonLu::Valeur { fiche: self.fiche.clone(), case: cle, rang, depuis: e.depuis, valeur: v.clone() });
                 }
             }
         }

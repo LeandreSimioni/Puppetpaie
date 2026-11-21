@@ -454,6 +454,19 @@ impl ValeurIllisible {
         }
         out.join(" · ")
     }
+
+    /// Combien elle porte d'elements, quand c'est une liste.
+    pub fn elements(&self) -> Option<usize> {
+        match &self.0 {
+            Value::Array(l) => Some(l.len()),
+            _ => None,
+        }
+    }
+
+    /// Est-ce un objet, des cases ecrites ensemble ?
+    pub fn est_un_objet(&self) -> bool {
+        matches!(self.0, Value::Object(_))
+    }
 }
 
 /// Elle se reecrit telle qu'elle a ete lue.
