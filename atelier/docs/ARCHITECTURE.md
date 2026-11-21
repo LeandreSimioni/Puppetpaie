@@ -548,6 +548,8 @@ un libellé, chacun sa forme.
 | version du logiciel | `compagnie::maj::VersionDuLogiciel` | `compagnie/src/maj.rs` |
 | version de la forme du coffre (`coffre.bin`, `version` : seule celle de ce logiciel se lit, une autre se refuse) | `compagnie::coffre::VersionDuCoffre` | `compagnie/src/coffre.rs` |
 | paramètres de la dérivation du mot de passe du logiciel (scrypt : `n`, `r`, `p`, que `coffre.bin` écrit en nombres) | `compagnie::coffre::ParametresDuCoffre` (bornés à leur lecture, les refus dans l'ordre d'OpenSSL ; ceux de la bibliothèque, `scrypt::Params`) | `compagnie/src/coffre.rs` |
+| qui ouvre le coffre d'une compagnie, donc le seul mot de passe du logiciel qu'elle accepte (elle, ou l'administrateur auquel elle est rattachée ; `routes::coffre::qui_ouvre` le dit) | `compagnie::demande::QuiOuvre` | `compagnie/src/demande.rs` |
+| demande du mot de passe du logiciel (lequel, de qui, pour quel geste ; la même dans la page, la fenêtre du système et le terminal, et dans le refus d'un mot de passe faux ; composée par `routes::coffre::demande`) | `compagnie::demande::DemandeDuMotDePasse` | `compagnie/src/demande.rs` |
 | échec d'une mise à jour | `EchecDeMiseAJour` | `compagnie/src/maj.rs` |
 | numéro du ticket qui suit un retour chez l'éditeur (que le serveur du filet rend ; pas le numéro du retour, `NumeroDeRetour`) | `NumeroDeTicket` | `compagnie/src/editeur.rs` |
 | système | `Systeme` | `compagnie/src/maj.rs` |

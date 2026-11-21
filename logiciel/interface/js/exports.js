@@ -176,7 +176,7 @@ async function lancerDossier(route, apercu) {
   else if (quand === "annee") charge.annee = Number(periode);
   else charge.toutes_les_annees = true;
   if (route === "dossier-envoyer") {
-    const mdp = await demanderMotDePasse("L'envoyer à chaque salarié", { envoi: true });
+    const mdp = await demanderMotDePasse(DOSSIER.demande, { envoi: true });
     if (!mdp) return;
     charge.motdepasse = mdp;
   }
@@ -538,7 +538,7 @@ function dessinerCasc(r) {
     const vire_le = {};
     for (const c of document.querySelectorAll(".casc-date")) if (c.value) vire_le[c.dataset.annee] = c.value;
     const liste = Object.keys(vire_le);
-    const mdp = await demanderMotDePasse("Envoyer les 2 courriels", { envoi: true });
+    const mdp = await demanderMotDePasse(r.ecran.demande, { envoi: true });
     if (!mdp) return;
     const rendre = occupe(envoyer, "Envoi…");
     const repere = await repereCourrielsFictifs();

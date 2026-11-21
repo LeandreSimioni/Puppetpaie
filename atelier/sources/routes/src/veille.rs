@@ -33,13 +33,39 @@ fn heure_du_passage(quand: socle::paris::Moment) -> String {
     }
 }
 
-/// Ce que le bandeau dit d'un acces qui manque, par service (`a_poser` de la trace) : la phrase, et le bouton qui y mene.
+/// UN ACCES QUI MANQUE, tel que le bandeau le dit : le service (`net-entreprises`, `urssaf`, `google`, ou mene le
+/// bouton), la phrase, et le bouton.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct APoser {
-    #[serde(rename = "net-entreprises")]
-    net_entreprises: [&'static str; 2],
-    urssaf: [&'static str; 2],
-    google: [&'static str; 2],
+pub struct APoser {
+    service: String,
+    phrase: &'static str,
+    geste: &'static str,
+}
+
+/// CE QUI MANQUE MAINTENANT : les acces que le dernier passage a trouves absents (`a_poser` de la trace : ceux dont ce
+/// passage avait besoin), moins ceux que le coffre dit poses a l'instant ou la route rend (`ouverture::acces_pose`, sans
+/// rien ouvrir). Lier le Drive ou poser un mot de passe fait donc disparaitre sa ligne au prochain appel, sans attendre
+/// le releve. `Err` : le coffre ne se lit pas.
+pub fn acces_a_poser(racine: &std::path::Path, d: Option<&Trace>) -> socle::echec::R<Vec<APoser>> {
+    // Aucun passage encore : rien n'a ete trouve absent.
+    let notes: &[String] = match d {
+        Some(t) => &t.a_poser,
+        None => &[],
+    };
+    let mut a_poser = Vec::new();
+    for service in notes {
+        if crate::gestes::ouverture::acces_pose(racine, service)? {
+            continue;
+        }
+        let (phrase, geste) = match service.as_str() {
+            "net-entreprises" => ("Les retours de DSN ne se relèvent pas seuls : le mot de passe net-entreprises n'est pas posé.", "Poser le mot de passe"),
+            "urssaf" => ("Les retours de DPAE ne se relèvent pas seuls : le mot de passe Urssaf (DPAE) n'est pas posé.", "Poser le mot de passe"),
+            "google" => ("La sauvegarde ne part pas : aucun Drive n'est lié.", "Lier le Drive"),
+            autre => return Err(socle::refus!("La trace de la dernière ouverture nomme un accès inconnu : {}.", autre)),
+        };
+        a_poser.push(APoser { service: service.clone(), phrase, geste });
+    }
+    Ok(a_poser)
 }
 
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et
@@ -49,7 +75,8 @@ pub(crate) struct APoser {
 pub struct DitDuBandeau {
     etat: String,
     muets: Option<String>,
-    a_poser: APoser,
+    /// Ce qui manque maintenant (`acces_a_poser`), une ligne par acces.
+    a_poser: Vec<APoser>,
     retours: Option<String>,
     fictive: Option<&'static str>,
     horloge: Option<String>,
@@ -60,7 +87,7 @@ pub struct DitDuBandeau {
     termine: &'static str,
 }
 
-pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
+pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
     let dans = dans.map(socle::temps::ecrit::minutes_commencees_dites);
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
@@ -86,11 +113,7 @@ pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<std::time::Duration>, fict
     DitDuBandeau {
         etat,
         muets,
-        a_poser: APoser {
-            net_entreprises: ["Les retours de DSN ne se relèvent pas seuls : le mot de passe net-entreprises n'est pas posé.", "Poser le mot de passe"],
-            urssaf: ["Les retours de DPAE ne se relèvent pas seuls : le mot de passe Urssaf (DPAE) n'est pas posé.", "Poser le mot de passe"],
-            google: ["La sauvegarde ne part pas : aucun Drive n'est lié.", "Lier le Drive"],
-        },
+        a_poser,
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
         fictive: fictive.then_some("compagnie fictive : pas de sauvegarde, pourquoi ?"),
         horloge: horloge.map(|n| format!("pendant votre absence, la compagnie a travaillé ({}) : voir", n)),

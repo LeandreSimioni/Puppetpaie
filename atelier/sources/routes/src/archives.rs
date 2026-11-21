@@ -14,7 +14,7 @@ use crate::dossier_salarie::{construire, DemandeDeDossier, DossierEnvoye, Dossie
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use compagnie::INTERFACE;
 use crate::SansCharge;
-use socle::mois::{Annee, Mois, MoisOuJour};
+use socle::mois::{Annee, Mois};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
@@ -43,7 +43,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Exports);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
-    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "salaries, categories, periodes"),
+    lecture(Route::DossierFormes, "Dire ce que peut porter le dossier d'un salarié : catégories, périodes.", "salaries, categories, periodes, demande (du mot de passe, avant l'envoi)"),
     lecture(Route::ExportsPeriodes, "Dire ce qui s'exporte : mois, années, états, formats, logiciel comptable.", "mois, annees, etats, formats, logiciel retenu"),
     Fiche {
         route: Route::RetenirLogiciel,
@@ -274,6 +274,9 @@ struct FormesDuDossier {
     mois: Vec<Mois>,
     annees: Vec<Annee>,
     boite_liee: bool,
+    /// Une boite posee : la demande du mot de passe avant `dossier-envoyer`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: PathBuf,
 }
@@ -302,13 +305,15 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
     let categories: Vec<CategorieProposee> = documents::CategorieDeDocument::TOUTES.iter().map(|c| CategorieProposee { categorie: *c, quoi: c.libelle() }).collect();
+    let boite_liee = crate::ouverture::boite_liee(ctx)?;
     Ok(FormesDuDossier {
         phrase: socle::phrase!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
         salaries,
         categories,
         mois,
         annees,
-        boite_liee: crate::ouverture::boite_liee(ctx)?,
+        boite_liee,
+        demande: if boite_liee { Some(crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?) } else { None },
         dossier: documents::DossierHorsDuMois::DossiersDeSalaries.sous(&ctx.racine),
     })
 }
@@ -575,7 +580,16 @@ struct EcranDUnEtat {
     virement: &'static str,
     automatique: &'static str,
     a_la_main: &'static str,
+    /// La regularisation CASC-SVP, une boite posee : la demande du mot de passe avant `casc-envoyer`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
 }
+
+/// Le geste de `casc-envoyer`, tel que la demande du mot de passe le dit.
+const GESTE_CASC: &str = "envoyer à Audiens et au CASC-SVP les deux courriels de la régularisation";
+
+/// Le geste de `dossier-envoyer`, tel que la demande du mot de passe le dit.
+const GESTE_DOSSIER: &str = "envoyer par courriel à chaque salarié choisi son dossier";
 
 /// Le verbe unique, `exporter <etat>` : l'etat demande, tel que l'ecran le montre.
 fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
@@ -621,6 +635,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
             "La boîte courriel n'est pas posée : Configuration › Courriel. Une fois posée, l'envoi se fait d'ici en un clic."
         },
         a_la_main: "Joindre la liste nominative au courriel du CASC-SVP, recopier les deux courriels ci-dessous, puis noter la régularisation.",
+        demande: if boite_liee { Some(crate::coffre::demande(&ctx.racine, GESTE_CASC)?) } else { None },
     };
     Ok(EtatExporte { phrase, etat, phrases: avertissements, ecran })
 }
@@ -733,9 +748,7 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
     // CE QUI PARTIRAIT, SANS RIEN ECRIRE : chacun a son adresse, puis la preuve ; le dossier ne s'ecrit qu'ensuite.
     let vu = construire(ctx, &demande(true))?;
     adresses_de(ctx, &vu.salaries)?;
-    let a_qui = format!("{} salarie(s) : {}", vu.salaries.len(), vu.salaries.iter().map(|c| ctx.nomme(c)).collect::<Vec<_>>().join(", "));
-    let aujourdhui = socle::temps::jour_de_paris();
-    let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.cloned())), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
+    let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.cloned())), &crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?)?;
     let d = construire(ctx, &demande(false))?;
     let envoi = envoyer_dossier(ctx, &d, &Preuve { donnee: Some(forme), ..Preuve::default() }, INTERFACE, ouvrir)?;
     let phrase = socle::phrase!("Dossier de {} ({}) : {}.", d.salaries.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
@@ -802,9 +815,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         });
     }
     let mut client = ouvrir()?;
-    let aujourdhui = socle::temps::jour_de_paris();
-    let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
-    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), &crate::coffre::demande(&ctx.racine, GESTE_DOSSIER)?)?;
     let expediteur = expediteur_de(client.as_ref())?;
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
@@ -894,8 +905,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&socle::secret
     }
 
     let mut client = ouvrir()?;
-    let dernier_mois = r.mois.last().map(|m| m.mois).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::trop_courte("les mois de la régularisation")))?;
-    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.cloned())), MoisOuJour::Mois(dernier_mois), "envoi a Audiens et au CASC-SVP (liste nominative)", "Audiens et CASC-SVP")?;
+    verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.cloned())), &crate::coffre::demande(&ctx.racine, GESTE_CASC)?)?;
 
     // La liste nominative est la premiere chose qu'ecrit le dossier (`casc::ecrire`) : si elle ne peut s'ecrire, le refus
     // tombe avant tout autre fichier, et rien ne part.

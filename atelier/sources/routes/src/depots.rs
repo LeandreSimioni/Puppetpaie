@@ -57,7 +57,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Écrire ou reprendre la DSN ou la DPAE du mois ; dire ce qu'elle déclare.",
         charge: &[QUOI, MOIS, ETABLISSEMENT, ENGAGEMENTS, SIGNALEMENT],
         exemple: DPAE_DE_L_EXEMPLE,
-        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations",
+        rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -231,12 +231,30 @@ pub(crate) struct ChargeSuivre {
     pub(crate) mois: Option<Mois>,
 }
 
+/// Le depot reel d'une DSN, tel que la demande du mot de passe le dit : sa nature, et son mois, ou le jour de
+/// l'evenement d'un signalement. L'apercu et le depot le disent par ici.
+pub(crate) fn geste_dsn(nature: droit::nature_declaration::NatureDeLaDeclaration, mois: Mois, evenement: Option<Jour>) -> String {
+    match evenement {
+        Some(j) => format!("déposer en réel : {} du {}", nature.libelle(), j.jj_mm_aaaa()),
+        None => format!("déposer en réel : {} {}", nature.libelle(), socle::texte::de(&mois.libelle(Graphie::Accentuee))),
+    }
+}
+
+/// Le depot reel d'une DPAE, tel que la demande du mot de passe le dit.
+pub(crate) fn geste_dpae(mois: Option<Mois>) -> String {
+    match mois {
+        Some(m) => format!("déposer en réel la DPAE {}", socle::texte::de(&m.libelle(Graphie::Accentuee))),
+        None => "déposer en réel la DPAE".to_string(),
+    }
+}
+
 /// CE QUE LA BOITE DU DEPOT DIT, autour de ce que le fichier declare (`A`, l'apercu d'une DSN ou d'une DPAE) : sa
-/// phrase, son titre, ses encarts, et les phrases pour `moteur route --texte`.
+/// phrase, son titre, la demande du mot de passe du depot reel, ses encarts, et les phrases pour `moteur route --texte`.
 #[derive(Debug, Serialize)]
 pub(crate) struct Dit<A> {
     phrase: Phrase,
     titre: &'static str,
+    demande: compagnie::demande::DemandeDuMotDePasse,
     encarts: Vec<Encart>,
     phrases: Vec<Phrase>,
     avertissements: Vec<String>,
@@ -1147,7 +1165,8 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 Some(p) => p,
                 None => socle::phrase!("{} {} : {}.", a.libelle_nature, socle::texte::de(&a.mois.libelle(Graphie::Accentuee)), socle::ecran::compte(a.salaries, "salarié", "salariés")),
             };
-            DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
+            let demande = crate::coffre::demande(&ctx.racine, &geste_dsn(a.nature_declaration, a.mois, a.evenement))?;
+            DepotApercu::Dsn(Dit { phrase, titre: "Déposer la DSN", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
         Quoi::Dpae => {
             let a = apercu_depot_dpae(ctx, &fichier)?;
@@ -1158,7 +1177,8 @@ fn depot_apercu(ctx: &Contexte, d: Designation) -> R<DepotApercu> {
                 (None, Some(m)) => socle::phrase!("DPAE {} : {}.", socle::texte::de(&m.libelle(Graphie::Accentuee)), embauches),
                 (None, None) => socle::phrase!("DPAE : {}.", embauches),
             };
-            DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
+            let demande = crate::coffre::demande(&ctx.racine, &geste_dpae(a.mois))?;
+            DepotApercu::Dpae(Dit { phrase, titre: "Déposer la DPAE", demande, encarts: Vec::new(), phrases: Vec::new(), avertissements, informations, apercu: a })
         }
     };
     // Les phrases de ses parties (le remplacement, le recapitulatif, le test), a la suite de la sienne. Celles de ses

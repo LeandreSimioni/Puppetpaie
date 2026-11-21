@@ -705,7 +705,8 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 let mut ouvrir = || -> R<Box<dyn Courriel>> { Ok(Box::new(BoiteMuette::nouvelle())) };
                 if x.destinataire.is_some() {
                     let etats = crate::contrats::signature_apercu(ctx, *mois)?.contrats;
-                    crate::contrats::envoyer_avenants(ctx, std::slice::from_ref(&voulu), &etats, &Preuve::default(), &mut ouvrir)?;
+                    let demande = ChargeSignature::des_avenants(*mois, vec![voulu.clone()]).demande(ctx)?;
+                    crate::contrats::envoyer_avenants(ctx, std::slice::from_ref(&voulu), &etats, &Preuve::default(), &demande, &mut ouvrir)?;
                 } else {
                     crate::contrats::contrats_imprimer(ctx, ChargeSignature::des_avenants(*mois, vec![voulu]), QUI_HORLOGE)?;
                     imprime.set(true);

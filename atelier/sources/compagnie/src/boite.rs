@@ -80,6 +80,13 @@ pub fn verifier(racine: &Path) -> R<Ouverture> {
     }
     match client(racine).and_then(envois::courriel::verifier) {
         Ok(message) => Ok(Ouverture { ok: true, message, conseil: None }),
-        Err(e) => Ok(Ouverture { ok: false, message: socle::texte::lignes_du_texte(&e.phrase).first().map(|l| l.to_string()).into_iter().collect(), conseil: None }),
+        // La phrase est celle de la boite, en francais (`envois::courriel::traduire`) ; ce qu'elle porte a part (le texte du
+        // serveur ou du systeme) part chez l'editeur, puisque la verification ne refuse pas.
+        Err(e) => {
+            if let Err(n) = crate::incidents::depuis_exception(racine, e.classe, &e.phrase, None, "coffre-verifier", e.a_part.as_ref(), None) {
+                crate::diagnostic::noter_moteur(&format!("La vérification de la boîte courriel ne s'est pas notée au journal des incidents : {}", n.phrase));
+            }
+            Ok(Ouverture { ok: false, message: socle::texte::lignes_du_texte(&e.phrase).first().map(|l| l.to_string()).into_iter().collect(), conseil: None })
+        }
     }
 }

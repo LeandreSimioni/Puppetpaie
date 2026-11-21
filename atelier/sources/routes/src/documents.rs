@@ -28,7 +28,7 @@ use envois::journal;
 use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
-use socle::mois::{Graphie, Mois, MoisOuJour};
+use socle::mois::{Graphie, Mois};
 use crate::catalogue::{Ecran, Place};
 
 pub(crate) type R<T> = Result<T, Echec>;
@@ -49,7 +49,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les documents du mois de chaque salarié, et à qui ils partiraient.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "pret, empechements, informations, avertissements, boite_liee, expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja",
+        rend: "pret, empechements, informations, avertissements, boite_liee, demande (du mot de passe, avant l'envoi), expediteur, messages (cle, nom, destinataire, pieces, renvoi, changements), deja",
         refus: &[MANQUE, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -220,6 +220,8 @@ struct ApercuEnvoi {
     empechements: Vec<String>,
     informations: Vec<String>,
     boite_liee: bool,
+    /// La demande du mot de passe avant l'envoi.
+    demande: compagnie::demande::DemandeDuMotDePasse,
     phrases: Vec<String>,
 }
 
@@ -692,8 +694,15 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         empechements: prets.empechements,
         informations: prets.informations,
         boite_liee: prets.boite_liee,
+        demande: demande_documents(ctx, mois)?,
         phrases,
     })
+}
+
+/// LA DEMANDE DU MOT DE PASSE avant d'envoyer les documents de `mois` : l'apercu la rend a la page, l'envoi la pose
+/// lui-meme quand rien n'a ete tape.
+fn demande_documents(ctx: &Contexte, mois: Mois) -> R<compagnie::demande::DemandeDuMotDePasse> {
+    crate::coffre::demande(&ctx.racine, &format!("envoyer par courriel aux salariés cochés leurs documents {}", socle::texte::de(&mois.libelle(Graphie::Accentuee))))
 }
 
 /// Le resume de la paie de `cle` que `choisir` a fait pour chaque salarie servi, a garder au journal avec l'envoi.
@@ -1062,8 +1071,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::manque("signataire"))?.email.portee().map(str::to_lowercase);
     let preuve = match preuve {
         Some(p) => {
-            let a_qui = format!("{} salarie(s) : {}", cles.len(), cles.iter().map(|c| nom_de_la_paie(&paies, c)).collect::<Vec<_>>().join(", "));
-            Some(Preuve { donnee: Some(verifier_preuve(ctx, Some(p), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?), ..Preuve::default() })
+            Some(Preuve { donnee: Some(verifier_preuve(ctx, Some(p), &demande_documents(ctx, mois)?)?), ..Preuve::default() })
         }
         None => None,
     };
@@ -1092,7 +1100,6 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
         Some(p) => p,
         None => preuve,
     };
-    let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     // LA VERSION SUR LAQUELLE ILS PARTENT, engagement par engagement des salaries servis.
     let servis: Vec<&IdSalarie> = messages.iter().map(|m| &m.pour).collect();
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
@@ -1114,7 +1121,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let noms: Vec<String> = messages.iter().zip(&recus).map(|(m, r)| nom_a_l_ecran(ctx, &r.cle, &m.nom)).collect();
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
-    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), &demande_documents(ctx, mois)?)?;
     let mot_de_passe = socle::temps::duree(t_preuve);
     let t_envoi = std::time::Instant::now();
     let envoye = envoi::envoyer_suivi(&messages, &expediteur, client.as_mut(), None, None);
