@@ -506,12 +506,8 @@ async function ouvrirLaFicheRendue(fiche) {
   const form = document.getElementById("config-formulaire");
   const charge = fiche.cle ? { nom: FICHE_ACTIVE, cle: fiche.cle } : { nom: FICHE_ACTIVE };
   let r;
-  try { r = await api("fiche", charge); } catch (e) {
-    // La fiche d'avant ne reste pas à l'écran sous le nom de celle qui ne s'ouvre pas.
-    if (FICHE_COURANTE === fiche) form.innerHTML = "";
-    dire(e.message, "erreur");
-    return;
-  }
+  // Une fiche qui ne s'ouvre pas ne laisse pas celle d'avant à l'écran sous son nom.
+  try { r = await api("fiche", charge); } catch (e) { if (FICHE_COURANTE === fiche) form.innerHTML = ""; dire(e.message, "erreur"); return; }
   // Une autre fiche s'est ouverte pendant que la route répondait : c'est elle qui se dessine.
   if (FICHE_COURANTE !== fiche) return;
   const encart = (x) => (x.erreurs_titre ? `<div class="encart erreur"><b>${echapper(x.erreurs_titre)}</b> — ${echapper(x.erreurs_note)}</div>` : "");
