@@ -2667,7 +2667,7 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   seules DSN déclarent sans ce qui désigne sa nature reste à dire, comme celui d'un bulletin ; la page ne propose que les
   natures que ses pièces permettent (`nature::natures_permises` : payée au mois pour un bulletin sans marque du
   spectacle ; le code .007 que la DSN déclare, avec son motif quand elle le déclare ; aucune nature qui interdit le
-  numéro d'objet .050 qu'elle déclare, `contrats-base.json`), et `importation-nature` écrit celle que la compagnie dit
+  numéro d'objet .050 qu'elle déclare ou que le bulletin imprime, `contrats-base.json`), et `importation-nature` écrit celle que la compagnie dit
   (`engagement::importe::nature_de`). Ce que la dernière DSN reprise déclare du
   contrat ne se demande pas (`nature::DeclareParLaDsn`) : `importation-etat` ne propose que la nature qu'elle déclare et
   ne demande que ce qu'elle tait (le salaire seul, le plus souvent), et `importation-nature` prend sur elle ce que sa
@@ -2723,7 +2723,11 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   elles ont les mêmes dates, ou portent le même numéro de contrat. Un bulletin, qui imprime la période de sa paie, est
   aussi du contrat que la DSN déclare quand il commence le même jour ou que sa période y tient (le bulletin d'un mois
   d'un CDDU sur deux mois) ; une AEM ou un certificat attestent le contrat entier : les mêmes dates ou le même numéro
-  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats ; un contrat qu'une paie déclarée dit
+  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats, même aux dates qui se chevauchent (deux
+  spectacles la même semaine ; S21.G00.40.050 et .007 sont des rubriques du contrat), une pièce qui n'en dit pas ne
+  contredisant rien ; la même règle (`engagement::importe::deux_contrats`) tient le registre des contrats attestés
+  (`import::attestes` : un contrat du même salarié aux dates qui chevauchent celles de la pièce l'atteste déjà, sauf
+  celui d'un autre spectacle ou d'une autre nature) ; un contrat qu'une paie déclarée dit
   par ses dates ou son numéro ne se prend pas par une ressemblance plus faible ; une paie d'un autre mois ne se
   complète qu'aux mêmes dates (`ecrite::les_plus_proches`). La règle est `importation::ecrite::meme_contrat`, que
   lisent la paie qu'une page de bulletin complète à l'aperçu (`importation::bulletins`, DSN de l'aperçu et de

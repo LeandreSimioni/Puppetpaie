@@ -225,12 +225,13 @@ impl Proximite {
 /// DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`) : un bulletin (`piece`, sa
 /// `periode_de_paie`) est aussi du contrat que la DSN declare (`declare`) quand il commence le meme jour, ou que sa
 /// periode y tient. Une AEM ou un certificat attestent le contrat entier : les memes dates ou le meme numero seulement.
-/// Deux numeros d'objet, ou deux natures, differents : deux contrats. La seule regle, que lisent l'apercu (la paie que
+/// Deux numeros d'objet, ou deux natures, differents : deux contrats (`engagement::importe::deux_contrats`, que le
+/// registre des contrats attestes lit aussi). La seule regle, que lisent l'apercu (la paie que
 /// complete une page de bulletin : `importation::bulletins`), `rapprocher` (la paie d'un mois) et `engagements_importes`
 /// (l'engagement) ; la plus sure l'emporte (`les_plus_proches`). Que l'apercu et l'ecriture lisent la meme fait qu'un
 /// import rejoue ne trouve rien.
 pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
-    if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) || matches!((piece.nature, declare.nature), (Some(a), Some(b)) if a != b) {
+    if engagement::importe::deux_contrats(piece.objet, piece.nature, declare.objet, declare.nature) {
         return None;
     }
     let dates = piece.dates.zip(declare.dates);

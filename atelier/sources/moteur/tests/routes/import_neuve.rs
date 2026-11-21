@@ -220,6 +220,33 @@ fn la_nature_d_un_contrat_de_permanent_se_demande_apres_l_import() {
     assert_eq!(reussi(&route(&racine, "importation-etat", json!({})))["a_dire"], json!([]));
 }
 
+/// DEUX SPECTACLES LA MEME SEMAINE, DEUX CONTRATS (le bug : deux bulletins du meme salarie, deux numeros d'objet, des
+/// dates qui se chevauchent ; le registre des contrats attestes tenait le second pour le premier, son contrat CDDU etait
+/// jete, et sa nature se demandait apres l'import « reprise de ses seules DSN », CDI et CDD proposes). Le numero d'objet
+/// est une rubrique du contrat (S21.G00.40.050, `norme-dsn/texte/bloc-S21.G00.40.txt`) : deux numeros, deux contrats
+/// (`engagement::importe::deux_contrats`), chacun CDDU, rien a dire.
+#[test]
+fn deux_spectacles_aux_dates_qui_se_chevauchent_font_deux_contrats() {
+    let racine = neuve("deux_spectacles");
+    let import = racine.join("import");
+    std::fs::create_dir_all(&import).unwrap();
+    let mut second = a_repetitions();
+    second.numero = "8/2026";
+    second.objet = Some(("999Z99999902", "Le Grand Essai"));
+    second.periode = "du 20/01/2026 au 26/01/2026";
+    second.dates = vec!["du 20/01/2026 au 20/01/2026, du 25/01/2026 au 26/01/2026"];
+    pdf(vec![page_a(&a_repetitions())], &import.join("bulletin-1.pdf"));
+    pdf(vec![page_a(&second)], &import.join("bulletin-2.pdf"));
+    let r = reussi(&route(&racine, "importer", json!({}))).clone();
+    assert_eq!(r["bulletins"]["contrats_nouveaux"], json!(2), "{}", r["bulletins"]);
+    let contrats = contrats_importes(&racine);
+    assert_eq!(contrats.len(), 2, "{:?}", contrats);
+    assert!(contrats.iter().all(|c| c["atteste_par"] == json!("bulletin") && c["nature"] == json!("cddu_spectacle")), "{:?}", contrats);
+    let objets: BTreeSet<String> = contrats.iter().map(|c| c["numero_objet"].to_string()).collect();
+    assert_eq!(objets.len(), 2, "{:?}", contrats);
+    assert_eq!(reussi(&route(&racine, "importation-etat", json!({})))["a_dire"], json!([]));
+}
+
 /// REGARDER N'EST JAMAIS REFUSE (le bug : une compagnie qui venait d'importer ses bulletins n'avait dit ni son effectif
 /// ni sa premiere embauche ; `etat` refusait `EffectifAbsent`, et la Paie comme la Configuration restaient vides, case
 /// de l'effectif comprise). Juste apres l'import, chaque lecture que la page fait en s'ouvrant repond, et `etat` dit a

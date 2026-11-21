@@ -49,8 +49,8 @@ fn natures_permanentes() -> R<Vec<std::sync::Arc<droit::natures::Nature>>> {
 /// - la DSN deposee declare sa nature du contrat (S21.G00.40.007) : une nature qui ecrit ce code ; avec son motif de
 ///   recours (.021) quand elle le declare : une nature qu'elle designe avec lui (`Nature::declaree_par` ;
 ///   `norme-dsn/texte/bloc-S21.G00.40.txt`, `contrats-base.json`) ;
-/// - elle declare un numero d'objet (S21.G00.40.050, `PaieVersee::numero_objet`) : une nature qui ne l'interdit pas
-///   (`contrats-base.json`, `interdits`).
+/// - la DSN deposee declare, ou le bulletin imprime, un numero d'objet (S21.G00.40.050, `PaieVersee::numero_objet`) :
+///   une nature qui ne l'interdit pas (`contrats-base.json`, `interdits`).
 ///
 /// Une DSN reprise qui ne se relit plus ne dit pas son code : seul ce que la paie reprise garde (le numero d'objet) trie.
 fn natures_permises(ctx: &Contexte, importes: &[Importe], salarie: &IdSalarie, dsn: &DsnReprises) -> R<Vec<std::sync::Arc<droit::natures::Nature>>> {
@@ -61,7 +61,7 @@ fn natures_permises(ctx: &Contexte, importes: &[Importe], salarie: &IdSalarie, d
         if i.contrat().is_some() {
             permises.retain(|n| n.mensuelle());
         }
-        for (mois, p) in i.paies().iter().filter(|(_, p)| !p.contrat.d_un_bulletin()) {
+        for (mois, p) in i.paies() {
             if p.numero_objet.is_some() {
                 permises.retain(|n| n.interdit(droit::rubrique!("S21.G00.40.050")).is_none());
             }
@@ -305,7 +305,10 @@ fn nom_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
 /// Les contrats a dire d'un salarie : combien, les jours que leurs paies paient, payes le dernier mois repris.
 struct ContratsADire {
     nombre: usize,
-    /// Ceux qu'un bulletin atteste (sans marque du spectacle) ; les autres, ses seules DSN les declarent.
+    /// Ceux qu'un bulletin atteste (sans marque du spectacle).
+    de_permanent: usize,
+    /// Ceux qu'aucune piece n'atteste et dont aucune DSN ne declare une paie : leurs paies viennent de bulletins seuls.
+    /// Les autres, leurs DSN les declarent.
     par_bulletin: usize,
     payes: Option<Periode>,
     en_cours: bool,
@@ -313,18 +316,22 @@ struct ContratsADire {
 
 impl ContratsADire {
     /// CE QUE LA PAGE DIT DE SES CONTRATS A DIRE, d'ou ils viennent : un bulletin sans marque du spectacle, celui d'un
-    /// permanent ; une DSN dont ce qu'elle declare ne suffit pas a dire la nature (sans motif de recours, S21.G00.40.021).
+    /// permanent ; des bulletins dont aucun contrat n'a ete atteste ; une DSN dont ce qu'elle declare ne suffit pas a dire
+    /// la nature (sans motif de recours, S21.G00.40.021).
     fn dit(&self) -> String {
         let pluriel = |n: usize| if n > 1 { "s" } else { "" };
         let periode: String = self.payes.iter().map(|p| format!(" ; payé{} du {} au {}", pluriel(self.nombre), p.debut().jj_mm_aaaa(), p.fin().jj_mm_aaaa())).collect();
-        let par_dsn = self.nombre - self.par_bulletin;
+        let par_dsn = self.nombre - self.de_permanent - self.par_bulletin;
         let mut dit = Vec::new();
-        if self.par_bulletin > 0 {
+        if self.de_permanent > 0 {
             dit.push(format!(
                 "{} contrat{} repris : ses bulletins n'ont pas de Congés Spectacles ni de numéro d'objet, c'est un contrat de permanent",
-                self.par_bulletin,
-                pluriel(self.par_bulletin)
+                self.de_permanent,
+                pluriel(self.de_permanent)
             ));
+        }
+        if self.par_bulletin > 0 {
+            dit.push(format!("{} contrat{} repris de ses seuls bulletins, sans contrat attesté : ils ne disent pas sa nature", self.par_bulletin, pluriel(self.par_bulletin)));
         }
         if par_dsn > 0 {
             dit.push(format!("{} contrat{} repris de ses seules DSN : ce qu'elles en déclarent ne suffit pas à dire sa nature", par_dsn, pluriel(par_dsn)));
@@ -341,9 +348,12 @@ fn a_dire_par_salarie(importes: &[Importe]) -> R<BTreeMap<IdSalarie, ContratsADi
         // Un engagement importe porte toujours son salarie.
         let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
         let payes = jours_payes(i)?;
-        let x = par.entry(salarie).or_insert(ContratsADire { nombre: 0, par_bulletin: 0, payes: None, en_cours: false });
+        let x = par.entry(salarie).or_insert(ContratsADire { nombre: 0, de_permanent: 0, par_bulletin: 0, payes: None, en_cours: false });
         x.nombre += 1;
-        x.par_bulletin += usize::from(i.contrat().is_some());
+        // D'ou vient ce qui en a ete repris : la piece qui atteste son contrat, sinon la source de ses paies.
+        let de_permanent = i.contrat().is_some();
+        x.de_permanent += usize::from(de_permanent);
+        x.par_bulletin += usize::from(!de_permanent && i.paies().values().all(|p| p.contrat.d_un_bulletin()));
         x.payes = match (x.payes, payes) {
             (Some(a), Some(b)) => Some(reunies(a, b)?),
             (a, b) => a.or(b),
