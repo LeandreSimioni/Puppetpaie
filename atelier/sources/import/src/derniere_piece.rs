@@ -9,8 +9,9 @@ use socle::echec::R;
 use socle::mois::Mois;
 
 /// LA DERNIERE FOIS QUE LES PIECES REPRISES PORTENT UN SALARIE : le dernier mois qu'elles datent (un bulletin, la fin de
-/// la periode de sa paie ; une DSN, une AEM ou un certificat, la fin du contrat), ou un contrat qui court encore (sans
-/// fin : un CDI, un contrat que l'AEM dit « en cours »). `Aucune` : aucune piece ne le date.
+/// la periode de sa paie ; une DSN, son mois et la fin du contrat ; une AEM, son mois et la fin du contrat quand elle la
+/// dit ; un certificat, la fin de sa periode), ou un contrat qui court encore (sans fin dans les DSN qui le declarent :
+/// un CDI). `Aucune` : aucune piece ne le date.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DernierePiece {
     #[default]

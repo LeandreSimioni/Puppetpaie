@@ -239,7 +239,13 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         let mut dernier_contrat: HashMap<Option<&Nir>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
             dernier_contrat.insert(c.nir.as_ref(), c);
-            fins.insert((c.nir.clone(), c.numero.clone(), c.periode.debut()), c.fin_declaree.or(c.periode.fin()));
+            // La fin d'un contrat qu'une DSN a dite reste dite : une DSN suivante qui le redeclare sans sa fin (un rappel
+            // apres la rupture) ne le fait pas courir de nouveau.
+            let fin = c.fin_declaree.or(c.periode.fin());
+            let dite = fins.entry((c.nir.clone(), c.numero.clone(), c.periode.debut())).or_insert(fin);
+            if fin.is_some() {
+                *dite = fin;
+            }
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
@@ -289,6 +295,10 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         if let Some(&i) = index_salaries.get(&nir) {
             out.salaries[i].derniere_piece.contrat(fin);
         }
+    }
+    // Le mois de la derniere DSN qui declare le salarie le date aussi : elle le paie, quelle que soit la fin de ses contrats.
+    for s in out.salaries.iter_mut() {
+        s.derniere_piece.porte(s.mois);
     }
     Ok(out)
 }

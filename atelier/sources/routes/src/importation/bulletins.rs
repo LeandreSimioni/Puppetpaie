@@ -773,7 +773,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             d.porte(m);
         }
         match &c.aem {
-            Some(a) if a.fin_contrat.is_some() || a.en_cours => d.contrat(a.fin_contrat),
+            // Une AEM « en cours » dit que le contrat continue apres son mois, pas qu'il court aujourd'hui : elle ne date
+            // que son mois, deja porte.
+            Some(a) if a.fin_contrat.is_some() => d.contrat(a.fin_contrat),
             Some(_) => {}
             None => {
                 if let Some(p) = c.c.periode {
