@@ -132,6 +132,9 @@ struct Cx<'a> {
     /// La cle des cases du metier de la fiche, que la grille trouvee donne.
     par_la_grille: droit::minima::ParLaGrille,
     m: &'a emplois::Metier,
+    /// Ce que la table releve de la convention pour ce metier (`metiers`), quand elle en releve : le cachet et la
+    /// repetition se lisent alors dans l'annexe que la table nomme, celle que la bulle lit, sans l'annexe de la fiche.
+    releve: Option<&'a droit::minima::MetierDansLaConvention>,
     fiche: &'a droit::fiche::SalarieDuContrat,
     paie: &'a Paie,
     ent: &'a droit::fiche::ChampsEntreprise,
@@ -205,10 +208,33 @@ impl<'a> Cx<'a> {
         Ok(self.annexe.iter().filter(|a| annexes.as_ref().is_some_and(|m| m.contains_key(*a))).copied().collect())
     }
 
+    /// L'annexe ou la table releve le cachet du metier (`metiers`, celle que la bulle lit) : `None` quand elle ne releve
+    /// pas le metier (il prend les annexes candidates) ; `Some(None)` quand elle le releve sans cachet d'une annexe.
+    fn annexe_du_cachet_releve(&self) -> Option<Option<AnnexeConvention>> {
+        use droit::minima::CeQueFixeLaConvention as Releve;
+        Some(self.releve?.rubriques.iter().find_map(|r| match r {
+            Releve::Cachet { annexe } => *annexe,
+            _ => None,
+        }))
+    }
+
+    /// L'annexe ou la table releve la repetition du metier, comme `annexe_du_cachet_releve`.
+    fn annexe_de_la_repetition_relevee(&self) -> Option<Option<AnnexeConvention>> {
+        use droit::minima::CeQueFixeLaConvention as Releve;
+        Some(self.releve?.rubriques.iter().find_map(|r| match r {
+            Releve::Repetition { annexe, .. } => *annexe,
+            _ => None,
+        }))
+    }
+
     fn plancher_cachet_3090(&self) -> R<Option<Plancher>> {
         let refs = self.refs();
         let mut meilleurs: Vec<(MontantUnitaire, AnnexeConvention, &droit::minima::GrilleDeCachets)> = Vec::new();
-        for annexe in self.annexes_candidates()? {
+        let annexes = match self.annexe_du_cachet_releve() {
+            Some(relevee) => relevee.into_iter().collect(),
+            None => self.annexes_candidates()?,
+        };
+        for annexe in annexes {
             let ligne = refs.get(&annexe).ok_or_else(|| socle::fichiers::absent(annexe.as_str()))?;
             let grille = self.annexe_3090(&annexe)?.cachets.as_ref().and_then(|c| c.get(ligne)).ok_or_else(|| manque(&format!("3090.annexes.{}.cachets.{}", annexe, ligne)))?;
             if let Some(montant) = palier(&grille.paliers, self.nb_cachets) {
@@ -885,6 +911,46 @@ impl<'a> Cx<'a> {
         let (montant, annexe, heure, lib) = plus_bas(trouves, |x| x.0).unwrap();
         Ok(Some((montant, format!("CCN 3090, annexe {}, {}", annexe, lib), heure)))
     }
+
+    /// LE CACHET DE REPETITION DU JOUR d'un metier dont la table releve la repetition dans l'annexe `relevee` (celle que
+    /// la bulle lit, `repetition_fixee`) : un montant par jour, « qu'il y ait 1 ou 2 services de répétition de 4 heures
+    /// dans la même journée » (annexe 4, KALIARTI000028157829 ; 94,34 EUR, avenant du 21/07/2025). Rien quand la table
+    /// releve le metier sans repetition d'une annexe, ni pour un musicien ou un chef d'orchestre de cette annexe, qui ont
+    /// leurs propres services.
+    fn cachet_de_repetition_releve(&self, relevee: Option<AnnexeConvention>) -> R<Option<Minimum>> {
+        let Some(annexe) = relevee else { return Ok(None) };
+        if musicien_dans(self.refs(), &annexe) {
+            return Ok(None);
+        }
+        let r = self.grille.annexes.as_ref().and_then(|x| x.get(&annexe)).and_then(|x| x.repetition.as_ref());
+        let montant = r.and_then(|r| r.cachet).ok_or_else(|| manque(&format!("3090.annexes.{}.repetition.cachet", annexe)))?;
+        let libelle: String = r.and_then(|r| r.cachet_libelle.clone()).into_iter().collect();
+        Ok(Some(Minimum { montant, quoi: format!("CCN 3090, annexe {}, {}", annexe, libelle), par: Par::Jour, service_3090: false }))
+    }
+}
+
+/// LA JOURNEE DE REPETITION LA MOINS PAYEE d'une ligne « Service de repetition » (`saisie` : la ligne telle que saisie,
+/// pour ses dates) : ses services et ce qu'elle paie, au taux de la ligne. La ligne dit ses services et ses jours, pas
+/// combien chaque jour en compte ; le cachet de repetition vaut pour 1 ou 2 services par jour. Avec `n` jours et entre
+/// `n` et `2n - 1` services entiers, un jour au moins n'en a qu'un ; avec `2n`, chacun en a deux (une inference : elle
+/// suppose au moins un service par date, et jamais plus de deux, ce que le texte ne dit pas en toutes lettres). Hors de la (une ligne
+/// sans dates, des services qui ne se comptent pas en entiers, moins d'un service par jour, plus de deux), la ligne ne
+/// dit pas ce que paie un jour : rien ne se compare.
+fn journee_la_moins_payee(l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> Option<(usize, MontantUnitaire, MontantUnitaire)> {
+    let Some(QuantiteDeLigne::Services(services)) = l.paiement.quantite() else { return None };
+    let taux = l.paiement.taux().par_unite()?;
+    let jours: BTreeSet<Jour> = saisie?.dates().iter().map(|d| d.jour()).collect();
+    let n = jours.len();
+    if n == 0 || socle::grandeurs::entiere(services) != Some(services) {
+        return None;
+    }
+    if services == Services::comptes(2 * n) {
+        Some((2, taux, taux + taux))
+    } else if services >= Services::comptes(n) && services < Services::comptes(2 * n) {
+        Some((1, taux, taux))
+    } else {
+        None
+    }
 }
 
 /// La ligne de minima `refs` de l'annexe `annexe` (la 3090) est-elle celle d'un musicien ou d'un chef d'orchestre (sa
@@ -938,8 +1004,14 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
     if t.convention(&idcc).is_none() {
         return Ok(None);
     }
+    // Un metier que la compagnie a cree n'est pas celui dont il est la copie : il n'a pas de minimum releve, et son code
+    // declare (celui de la copie) ne le compare a rien.
+    if paie.engagement.metier.as_ref().is_some_and(|m| m.numero_cree().is_some()) {
+        return Ok(None);
+    }
     let Some(code) = paie.salarie.code_emploi_ft.dite() else { return Ok(None) };
     let Some(m) = emplois::metier(code)? else { return Ok(None) };
+    let releve = t.convention(&idcc).and_then(|c| c.metiers.as_ref()).and_then(|r| r.get(&m.code));
     // Un cachet se paie en cachets (`rubriques-base.json`, l'unite de la rubrique « cachet »).
     let nb_cachets = paie
         .remuneration
@@ -965,6 +1037,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
         lie_depuis,
         par_la_grille,
         m: &m,
+        releve,
         fiche: &paie.salarie,
         paie,
         ent,
@@ -981,6 +1054,9 @@ fn minimum_dans(cx: &Cx, l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> R<
     // Le service de repetition de la 3090 : un minimum par service ou par heure selon
     // l'annexe, jamais le cachet de la journee.
     if repetition(&l.code) && *cx.idcc == IDCC_3090 && statut == Statut::Artiste {
+        if let Some(relevee) = cx.annexe_de_la_repetition_relevee() {
+            return cx.cachet_de_repetition_releve(relevee);
+        }
         let dates: BTreeSet<Jour> = saisie.iter().flat_map(|s| s.dates().iter()).map(|d| d.jour()).collect();
         // Un service de repetition se paie en services (`rubriques-base.json`) : au plus un par date.
         let un_par_jour = match l.paiement.quantite() {
@@ -1043,6 +1119,9 @@ pub(crate) fn cachet_de_repetition(ctx: &Contexte, paie: &Paie) -> R<Option<Mini
         if *cx.idcc != IDCC_3090 || cx.statut() != Statut::Artiste {
             return Ok(None);
         }
+        if let Some(relevee) = cx.annexe_de_la_repetition_relevee() {
+            return cx.cachet_de_repetition_releve(relevee);
+        }
         let refs = cx.refs();
         let mut trouves: Vec<(MontantUnitaire, AnnexeConvention, String)> = Vec::new();
         for annexe in cx.annexes_ou_la_sienne()? {
@@ -1073,11 +1152,34 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
         let mut avis = Vec::new();
         for (l, saisie) in paie.remuneration.iter().zip(saisies_de(paie)) {
             let Some(p) = minimum_dans(cx, l, saisie)? else { continue };
+            // Un minimum du jour (le cachet de repetition) : ce que paie la journee la moins payee de la ligne.
+            if p.par == Par::Jour {
+                let Some((services, taux, paye)) = journee_la_moins_payee(l, saisie) else { continue };
+                if paye < p.montant {
+                    let dits = if services == 1 { "1 service".to_string() } else { format!("{} services", services) };
+                    avis.push(a_verifier(
+                        t,
+                        idcc,
+                        format!(
+                            "{}, {} : {} pour une journée de répétition ({} à {}). Notre lecture de la convention donne un minimum conventionnel de {} par jour, pour 1 ou 2 services ({} ; {}).",
+                            qui,
+                            l.designation(),
+                            euros(paye),
+                            dits,
+                            euros(taux),
+                            euros(p.montant),
+                            p.quoi,
+                            texte_source
+                        ),
+                    ));
+                }
+                continue;
+            }
             // Ce que la ligne paie de ce que le minimum compare : a l'heure, ou le prix de son unite (un cachet, un
             // service, une journee se paient a l'unite).
             let paye = match p.par {
                 Par::Heure => paye_a_l_heure(l),
-                Par::Unite | Par::Cachet | Par::Service => l.paiement.taux().par_unite(),
+                Par::Unite | Par::Cachet | Par::Service | Par::Jour => l.paiement.taux().par_unite(),
             };
             let Some(paye) = paye else { continue };
             if p.service_3090 {
@@ -1117,6 +1219,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
                 Par::Heure => "l'heure",
                 Par::Cachet => "le cachet",
                 Par::Service => "le service",
+                Par::Jour => "le jour",
             };
             if paye < p.montant {
                 avis.push(a_verifier(
@@ -1263,12 +1366,14 @@ pub struct CeQueFixe {
     pub texte: String,
 }
 
-/// CE QUE LA CONVENTION FIXE AU METIER, a un jour : le nom qu'elle lui donne, et chaque rubrique dont un montant vaut ce
-/// jour-la (`CeQueFixe`).
+/// CE QUE LA CONVENTION FIXE AU METIER, a un jour : le nom qu'elle lui donne, chaque rubrique dont un montant vaut ce
+/// jour-la (`CeQueFixe`), et ce qui ne se lit pas, en phrases (la surcouche de la compagnie, une convention que le socle
+/// de l'annee ne couvre pas) : les rubriques qui en ont besoin ne se disent pas, les autres restent.
 #[derive(Debug, Clone)]
 pub struct CeQueFixeAuMetier {
     pub nom: String,
     pub rubriques: Vec<CeQueFixe>,
+    pub ne_se_lit_pas: Vec<String>,
 }
 
 /// LES PALIERS D'UNE GRILLE DE CACHETS, dits : « 1 à 7 représentations dans le mois », « 8 à 11 », « 16 et plus » ; la
@@ -1357,8 +1462,10 @@ fn texte_qui_fixe(fondement: Option<&droit::source::Fondement>, montants: &[Mont
 /// de chacun. Une lecture, qui dit ce qu'elle sait : rien de releve pour le metier, ou une compagnie sans convention,
 /// rien (`None`) ; une rubrique dont la valeur ne se lit pas pour la compagnie ce jour-la (l'accord qui la lie, quand le
 /// logiciel n'a pas le bareme de l'annee pour reconnaitre son organisation patronale ; un tarif que la convention ne
-/// fixe pas encore) ne se dit pas, et rien d'autre ne tombe. Seul refuse un defaut de ce qui est livre (une ligne, une
-/// grille ou une source qui manque) ou le disque.
+/// fixe pas encore) ne se dit pas, et rien d'autre ne tombe. Ce que la compagnie a pose et qui ne se lit pas (sa
+/// surcouche du bareme, une convention que le socle de l'annee ne couvre pas) cache les seules rubriques qui en ont
+/// besoin, et se dit (`ne_se_lit_pas`), panne du disque sur ces fichiers comprise. Seul refuse un defaut de ce qui est
+/// livre (une ligne, une grille ou une source qui manque).
 pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jour: Jour) -> R<Option<CeQueFixeAuMetier>> {
     use droit::minima::CeQueFixeLaConvention as Releve;
     let ent = ctx.entreprise_au(&jour);
@@ -1368,18 +1475,34 @@ pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jou
     let Some(releve) = t.convention(idcc).and_then(|c| c.metiers.as_ref()).and_then(|m| m.get(code)) else { return Ok(None) };
     // L'accord qui lie la compagnie depend de son organisation patronale, que seul le bareme de l'annee reconnait : sans
     // lui, la grille qui la lie ne se sait pas, et ni le cachet ni la repetition ne se disent.
-    let grille = match ctx.organisation_dans_le_socle(jour.annee(), ent.organisation_patronale.dite())? {
-        Ok(organisation) => grille_au(t, idcc, organisation.as_ref(), Some(jour)).map(|(g, _, _)| g),
-        Err(_sans_bareme) => None,
+    let mut ne_se_lit_pas: Vec<String> = Vec::new();
+    let mut dire = |e: Echec| {
+        if !ne_se_lit_pas.contains(&e.phrase) {
+            ne_se_lit_pas.push(e.phrase);
+        }
+    };
+    // Une organisation que la fiche dit se reconnait dans le socle que la surcouche de la compagnie reprend : une
+    // surcouche qui ne se lit pas cache l'accord qui lie la compagnie, donc le cachet et la repetition ; elle se dit.
+    let grille = match ctx.organisation_dans_le_socle(jour.annee(), ent.organisation_patronale.dite()) {
+        Ok(Ok(organisation)) => grille_au(t, idcc, organisation.as_ref(), Some(jour)).map(|(g, _, _)| g),
+        Ok(Err(_sans_bareme)) => None,
+        Err(e) => {
+            dire(e);
+            None
+        }
     };
     let cle = format!("conventions.{}.metiers.{}", idcc, code);
-    // Le tarif de ce jour : celui que la ligne prend quand elle ne dit pas son taux.
-    let tarif_fixe = |rubrique: CodeDeRubrique, condition: &String| -> R<Option<CeQueFixe>> {
-        let Some((montant, tarifs)) = crate::tarif_et_ses_tarifs(ctx, &rubrique, &jour)? else { return Ok(None) };
+    // Le tarif de ce jour : celui que la ligne prend quand elle ne dit pas son taux ; `Err` : ce que la compagnie a pose
+    // empeche de le lire (`Contexte::tarifs_conventionnels`).
+    let tarif_fixe = |rubrique: CodeDeRubrique, condition: &String| -> R<Result<Option<CeQueFixe>, Echec>> {
+        let (montant, lus) = match crate::tarif_et_ses_tarifs(ctx, &rubrique, &jour)? {
+            Ok(Some(x)) => x,
+            Ok(None) => return Ok(Ok(None)),
+            Err(e) => return Ok(Err(e)),
+        };
         let montants = vec![MontantFixe { condition: condition.clone(), montant }];
-        let ou = format!("{}.json par_convention.{}.bareme.tarifs_conventionnels", jour.annee(), idcc);
-        let texte = texte_qui_fixe(tarifs.source.as_ref(), &montants, &droit::contexte::SOCLES, &ou)?;
-        Ok(Some(CeQueFixe { rubrique, montants, texte }))
+        let texte = texte_qui_fixe(lus.tarifs.source.as_ref(), &montants, &lus.fichier, &lus.cle)?;
+        Ok(Ok(Some(CeQueFixe { rubrique, montants, texte })))
     };
     let mut rubriques = Vec::new();
     for r in &releve.rubriques {
@@ -1397,16 +1520,19 @@ pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jou
                 CeQueFixe { rubrique: REPETITION, montants, texte }
             }
             (Releve::Cachet { .. } | Releve::Repetition { .. }, None) => continue,
-            (Releve::Repas { condition }, _) => match tarif_fixe(crate::REPAS, condition)? {
-                Some(f) => f,
-                None => continue,
-            },
-            (Releve::Nuitee { condition }, _) => match tarif_fixe(crate::NUITEE, condition)? {
-                Some(f) => f,
-                None => continue,
-            },
+            (Releve::Repas { condition }, _) | (Releve::Nuitee { condition }, _) => {
+                let rubrique = if matches!(r, Releve::Repas { .. }) { crate::REPAS } else { crate::NUITEE };
+                match tarif_fixe(rubrique, condition)? {
+                    Ok(Some(f)) => f,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        dire(e);
+                        continue;
+                    }
+                }
+            }
         };
         rubriques.push(fixe);
     }
-    Ok(Some(CeQueFixeAuMetier { nom: releve.nom.clone(), rubriques }))
+    Ok(Some(CeQueFixeAuMetier { nom: releve.nom.clone(), rubriques, ne_se_lit_pas }))
 }

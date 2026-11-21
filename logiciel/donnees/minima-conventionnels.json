@@ -13,7 +13,7 @@
   "metiers": {
    "MAR010": {
     "nom": "Artiste marionnettiste",
-    "note": "Seule l'annexe 4 (tournee) nomme le marionnettiste : c'est elle qui est relevee. En annexe 1, le calcul compare son cachet a la grille << Role (artiste dramatique) >> (emplois-base.json, minima.3090.1), qu'aucun texte depose ne lui rattache : la bulle n'en dit rien.",
+    "note": "Seule l'annexe 4 (tournee) nomme le marionnettiste : c'est elle qui est relevee, et les avertissements de minimum la lisent comme la bulle, quelle que soit l'annexe de la fiche Entreprise.",
     "rubriques": [
      {"rubrique": "cachet", "annexe": "4"},
      {"rubrique": "repetition", "annexe": "4", "condition": "par jour, pour 1 ou 2 services de 4 h"},
@@ -101,7 +101,7 @@
     },
     "repetition": {
      "cachet": 84.0,
-     "cachet_libelle": "cachet de repetition, 1 ou 2 services dans la meme journee",
+     "cachet_libelle": "cachet de répétition, 1 ou 2 services dans la même journée",
      "heure": 14.0,
      "service_musicien": 47.52
     },
@@ -202,7 +202,7 @@
     },
     "repetition": {
      "cachet": 106.2,
-     "cachet_libelle": "cachet de base des journees de repetition",
+     "cachet_libelle": "cachet de base des journées de répétition",
      "service_isole": 73.83
     },
     "techniciens": {
@@ -602,7 +602,7 @@
     },
     "repetition": {
      "cachet": 94.34,
-     "cachet_libelle": "cachet de repetition, 1 ou 2 services de 4 heures dans la meme journee",
+     "cachet_libelle": "cachet de répétition, 1 ou 2 services de 4 heures dans la même journée",
      "source": {"sources": [
       {"fichier": "atelier/reference/sources/legifrance-3090-avenant-salaires-20250721.md", "emetteur": "convention", "article": "avenant du 21/07/2025, annexe 4", "citation": "Le cachet de répétition est fixé à 94,34 euros (pour un ou deux services de répétitions de quatre heures dans la même journée)."},
       {"fichier": "atelier/reference/sources/kali-entrepot/articles.jsonl.gz#3090", "emetteur": "convention", "article": "KALIARTI000028157829", "citation": "Le cachet de répétition est un cachet journalier indivisible, fixé au même montant, qu'il y ait 1 ou 2 services de répétition de 4 heures dans la même journée."}
@@ -640,7 +640,7 @@
     },
     "repetition": {
      "cachet": 108.03,
-     "cachet_libelle": "cachet de base par jour, repetitions / creation",
+     "cachet_libelle": "cachet de base par jour, répétitions / création",
      "service_isole": 63.17
     },
     "techniciens": {

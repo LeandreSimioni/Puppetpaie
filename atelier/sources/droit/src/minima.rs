@@ -137,6 +137,9 @@ socle::noms_fermes! {
         JusquA200 = "<= 200 places",
         AuPlus300 = "<= 300 places",
         MoinsDe300 = "< 300 places",
+        De301A600 = "301 a 600 places",
+        PlusDe600 = "> 600 places",
+        AutresSalles = "autres salles",
     }
 }
 
@@ -147,6 +150,9 @@ impl JaugeDeLaGrille {
             JaugeDeLaGrille::JusquA200 => "salle jusqu'à 200 places",
             JaugeDeLaGrille::AuPlus300 => "salle de 300 places au plus",
             JaugeDeLaGrille::MoinsDe300 => "salle de moins de 300 places",
+            JaugeDeLaGrille::De301A600 => "salle de 301 à 600 places",
+            JaugeDeLaGrille::PlusDe600 => "salle de plus de 600 places",
+            JaugeDeLaGrille::AutresSalles => "autres salles",
         }
     }
 }
@@ -217,7 +223,8 @@ forme_notee! {
         pub periode: Option<PeriodeDesPaliers>,
         pub jauge: Option<JaugeDeLaGrille>,
         pub paliers: Vec<Palier>,
-        pub autres_jauges: Option<BTreeMap<CleDeGrille, Vec<MontantUnitaire>>>,
+        /// Les montants des autres jauges, pour memoire : le metier pointe la grille de la plus basse.
+        pub autres_jauges: Option<BTreeMap<JaugeDeLaGrille, Vec<MontantUnitaire>>>,
     }
 }
 
@@ -767,14 +774,16 @@ impl ParLaGrille {
     }
 }
 
-/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, ou d'une unite de grille (la journee,
-/// la semaine, le mois).
+/// Ce qu'un minimum compare : le prix d'une heure, d'un cachet, d'un service, d'une unite de grille (la journee,
+/// la semaine, le mois), ou ce que paie un jour de repetition, ses services ensemble (le cachet de repetition de la 3090,
+/// « pour un ou deux services de répétitions de quatre heures dans la même journée »).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Par {
     Heure,
     Cachet,
     Service,
     Unite,
+    Jour,
 }
 
 /// Le minimum conventionnel d'une ligne de paie, tel que les avertissements le lisent : le montant, la grille d'ou il

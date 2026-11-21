@@ -2427,6 +2427,38 @@ fn tranches_de_l_annee_appliquees(p: &Paie) -> R<Option<(Montant, Montant, Monta
     Ok(Some((lue(Assiette::T1Annuelle)?, lue(Assiette::T2Annuelle)?, lue(Assiette::CetAnnuelle)?)))
 }
 
+/// UN NET A PAYER NEGATIF S'AVERTIT, rien ne le refuse (Leandre, 21/11/2026) : la carte dit ce qui s'est retire du brut,
+/// comme `calculer` compose le net (7.10) : les cotisations salariales, les avantages recus en nature, et les lignes hors
+/// assiette qui retiennent (un acompte retenu).
+pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
+    if p.net_a_payer >= Montant::ZERO {
+        return Ok(None);
+    }
+    let mut retires = vec![format!("les cotisations salariales ({})", euros(p.total_sal))];
+    let mut en_nature = Montant::ZERO;
+    for l in &p.remuneration {
+        if rubrique(&ctx.racine, &l.code, &ctx.lue_au)?.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
+            en_nature += l.montant;
+        }
+    }
+    if en_nature > Montant::ZERO {
+        retires.push(format!("les avantages reçus en nature ({})", euros(en_nature)));
+    }
+    for l in p.remuneration.iter().filter(|l| !l.soumis && l.montant < Montant::ZERO) {
+        retires.push(format!("{} ({})", l.designation(), euros(l.montant.abs())));
+    }
+    Ok(Some(Avis {
+        info: false,
+        texte: format!(
+            "{} : le net à payer est négatif ({}). Du brut ({}) se retirent {}.",
+            crate::qui_de(&p.salarie)?,
+            euros(p.net_a_payer),
+            euros(p.brut),
+            retires.join(", ")
+        ),
+    }))
+}
+
 /// Le plafond sur lequel se pose le forfait de sante d'un salarie au mois (`pss_periode`, la rubrique `mutuelle` et la
 /// base 18 du bloc 79) : celui de la periode de paie, reduit au prorata des jours quand le contrat ne la couvre pas
 /// (`plafond::plafond_permanent`), mais SANS la correction du temps partiel.

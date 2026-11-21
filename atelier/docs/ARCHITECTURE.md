@@ -1280,18 +1280,20 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
+| tarifs de la convention lus, avec le fichier du socle et la clé qui les portent | `droit::contexte::TarifsLus` | `droit/src/contexte.rs` |
 | emploi (un métier par son code ; sa fiche vient du catalogue ou de la nomenclature, `FicheDuMetier`, dont `FicheDuCatalogue` et `EmploiFt` sont les formes des fichiers ; les sept champs qu'il fait déclarer, `ChampsDuMetier` ; un métier d'un déroulant, `MetierDuDeroulant`, une réponse) | `Metier` | `droit/src/emplois.rs` |
 | emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
 | emploi écrit (les six champs de l'emploi qu'une carte écrit à la main ou qu'un bulletin importé imprime, sans libellé lisible ; un emploi qui n'en dit aucun n'est pas écrit, sa case est vide, `EmploiEcrit::dit`. La carte le porte en une case, `engagement::saisie::Carte.emploi`, et un changement de la carte l'écrit entier, `{"case": "emploi", "valeur": {…}}` ; chacun de ses champs reste un champ de la carte, `saisie::Champ`, qu'un avenant change et retire seul ; l'import y pose l'emploi qu'un bulletin imprime, `EmploiEngagement.ecrit`) | `EmploiEcrit` | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
 | métier créé (copié d'un métier par la compagnie, puis modifié ; son fichier, `MetiersCrees`, une forme ; le code de la nomenclature qu'il fait déclarer, `code_declare`) | `MetierCree` | `droit/src/emplois.rs` |
+| cadre ou non, tel que la création d'un métier le dit | `Encadrement` | `droit/src/emplois.rs` |
 | ce que la compagnie a dit de ses métiers, lu pour une lecture (cochés, décochés, créés ; un fichier qui ne se lit pas ne ferme rien, sa faute se dit) | `DitsDeLaCompagnie` | `routes/src/metiers.rs` |
 | famille d'un métier | `FamilleDeMetier` | `droit/src/emplois.rs` |
 | sorte DSN d'une rubrique | `SorteDsnDeRubrique` ; le `dsn_type` qui la porte : `DsnTypeDeRubrique` | `droit/src/catalogue.rs` |
 | annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | clé de grille des minima | `CleDeGrille` | `droit/src/minima.rs` |
 | période des paliers d'une grille de cachets (le mois, trois mois) | `PeriodeDesPaliers` | `droit/src/minima.rs` |
-| jauge de la salle qu'une grille de cachets vise | `JaugeDeLaGrille` | `droit/src/minima.rs` |
+| jauge de la salle qu'une grille de cachets vise, et celle des autres jauges qu'elle porte pour mémoire (`autres_jauges`) | `JaugeDeLaGrille` | `droit/src/minima.rs` |
 | ce que la convention fixe au métier (le nom qu'elle lui donne, la tête de la bulle d'une ligne de paie, route `convention-du-metier`) et, pour une rubrique de paie, chaque montant et ce qu'il paie (`MontantFixe`), et le texte qui les fixe : l'article de la source de la valeur lue qui cite chaque montant (`droit::source::Fondement::qui_cite`) ; ce que la table des minima en relève, métier par métier, est sa forme, une variante par rubrique qui a son lecteur : `droit::minima::MetierDansLaConvention`, `CeQueFixeLaConvention` | `CeQueFixeAuMetier`, `CeQueFixe` | `engagement/src/minima.rs` |
 | catégorie dans la convention | `CategorieConventionnelle` | `droit/src/fiche.rs` |
 | annexe de la convention 3090 | `AnnexeConvention` | `droit/src/fiche.rs` |
@@ -2210,8 +2212,10 @@ datée, vérifiable**.
   `emplois::metiers_crees`) a la fiche d'un métier du catalogue et se lit par le même chemin (`CodeEmploi::metier`,
   qui note son fichier dans l'empreinte de la paie) ; son code, `CIE-` et un numéro, ne s'écrit jamais comme un code de
   la nomenclature, et ne masque donc aucun métier du catalogue ; la DSN déclare son code France Travail
-  (`Metier::code_emploi_ft`). Il se propose d'office dans les cartes, et se retire comme les autres (décoché). Il garde
-  le rattachement aux minima de sa copie ; aucun texte déposé n'interdit d'employer sur un métier hors des listes des
+  (`Metier::code_emploi_ft`). Il se propose d'office dans les cartes, et se retire comme les autres (décoché). Il n'a
+  pas de minimum relevé (Léandre, 21/11/2026 : « vide, c'est pas le métier original ») : ni la bulle ni l'avertissement
+  de minimum ne le comparent à la grille de sa copie (l'engagement garde le métier de sa carte, `Engagement::metier`) ;
+  aucun texte déposé n'interdit d'employer sur un métier hors des listes des
   annexes 8 et 10 (elles disent qui relève de l'assurance chômage des intermittents, `caisse_conges::hors_de_l_annexe8`),
   et rien ne se refuse de plus.
 - `logiciel/donnees/minima-conventionnels.json` — les grilles de la **3090** (annexes
@@ -2238,6 +2242,11 @@ datée, vérifiable**.
   du mois de la carte, et le texte affiché est l'article de la source de cette valeur qui cite chaque montant (un test
   des sources le tient, `chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source`). La lecture dit ce qu'elle sait :
   une rubrique dont la valeur ne se lit pas pour la compagnie ce jour-là ne se dit pas, et rien d'autre ne tombe.
+  **Un seul chemin** : pour un métier que `metiers` relève, l'avertissement de minimum lit la même grille que la bulle,
+  dans l'annexe que la table nomme, sans regarder l'annexe de la fiche Entreprise ; une rubrique que la table ne relève
+  pas ne s'avertit pas. La répétition se compare au jour (`droit::minima::Par::Jour`) : le cachet de répétition de
+  l'annexe vaut pour 1 ou 2 services dans la journée, et la journée la moins payée de la ligne (ses services au taux de
+  la ligne) s'y compare quand la ligne le dit (`engagement::minima::journee_la_moins_payee`) ; un musicien n'en a pas.
   Ajouter un métier, c'est ajouter son entrée (et la `source` de sa grille si elle n'en a pas) ; une rubrique sans
   lecteur (autre que cachet, répétition, repas, nuitée) ne se lit pas dans la table.
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,

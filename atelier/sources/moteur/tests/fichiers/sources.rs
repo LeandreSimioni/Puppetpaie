@@ -9,7 +9,7 @@ use crate::outils::code_livre;
 
 use droit::source::{Fondement, Source};
 use serde_json::Value;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -246,9 +246,18 @@ fn montant_cite(ou: &str, source: &Value, m: &Value, fautes: &mut Vec<String>) {
 #[test]
 fn chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source() {
     let (minima, emplois) = (lu("minima-conventionnels.json"), lu("emplois-base.json"));
-    let baremes = [("2025", lu("baremes/2025.json")), ("2026", lu("baremes/2026.json"))];
+    // Chaque bareme livre, quelle que soit son annee.
+    let mut baremes: Vec<(String, Value)> = std::fs::read_dir(code_livre().join("baremes"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".json"))
+        .map(|n| (n.trim_end_matches(".json").to_string(), lu(&format!("baremes/{}", n))))
+        .collect();
+    baremes.sort_by(|a, b| a.0.cmp(&b.0));
+    assert!(!baremes.is_empty());
     let mut fautes = Vec::new();
-    let mut vus = 0;
+    // Les montants vus, par rubrique relevee : aucune ne passe a vide.
+    let mut vus: BTreeMap<String, usize> = BTreeMap::new();
     for (idcc, c) in minima["conventions"].as_object().unwrap() {
         let Some(metiers) = c["metiers"].as_object() else { continue };
         let grilles: Vec<&Value> = std::iter::once(c).chain(c["accords"].as_array().into_iter().flatten()).collect();
@@ -257,6 +266,7 @@ fn chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source() {
             for r in m["rubriques"].as_array().unwrap() {
                 let rubrique = r["rubrique"].as_str().unwrap();
                 let ou = format!("conventions.{}.metiers.{} {}", idcc, code, rubrique);
+                let vus = vus.entry(ou.clone()).or_insert(0);
                 for g in &grilles {
                     // La grille (ou la repetition) de l'annexe que la rubrique nomme, sinon celle de la convention.
                     let (dans, ligne) = match r["annexe"].as_str() {
@@ -271,41 +281,47 @@ fn chaque_montant_de_la_bulle_est_dans_la_citation_de_sa_source() {
                                 continue;
                             };
                             for p in paliers {
-                                vus += 1;
+                                *vus += 1;
                                 montant_cite(&ou, &grille["source"], &p["montant"], &mut fautes);
                             }
                         }
                         "repetition" if r["annexe"].is_string() => {
-                            vus += 1;
+                            *vus += 1;
                             montant_cite(&ou, &dans["repetition"]["source"], &dans["repetition"]["cachet"], &mut fautes);
                         }
                         "repetition" => {
                             let rep = &dans["repetition"];
                             let propre = &rep["par_categorie"][ligne.as_str().unwrap()]["service"];
-                            vus += 1;
+                            *vus += 1;
                             montant_cite(&ou, &rep["source"], if propre.is_null() { &rep["service"] } else { propre }, &mut fautes);
                         }
                         _ => {}
                     }
                 }
                 if rubrique == "repas" || rubrique == "nuitee" {
+                    // Les tarifs de la couche de la convention, et ceux du socle, que la bulle lit quand la couche n'en a
+                    // pas (`Contexte::tarifs_conventionnels`).
                     for (an, b) in &baremes {
-                        let tarifs = &b["par_convention"][idcc]["bareme"]["tarifs_conventionnels"];
-                        let valeurs: Vec<&Value> = match &tarifs[rubrique] {
-                            Value::Array(datees) => datees.iter().map(|d| &d["valeur"]).filter(|v| !v.is_null()).collect(),
-                            Value::Null => Vec::new(),
-                            seule => vec![seule],
-                        };
-                        for v in valeurs {
-                            vus += 1;
-                            montant_cite(&format!("{} (barème {})", ou, an), &tarifs["source"], v, &mut fautes);
+                        for (ou_dans, tarifs) in [("couche", &b["par_convention"][idcc]["bareme"]["tarifs_conventionnels"]), ("socle", &b["tarifs_conventionnels"])] {
+                            let valeurs: Vec<&Value> = match &tarifs[rubrique] {
+                                Value::Array(datees) => datees.iter().map(|d| &d["valeur"]).filter(|v| !v.is_null()).collect(),
+                                Value::Null => Vec::new(),
+                                seule => vec![seule],
+                            };
+                            for v in valeurs {
+                                *vus += 1;
+                                montant_cite(&format!("{} (barème {}, {})", ou, an, ou_dans), &tarifs["source"], v, &mut fautes);
+                            }
                         }
                     }
                 }
             }
         }
     }
-    // Ce que le test parcourt n'est jamais vide : une cle renommee le ferait reussir sans rien verifier.
-    assert!(vus > 0);
+    // Ce que le test parcourt n'est jamais vide : une cle renommee le ferait reussir sans rien verifier, rubrique par
+    // rubrique.
+    assert!(!vus.is_empty());
+    let a_vide: Vec<&String> = vus.iter().filter(|(_, n)| **n == 0).map(|(ou, _)| ou).collect();
+    assert!(a_vide.is_empty(), "rubriques relevées sans aucun montant vu : {:?}", a_vide);
     assert!(fautes.is_empty(), "{} montant(s) sans leur citation :\n{}", fautes.len(), fautes.join("\n"));
 }

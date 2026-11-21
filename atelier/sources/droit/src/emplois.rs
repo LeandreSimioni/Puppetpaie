@@ -206,7 +206,7 @@ impl CodeEmploi {
         }
         let crees = metiers_crees(racine)?;
         let Some(m) = crees.iter().find(|m| m.code == *self) else {
-            return Err(socle::refus!("Le métier {} n'est pas dans les métiers de la compagnie : créez-le d'abord dans Configuration › Métiers.", self));
+            return Err(socle::refus!("Le métier {} n'est pas dans les métiers de la compagnie : créez-le d'abord dans Configuration › Métiers.", self).reclasser(socle::echec::Classe::Manque));
         };
         // Le calcul qui lit un metier cree depend de ce qu'il dit : son fichier se note dans l'empreinte de la paie.
         socle::fichiers::noter_si_besoin(&METIERS_CREES.dans(racine));
@@ -821,6 +821,14 @@ pub struct MetiersCrees {
 
 /// Ce que dit le fichier des metiers crees (`MetiersCrees::quoi`).
 pub const QUOI_METIERS_CREES: &str = "Les metiers que cette compagnie a crees dans Configuration > Metiers : chacun copie d'un metier (copie_de), puis modifie. Son code (CIE- et un numero) ne se declare pas : la DSN declare son code_declare, un code de la nomenclature des emplois du spectacle. Sa fiche a la forme d'un metier du catalogue (donnees/emplois-base.json).";
+
+socle::noms_fermes! {
+    /// CADRE OU NON, tel que la creation d'un metier le dit (`metier-cree`) : la charge le dit, rien ne se suppose.
+    Encadrement, "Cadre ou non" {
+        Cadre = "cadre",
+        NonCadre = "non_cadre",
+    }
+}
 
 /// UN METIER QUE LA COMPAGNIE A CREE (Leandre, 20/11/2026 : « On copie et on modifie ») : son code (`CodeEmploi::cree`),
 /// le metier dont il est la copie (du catalogue, ou deja cree), le code de la nomenclature qu'il fait declarer

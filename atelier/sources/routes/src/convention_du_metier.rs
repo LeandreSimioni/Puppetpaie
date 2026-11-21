@@ -20,8 +20,12 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire ce que la convention fixe au métier, rubrique par rubrique.",
     charge: &[MOIS, Champ { nom: "metier", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier (MAR010…)", avance: false }],
     exemple: r#"{"mois":"2026-11","metier":"MAR010"}"#,
-    rend: "phrase : le nom que la convention donne au métier (la tête de la bulle) ; rubriques : pour chacune (rubrique), les montants et ce que chacun paie (condition, montant), le texte qui les fixe",
-    refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le fichier que la phrase dit illisible" }],
+    rend: "phrase : le nom que la convention donne au métier (la tête de la bulle) ; etiquette : le nom du « i » ; rubriques : pour chacune (rubrique), les montants et ce que chacun paie (condition, montant), le texte qui les fixe ; ne_se_lit_pas : ce qui cache une rubrique, en phrases",
+    refus: &[
+        FORME,
+        Refus { classe: Classe::Disque, corriger: "le fichier que la phrase dit illisible" },
+        Refus { classe: Classe::FichierAbsent, corriger: "le fichier livré que la phrase dit manquant : le signaler au développeur" },
+    ],
     acte: Acte::Lit,
     phrase: 80,
     ecran: Ecran::Lecture,
@@ -36,11 +40,14 @@ struct ChargeDuMetier {
 }
 
 /// Ce que la route rend : sa phrase (le nom que la convention donne au metier, la tete de la bulle ; ou qu'elle ne fixe
-/// rien), et ce que la convention fixe pour chaque rubrique.
+/// rien), ce que la convention fixe pour chaque rubrique, et ce qui ne se lit pas et cache une rubrique, en phrases.
 #[derive(Debug, Serialize)]
 struct ConventionDuMetier {
     phrase: Phrase,
+    /// Le nom lisible du « i » qui ouvre la bulle ; `None` : rien ne se dit, il n'y a pas de « i ».
+    etiquette: Option<String>,
     rubriques: Vec<CeQueFixe>,
+    ne_se_lit_pas: Vec<String>,
 }
 
 impl Dite for ConventionDuMetier {
@@ -64,7 +71,17 @@ fn convention_du_metier(ctx: &Contexte, c: ChargeDuMetier) -> R<ConventionDuMeti
         None => None,
     };
     Ok(match fixe {
-        Some(f) if !f.rubriques.is_empty() => ConventionDuMetier { phrase: socle::phrase!("{}", f.nom), rubriques: f.rubriques },
-        _ => ConventionDuMetier { phrase: Phrase::fixe("La convention ne fixe rien de relevé pour ce métier."), rubriques: Vec::new() },
+        Some(f) if !f.rubriques.is_empty() || !f.ne_se_lit_pas.is_empty() => ConventionDuMetier {
+            phrase: socle::phrase!("{}", f.nom),
+            etiquette: Some(format!("Ce que la convention fixe : {}", f.nom)),
+            rubriques: f.rubriques,
+            ne_se_lit_pas: f.ne_se_lit_pas,
+        },
+        _ => ConventionDuMetier {
+            phrase: Phrase::fixe("La convention ne fixe rien de relevé pour ce métier."),
+            etiquette: None,
+            rubriques: Vec::new(),
+            ne_se_lit_pas: Vec::new(),
+        },
     })
 }

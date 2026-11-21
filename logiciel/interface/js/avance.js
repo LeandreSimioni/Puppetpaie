@@ -288,7 +288,7 @@ function lignesDePaie(lignes, choixDe, o) {
     const bulle = bulleDe(l);
     const ouverte = !!(bulle && o.ouvertes && o.ouvertes.has(i));
     const porte = !avecBulles ? "" : bulle
-      ? `<button type="button" class="lien bulle-i" data-bulle="${i}" aria-expanded="${ouverte}" title="${echapper(bulle.tete)}" aria-label="ce que la convention fixe : ${echapper(bulle.tete)}">i</button>`
+      ? `<button type="button" class="lien bulle-i" data-bulle="${i}" aria-expanded="${ouverte}" title="${echapper(bulle.tete)}" aria-label="${echapper(bulle.etiquette)}">i</button>`
       : "<span></span>";
     return `<div class="ligne-paie" data-ligne="${i}" data-valeur="${echapper(JSON.stringify(l))}">
       ${colonnes.map(cellule).join("")}
@@ -307,6 +307,7 @@ function bulleDeLaLigne(b, ouverte) {
     <div><b>${echapper(b.tete)}</b></div>
     <table>${b.montants.map((m) => `<tr><td>${echapper(m.condition)}</td><td class="montant">${echapper(euros(m.montant))}</td></tr>`).join("")}</table>
     <span class="bulle-texte">${echapper(b.texte)}</span>
+    ${b.ne_se_lit_pas.map((p) => `<span class="discret">${echapper(p)}</span>`).join("")}
   </div>`;
 }
 
