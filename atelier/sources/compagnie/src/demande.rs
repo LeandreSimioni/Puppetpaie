@@ -4,8 +4,8 @@
 //! `preuve::verifier_preuve` et `coffre::exiger_mot_de_passe` gardent --, le moteur demande LUI-MEME le mot de
 //! passe, par un canal qu'un agent ne tient pas :
 //!
-//!   1. s'il y a un ecran : la boite de dialogue du systeme (`fenetre_native`), qui dit ce qui va partir (quoi, quel mois, a qui) ; la
-//!      fermer, c'est refuser ;
+//!   1. s'il y a un ecran : la boite de dialogue du systeme (`fenetre_native`), qui pose la demande (`DemandeDuMotDePasse` :
+//!      quel mot de passe, de qui, pour quel geste), mot pour mot comme la page ; la fermer, c'est refuser ;
 //!   2. sinon, si un humain est au terminal : la question dans le terminal, SANS ECHO ;
 //!   3. sinon (un agent seul, un conteneur) : REFUS, avec une phrase qui dit pourquoi et quoi faire.
 //!
@@ -33,7 +33,7 @@ use std::rc::Rc;
 use crate::coffre::{retenir_mot_de_passe_tape, Coffre};
 use socle::secret::Secret;
 use socle::echec::{refus, Echec, R};
-use socle::mois::MoisOuJour;
+use socle::texte::Phrase;
 
 /// Combien de fois on laisse retaper un mot de passe refuse avant de renoncer.
 const ESSAIS: u8 = 3;
@@ -41,17 +41,51 @@ const ESSAIS: u8 = 3;
 /// La duree de la seance (`coffre seance`) : douze heures.
 pub const DUREE_DE_LA_SEANCE: std::time::Duration = std::time::Duration::from_secs(12 * 3_600);
 
-/// Ce qui va partir, tel que l'humain doit le lire avant de taper.
+/// QUI OUVRE LE COFFRE D'UNE COMPAGNIE, donc le seul mot de passe du logiciel qu'elle accepte (`Coffre::verifier_ouverture` :
+/// une seule enveloppe) : le sien ; ou, rattachee a l'administrateur de l'installation, celui de l'administrateur, qui a
+/// rescelle son enveloppe (le sien ne l'ouvre plus). `routes::coffre::qui_ouvre` le dit d'une compagnie.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Acte {
-    pub quoi: String,
-    pub quand: Option<MoisOuJour>,
-    pub a_qui: String,
+pub enum QuiOuvre {
+    /// Une compagnie seule : son nom.
+    Compagnie(String),
+    /// L'administrateur : les compagnies que son mot de passe ouvre, en liste lisible (« A, B et C »).
+    Administrateur(String),
 }
 
-impl Acte {
-    pub fn nouveau(quoi: impl Into<String>, quand: Option<MoisOuJour>, a_qui: impl Into<String>) -> Acte {
-        Acte { quoi: quoi.into(), quand, a_qui: a_qui.into() }
+impl QuiOuvre {
+    /// De qui est le mot de passe, en mots : « de Compagnia UEUEUE », « de l'administrateur, qui ouvre A et B ».
+    fn de_qui(&self) -> String {
+        match self {
+            QuiOuvre::Compagnie(nom) => socle::texte::de(nom),
+            QuiOuvre::Administrateur(compagnies) if compagnies.is_empty() => "de l'administrateur".to_string(),
+            QuiOuvre::Administrateur(compagnies) => format!("de l'administrateur, qui ouvre {}", compagnies),
+        }
+    }
+}
+
+/// LA DEMANDE DU MOT DE PASSE DU LOGICIEL, telle qu'un humain la lit : ce qui est demande (`titre`), de qui (`de_qui`), pour
+/// quel geste (`pour`). LA MEME PARTOUT : la boite de la page la pose telle qu'une route la rend, la fenetre du systeme et
+/// le terminal la posent par `Question` ; un mot de passe refuse se dit avec les memes mots (`refus`). Jamais un secret.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DemandeDuMotDePasse {
+    pub titre: Phrase,
+    pub de_qui: Phrase,
+    pub pour: Phrase,
+    /// De qui, en mots, pour le refus.
+    #[serde(skip)]
+    qui: String,
+}
+
+impl DemandeDuMotDePasse {
+    /// La demande du mot de passe que `qui` accepte, pour `geste` (« poser le mot de passe net-entreprises (DSN) »).
+    pub fn de(qui: &QuiOuvre, geste: &str) -> DemandeDuMotDePasse {
+        let qui = qui.de_qui();
+        DemandeDuMotDePasse { titre: Phrase::fixe("PuppetPaie : le mot de passe du logiciel"), de_qui: socle::phrase!("Celui {}.", qui), pour: socle::phrase!("Pour {}.", geste), qui }
+    }
+
+    /// Le refus d'un mot de passe qui n'ouvre pas le coffre : lequel etait attendu, puis `suite` (« Rien n'est parti. »).
+    pub fn refus(&self, suite: &str) -> String {
+        format!("Mot de passe refusé : ce n'est pas le mot de passe du logiciel {}. {}", self.qui, suite)
     }
 }
 
@@ -126,39 +160,18 @@ fn canal_installe() -> Option<Rc<dyn Canal>> {
 pub const SANS_HUMAIN: &str = "Rien n'est parti : aucun humain n'est la pour taper le mot de passe du logiciel (ni ecran, ni terminal). \
 Un acte reel ne se fait pas sans lui : le lancer depuis la fenetre PuppetPaie, ou depuis un terminal ouvert par vous.";
 
-fn question_de_l_acte(acte: &Acte, essai: u8, precedent_refuse: bool) -> Question {
-    let mut lignes = vec![format!("Acte : {}", acte.quoi)];
-    if let Some(quand) = acte.quand {
-        lignes.push(format!("Mois : {}", quand));
-    }
-    if !acte.a_qui.trim().is_empty() {
-        lignes.push(format!("A : {}", acte.a_qui.trim()));
-    }
-    lignes.push("Taper le mot de passe du logiciel autorise CET acte, maintenant. Fermer la fenetre le refuse.".into());
-    Question { titre: "PuppetPaie : autoriser cet acte".into(), lignes, essai, precedent_refuse, seance: false, invite: None }
-}
-
-fn question_de_la_seance(duree: std::time::Duration, essai: u8, precedent_refuse: bool) -> Question {
-    Question {
-        titre: "PuppetPaie : ouvrir le coffre".into(),
-        lignes: vec![
-            format!("Le mot de passe du logiciel ouvre le coffre pour {}.", socle::temps::ecrit::heures_dites(duree)),
-            "Il n'autorise AUCUN acte reel : chaque depot, envoi ou signature le redemandera.".into(),
-        ],
-        essai,
-        precedent_refuse,
-        seance: true,
-        invite: None,
-    }
+/// La question que pose la fenetre ou le terminal : la demande, mot pour mot (`DemandeDuMotDePasse`).
+fn question(demande: &DemandeDuMotDePasse, essai: u8, precedent_refuse: bool, seance: bool) -> Question {
+    Question { titre: demande.titre.to_string(), lignes: vec![demande.de_qui.to_string(), demande.pour.to_string()], essai, precedent_refuse, seance, invite: None }
 }
 
 /// Pose la question jusqu'a `ESSAIS` fois ; rend le mot de passe qui ouvre le coffre de `racine`, ou la phrase du refus.
 /// Le mot de passe sort d'ici vers l'appelant interne seul (jamais vers un agent) ; rien d'autre n'en garde trace.
-fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Question) -> R<Secret> {
+fn obtenir(racine: &Path, canal: &dyn Canal, demande: &DemandeDuMotDePasse, seance: bool) -> R<Secret> {
     let coffre = Coffre::du_poste(racine);
     let mut refuse = false;
     for essai in 1..=ESSAIS {
-        match canal.demander(&question(essai, refuse)) {
+        match canal.demander(&question(demande, essai, refuse, seance)) {
             Reponse::Refus(e) => return Err(e),
             Reponse::Mot(m) => {
                 if m.devoiler().is_empty() {
@@ -172,7 +185,7 @@ fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Ques
             }
         }
     }
-    Err(refus("Mot de passe du logiciel refuse. Rien n'est parti."))
+    Err(refus(demande.refus("Rien n'est parti.")))
 }
 
 fn sans_mot_de_passe_pose(racine: &Path) -> Option<Echec> {
@@ -185,10 +198,10 @@ fn sans_mot_de_passe_pose(racine: &Path) -> Option<Echec> {
     }
 }
 
-/// Demande l'aval d'un humain pour `acte`. Accepte : le mot de passe verifie est retenu pour la suite de la commande
-/// (il ouvre le coffre). Refuse : rien n'est retenu, rien n'est ecrit.
-pub fn autoriser_acte(racine: &Path, acte: &Acte) -> Verdict {
-    match mot_de_passe_de_l_acte(racine, acte) {
+/// Demande l'aval d'un humain pour le geste que `demande` dit. Accepte : le mot de passe verifie est retenu pour la suite
+/// de la commande (il ouvre le coffre). Refuse : rien n'est retenu, rien n'est ecrit.
+pub fn autoriser_acte(racine: &Path, demande: &DemandeDuMotDePasse) -> Verdict {
+    match mot_de_passe_de_l_acte(racine, demande) {
         Ok(m) => {
             retenir_mot_de_passe_tape(&m);
             Verdict::Accepte
@@ -201,23 +214,28 @@ pub fn autoriser_acte(racine: &Path, acte: &Acte) -> Verdict {
 /// mot de passe tape, verifie sur le coffre de `racine` (une compagnie rattachee), RENDU a l'appelant, qui le
 /// passe comme preuve au depot de chaque compagnie -- chaque depot le reverifie sur son propre coffre (`verifier_preuve`).
 /// Rien n'est retenu ici. Refuse comme `autoriser_acte` : sans mot de passe pose, sans humain, fenetre fermee.
-pub fn mot_de_passe_de_l_acte(racine: &Path, acte: &Acte) -> R<Secret> {
+pub fn mot_de_passe_de_l_acte(racine: &Path, demande: &DemandeDuMotDePasse) -> R<Secret> {
     if let Some(e) = sans_mot_de_passe_pose(racine) {
         return Err(e);
     }
     let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
-    obtenir(racine, canal.as_ref(), |essai, refuse| question_de_l_acte(acte, essai, refuse))
+    obtenir(racine, canal.as_ref(), demande, false)
 }
 
-/// La seance : le mot de passe tape une fois, GARDE `DUREE_DE_LA_SEANCE` (`Coffre::garder_ouverture`) et retenu pour la
-/// commande. Elle ouvre le coffre ; elle n'autorise jamais un acte reel.
-pub fn ouvrir_seance(racine: &Path) -> Verdict {
+/// La seance : le mot de passe que `qui` accepte, tape une fois, GARDE `DUREE_DE_LA_SEANCE` (`Coffre::garder_ouverture`) et
+/// retenu pour la commande. Elle ouvre le coffre ; elle n'autorise jamais un acte reel.
+pub fn ouvrir_seance(racine: &Path, qui: &QuiOuvre) -> Verdict {
+    let geste = format!(
+        "ouvrir le coffre pendant {}, sans autoriser aucun dépôt, envoi ni signature",
+        socle::temps::ecrit::heures_dites(DUREE_DE_LA_SEANCE)
+    );
+    let demande = DemandeDuMotDePasse::de(qui, &geste);
     let ouverte = || -> R<()> {
         if let Some(e) = sans_mot_de_passe_pose(racine) {
             return Err(e);
         }
         let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
-        let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(DUREE_DE_LA_SEANCE, essai, refuse))?;
+        let m = obtenir(racine, canal.as_ref(), &demande, true)?;
         let coffre = Coffre::du_poste(racine);
         let fin = coffre.maintenant.plus_duree(DUREE_DE_LA_SEANCE).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
         coffre.garder_ouverture(&m, fin)?;
@@ -735,9 +753,9 @@ mod tests {
     const NET: &str = "SecretNet-fictif-4471";
     const BOITE: &str = "boite-fictive-9921";
 
-    /// Le mois des actes de ces tests.
-    fn septembre() -> MoisOuJour {
-        MoisOuJour::Mois(socle::forme::lire_texte("\"2026-09\"", "le mois du test").unwrap())
+    /// La demande des actes de ces tests.
+    fn demande(geste: &str) -> DemandeDuMotDePasse {
+        DemandeDuMotDePasse::de(&QuiOuvre::Compagnie("La Compagnie d'essai".into()), geste)
     }
 
     // `PUPPETPAIE_CLE` est une variable du processus : un test a la fois y touche.
@@ -797,7 +815,7 @@ mod tests {
 
     /// La phrase du refus d'un acte reel demande sans preuve.
     fn proteger_un_acte(m: &Monde) -> String {
-        crate::preuve::verifier_preuve(&m.ctx(), None, septembre(), "depot REEL d'une DSN", "net-entreprises").unwrap_err().phrase
+        crate::preuve::verifier_preuve(&m.ctx(), None, &demande("déposer en réel la DSN de septembre 2026")).unwrap_err().phrase
     }
 
     // ------------------------------------------------------------ le mot de passe tape ouvre tout
@@ -839,7 +857,7 @@ mod tests {
         {
             let _g = installer(mauvaise.clone());
             let dit = proteger_un_acte(&m);
-            assert!(dit.contains("refuse") && !dit.contains("Pas-le-bon"), "{}", dit);
+            assert!(dit.contains("refus") && !dit.contains("Pas-le-bon"), "{}", dit);
         }
         assert_eq!(mauvaise.nombre(), ESSAIS as usize);
         assert!(le_poste_n_ouvre_pas(&m));
@@ -850,11 +868,10 @@ mod tests {
         let m = monde();
         let f = Rc::new(Fausse::mot(LOGICIEL));
         let _g = installer(f.clone());
-        let acte = Acte::nouveau("envoi des documents", Some(septembre()), "3 salaries : Ana, Bo, Cy");
-        assert!(matches!(autoriser_acte(&m.racine, &acte), Verdict::Accepte));
+        assert!(matches!(autoriser_acte(&m.racine, &demande("envoyer les documents de septembre 2026 à Ana, Bo et Cy")), Verdict::Accepte));
         let q = &f.questions()[0];
         let texte = format!("{} {}", q.titre, q.lignes.join(" | "));
-        for attendu in ["envoi des documents", "2026-09", "Ana, Bo, Cy"] {
+        for attendu in ["PuppetPaie : le mot de passe du logiciel", "de La Compagnie d'essai", "envoyer les documents de septembre 2026 à Ana, Bo et Cy"] {
             assert!(texte.contains(attendu), "{}", texte);
         }
         assert!(!q.seance);
@@ -871,14 +888,14 @@ mod tests {
         crate::coffre::retenir_mot_de_passe_tape(&Secret::nouveau(LOGICIEL));
         {
             let _g = installer(Rc::new(Fausse::mot(LOGICIEL)));
-            assert!(matches!(ouvrir_seance(&m.racine), Verdict::Accepte));
+            assert!(matches!(ouvrir_seance(&m.racine, &QuiOuvre::Compagnie("La Compagnie d'essai".into())), Verdict::Accepte));
         }
         assert!(proteger_un_acte(&m).contains("aucun humain"));
         // Et la charge de la route, elle, reste une preuve (la fenetre Tk, la page) : le mot de passe tape y arrive.
         let preuve = crate::preuve::Preuve { motdepasse: Some(Secret::nouveau(LOGICIEL)), ..Default::default() };
-        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), septembre(), "x", "y").is_ok());
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&preuve), &demande("x")).is_ok());
         let mauvaise = crate::preuve::Preuve { motdepasse: Some(Secret::nouveau("Pas-le-bon-mot-de-passe-77")), ..Default::default() };
-        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), septembre(), "x", "y").is_err());
+        assert!(crate::preuve::verifier_preuve(&m.ctx(), Some(&mauvaise), &demande("x")).is_err());
     }
 
     // ------------------------------------------------------------ la seance
@@ -890,7 +907,7 @@ mod tests {
         let f = Rc::new(Fausse::mot(LOGICIEL));
         {
             let _g = installer(f.clone());
-            assert!(matches!(ouvrir_seance(&m.racine), Verdict::Accepte));
+            assert!(matches!(ouvrir_seance(&m.racine, &QuiOuvre::Compagnie("La Compagnie d'essai".into())), Verdict::Accepte));
         }
         assert!(f.questions()[0].seance);
         // Plus rien de retenu en memoire : c'est la seance GARDEE (12 h) qui ouvre, dans un processus neuf.
@@ -912,7 +929,7 @@ mod tests {
     }
 
     fn q() -> Question {
-        question_de_l_acte(&Acte::nouveau("x", Some(septembre()), "y"), 1, false)
+        question(&demande("x"), 1, false, false)
     }
 
     #[test]

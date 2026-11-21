@@ -1245,8 +1245,8 @@ async function boiteSuppression() {
   };
   document.getElementById("sup-confirmer").onclick = async () => {
     let mdp = "";
-    if (q.mot_de_passe) {
-      mdp = await demanderMotDePasse("Supprimer définitivement");
+    if (q.demande) {
+      mdp = await demanderMotDePasse(q.demande);
       if (mdp === null) return;
     }
     try {

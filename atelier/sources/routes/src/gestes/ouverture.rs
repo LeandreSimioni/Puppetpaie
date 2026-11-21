@@ -737,11 +737,6 @@ fn trop_recente(precedente: &Trace, pas_avant: Duration) -> Option<String> {
     }
 }
 
-/// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
-fn coffre_dispo(ctx: &Contexte, service: &str) -> R<bool> {
-    compagnie::coffre::Coffre::du_poste(&ctx.racine).disponible(service)
-}
-
 /// Une seule phrase pour l'absence de reseau, pas une erreur par dossier et par organisme. Les erreurs
 /// qui ne disent que « pas de reseau » sortent des incidents ; les autres (un mot de passe refuse, un coffre ferme)
 /// restent, elles demandent un geste.
@@ -1013,13 +1008,34 @@ fn reborrow_courriel<'b>(c: &'b mut Option<&mut dyn Courriel>) -> Option<&'b mut
     }
 }
 
+/// L'ACCES `service` EST-IL POSE, MAINTENANT ? (`a_poser` : `net-entreprises`, `urssaf`, `google`.) Le coffre le dit sans
+/// rien ouvrir (le mot de passe d'un organisme, pose ou dans l'environnement ; le jeton Google, lu) ; `Err` : le coffre ne se
+/// lit pas. Le passage s'en sert pour noter ce qui manque, et le bandeau pour ne redire que ce qui manque encore
+/// (`veille::acces_a_poser`) : un acces pose apres le releve disparait du bandeau tout de suite.
+pub(crate) fn acces_pose(racine: &Path, service: &str) -> R<bool> {
+    match service {
+        "google" => Ok(crate::coffre::autorise(racine)),
+        organisme => compagnie::coffre::Coffre::du_poste(racine).disponible(organisme),
+    }
+}
+
+/// UN RELEVE QUI S'ARRETE (un delai depasse, une reponse coupee, un disque qui refuse) : la compagnie en lit la phrase
+/// (`quoi : phrase`) ; ce qu'il porte a part part chez l'editeur par le journal des incidents (`suites::noter_la_panne`),
+/// puisque l'ouverture ne refuse pas et qu'aucune route ne le notera.
+fn noter_le_releve_refuse(ctx: &Contexte, r: &mut Ouverture, quoi: &str, e: &socle::echec::Echec) {
+    r.incidents.push(format!("{} : {}", quoi, nomme(&ctx.racine, e)));
+    if let Err(n) = crate::gestes::suites::noter_la_panne(&ctx.racine, "ouverture", e, false) {
+        r.incidents.push(format!("{} : le journal des incidents ne l'a pas noté : {}", quoi, n.phrase));
+    }
+}
+
 /// Les retours DSN (net-entreprises) puis DPAE (Urssaf) : un secret absent est un manque, une panne est un incident.
 fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>, r: &mut Ouverture) -> R<()> {
     // Le canal DSN.
     let client_dsn = clients.dsn.take();
     let dispo = match &client_dsn {
         Some(_) => Some(true),
-        None => match coffre_dispo(ctx, "net-entreprises") {
+        None => match acces_pose(&ctx.racine, "net-entreprises") {
             Ok(b) => Some(b),
             Err(m) => {
                 // Une erreur du coffre : l'ouverture ne tombe pas.
@@ -1043,7 +1059,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.dire(dit);
                     r.releve = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours : {}", nomme(&ctx.racine, &e))),
+                Err(e) => noter_le_releve_refuse(ctx, r, "Retours", &e),
             }
             r.finir_l_etape();
         }
@@ -1055,7 +1071,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
     let client_dpae = clients.dpae.take();
     let dispo = match &client_dpae {
         Some(_) => Some(true),
-        None => match coffre_dispo(ctx, "urssaf") {
+        None => match acces_pose(&ctx.racine, "urssaf") {
             Ok(b) => Some(b),
             Err(m) => {
                 r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &m)));
@@ -1082,7 +1098,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
                     r.dire(dit);
                     r.releve_dpae = Some(rel);
                 }
-                Err(e) => r.incidents.push(format!("Retours DPAE : {}", nomme(&ctx.racine, &e))),
+                Err(e) => noter_le_releve_refuse(ctx, r, "Retours DPAE", &e),
             }
             r.finir_l_etape();
         }
@@ -1094,7 +1110,17 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
 /// La sauvegarde, en dernier : un compte Google non lie est un manque ; rien de neuf sur le disque, en veille, est un
 /// silence (aucun appel) ; une panne est un incident.
 fn sauvegarder_le_dossier(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>, r: &mut Ouverture) -> R<()> {
-    let pret = clients.drive.is_some() || crate::coffre::autorise(&ctx.racine);
+    let pret = if clients.drive.is_some() {
+        true
+    } else {
+        match acces_pose(&ctx.racine, "google") {
+            Ok(b) => b,
+            Err(e) => {
+                r.incidents.push(format!("Sauvegarde : {}", nomme(&ctx.racine, &e)));
+                return Ok(());
+            }
+        }
+    };
     if !pret {
         r.a_poser.push("google".to_string());
         r.manque_coffre(

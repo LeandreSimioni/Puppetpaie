@@ -1067,6 +1067,9 @@ struct DemandeDeFiche {
     adresse: droit::fiche::Courriel,
 }
 
+/// Le geste de `fiche-demander`, tel que la demande du mot de passe le dit (la configuration la rend a la page).
+pub(crate) const GESTE_DEMANDER_FICHE: &str = "envoyer par courriel à la personne la demande de remplir sa fiche";
+
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
 fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&socle::secret::Secret>) -> R<DemandeDeFiche> {
     let preuve = Preuve::du_mot_de_passe(motdepasse.cloned());
@@ -1085,8 +1088,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         Some(c) => c,
         None => ouverte.insert(client_courriel(ctx)?).as_mut(),
     };
-    let mois = socle::temps::jour_de_paris().mois_civil();
-    verifier_preuve(ctx, Some(preuve), socle::mois::MoisOuJour::Mois(mois), "demande de fiche (« Remplir ma fiche »)", &adresse)?;
+    verifier_preuve(ctx, Some(preuve), &crate::coffre::demande(&ctx.racine, GESTE_DEMANDER_FICHE)?)?;
 
     let compagnie = ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::manque("raison_sociale"))?.to_string();
     let sg = ctx.entreprise.signataire.exigee("signataire")?;

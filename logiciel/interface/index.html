@@ -293,15 +293,16 @@
 
 <!-- Le mot de passe du logiciel : un seul popup, au-dessus de la boîte
      courante, pour chaque acte qui engage (js/boites.js, demanderMotDePasse).
-     Un formulaire, pour qu'Entrée confirme. -->
+     Ses trois lignes sont la demande que la route rend. Un formulaire, pour
+     qu'Entrée confirme. -->
 <div class="voile cachee" id="voile-mdp">
   <form class="boite boite-mdp" id="forme-mdp" autocomplete="off">
-    <h3>Mot de passe</h3>
-    <p class="discret" id="mdp-pourquoi"></p>
+    <h3 id="mdp-titre"></h3>
+    <p id="mdp-de-qui"></p>
+    <p class="discret" id="mdp-pour"></p>
     <label class="champ-boite">
       <input type="password" id="mdp-valeur" autocomplete="off">
     </label>
-    <p class="note" id="mdp-note"></p>
     <div class="actions">
       <button type="button" class="secondaire" id="mdp-annuler">Annuler</button>
       <button type="submit" class="primaire" id="mdp-ok">Confirmer</button>

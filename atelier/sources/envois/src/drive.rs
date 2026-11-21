@@ -24,7 +24,7 @@ use socle::garde_reseau::Url;
 use md5::Digest;
 use serde::{Deserialize, Serialize};
 
-use crate::google::{encoder, jeton_par_rafraichissement, lue, phrase_de_panne, Application, JETONS};
+use crate::google::{encoder, jeton_par_rafraichissement, lue, panne_de_google, Application, JETONS};
 use crate::transport::{envoyer, Requete};
 
 /// UN FICHIER (OU UN DOSSIER) TEL QUE DRIVE LE REND, des seuls champs demandes (`fields`) : un element d'un listage, un
@@ -232,8 +232,9 @@ const ATTENTE_DE_BASE_MS: u64 = 1000;
 /// Une erreur que Google dit passagere : a retenter apres une attente (voir `NOUVELLES_TENTATIVES`).
 pub fn passagere(e: &ErreurGoogle) -> bool {
     // Un 403 n'est passager que s'il dit une limite de debit.
+    // Ce que Google a dit est dans le detail, a part (`google::panne_de_google`).
     let limite = || {
-        let m = e.echec.phrase.to_lowercase();
+        let m = e.echec.en_lignes().to_lowercase();
         m.contains("rate limit") || m.contains("ratelimitexceeded")
     };
     use ureq::http::StatusCode;
@@ -428,18 +429,7 @@ impl Client {
         let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
         match envoyer(&requete) {
             Ok((brut, _)) => Ok(brut),
-            Err(panne) => {
-                let statut = match &panne {
-                    crate::transport::Panne::Statut { code, .. } => Some(*code),
-                    _ => None,
-                };
-                let mut e = match phrase_de_panne(panne) {
-                    Ok(phrase) => ErreurGoogle::google(phrase),
-                    Err(e) => ErreurGoogle::from(e),
-                };
-                e.statut = statut;
-                Err(e)
-            }
+            Err(panne) => Err(panne_de_google(url, panne)),
         }
     }
 
