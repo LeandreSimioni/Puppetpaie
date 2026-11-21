@@ -807,7 +807,7 @@ async function exporterSalarie(cle) {
 async function demanderFiche(bouton) {
   const adresse = document.getElementById("invitation-courriel").value.trim();
   const prenom = document.getElementById("invitation-prenom").value.trim();
-  const mdp = await demanderMotDePasse("Envoyer la demande", { envoi: true });
+  const mdp = await demanderMotDePasse(ETAT.configuration.invitation.demande, { envoi: true });
   if (!mdp) return;
   const rendre = occupe(bouton, "Envoi…");
   const repere = await repereCourrielsFictifs();

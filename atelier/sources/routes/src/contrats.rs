@@ -40,7 +40,7 @@ use socle::date::{Jour, PeriodeOuverte};
 use socle::paris::{InstantOuJour, Moment};
 use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
-use socle::mois::{Mois, MoisOuJour};
+use socle::mois::Mois;
 
 
 const CONTRATS: Champ = Champ { nom: "contrats", libelle: Affiche::new("Contrats"), forme: Forme::Objet, sens: "les contrats choisis : [{salarie, debut, numero}]", avance: false };
@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
         charge: &[MOIS],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "contrats (chacun : son état, et ses gestes recu et relancer, route et charge), boite_liee, signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
+        rend: "contrats (chacun : son état, et ses gestes recu et relancer, route, charge et demande du mot de passe), boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -114,7 +114,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois de l'écran, où se lit un contrat signé hors du logiciel (le mois présent sinon)", avance: true },
         ],
         exemple: r#"{"salarie":"FULLER","debut":"2026-11-27","numero":"FU1.26.01"}"#,
-        rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts",
+        rend: "le contrat (contrat, date_contrat, signe ; ailleurs : signé hors du logiciel, et contrat_signe : chemin du dossier de son PDF, deposes, phrase), numero de l'avenant, effet, modifications (numero et article, avant, apres ; phrase en clair sans numero), avenants (et la phrase de chacun), destinataire, titre (le contrat comme l'avenant le nomme), situation, encarts, demande_envoyer et demande_remplacer (du mot de passe, avant chaque envoi)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "le salarié, le début et le numéro d'un contrat parti à la signature ou signé hors du logiciel" }, MANQUE, ILLISIBLE],
         acte: Acte::Lit,
         phrase: 0,
@@ -248,6 +248,36 @@ impl ChargeSignature {
         self.contrats.as_ref().is_some_and(|l| !l.is_empty()) || self.salaries.as_ref().is_some_and(|l| !l.is_empty())
     }
 
+    /// LA DEMANDE DU MOT DE PASSE avant d'envoyer a la signature ce que la charge choisit : une route qui propose l'envoi
+    /// (la boite du mois, l'avenant, la relance) la rend depuis la charge qu'elle propose ; `demander-signature` la pose
+    /// depuis la sienne. Un seul salarie se nomme ; plusieurs, ou aucun dit (la boite du mois, ou l'on coche), « choisis »,
+    /// avec le mois.
+    pub(crate) fn demande(&self, ctx: &Contexte) -> R<compagnie::demande::DemandeDuMotDePasse> {
+        let mut qui: Vec<&IdSalarie> = Vec::new();
+        for k in self.contrats.iter().flatten().map(|c| &c.salarie).chain(self.salaries.iter().flatten()).chain(self.avenants().iter().map(|a| &a.salarie)) {
+            if !qui.contains(&k) {
+                qui.push(k);
+            }
+        }
+        let n_contrats = self.contrats.as_ref().map_or(0, Vec::len) + self.salaries.as_ref().map_or(0, Vec::len);
+        let n_avenants = self.avenants().len();
+        let pieces = match (n_contrats, n_avenants) {
+            (1, 0) => "le contrat",
+            (0, 1) => "l'avenant",
+            (_, 0) if n_contrats > 0 => "les contrats",
+            (0, _) => "les avenants",
+            _ => "les contrats et avenants",
+        };
+        let mois = socle::texte::de(&self.mois.libelle(socle::mois::Graphie::Accentuee));
+        let geste = match (self.remplace(), qui.as_slice()) {
+            (true, [un]) => format!("envoyer à la signature le contrat refait de {}, qui annule et remplace le précédent", ctx.nomme(un)),
+            (true, _) => format!("envoyer à la signature les contrats refaits {}, qui annulent et remplacent les précédents", mois),
+            (false, [un]) => format!("envoyer à la signature {} de {}", pieces, ctx.nomme(un)),
+            (false, _) => format!("envoyer à la signature {} choisis {}", pieces, mois),
+        };
+        crate::coffre::demande(&ctx.racine, &geste)
+    }
+
     /// UNE CHARGE QUI COCHE UNE LISTE VIDE (`contrats` ou `salaries` donnes vides, sans avenant) : rien n'est choisi.
     fn aucun_coche(&self) -> R<()> {
         let donne = self.contrats.is_some() || self.salaries.is_some();
@@ -336,7 +366,7 @@ pub(crate) struct GesteRecu {
 pub(crate) struct GesteRelancer {
     route: Route,
     bouton: &'static str,
-    pourquoi: String,
+    demande: compagnie::demande::DemandeDuMotDePasse,
     charge: ChargeSignature,
 }
 
@@ -380,6 +410,8 @@ pub(crate) struct ApercuSignature {
     mois: Mois,
     pub(crate) contrats: Vec<ContratASigner>,
     boite_liee: bool,
+    /// La demande du mot de passe avant d'envoyer a la signature ce qui est coche.
+    demande: compagnie::demande::DemandeDuMotDePasse,
     avertissements: Vec<String>,
     /// L'encart de la signature d'un clic, quand une boite courriel est liee.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -469,6 +501,9 @@ pub(crate) struct ApercuAvenant {
     avenants: Vec<AvenantDit>,
     remplacable: bool,
     boite_liee: bool,
+    /// La demande du mot de passe avant d'envoyer l'avenant, et avant d'envoyer le contrat refait (annule et remplace).
+    demande_envoyer: compagnie::demande::DemandeDuMotDePasse,
+    demande_remplacer: compagnie::demande::DemandeDuMotDePasse,
     destinataire: Option<droit::fiche::Courriel>,
     situation: String,
     encarts: Vec<Encart>,
@@ -719,14 +754,11 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     let etats_des_contrats = signature_apercu(ctx, c.mois)?.contrats;
     // Un avenant sans objet ou une date d'effet illisible refuse le tout, avant que rien ne parte.
     avenants_a_envoyer(ctx, avenants, &etats_des_contrats)?;
+    let demande_du_mot_de_passe = c.demande(ctx)?;
     let mut preuve = Preuve::du_mot_de_passe(motdepasse);
     let mut r = ContratsEnvoyes::default();
     if des_contrats {
         let choisis = c.choisis();
-        let a_qui = match &choisis.salaries {
-            Some(l) if !l.is_empty() => format!("{} salarie(s) : {}", l.len(), l.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ")),
-            _ => "les salaries du mois qui ont un contrat a signer".to_string(),
-        };
         if !c.remplace() {
             refuser_les_contrats_partis(ctx, c.mois, &choisis)?;
         }
@@ -734,23 +766,14 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         // Un refus se dit d'abord : la boite et la preuve ne se demandent que pour ce qui part.
         let verifiee = crate::gestes::signature::verifier_demande(ctx, &demande)?;
         let mut client = ouvrir()?;
-        let quoi = if c.remplace() {
-            "contrat refait, a signer (il annule et remplace le precedent)"
-        } else if verifiee.rappels > 0 && verifiee.rappels == verifiee.contrats {
-            "relance de demande de signature de contrat"
-        } else if verifiee.rappels > 0 {
-            "demande de signature de contrat, et relance"
-        } else {
-            "demande de signature de contrat"
-        };
-        preuve = Preuve { donnee: Some(verifier_preuve(ctx, Some(&preuve), MoisOuJour::Mois(c.mois), quoi, &a_qui)?), ..Preuve::default() };
+        preuve = Preuve { donnee: Some(verifier_preuve(ctx, Some(&preuve), &demande_du_mot_de_passe)?), ..Preuve::default() };
         r = crate::gestes::signature::demander_signature(ctx, &demande, client.as_mut())?;
         r.avertissements.splice(0..0, verifiee.avertissements);
     }
     let n_contrats = r.contrats.len();
     let mut n_avenants = 0;
     if !avenants.is_empty() {
-        let (av, avertissements) = envoyer_avenants(ctx, avenants, &etats_des_contrats, &preuve, ouvrir)?;
+        let (av, avertissements) = envoyer_avenants(ctx, avenants, &etats_des_contrats, &preuve, &demande_du_mot_de_passe, ouvrir)?;
         n_avenants = av.avenants.len();
         r.partis.extend(av.partis);
         r.contrats.extend(av.avenants);
@@ -880,7 +903,14 @@ fn avenant_repris(ctx: &Contexte, c: &ContratASigner) -> R<UnAvenant> {
 /// lit au journal), puis la boite, la preuve, et `signature::envoyer_avenants`. UN SALARIE SANS COURRIEL n'empeche pas
 /// les autres : ses avenants ne partent pas, ils se nomment dans le second terme (la phrase de
 /// `signature::avenants_sans_courriel_dit`) ; refus si aucun avenant coche n'a de courriel.
-pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &[ContratASigner], preuve: &Preuve, ouvrir: Ouvrir) -> R<(crate::gestes::signature::Avenants, Vec<String>)> {
+pub(crate) fn envoyer_avenants(
+    ctx: &Contexte,
+    voulus: &[AvenantVoulu],
+    etats: &[ContratASigner],
+    preuve: &Preuve,
+    demande: &compagnie::demande::DemandeDuMotDePasse,
+    ouvrir: Ouvrir,
+) -> R<(crate::gestes::signature::Avenants, Vec<String>)> {
     if voulus.is_empty() {
         return Err(refus("Aucun avenant coché. Rien n'est parti."));
     }
@@ -897,12 +927,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &
     }
     crate::gestes::signature::controler_avenants(ctx, &par_salarie)?;
     let mut client = ouvrir()?;
-    let Some(premier_mois) = par_salarie.iter().flat_map(|(_, aa)| aa.iter().map(|a| a.mois)).min() else {
-        return Err(refus("Aucun avenant coché. Rien n'est parti."));
-    };
-    let a_qui = format!("{} salarie(s) : {}", par_salarie.len(), par_salarie.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join(", "));
-    let quoi = if par_salarie.iter().any(|(_, aa)| aa.iter().any(UnAvenant::rappel)) { "relance d'avenant(s) a signer" } else { "envoi d'avenant(s) a signer" };
-    verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(premier_mois), quoi, &a_qui)?;
+    verifier_preuve(ctx, Some(preuve), demande)?;
     Ok((crate::gestes::signature::envoyer_avenants(ctx, &par_salarie, client.as_mut())?, avertissements))
 }
 
@@ -972,21 +997,18 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             // rappel ; partie imprimee seulement, elle part par courriel pour la premiere fois. `demander-signature` le
             // lit de meme au journal : la charge ne le dit pas.
             let rappel = if avenant_en_attente { etat.avenant.as_ref().is_some_and(|a| a.par_courriel) } else { demande_par_courriel };
-            let relancer = (par.is_some() && boite_liee).then(|| {
-                let vise = ContratVise { salarie: p.salarie.id.clone(), debut, numero: numero.clone() };
-                let charge = if avenant_en_attente {
-                    ChargeSignature::des_avenants(mois, vec![AvenantVoulu { salarie: p.salarie.id.clone(), debut, numero: vise.numero.clone(), mois: Some(mois), effet: None }])
-                } else {
-                    ChargeSignature::des_contrats(mois, vec![vise])
-                };
-                // Ce que la demande du mot de passe dit avant un rappel, ou avant l'envoi d'une piece imprimee.
-                let (bouton, pourquoi) = if rappel {
-                    ("Relancer", format!("Relancer la signature : {}, {}.", nom, attente))
-                } else {
-                    ("Envoyer par courriel", format!("Envoyer par courriel : {}, {}.", nom, attente))
-                };
-                GesteRelancer { route: Route::DemanderSignature, bouton, pourquoi, charge }
-            });
+            let relancer = (par.is_some() && boite_liee)
+                .then(|| -> R<GesteRelancer> {
+                    let vise = ContratVise { salarie: p.salarie.id.clone(), debut, numero: numero.clone() };
+                    let charge = if avenant_en_attente {
+                        ChargeSignature::des_avenants(mois, vec![AvenantVoulu { salarie: p.salarie.id.clone(), debut, numero: vise.numero.clone(), mois: Some(mois), effet: None }])
+                    } else {
+                        ChargeSignature::des_contrats(mois, vec![vise])
+                    };
+                    let bouton = if rappel { "Relancer" } else { "Envoyer par courriel" };
+                    Ok(GesteRelancer { route: Route::DemanderSignature, bouton, demande: charge.demande(ctx)?, charge })
+                })
+                .transpose()?;
             (Some(GesteRecu { route: Route::ContratRecu, charge }), relancer)
         } else {
             (None, None)
@@ -1057,6 +1079,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         rien_en_attente: (!contrats.iter().any(|c| c.en_attente)).then_some("Aucun contrat n'attend sa signature."),
         contrats,
         boite_liee,
+        demande: ChargeSignature::des_contrats(mois, Vec::new()).demande(ctx)?,
         avertissements,
         phrases,
     })
@@ -1091,7 +1114,12 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
             }
         },
     };
-    Ok(brut.dit())
+    // Les deux envois que la boite propose, et la demande du mot de passe de chacun, depuis la charge qu'il enverra.
+    let avenant = AvenantVoulu { salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), mois: Some(brut.mois), effet: None };
+    let demande_envoyer = ChargeSignature::des_avenants(brut.mois, vec![avenant]).demande(ctx)?;
+    let refait = ContratVise { salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone() };
+    let demande_remplacer = ChargeSignature { remplace: Some(true), ..ChargeSignature::des_contrats(brut.mois, vec![refait]) }.demande(ctx)?;
+    Ok(brut.dit(demande_envoyer, demande_remplacer))
 }
 
 /// Ce que l'apercu d'un avenant sait avant de le dire (`AvenantLu::dit`).
@@ -1119,8 +1147,9 @@ struct AvenantLu {
 }
 
 impl AvenantLu {
-    /// L'apercu dit : la situation du contrat, les encarts, le titre, la phrase.
-    fn dit(self) -> ApercuAvenant {
+    /// L'apercu dit : la situation du contrat, les encarts, le titre, la phrase, et la demande du mot de passe de ses
+    /// deux envois.
+    fn dit(self, demande_envoyer: compagnie::demande::DemandeDuMotDePasse, demande_remplacer: compagnie::demande::DemandeDuMotDePasse) -> ApercuAvenant {
         let n = self.modifications.len();
         let ailleurs = self.contrat_signe.is_some();
         // « n° 12 », ou « sans numéro ».
@@ -1213,6 +1242,8 @@ impl AvenantLu {
             avenants,
             remplacable: self.remplacable,
             boite_liee: self.boite_liee,
+            demande_envoyer,
+            demande_remplacer,
             destinataire: self.destinataire,
             situation,
             encarts,

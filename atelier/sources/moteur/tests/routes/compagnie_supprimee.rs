@@ -45,7 +45,9 @@ fn une_compagnie_reelle_ne_se_supprime_que_sur_le_mot_de_passe_du_logiciel() {
     administrateur::rattacher(&i, &b, &admin(), None, &p).unwrap();
     assert!(administrateur::est_rattachee(&i, &b).unwrap());
     let q = socle::ecriture::en_valeur(&suppression::question(&b).unwrap());
-    assert_eq!((q["genre"].clone(), q["mot_de_passe"].clone()), (json!("reelle"), json!(true)), "{}", q);
+    assert_eq!(q["genre"], json!("reelle"), "{}", q);
+    // Rattachee : la demande dit que c'est le mot de passe de l'administrateur qui l'ouvre.
+    assert!(q["demande"]["de_qui"].as_str().unwrap().starts_with("Celui de l'administrateur"), "{}", q);
     assert!(q["conservation"].as_str().unwrap().contains("L3243-4"));
     // La sauvegarde ne se propose que si un Drive est lie (son jeton est la).
     assert_eq!(q["sauvegarde"]["liee"], json!(false));
