@@ -869,8 +869,6 @@ pub struct Authentification<'a> {
     pub url: &'a Url,
     pub declarant: &'a Identite,
     pub motdepasse: Option<&'a socle::secret::Secret>,
-    /// La variable d'environnement que le refus nomme quand le mot de passe manque.
-    pub variable: &'a str,
     pub service: Option<&'a str>,
     pub jeton: Option<&'a socle::secret::Secret>,
 }
@@ -884,23 +882,12 @@ pub struct Session {
 /// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
 /// part. Le mot de passe ne survit pas a cet appel et n'entre dans aucun message.
 pub fn authentifier(a: &Authentification) -> Result<Session, EchecApi> {
-    let variable = a.variable;
     let mdp = match a.motdepasse {
         Some(m) if !m.devoiler().is_empty() => m,
         _ => {
             return Err(EchecApi::nouveau(
                 Classe::Organisme,
-                format!(
-                    "Mot de passe absent.\n\
-Trois facons de le fournir, dans cet ordre de priorite :\n\n\
-\x20 1. le passer a Client(motdepasse=...) -- ce que font les\n\
-\x20    fenetres et les commandes apres avoir vu l'humain ;\n\
-\x20 2. la variable d'environnement {v} ;\n\
-\x20    PowerShell :  $env:{v} = (Read-Host \"mot de passe\")\n\
-\x20 3. le coffre, pour les lectures automatiques :\n\
-\x20    route coffre-poser, service net-entreprises\n",
-                    v = variable
-                ),
+                format!("Le mot de passe de {} n'est pas posé : le poser dans Configuration › Mots de passe. Rien n'est parti.", a.canal.service_du_mot_de_passe()),
                 None,
             ))
         }

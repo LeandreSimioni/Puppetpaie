@@ -150,13 +150,28 @@ pub fn traduire(texte: &str) -> Echec {
     dite("La boîte courriel a refusé la demande : vérifier l'adresse et le mot de passe d'application (Configuration › Mots de passe) ; nouvel essai plus tard.", texte)
 }
 
+/// La phrase d'une boite qui refuse le mot de passe (`mot_de_passe_refuse`).
+const MOT_DE_PASSE_REFUSE: &str = "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.";
+
+/// La phrase d'une boite qui ne se joint pas (`injoignable`).
+const INJOIGNABLE: &str = "La boîte courriel est injoignable : vérifier la connexion internet ; nouvel essai plus tard.";
+
 /// La boite refuse le mot de passe (`detail` : ce que le serveur a ecrit).
 #[track_caller]
 fn mot_de_passe_refuse(detail: impl std::fmt::Display) -> Echec {
-    dite(
-        "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
-        detail,
-    )
+    dite(MOT_DE_PASSE_REFUSE, detail)
+}
+
+/// Le refus `e` dit-il que la boite refuse le mot de passe ? Un refus d'usage, pas un defaut du logiciel, pour le
+/// journal des incidents.
+pub fn dit_le_mot_de_passe_refuse(e: &Echec) -> bool {
+    e.classe == Some(Classe::Courriel) && e.phrase == MOT_DE_PASSE_REFUSE
+}
+
+/// Le refus `e` dit-il que la boite ne se joint pas ? Le reseau, qui ne dit rien du logiciel : il ne se note pas chez
+/// l'editeur.
+pub fn dit_la_boite_injoignable(e: &Echec) -> bool {
+    e.classe == Some(Classe::Courriel) && e.phrase == INJOIGNABLE
 }
 
 /// UN MESSAGE QUE LE SERVEUR D'ENVOI (SMTP) N'A PAS PRIS, dit a l'administrateur ; le texte du serveur ou de la
@@ -183,7 +198,7 @@ fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
 /// La boite ne se joint pas (`e` : ce que le systeme en dit). « injoignable » : le mot que `sauvegarde::hors_ligne` lit.
 #[track_caller]
 fn injoignable(e: impl std::fmt::Display) -> Echec {
-    dite("La boîte courriel est injoignable : vérifier la connexion internet ; nouvel essai plus tard.", format!("Serveur injoignable : {}", e))
+    dite(INJOIGNABLE, format!("Serveur injoignable : {}", e))
 }
 
 /// La connexion securisee a la boite ne s'etablit pas (`e` : ce que la bibliotheque TLS en dit).
@@ -614,7 +629,7 @@ impl Courriel for Client {
 pub fn verifier(mut c: Client) -> R<String> {
     c.boite()?;
     c.fermer()?;
-    Ok(format!("boite {} ouverte ({}).", c.compte, c.serveurs.imap))
+    Ok(format!("Boîte {} ouverte ({}).", c.compte, c.serveurs.imap))
 }
 
 // ---------------------------------------------------------------------------------------------- la boite simulee

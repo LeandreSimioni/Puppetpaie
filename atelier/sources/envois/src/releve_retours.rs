@@ -192,7 +192,6 @@ pub struct Client {
     pub jeton: Option<Secret>,
     pub declarant: crate::transport::Identite,
     motdepasse: Option<Secret>,
-    variable: &'static str,
     majuscules: bool,
 }
 
@@ -206,7 +205,6 @@ impl Client {
             jeton: None,
             declarant,
             motdepasse,
-            variable: VARIABLE_MOTDEPASSE,
             majuscules: false,
         }
     }
@@ -222,7 +220,6 @@ impl Client {
             jeton: None,
             declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
             motdepasse,
-            variable: VARIABLE_MOTDEPASSE_DPAE,
             majuscules,
         }
     }
@@ -248,7 +245,6 @@ impl Client {
             url: &self.adresses.authentification,
             declarant: &self.declarant,
             motdepasse: mdp.as_ref(),
-            variable: self.variable,
             service: self.adresses.service.as_deref(),
             jeton: self.jeton.as_ref(),
         })?;
@@ -387,6 +383,14 @@ impl CanalDesRetours {
         match self {
             CanalDesRetours::Dsn => "net-entreprises",
             CanalDesRetours::Dpae => "L'Urssaf (DPAE)",
+        }
+    }
+
+    /// Le service dont le mot de passe ouvre ce canal, tel qu'une phrase le nomme apres « le mot de passe de ».
+    pub fn service_du_mot_de_passe(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "net-entreprises",
+            CanalDesRetours::Dpae => "l'Urssaf (DPAE)",
         }
     }
 
@@ -851,7 +855,7 @@ pub fn relever_retours(
     }
     let Some(mut client) = client else {
         releve.plateforme_non_lue.push(
-            "Mot de passe net-entreprises absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service net-entreprises`.".into(),
+            format!("Le mot de passe de {} n'est pas posé : le poser dans Configuration › Mots de passe.", canal.service_du_mot_de_passe()),
         );
         return Ok(releve);
     };
@@ -1117,7 +1121,7 @@ pub fn relever_retours_dpae(
     }
     let Some(mut client) = client else {
         let mut r = Releve::vide();
-        r.plateforme_non_lue.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
+        r.plateforme_non_lue.push(format!("Le mot de passe de {} n'est pas posé : le poser dans Configuration › Mots de passe.", CanalDesRetours::Dpae.service_du_mot_de_passe()));
         return Ok(r);
     };
     let Some(flux) = flux else {
