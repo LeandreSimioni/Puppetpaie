@@ -10,7 +10,7 @@ use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
     cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
-    GOOGLE_INDISPONIBLE,
+    GOOGLE_INDISPONIBLE, GOOGLE_MUET,
 };
 
 /// Echecs passagers de suite (chacun deja retente par le client) au-dela desquels le reste du passage est reporte sans appel.
@@ -55,6 +55,8 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     // passage suivant les croirait a jour.
     let mut en_echec: std::collections::HashSet<CheminRelatif> = std::collections::HashSet::new();
     let etat_de: BTreeMap<&CheminRelatif, &Etat> = presents.iter().map(|(r, e)| (r, e)).collect();
+    // Chaque echec de ce passage (la cle de l'index, l'erreur) : son detail technique part chez l'editeur (plus bas).
+    let mut a_noter: Vec<(String, ErreurGoogle)> = Vec::new();
 
     // Par dossier (aucun pour la racine) : un seul listage Drive sert a tous les fichiers qu'il porte.
     let mut par_dossier: BTreeMap<Option<CheminRelatif>, Vec<CheminRelatif>> = BTreeMap::new();
@@ -102,7 +104,9 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 resultat.incidents.push(format!("{} : {}", dossier, e.echec.phrase));
                 let cause = cause_de(&e);
                 indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
-                resultat.reportes.push(Reporte { quoi: dossier.clone(), dossier: true, cause: cause.into() });
+                let reporte = Reporte { quoi: dossier.clone(), dossier: true, cause: cause.into() };
+                a_noter.push((reporte.cle(), e));
+                resultat.reportes.push(reporte);
                 dossiers.remove(&cle);
                 en_echec.extend(fichiers.iter().cloned());
                 continue;
@@ -154,7 +158,9 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                     resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                     let cause = cause_de(&e);
                     indisponibles_de_suite = if cause == GOOGLE_INDISPONIBLE { indisponibles_de_suite + 1 } else { 0 };
-                    resultat.reportes.push(Reporte { quoi: relatif.to_string(), dossier: false, cause: cause.into() });
+                    let reporte = Reporte { quoi: relatif.to_string(), dossier: false, cause: cause.into() };
+                    a_noter.push((reporte.cle(), e));
+                    resultat.reportes.push(reporte);
                     en_echec.insert(relatif.clone());
                 }
             }
@@ -202,5 +208,25 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     };
     resultat.persistant = phrase_persistante(&nouvel_index, socle::temps::secondes())?;
     ecrire_index(racine, &nouvel_index)?;
+    noter_les_echecs(racine, &a_noter, nouvel_index.echecs.as_ref(), &mut resultat);
     Ok(resultat)
+}
+
+/// LE DETAIL D'UN ECHEC DE LA SAUVEGARDE CHEZ L'EDITEUR : sa phrase, sa classe et ce qu'il porte a part (le statut, le
+/// corps de Google), par le journal des incidents, puisque le passage ne refuse pas et qu'aucune route ne le notera.
+/// Une fois, au premier passage ou l'echec apparait (`EchecIndexe::passages`) : un echec qui dure ne fait pas un incident
+/// a chaque passage. Une panne de Google (passagere, deja retentee, ou muette) ne se note pas : elle ne dit rien du
+/// logiciel, et le passage suivant la retente. Le Drive plein est un refus d'usage (`incidents::REFUS`).
+fn noter_les_echecs(racine: &Path, a_noter: &[(String, ErreurGoogle)], echecs: Option<&BTreeMap<String, EchecIndexe>>, resultat: &mut Sauvegarde) {
+    for (cle, e) in a_noter {
+        let premier = echecs.and_then(|x| x.get(cle)).is_some_and(|x| x.passages == 1);
+        let cause = cause_de(e);
+        if !premier || cause == GOOGLE_INDISPONIBLE || cause == GOOGLE_MUET {
+            continue;
+        }
+        let nature = (e.echec.phrase == envois::google::DRIVE_PLEIN).then_some(compagnie::incidents::REFUS);
+        if let Err(n) = compagnie::incidents::depuis_exception(racine, e.echec.classe, &e.echec.phrase, nature, "sauvegarde", e.echec.a_part.as_ref(), None) {
+            resultat.incidents.push(format!("{} : le journal des incidents ne l'a pas noté : {}", cle, n.phrase));
+        }
+    }
 }

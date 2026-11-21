@@ -211,6 +211,26 @@ pub(crate) fn noter_la_panne(racine: &std::path::Path, ou: &str, e: &socle::eche
     compagnie::incidents::depuis_exception(racine, e.classe, &e.phrase, nature, ou, e.a_part.as_ref(), None).map(|_| ())
 }
 
+/// UN RELEVE QUI S'ARRETE dans une route qui ne refuse pas pour autant (`ouverture`, `suivre-depot`, `bilan-repetition`) :
+/// la compagnie en lit la phrase ; ce qu'il porte a part part chez l'editeur, sauf une panne de passage
+/// (`envois::suites::panne_de_passage` : la veille ou le geste suivant la retente).
+pub(crate) fn noter_le_releve_arrete(racine: &std::path::Path, ou: &str, e: &socle::echec::Echec) -> R<()> {
+    if envois::suites::panne_de_passage(e) {
+        return Ok(());
+    }
+    noter_la_panne(racine, ou, e, false)
+}
+
+/// Ce qu'un releve arrete dit, dans une route de lecture : sa phrase, et ce qui l'empeche d'etre note chez l'editeur
+/// (`noter_le_releve_arrete`).
+pub(crate) fn a_dire_du_releve_arrete(racine: &std::path::Path, ou: &str, e: socle::echec::Echec) -> envois::suites::ADire {
+    let mut incidents = vec![e.phrase.clone()];
+    if let Err(n) = noter_le_releve_arrete(racine, ou, &e) {
+        incidents.push(format!("Le relevé arrêté ne s'est pas noté au journal des incidents : {}", n.phrase));
+    }
+    envois::suites::ADire { incidents, a_faire: Vec::new() }
+}
+
 /// Un depot refuse s'ecrit au journal des incidents, test comme reel. LE CAS URGENT SE DISTINGUE ICI : un refus en REEL
 /// alors que la repetition etait conforme.
 fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()> {

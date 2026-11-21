@@ -132,19 +132,24 @@ impl Reporte {
     }
 }
 
-/// Les causes, en clair. Le detail brut (« HTTP 500 : Internal Error ») reste dans `incidents`, pour la ligne de commande.
+/// Les causes, en clair. La phrase de chaque echec reste dans `incidents`, pour la ligne de commande ; le detail
+/// technique d'un echec qui n'est pas une panne de Google part chez l'editeur, au premier passage ou il apparait
+/// (`routes::gestes::sauvegarde`).
 pub const GOOGLE_INDISPONIBLE: &str = "Google indisponible";
-const GOOGLE_MUET: &str = "Google ne répond pas";
+pub const GOOGLE_MUET: &str = "Google ne répond pas";
 const GOOGLE_REFUSE: &str = "Google refuse l'envoi";
+const DRIVE_PLEIN: &str = "le Drive du compte Google lié est plein";
 const FICHIER_ILLISIBLE: &str = "fichier illisible sur ce poste";
 
 /// La cause d'une erreur, en clair : passagere chez Google (`drive::passagere`, deja retentee par le client), un delai
-/// depasse, un refus de Google, ou un fichier du poste qui ne se lit pas.
+/// depasse, le Drive plein (`envois::google::DRIVE_PLEIN`), un refus de Google, ou un fichier du poste qui ne se lit pas.
 pub fn cause_de(e: &ErreurGoogle) -> &'static str {
     if envois::drive::passagere(e) {
         GOOGLE_INDISPONIBLE
     } else if e.echec.classe == Some(Classe::DelaiDepasse) || e.echec.phrase.to_lowercase().contains("timed out") {
         GOOGLE_MUET
+    } else if e.echec.phrase == envois::google::DRIVE_PLEIN {
+        DRIVE_PLEIN
     } else if e.echec.classe == Some(Classe::Disque) {
         FICHIER_ILLISIBLE
     } else {

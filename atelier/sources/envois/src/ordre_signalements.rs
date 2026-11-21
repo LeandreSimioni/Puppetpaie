@@ -168,7 +168,11 @@ pub fn relever_la_plateforme(ctx: &Contexte, branchement: Branchement, client: O
         // reste de ce que la releve a a dire est dans les suites (`Suites::dit`).
         Ok(r) if r.plateforme_non_lue.is_empty() => None,
         Ok(r) => Some(r.plateforme_non_lue.join("; ")),
-        Err(e) => Some(e.phrase),
+        // La compagnie en lit la phrase ; le detail part chez l'editeur par les suites.
+        Err(e) => {
+            suites.arret(&e);
+            Some(e.phrase)
+        }
     }
 }
 

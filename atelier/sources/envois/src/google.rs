@@ -107,6 +107,10 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
     champs.iter().map(|(k, v)| format!("{}={}", q(k), q(v))).collect::<Vec<_>>().join("&")
 }
 
+/// LE DRIVE PLEIN, tel que la compagnie le lit : la phrase d'une erreur `storageQuotaExceeded` (`traduite`), que la
+/// sauvegarde reconnait pour en dire la cause (`compagnie::sauvegarde::cause_de`).
+pub const DRIVE_PLEIN: &str = "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde repart ensuite seule.";
+
 /// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (l'autorisation perdue, une permission
 /// qui manque, le Drive plein), en sa phrase ; `None` pour toute autre erreur de Google, que `panne_dite` dit. Un corps
 /// qui n'est pas une erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus cite le
@@ -127,7 +131,7 @@ fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, r
     // storage in Drive, Gmail & Google Photos », « Buy more Google storage »
     // (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`, l. 961-985).
     if raisons.iter().any(|r| r == "storageQuotaExceeded") {
-        return Some("Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde repart ensuite seule.");
+        return Some(DRIVE_PLEIN);
     }
     if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
         return Some("Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.");
