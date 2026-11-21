@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Idcc, Lue, NomDeFiche, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
+use crate::fiche::{AUnJour, ChampsEntreprise, Idcc, Lue, NomDeFiche, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, SeuilNonPorte, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
 use crate::bareme::VersementMobiliteDit;
 use socle::echec::Lieu;
@@ -73,10 +73,10 @@ fn levenshtein(a: &str, b: &str) -> usize {
 /// LES AUTRES ETABLISSEMENTS OUVERTS UN JOUR AU MOINS de la `periode` (la fiche entreprise datee : `etablissements`
 /// est la liste de ceux qui sont ouverts, une version par ouverture, modification ou fermeture), chacun dans sa derniere
 /// valeur de la periode. Un etablissement ferme en cours de mois a encore sa DSN de ce mois. `None` : la fiche n'en dit
-/// rien.
-pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, periode: &Periode) -> Option<Vec<Etablissement>> {
+/// rien. Refus : une version de la periode ne se lit pas (elle ne dit ni ouvert ni ferme ; rien ne se devine).
+pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, periode: &Periode) -> R<Option<Vec<Etablissement>>> {
     let (debut, fin) = (&periode.debut(), &periode.fin());
-    let liste = liste?;
+    let Some(liste) = liste else { return Ok(None) };
     let versions = crate::fiche::valeurs_datees(liste);
     let mut ordre: Vec<Option<String>> = Vec::new();
     let mut vus: HashMap<Option<String>, Etablissement> = HashMap::new();
@@ -87,7 +87,8 @@ pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, periode
         if !(commence_avant_la_fin && finit_apres_le_debut) {
             continue;
         }
-        for e in v.valeur.dite().into_iter().flatten() {
+        let lue = v.lue().map_err(|i| crate::fiche::IllisibleEnVigueur { case: crate::fiche::CaseEntreprise::Etablissements.into(), ecrite: i.ecrite() }.refus(LA_FICHE_ENTREPRISE))?;
+        for e in lue.into_iter().flatten() {
             let nic = e.nic.en_texte();
             if !vus.contains_key(&nic) {
                 ordre.push(nic.clone());
@@ -95,17 +96,25 @@ pub fn etablissements_entre(liste: Option<&[Datee<Vec<Etablissement>>]>, periode
             vus.insert(nic, e.clone());
         }
     }
-    Some(ordre.into_iter().filter_map(|n| vus.remove(&n)).collect())
+    Ok(Some(ordre.into_iter().filter_map(|n| vus.remove(&n)).collect()))
 }
 
 /// L'HISTOIRE DES AUTRES ETABLISSEMENTS : chacun dans sa derniere valeur, et le dernier jour ou il etait ouvert s'il est
-/// ferme (la veille de la premiere version qui ne le porte plus).
+/// ferme (la veille de la premiere version qui ne le porte plus). Ce que l'ecran montre : une version illisible ne dit
+/// rien (ni ouvert, ni ferme) ; la fiche la dit a part (`Contexte::non_lus`).
 pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) -> R<Vec<(Etablissement, Option<Jour>)>> {
-    let versions: Vec<&Datee<Vec<Etablissement>>> = liste.into_iter().flat_map(crate::fiche::valeurs_datees).collect();
+    let mut versions: Vec<(Option<Jour>, Option<&Vec<Etablissement>>)> = Vec::new();
+    for v in liste.into_iter().flat_map(crate::fiche::valeurs_datees) {
+        match v.lue() {
+            Ok(l) => versions.push((v.depuis, l)),
+            // Illisible : elle ne dit rien ici, la fiche la montre a part.
+            Err(_) => continue,
+        }
+    }
     let mut ordre: Vec<Option<String>> = Vec::new();
     let mut vus: HashMap<Option<String>, (Etablissement, Option<Jour>)> = HashMap::new();
-    for (i, v) in versions.iter().enumerate() {
-        let ouverts: Vec<&Etablissement> = v.valeur.dite().into_iter().flatten().collect();
+    for (i, (depuis, lue)) in versions.iter().enumerate() {
+        let ouverts: Vec<&Etablissement> = lue.into_iter().flat_map(|l| l.iter()).collect();
         let presents: Vec<Option<&str>> = ouverts.iter().map(|e| e.nic.portee()).collect();
         for e in ouverts {
             let nic = e.nic.en_texte();
@@ -115,7 +124,7 @@ pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) 
             vus.insert(nic, ((*e).clone(), None));
         }
         if i > 0 {
-            if let Some(j) = v.depuis {
+            if let Some(j) = depuis {
                 for (nic, (_, ferme)) in vus.iter_mut() {
                     if !presents.contains(&nic.as_deref()) && ferme.is_none() {
                         *ferme = Some(j.avant(Duree::jours(1))?);
@@ -1172,14 +1181,16 @@ pub struct Contexte {
     pub lue_au: Jour,
     /// Quel jour on est, pour les gardes du calendrier (distinct de `date`).
     pub aujourdhui: Jour,
-    /// La fiche entreprise a `lue_au`.
-    pub entreprise: ChampsEntreprise,
+    /// La fiche entreprise a `lue_au` : pour calculer (`entreprise`), pour montrer (`entreprise_montree`).
+    entreprise: AUnJour<ChampsEntreprise>,
     /// Les fiches telles qu'ecrites, datees, lues par leur forme : une periode se lit a sa date (`salarie_au`, `au`).
     fiches: Arc<Fiches>,
-    /// Les fiches salaries a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier.
-    pub salaries: IndexMap<IdSalarie, FicheSalarie>,
-    /// Les fiches spectacles a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier.
-    pub spectacles: IndexMap<IdSpectacle, ChampsSpectacle>,
+    /// Les fiches salaries a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier : pour calculer
+    /// (`salarie`, `salaries`), pour montrer (`salarie_montre`, `salaries_montres`).
+    salaries: IndexMap<IdSalarie, AUnJour<FicheSalarie>>,
+    /// Les fiches spectacles a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier : pour calculer
+    /// (`fiche_du_spectacle`, `spectacles`), pour montrer (`spectacle_montre`, `spectacles_montres`).
+    spectacles: IndexMap<IdSpectacle, AUnJour<ChampsSpectacle>>,
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
     atmp_lu: Option<(Annee, socle::grandeurs::Taux)>,
@@ -1228,19 +1239,40 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
     Ok(f)
 }
 
+/// Une fiche a un jour existait-elle ce jour-la ? Une case dite, ou une valeur illisible en vigueur.
+fn existait<P: crate::fiche::FicheSaisie>(f: &AUnJour<P>) -> bool {
+    !f.pour_montrer().est_vide() || !f.illisibles().is_empty()
+}
+
 /// Les fiches spectacles a `jour` : celles qui existaient ce jour-la.
-fn spectacles_au(s: &Spectacles, jour: &Jour) -> IndexMap<IdSpectacle, ChampsSpectacle> {
-    s.fiches.iter().map(|(k, f)| (k.clone(), f.au(jour))).filter(|(_, c)| !c.est_vide()).collect()
+fn spectacles_au(s: &Spectacles, jour: &Jour) -> IndexMap<IdSpectacle, AUnJour<ChampsSpectacle>> {
+    s.fiches.iter().map(|(k, f)| (k.clone(), f.au(jour))).filter(|(_, c)| existait(c)).collect()
 }
 
 /// Les fiches salaries a `jour` : celles qui existaient ce jour-la.
-fn salaries_au(s: &Salaries, jour: &Jour) -> IndexMap<IdSalarie, FicheSalarie> {
+fn salaries_au(s: &Salaries, jour: &Jour) -> IndexMap<IdSalarie, AUnJour<FicheSalarie>> {
     s.fiches
         .iter()
         .map(|(id, f)| (id, f.au(jour)))
-        .filter(|(_, c)| !c.est_vide())
-        .map(|(id, champs)| (id.clone(), FicheSalarie { id: id.clone(), champs }))
+        .filter(|(_, c)| existait(c))
+        .map(|(id, champs)| (id.clone(), champs.changee(|champs| FicheSalarie { id: id.clone(), champs })))
         .collect()
+}
+
+/// La fiche entreprise, telle qu'un refus la nomme (`AUnJour::pour_calculer`).
+const LA_FICHE_ENTREPRISE: &str = "La fiche Entreprise";
+
+/// La fiche du salarie `id`, telle qu'un refus la nomme : son nom, sinon sa cle.
+fn qui_salarie(id: &IdSalarie, f: &AUnJour<FicheSalarie>) -> String {
+    match f.pour_montrer().nomme() {
+        Some(nom) => format!("La fiche de {}", nom),
+        None => format!("La fiche de {}", id),
+    }
+}
+
+/// La fiche du spectacle `id`, telle qu'un refus la nomme.
+fn qui_spectacle(id: &IdSpectacle) -> String {
+    format!("La fiche du spectacle « {} »", id)
 }
 
 /// Les fiches d'une compagnie et ce qu'elle a dit d'elle-meme, sous sa racine.
@@ -1329,15 +1361,84 @@ impl Contexte {
         self.au(&mois.dernier_jour())
     }
 
-    /// La fiche entreprise a `jour`.
-    pub fn entreprise_au(&self, jour: &Jour) -> ChampsEntreprise {
-        if *jour == self.lue_au {
-            return self.entreprise.clone();
-        }
-        self.fiches.entreprise.au(jour)
+    /// LA FICHE ENTREPRISE A `lue_au` QUE LE CALCUL LIT : refus, une valeur en vigueur ne se lit pas (`AUnJour`).
+    pub fn entreprise(&self) -> R<&ChampsEntreprise> {
+        self.entreprise.pour_calculer(LA_FICHE_ENTREPRISE)
     }
 
-    /// La fiche salarie `cle` a `jour`. Refus : la fiche ne dit rien ce jour-la.
+    /// La fiche entreprise a `lue_au` que l'on montre : une valeur illisible y est vide (`non_lus` la dit).
+    pub fn entreprise_montree(&self) -> &ChampsEntreprise {
+        self.entreprise.pour_montrer()
+    }
+
+    /// La fiche entreprise a `jour` que le calcul lit (`entreprise`).
+    pub fn entreprise_au(&self, jour: &Jour) -> R<ChampsEntreprise> {
+        if *jour == self.lue_au {
+            return self.entreprise().cloned();
+        }
+        self.fiches.entreprise.au(jour).en_calcul(LA_FICHE_ENTREPRISE)
+    }
+
+    /// La fiche entreprise a `jour` que l'on montre (`entreprise_montree`).
+    pub fn entreprise_montree_au(&self, jour: &Jour) -> ChampsEntreprise {
+        self.fiches.entreprise.au(jour).montree()
+    }
+
+    /// LA FICHE DU SALARIE `cle` A `lue_au` QUE LE CALCUL LIT ; `None` : aucune fiche ce jour-la. Refus : une valeur en
+    /// vigueur ne se lit pas.
+    pub fn salarie(&self, cle: &IdSalarie) -> R<Option<&FicheSalarie>> {
+        self.salaries.get_key_value(cle).map(|(id, f)| f.pour_calculer(&qui_salarie(id, f))).transpose()
+    }
+
+    /// La fiche du salarie `cle` a `lue_au` que l'on montre ; `None` : aucune fiche ce jour-la.
+    pub fn salarie_montre(&self, cle: &IdSalarie) -> Option<&FicheSalarie> {
+        self.salaries.get(cle).map(AUnJour::pour_montrer)
+    }
+
+    /// LES FICHES DES SALARIES A `lue_au` QUE LE CALCUL LIT, dans l'ordre du fichier : chacune, ou le refus de la sienne
+    /// (`salarie`).
+    pub fn salaries(&self) -> impl Iterator<Item = (&IdSalarie, R<&FicheSalarie>)> {
+        self.salaries.iter().map(|(id, f)| (id, f.pour_calculer(&qui_salarie(id, f))))
+    }
+
+    /// Les fiches des salaries a `lue_au` que l'on montre, dans l'ordre du fichier.
+    pub fn salaries_montres(&self) -> impl Iterator<Item = (&IdSalarie, &FicheSalarie)> {
+        self.salaries.iter().map(|(id, f)| (id, f.pour_montrer()))
+    }
+
+    /// Les cles des salaries qui ont une fiche a `lue_au`, dans l'ordre du fichier.
+    pub fn cles_des_salaries(&self) -> impl Iterator<Item = &IdSalarie> {
+        self.salaries.keys()
+    }
+
+    /// LA FICHE DU SPECTACLE `cle` A `lue_au` QUE LE CALCUL LIT ; `None` : aucune fiche ce jour-la. Refus : une valeur
+    /// en vigueur ne se lit pas.
+    pub fn fiche_du_spectacle(&self, cle: &str) -> R<Option<&ChampsSpectacle>> {
+        self.spectacles.get_key_value(cle).map(|(id, f)| f.pour_calculer(&qui_spectacle(id))).transpose()
+    }
+
+    /// La fiche du spectacle `cle` a `lue_au` que l'on montre ; `None` : aucune fiche ce jour-la.
+    pub fn spectacle_montre(&self, cle: &str) -> Option<&ChampsSpectacle> {
+        self.spectacles.get(cle).map(AUnJour::pour_montrer)
+    }
+
+    /// Les fiches des spectacles a `lue_au` que le calcul lit, dans l'ordre du fichier (`fiche_du_spectacle`).
+    pub fn spectacles(&self) -> impl Iterator<Item = (&IdSpectacle, R<&ChampsSpectacle>)> {
+        self.spectacles.iter().map(|(id, f)| (id, f.pour_calculer(&qui_spectacle(id))))
+    }
+
+    /// Les fiches des spectacles a `lue_au` que l'on montre, dans l'ordre du fichier.
+    pub fn spectacles_montres(&self) -> impl Iterator<Item = (&IdSpectacle, &ChampsSpectacle)> {
+        self.spectacles.iter().map(|(id, f)| (id, f.pour_montrer()))
+    }
+
+    /// Les cles des spectacles qui ont une fiche a `lue_au`, dans l'ordre du fichier.
+    pub fn cles_des_spectacles(&self) -> impl Iterator<Item = &IdSpectacle> {
+        self.spectacles.keys()
+    }
+
+    /// La fiche salarie `cle` a `jour` que le calcul lit. Refus : la fiche ne dit rien ce jour-la, ou une valeur en
+    /// vigueur ne se lit pas.
     pub fn salarie_au(&self, cle: &IdSalarie, jour: &Jour) -> R<FicheSalarie> {
         let (id, brute) = self
             .fiches
@@ -1345,8 +1446,8 @@ impl Contexte {
             .fiches
             .get_key_value(cle)
             .ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Manque, format!("Salarie inconnu : {}.", repr_texte(cle.as_str()))))?;
-        let champs = brute.au(jour);
-        if champs.est_vide() {
+        let a_ce_jour = brute.au(jour);
+        if !existait(&a_ce_jour) {
             return Err(socle::echec::erreur(
                 socle::echec::Classe::Manque,
                 format!(
@@ -1357,12 +1458,15 @@ impl Contexte {
                 ),
             ));
         }
-        Ok(FicheSalarie { id: id.clone(), champs })
+        let fiche = a_ce_jour.changee(|champs| FicheSalarie { id: id.clone(), champs });
+        let qui = qui_salarie(id, &fiche);
+        fiche.en_calcul(&qui)
     }
 
-    /// Les cles des salaries qu'on peut encore embaucher (les archives restent dans `salaries`).
+    /// Les cles des salaries qu'on peut encore embaucher (les archives restent dans `salaries`). Montre : une case
+    /// « actif » illisible ne retire personne de la liste.
     pub fn salaries_actifs(&self) -> Vec<&IdSalarie> {
-        self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
+        self.salaries_montres().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// LA CASE DES PERMANENTS, SUR UNE PERIODE : la fiche Entreprise dit-elle, a un jour au moins de `debut..=fin`, que la
@@ -1370,23 +1474,27 @@ impl Contexte {
     /// jamais cochee ne le dit pas.
     /// La seule lecture de la case : elle ne regle que ce que le moteur PROPOSE (un CDI ou un CDD neuf), jamais ce qui est
     /// du a un permanent deja engage (`engagement::permanents::Permanents`). Lue au premier jour, puis a chaque jour ou
-    /// la case change dans la periode.
-    pub fn emploie_des_permanents_pendant(&self, periode: &socle::date::Periode) -> bool {
-        self.fiches.entreprise.emploie_des_permanents.as_deref().is_some_and(|liste| {
-            std::iter::once(periode.debut())
-                .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| *j > periode.debut() && periode.contient(j)))
-                .any(|j| crate::fiche::valeur_au(liste, &j).oui())
-        })
+    /// la case change dans la periode. Refus : la case ne se lit pas un de ces jours.
+    pub fn emploie_des_permanents_pendant(&self, periode: &socle::date::Periode) -> R<bool> {
+        let Some(liste) = self.fiches.entreprise.emploie_des_permanents.as_deref() else { return Ok(false) };
+        for j in std::iter::once(periode.debut()).chain(liste.iter().filter_map(|e| e.depuis).filter(|j| *j > periode.debut() && periode.contient(j))) {
+            let coche = crate::fiche::valeur_au(liste, &j)
+                .map_err(|i| crate::fiche::IllisibleEnVigueur { case: crate::fiche::CaseEntreprise::EmploieDesPermanents.into(), ecrite: i.ecrite() }.refus(LA_FICHE_ENTREPRISE))?;
+            if coche.oui() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Idem pour les spectacles.
     pub fn spectacles_actifs(&self) -> Vec<&IdSpectacle> {
-        self.spectacles.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
+        self.spectacles_montres().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// L'effectif de la compagnie (`config/effectifs.json`).
     pub fn effectif(&self) -> R<EffectifsParAnnee> {
-        effectif_de(&self.racine, &self.entreprise)
+        effectif_de(&self.racine, self.entreprise()?)
     }
 
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
@@ -1421,14 +1529,14 @@ impl Contexte {
     }
 
     /// La fiche entreprise de ce contexte, telle qu'un document la lit.
-    pub fn entreprise_et_gabarits(&self) -> EntrepriseDuDocument {
-        self.pour_un_modele(&self.entreprise)
+    pub fn entreprise_et_gabarits(&self) -> R<EntrepriseDuDocument> {
+        Ok(self.pour_un_modele(self.entreprise()?))
     }
 
     /// Ce dont depend le bareme lu a `jour` : la compagnie, sa fiche entreprise a ce jour, et la signature (date, taille)
     /// des fichiers qui le composent.
     pub fn empreinte_bareme(&self, jour: &Jour) -> R<String> {
-        self.empreinte_bareme_de(jour.annee(), &self.entreprise_au(jour))
+        self.empreinte_bareme_de(jour.annee(), &self.entreprise_au(jour)?)
     }
 
     fn empreinte_bareme_de(&self, an: Annee, ent: &ChampsEntreprise) -> R<String> {
@@ -1545,7 +1653,7 @@ impl Contexte {
             // La surcouche de la compagnie qui ne se lit pas (sa forme, ou le disque) : dit, pas avale.
             Err(ne_se_lit_pas) => return Ok(Err(ne_se_lit_pas)),
         };
-        let ent = self.entreprise_au(jour);
+        let ent = self.entreprise_au(jour)?;
         let cle = format!("{}|{:?}|{}|{:?}|{:?}", fichier.display(), socle::fichiers::signature(&fichier)?, jour.iso(), ent.idcc, ent.organisation_patronale);
         socle::fichiers::garde_notee(cache, cle, || {
             let livre = CheminRelatif::sous(&self.code, &fichier)?;
@@ -1616,14 +1724,18 @@ impl Contexte {
             Ok(s) => s,
             Err(e) => return Some(Err(e)),
         };
-        self.taux_atmp_du_siege(an, &self.entreprise_au(&jour), socle_an.as_ref())
+        let ent = match self.entreprise_au(&jour) {
+            Ok(e) => e,
+            Err(e) => return Some(Err(e)),
+        };
+        self.taux_atmp_du_siege(an, &ent, socle_an.as_ref())
     }
 
     /// La compagnie a-t-elle dit son taux AT/MP pour l'annee `an` (sa fiche le porte avec cette annee) ? Sinon, celui
-    /// qu'une piece atteste se lit (`avec_le_taux_atmp_lu`).
-    pub fn taux_atmp_dit(&self, an: Annee) -> bool {
+    /// qu'une piece atteste se lit (`avec_le_taux_atmp_lu`). Refus : la fiche ne se lit pas ce jour-la.
+    pub fn taux_atmp_dit(&self, an: Annee) -> R<bool> {
         let jour = self.jour_du_taux_atmp(an);
-        self.entreprise_au(&jour).taux_atmp.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.annee() == an))
+        Ok(self.entreprise_au(&jour)?.taux_atmp.is_some_and(|t| t.valeur.is_some() && t.depuis.is_some_and(|d| d.annee() == an)))
     }
 
     /// LE TAUX AT/MP DU SIEGE POUR L'ANNEE `an`, tel que la case de la fiche `ent` le dit (`ChampsEntreprise::taux_atmp`,
@@ -1642,13 +1754,13 @@ impl Contexte {
     /// LE BAREME DE `jour` AVANT SON CONTROLE (le socle, la convention, la surcouche de la compagnie) : ce contre quoi une
     /// fiche qu'on enregistre se controle avant d'etre ecrite (`controler_etablissements`).
     pub fn bareme_fondu(&self, jour: &Jour) -> R<Pile> {
-        self.empiler(jour, &self.entreprise).map(|(p, _)| p)    }
+        self.empiler(jour, self.entreprise()?).map(|(p, _)| p)    }
 
     /// LES REGLES DATEES QUI S'APPLIQUENT A CE JOUR : le `depuis` de chaque valeur datee en vigueur du bareme de
     /// l'annee (le socle, la convention, la compagnie), du plus ancien au plus recent, sans doublon. Une paie qui s'est
     /// calculee sous d'autres regles le dit a sa date (« regle du JJ/MM/AAAA »).
     pub fn regles_datees(&self, jour: &Jour) -> R<Vec<Jour>> {
-        Ok(self.pile_lue(jour, &self.entreprise_au(jour))?.regles.clone())
+        Ok(self.pile_lue(jour, &self.entreprise_au(jour)?)?.regles.clone())
     }
 
     /// LES VALEURS DATEES DE LA COMPAGNIE QUI S'APPLIQUENT A CE JOUR a l'engagement du salarie `salarie` sur le spectacle
@@ -1676,7 +1788,7 @@ impl Contexte {
     /// `None` : une annee sans socle, une fiche sans convention, ou une convention que le socle ne couvre pas.
     fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
         let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.annee())? else { return Ok(None) };
-        let ent = self.entreprise_au(jour);
+        let ent = self.entreprise_au(jour)?;
         let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
         Ok(convention(&socle_an, idcc)?.map(lire))
@@ -1694,13 +1806,13 @@ impl Contexte {
     /// Le bareme resolu a ce jour, garde et partage : il se lit sans se copier ; ce qui le change (la pile d'un contrat,
     /// `bareme::bareme_applique` ; la surcharge d'un etablissement) en part.
     pub fn bareme(&self, jour: &Jour) -> R<Arc<Pile>> {
-        Ok(self.pile_lue(jour, &self.entreprise_au(jour))?.pile.clone())
+        Ok(self.pile_lue(jour, &self.entreprise_au(jour)?)?.pile.clone())
     }
 
     /// LA COMPAGNIE TELLE QUE LA PILE DU BAREME LA LIT a `jour` (`bareme::bareme_applique`) : sa fiche a ce jour, et son
     /// effectif de l'annee.
     pub fn entreprise_lue(&self, jour: &Jour) -> R<crate::bareme::EntrepriseLue> {
-        let fiche = self.entreprise_au(jour);
+        let fiche = self.entreprise_au(jour)?;
         let lu = effectif_de(&self.racine, &fiche)?;
         Ok(crate::bareme::EntrepriseLue { fiche, effectif: lu.valeur(jour.annee()), cse: lu.cse(jour.annee()), cinquante: lu.cinquante(jour.annee()), taux_lus: false })
     }
@@ -1709,7 +1821,7 @@ impl Contexte {
     /// contexte.
     pub fn plafond_securite_sociale(&self, annee: Annee) -> R<crate::plafond::Pss> {
         let jour = annee.premier_jour();
-        let lue = self.pile_lue(&jour, &self.entreprise)?;
+        let lue = self.pile_lue(&jour, self.entreprise()?)?;
         let plafond = lue.pile.plafond_securite_sociale.as_ref().map(|p| crate::plafond::Pss::en_euros_entiers(p.mensuel, p.horaire));
         match plafond.filter(|p| !p.mensuel().est_nul() && !p.horaire().est_nul()) {
             Some(p) => Ok(p),
@@ -1733,7 +1845,7 @@ PSS_H_METROP).",
     /// Le SMIC horaire applicable a la date (le bareme liste les revalorisations ; la derniere dont `depuis <= date`
     /// gagne).
     pub fn smic(&self, jour: &Jour) -> R<MontantUnitaire> {
-        let lue = self.pile_lue(jour, &self.entreprise_au(jour))?;
+        let lue = self.pile_lue(jour, &self.entreprise_au(jour)?)?;
         match smic_en_vigueur(&lue.pile.smic_horaire, jour)? {
             Some((_, v)) => Ok(socle::grandeurs::courte(v)),
             None => Err(socle::refus!("Aucun SMIC applicable au {} dans le bareme.", jour.iso())),
@@ -1741,22 +1853,25 @@ PSS_H_METROP).",
     }
 
     /// Les autres etablissements que la fiche dit en dernier (ouverts ou fermes depuis), hors le siege : ce que l'ecran en
-    /// montre.
+    /// montre. Une derniere liste illisible n'en montre aucun : la fiche la dit a part (`non_lus`).
     pub fn etablissements_dits(&self) -> Vec<crate::fiche::Etablissement> {
-        let derniere = self.fiches.entreprise.etablissements.as_deref().and_then(|l| l.iter().max_by_key(|d| d.depuis)).and_then(|d| d.valeur.dite());
-        let principal = self.entreprise.nic_principal();
+        let derniere = match self.fiches.entreprise.etablissements.as_deref().and_then(|l| l.iter().max_by_key(|d| d.depuis)).map(Datee::lue) {
+            Some(Ok(l)) => l,
+            Some(Err(_)) | None => None,
+        };
+        let principal = self.entreprise_montree().nic_principal();
         derniere.into_iter().flatten().filter(|e| e.nic.dite() != principal).cloned().collect()
     }
 
-    /// La fiche entreprise d'un mois : lue au dernier jour du mois, avec chaque autre etablissement ouvert un
-    /// jour au moins du mois (`etablissements_entre`).
-    pub fn entreprise_du_mois(&self, mois: Mois) -> ChampsEntreprise {
+    /// La fiche entreprise d'un mois que le calcul lit : lue au dernier jour du mois, avec chaque autre etablissement
+    /// ouvert un jour au moins du mois (`etablissements_entre`).
+    pub fn entreprise_du_mois(&self, mois: Mois) -> R<ChampsEntreprise> {
         let dernier = mois.dernier_jour();
-        let mut ent = self.entreprise_au(&dernier);
-        if let Some(l) = etablissements_entre(self.fiches.entreprise.etablissements.as_deref(), &Periode::du_mois(mois)) {
+        let mut ent = self.entreprise_au(&dernier)?;
+        if let Some(l) = etablissements_entre(self.fiches.entreprise.etablissements.as_deref(), &Periode::du_mois(mois))? {
             ent.etablissements = Some(l);
         }
-        ent
+        Ok(ent)
     }
 
     /// La fiche entreprise `ent` telle qu'un document de cette compagnie la lit (`EntrepriseDuDocument`).
@@ -1765,8 +1880,8 @@ PSS_H_METROP).",
     }
 
     /// Le numero de licence de la fiche entreprise a la date (`None` : pas de licence).
-    pub fn licence(&self, jour: &Jour) -> Option<String> {
-        self.entreprise_au(jour).licence_spectacle
+    pub fn licence(&self, jour: &Jour) -> R<Option<String>> {
+        Ok(self.entreprise_au(jour)?.licence_spectacle)
     }
 
     /// CE QUE LES FICHES DE LA COMPAGNIE PORTENT ET QUE LE MOTEUR NE LIT PAS (`fiche::non_lus`) : l'entreprise, chaque
@@ -1812,17 +1927,16 @@ PSS_H_METROP).",
     /// Le salarie de cette cle tel que l'ecran le nomme (`socle::texte::salarie_nomme` : « NOM Prénom ») ; la cle sans
     /// fiche.
     pub fn nomme(&self, cle: &IdSalarie) -> String {
-        match self.salaries.get(cle).and_then(|f| f.nomme()) {
+        match self.salarie_montre(cle).and_then(|f| f.nomme()) {
             Some(nom) => nom,
             None => cle.to_string(),
         }
     }
 
-    /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle, une fiche que
-    /// la compagnie n'a pas (`Classe::Manque`).
+    /// La fiche dont la cle est `cle` que le calcul lit, sans rien chercher d'approchant. Refus : aucune fiche n'a cette
+    /// cle, une fiche que la compagnie n'a pas (`Classe::Manque`) ; une valeur en vigueur ne se lit pas.
     pub fn fiche_de(&self, cle: &IdSalarie) -> R<FicheSalarie> {
-        self.salaries
-            .get(cle)
+        self.salarie(cle)?
             .cloned()
             .ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Manque, format!("Salarie inconnu : {}.", repr_texte(cle.as_str()))))
     }
@@ -1849,14 +1963,15 @@ PSS_H_METROP).",
         if forme_de_nir(&brut) {
             // Un NIR saisi se range en capitales (`Nir::rangee`) : 2A, 2B.
             let cherche = crate::fiche::Nir::lire(&brut[..13])?;
-            for (cle, s) in &self.salaries {
+            // Chercher, c'est regarder : les fiches telles qu'on les montre.
+            for (cle, s) in self.salaries_montres() {
                 if s.nir.dite() == Some(&cherche) {
                     return Ok(cle.to_string());
                 }
             }
         }
         let mut trouves: Vec<&IdSalarie> = Vec::new();
-        for (cle, s) in &self.salaries {
+        for (cle, s) in self.salaries_montres() {
             let (n, p) = (exige(&s.nom, "nom")?, exige(&s.prenom, "prenom")?);
             let ensemble = [cle_recherche(&n), cle_recherche(&p), cle_recherche(&format!("{} {}", n, p)), cle_recherche(&format!("{} {}", p, n))];
             if ensemble.contains(&q) {
@@ -1877,7 +1992,7 @@ PSS_H_METROP).",
         // Tolerance : prefixe (Celi -> CELIMENE) puis distance d'edition, sur les seuls actifs.
         let actifs = self.salaries_actifs();
         let noms_de = |cle: &IdSalarie| -> R<[String; 2]> {
-            let s = &self.salaries[cle];
+            let s = self.salaries[cle].pour_montrer();
             Ok([cle_recherche(&exige(&s.prenom, "prenom")?), cle_recherche(&exige(&s.nom, "nom")?)])
         };
         let mut prefixes: Vec<&IdSalarie> = Vec::new();
@@ -1911,7 +2026,7 @@ PSS_H_METROP).",
             return Ok(cle.to_string());
         }
         // Rien parmi les actifs : si une archive ressemble, le dire plutot que « inconnu ».
-        for (cle, s) in &self.salaries {
+        for (cle, s) in self.salaries_montres() {
             if !s.archivee() {
                 continue;
             }
@@ -1951,8 +2066,9 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
                 repr_texte(nom)
             ));
         }
-        let trouve = |cle: &IdSpectacle| Spectacle { cle: cle.clone(), champs: self.spectacles[cle].clone() };
-        let ordre: Vec<(&IdSpectacle, &ChampsSpectacle)> = self.spectacles.iter().collect();
+        // Trouve par ce qu'on en montre ; la fiche rendue est celle que le calcul lit.
+        let trouve = |cle: &IdSpectacle| -> R<Spectacle> { Ok(Spectacle { cle: cle.clone(), champs: self.spectacles[cle].pour_calculer(&qui_spectacle(cle))?.clone() }) };
+        let ordre: Vec<(&IdSpectacle, &ChampsSpectacle)> = self.spectacles_montres().collect();
         let net = nom.trim();
         // Un nom qui designe plusieurs spectacles ne se devine pas : il se refuse, et dit lesquels.
         let un_seul = |trouves: Vec<&IdSpectacle>| -> R<Option<Spectacle>> {
@@ -1963,10 +2079,10 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
                     trouves.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
                 ));
             }
-            Ok(trouves.first().map(|c| trouve(c)))
+            trouves.first().map(|c| trouve(c)).transpose()
         };
         if let Some((cle, _)) = self.spectacles.get_key_value(net) {
-            return Ok(trouve(cle));
+            return trouve(cle);
         }
         let noms_de = |cle: &str, sp: &ChampsSpectacle| -> R<[String; 2]> { Ok([cle.to_string(), sp.titre.ecrite("titre")?.to_string()]) };
         // Un nom qui n'a pas la forme d'un numero d'objet ne designe aucun numero.

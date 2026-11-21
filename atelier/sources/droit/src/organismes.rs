@@ -671,22 +671,23 @@ fn numero_de_reference(reference: &ReferenceDAdhesion) -> R<u32> {
 pub fn saisis(ctx: &Contexte) -> R<(Vec<Adhesion>, Vec<u32>)> {
     let fichier = fichier_organismes(ctx)?;
     let Some(liste) = fichier.adhesions_prevoyance.as_deref() else { return Ok((Vec::new(), Vec::new())) };
-    let prises = liste
-        .iter()
-        .flat_map(|e| e.valeur.dite().into_iter().flatten())
-        .map(|a| numero_de_reference(&a.reference))
-        .collect::<R<Vec<u32>>>()?;
-    let au = crate::fiche::valeur_au(liste,&ctx.lue_au);
+    // Le fichier se lit strict (`lire_fichier`) : une valeur illisible n'y entre pas ; dite, elle refuserait.
+    let illisible = |i: &socle::forme::ValeurIllisible| socle::refus!("Le fichier des organismes porte une adhésion qui ne se lit pas (« {} »).", i.ecrite());
+    let mut prises = Vec::new();
+    for e in liste {
+        for a in e.lue().map_err(illisible)?.into_iter().flatten() {
+            prises.push(numero_de_reference(&a.reference)?);
+        }
+    }
+    let au = crate::fiche::valeur_au(liste, &ctx.lue_au).map_err(illisible)?;
     let textes = donnes_par_un_texte()?;
     let adhesions: Vec<Adhesion> = au
-        .dite()
         .into_iter()
         .flatten()
         .filter(|a| {
             let libelle = a.libelle.as_str().trim().to_uppercase();
             !textes.contains(&libelle) && !a.contribution.as_ref().is_some_and(|c| c.est_le_libelle(&libelle))
         })
-        .cloned()
         .collect();
     Ok((adhesions, prises))
 }
@@ -774,11 +775,12 @@ impl Attendu {
 
 /// Les contrats que cette compagnie declare a la date du contexte, dans l'ordre ou ils se presentent.
 pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
-    let idcc = ctx.entreprise.idcc.dite();
+    let ent = ctx.entreprise()?;
+    let idcc = ent.idcc.dite();
     let base = base()?;
     let mut out: Vec<Attendu> = base.contrats.tous.iter().map(Attendu::from).collect();
     // L'exemption de la CASC-SVP se lit avec l'effectif de l'annee du contexte (le mois que l'on compose), pas du jour.
-    if let Some(casc) = crate::adhesions::casc_svp(&ctx.entreprise, &ctx.effectif()?, ctx.lue_au.annee())? {
+    if let Some(casc) = crate::adhesions::casc_svp(ent, &ctx.effectif()?, ctx.lue_au.annee())? {
         out.push(Attendu {
             cle: CASC,
             libelle: Some(casc.libelle.to_string()),

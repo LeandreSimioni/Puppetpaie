@@ -640,7 +640,7 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     let mut brut: Vec<(CodeDeRubrique, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
     if socle::fichiers::est_dossier(racine) {
         for (c, datee) in de_la_compagnie(racine)?.rubriques {
-            let v = datee.au(jour);
+            let v = datee.au(jour).en_calcul(&format!("La rubrique {} de la compagnie", c))?;
             if v.est_vide() {
                 continue;
             }

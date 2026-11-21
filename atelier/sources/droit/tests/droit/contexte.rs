@@ -36,16 +36,16 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
 
     // Le contexte d'aujourd'hui (decembre) et celui d'octobre : la meme compagnie, chacun sous ses valeurs.
     let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15"))).unwrap();
-    assert_eq!(ctx.entreprise.idcc.portee(), Some("1285"));
+    assert_eq!(ctx.entreprise().unwrap().idcc.portee(), Some("1285"));
     let octobre = ctx.du_mois(mois("2026-10")).unwrap();
-    assert_eq!((octobre.entreprise.idcc.portee(), octobre.entreprise.adresse.portee()), (Some("3090"), Some("21 RUE DU PORT")));
-    assert_eq!(ctx.entreprise_du_mois(mois("2026-11")).adresse.portee(), Some("8 PLACE DU MARCHE"));
+    assert_eq!((octobre.entreprise().unwrap().idcc.portee(), octobre.entreprise().unwrap().adresse.portee()), (Some("3090"), Some("21 RUE DU PORT")));
+    assert_eq!(ctx.entreprise_du_mois(mois("2026-11")).unwrap().adresse.portee(), Some("8 PLACE DU MARCHE"));
     // La convention que le bareme applique est celle du jour lu, quel que soit le contexte qui le lit.
     let convention = |jour: Jour| ctx.entreprise_lue(&jour).unwrap().fiche.idcc.en_texte();
     assert_eq!((convention(j("2026-10-31")), convention(j("2026-11-01"))), (Some("3090".to_string()), Some("1285".to_string())));
     // La premiere valeur vaut de tout temps, meme ecrite avec une date.
     assert_eq!(ctx.salarie_au(&droit::contexte::IdSalarie::lire("BRIOCHE").unwrap(), &j("2020-03-01")).unwrap().nom.portee(), Some("BRIOCHE"));
-    assert_eq!(ctx.au(&j("2020-03-01")).unwrap().salaries[&droit::contexte::IdSalarie::lire("BRIOCHE").unwrap()].emploi.portee(), Some("COMEDIENNE"));
-    assert_eq!(ctx.entreprise_au(&j("2019-01-01")).idcc.portee(), Some("3090"));
+    assert_eq!(ctx.au(&j("2020-03-01")).unwrap().salarie(&droit::contexte::IdSalarie::lire("BRIOCHE").unwrap()).unwrap().unwrap().emploi.portee(), Some("COMEDIENNE"));
+    assert_eq!(ctx.entreprise_au(&j("2019-01-01")).unwrap().idcc.portee(), Some("3090"));
     std::fs::remove_dir_all(&racine).unwrap();
 }

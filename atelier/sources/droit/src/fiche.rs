@@ -2277,13 +2277,16 @@ macro_rules! fiche {
             pub fn cles_inconnues(&self) -> Vec<&str> {
                 self.cles_inconnues.noms()
             }
-            /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.
-            pub fn au(&self, jour: &Jour) -> $plate {
-                $plate {
-                    $( $champ: self.$champ.as_deref().and_then(|l| valeur_au(l, jour)), )*
-                    $( $piece: PieceFermee::de($cases { $( $pchamp: self.$pchamp.as_deref().and_then(|l| valeur_au(l, jour)), )* }), )*
+            /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites, et ceux dont la valeur en vigueur ne se lit
+            /// pas (`AUnJour`).
+            pub fn au(&self, jour: &Jour) -> AUnJour<$plate> {
+                let mut illisibles = Vec::new();
+                let plate = $plate {
+                    $( $champ: en_vigueur(self.$champ.as_deref(), jour, CaseDeFiche::Case(NomDeCase($ecrit)), &mut illisibles), )*
+                    $( $piece: PieceFermee::de($cases { $( $pchamp: en_vigueur(self.$pchamp.as_deref(), jour, CaseDeFiche::Piece($pcles::$pvar.into()), &mut illisibles), )* }), )*
                     $( $( $note: self.$note.clone(), )* )?
-                }
+                };
+                AUnJour { plate, illisibles }
             }
 
             /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` : la valeur de tout
@@ -2332,7 +2335,7 @@ macro_rules! fiche {
             type Plate = $plate;
             type Changement = $ch;
 
-            fn au(&self, jour: &Jour) -> $plate {
+            fn au(&self, jour: &Jour) -> AUnJour<$plate> {
                 $datee::au(self, jour)
             }
 
@@ -2409,8 +2412,9 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
     type Plate: Clone + Default + Serialize + DeserializeOwned;
     type Changement: DeserializeOwned;
 
-    /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.
-    fn au(&self, jour: &Jour) -> Self::Plate;
+    /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites, et ceux dont la valeur en vigueur ne se lit pas
+    /// (`AUnJour` : pour calculer ou pour montrer).
+    fn au(&self, jour: &Jour) -> AUnJour<Self::Plate>;
 
     /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` d'abord) ; aucun pour un champ
     /// que la fiche ne dit pas, ou que la forme ne declare pas.
@@ -2445,9 +2449,9 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// tout se garde dans le fichier tel qu'ecrit, et rien ne s'invente a sa place.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NonLu {
-    /// UNE VALEUR DATEE ILLISIBLE (`Datee::illisible`) : la case est vide a partir de son `depuis`, et le calcul ou
-    /// l'acte qui en a besoin refuse en la nommant, comme pour toute case vide. `rang` : sa place dans la liste datee de
-    /// la case, telle qu'ecrite (0 : la premiere).
+    /// UNE VALEUR DATEE ILLISIBLE (`Datee::lue`) : ni dite ni vide ; le calcul ou l'acte qui lit la fiche quand elle est
+    /// en vigueur refuse en nommant la fiche et la case (`AUnJour::pour_calculer`). `rang` : sa place dans la liste
+    /// datee de la case, telle qu'ecrite (0 : la premiere).
     Valeur { fiche: FicheNommee, case: CaseDeFiche, rang: usize, depuis: Option<Jour>, ecrite: String },
     /// UNE CLE QUE LA FORME NE CONNAIT PAS : elle ne dit rien, et seul l'editeur l'apprend.
     Cle { fiche: FicheNommee, cle: String },
@@ -2483,7 +2487,7 @@ pub fn non_lus<F: FicheDatee>(f: &F, fiche: &FicheNommee) -> Vec<NonLu> {
     impl VoirListe for Illisibles<'_> {
         fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]) {
             for (rang, e) in liste.iter().enumerate() {
-                if let Some(v) = &e.illisible {
+                if let Err(v) = e.lue() {
                     self.out.push(NonLu::Valeur { fiche: self.fiche.clone(), case: cle, rang, depuis: e.depuis, ecrite: v.ecrite() });
                 }
             }
@@ -2518,30 +2522,47 @@ pub trait VoirListe {
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
 ///
-/// UNE VALEUR ILLISIBLE (`illisible`) : dans le fichier d'une compagnie (`lire_fiche_posee`), une valeur que le type de
-/// la case ne lit plus (ecrite par une version precedente ou a la main) est tenue pour NON DITE : `valeur` est vide a
-/// partir de `depuis`, comme une case videe, et rien ne s'invente a sa place (ni la valeur d'avant, ni un defaut). Elle
-/// se garde telle qu'ecrite et se reecrit telle quelle, tant que la compagnie ne redit pas la case a cette date
-/// (`dater` la remplace alors). Les donnees livrees et les charges ne la connaissent pas : elles restent strictes.
+/// UNE VALEUR ILLISIBLE : dans le fichier d'une compagnie (`lire_fiche_posee`), une valeur que le type de la case ne lit
+/// plus (ecrite par une version precedente ou a la main). Elle n'est NI DITE NI VIDE : elle a son propre etat
+/// (`socle::forme::LueOuIllisible`), et la valeur ne se tire que par `lue`, qui la rend a part ; rien ne la prend pour
+/// une case vide sans que le compilateur l'ait fait choisir. Elle se garde telle qu'ecrite et se reecrit telle quelle,
+/// tant que la compagnie ne redit pas la case a cette date (`dater` la remplace alors). Les donnees livrees et les
+/// charges ne la connaissent pas : elles restent strictes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Datee<T> {
     pub depuis: Option<Jour>,
-    /// La valeur ; nulle, la case est vide a partir de `depuis`.
-    pub valeur: Option<T>,
+    /// La valeur (nulle, la case est vide a partir de `depuis`), ou ce que le fichier ecrit et que son type ne lit pas.
+    valeur: socle::forme::LueOuIllisible<Option<T>>,
     pub note: Option<String>,
-    /// La valeur telle que le fichier l'ecrit, quand son type ne la lit pas (`valeur` est alors vide).
-    pub illisible: Option<socle::forme::ValeurIllisible>,
 }
 
 impl<T> Datee<T> {
     /// Une valeur dite, lisible.
     pub fn dite(depuis: Option<Jour>, valeur: Option<T>, note: Option<String>) -> Datee<T> {
-        Datee { depuis, valeur, note, illisible: None }
+        Datee { depuis, valeur: socle::forme::LueOuIllisible::Lue(valeur), note }
     }
 
-    /// La valeur ne se lit pas (`illisible`).
+    /// LA SEULE LECTURE DE LA VALEUR : dite ou vide (`Ok`), ou illisible (`Err`, ce que le fichier ecrit) ; celui qui la
+    /// lit choisit : montrer l'illisible, ou refuser en nommant la case.
+    pub fn lue(&self) -> Result<Option<&T>, &socle::forme::ValeurIllisible> {
+        match &self.valeur {
+            socle::forme::LueOuIllisible::Lue(v) => Ok(v.as_ref()),
+            socle::forme::LueOuIllisible::Illisible(i) => Err(i),
+        }
+    }
+
+    /// La valeur ne se lit pas.
     pub fn est_illisible(&self) -> bool {
-        self.illisible.is_some()
+        self.lue().is_err()
+    }
+
+    /// La meme valeur datee, sa valeur lisible changee par `f` (une illisible reste telle).
+    pub fn changee<U>(&self, f: impl FnOnce(Option<&T>) -> Option<U>) -> Datee<U> {
+        let valeur = match &self.valeur {
+            socle::forme::LueOuIllisible::Lue(v) => socle::forme::LueOuIllisible::Lue(f(v.as_ref())),
+            socle::forme::LueOuIllisible::Illisible(i) => socle::forme::LueOuIllisible::Illisible(i.clone()),
+        };
+        Datee { depuis: self.depuis, valeur, note: self.note.clone() }
     }
 }
 
@@ -2561,9 +2582,9 @@ impl<T: EcritureDeCase> Serialize for Datee<T> {
         if let Some(d) = &self.depuis {
             st.serialize_field("depuis", d)?;
         }
-        match &self.illisible {
-            Some(v) => st.serialize_field("valeur", v)?,
-            None => st.serialize_field("valeur", &CaseEcrite(&self.valeur))?,
+        match &self.valeur {
+            socle::forme::LueOuIllisible::Illisible(v) => st.serialize_field("valeur", v)?,
+            socle::forme::LueOuIllisible::Lue(v) => st.serialize_field("valeur", &CaseEcrite(v))?,
         }
         if let Some(n) = &self.note {
             st.serialize_field("note", n)?;
@@ -2585,19 +2606,99 @@ impl<'de, T: DeserializeOwned> Deserialize<'de> for Datee<T> {
             note: Option<String>,
         }
         let l = Lue::<T>::deserialize(d)?;
-        Ok(match l.valeur {
-            socle::forme::LueOuIllisible::Lue(valeur) => Datee { depuis: l.depuis, valeur, note: l.note, illisible: None },
-            socle::forme::LueOuIllisible::Illisible(v) => Datee { depuis: l.depuis, valeur: None, note: l.note, illisible: Some(v) },
-        })
+        Ok(Datee { depuis: l.depuis, valeur: l.valeur, note: l.note })
     }
 }
 
 /// La valeur en vigueur a `jour` : celle dont le `depuis` est le plus recent sans le depasser (a meme date, la derniere
-/// ecrite ; sans `depuis`, de tout temps). Avant la premiere, la case est vide.
-pub fn valeur_au<T: Clone>(liste: &[Datee<T>], jour: &Jour) -> Option<T> {
+/// ecrite ; sans `depuis`, de tout temps). Avant la premiere, la case est vide. Illisible en vigueur : `Err`, ce que le
+/// fichier ecrit (`Datee::lue`).
+pub fn valeur_au<'a, T: Clone>(liste: &'a [Datee<T>], jour: &Jour) -> Result<Option<T>, &'a socle::forme::ValeurIllisible> {
     let mut entrees: Vec<&Datee<T>> = liste.iter().collect();
     entrees.sort_by_key(|e| e.depuis);
-    entrees.into_iter().filter(|e| e.depuis.is_none_or(|j| j <= *jour)).last().and_then(|e| e.valeur.clone())
+    match entrees.into_iter().filter(|e| e.depuis.is_none_or(|j| j <= *jour)).last() {
+        Some(e) => e.lue().map(|v| v.cloned()),
+        None => Ok(None),
+    }
+}
+
+/// UNE VALEUR ILLISIBLE EN VIGUEUR un jour dans une fiche (`AUnJour`) : sa case, et ce que le fichier ecrit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct IllisibleEnVigueur {
+    pub case: CaseDeFiche,
+    pub ecrite: String,
+}
+
+/// LA FICHE A UN JOUR, telle que le moteur la tient (`FicheDatee::au`) : ses cases en vigueur, et celles dont la valeur
+/// en vigueur ne se lit pas. ELLE NE S'OUVRE QUE DE DEUX FACONS : POUR CALCULER (`pour_calculer`), qui refuse tant
+/// qu'une valeur en vigueur ne se lit pas, en nommant la fiche et la case, comme une case vide qu'un acte exige (rien ne
+/// se devine : regle de fond 1) ; POUR MONTRER (`pour_montrer`), ou une valeur illisible est vide et se dit a part
+/// (`illisibles`). Un calcul qui prendrait une valeur illisible pour une case vide doit l'ecrire.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AUnJour<P> {
+    plate: P,
+    illisibles: Vec<IllisibleEnVigueur>,
+}
+
+impl<P> AUnJour<P> {
+    /// La fiche que le calcul lit : refus, une valeur en vigueur ne se lit pas (`qui` : « La fiche de Solène
+    /// Marchetot ») ; la case va a part, comme celle d'un manque (`socle::fichiers::manque`).
+    pub fn pour_calculer(&self, qui: &str) -> R<&P> {
+        match self.illisibles.first() {
+            None => Ok(&self.plate),
+            Some(i) => Err(i.refus(qui)),
+        }
+    }
+
+    /// La meme, gardee (`pour_calculer`).
+    pub fn en_calcul(self, qui: &str) -> R<P> {
+        match self.illisibles.first() {
+            None => Ok(self.plate),
+            Some(i) => Err(i.refus(qui)),
+        }
+    }
+
+    /// La fiche que l'on montre : une valeur illisible y est vide, et se dit a part (`illisibles`).
+    pub fn pour_montrer(&self) -> &P {
+        &self.plate
+    }
+
+    /// La meme, gardee (`pour_montrer`).
+    pub fn montree(self) -> P {
+        self.plate
+    }
+
+    /// Les valeurs en vigueur qui ne se lisent pas.
+    pub fn illisibles(&self) -> &[IllisibleEnVigueur] {
+        &self.illisibles
+    }
+
+    /// La meme fiche, sa plate changee par `f` (les memes illisibles).
+    pub fn changee<Q>(self, f: impl FnOnce(P) -> Q) -> AUnJour<Q> {
+        AUnJour { plate: f(self.plate), illisibles: self.illisibles }
+    }
+}
+
+impl IllisibleEnVigueur {
+    /// LE REFUS D'UN CALCUL QUI LIT LA FICHE `qui` (« La fiche de Solène Marchetot ») dont cette valeur ne se lit pas :
+    /// la fiche, la valeur telle qu'ecrite, quoi faire ; la case a part, comme celle d'un manque
+    /// (`socle::fichiers::manque`). Un manque : la compagnie le redit.
+    pub fn refus(&self, qui: &str) -> socle::echec::Echec {
+        socle::echec::cle(format!("{} porte une valeur qui ne se lit plus (« {} ») : la saisir de nouveau.", qui, self.ecrite), self.case.nom()).reclasser(socle::echec::Classe::Manque)
+    }
+}
+
+/// La valeur en vigueur a `jour` de la liste de la case `case` (`valeur_au`) ; illisible, elle est vide et se note dans
+/// `illisibles` (`AUnJour`).
+fn en_vigueur<T: Clone>(liste: Option<&[Datee<T>]>, jour: &Jour, case: CaseDeFiche, illisibles: &mut Vec<IllisibleEnVigueur>) -> Option<T> {
+    match liste.map(|l| valeur_au(l, jour)) {
+        None => None,
+        Some(Ok(v)) => v,
+        Some(Err(i)) => {
+            illisibles.push(IllisibleEnVigueur { case, ecrite: i.ecrite() });
+            None
+        }
+    }
 }
 
 /// LES TEMPS D'UNE CASE DATEE A UN JOUR (`temps_au`) : la valeur en vigueur, la derniere d'avant, la prochaine a venir,
@@ -2624,6 +2725,8 @@ pub struct Avant<T> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AVenir<T> {
     pub valeur: Option<T>,
+    /// Ce que le fichier ecrit, quand la prochaine valeur ne se lit pas (`valeur` est alors vide) : a montrer.
+    pub illisible: Option<String>,
     pub depuis: Jour,
     pub note: Option<String>,
 }
@@ -2645,20 +2748,21 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
     }
     let ici = toutes.iter().rposition(|e| e.depuis.is_none_or(|j| j <= *jour));
     let en_vigueur = ici.map(|i| toutes[i].clone());
-    let pareilles = |a: &Option<T>, b: &Option<T>| match (a, b) {
-        (Some(x), Some(y)) => meme(x, y),
-        (None, None) => true,
-        (Some(_), None) | (None, Some(_)) => false,
+    // Une valeur illisible n'est pareille a aucune autre.
+    let pareilles = |a: &Datee<T>, b: &Datee<T>| match (a.lue(), b.lue()) {
+        (Ok(Some(x)), Ok(Some(y))) => meme(x, y),
+        (Ok(None), Ok(None)) => true,
+        (Ok(Some(_)), Ok(None)) | (Ok(None), Ok(Some(_))) | (Err(_), _) | (_, Err(_)) => false,
     };
     let mut avant = None;
     if let Some(i) = ici {
         let mut debut = i;
-        while debut > 0 && pareilles(&toutes[debut - 1].valeur, &toutes[i].valeur) {
+        while debut > 0 && pareilles(&toutes[debut - 1], &toutes[i]) {
             debut -= 1;
         }
         if let (Some(e), Some(depuis)) = (debut.checked_sub(1).map(|p| &toutes[p]), toutes[debut].depuis) {
-            if let Some(valeur) = e.valeur.clone() {
-                avant = Some(Avant { valeur, jusqu_au: depuis.avant(socle::date::Duree::jours(1))?, note: e.note.clone() });
+            if let Ok(Some(valeur)) = e.lue() {
+                avant = Some(Avant { valeur: valeur.clone(), jusqu_au: depuis.avant(socle::date::Duree::jours(1))?, note: e.note.clone() });
             }
         }
     }
@@ -2666,7 +2770,12 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
         Some(i) => toutes.get(i + 1),
         None => toutes.first(),
     };
-    let a_venir = suivante.and_then(|e| e.depuis.map(|depuis| AVenir { valeur: e.valeur.clone(), depuis, note: e.note.clone() }));
+    let a_venir = suivante.and_then(|e| {
+        e.depuis.map(|depuis| match e.lue() {
+            Ok(v) => AVenir { valeur: v.cloned(), illisible: None, depuis, note: e.note.clone() },
+            Err(i) => AVenir { valeur: None, illisible: Some(i.ecrite()), depuis, note: e.note.clone() },
+        })
+    });
     Ok(Temps { en_vigueur, avant, a_venir, toutes })
 }
 
@@ -3794,9 +3903,9 @@ pub type Spectacles = FichierDeFiches<IdSpectacle, FicheSpectacleDatee>;
 
 /// LA LECTURE DES FICHES D'UNE COMPAGNIE, la seule (`config/entreprise.json` en `FicheEntrepriseDatee`,
 /// `config/salaries.json` en `Salaries`, `config/spectacles.json` en `Spectacles` ; `nom` dit laquelle) : le fichier
-/// d'une installation posee (`socle::forme::lire_fichier_pose_en_phrase`). Une valeur qu'une case ne lit plus est tenue
-/// pour non dite et se garde (`Datee::illisible`), une cle que la forme ne connait pas se garde et ne dit rien : ni l'une
-/// ni l'autre ne ferme la compagnie (`non_lus` les dit). Un fichier qui n'est pas du JSON, ou dont la structure
+/// d'une installation posee (`socle::forme::lire_fichier_pose_en_phrase`). Une valeur qu'une case ne lit plus se garde,
+/// ni dite ni vide (`Datee::lue`), une cle que la forme ne connait pas se garde et ne dit rien : ni l'une ni l'autre ne
+/// ferme la compagnie (`non_lus` les dit) ; seul le calcul qui lit la valeur refuse (`AUnJour`). Un fichier qui n'est pas du JSON, ou dont la structure
 /// d'ensemble est fausse (une fiche qui n'est pas un objet, une case qui n'est pas une liste datee, un jour `depuis`
 /// illisible), se refuse en mots d'administrateur ; le detail technique va a part.
 pub fn lire_fiche_posee<T: DeserializeOwned>(chemin: &std::path::Path, nom: NomDeFiche) -> R<T> {
@@ -3866,7 +3975,7 @@ mod tests {
         }
         let f = &s.fiches[&IdSalarie::lire("FULLER").unwrap()];
         let j = |ecrit: &str| -> Jour { socle::forme::lire_texte(&format!("\"{}\"", ecrit), "le jour du test").unwrap() };
-        assert_eq!(f.au(&j("2026-11-01")).actif, None);
-        assert!(f.au(&j("2026-11-02")).actif.oui());
+        assert_eq!(f.au(&j("2026-11-01")).pour_calculer("FULLER").unwrap().actif, None);
+        assert!(f.au(&j("2026-11-02")).pour_calculer("FULLER").unwrap().actif.oui());
     }
 }

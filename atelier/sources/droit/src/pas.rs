@@ -225,8 +225,8 @@ pub fn est_perime(e: &TauxRecu, le: Jour) -> bool {
 // ------------------------------------------------------------------ lecture
 
 /// Vrai seulement si la fiche est la ET qu'elle n'a pas de NIR.
-pub fn sans_nir(ctx: &Contexte, cle: &IdSalarie) -> bool {
-    ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none())
+pub fn sans_nir(ctx: &Contexte, cle: &IdSalarie) -> R<bool> {
+    Ok(ctx.salarie(cle)?.is_some_and(|f| f.nir.portee().is_none()))
 }
 
 /// Le jour auquel on demande si un taux vaut encore : celui du contexte.
@@ -242,11 +242,21 @@ pub fn le_jour(ctx: &Contexte, le: Option<Jour>) -> Jour {
 
 /// LES TAUX RECUS POUR LE SALARIE `cle`, du premier mis a disposition au dernier (a instant egal, dans l'ordre ou ils
 /// se sont ecrits), ceux de sa fiche s'il en a une. Une valeur de la fiche qui n'est pas un taux (la case vide d'avant le
-/// premier) n'en est pas un.
+/// premier) n'en est pas un. Refus : un taux recu ne se lit pas (le taux d'avant ne vaut pas a sa place : rien ne se
+/// devine).
 pub fn recus(ctx: &Contexte, cle: &IdSalarie) -> R<Vec<TauxRecu>> {
     let mut ecrits: Vec<_> = ctx.salarie_brut(cle).into_iter().flat_map(|fiche| fiche.taux_pas.iter().flatten()).collect();
     ecrits.sort_by_key(|e| e.depuis);
-    let mut r: Vec<TauxRecu> =ecrits.into_iter().filter_map(|e| e.valeur.dite()).cloned().collect();
+    let mut r: Vec<TauxRecu> = Vec::new();
+    for e in ecrits {
+        match e.lue() {
+            Ok(v) => r.extend(v.cloned()),
+            Err(i) => {
+                let illisible = crate::fiche::IllisibleEnVigueur { case: crate::fiche::CaseSalarie::TauxPas.into(), ecrite: i.ecrite() };
+                return Err(illisible.refus(&format!("La fiche de {}", ctx.nomme(cle))));
+            }
+        }
+    }
     r.sort_by_key(|v| v.mis_a_disposition);
     Ok(r)
 }
@@ -566,10 +576,10 @@ fn situation_et_taux(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Op
     let recus = recus(ctx, cle)?;
     let e = en_vigueur(&recus, le, mois);
     let quoi = match e {
-        None if sans_nir(ctx, cle) => SituationDuTaux::SansNir,
+        None if sans_nir(ctx, cle)? => SituationDuTaux::SansNir,
         None => SituationDuTaux::Inconnu,
         Some(e) if !e.r#type.is_some_and(TypeDeTauxPas::transmis) => {
-            if sans_nir(ctx, cle) {
+            if sans_nir(ctx, cle)? {
                 SituationDuTaux::SansNir
             } else {
                 SituationDuTaux::Bareme
@@ -601,15 +611,16 @@ fn situation_et_taux(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Op
     Ok((s, e.cloned()))
 }
 
+/// La fiche, telle qu'on la montre, est archivee : une case « actif » illisible ne retire personne de la liste.
 fn archive(ctx: &Contexte, cle: &IdSalarie) -> bool {
-    ctx.salaries.get(cle).is_some_and(|f| f.archivee())
+    ctx.salarie_montre(cle).is_some_and(|f| f.archivee())
 }
 
 /// Le meme tableau pour plusieurs salaries, dans l'ordre alphabetique. Sans liste : ceux des fiches, moins les archives.
 pub fn diagnostic(ctx: &Contexte, cles: Option<&[IdSalarie]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<Situation>> {
     let cles: BTreeSet<IdSalarie> = match cles {
         Some(c) => c.iter().cloned().collect(),
-        None => ctx.salaries.keys().filter(|c| !archive(ctx, c)).cloned().collect(),
+        None => ctx.cles_des_salaries().filter(|c| !archive(ctx, c)).cloned().collect(),
     };
     cles.iter().map(|c| situation(ctx, c, le, mois)).collect()
 }

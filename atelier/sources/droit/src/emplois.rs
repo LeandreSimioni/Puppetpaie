@@ -692,7 +692,8 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &IdSalarie, periode: &Periode) -
     jours.dedup();
     let mut out = Vec::new();
     for j in jours {
-        let (avant, apres) = (brute.au(&j.avant(socle::date::Duree::jours(1))?), brute.au(&j));
+        let qui = format!("La fiche de {}", ctx.nomme(cle));
+        let (avant, apres) = (brute.au(&j.avant(socle::date::Duree::jours(1))?).en_calcul(&qui)?, brute.au(&j).en_calcul(&qui)?);
         if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS) {
             out.push(j);
         }

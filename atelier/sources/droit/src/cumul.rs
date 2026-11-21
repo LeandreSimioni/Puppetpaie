@@ -243,7 +243,7 @@ pub fn position(
 
 /// Date de naissance du salarie, ou `None`.
 pub fn naissance(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
-    Ok(ctx.salaries.get(salarie).and_then(|f| f.date_naissance.dite().copied()))
+    Ok(ctx.salarie(salarie)?.and_then(|f| f.date_naissance.dite().copied()))
 }
 
 /// Fin du dernier contrat declare : le depart de la fenetre par defaut.
@@ -337,5 +337,5 @@ pub fn tableau_cumul(
 /// Date anniversaire des droits, si elle est dans `config/salaries.json`
 /// (`anniversaire_droits`) ; absente tant que France Travail ne l'a pas notifiee.
 pub fn anniversaire_configure(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
-    Ok(ctx.salaries.get(salarie).and_then(|f| f.anniversaire_droits.dite().copied()))
+    Ok(ctx.salarie(salarie)?.and_then(|f| f.anniversaire_droits.dite().copied()))
 }

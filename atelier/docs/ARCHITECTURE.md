@@ -103,9 +103,15 @@ que par la structure :
   se lit et ne dit rien, pour que la compagnie s'ouvre après sa mise à jour ; elle ne se réécrit pas, et ni la plate ni
   une charge ne l'ont. **Les fiches d'une compagnie se lisent par `droit::fiche::lire_fiche_posee`**, le fichier d'une
   installation posée (`socle::forme::lire_fichier_pose_en_phrase`) : une valeur datée que le type de sa case ne lit plus
-  est tenue pour non dite (vide à partir de son `depuis`, rien ne s'invente à sa place) et se réécrit telle quelle tant
-  que la compagnie ne redit pas la case (`Datee::illisible`) ; une clé que la forme ne connaît pas se garde, se réécrit et
-  ne dit rien (`socle::forme::ClesInconnues`) ; l'une et l'autre sont un `droit::fiche::NonLu`. Les données livrées et
+  n'est ni dite ni vide (`socle::forme::LueOuIllisible`, que seul `Datee::lue` ouvre) et se réécrit telle quelle tant
+  que la compagnie ne redit pas la case ; une clé que la forme ne connaît pas se garde, se réécrit et ne dit rien
+  (`socle::forme::ClesInconnues`) ; l'une et l'autre sont un `droit::fiche::NonLu`. **Regarder répond, calculer
+  refuse, et c'est le type qui le tient** : la fiche à un jour (`droit::fiche::AUnJour`, que rendent `au()` et que
+  porte le `Contexte`) ne s'ouvre que pour calculer, ce qui refuse en nommant la fiche et la case, ou pour montrer ;
+  aucun lecteur ne prend une valeur illisible pour une case vide sans l'écrire. La valeur illisible d'un salarié ne
+  ferme que ce qui lit sa fiche. Un écrivain que le moteur lance de lui-même (l'arrêté AT/MP, l'import qui complète)
+  ne l'écrit pas par-dessus (`droit::fiche::porte_un_illisible`) : seul un geste de la compagnie qui redit la case la
+  remplace. Les données livrées et
   les charges ne passent jamais par là : elles restent strictes. Une structure d'ensemble fausse (pas du JSON, une case
   qui n'est pas une liste datée) refuse comme ailleurs. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
@@ -1219,7 +1225,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | spectacle | `IdSpectacle`, `droit::fiche::Spectacle` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
 | fiche | `droit::fiche::NomDeFiche`, `Datee<T>` | `droit/src/fiche.rs` |
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
-| ce qu'une fiche de la compagnie porte et que le moteur ne lit pas (une valeur datée que le type de sa case ne lit plus, tenue pour non dite et gardée telle qu'écrite, `Datee::illisible` ; une clé que la forme ne connaît pas, gardée, qui ne dit rien) : la compagnie lit la première sur sa case, l'éditeur apprend l'une et l'autre par un incident (`routes::non_lus`) | `droit::fiche::NonLu` | `droit/src/fiche.rs` |
+| ce qu'une fiche de la compagnie porte et que le moteur ne lit pas (une valeur datée que le type de sa case ne lit plus, ni dite ni vide, gardée telle qu'écrite, `Datee::lue` ; une clé que la forme ne connaît pas, gardée, qui ne dit rien) : la compagnie lit la première sur sa case (`declarations::champs::illisibles`), l'éditeur apprend l'une et l'autre par un incident, un par sorte de fiche et case (`routes::non_lus`) | `droit::fiche::NonLu` | `droit/src/fiche.rs` |
+| valeur illisible (ce qu'un fichier posé écrit dans une case et que son type ne lit pas, gardé tel quel et réécrit tel quel) ; la valeur d'une case datée, lue ou illisible, son propre état, qui ne se tire que par `Datee::lue` | `socle::forme::ValeurIllisible`, `socle::forme::LueOuIllisible` | `socle/src/forme.rs` |
+| clés qu'une forme ne connaît pas, dans le fichier d'une installation posée (gardées, réécrites, ne disent rien ; refusées partout ailleurs) | `socle::forme::ClesInconnues` | `socle/src/forme.rs` |
+| fiche à un jour, telle que le moteur la tient (ses cases en vigueur, et celles dont la valeur en vigueur ne se lit pas) : elle ne s'ouvre que pour calculer, ce qui refuse en nommant la fiche et la case (`pour_calculer`, `Contexte::entreprise`, `salarie`, `salaries`, `entreprise_au`, `salarie_au`), ou pour montrer, où l'illisible est vide et se dit à part (`pour_montrer`, `Contexte::entreprise_montree`, `salarie_montre`, `salaries_montres`) ; une valeur illisible en vigueur, sa case et ce que le fichier écrit | `droit::fiche::AUnJour`, `droit::fiche::IllisibleEnVigueur` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | dernière fois que les pièces reprises portent un salarié (le dernier mois qu'elles datent, un contrat qui court encore, ou aucune), qui range sa fiche neuve active ou archivée | `import::derniere_piece::DernierePiece` | `import/src/derniere_piece.rs` |

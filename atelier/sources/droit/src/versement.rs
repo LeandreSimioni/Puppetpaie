@@ -173,7 +173,7 @@ impl<'de> Deserialize<'de> for Versement {
 /// (`socle::forme::en_fichier_pose`), tel qu'il s'ecrivait alors et rien d'autre, pour que la compagnie s'ouvre apres sa
 /// mise a jour ; il se recrit dans la forme neuve au premier enregistrement de la fiche. Une charge, elle, ne dit que
 /// la forme neuve. Un texte d'avant que ce lecteur ne connait pas est une valeur illisible de la case
-/// (`fiche::Datee::illisible`).
+/// (`fiche::Datee::lue`).
 struct Lecteur;
 
 impl<'de> serde::de::Visitor<'de> for Lecteur {
