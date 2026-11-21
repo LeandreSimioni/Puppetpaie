@@ -35,7 +35,7 @@ const SERVICE: Champ = Champ { nom: "service", libelle: Affiche::new("Service"),
 const MOT_DE_PASSE: Champ = Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, tapé dans la page ; par moteur route, le moteur le demande lui-même à un humain", avance: false };
 const ADMINISTRATEUR: Champ = Champ { nom: "administrateur", libelle: Affiche::new("Mot de passe de l'administrateur"), forme: Forme::Texte, sens: "le mot de passe de l'administrateur, tapé dans la page ; par moteur route, le moteur le demande à un humain", avance: false };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est modifié" };
-const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs";
+const ETAT: &str = "l'état du coffre : ce qui est posé, depuis quand, jamais les valeurs ; la demande du mot de passe avant chaque geste";
 
 /// Les secrets qu'une charge de ce module peut porter, retires de celle qui arrive par `moteur route` (le mot de passe
 /// du logiciel, `motdepasse`, l'est de toutes).

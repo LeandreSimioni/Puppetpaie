@@ -328,17 +328,19 @@
         });
       }
       const reel = document.getElementById("g-reel"), test = document.getElementById("g-test");
-      if (reel) reel.onclick = () => demanderMotDePasse(g.reel.titre, (m) => deposer(true, m, reel));
+      if (reel) reel.onclick = () => demanderMotDePasse(g.reel.demande, (m) => deposer(true, m, reel));
       if (test) test.onclick = () => deposer(false, "", test);
     }
 
     /* Le mot de passe de l'administrateur, tape au moment de l'acte : il ouvre chaque coffre, et chaque depot le
-       reverifie. Annuler ne fait rien. */
-    function demanderMotDePasse(titre, suite) {
+       reverifie. Ce que la boite dit est la demande que le tableau rend (`demande` : titre, de_qui, pour). Annuler ne
+       fait rien. */
+    function demanderMotDePasse(demande, suite) {
       const b = document.createElement("div");
       b.className = "boite-mdp";
-      b.innerHTML = `<form><p><b>${esc(titre)}</b></p>
-        <p class="discret">{{P:chaque_dsn}}</p>
+      b.innerHTML = `<form><p><b>${esc(demande.titre)}</b></p>
+        <p>${esc(demande.de_qui)}</p>
+        <p class="discret">${esc(demande.pour)}</p>
         <input type="password" autocomplete="current-password" placeholder="{{P:mdp_administrateur}}">
         <div class="barre"><button type="button" class="second">Annuler</button><button type="submit">Déposer</button></div></form>`;
       document.body.appendChild(b);

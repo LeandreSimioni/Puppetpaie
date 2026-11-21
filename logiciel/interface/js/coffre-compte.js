@@ -202,9 +202,9 @@ async function dessinerCoffre(cible) {
   cible.querySelectorAll(".k-ouvrir").forEach((b) => { b.onclick = () => basculer(b.closest(".rang")); });
 
   // La preuve, si elle est exigée : le popup. Null = annulé, on ne fait rien.
-  const preuve = async (quoi) => {
+  const preuve = async (demande) => {
     if (!exige) return { motdepasse: null };
-    const m = await demanderMotDePasse(quoi);
+    const m = await demanderMotDePasse(demande);
     return m ? { motdepasse: m } : null;
   };
   // L'ACTUEL EST UN CHAMP, PAS UN POPUP, et seulement ici. La regle du popup vaut pour un acte qui ENGAGE : deposer,
@@ -261,10 +261,11 @@ async function dessinerCoffre(cible) {
   };
   for (const carte of cible.querySelectorAll("[data-service]")) {
     const service = carte.dataset.service, verdict = carte.querySelector(".k-verdict");
+    const dit = c.services.find((s) => s.service === service);
     carte.querySelector(".k-poser").onclick = async () => {
       const nom = carte.querySelector(".k-nom"), prenom = carte.querySelector(".k-prenom");
       const compte = carte.querySelector(".k-compte");
-      const p = await preuve("Poser");
+      const p = await preuve(dit.demande_poser);
       if (!p) return;
       // Le moteur dit ce qui change, pose, essaie une fois la connexion et dit ce qu'il en est (`phrase`, `couleur`).
       try {
@@ -286,8 +287,8 @@ async function dessinerCoffre(cible) {
     };
     const oublierService = carte.querySelector(".k-oublier");
     if (oublierService) oublierService.onclick = async () => {
-      if (!confirm(c.services.find((s) => s.service === service).oublier)) return;
-      const p = await preuve("Oublier");
+      if (!confirm(dit.oublier)) return;
+      const p = await preuve(dit.demande_oublier);
       if (!p) return;
       try {
         const r = await api("coffre-oublier", { service, ...p });
@@ -326,7 +327,7 @@ async function dessinerCompteGoogle(cible, preuve, ok, raté, k) {
   oublier.hidden = oublier.disabled;
 
   lier.onclick = async () => {
-    const p = await preuve("Lier le Drive");
+    const p = await preuve(k.demande_google_lier);
     if (!p) return;
     lier.disabled = oublier.disabled = true;
     verdict.textContent = k.google_ouvert;
@@ -337,7 +338,7 @@ async function dessinerCompteGoogle(cible, preuve, ok, raté, k) {
   };
   oublier.onclick = async () => {
     if (!confirm(k.google_oublier)) return;
-    const p = await preuve("Oublier le compte Google");
+    const p = await preuve(k.demande_google_oublier);
     if (!p) return;
     try {
       const r = await api("google-oublier", p);
