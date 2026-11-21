@@ -365,9 +365,25 @@ impl<F: Read + Write> Imap<F> {
         r.corps.into_iter().next().ok_or_else(|| erreur(format!("Message {} introuvable.", uid)))
     }
 
-    /// `LOGOUT` ; un serveur qui la refuse se dit.
+    /// `LOGOUT` ; un serveur qui la refuse se dit. Le `* BYE` qui la suit est la reponse attendue, pas un refus : « The
+    /// server MUST send a BYE untagged response before the (tagged) OK response » (RFC 3501, § 6.1.3,
+    /// `atelier/reference/sources/ietf-rfc3501-imap/ietf-rfc3501-imap4rev1-20261121.txt`, l. 1416-1419).
     pub fn deconnecter(&mut self) -> R<()> {
-        self.commande("LOGOUT").map(|_| ())
+        self.numero += 1;
+        let etiquette = format!("A{:04}", self.numero);
+        self.flux.write_all(format!("{} LOGOUT\r\n", etiquette).as_bytes()).map_err(es)?;
+        self.flux.flush().map_err(es)?;
+        loop {
+            let unite = self.lire_unite()?;
+            if !unite.starts_with(format!("{} ", etiquette).as_bytes()) {
+                continue;
+            }
+            return match Response::parse(&unite) {
+                Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(()),
+                Ok((_, Response::Done { .. })) => Err(erreur(traduire(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim()))),
+                _ => Err(erreur("Reponse du serveur illisible.")),
+            };
+        }
     }
 }
 
