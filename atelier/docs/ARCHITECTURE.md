@@ -1215,6 +1215,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
+| dernière fois que les pièces reprises portent un salarié (le dernier mois qu'elles datent, un contrat qui court encore, ou aucune), qui range sa fiche neuve active ou archivée | `import::derniere_piece::DernierePiece` | `import/src/derniere_piece.rs` |
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
@@ -2647,6 +2648,15 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
   et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
+- **Active ou archivée** (`import::derniere_piece` ; Léandre, 21/11/2026 : « tous les salariés qui viennent des années
+  précédentes […] ils doivent être mis comme archivés ») : une fiche de salarié ou de spectacle que l'import crée est
+  active si une pièce reprise la porte dans les douze derniers mois (`recente`, le seul seuil), archivée sinon. Pour un
+  salarié, toutes ses pièces comptent, une fois lues (`DernierePiece`, `importation::bulletins::ranger_les_salaries`) :
+  un bulletin, la période de sa paie ; une DSN, chaque contrat tel que la plus récente DSN qui le déclare le dit
+  (sa fin, S21.G00.62.001, à défaut .40.010) ; une AEM, son mois et son contrat ; un certificat, le contrat qu'il
+  atteste. Un contrat sans fin (un CDI, une AEM « en cours ») court encore : le salarié est actif. Une fiche qu'aucune
+  pièce ne date garde la case vide. Une fiche qui existe n'est jamais rangée par l'import (`completer`) ; une fiche
+  archivée garde tout son historique, et « Pour démarrer » ne lui demande rien.
 - **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
   par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
   fiche sans NIR (même nom, même premier prénom, même date de naissance quand les deux la disent), ne se crée pas :

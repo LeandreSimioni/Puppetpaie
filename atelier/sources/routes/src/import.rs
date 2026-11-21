@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use import::derniere_piece::DernierePiece;
 use import::dsn_aem::{self, SalarieDeclare};
 use import::proposee::{self, FicheProposee};
 use import::reponse::{n_mots, DitPar, Ecart, EtatFiche, FicheImportee, FicheVisee, Importation, Origine, Source};
@@ -224,7 +225,6 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<(ChampsSalarie, Vec<FauteDeCase>)> 
         date_anciennete: decl.premier_contrat,
         statut,
         emploi_affichage,
-        actif: Some(true),
         ..ChampsSalarie::default()
     };
     f.fondre(&de_la_dsn);
@@ -306,6 +306,11 @@ pub(crate) struct Apercu {
     /// LA PIECE QUI DONNE SON MATRICULE A UNE FICHE NEUVE, par le NIR de la fiche : la premiere qui le porte (la DSN
     /// passe avant les bulletins, qui completent ce qu'elle cree) ; `importation::matricules` la nomme.
     pub(crate) matricules_lus_dans: HashMap<Option<Nir>, Source>,
+    /// CE QUE LES PIECES DISENT DE LA DERNIERE FOIS QU'ELLES PORTENT UN SALARIE, par son NIR (aucun pour un individu que
+    /// la DSN declare sans lui) : ses contrats des DSN et des AEM deposees ici ; les bulletins, les certificats et les AEM
+    /// en PDF s'y ajoutent (`importation::bulletins`), puis chaque fiche de salarie a creer en est rangee, active ou
+    /// archivee (`importation::bulletins::ranger_les_salaries`).
+    pub(crate) derniere_piece: HashMap<Option<Nir>, DernierePiece>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -535,27 +540,35 @@ pub(crate) fn apercu_lu(
     avertissements.extend(illisibles.iter().map(|f| format!("AEM illisible, ignoree : {}", f)));
     avertissements.extend(fautes.iter().map(|f| format!("AEM : {}", f)));
     let n_aem = contrats.iter().map(|c| c.fichier.clone()).collect::<HashSet<_>>().len();
+    // Ce que les DSN et les AEM deposees disent de la derniere fois qu'elles portent chaque salarie : le contrat.
+    let mut derniere_piece: HashMap<Option<Nir>, DernierePiece> = HashMap::new();
+    for decl in &lecture.salaries {
+        derniere_piece.entry(decl.individu.identite.nir.clone()).or_default().suivre(decl.derniere_piece);
+    }
+    for c in &contrats {
+        derniere_piece.entry(Some(c.nir.clone())).or_default().contrat(Some(c.periode.fin()));
+    }
     struct Objet {
         numero: NumeroObjetSpectacle,
-        premier: String,
-        dernier: String,
+        premier: socle::mois::Mois,
+        dernier: socle::mois::Mois,
         contrats: usize,
         aem: bool,
     }
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == Source::Aem })
+        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois, dernier: o.dernier_mois, contrats: o.contrats, aem: o.source == Source::Aem })
         .collect();
     for c in &contrats {
         let Some(numero) = &c.numero_objet else {
             continue;
         };
-        let m = c.periode.fin().mois_civil().to_string();
+        let m = c.periode.fin().mois_civil();
         let i = match objets.iter().position(|o| o.numero == *numero) {
             Some(i) => i,
             None => {
-                objets.push(Objet { numero: numero.clone(), premier: m.clone(), dernier: m.clone(), contrats: 0, aem: true });
+                objets.push(Objet { numero: numero.clone(), premier: m, dernier: m, contrats: 0, aem: true });
                 objets.len() - 1
             }
         };
@@ -573,7 +586,6 @@ pub(crate) fn apercu_lu(
         }
     }
     objets.sort_by(|a, b| a.premier.cmp(&b.premier));
-    let seuil = aujourdhui.mois_civil().avant(socle::date::Duree::mois(12))?.to_string();
     let mut spectacles = Vec::new();
     for o in &objets {
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {
@@ -588,7 +600,7 @@ pub(crate) fn apercu_lu(
         let sp = SpectacleDesPieces {
             titre: import::proposee::A_COMPLETER,
             numero_objet: o.numero.clone(),
-            actif: o.dernier >= seuil,
+            actif: import::derniere_piece::recente(o.dernier, aujourdhui)?,
             note: format!("{} de {} a {} ({} contrat(s))", source, o.premier, o.dernier, o.contrats),
             code_analytique: None,
             titre_propose: None,
@@ -723,6 +735,7 @@ pub(crate) fn apercu_lu(
         paies_en_question,
         matricules_declares,
         matricules_lus_dans,
+        derniere_piece,
     })
 }
 

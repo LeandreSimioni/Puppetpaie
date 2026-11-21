@@ -31,6 +31,9 @@ pub struct SalarieDeclare {
     pub mois: Mois,
     pub initiales: String,
     pub premier_contrat: Option<Jour>,
+    /// Ce que ses contrats disent de la derniere fois que les DSN le portent : chaque contrat tel que la plus recente DSN
+    /// qui le declare le dit, par sa fin (S21.G00.62.001, a defaut .40.010) ; sans fin, il court encore.
+    pub derniere_piece: crate::derniere_piece::DernierePiece,
 }
 
 impl SalarieDeclare {
@@ -206,6 +209,8 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
     let mut index_salaries: HashMap<Option<Nir>, usize> = HashMap::new();
     let mut index_objets: HashMap<droit::fiche::NumeroObjetSpectacle, usize> = HashMap::new();
+    // La fin de chaque contrat (son salarie, son numero, son debut), telle que la plus recente DSN qui le declare la dit.
+    let mut fins: BTreeMap<(Option<Nir>, Option<engagement::numeros::NumeroContrat>, Jour), Option<Jour>> = BTreeMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());
@@ -234,6 +239,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         let mut dernier_contrat: HashMap<Option<&Nir>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
             dernier_contrat.insert(c.nir.as_ref(), c);
+            fins.insert((c.nir.clone(), c.numero.clone(), c.periode.debut()), c.fin_declaree.or(c.periode.fin()));
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
@@ -268,6 +274,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 mois,
                 initiales,
                 premier_contrat: premier,
+                derniere_piece: crate::derniere_piece::DernierePiece::Aucune,
             };
             match index_salaries.get(&nir) {
                 Some(&i) => out.salaries[i] = decl,
@@ -276,6 +283,11 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                     index_salaries.insert(nir, out.salaries.len() - 1);
                 }
             }
+        }
+    }
+    for ((nir, _, _), fin) in fins {
+        if let Some(&i) = index_salaries.get(&nir) {
+            out.salaries[i].derniere_piece.contrat(fin);
         }
     }
     Ok(out)
