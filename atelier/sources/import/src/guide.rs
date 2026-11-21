@@ -13,8 +13,9 @@
 //! - les archives : `tri` (un zip s'ouvre, son contenu se trie comme le reste ; un PDF sans texte ne se lit pas).
 //!
 //! L'ESSENTIEL D'ABORD (`essentiel`, `essentielles`) : les bulletins refont l'historique, une DSN deposee pre-remplit la
-//! configuration (`routes::importation::parametrage`), tout dans un dossier qu'on choisit ; puis, a part, ce qu'on peut
-//! mettre si certains documents manquent (`si_manquent`, `autres`).
+//! configuration (`routes::importation::parametrage`), tout dans le dossier d'import `import/`, le seul que l'import lit
+//! (`ouvrir` : le bouton qui l'ouvre) ; puis, a part, ce qu'on peut mettre si certains documents manquent (`si_manquent`,
+//! `autres`).
 //!
 //! Ce qui restera a dire : ce qu'aucune de ces lectures ne donne -- la nature d'un contrat de permanent
 //! (`nature`), et ce que « Pour demarrer » demande encore (les conges d'un permanent repris compris)
@@ -28,6 +29,8 @@ use std::path::Path;
 pub struct Guide {
     /// L'essentiel, en quelques phrases.
     pub essentiel: &'static [&'static str],
+    /// Le bouton qui ouvre le dossier d'import (`import/`), a cote de l'essentiel.
+    pub ouvrir: &'static str,
     /// Les deux pieces de l'essentiel, les bulletins et une DSN deposee : ce qui s'en lit.
     pub essentielles: Vec<Piece>,
     /// La phrase qui ouvre les autres pieces.
@@ -36,7 +39,7 @@ pub struct Guide {
     pub autres: Vec<Piece>,
     pub accepte: &'static str,
     pub reste: &'static str,
-    /// Le meme chemin apres une premiere reprise : ajouter au dossier, relancer l'import.
+    /// Le meme chemin apres une premiere reprise : ajouter au dossier d'import, relancer l'import.
     pub rejouer: &'static str,
     pub rien_n_est_perdu: &'static str,
     /// Le titre du guide replie, une fois un historique repris.
@@ -63,8 +66,9 @@ pub fn guide() -> Guide {
         essentiel: &[
             "Pour un import de bonne qualité, reprenez toutes vos fiches de paie : elles refont votre historique.",
             "Ajoutez une DSN déposée : elle pré-remplit la configuration de la compagnie.",
-            "Mettez le tout dans un dossier sur l'ordinateur, puis choisissez ce dossier et importez.",
+            "Mettez le tout dans le dossier d'import, puis importez.",
         ],
+        ouvrir: "Ouvrir le dossier d'import",
         essentielles: vec![
             Piece {
                 quoi: "Les bulletins de paie, en PDF",
@@ -131,9 +135,9 @@ pub fn guide() -> Guide {
         ],
         accepte: crate::tri::ACCEPTE,
         reste: "Après l'import, ce qu'une DSN pourrait donner se dit à part, pour l'ajouter ; ce qu'aucune pièce ne porte se demande, une fois, avec l'endroit où le trouver : par exemple qui signe les contrats, ou la date de la première embauche de la compagnie.",
-        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier et relancez l'import. Seul ce qui est neuf est repris, et les fiches ne reçoivent que ce qui leur manque. Si une DSN déclare quelqu'un qui ressemble à une fiche sans numéro de sécurité sociale, l'import demande si c'est la même personne et ne reprend rien de lui avant votre réponse : laissez la DSN dans le dossier, répondez, puis relancez l'import.",
+        rejouer: "Un document oublié, une DSN, une année qui manquait : mettez-le dans le dossier d'import et relancez l'import. Seul ce qui est neuf est repris, et les fiches ne reçoivent que ce qui leur manque. Si une DSN déclare quelqu'un qui ressemble à une fiche sans numéro de sécurité sociale, l'import demande si c'est la même personne et ne reprend rien de lui avant votre réponse : laissez la DSN dans le dossier, répondez, puis relancez l'import.",
         rien_n_est_perdu: "Un document que le logiciel ne sait pas lire est dit, avec sa raison ; il ne change rien au reste. Les noms des fichiers ne comptent pas : le logiciel lit leur contenu.",
-        replie: "Ce qu'on met dans le dossier",
+        replie: "Ce qu'on met dans le dossier d'import",
         ce_qui_s_en_lit: "Ce qui s'en lit",
         avance: "Avancé",
         apercu: "Aperçu, sans rien écrire",

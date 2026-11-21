@@ -245,28 +245,31 @@ fn type_du_contact(decl: &DeclarantDsn) -> &str {
     }
 }
 
-/// LA MEDECINE DU TRAVAIL INTERNE DE L'ETABLISSEMENT, dans l'identifiant de son service de prevention et de sante au travail
-/// (S21.G00.11.025 : « Cette rubrique doit etre renseignee par l'identifiant du service de prevention et de sante au travail
-/// (SPST) », `X [1,14]`, conditionnelle en mensuelle ; cahier 2026.1, `norme-dsn/texte/bloc-S21.G00.12.txt` l. 33-37, et
-/// 2027.1.1, `texte-2027/bloc-S21.G00.11.txt` l. 232-237). La norme 2027 y nomme les SPST autonomes : « MT01 - MEDECINE
-/// INTERNE ETABLISSEMENT » (note differentielle 2026.1.2 -> 2027.1.2, § 13,
-/// `norme-dsn/dsn-note-differentielle-ct-2026.1.2-vers-2027.1.2-20251224.txt` l. 3497-3503), et en fait la condition du
-/// contact de type 17 (`contact_sante_travail`) ; la norme 2026 n'a ni l'une ni l'autre. La fiche garde le code de la DPAE
-/// (`medecine_travail`), ou la medecine interne s'ecrit MT999 (`droit::fiche::CodeMedecine::INTERNE`) : les deux textes nomment la
-/// meme medecine interne a l'etablissement, ce qui est une inference.
+/// L'IDENTIFIANT DU SERVICE DE PREVENTION ET DE SANTE AU TRAVAIL DE L'ETABLISSEMENT (S21.G00.11.025 : « Cette rubrique doit
+/// etre renseignee par l'identifiant du service de prevention et de sante au travail (SPST). La definition de cet
+/// identifiant est precisee dans la fiche consigne dediee », `X [1,14]`, conditionnelle en mensuelle ; cahier 2027.1.1,
+/// `norme-dsn/texte-2027/bloc-S21.G00.11.txt` l. 232-237 ; la norme 2026 ne l'a pas). La fiche consigne est la 3370 de
+/// net-entreprises (`atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche3370-spst-dsn-
+/// mensuelle-20260826.txt`) : la declaration est « attendue en DSN à partir de la version de norme P27V01 » (l. 2) ;
+/// « Les rubriques permettant de renseigner le SPST en DSN doivent être renseignées à partir des valeurs disponibles en
+/// colonne « mt_lib_court » du référentiel (par exemple : MT189) » (l. 11) ; un employeur qui recourt a un seul SPST
+/// interentreprises y porte « La valeur [qui] provient du référentiel Urssaf (« MTXX ») » (l. 16), un SPST autonome
+/// « MT01 » (l. 19), qui demande le contact de type 17 (`contact_sante_travail`). La fiche ne porte qu'un service pour la
+/// compagnie : c'est celui de l'etablissement ; le SPST « particulier » d'un salarie (S21.G00.30.030, cas 3 et 4 de la
+/// fiche) ne s'ecrit pas.
 ///
-/// Rend `MT01` quand la fiche dit une medecine interne et que la version du fichier est 2027 ou apres ; sinon rien. L'identifiant d'un
-/// service EXTERNE ne s'ecrit pas encore : sa definition est « precisee dans la fiche consigne dediee », qui n'est pas
-/// deposee, et que le code de la DPAE soit cet identifiant serait une inference (la rubrique est conditionnelle).
-fn spst_ecrit(f: &Fichier, ent_e: &ChampsEntreprise) -> R<Option<String>> {
-    let interne = ent_e.medecine_travail.dite().is_some_and(droit::fiche::CodeMedecine::interne);
-    if !interne
-        || crate::norme::Norme::rang(f.norme()?.version)? < crate::norme::Norme::rang(droit::natures::VersionDeLaNorme::P27V01)?
+/// L'identifiant vient du code de la fiche (`medecine_travail`, celui de la DPAE) : `CodeMedecine::identifiant_spst`, MT01
+/// pour la medecine interne (MT999). Les deux codes viennent du meme referentiel (la fiche 3370, l. 10 ; la page du jeu,
+/// `urssaf-sst-dpae/`) ; qu'ils soient le meme code est une inference. Rend l'identifiant quand la fiche dit son service et
+/// que la version du fichier est 2027 ou apres ; sinon rien.
+fn spst_ecrit(f: &Fichier, ent_e: &ChampsEntreprise) -> R<Option<droit::fiche::IdentifiantSpst>> {
+    let Some(code) = ent_e.medecine_travail.dite() else { return Ok(None) };
+    if crate::norme::Norme::rang(f.norme()?.version)? < crate::norme::Norme::rang(droit::natures::VersionDeLaNorme::P27V01)?
         || !usage_admet(f, droit::rubrique!("S21.G00.11.025"), NatureDeLaDeclaration::Mensuelle)?
     {
         return Ok(None);
     }
-    Ok(Some("MT01".to_string()))
+    code.identifiant_spst().map(Some)
 }
 
 /// LE CONTACT DE LA MEDECINE DU TRAVAIL INTERNE (S20.G00.07 de type 17). Norme 2027 (cahier technique 2027.1.1,
@@ -277,7 +280,7 @@ fn spst_ecrit(f: &Fichier, ent_e: &ChampsEntreprise) -> R<Option<String>> {
 /// un interlocuteur place sous sa responsabilite, pour la transmission des arrets de travail ». Il vient de la fiche
 /// (`contact_sante_travail`, montre et demande quand le code vaut MT999, `champs-base.json`) ; sans lui, la DSN refuse.
 fn contact_sante_travail(f: &mut Fichier, ent_e: &ChampsEntreprise) -> R<()> {
-    if spst_ecrit(f, ent_e)?.as_deref() != Some("MT01") {
+    if !spst_ecrit(f, ent_e)?.is_some_and(|s| s.interne()) {
         return Ok(());
     }
     let c = ent_e.contact_sante_travail.dite();

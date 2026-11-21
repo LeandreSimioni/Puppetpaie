@@ -43,15 +43,14 @@ contenu des fichiers et reconstruit tout ce qu'il peut.
 
 ```
 route importation-apercu          # l'aperçu, en JSON (`tri` : le sort de chaque fichier, et pourquoi) : rien n'est écrit
-route importer                    # le reprend
-route importer {"dossier": D}     # lit un autre dossier que import/
+route importer                    # le reprend (import/ seul : aucun autre dossier)
 ```
 
-Ou, dans l'interface : **Configuration › Reprendre l'historique** — le
-dossier prérempli, « Parcourir… » pour en prendre un autre, « Ouvrir le
-dossier » pour y déposer les fichiers, « Voir ce qui serait repris » (le même
+Ou, dans l'interface : **Configuration › Reprendre l'historique** —
+« Ouvrir le dossier d'import » pour y déposer les fichiers, « Aperçu, sans rien écrire » (le même
 compte rendu), puis « Reprendre ». Les fichiers lus sont copiés dans
-l'historique de la compagnie ; le dossier `import/` peut ensuite être vidé.
+l'historique de la compagnie ; le dossier `import/` les garde : une version suivante
+du logiciel les relit et en tire davantage.
 
 | Ce qui est lu | D'où | Ce qui est écrit |
 |---|---|---|
@@ -449,7 +448,7 @@ qui ment ailleurs), et le rebut (`*.tmp`).
 
 Tout ce que fait la fenêtre passe par une route, et toute route se sert en ligne de commande. La page ne parle au
 moteur que par ces routes ; la fenêtre ne garde que ses propres gestes (montrer une compagnie, la déverrouiller par son
-mot de passe, ouvrir un fichier, choisir un dossier, se fermer) et celui qui débride la démo, qui n'existe qu'à l'écran :
+mot de passe, ouvrir un fichier, se fermer) et celui qui débride la démo, qui n'existe qu'à l'écran :
 
 ```
 moteur routes                     # le catalogue : le geste de chaque route, sa charge, un exemple (--avance : tout)
@@ -978,7 +977,8 @@ Quand une source a changé, le référentiel qu'elle nourrit se **relève** par
 `naf-base.json`), `usages` et `formats` (le classeur de net-entreprises ou le
 cahier technique en PDF → `usages-dsn-*.json`, `formats-dsn-*.json`), `urssaf`
 (la Table des Urssaf, la liste des sites, le COG 2015 →
-`urssaf-dpae-base.json`). Les sources, puis la sortie, se nomment toujours ;
+`urssaf-dpae-base.json`), `spst` (le référentiel « sst_dpae » de l'Urssaf →
+`spst-base.json`). Les sources, puis la sortie, se nomment toujours ;
 une sortie qui existe ne se remplace qu'avec `--remplacer`, et rien ne s'écrit
 avant que le relevé soit fait. La `note` du JSON nomme la commande, les
 fichiers déposés et le jour du relevé. Par exemple :

@@ -128,8 +128,9 @@ pub(crate) struct DossierLu {
     pub(crate) copies: BTreeMap<usize, NomDeFichier>,
 }
 
-/// `importation-apercu` avec `{"dossier": ...}`.
-pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
+/// `importation-apercu` sur la boite aux lettres `import/` (`crate::import::boite_d_import`).
+pub(crate) fn apercu_dossier(ctx: &Contexte) -> R<Importation> {
+    let dossier = &crate::import::boite_d_import(ctx)?;
     // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
     // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.
     let departs = envois::journal::lu(&ctx.racine)?.departs;
@@ -633,8 +634,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     sans += 1;
                     continue;
                 }
-                if registre.pareils(&c.nir, &c.periode, Source::Aem).is_empty() {
-                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), c.periode, Source::Aem, BlocDImport::Declarations)?;
+                let ligne = import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir));
+                if registre.pareils(&c.nir, &c.periode, ligne.contrat.numero_objet.as_ref(), ligne.contrat.nature, Source::Aem).is_empty() {
+                    registre.ajouter(&c.nir, ligne, c.periode, Source::Aem, BlocDImport::Declarations)?;
                     nouveaux += 1;
                 }
             }
@@ -1143,7 +1145,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             Ok((compte, ligne_contrat)) => {
                 // LE BULLETIN EST LA PIECE DE PAIE : un contrat d'AEM aux memes dates qui compte autre chose
                 // s'efface devant le sien (`import::attestes`) ; un autre contrat atteste reste, et l'ecart se dit.
-                let pareils = registre.pareils(&l.nir, &l.b.periode, Source::Bulletin);
+                let pareils = registre.pareils(&l.nir, &l.b.periode, ligne_contrat.contrat.numero_objet.as_ref(), ligne_contrat.contrat.nature, Source::Bulletin);
                 // Le brut que le bulletin lu dit (un nombre de sa lecture) : sa porte.
                 let le_sien = (Some(compte.heures), Some(compte.cachets), Some(compte.jours), Some(compte.brut));
                 let en_mots = import::attestes::en_mots(le_sien.0, le_sien.1, le_sien.2, le_sien.3);
@@ -1228,7 +1230,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else {
             infos.certificat = c.numero.clone();
         }
-        let pareils = registre.pareils(nir, &periode, cl.piece());
+        let pareils = registre.pareils(nir, &periode, cl.objet(), Some(cl.nature()), cl.piece());
         // UN CERTIFICAT DONT D'AUTRES PIECES N'ATTESTENT QUE DES MOIS (un bulletin, une AEM, chacun le sien) atteste seul
         // ses autres mois (`attestes::reste_du_certificat`) ; un certificat deja repris ne se reprend pas deux fois.
         let mut reste: Option<(ContratLu, Periode)> = None;
@@ -2309,6 +2311,16 @@ impl Attestee {
     /// La piece qu'elle est : dans la reponse, dans ce que l'import dit d'ou vient une valeur (et son `atteste_par`).
     fn piece(&self) -> Source {
         if self.aem.is_some() { Source::Aem } else { Source::Certificat }
+    }
+
+    /// Le numero d'objet qu'elle imprime : celui de l'AEM ; un certificat Congés Spectacles n'en imprime pas.
+    fn objet(&self) -> Option<&NumeroObjetSpectacle> {
+        self.aem.as_ref().and_then(|a| a.numero_objet.as_ref())
+    }
+
+    /// La nature qu'elle atteste : un contrat d'usage, comme le disent `contrat_de_l_aem` et `contrat_du_certificat`.
+    fn nature(&self) -> NatureDeContrat {
+        NatureDeContrat::CdduSpectacle
     }
 
     /// Le mois dont elle parle : celui de l'AEM, celui de la fin du certificat.

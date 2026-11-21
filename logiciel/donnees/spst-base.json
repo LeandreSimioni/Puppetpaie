@@ -1,0 +1,1611 @@
+{
+  "quoi": "Les services de prevention et de sante au travail (SPST) du referentiel « sst_dpae » de l'Urssaf, un par identifiant (mt_lib_court : MT et trois chiffres, ou MT01 pour la medecine interne a l'etablissement), que la DSN 2027 porte en S21.G00.11.025 et dont la DPAE tire son C_MT_DCL (MT999 pour la medecine interne), avec le nom du service et sa commune.",
+  "note": "Une source relevee et datee -- `moteur sources` : urssaf-sst-dpae (urssaf-sst-dpae-20261121.csv), deposee dans atelier/reference/sources/urssaf-sst-dpae/. Extrait par `moteur extraire spst` le 21/11/2026 ; ne pas editer a la main.",
+  "services": [
+    {
+      "code": "MT002",
+      "nom": "AIMT DU PORT DU RHIN",
+      "commune": "STRASBOURG"
+    },
+    {
+      "code": "MT004",
+      "nom": "SANTE AU TRAVAIL 68 COLMAR",
+      "commune": "COLMAR"
+    },
+    {
+      "code": "MT005",
+      "nom": "SANTE AU TRAVAIL 68 CERNAY",
+      "commune": "CERNAY"
+    },
+    {
+      "code": "MT008",
+      "nom": "SANTE AU TRAVAIL 68 MASEVAUX",
+      "commune": "MASEVAUX"
+    },
+    {
+      "code": "MT009",
+      "nom": "SANTE AU TRAVAIL 68 ALTKIRCH",
+      "commune": "ALTKIRCH"
+    },
+    {
+      "code": "MT01",
+      "nom": "MEDECINE INTERNE ETABLISSEMENT",
+      "commune": "SANS"
+    },
+    {
+      "code": "MT010",
+      "nom": "APST68",
+      "commune": "COLMAR"
+    },
+    {
+      "code": "MT012",
+      "nom": "SANTE AU TRAVAIL 68 MULHOUSE",
+      "commune": "MULHOUSE"
+    },
+    {
+      "code": "MT013",
+      "nom": "MSA D ALSACE",
+      "commune": "COLMAR CEDEX"
+    },
+    {
+      "code": "MT014",
+      "nom": "SRSTT - MIDI PYR. /CH.VIOLETTE(L UNION)",
+      "commune": "L UNION"
+    },
+    {
+      "code": "MT015",
+      "nom": "CENTRE DE GESTION DE LA HAUTE-SOANE",
+      "commune": "VESOUL"
+    },
+    {
+      "code": "MT016",
+      "nom": "AST67 ALSACE SANTE AU TRAVAIL",
+      "commune": "STRASBOURG CEDEX"
+    },
+    {
+      "code": "MT017",
+      "nom": "ACST",
+      "commune": "ILLKIRCH-GRAFFENSTADEN"
+    },
+    {
+      "code": "MT020",
+      "nom": "PST LANDES",
+      "commune": "SAINT PIERRE DU MONT"
+    },
+    {
+      "code": "MT021",
+      "nom": "MEDECINE PREVENTIVE DU CDG40",
+      "commune": "MONT DE MARSAN CEDEX"
+    },
+    {
+      "code": "MT022",
+      "nom": "SISTB  BERGERAC",
+      "commune": "BERGERAC"
+    },
+    {
+      "code": "MT023",
+      "nom": "SIMT PERIGUEUX",
+      "commune": "PERIGUEUX"
+    },
+    {
+      "code": "MT024",
+      "nom": "AHI 33 SERVICE DE SANTE AU TRAVAIL",
+      "commune": "BORDEAUX"
+    },
+    {
+      "code": "MT025",
+      "nom": "ASS.  INDUSTR.  BALLASTIERE",
+      "commune": "LIBOURNE"
+    },
+    {
+      "code": "MT026",
+      "nom": "SIST LIB",
+      "commune": "LIBOURNE"
+    },
+    {
+      "code": "MT027",
+      "nom": "SSTI WILSON",
+      "commune": "BORDEAUX"
+    },
+    {
+      "code": "MT028",
+      "nom": "SSTL MONT-DE-MARSAN",
+      "commune": "MONT DE MARSAN CEDEX"
+    },
+    {
+      "code": "MT029",
+      "nom": "SSTL DAX",
+      "commune": "DAX CEDEX"
+    },
+    {
+      "code": "MT030",
+      "nom": "CIST VILLENEUVE SUR LOT",
+      "commune": "VILLENEUVE SUR LOT"
+    },
+    {
+      "code": "MT031",
+      "nom": "CIST 47",
+      "commune": "AGEN"
+    },
+    {
+      "code": "MT032",
+      "nom": "SERVICE DE SANTE AU TRAVAIL OLORON STE MARIE",
+      "commune": "OLORON"
+    },
+    {
+      "code": "MT033",
+      "nom": "PRISSM",
+      "commune": "PAU"
+    },
+    {
+      "code": "MT034",
+      "nom": "SSTI ORTHEZ",
+      "commune": "ORTHEZ"
+    },
+    {
+      "code": "MT035",
+      "nom": "ASTPB",
+      "commune": "BAYONNE"
+    },
+    {
+      "code": "MT036",
+      "nom": "SIMETRA",
+      "commune": "BIARRITZ"
+    },
+    {
+      "code": "MT037",
+      "nom": "CENTRE DE GESTION 64",
+      "commune": "PAU CEDEX"
+    },
+    {
+      "code": "MT038",
+      "nom": "SST DE LACQ",
+      "commune": "LACQ"
+    },
+    {
+      "code": "MT041",
+      "nom": "CMT VICHY",
+      "commune": "VICHY"
+    },
+    {
+      "code": "MT042",
+      "nom": "SSTI03",
+      "commune": "MOULINS"
+    },
+    {
+      "code": "MT043",
+      "nom": "CMT MONTLUCON",
+      "commune": "MONTLUCON"
+    },
+    {
+      "code": "MT044",
+      "nom": "ACISMT",
+      "commune": "AURILLAC CEDEX"
+    },
+    {
+      "code": "MT045",
+      "nom": "AIST 43",
+      "commune": "LE PUY EN VELAY"
+    },
+    {
+      "code": "MT046",
+      "nom": "AIST BRIOUDE LANGEAC SAUGUES",
+      "commune": "BRIOUDE"
+    },
+    {
+      "code": "MT047",
+      "nom": "AIST LA PREVENTION ACTIVE",
+      "commune": "CLERMONT FERRAND"
+    },
+    {
+      "code": "MT048",
+      "nom": "CENTRE DE GESTION 43",
+      "commune": "ESPALY SAINT MARCEL"
+    },
+    {
+      "code": "MT060",
+      "nom": "MEDECINE COLLECTIVITES LOCALE",
+      "commune": "PERIGUEUX CEDEX 9"
+    },
+    {
+      "code": "MT061",
+      "nom": "SST - BTP ET INDUSTRIES CONNEXES DE COTE D OR",
+      "commune": "DIJON"
+    },
+    {
+      "code": "MT062",
+      "nom": "AIST 21",
+      "commune": "DIJON"
+    },
+    {
+      "code": "MT063",
+      "nom": "COMITE DE MEDECINE DU TRAVAIL DU CHATILLONNAIS",
+      "commune": "CHATILLON SUR SEINE"
+    },
+    {
+      "code": "MT064",
+      "nom": "MTN PREVENTION",
+      "commune": "NEVERS CEDEX"
+    },
+    {
+      "code": "MT066",
+      "nom": "SST BTP 71",
+      "commune": "MACON CEDEX"
+    },
+    {
+      "code": "MT067",
+      "nom": "MEDECINE DU TRAVAIL 71",
+      "commune": "CHALON SUR SAONE CEDEX"
+    },
+    {
+      "code": "MT068",
+      "nom": "PROVAE",
+      "commune": "SAINTE-SAVINE"
+    },
+    {
+      "code": "MT069",
+      "nom": "AIST 89",
+      "commune": "AUXERRE CEDEX"
+    },
+    {
+      "code": "MT070",
+      "nom": "SMTI DU JOVINIEN",
+      "commune": "JOIGNY"
+    },
+    {
+      "code": "MT071",
+      "nom": "SMTI DU TONNERROIS",
+      "commune": "TONNERRE"
+    },
+    {
+      "code": "MT081",
+      "nom": "AIST22",
+      "commune": "PLERIN"
+    },
+    {
+      "code": "MT082",
+      "nom": "SIST",
+      "commune": "DINAN"
+    },
+    {
+      "code": "MT084",
+      "nom": "SANTE AU TRAVAIL EN IROISE",
+      "commune": "BREST"
+    },
+    {
+      "code": "MT086",
+      "nom": "SANTE AU TRAVAIL EN CORNOUAILLE",
+      "commune": "QUIMPER CEDEX"
+    },
+    {
+      "code": "MT087",
+      "nom": "PRESANTRA",
+      "commune": "MORLAIX CEDEX"
+    },
+    {
+      "code": "MT088",
+      "nom": "PREVENTION SANTE TRAVAIL 35",
+      "commune": "RENNES CEDEX 7"
+    },
+    {
+      "code": "MT089",
+      "nom": "STPF SANTE AU TRAVAIL DU PAYS DE FOUGERES",
+      "commune": "FOUGERES"
+    },
+    {
+      "code": "MT090",
+      "nom": "STSM SANTE AU TRAVAIL DU PAYS DE ST MALO",
+      "commune": "SAINT MALO"
+    },
+    {
+      "code": "MT091",
+      "nom": "SANTE ET PREVENTION BTP35",
+      "commune": "RENNES"
+    },
+    {
+      "code": "MT092",
+      "nom": "AMIEM",
+      "commune": "CAUDAN CEDEX"
+    },
+    {
+      "code": "MT093",
+      "nom": "CDG FONCTION PUBLIQUE TERRITORIALE DU MORBIHAN",
+      "commune": "VANNES CEDEX"
+    },
+    {
+      "code": "MT101",
+      "nom": "APST 18",
+      "commune": "BOURGES"
+    },
+    {
+      "code": "MT102",
+      "nom": "SISTEL",
+      "commune": "CHARTRES"
+    },
+    {
+      "code": "MT103",
+      "nom": "ASS. INTERPROFESSIONNELLE SERVICE MEDICAL DU TRAVAIL",
+      "commune": "CHATEAUROUX CEDEX"
+    },
+    {
+      "code": "MT105",
+      "nom": "APST 37",
+      "commune": "CHAMBRAY LES TOURS"
+    },
+    {
+      "code": "MT106",
+      "nom": "SAN.T.BTP.",
+      "commune": "TOURS CEDEX 2"
+    },
+    {
+      "code": "MT107",
+      "nom": "CENTRE DE GESTION DE LA FONCTION PUB ET TERR DE L INDRE",
+      "commune": "CHATEAUROUX"
+    },
+    {
+      "code": "MT109",
+      "nom": "APST 41",
+      "commune": "BLOIS"
+    },
+    {
+      "code": "MT110",
+      "nom": "CIHL SARAN",
+      "commune": "SARAN CEDEX"
+    },
+    {
+      "code": "MT111",
+      "nom": "CENTRE DE GESTION FPT INDRE ET LOIRE",
+      "commune": "TOURS"
+    },
+    {
+      "code": "MT112",
+      "nom": "CENTRE DE GESTION DE LA FONCTION PUBLIQUE ET TERR. DU CHER",
+      "commune": "PLAIMPIED GIVAUDINS"
+    },
+    {
+      "code": "MT113",
+      "nom": "CENTRE DE GESTION DE LA FONCTION PUBL. ET TERR. EURE ET LOIR",
+      "commune": "LUISANT"
+    },
+    {
+      "code": "MT114",
+      "nom": "CENTRE DE GESTION DE LA FONCTION PUB ET TERR DU LOIRET",
+      "commune": "ORLEANS Cedex 1"
+    },
+    {
+      "code": "MT115",
+      "nom": "CENTRE DE GESTION DE LA FONCTION PUB ET TERR DU LOIR ET CHER",
+      "commune": "LA CHAUSSEE SAINT VICTOR"
+    },
+    {
+      "code": "MT121",
+      "nom": "ARDENNES SANTE TRAVAIL",
+      "commune": "CHARLEVILLE MEZIERES"
+    },
+    {
+      "code": "MT123",
+      "nom": "AMITR",
+      "commune": "MAIZIERES LA GRANDE PAROISSE"
+    },
+    {
+      "code": "MT125",
+      "nom": "REIMS SANTE AU TRAVAIL",
+      "commune": "BEZANNES"
+    },
+    {
+      "code": "MT126",
+      "nom": "AMTER",
+      "commune": "EPERNAY CEDEX"
+    },
+    {
+      "code": "MT127",
+      "nom": "CIEMT",
+      "commune": "VITRY LE FRANCOIS CEDEX"
+    },
+    {
+      "code": "MT129",
+      "nom": "GIMTA",
+      "commune": "SAINTE MENEHOULD"
+    },
+    {
+      "code": "MT130",
+      "nom": "STSM 51",
+      "commune": "SAINT MARTIN SUR LE PRE"
+    },
+    {
+      "code": "MT132",
+      "nom": "ASS. INTERENTREPRISES DES SERVICES MEDICAUX DE LA HAUTE-MARNE",
+      "commune": "CHAUMONT CEDEX"
+    },
+    {
+      "code": "MT141",
+      "nom": "SPSTI 2A",
+      "commune": "AJACCIO CEDEX 9"
+    },
+    {
+      "code": "MT142",
+      "nom": "SPST 2B",
+      "commune": "BASTIA"
+    },
+    {
+      "code": "MT150",
+      "nom": "CDG 39 FPT DU JURA",
+      "commune": "CHAMPAGNOLE CEDEX"
+    },
+    {
+      "code": "MT151",
+      "nom": "AST 25",
+      "commune": "BESANCON CEDEX"
+    },
+    {
+      "code": "MT154",
+      "nom": "MEDECINE DU TRAVAIL DU BTP DE FRANCHE-COMTE",
+      "commune": "BESANCON CEDEX"
+    },
+    {
+      "code": "MT158",
+      "nom": "CENTRE DEPARTEMENTAL DE GESTION DE LA FONCTION PUBLIQUE",
+      "commune": "MONTBELIARD"
+    },
+    {
+      "code": "MT159",
+      "nom": "OPSAT",
+      "commune": "DOLE"
+    },
+    {
+      "code": "MT160",
+      "nom": "PREVENIR",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT161",
+      "nom": "ASP",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT162",
+      "nom": "SANO",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT163",
+      "nom": "ACMS",
+      "commune": "SURESNES CEDEX"
+    },
+    {
+      "code": "MT167",
+      "nom": "AMI",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT168",
+      "nom": "AMPI",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT169",
+      "nom": "APST BTP RP",
+      "commune": "BOURG LA REINE"
+    },
+    {
+      "code": "MT171",
+      "nom": "SIMT",
+      "commune": "SERRIS"
+    },
+    {
+      "code": "MT175",
+      "nom": "CIAMT",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT176",
+      "nom": "THALIE SANTE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT177",
+      "nom": "CENTRE MEDICAL PUBLICITE ET COMMUNICATION",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT178",
+      "nom": "SANTE AU TRAVAIL EN ILE DE FRANCE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT179",
+      "nom": "EFFICIENCE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT181",
+      "nom": "PREVLINK",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT182",
+      "nom": "SISTBP",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT183",
+      "nom": "PREVEAM",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT189",
+      "nom": "SEMSI CODE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT190",
+      "nom": "SIFSAT",
+      "commune": "SAINT OUEN"
+    },
+    {
+      "code": "MT191",
+      "nom": "SMST CODE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT192",
+      "nom": "SERSIMT CODE",
+      "commune": "PARIS"
+    },
+    {
+      "code": "MT197",
+      "nom": "AISP METRA",
+      "commune": "SURESNES"
+    },
+    {
+      "code": "MT199",
+      "nom": "SIST",
+      "commune": "ARGENTEUIL"
+    },
+    {
+      "code": "MT201",
+      "nom": "AIRST",
+      "commune": "MAISONS-LAFFITE"
+    },
+    {
+      "code": "MT203",
+      "nom": "OBJECTIF SANTE TRAVAIL",
+      "commune": "SAINT GERMAIN EN LAYE"
+    },
+    {
+      "code": "MT204",
+      "nom": "HORIZON SANTE TRAVAIL",
+      "commune": "NANTERRE"
+    },
+    {
+      "code": "MT207",
+      "nom": "AMEDICLEN",
+      "commune": "LEVALLOIS-PERRET"
+    },
+    {
+      "code": "MT208",
+      "nom": "HORIZON SANTE TRAVAIL",
+      "commune": "ASNIERES"
+    },
+    {
+      "code": "MT209",
+      "nom": "IPAL",
+      "commune": "ALFORTVILLE"
+    },
+    {
+      "code": "MT211",
+      "nom": "SMIE BOIS COLOMBES",
+      "commune": "BOIS COLOMBES"
+    },
+    {
+      "code": "MT215",
+      "nom": "AMET",
+      "commune": "ROSNY SOUS BOIS"
+    },
+    {
+      "code": "MT216",
+      "nom": "AICAC",
+      "commune": "CHELLES"
+    },
+    {
+      "code": "MT218",
+      "nom": "SIMT",
+      "commune": "MEAUX CEDEX"
+    },
+    {
+      "code": "MT220",
+      "nom": "A.C.I.S.T",
+      "commune": "CHEVILLY LARUE"
+    },
+    {
+      "code": "MT221",
+      "nom": "GIM",
+      "commune": "CHAMPIGNY SUR MARNE"
+    },
+    {
+      "code": "MT222",
+      "nom": "GIMAC",
+      "commune": "CHARENTON LE PONT"
+    },
+    {
+      "code": "MT224",
+      "nom": "ASTE",
+      "commune": "MENNECY CEDEX"
+    },
+    {
+      "code": "MT230",
+      "nom": "SIST BTP 77",
+      "commune": "DAMMARIE LES LYS"
+    },
+    {
+      "code": "MT261",
+      "nom": "S.I.S.T SERVICE INTERENTREPRISE DE SANTE AU TRAVAIL DE NARBONNE",
+      "commune": "NARBONNE CROIX SUD CEDEX"
+    },
+    {
+      "code": "MT262",
+      "nom": "APREVYA SANTE TRAVAIL",
+      "commune": "CARCASSONNE CEDEX"
+    },
+    {
+      "code": "MT264",
+      "nom": "A.S.T.  BEAUCAIRE",
+      "commune": "BEAUCAIRE"
+    },
+    {
+      "code": "MT265",
+      "nom": "PREVY NIMES",
+      "commune": "NIMES"
+    },
+    {
+      "code": "MT266",
+      "nom": "A.M.T. CENTRE MARCOULE",
+      "commune": "CHUSCLAN"
+    },
+    {
+      "code": "MT267",
+      "nom": "CEVENA",
+      "commune": "ALES"
+    },
+    {
+      "code": "MT268",
+      "nom": "ENSANTE !",
+      "commune": "MONTPELLIER CEDEX"
+    },
+    {
+      "code": "MT269",
+      "nom": "SANTE BTP 34",
+      "commune": "MONTPELLIER"
+    },
+    {
+      "code": "MT270",
+      "nom": "A.I.S.T.",
+      "commune": "BEZIERS  CEDEX"
+    },
+    {
+      "code": "MT271",
+      "nom": "AIPALS",
+      "commune": "MONTPELLIER CEDEX 03"
+    },
+    {
+      "code": "MT276",
+      "nom": "POLE SANTE TRAVAIL 66",
+      "commune": "CABESTANY"
+    },
+    {
+      "code": "MT277",
+      "nom": "MEDECINE BANCAIRE",
+      "commune": "PERPIGNAN"
+    },
+    {
+      "code": "MT302",
+      "nom": "SPST 19 24",
+      "commune": "BRIVE LA GAILLARDE"
+    },
+    {
+      "code": "MT303",
+      "nom": "ACIMT",
+      "commune": "GUERET CEDEX"
+    },
+    {
+      "code": "MT304",
+      "nom": "AMCO BTP",
+      "commune": "LIMOGES CEDEX 3"
+    },
+    {
+      "code": "MT305",
+      "nom": "SERVICE MEDICAL INTER-ENTR. DES ORG. DE SECURITE SOCIALE DU R.G.",
+      "commune": "LIMOGES"
+    },
+    {
+      "code": "MT306",
+      "nom": "SPSTI 23 87",
+      "commune": "LIMOGES CEDEX"
+    },
+    {
+      "code": "MT311",
+      "nom": "CAP ST BTP",
+      "commune": "MONTIGNY-LES-METZ"
+    },
+    {
+      "code": "MT312",
+      "nom": "SERVICE MEDICAL INTERPROFESSIONNEL MEUSIEN",
+      "commune": "VERDUN"
+    },
+    {
+      "code": "MT313",
+      "nom": "AGESTRA",
+      "commune": "METZ"
+    },
+    {
+      "code": "MT314",
+      "nom": "ALSMT",
+      "commune": "LAXOU"
+    },
+    {
+      "code": "MT317",
+      "nom": "AST MOSELLE EST",
+      "commune": "CREUTZWALD"
+    },
+    {
+      "code": "MT319",
+      "nom": "SERVICE DE SANTE AU TRAVAIL SAINT DIE",
+      "commune": "SAINT DIE CEDEX"
+    },
+    {
+      "code": "MT320",
+      "nom": "EPSAT VOSGES",
+      "commune": "EPINAL"
+    },
+    {
+      "code": "MT321",
+      "nom": "SERVICE DE SANTE AU TRAVAIL NEUFCHATEAU",
+      "commune": "NEUFCHATEAU"
+    },
+    {
+      "code": "MT322",
+      "nom": "SERVICE DE SANTE AU TRAVAIL REMIREMONT",
+      "commune": "REMIREMONT"
+    },
+    {
+      "code": "MT323",
+      "nom": "ASS LORRAINE DES SERV MEDICAUX DU TRAVAIL",
+      "commune": "NANCY"
+    },
+    {
+      "code": "MT331",
+      "nom": "APREVYA SANTE TRAVAIL VERNIOLLE",
+      "commune": "VERNIOLLE"
+    },
+    {
+      "code": "MT332",
+      "nom": "MEDECINE DU TRAVAIL VILLEFRANCHE RGUE",
+      "commune": "VILLEFRANCHE DE ROUERGUE"
+    },
+    {
+      "code": "MT334",
+      "nom": "PRESTAL",
+      "commune": "RODEZ"
+    },
+    {
+      "code": "MT336",
+      "nom": "SST ARTISANAT-CMTA/ETOILE (TLSE)",
+      "commune": "TOULOUSE CEDEX 6"
+    },
+    {
+      "code": "MT338",
+      "nom": "SST (ST-GAUDENS)",
+      "commune": "SAINT-GAUDENS"
+    },
+    {
+      "code": "MT340",
+      "nom": "ASTIA/ASS DE MEDECINE ET DE SANTE AU TRAVAIL (TLSE)",
+      "commune": "TOULOUSE"
+    },
+    {
+      "code": "MT341",
+      "nom": "PREVALY",
+      "commune": "TOULOUSE"
+    },
+    {
+      "code": "MT343",
+      "nom": "SSTMC",
+      "commune": "MURET"
+    },
+    {
+      "code": "MT344",
+      "nom": "SERVICE ST (REVEL)",
+      "commune": "REVEL"
+    },
+    {
+      "code": "MT346",
+      "nom": "SRAS BTP",
+      "commune": "TOULOUSE CEDEX 4"
+    },
+    {
+      "code": "MT347",
+      "nom": "CSTG 32",
+      "commune": "AUCH"
+    },
+    {
+      "code": "MT348",
+      "nom": "MEDECINE DU TRAVAIL 46",
+      "commune": "CAHORS CEDEX"
+    },
+    {
+      "code": "MT349",
+      "nom": "ASMT DES HAUTES-PYRENEES",
+      "commune": "TARBES"
+    },
+    {
+      "code": "MT352",
+      "nom": "SISTTS SECTEUR MAZAMET",
+      "commune": "MAZAMET"
+    },
+    {
+      "code": "MT353",
+      "nom": "SERVICE PARITAIRE DE SANTE AU TRAVAIL DU TARN",
+      "commune": "LAVAUR"
+    },
+    {
+      "code": "MT354",
+      "nom": "SPSTI 81",
+      "commune": "ALBI"
+    },
+    {
+      "code": "MT356",
+      "nom": "SISTTS REGION CASTRES",
+      "commune": "CASTRES CEDEX"
+    },
+    {
+      "code": "MT357",
+      "nom": "SMTI 82 MONTAUBAN",
+      "commune": "MONTAUBAN"
+    },
+    {
+      "code": "MT363",
+      "nom": "PREVENO",
+      "commune": "SAINT-SAULVE"
+    },
+    {
+      "code": "MT366",
+      "nom": "AIMST DE CAMBRAI",
+      "commune": "CAMBRAI CEDEX"
+    },
+    {
+      "code": "MT367",
+      "nom": "SERVICE DE SANTE INTER BANQUES",
+      "commune": "LILLE"
+    },
+    {
+      "code": "MT369",
+      "nom": "CEDEST DUNKERQUE",
+      "commune": "COUDEKERQUE BRANCHE"
+    },
+    {
+      "code": "MT372",
+      "nom": "POLE SANTE TRAVAIL METROPOLE NORD",
+      "commune": "LILLE CEDEX"
+    },
+    {
+      "code": "MT375",
+      "nom": "SIMUP HALLUIN",
+      "commune": "HALLUIN CEDEX"
+    },
+    {
+      "code": "MT378",
+      "nom": "ACTION SANTE TRAVAIL",
+      "commune": "AIX-NOULETTE"
+    },
+    {
+      "code": "MT383",
+      "nom": "ASTIL 62",
+      "commune": "COQUELLES CEDEX"
+    },
+    {
+      "code": "MT385",
+      "nom": "GISTAF",
+      "commune": "CONDE SUR NOIREAU"
+    },
+    {
+      "code": "MT386",
+      "nom": "SIST OUEST NORMANDIE",
+      "commune": "SAINT-LO CEDEX"
+    },
+    {
+      "code": "MT388",
+      "nom": "SMTBTP CHERBOURG",
+      "commune": "CHERBOURG CEDEX"
+    },
+    {
+      "code": "MT390",
+      "nom": "AMTH BEAUMONT",
+      "commune": "BEAUMONT"
+    },
+    {
+      "code": "MT391",
+      "nom": "MIT VILLE CHERBOURG OCTEVILLE",
+      "commune": "CHERBOURG OCTEVILLE"
+    },
+    {
+      "code": "MT392",
+      "nom": "ASTISMIE - ASS SANTE AU TRAVAIL",
+      "commune": "NOYELLES-LES-VERMELLES"
+    },
+    {
+      "code": "MT393",
+      "nom": "ASSOCIATION SANTE AU TRAVAIL",
+      "commune": "NOYELLES-LES-VERMELLES"
+    },
+    {
+      "code": "MT394",
+      "nom": "CENTRE DE GESTION FPT DE LA MANCHE (CDG50)",
+      "commune": "SAINT-LO CEDEX"
+    },
+    {
+      "code": "MT395",
+      "nom": "CDG 14 FPT DU CALVADOS",
+      "commune": "HEROUVILLE SAINT-CLAIR"
+    },
+    {
+      "code": "MT400",
+      "nom": "SIST BTP 61",
+      "commune": "ALENCON CEDEX"
+    },
+    {
+      "code": "MT401",
+      "nom": "SANTE BTP NORMANDIE",
+      "commune": "COLOMBELLES"
+    },
+    {
+      "code": "MT403",
+      "nom": "PST",
+      "commune": "CAEN"
+    },
+    {
+      "code": "MT404",
+      "nom": "MIST NORMANDIE",
+      "commune": "HEROUVILLE SAINT CLAIR CEDEX"
+    },
+    {
+      "code": "MT405",
+      "nom": "SIST",
+      "commune": "LISIEUX"
+    },
+    {
+      "code": "MT412",
+      "nom": "AMIVA ASS INTERPROFESSIONNELLE DE LA VALLE DE L ANDELLE",
+      "commune": "PONT SAINT PIERRE"
+    },
+    {
+      "code": "MT413",
+      "nom": "AMSIE DE BERNAY BRIONNE ET PONT-AUDEMER",
+      "commune": "PONT AUDEMER"
+    },
+    {
+      "code": "MT414",
+      "nom": "ASS AMI SANTE AU TRAVAIL",
+      "commune": "EVREUX CEDEX"
+    },
+    {
+      "code": "MT415",
+      "nom": "AMSIE REGION DE GISORS",
+      "commune": "GISORS"
+    },
+    {
+      "code": "MT416",
+      "nom": "AMSIE VERNEUIL SUR AVRE",
+      "commune": "VERNEUIL SUR AVRE"
+    },
+    {
+      "code": "MT417",
+      "nom": "AMSIE VERNON ET REGION",
+      "commune": "VERNON"
+    },
+    {
+      "code": "MT418",
+      "nom": "SANTE AU TRAVAIL BTP EURE",
+      "commune": "LE VIEIL EVREUX"
+    },
+    {
+      "code": "MT419",
+      "nom": "GIMETRA  GROUPEMENT INTERPROFESSIONNEL DE MEDECINE DU TRAVAIL",
+      "commune": "IVRY LA BATAILLE"
+    },
+    {
+      "code": "MT421",
+      "nom": "MEDECINE DU TRAVAIL BOLBEC AIHIMT",
+      "commune": "GONFREVILLE-L'ORCHER"
+    },
+    {
+      "code": "MT422",
+      "nom": "AMSN",
+      "commune": "BOIS GUILLAUME"
+    },
+    {
+      "code": "MT423",
+      "nom": "AMSD DIEPPE",
+      "commune": "DIEPPE"
+    },
+    {
+      "code": "MT425",
+      "nom": "MEDECINE DU TRAVAIL DU HAVRE AIST",
+      "commune": "LE HAVRE"
+    },
+    {
+      "code": "MT426",
+      "nom": "MEDECINE DU TRAVAIL DU HAVRE CMHI",
+      "commune": "LE HAVRE"
+    },
+    {
+      "code": "MT428",
+      "nom": "BATIMENT ET TRAVAUX PUBLICS",
+      "commune": "ROUEN CEDEX"
+    },
+    {
+      "code": "MT429",
+      "nom": "SERVICE MEDICAL DU TRAVAIL (COMMERCE ET PME)",
+      "commune": "ROUEN"
+    },
+    {
+      "code": "MT430",
+      "nom": "MEDECINE DU TRAVAIL BATIMENT BTP",
+      "commune": "LE HAVRE CEDEX"
+    },
+    {
+      "code": "MT431",
+      "nom": "MASANTE.PRO",
+      "commune": "MONT SAINT AIGNAN"
+    },
+    {
+      "code": "MT432",
+      "nom": "ISTF FECAMP",
+      "commune": "FECAMP CEDEX"
+    },
+    {
+      "code": "MT433",
+      "nom": "MEDECINE DU TRAVAIL PORTUAIRE",
+      "commune": "LE HAVRE"
+    },
+    {
+      "code": "MT434",
+      "nom": "SANTRA PLUS",
+      "commune": "GONFREVILLE L ORCHER"
+    },
+    {
+      "code": "MT440",
+      "nom": "UNION DES USAGERS DU PORT DE ROUEN",
+      "commune": "ROUEN CEDEX 3"
+    },
+    {
+      "code": "MT441",
+      "nom": "SERVICE SANTE TRAVAIL REGION NANTAISE SSTRN",
+      "commune": "NANTES CEDEX 4"
+    },
+    {
+      "code": "MT442",
+      "nom": "AMEBAT",
+      "commune": "NANTES CEDEX 3"
+    },
+    {
+      "code": "MT444",
+      "nom": "GIST",
+      "commune": "SAINT NAZAIRE"
+    },
+    {
+      "code": "MT445",
+      "nom": "MTPL",
+      "commune": "NANTES"
+    },
+    {
+      "code": "MT446",
+      "nom": "SMIE SERVICE MEDICAL INTER ENTREPRISES",
+      "commune": "CHATEAUBRIANT"
+    },
+    {
+      "code": "MT447",
+      "nom": "SMIA DE L ANJOU",
+      "commune": "ANGERS"
+    },
+    {
+      "code": "MT448",
+      "nom": "STCS CHOLET - SAUMUR",
+      "commune": "CHOLET CEDEX"
+    },
+    {
+      "code": "MT449",
+      "nom": "SMI DU SAUMUROIS",
+      "commune": "SAUMUR CEDEX"
+    },
+    {
+      "code": "MT451",
+      "nom": "S.A.T.M.",
+      "commune": "LAVAL CEDEX 9"
+    },
+    {
+      "code": "MT452",
+      "nom": "SANTE AU TRAVAIL 72",
+      "commune": "LE MANS"
+    },
+    {
+      "code": "MT453",
+      "nom": "RESTEV",
+      "commune": "LA ROCHE SUR YON CEDEX"
+    },
+    {
+      "code": "MT454",
+      "nom": "PSTVL",
+      "commune": "LES SABLES D OLONNE"
+    },
+    {
+      "code": "MT456",
+      "nom": "SMINOV",
+      "commune": "CHALLANS"
+    },
+    {
+      "code": "MT470",
+      "nom": "SISAT SUD AISNE",
+      "commune": "CHATEAU-THIERRY"
+    },
+    {
+      "code": "MT471",
+      "nom": "MEDECINE DU TRAVAIL SOISSONS",
+      "commune": "SOISSONS"
+    },
+    {
+      "code": "MT472",
+      "nom": "PRESOA",
+      "commune": "SAINT QUENTIN"
+    },
+    {
+      "code": "MT473",
+      "nom": "SMIN",
+      "commune": "NOYON"
+    },
+    {
+      "code": "MT474",
+      "nom": "MTVO COMPIEGNE",
+      "commune": "COMPIEGNE"
+    },
+    {
+      "code": "MT475",
+      "nom": "MEDISIS",
+      "commune": "BEAUVAIS"
+    },
+    {
+      "code": "MT476",
+      "nom": "CDG 02 FPT DE L'AISNE",
+      "commune": "CHAUNY"
+    },
+    {
+      "code": "MT477",
+      "nom": "UMTV",
+      "commune": "PONT STE MAXENCE"
+    },
+    {
+      "code": "MT478",
+      "nom": "AISTV",
+      "commune": "WOINCOURT"
+    },
+    {
+      "code": "MT479",
+      "nom": "AMSIH",
+      "commune": "HAM"
+    },
+    {
+      "code": "MT480",
+      "nom": "ASMIS",
+      "commune": "AMIENS CEDEX 1"
+    },
+    {
+      "code": "MT481",
+      "nom": "CDG 80 FPT DE LA SOMME",
+      "commune": "AMIENS CEDEX 1"
+    },
+    {
+      "code": "MT491",
+      "nom": "SPSTI 16",
+      "commune": "L'ISLE D'ESPAGNAC"
+    },
+    {
+      "code": "MT494",
+      "nom": "MEDECINE DU TRAVAIL  A.P.A.S.",
+      "commune": "ROCHEFORT CEDEX"
+    },
+    {
+      "code": "MT495",
+      "nom": "SANTE AU TRAVAIL D AUNIS ET DE SAINTONGE",
+      "commune": "LA ROCHELLE CEDEX"
+    },
+    {
+      "code": "MT497",
+      "nom": "SIST 79",
+      "commune": "NIORT"
+    },
+    {
+      "code": "MT498",
+      "nom": "ASSTV 86",
+      "commune": "POITIERS CEDEX"
+    },
+    {
+      "code": "MT499",
+      "nom": "MEDECINE DU TRAVAIL MSA LANGUEDOC",
+      "commune": "NIMES CEDEX 9"
+    },
+    {
+      "code": "MT501",
+      "nom": "AISMT 04",
+      "commune": "DIGNE LES BAINS CEDEX"
+    },
+    {
+      "code": "MT502",
+      "nom": "GEST 05",
+      "commune": "GAP"
+    },
+    {
+      "code": "MT503",
+      "nom": "AMETRA 06",
+      "commune": "NICE"
+    },
+    {
+      "code": "MT504",
+      "nom": "APST BTP 06",
+      "commune": "NICE CEDEX 4"
+    },
+    {
+      "code": "MT505",
+      "nom": "AMETRA 06",
+      "commune": "SAINT LAURENT DU VAR"
+    },
+    {
+      "code": "MT506",
+      "nom": "CMTI 06",
+      "commune": "NICE"
+    },
+    {
+      "code": "MT507",
+      "nom": "AISMT 13",
+      "commune": "MARSEILLE"
+    },
+    {
+      "code": "MT514",
+      "nom": "ASTBTP 13",
+      "commune": "MARSEILLE CEDEX 9"
+    },
+    {
+      "code": "MT515",
+      "nom": "GIMS",
+      "commune": "MARSEILLE"
+    },
+    {
+      "code": "MT516",
+      "nom": "SANTE AU TRAVAIL PROVENCE",
+      "commune": "AIX EN PROVENCE"
+    },
+    {
+      "code": "MT517",
+      "nom": "EXPERTIS",
+      "commune": "MARSEILLE CEDEX 2"
+    },
+    {
+      "code": "MT519",
+      "nom": "ODALIA",
+      "commune": "OLLIOULES CEDEX"
+    },
+    {
+      "code": "MT524",
+      "nom": "AIST 84",
+      "commune": "AVIGON"
+    },
+    {
+      "code": "MT525",
+      "nom": "SANTE AU TRAVAIL DURANCE LUBERON",
+      "commune": "CAVAILLON"
+    },
+    {
+      "code": "MT526",
+      "nom": "GMSI 84",
+      "commune": "CARPENTRAS"
+    },
+    {
+      "code": "MT527",
+      "nom": "TRANSPORTEURS ROUTIERS DU VAR",
+      "commune": "TOULON CEDEX 9"
+    },
+    {
+      "code": "MT530",
+      "nom": "CDG 07 FPT DE L'ARDECHE",
+      "commune": "LACHAPELLE SOUS AUBENAS CEDEX"
+    },
+    {
+      "code": "MT531",
+      "nom": "MT PERONNAS & AUTRES",
+      "commune": "PERONNAS"
+    },
+    {
+      "code": "MT532",
+      "nom": "COMITE SANTE AU TRAVAIL OYONNAX",
+      "commune": "BELLIGNAT"
+    },
+    {
+      "code": "MT533",
+      "nom": "AST BTP AIN",
+      "commune": "BOURG-EN-BRESSE"
+    },
+    {
+      "code": "MT534",
+      "nom": "CDG 38 ISERE",
+      "commune": "SAINT MARTIN D'HERES"
+    },
+    {
+      "code": "MT537",
+      "nom": "ASS MEDECINE DU TRAVAIL REGION TAIN-TOURNON",
+      "commune": "TOURNON"
+    },
+    {
+      "code": "MT539",
+      "nom": "CDG 69",
+      "commune": "SAINTEFOY LES LYON"
+    },
+    {
+      "code": "MT540",
+      "nom": "APST 26 07",
+      "commune": "VALENCE CEDEX 9"
+    },
+    {
+      "code": "MT541",
+      "nom": "REGION DE NYONS",
+      "commune": "NYONS"
+    },
+    {
+      "code": "MT542",
+      "nom": "STDV ROMANS ET SA REGION",
+      "commune": "ROMANS SUR ISERE CEDEX"
+    },
+    {
+      "code": "MT543",
+      "nom": "CISTT TRICASTIN",
+      "commune": "PIERRELATTE"
+    },
+    {
+      "code": "MT544",
+      "nom": "STDV REGION DE SAINT VALLIER",
+      "commune": "SAINT VALLIER CEDEX"
+    },
+    {
+      "code": "MT545",
+      "nom": "STDV VALLEE DE LA DROME",
+      "commune": "CREST"
+    },
+    {
+      "code": "MT546",
+      "nom": "PST 07 26",
+      "commune": "LE POUZIN"
+    },
+    {
+      "code": "MT547",
+      "nom": "SMT ALPES SANTE TRAVAIL TRAVAIL TEMPORAIRE",
+      "commune": "GRENOBLE"
+    },
+    {
+      "code": "MT548",
+      "nom": "CDG 42",
+      "commune": "SAINT-ETIENNE"
+    },
+    {
+      "code": "MT549",
+      "nom": "SMT DE BOURGOIN JALLIEU",
+      "commune": "BOURGOIN JALLIEU"
+    },
+    {
+      "code": "MT550",
+      "nom": "PRESANTIS",
+      "commune": "GRENOBLE"
+    },
+    {
+      "code": "MT551",
+      "nom": "ASSOC DE MT INTERBANCAIRES",
+      "commune": "GRENOBLE CEDEX 2"
+    },
+    {
+      "code": "MT552",
+      "nom": "MT BATIMENT ET TX PUBLICS DE L ISERE",
+      "commune": "GRENOBLE CEDEX 2"
+    },
+    {
+      "code": "MT553",
+      "nom": "SMT METRAZIF",
+      "commune": "SEYSSINET PARISET"
+    },
+    {
+      "code": "MT554",
+      "nom": "PST38",
+      "commune": "GRENOBLE"
+    },
+    {
+      "code": "MT555",
+      "nom": "SERVICE MEDICAL INTERENTREPRISES",
+      "commune": "VIENNE CEDEX"
+    },
+    {
+      "code": "MT556",
+      "nom": "SM INTERENTREPRISE",
+      "commune": "MOIRANS"
+    },
+    {
+      "code": "MT557",
+      "nom": "SERVICE MEDICAL DU TRAVAIL DE BOEN",
+      "commune": "BOEN"
+    },
+    {
+      "code": "MT558",
+      "nom": "SERVICE MEDICAL DE ST-CHAMOND",
+      "commune": "SAINT-CHAMOND"
+    },
+    {
+      "code": "MT559",
+      "nom": "SERVICE MEDICAL DE CHARLIEU",
+      "commune": "CHARLIEU"
+    },
+    {
+      "code": "MT560",
+      "nom": "SERVICE MEDICAL DU TRAVAIL DU B.T.P.",
+      "commune": "SAINT-ETIENNE"
+    },
+    {
+      "code": "MT561",
+      "nom": "SUD LOIRE SANTE AU TRAVAIL",
+      "commune": "SAINT-ETIENNE CEDEX 1"
+    },
+    {
+      "code": "MT562",
+      "nom": "SPSTL42",
+      "commune": "ROANNE CEDEX"
+    },
+    {
+      "code": "MT563",
+      "nom": "PRESTA AIN ET BEAUJOLAIS",
+      "commune": "BOURG-EN-BRESSE"
+    },
+    {
+      "code": "MT570",
+      "nom": "MC2A PROMEOM",
+      "commune": "LYON"
+    },
+    {
+      "code": "MT571",
+      "nom": "MEDECINE DU TRAVAIL DE COURS",
+      "commune": "COURS LA VILLE"
+    },
+    {
+      "code": "MT572",
+      "nom": "BTP SANTE AU TRAVAIL",
+      "commune": "VILLEURBANNE CEDEX"
+    },
+    {
+      "code": "MT573",
+      "nom": "MEDECINE DU TRAVAIL DE L OUEST LYONNAIS",
+      "commune": "ST FOY L ARGENTIERE"
+    },
+    {
+      "code": "MT575",
+      "nom": "MED. DU TRAVAIL DE THIZY",
+      "commune": "THIZY"
+    },
+    {
+      "code": "MT576",
+      "nom": "MED. DU TRAVAIL DE VILLEFRANCHE",
+      "commune": "VILLEFRANCHE SUR SAONE"
+    },
+    {
+      "code": "MT577",
+      "nom": "MED. DU TRAVAIL RHONE POULENC AGRO",
+      "commune": "LYON CEDEX 09"
+    },
+    {
+      "code": "MT578",
+      "nom": "SPST 73",
+      "commune": "LE BOURGET DU LAC CEDEX"
+    },
+    {
+      "code": "MT580",
+      "nom": "MEDECINE DU TRAVAIL DU BATIMENT",
+      "commune": "CHAMBERY"
+    },
+    {
+      "code": "MT582",
+      "nom": "ASMI SALLANCHES",
+      "commune": "SALLANCHES CEDEX"
+    },
+    {
+      "code": "MT583",
+      "nom": "SPST AMB",
+      "commune": "SCIONZIER CEDEX"
+    },
+    {
+      "code": "MT585",
+      "nom": "ASS SANTE AU TRAVAIL DU GENEVOIS",
+      "commune": "VILLE LA GRAND"
+    },
+    {
+      "code": "MT586",
+      "nom": "AST 74",
+      "commune": "ANNECY CEDEX"
+    },
+    {
+      "code": "MT587",
+      "nom": "ASMI BONNEVILLE",
+      "commune": "BONNEVILLE CEDEX"
+    },
+    {
+      "code": "MT600",
+      "nom": "CIST 97.1",
+      "commune": "BAIE MAHAULT"
+    },
+    {
+      "code": "MT601",
+      "nom": "SPST ANTILLES GUYANE",
+      "commune": "BAIE MAHAULT"
+    },
+    {
+      "code": "MT602",
+      "nom": "AISTM 972",
+      "commune": "FORT DE FRANCE"
+    },
+    {
+      "code": "MT603",
+      "nom": "SIST 972",
+      "commune": "FORT DE FRANCE CEDEX"
+    },
+    {
+      "code": "MT604",
+      "nom": "CISTC CAYENNE",
+      "commune": "REMIRE MONTJOLY"
+    },
+    {
+      "code": "MT605",
+      "nom": "STKOG",
+      "commune": "KOUROU CEDEX"
+    },
+    {
+      "code": "MT606",
+      "nom": "INTERMETRA",
+      "commune": "SAINT DENIS"
+    },
+    {
+      "code": "MT607",
+      "nom": "SISTBI",
+      "commune": "LE PORT CEDEX"
+    },
+    {
+      "code": "MT608",
+      "nom": "2MT MARTINIQUE MEDECINE TRAVAIL",
+      "commune": "LE LAMENTIN"
+    },
+    {
+      "code": "MT609",
+      "nom": "SIST MAYOTTE - MEDETRAM",
+      "commune": "MAMOUDZOU"
+    },
+    {
+      "code": "MT827",
+      "nom": "CISTTAA",
+      "commune": "DAX"
+    },
+    {
+      "code": "MT833",
+      "nom": "SSTI 33",
+      "commune": "BORDEAUX"
+    },
+    {
+      "code": "MT864",
+      "nom": "SIMETRA ET ASTPB",
+      "commune": "BAYONNE"
+    },
+    {
+      "code": "MT900",
+      "nom": "MARINS AFFILIES A L ENIM",
+      "commune": "PERIGNY"
+    }
+  ]
+}

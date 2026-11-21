@@ -600,6 +600,8 @@ un libellé, chacun sa forme.
 | code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
 | groupe d'un risque AT/MP en Alsace-Moselle (le numéro de groupe de l'annexe 3 de l'arrêté de tarification, auquel l'annexe donne un taux) | `GroupeAlsaceMoselle` | `droit/src/bareme.rs` |
 | code Urssaf de la DPAE | `CodeUrssafDpae` | `declarations/src/urssaf.rs` |
+| code du service de santé au travail (celui de la DPAE, la case de la fiche) | `CodeMedecine` | `droit/src/fiche.rs` |
+| identifiant d'un service de prévention et de santé au travail (SPST) | `IdentifiantSpst` | `droit/src/fiche.rs` |
 | identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
 | clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
 | accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
@@ -1065,6 +1067,12 @@ un libellé, chacun sa forme.
   `urssaf-dpae-base.json` (`existe`). Que portent un organisme de la table et celui du territoire d'un département,
   les paramètres d'une DPAE, ce que la page propose (`urssaf_deduit`) ; celui que la fiche Entreprise tape
   (`code_urssaf`, du texte) se lit par `dpae::code_urssaf_saisi`, qui nomme la case.
+- **code du service de santé au travail, identifiant d'un SPST** : le service de prévention et de santé au travail
+  auquel la compagnie adhère. La DPAE l'écrit en C_MT_DCL, « MT » et trois chiffres, et MT999 pour une médecine interne
+  (`CodeMedecine`, la case `medecine_travail` de la fiche) ; le référentiel « sst_dpae » de l'Urssaf
+  (`spst-base.json`, `declarations::spst`) et la DSN 2027 (S21.G00.11.025) l'écrivent `IdentifiantSpst`, MT01 pour la
+  médecine interne. On passe de l'un à l'autre par `CodeMedecine::du_referentiel` et `CodeMedecine::identifiant_spst`,
+  et nulle part ailleurs. Que portent la fiche, la DPAE, le référentiel livré, la DSN écrite et la DSN lue.
 - **identifiant du taux de PAS** : S21.G00.50.008, `-1|0|[1-9][0-9]{0,17}` ; `SansCrm` (« -1 », un contrat court sans
   compte rendu) ou le numéro que la DGFiP donne, écrit comme lu. Que portent un taux reçu de la fiche, le compte rendu
   PAS relevé (strict), le taux qui vaut, le prélèvement d'un versement, la paie versée d'un engagement importé, la DSN
@@ -1207,6 +1215,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | pièce qui porterait ce qui manque à la configuration (une DSN déposée, ou aucune : cela se saisit) | `declarations::dsn_lue::PieceQuiLaPorte` | `declarations/src/dsn_lue.rs` |
 | ce que l'import a repris (rien, des pièces sans DSN avec les années de leurs paies et les natures à dire, une DSN au moins), qui range ce qui manque | `declarations::demarrage::CeQueLImportARepris` | `declarations/src/demarrage.rs` |
 | ce qu'une DSN pourrait donner à la configuration, après un import sans DSN (la phrase, et les lignes) | `declarations::demarrage::ParUneDsn` | `declarations/src/demarrage.rs` |
+| valeur proposée (ce que le moteur propose dans la case d'une ligne de « Pour démarrer », à valider ou à corriger : un texte, un jour ; écrite comme la case la tient, dite dans la phrase) | `declarations::demarrage::ValeurProposee` | `declarations/src/demarrage.rs` |
 | ce qui atteste un contrat ou complète une paie (une pièce, ou l'historique) | `Attestant` | `import/src/reponse.rs` |
 | bloc du compte rendu d'un import | `BlocDImport` | `import/src/attestes.rs` |
 | d'où le calendrier tient un contrat passé (un engagement, l'historique) | `SourceDuContratPasse` | `routes/src/mois.rs` |
@@ -1327,7 +1336,8 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectifs par année (les effectifs annuels A01 de la compagnie, et ce qui s'en lit : les seuils, le CSE, cinquante salariés) | `droit::contexte::EffectifsParAnnee` | `droit/src/contexte.rs` |
 | contrat dans l'effectif (un contrat tel que L. 130-1 et R. 130-1 CSS le comptent : sa personne, ses dates, et la part qu'un jour du contrat compte, aucune quand il est exclu du décompte, un CDD de remplacement ou un dispositif de L. 1111-3 du code du travail, `ContratDansLEffectif::de` ; le temps de travail, la part entière ou le rapport des quotités d'un temps partiel, une référence nulle refusée ; la seule règle, `droit::effectif::effectif_du_mois`, `effectif_au_jour` et `effectif_annuel`, que lisent l'Urssaf simulée depuis les DSN et l'effectif repris) | `droit::effectif::ContratDansLEffectif`, `droit::effectif::TempsDansLEffectif` | `droit/src/effectif.rs` |
-| effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou ce qui manque pour le calculer, et sa phrase ; « Pour démarrer » le propose sur la ligne de l'effectif, la route `effectif` le confirme) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
+| effectif repris (l'effectif d'une année d'avant PuppetPaie d'après ses paies reprises, ou pourquoi il ne se propose pas, sa phrase et ses réserves ; « Pour démarrer » le pré-remplit dans la case de son année, que son « Enregistrer » écrit par la route `effectif`) | `engagement::effectif_repris::EffectifRepris` | `engagement/src/effectif_repris.rs` |
+| première embauche reprise (le plus ancien début de contrat que les pièces reprises disent, et la pièce qui le dit ; « Pour démarrer » le propose dans la case de la première embauche, la compagnie le valide ou le corrige) | `engagement::effectif_repris::PremiereEmbaucheReprise` | `engagement/src/effectif_repris.rs` |
 | taxe sur les salaires (ce que le texte fixe pour une année : taux, majorations, seuils, franchise, décote, abattement) | `droit::forme_bareme::TaxeSurLesSalaires` | `droit/src/forme_bareme.rs` |
 | limite de l'abattement de la CSG (le nombre de plafonds de la paie sous lequel le brut est abattu de 1,75 %, CSS L. 136-2, I ; l'assiette qu'elle donne, `Pile::assiette_csg`, sur la part abattue que les assiettes plafonnées disent) | `droit::forme_bareme::LimiteDeLAbattementCsg` | `droit/src/forme_bareme.rs` |
 | régularisation du plafond (quelles paies régularisent leurs assiettes plafonnées sur l'année civile, CSS R. 242-2, II ; BOSS § 1250 ; le technicien intermittent, une tolérance retenue, `par_contrat`) | `droit::forme_bareme::RegularisationDuPlafond`, `droit::forme_bareme::PlafondDuTechnicienIntermittent` | `droit/src/forme_bareme.rs` |
@@ -2605,7 +2615,9 @@ d'heures ».
 
 Une compagnie qui arrive d'un autre logiciel met tout ce qu'elle a dans sa boîte aux lettres `import/` (DSN, AEM,
 bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engagements importés**
-(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`).
+(`import/src/`, routes `importation-apercu`, `importer`, `importation-etat`). `importation-apercu` et `importer` ne lisent
+que cette boîte, sans charge (`routes::import::boite_d_import`, qui la crée vide si elle manque) ; la page l'ouvre par
+le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
 
 - **Le tri** (`import/tri.rs`) : chaque fichier reçoit une sorte, par son contenu, jamais par son nom (`dsn`, `aem`,
   `pdf_texte`, `pdf_sans_texte`, `archive`…). Une DSN d'une autre entreprise que la compagnie n'est pas lue.
@@ -2629,7 +2641,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   importés, chacun dans `engagements/AAAA-MM.json`, le fichier du mois où il commence (le contrat qu'une AEM ou un
   bulletin atteste, et ce qui a été versé, mois par mois) ; la copie de chaque pièce reprise dans
   `historique/bulletins/`, nommée par son empreinte (rien de personnel dans un nom). Un import se rejoue sans dommage,
-  et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier, on relance
+  et c'est **le seul chemin**, avant comme après une première reprise : on ajoute une pièce au dossier d'import, on relance
   `importer`, seul le neuf est repris ; l'aperçu (`importation-apercu`) est hors du chemin simple.
 - **Une fiche sans NIR et la DSN ajoutée ensuite** (`importation/identite.rs`) : un salarié ne se rattache à sa DSN que
   par son NIR. Un individu qu'une DSN déclare sous un NIR qu'aucune fiche ne porte, et qui ressemble au salarié d'une
@@ -2640,7 +2652,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   rejoué la complète ; une autre, la réponse se garde avec la configuration (`config/import-identites.json`) et
   l'import rejoué crée sa fiche.
 - **Le guide** (`import/guide.rs`, rendu par `importation-etat`) dit l'essentiel d'abord : les bulletins refont
-  l'historique, une DSN déposée pré-remplit la configuration, tout dans un dossier qu'on choisit ; puis ce qu'on peut
+  l'historique, une DSN déposée pré-remplit la configuration, tout dans le dossier d'import ; puis ce qu'on peut
   mettre si certains documents manquent. Chaque phrase ne dit que ce que l'import lit.
 - **Ce qu'une DSN pourrait donner** : chaque ligne de « Pour démarrer » dit la pièce qui la porterait
   (`declarations::dsn_lue::PieceQuiLaPorte`), jugée sur la case déclarée, pas sur sa forme lisible : une DSN quand
@@ -2665,7 +2677,7 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   seules DSN déclarent sans ce qui désigne sa nature reste à dire, comme celui d'un bulletin ; la page ne propose que les
   natures que ses pièces permettent (`nature::natures_permises` : payée au mois pour un bulletin sans marque du
   spectacle ; le code .007 que la DSN déclare, avec son motif quand elle le déclare ; aucune nature qui interdit le
-  numéro d'objet .050 qu'elle déclare, `contrats-base.json`), et `importation-nature` écrit celle que la compagnie dit
+  numéro d'objet .050 qu'elle déclare ou que le bulletin imprime, `contrats-base.json`), et `importation-nature` écrit celle que la compagnie dit
   (`engagement::importe::nature_de`). Ce que la dernière DSN reprise déclare du
   contrat ne se demande pas (`nature::DeclareParLaDsn`) : `importation-etat` ne propose que la nature qu'elle déclare et
   ne demande que ce qu'elle tait (le salaire seul, le plus souvent), et `importation-nature` prend sur elle ce que sa
@@ -2721,7 +2733,11 @@ bulletins en PDF, zip, doublons) ; l'import en tire ses fiches et ses **engageme
   elles ont les mêmes dates, ou portent le même numéro de contrat. Un bulletin, qui imprime la période de sa paie, est
   aussi du contrat que la DSN déclare quand il commence le même jour ou que sa période y tient (le bulletin d'un mois
   d'un CDDU sur deux mois) ; une AEM ou un certificat attestent le contrat entier : les mêmes dates ou le même numéro
-  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats ; un contrat qu'une paie déclarée dit
+  seulement. Deux numéros d'objet, ou deux natures, différents : deux contrats, même aux dates qui se chevauchent (deux
+  spectacles la même semaine ; S21.G00.40.050 et .007 sont des rubriques du contrat), une pièce qui n'en dit pas ne
+  contredisant rien ; la même règle (`engagement::importe::deux_contrats`) tient le registre des contrats attestés
+  (`import::attestes` : un contrat du même salarié aux dates qui chevauchent celles de la pièce l'atteste déjà, sauf
+  celui d'un autre spectacle ou d'une autre nature) ; un contrat qu'une paie déclarée dit
   par ses dates ou son numéro ne se prend pas par une ressemblance plus faible ; une paie d'un autre mois ne se
   complète qu'aux mêmes dates (`ecrite::les_plus_proches`). La règle est `importation::ecrite::meme_contrat`, que
   lisent la paie qu'une page de bulletin complète à l'aperçu (`importation::bulletins`, DSN de l'aperçu et de
@@ -3220,18 +3236,28 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
 - **Une compagnie venue d'un autre logiciel** se voit proposer, sur la ligne de l'effectif de « Pour démarrer », celui
   de chaque année demandée dont des paies sont reprises, calculé selon R. 130-1 (`droit::effectif`, la règle même de
   l'Urssaf simulée) depuis les contrats que ces paies paient (`engagement::effectif_repris`) ; la moyenne ne prend que
-  les mois dont une paie est reprise, et la phrase nomme les autres. Rien ne se pose sans le geste qui le confirme (la
-  route `effectif`, qui reste aussi sous « Avancé » : `pour-demarrer` rend, pour chaque année que la ligne demande, `effectifs` et
-  leurs `gestes`, « Confirmer » la valeur proposée ou « Dire l'effectif » dans sa boîte, que `js/avance.js` dessine). Une
+  les mois dont une paie est reprise, et la phrase nomme les autres. Chaque année que la ligne demande est une case,
+  pré-remplie de ce que les paies reprises donnent (vide sinon, et sa phrase courte dit pourquoi), que le même
+  « Enregistrer » que les cases des fiches écrit, comme si elle avait été tapée : `pour-demarrer` rend sur la ligne
+  `a_enregistrer`, les gestes de la route `effectif` (une année chacun, sa case, sa valeur de départ, sa phrase), que la
+  page dessine depuis la fiche de la route et joue après `enregistrer-fiche`, sans nommer l'effectif (`js/rappels.js`) ;
+  la route `effectif` vérifie et refuse comme toujours, et reste aussi sous « Avancé ». Une
   proposition est juste ou ne se fait pas, et sa phrase dit pourquoi : une paie dont le contrat ne se compte pas (sa
   nature, son motif de recours d'un CDD, les heures d'un permanent : aucune pièce ne les dit) fait taire l'année de sa
   paie ; un contrat d'usage connu par son seul bulletin compte sur la période que ce bulletin imprime, celle que l'import
-  lui donne partout, et la phrase le dit (trop haut si elle dépasse le contrat, jamais trop bas) ; une année dont un mois se paie ici, celle de la première embauche
+  lui donne partout (trop haut si elle dépasse le contrat, jamais trop bas) ; une année sans paie reprise, une année dont un mois se paie ici, celle de la première embauche
   sans paie reprise du mois de l'embauche (L. 130-1, I, troisième alinéa : l'effectif présent le dernier jour de ce mois,
   qui se propose quand ce mois est repris), et, sans date de première embauche, celle de la plus ancienne paie reprise
-  (peut-être celle de l'embauche) ne se proposent pas. Ce qu'aucune paie reprise ne distingue (les exclus de L. 1111-3
-  du code du travail) se dit avec la valeur. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
+  (peut-être celle de l'embauche) ne se proposent pas. Ce que la compagnie valide avec les valeurs (les exclus de
+  L. 1111-3 du code du travail, qu'aucune paie reprise ne distingue ; le contrat connu par son seul bulletin ; les mois
+  sans paie reprise hors de la moyenne : `EffectifRepris::reserves`) se dit une fois, sur la ligne. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
   dans `manques`.
+- **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
+  le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;
+  une DSN, une AEM ou un certificat Congés Spectacles dit le contrat, un bulletin seulement la période qu'il paie ; la
+  ligne de la case dit d'où vient la date). Rien ne
+  s'écrit sans le geste de la compagnie, qui la valide ou la corrige : le logiciel ne sait pas si les pièces reprises
+  sont toutes les siennes.
 - Ces seuils-là (formation, FNAL, échéance de la DSN) sont ceux du code de la
   sécurité sociale ; ceux du CSE (CCNEAC, 11 et 50) relèvent du code du travail,
   et le moteur ne les tranche pas avec l'effectif de l'Urssaf : la représentation

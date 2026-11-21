@@ -234,7 +234,7 @@ fn siret_de(ent: &ChampsEntreprise) -> R<String> {
 fn medecine_de(ent: &ChampsEntreprise) -> R<String> {
     match ent.medecine_travail.portee() {
         Some(mt) => Ok(strip(mt).to_string()),
-        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le code du service de santé au travail, que la DPAE exige : le lire sur l'adhésion au service de santé au travail, et le saisir dans Configuration › Entreprise.", "medecine_travail")),
+        None => Err(socle::echec::cle("La fiche entreprise ne dit pas le service de santé au travail, dont la DPAE exige le code : le choisir par son nom dans Configuration › Entreprise, « Service de santé au travail ».", "medecine_travail")),
     }
 }
 

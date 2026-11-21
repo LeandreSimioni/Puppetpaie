@@ -4,8 +4,10 @@
 //! l'est (`pareils`), et s'il ne l'est pas, le lui ajoute (`ajouter`). Ce qu'il retient, et ce qu'il change a
 //! l'historique, est ce que l'ecriture prend (`import::ecrite`).
 //!
-//! LA REGLE : un contrat du meme salarie (par son NIR) dont les dates chevauchent celles de la piece l'atteste deja ;
-//! la piece le confirme, n'ajoute rien, et ses ecarts se notent. Deux exceptions, de la piece la moins complete a la
+//! LA REGLE : un contrat du meme salarie (par son NIR) dont les dates chevauchent celles de la piece l'atteste deja,
+//! sauf s'il dit un autre numero d'objet ou une autre nature qu'elle : ce sont deux contrats
+//! (`engagement::importe::deux_contrats`) ; la piece le confirme, n'ajoute rien, et ses ecarts se notent. Deux
+//! exceptions, de la piece la moins complete a la
 //! plus complete :
 //! - le contrat qu'un certificat atteste ne porte ni les heures, ni les cachets et les jours a part, et son brut est
 //!   arrondi a l'euro (`import::certificat_lu`) : un bulletin ou une AEM le remplace, MOIS PAR MOIS (`reste_du_
@@ -19,7 +21,8 @@
 use std::collections::{BTreeSet, HashMap};
 
 use droit::contexte::Contexte;
-use droit::fiche::Nir;
+use droit::fiche::{Nir, NumeroObjetSpectacle};
+use droit::natures::NatureDeContrat;
 use engagement::importe::{Attestation, ContratAtteste, ContratLu};
 use crate::reponse::{Attestant, Source};
 use socle::date::Periode;
@@ -80,6 +83,13 @@ impl Atteste {
     /// Tient-il dans la periode d'une piece ?
     pub fn tient_dans(&self, piece: &Periode) -> bool {
         piece.croise(&self.periode) == Some(self.periode)
+    }
+
+    /// Peut-il etre le contrat qu'une piece de `nir` atteste aux dates `periode`, sous `objet` et `nature` : le meme
+    /// salarie, des dates qui chevauchent, et pas deux contrats (`engagement::importe::deux_contrats`).
+    fn chevauche(&self, nir: &Nir, periode: &Periode, objet: Option<&NumeroObjetSpectacle>, nature: Option<NatureDeContrat>) -> bool {
+        let c = self.contrat();
+        self.nir == *nir && self.periode.croise(periode).is_some() && !engagement::importe::deux_contrats(c.numero_objet.as_ref(), c.nature, objet, nature)
     }
 }
 
@@ -272,12 +282,13 @@ impl Registre {
     }
 
     /// Les contrats deja attestes qui chevauchent celui que la piece `piece` (un certificat, une AEM, un bulletin)
-    /// atteste. Un certificat ne compte que pour un certificat : un bulletin ou une AEM le remplace (`ajouter`). Vide :
-    /// le contrat ne l'est pas.
-    pub fn pareils(&self, nir: &Nir, periode: &Periode, piece: Source) -> Vec<Atteste> {
+    /// atteste, et qui peuvent etre le sien : ni un autre numero d'objet, ni une autre nature que ceux qu'elle dit
+    /// (`objet`, `nature` ; `engagement::importe::deux_contrats`). Un certificat ne compte que pour un certificat : un
+    /// bulletin ou une AEM le remplace (`ajouter`). Vide : le contrat ne l'est pas.
+    pub fn pareils(&self, nir: &Nir, periode: &Periode, objet: Option<&NumeroObjetSpectacle>, nature: Option<NatureDeContrat>, piece: Source) -> Vec<Atteste> {
         self.tous
             .iter()
-            .filter(|a| a.nir == *nir && a.periode.croise(periode).is_some() && (piece == Source::Certificat || !a.de_certificat()))
+            .filter(|a| a.chevauche(nir, periode, objet, nature) && (piece == Source::Certificat || !a.de_certificat()))
             .cloned()
             .collect()
     }
@@ -295,10 +306,11 @@ impl Registre {
         let a = lu(nir, &ligne, periode, Attestant::Piece(source));
         let mut phrases = Vec::new();
         if !a.de_certificat() {
+            let (objet, nature) = (a.contrat().numero_objet.as_ref(), a.contrat().nature);
             let remplaces: Vec<usize> = (0..self.tous.len())
                 .filter(|i| {
                     let x = &self.tous[*i];
-                    x.nir == *nir && x.periode.croise(&periode).is_some() && (x.de_certificat() || (source == Source::Bulletin && x.contrat().atteste_par == Attestation::Aem))
+                    x.chevauche(nir, &periode, objet, nature) && (x.de_certificat() || (source == Source::Bulletin && x.contrat().atteste_par == Attestation::Aem))
                 })
                 .collect();
             for i in remplaces.into_iter().rev() {

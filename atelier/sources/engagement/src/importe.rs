@@ -548,6 +548,23 @@ pub fn activite_du_mois(
     }
 }
 
+/// DEUX CONTRATS, QUELLES QUE SOIENT LEURS DATES : deux pieces du meme salarie qui disent chacune un numero d'objet, et
+/// pas le meme, ou chacune une nature, et pas la meme. Le numero d'objet (S21.G00.40.050, « attribue par le CNCS pour
+/// chaque spectacle ou chaque production ») et la nature (S21.G00.40.007) sont des rubriques du bloc Contrat, une valeur
+/// par contrat (`atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`) : deux valeurs differentes, deux contrats, meme
+/// quand leurs dates se chevauchent (deux spectacles la meme semaine). Une piece qui ne dit pas l'un ou l'autre (un
+/// certificat Congés Spectacles n'imprime pas le numero d'objet, le bulletin d'un permanent pas sa nature) ne contredit
+/// rien sur ce point. La seule regle, que lisent le registre des contrats attestes (`import::attestes`) et ce qui
+/// rapproche deux pieces du meme contrat (`routes::importation::ecrite::meme_contrat`).
+pub fn deux_contrats(
+    objet: Option<&NumeroObjetSpectacle>,
+    nature: Option<NatureDeContrat>,
+    autre_objet: Option<&NumeroObjetSpectacle>,
+    autre_nature: Option<NatureDeContrat>,
+) -> bool {
+    matches!((objet, autre_objet), (Some(a), Some(b)) if !a.meme(b)) || matches!((nature, autre_nature), (Some(a), Some(b)) if a != b)
+}
+
 impl ContratAtteste {
     /// Un contrat dont on ne sait encore que ce qui l'atteste, et la nature que la piece atteste (`None` : a dire).
     pub fn vide(atteste_par: Attestation, nature: Option<NatureDeContrat>) -> ContratAtteste {

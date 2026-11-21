@@ -79,7 +79,8 @@ function htmlPoses() {
  * vit (`ou`), et pour qui (`qui`, une ligne d'un salarié ou d'un spectacle). Chaque case se
  * remplit sur place, dessinée comme dans sa fiche (`champDeFiche`) ; un seul
  * « Enregistrer » écrit tout ce qui a changé (`enregistrer-fiche`, une
- * écriture par fiche), et la liste se relit. La page ne fait que la mise en
+ * écriture par fiche) et joue les gestes que le moteur lui donne
+ * (`a_enregistrer`), et la liste se relit. La page ne fait que la mise en
  * page. */
 const DEMARRAGE_VIDE = { titre: "", note: "", manques: [], dsn: null };
 let DEMARRAGE = DEMARRAGE_VIDE;
@@ -130,10 +131,10 @@ function htmlDemarrage(manques) {
   const lien = (m) => `<button type="button" class="lien"${attributChamp(m.champ)}
         data-manque-onglet="${echapper(m.onglet)}"${qui(m)}>${echapper(m.ou)}</button>`;
   const pour = (m) => (m.pour ? `<div class="note">${echapper(m.pour)}</div>` : "");
-  // L'EFFECTIF DE CHAQUE ANNÉE QUE LA LIGNE DEMANDE (`effectifs`, du moteur) : ce que les paies reprises en donnent
-  // (sa phrase), et ses gestes, que le moteur rend et qu'`avance.js` dessine.
-  const effectifs = (m, i) => (m.effectifs || []).map((e, k) => `<div class="note" data-demarrage-effectif="${i}" data-demarrage-rang="${k}">
-      ${e.phrase ? `<p>${echapper(e.phrase)}</p>` : ""}${boutonsDesGestes(e.gestes)}</div>`).join("");
+  // LES GESTES QUE « ENREGISTRER » JOUE (`a_enregistrer`, du moteur) : chacun sa phrase et ses cases, pré-remplies,
+  // que la fiche de sa route décrit (`casesDuGeste`, d'`avance.js`).
+  const aEnregistrer = (m, i) => (m.a_enregistrer || []).map((g, k) => `<div data-demarrage-geste="${i}" data-demarrage-rang="${k}">
+      ${casesDuGeste(g)}</div>`).join("");
   const ligne = (m) => {
     const i = manques.indexOf(m);
     const k = caseDuManque(m);
@@ -141,20 +142,20 @@ function htmlDemarrage(manques) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
         ${pour(m)}
-        ${effectifs(m, i)}
+        ${aEnregistrer(m, i)}
         ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
       <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
       ${pour(m)}
-      ${effectifs(m, i)}
+      ${aEnregistrer(m, i)}
       <div class="actions">${lien(m)}</div>
     </li>`;
   };
   const entreprise = manques.filter((m) => !m.qui);
   const lesQui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
-  const aRemplir = manques.some((m) => caseDuManque(m));
+  const aRemplir = manques.some((m) => caseDuManque(m) || (m.a_enregistrer || []).length);
   // CE QU'UNE DSN DONNERAIT (`dsn`, du moteur) : sa phrase, et chaque ligne, qui mène à sa place.
   const dsn = DEMARRAGE.dsn ? `<div class="encart attention"><p>${echapper(DEMARRAGE.dsn.phrase)}</p>
       <ul class="rappel-liste">${DEMARRAGE.dsn.manques.map((m) => `<li class="demarrage-ligne">
@@ -185,20 +186,16 @@ function brancherDemarrage(conteneur) {
     brancherAide(sel);
     brancherTaxeSalaires(sel);
   });
-  // LES GESTES DE L'EFFECTIF D'UNE ANNÉE (`effectifs[].gestes`, du moteur) : comme les autres sorties de la liste, ils
-  // demandent d'abord ce qu'il faut faire de ce qui est tapé et pas enregistré (`quitterDemarrage`) ; puis la
-  // liste se relit.
-  conteneur.querySelectorAll(".demarrage-liste [data-demarrage-effectif]").forEach((bloc) => {
-    const m = DEMARRAGE.manques[+bloc.dataset.demarrageEffectif];
-    const e = m && m.effectifs && m.effectifs[+bloc.dataset.demarrageRang];
-    if (!e) return;
-    bloc.querySelectorAll("[data-geste]").forEach((b) => {
-      const g = e.gestes[+b.dataset.geste];
-      b.onclick = async () => {
-        if (!(await quitterDemarrage())) return;
-        await faireLeGeste(g, { pardessus: true }, async () => { await relireEtat(); await repeindreDemarrage(); });
-      };
-    });
+}
+
+/* LES GESTES QUE « ENREGISTRER » JOUE (`a_enregistrer`, du moteur), tels que leurs cases les disent : `{route,
+ * charge}` ; un geste dont les cases sont vides ne part pas. */
+function gestesDemarrage(liste) {
+  return [...liste.querySelectorAll("[data-demarrage-geste]")].flatMap((bloc) => {
+    const m = DEMARRAGE.manques[+bloc.dataset.demarrageGeste];
+    const g = m && m.a_enregistrer && m.a_enregistrer[+bloc.dataset.demarrageRang];
+    const charge = g && chargeDuGeste(bloc, g);
+    return charge ? [{ route: g.route, charge }] : [];
   });
 }
 
@@ -243,19 +240,22 @@ document.addEventListener("change", (e) => {
   const l = e.target.closest && e.target.closest(".demarrage-liste");
   if (l) l.dataset.touchee = "1";
 });
-const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")].find((l) => l.dataset.touchee && changementsDemarrage(l).length);
+const listeDemarrageModifiee = () => [...document.querySelectorAll(".demarrage-liste")]
+  .find((l) => l.dataset.touchee && (changementsDemarrage(l).length || gestesDemarrage(l).length));
 function demarrageModifie() {
   return !!listeDemarrageModifiee();
 }
 
 /* ENREGISTRER « POUR DÉMARRER » : tout ce que la liste porte, une écriture
- * par fiche (`enregistrer-fiche`), puis la liste se relit. Rend vrai quand
- * tout est écrit. */
+ * par fiche (`enregistrer-fiche`), puis chaque geste que le moteur dit de
+ * jouer (`a_enregistrer`), puis la liste se relit. Le premier refus arrête
+ * la suite et se dit. Rend vrai quand tout est écrit. */
 async function enregistrerDemarrage(liste) {
   const fiches = changementsDemarrage(liste);
+  const gestes = gestesDemarrage(liste);
   const dit = liste.querySelector("[data-demarrage-dit]");
   const bouton = liste.querySelector("[data-demarrage-enregistrer]");
-  if (!fiches.length) return true;
+  if (!fiches.length && !gestes.length) return true;
   if (bouton) bouton.disabled = true;
   dit.hidden = true;
   let phrase = "";
@@ -271,6 +271,7 @@ async function enregistrerDemarrage(liste) {
       }
       phrase = r.phrase;
     }
+    for (const g of gestes) phrase = (await api(g.route, g.charge)).phrase;
   } catch (e) {
     if (bouton) bouton.disabled = false;
     // Un refus de fiche porte ses anomalies à part (`a_part.anomalies`) ; un autre refus, sa phrase.

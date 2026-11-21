@@ -1,0 +1,662 @@
+Le contexte :
+Suite aux dispositions prises pour renforcer la prévention en santé au travail, la déclaration du service de prévention et de santé au travail (SPST) est attendue en DSN à partir de la version de norme P27V01. Deux usages sont à distinguer selon la nature de la déclaration (S20.G00.05.001) dans laquelle le SPST est renseigné :
+Dans le signalement de déclaration préalable à l'embauche (DPAE), la déclaration du SPST sert exclusivement à préparer l’organisation de la visite médicale obligatoire ;
+Pour plus de précisions sur le contenu de ce signalement, il convient de se référer à la fiche consigne dédiée : « Déclaration préalable à l'embauche (DPAE) en DSN ».
+En DSN mensuelle, en application de la loi du 2 août 2021 pour renforcer la prévention en santé au travail, la déclaration du SPST permet à l'Assurance Maladie d’identifier et transmettre au service de médecine du travail certains arrêts de travail pour prévenir les situations de désinsertion professionnelle.
+Point d’attention sur le périmètre d'application de la loi du 2 août 2021 :
+La nature du SPST qui suit les salariés emporte ou non l’application du dispositif.
+Les services de médecine de prévention de la fonction publique ne sont pas inclus dans le dispositif.
+En revanche, les agents du secteur public relevant du régime général, dès lors qu’ils sont suivis par des services de prévention et de santé au travail interentreprises (SPSTI), sont inclus dans le dispositif prévu par l’article 19 de la loi du 2 août 2021 (fonctionnaires + contractuels de droit public + contractuels de droit privé du secteur public).
+La déclaration du SPST en DSN s’appuie sur le référentiel « sst_dpae » disponible sur le site internet de l’Urssaf : https://open.urssaf.fr/explore/dataset/sst_dpae/table/.
+Les rubriques permettant de renseigner le SPST en DSN doivent être renseignées à partir des valeurs disponibles en colonne « mt_lib_court » du référentiel (par exemple : MT189).
+Déclarer le SPST en DSN mensuelle
+Cette fiche traite exclusivement de la déclaration du SPST en DSN mensuelle.
+Quatre cas sont à distinguer :
+1 - Le déclarant a recours à un seul et unique SPST interentreprises pour l’ensemble de ses salariés :
+La déclaration du SPST se fait dans la rubrique « Identifiant du Service de Prévention et de Santé au Travail (SPST) - S21.G00.11.025 ». La valeur provient du référentiel Urssaf (« MTXX ») ;
+Aucune autre information relative au SPST n’est attendue dans la DSN mensuelle.
+2 - Le déclarant dispose d’un SPST autonome pour suivre l’ensemble de ses salariés
+La déclaration du SPST se fait dans la rubrique « Identifiant du Service de Prévention et de Santé au Travail (SPST) - S21.G00.11.025 ». avec la valeur « MT01 » (issue du référentiel Urssaf) ;
+En complément de ce code, les coordonnées du service de médecine du travail interne à l’établissement doivent également être renseignées dans un bloc « Contact chez le déclaré - S20.G00.07 » de type « 17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré ».
+3 - L’employeur a recours simultanément à plusieurs modes de SPST (plusieurs SPST interentreprises ou bien un SPST autonome pour certains salariés et au moins un SPST interentreprises pour d’autres).
+L’identifiant du SPST « principal » (celui qui couvre le plus grand nombre de salariés) est renseigné en rubrique « Identifiant du Service de Prévention et de Santé au Travail (SPST) - S21.G00.11.025 », selon les modalités mentionnées plus haut ;
+Pour chaque salarié relevant d’un SPST différent du SPST principal déclaré en bloc « Etablissement - S21.G00.11 », le SPST « particulier » doit être déclaré dans la rubrique « Identifiant du Service de Prévention et de Santé au Travail (SPST) - S21.G00.30.030 » ;
+Si un SPST déclaré dans un bloc « Etablissement - S21.G00.11 » ou « Individu - S21.G00.30 » porte la valeur « MT01 », il est attendu un bloc « Contact chez le déclaré - S20.G00.07 » de type « 17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré » selon les mêmes modalités que décrit plus haut.
+4 - Dans le cas particulier d’un salarié en multi-contrats auprès d’un même employeur et qui relève de SPST différents (par exemple, en raison de lieux de travail ou de conditions d’activités différents pour chacun des contrats) :
+L’identifiant SPST attendu en DSN pour ce salarié est celui du dernier SPST connu à l’arrêt de la paie ;
+Soit, il s’agit du même SPST que celui déclaré en bloc « Etablissement - S21.G00.11 » et cette situation n’entraine donc aucune spécificité sur la déclaration ;
+Soit, il s’agit d’un SPST différent et il conviendra alors de le déclarer dans le bloc « Individu - S21.G00.30 » du salarié concerné selon les modalités décrites supra.
+Si à l’arrêt de la paie, le salarié en multi-contrats relève de plusieurs SPST, il conviendra de renseigner en DSN mensuelle le SPST correspondant du contrat dont le volume d’activité est le plus important.
+Exemple de déclaration du SPST en DSN mensuelle
+Point d’attention : Les exemples ne détaillent pas l’exhaustivité des blocs et rubriques attendus mais uniquement ceux présentant une particularité vis-à-vis de la déclaration du SPST. 
+Exemple 1 : 
+L’employeur a recours à un SPST interentreprises pour les missions de prévention et de santé au travail (par exemple, le SPST correspondant au code « MT189 » dans le référentiel de l’Urssaf) ;
+Ce SPST interentreprises assure le suivi de l’ensemble des salariés déclarés dans la DSN mensuelle ;
+Le SPST est déclaré comme ci-dessous dans chaque DSN mensuelle à partir de la version de norme P27V01 :
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+Exemple 2 : 
+L’employeur dispose d’un SPST autonome pour les missions de prévention et de santé au travail (rappel : les services de médecine internes correspondent au code « MT01 » dans le référentiel de l’Urssaf) ;
+Ce SPST assure le suivi de l’ensemble des salariés déclarés dans la DSN mensuelle ;
+Le SPST est déclaré comme ci-dessous dans chaque DSN mensuelle à partir de la version de norme P27V01 :
+S20.G00.07 - Contact chez le déclaré
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S20.G00.07.001
+|
+Nom et prénom du contact
+|
+A renseigner
+|
+S20.G00.07.002
+|
+Adresse téléphonique
+|
+Renseigner le numéro de téléphone du service de médecine du travail interne à l’établissement
+|
+S20.G00.07.003
+|
+Adresse mél du contact
+|
+Renseigner l’adresse mél d’un contact au sein du service de médecine du travail interne à l’établissement habilité à recevoir des données médicales
+|
+S20.G00.07.004
+|
+Type
+|
+17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré
+|
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+Exemple 3 : 
+L’employeur dispose d’un SPST autonome pour les missions de prévention et de santé au travail (rappel : les services de médecine internes correspondent au code « MT01 » dans le référentiel de l’Urssaf) ;
+Ce SPST assure le suivi de la majorité des salariés déclarés dans la DSN mensuelle ;
+Pour deux salariés éloignés géographiquement du siège social, il a recours à un SPST interentreprises de proximité ;
+Ces différents modes de SPST sont déclarés comme ci-dessous dans chaque DSN mensuelle à partir de la version de norme P27V01 :
+S20.G00.07 - Contact chez le déclaré
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S20.G00.07.001
+|
+Nom et prénom du contact
+|
+A renseigner
+|
+S20.G00.07.002
+|
+Adresse téléphonique
+|
+Renseigner le numéro de téléphone du service de médecine du travail interne à l’établissement
+|
+S20.G00.07.003
+|
+Adresse mél du contact
+|
+Renseigner l’adresse mél d’un contact au sein du service de médecine du travail interne à l’établissement habilité à recevoir des données médicales
+|
+S20.G00.07.004
+|
+Type
+|
+17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré
+|
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+S21.G00.30 - Individu
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S21.G00.30.001
+|
+Numéro d'inscription au répertoire
+|
+2890394063237 (NIR de l’individu connu du déclarant)
+|
+S21.G00.30.002
+|
+Nom de famille
+|
+MARTIN (Nom de l’individu)
+|
+S21.G00.30.003
+|
+Nom d’usage
+|
+MARTIN (Nom d’usage de l’individu)
+|
+S21.G00.30.004
+|
+Prénoms
+|
+Sonia (Prénoms de l’individu)
+|
+[...]
+|
+|
+|
+S21.G00.30.030
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+S21.G00.30 - Individu
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S21.G00.30.001
+|
+Numéro d'inscription au répertoire
+|
+1920859041789 (NIR de l’individu connu du déclarant)
+|
+S21.G00.30.002
+|
+Nom de famille
+|
+DUBOIS (Nom de l’individu)
+|
+S21.G00.30.003
+|
+Nom d’usage
+|
+DUBOIS (Nom d’usage de l’individu)
+|
+S21.G00.30.004
+|
+Prénoms
+|
+Louis (Prénoms de l’individu)
+|
+[...]
+|
+|
+|
+S21.G00.30.030
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+Exemple 4 : 
+L’employeur a recours à un SPST interentreprises pour les missions de prévention et de santé au travail (par exemple, le SPST correspondant au code « MT189 » dans le référentiel de l’Urssaf) ;
+Ce SPST assure le suivi de la majorité des salariés déclarés dans la DSN mensuelle ;
+Pour certains salariés nécessitant un suivi particulier, il dispose d’un service de prévention et de suivi interne ;
+Ces différents modes de SPST sont déclarés comme ci-dessous dans chaque DSN mensuelle à partir de la version de norme P27V01 :
+S20.G00.07 - Contact chez le déclaré
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S20.G00.07.001
+|
+Nom et prénom du contact
+|
+A renseigner
+|
+S20.G00.07.002
+|
+Adresse téléphonique
+|
+Renseigner le numéro de téléphone du service de médecine du travail interne à l’établissement
+|
+S20.G00.07.003
+|
+Adresse mél du contact
+|
+Renseigner l’adresse mél d’un contact au sein du service de médecine du travail interne à l’établissement habilité à recevoir des données médicales
+|
+S20.G00.07.004
+|
+Type
+|
+17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré
+|
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+S21.G00.30 - Individu
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S21.G00.30.001
+|
+Numéro d'inscription au répertoire
+|
+2890394063237 (NIR de l’individu connu du déclarant)
+|
+S21.G00.30.002
+|
+Nom de famille
+|
+MARTIN (Nom de l’individu)
+|
+S21.G00.30.003
+|
+Nom d’usage
+|
+MARTIN (Nom d’usage de l’individu)
+|
+S21.G00.30.004
+|
+Prénoms
+|
+Sonia (Prénoms de l’individu)
+|
+[...]
+|
+|
+|
+S21.G00.30.030
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+S21.G00.30 - Individu
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S21.G00.30.001
+|
+Numéro d'inscription au répertoire
+|
+1920859041789 (NIR de l’individu connu du déclarant)
+|
+S21.G00.30.002
+|
+Nom de famille
+|
+DUBOIS (Nom de l’individu)
+|
+S21.G00.30.003
+|
+Nom d’usage
+|
+DUBOIS (Nom d’usage de l’individu)
+|
+S21.G00.30.004
+|
+Prénoms
+|
+Louis (Prénoms de l’individu)
+|
+[...]
+|
+|
+|
+S21.G00.30.030
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+Exemple 5 : 
+L’employeur a recours à un SPST interentreprises pour les missions de prévention et de santé au travail de la majorité de ses salariés (par exemple, le SPST correspondant au code « MT189 » dans le référentiel de l’Urssaf) ;
+Certains salariés comme Mme MARTIN disposent de deux contrats auprès de cet employeur. Dans le cadre de chaque contrat, les missions de prévention et de santé au travail sont assurées par un SPST différent : le SPST correspondant au code « MT189 » mais aussi, pour le deuxième contrat, le SPST correspondant au code « MT176 » ;
+Le SPST compétent à l’arrêt de la paie (ou, si les deux contrats sont en cours à l’arrêt de la paie, celui qui représente l’activité majoritaire) est le SPST ayant pour code « MT176 » ;
+Ces différents modes de SPST sont déclarés comme ci-dessous dans chaque DSN mensuelle à partir de la version de norme P27V01 :
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+S21.G00.30 - Individu
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S21.G00.30.001
+|
+Numéro d'inscription au répertoire
+|
+2890394063237 (NIR de l’individu connu du déclarant)
+|
+S21.G00.30.002
+|
+Nom de famille
+|
+MARTIN (Nom de l’individu)
+|
+S21.G00.30.003
+|
+Nom d’usage
+|
+MARTIN (Nom d’usage de l’individu)
+|
+S21.G00.30.004
+|
+Prénoms
+|
+Sonia (Prénoms de l’individu)
+|
+[...]
+|
+|
+|
+S21.G00.30.030
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT176
+|
+[...]
+|
+|
+|
+Déclaration attendue en DSN mensuelle en cas de changement de SPST
+Si le déclarant modifie la façon dont il met en œuvre des missions de prévention et de santé au travail (par exemple passage d’un SPST interentreprises à un SPST autonome ou changement de prestataire SPST interentreprises), l’attendu en DSN mensuelle consiste uniquement à déclarer le nouveau SPST dans la DSN mensuelle du mois principal déclaré (MPD) concerné.
+En cas de changement en cours de mois, le SPST à déclarer sera celui en vigueur à l’arrêt de la paie.
+Correction d’une erreur de SPST en DSN mensuelle
+Si après transmission d’une DSN mensuelle, le déclarant s’aperçoit d’une erreur sur le code SPST déclaré :
+Avant la date d’éligibilité, le SPST est corrigée dans une DSN Annule et remplace.
+Après la date d’exigibilité, le SPST est corrigé dans la DSN mensuelle suivante.
+Exemple 6 : Correction d’une erreur de SPST en DSN mensuelle
+Le déclarant indique dans la DSN mensuelle du MPD de janvier 2027 recourir à un SPST interentreprises alors qu’il dispose en fait en fait d’un SPST autonome pour le suivi de l’ensemble de ses salariés ;
+Il constate l’erreur après la date d'exigibilité de la DSN, et la corrige dans la déclaration mensuelle du MPD de février 2027.
+Dans la DSN du MPD de janvier 2027 (déclaration erronée) :
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+Dans la DSN du MPD de février 2027 portant la correction :
+S20.G00.07 - Contact chez le déclaré
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S20.G00.07.001
+|
+Nom et prénom du contact
+|
+A renseigner
+|
+S20.G00.07.002
+|
+Adresse téléphonique
+|
+Renseigner le numéro de téléphone du service de médecine du travail interne à l’établissement
+|
+S20.G00.07.003
+|
+Adresse mél du contact
+|
+Renseigner l’adresse mél d’un contact au sein du service de médecine du travail interne à l’établissement habilité à recevoir des données médicales
+|
+S20.G00.07.004
+|
+Type
+|
+17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré
+|
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+Exemple 7 : 
+Le déclarant indique dans la DSN mensuelle du MPD de janvier 2027 disposer d’un SPST autonome alors qu’il recourt en fait à un SPST interentreprises pour le suivi de l’ensemble de ses salariés ;
+Il constate l’erreur après la date d'exigibilité de la DSN, et la corrige dans la déclaration mensuelle du MPD de février 2027.
+Dans la DSN du MPD de janvier 2027 (déclaration erronée) :
+S20.G00.07 - Contact chez le déclaré
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+S20.G00.07.001
+|
+Nom et prénom du contact
+|
+A renseigner
+|
+S20.G00.07.002
+|
+Adresse téléphonique
+|
+Renseigner le numéro de téléphone du service de médecine du travail interne à l’établissement
+|
+S20.G00.07.003
+|
+Adresse mél du contact
+|
+Renseigner l’adresse mél d’un contact au sein du service de médecine du travail interne à l’établissement habilité à recevoir des données médicales
+|
+S20.G00.07.004
+|
+Type
+|
+17 - Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré
+|
+S21.G00.11 - Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT01
+|
+[...]
+|
+|
+|
+Dans la DSN du MPD de février 2027 portant la correction :
+S21.G00.11 – Etablissement
+|
+Code
+|
+Rubrique
+|
+Valorisation
+|
+[...]
+|
+|
+|
+S21.G00.11.025
+|
+Identifiant du Service de Prévention et de Santé au Travail (SPST)
+|
+MT189
+|
+[...]
+|
+|
+|
+La réglementation (Textes de lois, BOSS, etc.)
+Articles L. 1221-10 à L. 1221-12 du Code du travail ;
+Article 19 de la loi n° 2021-1018 du 2 août 2021 pour renforcer la prévention en santé au travail.

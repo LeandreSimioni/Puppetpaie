@@ -2,7 +2,7 @@
 //! la boite aux lettres (`importation-etat`), l'import lui-meme (`importer`, `importation/ecrite.rs`) et la nature d'un
 //! contrat importe (`importation-nature`).
 //!
-//! `importation-apercu` lit la boite aux lettres `import/` entiere (`{"dossier": ...}` en nomme une autre ;
+//! `importation-apercu` et `importer` lisent la boite aux lettres `import/` de la compagnie, et elle seule (`boite_d_import` ;
 //! `import::bulletins`) : le tri, les DSN et AEM qu'il trouve (`import/dsn_aem.rs`, par `apercu_lu`), puis
 //! les bulletins de paie.
 //!
@@ -33,8 +33,6 @@ use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::MoisOuJour;
 
-const DOSSIER: Champ = Champ { nom: "dossier", libelle: Affiche::new("Dossier"), forme: Forme::Texte, sens: "le dossier choisi ; la boîte import/ de la compagnie sinon", avance: true };
-
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Import);
 
@@ -54,22 +52,22 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ImportationApercu,
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
-        charge: &[DOSSIER],
+        charge: &[],
         exemple: r#"{}"#,
-        rend: "le tri des pièces (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme" }, FORME],
+        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
+        refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
         acte: Acte::Lit,
         phrase: 0,
-        // Hors du chemin simple : on met les pieces dans le dossier et on importe (`importer` se rejoue).
+        // Hors du chemin simple : on met les pieces dans `import/` et on importe (`importer` se rejoue).
         ecran: Ecran::DessineAvance(Place::Import),
     },
     Fiche {
         route: Route::Importer,
-        geste: "Reprendre les pièces d'un ancien logiciel : fiches, engagements importés.",
-        charge: &[DOSSIER],
+        geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
+        charge: &[],
         exemple: r#"{}"#,
         rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
-        refus: &[Refus { classe: Classe::Refuse, corriger: "le dossier, ou les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
+        refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -116,14 +114,19 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let _releves = import::releve::Releves::ouvrir();
     let ctx = porte.ctx;
     match porte.route {
-        // `{"dossier": ...}` (vide ou absent : `import/` de la compagnie) : la boite aux lettres entiere, bulletins
-        // compris (`import::bulletins`).
-        Route::ImportationApercu => en_json(crate::importation::bulletins::apercu_dossier(ctx, &dossier_import(ctx, &charge.lire()?)?)?),
+        // La boite aux lettres `import/` entiere, bulletins compris (`import::bulletins`).
+        Route::ImportationApercu => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(crate::importation::bulletins::apercu_dossier(ctx)?)
+        }
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;
             en_json(etat_importation(ctx)?)
         }
-        Route::Importer => en_json(crate::importation::ecrite::importer(ctx, &charge.lire()?)?),
+        Route::Importer => {
+            let super::SansCharge {} = charge.lire()?;
+            en_json(crate::importation::ecrite::importer(ctx)?)
+        }
         // La nature des contrats repris qu'aucun bulletin ne dit.
         Route::ImportationNature => en_json(crate::importation::nature::dire(ctx, &charge.lire()?)?),
         // La reponse a une question d'identite (`importation::identite`).
@@ -132,39 +135,17 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     }
 }
 
-/// La charge de `importation-apercu` et d'`importer` : le dossier a lire (vide ou absent : la boite aux lettres).
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ChargeDossier {
-    dossier: Option<socle::forme::TexteDit>,
-}
-
-/// Le dossier a trier : `charge.dossier`, ou `import/` a la racine de la compagnie s'il est vide ou absent.
+/// Le dossier que `importation-apercu` et `importer` lisent : la boite aux lettres `import/` a la racine de la compagnie,
+/// et elle seule (un seul dossier, pas de choix : `atelier/AGENTS.md`, « L'import »).
 ///
-/// LA BOITE AUX LETTRES DE LA COMPAGNIE SE CREE VIDE : `import/` qui n'existe pas encore est
-/// cree, et l'apercu (ou l'import) n'a rien a reprendre, au lieu de refuser « dossier absent » ; de meme quand l'ecran le
-/// nomme (`charge.dossier`, le chemin que `importation-etat` lui a donne). Un AUTRE dossier donne qui n'existe pas reste
-/// refuse (`import::tri::trier`).
-pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBuf> {
+/// LA BOITE AUX LETTRES DE LA COMPAGNIE SE CREE VIDE : `import/` qui n'existe pas encore est cree, et l'apercu (ou
+/// l'import) n'a rien a reprendre, au lieu de refuser « dossier absent ».
+pub(crate) fn boite_d_import(ctx: &Contexte) -> R<PathBuf> {
     let boite = ctx.racine.join(import::BOITE_AUX_LETTRES);
-    let d = match charge.dossier.as_deref() {
-        None => boite.clone(),
-        Some(s) => PathBuf::from(crate::depots::normaliser(s)),
-    };
-    // Le dossier nomme est-il la boite : sous la racine de la compagnie, sous son nom. Un parent qui n'existe pas n'est
-    // pas la racine ; un disque qui refuse de le dire se dit.
-    let parent = match d.parent().map(Path::canonicalize) {
-        Some(Ok(p)) => Some(p),
-        Some(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Some(Err(e)) => return Err(socle::echec::du_disque(&d, &e)),
-        None => None,
-    };
-    let racine = ctx.racine.canonicalize().map_err(|e| socle::echec::du_disque(&ctx.racine, &e))?;
-    let la_boite = d == boite || (d.file_name() == boite.file_name() && parent.as_ref() == Some(&racine));
-    if la_boite && !d.exists() {
-        std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
+    if !boite.exists() {
+        std::fs::create_dir_all(&boite).map_err(|e| socle::echec::du_disque(&boite, &e).reclasser(Classe::Disque))?;
     }
-    Ok(d)
+    Ok(boite)
 }
 
 /// Un dossier de travail temporaire du systeme, propre a cet appel (a effacer avant de rendre).
@@ -808,7 +789,7 @@ fn etat_importation(ctx: &Contexte) -> R<EtatImportation> {
             socle::phrase!("Repris le {} : {} contrats, {} salariés, du {} au {}.", le.jj_mm_aaaa(), contrats.len(), salaries.len(), du.jj_mm_aaaa(), au.jj_mm_aaaa())
         }
         (Some(le), _, _) => socle::phrase!("Repris le {} : {} contrats, {} salariés.", le.jj_mm_aaaa(), contrats.len(), salaries.len()),
-        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans un dossier, choisissez-le, puis importez."),
+        (None, _, _) => Phrase::fixe("Rien n'est repris d'un ancien logiciel : mettez ses bulletins de paie et une DSN déposée dans le dossier d'import, puis importez."),
     };
     Ok(EtatImportation {
         phrase,

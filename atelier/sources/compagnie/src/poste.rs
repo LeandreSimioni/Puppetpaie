@@ -1,11 +1,13 @@
-//! LES GESTES DU POSTE : ouvrir un fichier ou un dossier dans l'explorateur, choisir un dossier dans la boite du
-//! systeme, ouvrir une adresse dans le navigateur. Ce ne sont pas des gestes du logiciel mais de l'outil qui regarde :
-//! une route rend le chemin, la fenetre l'ouvre (`window.pywebview.api.ouvrir`, `choisir_dossier`, servis par
+//! LES GESTES DU POSTE : ouvrir un fichier ou un dossier dans l'explorateur, ouvrir une adresse dans le navigateur. Ce
+//! ne sont pas des gestes du logiciel mais de l'outil qui regarde :
+//! une route rend le chemin, la fenetre l'ouvre (`window.pywebview.api.ouvrir`, servi par
 //! `interface::Fenetre::lanceur`) ; en ligne de commande, le LLM lit le chemin. Un geste de la compagnie en prend aussi
 //! (une adresse a ouvrir, une chaine PowerShell) : ils n'ont besoin de rien au-dessus de la compagnie.
 
 use std::path::{Component, Path};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(all(unix, not(target_os = "macos")))]
+use std::process::Stdio;
 
 use socle::echec::R;
 
@@ -92,45 +94,9 @@ pub fn entre_apostrophes_powershell(t: &str) -> String {
     s
 }
 
-/// CHOISIR UN DOSSIER. La boite du systeme, lancee par la fenetre : Windows par PowerShell (`FolderBrowserDialog`, au
-/// premier plan), macOS par `osascript`, Linux par `zenity` ou `kdialog`. Rend le chemin choisi, ou `None` si on a annule.
-pub fn choisir_dossier(titre: &str) -> R<Option<String>> {
-    // Le titre garde son apostrophe : chaque boite l'echappe a sa facon -- PowerShell double l'apostrophe
-    // dans sa chaine entre apostrophes (ou `$` et l'accent grave sont litteraux), AppleScript echappe `\` et `"`
-    // dans sa chaine entre guillemets ; zenity le recoit en argument, tel quel.
-    let titre: String = if titre.trim().is_empty() { "Choisir un dossier" } else { titre }.chars().filter(|c| !c.is_control()).collect();
-    #[cfg(windows)]
-    let sortie = {
-        use std::os::windows::process::CommandExt;
-        let script = format!(
-            "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms;              $f=New-Object System.Windows.Forms.Form -Property @{{TopMost=$true}};              $d=New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description='{}'; $d.ShowNewFolderButton=$false;              if($d.ShowDialog($f) -eq 'OK'){{ $d.SelectedPath }}",
-            entre_apostrophes_powershell(&titre)
-        );
-        Command::new("powershell")
-            .args(["-NoProfile", "-STA", "-Command", &script])
-            .creation_flags(0x0800_0000)
-            .stdin(Stdio::null())
-            .output()
-    };
-    #[cfg(target_os = "macos")]
-    let sortie = Command::new("osascript")
-        .args(["-e", &format!("POSIX path of (choose folder with prompt \"{}\")", titre.replace('\\', "\\\\").replace('"', "\\\""))])
-        .stdin(Stdio::null())
-        .output();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let sortie = Command::new("zenity")
-        .args(["--file-selection", "--directory", &format!("--title={}", titre)])
-        .stdin(Stdio::null())
-        .output()
-        .or_else(|_| Command::new("kdialog").args(["--getexistingdirectory", "."]).stdin(Stdio::null()).output());
-    let sortie = sortie.map_err(|e| socle::refus!("La boite de choix du dossier ne s'ouvre pas : {}. Tapez le chemin a la main.", e))?;
-    let chemin = String::from_utf8_lossy(&sortie.stdout).trim().trim_end_matches(['/', '\\']).to_string();
-    Ok((!chemin.is_empty()).then_some(chemin))
-}
-
 /// Ce que la fenetre ouvre pour la page d'une compagnie : `chemin`, tel qu'une route l'a rendu, relatif a la compagnie
-/// ou absolu ; jamais par `..`. Un chemin absolu hors de la compagnie n'est ouvert que s'il est un dossier (celui que
-/// l'on a choisi pour l'import). `creer` : un dossier de la compagnie qui manque se cree (la boite `import/`).
+/// ou absolu ; jamais par `..`. Un chemin absolu hors de la compagnie n'est ouvert que s'il est un dossier.
+/// `creer` : un dossier de la compagnie qui manque se cree (la boite `import/`).
 pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String> {
     let p = Path::new(chemin.trim());
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {

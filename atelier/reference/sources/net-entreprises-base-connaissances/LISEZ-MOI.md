@@ -525,6 +525,37 @@ janvier N+1, rejetée au-delà. C'est le bloc que la fiche 898 demande pour annu
 tort. **Où le moteur s'en sert** : la régularisation du PAS existante (`declarations/`) ; le ticket #324 du privé
 (contrat déclaré à tort).
 
+## Fiche 3370 — Service de prévention et de santé au travail (SPST) en DSN mensuelle
+
+- URL : https://net-entreprises.custhelp.com/app/answers/detail/a_id/3370
+- Relevée le 21/11/2026 par `curl` ; « Date de création : 11/03/2026 », « Date de modification : 26/08/2026 ». Le brut
+  (`net-entreprises-fiche3370-spst-dsn-mensuelle-20260826.html`) et sa transcription (`.txt`, tableaux aplatis en
+  lignes `|`). C'est « la fiche consigne dédiée » à laquelle renvoie S21.G00.11.025 dans la norme 2027
+  (`norme-dsn/texte-2027/bloc-S21.G00.11.txt`, l. 232-237).
+
+**Ce qu'on en lit** (`.txt`, lignes citées) :
+- l. 2 : « la déclaration du service de prévention et de santé au travail (SPST) est attendue en DSN à partir de la
+  version de norme P27V01 ».
+- l. 10-11 : « La déclaration du SPST en DSN s’appuie sur le référentiel « sst_dpae » disponible sur le site internet
+  de l’Urssaf » ; « Les rubriques permettant de renseigner le SPST en DSN doivent être renseignées à partir des valeurs
+  disponibles en colonne « mt_lib_court » du référentiel (par exemple : MT189) ». Le référentiel est déposé dans
+  `../urssaf-sst-dpae/`.
+- l. 15-17 (cas 1, un seul SPST interentreprises) : S21.G00.11.025, « La valeur provient du référentiel Urssaf
+  (« MTXX ») » ; « Aucune autre information relative au SPST n’est attendue dans la DSN mensuelle ».
+- l. 18-20 (cas 2, SPST autonome) : S21.G00.11.025 « avec la valeur « MT01 » (issue du référentiel Urssaf) », et le
+  contact de type 17 (S20.G00.07).
+- l. 21-28 (cas 3 et 4, plusieurs SPST, ou un salarié en multi-contrats) : le SPST « principal » en S21.G00.11.025, le
+  « particulier » d'un salarié en S21.G00.30.030.
+- Un changement de SPST se déclare dans la DSN du mois principal déclaré concerné ; une erreur se corrige par une DSN
+  « annule et remplace » avant l'exigibilité, dans la DSN suivante après.
+
+**Où le moteur s'en sert** : `declarations::dsn::spst_ecrit` (S21.G00.11.025, en norme 2027 : l'identifiant du service
+de la fiche, MT01 pour une médecine interne) ; `declarations::dsn_lue` (une DSN 2027 reprise rend l'identifiant à la
+case) ; `droit::fiche::IdentifiantSpst` et `CodeMedecine::identifiant_spst`. Le SPST « particulier » d'un salarié
+(S21.G00.30.030) ne s'écrit pas : la fiche ne porte qu'un service pour la compagnie. **Inférence** : la fiche ne dit
+pas en toutes lettres que l'identifiant de la DSN est le code de la DPAE ; les deux viennent du même référentiel
+(`../urssaf-sst-dpae/LISEZ-MOI.md`).
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
@@ -623,6 +654,8 @@ Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier em
 - `net-entreprises-fiche3360-fait-generateur-20260130.txt` : `3ebd62cc5d8e08cefa094f46fda05a5c22b9e0a47761c5da0e9d2dcf21e4fe33`
 - `net-entreprises-fiche3369-proratisation-plafond-temps-partiel-40-084-20260403.pdf` : `3c261bab85bfaf80ec5089904393d54d8b8482cd48c8e48a69f412058416c24f`
 - `net-entreprises-fiche3369-proratisation-plafond-temps-partiel-40-084-20260403.txt` : `b87495fc8133fffed7fe1104fb92e2e2e00e631b880f7a35cfc0c43e2ebc6d34`
+- `net-entreprises-fiche3370-spst-dsn-mensuelle-20260826.html` : `ea35e7b84e5ac4af580edf6e3ddc9d05d1176c43bfade49d038b18a1b53614eb`
+- `net-entreprises-fiche3370-spst-dsn-mensuelle-20260826.txt` : `ca7352d0fed36020a733bdb341ebf8225a06c537303269ba69fdae60e9cf70a2`
 - `net-entreprises-fiche3377-oc-multi-contrats-dans-le-mois-20260527.html` : `6a97bfd232391c2e289db79d87b17b0b0d1eefe2dcb7bf0ca93dfb4b6cfd94d5`
 - `net-entreprises-fiche3377-oc-multi-contrats-dans-le-mois-20260527.txt` : `9bc31d47dfc8f0fad497b20ca6f0775eece8ae6491750cad18923467b81416a2`
 - `net-entreprises-fiche3381-indemnites-fin-de-contrat-20260603.html` : `f2d440176b0725233c55fcb4653bfce0e17aaee62442d9fb1e34e077ef16b1f3`

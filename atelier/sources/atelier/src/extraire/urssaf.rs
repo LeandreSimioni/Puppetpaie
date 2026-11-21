@@ -148,13 +148,13 @@ fn rangs_csv(texte: &str, delim: char) -> Vec<Vec<String>> {
 }
 
 /// L'entete, puis chaque rang en (nom de colonne -> valeur) ; une colonne absente du rang vaut `None`.
-struct Table {
+pub(crate) struct Table {
     entete: Vec<String>,
-    rangs: Vec<Vec<String>>,
+    pub(crate) rangs: Vec<Vec<String>>,
 }
 
 impl Table {
-    fn lire(texte: &str, delim: char) -> Table {
+    pub(crate) fn lire(texte: &str, delim: char) -> Table {
         let mut rangs = rangs_csv(texte, delim);
         let entete = if rangs.is_empty() { Vec::new() } else { rangs.remove(0) };
         Table { entete, rangs }
@@ -166,7 +166,7 @@ impl Table {
         rang.get(j).map(String::as_str)
     }
 
-    fn exige<'a>(&self, rang: &'a [String], nom: &str, fichier: &str) -> R<&'a str> {
+    pub(crate) fn exige<'a>(&self, rang: &'a [String], nom: &str, fichier: &str) -> R<&'a str> {
         self.get(rang, nom).ok_or_else(|| refus!("{} : colonne {} absente d'un rang", fichier, repr(nom)))
     }
 }

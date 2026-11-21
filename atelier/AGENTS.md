@@ -102,6 +102,14 @@ un calendrier, une case) ne crée pas de route et ne change pas ce qu'une route 
 vérifiait déjà, l'écran ne le lui redemande pas par un autre chemin. Si l'écran a besoin que le moteur dise quelque
 chose de plus, cela se présente à Léandre avant, en une ligne.
 
+**Ce sont les routes qui font la mise en page** (Léandre, 21/11/2026 : « c'est les routes qui doivent faire la mise
+en page », « regarde ce qu'on a fait pour la carte engagement »). La carte d'un engagement en est le modèle : un seul
+dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le libellé, les choix, ce qui est
+pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
+propose arrive par la route (`propose`), et « Enregistrer » la valide. Les fiches (Entreprise, Salarié, Spectacle)
+gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
+dans la page.
+
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
 catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à

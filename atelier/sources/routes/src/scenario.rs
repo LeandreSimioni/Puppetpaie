@@ -251,7 +251,7 @@ struct HorlogeDeLOuverture {
 }
 
 
-/// Les routes dont la cle `dossier` vide (ou absente) veut dire `import/` de la compagnie (`crate::import::dossier_import`).
+/// Les routes qui lisent `import/` de la compagnie (`crate::import::boite_d_import`) : la piece du scenario, sous la cle `dossier`.
 #[cfg(feature = "atelier")]
 fn lit_la_boite_aux_lettres(route: Route) -> bool {
     route == Route::Importer || route.nom().starts_with("importation")

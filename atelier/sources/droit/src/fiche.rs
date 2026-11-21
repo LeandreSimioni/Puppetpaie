@@ -514,9 +514,11 @@ impl CodeEmploiFt {
 /// LE CODE DU SERVICE DE SANTE AU TRAVAIL, celui de la DPAE : « MT » et trois chiffres, 5 caracteres. La norme DPAE
 /// (C_MT_DCL, positions 938-947 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 485-497) : « Il est
 /// attendu ici un code du type MT+ 3 positions numériques. Ex: MT542 [...] Si vous disposez d'un centre de médecine
-/// interne à l'établissement, renseignez MT999 » ; la zone en a 10, cadree a droite. La DSN 2027 ecrit la medecine
-/// interne « MT01 - MEDECINE INTERNE ETABLISSEMENT » en S21.G00.11.025 (`declarations::dsn::spst_ecrit`, qui la tire de
-/// `MT999`, `INTERNE`) ; l'identifiant d'un service externe y est defini par une fiche consigne qui n'est pas deposee.
+/// interne à l'établissement, renseignez MT999 » ; la zone en a 10, cadree a droite. Il se choisit dans le referentiel
+/// « sst_dpae » de l'Urssaf (`IdentifiantSpst`, `declarations::spst`), dont les codes des services sont de cette forme ;
+/// le referentiel ecrit la medecine interne MT01, la norme DPAE MT999 (`du_referentiel`, `identifiant_spst`). Un code de
+/// la bonne forme absent du referentiel se lit quand meme : ni la norme DPAE ni la fiche consigne 3370 ne donnent de
+/// controle qui le refuse.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct CodeMedecine(String);
@@ -534,7 +536,7 @@ impl CodeMedecine {
             format!(
                 "« {} » n'est pas un code de service de santé au travail : la DPAE l'attend en MT suivi de trois chiffres, \
 MT542 par exemple, et MT999 pour une médecine interne à l'établissement (norme DPAE v5.3, zone « Code centre de médecine \
-du travail »). Il se lit sur l'attestation d'adhésion à ce service",
+du travail »). Choisissez votre service par son nom dans la liste de l'Urssaf (Configuration › Entreprise)",
                 texte
             )
         })
@@ -544,9 +546,86 @@ du travail »). Il se lit sur l'attestation d'adhésion à ce service",
     pub fn interne(&self) -> bool {
         self.0 == Self::INTERNE
     }
+
+    /// LE CODE DE LA FICHE D'UN SERVICE DU REFERENTIEL : le meme, sauf la medecine interne, que le referentiel ecrit MT01
+    /// et la norme DPAE MT999 (`INTERNE`). Que les deux nomment la meme medecine interne est une inference : aucun texte
+    /// ne les rapproche en ces mots.
+    pub fn du_referentiel(id: &IdentifiantSpst) -> R<CodeMedecine> {
+        CodeMedecine::lire(if id.interne() { Self::INTERNE } else { id.as_str() })
+    }
+
+    /// L'IDENTIFIANT DU SPST QUE LA DSN 2027 ECRIT POUR CE CODE (S21.G00.11.025) : le meme, sauf la medecine interne,
+    /// MT01 (`du_referentiel`, a rebours). La fiche consigne 3370 (`atelier/reference/sources/net-entreprises-base-
+    /// connaissances/net-entreprises-fiche3370-spst-dsn-mensuelle-20260826.txt`, l. 10) : « La déclaration du SPST en DSN
+    /// s’appuie sur le référentiel « sst_dpae » », dont la DPAE se sert aussi (page du jeu, `urssaf-sst-dpae/`) ; que le
+    /// code de la DPAE soit celui de la DSN est une inference : aucun texte ne le dit en ces mots.
+    pub fn identifiant_spst(&self) -> R<IdentifiantSpst> {
+        IdentifiantSpst::lire(if self.interne() { IdentifiantSpst::INTERNE } else { &self.0 })
+    }
 }
 
 texte_borne!(@commun CodeMedecine, "caractères");
+
+/// L'IDENTIFIANT D'UN SERVICE DE PREVENTION ET DE SANTE AU TRAVAIL (SPST) : la colonne `mt_lib_court` du referentiel
+/// « sst_dpae » de l'Urssaf (`atelier/reference/sources/urssaf-sst-dpae/`), « MT » et trois chiffres (MT176), ou MT01
+/// pour un service autonome, « MEDECINE INTERNE ETABLISSEMENT ». La fiche consigne 3370 de net-entreprises : les rubriques
+/// du SPST en DSN « doivent être renseignées à partir des valeurs disponibles en colonne « mt_lib_court » du référentiel
+/// (par exemple : MT189) » (`net-entreprises-fiche3370-spst-dsn-mensuelle-20260826.txt`, l. 11) ; S21.G00.11.025 les
+/// porte, `X [1,14]` (`norme-dsn/texte-2027/bloc-S21.G00.11.txt`, l. 232-237). Que portent le referentiel livre
+/// (`spst-base.json`), la DSN ecrite et la DSN lue.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdentifiantSpst(String);
+
+impl IdentifiantSpst {
+    /// Le service autonome, « MT01 - MEDECINE INTERNE ETABLISSEMENT » (fiche 3370, l. 19 ; note differentielle
+    /// 2026.1.2 -> 2027.1.2, l. 3501-3503).
+    pub const INTERNE: &'static str = "MT01";
+
+    /// L'identifiant `texte` : MT01, ou MT et trois chiffres, la forme de chaque valeur du referentiel.
+    pub fn lire(texte: &str) -> R<IdentifiantSpst> {
+        let externe = match texte.strip_prefix("MT") {
+            Some(chiffres) => chiffres.len() == 3 && chiffres.bytes().all(|b| b.is_ascii_digit()),
+            None => false,
+        };
+        if texte == Self::INTERNE || externe {
+            Ok(IdentifiantSpst(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "{} n'est pas l'identifiant d'un service de prévention et de santé au travail du référentiel de l'Urssaf : MT01, ou MT suivi de trois chiffres.",
+                socle::fichiers::repr(texte)
+            ))
+        }
+    }
+
+    /// Le service autonome de l'etablissement (`INTERNE`) ?
+    pub fn interne(&self) -> bool {
+        self.0 == Self::INTERNE
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for IdentifiantSpst {
+    type Error = String;
+    fn try_from(texte: String) -> Result<IdentifiantSpst, String> {
+        IdentifiantSpst::lire(&texte).map_err(|e| e.phrase)
+    }
+}
+
+impl From<IdentifiantSpst> for String {
+    fn from(i: IdentifiantSpst) -> String {
+        i.0
+    }
+}
+
+impl std::fmt::Display for IdentifiantSpst {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
 
 texte_borne! {
     /// LE TELEPHONE de l'employeur (le contact DSN, le signataire) : 11 chiffres au plus. La DPAE en ecrit les chiffres, 11

@@ -184,7 +184,8 @@ pub const ROUTES: &[Fiche] = &[
         acte: Acte::Ecrit,
         phrase: 300,
         // Sous « Avancé », d'ou l'effectif d'une annee se dit et se corrige toujours ; « Pour démarrer » (`pour-demarrer`,
-        // `routes::rappels::ManqueVu`) la rend aussi en geste, sur la ligne qui demande l'effectif.
+        // `routes::rappels::ManqueVu`) la rend aussi, une case par annee sur la ligne qui demande l'effectif, que son
+        // « Enregistrer » joue.
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire ou poser l'effectif")),
     },
     Fiche {
@@ -410,7 +411,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
 }
 
 /// La charge de `effectif` : l'annee mesuree (absente : celles qui manquent), et l'effectif que la compagnie en dit.
-/// Le geste de « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa boite la fait saisir.
+/// « Pour démarrer » l'ecrit aussi (`routes::rappels::ManqueVu`) : sans valeur, sa case la fait saisir.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeEffectif {

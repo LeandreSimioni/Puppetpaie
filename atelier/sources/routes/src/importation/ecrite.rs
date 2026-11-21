@@ -1,6 +1,6 @@
 //! `importer` : ecrit ce que `importation-apercu` annonce.
 //!
-//! `{"dossier": ...}` : la boite aux lettres `import/` entiere, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
+//! La boite aux lettres `import/` entiere, et elle seule, comme l'apercu (`importation::bulletins`). Dans l'ordre : ce
 //! qui est repris (DSN, AEM, PDF dont une page au moins est reprise) est COPIE dans `historique/bulletins/`, sous le nom
 //! de sa copie (`<empreinte>.<pdf|dsn|txt>` : rien de personnel ; `importation::bulletins::nom_copie`) -- rien ne s'ecrase ;
 //! l'apercu est relu DANS ces copies, et c'est lui qui s'ecrit ; les fiches
@@ -225,12 +225,13 @@ impl Proximite {
 /// DSN le contrat entier (S21.G00.40.001 et .010, `norme-dsn/texte/bloc-S21.G00.40.txt`) : un bulletin (`piece`, sa
 /// `periode_de_paie`) est aussi du contrat que la DSN declare (`declare`) quand il commence le meme jour, ou que sa
 /// periode y tient. Une AEM ou un certificat attestent le contrat entier : les memes dates ou le meme numero seulement.
-/// Deux numeros d'objet, ou deux natures, differents : deux contrats. La seule regle, que lisent l'apercu (la paie que
+/// Deux numeros d'objet, ou deux natures, differents : deux contrats (`engagement::importe::deux_contrats`, que le
+/// registre des contrats attestes lit aussi). La seule regle, que lisent l'apercu (la paie que
 /// complete une page de bulletin : `importation::bulletins`), `rapprocher` (la paie d'un mois) et `engagements_importes`
 /// (l'engagement) ; la plus sure l'emporte (`les_plus_proches`). Que l'apercu et l'ecriture lisent la meme fait qu'un
 /// import rejoue ne trouve rien.
 pub(crate) fn meme_contrat(piece: Reperes, declare: Reperes) -> Option<Proximite> {
-    if matches!((piece.objet, declare.objet), (Some(a), Some(b)) if !a.meme(b)) || matches!((piece.nature, declare.nature), (Some(a), Some(b)) if a != b) {
+    if engagement::importe::deux_contrats(piece.objet, piece.nature, declare.objet, declare.nature) {
         return None;
     }
     let dates = piece.dates.zip(declare.dates);
@@ -846,11 +847,11 @@ fn copier_repris(ctx: &Contexte, lu: &crate::importation::bulletins::DossierLu) 
     Ok((Copie { copies, identiques, differents, dossier }, noms))
 }
 
-/// `importer` : `{"dossier": ...}`, la boite aux lettres `import/` (vide ou absent : celle de la compagnie) -- la copie
-/// de ce qui est repris, l'apercu relu dans la copie, l'ecriture.
-pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) -> R<Importation> {
+/// `importer` : la boite aux lettres `import/` de la compagnie -- la copie de ce qui est repris, l'apercu relu dans la
+/// copie, l'ecriture.
+pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
     let aujourdhui = ctx.date;
-    let dossier = crate::import::dossier_import(ctx, charge)?;
+    let dossier = crate::import::boite_d_import(ctx)?;
     // CE QUI EST PARTI D'ICI, que le journal dit, lu une fois pour le geste : il garde les matricules et les valeurs des
     // contrats qu'il a declares. Les depots que l'import reprend au journal (`depots_attestes_au_journal`) n'y changent
     // rien : leurs lignes ne portent aucune version d'engagement (`envois::reprise_journal`), et rien n'est parti d'eux

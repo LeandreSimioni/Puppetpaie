@@ -377,8 +377,7 @@ fn ecran_present() -> R<bool> {
     Ok(nomme("DISPLAY")? || nomme("WAYLAND_DISPLAY")?)
 }
 
-/// LA FENETRE : la boite de dialogue du systeme, comme pour choisir un dossier (`interface::api::choisir_dossier`) --
-/// PowerShell sous Windows, `osascript` sous macOS, `zenity` ou `kdialog` sous Linux. Linux sans l'un ni l'autre : pas de
+/// LA FENETRE : la boite de dialogue du systeme -- PowerShell sous Windows, `osascript` sous macOS, `zenity` ou `kdialog` sous Linux. Linux sans l'un ni l'autre : pas de
 /// fenetre, on passe au terminal.
 fn fenetre_native() -> Option<Box<dyn Canal>> {
     fenetre_systeme::Boite::du_poste().map(|b| Box::new(b) as Box<dyn Canal>)
