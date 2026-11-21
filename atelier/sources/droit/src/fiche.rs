@@ -2225,17 +2225,58 @@ macro_rules! fiche {
         /// Ses CLES NON LUES (`non_lues`) sont celles qu'une installation posee a pu ecrire dans le fichier et que la forme
         /// n'a plus : elles se lisent et ne disent rien (`socle::forme::NonLue`), pour que la compagnie s'ouvre apres sa
         /// mise a jour ; elles ne se reecrivent pas, et aucune charge ne les accepte (la fiche a un jour ne les a pas).
-        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-        #[serde(deny_unknown_fields)]
+        /// SES CLES INCONNUES (`cles_inconnues`) : dans le fichier d'une compagnie (`lire_fiche_posee`), une cle que la
+        /// forme ne connait pas se garde telle qu'ecrite, ne dit rien, se reecrit telle quelle et se dit a l'editeur
+        /// (`NonLu::Cle`) ; partout ailleurs (les donnees livrees), elle refuse la lecture (`socle::forme::ClesInconnues`).
+        #[derive(Debug, Clone, Default, PartialEq, Serialize)]
         pub struct $datee {
             $( #[serde(rename = $ecrit, skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
             $( $( #[serde(rename = $pecrit, skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
             $( $( $(#[$mm])* #[serde(rename = $mecrit, skip_serializing_if = "Option::is_none")] pub $memoire: Option<$mt>, )* )?
-            $( $( $(#[$um])* #[serde(rename = $uecrit, default, deserialize_with = "socle::forme::non_lue", skip_serializing)] $non_lue: socle::forme::NonLue, )* )?
+            $( $( $(#[$um])* #[serde(skip_serializing)] $non_lue: socle::forme::NonLue, )* )?
+            #[serde(flatten)]
+            cles_inconnues: socle::forme::ClesInconnues,
+        }
+
+        /// Cle par cle : une cle connue dans sa forme, une cle non lue parcourue et jetee, une cle repetee refusee, une
+        /// cle inconnue gardee dans le fichier d'une compagnie et refusee ailleurs (`ClesInconnues::garder`).
+        impl<'de> Deserialize<'de> for $datee {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                struct Lecteur;
+                impl<'de> serde::de::Visitor<'de> for Lecteur {
+                    type Value = $datee;
+                    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                        f.write_str("une fiche datée")
+                    }
+                    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<$datee, A::Error> {
+                        const CLES: &[&str] = &[$( $ecrit, )* $( $( $pecrit, )* )* $( $( stringify!($note), )* )? $( $( $mecrit, )* )? $( $( $uecrit, )* )?];
+                        let mut f = $datee::default();
+                        let mut vues: Vec<String> = Vec::new();
+                        while let Some(k) = m.next_key::<String>()? {
+                            if vues.contains(&k) {
+                                return Err(<A::Error as serde::de::Error>::custom(format!("duplicate field `{}`", k)));
+                            }
+                            vues.push(k.clone());
+                            $( if k == $ecrit { f.$champ = m.next_value()?; continue; } )*
+                            $( $( if k == $pecrit { f.$pchamp = m.next_value()?; continue; } )* )*
+                            $( $( if k == stringify!($note) { f.$note = m.next_value()?; continue; } )* )?
+                            $( $( if k == $mecrit { f.$memoire = m.next_value()?; continue; } )* )?
+                            $( $( if k == $uecrit { m.next_value::<serde::de::IgnoredAny>()?; continue; } )* )?
+                            f.cles_inconnues.garder(k, &mut m, CLES)?;
+                        }
+                        Ok(f)
+                    }
+                }
+                d.deserialize_map(Lecteur)
+            }
         }
 
         impl $datee {
+            /// Les cles que sa forme ne connait pas, gardees dans le fichier d'une compagnie, dans l'ordre du fichier.
+            pub fn cles_inconnues(&self) -> Vec<&str> {
+                self.cles_inconnues.noms()
+            }
             /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.
             pub fn au(&self, jour: &Jour) -> $plate {
                 $plate {
@@ -2346,6 +2387,10 @@ macro_rules! fiche {
                 f
             }
 
+            fn cles_inconnues(&self) -> Vec<&str> {
+                $datee::cles_inconnues(self)
+            }
+
             fn voir_listes<V: VoirListe>(&self, v: &mut V) {
                 $( if let Some(l) = &self.$champ {
                     v.liste(CaseDeFiche::Case(NomDeCase($ecrit)), l);
@@ -2391,6 +2436,63 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 
     /// Chaque liste datee, sous son nom, a qui la regarde.
     fn voir_listes<V: VoirListe>(&self, v: &mut V);
+
+    /// Les cles que sa forme ne connait pas, gardees dans le fichier d'une compagnie (`lire_fiche_posee`).
+    fn cles_inconnues(&self) -> Vec<&str>;
+}
+
+/// CE QU'UNE FICHE D'UNE COMPAGNIE PORTE ET QUE LE MOTEUR NE LIT PAS (`lire_fiche_posee`) : rien ne ferme la compagnie,
+/// tout se garde dans le fichier tel qu'ecrit, et rien ne s'invente a sa place.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NonLu {
+    /// UNE VALEUR DATEE ILLISIBLE (`Datee::illisible`) : la case est vide a partir de son `depuis`, et le calcul ou
+    /// l'acte qui en a besoin refuse en la nommant, comme pour toute case vide. `rang` : sa place dans la liste datee de
+    /// la case, telle qu'ecrite (0 : la premiere).
+    Valeur { fiche: FicheNommee, case: CaseDeFiche, rang: usize, depuis: Option<Jour>, ecrite: String },
+    /// UNE CLE QUE LA FORME NE CONNAIT PAS : elle ne dit rien, et seul l'editeur l'apprend.
+    Cle { fiche: FicheNommee, cle: String },
+}
+
+impl NonLu {
+    /// La fiche qui le porte.
+    pub fn fiche(&self) -> &FicheNommee {
+        match self {
+            NonLu::Valeur { fiche, .. } | NonLu::Cle { fiche, .. } => fiche,
+        }
+    }
+
+    /// CE QUE LA COMPAGNIE LIT SUR LA CASE (une anomalie de sa fiche) : la valeur telle qu'ecrite, et quoi faire ;
+    /// `choix` : la case se choisit dans une liste. Une cle inconnue ne se dit pas a la compagnie : aucune.
+    pub fn phrase(&self, choix: bool) -> Option<String> {
+        match self {
+            NonLu::Valeur { ecrite, .. } => {
+                Some(format!("Cette valeur ne se lit plus : « {} ». La {} de nouveau.", ecrite, if choix { "choisir" } else { "saisir" }))
+            }
+            NonLu::Cle { .. } => None,
+        }
+    }
+}
+
+/// Ce qu'une fiche datee `f` (la fiche `fiche`) porte et ne lit pas : ses valeurs illisibles, case par case, puis ses
+/// cles inconnues.
+pub fn non_lus<F: FicheDatee>(f: &F, fiche: &FicheNommee) -> Vec<NonLu> {
+    struct Illisibles<'a> {
+        fiche: &'a FicheNommee,
+        out: Vec<NonLu>,
+    }
+    impl VoirListe for Illisibles<'_> {
+        fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]) {
+            for (rang, e) in liste.iter().enumerate() {
+                if let Some(v) = &e.illisible {
+                    self.out.push(NonLu::Valeur { fiche: self.fiche.clone(), case: cle, rang, depuis: e.depuis, ecrite: v.ecrite() });
+                }
+            }
+        }
+    }
+    let mut v = Illisibles { fiche, out: Vec::new() };
+    f.voir_listes(&mut v);
+    v.out.extend(f.cles_inconnues().into_iter().map(|k| NonLu::Cle { fiche: fiche.clone(), cle: k.to_string() }));
+    v.out
 }
 
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
@@ -2400,16 +2502,68 @@ pub trait VoirListe {
 }
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, bound(serialize = "T: EcritureDeCase", deserialize = "T: DeserializeOwned"))]
+///
+/// UNE VALEUR ILLISIBLE (`illisible`) : dans le fichier d'une compagnie (`lire_fiche_posee`), une valeur que le type de
+/// la case ne lit plus (ecrite par une version precedente ou a la main) est tenue pour NON DITE : `valeur` est vide a
+/// partir de `depuis`, comme une case videe, et rien ne s'invente a sa place (ni la valeur d'avant, ni un defaut). Elle
+/// se garde telle qu'ecrite et se reecrit telle quelle, tant que la compagnie ne redit pas la case a cette date
+/// (`dater` la remplace alors). Les donnees livrees et les charges ne la connaissent pas : elles restent strictes.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Datee<T> {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub depuis: Option<Jour>,
     /// La valeur ; nulle, la case est vide a partir de `depuis`.
-    #[serde(serialize_with = "socle::ecriture::case_ecrite")]
     pub valeur: Option<T>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// La valeur telle que le fichier l'ecrit, quand son type ne la lit pas (`valeur` est alors vide).
+    pub illisible: Option<socle::forme::ValeurIllisible>,
+}
+
+impl<T> Datee<T> {
+    /// Une valeur dite, lisible.
+    pub fn dite(depuis: Option<Jour>, valeur: Option<T>, note: Option<String>) -> Datee<T> {
+        Datee { depuis, valeur, note, illisible: None }
+    }
+}
+
+/// Elle s'ecrit `{"depuis", "valeur", "note"}`, `depuis` et `note` seulement s'ils sont dits ; une valeur illisible se
+/// reecrit telle qu'elle a ete lue.
+impl<T: EcritureDeCase> Serialize for Datee<T> {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let n = 1 + usize::from(self.depuis.is_some()) + usize::from(self.note.is_some());
+        let mut st = s.serialize_struct("Datee", n)?;
+        if let Some(d) = &self.depuis {
+            st.serialize_field("depuis", d)?;
+        }
+        match &self.illisible {
+            Some(v) => st.serialize_field("valeur", v)?,
+            None => st.serialize_field("valeur", &CaseEcrite(&self.valeur))?,
+        }
+        if let Some(n) = &self.note {
+            st.serialize_field("note", n)?;
+        }
+        st.end()
+    }
+}
+
+impl<'de, T: DeserializeOwned> Deserialize<'de> for Datee<T> {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields, bound(deserialize = "T: DeserializeOwned"))]
+        struct Lue<T> {
+            #[serde(default)]
+            depuis: Option<Jour>,
+            #[serde(default)]
+            valeur: socle::forme::LueOuIllisible<Option<T>>,
+            #[serde(default)]
+            note: Option<String>,
+        }
+        let l = Lue::<T>::deserialize(d)?;
+        Ok(match l.valeur {
+            socle::forme::LueOuIllisible::Lue(valeur) => Datee { depuis: l.depuis, valeur, note: l.note, illisible: None },
+            socle::forme::LueOuIllisible::Illisible(v) => Datee { depuis: l.depuis, valeur: None, note: l.note, illisible: Some(v) },
+        })
+    }
 }
 
 /// La valeur en vigueur a `jour` : celle dont le `depuis` est le plus recent sans le depasser (a meme date, la derniere
@@ -2506,11 +2660,11 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
 pub fn dater<T>(liste: &mut Option<Vec<Datee<T>>>, valeur: Option<T>, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>) {
     let liste = liste.get_or_insert_with(Vec::new);
     if liste.is_empty() && premiere_datee && depuis.is_some() {
-        liste.push(Datee { depuis: None, valeur: None, note: None });
+        liste.push(Datee::dite(None, None, None));
     }
     let depuis = if liste.is_empty() { None } else { depuis.copied() };
     liste.retain(|e| e.depuis != depuis);
-    liste.push(Datee { depuis, valeur, note: note.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string) });
+    liste.push(Datee::dite(depuis, valeur, note.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string)));
     liste.sort_by_key(|e| e.depuis); // stable : a meme date, la derniere ecrite gagne
 }
 
@@ -3612,9 +3766,35 @@ pub type Salaries = FichierDeFiches<IdSalarie, FicheSalarieDatee>;
 /// `config/spectacles.json`.
 pub type Spectacles = FichierDeFiches<IdSpectacle, FicheSpectacleDatee>;
 
-/// LA LECTURE D'UN FICHIER DE FICHES (`config/entreprise.json` en `FicheEntrepriseDatee`, `config/salaries.json` en
-/// `Salaries`, `config/spectacles.json` en `Spectacles`), la seule : `fichier` le nomme dans les refus, qui disent la cle
-/// fautive jusqu'a sa case et quoi faire.
+/// LA LECTURE DES FICHES D'UNE COMPAGNIE, la seule (`config/entreprise.json` en `FicheEntrepriseDatee`,
+/// `config/salaries.json` en `Salaries`, `config/spectacles.json` en `Spectacles` ; `nom` dit laquelle) : le fichier
+/// d'une installation posee (`socle::forme::lire_fichier_pose_en_phrase`). Une valeur qu'une case ne lit plus est tenue
+/// pour non dite et se garde (`Datee::illisible`), une cle que la forme ne connait pas se garde et ne dit rien : ni l'une
+/// ni l'autre ne ferme la compagnie (`non_lus` les dit). Un fichier qui n'est pas du JSON, ou dont la structure
+/// d'ensemble est fausse (une fiche qui n'est pas un objet, une case qui n'est pas une liste datee, un jour `depuis`
+/// illisible), se refuse en mots d'administrateur ; le detail technique va a part.
+pub fn lire_fiche_posee<T: DeserializeOwned>(chemin: &std::path::Path, nom: NomDeFiche) -> R<T> {
+    socle::forme::lire_fichier_pose_en_phrase(chemin, |cle, _detail| refus_de_fiche_posee(nom, cle))
+}
+
+/// Le refus des fiches d'une compagnie dont la structure ne se lit pas : quelles fiches, ou (la fiche et sa case, sans
+/// le nom du fichier ni le detail technique, qui va a part), et quoi faire.
+fn refus_de_fiche_posee(nom: NomDeFiche, chemin: &str) -> String {
+    let (quelles, se_lit) = match nom {
+        NomDeFiche::Entreprise => ("La fiche de l'entreprise", "ne se lit pas : elle n'a"),
+        NomDeFiche::Salarie => ("Les fiches des salariés", "ne se lisent pas : elles n'ont"),
+        NomDeFiche::Spectacle => ("Les fiches des spectacles", "ne se lisent pas : elles n'ont"),
+    };
+    let ou = if chemin.is_empty() { String::new() } else { format!(" (à « {} »)", chemin) };
+    format!(
+        "{}{} {} pas l'écriture que le logiciel connaît. Restaurer la dernière sauvegarde, ou signaler le problème au \
+développeur.",
+        quelles, ou, se_lit
+    )
+}
+
+/// LA LECTURE D'UN FICHIER DE LA CONFIGURATION ECRIT COMME UNE FICHE (les organismes, les rubriques de la compagnie),
+/// stricte : `fichier` le nomme dans les refus, qui disent la cle fautive jusqu'a sa case et quoi faire.
 pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str) -> R<T> {
     socle::forme::lire_fichier_en_phrase(chemin, |cle, detail| refus_de_fiche(fichier, cle, detail))
 }

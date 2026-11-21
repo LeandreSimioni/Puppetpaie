@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
+use crate::fiche::{ChampsEntreprise, Idcc, Lue, NomDeFiche, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles, TauxAtmp};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, SeuilNonPorte, ParametresDeLaReduction, Pile, Rubrique, RubriqueModifiee, Surcouche};
 use crate::bareme::VersementMobiliteDit;
 use socle::echec::Lieu;
@@ -1192,7 +1192,7 @@ struct PileLue {
     regles: Vec<Jour>,
 }
 
-/// Les fiches d'une compagnie telles qu'ecrites, datees, lues par leur forme (`fiche::lire_fichier`)...
+/// Les fiches d'une compagnie telles qu'ecrites, datees, lues par leur forme (`fiche::lire_fiche_posee`)...
 #[derive(Debug)]
 struct Fiches {
     entreprise: FicheEntrepriseDatee,
@@ -1218,9 +1218,9 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
             }
         }
     }
-    let entreprise = crate::fiche::lire_fichier(&chemins[0], ENTREPRISE.texte())?;
-    let salaries = crate::fiche::lire_fichier(&chemins[1], SALARIES.texte())?;
-    let spectacles = crate::fiche::lire_fichier(&chemins[2], SPECTACLES.texte())?;
+    let entreprise = crate::fiche::lire_fiche_posee(&chemins[0], NomDeFiche::Entreprise)?;
+    let salaries = crate::fiche::lire_fiche_posee(&chemins[1], NomDeFiche::Salarie)?;
+    let spectacles = crate::fiche::lire_fiche_posee(&chemins[2], NomDeFiche::Spectacle)?;
     let f = Arc::new(Fiches { entreprise, salaries, spectacles });
     if connue {
         cache.lock().unwrap().insert(cfg.to_path_buf(), (sig, f.clone()));
@@ -1767,6 +1767,21 @@ PSS_H_METROP).",
     /// Le numero de licence de la fiche entreprise a la date (`None` : pas de licence).
     pub fn licence(&self, jour: &Jour) -> Option<String> {
         self.entreprise_au(jour).licence_spectacle
+    }
+
+    /// CE QUE LES FICHES DE LA COMPAGNIE PORTENT ET QUE LE MOTEUR NE LIT PAS (`fiche::non_lus`) : l'entreprise, chaque
+    /// salarie, chaque spectacle, dans l'ordre des fichiers.
+    pub fn non_lus(&self) -> Vec<crate::fiche::NonLu> {
+        use crate::fiche::{non_lus, FicheNommee};
+        let f = &self.fiches;
+        let mut out = non_lus(&f.entreprise, &FicheNommee::Entreprise);
+        for (k, s) in &f.salaries.fiches {
+            out.extend(non_lus(s, &FicheNommee::Salarie(k.clone())));
+        }
+        for (k, s) in &f.spectacles.fiches {
+            out.extend(non_lus(s, &FicheNommee::Spectacle(k.clone())));
+        }
+        out
     }
 
     /// La fiche entreprise telle qu'ecrite, datee.

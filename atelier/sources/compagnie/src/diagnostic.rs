@@ -327,7 +327,7 @@ fn construire(racine: &Path) -> Personnes {
     };
     let salaries = droit::contexte::SALARIES.dans(racine);
     if salaries.is_file() {
-        match droit::fiche::lire_fichier::<droit::fiche::Salaries>(&salaries, droit::contexte::SALARIES.texte()) {
+        match droit::fiche::lire_fiche_posee::<droit::fiche::Salaries>(&salaries, droit::fiche::NomDeFiche::Salarie) {
             Ok(fiches) => {
                 for (rang, (cle, datee)) in fiches.fiches.iter().enumerate() {
                     let fiche = TextesDeFiche::de(datee);
@@ -350,7 +350,7 @@ fn construire(racine: &Path) -> Personnes {
     }
     let entreprise = droit::contexte::ENTREPRISE.dans(racine);
     if entreprise.is_file() {
-        match droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&entreprise, droit::contexte::ENTREPRISE.texte()) {
+        match droit::fiche::lire_fiche_posee::<droit::fiche::FicheEntrepriseDatee>(&entreprise, droit::fiche::NomDeFiche::Entreprise) {
             Ok(e) => {
                 let fiche = TextesDeFiche::de(&e);
                 let mut noms = Vec::new();
