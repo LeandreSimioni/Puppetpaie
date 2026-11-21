@@ -303,6 +303,8 @@ async function appelerMoteur(route, charge = {}) {
   // lu part.
   if (d.ecrit) oublierLeMois();
   if (!d.ok && d.refus.classe === "EnvoiBride") montrerEnvoiRefuse(d.refus.phrase);
+  // Une valeur d'une fiche à saisir de nouveau : la route refuse et renvoie à la demande, que la page montre (js/demarrage.js).
+  if (!d.ok && d.refus.classe === "ValeurARedire") montrerLaDemande();
   return lireReponse(d);
 }
 

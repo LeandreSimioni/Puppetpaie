@@ -116,8 +116,70 @@ function finirChargement() {
 
 demarrer().catch((e) => {
   finirChargement();
+  // Une valeur à saisir de nouveau : sa boîte le dit déjà (`montrerLaDemande`).
+  if (e.detail && e.detail.classe === "ValeurARedire") return;
   dire(e.message, "erreur");
 });
+
+/* UNE VALEUR D'UNE FICHE QUI NE SE LIT PLUS : toute route que le moteur ne sert pas d'ici là refuse en renvoyant à la
+   demande (`ValeurARedire`). La boîte montre la première valeur que la route `valeurs-illisibles` rend — sa phrase, sa
+   case dessinée comme dans sa fiche (`caseDeRoute`) — et la redit par `enregistrer-fiche`, avec la charge que la route
+   donne : la case saisie, ou vide exprès. Puis la suivante ; quand il n'en reste aucune, la page se recharge. La boîte
+   ne se ferme pas d'un clic à côté : rien d'autre ne se fait d'ici là. */
+let DEMANDE_MONTREE = false;
+async function montrerLaDemande() {
+  if (DEMANDE_MONTREE) return;
+  DEMANDE_MONTREE = true;
+  finirChargement();
+  let d;
+  try { d = await appelerMoteur("valeurs-illisibles"); } catch (e) { DEMANDE_MONTREE = false; dire(e.message, "erreur"); return; }
+  if (!d.valeurs.length) { location.reload(); return; }
+  const v = d.valeurs[0];
+  ouvrirBoite(`
+    <h3>${echapper(d.titre)}</h3>
+    <p>${echapper(v.phrase)}</p>
+    <div id="redire-case">${v.case ? caseDeRoute(v.case) : ""}</div>
+    <div id="redire-dit"></div>
+    <div class="actions">
+      <button class="secondaire" id="redire-vide">${echapper(d.vide)}</button>
+      ${v.case ? `<button class="primaire" id="redire-ok">${echapper(d.enregistrer)}</button>` : ""}
+    </div>`);
+  CLIC_DEHORS = () => {};
+  const bloc = document.getElementById("redire-case");
+  brancherLesCases(bloc);
+  const dit = document.getElementById("redire-dit");
+  let confirme = false;
+  const redire = async (valeur) => {
+    const charge = { ...v.enregistrer, changements: [{ case: v.cle, valeur }] };
+    if (confirme) charge.confirme = true;
+    let r;
+    try { r = await appelerMoteur("enregistrer-fiche", charge); } catch (e) {
+      dit.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
+      return;
+    }
+    // Un avertissement (une phrase à confirmer) : rien n'est écrit ; « Confirmer » renvoie la même charge, confirmée.
+    if (r.avertissement) {
+      dit.innerHTML = r.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("");
+      confirme = true;
+      const ok = document.getElementById("redire-ok");
+      if (ok) ok.textContent = d.confirmer;
+      return;
+    }
+    fermerBoite();
+    DEMANDE_MONTREE = false;
+    montrerLaDemande();
+  };
+  document.getElementById("redire-vide").onclick = () => redire(null);
+  const ok = document.getElementById("redire-ok");
+  if (ok) {
+    ok.onclick = () => {
+      const x = bloc.querySelector("[data-case]");
+      // Une case à cocher dit oui ou non telle qu'elle est ; toute autre, ce que sa forme lit.
+      const lu = x.dataset.forme === "oui_non" ? x.checked : lireLaCase(x);
+      redire(lu === undefined ? null : lu);
+    };
+  }
+}
 
 /* LA FENETRE PUPPETPAIE, SANS BARRE NOIRE. La
    fenetre n'a pas de bordure systeme : le bandeau EST sa barre de titre. Son

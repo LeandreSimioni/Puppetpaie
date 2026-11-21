@@ -141,11 +141,12 @@ struct ChargeDeLaReponse {
 
 /// UNE VALEUR A SAISIR DE NOUVEAU, telle que la demande la rend : sa phrase, sa fiche et le libelle de sa case en mots, ce
 /// qui est ecrit, depuis quand (aucun : de tout temps), la case a saisir (aucune : la table ne la decrit pas, elle ne peut
-/// que se dire vide), et la charge de la reponse.
+/// que se dire vide), et la charge de la reponse ; `cle` : la case, telle que les `changements` de la reponse la nomment.
 #[derive(Debug, serde::Serialize)]
 struct ValeurARedire {
     phrase: String,
     fiche: String,
+    cle: droit::fiche::CaseDeFiche,
     libelle: String,
     ecrite: String,
     depuis: Option<Jour>,
@@ -197,6 +198,7 @@ fn demande(ctx: &Contexte) -> R<ValeursIllisibles> {
         valeurs.push(ValeurARedire {
             phrase,
             fiche: fiche_dite(ctx, &a.fiche),
+            cle: a.case,
             libelle,
             ecrite: a.ecrite,
             depuis: a.depuis,
