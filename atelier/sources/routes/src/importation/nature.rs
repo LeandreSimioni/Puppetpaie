@@ -331,7 +331,7 @@ impl ContratsADire {
             ));
         }
         if self.par_bulletin > 0 {
-            dit.push(format!("{} contrat{} repris de ses seuls bulletins, sans contrat attesté : ils ne disent pas sa nature", self.par_bulletin, pluriel(self.par_bulletin)));
+            dit.push(format!("{} contrat{} repris de ses bulletins, que l'import n'a pas su rattacher à un contrat (son compte rendu dit pourquoi) : sa nature reste à dire", self.par_bulletin, pluriel(self.par_bulletin)));
         }
         if par_dsn > 0 {
             dit.push(format!("{} contrat{} repris de ses seules DSN : ce qu'elles en déclarent ne suffit pas à dire sa nature", par_dsn, pluriel(par_dsn)));
