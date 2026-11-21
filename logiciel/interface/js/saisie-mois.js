@@ -329,16 +329,6 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") fermerGrilleMois(); });
 
-/* UN CLIC SUR UNE DATE OUVRE LE CALENDRIER DU NAVIGATEUR, PARTOUT (les écrans qui ne passent pas encore par le
- * dessinateur). Sans cela il fallait viser la petite icône au bout de la case. */
-document.addEventListener("click", (e) => {
-  const c = e.target;
-  if (!(c instanceof HTMLInputElement) || !/^(date|month|datetime-local)$/.test(c.type)) return;
-  if (c.disabled || c.readOnly || typeof c.showPicker !== "function") return;
-  // Le navigateur qui refuse d'ouvrir le choix le dit ; l'icône de la case reste.
-  try { c.showPicker(); } catch (err) { dire(err.message, "erreur"); }
-});
-
 /* ------------------------------------------- l'enregistrement
    Ce qui est tapé dans une case EST la saisie : chaque case changée part tout de suite à sa route
    (`js/carte.js`), et la ligne d'état dit l'heure que le moteur a écrite (« Enregistré à 14:32 »). Rien ne part pour
