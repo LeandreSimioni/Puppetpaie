@@ -82,6 +82,12 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn contient(f: &Self::Fichier, cle: &Self::Cle) -> bool;
     /// La fiche telle que l'ecran l'a montree (`ctx.lue_au`), si elle existe.
     fn montree(ctx: &Contexte, cle: Option<&Self::Cle>) -> Option<Self::Plate>;
+    /// La fiche telle qu'ecrite, datee (ses temps : `ouverture::temps_de`), si elle existe.
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&Self::Cle>) -> Option<&'a Self>;
+    /// Ce que l'en-tete de la fiche rendue dit d'elle (`fiches::rendue`) ; rien, pour une fiche qui n'en dit rien.
+    fn entete(_cle: Option<&Self::Cle>, _p: &Self::Plate) -> super::rendue::EnteteDeLaFiche {
+        super::rendue::EnteteDeLaFiche::aucun()
+    }
     /// Les cases qui different d'une fiche a l'autre.
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
@@ -217,6 +223,9 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     fn montree(ctx: &Contexte, _cle: Option<&()>) -> Option<ChampsEntreprise> {
         Some(crate::etablissements::entreprise_montree(ctx))
+    }
+    fn brute<'a>(ctx: &'a Contexte, _cle: Option<&()>) -> Option<&'a FicheEntrepriseDatee> {
+        Some(ctx.entreprise_brute())
     }
     fn differentes(a: &ChampsEntreprise, b: &ChampsEntreprise) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -469,6 +478,9 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn montree(ctx: &Contexte, cle: Option<&IdSalarie>) -> Option<ChampsSalarie> {
         ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
     }
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&IdSalarie>) -> Option<&'a FicheSalarieDatee> {
+        ctx.salarie_brut(cle?)
+    }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
@@ -591,6 +603,31 @@ impl SorteDeFiche for FicheSpectacleDatee {
     }
     fn montree(ctx: &Contexte, cle: Option<&IdSpectacle>) -> Option<ChampsSpectacle> {
         ctx.spectacles.get(cle?).cloned().map(Self::retenue)
+    }
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&IdSpectacle>) -> Option<&'a FicheSpectacleDatee> {
+        ctx.spectacle_brut(cle?.as_str())
+    }
+    /// L'EN-TETE D'UN SPECTACLE : son titre (« Nouveau spectacle » pour une fiche neuve, « Spectacle à nommer » pour un
+    /// numero que l'import a lu sans titre, sinon le titre, ou la cle), puis son numero d'objet, ou sa cle ; une fiche
+    /// neuve dit d'ou viendra sa cle.
+    fn entete(cle: Option<&IdSpectacle>, p: &ChampsSpectacle) -> super::rendue::EnteteDeLaFiche {
+        let titre = p.titre.as_deref().map(str::trim).filter(|t| !t.is_empty());
+        let numero = p.ecrite(droit::fiche::CaseSpectacle::NumeroObjet.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        match cle {
+            None => super::rendue::EnteteDeLaFiche::de("Nouveau spectacle".to_string(), None, Some("La clé de la fiche se fabrique à l'enregistrement.")),
+            Some(c) => {
+                let titre = match titre {
+                    Some(t) if !crate::ouverture::a_nommer(Some(t)) => t.to_string(),
+                    Some(_) => "Spectacle à nommer".to_string(),
+                    None => Self::cle_dite(c),
+                };
+                let sous_titre = match numero {
+                    Some(n) => n,
+                    None => Self::cle_dite(c),
+                };
+                super::rendue::EnteteDeLaFiche::de(titre, Some(sous_titre), None)
+            }
+        }
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -1484,15 +1521,29 @@ pub(crate) fn verifier_fiche(ctx: &Contexte, t: FicheTapee) -> R<FicheVerifiee> 
 }
 
 fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerifiee> {
+    let anomalies = anomalies_saisies::<F>(ctx, &t)?;
+    let (phrase, phrases) = verdict(&anomalies);
+    Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
+}
+
+/// LES ANOMALIES D'UNE FICHE TAPEE `t`, comme a l'ecriture : derivee (`SorteDeFiche::deriver`, sans forcer : seul ce qui
+/// est vide ou faux se refait), verifiee par la table, puis les fautes de ses cases (a la porte, a la reconnaissance, a la
+/// derivation), chacune sur sa case. `verifier-fiche` et la fiche rendue (`fiches::rendue`) les disent.
+pub(crate) fn anomalies_saisies<F: SorteDeFiche>(ctx: &Contexte, t: &Tapee<F::Plate>) -> R<Vec<Anomalie>> {
     let mut derivee = t.fiche.clone();
-    let mut fautes = t.fautes;
+    let mut fautes = t.fautes.clone();
     fautes.extend(F::reconnaitre(ctx, &F::Plate::default(), &mut derivee)?);
     fautes.extend(F::deriver(&mut derivee, false, &|_| true)?);
     let mut anomalies = champs::verifier_fiche(F::a_juger(&derivee))?;
     anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);
+    Ok(anomalies)
+}
+
+/// Ce que la verification d'une fiche dit de ses anomalies : sa phrase, et une ligne par anomalie.
+pub(crate) fn verdict(anomalies: &[Anomalie]) -> (socle::texte::Phrase, Vec<String>) {
     let phrases: Vec<String> = anomalies.iter().map(|a| format!("{} : {}", a.champ, a.message)).collect();
     let phrase = if phrases.is_empty() { socle::texte::Phrase::fixe("La fiche est juste.") } else { socle::phrase!("Anomalies de la fiche : {}.", phrases.len()) };
-    Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
+    (phrase, phrases)
 }
 
 /// Ce que le moteur PROPOSERAIT pour une case encore vide.

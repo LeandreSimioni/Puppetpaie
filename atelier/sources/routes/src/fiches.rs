@@ -1,5 +1,5 @@
 //! Configuration › Entreprise, Salariés, Spectacles : les fiches des salaries, des spectacles et de l'entreprise
-//! (`verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
+//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
@@ -37,6 +37,8 @@ use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
+mod rendue;
+pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
 pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
@@ -53,6 +55,21 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Fiches);
 
 /// Les routes de ce module, et leurs fiches.
 pub const ROUTES: &[Fiche] = &[
+    Fiche {
+        route: Route::Fiche,
+        geste: "Dire une fiche telle qu'on la saisit : ses cases ouvertes, dans l'ordre, et leurs fautes.",
+        charge: &[
+            NOM_FICHE,
+            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
+            Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche entière telle qu'on la saisit (les cases que la route configuration décrit) ; absente : la fiche telle qu'elle est enregistrée", avance: false },
+        ],
+        exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
+        rend: "titre, sous_titre et note de l'en-tête ; erreurs (l'encart, ou null) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        refus: &[MANQUE, FORME],
+        acte: Acte::Lit,
+        phrase: 0,
+        ecran: ECRAN,
+    },
     Fiche {
         route: Route::Permanents,
         geste: "Dire les cases que montre la fiche en cours de saisie.",
@@ -229,6 +246,7 @@ pub const ROUTES: &[Fiche] = &[
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
+        Route::Fiche => en_json(rendue::fiche(ctx, charge.lire()?)?),
         Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => {
