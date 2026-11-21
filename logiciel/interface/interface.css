@@ -309,6 +309,7 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case-lignes { grid-column: 1 / -1; }
 .case-objet { font-size: 12px; overflow-wrap: anywhere; }
 .case-dit { font-size: 12px; color: var(--discret); }
+.case-dits .case-dit { display: block; }
 .case-parties { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .case-parties .partie { display: inline-flex; gap: 4px; align-items: center; }
 /* Une fiche rendue : deux cases par ligne, une case « pleine » sur toute la ligne, un titre à chaque bloc. */

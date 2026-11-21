@@ -430,5 +430,23 @@ fn en_mots(champ: Option<&Champ>, v: Option<ValeurDeCase>) -> String {
             return l.to_string();
         }
     }
+    // Une case faite de cases se dit par les libelles de celles que la fiche montre, jamais par leurs cles ; celles
+    // qu'elle ne montre pas (la provenance d'un taux) ne se disent pas.
+    if let (Some(cases), Some(valeurs)) = (champ.and_then(|c| c.champs.as_ref()), v.cases()) {
+        let mut dits = Vec::new();
+        for c in cases.iter().filter(|c| c.ecran) {
+            let cle = c.cle.to_string();
+            let Some((_, Some(x))) = valeurs.iter().find(|(k, _)| *k == cle) else { continue };
+            let mot = match (c.libelles.as_ref(), x.ecrite()) {
+                (Some(libelles), MotEcrit::Mot(code)) => match libelles.de(&code) {
+                    Some(l) => l.to_string(),
+                    None => x.en_mots(),
+                },
+                _ => x.en_mots(),
+            };
+            dits.push(format!("{} : {}", c.libelle, mot));
+        }
+        return dits.join(" · ");
+    }
     v.en_mots()
 }

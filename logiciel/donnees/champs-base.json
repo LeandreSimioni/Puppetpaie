@@ -52,7 +52,7 @@
    "si": null,
    "si_etablissements": false,
    "si_entreprise": null,
-   "ecran": true
+   "ecran": false
   },
   {
    "cle": "nic", "bloc": "La compagnie", "largeur": "demie",
@@ -68,7 +68,7 @@
    "si": null,
    "si_etablissements": false,
    "si_entreprise": null,
-   "ecran": true
+   "ecran": false
   },
   {
    "cle": "siret", "bloc": "La compagnie", "largeur": "demie",
