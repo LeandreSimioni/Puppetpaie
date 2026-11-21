@@ -63,7 +63,7 @@ pub const ROUTES: &[Fiche] = &[
     },
     Fiche {
         route: Route::Importer,
-        geste: "Reprendre les pièces d'un ancien logiciel, déposées dans la boîte import/ : fiches, engagements importés.",
+        geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
         charge: &[],
         exemple: r#"{}"#,
         rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
@@ -117,7 +117,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         // La boite aux lettres `import/` entiere, bulletins compris (`import::bulletins`).
         Route::ImportationApercu => {
             let super::SansCharge {} = charge.lire()?;
-            en_json(crate::importation::bulletins::apercu_dossier(ctx, &boite_d_import(ctx)?)?)
+            en_json(crate::importation::bulletins::apercu_dossier(ctx)?)
         }
         Route::ImportationEtat => {
             let _: super::SansCharge = charge.lire()?;

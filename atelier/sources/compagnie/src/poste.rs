@@ -93,8 +93,8 @@ pub fn entre_apostrophes_powershell(t: &str) -> String {
 }
 
 /// Ce que la fenetre ouvre pour la page d'une compagnie : `chemin`, tel qu'une route l'a rendu, relatif a la compagnie
-/// ou absolu ; jamais par `..`. Un chemin absolu hors de la compagnie n'est ouvert que s'il est un dossier (celui que
-/// l'on a choisi pour l'import). `creer` : un dossier de la compagnie qui manque se cree (la boite `import/`).
+/// ou absolu ; jamais par `..`. Un chemin absolu hors de la compagnie n'est ouvert que s'il est un dossier.
+/// `creer` : un dossier de la compagnie qui manque se cree (la boite `import/`).
 pub fn ouvrir_pour_la_page(racine: &Path, chemin: &str, creer: bool) -> R<String> {
     let p = Path::new(chemin.trim());
     if chemin.trim().is_empty() || p.components().any(|c| c == Component::ParentDir) {

@@ -121,7 +121,7 @@ const AIDES: &[(&str, &str)] = &[
     ("import_numero", "Le numéro du contrat : la rubrique S21.G00.40.009 de sa dernière DSN."),
     ("import_quotite", "La durée du travail, en heures par mois : la rubrique S21.G00.40.013 de la DSN."),
     ("import_ecarts", "Le bulletin fait foi : c'est son montant qui s'écrit, l'écart reste noté ici."),
-    ("import_copies", "Les fichiers lus sont copiés dans l'historique de la compagnie ; vous pouvez vider le dossier d'import."),
+    ("import_copies", "Les fichiers lus sont copiés dans l'historique de la compagnie ; gardez-les aussi dans le dossier d'import : une version suivante du logiciel pourra en lire davantage."),
     ("import_rien", "Rien à reprendre : tout est déjà là."),
     ("import_avant_clic", "Rien n'est écrit avant ce clic."),
 ];

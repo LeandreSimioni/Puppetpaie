@@ -129,7 +129,8 @@ pub(crate) struct DossierLu {
 }
 
 /// `importation-apercu` sur la boite aux lettres `import/` (`crate::import::boite_d_import`).
-pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
+pub(crate) fn apercu_dossier(ctx: &Contexte) -> R<Importation> {
+    let dossier = &crate::import::boite_d_import(ctx)?;
     // Ce que l'import ferait des matricules (`importation::matricules`), face a ce qui est parti d'ici (le journal, lu
     // une fois) : chaque ligne, et les fiches neuves dont le matricule ne se poserait pas.
     let departs = envois::journal::lu(&ctx.racine)?.departs;
