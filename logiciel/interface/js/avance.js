@@ -548,7 +548,8 @@ function fautesDeLaFiche(cible, cases) {
  *  qui est déjà tapé reste dans sa case, et le curseur aussi) ; sinon, seules ses fautes changent. */
 function poserLaFiche(cible, f) {
   const avant = [...cible.querySelectorAll("[data-case-de]")].map((b) => b.dataset.caseDe).join(" ");
-  if (avant !== f.cases.map((c) => c.cle).join(" ")) {
+  if (!cible.dataset.posee || avant !== f.cases.map((c) => c.cle).join(" ")) {
+    cible.dataset.posee = "1";
     const tapees = new Map([...cible.querySelectorAll("[data-case][data-cle]")].map((x) => [x.dataset.cle, x]));
     const actif = document.activeElement && cible.contains(document.activeElement) ? document.activeElement.dataset.cle : null;
     cible.innerHTML = casesDeLaFiche(f);
