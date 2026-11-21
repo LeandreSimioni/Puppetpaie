@@ -50,7 +50,7 @@ use std::path::Path;
 
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecran::couleur_de_l_etat;
-use crate::service::contexte;
+use crate::service::contexte_de_la_route;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
 
@@ -93,6 +93,7 @@ mod importation;
 mod metier;
 mod non_lus;
 mod obligations;
+mod redire;
 mod regularisation;
 pub mod scenario;
 pub mod service;
@@ -256,12 +257,11 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     // UNE ROUTE QUI PORTE UN MOIS LIT LA CONFIGURATION DE CE MOIS (`Contexte::du_mois`) : sa paie, sa DSN et ses documents
     // se font sous les valeurs qui valaient alors, jamais sous celles d'aujourd'hui. Un mois qui ne se lit pas refuse la
     // route, rien ne s'ecrit.
+    // LA COMPAGNIE QUE LA ROUTE OUVRE, et le barrage d'une valeur a saisir de nouveau (`service::contexte_de_la_route`).
     let ctx = match charge.mois()? {
-        Some(m) => contexte(o)?.du_mois(m)?,
-        None => contexte(o)?,
+        Some(m) => contexte_de_la_route(o, route)?.du_mois(m)?,
+        None => contexte_de_la_route(o, route)?,
     };
-    // Ce que les fiches portent et ne lisent pas ne ferme rien : l'editeur l'apprend, une fois par chose (`non_lus`).
-    non_lus::noter(&ctx);
     let porte = Porte { route, ctx: &ctx, options: o };
     let dans = |l: &[catalogue::Fiche]| catalogue::dans(l, route).is_some();
     let rendu: R<Rendu> = match route {
@@ -296,6 +296,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         Route::HistoriqueMois => crate::historique_mois::route(&porte, charge),
         _ if dans(dossier_salarie::ROUTES) => dossier_salarie::route(&porte, charge),
         _ if dans(ouverture::ROUTES) => ouverture::route(&porte, charge),
+        _ if dans(redire::ROUTES) => redire::route(&porte, charge),
         _ if dans(rappels::ROUTES) => rappels::route(&porte, charge),
         // Les conseils « Le saviez-vous ? » : le conseil du jour, ceux du dossier d'un salarie, le resume de l'accueil.
         _ if dans(crate::gestes::conseils::ROUTES) => crate::gestes::conseils::route(&porte, charge),

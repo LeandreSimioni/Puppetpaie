@@ -1004,6 +1004,10 @@ fn changements_a_dater<F: SorteDeFiche>(avant: &F::Plate, apres: &F::Plate, cles
 /// `depuis` ou non ; une valeur `premiere_datee` (le taux de PAS recu) vaut a partir de `depuis` meme dans une case vide :
 /// avant lui, la fiche ne disait rien. Les notes s'ecrivent telles quelles. Les cases `a_part` s'ecrivent a part. Rend
 /// les cases ecrites.
+///
+/// UNE CASE REDITE (`redites` : nommee par la saisie, et qui porte une valeur illisible, `crate::redire`) s'ecrit
+/// toujours, a la date de sa premiere valeur illisible, qu'elle remplace seule (`droit::fiche::premiere_illisible`) :
+/// saisie, ou vide expres ; elle ne demande aucune date d'effet, puisqu'elle a la sienne.
 pub(crate) fn ecrire_datee<F: SorteDeFiche>(
     brute: &mut F,
     avant: &F::Plate,
@@ -1012,9 +1016,11 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
     depuis: Option<Jour>,
     note: Option<&str>,
     lue_au: &Jour,
+    redites: &[CaseDeFiche],
 ) -> R<Vec<CaseDeFiche>> {
-    let cles: Vec<CaseDeFiche> = F::differentes(avant, apres).into_iter().filter(|k| !F::a_part().contains(k)).collect();
+    let mut cles: Vec<CaseDeFiche> = F::differentes(avant, apres).into_iter().filter(|k| !F::a_part().contains(k) && !redites.contains(k)).collect();
     let a_dater = changements_a_dater::<F>(avant, apres, &cles, premiere_datee)?;
+    cles.extend(redites.iter().copied().filter(|k| !F::a_part().contains(k)));
     if depuis.is_none() && !a_dater.is_empty() {
         return Err(refus(format!(
             "Changer {} demande sa date d'effet (« a partir du ») : ce qui precede garde l'ancienne valeur, et la date ne \
@@ -1026,15 +1032,20 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
     let mut ecrites = Vec::new();
     let lisibles = champs::formes_lisibles(F::NOM)?;
     for k in cles {
+        let redite = if redites.contains(&k) { droit::fiche::premiere_illisible(brute, k) } else { None };
         let (a, b) = (avant.valeur_ecrite(k), apres.valeur_ecrite(k));
         let (a, b) = (a.as_ref(), b.as_ref());
         let rien = b.is_none_or(|v| v.ecrite() == MotEcrit::Mot(String::new()) || (v.cases().is_some() && sans_valeur(Some(v))));
-        if (case_vide(a) && rien) || (a.is_some() && b.is_some() && meme_case(a, b, &lisibles)) {
+        if redite.is_none() && ((case_vide(a) && rien) || (a.is_some() && b.is_some() && meme_case(a, b, &lisibles))) {
             continue;
         }
         let jours = brute.depuis(k);
         let datee = depuis.is_some() && a_dater.contains(&k);
-        let jour = if datee { depuis } else { jours.iter().copied().filter(|j| j.is_none_or(|j| j <= *lue_au)).last().flatten() };
+        let jour = match redite {
+            Some(sienne) => sienne,
+            None if datee => depuis,
+            None => jours.iter().copied().filter(|j| j.is_none_or(|j| j <= *lue_au)).last().flatten(),
+        };
         let ch = F::changement(apres, k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)))?;
         // Datee, la valeur ne vaut qu'a partir de `depuis`, meme dans une case vide : avant lui, la fiche ne disait rien.
         ecritures.push((ch, jour, datee));
@@ -1083,7 +1094,8 @@ pub(crate) fn poser_au<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     for ch in changements {
         F::appliquer(&mut apres, ch);
     }
-    ecrire_datee::<F>(brute, &avant, &apres, premiere_datee, depuis, note, lue_au)?;
+    // Ce que le moteur pose de lui-meme ne redit aucune valeur illisible : seule la compagnie la redit.
+    ecrire_datee::<F>(brute, &avant, &apres, premiere_datee, depuis, note, lue_au, &[])?;
     ecrire_fichier::<F>(ctx, &contenu)
 }
 
@@ -1156,6 +1168,8 @@ pub(crate) struct Preparee<F: SorteDeFiche> {
     apres: F::Plate,
     /// Ce que `completer_neuve` a donne a une fiche neuve, que sa fiche datee garde (`SorteDeFiche::memoriser`).
     memoire: F::Memoire,
+    /// Les cases que la saisie redit : nommees, et qui portent une valeur illisible (`ecrire_datee`).
+    redites: Vec<CaseDeFiche>,
 }
 
 impl<F: SorteDeFiche> Preparee<F> {
@@ -1188,7 +1202,13 @@ pub(crate) fn preparer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, ch
     if !fautes.is_empty() {
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
-    Ok(Preparee { cle: cle.cloned(), avant, apres, memoire })
+    // Les cases nommees qui portent une valeur illisible : la saisie les redit (`crate::redire`).
+    let illisibles = match F::brute(ctx, cle) {
+        Some(b) => droit::fiche::cases_illisibles(b),
+        None => Vec::new(),
+    };
+    let redites = nommees.iter().copied().filter(|k| illisibles.contains(k)).collect();
+    Ok(Preparee { cle: cle.cloned(), avant, apres, memoire, redites })
 }
 
 /// Ce que l'ecriture d'une fiche a fait : sa cle (celle d'une fiche neuve est fabriquee ici), les anomalies, si le
@@ -1216,7 +1236,7 @@ pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forc
         cle => cle,
     };
     let brute = F::ou_neuve(&mut contenu, cle.as_ref())?;
-    let mut champs = ecrire_datee::<F>(brute, &p.avant, &p.apres, false, depuis, note, &ctx.lue_au)?;
+    let mut champs = ecrire_datee::<F>(brute, &p.avant, &p.apres, false, depuis, note, &ctx.lue_au, &p.redites)?;
     if neuve {
         F::memoriser(brute, p.memoire);
     }
@@ -1307,7 +1327,8 @@ pub(crate) struct Avertissement {
 /// L'avertissement d'une fiche preparee ; `None` : rien n'est a dater ni a confirmer. N'ecrit rien.
 fn avertissement<F: SorteDeFiche>(ctx: &Contexte, p: &Preparee<F>) -> R<Option<Avertissement>> {
     let usage = F::usage(ctx, &p.avant, &p.apres)?;
-    let cles: Vec<CaseDeFiche> = F::differentes(&p.avant, &p.apres).into_iter().filter(|k| !F::a_part().contains(k)).collect();
+    // Une case redite a sa date, celle de la valeur illisible qu'elle remplace : rien a dater pour elle (`ecrire_datee`).
+    let cles: Vec<CaseDeFiche> = F::differentes(&p.avant, &p.apres).into_iter().filter(|k| !F::a_part().contains(k) && !p.redites.contains(k)).collect();
     let a_dater = changements_a_dater::<F>(&p.avant, &p.apres, &cles, false)?;
     let mut changements = changements_dits::<F>(ctx, &p.avant, &p.apres, &a_dater)?;
     if !F::est_vide(&p.avant) {

@@ -434,12 +434,25 @@ pub fn en_fichier_pose() -> bool {
 pub struct ValeurIllisible(Value);
 
 impl ValeurIllisible {
-    /// La valeur telle qu'on peut la montrer : un texte tel quel, toute autre valeur dans son ecriture JSON.
+    /// LA VALEUR TELLE QU'UN ADMINISTRATEUR LA LIT : un texte tel quel, un nombre ou un oui-non tel qu'il s'ecrit, une
+    /// liste ou un objet par leurs valeurs, separees d'un point median (les cles d'un objet sont des noms internes : elles
+    /// ne se montrent pas) ; rien d'ecrit, un tiret.
     pub fn ecrite(&self) -> String {
-        match &self.0 {
-            Value::String(t) => t.clone(),
-            v => v.to_string(),
+        fn feuilles(v: &Value, out: &mut Vec<String>) {
+            match v {
+                Value::Null => {}
+                Value::String(t) => out.push(t.clone()),
+                Value::Array(l) => l.iter().for_each(|x| feuilles(x, out)),
+                Value::Object(o) => o.values().for_each(|x| feuilles(x, out)),
+                Value::Bool(_) | Value::Number(_) => out.push(v.to_string()),
+            }
         }
+        let mut out = Vec::new();
+        feuilles(&self.0, &mut out);
+        if out.is_empty() {
+            return "—".to_string();
+        }
+        out.join(" · ")
     }
 }
 

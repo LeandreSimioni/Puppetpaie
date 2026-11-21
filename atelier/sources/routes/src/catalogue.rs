@@ -181,6 +181,7 @@ routes! {
         HistoriqueMois = "historique-mois",
         Etat = "etat",
         Configuration = "configuration",
+        ValeursIllisibles = "valeurs-illisibles",
         MajEtat = "maj-etat",
         CourrielsFictifs = "courriels-fictifs",
         Rappels = "rappels",
@@ -262,6 +263,18 @@ impl Acte {
             Acte::Engage => "engage (le mot de passe du logiciel, tapé par un humain)",
         }
     }
+}
+
+/// CE QUE FAIT LA ROUTE PENDANT QU'UNE VALEUR D'UNE FICHE ATTEND D'ETRE SAISIE DE NOUVEAU (`crate::redire`) : tant que la
+/// compagnie n'a pas repondu, rien ne se calcule, ne s'ecrit de soi-meme ni ne part. Le barrage (`redire::barrage`) ne lit
+/// que ceci : chaque fiche le dit, une route neuve ne compile pas sans le dire.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PendantLaDemande {
+    /// Elle se sert : elle lit l'etat de la compagnie sans rien calculer, elle est la demande ou sa reponse, ou elle ne
+    /// porte sur aucune compagnie (l'accueil, le catalogue, ecrire au developpeur).
+    Servie,
+    /// Elle refuse en renvoyant a la demande (`Classe::ValeurARedire`).
+    Refusee,
 }
 
 /// LES PLACES DE L'ECRAN, telles que la page les nomme : l'onglet, et le sous-onglet de la Configuration. Une place se
@@ -632,6 +645,8 @@ pub struct FicheEcrite {
     ecran: Option<&'static str>,
     affichage: &'static str,
     bouton: Option<&'static str>,
+    /// Vrai : elle se sert pendant qu'une valeur attend d'etre saisie de nouveau (`Fiche::pendant_la_demande`).
+    servie_pendant_la_demande: bool,
 }
 
 /// Le catalogue entier, tel que `moteur routes --json` l'imprime.
@@ -656,6 +671,8 @@ pub struct Fiche {
     pub phrase: usize,
     /// Ou la route se voit a l'ecran, et si elle est avancee.
     pub ecran: Ecran,
+    /// Ce qu'elle fait pendant qu'une valeur d'une fiche attend d'etre saisie de nouveau.
+    pub pendant_la_demande: PendantLaDemande,
 }
 
 /// Ce que bien des fiches partagent : le mois de l'ecran, et les refus de la forme de la charge.
@@ -697,6 +714,7 @@ impl Fiche {
                 Ecran::Auto(_, b) | Ecran::DessineAvecBouton(_, b) => Some(b.texte()),
                 Ecran::Dessine(_) | Ecran::DessineAvance(_) | Ecran::Geste(_) | Ecran::GesteAvance(_) | Ecran::Lecture | Ecran::LectureAvancee => None,
             },
+            servie_pendant_la_demande: self.pendant_la_demande == PendantLaDemande::Servie,
         })
     }
 
@@ -721,6 +739,9 @@ impl Fiche {
         t.push_str(&format!("  Exemple : echo '{{\"route\":\"{}\",\"charge\":{}}}' | moteur route\n", self.nom(), self.exemple));
         t.push_str(&format!("  Rend : {}\n", self.rend));
         t.push_str(&format!("  Écran : {}\n", self.ecran.texte()));
+        if self.pendant_la_demande == PendantLaDemande::Servie {
+            t.push_str("  Servie aussi quand une valeur d'une fiche attend d'être saisie de nouveau\n");
+        }
         if self.phrase > 0 {
             t.push_str(&format!("  Phrase : au plus {} caractères\n", self.phrase));
         }
@@ -749,6 +770,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     acte: Acte::Lit,
     phrase: 0,
     ecran: Ecran::LectureAvancee,
+    pendant_la_demande: PendantLaDemande::Servie,
 }];
 
 /// La charge de `routes` : toutes les routes (`avance`), ou le chemin simple.
@@ -790,7 +812,7 @@ fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {
 }
 
 /// Les modules dont les routes portent leur fiche, dans l'ordre du catalogue : l'ordre ou leurs exemples se jouent.
-pub const FICHES: [&[Fiche]; 30] = [
+pub const FICHES: [&[Fiche]; 31] = [
     crate::engagement::ROUTES,
     crate::etat_garde::ROUTES,
     crate::mois::ROUTES,
@@ -815,6 +837,7 @@ pub const FICHES: [&[Fiche]; 30] = [
     crate::filet::ROUTES,
     crate::historique_mois::ROUTES,
     crate::ouverture::ROUTES,
+    crate::redire::ROUTES,
     crate::rappels::ROUTES,
     crate::gestes::conseils::ROUTES,
     crate::gestes::ouverture::ROUTES,

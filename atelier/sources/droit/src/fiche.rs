@@ -2445,11 +2445,11 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// tout se garde dans le fichier tel qu'ecrit, et rien ne s'invente a sa place.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NonLu {
-    /// UNE VALEUR DATEE ILLISIBLE (`Datee::illisible`) : la case est vide a partir de son `depuis`, et le calcul ou
-    /// l'acte qui en a besoin refuse en la nommant, comme pour toute case vide. `rang` : sa place dans la liste datee de
-    /// la case, telle qu'ecrite (0 : la premiere).
+    /// UNE VALEUR DATEE ILLISIBLE (`Datee::illisible`) : la compagnie la saisit de nouveau avant tout autre geste, et rien
+    /// ne se calcule d'ici la (`routes::redire`). `rang` : sa place dans la liste datee de la case, telle qu'ecrite (0 :
+    /// la premiere) ; `ecrite` : ce que le fichier porte, en mots (`socle::forme::ValeurIllisible::ecrite`).
     Valeur { fiche: FicheNommee, case: CaseDeFiche, rang: usize, depuis: Option<Jour>, ecrite: String },
-    /// UNE CLE QUE LA FORME NE CONNAIT PAS : elle ne dit rien, et seul l'editeur l'apprend.
+    /// UNE CLE QUE LA FORME NE CONNAIT PAS : elle se garde, ne dit rien, ne demande rien, et seul l'editeur l'apprend.
     Cle { fiche: FicheNommee, cle: String },
 }
 
@@ -2458,17 +2458,6 @@ impl NonLu {
     pub fn fiche(&self) -> &FicheNommee {
         match self {
             NonLu::Valeur { fiche, .. } | NonLu::Cle { fiche, .. } => fiche,
-        }
-    }
-
-    /// CE QUE LA COMPAGNIE LIT SUR LA CASE (une anomalie de sa fiche) : la valeur telle qu'ecrite, et quoi faire ;
-    /// `choix` : la case se choisit dans une liste. Une cle inconnue ne se dit pas a la compagnie : aucune.
-    pub fn phrase(&self, choix: bool) -> Option<String> {
-        match self {
-            NonLu::Valeur { ecrite, .. } => {
-                Some(format!("Cette valeur ne se lit plus : « {} ». La {} de nouveau.", ecrite, if choix { "choisir" } else { "saisir" }))
-            }
-            NonLu::Cle { .. } => None,
         }
     }
 }
@@ -2510,6 +2499,25 @@ pub fn cases_illisibles<F: FicheDatee>(f: &F) -> Vec<CaseDeFiche> {
     c.0
 }
 
+/// LA PREMIERE VALEUR ILLISIBLE DE LA CASE `case` de la fiche datee `f`, par son `depuis` (`Some(None)` : de tout temps) ;
+/// aucune si la case n'en porte pas. Redite, c'est elle que la valeur remplace, a cette date (`routes::fiches`).
+pub fn premiere_illisible<F: FicheDatee>(f: &F, case: CaseDeFiche) -> Option<Option<Jour>> {
+    struct Premiere {
+        case: CaseDeFiche,
+        depuis: Option<Option<Jour>>,
+    }
+    impl VoirListe for Premiere {
+        fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]) {
+            if cle == self.case && self.depuis.is_none() {
+                self.depuis = liste.iter().find(|e| e.est_illisible()).map(|e| e.depuis);
+            }
+        }
+    }
+    let mut p = Premiere { case, depuis: None };
+    f.voir_listes(&mut p);
+    p.depuis
+}
+
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
@@ -2519,10 +2527,11 @@ pub trait VoirListe {
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
 ///
 /// UNE VALEUR ILLISIBLE (`illisible`) : dans le fichier d'une compagnie (`lire_fiche_posee`), une valeur que le type de
-/// la case ne lit plus (ecrite par une version precedente ou a la main) est tenue pour NON DITE : `valeur` est vide a
-/// partir de `depuis`, comme une case videe, et rien ne s'invente a sa place (ni la valeur d'avant, ni un defaut). Elle
-/// se garde telle qu'ecrite et se reecrit telle quelle, tant que la compagnie ne redit pas la case a cette date
-/// (`dater` la remplace alors). Les donnees livrees et les charges ne la connaissent pas : elles restent strictes.
+/// la case ne lit plus (ecrite par une version precedente ou a la main) : `valeur` est vide, et rien ne s'invente a sa
+/// place (ni la valeur d'avant, ni un defaut). AUCUN CALCUL NE LA VOIT : tant qu'elle est la, les routes de la compagnie
+/// ne font que la demander (`routes::redire`). Elle se garde telle qu'ecrite et se reecrit telle quelle, jusqu'a ce que
+/// la compagnie la redise (`premiere_illisible` : redite, elle est remplacee a son `depuis`). Les donnees livrees et les
+/// charges ne la connaissent pas : elles restent strictes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Datee<T> {
     pub depuis: Option<Jour>,

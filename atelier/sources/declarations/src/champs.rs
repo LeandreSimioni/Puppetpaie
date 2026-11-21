@@ -1700,20 +1700,6 @@ pub fn des_fautes(nom: NomDeFiche, fautes: &[droit::fiche::FauteDeCase]) -> R<Ve
         .collect())
 }
 
-/// LES VALEURS ILLISIBLES DE LA FICHE `fiche` (`non_lus` : celles de la compagnie, `droit::contexte::Contexte::non_lus`),
-/// EN ANOMALIES PRETES A POSER sur ses cases, comme les fautes d'une saisie (`des_fautes`) : « Cette valeur ne se lit
-/// plus : « fin du contart ». La choisir de nouveau. » ; « saisir » pour une case qui ne se choisit pas
-/// (`droit::fiche::NonLu::phrase`). Une cle inconnue ne se dit pas a la compagnie.
-pub fn illisibles(fiche: &droit::fiche::FicheNommee, non_lus: &[droit::fiche::NonLu]) -> R<Vec<Anomalie>> {
-    let mut fautes = Vec::new();
-    for n in non_lus.iter().filter(|n| n.fiche() == fiche) {
-        let droit::fiche::NonLu::Valeur { case, .. } = n else { continue };
-        let choix = champ(fiche.nom(), *case)?.is_some_and(|c| matches!(c.forme, Forme::Choix | Forme::Pays | Forme::Booleen | Forme::CodeAtmp));
-        fautes.extend(n.phrase(choix).map(|phrase| droit::fiche::FauteDeCase { case: *case, chemin: None, phrase }));
-    }
-    des_fautes(fiche.nom(), &fautes)
-}
-
 /// Le texte d'une case texte, sans ses blancs de bord, s'il en reste.
 fn texte_dit(t: &Option<String>) -> Option<String> {
     t.portee().map(|t| strip(t).to_string()).filter(|t| !t.is_empty())

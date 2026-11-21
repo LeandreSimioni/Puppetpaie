@@ -186,6 +186,12 @@ pub(crate) fn case_a_remplir(nom: NomDeFiche, chemin: &CheminDeFiche, valeur: Op
     Ok(champs::champ(nom, k)?.filter(|c| c.ecran && !c.calcule()).and_then(|c| case_du_champ(&c, valeur)))
 }
 
+/// LA CASE A SAISIR DE NOUVEAU (`crate::redire`) : la case `k` de la fiche `nom`, dessinee comme dans sa fiche, vide.
+/// Aucune pour une cle que la table ne connait pas, ou pour la ligne de l'histoire.
+pub(crate) fn case_a_redire(nom: NomDeFiche, k: CaseDeFiche) -> R<Option<CaseDeLaFiche>> {
+    Ok(champs::champ(nom, k)?.and_then(|c| case_du_champ(&c, None)))
+}
+
 /// La case que la fiche montre pour la cle `k` : la forme lisible dont elle se deduit, ou elle-meme.
 fn a_l_ecran(table: &[Champ], k: CaseDeFiche) -> CaseDeFiche {
     match table.iter().find(|c| c.cle == k) {
