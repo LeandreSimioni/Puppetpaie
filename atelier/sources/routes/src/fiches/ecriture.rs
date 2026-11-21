@@ -1539,6 +1539,13 @@ pub(crate) fn anomalies_saisies<F: SorteDeFiche>(ctx: &Contexte, t: &Tapee<F::Pl
     Ok(anomalies)
 }
 
+/// LES ANOMALIES D'UNE FICHE ENREGISTREE `plate` (telle que le moteur la retient, `SorteDeFiche::retenue`), verifiee
+/// telle qu'elle est, par la table : la pastille de sa ligne dans la liste (`configuration`) et la fiche ouverte sans
+/// saisie (`fiches::rendue`) les comptent ensemble.
+pub(crate) fn anomalies_enregistrees<F: SorteDeFiche>(plate: &F::Plate) -> R<Vec<Anomalie>> {
+    champs::verifier_fiche(F::a_juger(plate))
+}
+
 /// Ce que la verification d'une fiche dit de ses anomalies : sa phrase, et une ligne par anomalie.
 pub(crate) fn verdict(anomalies: &[Anomalie]) -> (socle::texte::Phrase, Vec<String>) {
     let phrases: Vec<String> = anomalies.iter().map(|a| format!("{} : {}", a.champ, a.message)).collect();

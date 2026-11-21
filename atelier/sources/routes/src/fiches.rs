@@ -39,7 +39,7 @@ use socle::texte::{capitaliser, strip};
 mod ecriture;
 mod rendue;
 pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
-pub(crate) use ecriture::{avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
@@ -61,9 +61,9 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             NOM_FICHE,
             Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
-            Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche entière telle qu'on la saisit (les cases que la route configuration décrit) ; absente : la fiche telle qu'elle est enregistrée", avance: false },
+            Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
         ],
-        exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
+        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
         rend: "titre, sous_titre et note de l'en-tête ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         acte: Acte::Lit,

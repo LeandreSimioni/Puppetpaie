@@ -531,7 +531,7 @@ async function ouvrirLaFicheRendue(fiche) {
   const relire = async () => {
     const n = ++tour;
     let r2;
-    try { r2 = await api("fiche", { ...charge, donnees: lireLesCases(cases) }); } catch (e) { dire(e.message, "erreur"); return; }
+    try { r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)) }); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== tour || !cases.isConnected) return;
     poserLaFiche(cases, r2);
   };
