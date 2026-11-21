@@ -1384,13 +1384,17 @@ function valeurHistorique(champ, v) {
   if (v === null || typeof v !== "object" || Array.isArray(v)) {
     return valeurLisible(v);
   }
-  // Une case de structure se nomme par les libellés de ses cases (`champs` de sa description).
+  // Une case de structure se nomme par les libellés de ses cases (`champs` de sa description), et un choix par le sien.
   const decrit = ETAT.configuration.description[FICHE_ACTIVE].find((c) => c.cle === champ);
   const libelles = Object.fromEntries(decrit && decrit.champs ? decrit.champs.map((s) => [s.cle, s.libelle]) : []);
+  const s = structureDecrite(champ);
+  const choix = Object.fromEntries((s ? s.champs : []).filter(([, , , g]) => g && g.choix).map(([k, , , g]) => [k, g.choix]));
+  const mot = (k, x) => (choix[k] && choix[k][String(x)]) || valeurLisible(x);
   const dire = (k, x) => x && typeof x === "object" && !Array.isArray(x) && !libelles[k]
-    ? Object.entries(x).map(([s, y]) => dire(`${k}.${s}`, y)).join(" · ")
-    : `${libelles[k] || k} : ${valeurLisible(x)}`;
-  return Object.keys(v).filter((k) => !k.startsWith("_") && k !== "note").map((k) => dire(k, v[k])).join(" · ");
+    ? Object.entries(x).map(([s2, y]) => dire(`${k}.${s2}`, y)).join(" · ")
+    : `${libelles[k] || k} : ${mot(k, x)}`;
+  // Une case que la valeur ne dit pas (le numéro du jour d'une fin de mois) ne se nomme pas.
+  return Object.keys(v).filter((k) => !k.startsWith("_") && k !== "note" && v[k] !== null).map((k) => dire(k, v[k])).join(" · ");
 }
 
 /* RIEN DE ROUGE. « On a le droit de changer de métier, je ne sais
