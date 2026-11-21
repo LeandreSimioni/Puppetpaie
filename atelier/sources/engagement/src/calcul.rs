@@ -2445,7 +2445,7 @@ pub(crate) fn net_negatif(ctx: &Contexte, p: &Paie) -> R<Option<Avis>> {
         retires.push(format!("les avantages reçus en nature ({})", euros(en_nature)));
     }
     for l in p.remuneration.iter().filter(|l| !l.soumis && l.montant < Montant::ZERO) {
-        retires.push(format!("{} ({})", l.designation(), euros(l.montant)));
+        retires.push(format!("{} ({})", l.designation(), euros(l.montant.abs())));
     }
     Ok(Some(Avis {
         info: false,

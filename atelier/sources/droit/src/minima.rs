@@ -744,8 +744,7 @@ pub fn lie_depuis(accord: &Convention, organisation: Option<&OrganisationPatrona
 
 /// LA GRILLE DE LA CONVENTION `idcc` QUI LIE LA COMPAGNIE AU `jour` : celle du dernier de ses accords (`accords`) dont
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
-/// grille de la convention elle-meme, a partir de sa date d'effet (`en_vigueur`). `None` : la table ne connait pas la
-/// convention, ou le `jour` est avant la date d'effet de sa grille (ni bulle, ni avertissement). Avec elle, la cle des cases du
+/// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
 /// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
 pub fn grille_au<'a>(t: &'a Table, idcc: &crate::fiche::Idcc, organisation: Option<&OrganisationPatronale>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
     let base = t.convention(idcc)?;
@@ -758,13 +757,6 @@ pub fn grille_au<'a>(t: &'a Table, idcc: &crate::fiche::Idcc, organisation: Opti
         Some(retenu) => retenu,
         None => (base, None),
     };
-    // Avant sa date d'effet, une grille ne vaut pas : la table n'a pas celle d'avant, et rien ne se compare ni ne se dit.
-    // Sans jour (un engagement sans jour travaille), la grille de la convention se lit comme avant.
-    if let (None, Some(effet), Some(j)) = (depuis, grille.en_vigueur, jour) {
-        if j < effet {
-            return None;
-        }
-    }
     Some((grille, depuis, ParLaGrille(())))
 }
 

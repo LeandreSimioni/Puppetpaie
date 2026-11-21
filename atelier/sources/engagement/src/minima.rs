@@ -932,7 +932,8 @@ impl<'a> Cx<'a> {
 /// LA JOURNEE DE REPETITION LA MOINS PAYEE d'une ligne « Service de repetition » (`saisie` : la ligne telle que saisie,
 /// pour ses dates) : ses services et ce qu'elle paie, au taux de la ligne. La ligne dit ses services et ses jours, pas
 /// combien chaque jour en compte ; le cachet de repetition vaut pour 1 ou 2 services par jour. Avec `n` jours et entre
-/// `n` et `2n - 1` services entiers, un jour au moins n'en a qu'un ; avec `2n`, chacun en a deux. Hors de la (une ligne
+/// `n` et `2n - 1` services entiers, un jour au moins n'en a qu'un ; avec `2n`, chacun en a deux (une inference : elle
+/// suppose au moins un service par date, et jamais plus de deux, ce que le texte ne dit pas en toutes lettres). Hors de la (une ligne
 /// sans dates, des services qui ne se comptent pas en entiers, moins d'un service par jour, plus de deux), la ligne ne
 /// dit pas ce que paie un jour : rien ne se compare.
 fn journee_la_moins_payee(l: &LigneBrut, saisie: Option<&crate::LignePaie>) -> Option<(usize, MontantUnitaire, MontantUnitaire)> {
@@ -1463,8 +1464,8 @@ fn texte_qui_fixe(fondement: Option<&droit::source::Fondement>, montants: &[Mont
 /// logiciel n'a pas le bareme de l'annee pour reconnaitre son organisation patronale ; un tarif que la convention ne
 /// fixe pas encore) ne se dit pas, et rien d'autre ne tombe. Ce que la compagnie a pose et qui ne se lit pas (sa
 /// surcouche du bareme, une convention que le socle de l'annee ne couvre pas) cache les seules rubriques qui en ont
-/// besoin, et se dit (`ne_se_lit_pas`). Seul refuse un defaut de ce qui est livre (une ligne, une grille ou une source
-/// qui manque) ou le disque.
+/// besoin, et se dit (`ne_se_lit_pas`), panne du disque sur ces fichiers comprise. Seul refuse un defaut de ce qui est
+/// livre (une ligne, une grille ou une source qui manque).
 pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jour: Jour) -> R<Option<CeQueFixeAuMetier>> {
     use droit::minima::CeQueFixeLaConvention as Releve;
     let ent = ctx.entreprise_au(&jour);

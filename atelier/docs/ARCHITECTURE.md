@@ -2247,8 +2247,6 @@ datée, vérifiable**.
   pas ne s'avertit pas. La répétition se compare au jour (`droit::minima::Par::Jour`) : le cachet de répétition de
   l'annexe vaut pour 1 ou 2 services dans la journée, et la journée la moins payée de la ligne (ses services au taux de
   la ligne) s'y compare quand la ligne le dit (`engagement::minima::journee_la_moins_payee`) ; un musicien n'en a pas.
-  Une grille n'est lue qu'à partir de sa date d'effet (`en_vigueur`, `droit::minima::grille_au`) : avant, ni bulle ni
-  avertissement, ni case du métier sur la fiche.
   Ajouter un métier, c'est ajouter son entrée (et la `source` de sa grille si elle n'en a pas) ; une rubrique sans
   lecteur (autre que cachet, répétition, repas, nuitée) ne se lit pas dans la table.
 - `logiciel/donnees/sources.json` — le **manifeste** : pour chaque source, titre,

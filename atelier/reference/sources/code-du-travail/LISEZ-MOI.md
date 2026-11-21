@@ -31,7 +31,7 @@ son terme : aucun préavis, cite L1243-5) ; `atelier/sources/droit/src/permanent
 la phrase de `routes/src/imprevus.rs` (`ce_qui_manque`) et `engagement/src/solde.rs` (`duree_du_preavis` : un préavis
 déclaré non effectué sur un motif sans préavis). Le bloc S21.G00.63 d'un signalement de fin de CDD se
 déclare avec le type « 90 - pas de clause de préavis applicable » (norme DSN, `atelier/reference/norme-dsn/texte/bloc-S21.G00.63.txt`).
-Test : `droit/tests/droit/permanents.rs` (`preavis_mois`, contre `moteur/tests/donnees/permanents/preavis_mois.json`).
+Test : `droit/tests/droit/permanents.rs` (`preavis_mois`, contre `droit/tests/donnees/permanents/preavis_mois.json`).
 
 **Inférence** : la lecture de « motif de rupture 031 » comme « CDD arrivé à son terme » est celle de la norme DSN
 (`bloc-S21.G00.62.txt`, « 031 - fin de contrat à durée déterminée ou fin d'accueil occasionnel »).
