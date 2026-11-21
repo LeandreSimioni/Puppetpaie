@@ -3251,7 +3251,9 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   (peut-être celle de l'embauche) ne se proposent pas. Ce que la compagnie valide avec les valeurs (les exclus de
   L. 1111-3 du code du travail, qu'aucune paie reprise ne distingue ; le contrat connu par son seul bulletin ; les mois
   sans paie reprise hors de la moyenne : `EffectifRepris::reserves`) se dit une fois, sur la ligne. Le calcul se fait une fois par `pour-demarrer` (`demarrage::route`), jamais
-  dans `manques`.
+  dans `manques`. Sans date de première embauche et sans aucune paie reprise des années demandées, la ligne de la
+  première embauche ne montre aucune case d'effectif (`EffectifRepris::paies_reprises`) : la date suffit, et la ligne de
+  l'effectif dit les années à remplir une fois la date écrite.
 - **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
   le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;
   une DSN, une AEM ou un certificat Congés Spectacles dit le contrat, un bulletin seulement la période qu'il paie ; la
