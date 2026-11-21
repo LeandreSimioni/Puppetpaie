@@ -1429,8 +1429,7 @@ struct Remunerations {
     #[serde(rename = "note")]
     _note: Option<String>,
     types: Vec<RemunerationDeChaquePaie>,
-    /// Le 001, le 003 et le 010 des blocs 51 valent-ils le brut ? (vrai sur un CDDU) Le 002 n'a jamais les indemnites du
-    /// bloc 52 (`engagement::calcul`, l'assiette du chomage).
+    /// Les quatre blocs 51 valent-ils tous le brut ? (vrai sur un CDDU)
     toutes_au_brut: bool,
 }
 
@@ -1825,8 +1824,7 @@ impl Proprietes {
         &self.remunerations.types
     }
 
-    /// Le 001, le 003 et le 010 des blocs 51 valent-ils le brut ? (vrai sur un CDDU) Le 002 n'a jamais les indemnites du
-    /// bloc 52 (`engagement::calcul`, l'assiette du chomage).
+    /// Les quatre blocs 51 valent-ils tous le brut ? (vrai sur un CDDU)
     pub fn remunerations_au_brut(&self) -> bool {
         self.remunerations.toutes_au_brut
     }

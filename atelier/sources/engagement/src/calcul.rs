@@ -2125,16 +2125,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             "rubriques_bulletin.csg_crds_nd",
         ));
     }
-    // S21.G00.51.011 = 002, le salaire brut servant aux calculs des droits de l'Assurance chomage, « doit contenir
-    // uniquement les éléments de salaire. Il ne doit pas inclure les primes et indemnités relatives à la rupture du
-    // contrat de travail déclarées dans le bloc « Prime, gratification et indemnité - S21.G00.52 » » (cahier technique
-    // 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.51.txt`, Type) ; la grille « Indemnités » de net-entreprises
-    // le redit pour chacune (« intégration au salaire brut soumis à contributions Assurance Chômage « Non » »,
-    // `atelier/reference/norme-dsn/netentreprises-grille-aide-remplissage-indemnites.txt`). Quelle que soit la nature, un
-    // CDDU compris (l'indemnite du delai de prevenance d'une fin d'essai, `solde::delai_de_prevenance_a_l_activite`).
-    let chomage_51 = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
-    let (base_51, retabli) = if nat.remunerations_au_brut() {
-        (brut, brut)
+    let (base_51, retabli, chomage_51) = if nat.remunerations_au_brut() {
+        (brut, brut, brut)
     } else {
         let base_51 = lb.iter().filter(|l| l.salaire_de_base).fold(Montant::ZERO, |a, l| a + l.montant);
         // S21.G00.51.011 = 003, « Salaire rétabli – reconstitué », qui « doit toujours être déclaré pour la période de paie
@@ -2143,7 +2135,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         // l'ont reduit (les rubriques `retabli`). Un mois entierement suspendu declare donc 001 a 0.00 et 003 au salaire du
         // mois.
         let retabli = brut - lb.iter().filter(|l| l.retabli).fold(Montant::ZERO, |a, l| a + l.montant);
-        (base_51, retabli)
+        let chomage = brut - lb.iter().filter(|l| l.dsn_bloc52.is_some() && l.soumis).fold(Montant::ZERO, |a, l| a + l.montant);
+        (base_51, retabli, chomage)
     };
     let tp = plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spec, brut, base_csg, plafond, plafond_urssaf, abattue_appliquee, smic, heures, tp);

@@ -571,30 +571,18 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
     Ok((stc.lignes, stc.avertissements))
 }
 
-/// CE QUE L1221-25 DECIDE d'une fin de periode d'essai a l'initiative de l'employeur (034), quel que soit le paiement du
-/// contrat (au mois ou a l'activite) : rien n'est du, et la phrase qui dit pourquoi ; ou le delai de prevenance n'est pas
-/// respecte, et la part du delai que le contrat n'a pas laissee courir.
-pub(crate) enum DelaiDePrevenanceDecide {
-    /// Rien a payer : l'essai stipule d'un contrat a duree determinee n'atteint pas une semaine, la faute grave est dite,
-    /// ou le delai expire au plus tard le jour ou le contrat finit.
-    RienADu(Avis),
-    /// Le delai n'est pas respecte : sa rubrique (`preavis.delai_de_prevenance.rubrique`), ce qui le dit en mots, et la
-    /// part non effectuee, du lendemain de la fin du contrat au jour ou le delai expire.
-    NonRespecte { rubrique: droit::catalogue::CodeDeRubrique, dit: String, non_effectue: Periode },
-}
-
-/// L1221-25 (`atelier/reference/sources/code-du-travail/xml/L1221-25.xml`) : « Lorsqu'il est mis fin, par l'employeur, au
-/// contrat en cours ou au terme de la période d'essai définie aux articles L. 1221-19 à L. 1221-24 ou à l'article
-/// L. 1242-10 pour les contrats stipulant une période d'essai d'au moins une semaine, le salarié est prévenu dans un délai
-/// [...] » ; « son inexécution ouvre droit pour le salarié, sauf s'il a commis une faute grave, à une indemnité
-/// compensatrice ». La decision pour la carte `e` d'un contrat du `debut` a la `fin`, au `motif` de sa fin ; `None` : le
-/// motif n'est pas le 034. Un contrat a duree determinee (un CDDU compris : L1242-10 est l'essai de tout CDD) dit son essai
-/// stipule, en jours, ou le calcul refuse en nommant la case ; la notification de la rupture aussi.
-pub(crate) fn delai_de_prevenance_decide(
-    e: &Carte, debut: &socle::date::Jour, fin: &socle::date::Jour, motif: Option<MotifDeRupture>, nat: &Nature, qui: &str,
-) -> R<Option<DelaiDePrevenanceDecide>> {
+/// L1221-25 : l'employeur qui met fin a l'essai (034) previent le salarie dans un delai qui depend de sa presence ; s'il
+/// ne l'a pas respecte, le salarie a droit, sauf faute grave, a une indemnite egale aux salaires qu'il aurait percus
+/// jusqu'a l'expiration du delai, « indemnité compensatrice de congés payés comprise » (`preavis.delai_de_prevenance`).
+/// La ligne : la part du delai apres la fin du contrat, le salaire de chaque mois pour ses heures
+/// (`droit::periodes::part_du_mois`) ; DSN 52 « 017 ». Les conges que ces jours acquierent (`conges_du_delai`) s'ajoutent
+/// a l'indemnite compensatrice de conges payes du solde.
+fn delai_de_prevenance(
+    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: MontantUnitaire, motif: Option<MotifDeRupture>, nat: &Nature,
+    qui: &str, stc: &mut Solde,
+) -> R<()> {
     let Some(regle) = permanents::regle_du_delai_de_prevenance(motif)? else {
-        return Ok(None);
+        return Ok(());
     };
     // Un CDD : seulement s'il stipule une periode d'essai d'au moins une semaine (L1221-25, renvoi a L1242-10).
     if !nat.duree_indeterminee {
@@ -608,20 +596,22 @@ pub(crate) fn delai_de_prevenance_decide(
             ), "periode_essai_jours"));
         };
         if essai < minimum {
-            return Ok(Some(DelaiDePrevenanceDecide::RienADu(info(format!(
+            stc.avertissements.push(info(format!(
                 "{} : periode d'essai stipulee de {}, moins d'une semaine : pas de delai de prevenance (L1221-25), \
                  rien a payer.",
                 qui,
                 essai
-            )))));
+            )));
+            return Ok(());
         }
     }
     if e.faute_grave == Some(true) {
-        return Ok(Some(DelaiDePrevenanceDecide::RienADu(info(format!(
+        stc.avertissements.push(info(format!(
             "{} : fin de periode d'essai pour faute grave : pas d'indemnite du delai de prevenance (L1221-25, « sauf s'il a \
              commis une faute grave »).",
             qui
-        )))));
+        )));
+        return Ok(());
     }
     let Some(notification) = e.notification_rupture else {
         return Err(socle::echec::cle(format!(
@@ -631,7 +621,8 @@ pub(crate) fn delai_de_prevenance_decide(
             qui
         ), "notification_rupture"));
     };
-    if notification < *debut || notification > *fin {
+    let debut = debut_de(e)?;
+    if notification < debut || notification > *fin {
         return Err(socle::refus!(
             "{} : la notification de la rupture ({}) doit tomber entre le debut ({}) et la fin ({}) du contrat.",
             qui,
@@ -640,7 +631,7 @@ pub(crate) fn delai_de_prevenance_decide(
             fin.iso()
         ));
     }
-    let delai = permanents::delai_de_prevenance(debut, &notification)?;
+    let delai = permanents::delai_de_prevenance(&debut, &notification)?;
     let dit = format!(
         "fin de periode d'essai notifiee le {} apres {} de presence : delai de prevenance de {}, jusqu'au {}",
         notification.jj_mm_aaaa(),
@@ -649,37 +640,17 @@ pub(crate) fn delai_de_prevenance_decide(
         delai.expiration.jj_mm_aaaa()
     );
     if delai.expiration <= *fin {
-        return Ok(Some(DelaiDePrevenanceDecide::RienADu(info(format!(
+        stc.avertissements.push(info(format!(
             "{} : {} ; le contrat finit le {} : delai respecte, rien a payer.",
             qui,
             dit,
             fin.jj_mm_aaaa()
-        )))));
+        )));
+        return Ok(());
     }
-    let non_effectue = Periode::du_au(fin.apres(socle::date::Duree::jours(1))?, delai.expiration)?;
-    Ok(Some(DelaiDePrevenanceDecide::NonRespecte { rubrique: regle.rubrique, dit, non_effectue }))
-}
-
-/// L1221-25 POUR UN CONTRAT PAYE AU MOIS : la decision (`delai_de_prevenance_decide`), puis, si le delai n'est pas
-/// respecte, l'indemnite egale aux salaires que le salarie aurait percus jusqu'a l'expiration du delai, « indemnité
-/// compensatrice de congés payés comprise » (`preavis.delai_de_prevenance`). La ligne : la part du delai apres la fin du
-/// contrat, le salaire de chaque mois pour ses heures (`droit::periodes::part_du_mois`) ; DSN 52 « 017 ». Les conges que
-/// ces jours acquierent s'ajoutent a l'indemnite compensatrice de conges payes du solde (`conges_non_effectues`).
-fn delai_de_prevenance(
-    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: MontantUnitaire, motif: Option<MotifDeRupture>, nat: &Nature,
-    qui: &str, stc: &mut Solde,
-) -> R<()> {
-    let debut = debut_de(e)?;
-    let (rubrique, dit, non_effectue) = match delai_de_prevenance_decide(e, &debut, fin, motif, nat, qui)? {
-        None => return Ok(()),
-        Some(DelaiDePrevenanceDecide::RienADu(avis)) => {
-            stc.avertissements.push(avis);
-            return Ok(());
-        }
-        Some(DelaiDePrevenanceDecide::NonRespecte { rubrique, dit, non_effectue }) => (rubrique, dit, non_effectue),
-    };
     // La part non effectuee : du lendemain de la fin au dernier jour du delai, le salaire de chaque mois traverse pour ses
     // heures (`droit::periodes::part_du_mois`, l'horaire reel du mois).
+    let non_effectue = Periode::du_au(fin.apres(socle::date::Duree::jours(1))?, delai.expiration)?;
     let (mut fraction, mut jours) = (Coefficient::ZERO, Jours::ZERO);
     for mois_de_j in non_effectue.mois() {
         let Some(dans_le_mois) = non_effectue.croise(&Periode::du_mois(mois_de_j)) else { continue };
@@ -688,7 +659,7 @@ fn delai_de_prevenance(
         fraction += part.fraction;
         jours += part.jours;
     }
-    stc.lignes.push(ligne(&rubrique, PaiementDeLigne::PartDuMois(fraction, salaire)));
+    stc.lignes.push(ligne(&regle.rubrique, PaiementDeLigne::PartDuMois(fraction, salaire)));
     let montant = (fraction * salaire).au_centime();
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&non_effectue)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
@@ -716,87 +687,6 @@ fn delai_de_prevenance(
     )));
     Ok(())
 }
-
-/// L1221-25 POUR UN CONTRAT PAYE A L'ACTIVITE (un CDDU), le mois ou il finit : la meme decision
-/// (`delai_de_prevenance_decide`) ; si le delai n'est pas respecte, l'indemnite « égale au montant des salaires et
-/// avantages que le salarié aurait perçus s'il avait accompli son travail jusqu'à l'expiration du délai de prévenance ».
-/// Un tel contrat est paye a ses cachets et heures des jours travailles, et ses jours apres la fin ne sont pas sur la
-/// carte (les jours coches sont les jours travailles) : ce montant, seule la compagnie le connait. La carte le dit
-/// (`indemnite_delai_prevenance`), ou le calcul refuse en nommant la case et les dates du delai non effectue. La ligne :
-/// ce montant, en une fois, dans la rubrique du delai (DSN 52 « 017 »). Rend la ligne, s'il y en a une, et ce qui le dit.
-/// Seul un contrat qui finit ce mois au motif 034 lit quelque chose (les regles du delai) ; ce que le montant comprend se
-/// dit partout dans les memes mots (`CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE`), sans lire la fiche du salarie.
-pub(crate) fn delai_de_prevenance_a_l_activite(ctx: &Contexte, e: &Carte, eng: &crate::Engagement, qui: &str) -> R<(Option<LignePaie>, Vec<Avis>)> {
-    if e.motif_rupture != Some(MotifDeRupture::FinDEssaiParLEmployeur) {
-        return Ok((None, Vec::new()));
-    }
-    let contrat = eng.contrat();
-    let Some(fin) = contrat.fin().filter(|f| f.mois_civil() == eng.mois) else {
-        return Ok((None, Vec::new()));
-    };
-    let nat = eng.nat()?;
-    let (rubrique, dit, non_effectue) = match delai_de_prevenance_decide(e, &contrat.debut(), &fin, e.motif_rupture, &nat, qui)? {
-        None => return Ok((None, Vec::new())),
-        Some(DelaiDePrevenanceDecide::RienADu(avis)) => return Ok((None, vec![avis])),
-        Some(DelaiDePrevenanceDecide::NonRespecte { rubrique, dit, non_effectue }) => (rubrique, dit, non_effectue),
-    };
-    let du_au = format!("du {} au {}", non_effectue.debut().jj_mm_aaaa(), non_effectue.fin().jj_mm_aaaa());
-    let Some(montant) = e.indemnite_delai_prevenance else {
-        return Err(socle::echec::cle(format!(
-            "{} : {} ; le contrat finit le {} : le délai n'est pas respecté, {}. L1221-25 doit au salarié, sauf faute grave, \
-             « le montant des salaires et avantages [qu'il] aurait perçus s'il avait accompli son travail jusqu'à l'expiration \
-             du délai de prévenance, indemnité compensatrice de congés payés comprise ». Saisissez dans sa carte ce qu'il \
-             aurait perçu {}, {} (« {} ») ; s'il a commis une faute grave, cochez « {} » : rien n'est dû.",
-            qui,
-            dit,
-            fin.jj_mm_aaaa(),
-            du_au,
-            du_au,
-            CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE,
-            crate::carte::libelle(crate::saisie::Champ::IndemniteDelaiPrevenance),
-            crate::carte::libelle(crate::saisie::Champ::FauteGrave)
-        ), "indemnite_delai_prevenance"));
-    };
-    if montant < Montant::ZERO {
-        return Err(socle::echec::cle(format!(
-            "{} : l'indemnité du délai de prévenance saisie est négative ({}) : saisissez ce qu'il aurait perçu {}.",
-            qui,
-            euros(montant),
-            du_au
-        ), "indemnite_delai_prevenance"));
-    }
-    // Une indemnite nulle ne s'ecrit pas : la norme refuse `0.00`.
-    if montant.est_nul() {
-        return Ok((None, vec![info(format!(
-            "{} : {} ; le contrat finit le {} : délai non effectué {}, et l'indemnité saisie est nulle (il n'aurait rien perçu \
-             ces jours-là) : aucune ligne.",
-            qui,
-            dit,
-            fin.jj_mm_aaaa(),
-            du_au
-        ))]));
-    }
-    let l = ligne_unique(ctx, &rubrique, montant)?;
-    Ok((Some(l), vec![avertir(format!(
-        "{} : {} ; le contrat finit le {} : délai non effectué {}, payé {} tel que saisi (L1221-25, indemnité compensatrice ; \
-         DSN 52 : 017), {}.",
-        qui,
-        dit,
-        fin.jj_mm_aaaa(),
-        du_au,
-        euros(montant),
-        CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE
-    ))]))
-}
-
-/// CE QUE COMPREND L'INDEMNITE DU DELAI DE PREVENANCE D'UN CONTRAT PAYE A L'ACTIVITE, que la compagnie saisit : L1221-25
-/// la veut « égale au montant des salaires et avantages que le salarié aurait perçus [...], indemnité compensatrice de
-/// congés payés comprise » ; L3141-30 rend l'indemnite compensatrice de conges (L3141-28) inapplicable « lorsque
-/// l'employeur est tenu d'adhérer à une caisse de congés » (la lecture, avec ses textes : `permanents-base.json`,
-/// `preavis.delai_de_prevenance.note`). Les memes mots au refus qui demande le montant, a l'avis qui le paie, et dans
-/// l'aide de la case (`routes::ouverture`, `AIDES`).
-pub(crate) const CE_QUE_COMPREND_L_INDEMNITE_A_L_ACTIVITE: &str =
-    "cachets, heures, avantages et congés payés compris, sauf les congés que paie la caisse des Congés Spectacles (L1221-25, L3141-30)";
 
 /// LE SALAIRE D'UN JOUR OUVRABLE au maintien (L3141-24, II) : le salaire mensuel `salaire` reparti sur les jours
 /// ouvrables du mois entier `mois` (`droit::conges::jours_ouvrables`). Un mois en compte toujours (six jours par semaine,

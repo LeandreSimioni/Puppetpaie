@@ -1648,12 +1648,21 @@ fn contrat_appelle(ctx: &Contexte, e: &engagement::Engagement, nat: &droit::natu
 /// refait pas.
 fn contrat_appelle_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<ContratAppelle> {
     let Some(cle) = e.salarie.as_ref() else { return Ok(ContratAppelle::default()) };
-    if let Some(d) = e.debut_lu() {
+    let debut = e.debut_lu();
+    if let Some(d) = debut {
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {
             return numero_a_dire(ctx, cle, d);
         }
     }
-    let Some(n) = engagement::carte::contrat_redige_ici(&ctx.racine, e, mois)? else { return Ok(ContratAppelle::default()) };
+    let Some(n) = e.nature else { return Ok(ContratAppelle::default()) };
+    if n.proprietes()?.modele_contrat().is_none() {
+        return Ok(ContratAppelle::default());
+    }
+    if let Some(d) = debut {
+        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
+            return Ok(ContratAppelle::default());
+        }
+    }
     Ok(ContratAppelle { ecrit: true, modeles: !crate::modeles_contrat::au_choix(ctx, n)?.is_empty(), numero: false })
 }
 
@@ -1861,8 +1870,6 @@ fn carte_lue(
             F::FinCeMois => fin_ce_mois,
             F::MotifAvantTerme => fin_ce_mois && e.motif_rupture.is_some_and(|m| Some(m) != nat.motif_rupture_par_defaut()),
             F::DuMotif(fait) => fin_ce_mois && faits.contains(&fait),
-            F::FinDEssaiParLEmployeur => fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur),
-            F::EssaiADire => contrat.ecrit || (fin_ce_mois && e.motif_rupture == Some(droit::natures::MotifDeRupture::FinDEssaiParLEmployeur)),
             F::PreavisNonEffectue => fin_ce_mois && non_effectue,
             F::Importee => e.importe == Some(true),
             F::MetierEcrit => e.metier.is_some(),

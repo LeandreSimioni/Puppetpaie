@@ -233,11 +233,6 @@ carte! {
         pub indemnite_licenciement: Option<Montant>,
         #[champ(Fait, FauteGrave)]
         pub faute_grave: Option<bool>,
-        #[champ(Fait, IndemniteDelaiPrevenance)]
-        #[serde(serialize_with = "socle::grandeurs::ecrit::nombre_json::option::serialize")]
-        /// Ce que le salarie d'un contrat paye a l'activite aurait percu jusqu'a l'expiration du delai de prevenance
-        /// (L1221-25), dit par la compagnie : `solde::delai_de_prevenance_a_l_activite` le paie.
-        pub indemnite_delai_prevenance: Option<Montant>,
         #[champ(Fin, MotifRupture)]
         pub motif_rupture: Option<droit::natures::MotifDeRupture>,
         #[champ(Fin, NotificationRupture)]
