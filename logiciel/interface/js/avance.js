@@ -212,10 +212,16 @@ const CASES = {
     html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? null : String(v), o.choix, null)}</select>`,
     lire: (x) => (x.value === "" ? null : x.value === "true"),
   },
-  // DU HTML COLLÉ (la signature des courriels), tel que le moteur le rend, nettoyé ; vide, son exemple.
+  // DU HTML COLLÉ (la signature des courriels), tel que le moteur le rend, nettoyé ; vide, son exemple. Le navigateur
+  // récrit le HTML qu'il montre : non touché (`data-rendu`, posé par `brancherLesCases`), il repart tel que la route l'a
+  // rendu.
   html: {
-    html: (v, o) => `<div class="case-html" contenteditable="true" data-case${o.exemple ? ` data-exemple="${echapper(o.exemple)}"` : ""}>${v == null ? "" : String(v)}</div>`,
-    lire: (x) => (x.textContent.trim() || x.querySelector("img") ? x.innerHTML.trim() : null),
+    html: (v, o) => `<div class="case-html" contenteditable="true" data-case${o.exemple ? ` data-exemple="${echapper(o.exemple)}"` : ""}${
+      v == null ? "" : ` data-valeur="${echapper(String(v))}"`}>${v == null ? "" : String(v)}</div>`,
+    lire: (x) => {
+      if (x.dataset.rendu != null && x.innerHTML === x.dataset.rendu) return x.dataset.valeur == null ? null : x.dataset.valeur;
+      return x.textContent.trim() || x.querySelector("img") ? x.innerHTML.trim() : null;
+    },
   },
 };
 
@@ -268,6 +274,7 @@ function brancherLesCases(bloc, o = {}) {
       x.focus();
     };
   });
+  bloc.querySelectorAll(".case-html").forEach((x) => { if (x.dataset.rendu == null) x.dataset.rendu = x.innerHTML; });
   // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
   const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
   bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
