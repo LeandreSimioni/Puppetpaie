@@ -152,7 +152,9 @@ pub fn qui_ouvre(inst: &Path, racine: &Path) -> R<compagnie::demande::QuiOuvre> 
     if !compagnies::est_fictive(racine)? && est_rattachee(inst, racine)? {
         return Ok(compagnie::demande::QuiOuvre::Administrateur(en_liste(&noms_de(inst, &rattachees(inst)?)?)));
     }
-    Ok(compagnie::demande::QuiOuvre::Compagnie(nom_de(inst, racine)?))
+    // Son nom se lit dans sa seule fiche (une fiche qui ne se lit pas la nomme par son dossier) : rien des autres
+    // compagnies de l'installation ne peut fermer une route qui dit cette demande.
+    Ok(compagnie::demande::QuiOuvre::Compagnie(compagnies::nom_de(racine)?))
 }
 
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?

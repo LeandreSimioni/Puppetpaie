@@ -259,9 +259,11 @@ impl ChargeSignature {
                 qui.push(k);
             }
         }
-        let n_contrats = self.contrats.as_ref().map_or(0, Vec::len) + self.salaries.as_ref().map_or(0, Vec::len);
+        let n_contrats = self.contrats.iter().flatten().count() + self.salaries.iter().flatten().count();
         let n_avenants = self.avenants().len();
         let pieces = match (n_contrats, n_avenants) {
+            // Rien n'est encore choisi (la boîte où l'on coche) : ce qui sera choisi peut être l'un ou l'autre.
+            (0, 0) => "les contrats et avenants",
             (1, 0) => "le contrat",
             (0, 1) => "l'avenant",
             (_, 0) if n_contrats > 0 => "les contrats",

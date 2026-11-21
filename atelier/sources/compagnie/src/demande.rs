@@ -80,7 +80,7 @@ impl DemandeDuMotDePasse {
     /// La demande du mot de passe que `qui` accepte, pour `geste` (« poser le mot de passe net-entreprises (DSN) »).
     pub fn de(qui: &QuiOuvre, geste: &str) -> DemandeDuMotDePasse {
         let qui = qui.de_qui();
-        DemandeDuMotDePasse { titre: Phrase::fixe("Le mot de passe du logiciel"), de_qui: socle::phrase!("Celui {}.", qui), pour: socle::phrase!("Pour {}.", geste), qui }
+        DemandeDuMotDePasse { titre: Phrase::fixe("PuppetPaie : le mot de passe du logiciel"), de_qui: socle::phrase!("Celui {}.", qui), pour: socle::phrase!("Pour {}.", geste), qui }
     }
 
     /// Le refus d'un mot de passe qui n'ouvre pas le coffre : lequel etait attendu, puis `suite` (« Rien n'est parti. »).
@@ -857,7 +857,7 @@ mod tests {
         {
             let _g = installer(mauvaise.clone());
             let dit = proteger_un_acte(&m);
-            assert!(dit.contains("refuse") && !dit.contains("Pas-le-bon"), "{}", dit);
+            assert!(dit.contains("refus") && !dit.contains("Pas-le-bon"), "{}", dit);
         }
         assert_eq!(mauvaise.nombre(), ESSAIS as usize);
         assert!(le_poste_n_ouvre_pas(&m));
@@ -871,7 +871,7 @@ mod tests {
         assert!(matches!(autoriser_acte(&m.racine, &demande("envoyer les documents de septembre 2026 à Ana, Bo et Cy")), Verdict::Accepte));
         let q = &f.questions()[0];
         let texte = format!("{} {}", q.titre, q.lignes.join(" | "));
-        for attendu in ["Le mot de passe du logiciel", "de la compagnie La Compagnie d'essai", "envoyer les documents de septembre 2026 à Ana, Bo et Cy"] {
+        for attendu in ["PuppetPaie : le mot de passe du logiciel", "de la compagnie La Compagnie d'essai", "envoyer les documents de septembre 2026 à Ana, Bo et Cy"] {
             assert!(texte.contains(attendu), "{}", texte);
         }
         assert!(!q.seance);
