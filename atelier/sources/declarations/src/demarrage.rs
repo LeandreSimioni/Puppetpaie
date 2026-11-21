@@ -757,7 +757,10 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
         // La page montre `pour` sous la case : la provenance de la date proposee s'y lit.
-        l.pour = Some(format!("{}{}.{}", initiale, c.as_str(), de_l_embauche.unwrap_or_default()));
+        l.pour = Some(match de_l_embauche {
+            Some(d) => format!("{}{}.{}", initiale, c.as_str(), d),
+            None => format!("{}{}.", initiale, c.as_str()),
+        });
     }
     let (par_une_dsn, mut lignes): (Vec<Manque>, Vec<Manque>) = match repris {
         CeQueLImportARepris::SansDsn { .. } => lignes.into_iter().partition(|l| l.piece == Some(PieceQuiLaPorte::Dsn)),

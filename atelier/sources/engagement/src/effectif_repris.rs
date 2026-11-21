@@ -318,7 +318,11 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
             }
             // L'annee de la date proposee (la case de la premiere embauche dit d'ou elle vient, `demarrage::route`) ;
             // sans proposition, celle de la plus ancienne paie reprise.
-            None if proposee.as_ref().map_or(plus_ancien.annee(), |p| p.jour.annee()) == *an => {
+            None if match &proposee {
+                Some(p) => p.jour.annee(),
+                None => plus_ancien.annee(),
+            } == *an =>
+            {
                 out.push(rien(match &proposee {
                     Some(p) => format!(
                         "{} est l'année de la première embauche proposée (le {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS). Validez ou corrigez la date de la première embauche : l'effectif de {} se proposera ensuite d'après elle.",
