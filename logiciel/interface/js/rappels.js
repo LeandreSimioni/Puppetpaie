@@ -77,7 +77,8 @@ function htmlPoses() {
 /* POUR DÉMARRER. Le moteur (`pour-demarrer`) rend d'un coup ce que la
  * compagnie peut remplir d'avance : chaque ligne, sa case (`case`), où elle
  * vit (`ou`), et pour qui (`qui`, une ligne d'un salarié ou d'un spectacle). Chaque case se
- * remplit sur place, dessinée comme dans sa fiche (`champDeFiche`) ; un seul
+ * remplit sur place, dessinée comme dans sa fiche (`champDeFiche` ; celle d'un
+ * spectacle, que la route rend, par le dessinateur commun : `caseDeLaFiche`) ; un seul
  * « Enregistrer » écrit tout ce qui a changé (`enregistrer-fiche`, une
  * écriture par fiche) et joue les gestes que le moteur lui donne
  * (`a_enregistrer`), et la liste se relit. La page ne fait que la mise en
@@ -97,6 +98,9 @@ function caseDuManque(m) {
     : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
   if (!fiche) return null;
   const [racine, ...reste] = m.case.split(".");
+  // LA CASE D'UN SPECTACLE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) : le dessinateur commun
+  // la dessine, comme dans sa fiche (`caseDeLaFiche`). Sans elle, la ligne mène à sa place.
+  if (nom === "spectacle") return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
   let c = conf.description[nom].find((x) => x.cle === racine);
   if (!c || c.calcule || c.ecran === false) return null;
   if (reste.length) {
@@ -114,6 +118,7 @@ function caseDuManque(m) {
 /* Le dessin de la case : celui de la fiche. Le métier se choisit dans la
  * liste des métiers, comme dans la fiche (`METIER_HTML`) : le code s'en lit. */
 function caseDemarrageHtml(k) {
+  if (k.rendue) return caseDeLaFiche(k.rendue);
   if (k.racine === "code_emploi_ft") {
     return `<div class="champ"><label>Métier
       <select data-cle="code_emploi_ft">${optionsMetiers(k.fiche.donnees.code_emploi_ft, "— choisir —")}</select></label></div>`;
@@ -218,7 +223,8 @@ function changementsDemarrage(liste) {
     const m = DEMARRAGE.manques[+li.dataset.demarrage];
     const k = m && caseDuManque(m);
     if (!k) return;
-    const lu = lireFormulaire(`[data-demarrage-liste="${liste.dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"] .demarrage-case`, {});
+    const sel = `[data-demarrage-liste="${liste.dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"] .demarrage-case`;
+    const lu = k.rendue ? lireLaFiche(document.querySelector(sel)) : lireFormulaire(sel, {});
     const v = lu[k.racine];
     const avant = k.fiche.donnees[k.racine];
     if (vide(v) || (v === false && !avant) || memes(v, avant)) return;

@@ -472,3 +472,108 @@ async function faireLeGeste(g, entete, apres) {
   // Une case vidée ne part pas : la route dit ce qu'une case absente fait (une reprise absente s'efface).
   document.getElementById("geste-ok").onclick = () => partir(chargeDuGeste(bloc, g) || g.charge, true);
 }
+
+/* ------------------------------------------------ une fiche que la route rend */
+
+/** UNE CASE D'UNE FICHE, telle que la route `fiche` la rend (`c` : `cle`, `libelle`, `forme`, `place`, `aide`, `valeur`,
+ *  `choix`, `temps`, `anomalie`) : son libellé et sa case (`caseDeForme`), l'aide en bulle au survol, comme sur la carte.
+ *  Une case à cocher se lit comme une phrase : la case, puis son libellé. Sous la case, sa valeur d'avant et celle à venir
+ *  (`temps`, en mots), puis sa faute (`fautesDeLaFiche`). Un oui-non montre sa valeur comme un pré-rempli : le changer
+ *  l'écrit, le laisser la garde (`lireLaFiche`). Une case à cocher et une valeur composée prennent la ligne. */
+function caseDeLaFiche(c) {
+  const ouiNon = c.forme === "oui_non";
+  const controle = caseDeForme(c.forme, ouiNon ? null : c.valeur, { choix: c.choix, prerempli: ouiNon && c.valeur != null ? c.valeur : undefined })
+    .replace("data-case", `data-case data-cle="${echapper(c.cle)}"`);
+  const bulle = c.aide ? ` title="${echapper(c.aide)}"` : "";
+  const corps = ouiNon ? `<label class="coche"${bulle}>${controle} ${echapper(c.libelle)}</label>`
+    : `<label${bulle}>${echapper(c.libelle)} ${controle}</label>`;
+  const ligne = (l) => (l ? `<div class="aide temps-case">${echapper(l.valeur)} · ${echapper(l.dit)}${
+    l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "");
+  const temps = c.temps ? ligne(c.temps.avant) + ligne(c.temps.a_venir) : "";
+  return `<div class="champ${ouiNon || c.forme === "objet" ? " pleine" : ""}" data-case-de="${echapper(c.cle)}">
+    ${corps}${temps}<div class="anomalie" hidden></div></div>`;
+}
+
+/** L'HISTORIQUE D'UNE FICHE (`historique` de la route `fiche`) : replié, une rangée par valeur de chaque case datée, en
+ *  mots, celle d'aujourd'hui en gras. Rien quand aucune case n'a changé. */
+function historiqueDeLaFiche(h) {
+  if (!h.length) return "";
+  return `<details class="champ pleine historique-fiche">
+    <summary>${aideDe("historique_titre")}</summary>
+    <div class="aide">${aideDe("historique_fiche")}</div>
+    <div class="histoire">${h.map((t) => t.valeurs.map((e) => `
+      <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
+        <span class="histoire-champ">${echapper(t.libelle)}</span>
+        <span class="histoire-valeur">${echapper(e.valeur)}</span>
+        <span class="histoire-date">${echapper(e.dit)}</span>
+        ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
+      </div>`).join("")).join("")}</div>
+  </details>`;
+}
+
+/** LES CASES D'UNE FICHE RENDUE (`f`), dans l'ordre où la route les rend : celles de base, puis celles qu'elle place sous
+ *  « Avancé », repliées (ouvertes d'elles-mêmes quand l'une dit quelque chose), puis l'historique. */
+function casesDeLaFiche(f) {
+  const de = (place) => f.cases.filter((c) => c.place === place).map(caseDeLaFiche).join("");
+  const base = de("base");
+  const avancees = de("avance");
+  const dit = (v) => v != null && v !== "" && v !== false && !(Array.isArray(v) && !v.length);
+  const ouvert = f.cases.some((c) => c.place === "avance" && dit(c.valeur));
+  return `<div class="champs">${base}</div>${avancees ? `<details class="bloc avance"${ouvert ? " open" : ""}>
+    <summary>Avancé</summary><div class="champs">${avancees}</div></details>` : ""}${historiqueDeLaFiche(f.historique)}`;
+}
+
+/** LES FAUTES DES CASES de `cible`, telles que la route les rend (`anomalie` de chaque case) : la case marquée, le message
+ *  dessous ; une case sans faute n'en dit rien. Un tiroir « Avancé » qui tient une erreur s'ouvre de lui-même. */
+function fautesDeLaFiche(cible, cases) {
+  cases.forEach((c) => {
+    const bloc = cible.querySelector(`[data-case-de="${CSS.escape(c.cle)}"]`);
+    if (!bloc) return;
+    const a = c.anomalie;
+    const x = bloc.querySelector("[data-case]");
+    x.classList.toggle("faute", !!a && a.gravite === "erreur");
+    x.classList.toggle("suspect", !!a && a.gravite === "avertissement");
+    const note = bloc.querySelector(":scope > .anomalie");
+    note.hidden = !a;
+    note.className = a ? `anomalie ${a.gravite}` : "anomalie";
+    note.textContent = a ? a.message : "";
+    if (a && a.gravite === "erreur") {
+      const tiroir = bloc.closest("details");
+      if (tiroir) tiroir.open = true;
+    }
+  });
+}
+
+/** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, ou quand la route rend d'autres cases, elle se dessine (ce
+ *  qui est déjà tapé reste dans sa case, et le curseur aussi) ; sinon, seules ses fautes changent. */
+function poserLaFiche(cible, f) {
+  const avant = [...cible.querySelectorAll("[data-case-de]")].map((b) => b.dataset.caseDe).join(" ");
+  if (avant !== f.cases.map((c) => c.cle).join(" ")) {
+    const tapees = new Map([...cible.querySelectorAll("[data-case][data-cle]")].map((x) => [x.dataset.cle, x]));
+    const actif = document.activeElement && cible.contains(document.activeElement) ? document.activeElement.dataset.cle : null;
+    cible.innerHTML = casesDeLaFiche(f);
+    cible.querySelectorAll("[data-case][data-cle]").forEach((x) => {
+      const t = tapees.get(x.dataset.cle);
+      if (!t) return;
+      if (x.type === "checkbox") x.checked = t.checked;
+      else if ("value" in x) x.value = t.value;
+    });
+    brancherLesCases(cible);
+    const garde = actif ? cible.querySelector(`[data-cle="${CSS.escape(actif)}"]`) : null;
+    if (garde) garde.focus();
+  }
+  fautesDeLaFiche(cible, f.cases);
+}
+
+/** CE QUE LES CASES D'UNE FICHE RENDUE DISENT, dans `cible`, sous la clé de chacune (une case vide : `null`) ; un oui-non
+ *  qu'on n'a pas changé dit la valeur de la fiche. */
+function lireLaFiche(cible) {
+  const lu = {};
+  cible.querySelectorAll("[data-case][data-cle]").forEach((x) => {
+    let v = lireLaCase(x);
+    if (v === undefined) return;
+    if (v === null && x.dataset.prerempli != null) v = x.dataset.prerempli === "oui";
+    lu[x.dataset.cle] = v;
+  });
+  return lu;
+}

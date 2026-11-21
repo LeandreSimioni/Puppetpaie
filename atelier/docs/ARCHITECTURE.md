@@ -2027,7 +2027,16 @@ faite de parties (le préavis : son type, puis ses dates quand le type en a) a s
 sous `parties` de la route etat) : le dessinateur la fait saisir partie par partie. Les jours d'une ligne partent tous
 dans sa première clé de jours ; le moteur les range par mois (`ligne::ranger`) et fait suivre la quantité d'une ligne
 qui comptait un cachet par jour (`LignePaie::quantite_qui_suit`). Une grandeur s'écrit elle-même dans la réponse (des
-cachets en entier) ; la page montre ce qu'elle reçoit. Les autres écrans passeront par le même dessinateur.
+cachets en entier) ; la page montre ce qu'elle reçoit. **Une fiche se rend comme une carte** : la route `fiche`
+(`routes::fiches::rendue`) rend une fiche telle qu'on la saisit (`{nom, cle, donnees}` ; sans `donnees`, telle
+qu'elle est enregistrée), ses seules cases ouvertes (`fiches::montres`), dans l'ordre de `champs-base.json`, chacune son
+libellé, sa forme, sa place (de base, ou « Avancé » quand la table la dit avancée), son aide, sa valeur, ses choix (les
+`libelles` de la table), ses temps et sa faute, en mots ; son en-tête et l'encart de ses erreurs ; l'historique de ses
+cases datées, en mots. Le dessinateur la dessine (`poserLaFiche`, `caseDeLaFiche`) et la relit (`lireLaFiche`) ; ce qu'on
+tape repart à la même route, qui redit les cases et leurs fautes : un seul appel, à la place de `permanents` et de
+`verifier-fiche`. L'écriture reste `enregistrer-fiche`. La fiche d'un spectacle passe par là, et la case d'un spectacle
+que « Pour démarrer » fait remplir (`case_rendue` de `pour-demarrer`) ; celles d'un salarié et de l'entreprise suivront.
+Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois
 

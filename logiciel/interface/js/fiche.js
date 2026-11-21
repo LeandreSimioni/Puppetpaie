@@ -85,7 +85,8 @@ function structureDecrite(cle, nom = FICHE_ACTIVE) {
 }
 
 /* UN CHAMP DE FICHE, DESSINÉ : celui que la fiche montre (`dessinerFormulaire`) et celui que « Pour démarrer » propose,
- * le même dessin. `c` : sa description ; `fiche` : `{donnees, anomalies}` ; `nom` : entreprise, salarie, spectacle. */
+ * le même dessin. `c` : sa description ; `fiche` : `{donnees, anomalies}` ; `nom` : entreprise, salarie (un spectacle,
+ * la route le rend et le dessinateur commun le dessine : `caseDeLaFiche`). */
 function champDeFiche(c, fiche, nom) {
   const desc = ETAT.configuration.description[nom];
   const anomalie = (cle) => fiche.anomalies.find((a) => a.champ === cle);
@@ -232,8 +233,7 @@ function champDeFiche(c, fiche, nom) {
     // a la main, le CSE « cse_adherent_fnas ».
     // La fiche salarie a suivi le meme jour : le sexe s'ecrivait « 2 », la
     // nationalite « 01 », le statut cadre « 04 ».
-    if (["entreprise", "salarie"].includes(nom) && c.forme === "choix"
-        && c.choix.length) {
+    if (c.forme === "choix" && c.choix.length) {
       // Un champ sans libellés (`libelles` absent) montre ses codes.
       const lib = c.libelles ? c.libelles : {};
       const v1 = texteDeLaCase(v);
@@ -314,6 +314,11 @@ function champDeFiche(c, fiche, nom) {
 
 function dessinerFormulaire(fiche) {
   if (!fiche) return;
+  // La fiche d'un spectacle, la route la rend et le dessinateur la dessine (`ouvrirLaFicheRendue`).
+  if (FICHE_ACTIVE === "spectacle") {
+    ouvrirLaFicheRendue(fiche);
+    return;
+  }
   FICHE_COURANTE = fiche;
   const desc = ETAT.configuration.description[FICHE_ACTIVE];
 
@@ -419,22 +424,16 @@ function dessinerFormulaire(fiche) {
   const err = fiche.anomalies.filter((a) => a.gravite === "erreur").length;
   document.getElementById("config-formulaire").innerHTML = `
     <div class="carte" style="margin-top:16px">
-      ${FICHE_ACTIVE === "salarie" ? enteteSalarie(fiche)
-        : FICHE_ACTIVE === "entreprise" ? "" : `<h2>${fiche.titre_dit ? echapper(fiche.titre_dit) : ""}${fiche.cle
-          // Le titre, pas la cle : `aaah-zerbinette` est un identifiant interne.
-          ? ` <span class="discret">— ${echapper(fiche.donnees.numero_objet || fiche.cle)}</span>` : ""}</h2>
-        ${fiche.cle && fiche.donnees.titre ? `<div class="cout-annee" data-cote="spectacles"
-          data-cout-de="${echapper(fiche.donnees.titre)}"></div>` : ""}`}
-      ${!fiche.cle && FICHE_ACTIVE === "spectacle" ? `<p class="note">${aideDe("fiche_cle")}</p>` : ""}
+      ${FICHE_ACTIVE === "salarie" ? enteteSalarie(fiche) : ""}
       ${err && fiche.erreurs_titre ? `<div class="encart erreur"><b>${echapper(fiche.erreurs_titre)}</b>
         — ${echapper(fiche.erreurs_note)}</div>` : ""}
       ${sections ? champs : `<div class="champs">${champs}</div>`}
       <div class="actions">
         <!-- ANNULER : une fiche qu'on crée ou modifie peut s'abandonner sans
              enregistrer. Voir annulerFiche. -->
-        <button class="secondaire" id="config-annuler"${FICHE_ACTIVE === "entreprise" ? " hidden" : ""}>Annuler</button>
-        <button class="primaire" id="config-enregistrer">Enregistrer</button>
-        <span class="note" id="config-modifie" hidden>modifications non enregistrées</span>
+        <button class="secondaire" id="config-annuler"${FICHE_ACTIVE === "entreprise" ? " hidden" : ""}>${aideDe("fiche_annuler")}</button>
+        <button class="primaire" id="config-enregistrer">${aideDe("fiche_enregistrer")}</button>
+        <span class="note" id="config-modifie" hidden>${aideDe("fiche_modifiee")}</span>
       </div>
     </div>`;
 
@@ -490,9 +489,69 @@ function dessinerFormulaire(fiche) {
   brancherNir();
   brancherSalarie(fiche);
   FICHE_MODIFIEE = false;
-  FICHE_INITIALE = JSON.stringify(lireFormulaire());
+  FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
   const t = document.getElementById("config-modifie");
   if (t) t.hidden = true;
+}
+
+/* LA FICHE QUE LA ROUTE REND (`fiche`), dessinée par le dessinateur commun (`js/avance.js`, `poserLaFiche`) : son en-tête
+ * (titre, ce qui le suit, sa note, le coût de l'année), l'encart de ses erreurs, ses cases ouvertes, « Annuler » et
+ * « Enregistrer ». Ce qu'on tape repart à la même route, 400 ms après la dernière frappe ou à chaque changement ; sa
+ * réponse dit les cases et leurs fautes. L'écriture est celle de toute fiche (`ecrireFiche`). `fiche` : la fiche de la
+ * liste (`configuration`), ou une neuve. */
+async function ouvrirLaFicheRendue(fiche) {
+  FICHE_COURANTE = fiche;
+  FICHE_MODIFIEE = false;
+  FICHE_INITIALE = null;
+  const charge = fiche.cle ? { nom: FICHE_ACTIVE, cle: fiche.cle } : { nom: FICHE_ACTIVE };
+  let r;
+  try { r = await api("fiche", charge); } catch (e) { dire(e.message, "erreur"); return; }
+  // Une autre fiche s'est ouverte pendant que la route répondait : c'est elle qui se dessine.
+  if (FICHE_COURANTE !== fiche) return;
+  const form = document.getElementById("config-formulaire");
+  form.innerHTML = `
+    <div class="carte" style="margin-top:16px">
+      <h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>
+      ${fiche.cle && fiche.donnees.titre ? `<div class="cout-annee" data-cote="spectacles"
+        data-cout-de="${echapper(fiche.donnees.titre)}"></div>` : ""}
+      ${r.note ? `<p class="note">${echapper(r.note)}</p>` : ""}
+      ${r.erreurs_titre ? `<div class="encart erreur"><b>${echapper(r.erreurs_titre)}</b>
+        — ${echapper(r.erreurs_note)}</div>` : ""}
+      <div data-fiche-cases></div>
+      <div class="actions">
+        <button class="secondaire" id="config-annuler">${aideDe("fiche_annuler")}</button>
+        <button class="primaire" id="config-enregistrer">${aideDe("fiche_enregistrer")}</button>
+        <span class="note" id="config-modifie" hidden>${aideDe("fiche_modifiee")}</span>
+      </div>
+    </div>`;
+  const cases = form.querySelector("[data-fiche-cases]");
+  poserLaFiche(cases, r);
+  let tour = 0;
+  let minuterie = null;
+  const relire = async () => {
+    const n = ++tour;
+    let r2;
+    try { r2 = await api("fiche", { ...charge, donnees: lireLaFiche(cases) }); } catch (e) { dire(e.message, "erreur"); return; }
+    if (n !== tour || !cases.isConnected) return;
+    poserLaFiche(cases, r2);
+  };
+  const changer = () => {
+    marquerModifie();
+    clearTimeout(minuterie);
+    minuterie = setTimeout(relire, 400);
+  };
+  cases.addEventListener("input", changer);
+  cases.addEventListener("change", changer);
+  document.getElementById("config-enregistrer").onclick = () => enregistrerFiche(fiche);
+  document.getElementById("config-annuler").onclick = annulerFiche;
+  peindreCoutAnnee();
+  FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
+}
+
+/* Ce que dit la fiche ouverte : celle que la route rend (`lireLaFiche`), ou le formulaire fait main (`lireFormulaire`). */
+function lireLaFicheOuverte() {
+  const rendue = document.querySelector("#config-formulaire [data-fiche-cases]");
+  return rendue ? lireLaFiche(rendue) : lireFormulaire();
 }
 
 /* Le HTML colle, sans ce qui s'executerait dans la page : scripts, cadres,
@@ -1200,7 +1259,7 @@ let FICHE_INITIALE = null;
 
 function ficheIdentique() {
   if (FICHE_INITIALE === null) return false;
-  return JSON.stringify(lireFormulaire()) === FICHE_INITIALE;
+  return JSON.stringify(lireLaFicheOuverte()) === FICHE_INITIALE;
 }
 
 function marquerModifie() {
@@ -1214,7 +1273,7 @@ function marquerModifie() {
   }
   FICHE_MODIFIEE = true;
   const t = document.getElementById("config-modifie");
-  if (t) { t.hidden = false; t.textContent = "modifications non enregistrées"; }
+  if (t) { t.hidden = false; t.textContent = ETAT.aides.fiche_modifiee; }
   if (annuler) annuler.hidden = false;
 }
 
@@ -1246,11 +1305,11 @@ async function demanderSiEnregistrer() {
   const choix = await new Promise((resoudre) => {
     let repondu = false;
     const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
-    ouvrirBoite(`<h3>Changements non enregistrés</h3>
+    ouvrirBoite(`<h3>${aideDe("non_enregistres_titre")}</h3>
       <p>${aideDe("non_enregistres")}</p>
       <div class="actions">
-        <button class="primaire" id="q-enregistrer">Enregistrer les changements</button>
-        <button class="secondaire" id="q-jeter">Annuler les changements</button>
+        <button class="primaire" id="q-enregistrer">${aideDe("garder_changements")}</button>
+        <button class="secondaire" id="q-jeter">${aideDe("jeter_changements")}</button>
       </div>`, () => repondre("rester"));
     // REPONDRE D'ABORD, FERMER ENSUITE : dans l'autre ordre, `fermerBoite`
     // appellerait le rappel de fermeture -- « rester » -- avant le bouton.
@@ -1333,7 +1392,7 @@ async function verifierFormulaire() {
  *  que c'est cette information-la qui fait decider.
  */
 async function enregistrerFiche(fiche) {
-  return ecrireFiche(fiche, lireFormulaire(), {});
+  return ecrireFiche(fiche, lireLaFicheOuverte(), {});
 }
 
 /* Une valeur declaree n'est pas toujours un mot : `signataire` et `banque`
@@ -1406,9 +1465,9 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
   const ligne = (titre, avant, apres, detail = "") => `<div class="changement">
       <div class="changement-titre">${echapper(titre)}</div>
       <div class="changement-valeurs">
-        <span class="avant">${String(avant).trim() ? echapper(avant) : `<i class="discret">vide</i>`}</span>
+        <span class="avant">${String(avant).trim() ? echapper(avant) : `<i class="discret">${aideDe("valeur_vide")}</i>`}</span>
         <span class="fleche">→</span>
-        <span class="apres">${String(apres).trim() ? echapper(apres) : `<i class="discret">effacé</i>`}</span>
+        <span class="apres">${String(apres).trim() ? echapper(apres) : `<i class="discret">${aideDe("valeur_effacee")}</i>`}</span>
       </div>${detail ? `<div class="changement-prix">${detail}</div>` : ""}
     </div>`;
   let blocs = "";
@@ -1417,29 +1476,28 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
       || metier.find((c) => c.champ === "emploi") || metier[0];
     const codes = metier.filter((c) => c !== emploi)
       .map((c) => `${c.libelle} : ${lisible(c, "apres")}`).join(" · ");
-    blocs += ligne("Métier", lisible(emploi, "avant"), lisible(emploi, "apres"),
+    blocs += ligne(ETAT.aides.dater_metier, lisible(emploi, "avant"), lisible(emploi, "apres"),
                    codes ? `<span class="discret">${echapper(codes)}</span>` : "");
   }
   blocs += autres.map((c) => ligne(c.libelle, lisible(c, "avant"), lisible(c, "apres"))).join("");
-  const titre = "Ce qui change";
   const dater = changements.length > 0;
   return new Promise((resoudre) => {
     let repondu = false;
     const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
-    ouvrirBoite(`<h3>${titre}</h3>
+    ouvrirBoite(`<h3>${aideDe("dater_titre")}</h3>
       ${usage ? `<p class="encart attention">${echapper(usage)}</p>` : ""}
       ${dater ? `<p>${aideDe("dater")}</p>
       <div class="changements">${blocs}</div>
-      <label class="champ-boite">À partir du
+      <label class="champ-boite">${aideDe("dater_depuis")}
         <input type="date" id="b-depuis"${valeurDeDepart(propose)}>
       </label>
       <p class="note">${pourquoi ? echapper(pourquoi) : ""} ${aideDe("dater_avant")}</p>
-      <details class="b-note-bloc"><summary class="discret">ajouter une note</summary>
-        <input type="text" id="b-note" placeholder="motif">
+      <details class="b-note-bloc"><summary class="discret">${aideDe("dater_note")}</summary>
+        <input type="text" id="b-note" placeholder="${aideDe("dater_motif")}">
       </details>` : ""}
       <div class="actions">
-        <button class="secondaire" id="b-annuler">Annuler</button>
-        <button class="primaire" id="b-dater">Enregistrer</button>
+        <button class="secondaire" id="b-annuler">${aideDe("fiche_annuler")}</button>
+        <button class="primaire" id="b-dater">${aideDe("fiche_enregistrer")}</button>
       </div>`,
       // Fermer la boite sans repondre -- clic a cote -- vaut annuler : c'est
       // ce que l'ecran montre, et rien ne doit s'ecrire en douce.
@@ -1528,13 +1586,13 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       // Ce que le moteur dit de ces erreurs (`pourquoi`) : celles qui bloquent si l'une bloque, sinon celles qui se forcent.
       const pourquoi = [...new Set(erreurs.filter((a) => forcable || a.forcable === false).map((a) => a.pourquoi).filter(Boolean))];
       // Le libellé et son message sur une ligne : `.encart b` est un titre.
-      ouvrirBoite(`<h3>Enregistrement refusé</h3>
+      ouvrirBoite(`<h3>${aideDe("refus_titre")}</h3>
         <div class="encart erreur">${e.detail.a_part.erreurs_dit ? `<b>${echapper(e.detail.a_part.erreurs_dit)}</b>` : ""}
           ${erreurs.map((a) => `<div class="anomalie"><b>${echapper(libelles[a.champ] || a.champ)}</b> : ${echapper(a.message)}</div>`).join("")}</div>
         ${pourquoi.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         <div class="actions">
-          <button class="${forcable ? "secondaire" : "primaire"}" onclick="fermerBoite()">Corriger</button>
-          ${forcable ? `<button class="primaire" id="b-forcer">Enregistrer quand même</button>` : ""}
+          <button class="${forcable ? "secondaire" : "primaire"}" onclick="fermerBoite()">${aideDe("refus_corriger")}</button>
+          ${forcable ? `<button class="primaire" id="b-forcer">${aideDe("refus_forcer")}</button>` : ""}
         </div>`);
       // La date d'effet deja saisie voyage avec : passer outre une erreur
       // ne doit pas faire perdre au passage ce qu'on venait de dater.

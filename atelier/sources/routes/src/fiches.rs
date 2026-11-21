@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche entière telle qu'on la saisit (les cases que la route configuration décrit) ; absente : la fiche telle qu'elle est enregistrée", avance: false },
         ],
         exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
-        rend: "titre, sous_titre et note de l'en-tête ; erreurs (l'encart, ou null) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        rend: "titre, sous_titre et note de l'en-tête ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         acte: Acte::Lit,
         phrase: 0,
@@ -922,7 +922,12 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&I
 /// (`dernier_mois_parti`) : ce qui est parti garde ce qu'il a dit, le reste prend la valeur nouvelle. Aucun mois parti :
 /// le premier jour du mois en cours. Une autre date se choisit, dans le passe aussi : ce qui est parti se corrige alors.
 pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>) -> R<(Jour, String)> {
-    let qui = if nom == NomDeFiche::Entreprise { "" } else { " pour ce salarié" };
+    // Un salarie : ce qui est parti pour lui ; l'entreprise, ce qui est parti pour quiconque ; un spectacle n'en a pas
+    // (`dernier_mois_parti`).
+    let qui = match nom {
+        NomDeFiche::Salarie => " pour ce salarié",
+        NomDeFiche::Entreprise | NomDeFiche::Spectacle => "",
+    };
     Ok(match dernier_mois_parti(ctx, nom, cle)? {
         Some(m) => {
             let phrase = format!(

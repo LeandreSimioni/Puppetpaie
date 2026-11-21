@@ -80,7 +80,8 @@ struct HistoireDUneCase {
     temps: TempsDeLaCase<String>,
 }
 
-/// CE QUE REND `fiche` : la phrase de sa verification, son en-tete, l'encart de ses erreurs (aucun sans erreur), ses
+/// CE QUE REND `fiche` : la phrase de sa verification, son en-tete, l'encart de ses erreurs (son titre, aucun sans
+/// erreur, et sa note : `ouverture::erreurs_dites`), ses
 /// cases ouvertes dans l'ordre, et l'historique de ses cases datees.
 #[derive(Serialize)]
 pub(crate) struct FicheRendue {
@@ -88,7 +89,8 @@ pub(crate) struct FicheRendue {
     phrases: Vec<String>,
     #[serde(flatten)]
     entete: EnteteDeLaFiche,
-    erreurs: Option<String>,
+    erreurs_titre: Option<String>,
+    erreurs_note: &'static str,
     cases: Vec<CaseDeLaFiche>,
     historique: Vec<HistoireDUneCase>,
 }
@@ -145,8 +147,8 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, donnees: Option<
         case.temps = historique.iter().find(|h| h.temps.champ == CaseDatee::Case(c.cle)).map(|h| h.temps.clone());
         cases.push(case);
     }
-    let (titre, note) = crate::ouverture::erreurs_dites(anomalies.iter().filter(|a| a.gravite == Gravite::Erreur).count());
-    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &plate), erreurs: titre.map(|t| format!("{} — {}", t, note)), cases, historique })
+    let (erreurs_titre, erreurs_note) = crate::ouverture::erreurs_dites(anomalies.iter().filter(|a| a.gravite == Gravite::Erreur).count());
+    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &plate), erreurs_titre, erreurs_note, cases, historique })
 }
 
 /// LA CASE QUE LE MOTEUR PROPOSE DE REMPLIR (« Pour démarrer » : `routes::rappels`), sur la fiche `nom`, de valeur
