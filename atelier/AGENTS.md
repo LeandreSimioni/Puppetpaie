@@ -79,6 +79,14 @@ soient droits.
 - **Un champ facultatif ne s'écrit que s'il est rempli** : absent ou `null`, il est vide (`None`), et vide n'est pas
   zéro ; on n'invente rien pour lui. Une case qui n'a pas de sens pour ce qu'on saisit n'existe pas. Un repli, c'est une
   absence qui devient une valeur (0, CDDU, « 12 mois ») : c'est cela qui est interdit.
+- **Vide et illisible sont deux choses, et c'est la porte qui les distingue** (Léandre, 21/11/2026 : « dans le typage
+  y a déjà la différence entre illisible et null », « si c'est illisible on demande de renommer »). Le type de chaque
+  case lit sa valeur : absente ou `null`, la case est vide ; écrite mais refusée par son type, elle est illisible.
+  Une valeur illisible dans le fichier d'une compagnie ne ferme pas la compagnie et ne se prend jamais pour vide :
+  le logiciel la montre et demande de la saisir de nouveau (ou de dire qu'elle est vide), et ne calcule rien pour
+  cette compagnie tant qu'il attend la réponse. L'illisible ne passe donc jamais la porte : aucun calcul n'a de
+  troisième état à connaître, et l'on n'en ajoute pas. Une case vide, elle, ne bloque que le calcul qui en a besoin
+  (« je peux pas faire une tarte aux pommes si j'ai pas de pommes, mais je peux faire un gâteau au chocolat »).
 - **Un geste, une route, qui obéit** : ni état, ni bouton, ni refus de plus pour une règle (le droit vit dans le calcul) ;
   un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
   diff à l'arrivée le tient). **Enregistrer sans rien changer n'est jamais une faute** (Léandre : « on peut appuyer sur
