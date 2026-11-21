@@ -46,8 +46,60 @@ function objetEnClair(v) {
 /** Les formes qui se tapent ou se choisissent d'une valeur simple : une valeur composée ne s'y écrit pas. */
 const FORMES_SIMPLES = new Set(["texte", "nombre", "montant", "oui_non", "mois", "date", "choix", "choix_rendu"]);
 
-/** Ce que le moteur prend pour une case vide (`o.prerempli`), montré dans la case sans y être écrit. */
-const prerempliDe = (o, enClair = String) => (o.prerempli == null ? "" : ` placeholder="${echapper(enClair(o.prerempli))}"`);
+/** Ce que le moteur prend pour une case vide (`o.prerempli`), montré dans la case sans y être écrit ; sans lui, l'exemple
+ *  que la route donne d'une case vide (`o.exemple`), grisé. */
+const prerempliDe = (o, enClair = String) => (o.prerempli != null ? ` placeholder="${echapper(enClair(o.prerempli))}"`
+  : o.exemple ? ` placeholder="ex. ${echapper(o.exemple)}"` : "");
+
+/** Une valeur dans un objet, par son chemin (« taux.t1_cadre »). */
+const auChemin = (o, chemin) => chemin.split(".").reduce((x, k) => (x && typeof x === "object" ? x[k] : undefined), o);
+
+/** Pose `v` dans l'objet `o` au bout de son chemin. */
+function poserAuChemin(o, chemin, v) {
+  const ks = chemin.split(".");
+  ks.slice(0, -1).forEach((k) => { if (!o[k] || typeof o[k] !== "object") o[k] = {}; o = o[k]; });
+  o[ks[ks.length - 1]] = v;
+}
+
+/** Une valeur qui ne dit rien, à quelque profondeur que ce soit. */
+const rienDit = (v) => v == null || v === "" || (typeof v === "object" && Object.values(v).every(rienDit));
+
+let NUMERO_DES_BOUTONS = 0;   // chaque groupe de boutons à cocher a son nom
+
+/** LES PARTIES D'UNE VALEUR (`o.parties`), chacune sa case dans un `[data-partie]` : celles qui sont ouvertes (de toujours,
+ *  ouvertes par la route, ou par la valeur choisie d'une autre partie : `ouvre`). Une partie dit ses choix (`choix`,
+ *  sinon ceux de la valeur, `o.choix`), son pré-rempli, son exemple et son aide (la bulle) ; ses choix en boutons à
+ *  cocher (`boutons`) ; un oui-non qui se choisit dans une liste (ses `choix` « true », « false »). */
+function partiesDe(val, o) {
+  const parties = o.parties || [];
+  const choisie = parties.filter((p) => (p.forme === "choix_rendu" || p.forme === "choix") && !p.choix)
+    .map((p) => (o.choix || []).find((c) => c.code !== "" && c.code === String(auChemin(val, p.cle)))).find(Boolean);
+  const ouvertes = (choisie && choisie.ouvre) || [];
+  return parties.filter((p) => p.toujours || p.ouverte || ouvertes.includes(p.cle)).map((p) => {
+    const v = auChemin(val, p.cle);
+    const choix = p.choix || ((p.forme === "choix_rendu" || p.forme === "choix") ? o.choix : undefined);
+    const forme = p.boutons && choix ? "boutons" : p.forme === "oui_non" && choix ? "choix_oui_non" : p.forme;
+    return `<label class="partie" data-partie="${echapper(p.cle)}"${p.aide ? ` title="${echapper(p.aide)}"` : ""}>${echapper(p.libelle)} ${
+      caseDeForme(forme, v, { choix, prerempli: p.prerempli, exemple: p.exemple, booleen: p.forme === "oui_non" })}</label>`;
+  }).join("");
+}
+
+/** CE QUE DISENT LES PARTIES de `x` (un élément qui porte `data-valeur`, la valeur telle qu'elle était, et `data-parties`,
+ *  les chemins des parties que la route décrit) : la valeur d'avant, chaque partie montrée par-dessus, une partie décrite
+ *  mais fermée vidée (elle n'a pas de sens pour ce qu'on saisit) ; une clé que la route ne décrit pas se garde. */
+function lireLesParties(x) {
+  const lu = JSON.parse(x.dataset.valeur || "null") || {};
+  const montrees = new Map([...x.querySelectorAll(":scope > [data-partie]")].map((p) => [p.dataset.partie, p]));
+  (x.dataset.parties ? x.dataset.parties.split(" ") : []).forEach((k) => {
+    const p = montrees.get(k);
+    poserAuChemin(lu, k, p ? lireLaCase(p.querySelector("[data-case]")) : null);
+  });
+  return lu;
+}
+
+/** Les attributs d'un élément de parties : sa valeur d'avant et les chemins de ses parties. */
+const attributsDesParties = (v, o) => ` data-valeur="${echapper(JSON.stringify(v == null ? null : v))}" data-parties="${
+  echapper((o.parties || []).map((p) => p.cle).join(" "))}"`;
 
 /** UN MONTANT DANS SA CASE s'écrit comme la page écrit un montant (`euros`, « 1 053,08 »), sans l'euro (la ligne le dit
  *  après lui) ; il se tape avec une virgule ou un point, et le moteur le lit. */
@@ -116,25 +168,54 @@ const CASES = {
   choix_rendu: { html: (v, o) => `<select data-case>${optionsDuChoix(v, o.choix, o.prerempli)}</select>`, lire: (x) => x.value || null },
   // Une valeur composée que le moteur décrit par son sens : elle se lit, elle ne se saisit pas d'une case.
   objet: { html: (v) => `<span class="case-objet" data-case>${echapper(objetEnClair(v))}</span>`, lire: () => undefined },
-  // UNE VALEUR FAITE DE PARTIES (`o.parties` : chacune sa clé, son libellé, sa forme) : chaque partie sa case ; celle
-  // qui se choisit offre `o.choix`, et la valeur choisie dit les parties qu'elle ouvre (`ouvre`) : une partie qui n'est
-  // pas de toujours ne se montre que si elle est ouverte. Vide de toutes ses parties, la valeur est vide.
+  // UNE VALEUR FAITE DE PARTIES (`partiesDe`, `lireLesParties`). Vide de tout ce qu'elle dit, la valeur est vide.
   parties: {
+    html: (v, o) => `<span class="case-parties" data-case${attributsDesParties(v, o)}>${partiesDe(v || {}, o)}</span>`,
+    lire: (x) => { const lu = lireLesParties(x); return rienDit(lu) ? null : lu; },
+  },
+  // DES RANGÉES (les autres établissements) : chacune ses parties (`o.parties`), une croix qui la retire, et sous elle
+  // ses temps (`o.temps.lignes`, par la clé de la rangée) ; « + » en ajoute une (`o.ajouter`). Une rangée qui ne dit rien
+  // ne part pas ; plus aucune rangée, la valeur est vide.
+  rangees: {
     html: (v, o) => {
-      const val = v || {};
-      const parties = o.parties || [];
-      const choisie = parties.filter((p) => p.forme === "choix_rendu" || p.forme === "choix")
-        .map((p) => (o.choix || []).find((c) => c.code !== "" && c.code === String(val[p.cle]))).find(Boolean);
-      const ouvertes = (choisie && choisie.ouvre) || [];
-      return `<span class="case-parties" data-case>${parties.filter((p) => p.toujours || ouvertes.includes(p.cle)).map((p) =>
-        `<label class="partie" data-partie="${echapper(p.cle)}">${echapper(p.libelle)} ${caseDeForme(p.forme, val[p.cle],
-          { choix: p.forme === "choix_rendu" || p.forme === "choix" ? o.choix : undefined })}</label>`).join("")}</span>`;
+      const tempsDe = (l) => {
+        const t = o.temps && l && l.nic ? o.temps.lignes.find((x) => x.cle === l.nic) : null;
+        return t ? t.cases.flatMap((c) => [c.avant, c.a_venir]).filter(Boolean)
+          .map((x) => `<small class="case-dit">${echapper(x.valeur)} · ${echapper(x.dit)}</small>`).join("") : "";
+      };
+      const rangee = (l) => `<div class="rangee"><span class="case-parties" data-rangee${attributsDesParties(l, o)}>${partiesDe(l || {}, o)}</span>
+        <button type="button" class="lien retirer-rangee" title="retirer" aria-label="retirer">&times;</button>${tempsDe(l)}</div>`;
+      return `<div class="case-rangees" data-case>${(Array.isArray(v) ? v : []).map(rangee).join("")}
+        <template>${rangee(null)}</template><button type="button" class="secondaire" data-rangee-plus>${echapper(o.ajouter || "+")}</button></div>`;
     },
     lire: (x) => {
-      const lu = {};
-      x.querySelectorAll(":scope > [data-partie]").forEach((p) => { lu[p.dataset.partie] = lireLaCase(p.querySelector("[data-case]")); });
-      return Object.values(lu).some((y) => y != null) ? lu : null;
+      const l = [...x.querySelectorAll(":scope > .rangee > [data-rangee]")].map(lireLesParties).filter((r) => !rienDit(r));
+      return l.length ? l : null;
     },
+  },
+  // DES BOUTONS À COCHER (les choix d'une partie, chacun une phrase entière) ; un oui-non y écrit vrai ou faux.
+  boutons: {
+    html: (v, o) => {
+      const nom = `boutons-${++NUMERO_DES_BOUTONS}`;
+      return `<span class="boutons-choix" role="radiogroup" data-case${o.booleen ? " data-booleen" : ""}>${(o.choix || []).filter((c) => c.code !== "")
+        .map((c) => `<label class="coche"><input type="radio" name="${nom}" value="${echapper(c.code)}"${v != null && String(v) === c.code ? " checked" : ""}> ${
+          echapper(c.libelle)}</label>`).join("")}</span>`;
+    },
+    lire: (x) => {
+      const c = x.querySelector("input:checked");
+      if (!c) return null;
+      return x.dataset.booleen != null ? c.value === "true" : c.value;
+    },
+  },
+  // UN OUI-NON QUI SE CHOISIT DANS UNE LISTE (« true », « false ») : il écrit vrai ou faux.
+  choix_oui_non: {
+    html: (v, o) => `<select data-case>${optionsDuChoix(v == null ? null : String(v), o.choix, null)}</select>`,
+    lire: (x) => (x.value === "" ? null : x.value === "true"),
+  },
+  // DU HTML COLLÉ (la signature des courriels), tel que le moteur le rend, nettoyé ; vide, son exemple.
+  html: {
+    html: (v, o) => `<div class="case-html" contenteditable="true" data-case${o.exemple ? ` data-exemple="${echapper(o.exemple)}"` : ""}>${v == null ? "" : String(v)}</div>`,
+    lire: (x) => (x.textContent.trim() || x.querySelector("img") ? x.innerHTML.trim() : null),
   },
 };
 
@@ -186,6 +267,18 @@ function brancherLesCases(bloc, o = {}) {
       b.before(x);
       x.focus();
     };
+  });
+  // Les rangées : « + » en ajoute une (le modèle vide), la croix retire la sienne ; la case le dit comme une saisie.
+  const dire = (x) => x.dispatchEvent(new Event("change", { bubbles: true }));
+  bloc.querySelectorAll("[data-rangee-plus]").forEach((b) => {
+    b.onclick = () => {
+      b.before(b.previousElementSibling.content.cloneNode(true));
+      brancherLesCases(b.parentElement, o);
+      dire(b.parentElement);
+    };
+  });
+  bloc.querySelectorAll(".retirer-rangee").forEach((b) => {
+    b.onclick = () => { const liste = b.closest(".case-rangees"); b.closest(".rangee").remove(); dire(liste); };
   });
   poserLesCalendriers(bloc, o);
 }
@@ -355,19 +448,27 @@ function caseDeRoute(c) {
   const choisi = (c.choix || []).find((o) => o.code !== "" && o.code === String(c.valeur));
   const temps = c.temps ? [c.temps.avant, c.temps.a_venir].filter(Boolean).map((l) => `<small class="case-dit">${
     echapper(l.valeur)} · ${echapper(l.dit)}${l.note ? ` · ${echapper(l.note)}` : ""}</small>`).join("") : "";
-  return `<label class="case" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
-    ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, parties: c.parties })}${choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}</label>`;
+  // Une case faite de plusieurs contrôles n'est pas un <label> : un clic n'y vise pas le premier.
+  const balise = ["parties", "rangees", "html"].includes(c.forme) ? "div" : "label";
+  return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
+    ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
+    choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span></${balise}>`;
 }
 
-/** Une case d'une chose qui existe (une fiche, la boîte qui modifie) : un oui-non y montre sa valeur comme un pré-rempli
- *  (le changer l'écrit, le laisser n'écrit rien : `CASES.oui_non`, `lireLesCases`). */
-const modifiable = (c) => (c.forme === "oui_non" && c.valeur != null ? { ...c, valeur: null, prerempli: c.valeur } : c);
+/** Ce que le moteur dit sous une case (`dit`), une ligne chacune. */
+const ditsDe = (c) => (c.dit || []).map((l) => `<small class="case-dit">${echapper(l)}</small>`).join("");
 
-/** Les cases en grille, comme sur la carte (`.e-cases`) : celles de base, puis celles que la route place sous « Avancé »,
- *  repliées, ouvertes d'elles-mêmes quand `ouvert`. */
-function grilleDesCases(base, avancees, ouvert) {
-  return `<div class="e-cases">${base}</div>${avancees ? `<details class="e-avance"${ouvert ? " open" : ""}><summary>Avancé</summary>
-    <div class="e-cases">${avancees}</div></details>` : ""}`;
+/** Une case d'une chose qui existe (une fiche, la boîte qui modifie) : un oui-non y montre comme un pré-rempli sa valeur
+ *  d'avant la saisie (`depart`, par défaut celle qu'elle montre) : le changer l'écrit, y revenir n'écrit rien
+ *  (`CASES.oui_non`, `lireLesCases`). */
+const modifiable = (c, depart = c.valeur) => (c.forme === "oui_non" && depart != null
+  ? { ...c, valeur: c.valeur === depart ? null : c.valeur, prerempli: depart } : c);
+
+/** Les cases en grille, comme sur la carte (`.e-cases` ; `classe` : celle d'une fiche, deux par ligne) : celles de base,
+ *  puis celles que la route place sous « Avancé », repliées, ouvertes d'elles-mêmes quand `ouvert`. */
+function grilleDesCases(base, avancees, ouvert, classe = "") {
+  return `<div class="e-cases ${classe}">${base}</div>${avancees ? `<details class="e-avance"${ouvert ? " open" : ""}><summary>Avancé</summary>
+    <div class="e-cases ${classe}">${avancees}</div></details>` : ""}`;
 }
 
 /** CE QUE LES CASES DE `bloc` DISENT, sous la clé de chacune (une case vidée : `null`). Comme sur la carte, une case qui
@@ -546,32 +647,59 @@ function historiqueDeLaFiche(h) {
 /** LES CASES D'UNE FICHE RENDUE (`f`), dans l'ordre où la route les rend, chacune une case de route d'une chose qui existe
  *  (`caseDeRoute`, `modifiable`) : la grille de base, puis celles qu'elle place sous « Avancé », ouvertes d'elles-mêmes
  *  quand l'une dit quelque chose, puis l'historique. */
-function casesDeLaFiche(f) {
-  const de = (place) => f.cases.filter((c) => c.place === place).map((c) => caseDeRoute(modifiable(c))).join("");
+function casesDeLaFiche(f, depart = {}) {
+  // Un titre quand le bloc change (`bloc`, rendu par la route ; un bloc sans titre n'en pose pas).
+  const de = (place) => {
+    let bloc = null;
+    return f.cases.filter((c) => c.place === place).map((c) => {
+      const titre = c.bloc !== bloc && c.bloc ? `<h3 class="bloc-titre">${echapper(c.bloc)}</h3>` : "";
+      bloc = c.bloc;
+      return titre + caseDeRoute(modifiable(c, depart[c.cle]));
+    }).join("");
+  };
   const dit = (v) => v != null && v !== "" && v !== false && !(Array.isArray(v) && !v.length);
-  return grilleDesCases(de("base"), de("avance"), f.cases.some((c) => c.place === "avance" && dit(c.valeur)))
+  return grilleDesCases(de("base"), de("avance"), f.cases.some((c) => c.place === "avance" && dit(c.valeur)), "fiche-cases")
     + historiqueDeLaFiche(f.historique);
 }
 
-/** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, ou quand la route rend d'autres cases, elle se dessine (ce
- *  qui est déjà tapé reste dans sa case, et le curseur aussi) ; sinon, seules ses fautes changent (`fautesDesCases`). */
+/** CE QUI DESSINE UNE FICHE RENDUE, sans ce qui change en tapant : ses cases, leurs parties ouvertes et leurs choix. */
+const dessinDeLaFiche = (f) => JSON.stringify(f.cases.map((c) => [c.cle, c.choix,
+  (c.parties || []).filter((p) => p.ouverte).map((p) => [p.cle, p.choix])]));
+
+/** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, ou quand la route rend un autre dessin (d'autres cases,
+ *  d'autres parties ouvertes, d'autres choix), elle se dessine (ce qui est déjà tapé reste dans sa case, et le curseur
+ *  aussi ; un oui-non garde pour pré-rempli sa valeur d'avant la saisie : `modifiable`) ; sinon, seuls changent ses fautes
+ *  (`fautesDesCases`) et ce que le moteur dit sous chaque case. */
 function poserLaFiche(cible, f) {
-  const controles = () => [...cible.querySelectorAll(".case[data-cle]")].map((c) => [c.dataset.cle, c.querySelector(":scope > [data-case]")]);
-  if (!cible.dataset.posee || controles().map(([k]) => k).join(" ") !== f.cases.map((c) => c.cle).join(" ")) {
+  // Chaque contrôle par sa case, sa rangée et sa partie.
+  const controles = () => [...cible.querySelectorAll("[data-case]")].map((x) => {
+    const c = x.closest(".case[data-cle]");
+    const r = x.closest(".rangee");
+    const p = x.closest("[data-partie]");
+    return [`${c ? c.dataset.cle : ""}|${r ? [...r.parentElement.children].indexOf(r) : ""}|${p ? p.dataset.partie : ""}`, x];
+  });
+  if (!cible.dataset.posee || cible.dataset.dessin !== dessinDeLaFiche(f)) {
+    if (!cible.dataset.posee) cible.depart = Object.fromEntries(f.cases.map((c) => [c.cle, c.valeur]));
     cible.dataset.posee = "1";
+    cible.dataset.dessin = dessinDeLaFiche(f);
     const tapees = new Map(controles());
-    const ici = document.activeElement && cible.contains(document.activeElement) ? document.activeElement.closest(".case[data-cle]") : null;
-    const actif = ici ? ici.dataset.cle : null;
-    cible.innerHTML = casesDeLaFiche(f);
+    const actif = controles().find(([, x]) => x === document.activeElement || x.contains(document.activeElement));
+    cible.innerHTML = casesDeLaFiche(f, cible.depart);
     controles().forEach(([k, x]) => {
       const t = tapees.get(k);
       if (!t) return;
-      if (x.type === "checkbox") x.checked = t.checked;
-      else if ("value" in x) x.value = t.value;
+      if (x.isContentEditable) x.innerHTML = t.innerHTML;
+      else if (x.type === "checkbox") x.checked = t.checked;
+      else if (x.tagName === "INPUT" || x.tagName === "SELECT") x.value = t.value;
     });
     brancherLesCases(cible);
-    const garde = actif ? cible.querySelector(`.case[data-cle="${CSS.escape(actif)}"] > [data-case]`) : null;
-    if (garde) garde.focus();
+    const garde = actif ? controles().find(([k]) => k === actif[0]) : null;
+    if (garde) garde[1].focus();
+  } else {
+    f.cases.forEach((c) => {
+      const d = cible.querySelector(`.case[data-cle="${CSS.escape(c.cle)}"] > [data-dits]`);
+      if (d) d.innerHTML = ditsDe(c);
+    });
   }
   fautesDesCases(cible, f.cases);
 }
