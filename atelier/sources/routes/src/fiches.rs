@@ -572,7 +572,10 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&IdSalarie>, d
                 let du_metier = match &t.metier {
                     Some(m) => match m.metier(&ctx.racine) {
                         Ok(lu) => Some(lu.code_emploi_ft()),
-                        Err(_) => continue,
+                        // Un metier cree absent (`Manque`), ou le fichier des metiers crees illisible (`Illisible`) ; une
+                        // autre panne (le disque, une donnee livree) remonte.
+                        Err(e) if matches!(e.classe, Some(socle::echec::Classe::Manque | socle::echec::Classe::Illisible)) => continue,
+                        Err(e) => return Err(e),
                     },
                     None => None,
                 };

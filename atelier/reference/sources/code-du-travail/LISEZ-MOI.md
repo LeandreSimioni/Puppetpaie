@@ -27,11 +27,11 @@ sujet, ce qu'on en lit et où le moteur s'en sert.
   **rupture anticipée à l'initiative du salarié** (motif de rupture 037 de la DSN, `bloc-S21.G00.62.txt` l. 265 ; le 036 est celui de l'employeur) ; le moteur ne le calcule pas.
 
 **Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `preavis.motifs_sans_preavis["031"]` (fin de CDD arrivé à
-son terme : aucun préavis, cite L1243-5) ; `atelier/sources/paie/src/permanents.rs` (`preavis_mois`, `raison_sans_preavis`) ;
-les phrases de `routes_listes.rs` et `routes_ouverture.rs` (`ce_qui_manque`, « La loi ne donne aucun preavis pour ce motif »)
-et `solde.rs` (un préavis déclaré non effectué sur un motif sans préavis). Le bloc S21.G00.63 d'un signalement de fin de CDD se
+son terme : aucun préavis, cite L1243-5) ; `atelier/sources/droit/src/permanents.rs` (`preavis_mois`, `raison_sans_preavis`) ;
+la phrase de `routes/src/imprevus.rs` (`ce_qui_manque`) et `engagement/src/solde.rs` (`duree_du_preavis` : un préavis
+déclaré non effectué sur un motif sans préavis). Le bloc S21.G00.63 d'un signalement de fin de CDD se
 déclare avec le type « 90 - pas de clause de préavis applicable » (norme DSN, `atelier/reference/norme-dsn/texte/bloc-S21.G00.63.txt`).
-Test : `tests/routes/routes_listes.rs`, `un_cdd_arrive_a_son_terme_n_a_aucun_preavis`.
+Test : `droit/tests/droit/permanents.rs` (`preavis_mois`, contre `moteur/tests/donnees/permanents/preavis_mois.json`).
 
 **Inférence** : la lecture de « motif de rupture 031 » comme « CDD arrivé à son terme » est celle de la norme DSN
 (`bloc-S21.G00.62.txt`, « 031 - fin de contrat à durée déterminée ou fin d'accueil occasionnel »).
@@ -59,11 +59,10 @@ CDI, un jour par semaine de la durée totale du contrat, deux semaines au plus, 
 terme d'origine (un CDD rompu porte sa date de rupture en `fin`) : il dit la règle et demande la durée.
 
 **Où le moteur s'en sert** : `permanents-base.json`, `preavis.rupture_anticipee_cdd` (`motifs_sans_preavis`, `motifs_a_dire`),
-lue pour un contrat à durée déterminée seulement (083 finit aussi un CDI) ; `permanents.rs` (`preavis_mois`, `regle_du_preavis`,
-`raison_sans_preavis`, qui prennent `cdd`) ; `solde::duree_du_preavis` (ni la loi du licenciement ni la convention pour 037) ; les
-deux écrans, `routes_listes::ce_qui_manque` et `routes_ouverture::ce_qui_manque_au_signalement`. Tests :
-`tests/routes/routes_listes.rs` (`un_cdd_rompu_avant_son_terme_…`, `un_cdd_rompu_par_le_salarie_…`),
-`tests/routes/routes_ouverture.rs` (`le_rappel_d_une_fin_de_cdd_…`), `tests/calcul/permanents.rs` (`le_solde_d_un_cdd_rompu_…`).
+lue pour un contrat à durée déterminée seulement (083 finit aussi un CDI) ; `droit/src/permanents.rs` (`preavis_mois`,
+`regle_du_preavis`, `raison_sans_preavis`, qui prennent `cdd`) ; `engagement/src/solde.rs` (`duree_du_preavis` : ni la loi du
+licenciement ni la convention pour 037) ; `routes/src/imprevus.rs` (`ce_qui_manque`). Aucun test propre à la rupture d'un CDD
+avant son terme.
 
 **Lectures, écrites comme telles** : « aucun préavis » est l'absence de texte qui en donne un, L1234-1 ne visant que le
 licenciement ; pour 084, la date de fin est celle que l'accord fixe. **Question ouverte**, close par le lot P1 (section « Le préavis
@@ -95,7 +94,7 @@ compensatrice de préavis ».**
   démissionnaire dispensé par l'employeur n'est **pas** un texte du dépôt (non lu, donc non écrit). Le démissionnaire d'un CDI
   relève de L1237-1 (« l'existence et la durée du préavis sont fixées par la loi, ou par convention ou accord collectif »,
   `LEGIARTI000006901174`, dans l'entrepôt, non relevé : aucun point du moteur ne le lit aujourd'hui).
-- **Où le moteur s'en sert** : `atelier/sources/paie/src/solde.rs` (l. 322-350, le « préavis non effectué (L1234-5) » : la rubrique
+- **Où le moteur s'en sert** : `atelier/sources/engagement/src/solde.rs` (`solde_de_tout_compte`, le préavis non effectué : la rubrique
   `indemnite_preavis`, mois × salaire, et l'avertissement « congés payés comprise »). Il s'appliquait à tout motif ; depuis le
   lot P1, motif par motif (section « Le préavis non effectué, motif par motif » ci-dessous) : plus rien pour un 037.
 
@@ -134,15 +133,11 @@ change pas ce qu'il faisait, et son avertissement le dit.
 
 **Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `preavis.indemnite_compensatrice` (`motifs_sans_indemnite`,
 `motifs_par_un_autre_article`, `motifs_a_trancher`) et `preavis.motifs_sans_preavis["034"]`, `["035"]` ;
-`atelier/sources/paie/src/permanents.rs` (`indemnite_de_preavis`, `IndemniteDePreavis`, et depuis le lot P2 `rubrique_de_l_indemnite_de_preavis` : la rubrique, donc le
-code du bloc 52, selon le motif, `preavis.indemnite_compensatrice.rubrique_par_motif`) ; `solde.rs` (`solde_de_tout_compte`,
-« le préavis non effectué ») ; `routes_accueil.rs` (`faits_de_rupture` : la case « préavis non effectué, payé en indemnité » n'est
-proposée que là où elle paie). Tests : `tests/calcul/permanents.rs` (`un_cdd_rompu_par_le_salarie_ne_paie_aucune_indemnite_de_preavis`,
-`une_demission_…`, `un_depart_a_la_retraite_…`, `un_licenciement_pour_inaptitude_non_professionnelle_…`, `un_licenciement_paie_…`,
-`un_licenciement_pour_inaptitude_professionnelle_…`, `une_mise_a_la_retraite_…`), `tests/routes/routes_accueil.rs`
-(`les_natures_payees_au_mois_descendent_quand_la_compagnie_dit_en_employer`) ; lot P2 : `tests/dsn/preavis.rs`
-(`le_preavis_non_effectue_d_une_inaptitude_professionnelle_se_declare_en_032`, le témoin `…_d_un_licenciement_se_declare_en_023`,
-`le_code_032_n_accompagne_qu_une_inaptitude`).
+`atelier/sources/droit/src/permanents.rs` (`indemnite_de_preavis`, `IndemniteDePreavis`, et `rubrique_de_l_indemnite_de_preavis` : la rubrique, donc le
+code du bloc 52, selon le motif, `preavis.indemnite_compensatrice.rubrique_par_motif`) ; `engagement/src/solde.rs`
+(`solde_de_tout_compte`, « le préavis non effectué »). Tests : `moteur/tests/dsn/preavis.rs`
+(`le_code_032_n_accompagne_qu_une_inaptitude`) ; `droit/tests/droit/permanents.rs`
+(`chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique`).
 
 ### Le délai de prévenance d'une fin d'essai (lot P2, 13/10/2026)
 
@@ -161,11 +156,11 @@ quatorze ; un mois : jusqu'au même quantième du mois suivant) ; la part du dé
 mensuel, chaque jour au prorata de son mois. Les « avantages » et les congés payés de ces jours ne sont pas ajoutés (le moteur
 le dit). À confirmer par l'orchestrateur ou Léandre : une circulaire ou une jurisprudence sur le décompte n'est pas déposée.
 
-**Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `preavis.delai_de_prevenance` (`tranches`, `_lecture`,
-`_cdd`, `_faute_grave`) ; `rubriques-base.json`, `indemnite_delai_prevenance` ; `permanents.rs` (`regle_du_delai_de_prevenance`,
-`delai_de_prevenance`) ; `solde.rs` (`delai_de_prevenance`). Tests : `tests/calcul/permanents.rs` (une tranche par test,
-`une_fin_d_essai_…`, `le_delai_de_prevenance_ne_se_devine_pas`, `une_fin_d_essai_a_l_initiative_du_salarie_ne_lui_donne_rien`),
-`tests/dsn/preavis.rs` (`l_indemnite_du_delai_de_prevenance_se_declare_en_017`).
+**Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `preavis.delai_de_prevenance` (`tranches`,
+`cdd_essai_minimum_jours`, `motif_rupture`, `rubrique`, `dsn_bloc52`) ; `rubriques-base.json`, `indemnite_delai_prevenance` ;
+`droit/src/permanents.rs` (`regle_du_delai_de_prevenance`, `delai_de_prevenance`) ; `engagement/src/solde.rs`
+(`delai_de_prevenance`). Test : `droit/tests/droit/permanents.rs` (`chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique`, la
+rubrique du délai et son code du bloc 52).
 
 ## L'effectif de la formation professionnelle : L6331-1, L6331-1 A, L6331-3 (relevé LEGI du 13/10/2026, lot F1)
 
@@ -214,7 +209,7 @@ Tests : `tests/calcul/imprevus.rs`, `tests/routes/routes_imprevus.rs`.
 
 **Où le moteur s'en sert** : `logiciel/donnees/obligations-base.json`, obligation `attestation_salaire` (ses `textes`, la
 `connaissance_presumee` qui rappelle que le salarié prévient vingt-quatre heures avant, `a_avoir`) ; le calcul est dans
-`atelier/sources/paie/src/obligations.rs` (`de_l_arret`). Tests : `tests/routes/routes_obligations.rs`.
+`atelier/sources/routes/src/obligations.rs` (`de_l_arret`).
 
 ## La déclaration préalable à l'embauche (21/10/2026)
 
@@ -239,8 +234,8 @@ la date vraie est à déposer ; reculée, la DPAE déposée a précédé l'embau
 refaire. Le guide de l'API DPAE de l'Urssaf (`../../norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 3 et 9) : pas
 d'annule-et-remplace en DPAE ; un doublon est rejeté (code 98).
 
-**Où le moteur s'en sert** : `atelier/sources/paie/src/routes_mois.rs` (`etat_par_paie`, `embauches_a_declarer`, l'étape
-DPAE de `bilan_du_mois`) et `routes_regularisation::debut_declare_avant`. Tests : `tests/routes/modifier_apres_echeance.rs`.
+**Où le moteur s'en sert** : `atelier/sources/routes/src/etapes.rs` (`embauches_a_declarer`, l'étape DPAE de
+`bilan_du_mois`).
 
 ## L'entrepreneur de spectacles vivants et sa licence (relevé du 23/10/2026, #236)
 

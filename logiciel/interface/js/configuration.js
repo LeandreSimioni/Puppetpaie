@@ -1090,13 +1090,13 @@ let FICHE_COURANTE = null;
 
 /* LE MÉTIER, en tête du bloc « Emploi ». Un seul
  * déroulant, qui montre le métier de la fiche (son code France Travail). La liste est celle des métiers cochés ;
- * on en ajoute dans l'onglet Métiers, pas ici. Un métier créé (`copie_de`) n'y est pas : il se choisit sur la
- * carte d'un engagement, la route « emploi » le refuse sur une fiche. */
+ * on en ajoute dans l'onglet Métiers, pas ici. La liste est celle que la route rend pour une fiche
+ * (`emplois_d_une_fiche`). */
 function METIER_HTML(fiche) {
   const code = fiche.donnees.code_emploi_ft;
   return `<div class="champ" id="config-metier">
     <label>Métier
-      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —", ETAT.emplois.filter((m) => !m.copie_de))}</select></label>
+      <select id="config-metier-choix">${optionsMetiers(code, "— choisir —", ETAT.emplois_d_une_fiche)}</select></label>
     <div class="discret petit"><button type="button" class="lien" id="aller-metiers">Ajouter un métier</button></div>
   </div>`;
 }
@@ -1184,6 +1184,7 @@ async function dessinerMetiers(cible) {
         try {
           const x = await api("metier-retenu", { code: c.dataset.code, retenu: c.checked });
           ETAT.emplois = x.emplois;
+          ETAT.emplois_d_une_fiche = x.emplois_d_une_fiche;
           ETAT.emplois_autres = x.emplois_autres;
           const m = r.metiers.find((y) => y.code === c.dataset.code);
           if (m) m.retenu = c.checked;

@@ -196,15 +196,26 @@ impl Fondement {
 
     /// LE TEXTE QUI CITE LE NOMBRE `ecrit` (un montant tel que les textes l'impriment, `socle::texte::chiffres_en_euros` :
     /// « 135,54 », « 2 094,16 ») : la premiere source dont la citation le porte entier, aux espaces insecables pres (ni
-    /// « 8,70 » dans « 98,70 », ni « 98,7 » dans « 98,70 »). Ce qui tient un montant affiche au texte qu'on affiche avec
-    /// lui (`engagement::minima::ce_que_fixe_la_convention`).
+    /// « 8,70 » dans « 98,70 », ni « 98,7 » dans « 98,70 », ni « 234,00 » dans « 1 234,00 » : une espace, ordinaire ou
+    /// insecable, precedee d'un groupe d'un a trois chiffres qui n'est pas la fin d'un autre montant, separe des milliers).
+    /// Deux montants d'une ligne de tableau (« 135,54 120,67 ») restent deux montants. Ce qui tient un montant affiche
+    /// au texte qu'on affiche avec lui (`engagement::minima::ce_que_fixe_la_convention`).
     pub fn qui_cite(&self, ecrit: &str) -> Option<&Source> {
+        let ecrit = ecrit.replace(['\u{a0}', '\u{202f}'], " ");
         self.sources().into_iter().find(|s| {
             let citation = s.citation.replace(['\u{a0}', '\u{202f}'], " ");
-            citation.match_indices(ecrit).any(|(i, _)| {
-                let avant = citation[..i].chars().next_back();
+            citation.match_indices(ecrit.as_str()).any(|(i, _)| {
+                let mut avant = citation[..i].chars().rev().peekable();
+                let juste_avant = avant.next();
                 let apres = citation[i + ecrit.len()..].chars().next();
-                !avant.is_some_and(|c| c.is_ascii_digit() || c == ',') && !apres.is_some_and(|c| c.is_ascii_digit())
+                let colle = juste_avant.is_some_and(|c| c.is_ascii_digit() || c == ',');
+                // Le groupe de chiffres avant l'espace, et ce qui le precede.
+                let mut groupe: usize = 0;
+                while avant.next_if(char::is_ascii_digit).is_some() {
+                    groupe += 1;
+                }
+                let millier = juste_avant == Some(' ') && (1..=3).contains(&groupe) && !avant.peek().is_some_and(|c| *c == ',' || *c == '.');
+                !colle && !millier && !apres.is_some_and(|c| c.is_ascii_digit())
             })
         })
     }

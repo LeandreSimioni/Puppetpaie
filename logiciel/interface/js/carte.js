@@ -139,7 +139,8 @@ function bullesOuvertes(div) {
 }
 
 /** CE QUE LA CONVENTION FIXE AU MÉTIER DE LA CARTE, sous le code de chaque rubrique (`rubriques` de la route), chacune
- *  avec la tête de sa bulle (la `phrase` de la route : le nom que la convention donne au métier). Avant sa réponse, rien :
+ *  avec la tête de sa bulle (la `phrase` de la route : le nom que la convention donne au métier), le nom du « i »
+ *  (`etiquette`) et ce qui ne se lit pas (`ne_se_lit_pas`), tels que la route les rend. Avant sa réponse, rien :
  *  elle redessine la carte quand elle arrive avec quelque chose à dire (pas sous les doigts). */
 function bullesDeLaCarte(div) {
   const metier = metierDeLaCarte(div);
@@ -149,7 +150,8 @@ function bullesDeLaCarte(div) {
   if (CONVENTION_DU_METIER.has(cle)) return CONVENTION_DU_METIER.get(cle) || {};
   CONVENTION_DU_METIER.set(cle, null);
   api("convention-du-metier", { mois, metier }).then((r) => {
-    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique, { ...x, tete: r.phrase }])));
+    CONVENTION_DU_METIER.set(cle, Object.fromEntries(r.rubriques.map((x) => [x.rubrique,
+      { ...x, tete: r.phrase, etiquette: r.etiquette, ne_se_lit_pas: r.ne_se_lit_pas }])));
     if (r.rubriques.length && div.isConnected && !div.contains(document.activeElement) && !CALENDRIER_OUVERT) dessinerCarte(div);
   }, (e) => {
     CONVENTION_DU_METIER.set(cle, {});

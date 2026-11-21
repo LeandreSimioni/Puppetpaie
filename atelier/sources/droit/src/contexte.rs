@@ -30,6 +30,16 @@ pub const GABARITS: NomDeFichier = NomDeFichier::du_moteur("gabarits");
 /// Le dossier des socles livres, une annee par fichier (`<annee>.json`), sous `donnees/`.
 pub const SOCLES: CheminRelatif = CheminRelatif::du_moteur("baremes");
 
+/// LES TARIFS DE LA CONVENTION LUS (`Contexte::tarifs_conventionnels`), et ou : le fichier du socle livre qui les porte
+/// (`baremes/<an>.json` du code) et leur cle, celle de la couche de la convention ou celle du socle. Un defaut de leur
+/// source se dit a cet endroit.
+#[derive(Debug, Clone)]
+pub struct TarifsLus {
+    pub tarifs: crate::forme_bareme::Tarifs,
+    pub fichier: CheminRelatif,
+    pub cle: String,
+}
+
 // ------------------------------------------------------------ les petits outils
 
 /// Le texte d'une case de fiche, exigee : vide, elle se refuse en se nommant.
@@ -1520,26 +1530,39 @@ impl Contexte {
     /// le bareme de l'annee reprend (`socle_de_l_annee`) et la couche de cette convention, comme le bareme les fond
     /// (`fondre_la_convention`). Rien d'autre ne les change (ni la surcouche de la compagnie, ni son taux AT/MP, ni le
     /// controle du bareme) : ils se lisent sans composer le bareme, et ce qui le ferait refuser ne les cache pas. `None` :
-    /// le logiciel n'a pas le bareme de l'annee, ou ni le socle ni la convention n'en fixent. Gardes tant que le socle et
-    /// la fiche sont les memes.
-    pub fn tarifs_conventionnels(&self, jour: &Jour) -> R<Option<crate::forme_bareme::Tarifs>> {
-        type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Option<crate::forme_bareme::Tarifs>>>>;
+    /// le logiciel n'a pas le bareme de l'annee, ou ni le socle ni la convention n'en fixent. `Ok(Err)` : ce que la
+    /// compagnie a pose empeche de les lire (sa surcouche `config/baremes/<an>.json` ne se lit pas, ou sa convention n'a
+    /// pas de couche dans le socle de l'annee) ; une lecture qui peut s'en passer le dit et continue, le calcul le refuse.
+    /// Avec eux, ou ils se lisent : le fichier du socle livre et la cle qui les porte. Gardes tant que le socle et la
+    /// fiche sont les memes.
+    pub fn tarifs_conventionnels(&self, jour: &Jour) -> R<Result<Option<TarifsLus>, socle::echec::Echec>> {
+        type Cache = Mutex<HashMap<String, socle::fichiers::Notee<Result<Option<TarifsLus>, socle::echec::Echec>>>>;
         static CACHE: OnceLock<Cache> = OnceLock::new();
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let Ok((_, fichier)) = self.socle_de_l_annee(jour.annee())? else { return Ok(None) };
+        let fichier = match self.socle_de_l_annee(jour.annee()) {
+            Ok(Ok((_, fichier))) => fichier,
+            Ok(Err(_sans_bareme)) => return Ok(Ok(None)),
+            // La surcouche de la compagnie qui ne se lit pas (sa forme, ou le disque) : dit, pas avale.
+            Err(ne_se_lit_pas) => return Ok(Err(ne_se_lit_pas)),
+        };
         let ent = self.entreprise_au(jour);
         let cle = format!("{}|{:?}|{}|{:?}|{:?}", fichier.display(), socle::fichiers::signature(&fichier)?, jour.iso(), ent.idcc, ent.organisation_patronale);
         socle::fichiers::garde_notee(cache, cle, || {
+            let livre = CheminRelatif::sous(&self.code, &fichier)?;
             let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
             let de_la_convention = match ent.idcc.dite() {
-                Some(idcc) => convention(&socle_an, idcc)?.and_then(|c| c.tarifs_conventionnels.clone()),
+                Some(idcc) => match convention(&socle_an, idcc) {
+                    Ok(couche) => couche.and_then(|c| c.tarifs_conventionnels.clone()).map(|t| (t, format!("par_convention.{}.bareme.tarifs_conventionnels", idcc))),
+                    Err(non_couverte) => return Ok(Err(non_couverte)),
+                },
                 None => None,
             };
             // La couche de la convention remplace les tarifs du socle, comme a la fonte.
-            Ok(match de_la_convention {
-                Some(t) => Some(t),
-                None => socle_an.tarifs_conventionnels,
-            })
+            let lus = match de_la_convention {
+                Some(de_la_convention) => Some(de_la_convention),
+                None => socle_an.tarifs_conventionnels.map(|t| (t, "tarifs_conventionnels".to_string())),
+            };
+            Ok(Ok(lus.map(|(tarifs, cle)| TarifsLus { tarifs, fichier: livre, cle })))
         })
     }
 

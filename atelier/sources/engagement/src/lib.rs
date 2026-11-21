@@ -1291,18 +1291,23 @@ pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
 /// (`Contexte::tarifs_conventionnels`). `None` : la convention n'en fixe pas, ou pas encore a ce jour, ou le logiciel n'a
 /// pas le bareme de l'annee ; le taux se saisit.
 pub fn tarif_conventionnel(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<MontantUnitaire>> {
-    Ok(tarif_et_ses_tarifs(ctx, code, jour)?.map(|(m, _)| m))
+    Ok(tarif_et_ses_tarifs(ctx, code, jour)??.map(|(m, _)| m))
 }
 
 /// Le meme tarif, et les tarifs de la convention qui le portent (leur `source` le cite) : la seule lecture des tarifs
-/// d'une rubrique (`Contexte::tarifs_conventionnels`, sans composer le bareme).
-pub(crate) fn tarif_et_ses_tarifs(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Option<(MontantUnitaire, droit::forme_bareme::Tarifs)>> {
+/// d'une rubrique (`Contexte::tarifs_conventionnels`, sans composer le bareme). `Ok(Err)` : ce que la compagnie a pose
+/// empeche de les lire ; le calcul le refuse (`tarif_conventionnel`), la bulle le dit.
+pub(crate) fn tarif_et_ses_tarifs(ctx: &Contexte, code: &CodeDeRubrique, jour: &Jour) -> R<Result<Option<(MontantUnitaire, droit::contexte::TarifsLus)>, Echec>> {
     if *code != REPAS && *code != NUITEE {
-        return Ok(None);
+        return Ok(Ok(None));
     }
-    let Some(t) = ctx.tarifs_conventionnels(jour)? else { return Ok(None) };
-    let tarif = if *code == REPAS { t.repas } else { t.nuitee };
-    Ok(tarif.and_then(|n| n.0).map(|m| (m, t)))
+    let lus = match ctx.tarifs_conventionnels(jour)? {
+        Ok(Some(lus)) => lus,
+        Ok(None) => return Ok(Ok(None)),
+        Err(e) => return Ok(Err(e)),
+    };
+    let tarif = if *code == REPAS { lus.tarifs.repas } else { lus.tarifs.nuitee };
+    Ok(Ok(tarif.and_then(|n| n.0).map(|m| (m, lus))))
 }
 
 /// Les lignes d'un engagement au cachet dont la rubrique a un tarif de la convention (`tarif_conventionnel`) et qui ne

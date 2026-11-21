@@ -1365,12 +1365,14 @@ pub struct CeQueFixe {
     pub texte: String,
 }
 
-/// CE QUE LA CONVENTION FIXE AU METIER, a un jour : le nom qu'elle lui donne, et chaque rubrique dont un montant vaut ce
-/// jour-la (`CeQueFixe`).
+/// CE QUE LA CONVENTION FIXE AU METIER, a un jour : le nom qu'elle lui donne, chaque rubrique dont un montant vaut ce
+/// jour-la (`CeQueFixe`), et ce qui ne se lit pas, en phrases (la surcouche de la compagnie, une convention que le socle
+/// de l'annee ne couvre pas) : les rubriques qui en ont besoin ne se disent pas, les autres restent.
 #[derive(Debug, Clone)]
 pub struct CeQueFixeAuMetier {
     pub nom: String,
     pub rubriques: Vec<CeQueFixe>,
+    pub ne_se_lit_pas: Vec<String>,
 }
 
 /// LES PALIERS D'UNE GRILLE DE CACHETS, dits : « 1 à 7 représentations dans le mois », « 8 à 11 », « 16 et plus » ; la
@@ -1459,8 +1461,10 @@ fn texte_qui_fixe(fondement: Option<&droit::source::Fondement>, montants: &[Mont
 /// de chacun. Une lecture, qui dit ce qu'elle sait : rien de releve pour le metier, ou une compagnie sans convention,
 /// rien (`None`) ; une rubrique dont la valeur ne se lit pas pour la compagnie ce jour-la (l'accord qui la lie, quand le
 /// logiciel n'a pas le bareme de l'annee pour reconnaitre son organisation patronale ; un tarif que la convention ne
-/// fixe pas encore) ne se dit pas, et rien d'autre ne tombe. Seul refuse un defaut de ce qui est livre (une ligne, une
-/// grille ou une source qui manque) ou le disque.
+/// fixe pas encore) ne se dit pas, et rien d'autre ne tombe. Ce que la compagnie a pose et qui ne se lit pas (sa
+/// surcouche du bareme, une convention que le socle de l'annee ne couvre pas) cache les seules rubriques qui en ont
+/// besoin, et se dit (`ne_se_lit_pas`). Seul refuse un defaut de ce qui est livre (une ligne, une grille ou une source
+/// qui manque) ou le disque.
 pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jour: Jour) -> R<Option<CeQueFixeAuMetier>> {
     use droit::minima::CeQueFixeLaConvention as Releve;
     let ent = ctx.entreprise_au(&jour);
@@ -1470,18 +1474,34 @@ pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jou
     let Some(releve) = t.convention(idcc).and_then(|c| c.metiers.as_ref()).and_then(|m| m.get(code)) else { return Ok(None) };
     // L'accord qui lie la compagnie depend de son organisation patronale, que seul le bareme de l'annee reconnait : sans
     // lui, la grille qui la lie ne se sait pas, et ni le cachet ni la repetition ne se disent.
-    let grille = match ctx.organisation_dans_le_socle(jour.annee(), ent.organisation_patronale.dite())? {
-        Ok(organisation) => grille_au(t, idcc, organisation.as_ref(), Some(jour)).map(|(g, _, _)| g),
-        Err(_sans_bareme) => None,
+    let mut ne_se_lit_pas: Vec<String> = Vec::new();
+    let mut dire = |e: Echec| {
+        if !ne_se_lit_pas.contains(&e.phrase) {
+            ne_se_lit_pas.push(e.phrase);
+        }
+    };
+    // Une organisation que la fiche dit se reconnait dans le socle que la surcouche de la compagnie reprend : une
+    // surcouche qui ne se lit pas cache l'accord qui lie la compagnie, donc le cachet et la repetition ; elle se dit.
+    let grille = match ctx.organisation_dans_le_socle(jour.annee(), ent.organisation_patronale.dite()) {
+        Ok(Ok(organisation)) => grille_au(t, idcc, organisation.as_ref(), Some(jour)).map(|(g, _, _)| g),
+        Ok(Err(_sans_bareme)) => None,
+        Err(e) => {
+            dire(e);
+            None
+        }
     };
     let cle = format!("conventions.{}.metiers.{}", idcc, code);
-    // Le tarif de ce jour : celui que la ligne prend quand elle ne dit pas son taux.
-    let tarif_fixe = |rubrique: CodeDeRubrique, condition: &String| -> R<Option<CeQueFixe>> {
-        let Some((montant, tarifs)) = crate::tarif_et_ses_tarifs(ctx, &rubrique, &jour)? else { return Ok(None) };
+    // Le tarif de ce jour : celui que la ligne prend quand elle ne dit pas son taux ; `Err` : ce que la compagnie a pose
+    // empeche de le lire (`Contexte::tarifs_conventionnels`).
+    let tarif_fixe = |rubrique: CodeDeRubrique, condition: &String| -> R<Result<Option<CeQueFixe>, Echec>> {
+        let (montant, lus) = match crate::tarif_et_ses_tarifs(ctx, &rubrique, &jour)? {
+            Ok(Some(x)) => x,
+            Ok(None) => return Ok(Ok(None)),
+            Err(e) => return Ok(Err(e)),
+        };
         let montants = vec![MontantFixe { condition: condition.clone(), montant }];
-        let ou = format!("{}.json par_convention.{}.bareme.tarifs_conventionnels", jour.annee(), idcc);
-        let texte = texte_qui_fixe(tarifs.source.as_ref(), &montants, &droit::contexte::SOCLES, &ou)?;
-        Ok(Some(CeQueFixe { rubrique, montants, texte }))
+        let texte = texte_qui_fixe(lus.tarifs.source.as_ref(), &montants, &lus.fichier, &lus.cle)?;
+        Ok(Ok(Some(CeQueFixe { rubrique, montants, texte })))
     };
     let mut rubriques = Vec::new();
     for r in &releve.rubriques {
@@ -1499,16 +1519,19 @@ pub fn ce_que_fixe_la_convention(ctx: &Contexte, code: &emplois::CodeEmploi, jou
                 CeQueFixe { rubrique: REPETITION, montants, texte }
             }
             (Releve::Cachet { .. } | Releve::Repetition { .. }, None) => continue,
-            (Releve::Repas { condition }, _) => match tarif_fixe(crate::REPAS, condition)? {
-                Some(f) => f,
-                None => continue,
-            },
-            (Releve::Nuitee { condition }, _) => match tarif_fixe(crate::NUITEE, condition)? {
-                Some(f) => f,
-                None => continue,
-            },
+            (Releve::Repas { condition }, _) | (Releve::Nuitee { condition }, _) => {
+                let rubrique = if matches!(r, Releve::Repas { .. }) { crate::REPAS } else { crate::NUITEE };
+                match tarif_fixe(rubrique, condition)? {
+                    Ok(Some(f)) => f,
+                    Ok(None) => continue,
+                    Err(e) => {
+                        dire(e);
+                        continue;
+                    }
+                }
+            }
         };
         rubriques.push(fixe);
     }
-    Ok(Some(CeQueFixeAuMetier { nom: releve.nom.clone(), rubriques }))
+    Ok(Some(CeQueFixeAuMetier { nom: releve.nom.clone(), rubriques, ne_se_lit_pas }))
 }
