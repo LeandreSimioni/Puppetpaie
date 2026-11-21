@@ -54,7 +54,14 @@ fn premiere_embauche_reprise(ctx: &Contexte, importes: &[Importe]) -> R<Option<P
         let du_bulletin = !i.paies().values().any(|p| p.contrat.numero_declare().is_some())
             && i.contrat().is_none_or(|c| c.atteste_par == Attestation::Bulletin);
         for (mois, p) in i.paies() {
-            let Some(contrat) = i.contrat_de_la_paie(p)? else { continue };
+            // Une paie dont le contrat ne se lit pas (ce que l'effectif range en manque) ne propose rien, et ne ferme
+            // pas la page.
+            let contrat = match i.contrat_de_la_paie(p) {
+                Ok(Some(c)) => c,
+                Ok(None) => continue,
+                Err(e) if e.dit_un_manque() => continue,
+                Err(e) => return Err(e),
+            };
             let jour = contrat.debut();
             if plus_ancien.is_none_or(|(j, b, _, _)| (jour, du_bulletin) < (j, b)) {
                 plus_ancien = Some((jour, du_bulletin, i, *mois));
@@ -62,7 +69,12 @@ fn premiere_embauche_reprise(ctx: &Contexte, importes: &[Importe]) -> R<Option<P
         }
     }
     let Some((jour, _, i, mois)) = plus_ancien else { return Ok(None) };
-    let qui = ctx.nomme(&i.cle_ecrite()?);
+    // Un engagement qui ne dit pas son salarie : la date ne se propose pas sans dire de qui elle vient.
+    let qui = match i.cle_ecrite() {
+        Ok(cle) => ctx.nomme(&cle),
+        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) => return Err(e),
+    };
     let declaree = i.paies().values().any(|p| p.contrat.numero_declare().is_some());
     let d_ou = match (declaree, i.contrat().map(|c| c.atteste_par)) {
         (true, _) => format!("le début du contrat de {} que déclare une DSN déposée", qui),
@@ -70,8 +82,8 @@ fn premiere_embauche_reprise(ctx: &Contexte, importes: &[Importe]) -> R<Option<P
         (false, Some(Attestation::Certificat)) => format!("le début du contrat de {} qu'atteste son certificat Congés Spectacles", qui),
         (false, Some(Attestation::Bulletin) | None) => format!(
             "le premier jour de la période que paie le bulletin de {} de {} (un bulletin ne dit pas le jour de l'embauche, seulement la période qu'il paie)",
-            mois.libelle(Graphie::Accentuee),
-            qui
+            qui,
+            mois.libelle(Graphie::Accentuee)
         ),
     };
     Ok(Some(PremiereEmbaucheReprise { jour, d_ou }))
@@ -304,21 +316,23 @@ pub fn effectifs_repris(ctx: &Contexte, annees: &[Annee]) -> R<(Vec<EffectifRepr
                 });
                 continue;
             }
-            None if plus_ancien.annee() == *an => {
-                let peut_etre = format!(
-                    "{} est peut-être l'année de la première embauche (la plus ancienne paie reprise est de {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS).",
-                    an,
-                    plus_ancien.libelle(Graphie::Accentuee)
-                );
+            // L'annee de la date proposee (la case de la premiere embauche dit d'ou elle vient, `demarrage::route`) ;
+            // sans proposition, celle de la plus ancienne paie reprise.
+            None if proposee.as_ref().map_or(plus_ancien.annee(), |p| p.jour.annee()) == *an => {
                 out.push(rien(match &proposee {
                     Some(p) => format!(
-                        "{} Date proposée pour la première embauche : le {}, {}, le plus ancien début de contrat que les pièces reprises disent. Validez-la ou corrigez-la : l'effectif de {} se proposera ensuite d'après elle.",
-                        peut_etre,
+                        "{} est l'année de la première embauche proposée (le {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS). Validez ou corrigez la date de la première embauche : l'effectif de {} se proposera ensuite d'après elle.",
+                        an,
                         p.jour.jj_mm_aaaa(),
-                        p.d_ou,
                         an
                     ),
-                    None => format!("{} Dites la date de la première embauche : d'avant {}, l'effectif de {} se proposera d'après les paies reprises.", peut_etre, an, an),
+                    None => format!(
+                        "{} est peut-être l'année de la première embauche (la plus ancienne paie reprise est de {}) : son effectif serait alors celui présent le dernier jour du mois de cette embauche, pas une moyenne (L. 130-1, I, CSS). Dites la date de la première embauche : d'avant {}, l'effectif de {} se proposera d'après les paies reprises.",
+                        an,
+                        plus_ancien.libelle(Graphie::Accentuee),
+                        an,
+                        an
+                    ),
                 }));
                 continue;
             }

@@ -3236,7 +3236,8 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   dans `manques`.
 - **Sans date de première embauche**, la même route la propose dans sa case (`Manque::propose`, que la page remplit) :
   le plus ancien début de contrat que les pièces reprises disent (`engagement::effectif_repris::PremiereEmbaucheReprise` ;
-  une DSN ou une AEM dit le contrat, un bulletin seulement la période qu'il paie, et la phrase dit laquelle). Rien ne
+  une DSN, une AEM ou un certificat Congés Spectacles dit le contrat, un bulletin seulement la période qu'il paie ; la
+  ligne de la case dit d'où vient la date). Rien ne
   s'écrit sans le geste de la compagnie, qui la valide ou la corrige : le logiciel ne sait pas si les pièces reprises
   sont toutes les siennes.
 - Ces seuils-là (formation, FNAL, échéance de la DSN) sont ceux du code de la

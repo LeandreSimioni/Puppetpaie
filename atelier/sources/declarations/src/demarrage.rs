@@ -723,9 +723,12 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
     let mut demandees: Vec<socle::mois::Annee> = lignes.iter().flat_map(|l| l.annees_d_effectif.iter().copied()).collect();
     demandees.sort();
     demandees.dedup();
+    let premiere_embauche = Some(CaseDeFiche::from(CaseEntreprise::PremiereEmbauche));
+    // D'ou vient la date proposee pour la premiere embauche : la ligne de sa case le dit, a la page comme en ligne de commande.
+    let mut d_ou_l_embauche: Option<String> = None;
     if !demandees.is_empty() {
         let (repris, embauche) = engagement::effectif_repris::effectifs_repris(ctx, &demandees)?;
-        let premiere_embauche = Some(CaseDeFiche::from(CaseEntreprise::PremiereEmbauche));
+        d_ou_l_embauche = embauche.as_ref().map(|e| e.d_ou.clone());
         for l in lignes.iter_mut() {
             l.effectifs = repris.iter().filter(|e| l.annees_d_effectif.contains(&e.annee)).cloned().collect();
             if l.qui.is_none() && l.champ == premiere_embauche {
@@ -740,13 +743,21 @@ pub fn route(ctx: &Contexte, proposes: Vec<Manque>, pose: Option<Pose>, repris: 
             _ => return Err(socle::refus!("La ligne « {} » de « Pour démarrer » ne dit ni ce qu'elle bloque ni ce qu'elle sert : le signaler au développeur.", l.libelle)),
         };
         // Une valeur que le moteur propose (`propose`) se dit dans la phrase : la ligne de commande la lit comme l'ecran.
-        let propose: String = l.propose.iter().map(|p| format!(" Proposé : « {} ».", p.dite())).collect();
+        let de_l_embauche = match (&l.propose, &d_ou_l_embauche) {
+            (Some(p), Some(d)) if l.qui.is_none() && l.champ == premiere_embauche => Some(format!(" Proposé : « {} », {}. Validez-la ou corrigez-la.", p.dite(), d)),
+            _ => None,
+        };
+        let propose: String = match &de_l_embauche {
+            Some(p) => p.clone(),
+            None => l.propose.iter().map(|p| format!(" Proposé : « {} ».", p.dite())).collect(),
+        };
         // L'effectif que les paies reprises donnent, annee par annee, ou ce qui manque pour le calculer.
         let effectifs: String = l.effectifs.iter().map(|e| format!(" {}", e.phrase)).collect();
         l.phrase = Some(format!("{} › {} : {}.{}{}", l.ou, l.libelle, pour, propose, effectifs));
         let mut c = pour.chars();
         let initiale: String = c.next().into_iter().flat_map(char::to_uppercase).collect();
-        l.pour = Some(format!("{}{}.", initiale, c.as_str()));
+        // La page montre `pour` sous la case : la provenance de la date proposee s'y lit.
+        l.pour = Some(format!("{}{}.{}", initiale, c.as_str(), de_l_embauche.unwrap_or_default()));
     }
     let (par_une_dsn, mut lignes): (Vec<Manque>, Vec<Manque>) = match repris {
         CeQueLImportARepris::SansDsn { .. } => lignes.into_iter().partition(|l| l.piece == Some(PieceQuiLaPorte::Dsn)),
