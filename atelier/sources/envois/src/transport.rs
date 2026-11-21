@@ -46,33 +46,77 @@ pub fn message_du_statut(code: http::StatusCode) -> Option<&'static str> {
     MESSAGES.iter().find(|(c, _)| *c == code).map(|(_, m)| *m)
 }
 
+/// CE QU'ON FAISAIT quand un tiers a mal repondu : le conseil de sa phrase en depend (`panne_dite`). Un meme statut ne
+/// dit pas la meme chose selon le service appele (guide de l'API DSN v6.9, § 9.1.1 « Dépôt et retours », l. 5191-5232,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.9-20260904.txt`) : un 403 est un
+/// compte bloque a l'authentification, une declaration deposee par un autre a la consultation ; un 422 est un parametre
+/// invalide a l'authentification, l'avis de rejet au depot. Seule l'identification renvoie la compagnie a ses mots de
+/// passe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CeQuOnFaisait {
+    /// S'identifier aupres de l'organisme du canal (l'authentification du guide).
+    Identifier(crate::releve_retours::CanalDesRetours),
+    /// Relever ce que l'organisme sert : la liste des retours ou des depots, un retour a telecharger.
+    Relever(crate::releve_retours::CanalDesRetours),
+    /// Deposer la declaration du canal (une DSN, une DPAE).
+    Deposer(crate::releve_retours::CanalDesRetours),
+    /// Se servir du Drive (sauvegarder, restaurer, voir le compte lie), et le jeton d'acces qu'il demande.
+    Sauvegarder,
+    /// Lier le compte Google (l'autorisation).
+    LierGoogle,
+}
+
+impl CeQuOnFaisait {
+    /// Le tiers, tel qu'une phrase le nomme en tete.
+    pub fn qui(self) -> &'static str {
+        match self {
+            CeQuOnFaisait::Identifier(c) | CeQuOnFaisait::Relever(c) | CeQuOnFaisait::Deposer(c) => c.organisme(),
+            CeQuOnFaisait::Sauvegarder | CeQuOnFaisait::LierGoogle => "Google",
+        }
+    }
+}
+
 /// UNE PANNE D'UN TIERS, DITE A L'ADMINISTRATEUR -- le seul endroit ou la reponse d'un organisme (net-entreprises,
-/// l'Urssaf) ou de Google devient une phrase que la compagnie lit. La phrase dit qui (`qui` : « net-entreprises »,
-/// « L'Urssaf (DPAE) », « Google »), ce que cela peut etre, et quoi faire ; elle ne porte ni adresse, ni code de
-/// reponse, ni corps. Le detail technique (le statut, l'adresse sans ses parametres, le debut du corps, ce que le systeme
-/// ou la bibliotheque a dit) va a part (`Lieu::detail`), que le journal des incidents porte a l'editeur ; il est aussi
-/// note dans la memoire des echecs (`socle::echec::noter_echec`). La classe est celle du statut (`classe_du_statut` :
-/// `Organisme` ou `DepotRefuse`), ou celle de la panne brute (un delai depasse reste `DelaiDepasse`) : rien ne change de
-/// ce qui est tente, accepte ou refuse.
+/// l'Urssaf) ou de Google devient une phrase que la compagnie lit. La phrase dit qui (`CeQuOnFaisait::qui`), ce que
+/// cela peut etre pour ce qu'on faisait, et quoi faire ; elle ne porte ni adresse, ni code de reponse, ni corps, sauf
+/// les motifs d'un avis de rejet, ecrits pour etre lus (`motifs_du_rejet`). Le detail technique (le statut, l'adresse
+/// sans ses parametres, le debut du corps, ce que le systeme ou la bibliotheque a dit) va a part (`Lieu::detail`), que
+/// le journal des incidents porte a l'editeur ; il est aussi note dans la memoire des echecs
+/// (`socle::echec::noter_echec`). La classe est celle du statut (`classe_du_statut` : `Organisme`, `DepotRefuse` ou
+/// `Google`), ou celle de la panne brute (un delai depasse reste `DelaiDepasse`) : rien ne change de ce qui est tente,
+/// accepte ou refuse.
 #[track_caller]
-pub fn panne_dite(qui: &str, classe_du_statut: Classe, url: &Url, p: Panne) -> EchecApi {
+pub fn panne_dite(faisait: CeQuOnFaisait, classe_du_statut: Classe, url: &Url, p: Panne) -> EchecApi {
+    let qui = faisait.qui();
     let (classe, phrase, detail, code) = match p {
         Panne::Statut { code, corps } => {
-            let phrase = match code {
-                http::StatusCode::UNAUTHORIZED => format!("{} a refusé l'identification : vérifier les accès dans Configuration › Mots de passe.", qui),
-                http::StatusCode::FORBIDDEN => format!("{} refuse l'accès : le compte est peut-être bloqué un temps après trop d'essais. Attendre, puis réessayer.", qui),
-                http::StatusCode::UNPROCESSABLE_ENTITY => format!("{} refuse les identifiants envoyés : le plus souvent un mot de passe mal saisi, à reposer dans Configuration › Mots de passe.", qui),
-                http::StatusCode::TOO_MANY_REQUESTS => format!("{} demande d'espacer les appels : nouvel essai plus tard.", qui),
-                _ => format!("{} n'a pas répondu comme attendu : le service est peut-être indisponible, ou les accès ne conviennent plus. Réessayer plus tard ; si cela dure, vérifier les accès dans Configuration › Mots de passe.", qui),
+            let motifs = match (faisait, &corps) {
+                (CeQuOnFaisait::Deposer(_), Ok(c)) if code == http::StatusCode::UNPROCESSABLE_ENTITY => motifs_du_rejet(c),
+                _ => Vec::new(),
             };
+            let phrase = phrase_du_statut_dite(faisait, code, &motifs);
             (Some(classe_du_statut), phrase, phrase_du_statut(code, &format!("sur {}", sans_secret(url.texte())), Some(debut_du_corps(corps, 800))), Some(code))
         }
         // « injoignable » : le mot que `sauvegarde::hors_ligne` lit pour dire que le reseau manque.
-        Panne::Reseau(r) => (Some(classe_du_statut), format!("{} injoignable : vérifier la connexion internet ; nouvel essai plus tard.", qui), format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None),
+        Panne::Reseau(r) => {
+            let phrase = match faisait {
+                // La connexion a pu se rompre apres l'envoi (`panne_de` : ureq ne dit pas a quel moment).
+                CeQuOnFaisait::Deposer(c) => format!(
+                    "{} injoignable pendant le dépôt : vérifier la connexion internet. {} a pu partir avant la coupure : regarder ce que le relevé des retours en dit avant toute autre chose.",
+                    qui,
+                    majuscule(c.declaration())
+                ),
+                _ => format!("{} injoignable : vérifier la connexion internet ; nouvel essai plus tard.", qui),
+            };
+            (Some(classe_du_statut), phrase, format!("Reseau injoignable pour {} : {}", sans_secret(url.texte()), r), None)
+        }
         Panne::Brute(e) => {
-            let phrase = match e.classe {
-                Some(Classe::DelaiDepasse) => format!("{} n'a pas répondu à temps : nouvel essai plus tard.", qui),
-                Some(Classe::Reseau) => format!("{} a coupé sa réponse en chemin : nouvel essai plus tard.", qui),
+            let phrase = match (faisait, e.classe) {
+                (CeQuOnFaisait::Deposer(c), Some(Classe::DelaiDepasse)) => peut_etre_recue(qui, "n'a pas répondu à temps au dépôt", c),
+                (CeQuOnFaisait::Deposer(c), Some(Classe::Reseau)) => peut_etre_recue(qui, "a coupé sa réponse au dépôt", c),
+                (CeQuOnFaisait::Deposer(c), _) => peut_etre_recue(qui, "a rendu au dépôt une réponse que le logiciel ne lit pas", c),
+                (_, Some(Classe::DelaiDepasse)) => format!("{} n'a pas répondu à temps : nouvel essai plus tard.", qui),
+                (_, Some(Classe::Reseau)) => format!("{} a coupé sa réponse en chemin : nouvel essai plus tard.", qui),
                 _ => format!("{} a rendu une réponse que le logiciel ne lit pas : nouvel essai plus tard.", qui),
             };
             (e.classe, phrase, format!("{} : {}", sans_secret(url.texte()), e.phrase), None)
@@ -81,6 +125,95 @@ pub fn panne_dite(qui: &str, classe_du_statut: Classe, url: &Url, p: Panne) -> E
     socle::echec::noter_echec(classe, &detail);
     let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
     EchecApi { echec: Echec { classe, phrase, a_part: Some(a_part.into()) }, code }
+}
+
+/// La phrase d'un statut hors 2xx, pour ce qu'on faisait. Les sens viennent du guide de l'API DSN v6.9, § 9.1.1
+/// (l. 5191-5232), que l'API DPAE reprend (`deposer-dsn`, guide d'implementation de l'API DPAE) ; pour Google, de
+/// « Resolve errors » (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt` :
+/// 401, l. 549-573 : rafraichir le jeton, sinon refaire l'autorisation).
+fn phrase_du_statut_dite(faisait: CeQuOnFaisait, code: http::StatusCode, motifs: &[String]) -> String {
+    use http::StatusCode as S;
+    let qui = faisait.qui();
+    let espacer = || format!("{} demande d'espacer les appels : nouvel essai plus tard.", qui);
+    match faisait {
+        // Authentification : 401 erreur d'authentification, 403 compte bloque apres des tentatives infructueuses, 422
+        // parametres invalides (dont les contraintes de format de net-entreprises).
+        CeQuOnFaisait::Identifier(_) => match code {
+            S::UNAUTHORIZED => format!("{} a refusé l'identification : vérifier les accès dans Configuration › Mots de passe.", qui),
+            S::FORBIDDEN => format!("{} refuse l'accès : le compte est peut-être bloqué un temps après trop d'essais. Attendre, puis réessayer.", qui),
+            S::UNPROCESSABLE_ENTITY => format!("{} refuse les identifiants envoyés : vérifier le compte (SIRET, nom, prénom sans accent) et son mot de passe dans Configuration › Mots de passe.", qui),
+            S::TOO_MANY_REQUESTS => espacer(),
+            _ => format!("{} n'a pas répondu comme attendu : le service est peut-être indisponible, ou les accès ne conviennent plus. Réessayer plus tard ; si cela dure, vérifier les accès dans Configuration › Mots de passe.", qui),
+        },
+        // Consultation et telechargement : 401 jeton invalide, ou declarant pas encore inscrit (« attendre J+1 ») ; 403
+        // une declaration que ce compte n'a pas deposee ; 422 parametres invalides ; 429 les contraintes de consultation.
+        CeQuOnFaisait::Relever(_) => match code {
+            S::UNAUTHORIZED => format!("{} a refusé la consultation : la session n'est plus valable, ou le compte n'est inscrit à ce service que depuis aujourd'hui (il l'est le lendemain). Nouvel essai plus tard.", qui),
+            S::FORBIDDEN => format!("{} refuse l'accès : ce qui est demandé porte sur une déclaration que ce compte n'a pas déposée.", qui),
+            S::UNPROCESSABLE_ENTITY => format!("{} juge la demande de consultation invalide : nouvel essai plus tard.", qui),
+            S::TOO_MANY_REQUESTS => espacer(),
+            _ => format!("{} n'a pas répondu comme attendu : le service est peut-être indisponible. Nouvel essai plus tard.", qui),
+        },
+        // Depot : 401 jeton invalide, ou declarant pas encore inscrit ; 422 l'avis de rejet (§ 3.2.2, l. 1336-1365) ;
+        // une erreur du service (5xx) ne dit pas si la declaration a ete recue.
+        CeQuOnFaisait::Deposer(c) => match code {
+            S::UNPROCESSABLE_ENTITY if motifs.is_empty() => format!("{} a rejeté {} (avis de rejet) : {}", qui, c.declaration(), c.ou_se_relit_l_avis_de_rejet()),
+            S::UNPROCESSABLE_ENTITY => format!("{} a rejeté {} (avis de rejet) : {}", qui, c.declaration(), motifs.join(" ; ")),
+            S::UNAUTHORIZED => format!("{} a refusé le dépôt : la session n'est plus valable, ou le compte n'est inscrit à ce service que depuis aujourd'hui (il l'est le lendemain). Nouvel essai plus tard.", qui),
+            serveur if serveur.is_server_error() => peut_etre_recue(qui, "a répondu au dépôt par une erreur de son service", c),
+            _ => format!("{} a refusé le dépôt : le service est peut-être indisponible. Nouvel essai plus tard.", qui),
+        },
+        CeQuOnFaisait::Sauvegarder => match code {
+            S::UNAUTHORIZED => "Google ne reconnaît plus l'autorisation du logiciel : lier de nouveau le Drive (Configuration › Mots de passe).".to_string(),
+            S::FORBIDDEN => "Google refuse cette action sur le Drive : nouvel essai plus tard ; si cela dure, lier de nouveau le Drive (Configuration › Mots de passe).".to_string(),
+            S::TOO_MANY_REQUESTS => espacer(),
+            _ => "Google n'a pas répondu comme attendu : nouvel essai plus tard.".to_string(),
+        },
+        CeQuOnFaisait::LierGoogle => "Google n'a pas accepté la liaison du compte : recommencer plus tard.".to_string(),
+    }
+}
+
+/// UN DEPOT QUI N'A PAS ABOUTI SANS REFUS (un delai depasse, une reponse coupee, une erreur du service) : la declaration
+/// a peut-etre ete recue, et ne se redepose pas a l'aveugle (regle de fond 4). L'accuse d'enregistrement ou l'avis de
+/// rejet « sont téléchargeables à nouveau par les services de gestion des retours » (guide de l'API DSN v6.9, § 3.2.2,
+/// l. 1338-1340) ; pour la DPAE, ils sont « mis à disposition sur le tableau de bord du déclarant » et une seconde DPAE
+/// de la meme embauche est rejetee en doublon (`atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 6 et
+/// 9). Ce que le releve dira d'un depot sans reponse, aucun texte ne l'ecrit : INFERENCE, de ce que ces retours se
+/// relisent.
+fn peut_etre_recue(qui: &str, quoi: &str, c: crate::releve_retours::CanalDesRetours) -> String {
+    format!("{} {} : {} a peut-être été reçue. Attendre ce que le relevé des retours en dit avant toute autre chose.", qui, quoi, c.declaration())
+}
+
+/// Le texte avec sa premiere lettre en capitale.
+fn majuscule(t: &str) -> String {
+    let mut c = t.chars();
+    match c.next() {
+        Some(p) => p.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
+}
+
+/// LES MOTIFS D'UN AVIS DE REJET, tels que l'organisme les ecrit : le corps d'un 422 au depot est l'avis de rejet (guide
+/// de l'API DSN v6.9, § 3.2.2, l. 1338-1365), au format des bilans, dont chaque anomalie porte son « message », le
+/// « Message d'erreur » a afficher (`gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`, l. 251-252). Un corps qui
+/// ne se lit pas en bilan n'en donne aucun : la phrase dit alors ou l'avis se relit, et le corps entier part a part.
+fn motifs_du_rejet(corps: &[u8]) -> Vec<String> {
+    let lu = if corps.starts_with(&[0x1f, 0x8b]) {
+        match gunzip(corps) {
+            Ok(o) => o,
+            Err(_) => return Vec::new(),
+        }
+    } else {
+        corps.to_vec()
+    };
+    let mut motifs: Vec<String> = Vec::new();
+    for a in crate::retours::anomalies_codees_d_octets(&lu).into_iter().flatten() {
+        let m = socle::texte::strip(&a.message).to_string();
+        if !m.is_empty() && !motifs.contains(&m) {
+            motifs.push(m);
+        }
+    }
+    motifs
 }
 
 /// `HTTP <code> <ou>`, puis ce que le guide dit du statut et le debut du corps de la reponse, chacun sur sa ligne.
@@ -658,26 +791,31 @@ fn meme_hote(a: &str, b: &str) -> bool {
 
 // ------------------------------------------------- l'API des organismes
 
+/// Les `n` premiers caracteres d'une reponse d'un tiers, lue en UTF-8 : ce que le detail d'une panne en garde.
+pub fn debut_lisible(o: &[u8], n: usize) -> String {
+    debut(&utf8_remplace(o), n)
+}
+
 /// Le debut lisible du corps d'une reponse d'erreur, ou la panne de sa lecture.
 fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> String {
     match corps {
-        Ok(c) => debut(&utf8_remplace(&c), n),
+        Ok(c) => debut_lisible(&c, n),
         Err(illisible) => format!("Le corps de la reponse ne s'est pas lu : {}", echec_brut(*illisible).echec.phrase),
     }
 }
 
-/// Une panne d'appel a l'organisme du canal `canal`, dite a l'administrateur (`panne_dite`) : un statut ou un reseau
-/// injoignable en `Organisme`, une panne brute dans sa classe.
+/// Une panne d'appel a un organisme pendant ce qu'on faisait, dite a l'administrateur (`panne_dite`) : un statut ou un
+/// reseau injoignable en `Organisme`, une panne brute dans sa classe.
 #[track_caller]
-fn en_erreur_api(canal: crate::releve_retours::CanalDesRetours, url: &Url, p: Panne) -> EchecApi {
-    panne_dite(canal.organisme(), Classe::Organisme, url, p)
+fn en_erreur_api(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> EchecApi {
+    panne_dite(faisait, Classe::Organisme, url, p)
 }
 
-/// Un GET sous le jeton de la session, a l'organisme du canal `canal` : le corps et les en-tetes ; une panne en
-/// `Organisme`.
+/// Un GET sous le jeton de la session, a l'organisme du canal `canal`, pour relever ce qu'il sert : le corps et les
+/// en-tetes ; une panne en `Organisme`.
 pub fn appeler(canal: crate::releve_retours::CanalDesRetours, url: &Url, jeton: Option<&socle::secret::Secret>) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
-    envoyer(&r).map_err(|p| en_erreur_api(canal, url, p))
+    envoyer(&r).map_err(|p| en_erreur_api(CeQuOnFaisait::Relever(canal), url, p))
 }
 
 /// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
@@ -795,7 +933,7 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
         content_type: Some("application/xml"),
         ..Requete::get(url, DELAI_APPEL)
     };
-    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(a.canal, url, p))?;
+    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(CeQuOnFaisait::Identifier(a.canal), url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
     Ok(Session { jeton: socle::secret::Secret::nouveau(socle::texte::strip(&jeton).to_string()) })
 }
@@ -824,6 +962,6 @@ pub fn depot(_au_jour: &crate::branchement::AuJourDuJour, url: &Url, jeton: &soc
             (_, p) => p,
         };
         // Un depot ne rend pas le statut : il se juge a sa classe.
-        EchecApi { code: None, ..panne_dite(canal.organisme(), classe, url, p) }
+        EchecApi { code: None, ..panne_dite(CeQuOnFaisait::Deposer(canal), classe, url, p) }
     })
 }

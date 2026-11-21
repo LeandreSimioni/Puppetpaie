@@ -583,6 +583,7 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| ce qu'on faisait quand un organisme ou Google a mal répondu (s'identifier, relever, déposer, se servir du Drive, lier Google : la phrase de la panne en suit le conseil) | `CeQuOnFaisait` | `envois/src/transport.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
 | jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
 | étape d'une ouverture et ce qu'elle a duré (la trace de l'ouverture les porte, dans l'ordre) | `EtapeMesuree` | `routes/src/gestes/ouverture.rs` |

@@ -390,6 +390,26 @@ impl CanalDesRetours {
         }
     }
 
+    /// La declaration que ce canal depose, telle qu'une phrase la nomme (`transport::panne_dite`).
+    pub fn declaration(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "la DSN",
+            CanalDesRetours::Dpae => "la DPAE",
+        }
+    }
+
+    /// Ou se relit l'avis de rejet d'un depot dont la reponse ne donne pas les motifs : la DSN, dans les retours (« L'AEE
+    /// et l'avis de rejet sont téléchargeables à nouveau par les services de gestion des retours », guide de l'API DSN
+    /// v6.9, § 3.2.2, l. 1338-1340) ; la DPAE, sur le tableau de bord du declarant (« L'avis de rejet ou l'accusé
+    /// d'enregistrement électronique sont mis à disposition sur le tableau de bord du déclarant »,
+    /// `atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 6).
+    pub fn ou_se_relit_l_avis_de_rejet(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "ses motifs se relisent dans les retours de net-entreprises.",
+            CanalDesRetours::Dpae => "ses motifs sont sur le tableau de bord du compte Urssaf.",
+        }
+    }
+
     /// Le sous-dossier de `retours/` ou s'archivent ses pieces : aucun pour la DSN (`retours/` meme), `dpae` pour la DPAE.
     pub fn dossier(self) -> Option<&'static str> {
         match self {

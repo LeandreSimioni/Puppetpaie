@@ -37,6 +37,10 @@ vont au dépôt privé (`reference-privee/sources/google-drive-api/`) ; leurs co
 - `paie/src/drive.rs` : `NOUVELLES_TENTATIVES` (trois), `passagere` (500, 502, 503, 504, 429, et un 403 de limite de
   débit), `attente` (1 s, 2 s, 4 s, plus un hasard d'au plus la base), dans `Client::appel_brut`, par où passent tous les
   appels Drive (dossiers, listages, dépôts, téléchargements).
+- `envois/src/google.rs`, `traduite` : « storageQuotaExceeded » (« This error occurs when the user reaches their storage
+  limit », l. 961-985) se dit « Le Drive du compte Google lié est plein » ; `envois/src/transport.rs`,
+  `phrase_du_statut_dite` : un 401 du Drive (l. 549-573 : « refresh the access token […] If this fails, direct the user
+  through the OAuth flow ») dit de lier de nouveau le Drive.
 - `paie/src/sauvegarde.rs` : ce qui échoue encore après ces tentatives est **reporté au passage suivant**, sans incident ;
   seul ce qui persiste se dit (`souci`).
 - Preuves : `tests/fichiers/drive.rs` (un faux serveur qui rend 500 puis 200, quatre 5xx, 429 et 403 de débit, l'attente

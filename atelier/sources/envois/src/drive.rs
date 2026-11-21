@@ -429,7 +429,7 @@ impl Client {
         let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
         match envoyer(&requete) {
             Ok((brut, _)) => Ok(brut),
-            Err(panne) => Err(panne_de_google(url, panne)),
+            Err(panne) => Err(panne_de_google(crate::transport::CeQuOnFaisait::Sauvegarder, url, panne)),
         }
     }
 
