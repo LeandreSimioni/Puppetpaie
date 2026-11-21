@@ -336,6 +336,27 @@ impl Dite for TauxAtmpDit {
     }
 }
 
+/// CE QUE LA CASE DU TAUX AT/MP DU SIEGE DIT SOUS ELLE, sur la fiche Entreprise (route `fiche`) : ce que `taux-atmp` en
+/// sait, en phrases (le taux de l'annee tel que la paie le lit, ce qui manque, la ligne en vigueur et d'ou elle vient, le
+/// risque tel que l'arrete l'ecrit, ou lire la notification), et la date qu'une ligne neuve propose.
+pub(crate) fn dit_sous_la_case(ctx: &Contexte) -> R<(Vec<String>, Jour)> {
+    let r = route(ctx)?;
+    let risque = r.risque.map(|x| {
+        let code = match x.code_arrete {
+            Some(a) => a,
+            None => x.code.to_string(),
+        };
+        format!("Risque {} : {}.", code, x.libelle)
+    });
+    let dit = std::iter::once(r.phrase.to_string())
+        .chain(Some(r.explication).filter(|e| !e.is_empty()))
+        .chain(r.maintenant.map(|l| l.dit))
+        .chain(risque)
+        .chain(std::iter::once(r.ou_le_lire.to_string()))
+        .collect();
+    Ok((dit, r.propose_depuis))
+}
+
 /// `taux-atmp` : la case du siege et celles des autres etablissements, aujourd'hui (voir `TauxAtmpDit`).
 pub(crate) fn route(ctx: &Contexte) -> R<TauxAtmpDit> {
     let aujourdhui = ctx.aujourdhui;

@@ -522,7 +522,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// controle des etablissements l'exige alors de chacun (`droit::contexte::controler_etablissements`). Un bareme du jour qui
 /// ne se compose pas ne le demande pas : la configuration s'ouvre quand meme (c'est la qu'on la corrige), et dit pourquoi
 /// (`ConfigurationDeLaPage::pour_payer`, que le meme empilement refuse).
-fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
+pub(crate) fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
         Ok(b) => droit::bareme::versement_mobilite(&b).is_some(),
         Err(_) => false,

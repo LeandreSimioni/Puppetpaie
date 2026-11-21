@@ -1633,8 +1633,8 @@ struct ManqueVu {
     manque: Manque,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     a_enregistrer: Vec<GesteDEffectif>,
-    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE, dessinee comme dans sa fiche (`fiches::case_a_remplir`) : sa
-    /// valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
+    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE, OU UNE CASE DE L'ENTREPRISE, dessinee comme dans sa fiche
+    /// (`fiches::case_a_remplir`) : sa valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
     #[serde(skip_serializing_if = "Option::is_none")]
     case_rendue: Option<crate::fiches::CaseDeLaFiche>,
 }
@@ -1669,13 +1669,19 @@ impl ManqueVu {
     /// Chaque annee que la ligne demande (`Manque::effectifs`, un par annee) : sa case, pre-remplie de ce que les paies
     /// reprises donnent, et sa phrase.
     fn de(ctx: &Contexte, mut manque: Manque) -> socle::echec::R<ManqueVu> {
-        let case_rendue = match (&manque.spectacle, &manque.case) {
-            (Some(s), Some(chemin)) => {
-                let valeur = match &manque.propose {
-                    Some(p) => droit::fiche::ValeurDeCase::de(p),
-                    None => ctx.spectacles.get(s).and_then(|f| f.valeur_ecrite(chemin.champ)),
-                };
-                crate::fiches::case_a_remplir(droit::fiche::NomDeFiche::Spectacle, chemin, valeur)?
+        let proposee = manque.propose.as_ref().and_then(droit::fiche::ValeurDeCase::de);
+        let case_rendue = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str(), &manque.case) {
+            (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
+                Some(f) => {
+                    let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
+                    crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Spectacle, chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                }
+                None => None,
+            },
+            (None, None, "entreprise", Some(chemin)) => {
+                let e = &ctx.entreprise;
+                let valeur = proposee.or_else(|| e.valeur_ecrite(chemin.champ));
+                crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Entreprise, chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
             }
             _ => None,
         };

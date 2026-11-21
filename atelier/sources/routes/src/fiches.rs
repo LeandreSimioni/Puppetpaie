@@ -710,19 +710,8 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
         Some(a) if (socle::annee!("1900")..=socle::annee!("2999")).contains(&a) => a,
         Some(a) => return Err(erreur(Classe::Illisible, socle::date::annee_impossible(a))),
     };
-    let bar = match droit::contexte::socle_livre_lu(annee)? {
-        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
-        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
-            Ok(b) => Some(b),
-            Err(e) if e.dit_un_manque() => None,
-            Err(e) => return Err(e),
-        },
-        None => None,
-    };
-    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
-    // La conclusion nomme les deux plafonds.
+    let (q, r) = regime_de_la_taxe(ctx, &ent, annee)?;
     use documents::taxe_sur_les_salaires::Decision;
-    let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(&ent, q.plafonds);
     Ok(RegimeDeLaTaxe {
         phrase: r.consequence.clone(),
         franchise: Franchise {
@@ -740,6 +729,24 @@ fn taxe_sur_les_salaires_regime(ctx: &Contexte, charge: ChargeTaxeSurLesSalaires
             _ => None,
         },
     })
+}
+
+/// LA QUESTION DE LA FRANCHISE ET LA CONCLUSION DU MOTEUR pour la fiche `ent` (CGI art. 231, 1), les salaires de
+/// `annee` : `taxe-sur-les-salaires-regime`, et la case de la taxe que rend la route `fiche`.
+pub(crate) fn regime_de_la_taxe(ctx: &Contexte, ent: &ChampsEntreprise, annee: Annee) -> R<(documents::taxe_sur_les_salaires::QuestionFranchise, documents::taxe_sur_les_salaires::RegimeTaxeSalaires)> {
+    let bar = match droit::contexte::socle_livre_lu(annee)? {
+        // Le bareme avant son controle : les plafonds de la franchise n'attendent pas l'effectif.
+        Some(_) => match ctx.bareme_fondu(&annee.premier_jour()) {
+            Ok(b) => Some(b),
+            Err(e) if e.dit_un_manque() => None,
+            Err(e) => return Err(e),
+        },
+        None => None,
+    };
+    let q = documents::taxe_sur_les_salaires::question_franchise(bar.as_ref(), annee).map_err(|m| m.reclasser(Classe::Illisible))?;
+    // La conclusion nomme les deux plafonds.
+    let r = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, q.plafonds);
+    Ok((q, r))
 }
 
 // ------------------------------------------------------------------ outils

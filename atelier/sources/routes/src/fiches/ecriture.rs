@@ -240,8 +240,15 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     /// LE TAUX AT/MP SAISI (`taux_atmp`, une ligne : `routes::atmp`) : le code risque s'ecrit sans point ni blanc
     /// (S21.G00.40.040, « 923AD » : sa saisie se range a sa lecture, `CodeRisqueAt::rangee`) ; la ligne est celle de la
-    /// personne (`provenance`), sans notification.
+    /// personne (`provenance`), sans notification. LA SIGNATURE DES COURRIELS COLLEE s'ecrit nettoyee de ce qui n'a rien a
+    /// faire dans une signature (scripts, cadres, formulaires, gestionnaires d'evenements, liens `javascript:` :
+    /// `envois::signature_courriel::nettoyer`, le meme menage qu'a l'envoi).
     fn ajuster(avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) {
+        if apres.courriel_signature != avant.courriel_signature {
+            if let Some(s) = apres.courriel_signature.as_mut() {
+                *s = envois::signature_courriel::nettoyer(s);
+            }
+        }
         if apres.taux_atmp == avant.taux_atmp {
             return;
         }
@@ -310,7 +317,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             }
             None => None,
         };
-        let phrases: Vec<String> = versement.into_iter().chain(atmp).collect();
+        let phrases: Vec<String> = versement.into_iter().chain(atmp).chain(urssaf_a_confirmer(avant, apres)?).collect();
         Ok((!phrases.is_empty()).then(|| phrases.join(" ")))
     }
     fn a_dater_a_part(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Vec<ChangementDit> {
@@ -349,6 +356,27 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         }
         Ok(dit)
     }
+}
+
+/// UNE AUTRE URSSAF QUE CELLE DU CODE POSTAL se confirme avant d'ecrire : celle du territoire recoit normalement DPAE et
+/// DSN (`declarations::urssaf::BaseUrssaf::du_code_postal`), et une Urssaf qui ne gere pas la compagnie peut faire rejeter
+/// ses declarations. La phrase dit les deux ; aucune quand le code ne change pas, est vide ou est celui du code postal.
+fn urssaf_a_confirmer(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
+    let Some(choisi) = apres.code_urssaf.as_deref().filter(|c| !c.trim().is_empty() && apres.code_urssaf != avant.code_urssaf) else { return Ok(None) };
+    let urssaf = declarations::urssaf::base()?;
+    let Some(deduit) = apres.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp)) else { return Ok(None) };
+    if deduit.to_string() == choisi.trim() {
+        return Ok(None);
+    }
+    let nom = |code: &str| match urssaf.organismes.iter().find(|o| o.code.to_string() == code) {
+        Some(o) => format!("{} — {}", code, o.nom),
+        None => code.to_string(),
+    };
+    Ok(Some(format!(
+        "Selon l'adresse, vos déclarations vont à l'Urssaf {} ; vous choisissez {}. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations.",
+        nom(&deduit.to_string()),
+        nom(choisi.trim())
+    )))
 }
 
 /// UNE LIGNE DU TAUX AT/MP DU SIEGE S'ECRIT A SA DATE (`depuis`, celle de la notification), dans la case datee
