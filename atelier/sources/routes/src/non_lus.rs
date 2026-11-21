@@ -1,20 +1,19 @@
 //! CE QUE LES FICHES D'UNE COMPAGNIE PORTENT ET QUE LE MOTEUR NE LIT PAS (`droit::fiche::NonLu` : une valeur datee
-//! illisible, une cle que la forme ne connait pas) : rien ne ferme la compagnie (`droit::fiche::lire_fiche_posee`), et
-//! l'editeur l'apprend, EN SILENCE, par le journal des incidents (`compagnie::incidents`), pour que le lecteur de la case
-//! apprenne l'ecriture qu'il ne connait pas, comme un document que l'import n'a pas lu (`importation::incident`).
+//! illisible, une cle que la forme ne connait pas) : regarder repond (`droit::fiche::lire_fiche_posee`), calculer refuse
+//! en nommant la fiche et la case ; la compagnie le lit sur la case (`declarations::champs::illisibles`), et l'editeur l'apprend, EN
+//! SILENCE, par le journal des incidents (`compagnie::incidents`), pour que le lecteur de la case apprenne l'ecriture
+//! qu'il ne connait pas, comme un document que l'import n'a pas lu (`importation::incident`).
 //!
-//! UNE CHOSE NON LUE, UN INCIDENT : son genre porte une empreinte de ce qu'elle est (la fiche et sa cle, la case, le rang,
-//! la valeur ecrite ; la cle inconnue), et une chose deja au journal ne se note plus : le geste suivant, qui relit les
-//! memes fiches, n'envoie rien de neuf. CE QUI PART NE DIT NI LA VALEUR NI LA CLE DE LA FICHE (un nom, un NIR peuvent
-//! s'y trouver) : la sorte de fiche, la case ou la cle inconnue, le rang ; l'empreinte ne se relit pas.
+//! UN INCIDENT PAR SORTE DE FICHE ET PAR CASE (ou cle inconnue) : son genre ne dit que cela, et un genre deja au journal
+//! ne se note plus. CE QUI PART NE PORTE RIEN DE REEL (regle de fond 9) : ni la valeur, ni la cle de la fiche (un nom,
+//! un NIR peuvent s'y trouver), ni aucune empreinte calculee sur l'une ou l'autre, qui se retrouverait par essais ; la
+//! sorte de fiche, la case ou la cle inconnue, le rang de la valeur datee.
 
 use std::collections::BTreeSet;
 
-use sha2::{Digest, Sha256};
-
 use compagnie::incidents;
 use droit::contexte::Contexte;
-use droit::fiche::{FicheNommee, NonLu};
+use droit::fiche::NonLu;
 
 /// L'endroit, dans le journal des incidents.
 const OU: &str = "fiches";
@@ -32,25 +31,9 @@ struct CeQuiPart<'a> {
     cle_inconnue: Option<&'a str>,
 }
 
-/// L'empreinte de ce qu'une chose non lue est, sans rien en dire.
-fn empreinte(n: &NonLu) -> String {
-    let mut h = Sha256::new();
-    match n.fiche() {
-        FicheNommee::Entreprise => {}
-        FicheNommee::Salarie(k) => h.update(k.to_string().as_bytes()),
-        FicheNommee::Spectacle(k) => h.update(k.to_string().as_bytes()),
-    }
-    h.update(b"\n");
-    match n {
-        NonLu::Valeur { case, rang, ecrite, .. } => h.update(format!("{}\n{}\n{}", case, rang, ecrite).as_bytes()),
-        NonLu::Cle { cle, .. } => h.update(cle.as_bytes()),
-    }
-    h.finalize().iter().take(6).map(|b| format!("{:02x}", b)).collect()
-}
-
-/// A CHAQUE GESTE SUR UNE COMPAGNIE : chaque chose que ses fiches portent et ne lisent pas (`Contexte::non_lus`), une
-/// fois au journal des incidents, puis l'envoi ordinaire. Rien ne refuse le geste : un journal qui ne se lit pas, ou un
-/// incident qui ne s'ecrit pas, se dit et le geste continue (comme `importation::incident`).
+/// A CHAQUE GESTE SUR UNE COMPAGNIE : chaque (sorte de fiche, case) que ses fiches portent et ne lisent pas
+/// (`Contexte::non_lus`), une fois au journal des incidents, puis l'envoi ordinaire. Rien ne refuse le geste : un journal
+/// qui ne se lit pas, ou un incident qui ne s'ecrit pas, se dit et le geste continue (comme `importation::incident`).
 pub(crate) fn noter(ctx: &Contexte) {
     let non_lus = ctx.non_lus();
     if non_lus.is_empty() {
@@ -63,22 +46,23 @@ pub(crate) fn noter(ctx: &Contexte) {
             return;
         }
     };
+    let mut vus: BTreeSet<String> = BTreeSet::new();
     let mut notes = 0;
     for n in &non_lus {
         let fiche = n.fiche().nom().nom();
         let (genre, resume, part) = match n {
             NonLu::Valeur { case, rang, .. } => (
-                format!("valeur illisible : fiche {}, case {} ({})", fiche, case, empreinte(n)),
-                format!("Une valeur de la case {} d'une fiche {} ne se lit pas : tenue pour non dite.", case, fiche),
+                format!("valeur illisible : fiche {}, case {}", fiche, case),
+                format!("Une valeur de la case {} d'une fiche {} ne se lit pas : le calcul qui la lit refuse.", case, fiche),
                 CeQuiPart { fiche, case: Some(case.to_string()), rang: Some(*rang), cle_inconnue: None },
             ),
             NonLu::Cle { cle, .. } => (
-                format!("clé inconnue : fiche {}, {} ({})", fiche, cle, empreinte(n)),
+                format!("clé inconnue : fiche {}, {}", fiche, cle),
                 format!("Une fiche {} porte la clé {}, que sa forme ne connaît pas : gardée, elle ne dit rien.", fiche, cle),
                 CeQuiPart { fiche, case: None, rang: None, cle_inconnue: Some(cle) },
             ),
         };
-        if deja.contains(&incidents::empreinte(incidents::LOGICIEL, OU, &genre)) {
+        if !vus.insert(genre.clone()) || deja.contains(&incidents::empreinte(incidents::LOGICIEL, OU, &genre)) {
             continue;
         }
         let note = incidents::Note { nature: incidents::LOGICIEL, resume: &resume, ou: OU, quoi: &genre, detail: &part, trace: None, sans_contexte: true };

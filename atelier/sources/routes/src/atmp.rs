@@ -92,6 +92,25 @@ pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: Annee) -> R<Vec<String>> {
     Ok(socle_de(an)?.map(|socle| inscrire_selon(ctx, an, socle)).transpose()?.into_iter().flatten().collect())
 }
 
+/// CE QUE L'ARRETE DE L'ANNEE `an` NE S'INSCRIT PAS : une case (le taux du siege, la liste des autres etablissements) qui
+/// porte une valeur illisible ne s'ecrit pas sans geste de la compagnie (`droit::fiche::porte_un_illisible`) ; le moteur
+/// s'abstient et le dit, en phrases. Rien pour une annee sans socle livre.
+pub(crate) fn abstenues(ctx: &Contexte, an: Annee) -> R<Vec<String>> {
+    if socle_de(an)?.is_none() {
+        return Ok(Vec::new());
+    }
+    Ok(abstenues_de(&crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?, an))
+}
+
+fn abstenues_de(fiche: &FicheEntrepriseDatee, an: Annee) -> Vec<String> {
+    let cases = [("siège", droit::fiche::porte_un_illisible(fiche.taux_atmp.as_deref())), ("autres établissements", droit::fiche::porte_un_illisible(fiche.etablissements.as_deref()))];
+    cases
+        .into_iter()
+        .filter(|(_, illisible)| *illisible)
+        .map(|(ou, _)| format!("Taux AT/MP {}, {} : une valeur de la case ne se lit plus ; le taux de l'arrêté ne s'y inscrit pas tant qu'elle n'est pas saisie de nouveau.", an, ou))
+        .collect()
+}
+
 fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
     let janvier = an.premier_jour();
     let risques = bareme::risques_de(&socle);
@@ -123,8 +142,9 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
     };
     let mut dit = Vec::new();
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
+    dit.extend(abstenues_de(&fiche, an));
     // Le siege.
-    let siege = fiche.taux_atmp.as_deref().and_then(derniere);
+    let siege = fiche.taux_atmp.as_deref().filter(|l| !droit::fiche::porte_un_illisible(Some(l))).and_then(derniere);
     let alsace = bareme::en_alsace_moselle(ctx.entreprise_au(&janvier).code_postal.portee());
     if let Some(t) = siege.and_then(|l| de_l_arrete(&l, alsace, false, janvier)) {
         let phrase = format!("Taux AT/MP {}, siège : {}.", an, ligne_dite(&t).dit);
@@ -134,6 +154,9 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
     }
     // Les autres etablissements : la derniere liste, si elle ne change pas apres ce 1er janvier ; un etablissement ouvert
     // dans l'annee, a son ouverture.
+    if droit::fiche::porte_un_illisible(fiche.etablissements.as_deref()) {
+        return Ok(dit);
+    }
     let Some(liste) = fiche.etablissements.as_deref().and_then(|l| droit::fiche::valeurs_datees(l).last().copied()).filter(|v| v.depuis.is_none_or(|d| d <= janvier)).and_then(|v| v.valeur.clone()) else {
         return Ok(dit);
     };
