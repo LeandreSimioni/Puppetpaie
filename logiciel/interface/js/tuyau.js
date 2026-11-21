@@ -448,7 +448,7 @@ window.addEventListener("unhandledrejection", (ev) => {
   });
 });
 
-/** LES GESTES DE LA FENÊTRE : ouvrir, choisir un dossier, la veille. Ce ne sont pas des routes du moteur mais l'outil qui
+/** LES GESTES DE LA FENÊTRE : ouvrir, la veille. Ce ne sont pas des routes du moteur mais l'outil qui
  *  regarde (`interface/poste.rs`, servi par la fenêtre : `window.pywebview.api`) ; une route rend le chemin, la fenêtre
  *  l'ouvre. Rend la réponse de la fenêtre, ou lève son refus. */
 async function fenetre(geste, ...args) {

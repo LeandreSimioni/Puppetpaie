@@ -352,7 +352,7 @@ async function dessinerImportation(cible) {
   const deja = e.reprises.length || e.contrats;
   // Le dossier d'import (`dossier` de `importation-etat`) : la fenêtre du poste l'ouvre ; ailleurs, son chemin se lit.
   const boite = fenetreDuPoste()
-    ? `<button type="button" class="primaire" id="import-ouvrir">${echapper(e.guide.ouvrir)}</button>`
+    ? `<button type="button" class="secondaire" id="import-ouvrir">${echapper(e.guide.ouvrir)}</button>`
     : `<code class="import-chemin">${echapper(e.dossier)}</code>`;
   // L'essentiel se lit à côté du bouton tant que rien n'est repris ; ensuite, il se replie avec le guide.
   cible.innerHTML = `

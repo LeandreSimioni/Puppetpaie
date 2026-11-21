@@ -49,7 +49,8 @@ route importer                    # le reprend (import/ seul : aucun autre dossi
 Ou, dans l'interface : **Configuration › Reprendre l'historique** —
 « Ouvrir le dossier d'import » pour y déposer les fichiers, « Aperçu, sans rien écrire » (le même
 compte rendu), puis « Reprendre ». Les fichiers lus sont copiés dans
-l'historique de la compagnie ; le dossier `import/` peut ensuite être vidé.
+l'historique de la compagnie ; le dossier `import/` les garde : une version suivante
+du logiciel les relit et en tire davantage.
 
 | Ce qui est lu | D'où | Ce qui est écrit |
 |---|---|---|
