@@ -494,32 +494,36 @@ function dessinerFormulaire(fiche) {
   if (t) t.hidden = true;
 }
 
-/* LA FICHE QUE LA ROUTE REND (`fiche`), dessinée par le dessinateur commun (`js/avance.js`, `poserLaFiche`) : son en-tête
- * (titre, ce qui le suit, sa note, le coût de l'année), l'encart de ses erreurs, ses cases ouvertes, « Annuler » et
- * « Enregistrer ». Ce qu'on tape repart à la même route, 400 ms après la dernière frappe ou à chaque changement ; sa
- * réponse dit les cases et leurs fautes. L'écriture est celle de toute fiche (`ecrireFiche`). `fiche` : la fiche de la
- * liste (`configuration`), ou une neuve. */
+/* LA FICHE QUE LA ROUTE REND (`fiche`), dessinée par le dessinateur commun (`js/avance.js`, `poserLaFiche`) : son en-tête,
+ * tel que la route le dit (titre, ce qui le suit, sa note, où lire le coût de l'année, si « Annuler » se montre), l'encart
+ * de ses erreurs, ses cases ouvertes, « Annuler » et « Enregistrer ». Ce qu'on tape repart à la même route, 400 ms après
+ * la dernière frappe ou à chaque changement ; sa réponse dit les cases, leurs fautes et l'encart. L'écriture est celle
+ * de toute fiche (`ecrireFiche`). `fiche` : la fiche de la liste (sa `cle`), ou une neuve. */
 async function ouvrirLaFicheRendue(fiche) {
   FICHE_COURANTE = fiche;
   FICHE_MODIFIEE = false;
   FICHE_INITIALE = null;
+  const form = document.getElementById("config-formulaire");
   const charge = fiche.cle ? { nom: FICHE_ACTIVE, cle: fiche.cle } : { nom: FICHE_ACTIVE };
   let r;
-  try { r = await api("fiche", charge); } catch (e) { dire(e.message, "erreur"); return; }
+  try { r = await api("fiche", charge); } catch (e) {
+    // La fiche d'avant ne reste pas à l'écran sous le nom de celle qui ne s'ouvre pas.
+    if (FICHE_COURANTE === fiche) form.innerHTML = "";
+    dire(e.message, "erreur");
+    return;
+  }
   // Une autre fiche s'est ouverte pendant que la route répondait : c'est elle qui se dessine.
   if (FICHE_COURANTE !== fiche) return;
-  const form = document.getElementById("config-formulaire");
+  const encart = (x) => (x.erreurs_titre ? `<div class="encart erreur"><b>${echapper(x.erreurs_titre)}</b> — ${echapper(x.erreurs_note)}</div>` : "");
   form.innerHTML = `
     <div class="carte" style="margin-top:16px">
-      <h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>
-      ${fiche.cle && fiche.donnees.titre ? `<div class="cout-annee" data-cote="spectacles"
-        data-cout-de="${echapper(fiche.donnees.titre)}"></div>` : ""}
+      ${r.titre ? `<h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>` : ""}
+      ${r.cout ? `<div class="cout-annee" data-cote="${echapper(r.cout.cote)}" data-cout-de="${echapper(r.cout.de)}"></div>` : ""}
       ${r.note ? `<p class="note">${echapper(r.note)}</p>` : ""}
-      ${r.erreurs_titre ? `<div class="encart erreur"><b>${echapper(r.erreurs_titre)}</b>
-        — ${echapper(r.erreurs_note)}</div>` : ""}
+      <div data-fiche-erreurs>${encart(r)}</div>
       <div data-fiche-cases></div>
       <div class="actions">
-        <button class="secondaire" id="config-annuler">${aideDe("fiche_annuler")}</button>
+        <button class="secondaire" id="config-annuler"${r.annuler ? "" : " hidden"}>${aideDe("fiche_annuler")}</button>
         <button class="primaire" id="config-enregistrer">${aideDe("fiche_enregistrer")}</button>
         <span class="note" id="config-modifie" hidden>${aideDe("fiche_modifiee")}</span>
       </div>
@@ -533,6 +537,7 @@ async function ouvrirLaFicheRendue(fiche) {
     let r2;
     try { r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)) }); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== tour || !cases.isConnected) return;
+    form.querySelector("[data-fiche-erreurs]").innerHTML = encart(r2);
     poserLaFiche(cases, r2);
   };
   const changer = () => {

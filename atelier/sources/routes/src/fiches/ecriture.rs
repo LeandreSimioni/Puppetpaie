@@ -84,7 +84,8 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn montree(ctx: &Contexte, cle: Option<&Self::Cle>) -> Option<Self::Plate>;
     /// La fiche telle qu'ecrite, datee (ses temps : `ouverture::temps_de`), si elle existe.
     fn brute<'a>(ctx: &'a Contexte, cle: Option<&Self::Cle>) -> Option<&'a Self>;
-    /// Ce que l'en-tete de la fiche rendue dit d'elle (`fiches::rendue`) ; rien, pour une fiche qui n'en dit rien.
+    /// Ce que l'en-tete de la fiche rendue `p`, telle qu'elle est enregistree, dit d'elle (`fiches::rendue`) ; rien, pour
+    /// une fiche qui n'en dit rien.
     fn entete(_cle: Option<&Self::Cle>, _p: &Self::Plate) -> super::rendue::EnteteDeLaFiche {
         super::rendue::EnteteDeLaFiche::aucun()
     }
@@ -226,6 +227,10 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     fn brute<'a>(ctx: &'a Contexte, _cle: Option<&()>) -> Option<&'a FicheEntrepriseDatee> {
         Some(ctx.entreprise_brute())
+    }
+    /// L'entreprise n'a pas de liste ou revenir : pas d'« Annuler ».
+    fn entete(_cle: Option<&()>, _p: &ChampsEntreprise) -> super::rendue::EnteteDeLaFiche {
+        super::rendue::EnteteDeLaFiche::sans_liste()
     }
     fn differentes(a: &ChampsEntreprise, b: &ChampsEntreprise) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -609,12 +614,14 @@ impl SorteDeFiche for FicheSpectacleDatee {
     }
     /// L'EN-TETE D'UN SPECTACLE : son titre (« Nouveau spectacle » pour une fiche neuve, « Spectacle à nommer » pour un
     /// numero que l'import a lu sans titre, sinon le titre, ou la cle), puis son numero d'objet, ou sa cle ; une fiche
-    /// neuve dit d'ou viendra sa cle.
+    /// neuve dit d'ou viendra sa cle. Une fiche titree montre son cout de l'annee, que la route `couts` range par titre.
     fn entete(cle: Option<&IdSpectacle>, p: &ChampsSpectacle) -> super::rendue::EnteteDeLaFiche {
-        let titre = p.titre.as_deref().map(str::trim).filter(|t| !t.is_empty());
+        let titre = p.titre.as_deref().filter(|t| !t.is_empty());
         let numero = p.ecrite(droit::fiche::CaseSpectacle::NumeroObjet.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        let cout = titre.map(|t| super::rendue::CoutDeLaFiche::Spectacle { de: t.to_string() });
+        let titre = titre.map(str::trim).filter(|t| !t.is_empty());
         match cle {
-            None => super::rendue::EnteteDeLaFiche::de("Nouveau spectacle".to_string(), None, Some("La clé de la fiche se fabrique à l'enregistrement.")),
+            None => super::rendue::EnteteDeLaFiche::de("Nouveau spectacle".to_string(), None, Some("La clé de la fiche se fabrique à l'enregistrement."), None),
             Some(c) => {
                 let titre = match titre {
                     Some(t) if !crate::ouverture::a_nommer(Some(t)) => t.to_string(),
@@ -625,7 +632,7 @@ impl SorteDeFiche for FicheSpectacleDatee {
                     Some(n) => n,
                     None => Self::cle_dite(c),
                 };
-                super::rendue::EnteteDeLaFiche::de(titre, Some(sous_titre), None)
+                super::rendue::EnteteDeLaFiche::de(titre, Some(sous_titre), None, cout)
             }
         }
     }

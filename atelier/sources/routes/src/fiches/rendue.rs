@@ -32,24 +32,42 @@ pub(crate) enum FicheARendre {
     Spectacle { cle: Option<IdSpectacle>, changements: Option<socle::forme::Liste> },
 }
 
-/// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, et une note
-/// dessous ; une fiche qui n'en dit rien n'en a aucun.
+/// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, une note
+/// dessous, le cout de l'annee qu'elle montre (`cout`), et si « Annuler » ramene a la liste (`annuler` : l'entreprise
+/// n'a pas de liste) ; une fiche qui n'en dit rien n'a que son « Annuler ».
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnteteDeLaFiche {
     titre: Option<String>,
     sous_titre: Option<String>,
     note: Option<&'static str>,
+    cout: Option<CoutDeLaFiche>,
+    annuler: bool,
+}
+
+/// LE COUT DE L'ANNEE QU'UNE FICHE MONTRE EN TETE : ou le lire dans ce que rend la route `couts` (le cote, et la cle sous
+/// laquelle elle range cette fiche : un spectacle par son titre). La route `fiche` ne le calcule pas : `couts` lit l'annee
+/// entiere, une fois par annee et par seance (la page le garde), et la fiche se rend a chaque frappe.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "cote")]
+pub(crate) enum CoutDeLaFiche {
+    #[serde(rename = "spectacles")]
+    Spectacle { de: String },
 }
 
 impl EnteteDeLaFiche {
-    /// Un en-tete qui ne dit rien.
+    /// Un en-tete qui ne dit rien, « Annuler » ramenant a la liste.
     pub(crate) fn aucun() -> EnteteDeLaFiche {
-        EnteteDeLaFiche { titre: None, sous_titre: None, note: None }
+        EnteteDeLaFiche { titre: None, sous_titre: None, note: None, cout: None, annuler: true }
     }
 
-    /// Un titre, ce qui le suit, et sa note.
-    pub(crate) fn de(titre: String, sous_titre: Option<String>, note: Option<&'static str>) -> EnteteDeLaFiche {
-        EnteteDeLaFiche { titre: Some(titre), sous_titre, note }
+    /// Un en-tete qui ne dit rien, sans « Annuler » : une fiche sans liste ou revenir.
+    pub(crate) fn sans_liste() -> EnteteDeLaFiche {
+        EnteteDeLaFiche { annuler: false, ..EnteteDeLaFiche::aucun() }
+    }
+
+    /// Un titre, ce qui le suit, sa note et le cout de l'annee qu'il montre ; « Annuler » ramene a la liste.
+    pub(crate) fn de(titre: String, sous_titre: Option<String>, note: Option<&'static str>, cout: Option<CoutDeLaFiche>) -> EnteteDeLaFiche {
+        EnteteDeLaFiche { titre: Some(titre), sous_titre, note, cout, annuler: true }
     }
 }
 
@@ -156,7 +174,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
         cases.push(case);
     }
     let (erreurs_titre, erreurs_note) = crate::ouverture::erreurs_dites(anomalies.iter().filter(|a| a.gravite == Gravite::Erreur).count());
-    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &plate), erreurs_titre, erreurs_note, cases, historique })
+    Ok(FicheRendue { phrase, phrases, entete: F::entete(cle.as_ref(), &enregistree), erreurs_titre, erreurs_note, cases, historique })
 }
 
 /// LA CASE QUE LE MOTEUR PROPOSE DE REMPLIR (« Pour démarrer » : `routes::rappels`), sur la fiche `nom`, de valeur
