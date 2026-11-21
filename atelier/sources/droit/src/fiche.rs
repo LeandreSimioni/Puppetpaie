@@ -2495,6 +2495,21 @@ pub fn non_lus<F: FicheDatee>(f: &F, fiche: &FicheNommee) -> Vec<NonLu> {
     v.out
 }
 
+/// Les cases de la fiche datee `f` qui portent une valeur illisible (`porte_un_illisible`), chacune une fois.
+pub fn cases_illisibles<F: FicheDatee>(f: &F) -> Vec<CaseDeFiche> {
+    struct Cases(Vec<CaseDeFiche>);
+    impl VoirListe for Cases {
+        fn liste<T: EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]) {
+            if porte_un_illisible(Some(liste)) {
+                self.0.push(cle);
+            }
+        }
+    }
+    let mut c = Cases(Vec::new());
+    f.voir_listes(&mut c);
+    c.0
+}
+
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
@@ -2523,6 +2538,17 @@ impl<T> Datee<T> {
     pub fn dite(depuis: Option<Jour>, valeur: Option<T>, note: Option<String>) -> Datee<T> {
         Datee { depuis, valeur, note, illisible: None }
     }
+
+    /// La valeur ne se lit pas (`illisible`).
+    pub fn est_illisible(&self) -> bool {
+        self.illisible.is_some()
+    }
+}
+
+/// UNE LISTE DATEE QUI PORTE UNE VALEUR ILLISIBLE : un ecrivain que le moteur lance de lui-meme (l'arrete AT/MP, l'import
+/// qui complete) ne l'ecrit pas, il s'abstient et le dit ; seul un geste de la compagnie qui redit la case la remplace.
+pub fn porte_un_illisible<T>(liste: Option<&[Datee<T>]>) -> bool {
+    liste.is_some_and(|l| l.iter().any(Datee::est_illisible))
 }
 
 /// Elle s'ecrit `{"depuis", "valeur", "note"}`, `depuis` et `note` seulement s'ils sont dits ; une valeur illisible se
@@ -3774,23 +3800,19 @@ pub type Spectacles = FichierDeFiches<IdSpectacle, FicheSpectacleDatee>;
 /// d'ensemble est fausse (une fiche qui n'est pas un objet, une case qui n'est pas une liste datee, un jour `depuis`
 /// illisible), se refuse en mots d'administrateur ; le detail technique va a part.
 pub fn lire_fiche_posee<T: DeserializeOwned>(chemin: &std::path::Path, nom: NomDeFiche) -> R<T> {
-    socle::forme::lire_fichier_pose_en_phrase(chemin, |cle, _detail| refus_de_fiche_posee(nom, cle))
+    socle::forme::lire_fichier_pose_en_phrase(chemin, |_cle, _detail| refus_de_fiche_posee(nom))
 }
 
-/// Le refus des fiches d'une compagnie dont la structure ne se lit pas : quelles fiches, ou (la fiche et sa case, sans
-/// le nom du fichier ni le detail technique, qui va a part), et quoi faire.
-fn refus_de_fiche_posee(nom: NomDeFiche, chemin: &str) -> String {
-    let (quelles, se_lit) = match nom {
-        NomDeFiche::Entreprise => ("La fiche de l'entreprise", "ne se lit pas : elle n'a"),
-        NomDeFiche::Salarie => ("Les fiches des salariés", "ne se lisent pas : elles n'ont"),
-        NomDeFiche::Spectacle => ("Les fiches des spectacles", "ne se lisent pas : elles n'ont"),
+/// Le refus des fiches d'une compagnie dont la structure ne se lit pas : quelles fiches, et le seul geste qui reste, le
+/// bouton « Un problème, une idée ? » de la page (`js/filet.js`). Ni le nom du fichier, ni celui d'une case, ni le detail
+/// technique : ils vont a part.
+fn refus_de_fiche_posee(nom: NomDeFiche) -> String {
+    let quelles = match nom {
+        NomDeFiche::Entreprise => "La fiche de l'entreprise ne se lit pas : elle n'a",
+        NomDeFiche::Salarie => "Les fiches des salariés ne se lisent pas : elles n'ont",
+        NomDeFiche::Spectacle => "Les fiches des spectacles ne se lisent pas : elles n'ont",
     };
-    let ou = if chemin.is_empty() { String::new() } else { format!(" (à « {} »)", chemin) };
-    format!(
-        "{}{} {} pas l'écriture que le logiciel connaît. Restaurer la dernière sauvegarde, ou signaler le problème au \
-développeur.",
-        quelles, ou, se_lit
-    )
+    format!("{} pas l'écriture que le logiciel connaît. Le dire au développeur par « Un problème, une idée ? ».", quelles)
 }
 
 /// LA LECTURE D'UN FICHIER DE LA CONFIGURATION ECRIT COMME UNE FICHE (les organismes, les rubriques de la compagnie),

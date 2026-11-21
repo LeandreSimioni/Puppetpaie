@@ -190,7 +190,7 @@ impl<'de> serde::de::Visitor<'de> for Lecteur {
 
     fn visit_str<E: serde::de::Error>(self, texte: &str) -> Result<Versement, E> {
         if !socle::forme::en_fichier_pose() {
-            return Err(E::invalid_type(serde::de::Unexpected::Str(texte), &self));
+            return Err(E::custom(format!("« {} » n'est pas un des choix du jour du versement : en choisir un dans la liste", texte)));
         }
         Versement::du_texte_d_avant(texte)
             .ok_or_else(|| E::custom(format!("Le jour du versement « {} » ne se lit pas : le choisir de nouveau.", texte)))

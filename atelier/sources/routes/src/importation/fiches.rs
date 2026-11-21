@@ -119,8 +119,10 @@ fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, champs: &F::
         return Err(erreur(Classe::Refuse, format!("La fiche {} {} n'existe plus : rien n'est complete.", F::NOM, cle.map(F::cle_dite).into_iter().collect::<String>())));
     };
     let au = brute.au(&ctx.lue_au);
+    // Une case qui porte une valeur illisible n'est pas vide : la compagnie ne l'a pas redite, l'import ne la complete pas.
+    let illisibles = droit::fiche::cases_illisibles(brute);
     let mut ecrits = F::Plate::default();
-    for k in champs.cases_dites().into_iter().filter(|k| fiches::case_vide(au.valeur_ecrite(*k).as_ref())) {
+    for k in champs.cases_dites().into_iter().filter(|k| !illisibles.contains(k) && fiches::case_vide(au.valeur_ecrite(*k).as_ref())) {
         ecrits.prendre(champs, k);
     }
     let notes_de_la_fiche = au.notes_dites();

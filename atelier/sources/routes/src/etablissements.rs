@@ -204,9 +204,15 @@ pub(crate) fn ecrire(ctx: &Contexte, contenu: &mut FicheEntrepriseDatee, siege: 
         return Err(refus(format!("Autres établissements : il manque {}. Rien n'a été enregistré.", griefs.join(" ; "))));
     }
 
-    // L'histoire telle que la fiche la dit : une frise par etablissement.
-    let versions: Vec<(Option<Jour>, Vec<Etablissement>)> =
-        contenu.etablissements.iter().flat_map(|l| droit::fiche::valeurs_datees(l)).map(|e| (e.depuis, e.valeur.iter().flatten().cloned().collect())).collect();
+    // L'histoire telle que la fiche la dit : une frise par etablissement. Une version illisible ne dit rien (ni ouvert, ni
+    // ferme) : la compagnie, qui redit la case, la remplace par ce qu'elle dit.
+    let versions: Vec<(Option<Jour>, Vec<Etablissement>)> = contenu
+        .etablissements
+        .iter()
+        .flat_map(|l| droit::fiche::valeurs_datees(l))
+        .filter(|e| !e.est_illisible())
+        .map(|e| (e.depuis, e.valeur.iter().flatten().cloned().collect()))
+        .collect();
     let ouverts: Vec<Etablissement> = versions.last().map(|(_, l)| l.clone()).into_iter().flatten().collect();
     let mut frises: BTreeMap<Option<Nic>, Frise> = BTreeMap::new();
     for (i, (j, l)) in versions.iter().enumerate() {

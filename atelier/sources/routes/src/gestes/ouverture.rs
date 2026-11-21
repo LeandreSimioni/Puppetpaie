@@ -946,6 +946,11 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         if let Err(e) = crate::atmp::inscrire_l_arrete(ctx, an) {
             r.incidents.push(format!("Taux AT/MP {} : {}", an, nomme(&ctx.racine, &e)));
         }
+        // Ce que l'arrete ne s'inscrit pas (une case qui porte une valeur illisible) se dit.
+        match crate::atmp::abstenues(ctx, an) {
+            Ok(abstenues) => r.incidents.extend(abstenues),
+            Err(e) => r.incidents.push(format!("Taux AT/MP {} : {}", an, nomme(&ctx.racine, &e))),
+        }
     }
 
     // LE DIAGNOSTIC A DISTANCE : ce que le journal des incidents a note part chez l'editeur -- pas depuis la
