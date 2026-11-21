@@ -454,7 +454,10 @@ async function viserLeMontant(div, champs) {
     const cle = caseDesLignes(div).cle;
     changements.push({ case: cle, valeur: (div._carte[cle] || []).map((l, i) => {
       const t = e.lignes.find((x) => x.rang === i);
-      return t ? { ...l, taux: t.taux } : l;
+      const ligne = t ? { ...l, taux: t.taux } : l;
+      // La ligne s'écrit avec les seules clés de sa rubrique, comme une ligne tapée (`lireLesLignes`) : le brouillon
+      // en porte d'autres, que la route ne lit pas.
+      return rubriqueDe(ligne.rubrique) ? ligneDonnee(ligne, rubriqueDe(ligne.rubrique)) : ligne;
     }) });
   }
   if ("salaire_mensuel" in e) changements.push({ case: "salaire_mensuel", valeur: e.salaire_mensuel });
