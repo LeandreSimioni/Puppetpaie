@@ -240,7 +240,7 @@ fn envoi_refuse(arret: &ArretDeLEnvoi) -> Echec {
         }
         ArretDeLEnvoi::Delai(detail) => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),
         ArretDeLEnvoi::Tls(detail) => tls(detail),
-        ArretDeLEnvoi::Interrompu(detail) => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
+        ArretDeLEnvoi::Interrompu(detail) | ArretDeLEnvoi::Inattendu(detail) => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
     }
 }
 
@@ -277,26 +277,21 @@ fn tls(e: impl std::fmt::Display) -> Echec {
 pub trait Flux: Read + Write {}
 impl<T: Read + Write + ?Sized> Flux for T {}
 
-fn connecter(hote: &str, port: u16) -> Result<TcpStream, RefusDeLaBoite> {
-    // En essai, le garde-fou reseau : aucune boite reelle.
-    socle::garde_reseau::directe(hote).map_err(|e| RefusDeLaBoite { echec: e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel), sorte: SorteDeRefusDeLaBoite::Injoignable })?;
-    let delai = DELAI;
-    let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
-    let mut derniere = None;
-    for a in adresses {
-        match TcpStream::connect_timeout(&a, delai) {
+/// LA CONNEXION A `hote:port`, celle de la releve comme celle de l'envoi : la premiere adresse du nom qui repond, avec
+/// le delai (`DELAI`) a la connexion, en lecture et en ecriture. Le garde-fou reseau est a l'appelant.
+fn connecter(hote: &str, port: u16) -> std::io::Result<TcpStream> {
+    let mut derniere = std::io::Error::other("Le nom du serveur ne donne aucune adresse.");
+    for a in (hote, port).to_socket_addrs()? {
+        match TcpStream::connect_timeout(&a, DELAI) {
             Ok(s) => {
-                s.set_read_timeout(Some(delai)).map_err(injoignable)?;
-                s.set_write_timeout(Some(delai)).map_err(injoignable)?;
+                s.set_read_timeout(Some(DELAI))?;
+                s.set_write_timeout(Some(DELAI))?;
                 return Ok(s);
             }
-            Err(e) => derniere = Some(e),
+            Err(e) => derniere = e,
         }
     }
-    Err(match derniere {
-        Some(e) => injoignable(e),
-        None => injoignable("aucune adresse"),
-    })
+    Err(derniere)
 }
 
 /// La configuration TLS des connexions IMAP et SMTP : racines du systeme (`rustls-platform-verifier`).
@@ -307,11 +302,21 @@ fn configuration_tls() -> Result<Arc<rustls::ClientConfig>, rustls::Error> {
     Ok(Arc::new(config))
 }
 
-fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, RefusDeLaBoite> {
-    let tcp = connecter(hote, port)?;
-    let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| erreur(format!("nom de serveur illisible : {}", e)))?;
-    let connexion = rustls::ClientConnection::new(configuration_tls().map_err(tls)?, nom).map_err(tls)?;
+/// TLS SUR LA CONNEXION `tcp` a `hote`, pour la releve comme pour l'envoi : le certificat se verifie contre ce nom ; la
+/// poignee de main se fait au premier echange. Ce qui l'empeche (la configuration, le nom qui ne se lit pas) se rend
+/// en detail, que l'appelant dit.
+fn sur_tls(hote: &str, tcp: TcpStream) -> Result<Box<dyn Flux>, String> {
+    let config = configuration_tls().map_err(|e| e.to_string())?;
+    let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| format!("nom de serveur illisible : {}", e))?;
+    let connexion = rustls::ClientConnection::new(config, nom).map_err(|e| e.to_string())?;
     Ok(Box::new(rustls::StreamOwned::new(connexion, tcp)))
+}
+
+fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, RefusDeLaBoite> {
+    // En essai, le garde-fou reseau : aucune boite reelle.
+    socle::garde_reseau::directe(hote).map_err(|e| RefusDeLaBoite { echec: e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel), sorte: SorteDeRefusDeLaBoite::Injoignable })?;
+    let tcp = connecter(hote, port).map_err(injoignable)?;
+    Ok(sur_tls(hote, tcp).map_err(tls)?)
 }
 
 // ------------------------------------------------------------------------------------------------------- l'IMAP
@@ -532,12 +537,18 @@ enum ArretDeLEnvoi {
     Delai(String),
     /// La configuration de la connexion securisee ne se fabrique pas.
     Tls(String),
-    /// Le reste : le reseau, une reponse que ce dialogue ne lit pas, un serveur qui n'offre pas ce que l'envoi demande.
+    /// Le serveur parle encore, mais ne repond ou n'offre pas ce que l'envoi attend : l'echange se clot par `QUIT`.
+    Inattendu(String),
+    /// Le reste : le reseau, une reponse que ce dialogue ne lit pas ; le canal n'est plus sur.
     Interrompu(String),
 }
 
 fn interrompu(detail: impl Into<String>) -> ArretDeLEnvoi {
     ArretDeLEnvoi::Interrompu(detail.into())
+}
+
+fn inattendu(detail: impl Into<String>) -> ArretDeLEnvoi {
+    ArretDeLEnvoi::Inattendu(detail.into())
 }
 
 fn arret_es(e: std::io::Error) -> ArretDeLEnvoi {
@@ -546,6 +557,12 @@ fn arret_es(e: std::io::Error) -> ArretDeLEnvoi {
         TimedOut | WouldBlock => ArretDeLEnvoi::Delai(format!("délai dépassé ({})", e)),
         _ => interrompu(e.to_string()),
     }
+}
+
+/// Ce que la connexion securisee refuse : la configuration qui ne se fabrique pas, ou le nom du serveur qui ne se lit
+/// pas (le detail, pour qui le dit).
+fn arret_tls(detail: String) -> ArretDeLEnvoi {
+    ArretDeLEnvoi::Tls(detail)
 }
 
 /// Une reponse plus longue n'est pas une reponse que ce dialogue lit : une ligne de reponse fait 512 octets au plus
@@ -644,7 +661,12 @@ impl<F: Read + Write> Smtp<F> {
                 return Err(interrompu("Réponse du serveur trop longue."));
             }
             let mut bloc = [0u8; 4096];
-            let n = self.flux.read(&mut bloc).map_err(arret_es)?;
+            let n = match self.flux.read(&mut bloc) {
+                Ok(n) => n,
+                // Un signal a coupe la lecture : elle se reprend.
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(arret_es(e)),
+            };
             if n == 0 {
                 return Err(interrompu("Connexion fermée par le serveur."));
             }
@@ -699,8 +721,27 @@ impl<F: Read + Write> Smtp<F> {
         match r.code / 100 {
             4 | 5 => Err(ArretDeLEnvoi::Refus { code: r.code, texte: r.lignes.join(" / ") }),
             c if c == chiffre => Ok(r),
-            _ => Err(interrompu(format!("Réponse {} inattendue : {}", r.code, r.lignes.join(" / ")))),
+            _ => Err(inattendu(format!("Réponse {} inattendue : {}", r.code, r.lignes.join(" / ")))),
         }
+    }
+
+    /// `QUIT`, quand le serveur parle encore : apres un succes, un refus ou une reponse inattendue (RFC 5321,
+    /// § 4.1.1.10, l. 2209-2211 : « The sender MUST NOT intentionally close the transmission channel until it sends a
+    /// QUIT command »). Sa reponse ne change rien a ce qui est fait (l. 2215-2218) ; un delai ou un canal coupe ne
+    /// se clot pas. Rend `issue` telle quelle.
+    fn clore<T>(&mut self, issue: Result<T, ArretDeLEnvoi>) -> Result<T, ArretDeLEnvoi> {
+        if issue.is_ok() {
+            let _ = self.commande("QUIT", 2);
+        }
+        self.clore_si_arret(issue)
+    }
+
+    /// `QUIT` si `issue` est un arret que le serveur peut encore entendre ; un succes continue l'echange.
+    fn clore_si_arret<T>(&mut self, issue: Result<T, ArretDeLEnvoi>) -> Result<T, ArretDeLEnvoi> {
+        if matches!(issue, Err(ArretDeLEnvoi::Refus { .. } | ArretDeLEnvoi::Inattendu(_))) {
+            let _ = self.commande("QUIT", 2);
+        }
+        issue
     }
 
     fn commande(&mut self, ligne: &str, chiffre: u16) -> Result<ReponseSmtp, ArretDeLEnvoi> {
@@ -746,7 +787,7 @@ impl<F: Read + Write> Smtp<F> {
             self.commande(&socle::base64::ecrire(mot_de_passe.devoiler().as_bytes()), 2)?;
             return Ok(());
         }
-        Err(interrompu("Le serveur d'envoi n'offre ni AUTH PLAIN ni AUTH LOGIN."))
+        Err(inattendu("Le serveur d'envoi n'offre ni AUTH PLAIN ni AUTH LOGIN."))
     }
 
     /// La transaction (RFC 5321, § 3.3, l. 1017-1027) : `MAIL FROM:<...>`, un `RCPT TO:<...>` par destinataire, `DATA`
@@ -757,13 +798,13 @@ impl<F: Read + Write> Smtp<F> {
         let mut options = String::new();
         if !expediteur.is_ascii() || destinataires.iter().any(|d| !d.is_ascii()) {
             if !ext.smtputf8 {
-                return Err(interrompu("Une adresse n'est pas en ASCII, et le serveur d'envoi n'offre pas SMTPUTF8."));
+                return Err(inattendu("Une adresse n'est pas en ASCII, et le serveur d'envoi n'offre pas SMTPUTF8."));
             }
             options.push_str(" SMTPUTF8");
         }
         if !donnees.is_ascii() {
             if !ext.huit_bits {
-                return Err(interrompu("Le message n'est pas en ASCII, et le serveur d'envoi n'offre pas 8BITMIME."));
+                return Err(inattendu("Le message n'est pas en ASCII, et le serveur d'envoi n'offre pas 8BITMIME."));
             }
             options.push_str(" BODY=8BITMIME");
         }
@@ -780,65 +821,36 @@ impl<F: Read + Write> Smtp<F> {
     }
 }
 
-/// La connexion au serveur d'envoi ; ce que le systeme en dit arrete l'envoi.
-fn connecter_smtp(hote: &str, port: u16) -> Result<TcpStream, ArretDeLEnvoi> {
-    let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(arret_es)?.collect();
-    let mut derniere = None;
-    for a in adresses {
-        match TcpStream::connect_timeout(&a, DELAI) {
-            Ok(s) => {
-                s.set_read_timeout(Some(DELAI)).map_err(arret_es)?;
-                s.set_write_timeout(Some(DELAI)).map_err(arret_es)?;
-                return Ok(s);
-            }
-            Err(e) => derniere = Some(e),
-        }
-    }
-    Err(match derniere {
-        Some(e) => arret_es(e),
-        None => interrompu("Le nom du serveur ne donne aucune adresse."),
-    })
-}
-
-/// TLS sur la connexion, avec la configuration de l'IMAP (`configuration_tls`) ; la poignee de main se fait au premier
-/// echange.
-fn tls_smtp(hote: &str, tcp: TcpStream) -> Result<Box<dyn Flux>, ArretDeLEnvoi> {
-    let config = configuration_tls().map_err(|e| ArretDeLEnvoi::Tls(e.to_string()))?;
-    let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| interrompu(format!("nom de serveur illisible : {}", e)))?;
-    let connexion = rustls::ClientConnection::new(config, nom).map_err(|e| interrompu(e.to_string()))?;
-    Ok(Box::new(rustls::StreamOwned::new(connexion, tcp)))
-}
-
 /// L'ENVOI D'UN MESSAGE au serveur `hote:port`. TLS des la connexion, sauf sur le port 587 : la connexion commence en
 /// clair et passe en TLS par `STARTTLS` (RFC 3207, § 4, l. 96-110), puis reprend a `EHLO`, le client oubliant ce que le
 /// serveur a dit avant (§ 4.2, l. 208-220). `QUIT` clot l'echange quand le serveur parle encore, la transaction finie
 /// ou refusee (RFC 5321, § 4.1.1.10, l. 2207-2214) ; sa reponse ne change rien a ce qui est fait : le serveur « MUST
 /// cancel any pending transaction, but not undo any previously completed transaction » (l. 2215-2218).
 fn session_smtp(hote: &str, port: u16, compte: &str, mot_de_passe: &socle::secret::Secret, destinataires: &[String], donnees: &[u8]) -> Result<(), ArretDeLEnvoi> {
-    let tcp = connecter_smtp(hote, port)?;
+    let tcp = connecter(hote, port).map_err(arret_es)?;
     let (mut smtp, ext) = if port == 587 {
         let mut clair = Smtp::sur(tcp);
-        let ext = clair.saluer()?;
-        if !ext.starttls {
-            return Err(interrompu("Le serveur d'envoi n'offre pas STARTTLS."));
-        }
-        clair.commande("STARTTLS", 2)?;
-        let mut chiffre = Smtp::sur(tls_smtp(hote, clair.flux()?)?);
-        let ext = chiffre.ehlo()?;
+        let offre = match clair.saluer() {
+            Ok(ext) if !ext.starttls => Err(inattendu("Le serveur d'envoi n'offre pas STARTTLS.")),
+            Ok(_) => clair.commande("STARTTLS", 2).map(|_| ()),
+            Err(arret) => Err(arret),
+        };
+        clair.clore_si_arret(offre)?;
+        let mut chiffre = Smtp::sur(sur_tls(hote, clair.flux()?).map_err(arret_tls)?);
+        let ext = chiffre.ehlo();
+        let ext = chiffre.clore_si_arret(ext)?;
         (chiffre, ext)
     } else {
-        let mut chiffre = Smtp::sur(tls_smtp(hote, tcp)?);
-        let ext = chiffre.saluer()?;
+        let mut chiffre = Smtp::sur(sur_tls(hote, tcp).map_err(arret_tls)?);
+        let ext = chiffre.saluer();
+        let ext = chiffre.clore_si_arret(ext)?;
         (chiffre, ext)
     };
     let issue = match smtp.identifier(&ext, compte, mot_de_passe) {
         Ok(()) => smtp.transmettre(&ext, compte, destinataires, donnees),
         Err(arret) => Err(arret),
     };
-    if matches!(issue, Ok(()) | Err(ArretDeLEnvoi::Refus { .. })) {
-        let _ = smtp.commande("QUIT", 2);
-    }
-    issue
+    smtp.clore(issue)
 }
 
 /// UNE ADRESSE QUI SE MET DANS L'ENVELOPPE : `Local-part "@" Domain` (RFC 5321, § 4.1.2, l. 2314), entre chevrons
