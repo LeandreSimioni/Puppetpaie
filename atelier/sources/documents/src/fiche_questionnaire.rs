@@ -281,7 +281,7 @@ impl Question {
             Question::Adresse => q("adresse", "Adresse", "Numéro et rue, comme sur une enveloppe.", F::Texte, CaseSalarie::AdresseAffichage),
             Question::CodePostal => q("code_postal", "Code postal", "", F::CodePostal, CaseSalarie::CodePostal),
             Question::Commune => q("commune", "Commune", "", F::Texte, CaseSalarie::CommuneAffichage),
-            Question::Iban => q("iban", "IBAN", "Le compte où ta compagnie verse ton salaire : sur ton relevé d'identité bancaire (RIB).", F::Iban, CaseSalarie::Banque),
+            Question::Iban => q("iban", "IBAN", "Le compte où ton employeur verse ton salaire : sur ton relevé d'identité bancaire (RIB).", F::Iban, CaseSalarie::Banque),
             Question::Bic => q("bic", "BIC", "Sur le même RIB, 8 ou 11 caractères.", F::Bic, CaseSalarie::Banque),
             Question::CongesSpectacles => QuestionDeclaree {
                 aucun: Some("Je n'ai pas de numéro Congés Spectacles"),
@@ -293,7 +293,7 @@ impl Question {
                 ..q(
                     "anniversaire",
                     "Date anniversaire de tes droits France Travail",
-                    "Sur ta notification France Travail. Avec elle, ta compagnie peut te montrer tes heures et tes salaires chez elle depuis cette date.",
+                    "Sur ta notification France Travail. Avec elle, ton employeur peut te montrer tes heures et tes salaires chez lui depuis cette date.",
                     F::Date,
                     CaseSalarie::AnniversaireDroits,
                 )
@@ -336,7 +336,7 @@ impl Question {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
                 facultative: true,
                 avec_l_exemple_dfs: true,
-                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ta compagnie te rembourse tous tes frais. Tes prestations sociales sont calculées sur la base de tes cotisations : avec la déduction, cette base est plus basse, et les prestations qui en dépendent aussi, par exemple ta retraite. La déduction porte sur tes cotisations de sécurité sociale et de retraite complémentaire, pas sur tes cotisations d'assurance chômage d'intermittent ni sur tes Congés Spectacles. Ta compagnie doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
+                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ton employeur te rembourse tous tes frais. Tes prestations sociales sont calculées sur la base de tes cotisations : avec la déduction, cette base est plus basse, et les prestations qui en dépendent aussi, par exemple ta retraite. La déduction porte sur tes cotisations de sécurité sociale et de retraite complémentaire, pas sur tes cotisations d'assurance chômage d'intermittent ni sur tes Congés Spectacles. Ton employeur doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
@@ -346,7 +346,7 @@ impl Question {
                 )
             },
             Question::ModeleBulletin => QuestionDeclaree {
-                aucun: Some("Celui que la compagnie donne d'ordinaire"),
+                aucun: Some("Celui que ton employeur donne d'ordinaire"),
                 ..q(
                     "modele_bulletin",
                     "Ton bulletin de paie",
@@ -433,11 +433,11 @@ impl ExempleDfs {
         });
         let economie = self.cout_sans - self.cout_avec;
         l.push(if economie > Montant::ZERO {
-            format!("Ta compagnie, elle, économise {} sur ce cachet.", euros(economie))
+            format!("Ton employeur, lui, économise {} sur ce cachet.", euros(economie))
         } else if economie < Montant::ZERO {
-            format!("Ta compagnie, elle, paie {} de plus sur ce cachet.", euros(-economie))
+            format!("Ton employeur, lui, paie {} de plus sur ce cachet.", euros(-economie))
         } else {
-            "Ce que paie ta compagnie ne change pas.".to_string()
+            "Ce que paie ton employeur ne change pas.".to_string()
         });
         l.push(format!(
             "{}tes droits à la retraite et à la Sécurité sociale sont comptés sur {} au lieu de {} : {} de salaire qui ne comptent pas pour toi.",

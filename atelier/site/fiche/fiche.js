@@ -233,7 +233,7 @@
     var phrases = [];
     if (vides.length) phrases.push("Sans réponse : " + vides.join(", ") + ".");
     if (fausses.length) phrases.push("À vérifier : " + fausses.join(", ") + ".");
-    m.textContent = phrases.length ? phrases.join(" ") + " Tu peux envoyer quand même : ta compagnie te redemandera ce qui manque." : "";
+    m.textContent = phrases.length ? phrases.join(" ") + " Tu peux envoyer quand même : ton employeur te redemandera ce qui manque." : "";
     m.classList.toggle("cache", !phrases.length);
   }
 
