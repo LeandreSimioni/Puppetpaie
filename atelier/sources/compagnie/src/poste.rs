@@ -5,24 +5,34 @@
 //! (une adresse a ouvrir, une chaine PowerShell) : ils n'ont besoin de rien au-dessus de la compagnie.
 
 use std::path::{Component, Path};
+#[cfg(not(target_os = "wasi"))]
 use std::process::Command;
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::process::Stdio;
 
 use socle::echec::R;
 
+/// Dans le navigateur (la cible WASI), le logiciel tourne dans l'onglet : il n'a aucun programme du poste a lancer.
+#[cfg(target_os = "wasi")]
+fn rien_ne_se_lance() -> std::io::Result<()> {
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "dans le navigateur, le logiciel ne lance aucun programme"))
+}
+
 /// Ouvre un fichier ou un dossier dans le programme du poste (l'explorateur, le lecteur PDF), et rend ce que l'ecran en
 /// dit : « Dossier ouvert : … » (l'explorateur peut s'ouvrir derriere la fenetre), rien pour un fichier ouvert, ou, quand
-/// aucun programme ne l'a ouvert, ou il est (une information : il est ecrit). `Err` : il n'existe pas.
+/// aucun programme ne l'a ouvert, ou il est (une information : il est ecrit). `Err` : il n'existe pas. Dans le
+/// navigateur, aucun programme ne l'ouvre : la reponse dit ou il est, ou qu'il n'existe pas.
 pub fn ouvrir(chemin: &Path) -> R<String> {
     // Une piece de l'Historique arrive en `retours/...` (barres droites) jointe a la racine : Windows lit le fichier,
     // mais l'explorateur ne reconnait pas le chemin et ouvre « Documents » a la place.
     #[cfg(windows)]
-    let r = Command::new("explorer").arg(separateurs_windows(&chemin.to_string_lossy())).spawn();
+    let r = Command::new("explorer").arg(separateurs_windows(&chemin.to_string_lossy())).spawn().map(|_| ());
     #[cfg(target_os = "macos")]
-    let r = Command::new("open").arg(chemin).spawn();
+    let r = Command::new("open").arg(chemin).spawn().map(|_| ());
     #[cfg(all(unix, not(target_os = "macos")))]
-    let r = Command::new("xdg-open").arg(chemin).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let r = Command::new("xdg-open").arg(chemin).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ());
+    #[cfg(target_os = "wasi")]
+    let r = rien_ne_se_lance();
     match r {
         Ok(_) if chemin.is_dir() => Ok(format!("Dossier ouvert : {}", chemin.display())),
         // Ce qui s'ouvre se nomme : si le poste n'a pas de programme pour le montrer, on sait ou le prendre.
@@ -54,18 +64,19 @@ pub fn separateurs_windows(chemin: &str) -> String {
     chemin.replace('/', "\\")
 }
 
-/// Ouvre une adresse dans le navigateur du poste.
+/// Ouvre une adresse dans le navigateur du poste. Dans le navigateur, le logiciel ne lance rien : le refus le dit.
 pub fn ouvrir_adresse(url: &socle::garde_reseau::Url) -> R<()> {
     // En essai, le garde-fou reseau : aucun navigateur vers une adresse reelle.
     socle::garde_reseau::directe(&socle::garde_reseau::hote_de(url.texte()))?;
-    let url = url.texte();
     #[cfg(windows)]
-    let r = Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn();
+    let r = Command::new("rundll32").args(["url.dll,FileProtocolHandler", url.texte()]).spawn().map(|_| ());
     #[cfg(target_os = "macos")]
-    let r = Command::new("open").arg(url).spawn();
+    let r = Command::new("open").arg(url.texte()).spawn().map(|_| ());
     #[cfg(all(unix, not(target_os = "macos")))]
-    let r = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
-    r.map(|_| ()).map_err(|e| socle::refus!("Le navigateur ne s'ouvre pas : {}.", e))
+    let r = Command::new("xdg-open").arg(url.texte()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ());
+    #[cfg(target_os = "wasi")]
+    let r = rien_ne_se_lance();
+    r.map_err(|e| socle::refus!("Le navigateur ne s'ouvre pas : {}.", e))
 }
 
 /// Ouvre dans le navigateur du poste une adresse de l'editeur : en https, sur `auteur::SITES` ou l'un de leurs

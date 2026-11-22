@@ -1113,7 +1113,7 @@ fn local_arrondi(t: Moment) -> i64 {
 /// LA DATE DE MODIFICATION D'UN FICHIER, une donnee du dehors : les secondes et la fraction en nanosecondes, lues
 /// contre le calendrier ; `None` : le systeme date le fichier hors du calendrier. Son lecteur dit ce que l'absence veut
 /// dire pour lui.
-/// Hors Unix (Windows), la meme valeur par `modified()`.
+/// Hors Unix (Windows, et le navigateur : WASI), la meme valeur par `modified()`.
 #[cfg(unix)]
 pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
     use std::os::unix::fs::MetadataExt;
@@ -1122,11 +1122,11 @@ pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
 
 #[cfg(not(unix))]
 pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
-    // Windows date tout fichier (`ftLastWriteTime`) ; une date d'avant 1970 compte en secondes negatives, comme `mtime` de
-    // Unix.
+    // Windows date tout fichier (`ftLastWriteTime`), WASI aussi (le `mtim` de chaque `filestat`) ; une date d'avant 1970
+    // compte en secondes negatives, comme `mtime` de Unix.
     let date = match m.modified() {
         Ok(t) => t,
-        Err(e) => unreachable!("Windows date tout fichier : {}", e),
+        Err(e) => unreachable!("Windows et WASI datent tout fichier : {}", e),
     };
     match date.duration_since(std::time::UNIX_EPOCH) {
         Ok(d) => Moment::de_duree(d, false),

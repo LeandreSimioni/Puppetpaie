@@ -375,7 +375,8 @@ fn variable(nom: &str) -> R<Option<String>> {
     }
 }
 
-/// Ce qu'un terminal demande quand la question ne dit pas son invite.
+/// Ce qu'un terminal demande quand la question ne dit pas son invite (le navigateur n'a pas de terminal).
+#[cfg(any(unix, windows))]
 const INVITE_DU_TERMINAL: &str = "Mot de passe du logiciel (rien ne s'affiche) : ";
 
 /// L'invite de la question `q`, ou `de_base` quand elle ne dit pas la sienne.
