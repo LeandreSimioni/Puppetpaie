@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PuppetPaie — la paie des intermittents du spectacle, gratuite et libre</title>
+<meta name="description" content="Logiciel de paie gratuit et libre pour les intermittents du spectacle et les permanents des compagnies de spectacle vivant : CDDU au cachet ou à l'heure, contrat, DPAE, bulletin, DSN, Congés Spectacles, selon la convention collective. Sur votre ordinateur, Windows, Linux et macOS.">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:site_name" content="PuppetPaie">
+<meta property="og:title" content="PuppetPaie — la paie des intermittents du spectacle">
+<meta property="og:description" content="Un logiciel de paie gratuit et libre pour les intermittents du spectacle et les permanents : contrat, DPAE, bulletin, DSN, Congés Spectacles.">
+<meta property="og:url" content="https://puppetpaie.fr/">
+<meta property="og:image" content="https://puppetpaie.fr/apercu.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="PuppetPaie, la paie de la culture">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"PuppetPaie",
+ "description":"Logiciel de paie gratuit et libre pour les compagnies de spectacle vivant : intermittents du spectacle (CDDU, au cachet ou à l'heure) et salariés permanents. Contrat, DPAE, bulletin de paie, DSN, certificats Congés Spectacles, selon la convention collective.",
+ "applicationCategory":"BusinessApplication","applicationSubCategory":"Logiciel de paie",
+ "operatingSystem":"Windows, Linux, macOS","inLanguage":"fr",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},
+ "license":"https://interoperable-europe.ec.europa.eu/collection/eupl/eupl-text-eupl-12","url":"https://puppetpaie.fr/",
+ "isAccessibleForFree":true,
+ "keywords":"paie des intermittents du spectacle, logiciel de paie intermittents, CDDU, cachet, DPAE, DSN, Congés Spectacles, spectacle vivant","sameAs":"https://github.com/LeandreSimioni/PuppetPaie",
+ "author":{"@type":"Person","name":"Léandre"},
+ "publisher":{"@type":"Organization","name":"Compagnie UEUEUE"}}
+</script>
+<meta name="denicherbot" content="noindex">
+<link rel="canonical" href="https://puppetpaie.fr/">
+<link rel="icon" href="/favicon.svg?v=20261103" type="image/svg+xml" sizes="any">
+<link rel="icon" href="/favicon.ico?v=20261103" sizes="32x32">
+<style>
+/* Page de lancement (09/10/2026) : fond blanc, peu de mots, aucun lien
+   sortant ni pied de page. Seul script : le logo animé (logo.js). */
+/* Familles auto-hébergées — mêmes fichiers que le reste du site. */
+@font-face{font-family:"EB Garamond";font-style:normal;font-weight:400 800;
+  font-display:swap;src:url("/assets/fonts/eb-garamond-v33-latin-variable.woff2") format("woff2")}
+@font-face{font-family:"EB Garamond";font-style:italic;font-weight:400 800;
+  font-display:swap;src:url("/assets/fonts/eb-garamond-v33-latin-variable-italic.woff2") format("woff2")}
+@font-face{font-family:"Libre Franklin";font-style:normal;font-weight:100 900;
+  font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
+@font-face{font-family:"Libre Franklin";font-style:italic;font-weight:100 900;
+  font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable-italic.woff2") format("woff2")}
+
+:root{
+  --papier:#FFFFFF; --encre:#141413; --gris:#8A8782; --filet:#E6E5E2;
+  --carmin:#9B1B30; --logo:#2350c4; --rayon:4px;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--papier);color:var(--encre);
+     font:400 1rem/1.5 "Libre Franklin",system-ui,sans-serif;
+     display:flex;flex-direction:column}
+main{flex:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;
+     justify-content:flex-start;text-align:center;
+     padding:clamp(4rem,12vh,8rem) 16px 3rem}
+/* Le titre est le logo animé (12/10/2026) : lettres dessinées en SVG, mises en
+   scène par logo.js. La scène prend toute la largeur ; ce qui en sort est en
+   coulisse. Le mot reste caché jusqu'à la première image de l'animation, pour
+   qu'il ne clignote pas au chargement ; sans script (noscript) il s'affiche
+   tel quel, et si logo.js ne vient pas, il apparaît seul au bout de 3 s. */
+.logo{align-self:center;width:min(800px,calc(100% + 32px));margin:0 0 .9rem;font-weight:400}
+#scene{position:relative;isolation:isolate;overflow:hidden;
+       display:flex;align-items:center;justify-content:center;
+       height:clamp(120px,24vw,200px)}
+#mot{display:flex;align-items:flex-end;gap:.02em;color:var(--logo);
+     font-size:clamp(40px,11vw,104px)}
+#mot{visibility:hidden;animation:montrer 0s 3s forwards}
+@keyframes montrer{to{visibility:visible}}
+.logo-pret #mot{visibility:visible;animation:none}
+#mot span{display:block;transform-origin:50% 100%;will-change:transform,opacity}
+#mot svg{display:block;height:1.7em;width:calc(var(--l) / 170 * 1.7em);overflow:visible;
+         fill:none;stroke:currentColor;stroke-width:10.5;stroke-linecap:round;stroke-linejoin:round}
+#ombres{position:absolute;inset:0;z-index:-1;pointer-events:none}
+.ombre{position:absolute;color:#000;will-change:transform,opacity}
+.ombre svg{display:block;width:100%;height:100%;overflow:visible;
+           fill:none;stroke:currentColor;stroke-width:10.5;stroke-linecap:round;stroke-linejoin:round}
+#mot svg.grand,.ombre svg.grand{stroke-width:30.5}
+.phrase{font:italic 400 clamp(1.1rem,3vw,1.35rem)/1.4 "EB Garamond",Georgia,serif;
+        margin:0;max-width:30ch}
+.mots{margin:1rem 0 0;font-size:.72rem;letter-spacing:.22em;
+      text-transform:uppercase;color:var(--gris)}
+/* Les quatre mots s'expliquent : une phrase au survol, au toucher ou au clavier. */
+.cle{position:relative;cursor:help;outline-offset:4px;
+     text-decoration:underline dotted var(--filet);text-underline-offset:.35em}
+.cle:hover,.cle:focus{color:var(--encre);text-decoration-color:var(--carmin)}
+.bulle{position:absolute;top:calc(100% + .7rem);left:50%;z-index:3;
+       width:max-content;max-width:min(17rem,80vw);padding:.6rem .8rem;
+       background:var(--papier);border:1px solid var(--filet);border-radius:var(--rayon);
+       box-shadow:0 6px 18px rgba(20,20,19,.08);
+       font:italic 400 1rem/1.35 "EB Garamond",Georgia,serif;
+       letter-spacing:0;text-transform:none;color:var(--encre);text-align:center;
+       opacity:0;visibility:hidden;transform:translate(-50%,-4px);
+       transition:opacity .18s,transform .18s,visibility .18s;pointer-events:none}
+.cle:first-child .bulle{left:0;transform:translate(0,-4px)}
+.cle:last-child .bulle{left:auto;right:0;transform:translate(0,-4px)}
+.cle:hover .bulle,.cle:focus .bulle{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.cle:first-child:hover .bulle,.cle:first-child:focus .bulle,
+.cle:last-child:hover .bulle,.cle:last-child:focus .bulle{transform:none}
+/* La bulle de « Libre » porte un lien : un pont couvre l'écart sous le mot, et la
+   bulle se clique tant qu'elle est visible (au survol, au toucher, au clavier). */
+.bulle::before{content:"";position:absolute;left:0;right:0;top:-.8rem;height:.8rem}
+.cle:hover .bulle,.cle:focus .bulle,.cle:focus-within .bulle{pointer-events:auto}
+.cle:last-child:focus-within .bulle{opacity:1;visibility:visible;transform:none}
+.bulle a{font-style:normal;color:var(--encre);text-decoration-color:var(--carmin);
+         text-underline-offset:.2em}
+.bulle a:hover{color:var(--carmin)}
+@media (prefers-reduced-motion:reduce){.bulle{transition:none}}
+.dates{list-style:none;padding:0;margin:4.5rem 0 0;
+       display:grid;grid-template-columns:auto auto;gap:.7rem 1.6rem;
+       text-align:left;align-items:baseline}
+.dates li{display:contents}
+.dates time{font:500 .78rem/1 "Libre Franklin",sans-serif;
+            letter-spacing:.16em;text-transform:uppercase;color:var(--carmin);
+            text-align:right}
+.dates span{font:400 1.15rem/1.3 "EB Garamond",Georgia,serif}
+/* Le mot de Léandre : la présentation, en Garamond, alignée à gauche. */
+.texte{margin:3.5rem 0 0;max-width:800px;text-align:left;
+       font:400 1.15rem/1.55 "EB Garamond",Georgia,serif}
+.texte p{margin:0 0 .9rem}
+.texte .salut{margin-top:1.4rem}
+.texte .signature{margin-top:.2rem}
+.faits{margin:2.2rem 0 0;max-width:800px;font-size:.85rem;line-height:1.55;color:var(--gris)}
+/* Les téléchargements : trois liens égaux ; telecharger.js met en tête celui du système du visiteur. */
+.telecharger{margin-top:3.5rem;display:flex;flex-direction:column;align-items:center;gap:.9rem}
+.telecharger h2{margin:0;font:500 .72rem/1 "Libre Franklin",sans-serif;
+                letter-spacing:.22em;text-transform:uppercase;color:var(--gris)}
+.systemes{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;
+          justify-content:center;gap:.6rem}
+.systemes a{display:inline-block;font:500 .85rem/1 "Libre Franklin",sans-serif;letter-spacing:.06em;
+            padding:.9rem 1.4rem;border:1px solid var(--filet);border-radius:var(--rayon);
+            background:var(--papier);color:var(--encre);text-decoration:none}
+.systemes a:hover{border-color:var(--carmin);color:var(--carmin)}
+.systemes .principal a{background:var(--encre);border-color:var(--encre);color:var(--papier);
+                       padding:1rem 1.8rem}
+.systemes .principal a:hover{background:var(--carmin);border-color:var(--carmin);color:var(--papier)}
+.autres{margin:0;font-size:.78rem;color:var(--gris)}
+.autres a{color:var(--gris);text-decoration-color:var(--filet);text-underline-offset:.25em}
+.autres a:hover{color:var(--carmin)}
+.pied{margin-top:4.5rem;font-size:.75rem;color:var(--gris)}
+.pied a{color:var(--gris);text-decoration-color:var(--filet);text-underline-offset:.2em}
+.pied a:hover{color:var(--carmin)}
+.mot{margin-top:4.5rem;max-width:34ch;font-size:.92rem;color:var(--encre)}
+.mot p{margin:0}
+.mot a{color:var(--encre);text-decoration-color:var(--carmin);
+       text-underline-offset:.2em}
+.mot a:hover{color:var(--carmin)}
+.signature{font:italic 400 1.15rem "EB Garamond",Georgia,serif;
+           margin-top:.6rem !important}
+:focus-visible{outline:2px solid var(--carmin);outline-offset:3px;
+               border-radius:var(--rayon)}
+</style>
+<noscript><style>#mot{visibility:visible;animation:none}</style></noscript>
+
+<main>
+  <h1 class="logo" aria-label="PuppetPaie, la paie des intermittents du spectacle">
+    <span id="scene"><span id="mot" aria-hidden="true"><span class="cane"><svg class="grand" viewBox="276 136.9 240 489.9" style="--l:83.3" aria-hidden="true"><path d="M301 146 C298 280 305 450 297 618"/><path d="M340 170 C420 132 504 196 504 298 C504 398 424 466 338 432"/><circle cx="338" cy="432" r="16.5" fill="currentColor" stroke="none"/><circle cx="297" cy="618" r="17" fill="currentColor" stroke="none"/></svg></span><span><svg viewBox="-6 -108 58 170" style="--l:58" aria-hidden="true"><g transform="translate(0 0.6) rotate(-2.00 28 -40)"><path d="M2 -50 C0 -18 6 1 22 1 C36 1 43 -14 44 -32"/><path d="M44 -51 C45 -30 44 -12 46 1"/></g></svg></span><span><svg viewBox="-6 -108 58 170" style="--l:58" aria-hidden="true"><g transform="translate(0 -0.8) rotate(1.11 28 -40)"><path d="M2 -50 C3 -16 1 18 3 46"/><path d="M6 -40 C20 -56 46 -54 46 -27 C46 -2 22 4 6 -8"/></g></svg></span><span><svg viewBox="-6 -108 58 170" style="--l:58" aria-hidden="true"><g transform="translate(0 -1.6) rotate(0.66 28 -40)"><path d="M2 -50 C3 -16 1 18 3 46"/><path d="M6 -40 C20 -56 46 -54 46 -27 C46 -2 22 4 6 -8"/></g></svg></span><span><svg viewBox="-6 -108 54 170" style="--l:54" aria-hidden="true"><g transform="translate(0 -0.4) rotate(-1.06 26 -40)"><path d="M4 -25 C18 -26 30 -26 43 -27 C45 -44 35 -52 23 -52 C9 -52 1 -40 1 -24 C1 -7 11 1 25 1 C35 1 41 -4 44 -10"/></g></svg></span><span><svg viewBox="-6 -108 40 170" style="--l:40" aria-hidden="true"><g transform="translate(0 0.7) rotate(-0.41 19 -40)"><path d="M12 -84 C11 -50 9 -18 14 -4 C17 3 27 2 32 -4"/><path d="M0 -49 C10 -50 22 -51 32 -51"/></g></svg></span><span><svg viewBox="-6 -108 58 170" style="--l:58" aria-hidden="true"><g transform="translate(0 0.4) rotate(1.67 28 -40)"><path d="M2 -50 C3 -16 1 18 3 46"/><path d="M6 -40 C20 -56 46 -54 46 -27 C46 -2 22 4 6 -8"/></g></svg></span><span><svg viewBox="-6 -108 56 170" style="--l:56" aria-hidden="true"><g transform="translate(0 -1.3) rotate(-1.38 27 -40)"><path d="M40 -40 C35 -50 28 -52 21 -52 C7 -52 0 -38 0 -24 C0 -8 9 1 20 1 C32 1 40 -10 41 -27"/><path d="M42 -52 C41 -32 42 -14 44 1"/></g></svg></span><span><svg viewBox="-6 -108 24 170" style="--l:24" aria-hidden="true"><g transform="translate(0 0.6) rotate(-0.93 11 -40)"><path d="M4 -50 C3 -32 5 -14 4 0"/><circle cx="5" cy="-74" r="7" fill="currentColor" stroke="none"/></g></svg></span><span><svg viewBox="-6 -108 54 170" style="--l:54" aria-hidden="true"><g transform="translate(0 -1.8) rotate(-0.58 26 -40)"><path d="M4 -25 C18 -26 30 -26 43 -27 C45 -44 35 -52 23 -52 C9 -52 1 -40 1 -24 C1 -7 11 1 25 1 C35 1 41 -4 44 -10"/></g></svg></span></span></span>
+  </h1>
+  <script src="/logo.js?v=20261012b"></script>
+  <p class="phrase">La paie de la culture.</p>
+  <p class="mots"><span class="cle" tabindex="0" aria-describedby="b-gratuite">Gratuite<span class="bulle" role="tooltip" id="b-gratuite">Pour que chaque euro serve d’abord à payer l’humain.</span></span> · <span class="cle" tabindex="0" aria-describedby="b-simple">Simple<span class="bulle" role="tooltip" id="b-simple">Une interface qui adapte sa complexité à la taille de la structure.</span></span> · <span class="cle" tabindex="0" aria-describedby="b-legere">Légère<span class="bulle" role="tooltip" id="b-legere">Un programme de 20 Mo qui tourne en local, sous Windows, Linux et macOS.</span></span> · <span class="cle" tabindex="0" aria-describedby="b-libre">Libre<span class="bulle" role="tooltip" id="b-libre">Un code ouvert : traçable, vérifiable.<br><a href="https://github.com/LeandreSimioni/PuppetPaie">Le code sur GitHub</a></span></span></p>
+
+  <div class="texte">
+    <p>PuppetPaie est un logiciel de paie gratuit, conçu pour que les compagnies de spectacle vivant puissent consacrer le plus d’argent possible à rémunérer les personnes.</p>
+    <p>Il est pensé de manière simple et collaborative&nbsp;: si vous trouvez des choses que vous auriez aimé voir, si vous avez des idées ou si vous rencontrez des problèmes, un petit formulaire vous permet de me faire vos retours et d’améliorer le logiciel pour tout le monde.</p>
+    <p>Le logiciel est léger, rapide et souverain. Tout se passe sur votre machine et dans vos mails.</p>
+    <p>L’import de votre compagnie est simple&nbsp;: munissez-vous de tous vos bulletins de paie pour récupérer votre historique directement dans le logiciel, et d’une DSN pour accélérer sa configuration. C’est parti&nbsp;!</p>
+    <p>Vous pouvez essayer le logiciel sur des compagnies fictives, pour le prendre en main ou simplement pour vous rassurer sur la manière dont les paies se font dans le spectacle vivant.</p>
+    <p class="salut">Beaux spectacles, belles rencontres,</p>
+    <p class="signature">Léandre</p>
+  </div>
+
+  <p class="faits">Les intermittents du spectacle, au cachet ou à l’heure, et les permanents. Le contrat, la DPAE, le bulletin, la DSN et les Congés Spectacles, selon la convention collective de la compagnie.</p>
+
+  <section class="telecharger" aria-labelledby="t-demo">
+    <h2 id="t-demo">Télécharger la démo</h2>
+    <ul class="systemes" id="systemes">
+      <li data-systeme="windows"><a href="https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download/PuppetPaie-installeur-windows.exe">Windows</a></li>
+      <li data-systeme="linux"><a href="https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download/PuppetPaie-linux.zip">Linux</a></li>
+      <li data-systeme="mac"><a href="https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download/PuppetPaie-mac.zip">macOS</a></li>
+    </ul>
+    <p class="autres"><a href="https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download/PuppetPaie-portable.zip">ou le dossier portable, pour une clé USB (Windows, Linux et macOS)</a></p>
+  </section>
+  <script src="/telecharger.js?v=20261102"></script>
+
+  <ol class="dates">
+    <li><time datetime="2027-01">Janvier 2027</time><span>Les premières compagnies.</span></li>
+    <li><time datetime="2027-06">Juin 2027</time><span>Ouvert à toutes les compagnies.</span></li>
+  </ol>
+
+  <div class="mot">
+    <p>Pour faire partie des premières compagnies, écrivez-moi.<br>
+       <a href="mailto:puppetpaie@gmail.com">puppetpaie@gmail.com</a></p>
+  </div>
+
+  <p class="pied"><a href="/confidentialite/">Confidentialité</a> · <a href="/utilisation/">Conditions d’utilisation</a></p>
+</main>
+
+</html>
