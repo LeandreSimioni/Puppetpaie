@@ -1119,7 +1119,12 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                 .retours
                 .iter()
                 .map(|r| RetourLu {
-                    titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
+                    titre: match (r.abandon, &r.salarie) {
+                        (true, _) => "Demande abandonnée",
+                        (false, Some(_)) => "Fiche reçue",
+                        (false, None) => "Réponse sans nom lisible",
+                    }
+                    .to_string(),
                     quand: Some(r.quand),
                     phrases: Vec::new(),
                     pastille: None,

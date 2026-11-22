@@ -1128,7 +1128,10 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
     };
     let questions = questions_pour(ctx, &fiche)?;
     if questions.is_empty() {
-        return Err(refus(format!("Rien ne manque à la fiche de {} que la personne puisse dire : rien à lui demander.", adresse)));
+        return Err(refus(format!(
+            "La fiche de {} a déjà tout ce que la personne peut dire : rien à lui demander. Pour la relire ou la corriger, ouvre-la dans Configuration › Salariés.",
+            adresse
+        )));
     }
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
     let q = fq::a_recopier(&code, &questions);
@@ -1366,16 +1369,32 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             (n, Some((_, s))) if n.trim().is_empty() => nom_de(&s.champs),
             (n, _) => n,
         };
-        if nom.trim().is_empty() {
-            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
-            continue;
-        }
         // La reponse, le courriel tel qu'il est arrive : une piece produite, rangee hors d'un mois.
         let sorte = documents::SorteDePieceProduite::FicheDeSalarie;
         let dossier = documents::DossierHorsDuMois::FichesDeSalaries.sous(&ctx.racine);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("{}{}.eml", sorte.prefixe(), code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
+        // UNE REPONSE SANS NOM LISIBLE (celle d'une demande d'une version d'avant, que la releve ne lit plus) : rien ne se
+        // cree, mais elle est arrivee : la demande se ferme sur elle, gardee comme piece, et l'incident ne revient pas a
+        // chaque releve. Une nouvelle demande se fait si besoin.
+        if nom.trim().is_empty() {
+            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree, la demande est close : en refaire une si besoin.", code, de));
+            let retour = journal::RetourFiche {
+                code: code.clone(),
+                abandon: false,
+                salarie: None,
+                illisible: Some(illisible.clone()),
+                erreurs: None,
+                quand,
+                qui: qui.to_string(),
+                de: Some(de.clone()),
+                message: Some(ident.clone()),
+                reponse: "reponse sans nom lisible : rien n'est cree".to_string(),
+            };
+            journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour)).map_err(|e| e.reclasser(Classe::Disque))?;
+            continue;
+        }
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         // Ce que la personne dit n'avoir pas et qu'aucune case ne garde (le numero Congés Spectacles) : la note le dit.
         for q in &lue.sans {
