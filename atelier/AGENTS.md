@@ -244,6 +244,12 @@ paie comprises, jamais d'un dessin ni d'un souvenir ; ce qui a un lecteur reste,
 fait se voit d'emblée et tient en peu de cases ; ce que peu de gens changent reste possible, sous « Avancé », et ne
 pèse sur personne d'autre. On ne retire pas une possibilité pour faire simple : on la range.
 
+**Le logiciel est neutre** (Léandre, 22/11/2026 : « on n'est pas du côté des patrons », « il y a une vraie
+neutralité du logiciel », « chacun sait exactement combien prend l'État, qu'est-ce qui va aux retraites, qu'est-ce
+qui va à la sécu »). Ce qu'il explique à un salarié, il le dit entier, chiffres à l'appui, calculés par le moteur :
+ce que la personne gagne, ce qu'elle perd, et ce que la compagnie y gagne ; jamais une phrase arrangée du côté de
+l'employeur, ni un commentaire. Une explication se donne par un exemple chiffré avant une grande phrase.
+
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue
 alerte le développeur et se raccourcit dans le moteur.
