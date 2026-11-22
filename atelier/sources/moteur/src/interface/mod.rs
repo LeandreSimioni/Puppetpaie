@@ -14,6 +14,7 @@
 pub mod api;
 pub mod http;
 pub mod navigateur;
+pub mod onglet;
 pub mod veille;
 
 use std::collections::HashMap;
@@ -1151,7 +1152,12 @@ impl Fenetre {
 
     /// L'adresse que la fenetre charge (avec le jeton, qui passe aussitot en cookie).
     pub fn adresse(&self, hote: &str, port: u16) -> String {
-        format!("http://{}:{}/?jeton={}", hote, port, self.jeton.devoiler())
+        format!("http://{}:{}{}", hote, port, self.premiere_page())
+    }
+
+    /// La premiere page que la fenetre sert, avec son jeton : `/?jeton=…`.
+    pub fn premiere_page(&self) -> String {
+        format!("/?jeton={}", self.jeton.devoiler())
     }
 }
 

@@ -146,9 +146,15 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Resul
         }
     }
     flux.read_exact(&mut corps)?;
+    Ok(Some(Ok(requete(methode, &cible, entetes, corps))))
+}
+
+/// La requete d'une `cible` (le chemin et ses parametres, `/api/mois`, `/?jeton=…`), des en-tetes (leurs noms en
+/// minuscules) et du corps : celle du serveur, celle d'un onglet (`onglet::traiter`).
+pub fn requete(methode: String, cible: &str, entetes: HashMap<String, String>, corps: Vec<u8>) -> Requete {
     let (chemin, requete) = match cible.split_once('?') {
         Some(c) => c,
-        None => (cible.as_str(), ""),
+        None => (cible, ""),
     };
     let params = requete
         .split('&')
@@ -158,7 +164,7 @@ fn lire_requete(flux: &mut BufReader<TcpStream>) -> std::io::Result<Option<Resul
             None => (decoder_pourcent(p), String::new()),
         })
         .collect();
-    Ok(Some(Ok(Requete { methode, chemin: decoder_pourcent(chemin), params, entetes, corps })))
+    Requete { methode, chemin: decoder_pourcent(chemin), params, entetes, corps }
 }
 
 /// Une requete refusee avant d'etre lue : l'enveloppe d'un refus, que la page sait lire (`d.refus.phrase`), et non un

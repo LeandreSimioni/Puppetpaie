@@ -604,6 +604,7 @@ un libellé, chacun sa forme.
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
 | sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
+| une demande de la page dans un onglet du navigateur, sans serveur ; la réponse que la fenêtre lui sert : `ReponseALOnglet` | `DemandeDeLOnglet` | `moteur/src/interface/onglet.rs` |
 | ce qui arrête un envoi SMTP (la réponse négative et son code, le délai, le TLS, l'échange interrompu), avant sa phrase ; le dialogue SMTP sur un flux : `Smtp`, une réponse : `ReponseSmtp`, ce que le serveur offre : `Extensions` | `ArretDeLEnvoi` | `envois/src/courriel.rs` |
 | ce qu'on faisait quand un organisme ou Google a mal répondu (s'identifier, relever, déposer, se servir du Drive, lier Google : la phrase de la panne en suit le conseil) | `CeQuOnFaisait` | `envois/src/transport.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
@@ -1982,7 +1983,7 @@ des fictives), et ce que l'écran lit d'un mois : `apercu_dsn.rs`, `historique_m
 
 | dossier | ce qu'il porte |
 |---|---|
-| `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille qui tourne |
+| `interface/` | le serveur local de la page (127.0.0.1, un jeton par appel), l'accueil et ses compagnies, une fenêtre par installation, la veille qui tourne ; dans le navigateur (la cible WASI), la même fenêtre sert les demandes de l'onglet sans serveur (`onglet.rs`) |
 | `publication/` | ce que le flux « Publier » appelle sur le `moteur` qu'il vient de compiler (`moteur maj --publier-github`, `--cle-github`, `--marquer-fictives`, `--poser-fictives`) : les archives, la signature par la graine de GitHub, les fictives livrées |
 | `commandes/` | ce qui n'est pas un geste de l'écran : le coffre, la restauration, la mise à jour ; l'aiguillage de la ligne de commande (`ligne_de_commande`), que `moteur-atelier` reprend avec ses commandes ; les gestes passent par `moteur route` |
 
