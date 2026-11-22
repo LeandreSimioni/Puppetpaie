@@ -225,6 +225,9 @@ par son nom dans le JS : on lit sa fiche.
 compagnie, aucun dépôt (règle 9). `logiciel/` est **exactement ce qu'une compagnie reçoit** et ce que publie la mise à
 jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` est l'espace Cargo (`docs/ARCHITECTURE.md`,
 « Les parties » ; `declarations` prend à `documents`, jamais l'inverse) ; les textes : « Les sources ».
+`atelier/site/` **est puppetpaie.fr** (Léandre, 22/11/2026 : « tout ici ») : l'accueil, ses pages, et `fiche/`, la
+page où un salarié prépare sa réponse ; ce qui est sur `main` part en ligne au déploiement suivant du serveur
+(`atelier/site/LISEZ-MOI.md` dit comment, et ce que la politique de sécurité du site admet).
 
 **On développe dans le nuage, et seulement là** : le poste de Léandre est une installation ordinaire.
 
