@@ -23,16 +23,18 @@ use super::ecriture::{anomalies_enregistrees, anomalies_saisies, comblee, verdic
 
 /// LA FICHE A RENDRE (`fiche`) : `{"nom": …}`, sa cle pour une fiche enregistree (aucune : une fiche neuve, ou
 /// l'entreprise), et ce qui est saisi (`changements`, comme a l'ecriture `enregistrer-fiche` et comme la carte : chacun
-/// lu seul dans le type de sa case, pose sur la fiche enregistree ; absents : la fiche telle qu'elle est enregistree).
+/// lu seul dans le type de sa case, pose sur la fiche enregistree ; absents : la fiche telle qu'elle est enregistree), et
+/// les cases que la saisie vient de changer (`changees`, de la plus ancienne a la plus recente : ce qu'une case decide
+/// d'autres cases ne se fait que quand c'est elle qu'on vient de changer ; absentes : aucune).
 #[derive(Deserialize)]
 #[serde(tag = "nom", deny_unknown_fields)]
 pub(crate) enum FicheARendre {
     #[serde(rename = "entreprise")]
-    Entreprise { changements: Option<socle::forme::Liste> },
+    Entreprise { changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
     #[serde(rename = "salarie")]
-    Salarie { cle: Option<IdSalarie>, changements: Option<socle::forme::Liste> },
+    Salarie { cle: Option<IdSalarie>, changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
     #[serde(rename = "spectacle")]
-    Spectacle { cle: Option<IdSpectacle>, changements: Option<socle::forme::Liste> },
+    Spectacle { cle: Option<IdSpectacle>, changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>> },
 }
 
 /// CE QUE L'EN-TETE D'UNE FICHE RENDUE DIT D'ELLE (`SorteDeFiche::entete`) : son titre, ce qui suit le titre, une note
@@ -248,9 +250,9 @@ impl Dite for FicheRendue {
 /// inconnue) ; une case que son type refuse est sa faute, et le reste se rend.
 pub(crate) fn fiche(ctx: &Contexte, charge: FicheARendre) -> R<FicheRendue> {
     match charge {
-        FicheARendre::Entreprise { changements } => rendre::<FicheEntrepriseDatee>(ctx, None, changements),
-        FicheARendre::Salarie { cle, changements } => rendre::<FicheSalarieDatee>(ctx, cle, changements),
-        FicheARendre::Spectacle { cle, changements } => rendre::<FicheSpectacleDatee>(ctx, cle, changements),
+        FicheARendre::Entreprise { changements, changees } => rendre::<FicheEntrepriseDatee>(ctx, None, changements, changees),
+        FicheARendre::Salarie { cle, changements, changees } => rendre::<FicheSalarieDatee>(ctx, cle, changements, changees),
+        FicheARendre::Spectacle { cle, changements, changees } => rendre::<FicheSpectacleDatee>(ctx, cle, changements, changees),
     }
 }
 
@@ -258,8 +260,8 @@ pub(crate) fn fiche(ctx: &Contexte, charge: FicheARendre) -> R<FicheRendue> {
 /// dessus (`changements`, comme a l'ecriture : une case qu'on ne nomme pas garde sa valeur, une case videe est vide) ;
 /// ses anomalies (sans saisie, la verification de sa pastille dans la liste, `anomalies_enregistrees` ; avec, comme a
 /// l'ecriture, `anomalies_saisies`), les cases que la fiche montre au jour de l'ecran (`fiches::montres`), dans l'ordre
-/// de la table, et ses temps.
-fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Option<socle::forme::Liste>) -> R<FicheRendue> {
+/// de la table, et ses temps. Ce que la route recrit de la saisie suit les cases qui viennent de changer (`changees`).
+fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Option<socle::forme::Liste>, changees: Option<Vec<CaseDeFiche>>) -> R<FicheRendue> {
     let jour = ctx.aujourdhui;
     let enregistree = match (F::montree(ctx, cle.as_ref()), &cle) {
         (Some(p), _) => p,
@@ -276,7 +278,12 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
             for ch in lus.0 {
                 F::appliquer(&mut plate, ch);
             }
-            reecrites = F::reprendre_la_saisie(ctx, &liste, &depart, &mut plate, &mut fautes)?;
+            // Aucune case nommee : aucune ne vient de changer.
+            let changees: &[CaseDeFiche] = match &changees {
+                Some(l) => l,
+                None => &[],
+            };
+            reecrites = F::reprendre_la_saisie(ctx, &liste, changees, &mut plate, &mut fautes)?;
             let tapee = Tapee { fiche: plate, fautes };
             let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
             plate = tapee.fiche;
@@ -633,14 +640,17 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
 /// CE QUE LA ROUTE RECRIT DE LA SAISIE D'UN SALARIE (`fiche`, a chaque relecture), posee sur `plate` ; les cases recrites.
 /// LES QUINZE CHIFFRES DE LA CARTE VITALE, collees dans « Numéro de sécurité sociale », se repartissent entre le numero
 /// (les treize premiers) et sa cle (les deux derniers) : la fiche les garde en deux cases, la cle verifiant le numero
-/// (S21.G00.30.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`). LE METIER CHOISI (un code de la
-/// nomenclature, different de celui de la fiche enregistree) remplit l'intitule de l'emploi, le PCS-ESE, le statut et les
-/// classements, comme sur la carte (`emplois::resoudre`), au feminin pour une salariee ; une case que la saisie a deja
-/// changee garde ce qu'on y a tape. Un metier que le moteur ne resout pas le dit sur sa case.
+/// (S21.G00.30.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`). LE METIER QU'ON VIENT DE CHOISIR (le code
+/// de la nomenclature est dans `changees`) remplit les cases que le metier decide (`emplois::ChampsDuMetier::CASES`) :
+/// l'intitule de l'emploi, le PCS-ESE, le statut et les classements, comme sur la carte (`emplois::resoudre`, le cadre
+/// du metier dans la convention de la compagnie), au feminin pour une salariee ; une case changee apres lui dans la meme
+/// saisie garde ce qu'on y a tape, et une case que le metier ne dit pas (pas de PCS-ESE, pas de classement) garde sa
+/// valeur. Sans metier choisi a l'instant, ces cases gardent ce qu'elles disent. Un metier que le moteur ne resout pas le
+/// dit sur sa case.
 pub(super) fn reprendre_le_salarie(
     ctx: &Contexte,
     liste: &socle::forme::Liste,
-    enregistree: &droit::fiche::ChampsSalarie,
+    changees: &[CaseDeFiche],
     plate: &mut droit::fiche::ChampsSalarie,
     fautes: &mut Vec<FauteDeCase>,
 ) -> R<Vec<CaseDeFiche>> {
@@ -662,7 +672,9 @@ pub(super) fn reprendre_le_salarie(
             reecrites.push(k.into());
         }
     }
-    let Some(code) = plate.code_emploi_ft.clone().filter(|c| Some(c) != enregistree.code_emploi_ft.as_ref()) else { return Ok(reecrites) };
+    let Some(rang) = changees.iter().rposition(|k| *k == CaseDeFiche::from(S::CodeEmploiFt)) else { return Ok(reecrites) };
+    let tapees_apres = &changees[rang + 1..];
+    let Some(code) = plate.code_emploi_ft.clone() else { return Ok(reecrites) };
     let Some(emploi) = droit::emplois::CodeEmploi::du_code_declare(&code)? else { return Ok(reecrites) };
     let feminin = declarations::ntt::sexe_de(plate.nir.dite().and_then(|n| droit::fiche::Sexe::du_nir(n.as_ref())), plate.sexe.code()) == Some("2");
     let m = match droit::emplois::resoudre(&emploi.metier(&ctx.racine)?, None, feminin, ctx.entreprise.idcc.dite()) {
@@ -674,10 +686,12 @@ pub(super) fn reprendre_le_salarie(
     };
     macro_rules! remplir {
         ($champ:ident, $k:expr, $v:expr) => {
-            let v = $v;
-            if plate.$champ == enregistree.$champ && plate.$champ != v {
-                plate.$champ = v;
-                reecrites.push($k.into());
+            let k: CaseDeFiche = $k.into();
+            if let Some(v) = $v {
+                if !tapees_apres.contains(&k) && plate.$champ.as_ref() != Some(&v) {
+                    plate.$champ = Some(v);
+                    reecrites.push(k);
+                }
             }
         };
     }
