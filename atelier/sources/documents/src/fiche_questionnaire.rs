@@ -492,12 +492,20 @@ fn depourcent(t: &str) -> Option<String> {
 
 pub const SUJET: &str = "Ta fiche pour {compagnie}";
 
-pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes ci-dessous, chacune suivie de ta réponse ; écris « aucun » si tu n'en as pas.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
+pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir ci-dessous, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
 
-pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant ces lignes, chacune suivie de ta réponse ; écris « aucun » si tu n'en as pas :</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
+pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
 
-/// CE QUI SE RECOPIE SANS LA PAGE : d'abord ce que chaque ligne demande (sans deux-points : rien ne s'y prend pour une
-/// reponse), puis les lignes `cle : ` a remplir, puis le code, en dernier.
+/// CE QUI SE RECOPIE SANS LA PAGE : d'abord ce que chaque ligne demande, avec l'aide de sa question, mot pour mot celle
+/// de la page (une ligne qui commence par « cle — » : rien ne s'y prend pour une reponse, `lire_reponse`), puis les
+/// lignes `cle : ` a remplir, puis le code, en dernier.
+///
+/// Le courriel porte ainsi l'information sur la deduction forfaitaire, et c'est lui qui la prouve : le BOSS veut le
+/// salarie informe « par tout moyen donnant date certaine […] de ce dispositif et de ses conséquences sur la validation
+/// de ses droits aux assurances sociales » (§ 2190), l'employeur qui ne justifie pas l'avoir informe « ne peut se
+/// prévaloir d'un accord de ceux-ci, même tacite » (§ 2200), et c'est a lui de le prouver (§ 2210) :
+/// `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2730-2745. La page ne garde rien ; le
+/// courriel parti, date, reste dans la boite de la compagnie.
 pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
     let mut lignes: Vec<String> = Vec::new();
     for q in questions {
@@ -506,14 +514,18 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
         if let FormeDeReponse::Choix(c) = &d.forme {
             dit.push_str(&format!(" ({})", c.iter().map(|(v, _)| *v).collect::<Vec<_>>().join(" ou ")));
         }
+        dit.push('.');
+        if !d.aide.is_empty() {
+            dit.push_str(&format!(" {}", d.aide));
+        }
         if let Some(a) = d.aucun {
-            dit.push_str(&format!(" ; « {} » : {}", AUCUN, a.to_lowercase()));
+            dit.push_str(&format!(" « {} » : {}.", AUCUN, a.to_lowercase()));
         }
         if let Some(p) = d.si_aucun {
-            dit.push_str(&format!(" ; seulement si {} est « {} »", p.declaree().cle, AUCUN));
+            dit.push_str(&format!(" Seulement si {} est « {} ».", p.declaree().cle, AUCUN));
         }
         if d.facultative {
-            dit.push_str(" ; facultatif");
+            dit.push_str(" Facultatif.");
         }
         lignes.push(dit);
     }
