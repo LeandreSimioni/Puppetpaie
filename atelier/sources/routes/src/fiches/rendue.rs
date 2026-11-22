@@ -266,7 +266,8 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
         (None, None) => F::retenue(F::Plate::default()),
         (None, Some(c)) => return Err(socle::echec::erreur(Classe::Manque, format!("Aucune fiche {} « {} ».", F::NOM, F::cle_dite(c)))),
     };
-    let mut plate = comblee::<F>(&enregistree)?;
+    let depart = comblee::<F>(&enregistree)?;
+    let mut plate = depart.clone();
     let mut reecrites = Vec::new();
     let anomalies = match changements {
         None => anomalies_enregistrees::<F>(&enregistree)?,
@@ -275,7 +276,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
             for ch in lus.0 {
                 F::appliquer(&mut plate, ch);
             }
-            reecrites = F::reprendre_la_saisie(ctx, &liste, &enregistree, &mut plate, &mut fautes)?;
+            reecrites = F::reprendre_la_saisie(ctx, &liste, &depart, &mut plate, &mut fautes)?;
             let tapee = Tapee { fiche: plate, fautes };
             let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
             plate = tapee.fiche;
@@ -300,7 +301,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
         None => None,
     };
-    let completer = Completer::de(ctx, F::a_juger(&plate))?;
+    let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k))?;
     let mut cases = Vec::new();
     let mut avance_ouvert = false;
     for c in table.iter().filter(|c| montres.contains(&c.cle)) {
@@ -328,10 +329,11 @@ enum Completer<'a> {
 }
 
 impl<'a> Completer<'a> {
-    fn de(ctx: &Contexte, fiche: FicheAJuger<'a>) -> R<Completer<'a>> {
+    /// Pour la fiche `fiche`, dont les cases `montree` s'ouvrent.
+    fn de(ctx: &Contexte, fiche: FicheAJuger<'a>, montree: &dyn Fn(CaseDeFiche) -> bool) -> R<Completer<'a>> {
         Ok(match fiche {
             FicheAJuger::Entreprise(e) => Completer::Entreprise(e),
-            FicheAJuger::Salarie(s) => Completer::Salarie(s, ListesDuSalarie::lire(ctx)?),
+            FicheAJuger::Salarie(s) => Completer::Salarie(s, ListesDuSalarie::lire(ctx, montree)?),
             FicheAJuger::Spectacle(_) => Completer::Rien,
         })
     }
@@ -354,7 +356,7 @@ pub(crate) fn case_a_remplir(ctx: &Contexte, fiche: FicheAJuger<'_>, chemin: &Ch
     let Some(c) = champs::champ(fiche.nom(), chemin.champ)?.filter(|c| c.ecran && !c.calcule()) else { return Ok(None) };
     let mobilite = crate::ouverture::versement_mobilite_des_etablissements(ctx);
     let Some(mut case) = case_du_champ(&c, valeur, &|ch: &[&str]| ecrite(c.cle, ch), mobilite)? else { return Ok(None) };
-    if !Completer::de(ctx, fiche)?.case(ctx, &mut case)? {
+    if !Completer::de(ctx, fiche, &|k| k == c.cle)?.case(ctx, &mut case)? {
         return Ok(None);
     }
     if let (Some(dans), Some(parties)) = (&chemin.dans, case.parties.as_mut()) {
@@ -503,13 +505,14 @@ fn choix_de(choix: &[String], libelles: Option<&Libelles>) -> Vec<Choix> {
 
 /// LES LISTES QUE LA FICHE D'UN SALARIE OFFRE, lues une fois pour toute la fiche : les pays de naissance (la table
 /// « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE, chacun avec la nationalite DSN qui s'en deduit), les
-/// metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), la complementaire sante d'un salarie au mois, et ce que
-/// la fiche de l'entreprise dit de la deduction forfaitaire specifique.
+/// metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), la complementaire sante d'un salarie au mois (lue
+/// seulement quand sa case s'ouvre : elle compose le bareme du jour), et ce que la fiche de l'entreprise dit de la
+/// deduction forfaitaire specifique.
 struct ListesDuSalarie {
     pays_naissance: Vec<Choix>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     metiers: Vec<Choix>,
-    sante: SanteDuSalarie,
+    sante: Option<SanteDuSalarie>,
     deduction_forfaitaire: String,
 }
 
@@ -526,7 +529,7 @@ enum SanteDuSalarie {
 const LU_DANS_LE_NIR: &str = "Rempli pour vous — lu dans le numéro de sécurité sociale.";
 
 impl ListesDuSalarie {
-    fn lire(ctx: &Contexte) -> R<ListesDuSalarie> {
+    fn lire(ctx: &Contexte, montree: &dyn Fn(CaseDeFiche) -> bool) -> R<ListesDuSalarie> {
         let a_choisir = || Choix::de("", A_CHOISIR);
         let pays_naissance = std::iter::once(a_choisir()).chain(socle::pays::servir_naissance()?.into_iter().map(|p| Choix::de(&p.code, &p.nom))).collect();
         let metiers = std::iter::once(a_choisir())
@@ -536,12 +539,16 @@ impl ListesDuSalarie {
                     .map(|m| Choix::de(&m.code, format!("{}{}", m.libelle, if m.cadre_par_defaut { " (cadre)" } else { "" })).sous(Some(m.famille.to_string()))),
             )
             .collect();
-        let sante = match droit::bareme::sante_hors_fiche(&ctx.entreprise)? {
-            Some(d) => SanteDuSalarie::HorsFiche(d),
-            None => match crate::ouverture::niveaux_sante(ctx)? {
-                Ok(niveaux) => SanteDuSalarie::Niveaux(std::iter::once(Choix::de("", "— pas encore dite —")).chain(niveaux.iter().map(|n| Choix::de(&n.niveau, &n.libelle))).collect()),
-                Err(manque) => SanteDuSalarie::PourPayer(manque),
-            },
+        let sante = if montree(droit::fiche::CasePieceSalarie::SanteSvp.into()) {
+            Some(match droit::bareme::sante_hors_fiche(&ctx.entreprise)? {
+                Some(d) => SanteDuSalarie::HorsFiche(d),
+                None => match crate::ouverture::niveaux_sante(ctx)? {
+                    Ok(niveaux) => SanteDuSalarie::Niveaux(std::iter::once(Choix::de("", "— pas encore dite —")).chain(niveaux.iter().map(|n| Choix::de(&n.niveau, &n.libelle))).collect()),
+                    Err(manque) => SanteDuSalarie::PourPayer(manque),
+                },
+            })
+        } else {
+            None
         };
         Ok(ListesDuSalarie { pays_naissance, pays: droit::nationalite::servir()?, metiers, sante, deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)? })
     }
@@ -602,13 +609,14 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
         case.renvoi = Some(RenvoiDeLaFiche::Metiers { libelle: "Ajouter un métier" });
     } else if case.cle == CaseDeFiche::from(droit::fiche::CasePieceSalarie::SanteSvp) {
         match &listes.sante {
-            SanteDuSalarie::Niveaux(niveaux) => {
+            None => {}
+            Some(SanteDuSalarie::Niveaux(niveaux)) => {
                 if let Some(p) = case.parties.iter_mut().flatten().find(|p| p.cle == "niveau") {
                     p.choix = Some(niveaux.clone());
                 }
                 case.dit.push("Obligatoire pour un salarié au mois (art. L911-7) : sans elle, le logiciel refuse de le payer plutôt que de cotiser moins que le contrat. Elle se lit sur son bulletin d'adhésion.".to_string());
             }
-            SanteDuSalarie::HorsFiche(dit) | SanteDuSalarie::PourPayer(dit) => {
+            Some(SanteDuSalarie::HorsFiche(dit) | SanteDuSalarie::PourPayer(dit)) => {
                 // Rien a y choisir ici : la valeur de la fiche se lit et se garde telle quelle.
                 case.forme = Forme::Objet;
                 case.parties = None;

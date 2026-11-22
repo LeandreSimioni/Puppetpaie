@@ -1951,8 +1951,8 @@
    "cle": "sante_svp", "bloc": "Salarié au mois", "largeur": "pleine",
    "champs": [
     {"cle": "niveau", "libelle": "Niveau de garantie", "forme": "choix", "ecran": true, "aide": "Le niveau souscrit, sur son bulletin d'adhésion : les niveaux du barème de la convention."},
-    {"cle": "conjoint", "libelle": "Conjoint couvert", "forme": "booleen", "ecran": true},
-    {"cle": "enfants", "libelle": "Enfants couverts", "forme": "texte", "ecran": true, "aide": "Le nombre d'enfants que le contrat couvre."}
+    {"cle": "conjoint", "libelle": "Conjoint couvert", "forme": "booleen", "ecran": true, "choix": ["true", "false"], "libelles": {"true": "Oui", "false": "Non"}, "aide": "Ce que dit son bulletin d'adhésion, même à non."},
+    {"cle": "enfants", "libelle": "Enfants couverts", "forme": "texte", "ecran": true, "exemple": "0", "aide": "Le nombre d'enfants que le contrat couvre, même à zéro."}
    ],
    "libelle": "Complémentaire santé",
    "forme": "structure",
