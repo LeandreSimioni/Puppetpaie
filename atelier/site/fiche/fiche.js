@@ -140,6 +140,12 @@
       var plus = element("details", "plus");
       plus.appendChild(element("summary", null, "En savoir plus"));
       plus.appendChild(element("p", null, q.explication));
+      // L'exemple chiffré que le moteur a calculé : une ligne par chiffre, telles qu'il les compose.
+      if (q.exemple && q.exemple.length) {
+        var exemple = element("div", "exemple");
+        q.exemple.forEach(function (ligne) { exemple.appendChild(element("p", null, ligne)); });
+        plus.appendChild(exemple);
+      }
       bloc.appendChild(plus);
     }
     if (q.aucun) {
@@ -227,7 +233,7 @@
     var phrases = [];
     if (vides.length) phrases.push("Sans réponse : " + vides.join(", ") + ".");
     if (fausses.length) phrases.push("À vérifier : " + fausses.join(", ") + ".");
-    m.textContent = phrases.length ? phrases.join(" ") + " Tu peux envoyer quand même : ta compagnie te redemandera ce qui manque." : "";
+    m.textContent = phrases.length ? phrases.join(" ") + " Tu peux envoyer quand même : ton employeur te redemandera ce qui manque." : "";
     m.classList.toggle("cache", !phrases.length);
   }
 

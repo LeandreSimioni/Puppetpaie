@@ -1000,6 +1000,85 @@ fn questions_pour(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<
     Ok(fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(fiche, c.into())))
 }
 
+/// Le gabarit de l'exemple de la deduction forfaitaire, dans la compagnie fictive de l'apercu (`bulletin::dossier_apercu`).
+const EXEMPLE_DFS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("apercu-bulletin/exemple-deduction.json");
+
+/// LE GABARIT DE L'EXEMPLE (`apercu-bulletin/exemple-deduction.json`) : ce qu'il est, et ses cartes, sans leur jour.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GabaritDeLExemple {
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
+    engagements: Vec<engagement::saisie::Carte>,
+}
+
+/// L'EXEMPLE CHIFFRE DE LA DEDUCTION FORFAITAIRE (`fq::ExempleDfs`), calcule par le calcul des vrais bulletins
+/// (`engagement::pour_l_ecran`, comme le bulletin d'exemple) dans la compagnie fictive de l'apercu : un cachet de 150 EUR
+/// brut, le 1er decembre de l'annee du dernier bareme livre, d'une meme artiste sans la deduction (EXEMPLE-SANS) et avec
+/// (EXEMPLE-AVEC, artiste dramatique ; la compagnie fictive l'exerce par accord collectif). Le meme pour toutes les
+/// compagnies et toutes les demandes : il entre dans le formulaire publie (`fq::formulaire_publie`, que le lien de la
+/// demande nomme et que `moteur-atelier formulaire-fiche` ecrit) et dans le courriel (`fq::a_recopier`). `None` quand le calcul
+/// n'abat rien (une annee ou le taux de la deduction est nul) : rien ne se montre.
+pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
+    let annee = droit::contexte::annees_du_socle(&socle::fichiers::dossier_du_code().join("baremes"))?
+        .into_iter()
+        .max()
+        .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "annee"))?;
+    let mois = annee.decembre();
+    let jour = mois.jour_exige(1)?;
+    let racine = crate::bulletin::dossier_apercu();
+    let gabarit: GabaritDeLExemple = socle::forme::lire_fichier(&racine.join("exemple-deduction.json"), "L'exemple de la déduction forfaitaire ne se lit pas.")?;
+    let mut engagements = gabarit.engagements;
+    for carte in engagements.iter_mut() {
+        carte.debut = Some(jour);
+        carte.fin = Some(jour);
+        carte.date_paiement = Some(jour);
+        for ligne in carte.lignes.iter_mut().flatten() {
+            if let engagement::LignePaie::Unites(u) = ligne {
+                u.dates = vec![engagement::DateDeLigne::Nue(jour)];
+            }
+        }
+    }
+    let saisie = engagement::saisie::VueDuMois { mois, taux_cachet: None, engagements };
+    let ctx = Contexte::nouveau(&racine, Some(jour))?;
+    let paies = engagement::pour_l_ecran(&ctx, &saisie)?.paies;
+    let (avec, sans): (Vec<_>, Vec<_>) = paies.iter().partition(|p| p.deduction_forfaitaire.is_some());
+    // Deux paies du meme cachet, l'une sans la deduction, l'autre avec : le gabarit ne dit rien d'autre.
+    let ([sans], [avec]) = (sans.as_slice(), avec.as_slice()) else {
+        return Err(socle::echec::livree(&EXEMPLE_DFS, "engagements"));
+    };
+    if sans.brut != avec.brut {
+        return Err(socle::echec::livree(&EXEMPLE_DFS, "engagements"));
+    }
+    let Some(d) = avec.deduction_forfaitaire.as_ref().filter(|d| d.montant > Montant::ZERO) else {
+        return Ok(None);
+    };
+    let profession = ctx
+        .bareme(&jour)?
+        .deduction_forfaitaire
+        .as_ref()
+        .and_then(|b| b.professions.get(&d.profession))
+        .map(|p| p.libelle.clone())
+        .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "deduction_forfaitaire.professions"))?;
+    // Ce qui reste compte sur le brut entier : la base que le calcul a posee sur la ligne, sous la deduction.
+    let au_brut = |id: &droit::forme_bareme::IdDeCotisation| {
+        avec.lignes.iter().any(|l| l.est(id) && l.base == engagement::calcul::BaseDeCotisation::Montant(avec.brut))
+    };
+    Ok(Some(fq::ExempleDfs {
+        annee,
+        profession,
+        taux: d.taux,
+        brut: avec.brut,
+        net_sans: sans.net_a_payer,
+        net_avec: avec.net_a_payer,
+        cout_sans: sans.cout_employeur,
+        cout_avec: avec.cout_employeur,
+        base_abattue: avec.brut - d.montant,
+        chomage_au_brut: au_brut(&droit::forme_bareme::CHOMAGE),
+        conges_spectacles_au_brut: au_brut(&droit::forme_bareme::CONGES_SPEC),
+    }))
+}
+
 /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1062,7 +1141,9 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         )));
     }
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
-    let q = fq::a_recopier(&code, &questions);
+    // L'exemple de la deduction forfaitaire : le meme dans le courriel date et dans le formulaire publie que le lien nomme.
+    let exemple = exemple_dfs()?;
+    let q = fq::a_recopier(&code, &questions, exemple.as_ref());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1071,7 +1152,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         let e = |s: &str| if echappe { html_echapper(s) } else { s.to_string() };
         vec![("virgule_prenom", e(&virgule_prenom)), ("compagnie", e(&compagnie)), ("signataire", e(&signataire))]
     };
-    let lien = fq::LienDeFiche { formulaire: fq::formulaire_publie().empreinte, questions, code: code.clone(), adresse: expediteur.clone(), objet: format!("Re: {}", sujet) }.ecrit();
+    let lien = fq::LienDeFiche { formulaire: fq::formulaire_publie(exemple.as_ref()).empreinte, questions, code: code.clone(), adresse: expediteur.clone(), objet: format!("Re: {}", sujet) }.ecrit();
     let mut texte = champs(false);
     texte.push(("questionnaire", q.clone()));
     texte.push(("lien", lien.clone()));
