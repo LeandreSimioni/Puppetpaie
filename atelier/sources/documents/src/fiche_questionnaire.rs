@@ -190,6 +190,9 @@ pub struct QuestionDeclaree {
     /// L'EXPLICATION LONGUE (`""` : aucune) : la page la montre derriere « En savoir plus », le courriel la porte entiere
     /// sous la ligne de la question.
     pub explication: &'static str,
+    /// Son explication porte, a sa suite, l'exemple chiffre de la deduction forfaitaire (`ExempleDfs`), quand le moteur
+    /// sait le calculer.
+    pub avec_l_exemple_dfs: bool,
     /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche. C'est le
     /// seul endroit qui dit qu'une case se demande au salarie.
     pub case: CaseSalarie,
@@ -241,7 +244,7 @@ impl Question {
     /// CE QU'ELLE EST : la declaration, la seule.
     pub fn declaree(self) -> QuestionDeclaree {
         use FormeDeReponse as F;
-        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, explication: "", case, pourvu: None };
+        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, explication: "", avec_l_exemple_dfs: false, case, pourvu: None };
         match self {
             Question::Prenom => q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage),
             Question::Nom => q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage),
@@ -316,13 +319,24 @@ impl Question {
             // - il baisse chaque annee et disparait le 1er janvier 2032 : l. 2888-2893 ;
             // - 7 600 euros par an : l. 2622-2623 ; chez chaque employeur : § 2160, l. 2694-2696 ;
             // - seulement avec de vrais frais, pas si tout est rembourse : § 2130, l. 2651-2657 ;
-            // - des consequences sur les droits aux assurances sociales : § 2190, l. 2732-2733 ;
+            // - les prestations calculees sur la base des cotisations, plus basse sous la deduction, par exemple la
+            //   retraite : le guide du ministere de la Culture, « Nota », l. 1508-1511
+            //   (`atelier/reference/sources/culture-guide-obligations-sociales/culture-guide-obligations-sociales-spectacle-20130701.txt`),
+            //   ce que le BOSS appelle les « conséquences sur la validation de ses droits aux assurances sociales »
+            //   (§ 2190, l. 2732-2733) ;
+            // - sur quoi elle porte : la fiche pratique d'Audiens
+            //   (`atelier/reference/sources/audiens-dsn/audiens-fiche-pratique-deduction-forfaitaire-specifique-20250601.txt`) :
+            //   les cotisations de securite sociale et la retraite complementaire Agirc-Arrco, l. 63-69 ; pas le chomage ni
+            //   l'AGS des intermittents, l. 50-58 (« Remarque ») et l. 66-67 ; pas les Conges Spectacles, l. 71. Le moteur
+            //   abat ainsi (bareme, `deduction_forfaitaire.rubriques_abattues` : ni `chomage` ni `conges_spec`) ;
+            // - l'exemple chiffre qui suit l'explication : `ExempleDfs`, calcule par le moteur ;
             // - une reponse d'accord ou de refus : l. 2733-2734 ; le silence vaut accord : l. 2737 ;
             // - renoncer a tout moment, pour l'annee suivante : l. 2951-2952.
             Question::AccordDfs => QuestionDeclaree {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
                 facultative: true,
-                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ta compagnie te rembourse tous tes frais. Elle a des conséquences sur les droits que tes cotisations te valent aux assurances sociales. Ta compagnie doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
+                avec_l_exemple_dfs: true,
+                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ta compagnie te rembourse tous tes frais. Tes prestations sociales sont calculées sur la base de tes cotisations : avec la déduction, cette base est plus basse, et les prestations qui en dépendent aussi, par exemple ta retraite. La déduction porte sur tes cotisations de sécurité sociale et de retraite complémentaire, pas sur tes cotisations d'assurance chômage d'intermittent ni sur tes Congés Spectacles. Ta compagnie doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
@@ -364,6 +378,92 @@ pub fn a_poser(manque: &dyn Fn(CaseSalarie) -> bool, dite: &dyn Fn(CaseSalarie) 
     posees
 }
 
+// ---------------------------------------------------------------- l'exemple chiffre de la deduction forfaitaire
+
+/// L'EXEMPLE CHIFFRE DE LA DEDUCTION FORFAITAIRE SPECIFIQUE : le meme cachet d'une meme artiste, paye sans la deduction
+/// puis avec, par le calcul des vrais bulletins (`routes::fiches::exemple_dfs`, la compagnie fictive de l'apercu). Il
+/// suit l'explication de la question qui le porte (`QuestionDeclaree::avec_l_exemple_dfs`), dans la page comme dans le
+/// courriel date qui prouve l'information (BOSS, frais professionnels, § 2190 a 2210) ; `lignes` est le seul endroit qui
+/// le compose. Chaque chiffre vient du calcul ; aucune retraite future ne se chiffre (aucun texte depose ne le permet).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExempleDfs {
+    /// L'annee du calcul : celle du dernier bareme livre.
+    pub annee: socle::mois::Annee,
+    /// La profession de la deduction, telle que le bareme la nomme (« Artiste dramatique »).
+    pub profession: String,
+    /// Le taux de la deduction cette annee pour cette profession.
+    pub taux: socle::grandeurs::Taux,
+    pub brut: socle::grandeurs::Montant,
+    /// Le « Net à payer avant impôt » du bulletin (`Paie::net_a_payer`), sans puis avec la deduction.
+    pub net_sans: socle::grandeurs::Montant,
+    pub net_avec: socle::grandeurs::Montant,
+    /// Le cout employeur (`Paie::cout_employeur`), sans puis avec la deduction.
+    pub cout_sans: socle::grandeurs::Montant,
+    pub cout_avec: socle::grandeurs::Montant,
+    /// La base abattue : le brut moins la deduction retenue (ce que la DSN declare, bloc 54 de type 10).
+    pub base_abattue: socle::grandeurs::Montant,
+    /// Sous la deduction, la ligne du chomage d'intermittent garde le brut pour base (annexes VIII et X, art. 49 : « avant
+    /// application de l'abattement »), telle que le calcul l'a posee.
+    pub chomage_au_brut: bool,
+    /// Sous la deduction, la ligne des Conges Spectacles garde le brut pour base (norme DSN, bloc 78 : « avant toute
+    /// déduction forfaitaire spécifique »), telle que le calcul l'a posee.
+    pub conges_spectacles_au_brut: bool,
+}
+
+impl ExempleDfs {
+    /// L'exemple, une ligne courte par chiffre.
+    pub fn lignes(&self) -> Vec<String> {
+        use socle::grandeurs::Montant;
+        use socle::texte::{euros, pourcent};
+        let brut = euros(self.brut);
+        let mut l = vec![
+            // « Un exemple », deux mots avant le deux-points : recopiee dans une reponse, la ligne n'est jamais lue
+            // comme une reponse (`lire_reponse`).
+            format!("Un exemple : un cachet de {} brut d'{}, en {} (déduction de {}).", brut, self.profession.to_lowercase(), self.annee, pourcent(self.taux)),
+            format!("Sans la déduction : ton net à payer avant impôt est de {}.", euros(self.net_sans)),
+            format!("Avec la déduction : ton net à payer avant impôt est de {}.", euros(self.net_avec)),
+        ];
+        let gain = self.net_avec - self.net_sans;
+        l.push(if gain > Montant::ZERO {
+            format!("Tu gagnes {} sur ce cachet.", euros(gain))
+        } else if gain < Montant::ZERO {
+            format!("Tu perds {} sur ce cachet.", euros(-gain))
+        } else {
+            "Ton net ne change pas.".to_string()
+        });
+        let economie = self.cout_sans - self.cout_avec;
+        l.push(if economie > Montant::ZERO {
+            format!("Ta compagnie, elle, économise {} sur ce cachet.", euros(economie))
+        } else if economie < Montant::ZERO {
+            format!("Ta compagnie, elle, paie {} de plus sur ce cachet.", euros(-economie))
+        } else {
+            "Ce que paie ta compagnie ne change pas.".to_string()
+        });
+        l.push(format!(
+            "{}tes droits à la retraite et à la Sécurité sociale sont comptés sur {} au lieu de {} : {} de salaire qui ne comptent pas pour toi.",
+            if gain > Montant::ZERO { "En échange, " } else { "Et " },
+            euros(self.base_abattue),
+            brut,
+            euros(self.brut - self.base_abattue)
+        ));
+        match (self.chomage_au_brut, self.conges_spectacles_au_brut) {
+            (true, true) => l.push(format!("Ton chômage d'intermittent et tes Congés Spectacles restent comptés sur {}.", brut)),
+            (true, false) => l.push(format!("Ton chômage d'intermittent reste compté sur {}.", brut)),
+            (false, true) => l.push(format!("Tes Congés Spectacles restent comptés sur {}.", brut)),
+            (false, false) => {}
+        }
+        l
+    }
+}
+
+/// Les lignes de l'exemple que porte la question `d`, s'il y en a un.
+fn exemple_de(d: &QuestionDeclaree, exemple: Option<&ExempleDfs>) -> Vec<String> {
+    match exemple {
+        Some(e) if d.avec_l_exemple_dfs => e.lignes(),
+        _ => Vec::new(),
+    }
+}
+
 // ---------------------------------------------------------------- le formulaire publie
 
 /// Un choix, tel que le formulaire publie le dit.
@@ -390,6 +490,9 @@ struct QuestionPubliee {
     facultative: bool,
     #[serde(skip_serializing_if = "str::is_empty")]
     explication: &'static str,
+    /// L'exemple chiffre qui suit l'explication, une ligne par chiffre (`ExempleDfs::lignes`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    exemple: Vec<String>,
 }
 
 /// Comment la reponse s'ecrit : la page la compose ainsi, la releve la lit ainsi (`lire_reponse`).
@@ -423,8 +526,10 @@ impl FormulairePublie {
     }
 }
 
-/// Le formulaire de cette version du moteur, tel qu'il se publie.
-pub fn formulaire_publie() -> FormulairePublie {
+/// Le formulaire de cette version du moteur, tel qu'il se publie, avec l'exemple de la deduction forfaitaire que le
+/// moteur a calcule (`routes::fiches::exemple_dfs`) : quand le bareme change,
+/// l'exemple change, et l'empreinte avec lui.
+pub fn formulaire_publie(exemple: Option<&ExempleDfs>) -> FormulairePublie {
     let questions = Question::TOUTES
         .iter()
         .map(|q| {
@@ -442,6 +547,7 @@ pub fn formulaire_publie() -> FormulairePublie {
                 si_aucun: d.si_aucun.map(|p| p.declaree().cle),
                 facultative: d.facultative,
                 explication: d.explication,
+                exemple: exemple_de(&d, exemple),
             }
         })
         .collect();
@@ -533,7 +639,9 @@ pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font
 /// prévaloir d'un accord de ceux-ci, même tacite » (§ 2200), et c'est a lui de le prouver (§ 2210) :
 /// `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2730-2745. La page ne garde rien ; le
 /// courriel parti, date, reste dans la boite de la compagnie.
-pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
+/// L'exemple de la deduction forfaitaire (`ExempleDfs`), le meme que la page montre, suit l'explication de sa question,
+/// une ligne par chiffre.
+pub fn a_recopier(code: &CodeDeDemande, questions: &[Question], exemple: Option<&ExempleDfs>) -> String {
     let mut lignes: Vec<String> = Vec::new();
     for q in questions {
         let d = q.declaree();
@@ -559,6 +667,7 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
         if !d.explication.is_empty() {
             lignes.push(format!("   En savoir plus — {}", d.explication));
         }
+        lignes.extend(exemple_de(&d, exemple).into_iter().map(|l| format!("   {}", l)));
     }
     lignes.push(String::new());
     lignes.extend(questions.iter().map(|q| format!("{}{}", q.declaree().cle, SEPARATEUR)));
