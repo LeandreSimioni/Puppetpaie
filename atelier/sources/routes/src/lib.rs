@@ -111,7 +111,8 @@ pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &droit::cont
 
 /// La pile d'un fil qui sert des routes dans la fenetre : 8 Mo, celle du fil principal d'un `moteur route` sous Linux (un
 /// fil neuf n'en a que 2). Un calcul qui remonte les mois d'avant s'y empile ; un debordement de pile ne se rattrape pas
-/// (`catch_unwind` n'y peut rien), il fermerait la fenetre.
+/// (`catch_unwind` n'y peut rien), il fermerait la fenetre. Dans le navigateur, le module n'a qu'un fil : sa pile a la
+/// meme taille, posee a l'edition des liens (`atelier/sources/.cargo/config.toml`, `[target.wasm32-wasip1]`).
 pub(crate) const PILE_D_UNE_ROUTE: usize = 8 * 1024 * 1024;
 
 /// Un fil qui sert des routes dans la fenetre (une connexion, la file des etats, la veille, un passage en fond), avec

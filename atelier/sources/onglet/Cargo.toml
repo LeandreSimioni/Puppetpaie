@@ -1,0 +1,20 @@
+[lints]
+workspace = true
+
+[package]
+name = "onglet"
+version = "0.1.0"
+edition = "2021"
+description = "La porte du moteur vers l'hote JavaScript d'un onglet du navigateur (la demo de puppetpaie.fr, cible wasm32-wasip1) : quatre exports qui passent des octets, rien d'autre."
+license = "EUPL-1.2"
+publish = false
+
+# Un module WebAssembly que l'hote charge (`cdylib`) ; rien ne prend cette crate, et elle est hors de `default-members` :
+# elle ne se construit que pour le navigateur (`cargo build --profile navigateur --target wasm32-wasip1 -p onglet`).
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# La logique de l'onglet (`moteur::interface::onglet` : la fenetre qui nait, la demande qui entre, la reponse qui sort).
+moteur = { path = "../moteur" }
