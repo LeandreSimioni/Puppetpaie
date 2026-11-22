@@ -312,6 +312,8 @@ button.occupe::before { content: ""; display: inline-block; width: .8em; height:
 .case-dits .case-dit { display: block; }
 .case-parties { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
 .case-parties .partie { display: inline-flex; gap: 4px; align-items: center; }
+.case-parties .partie:has(input[type=text]) { flex: 1 1 14em; }
+.case-parties .partie input[type=text] { flex: 1; min-width: 0; }
 /* Une fiche rendue : deux cases par ligne, une case « pleine » sur toute la ligne, un titre à chaque bloc. */
 .e-cases.fiche-cases { grid-template-columns: 1fr 1fr; align-items: start; }
 .fiche-cases > .pleine, .fiche-cases > .bloc-titre { grid-column: 1 / -1; }

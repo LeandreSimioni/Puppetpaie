@@ -516,7 +516,11 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
 function sansTexteVide(v) {
   if (v === "") return null;
   if (Array.isArray(v)) return v.length ? v.map(sansTexteVide) : null;
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sansTexteVide(x)]));
+  if (v && typeof v === "object") {
+    const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sansTexteVide(x)]));
+    // Une structure dont aucune partie n'a de valeur (vide, ou une case non cochée) est une case vide.
+    return Object.values(o).every((x) => x === null || x === false) ? null : o;
+  }
   return v;
 }
 function casesDeLaCharge(donnees) {

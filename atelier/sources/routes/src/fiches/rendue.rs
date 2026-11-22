@@ -281,7 +281,13 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
             (F::reprendre_la_saisie(ctx, liste, changees, &mut plate, &mut fautes)?, fautes, true)
         }
     };
-    reecrites.extend(F::proposer(&mut plate, changements.as_ref().map(|_| changees.as_deref().unwrap_or_default()))?);
+    // A l'ouverture, aucune liste ; a une relecture, les cases qui viennent de changer (aucune nommee : aucune).
+    let venues: Option<&[CaseDeFiche]> = match (&changements, &changees) {
+        (None, _) => None,
+        (Some(_), Some(l)) => Some(l),
+        (Some(_), None) => Some(&[]),
+    };
+    reecrites.extend(F::proposer(&mut plate, venues)?);
     // Sans saisie ni proposition, la verification de la pastille ; sinon celle de la fiche telle qu'elle se montre.
     let anomalies = if saisie || !reecrites.is_empty() {
         let tapee = Tapee { fiche: plate, fautes };
