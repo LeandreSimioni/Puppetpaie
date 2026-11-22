@@ -201,6 +201,18 @@ fn injoignable(e: impl std::fmt::Display) -> Echec {
     dite(INJOIGNABLE, format!("Serveur injoignable : {}", e))
 }
 
+/// La boite a rendu ce que ce dialogue ne lit pas (`detail` : ce qu'elle a rendu, ou ce que la bibliotheque en dit).
+#[track_caller]
+fn illisible(detail: impl std::fmt::Display) -> Echec {
+    dite("La boîte courriel a rendu une réponse que le logiciel ne lit pas : nouvel essai plus tard.", detail)
+}
+
+/// La boite a ferme la connexion avant de tout rendre.
+#[track_caller]
+fn fermee_en_chemin() -> Echec {
+    dite("La boîte courriel a fermé la connexion en chemin : nouvel essai plus tard.", "Connexion fermee par le serveur.")
+}
+
 /// La connexion securisee a la boite ne s'etablit pas (`e` : ce que la bibliotheque TLS en dit).
 #[track_caller]
 fn tls(e: impl std::fmt::Display) -> Echec {
@@ -312,7 +324,7 @@ impl<F: Read + Write> Imap<F> {
         match Response::parse(&accueil) {
             Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(traduire(String::from_utf8_lossy(&accueil).trim())),
             Ok(_) => {}
-            Err(e) => return Err(erreur(format!("L'accueil du serveur ne se lit pas : {}", e))),
+            Err(e) => return Err(illisible(format!("L'accueil du serveur ne se lit pas : {}", e))),
         }
         imap.commande(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe.devoiler())?))?;
         imap.commande(&format!("EXAMINE {}", quoter(dossier)?))?;
@@ -327,7 +339,7 @@ impl<F: Read + Write> Imap<F> {
             let mut bloc = [0u8; 8192];
             let n = self.flux.read(&mut bloc).map_err(es)?;
             if n == 0 {
-                return Err(erreur("Connexion fermee par le serveur."));
+                return Err(fermee_en_chemin());
             }
             self.tampon.extend_from_slice(&bloc[..n]);
         }
@@ -338,7 +350,7 @@ impl<F: Read + Write> Imap<F> {
             let mut bloc = [0u8; 8192];
             let lus = self.flux.read(&mut bloc).map_err(es)?;
             if lus == 0 {
-                return Err(erreur("Connexion fermee par le serveur."));
+                return Err(fermee_en_chemin());
             }
             self.tampon.extend_from_slice(&bloc[..lus]);
         }
@@ -352,7 +364,7 @@ impl<F: Read + Write> Imap<F> {
             let ligne = self.lire_ligne()?;
             unite.extend_from_slice(&ligne);
             match longueur_litteral(&ligne) {
-                Some(n) if n > LITTERAL_MAXIMUM => return Err(erreur("Reponse du serveur trop grosse.")),
+                Some(n) if n > LITTERAL_MAXIMUM => return Err(illisible(format!("Reponse du serveur trop grosse : un litteral de {} octets.", n))),
                 Some(n) => {
                     let corps = self.lire_octets(n)?;
                     unite.extend_from_slice(&corps);
@@ -380,7 +392,7 @@ impl<F: Read + Write> Imap<F> {
                         let brut = String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim().to_string();
                         Err(traduire(&brut))
                     }
-                    _ => Err(erreur("Reponse du serveur illisible.")),
+                    _ => Err(illisible(String::from_utf8_lossy(&unite).trim().to_string())),
                 };
             }
             if unite.starts_with(b"* ") {
@@ -444,7 +456,7 @@ impl<F: Read + Write> Imap<F> {
             return match Response::parse(&unite) {
                 Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(()),
                 Ok((_, Response::Done { .. })) => Err(traduire(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim())),
-                _ => Err(erreur("Reponse du serveur illisible.")),
+                _ => Err(illisible(String::from_utf8_lossy(&unite).trim().to_string())),
             };
         }
     }

@@ -150,8 +150,14 @@ fn muette(e: &std::io::Error) -> bool {
     )
 }
 
+/// Un refus dont ce que le systeme a dit (`detail`) va a part : la phrase reste en mots.
+#[track_caller]
+fn refus_detaille(phrase: &str, detail: impl std::fmt::Display) -> Echec {
+    Echec { a_part: Some(socle::echec::Lieu { detail: Some(detail.to_string()), ..socle::echec::Lieu::default() }.into()), ..refus(phrase) }
+}
+
 fn panne_locale(e: std::io::Error) -> Echec {
-    refus(format!("L'adresse locale de l'autorisation est en panne : {}. Aucune autorisation enregistree. Recommencer.", e))
+    refus_detaille("L'adresse locale où Google rend l'autorisation est en panne : aucune autorisation enregistrée. Recommencer.", e)
 }
 
 /// Ecrit `octets` au navigateur ; un navigateur parti (connexion refermee) n'attend plus rien : rien a lui dire.
@@ -203,8 +209,8 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Result<Connexion, Echec> {
     }
     let retour = Retour { code: premiere_valeur(requete, "code"), erreur: premiere_valeur(requete, "error") };
     let page = match &retour.erreur {
-        None => page_retour("C'est bon.", "#4f9f6f", "Tu peux fermer cette fenetre et revenir a PuppetPaie."),
-        Some(e) => page_retour("Autorisation refusee", "#d05353", &echapper(e)),
+        None => page_retour("C'est bon.", "#4f9f6f", "Tu peux fermer cette fenêtre et revenir à PuppetPaie."),
+        Some(e) => page_retour("Autorisation refusée", "#d05353", &echapper(e)),
     };
     let corps = page.into_bytes();
     let entete = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", corps.len());
@@ -239,8 +245,8 @@ pub fn autoriser(
     let defi = base64_url(&Sha256::digest(verificateur.as_bytes()));
     let etat = aleatoire_url(24)?;
 
-    let ecouteur = TcpListener::bind("127.0.0.1:0").map_err(|e| refus(format!("Impossible d'ecouter sur 127.0.0.1 : {}.", e)))?;
-    let adresse = ecouteur.local_addr().map_err(|e| refus(format!("Impossible d'ecouter sur 127.0.0.1 : {}.", e)))?;
+    let ecouteur = TcpListener::bind("127.0.0.1:0").map_err(panne_locale)?;
+    let adresse = ecouteur.local_addr().map_err(panne_locale)?;
     let redirection = format!("http://127.0.0.1:{}/", adresse.port());
     let url = AUTORISATION.joindre(&format!(
         "?{}",
@@ -282,7 +288,7 @@ pub fn autoriser(
             Ok(Some(r)) => tx.send(Ok(r)),
             Err(e) => tx.send(Err(e)),
         };
-        envoi.map_err(|e| refus(format!("La reponse de Google n'a pas pu etre transmise : {}. Recommencer.", e)))
+        envoi.map_err(|e| refus_detaille("La réponse de Google ne s'est pas transmise au logiciel : aucune autorisation enregistrée. Recommencer.", e))
     });
     let rejoindre = |fil: std::thread::JoinHandle<Result<(), Echec>>| -> Result<(), Echec> {
         match fil.join() {
@@ -293,10 +299,7 @@ pub fn autoriser(
                     (None, Some(s)) => s.clone(),
                     (None, None) => "sans message".to_string(),
                 };
-                Err(refus(format!(
-                    "L'attente de la reponse de Google s'est arretee net ({}). Aucune autorisation enregistree. Recommencer.",
-                    pourquoi
-                )))
+                Err(refus_detaille("L'attente de la réponse de Google s'est arrêtée net : aucune autorisation enregistrée. Recommencer.", pourquoi))
             }
         }
     };
@@ -316,16 +319,16 @@ pub fn autoriser(
             }
             rejoindre(fil)?;
             return Err(refus(format!(
-                "Aucune reponse de Google en {} minutes : aucune autorisation enregistree. Recommencer, et accepter dans la fenetre du navigateur.",
+                "Aucune réponse de Google en {} minutes : aucune autorisation enregistrée. Recommencer, et accepter dans la fenêtre du navigateur.",
                 socle::temps::ecrit::minutes_entieres_dites(delai.max(Duration::from_secs(60)))
             )));
         }
     };
     if let Some(e) = recu.erreur {
-        return Err(refus(format!("Google a refuse : {}", e)));
+        return Err(refus_detaille("Google a refusé l'autorisation : aucune autorisation enregistrée. Recommencer, et accepter dans la fenêtre du navigateur.", format!("error={}", e)));
     }
     let Some(code) = recu.code else {
-        return Err(refus("Google n'a renvoye aucun code d'autorisation : aucune autorisation enregistree. Recommencer."));
+        return Err(refus("Google n'a renvoyé aucun code d'autorisation : aucune autorisation enregistrée. Recommencer."));
     };
 
     let corps = encoder(&[
@@ -346,11 +349,11 @@ pub fn autoriser(
     let non_vide_secret = |t: Option<socle::secret::Secret>| t.filter(|x| !x.devoiler().is_empty());
     let Some(rafraichissement) = non_vide_secret(reponse.refresh_token) else {
         return Err(refus(
-            "Google n'a pas renvoye de jeton de rafraichissement. Retirer\nl'acces de l'application sur myaccount.google.com > Securite >\nVos connexions a des applications tierces, puis recommencer.",
+            "Google n'a pas renvoyé de jeton de rafraîchissement : aucune autorisation enregistrée. Retirer l'accès de l'application dans le compte Google (Sécurité › Vos connexions à des applications tierces), puis recommencer.",
         ));
     };
     let Some(acces) = non_vide_secret(reponse.access_token) else {
-        return Err(refus("Google n'a pas renvoye de jeton d'acces : aucune autorisation enregistree. Recommencer."));
+        return Err(refus("Google n'a pas renvoyé de jeton d'accès : aucune autorisation enregistrée. Recommencer."));
     };
     // Sans `scope`, Google n'a accorde aucune permission.
     let mut accordees: Vec<String> = reponse.scope.iter().flat_map(|s| s.split_whitespace()).map(str::to_string).collect();
@@ -363,7 +366,7 @@ pub fn autoriser(
     let oubliees: Vec<&str> = PERMISSIONS.iter().filter(|p| !accordees.iter().any(|a| a == *p)).map(|p| courte(p)).collect();
     if !oubliees.is_empty() {
         dire(&format!(
-            "Attention : permission(s) non accordee(s) : {}.\n  Les cases correspondantes n'ont pas ete cochees dans la fenetre.",
+            "Attention : permission(s) non accordée(s) : {}. Les cases correspondantes n'ont pas été cochées dans la fenêtre de Google.",
             oubliees.join(", ")
         ));
     }
@@ -372,7 +375,7 @@ pub fn autoriser(
     let entetes = [("Authorization", autorisation.as_str())];
     let infos: ReponseCompte = appeler(&Requete { entetes: &entetes, ..Requete::get(&adresses.compte, DELAI) })?;
     let Some(compte) = non_vide(infos.email) else {
-        return Err(refus("Google n'a pas donne l'adresse du compte : aucune autorisation enregistree. Recommencer."));
+        return Err(refus("Google n'a pas donné l'adresse du compte : aucune autorisation enregistrée. Recommencer."));
     };
 
     Ok(JetonGoogle { rafraichissement, compte, permissions: accordees })
