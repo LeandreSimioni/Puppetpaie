@@ -1397,7 +1397,7 @@
    "declare": true,
    "derive_de": null,
    "rubrique": null,
-   "si": [{"nir": [""]}, {"sexe": ["*"]}],
+   "si": [{"nir": [""]}],
    "si_etablissements": false,
    "si_entreprise": null,
    "ecran": true
