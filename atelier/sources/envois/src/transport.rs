@@ -6,7 +6,8 @@
 //! l'appelant qui le garde en memoire et le repasse.
 //!
 //! Les pannes : `Organisme` (message et `code`) ; un delai de lecture (`DelaiDepasse`), une reponse coupee, une connexion
-//! rompue, un gzip illisible (`Reseau`) portent leur `classe`, que l'appelant releve.
+//! rompue (`Reseau`), une reponse mal formee, gzip ou protocole (`Illisible`, `mal_formee`) portent leur `classe`, que
+//! l'appelant releve.
 
 use droit::fiche::Lue as _;
 use socle::echec::{Classe, Echec};
@@ -340,9 +341,19 @@ fn horodatage(m: socle::paris::Moment) -> String {
 
 // ------------------------------------------------------------------- gzip
 
-/// Decompresse un corps gzip ; les refus (tronque, en-tete invalide, somme de controle) sont dits en francais.
+/// UNE REPONSE MAL FORMEE (une compression fausse, un protocole que le client ne lit pas) : le corps est arrive, mais ne
+/// se lit pas. Ce n'est pas une coupure (`Classe::Reseau`) : la phrase le dit (`panne_dite` : « a rendu une réponse que
+/// le logiciel ne lit pas »), et ce n'est pas une panne de passage (`suites::panne_de_passage`) : le detail part chez
+/// l'editeur.
+#[track_caller]
+fn mal_formee(message: impl Into<String>) -> Panne {
+    Panne::brute(Classe::Illisible, message)
+}
+
+/// Decompresse un corps gzip ; les refus (tronque, en-tete invalide, somme de controle) sont dits en francais. Le corps
+/// est arrive en entier (`lire_corps`) : un gzip tronque est une reponse mal formee.
 pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
-    let eof = || Panne::brute(Classe::Reseau, "réponse gzip tronquée");
+    let eof = || mal_formee("réponse gzip tronquée");
     let mut sortie = Vec::new();
     let mut reste = donnees;
     loop {
@@ -351,7 +362,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         }
         if reste.len() < 2 || reste[0] != 0x1f || reste[1] != 0x8b {
             let debut: Vec<String> = reste.iter().take(2).map(|o| format!("{:02x}", o)).collect();
-            return Err(Panne::brute(Classe::Reseau, format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
+            return Err(mal_formee(format!("réponse attendue en gzip, elle commence par {}", debut.join(" "))));
         }
         let mut pos = 2;
         let lire = |pos: &mut usize, n: usize| -> Result<(), Panne> {
@@ -367,7 +378,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let (methode, drapeaux) = (reste[2], reste[3]);
         pos += 8;
         if methode != 8 {
-            return Err(Panne::brute(Classe::Reseau, "réponse gzip : méthode de compression inconnue"));
+            return Err(mal_formee("réponse gzip : méthode de compression inconnue"));
         }
         if drapeaux & 4 != 0 {
             if reste.len() < pos + 2 {
@@ -403,7 +414,7 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
             membre.reserve(32 * 1024);
             let st = d
                 .decompress_vec(&en_entree[avant_in..], &mut membre, flate2::FlushDecompress::None)
-                .map_err(|e| Panne::brute(Classe::Reseau,format!("réponse gzip illisible : {}", e)))?;
+                .map_err(|e| mal_formee(format!("réponse gzip illisible : {}", e)))?;
             if st == flate2::Status::StreamEnd {
                 break;
             }
@@ -421,10 +432,10 @@ pub fn gunzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
         let mut h = flate2::Crc::new();
         h.update(&membre);
         if crc != h.sum() {
-            return Err(Panne::brute(Classe::Reseau, "réponse gzip : somme de contrôle fausse"));
+            return Err(mal_formee("réponse gzip : somme de contrôle fausse"));
         }
         if longueur != (membre.len() as u64 & 0xffff_ffff) as u32 {
-            return Err(Panne::brute(Classe::Reseau, "réponse gzip : longueur fausse"));
+            return Err(mal_formee("réponse gzip : longueur fausse"));
         }
         sortie.extend_from_slice(&membre);
         let mut suite = &apres[8..];
@@ -491,7 +502,7 @@ fn panne_de(e: ureq::Error, https: bool) -> Panne {
             K::TimedOut if io.raw_os_error().is_none() => Panne::Reseau("timed out".into()),
             _ => Panne::Reseau(errno_texte(&io)),
         },
-        Error::Protocol(p) => Panne::brute(Classe::Reseau, p.to_string()),
+        Error::Protocol(p) => mal_formee(p.to_string()),
         Error::Rustls(r) => Panne::Reseau(format!("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: {}", r)),
         Error::Tls(t) => Panne::Reseau(format!("[SSL] {}", t)),
         Error::BadUri(u) => Panne::brute(Classe::Illisible, format!("unknown url type: {:?}", u)),
