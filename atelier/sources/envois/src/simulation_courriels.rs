@@ -449,6 +449,20 @@ pub fn bouton_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[
     Ok(bouton(&f))
 }
 
+/// Le premier lien du courriel joue de la demande (dont on connait les identifiants) qui commence par `debut` (la page
+/// « Remplir ma fiche ») : ce que la personne fictive ouvre ; `None` sans courriel ni lien.
+pub fn lien_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[crate::envoi::IdDeCourriel], debut: &str) -> R<Option<String>> {
+    let Some(octets) = identifiants.iter().find_map(|i| envoyes.get(i.texte())) else { return Ok(None) };
+    let m = parse_mail(octets).map_err(illisible)?;
+    let mut f = Vec::new();
+    feuilles(&m, &mut f);
+    let re = regex::Regex::new(r#"href="([^"]+)""#).expect("motif d'un lien");
+    Ok(f.iter()
+        .filter(|f| f.ctype.mimetype == "text/html")
+        .flat_map(|f| re.captures_iter(&texte_de(f)).map(|c| deseschapper(&c[1])).collect::<Vec<_>>())
+        .find(|lien| lien.starts_with(debut)))
+}
+
 /// Le courriel que la personne fictive renvoie a la boite (de `de` a `a`), date de maintenant,
 /// identifiant `<ident@fictive.puppetpaie>`.
 pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -> socle::echec::R<Vec<u8>> {

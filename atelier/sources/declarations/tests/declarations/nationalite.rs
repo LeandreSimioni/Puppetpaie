@@ -12,7 +12,6 @@
 
 use crate::outils::anomalies;
 use declarations::champs::{Anomalie, Gravite};
-use std::collections::HashMap;
 
 #[test]
 fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
@@ -33,8 +32,12 @@ fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
 
 #[test]
 fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
-    use documents::fiche_questionnaire::{fiche_depuis_reponses, pays_lu};
-    let lire = |cle: &'static str, reponse: &str| fiche_depuis_reponses(&[(cle, reponse.to_string())].into_iter().collect()).unwrap();
+    use documents::fiche_questionnaire::{fiche_depuis_reponses, lire_reponse, pays_lu};
+    let lu = |texte: &str| {
+        let f = fiche_depuis_reponses(&lire_reponse(texte)).unwrap();
+        (f.fiche, f.illisible)
+    };
+    let lire = |cle: &str, reponse: &str| lu(&format!("{} : {}", cle, reponse));
     for (reponse, pays, code) in [("norvégienne", "NO", "03"), ("Marocain", "MA", "04"), ("italienne", "IT", "02"), ("liechtensteinoise", "LI", "03"), ("britannique", "GB", "04"), ("Suisse", "CH", "04"), ("Islande", "IS", "03"), ("française", "FR", "01")] {
         let (d, illisible) = lire("nationalite", reponse);
         assert!(illisible.is_empty(), "{} : {:?}", reponse, illisible);
@@ -49,13 +52,12 @@ fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
     assert_eq!(pays_lu("République tchèque").map(|p| p.0), Some("CZ".into()));
     // Un code que la liste ne connait pas ne se garde plus.
     assert_eq!(pays_lu("zz"), None);
-    let rep: HashMap<&'static str, String> = [("pays", "Atlantide".to_string()), ("nationalite", "Vietnam".to_string())].into_iter().collect();
-    let (d, illisible) = fiche_depuis_reponses(&rep).unwrap();
+    let (d, illisible) = lu("pays_naissance : Atlantide\nnationalite : Vietnam");
     assert!(d.pays_naissance.is_none(), "{:?}", d);
     assert_eq!(illisible, vec!["pays de naissance : « Atlantide »".to_string()]);
     assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.map(|c| c.as_str())), (Some("VN"), Some("04")));
     // Un pays de naissance que le COG n'a pas, mais la table « Pays » de la DSN si, se lit par son libelle.
-    let (d, illisible) = lire("pays", "Kosovo");
+    let (d, illisible) = lire("pays_naissance", "Kosovo");
     assert_eq!(d.pays_naissance.as_deref(), Some("XK"), "{:?} {:?}", d, illisible);
     assert!(illisible.is_empty(), "{:?}", illisible);
 }

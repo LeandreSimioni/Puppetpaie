@@ -1823,8 +1823,8 @@ fn circuits_fictifs() -> Circuits {
             titre: "Ce que reçoit la personne",
             bulles: &["La demande part", "Elle appuie sur « Remplir ma fiche »", "Sa fiche se crée"],
             notes: &[
-                "Un courriel avec un bouton « Remplir ma fiche », et les questions recopiées dans le texte pour les messageries qui n'affichent pas le bouton.",
-                "Le bouton ouvre sa messagerie sur les questions, une par ligne : elle écrit après chaque deux-points et envoie. Seul ce qu'elle sait lui est demandé ; l'emploi reste à l'employeur.",
+                "Un courriel avec un bouton « Remplir ma fiche », et les lignes à recopier dans le texte pour qui ne peut pas ouvrir la page.",
+                "Le bouton ouvre une page de puppetpaie.fr, qui ne garde rien : elle y remplit ce qui manque à sa fiche, et « Envoyer » ouvre sa messagerie sur la réponse toute écrite. Seul ce qu'elle sait lui est demandé ; l'emploi reste à l'employeur.",
                 "Sa réponse est relevée comme une signature : la fiche salarié se crée avec ce qu'elle a écrit, marquée « à compléter » pour l'emploi. Une réponse illisible laisse la case vide, et le dit.",
             ],
             attente: Some("La réponse de la personne fictive arrive une vingtaine de secondes après l'envoi."),

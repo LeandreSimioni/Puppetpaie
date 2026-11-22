@@ -1293,6 +1293,7 @@
   },
   {
    "cle": "nom_affichage", "bloc": "Identité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Nom de famille",
    "forme": "affichage",
    "aide": "Le nom de naissance, écrit normalement, avec ses accents : « Béjart Duparc ». Les capitales des déclarations se fabriquent toutes seules.",
@@ -1327,6 +1328,7 @@
   {
    "note": "Le nom d'usage (S21.G00.30.003, « la possibilité pour une personne de porter un nom qu'elle n'a pas acquis selon les règles d'acquisition du nom de famille », usage C : `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 138-144 ; l'éditorial des identités, `texte/chapitre-4-controles.txt`, § 4.4.8, préfère « nom d'usage » à « nom d'époux »). La DSN l'écrit quand il est dit ; le certificat Congés Spectacles l'imprime, le nom déclaré sinon. Une DSN importée le porte à la fiche.",
    "cle": "nom_usage", "bloc": "Avancé — cas particuliers", "largeur": "demie",
+   "se_demande": "au_salarie",
    "avance": "cas_particulier",
    "libelle": "Nom d'usage",
    "forme": "officiel",
@@ -1344,6 +1346,7 @@
   },
   {
    "cle": "prenom_affichage", "bloc": "Identité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Prénom",
    "forme": "affichage",
    "aide": "Le premier prénom de l'état civil, avec ses accents : il s'imprime tel quel sur le contrat et le bulletin.",
@@ -1378,6 +1381,7 @@
   {
    "note": "Le pseudonyme du certificat d'emploi de la caisse des Congés Spectacles (`documents::conges_spectacles`), et rien d'autre : aucune déclaration ne le porte.",
    "cle": "pseudonyme", "bloc": "Avancé — cas particuliers", "largeur": "demie",
+   "se_demande": "au_salarie",
    "avance": "cas_particulier",
    "libelle": "Pseudonyme",
    "forme": "texte",
@@ -1396,6 +1400,7 @@
   {
    "note": "CE CHAMP EST CELUI QU'ON NE PEUT PAS DEVINER, et celui qui manque le\nplus souvent a une premiere embauche. Son aide dit donc aussi quoi\nfaire quand il n'y en a pas encore -- c'est la question qui se pose\nvraiment, et la reponse de la norme n'est pas celle qu'on croit.",
    "cle": "nir", "bloc": "Identité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Numéro de sécurité sociale",
    "utile_pour": ["dpae", "dsn"],
    "sinon": "elles le déclarent par un numéro temporaire, avec son sexe",
@@ -1431,6 +1436,7 @@
   {
    "note": "LE SEXE NE SE DECLARE NULLE PART TEL QUEL : aucune rubrique du bloc 30\nne le porte. Il voyage dans le premier caractere du NIR -- et, quand il\nn'y a pas de NIR, dans celui du numero technique temporaire, dont il\nest le premier morceau (`declarations/src/ntt.rs`). D'ou une case qui ne\nsert qu'a ce cas-la, et que l'ecran ne montre que sans NIR : le\ndedoubler serait s'exposer a ce que les deux se contredisent.",
    "cle": "sexe", "bloc": "Identité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelles": {"1": "Homme", "2": "Femme"},
    "exige_par": ["dpae", "dsn"],
    "exige_si": {"nir": [""]},
@@ -1453,6 +1459,7 @@
   },
   {
    "cle": "date_naissance", "bloc": "Identité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "exige_par": ["dpae", "dsn"],
    "libelle": "Date de naissance",
    "forme": "date",
@@ -1487,6 +1494,7 @@
   },
   {
    "cle": "lieu_naissance_affichage", "bloc": "Naissance et nationalité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Commune de naissance",
    "forme": "affichage",
    "aide": "La commune, ou la ville à l'étranger, comme sur la pièce d'identité : « Paris 12e », « Turin ».",
@@ -1504,6 +1512,7 @@
   {
    "note": "DEPARTEMENT ET PAYS SE LISENT DANS LE NIR : ses 6e et 7e\nchiffres sont le departement de naissance, 99 a l'etranger. L'ecran\nles propose (`routes/fiches.rs`, `suggestions`) et ne les ecrit\nque dans une case vide.",
    "cle": "departement_naissance", "bloc": "Naissance et nationalité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "exige_par": ["dpae", "dsn"],
    "libelle": "Département de naissance",
    "forme": "texte",
@@ -1521,6 +1530,7 @@
   },
   {
    "cle": "pays_naissance", "bloc": "Naissance et nationalité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "exige_par": ["dsn"],
    "libelle": "Pays de naissance",
    "forme": "pays",
@@ -1538,6 +1548,7 @@
   },
   {
    "cle": "code_nationalite_dsn", "bloc": "Naissance et nationalité", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelles": {"01": "Française", "02": "D'un pays de l'Union européenne", "03": "Islandaise, liechtensteinoise ou norvégienne (EEE hors Union)", "04": "D'un autre pays (Royaume-Uni et Suisse compris)"},
    "exige_par": ["dsn"],
    "exige_si": {"pays_nationalite": [""], "pays_nationalite_hors_liste": [""]},
@@ -1612,6 +1623,7 @@
   },
   {
    "cle": "adresse_affichage", "bloc": "Coordonnées", "largeur": "pleine",
+   "se_demande": "au_salarie",
    "libelle": "Adresse",
    "forme": "affichage",
    "aide": "Numéro et voie, comme sur une enveloppe.",
@@ -1628,6 +1640,7 @@
   },
   {
    "cle": "code_postal", "bloc": "Coordonnées", "largeur": "demie",
+   "se_demande": "au_salarie",
    "exige_par": ["dsn"],
    "libelle": "Code postal",
    "forme": "chiffres",
@@ -1662,6 +1675,7 @@
   },
   {
    "cle": "commune_affichage", "bloc": "Coordonnées", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Commune",
    "forme": "affichage",
    "aide": "",
@@ -1698,6 +1712,7 @@
   {
    "note": "LE COMPTE OU LE SALAIRE EST VIRE : l'IBAN, controle par sa cle (ISO 13616, MOD 97-10 : atelier/reference/sources/iban/), et le BIC, facultatif (reglement (UE) 260/2012, art. 5, 7). Il ne part dans aucune declaration.",
    "cle": "banque", "bloc": "Paiement du salaire", "largeur": "pleine",
+   "se_demande": "au_salarie",
    "champs": [
     {"cle": "iban", "libelle": "IBAN", "forme": "texte", "ecran": true, "aide": "Sur le relevé d'identité bancaire (RIB) : 27 caractères commençant par FR pour un compte en France, de 15 à 34 ailleurs. Les espaces ne comptent pas."},
     {"cle": "bic", "libelle": "BIC", "forme": "texte", "ecran": true, "aide": "Sur le même RIB, 8 ou 11 caractères.", "exemple": "AGRIFRPPXXX"}
@@ -1718,6 +1733,7 @@
   },
   {
    "cle": "num_conges_spectacles", "bloc": "Intermittence", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Numéro Congés Spectacles",
    "forme": "texte",
    "aide": "Utile pour les bulletins : le numéro que la caisse des Congés Spectacles (Audiens) a donné à l'intermittent : il s'imprime sur le bulletin. Un premier contrat n'en a souvent pas encore.",
@@ -1907,6 +1923,7 @@
   {
    "note": "L'ACCORD DU SALARIE A LA DEDUCTION FORFAITAIRE SPECIFIQUE. Ne\nsert que si la compagnie l'exerce salarie par salarie (fiche entreprise,\n<< accord_individuel >>). Arrete du 4 septembre 2025, art. 9, I, al. 3 :\nl'option << peut alors figurer soit dans le contrat de travail ou soit dans\nun avenant au contrat de travail. A defaut, l'employeur informe et recueille\nle consentement annuel du salarie par tout moyen. Lorsque le travailleur\nsalarie et assimile ne repond pas dans un delai raisonnable a cette\nconsultation, son silence vaut accord. Le salarie peut toutefois demander a\ntout moment [...] a beneficier ou ne plus beneficier de la deduction, avec\napplication au 1er janvier de l'annee suivante. >> Le consentement est\nannuel : l'historique de la fiche le date. Vide : la paie refuse (l'accord\nne se devine pas) ; << refus >> : pas de deduction.",
    "cle": "deduction_forfaitaire_accord", "bloc": "Déduction forfaitaire spécifique", "largeur": "demie",
+   "se_demande": "au_salarie",
    "avance": "cas_particulier",
    "libelles": {"": "Pas encore dit", "contrat": "Dans son contrat de travail ou un avenant", "consentement_annuel": "Par son consentement de l'année (son silence vaut accord)", "refus": "Il a refusé : pas de déduction"},
    "libelle": "Accord du salarié à la déduction forfaitaire spécifique",
@@ -2336,6 +2353,7 @@
   },
   {
    "cle": "anniversaire_droits", "bloc": "Intermittence", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Date anniversaire des droits",
    "forme": "date",
    "aide": "Utile pour le décompte des heures : la date de réexamen des droits d'un intermittent, sur sa notification France Travail. Sans elle, le logiciel s'en passe.",
@@ -2353,6 +2371,7 @@
   {
    "note": "LE MODELE DU BULLETIN. Deux modeles : << simplifié >>, le bulletin clarifie du modele de l'arrete du 25/02/2016 (art. 1, I), et << complet >>, le meme bulletin suivi d'une page annexe qui detaille chaque cotisation (base, taux et montant des deux parts) sous la ligne du bulletin qui la regroupe : la FAQ du BOSS sur le bulletin, Q 10, n'admet pas plus de detail dans la rubrique des obligatoires et l'admet << au verso du bulletin de paie ou bien sur un document annexe >> (atelier/reference/sources/montant-net-social/boss-regles-generales-bulletin-de-paie-20250207-archive-web.txt). `bulletin::modele_du_bulletin`. Un salarie qui demande l'autre modele que celui de la compagnie l'obtient par cette case (Avance), qui l'emporte. Vide : celui de la compagnie.",
    "cle": "modele_bulletin", "bloc": "Avancé — cas particuliers", "largeur": "demie",
+   "se_demande": "au_salarie",
    "libelle": "Modèle de bulletin demandé par le salarié",
    "forme": "choix",
    "aide": "À laisser vide dans le cas ordinaire : le salarié reçoit le modèle de bulletin choisi par la compagnie (Configuration). Si ce salarié demande l'autre modèle, le choisir ici : « simplifié » (cotisations regroupées, le modèle réglementaire) ou « complet » (le même, suivi d'une page annexe qui détaille chaque cotisation et contribution, avec le taux de la part de l'employeur). Ses bulletins suivants le suivent ; ceux déjà remis ne changent pas.",
