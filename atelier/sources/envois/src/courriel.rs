@@ -211,8 +211,11 @@ fn mot_de_passe_refuse(detail: impl std::fmt::Display) -> RefusDeLaBoite {
 /// bibliotheque va a part (`dite`). Les codes sont ceux de la RFC 5321, § 4.2.2-4.2.3
 /// (`atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2870-2930) : 550
 /// « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », 551 « User not
-/// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » : la boite d'arrivee, donc l'adresse du
-/// destinataire ; un 4xx est passager. 535 est le mot de passe refuse (RFC 4954, § 6,
+/// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » ; un 4xx est passager. Lequel des
+/// envois les rend, le § 4.3.2 (l. 3100-3115) le dit : 551 ne repond qu'a `RCPT` (le destinataire) ; 553 repond a `MAIL`
+/// (l'expediteur, la boite d'envoi) comme a `RCPT` ; 550 a `MAIL`, a `RCPT` et a `DATA` (« rejections for policy
+/// reasons »). La bibliotheque ne dit pas a quel envoi le serveur a repondu : la phrase de 550 et 553 dit les
+/// possibilites sans trancher. 535 est le mot de passe refuse (RFC 4954, § 6,
 /// `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt`, l. 600-605 : « Authentication credentials
 /// invalid […] the client SHOULD ask the user to supply new credentials »).
 #[track_caller]
@@ -220,7 +223,9 @@ fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
     let detail = e.to_string();
     match e.status().map(|c| c.to_string()).as_deref() {
         Some("535") => mot_de_passe_refuse(detail).echec,
-        Some("550" | "551" | "553") => dite("Le serveur d'envoi refuse une adresse du message (boîte introuvable, refusée ou mal écrite) : vérifier l'adresse courriel du salarié destinataire. Le message n'est pas parti.", detail),
+        Some("551") => dite("Le serveur d'envoi refuse l'adresse du destinataire (une boîte qu'il ne sert pas) : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail),
+        Some("553") => dite("Le serveur d'envoi refuse une adresse mal écrite, sans dire laquelle : celle du salarié destinataire, ou celle de la boîte d'envoi. Vérifier l'adresse courriel du salarié, puis celle de la boîte (Configuration › Mots de passe). Le message n'est pas parti.", detail),
+        Some("550") => dite("Le serveur d'envoi refuse le message sans dire pourquoi : l'adresse du salarié destinataire (boîte introuvable), celle de la boîte d'envoi, ou une règle du serveur. Vérifier d'abord l'adresse courriel du salarié. Le message n'est pas parti.", detail),
         _ if e.is_permanent() => dite("Le serveur d'envoi a refusé le message : il n'est pas parti. Nouvel essai plus tard.", detail),
         _ if e.is_transient() => dite("Le serveur d'envoi refuse le message pour l'instant : nouvel essai plus tard.", detail),
         _ if e.is_timeout() => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),

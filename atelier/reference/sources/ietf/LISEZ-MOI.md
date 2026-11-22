@@ -63,8 +63,10 @@
 
 `atelier/sources/envois/src/courriel.rs`, `envoi_refuse` : un 550, 551 ou 553 à l'envoi (§ 4.2.2-4.2.3, l. 2870-2930 :
 « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », « User not local »,
-« mailbox name not allowed (e.g., mailbox syntax incorrect) ») dit de vérifier l'adresse du salarié destinataire ; un
-4xx est passager.
+« mailbox name not allowed (e.g., mailbox syntax incorrect) ») se dit d'après le § 4.3.2 (l. 3100-3115) : 551 ne
+répond qu'à `RCPT`, c'est l'adresse du destinataire ; 553 répond à `MAIL` comme à `RCPT`, et 550 aussi à `DATA` : la
+phrase dit les possibilités sans trancher, la bibliothèque ne disant pas à quel envoi le serveur a répondu ; un 4xx
+est passager.
 
 | fichier | d'où | relevé |
 |---|---|---|
