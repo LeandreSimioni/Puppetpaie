@@ -282,6 +282,7 @@ impl Question {
             },
             Question::Anniversaire => QuestionDeclaree {
                 facultative: true,
+                aucun: Some("Je n'en ai pas"),
                 ..q(
                     "anniversaire",
                     "Date anniversaire de tes droits France Travail",
@@ -596,22 +597,34 @@ impl ReponseLue {
     }
 }
 
-/// LA LECTURE DE LA REPONSE, le texte que la personne a ecrit (la citation deja otee, `envois::courriel_lecture`) :
-/// chaque ligne `cle : valeur` dont la cle est celle d'une question. Une autre ligne (un bonjour, une signature, le
-/// code) ne dit rien. Une valeur vide n'est pas une reponse ; `aucun` en est une, pour une question qui l'admet, et
-/// illisible pour une autre ; une question repondue deux fois de deux facons est illisible.
+/// LA LECTURE DE LA REPONSE, le texte que la personne a ecrit (la citation deja otee, `envois::courriel_lecture`).
+///
+/// UNE LIGNE EST UNE REPONSE quand ce qui precede son premier deux-points est un seul mot (lettres, chiffres, `_`) :
+/// `prenom : Marie`. Toute autre ligne n'est visiblement pas une reponse et ne dit rien : un bonjour, une signature,
+/// « Le 22 nov. à 10:30, … a écrit : », les lignes « cle — … » du courriel. Le mot se lit sans tenir compte des
+/// capitales (`Prenom`, `NIR`) ; la ligne du code n'est pas une question ; un autre mot qui n'est la cle d'aucune
+/// question est illisible, et se redemande. Une valeur vide n'est pas une reponse ; `aucun` (ou `aucune`) en est une,
+/// pour une question qui l'admet, et illisible pour une autre ; une question repondue deux fois de deux facons est
+/// illisible.
 pub fn lire_reponse(texte: &str) -> ReponseLue {
     let mut lue = ReponseLue::default();
     let mut en_double: Vec<Question> = Vec::new();
     for ligne in socle::texte::lignes_du_texte(texte) {
         let Some((tete, valeur)) = ligne.split_once(':') else { continue };
-        let Some(q) = Question::de_la_cle(strip(tete)) else { continue };
+        let mot = strip(tete).to_lowercase();
+        if mot.is_empty() || !mot.chars().all(|c| c.is_alphanumeric() || c == '_') || mot == CLE_DU_CODE {
+            continue;
+        }
         let valeur = strip(valeur);
         if valeur.is_empty() {
             continue;
         }
+        let Some(q) = Question::de_la_cle(&mot) else {
+            lue.illisibles.push(format!("« {} » : « {} » (ce n'est pas une question de la fiche)", strip(tete), valeur));
+            continue;
+        };
         let d = q.declaree();
-        let r = if valeur.to_lowercase() == AUCUN {
+        let r = if [AUCUN, "aucune"].contains(&valeur.to_lowercase().as_str()) {
             if d.aucun.is_none() {
                 lue.illisibles.push(format!("{} : « {} » (cette question n'admet pas « {} »)", en_minuscule(d.libelle), valeur, AUCUN));
                 continue;
