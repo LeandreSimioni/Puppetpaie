@@ -98,14 +98,10 @@ function dessinerVeille(v) {
 
   // 3. CE QUI EST À FAIRE : en mots, avec le chemin. Le premier se lit, les
   //    suivants se déplient.
-  const afaire = [];
-  if (d) {
-    d.a_poser.forEach((code) => {
-      const [phrase, geste] = k.a_poser[code];
-      afaire.push(`${echapper(phrase)} <button class="lien" data-aller="${echapper(code)}">${echapper(geste)}</button>`);
-    });
-    [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
-  }
+  // Ce qui manque est celui du coffre AU MOMENT où la fenêtre répond (`dit.a_poser`), pas celui du dernier relevé.
+  const afaire = k.a_poser.map((a) =>
+    `${echapper(a.phrase)} <button class="lien" data-aller="${echapper(a.service)}">${echapper(a.geste)}</button>`);
+  if (d) [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
   if (v.erreur) afaire.push(echapper(v.erreur));
   if (afaire.length) {
     zone.classList.add("souci");

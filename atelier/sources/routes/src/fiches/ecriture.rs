@@ -82,6 +82,13 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn contient(f: &Self::Fichier, cle: &Self::Cle) -> bool;
     /// La fiche telle que l'ecran l'a montree (`ctx.lue_au`), si elle existe.
     fn montree(ctx: &Contexte, cle: Option<&Self::Cle>) -> Option<Self::Plate>;
+    /// La fiche telle qu'ecrite, datee (ses temps : `ouverture::temps_de`), si elle existe.
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&Self::Cle>) -> Option<&'a Self>;
+    /// Ce que l'en-tete de la fiche rendue `p`, telle qu'elle est enregistree, dit d'elle (`fiches::rendue`) ; rien, pour
+    /// une fiche qui n'en dit rien.
+    fn entete(_cle: Option<&Self::Cle>, _p: &Self::Plate) -> super::rendue::EnteteDeLaFiche {
+        super::rendue::EnteteDeLaFiche::aucun()
+    }
     /// Les cases qui different d'une fiche a l'autre.
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
@@ -218,6 +225,13 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     fn montree(ctx: &Contexte, _cle: Option<&()>) -> Option<ChampsEntreprise> {
         Some(crate::etablissements::entreprise_montree(ctx))
     }
+    fn brute<'a>(ctx: &'a Contexte, _cle: Option<&()>) -> Option<&'a FicheEntrepriseDatee> {
+        Some(ctx.entreprise_brute())
+    }
+    /// L'entreprise n'a pas de liste ou revenir : pas d'« Annuler ».
+    fn entete(_cle: Option<&()>, _p: &ChampsEntreprise) -> super::rendue::EnteteDeLaFiche {
+        super::rendue::EnteteDeLaFiche::sans_liste()
+    }
     fn differentes(a: &ChampsEntreprise, b: &ChampsEntreprise) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
@@ -226,8 +240,15 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     }
     /// LE TAUX AT/MP SAISI (`taux_atmp`, une ligne : `routes::atmp`) : le code risque s'ecrit sans point ni blanc
     /// (S21.G00.40.040, « 923AD » : sa saisie se range a sa lecture, `CodeRisqueAt::rangee`) ; la ligne est celle de la
-    /// personne (`provenance`), sans notification.
+    /// personne (`provenance`), sans notification. LA SIGNATURE DES COURRIELS COLLEE s'ecrit nettoyee de ce qui n'a rien a
+    /// faire dans une signature (scripts, cadres, formulaires, gestionnaires d'evenements, liens `javascript:` :
+    /// `envois::signature_courriel::nettoyer`, le meme menage qu'a l'envoi).
     fn ajuster(avant: &ChampsEntreprise, apres: &mut ChampsEntreprise) {
+        if apres.courriel_signature != avant.courriel_signature {
+            if let Some(s) = apres.courriel_signature.as_mut() {
+                *s = envois::signature_courriel::nettoyer(s);
+            }
+        }
         if apres.taux_atmp == avant.taux_atmp {
             return;
         }
@@ -296,7 +317,7 @@ impl SorteDeFiche for FicheEntrepriseDatee {
             }
             None => None,
         };
-        let phrases: Vec<String> = versement.into_iter().chain(atmp).collect();
+        let phrases: Vec<String> = versement.into_iter().chain(atmp).chain(urssaf_a_confirmer(avant, apres)?).collect();
         Ok((!phrases.is_empty()).then(|| phrases.join(" ")))
     }
     fn a_dater_a_part(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> Vec<ChangementDit> {
@@ -335,6 +356,27 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         }
         Ok(dit)
     }
+}
+
+/// UNE AUTRE URSSAF QUE CELLE DU CODE POSTAL se confirme avant d'ecrire : celle du territoire recoit normalement DPAE et
+/// DSN (`declarations::urssaf::BaseUrssaf::du_code_postal`), et une Urssaf qui ne gere pas la compagnie peut faire rejeter
+/// ses declarations. La phrase dit les deux ; aucune quand le code ne change pas, est vide ou est celui du code postal.
+fn urssaf_a_confirmer(avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
+    let Some(choisi) = apres.code_urssaf.as_deref().filter(|c| !c.trim().is_empty() && apres.code_urssaf != avant.code_urssaf) else { return Ok(None) };
+    let urssaf = declarations::urssaf::base()?;
+    let Some(deduit) = apres.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp)) else { return Ok(None) };
+    if deduit.to_string() == choisi.trim() {
+        return Ok(None);
+    }
+    let nom = |code: &str| match urssaf.organismes.iter().find(|o| o.code.to_string() == code) {
+        Some(o) => format!("{} — {}", code, o.nom),
+        None => code.to_string(),
+    };
+    Ok(Some(format!(
+        "Selon l'adresse, vos déclarations vont à l'Urssaf {} ; vous choisissez {}. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations.",
+        nom(&deduit.to_string()),
+        nom(choisi.trim())
+    )))
 }
 
 /// UNE LIGNE DU TAUX AT/MP DU SIEGE S'ECRIT A SA DATE (`depuis`, celle de la notification), dans la case datee
@@ -469,6 +511,9 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn montree(ctx: &Contexte, cle: Option<&IdSalarie>) -> Option<ChampsSalarie> {
         ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
     }
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&IdSalarie>) -> Option<&'a FicheSalarieDatee> {
+        ctx.salarie_brut(cle?)
+    }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
@@ -591,6 +636,33 @@ impl SorteDeFiche for FicheSpectacleDatee {
     }
     fn montree(ctx: &Contexte, cle: Option<&IdSpectacle>) -> Option<ChampsSpectacle> {
         ctx.spectacles.get(cle?).cloned().map(Self::retenue)
+    }
+    fn brute<'a>(ctx: &'a Contexte, cle: Option<&IdSpectacle>) -> Option<&'a FicheSpectacleDatee> {
+        ctx.spectacle_brut(cle?.as_str())
+    }
+    /// L'EN-TETE D'UN SPECTACLE : son titre (« Nouveau spectacle » pour une fiche neuve, « Spectacle à nommer » pour un
+    /// numero que l'import a lu sans titre, sinon le titre, ou la cle), puis son numero d'objet, ou sa cle ; une fiche
+    /// neuve dit d'ou viendra sa cle. Une fiche titree montre son cout de l'annee, que la route `couts` range par titre.
+    fn entete(cle: Option<&IdSpectacle>, p: &ChampsSpectacle) -> super::rendue::EnteteDeLaFiche {
+        let titre = p.titre.as_deref().filter(|t| !t.is_empty());
+        let numero = p.ecrite(droit::fiche::CaseSpectacle::NumeroObjet.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        let cout = titre.map(|t| super::rendue::CoutDeLaFiche::Spectacle { de: t.to_string() });
+        let titre = titre.map(str::trim).filter(|t| !t.is_empty());
+        match cle {
+            None => super::rendue::EnteteDeLaFiche::de("Nouveau spectacle".to_string(), None, Some("La clé de la fiche se fabrique à l'enregistrement."), None),
+            Some(c) => {
+                let titre = match titre {
+                    Some(t) if !crate::ouverture::a_nommer(Some(t)) => t.to_string(),
+                    Some(_) => "Spectacle à nommer".to_string(),
+                    None => Self::cle_dite(c),
+                };
+                let sous_titre = match numero {
+                    Some(n) => n,
+                    None => Self::cle_dite(c),
+                };
+                super::rendue::EnteteDeLaFiche::de(titre, Some(sous_titre), None, cout)
+            }
+        }
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -1484,15 +1556,36 @@ pub(crate) fn verifier_fiche(ctx: &Contexte, t: FicheTapee) -> R<FicheVerifiee> 
 }
 
 fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerifiee> {
+    let anomalies = anomalies_saisies::<F>(ctx, &t)?;
+    let (phrase, phrases) = verdict(&anomalies);
+    Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
+}
+
+/// LES ANOMALIES D'UNE FICHE TAPEE `t`, comme a l'ecriture : derivee (`SorteDeFiche::deriver`, sans forcer : seul ce qui
+/// est vide ou faux se refait), verifiee par la table, puis les fautes de ses cases (a la porte, a la reconnaissance, a la
+/// derivation), chacune sur sa case. `verifier-fiche` et la fiche rendue (`fiches::rendue`) les disent.
+pub(crate) fn anomalies_saisies<F: SorteDeFiche>(ctx: &Contexte, t: &Tapee<F::Plate>) -> R<Vec<Anomalie>> {
     let mut derivee = t.fiche.clone();
-    let mut fautes = t.fautes;
+    let mut fautes = t.fautes.clone();
     fautes.extend(F::reconnaitre(ctx, &F::Plate::default(), &mut derivee)?);
     fautes.extend(F::deriver(&mut derivee, false, &|_| true)?);
     let mut anomalies = champs::verifier_fiche(F::a_juger(&derivee))?;
     anomalies.extend(champs::des_fautes(F::NOM, &fautes)?);
+    Ok(anomalies)
+}
+
+/// LES ANOMALIES D'UNE FICHE ENREGISTREE `plate` (telle que le moteur la retient, `SorteDeFiche::retenue`), verifiee
+/// telle qu'elle est, par la table : la pastille de sa ligne dans la liste (`configuration`) et la fiche ouverte sans
+/// saisie (`fiches::rendue`) les comptent ensemble.
+pub(crate) fn anomalies_enregistrees<F: SorteDeFiche>(plate: &F::Plate) -> R<Vec<Anomalie>> {
+    champs::verifier_fiche(F::a_juger(plate))
+}
+
+/// Ce que la verification d'une fiche dit de ses anomalies : sa phrase, et une ligne par anomalie.
+pub(crate) fn verdict(anomalies: &[Anomalie]) -> (socle::texte::Phrase, Vec<String>) {
     let phrases: Vec<String> = anomalies.iter().map(|a| format!("{} : {}", a.champ, a.message)).collect();
     let phrase = if phrases.is_empty() { socle::texte::Phrase::fixe("La fiche est juste.") } else { socle::phrase!("Anomalies de la fiche : {}.", phrases.len()) };
-    Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
+    (phrase, phrases)
 }
 
 /// Ce que le moteur PROPOSERAIT pour une case encore vide.

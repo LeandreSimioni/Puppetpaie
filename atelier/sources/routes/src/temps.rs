@@ -57,6 +57,26 @@ struct LigneDuTemps<V> {
     note: Option<String>,
 }
 
+impl<V> TempsDeLaCase<V> {
+    /// Les memes temps, chaque valeur dite par `dire` (en mots, telle que la fiche rendue la montre :
+    /// `fiches::rendue`).
+    pub(crate) fn dits<W>(self, dire: &impl Fn(Option<V>) -> Option<W>) -> TempsDeLaCase<W> {
+        TempsDeLaCase {
+            champ: self.champ,
+            avant: self.avant.map(|l| l.dite(dire)),
+            a_venir: self.a_venir.map(|l| l.dite(dire)),
+            valeurs: self.valeurs.into_iter().map(|l| l.dite(dire)).collect(),
+            lignes: self.lignes.into_iter().map(|l| TempsDUneLigne { cle: l.cle, dit: l.dit, cases: l.cases.into_iter().map(|c| c.dits(dire)).collect() }).collect(),
+        }
+    }
+}
+
+impl<V> LigneDuTemps<V> {
+    fn dite<W>(self, dire: &impl Fn(Option<V>) -> Option<W>) -> LigneDuTemps<W> {
+        LigneDuTemps { valeur: dire(self.valeur), depuis: self.depuis, jusqu_au: self.jusqu_au, dit: self.dit, en_vigueur: self.en_vigueur, note: self.note }
+    }
+}
+
 /// De quand a quand une valeur datee vaut, en mots.
 fn quand_dit(depuis: Option<Jour>, jusqu_au: Option<Jour>) -> String {
     match (depuis, jusqu_au) {

@@ -56,6 +56,7 @@ use droit::fiche::{
     CaseDeFiche, CaseSalarie, CaseSpectacle, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, CodeNaf, CodePostal, FauteDeCase, FicheEntrepriseDatee, FicheNommee, FicheSaisie,
     FicheSalarieDatee, FicheSpectacleDatee, MotEcrit, Nir, NomDeCase, NomDeFiche, NumeroObjetSpectacle, Statut, ValeurDeCase,
 };
+use import::derniere_piece::DernierePiece;
 use import::proposee::FicheProposee;
 use crate::fiches::SorteDeFiche;
 use crate::importation::fiches::{redemandees, verifier_comme_a_l_ecriture};
@@ -672,7 +673,6 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     ap.reponse.avertissements.extend(avertissements_aem);
 
     let mut reponse = ap.reponse;
-    let seuil = ctx.aujourdhui.mois_civil().avant(socle::date::Duree::mois(12))?;
     let mut nouvelles_fiches = 0usize;
     let chemin_de = |l: &Lu| tri.fichiers[l.fichier].chemin.clone();
 
@@ -758,6 +758,36 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         *fiches_certificats.entry(dernier.piece()).or_default() += 1;
         *salaries_certificats.entry(dernier.piece()).or_default() += 1;
     }
+
+    // 5c. Active ou archivee, chaque fiche de salarie a creer, de ce que toutes ses pieces disent de la derniere fois
+    // qu'elles le portent (`import::derniere_piece`) : un bulletin, la periode de sa paie ; une AEM, son mois et la fin du
+    // contrat quand elle la dit ; un certificat, le contrat qu'il atteste. Les DSN et les AEM
+    // deposees y sont deja (`ri::apercu_lu`).
+    for l in &lus {
+        ap.derniere_piece.entry(Some(l.nir.clone())).or_default().porte(l.mois);
+    }
+    for c in &certificats {
+        let Some(nir) = &c.c.identite.nir else { continue };
+        let d = ap.derniere_piece.entry(Some(nir.clone())).or_default();
+        if let Some(m) = c.mois() {
+            d.porte(m);
+        }
+        match &c.aem {
+            // Une AEM « en cours » dit que le contrat continue apres son mois, pas qu'il court aujourd'hui : elle ne date
+            // que son mois, deja porte.
+            Some(a) => {
+                if let Some(f) = a.fin_contrat {
+                    d.contrat(f);
+                }
+            }
+            None => {
+                if let Some(p) = c.c.periode {
+                    d.contrat(p.fin());
+                }
+            }
+        }
+    }
+    ranger_les_salaries(&mut ap.a_creer, &mut reponse, &ap.derniere_piece, ctx.aujourdhui)?;
 
     // 6. L'entreprise : creee des bulletins si ni la fiche ni une DSN ne la donne ; sinon ses ecarts.
     if ap.licences.is_empty() {
@@ -899,8 +929,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let sp = SpectacleDesPieces {
             titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
-            alias: Vec::new(),
-            actif: dernier >= seuil,
+            actif: import::derniere_piece::recente(dernier, ctx.aujourdhui)?,
             note: format!("bulletins de {} a {} ({} bulletin(s))", premier, dernier, rangs.len()),
             code_analytique: analytique.clone(),
             titre_propose: propose.as_ref().map(|p| p.0.clone()),
@@ -935,8 +964,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let sp = SpectacleDesPieces {
             titre: proposee::A_COMPLETER,
             numero_objet: numero.clone(),
-            alias: Vec::new(),
-            actif: dernier >= seuil,
+            actif: import::derniere_piece::recente(dernier, ctx.aujourdhui)?,
             note: format!("AEM de {} a {} ({} contrat(s))", premier, dernier, mois.len()),
             code_analytique: None,
             titre_propose: None,
@@ -1900,17 +1928,34 @@ impl SalarieLu {
 }
 
 /// La fiche d'un salarie que proposent ses pieces : ce qu'elles impriment de lui, puis ce que son statut et son metier
-/// donnent (`statut_et_metier` : l'emploi du catalogue remplace l'intitule imprime), ses formes lisibles, et active ; et
-/// la faute de chaque case qu'elles impriment hors de son type (la case reste vide).
+/// donnent (`statut_et_metier` : l'emploi du catalogue remplace l'intitule imprime), ses formes lisibles ; et la faute
+/// de chaque case qu'elles impriment hors de son type (la case reste vide). Active ou archivee, la fiche a creer l'est
+/// une fois toutes ses pieces lues (`ranger_les_salaries`).
 fn salarie_propose(s: SalarieLu, metier: &EmploiEngagement) -> R<(ChampsSalarie, Vec<FauteDeCase>)> {
     let (mut f, mut fautes): (ChampsSalarie, Vec<FauteDeCase>) = proposee::de(&s)?;
     let (m, fautes_du_metier): (ChampsSalarie, Vec<FauteDeCase>) = proposee::de(metier)?;
     f.fondre(&m);
     fautes.extend(fautes_du_metier);
     lisibles_de_la_piece::<FicheSalarieDatee>(&mut f, &mut fautes)?;
-    let mut f = crate::fiches::comblee::<FicheSalarieDatee>(&f)?;
-    f.actif = Some(true);
-    Ok((f, fautes))
+    Ok((crate::fiches::comblee::<FicheSalarieDatee>(&f)?, fautes))
+}
+
+/// ACTIVE OU ARCHIVEE : chaque fiche de salarie que l'import cree, une fois toutes ses pieces lues
+/// (`import::derniere_piece`). Celle qu'aucune piece ne date garde sa case vide. La reponse montre la fiche rangee, et ses
+/// anomalies se refont (une fiche archivee ne crie pas : `champs::verifier_fiche`).
+fn ranger_les_salaries(a_creer: &mut [ACreer], reponse: &mut Importation, derniere_piece: &HashMap<Option<Nir>, DernierePiece>, aujourdhui: Jour) -> R<()> {
+    for a in a_creer.iter_mut().filter(|a| a.donnees.nom() == NomDeFiche::Salarie) {
+        let nir = a.nir().cloned();
+        let Some(s) = FicheSalarieDatee::de_la_proposee(&mut a.donnees) else { continue };
+        s.actif = match derniere_piece.get(&nir) {
+            Some(d) => d.active(aujourdhui)?,
+            None => None,
+        };
+        if let Some(e) = a.rang.and_then(|i| reponse.salaries.get_mut(i)) {
+            e.poser(&a.donnees, verifier_comme_a_l_ecriture(&a.donnees, &a.fautes)?);
+        }
+    }
+    Ok(())
 }
 
 /// Ce que le statut et l'emploi qu'un bulletin imprime disent du salarie, en champs de sa fiche.

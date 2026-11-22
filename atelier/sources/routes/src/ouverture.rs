@@ -28,7 +28,7 @@ use socle::echec::{erreur, Classe, R};
 use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::catalogue::{Ecran, Place};
-use crate::fiches::{comblee, SorteDeFiche};
+use crate::fiches::{anomalies_enregistrees, comblee, SorteDeFiche};
 use crate::temps::TempsDeLaCase;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -90,12 +90,26 @@ const AIDES: &[(&str, &str)] = &[
     ("cloture", "Les saisies et les sorties de l'année ne se modifieront plus (rouvrir reste possible, depuis l'Historique). Tout ce qu'il faut garder (saisies, bulletins, contrats signés, DPAE, DSN, certificats, retours des organismes, journal des dépôts, fiches, export compta) est réuni dans l'archive de l'exercice."),
     ("cloture_refus", "La clôture vient après la dernière DSN de l'année : elle est refusée si un mois avec des paies n'a pas de DSN acceptée au journal."),
     ("cloture_forcer", "Si une DSN manque au journal (déposée ailleurs, par exemple)."),
-    ("fiche_cle", "La clé de la fiche se fabrique à l'enregistrement."),
-    ("signature_lourde", "Trop lourde : une image collée pèse tout son poids, préférez une image en ligne."),
-    ("urssaf_changer", "D'après l'adresse de l'entreprise, vos déclarations vont à l'Urssaf de son code postal : c'est elle qui reçoit normalement DPAE et DSN. Une Urssaf qui ne vous gère pas peut faire rejeter vos déclarations. Voulez-vous vraiment la changer ?"),
     ("historique_titre", "Historique des valeurs"),
     ("historique_fiche", "Toutes les valeurs de chaque case, passées et à venir, avec leurs dates et d'où elles viennent ; en gras, celle d'aujourd'hui. Celles d'avant restent pour les déclarations déjà envoyées."),
     ("non_enregistres", "Vos changements ne sont pas encore enregistrés."),
+    ("non_enregistres_titre", "Changements non enregistrés"),
+    ("garder_changements", "Enregistrer les changements"),
+    ("jeter_changements", "Annuler les changements"),
+    ("fiche_annuler", "Annuler"),
+    ("fiche_enregistrer", "Enregistrer"),
+    ("fiche_modifiee", "modifications non enregistrées"),
+    ("dater_titre", "Ce qui change"),
+    ("dater_metier", "Métier"),
+    ("dater_depuis", "À partir du"),
+    ("dater_note", "ajouter une note"),
+    ("dater_motif", "motif"),
+    ("valeur_vide", "vide"),
+    ("valeur_effacee", "effacé"),
+    ("refus_titre", "Enregistrement refusé"),
+    ("refus_corriger", "Corriger"),
+    ("refus_forcer", "Enregistrer quand même"),
+    ("cout_attente", "Coût…"),
     ("dater", "Ce que vous changez vaut à partir d'une date : la voici proposée, changez-la si besoin, puis enregistrez."),
     ("dater_avant", "Avant cette date, la fiche garde ce qu'elle disait."),
     ("rien_enregistre", "Rien n'est enregistré : vos saisies restent dans la fiche, à enregistrer quand vous voulez."),
@@ -116,7 +130,6 @@ const AIDES: &[(&str, &str)] = &[
     ("dpae_cochees", "Cochées d'avance : les embauches sans DPAE, ou dont la DPAE a été refusée. Une DPAE déjà passée ne se redéclare pas : l'Urssaf recevrait deux déclarations pour un seul contrat."),
     ("dpae_heure", "Heure d'embauche déclarée : 08h00. Toutes les embauches cochées partent ensemble, dans un seul dépôt. D'abord le test, qui ne déclare rien ; puis, une fois le test revenu conforme, l'envoi réel."),
     ("revue_spectacles", "Décochés, ils s'archivent : ils restent lisibles et se réactivent d'un clic (Configuration › Spectacles). Ceux qui continuent gardent leur numéro d'objet."),
-    ("mot_de_passe", "Le mot de passe du logiciel ne sert qu'à prouver que quelqu'un est là. Les mots de passe des organismes et de la boîte restent dans le coffre."),
     ("import_natures", "Un bulletin de paie ne dit pas si le contrat est un CDI ou un CDD ; la DSN déposée du même mois pourrait le dire. Sinon, dites-le pour chacun : la DSN et les documents de fin de contrat en dépendent."),
     ("import_numero", "Le numéro du contrat : la rubrique S21.G00.40.009 de sa dernière DSN."),
     ("import_quotite", "La durée du travail, en heures par mois : la rubrique S21.G00.40.013 de la DSN."),
@@ -226,7 +239,6 @@ pub(crate) struct VueFiche<P, K> {
     quoi_dit: String,
     geste_dit: &'static str,
     matricule_dit: Option<String>,
-    titre_dit: String,
     erreurs_titre: Option<String>,
     erreurs_note: &'static str,
     nom: NomDeFiche,
@@ -263,7 +275,7 @@ struct DonneesDeLaFiche<P> {
 
 /// LES TEMPS DE CHAQUE CASE DATEE de la fiche `brute` a `jour` (`droit::fiche::temps_au`), chaque valeur ecrite comme le
 /// fichier l'ecrit (`ValeurDeCase`) ; une case qui n'a qu'une valeur n'en a pas. La page les met en page.
-fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<ValeurDeCase>>> {
+pub(crate) fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<ValeurDeCase>>> {
     struct Toutes {
         listes: Vec<(CaseDeFiche, R<Vec<droit::fiche::Datee<ValeurDeCase>>>)>,
     }
@@ -359,7 +371,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let nom = F::NOM;
     let plate = F::retenue(plate);
     // La fiche se verifie telle qu'elle est ; sa forme lisible comblee n'est qu'un depart pour l'ecran.
-    let anomalies = champs::verifier_fiche(F::a_juger(&plate))?;
+    let anomalies = anomalies_enregistrees::<F>(&plate)?;
     let montree = comblee::<F>(&plate)?;
     let declare = champs::apercu_derive(&montree)?;
     // Sa pastille : archivee (une information), ses erreurs (a corriger, la compagnie le peut), ce qui est a verifier,
@@ -402,20 +414,9 @@ fn fiche_verifiee<F: SorteDeFiche>(
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
     let lu = |k: NomDeCase| montree.ecrite(k.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == NomDeFiche::Spectacle && lu(CaseSpectacle::Titre.into()).is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
-    // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
-    let titre_dit = match (cle, lu(CaseSpectacle::Titre.into())) {
-        (None, _) => "Nouveau spectacle".to_string(),
-        (Some(_), _) if sans_titre => "Spectacle à nommer".to_string(),
-        (Some(_), Some(t)) => t,
-        (Some(c), None) => F::cle_dite(c),
-    };
-    let erreurs_titre = match erreurs {
-        0 => None,
-        1 => Some("Un champ à corriger".to_string()),
-        n => Some(format!("{} champs à corriger", n)),
-    };
-    let erreurs_note = if erreurs > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" };
+    let sans_titre = nom == NomDeFiche::Spectacle && a_nommer(lu(CaseSpectacle::Titre.into()).as_deref());
+    // Ce que l'en-tete de la fiche dit : les champs a corriger.
+    let (erreurs_titre, erreurs_note) = erreurs_dites(erreurs);
     let quoi = match nom {
         NomDeFiche::Salarie => [
             lu(CaseSalarie::EmploiAffichage.into()).or_else(|| lu(CaseSalarie::Emploi.into())),
@@ -426,7 +427,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
     let matricule_dit = lu(CaseSalarie::CodeSalarie.into()).filter(|_| nom == NomDeFiche::Salarie).map(|m| format!("matricule {}", m));
-    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, p)?;
+    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, &|| Ok(!p.dus.is_empty()))?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
@@ -437,7 +438,6 @@ fn fiche_verifiee<F: SorteDeFiche>(
         quoi_dit,
         geste_dit,
         matricule_dit,
-        titre_dit,
         erreurs_titre,
         erreurs_note,
         nom,
@@ -453,6 +453,22 @@ fn fiche_verifiee<F: SorteDeFiche>(
     })
 }
 
+/// UN SPECTACLE A NOMMER : l'import n'a lu que son numero d'objet, son titre est « A COMPLETER »
+/// (`import::proposee::A_COMPLETER`).
+pub(crate) fn a_nommer(titre: Option<&str>) -> bool {
+    titre.is_some_and(|t| t.trim().eq_ignore_ascii_case(import::proposee::A_COMPLETER))
+}
+
+/// Ce que l'en-tete d'une fiche dit de ses erreurs (`n`, celles de gravite « erreur ») : le titre de l'encart, aucun sans
+/// erreur, et sa note.
+pub(crate) fn erreurs_dites(n: usize) -> (Option<String>, &'static str) {
+    let titre = match n {
+        0 => None,
+        1 => Some("Un champ à corriger".to_string()),
+        n => Some(format!("{} champs à corriger", n)),
+    };
+    (titre, if n > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" })
+}
 
 /// Un etablissement qu'un engagement choisit : son NIC (vide : le siege), son nom, son ouverture et son dernier jour s'il
 /// est ferme, et ce que l'option en dit.
@@ -503,7 +519,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
 /// controle des etablissements l'exige alors de chacun (`droit::contexte::controler_etablissements`). Un bareme du jour qui
 /// ne se compose pas ne le demande pas : la configuration s'ouvre quand meme (c'est la qu'on la corrige), et dit pourquoi
 /// (`ConfigurationDeLaPage::pour_payer`, que le meme empilement refuse).
-fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
+pub(crate) fn versement_mobilite_des_etablissements(ctx: &Contexte) -> bool {
     match ctx.bareme_fondu(&ctx.aujourdhui) {
         Ok(b) => droit::bareme::versement_mobilite(&b).is_some(),
         Err(_) => false,
@@ -773,6 +789,8 @@ struct Invitation {
     aide: &'static str,
     sans_boite: Option<&'static str>,
     ou: &'static str,
+    /// La demande du mot de passe avant d'envoyer la demande (`fiche-demander`).
+    demande: compagnie::demande::DemandeDuMotDePasse,
 }
 
 /// TOUTE LA CONFIGURATION, VERIFIEE (`configuration`, et `configuration` de `etat`), et ce que la page en tire sans un
@@ -931,6 +949,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
             aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
             sans_boite: (!boite_liee).then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
             ou: "Ou remplissez la fiche vous-même ci-dessous. Le matricule se donne à l'enregistrement.",
+            demande: crate::coffre::demande(&ctx.racine, crate::fiches::GESTE_DEMANDER_FICHE)?,
         },
         boite_liee,
         fiches_attendues,
@@ -1543,30 +1562,6 @@ fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
         .collect()))
 }
 
-/// Une convention collective que le bareme sait servir : son IDCC, son libelle, si sa couche de taux est RELEVEE
-/// (`applicable`), et l'option qui la propose.
-#[derive(Debug, Clone, serde::Serialize)]
-struct ConventionServie {
-    idcc: droit::fiche::Idcc,
-    libelle: String,
-    applicable: bool,
-    option_dit: String,
-}
-
-/// Les conventions collectives que le bareme sait servir, pour la fiche (`Contexte::conventions_servies`). La page ne les
-/// invente pas, et elle n'en invente pas le libelle.
-fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
-    Ok(ctx
-        .conventions_servies()?
-        .into_iter()
-        .map(|(idcc, c)| {
-            let libelle = if c.libelle.trim().is_empty() { idcc.to_string() } else { c.libelle };
-            let option_dit = format!("IDCC {} — {}{}", idcc, libelle, if c.applicable { "" } else { " (taux non relevés)" });
-            ConventionServie { idcc, libelle, applicable: c.applicable, option_dit }
-        })
-        .collect())
-}
-
 // -------------------------------------------------------------------- l'etat
 
 /// Un salarie des listes ou l'on choisit : sa cle et son nom. Ce que sa carte propose, la carte le dit
@@ -1583,13 +1578,6 @@ struct SpectacleDeLaListe {
     cle: droit::contexte::IdSpectacle,
     titre: String,
     numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
-}
-
-/// Un organisme de recouvrement que la DPAE fait choisir.
-#[derive(Debug, Clone, serde::Serialize)]
-struct OrganismeUrssaf {
-    code: declarations::urssaf::CodeUrssafDpae,
-    nom: String,
 }
 
 /// CE QUE LA PAGE LIT EN S'OUVRANT (`etat`) : la configuration verifiee et sa phrase, l'auteur, ce qu'une compagnie
@@ -1624,11 +1612,6 @@ pub(crate) struct EtatDeLaPage {
     niveaux_sante: Option<Vec<NiveauDeSante>>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,
-    conventions: Vec<ConventionServie>,
-    organismes_urssaf: Vec<OrganismeUrssaf>,
-    urssaf_deduit_dit: String,
-    /// L'organisme Urssaf que le code postal de la fiche designe, s'il en designe un.
-    urssaf_deduit: Option<declarations::urssaf::CodeUrssafDpae>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     pays_naissance: Vec<socle::pays::PaysServi>,
 }
@@ -1691,12 +1674,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     // Une rubrique que le moteur pose (`saisie` vide) ne se propose pas.
     let rubriques: Vec<RubriqueDeLaPage> = cat.iter().filter(|r| !r.saisie.is_empty()).map(rubrique_de_la_page).collect::<R<_>>()?;
 
-    // Les organismes de recouvrement, pour que le code Urssaf de la DPAE se
-    // CHOISISSE au lieu de se taper ; et celui que le moteur prend quand la
-    // fiche n'en dit rien : l'organisme du territoire.
-    let urssaf = declarations::urssaf::base()?;
-    let deduit = ctx.entreprise.code_postal.portee().and_then(|cp| urssaf.du_code_postal(cp));
-    let organismes_urssaf: Vec<OrganismeUrssaf> = urssaf.organismes.iter().map(|o| OrganismeUrssaf { code: o.code.clone(), nom: o.nom.clone() }).collect();
     let branchement = compagnie::bridage::branchement(&ctx.racine)?;
     let joue = branchement.joue();
 
@@ -1744,14 +1721,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         sante_hors_fiche: droit::bareme::sante_hors_fiche(&ctx.entreprise)?,
         // Ce que la fiche d'un permanent dit de sa complementaire sante, sous le choix du niveau.
         sante_aide: "Obligatoire pour un salarié au mois (art. L911-7) : sans elle, le logiciel refuse de le payer plutôt que de cotiser moins que le contrat. Elle se lit sur son bulletin d'adhésion.",
-        // Les conventions collectives servies, pour la fiche entreprise.
-        conventions: conventions(ctx)?,
-        organismes_urssaf,
-        urssaf_deduit_dit: match &deduit {
-            Some(c) => format!("— code postal ({}) —", c),
-            None => "— code postal : aucun organisme ne s'en déduit —".to_string(),
-        },
-        urssaf_deduit: deduit,
         // LES PAYS : la liste livree, triee par nom, chacun avec la codification UE que le moteur en
         // deduit. Le pays de naissance et le pays de nationalite s'y choisissent.
         pays: droit::nationalite::servir()?,

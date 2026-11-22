@@ -47,7 +47,7 @@ fn declarant() -> Identite {
 /// L'authentification du guide, avec ce mot de passe.
 fn authentifier_avec(url: &Url, declarant: &Identite, motdepasse: Option<&str>) -> Result<envois::transport::Session, envois::transport::EchecApi> {
     let secret = motdepasse.map(|m| socle::secret::Secret::nouveau(m));
-    authentifier(&Authentification { url, declarant, motdepasse: secret.as_ref(), variable: "NET_ENTREPRISES_MOTDEPASSE", service: Some("97"), jeton: None })
+    authentifier(&Authentification { canal: envois::releve_retours::CanalDesRetours::Dsn, url, declarant, motdepasse: secret.as_ref(), variable: "NET_ENTREPRISES_MOTDEPASSE", service: Some("97"), jeton: None })
 }
 
 #[test]

@@ -152,8 +152,18 @@ fn adresses_dsn(environnement: EnvironnementNetEntreprises) -> Adresses {
     }
 }
 
+/// LE SERVICE DE L'AUTHENTIFICATION A LA DPAE : « Pour un déclarant ou tiers déclarant, il convient de paramétrer le
+/// service 25. Pour un concentrateur, le service 98 doit être paramétré. » (FAQ de l'API DPAE,
+/// `atelier/reference/norme-dpae/5493-API-DPAE-FAQ.pdf`, « Quel service faut-il paramétrer dans le module API ? »). Une
+/// compagnie declare pour elle-meme : c'est 25. Sans lui, l'Urssaf repond 404 a l'authentification.
+const SERVICE_DPAE_DU_DECLARANT: &str = "25";
+
 fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
-    let service = compte.and_then(|c| c.service.dite()).filter(|s| !s.is_empty()).cloned();
+    // Le service que la fiche dit (un concentrateur dit le sien) ; une compagnie n'en dit pas : celui du declarant.
+    let service = match compte.and_then(|c| c.service.dite()).filter(|s| !s.is_empty()) {
+        Some(s) => Some(s.clone()),
+        None => Some(SERVICE_DPAE_DU_DECLARANT.to_string()),
+    };
     // L'atelier seulement : un faux Urssaf local (`redirection`).
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DPAE) {
@@ -176,6 +186,8 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
 
 /// `netentreprises.Client` et `dpae_api.ClientDpae`.
 pub struct Client {
+    /// Le canal de l'organisme auquel ce client parle : ses pannes le nomment (`transport::panne_dite`).
+    pub canal: CanalDesRetours,
     pub adresses: Adresses,
     pub jeton: Option<Secret>,
     pub declarant: crate::transport::Identite,
@@ -189,6 +201,7 @@ impl Client {
     pub fn dsn(ctx: &Contexte, environnement: EnvironnementNetEntreprises, motdepasse: Option<Secret>) -> Client {
         let declarant = crate::transport::declarant(&ctx.entreprise);
         Client {
+            canal: CanalDesRetours::Dsn,
             adresses: adresses_dsn(environnement),
             jeton: None,
             declarant,
@@ -204,6 +217,7 @@ impl Client {
         let compte = ctx.entreprise.api_dpae.dite();
         let siret = compte.and_then(|c| c.siret.dite()).or_else(|| ctx.entreprise.siret.dite()).cloned();
         Client {
+            canal: CanalDesRetours::Dpae,
             adresses: adresses_dpae(compte),
             jeton: None,
             declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
@@ -230,6 +244,7 @@ impl Client {
     pub fn authentifier(&mut self) -> Result<(), Panne> {
         let mdp = self.secret().map(|m| if self.majuscules { m.transforme(str::to_uppercase) } else { m.clone() });
         let session = crate::transport::authentifier(&crate::transport::Authentification {
+            canal: self.canal,
             url: &self.adresses.authentification,
             declarant: &self.declarant,
             motdepasse: mdp.as_ref(),
@@ -250,13 +265,13 @@ impl Client {
     }
 
     fn appel(&self, url: &Url) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
-        Ok(crate::transport::appeler(url, self.jeton.as_ref())?)
+        Ok(crate::transport::appeler(self.canal, url, self.jeton.as_ref())?)
     }
 
     /// La consultation d'une plage.
     fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        Ok(crate::transport::consulter(base, self.jeton.as_ref(), debut, fin)?)
+        Ok(crate::transport::consulter(self.canal, base, self.jeton.as_ref(), debut, fin)?)
     }
 
     pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Annonce>, Panne> {
@@ -364,6 +379,14 @@ impl CanalDesRetours {
         match acte {
             Acte::Dpae => CanalDesRetours::Dpae,
             _ => CanalDesRetours::Dsn,
+        }
+    }
+
+    /// L'organisme qui sert ce canal, tel qu'une phrase le nomme en tete (`transport::panne_dite`).
+    pub fn organisme(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "net-entreprises",
+            CanalDesRetours::Dpae => "L'Urssaf (DPAE)",
         }
     }
 
@@ -815,7 +838,8 @@ pub fn relever_retours(
     match client.authentifier() {
         Ok(()) => {}
         Err(p) if p.est_api() => {
-            releve.plateforme_non_lue.push(format!("Authentification refusee : {}", p.echec.phrase));
+            releve.plateforme_non_lue.push(p.echec.phrase.clone());
+            suites.panne(p);
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
@@ -892,11 +916,12 @@ pub fn relever_retours(
             }
             Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::NOT_FOUND) => {}
             Err(p) if p.est_api() => {
-                releve.plateforme_non_lue.push(format!("Consultation interrompue : {}", p.echec.phrase));
+                releve.plateforme_non_lue.push(p.echec.phrase.clone());
                 // UN HOTE QUI NE REPOND PAS (aucun statut HTTP) n'est plus appele dans ce releve (plus bas).
                 if p.code.is_none() {
                     muets.push((socle::garde_reseau::hote_de(client.adresses.retours.texte()), p.echec.phrase.clone()));
                 }
+                suites.panne(p);
                 break;
             }
             Err(p) => return Err(en_echec(p)),
@@ -935,7 +960,7 @@ pub fn relever_retours(
                 let hote = socle::garde_reseau::hote_de(url.texte());
                 if let Some((_, panne)) = muets.iter().find(|(h, _)| *h == hote) {
                     if r.nature_retour == NatureDuRetour::CertificatDeConformite {
-                        let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, panne);
+                        let phrase = format!("Le retour de nature {} ne s'est pas téléchargé : {}", r.nature_retour, panne);
                         if !releve.plateforme_non_lue.contains(&phrase) {
                             releve.plateforme_non_lue.push(phrase);
                         }
@@ -950,10 +975,11 @@ pub fn relever_retours(
                         continue;
                     }
                     Err(p) if p.est_api() => {
-                        let phrase = format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase);
+                        let phrase = format!("Le retour de nature {} ne s'est pas téléchargé : {}", r.nature_retour, p.echec.phrase);
                         if p.code.is_none() {
                             muets.push((hote, p.echec.phrase.clone()));
                         }
+                        suites.panne(p);
                         match r.nature_retour {
                             NatureDuRetour::CertificatDeConformite => releve.plateforme_non_lue.push(phrase),
                             _ => suites.dit.incidents.push(phrase),
@@ -1082,7 +1108,8 @@ pub fn relever_retours_dpae(
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.plateforme_non_lue.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
+            r.plateforme_non_lue.push(format!("Le flux {} ne s'est pas consulté : {}", flux, p.echec.phrase));
+            suites.panne(p);
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),
@@ -1101,7 +1128,8 @@ pub fn relever_retours_dpae(
             // texte de l'Urssaf ne dit le 410 : `relever_retours`).
             Err(p) if p.est_api() && p.code == Some(ureq::http::StatusCode::GONE) => suites.retires.push((x.nature_retour, url, p.echec)),
             Err(p) if p.est_api() => {
-                suites.dit.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase));
+                suites.dit.incidents.push(format!("Le retour de nature {} ne s'est pas téléchargé : {}", x.nature_retour, p.echec.phrase));
+                suites.panne(p);
                 rates.push(x);
             }
             Err(p) => return Err(en_echec(p)),

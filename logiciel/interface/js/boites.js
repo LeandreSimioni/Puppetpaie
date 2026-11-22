@@ -130,9 +130,13 @@ document.getElementById("voile").onclick = (e) => {
    (`#voile-mdp`), au-dessus de la boîte courante, et rend une promesse :
    le mot de passe, ou null si on annule (Échap, Annuler, clic à côté).
 
+   Ce qu'il dit est la demande que la route du geste rend (`demande` :
+   `titre`, `de_qui`, `pour`) : quel mot de passe, de qui, pour quoi. La
+   page n'en écrit aucun mot.
+
    Le navigateur ne retient pas le mot de passe : il se tape, à chaque
    fois, et c'est le but. */
-function demanderMotDePasse(pourquoi, { envoi = false } = {}) {
+function demanderMotDePasse(demande, { envoi = false } = {}) {
   // UN ENVOI SANS RIEN À PROUVER (le moteur le dit : `envoi_sans_mot_de_passe`, route `etat`) : le geste part sans
   // le popup, et la page montre ce que le moteur en rend (l'acte joué, ou son refus).
   if (envoi && ETAT && ETAT.envoi_sans_mot_de_passe) return Promise.resolve("sans-mot-de-passe");
@@ -140,9 +144,9 @@ function demanderMotDePasse(pourquoi, { envoi = false } = {}) {
     const voile = document.getElementById("voile-mdp");
     const forme = document.getElementById("forme-mdp");
     const champ = document.getElementById("mdp-valeur");
-    // Le geste : le nom du bouton qui le demande, ou ce que le moteur en dit (`pourquoi`).
-    document.getElementById("mdp-pourquoi").textContent = pourquoi;
-    document.getElementById("mdp-note").textContent = ETAT.aides.mot_de_passe;
+    document.getElementById("mdp-titre").textContent = demande.titre;
+    document.getElementById("mdp-de-qui").textContent = demande.de_qui;
+    document.getElementById("mdp-pour").textContent = demande.pour;
     champ.value = "";
     voile.classList.remove("cachee");
     const finir = (valeur) => {

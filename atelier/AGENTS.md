@@ -38,8 +38,12 @@ Trois rôles, trois méthodes (`journal/methodes/` du privé).
    de côté » se corrige dans la même PR, avant de dire de fusionner. Ne remonte à Léandre qu'une **décision d'éditeur**
    (argent, engagement envers un organisme, publication, ce qui change le produit pour toutes les compagnies) ou **un
    geste sur son poste**, en une ligne.
-2. **Pas de précautions de transition tant que Léandre est le seul utilisateur** : ni compatibilité, ni circuit
-   provisoire, quitte à tout casser.
+2. **Une mise à jour ne ferme jamais une compagnie** (Léandre, 21/11/2026 : « on va dire que le logiciel, il est là »,
+   « il faut qu'elle puisse ouvrir le logiciel »). Ce qu'une installation a écrit dans ses fichiers se lit encore après
+   la mise à jour : une forme qui change lit l'ancienne, telle qu'elle s'écrivait et rien d'autre, et la réécrit dans
+   la neuve au premier enregistrement ; une clé retirée se lit et ne dit rien (`fiche!`, `non_lues`). Chaque lot qui
+   change ou retire une forme écrite le prouve en jouant une compagnie qui porte l'ancienne. En dehors des fichiers
+   d'une compagnie, rien ne se garde : ni circuit provisoire, ni second chemin dans les routes ou la page.
 
 ## L'architecture s'impose, elle ne se raconte pas
 
@@ -75,6 +79,14 @@ soient droits.
 - **Un champ facultatif ne s'écrit que s'il est rempli** : absent ou `null`, il est vide (`None`), et vide n'est pas
   zéro ; on n'invente rien pour lui. Une case qui n'a pas de sens pour ce qu'on saisit n'existe pas. Un repli, c'est une
   absence qui devient une valeur (0, CDDU, « 12 mois ») : c'est cela qui est interdit.
+- **Vide et illisible sont deux choses, et c'est la porte qui les distingue** (Léandre, 21/11/2026 : « dans le typage
+  y a déjà la différence entre illisible et null », « si c'est illisible on demande de renommer »). Le type de chaque
+  case lit sa valeur : absente ou `null`, la case est vide ; écrite mais refusée par son type, elle est illisible.
+  Une valeur illisible dans le fichier d'une compagnie ne ferme pas la compagnie et ne se prend jamais pour vide :
+  le logiciel la montre et demande de la saisir de nouveau (ou de dire qu'elle est vide), et ne calcule rien pour
+  cette compagnie tant qu'il attend la réponse. L'illisible ne passe donc jamais la porte : aucun calcul n'a de
+  troisième état à connaître, et l'on n'en ajoute pas. Une case vide, elle, ne bloque que le calcul qui en a besoin
+  (« je peux pas faire une tarte aux pommes si j'ai pas de pommes, mais je peux faire un gâteau au chocolat »).
 - **Un geste, une route, qui obéit** : ni état, ni bouton, ni refus de plus pour une règle (le droit vit dans le calcul) ;
   un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
   diff à l'arrivée le tient). **Enregistrer sans rien changer n'est jamais une faute** (Léandre : « on peut appuyer sur
@@ -106,9 +118,16 @@ chose de plus, cela se présente à Léandre avant, en une ligne.
 en page », « regarde ce qu'on a fait pour la carte engagement »). La carte d'un engagement en est le modèle : un seul
 dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le libellé, les choix, ce qui est
 pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
-propose arrive par la route (`propose`), et « Enregistrer » la valide. Les fiches (Entreprise, Salarié, Spectacle)
+propose arrive par la route (`propose`), et « Enregistrer » la valide. La fiche d'un spectacle
+est le modèle des fiches : la route `fiche` la rend telle qu'on la saisit, et le même dessin d'une case (`caseDeRoute`,
+`js/avance.js`) sert à la carte et à la fiche. Les fiches Entreprise et Salarié
 gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
-dans la page.
+dans la page. **Tout le logiciel suit, écran par écran** (Léandre, 21/11/2026 : « la même chose qu'on a fait pour la
+carte, il faut la faire pour tout le logiciel », « la page, il faut juste faire un petit peu de mise en forme »).
+**Avant de toucher à un écran, on relève tout ce qu'il a** (« regarder tout ce qu'avait la page pour voir qu'on ne
+perd rien ») : chaque case, bouton, phrase, condition d'affichage et geste, avec la ligne du JS qui le fait et ce que
+la route en dit déjà. Ce que le passage ferait perdre ne se retire ni ne se garde d'office : c'est une question à
+Léandre, une par chose (« on la garde ou pas, et si oui, comment »).
 
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
@@ -158,6 +177,11 @@ par son nom dans le JS : on lit sa fiche.
   s'occupe des règles des permanents ») : tant que le chemin d'une compagnie d'intermittents n'est pas droit de bout
   en bout (engager, payer, déclarer, relever), aucun ticket qui ne concerne que les permanents ne se traite ; ce
   qu'on découvre sur eux va dans un ticket, et y reste. Léandre dit quand cela change.
+- **L'administrateur central attend aussi** (Léandre, 21/11/2026 : « on a mis en attente les permanents, on peut
+  mettre en attente aussi l'administrateur central ») : ce qui ne concerne que l'administrateur de plusieurs
+  compagnies (le rattachement, son tableau, le dépôt groupé) ne se traite pas tant que le chemin d'une compagnie
+  seule n'est pas droit ; ce qu'on y découvre va dans un ticket, et y reste. Un lot ne casse pas ce qui existe pour
+  lui, mais ne s'y attarde pas.
 - **Un manque va dans un ticket du privé**, jamais dans un plan ni une consigne.
 - **Un retour se trie avant de se corriger** (`journal/methodes/TRIER-LES-RETOURS.md` du privé) : ne se corrige que
   ce qui est reproduit et **que les textes autorisent** ; une question de métier va d'abord à Léandre.

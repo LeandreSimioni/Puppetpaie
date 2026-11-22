@@ -1484,7 +1484,6 @@ const PHRASES_DE_L_ACCUEIL: &[(&str, &str)] = &[
     ("toutes_faites", "Toutes les déclarations de vos compagnies sont faites."),
     ("tableau_illisible", "Le tableau de cette compagnie ne se lit pas"),
     ("administrateur_seul", "un seul mot de passe, celui de l'administrateur."),
-    ("chaque_dsn", "Chaque DSN part avec ses contrôles et son bilan, compagnie par compagnie. Le mot de passe de l'administrateur le confirme."),
     ("mdp_administrateur", "le mot de passe de l'administrateur"),
     ("rien_parti", "Rien n'est parti."),
     ("rien_change", "Rien n'a changé."),

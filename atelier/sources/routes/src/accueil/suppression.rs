@@ -140,7 +140,7 @@ pub fn question(racine: &Path) -> R<Suppression> {
         phrase: socle::phrase!("Supprimer {} ?", nom),
         titre_dit: Some(format!("Supprimer {} ?", nom)),
         genre: Some(if g == Genre::Ajoutee { "ajoutee" } else { "reelle" }),
-        mot_de_passe: Some(g == Genre::Reelle),
+        demande: if g == Genre::Reelle { Some(crate::coffre::demande(racine, &geste_supprimer(&nom))?) } else { None },
         conservation: (g == Genre::Reelle).then_some(CONSERVATION),
         sauvegarde,
         avertissement: Some(format!("Tout le dossier de {} sera effacé de ce poste : fiches, paies, documents, journaux. Cela ne se défait pas.", nom)),
@@ -176,8 +176,9 @@ pub struct Suppression {
     titre_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     genre: Option<&'static str>,
+    /// Une compagnie reelle : la demande du mot de passe du logiciel avant de la supprimer.
     #[serde(skip_serializing_if = "Option::is_none")]
-    mot_de_passe: Option<bool>,
+    demande: Option<compagnie::demande::DemandeDuMotDePasse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     conservation: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -190,7 +191,7 @@ pub struct Suppression {
 
 impl Suppression {
     fn de(nom: String) -> Suppression {
-        Suppression { phrase: Phrase::fixe(""), nom, titre_dit: None, genre: None, mot_de_passe: None, conservation: None, sauvegarde: None, avertissement: None, supprimee: None }
+        Suppression { phrase: Phrase::fixe(""), nom, titre_dit: None, genre: None, demande: None, conservation: None, sauvegarde: None, avertissement: None, supprimee: None }
     }
 }
 
@@ -220,17 +221,20 @@ fn prouver(racine: &Path, nom: &str, motdepasse: Option<&socle::secret::Secret>,
     if !coffre.ouverture_exigee()? {
         return Err(refus("Aucun mot de passe du logiciel n'est posé pour cette compagnie : rien ne prouve qui la supprime. Rien n'a été supprimé."));
     }
+    let demande = crate::coffre::demande(racine, &geste_supprimer(nom))?;
     let tape = match motdepasse.filter(|m| !m.devoiler().is_empty()) {
         Some(m) => m.clone(),
-        None => {
-            let acte = compagnie::demande::Acte::nouveau(format!("supprimer définitivement la compagnie {}", nom), None, "");
-            compagnie::demande::mot_de_passe_de_l_acte(racine, &acte).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été supprimé.", p)))?
-        }
+        None => compagnie::demande::mot_de_passe_de_l_acte(racine, &demande).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été supprimé.", p)))?,
     };
     if !coffre.verifier_ouverture(&tape)? {
-        return Err(refus("Mot de passe du logiciel refusé. Rien n'a été supprimé."));
+        return Err(refus(demande.refus("Rien n'a été supprimé.")));
     }
     Ok(())
+}
+
+/// Le geste de la suppression, tel que la demande du mot de passe le dit.
+fn geste_supprimer(nom: &str) -> String {
+    format!("supprimer définitivement la compagnie {} de ce poste", nom)
 }
 
 /// SUPPRIMER `racine`, compagnie de l'installation `inst` : la preuve d'abord (une compagnie reelle), puis `avant` (la

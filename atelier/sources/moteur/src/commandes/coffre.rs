@@ -101,7 +101,8 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<ExitCode, Echec> {
             return Ok(ExitCode::SUCCESS);
         }
     }
-    match compagnie::demande::ouvrir_seance(&cadre.racine) {
+    let qui = routes::coffre::qui_ouvre(&cadre.racine)?;
+    match compagnie::demande::ouvrir_seance(&cadre.racine, &qui) {
         compagnie::demande::Verdict::Accepte => {
             let fin = coffre
                 .fin_ouverture_gardee()

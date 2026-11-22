@@ -38,10 +38,8 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
 
+use crate::fiche::{QuandDuVersement, VersementEcrit};
 use crate::natures::Nature;
-
-/// Les formes qu'elle lit, dans la phrase d'un refus.
-const FORMES: &str = "« fin du mois », « fin du contrat », « le 25 » ou « le 5 du mois suivant »";
 
 /// Le jour du versement que la compagnie a choisi.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,32 +51,59 @@ pub enum Versement {
 }
 
 impl Versement {
-    /// La case telle qu'elle s'ecrit ; `Err` : ce qu'elle attend.
-    pub fn lire(texte: &str) -> R<Versement> {
-        let t = socle::texte::sans_accent(texte).to_lowercase();
-        let mots: Vec<&str> = t.split_whitespace().collect();
-        let t = mots.join(" ");
-        let t = match t.strip_prefix("le ") {
-            Some(reste) => reste,
-            None => &t,
+    /// LE CHOIX QUE LA CASE ECRIT (`VersementEcrit`) : quand, et le numero du jour pour un jour du mois ou du mois
+    /// suivant, de 1 a 31, que les deux autres choix n'ont pas. `Err` : ce qu'il faut corriger.
+    fn de_l_ecrit(e: &VersementEcrit) -> Result<Versement, String> {
+        let Some(quand) = e.quand else {
+            return Err("Dire quand : choisir la fin du mois, la fin du contrat, un jour du mois ou \
+                        un jour du mois suivant."
+                .to_string());
         };
-        match t {
-            "fin du mois" | "dernier jour du mois" => return Ok(Versement::FinDuMois),
-            "fin du contrat" | "dernier jour du contrat" => return Ok(Versement::FinDuContrat),
+        let fixe = |mois_suivant: bool| match e.jour {
+            Some(n) if (1..=31).contains(&n) => u32::try_from(n).map(|quantieme| Versement::Fixe { quantieme, mois_suivant }).map_err(|x| x.to_string()),
+            Some(n) => Err(format!("Le {} n'est pas un jour du mois ; dire un numéro de 1 à 31.", n)),
+            None => Err("Dire le numéro du jour, de 1 à 31.".to_string()),
+        };
+        match quand {
+            QuandDuVersement::FinDuMois | QuandDuVersement::FinDuContrat if e.jour.is_some() => Err(
+                "Un numéro de jour ne se dit qu'avec « un jour du mois » ou « un jour du mois suivant ».".to_string(),
+            ),
+            QuandDuVersement::FinDuMois => Ok(Versement::FinDuMois),
+            QuandDuVersement::FinDuContrat => Ok(Versement::FinDuContrat),
+            QuandDuVersement::JourDuMois => fixe(false),
+            QuandDuVersement::JourDuMoisSuivant => fixe(true),
+        }
+    }
+
+    /// Le texte qu'une installation ecrivait avant la liste a choix : « fin du mois », « fin du contrat », « le 25 »
+    /// (« le 1er »), « le 5 du mois suivant ». `None` : ce n'est pas l'un d'eux.
+    fn du_texte_d_avant(texte: &str) -> Option<Versement> {
+        match texte {
+            "fin du mois" => return Some(Versement::FinDuMois),
+            "fin du contrat" => return Some(Versement::FinDuContrat),
             _ => {}
         }
-        let (n, mois_suivant) = match t.strip_suffix(" du mois suivant") {
+        let (n, mois_suivant) = match texte.strip_prefix("le ")?.strip_suffix(" du mois suivant") {
             Some(n) => (n, true),
-            None => (t, false),
+            None => (texte.strip_prefix("le ")?, false),
         };
-        let n = match n.strip_suffix("er") {
-            Some(reste) => reste,
-            None => n,
+        let quantieme: u32 = match (n, n.parse::<u32>()) {
+            ("1er", _) => 1,
+            (_, Ok(q)) => q,
+            (_, Err(_)) => return None,
         };
-        match n.parse::<u32>() {
-            Ok(q) if (1..=31).contains(&q) => Ok(Versement::Fixe { quantieme: q, mois_suivant }),
-            _ => Err(socle::refus!("{} attendu", FORMES)),
-        }
+        (1..=31).contains(&quantieme).then_some(Versement::Fixe { quantieme, mois_suivant })
+    }
+
+    /// Le choix tel que la case l'ecrit.
+    fn ecrit(self) -> VersementEcrit {
+        let (quand, jour) = match self {
+            Versement::FinDuMois => (QuandDuVersement::FinDuMois, None),
+            Versement::FinDuContrat => (QuandDuVersement::FinDuContrat, None),
+            Versement::Fixe { quantieme, mois_suivant: false } => (QuandDuVersement::JourDuMois, Some(quantieme as usize)),
+            Versement::Fixe { quantieme, mois_suivant: true } => (QuandDuVersement::JourDuMoisSuivant, Some(quantieme as usize)),
+        };
+        VersementEcrit { quand: Some(quand), jour }
     }
 
     /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat`. Aucun texte ne fixe ce jour :
@@ -91,7 +116,10 @@ impl Versement {
         match dit {
             Some(v) => Ok(*v),
             None => Err(socle::echec::cle(
-                format!("La fiche entreprise ne dit pas le jour du versement des salaires des {} : écrire {}.", qui, FORMES),
+                format!(
+                    "La fiche entreprise ne dit pas le jour du versement des salaires des {qui} : le choisir dans la configuration, \
+                     case « Jour du versement des {qui} »."
+                ),
                 cle,
             )),
         }
@@ -124,39 +152,52 @@ impl Versement {
     }
 }
 
-/// LA FORME UNIQUE DU CHOIX, telle que la case de la fiche entreprise l'ecrit et la montre : « fin du mois », « fin du
-/// contrat », « le 25 » (« le 1er »), « le 5 du mois suivant » ; `Versement::lire` la relit.
-impl std::fmt::Display for Versement {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match *self {
-            Versement::FinDuMois => f.write_str("fin du mois"),
-            Versement::FinDuContrat => f.write_str("fin du contrat"),
-            Versement::Fixe { quantieme, mois_suivant } => {
-                let q = if quantieme == 1 { "1er".to_string() } else { quantieme.to_string() };
-                write!(f, "le {}{}", q, if mois_suivant { " du mois suivant" } else { "" })
-            }
-        }
-    }
-}
-
 /// LA CASE DE LA FICHE ENTREPRISE (`date_de_versement_permanents`, `date_de_versement_intermittents`) : le choix, lu a
-/// la porte, ecrit sous sa forme unique. Un texte qui ne dit aucun choix se refuse a la lecture ; la case vide est nulle.
+/// la porte dans sa forme ecrite (`VersementEcrit` : `{"quand": "jour_du_mois_suivant", "jour": 5}`) et ecrit de meme. Un
+/// choix incomplet, ou un numero de jour avec la fin du mois ou du contrat, se refuse a la lecture ; la case vide est
+/// nulle.
 impl Serialize for Versement {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_str(self)
+        self.ecrit().serialize(s)
     }
 }
 
 impl<'de> Deserialize<'de> for Versement {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let texte = String::deserialize(d)?;
-        Versement::lire(&texte).map_err(|_| {
-            serde::de::Error::custom(format!("Le jour du versement « {} » ne se lit pas : écrire {}.", texte.trim(), FORMES))
-        })
+        d.deserialize_any(Lecteur)
     }
 }
 
-impl crate::fiche::FormeDeCase for Versement {}
+/// La case se lit dans sa forme ecrite (`VersementEcrit`). Une installation posee avant la liste a choix l'a ecrite en
+/// texte (« fin du contrat », « le 5 du mois suivant ») : ce texte se lit encore, tel qu'il s'ecrivait alors et rien
+/// d'autre, pour que la compagnie s'ouvre apres sa mise a jour ; il se recrit dans la forme neuve au premier
+/// enregistrement de la fiche.
+struct Lecteur;
+
+impl<'de> serde::de::Visitor<'de> for Lecteur {
+    type Value = Versement;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("le jour du versement : un choix (quand) et, pour un jour du mois ou du mois suivant, son numéro (jour)")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Versement, A::Error> {
+        let ecrit = VersementEcrit::deserialize(serde::de::value::MapAccessDeserializer::new(m))?;
+        Versement::de_l_ecrit(&ecrit).map_err(serde::de::Error::custom)
+    }
+
+    fn visit_str<E: serde::de::Error>(self, texte: &str) -> Result<Versement, E> {
+        Versement::du_texte_d_avant(texte)
+            .ok_or_else(|| E::custom(format!("Le jour du versement « {} » ne se lit pas : le choisir de nouveau.", texte)))
+    }
+}
+
+/// Ses cases sont celles de sa forme ecrite : `quand`, un choix, et `jour`.
+impl crate::fiche::FormeDeCase for Versement {
+    fn cases() -> Vec<crate::fiche::Declaree> {
+        <VersementEcrit as crate::fiche::FormeDeCase>::cases()
+    }
+}
 
 /// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` : le dernier jour du
 /// mois suivant (CCH-13 de S21.G00.50.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 61-62).
@@ -216,7 +257,7 @@ mod tests {
     #[test]
     fn un_versement_apres_le_mois_qui_suit_se_refuse() {
         let decembre: Mois = socle::forme::lire_texte("\"2026-12\"", "le mois du test").unwrap();
-        let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour(decembre, j("2026-12-31")).unwrap();
+        let cinq = Versement::Fixe { quantieme: 5, mois_suivant: true }.jour(decembre, j("2026-12-31")).unwrap();
         assert_eq!(cinq, j("2027-01-05"));
         assert_eq!(refus("X", &cinq, decembre, None).unwrap(), None);
         assert_eq!(refus("X", &j("2027-01-31"), decembre, None).unwrap(), None);

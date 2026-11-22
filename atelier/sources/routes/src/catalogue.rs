@@ -139,6 +139,7 @@ routes! {
         ExportCompta = "export-compta",
         Archiver = "archiver",
         JournalReprise = "journal-reprise",
+        Fiche = "fiche",
         Permanents = "permanents",
         TaxeSurLesSalairesRegime = "taxe-sur-les-salaires-regime",
         VerifierFiche = "verifier-fiche",
@@ -405,6 +406,11 @@ pub enum Forme {
     /// ne se saisit que si la valeur choisie l'ouvre. Le preavis d'une fin de contrat : son type, puis ses dates quand
     /// le type en a.
     Parties(&'static [Partie]),
+    /// DES RANGEES D'UNE FICHE : une liste d'objets, chacun les memes parties (`routes::fiches::PartieDeLaFiche`, rendues
+    /// a cote de la case), qu'on ajoute et retire (les autres etablissements de l'entreprise).
+    Rangees,
+    /// Du HTML colle (la signature des courriels) : le moteur le nettoie et en dit le poids (`champs::Forme::Html`).
+    Html,
 }
 
 /// UNE PARTIE D'UNE VALEUR FAITE DE PARTIES (`Forme::Parties`) : sa cle dans la valeur, son libelle, sa forme, et si elle
@@ -482,6 +488,8 @@ impl Forme {
             Forme::Choix(_) => "choix",
             Forme::ChoixRendu => "choix_rendu",
             Forme::Parties(_) => "parties",
+            Forme::Rangees => "rangees",
+            Forme::Html => "html",
         }
     }
 
@@ -489,7 +497,7 @@ impl Forme {
     fn choix(self) -> Option<Vec<ChoixEcrit>> {
         match self {
             Forme::Choix(c) => Some(c.iter().map(|c| ChoixEcrit { code: c.code, libelle: c.libelle.texte() }).collect()),
-            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) => None,
+            Forme::Texte | Forme::OuiNon | Forme::Nombre | Forme::Montant | Forme::Mois | Forme::Date | Forme::Jours | Forme::Liste | Forme::Quantite | Forme::Lignes | Forme::Objet | Forme::ChoixRendu | Forme::Parties(_) | Forme::Rangees | Forme::Html => None,
         }
     }
 

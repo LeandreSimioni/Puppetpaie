@@ -849,7 +849,7 @@ impl EntrepriseDeclaree {
                 // S21.G00.20.004" est obligatoire », CCH-12, `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt`
                 // l. 425-426), et la lecture ne le garde que si tous les versements disent le meme : pas de toute DSN.
                 banque: _,
-                // La medecine du travail : l'identifiant du SPST (S21.G00.11.025), d'une DSN 2027 seulement.
+                // La medecine du travail : l'identifiant du SPST (S21.G00.11.025).
                 medecine_travail: _,
                 // Rien de « Pour demarrer » ne le demande.
                 france_travail_dossier_recouvrement: _,
@@ -1554,13 +1554,16 @@ pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
         }
         e.declarant_dsn = Some(d);
     }
-    // LE SERVICE DE SANTE AU TRAVAIL : l'identifiant du SPST en S21.G00.11.025 (norme 2027, `dsn::spst_ecrit`), une valeur
-    // du referentiel « sst_dpae » de l'Urssaf (fiche consigne 3370, l. 11), devient le code de la fiche
+    // LE SERVICE DE SANTE AU TRAVAIL : l'identifiant du SPST en S21.G00.11.025 (`dsn::spst_ecrit`), une valeur du
+    // referentiel « sst_dpae » de l'Urssaf (fiche consigne 3370, l. 11), devient le code de la fiche
     // (`CodeMedecine::du_referentiel` : MT01, la medecine interne, s'y ecrit MT999). Qu'il soit le code de la DPAE est une
-    // inference : les deux viennent du meme referentiel. Une DSN 2026 n'a pas la rubrique, et une valeur qui n'a pas la forme
-    // d'un identifiant du referentiel ne dit pas de service : la case reste vide, et « Pour demarrer » la demande.
-    if let Ok(id) = droit::fiche::IdentifiantSpst::lire(&spst) {
-        e.medecine_travail = Some(CodeMedecine::du_referentiel(&id)?);
+    // inference : les deux viennent du meme referentiel. La lecture prend ce que toute DSN porte : la rubrique existe des
+    // la norme 2026 (`norme-dsn/texte/bloc-S21.G00.11.txt` l. 38), ou rien ne dit encore quoi y ecrire (la fiche 3370
+    // ne l'attend qu'a partir de P27V01). Une valeur qui n'a pas la forme d'un identifiant du referentiel ne dit donc pas
+    // de service et ne met pas la piece en faute : la case reste vide, et « Pour demarrer » la demande.
+    match droit::fiche::IdentifiantSpst::lire(&spst) {
+        Ok(id) => e.medecine_travail = Some(CodeMedecine::du_referentiel(&id)?),
+        Err(_) => {}
     }
     Ok(DsnLue {
         logiciel,
