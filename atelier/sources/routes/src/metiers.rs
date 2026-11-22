@@ -442,15 +442,13 @@ struct MetierARetenir {
 struct EmploisRendus {
     phrase: Phrase,
     emplois: Vec<MetierDuDeroulant>,
-    /// Les metiers que la fiche d'un salarie choisit (`metiers_d_une_fiche`).
-    emplois_d_une_fiche: Vec<MetierDuDeroulant>,
     emplois_autres: Vec<MetierAutre>,
 }
 
 impl EmploisRendus {
     /// La phrase, et les metiers proposes tels qu'ils sont maintenant.
     fn de(ctx: &Contexte, phrase: Phrase, emplois: Vec<MetierDuDeroulant>) -> R<EmploisRendus> {
-        Ok(EmploisRendus { phrase, emplois_d_une_fiche: metiers_d_une_fiche(&emplois), emplois, emplois_autres: metiers_autres_conventions(ctx)? })
+        Ok(EmploisRendus { phrase, emplois, emplois_autres: metiers_autres_conventions(ctx)? })
     }
 }
 

@@ -28,6 +28,7 @@ use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
+use declarations::champs::FicheAJuger;
 use socle::echec::{erreur, Classe};
 use crate::catalogue::{Ecran, Place};
 
@@ -1638,7 +1639,7 @@ struct ManqueVu {
     manque: Manque,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     a_enregistrer: Vec<GesteDEffectif>,
-    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE, OU UNE CASE DE L'ENTREPRISE, dessinee comme dans sa fiche
+    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE OU UN SALARIE, OU UNE CASE DE L'ENTREPRISE, dessinee comme dans sa fiche
     /// (`fiches::case_a_remplir`) : sa valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
     #[serde(skip_serializing_if = "Option::is_none")]
     case_rendue: Option<crate::fiches::CaseDeLaFiche>,
@@ -1679,14 +1680,22 @@ impl ManqueVu {
             (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
                 Some(f) => {
                     let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
-                    crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Spectacle, chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                    crate::fiches::case_a_remplir(ctx, FicheAJuger::Spectacle(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                }
+                None => None,
+            },
+            (None, Some(s), _, Some(chemin)) => match ctx.salaries.get(s) {
+                Some(f) => {
+                    let f = &f.champs;
+                    let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
+                    crate::fiches::case_a_remplir(ctx, FicheAJuger::Salarie(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
                 }
                 None => None,
             },
             (None, None, "entreprise", Some(chemin)) => {
                 let e = &ctx.entreprise;
                 let valeur = proposee.or_else(|| e.valeur_ecrite(chemin.champ));
-                crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Entreprise, chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
+                crate::fiches::case_a_remplir(ctx, FicheAJuger::Entreprise(e), chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
             }
             _ => None,
         };

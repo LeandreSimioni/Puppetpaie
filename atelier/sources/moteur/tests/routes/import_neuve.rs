@@ -126,16 +126,16 @@ fn l_apercu_annonce_ce_que_l_ecriture_trouvera() {
         }
     }
     let r = reussi(&route(&racine, "importer", json!({}))).clone();
-    let entreprise = entreprise_lue(&racine);
     let salaries = salaries_lus(&racine);
+    // Chaque fiche ecrite, telle que la configuration la verifie (la pastille de sa ligne).
+    let conf = reussi(&route(&racine, "configuration", json!({}))).clone();
     for (nom, f) in &a_creer {
-        let ecrite = if nom == "entreprise" {
-            entreprise.clone()
+        let v = if nom == "entreprise" {
+            conf["entreprise"].clone()
         } else {
             let nir = f["donnees"]["nir"].clone();
-            salaries.as_object().unwrap().values().find(|s| s["nir"] == nir).cloned().unwrap_or_else(|| panic!("{} non ecrit : {}", nir, r))
+            conf["salaries"].as_array().unwrap().iter().find(|s| s["donnees"]["nir"] == nir).cloned().unwrap_or_else(|| panic!("{} non ecrit : {}", nir, r))
         };
-        let v = reussi(&route(&racine, "verifier-fiche", json!({"nom": nom, "donnees": ecrite}))).clone();
         let erreurs = |x: &Value| -> BTreeSet<String> {
             x.as_array().unwrap().iter().filter(|a| a["gravite"] == json!("erreur")).map(|a| a["champ"].as_str().unwrap().to_string()).collect()
         };

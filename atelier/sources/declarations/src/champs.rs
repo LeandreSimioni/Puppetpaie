@@ -536,7 +536,6 @@ impl Champ {
     fn description(&self) -> Description<'_> {
         Description {
             cle: self.cle,
-            largeur: self.largeur,
             libelle: &self.libelle,
             forme: self.forme,
             aide: &self.aide,
@@ -605,7 +604,6 @@ impl Case {
 #[derive(Debug, Clone, Serialize)]
 pub struct Description<'a> {
     pub cle: CaseDeFiche,
-    pub largeur: Largeur,
     pub libelle: &'a str,
     pub forme: Forme,
     pub aide: &'a str,

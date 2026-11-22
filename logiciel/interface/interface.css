@@ -525,33 +525,10 @@ details.relire[open] > summary { margin-bottom: 8px; }
   letter-spacing: .6px; color: var(--discret); font-weight: bold;
   border-bottom: 1px solid var(--bord); padding-bottom: 6px;
 }
-.aide-bouton {
-  width: 16px; height: 16px; line-height: 14px; padding: 0; margin-left: 6px;
-  border: 1px solid var(--bord); border-radius: 50%; background: transparent;
-  color: var(--discret); font-size: 11px; cursor: pointer; vertical-align: middle;
-}
-.aide-bouton:hover, .aide-bouton.ouvert {
-  border-color: var(--action); color: var(--action);
-}
 .champ .aide p { margin: 0 0 4px; }
 .champ .aide p:last-child { margin-bottom: 0; }
 .champ .aide a { color: var(--action); word-break: break-all; }
 
-/* Une structure : une case par valeur, jamais d'accolades a taper. */
-.champ.structure > .titre-structure {
-  font-weight: bold; display: block; margin-bottom: 8px;
-}
-.sous-champs {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px 14px;
-}
-/* Une question dont les réponses sont des phrases entières :
-   des boutons à cocher, sur toute la largeur, plutôt qu'une liste
-   déroulante qui les couperait. */
-.sous-champ.sous-champ-large { grid-column: 1 / -1; }
-/* Sans quoi la ligne pleine garderait toutes les colonnes de `auto-fit`, et
-   les cases voisines tomberaient à 190 px. */
-.sous-champs:has(> .sous-champ-large) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .libelle-boutons { font-size: 12px; color: var(--discret); }
 .boutons-choix { margin-top: 3px; }
 .boutons-choix label.coche { align-items: flex-start; }
@@ -573,11 +550,6 @@ details.relire[open] > summary { margin-bottom: 8px; }
 }
 .retirer-ligne:hover { border-color: var(--erreur); color: var(--erreur); }
 .ajouter-ligne { font-size: 12px; padding: 4px 10px; }
-/* Une valeur que le moteur a posée à partir d'une autre : elle se voit, et
-   elle dit d'où elle vient. Sans cette ligne, on croit l'avoir tapée. */
-.champ .suggere {
-  font-size: 11px; margin-top: 4px; color: var(--action);
-}
 .champ .declare {
   font-size: 11px; margin-top: 4px; color: var(--discret);
   font-family: Consolas, monospace;
@@ -599,8 +571,6 @@ label.coche {
   font-size: 13px; color: var(--texte); padding: 3px 0;
 }
 label.coche input { width: auto; margin: 0; flex: none; }
-/* Les jours travaillés d'un permanent : les sept cases sur une ligne. */
-.jours-semaine { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .espace-haut { margin-top: 12px; }
 /* L'aide depliee : un encart qui se lit, pas une note de bas de page. */
 #config-formulaire .champ .aide:not([hidden]) {

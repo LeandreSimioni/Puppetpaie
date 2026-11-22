@@ -1,5 +1,5 @@
 //! Configuration › Entreprise, Salariés, Spectacles : les fiches des salaries, des spectacles et de l'entreprise
-//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
+//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `activer-fiche`, `enregistrer-fiche`, leur avertissement), leur demande par courriel
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
@@ -38,11 +38,10 @@ use socle::texte::{capitaliser, strip};
 mod ecriture;
 mod rendue;
 pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche};
-pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
-const DONNEES: Champ = Champ { nom: "donnees", libelle: Affiche::new("Cases de la fiche"), forme: Forme::Objet, sens: "les cases de la fiche, que la route configuration décrit (description : nom, forme, valeurs) ; une case inconnue se dit", avance: false };
 const CHANGEMENTS: Champ = Champ { nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet, sens: "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur", avance: false };
 pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
@@ -63,24 +62,8 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
         ],
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
-        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::Lit,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::Permanents,
-        geste: "Dire les cases que montre la fiche en cours de saisie.",
-        charge: &[
-            NOM_FICHE,
-            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "pour un salarié déjà enregistré, sa clé : les cases d'un permanent qui lui est dû, et celles que le métier d'un de ses engagements demande, se montrent ; absente sinon", avance: false },
-            Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche en cours de saisie ; pour un salarié ou un spectacle, l'entreprise est celle de la compagnie", avance: false },
-        ],
-        exemple: r#"{"nom":"entreprise","donnees":{}}"#,
-        rend: "montres (les cases que la fiche montre au jour de l'écran)",
-        refus: &[FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
@@ -96,18 +79,6 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
-        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
-        acte: Acte::Lit,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::VerifierFiche,
-        geste: "Vérifier une fiche avant de l'écrire : anomalies, valeurs déclarées.",
-        charge: &[NOM_FICHE, DONNEES],
-        exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
-        rend: "anomalies (case, gravité, message), declare (ce que la DSN dirait), suggestions",
-        refus: &[MANQUE, FORME, OPERATION],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
@@ -261,7 +232,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
         Route::Fiche => en_json(rendue::fiche(ctx, charge.lire()?)?),
-        Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => {
             let super::SansCharge {} = charge.lire()?;
@@ -287,7 +257,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
-        Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(ctx, charge.lire()?)?),
         Route::EnregistrerFiche => ecriture::enregistrer_fiche(ctx, charge.lire()?),
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
@@ -344,12 +313,6 @@ macro_rules! dites {
     };
 }
 dites!(FicheActivee, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
-
-impl Dite for Permanents {
-    fn phrase(&self) -> &Phrase {
-        &self.phrase
-    }
-}
 
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
@@ -465,41 +428,11 @@ struct EffectifDit {
     a_dire: Vec<Annee>,
 }
 
-// ------------------------------------------------------------------ permanents
+// ------------------------------------------------------------------ ce que la fiche montre
 
-/// Ce que rend `permanents` : la phrase, les cases que la fiche montre et les pieces que ses engagements ouvrent.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct Permanents {
-    phrase: Phrase,
-    montres: Vec<CaseDeFiche>,
-    pieces_ouvertes: Vec<Piece>,
-}
-
-/// `permanents` : les cases que la fiche en cours de saisie montre au jour de l'ecran (la configuration se montre au
-/// jour : `ouverture::configuration`) ; la page montre ou replie chaque case selon cette reponse, et ne decide rien
-/// quand on coche ou decoche la case des permanents.
-fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
-    let jour = ctx.aujourdhui;
-    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
-    // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
-    let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
-        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &dus)?, &donnees.fiche),
-        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &dus)?, &ctx.entreprise),
-        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &dus)?, &ctx.entreprise),
-    };
-    Ok(Permanents {
-        phrase: Phrase::fixe(if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." }),
-        montres: cases,
-        pieces_ouvertes,
-    })
-}
-
-/// CE QUE LA FICHE MONTRE (`montres`) : ses cases, et les pieces que ses engagements ouvrent, entieres (celle d'un
-/// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
-/// d'une piece que sur elles.
+/// CE QUE LA FICHE MONTRE (`montres`) : ses cases.
 pub(crate) struct Montres {
     pub(crate) cases: Vec<CaseDeFiche>,
-    pub(crate) pieces_ouvertes: Vec<Piece>,
 }
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
@@ -550,13 +483,7 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
     let cases = champs::fiche(nom)?.iter().filter(|c| donnees.montre(c, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
-    // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
-    let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
-    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc), (Piece::Reprise, reprise)]
-        .into_iter()
-        .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
-        .collect();
-    Ok(Montres { cases, pieces_ouvertes })
+    Ok(Montres { cases })
 }
 
 /// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::EffectifsParAnnee`) : la

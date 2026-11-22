@@ -71,8 +71,8 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 ecrire(&racine, "config/spectacles.json", &json!({"266Z00910022": datee(&json!({"titre": "Le Banc", "actif": true}))}));
             }
             let m = manques(&racine);
-            // Ce que la fiche Entreprise montre, tel que le moteur le dit a la page (route `permanents`).
-            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({"nom": "entreprise", "donnees": socle::ecriture::en_valeur(&ent)}), JOUR))["montres"].as_array().unwrap().clone();
+            // Ce que la fiche Entreprise montre, tel que le moteur le rend a la page (route `fiche`).
+            let montres: Vec<Value> = reussi(&route(&racine, "fiche", json!({"nom": "entreprise"}), JOUR))["cases"].as_array().unwrap().iter().map(|c| c["cle"].clone()).collect();
             let montre = |cle: &str| montres.contains(&json!(cle));
             for x in &m {
                 let Some(champ) = x["champ"].as_str() else { continue };
