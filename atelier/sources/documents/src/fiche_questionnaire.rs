@@ -302,12 +302,15 @@ impl Question {
             // « conséquences sur la validation de ses droits aux assurances sociales » (§ 2190). Le courriel de la
             // demande, qui porte cette aide (`a_recopier`), et celui de la reponse, dates, portent la date certaine. Ne se pose qu'a un salarie dont la
             // profession y ouvre droit, quand la compagnie l'exerce salarie par salarie (`si_entreprise` de sa ligne).
+            // Trois cas : il accepte, il refuse, ou sa reponse revient sans cette ligne : « son silence vaut accord »
+            // (§ 2190, l. 2737), que la releve ecrit en disant d'ou il vient. Elle n'est donc jamais a remplir de force.
             Question::AccordDfs => QuestionDeclaree {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
+                facultative: true,
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
-                    "Ton métier y ouvre droit : une part de ton salaire est déduite de la base de tes cotisations, ce qui peut réduire les droits qu'elles te valent aux assurances sociales.",
+                    "Ton métier y ouvre droit : une part de ton salaire est déduite de la base de tes cotisations, ce qui peut réduire les droits qu'elles te valent aux assurances sociales. Sans réponse de ta part, ton silence vaut accord.",
                     F::Choix(vec![("oui", "J'accepte la déduction"), ("non", "Je refuse la déduction")]),
                     CaseSalarie::DeductionForfaitaireAccord,
                 )
@@ -573,9 +576,17 @@ pub fn reponse(code: &CodeDeDemande, dites: &[(Question, Reponse)]) -> String {
 pub struct ReponseLue {
     pub dites: Vec<(Question, Reponse)>,
     pub illisibles: Vec<String>,
+    /// Les questions dont la reponse porte une ligne, lisible ou non.
+    vues: Vec<Question>,
 }
 
 impl ReponseLue {
+    /// La reponse ne porte aucune ligne pour `q` : la personne n'y a rien repondu (ni « aucun », ni une valeur, meme
+    /// illisible).
+    pub fn sans_ligne(&self, q: Question) -> bool {
+        !self.vues.contains(&q)
+    }
+
     /// NE GARDE QUE LES REPONSES AUX QUESTIONS `posees` (celles qu'on pose a cette personne) ; rend les autres questions
     /// repondues, qui ne s'ecrivent pas.
     pub fn ne_garder_que(&mut self, posees: &[Question]) -> Vec<Question> {
@@ -625,6 +636,9 @@ pub fn lire_reponse(texte: &str) -> ReponseLue {
             continue;
         };
         let d = q.declaree();
+        if !lue.vues.contains(&q) {
+            lue.vues.push(q);
+        }
         let r = if [AUCUN, "aucune"].contains(&valeur.to_lowercase().as_str()) {
             if d.aucun.is_none() {
                 lue.illisibles.push(format!("{} : « {} » (cette question n'admet pas « {} »)", en_minuscule(d.libelle), valeur, AUCUN));

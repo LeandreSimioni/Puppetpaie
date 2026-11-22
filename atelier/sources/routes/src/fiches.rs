@@ -1355,7 +1355,16 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         )?;
         let mut reponse = fq::lire_reponse(&texte);
         let non_demandees = reponse.ne_garder_que(&posees);
-        let lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let mut lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // L'ACCORD PAR SILENCE : la question de la deduction forfaitaire lui a ete posee (le courriel date de la demande
+        // portait son information, `fq::a_recopier`) et sa reponse revient sans cette ligne : « Lorsque le travailleur
+        // salarié ou assimilé ne répond pas à cette consultation, son silence vaut accord » (BOSS, frais professionnels,
+        // § 2190 : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2737). L'accord s'ecrit, le
+        // consentement de l'annee, et la note dit d'ou il vient. Sans reponse du tout, rien ne s'ecrit.
+        let par_silence = posees.contains(&fq::Question::AccordDfs) && reponse.sans_ligne(fq::Question::AccordDfs);
+        if par_silence {
+            lue.fiche.deduction_forfaitaire_accord = Some(droit::fiche::AccordDfs::ConsentementAnnuel);
+        }
         let mut illisible = lue.illisible;
         // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
         // dans la note, avec ce que la reponse n'a pas dit lisiblement.
@@ -1402,6 +1411,12 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         }
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
+        }
+        if par_silence {
+            note.push_str(&format!(
+                " Accord à la déduction forfaitaire par son silence : la question et son information lui ont été envoyées par le courriel du {}, et sa réponse n'en dit rien (BOSS, § 2190).",
+                a.quand.jour().jj_mm_aaaa()
+            ));
         }
         if !non_demandees.is_empty() {
             let dites: Vec<String> = non_demandees.iter().map(|q| fq::en_minuscule(q.declaree().libelle)).collect();
