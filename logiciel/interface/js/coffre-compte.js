@@ -132,8 +132,8 @@ async function dessinerCoffre(cible) {
       </div>`).join("")}
       <div class="rang" id="k-google">
         <div class="rang-infos"><b class="rang-nom">Compte Google</b>
-          <span class="discret">${echapper(k.google)}</span>${VEILLE?.dernier?.sauvegarde_souci
-            ? `<span class="compte">${echapper(VEILLE.dernier.sauvegarde_souci)}</span>`
+          <span class="discret">${echapper(k.google)}</span>${VEILLE?.dit?.sauvegarde_souci
+            ? `<span class="compte">${echapper(VEILLE.dit.sauvegarde_souci)}</span>`
             : VEILLE?.dernier?.sauvegarde
             ? `<span class="compte">${echapper(VEILLE.dernier.sauvegarde)}</span>` : ""}</div>
         <div class="rang-etat k-google-etat"><span class="discret">lecture…</span></div>
@@ -219,7 +219,8 @@ async function dessinerCoffre(cible) {
     return { motdepasse: champ ? champ.value : "" };
   };
   // Un geste qui pose ou oublie un accès change ce que le bandeau dit : il se relit tout de suite (`veille`).
-  const ok = (texte) => { dire(texte); dessinerCoffre(cible); suivreVeille(); };
+  // La veille se relit d'abord : la ligne « Compte Google » dit ce que la route `veille` rend maintenant.
+  const ok = async (texte) => { dire(texte); await suivreVeille(); dessinerCoffre(cible); };
   const raté = (e) => dire(e.message, "erreur");
   document.getElementById("k-changer").onclick = async () => {
     const nouveau = document.getElementById("k-nouveau").value;

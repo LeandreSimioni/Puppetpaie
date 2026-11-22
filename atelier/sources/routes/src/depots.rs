@@ -871,7 +871,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let a_dire = match releve {
         Ok((_, dit)) => dit,
-        Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
+        Err(e) => crate::gestes::suites::a_dire_du_releve_arrete(&ctx.racine, "suivre-depot", e),
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
@@ -927,7 +927,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         };
         a_dire = match releve {
             Ok((_, dit)) => dit,
-            Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
+            Err(e) => crate::gestes::suites::a_dire_du_releve_arrete(&ctx.racine, "bilan-repetition", e),
         };
         repetition = bilan_de_la_repetition(ctx, &d)?;
     }

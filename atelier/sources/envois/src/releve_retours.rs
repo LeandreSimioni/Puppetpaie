@@ -63,8 +63,6 @@ fn de_lecture(e: Echec) -> Panne {
 
 pub const SERVICE_DSN_REGIME_GENERAL: &str = "25";
 pub const SERVICE_DSN_REGIME_GENERAL_TEST: &str = "97";
-pub const VARIABLE_MOTDEPASSE: &str = "NET_ENTREPRISES_MOTDEPASSE";
-pub const VARIABLE_MOTDEPASSE_DPAE: &str = "URSSAF_MOTDEPASSE";
 
 /// Les adresses d'un service (`netentreprises.ADRESSES`, `dpae_api.ADRESSES_DPAE`).
 #[derive(Clone)]
@@ -192,7 +190,6 @@ pub struct Client {
     pub jeton: Option<Secret>,
     pub declarant: crate::transport::Identite,
     motdepasse: Option<Secret>,
-    variable: &'static str,
     majuscules: bool,
 }
 
@@ -206,7 +203,6 @@ impl Client {
             jeton: None,
             declarant,
             motdepasse,
-            variable: VARIABLE_MOTDEPASSE,
             majuscules: false,
         }
     }
@@ -222,7 +218,6 @@ impl Client {
             jeton: None,
             declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
             motdepasse,
-            variable: VARIABLE_MOTDEPASSE_DPAE,
             majuscules,
         }
     }
@@ -248,7 +243,6 @@ impl Client {
             url: &self.adresses.authentification,
             declarant: &self.declarant,
             motdepasse: mdp.as_ref(),
-            variable: self.variable,
             service: self.adresses.service.as_deref(),
             jeton: self.jeton.as_ref(),
         })?;
@@ -387,6 +381,34 @@ impl CanalDesRetours {
         match self {
             CanalDesRetours::Dsn => "net-entreprises",
             CanalDesRetours::Dpae => "L'Urssaf (DPAE)",
+        }
+    }
+
+    /// Le service dont le mot de passe ouvre ce canal, tel qu'une phrase le nomme apres « le mot de passe de ».
+    pub fn service_du_mot_de_passe(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "net-entreprises",
+            CanalDesRetours::Dpae => "l'Urssaf (DPAE)",
+        }
+    }
+
+    /// La declaration que ce canal depose, telle qu'une phrase la nomme (`transport::panne_dite`).
+    pub fn declaration(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "la DSN",
+            CanalDesRetours::Dpae => "la DPAE",
+        }
+    }
+
+    /// Ou se relit l'avis de rejet d'un depot dont la reponse ne donne pas les motifs : la DSN, dans les retours (« L'AEE
+    /// et l'avis de rejet sont téléchargeables à nouveau par les services de gestion des retours », guide de l'API DSN
+    /// v6.9, § 3.2.2, l. 1338-1340) ; la DPAE, sur le tableau de bord du declarant (« L'avis de rejet ou l'accusé
+    /// d'enregistrement électronique sont mis à disposition sur le tableau de bord du déclarant »,
+    /// `atelier/reference/norme-dpae/5491-API-DPAE-Fonctionnement.pdf`, p. 6).
+    pub fn ou_se_relit_l_avis_de_rejet(self) -> &'static str {
+        match self {
+            CanalDesRetours::Dsn => "ses motifs se relisent dans les retours de net-entreprises.",
+            CanalDesRetours::Dpae => "ses motifs sont sur le tableau de bord du compte Urssaf.",
         }
     }
 
@@ -831,7 +853,7 @@ pub fn relever_retours(
     }
     let Some(mut client) = client else {
         releve.plateforme_non_lue.push(
-            "Mot de passe net-entreprises absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service net-entreprises`.".into(),
+            format!("Le mot de passe de {} n'est pas posé : le poser dans Configuration › Mots de passe.", canal.service_du_mot_de_passe()),
         );
         return Ok(releve);
     };
@@ -1097,7 +1119,7 @@ pub fn relever_retours_dpae(
     }
     let Some(mut client) = client else {
         let mut r = Releve::vide();
-        r.plateforme_non_lue.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
+        r.plateforme_non_lue.push(format!("Le mot de passe de {} n'est pas posé : le poser dans Configuration › Mots de passe.", CanalDesRetours::Dpae.service_du_mot_de_passe()));
         return Ok(r);
     };
     let Some(flux) = flux else {

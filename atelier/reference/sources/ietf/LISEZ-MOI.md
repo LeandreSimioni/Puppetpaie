@@ -59,7 +59,14 @@
   dans le commentaire de `courriel_lecture::date_de` et de `parsedate_tz` ; elle ne perd pas le message (la règle du
   § 4), et un message sans `Date` lisible prend l'heure de la relève.
 
-## RFC 5321 : le transport du courriel (la casse d'une adresse)
+## RFC 5321 : le transport du courriel (la casse d'une adresse, les codes de réponse)
+
+`atelier/sources/envois/src/courriel.rs`, `envoi_refuse` : un 550, 551 ou 553 à l'envoi (§ 4.2.2-4.2.3, l. 2870-2930 :
+« mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », « User not local »,
+« mailbox name not allowed (e.g., mailbox syntax incorrect) ») se dit d'après le § 4.3.2 (l. 3100-3115) : 551 ne
+répond qu'à `RCPT`, c'est l'adresse du destinataire ; 553 répond à `MAIL` comme à `RCPT`, et 550 aussi à `DATA` : la
+phrase dit les possibilités sans trancher, la bibliothèque ne disant pas à quel envoi le serveur a répondu ; un 4xx
+est passager.
 
 | fichier | d'où | relevé |
 |---|---|---|
@@ -78,9 +85,30 @@
 `atelier/sources/import/src/dsn_aem.rs` : le courriel du contact DSN (S20.G00.07.003) et celui d'un salarié
 (S21.G00.30.018) se reprennent tels que la DSN de l'ancien logiciel les déclare, capitales comprises.
 
+## RFC 4954 : l'authentification SMTP (le mot de passe refusé)
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt` | https://www.rfc-editor.org/rfc/rfc4954.txt, tel que servi (HTTP 200, 43 493 octets) ; RFC 4954, « SMTP Service Extension for Authentication », R. Siemborski et A. Melnikov, Standards Track, juillet 2007 | 22/11/2026 |
+
+### Ce qu'on en lit
+
+- **§ 4, « The AUTH Command »** (lignes 274-276 du `.txt`) : « If the server is unable to authenticate the client, it
+  SHOULD reject the AUTH command with a 535 reply unless a more specific error code is appropriate. »
+- **§ 6, « Status Codes »** (lignes 600-605) : « 535 5.7.8 Authentication credentials invalid. This response to the AUTH
+  command indicates that the authentication failed due to invalid or insufficient authentication credentials. In this
+  case, the client SHOULD ask the user to supply new credentials (such as by presenting a password dialog box). »
+
+### Où le moteur s'en sert
+
+`atelier/sources/envois/src/courriel.rs`, `envoi_refuse` : un 535 à l'envoi dit que le mot de passe de la boîte est
+refusé, et renvoie la compagnie le poser de nouveau.
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt` : `6bf118f556749d08d1bfae92cefbdebf6084324ceba262a87af1efbe0e16d50a`
 
 - `ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt` : `7d560eddff1b213c17d4e1e5f95005728b2f05bc2b3947f0fcc91717c6707634`
 - `ietf-rfc5322-internet-message-format-20081001.txt` : `cb459acca15a2aa895863eaeff6f1d5b9c4ca15578ae3e3706f757787a385969`
