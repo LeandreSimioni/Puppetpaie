@@ -11,12 +11,14 @@
 // navigation de cadre, ou une demande d'une page tenue dans un cadre. Les pages du site (toutes au premier niveau :
 // sa politique interdit les cadres) et les fichiers de la démo elle-même passent au réseau sans qu'il y touche.
 
-// LA POLITIQUE DES PAGES QUE LE RELAIS FABRIQUE : une réponse fabriquée ici ne porte pas les en-têtes du serveur ; elle
-// porte celle-ci, la même que celle du chemin `/demo/` (atelier/site/demo/LISEZ-MOI.md), sauf `frame-ancestors`, qui
-// laisse la démo tenir la page du logiciel dans son cadre.
-const POLITIQUE = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
-  "img-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; " +
-  "frame-ancestors 'self'";
+// LA POLITIQUE DES PAGES QUE LE RELAIS FABRIQUE : une réponse fabriquée ici ne porte pas les en-têtes du serveur. Comme
+// le serveur du logiciel sur le poste (moteur/src/interface/http.rs), le relais pose une politique quand le moteur n'en
+// donne pas (il en donne une à ses PDF) ; celle-ci part de celle du site et n'ajoute que ce que la page du logiciel
+// exige : ses scripts et ses attributs `on…` en ligne (`'unsafe-inline'`), ses feuilles de style et ses styles en
+// ligne, ses images (le cachet), ses appels à `/api/…`, ses cadres (les PDF des courriels joués et de l'aperçu du
+// bulletin), et `frame-ancestors 'self'` pour que la page de la démo la tienne dans son cadre
+// (atelier/site/demo/LISEZ-MOI.md dit ce que chacun casse sans lui).
+const POLITIQUE = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 
 const DEMO = new URL("./", self.location).pathname;
 
@@ -115,7 +117,7 @@ function enReponse(r) {
     if (k.toLowerCase() !== "set-cookie") h.append(k, v);
   }
   h.set("Content-Type", r.type);
-  h.set("Content-Security-Policy", POLITIQUE);
+  if (!h.has("Content-Security-Policy")) h.set("Content-Security-Policy", POLITIQUE);
   h.set("Cache-Control", "no-store");
   const sansCorps = [101, 103, 204, 205, 304].includes(r.code);
   return new Response(sansCorps ? null : r.corps, { status: r.code, headers: h });

@@ -104,7 +104,7 @@ function lancerLeMoteur() {
     } else if (m.quoi === "echec") {
       arret("La démo n'a pas pu démarrer : " + m.phrase);
     } else if (m.quoi === "tombe") {
-      arret("Le logiciel s'est arrêté sur une erreur. C'est un défaut du logiciel : il a été noté dans la console du navigateur.");
+      arret("Le logiciel s'est arrêté sur une erreur. C'est un défaut du logiciel, pas une erreur de votre part.");
     }
   };
   worker.postMessage({ quoi: "demarrer" });
@@ -112,7 +112,8 @@ function lancerLeMoteur() {
 
 async function lancer() {
   if (typeof WebAssembly !== "object" || !("serviceWorker" in navigator) || typeof DecompressionStream !== "function") {
-    impossible("Ce navigateur ne peut pas faire tourner la démo (il lui manque WebAssembly, les service workers ou la décompression). Essayez un navigateur à jour, hors navigation privée, ou téléchargez le logiciel.");
+    // Il manque WebAssembly, les service workers ou la décompression en flux.
+    impossible("Ce navigateur ne peut pas faire tourner la démo. Essayez un navigateur à jour, dans une fenêtre ordinaire (pas en navigation privée), ou téléchargez le logiciel.");
     return;
   }
   navigator.serviceWorker.addEventListener("message", (e) => {
@@ -129,7 +130,8 @@ async function lancer() {
   try {
     await navigator.serviceWorker.register("relais.js", { scope: "/" });
   } catch (e) {
-    impossible("Ce navigateur refuse ce dont la démo a besoin (" + (e.message || e.name) + "). En navigation privée, certains navigateurs le refusent : essayez une fenêtre ordinaire, ou téléchargez le logiciel.");
+    console.error("Le relais de la démo ne s'installe pas :", e);
+    impossible("Ce navigateur refuse de faire tourner la démo ici (en navigation privée, certains navigateurs la refusent). Essayez une fenêtre ordinaire, ou téléchargez le logiciel.");
     return;
   }
   relais = (await navigator.serviceWorker.ready).active;

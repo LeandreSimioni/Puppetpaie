@@ -74,6 +74,8 @@ const dire = (m) => self.postMessage(m);
 // `onglet_traiter` et le temps total du worker, puis le temps total vu par le relais ; les cent dernières.
 self.mesures = [];
 self.mesuresDuDemarrage = null;
+// Et chaque envoi au filet (l'adresse et son issue, jamais le corps) : les cent derniers.
+self.envois = [];
 
 // LE TÉLÉCHARGEMENT, avec son avancement réel. Le total n'est connu que si le serveur envoie le fichier sans le
 // compresser en route (la longueur annoncée est alors celle des octets lus) ; sinon, seuls les octets reçus se disent.
@@ -168,6 +170,8 @@ function deB64(t) {
 
 let ex = null;
 let jeton = null;
+let tempsSysteme = 0;
+let appelsSysteme = 0;
 let tombe = null;
 const memoire = () => new Uint8Array(ex.memory.buffer);
 const sortie = (n) => { const p = ex.onglet_sortie() >>> 0; return memoire().slice(p, p + (n >>> 0)); };
@@ -194,6 +198,8 @@ const puppetpaie = {
     } catch (e) {
       r = { panne: String((e && e.message) || e) };
     }
+    self.envois.push({ adresse: d.adresse, issue: r.panne !== undefined ? "panne : " + r.panne : "code " + r.reponse.code });
+    if (self.envois.length > 100) self.envois.shift();
     gardee = te.encode(JSON.stringify(r));
     return gardee.length;
   },
@@ -219,7 +225,12 @@ async function demarrer() {
     new PreopenDirectory("/tmp", new Map()),
   ], { debug: false }); // sans `debug: false`, le shim journalise chaque appel au système dans la console
 
-  const instance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1: wasi.wasiImport, puppetpaie });
+  // Le temps passé dans les appels au système (le disque en mémoire, l'horloge…) se compte, pour les mesures.
+  const systeme = {};
+  for (const [nom, f] of Object.entries(wasi.wasiImport)) {
+    systeme[nom] = (...a) => { const t = performance.now(); try { return f(...a); } finally { tempsSysteme += performance.now() - t; appelsSysteme++; } };
+  }
+  const instance = await WebAssembly.instantiate(module, { wasi_snapshot_preview1: systeme, puppetpaie });
   ex = instance.exports;
   // Le module n'exporte pas `_initialize` : `initialize` ne fait alors que lui donner l'instance (sa mémoire).
   wasi.initialize(instance);
@@ -249,6 +260,8 @@ function repondre(d) {
   try {
     const p = ex.onglet_entree(o.length) >>> 0;
     memoire().set(o, p);
+    tempsSysteme = 0;
+    appelsSysteme = 0;
     const a = performance.now();
     const n = ex.onglet_traiter();
     dedans = performance.now() - a;
@@ -260,7 +273,7 @@ function repondre(d) {
     return { id: d.id, code: 503, type: "text/plain; charset=utf-8", entetes: [], corps: te.encode("Le logiciel de la démo s'est arrêté : relancez la démo.").buffer };
   }
   const corps = deB64(r.corps).buffer;
-  self.mesures.push({ id: d.id, methode: d.methode, adresse: d.adresse.split("?")[0], code: r.code, octets: corps.byteLength, traiter: dedans, worker: performance.now() - t0, relais: null });
+  self.mesures.push({ id: d.id, methode: d.methode, adresse: d.adresse.split("?")[0], code: r.code, octets: corps.byteLength, traiter: dedans, systeme: tempsSysteme, appels: appelsSysteme, worker: performance.now() - t0, relais: null });
   if (self.mesures.length > 100) self.mesures.shift();
   return { id: d.id, code: r.code, type: r.type, entetes: r.entetes, corps };
 }
