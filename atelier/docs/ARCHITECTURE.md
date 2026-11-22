@@ -1975,7 +1975,8 @@ plus, aux seuls endroits où un système diffère d'un autre : aucun fil ne dém
 file des états se fait sur le fil qui l'attend, `etat_garde::Fil`), aucune prise réseau (`socle::garde_reseau` refuse
 toute sortie ; seul le canal de l'éditeur joint le filet, par l'hôte JavaScript : `garde_reseau::par_l_hote`, l'import
 `puppetpaie.poster` de `socle::systeme`), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
-(`socle::fichiers::resolu`, `socle::processus`). La page y parle à la fenêtre sans serveur (`interface::onglet`), par
+(`socle::fichiers::resolu`, `socle::processus`), ni le dossier temporaire du système, celui que l'hôte nomme
+(`socle::fichiers::dossier_temporaire`). La page y parle à la fenêtre sans serveur (`interface::onglet`), par
 les exports de la crate `onglet` ; le module se fabrique par `cargo build --profile navigateur --target wasm32-wasip1
 -p onglet` : le profil `navigateur` est celui de `release` en « abort » (une panique abandonne le module, et l'appel
 JavaScript lève une exception que l'hôte dit à la page), et la pile du module est celle d'un fil de route

@@ -161,7 +161,7 @@ pub(crate) fn dossier_de_travail() -> PathBuf {
         Ok(d) => d.as_nanos(),
         Err(e) => e.duration().as_nanos(),
     };
-    std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", socle::processus::numero(), marque))
+    socle::fichiers::dossier_temporaire().join(format!("puppetpaie-tri-{}-{}", socle::processus::numero(), marque))
 }
 
 /// Chaque mot d'un texte avec sa première lettre en capitale ; rien s'il manque.

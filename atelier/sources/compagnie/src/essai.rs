@@ -566,7 +566,7 @@ pub fn commande(args: &[socle::ligne::Argument]) -> ExitCode {
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
         Some(d) => d,
-        None => std::env::temp_dir().join(DOSSIER_PAR_DEFAUT),
+        None => socle::fichiers::dossier_temporaire().join(DOSSIER_PAR_DEFAUT),
     };
     let texte = match std::env::var(VARIABLE) {
         Ok(t) => Some(t),
