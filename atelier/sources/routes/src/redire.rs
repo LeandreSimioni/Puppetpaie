@@ -243,7 +243,7 @@ fn demande(ctx: &Contexte) -> R<ValeursIllisibles> {
             libelle: libelle(nom, a.case)?,
             ecrite,
             depuis: a.depuis,
-            case: crate::fiches::case_a_redire(nom, a.case)?,
+            case: crate::fiches::case_a_redire(ctx, nom, a.case)?,
             enregistrer: ChargeDeLaReponse { nom, cle },
         });
     }

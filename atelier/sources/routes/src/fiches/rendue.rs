@@ -244,8 +244,10 @@ pub(crate) fn case_a_remplir(ctx: &Contexte, nom: NomDeFiche, chemin: &CheminDeF
 
 /// LA CASE A SAISIR DE NOUVEAU (`crate::redire`) : la case `k` de la fiche `nom`, dessinee comme dans sa fiche, vide.
 /// Aucune pour une cle que la table ne connait pas, ou pour la ligne de l'histoire.
-pub(crate) fn case_a_redire(nom: NomDeFiche, k: CaseDeFiche) -> R<Option<CaseDeLaFiche>> {
-    Ok(champs::champ(nom, k)?.and_then(|c| case_du_champ(&c, None)))
+pub(crate) fn case_a_redire(ctx: &Contexte, nom: NomDeFiche, k: CaseDeFiche) -> R<Option<CaseDeLaFiche>> {
+    let Some(c) = champs::champ(nom, k)? else { return Ok(None) };
+    let mobilite = crate::ouverture::versement_mobilite_des_etablissements(ctx);
+    case_du_champ(&c, None, &|_: &[&str]| MotEcrit::Vide, mobilite)
 }
 
 /// La case que la fiche montre pour la cle `k` : la forme lisible dont elle se deduit, ou elle-meme.
