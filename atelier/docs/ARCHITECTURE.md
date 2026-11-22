@@ -604,6 +604,7 @@ un libellé, chacun sa forme.
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
 | sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
+| ce qui arrête un envoi SMTP (la réponse négative et son code, le délai, le TLS, l'échange interrompu), avant sa phrase ; le dialogue SMTP sur un flux : `Smtp`, une réponse : `ReponseSmtp`, ce que le serveur offre : `Extensions` | `ArretDeLEnvoi` | `envois/src/courriel.rs` |
 | ce qu'on faisait quand un organisme ou Google a mal répondu (s'identifier, relever, déposer, se servir du Drive, lier Google : la phrase de la panne en suit le conseil) | `CeQuOnFaisait` | `envois/src/transport.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
 | jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |

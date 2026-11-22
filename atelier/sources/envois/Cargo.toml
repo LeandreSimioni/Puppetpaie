@@ -38,10 +38,8 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # La lecture MIME des courriels recus.
 mailparse = "0.16"
-# La messagerie : SMTP par `lettre` (sans son batisseur de messages : on lui passe nos octets, `send_raw`), TLS par
-# rustls et verificateur de la plate-forme (la racine d'un antivirus installee dans le magasin du systeme passe, comme
-# pour l'Urssaf) ; IMAP ecrit sur un flux rustls, reponses lues par `imap-proto`.
-lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls", "ring", "rustls-platform-verifier"] }
+# La messagerie : IMAP et SMTP ecrits sur un flux rustls (`courriel`), verificateur de la plate-forme (la racine d'un
+# antivirus installee dans le magasin du systeme passe, comme pour l'Urssaf) ; reponses IMAP lues par `imap-proto`.
 imap-proto = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-platform-verifier = "0.7"

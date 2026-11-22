@@ -65,8 +65,7 @@
 « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », « User not local »,
 « mailbox name not allowed (e.g., mailbox syntax incorrect) ») se dit d'après le § 4.3.2 (l. 3100-3115) : 551 ne
 répond qu'à `RCPT`, c'est l'adresse du destinataire ; 553 répond à `MAIL` comme à `RCPT`, et 550 aussi à `DATA` : la
-phrase dit les possibilités sans trancher, la bibliothèque ne disant pas à quel envoi le serveur a répondu ; un 4xx
-est passager.
+phrase dit les possibilités sans trancher ; un 4xx est passager.
 
 | fichier | d'où | relevé |
 |---|---|---|
@@ -84,6 +83,74 @@ est passager.
 
 `atelier/sources/import/src/dsn_aem.rs` : le courriel du contact DSN (S20.G00.07.003) et celui d'un salarié
 (S21.G00.30.018) se reprennent tels que la DSN de l'ancien logiciel les déclare, capitales comprises.
+
+### L'envoi d'un courriel, écrit sur le flux TLS (`atelier/sources/envois/src/courriel.rs`, `Smtp`, `session_smtp`)
+
+- **§ 4.2** (l. 2588-2598) : la forme d'une réponse, `Reply-code "-" texte` pour une ligne qui en annonce une autre,
+  `Reply-code [SP texte]` pour la dernière ; le code seul est une réponse (l. 2570-2573) ; « An SMTP client MUST
+  determine its actions only by the reply code, not by the text » (l. 2610-2611) ; un code inconnu se lit par son
+  premier chiffre (l. 2623-2625), un premier chiffre hors de 2 à 5 est une faute (l. 2639-2640). **§ 4.2.1**
+  (l. 2656-2690) : 2yz fait, 3yz attend la suite, 4yz passager, 5yz définitif (`Smtp::attendre`, `envoi_refuse`).
+- **§ 3.1** et l'accueil `220` ; **§ 4.1.1.1** (l. 1785-1801, 1832-1872) : `EHLO`, un littéral d'adresse quand le client
+  n'a pas de nom de domaine (§ 4.1.3, l. 2386-2392 : `EHLO [127.0.0.1]`), les extensions une par ligne, sans égard à
+  la casse (`Extensions`).
+- **§ 3.3** (l. 1017-1027) et **§ 4.1.2** (l. 2264, 2314) : `MAIL FROM:<…>`, `RCPT TO:<…>`, une adresse
+  `Local-part "@" Domain` entre chevrons (`adresse_d_enveloppe`) ; **§ 4.1.1.4** (l. 2003-2006) : la fin des données,
+  `<CRLF>.<CRLF>` ; **§ 4.5.2** (l. 3431-3433) : le point doublé en tête de ligne (`transparent`) ; **§ 4.1.1.10**
+  (l. 2207-2218) : `QUIT`, qui ne défait pas une transaction finie ; **§ 4.5.3.1.5** (l. 3506-3507) : une ligne de
+  réponse fait 512 octets au plus (la borne d'une réponse lue, `REPONSE_SMTP_MAXIMUM`).
+
+## RFC 3207 : STARTTLS (le port 587)
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-rfc3207-smtp-service-extension-for-secure-smtp-over-tls-20020201.txt` | https://www.rfc-editor.org/rfc/rfc3207.txt, tel que servi (HTTP 200, `text/plain;charset=utf-8`, 18 679 octets) ; RFC 3207, « SMTP Service Extension for Secure SMTP over Transport Layer Security », P. Hoffman, Standards Track, février 2002 | 22/11/2026 |
+
+- **§ 4** (l. 96-110) : `STARTTLS`, sans paramètre ; `220 Ready to start TLS`. **§ 4.2** (l. 208-220) : « The client
+  MUST discard any knowledge obtained from the server, such as the list of SMTP service extensions […]. The client
+  SHOULD send an EHLO command as the first command after a successful TLS negotiation. »
+- Où le moteur s'en sert : `envois/src/courriel.rs`, `session_smtp` (le port 587 commence en clair, passe en TLS, puis
+  reprend à `EHLO`).
+
+## RFC 4616 : le mécanisme SASL PLAIN
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-rfc4616-plain-sasl-mechanism-20060801.txt` | https://www.rfc-editor.org/rfc/rfc4616.txt, tel que servi (HTTP 200, `text/plain;charset=utf-8`, 20 270 octets) ; RFC 4616, « The PLAIN Simple Authentication and Security Layer (SASL) Mechanism », K. Zeilenga (éd.), Standards Track, août 2006 | 22/11/2026 |
+
+- **§ 2** (l. 122-126) : `message = [authzid] UTF8NUL authcid UTF8NUL passwd`.
+- Où le moteur s'en sert : `envois/src/courriel.rs`, `Smtp::identifier` (`AUTH PLAIN`, avec la réponse initiale de la
+  RFC 4954, § 4, l. 139-150, en base64, l. 192-194).
+
+## Le mécanisme SASL LOGIN (brouillon de l'IETF)
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-draft-murchison-sasl-login-00-login-sasl-mechanism-20030828.txt` | https://www.ietf.org/archive/id/draft-murchison-sasl-login-00.txt, tel que servi (HTTP 200, `text/plain; charset=utf-8`, 11 939 octets) ; « The LOGIN SASL Mechanism », K. Murchison et M. Crispin, Internet-Draft (Informational), 28 août 2003 | 22/11/2026 |
+
+- Un brouillon, jamais devenu RFC ; c'est le seul texte du mécanisme, que des serveurs n'offrent qu'à lui.
+- **§ 2.1** : le client répond au premier défi par l'identifiant, au second par le mot de passe ; « The contents of both
+  challenges SHOULD be ignored. »
+- Où le moteur s'en sert : `envois/src/courriel.rs`, `Smtp::identifier`, quand le serveur n'offre pas PLAIN.
+
+## RFC 6152 : 8BITMIME
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-rfc6152-smtp-service-extension-for-8bit-mime-transport-20110301.txt` | https://www.rfc-editor.org/rfc/rfc6152.txt, tel que servi (HTTP 200, `text/plain;charset=utf-8`, 13 034 octets) ; RFC 6152, « SMTP Service Extension for 8-bit MIME Transport », J. Klensin, N. Freed, M. Rose, D. Crocker (éd.), Standards Track, mars 2011 | 22/11/2026 |
+
+- **§ 2** et **§ 3** : le mot-clé `8BITMIME` à `EHLO`, et `BODY=8BITMIME` à `MAIL` pour un message qui n'est pas en ASCII.
+- Où le moteur s'en sert : `envois/src/courriel.rs`, `Smtp::transmettre`.
+
+## RFC 6531 : SMTPUTF8
+
+| fichier | d'où | relevé |
+|---|---|---|
+| `ietf-rfc6531-smtp-extension-for-internationalized-email-20120201.txt` | https://www.rfc-editor.org/rfc/rfc6531.txt, tel que servi (HTTP 200, `text/plain;charset=utf-8`, 40 977 octets) ; RFC 6531, « SMTP Extension for Internationalized Email », J. Yao et W. Mao, Standards Track, février 2012 | 22/11/2026 |
+
+- **§ 3.4** : « If the envelope or message being sent requires the capabilities of the SMTPUTF8 extension, the
+  SMTPUTF8-aware SMTP client MUST supply the SMTPUTF8 parameter with the MAIL command. »
+- Où le moteur s'en sert : `envois/src/courriel.rs`, `Smtp::transmettre` (une adresse qui n'est pas en ASCII).
 
 ## RFC 4954 : l'authentification SMTP (le mot de passe refusé)
 
@@ -108,7 +175,11 @@ refusé, et renvoie la compagnie le poser de nouveau.
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `ietf-draft-murchison-sasl-login-00-login-sasl-mechanism-20030828.txt` : `1d1748fcca3141cdf733bb87db47f036e289a6eed80e5502a538a5110c8fc39b`
+- `ietf-rfc3207-smtp-service-extension-for-secure-smtp-over-tls-20020201.txt` : `b004a203791a1ca664d39a49d73369f88f5f3870486a6639e3f833df2118e4ac`
+- `ietf-rfc4616-plain-sasl-mechanism-20060801.txt` : `33aa677ab7b8efe52e86147c63b38dd8dd5de96438c63e10ba8a04504bbdbca4`
 - `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt` : `6bf118f556749d08d1bfae92cefbdebf6084324ceba262a87af1efbe0e16d50a`
-
 - `ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt` : `7d560eddff1b213c17d4e1e5f95005728b2f05bc2b3947f0fcc91717c6707634`
 - `ietf-rfc5322-internet-message-format-20081001.txt` : `cb459acca15a2aa895863eaeff6f1d5b9c4ca15578ae3e3706f757787a385969`
+- `ietf-rfc6152-smtp-service-extension-for-8bit-mime-transport-20110301.txt` : `f3bb53c64929a09984fc2c34daaf3ea4d4e8e90e771decf3c2453ed6c9035ad7`
+- `ietf-rfc6531-smtp-extension-for-internationalized-email-20120201.txt` : `4f48303f7b7659d0b3149730b51a03d59799a95b4d2ca7d913533f97b9db4b40`
