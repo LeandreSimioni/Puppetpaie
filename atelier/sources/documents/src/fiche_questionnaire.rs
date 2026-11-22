@@ -559,6 +559,14 @@ pub struct ReponseLue {
 }
 
 impl ReponseLue {
+    /// NE GARDE QUE LES REPONSES AUX QUESTIONS `posees` (celles qu'on pose a cette personne) ; rend les autres questions
+    /// repondues, qui ne s'ecrivent pas.
+    pub fn ne_garder_que(&mut self, posees: &[Question]) -> Vec<Question> {
+        let (gardees, autres): (Vec<_>, Vec<_>) = std::mem::take(&mut self.dites).into_iter().partition(|(q, _)| posees.contains(q));
+        self.dites = gardees;
+        autres.into_iter().map(|(q, _)| q).collect()
+    }
+
     /// La reponse a `q`, si elle est dite.
     fn de(&self, q: Question) -> Option<&Reponse> {
         self.dites.iter().find(|(x, _)| *x == q).map(|(_, r)| r)

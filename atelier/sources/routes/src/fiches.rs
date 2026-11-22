@@ -1064,6 +1064,13 @@ pub struct FicheDemandee {
 /// Envoie a `adresse` le courriel « Remplir ma fiche ». Le journal garde
 /// le code : c'est par lui que la releve reconnaitra la reponse. `client` : la boite, ouverte ici (boite simulee dans une
 
+/// LES QUESTIONS A POSER A UNE PERSONNE dont la fiche est `fiche` (une fiche vide pour qui n'en a pas) : ce qui y manque
+/// et que seul le salarie connait, selon son cas (`fq::a_poser`). La demande les pose ; la releve ne lit qu'elles.
+fn questions_pour(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<fq::Question>> {
+    let manquent = champs::a_demander_au_salarie(fiche, &ctx.entreprise)?;
+    Ok(fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(fiche, c.into())))
+}
+
 /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1118,8 +1125,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         Some(f) => f,
         None => droit::fiche::ChampsSalarie::default(),
     };
-    let manquent = champs::a_demander_au_salarie(&fiche, &ctx.entreprise)?;
-    let questions = fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(&fiche, c.into()));
+    let questions = questions_pour(ctx, &fiche)?;
     if questions.is_empty() {
         return Err(refus(format!("Rien ne manque à la fiche de {} que la personne puisse dire : rien à lui demander.", adresse)));
     }
@@ -1331,14 +1337,27 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let lue = fq::fiche_depuis_reponses(&fq::lire_reponse(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
+        // UNE REPONSE NE REMPLIT QUE CE QUI A ETE DEMANDE : les questions de cette personne se recalculent comme a la
+        // demande, sur sa fiche telle qu'elle est (une fiche vide si elle n'en a pas) ; une ligne qui repond a une autre
+        // question ne s'ecrit pas, et la note le dit.
+        let vide = droit::fiche::ChampsSalarie::default();
+        let posees = questions_pour(
+            ctx,
+            match trouvee {
+                Some((_, s)) => &s.champs,
+                None => &vide,
+            },
+        )?;
+        let mut reponse = fq::lire_reponse(&texte);
+        let non_demandees = reponse.ne_garder_que(&posees);
+        let lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
         let mut illisible = lue.illisible;
         // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
         // dans la note, avec ce que la reponse n'a pas dit lisiblement.
         let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue.fiche).map_err(|m| m.reclasser(Classe::Illisible))?;
         illisible.extend(fautes.into_iter().map(|f| format!("{} : {}", f.case.nom(), f.phrase)));
         recue.email = Some(de.clone());
-        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
         // Le nom de la personne : celui de la reponse, ou celui de sa fiche, si elle en a une (on ne lui a demande que ce
         // qui y manquait).
         let nom_de = |f: &droit::fiche::ChampsSalarie| [f.prenom_affichage.remplie(), f.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
@@ -1363,6 +1382,10 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         }
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
+        }
+        if !non_demandees.is_empty() {
+            let dites: Vec<String> = non_demandees.iter().map(|q| fq::en_minuscule(q.declaree().libelle)).collect();
+            note.push_str(&format!(" Non demandé, non écrit : {}.", dites.join(", ")));
         }
         let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
