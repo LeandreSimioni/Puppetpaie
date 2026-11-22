@@ -94,11 +94,11 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn reprendre_la_saisie(_ctx: &Contexte, _liste: &socle::forme::Liste, _changees: &[CaseDeFiche], _plate: &mut Self::Plate, _fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
         Ok(Vec::new())
     }
-    /// CE QUE LA ROUTE `fiche` PROPOSE DANS LES CASES VIDES de la fiche `plate` qu'elle rend, a l'ouverture comme a
-    /// chaque relecture : une valeur que la page montre dans la case, que la personne peut changer, et qui ne s'ecrit
+    /// CE QUE LA ROUTE `fiche` PROPOSE DANS LES CASES VIDES de la fiche `plate` qu'elle rend, a l'ouverture (`changees`
+    /// absent) ou a une relecture (les cases qui viennent de changer) : une valeur que la page montre dans la case, que la personne peut changer, et qui ne s'ecrit
     /// qu'avec « Enregistrer » (aucune ecriture ne la pose d'elle-meme) ; rend les cases ou elle l'a posee. Rien pour une
     /// fiche qui ne propose rien.
-    fn proposer(_plate: &mut Self::Plate) -> R<Vec<CaseDeFiche>> {
+    fn proposer(_plate: &mut Self::Plate, _changees: Option<&[CaseDeFiche]>) -> R<Vec<CaseDeFiche>> {
         Ok(Vec::new())
     }
     /// Les cases qui different d'une fiche a l'autre.
@@ -532,8 +532,8 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn reprendre_la_saisie(ctx: &Contexte, liste: &socle::forme::Liste, changees: &[CaseDeFiche], plate: &mut ChampsSalarie, fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
         super::rendue::reprendre_le_salarie(ctx, liste, changees, plate, fautes)
     }
-    fn proposer(plate: &mut ChampsSalarie) -> R<Vec<CaseDeFiche>> {
-        super::rendue::proposer_au_salarie(plate)
+    fn proposer(plate: &mut ChampsSalarie, changees: Option<&[CaseDeFiche]>) -> R<Vec<CaseDeFiche>> {
+        super::rendue::proposer_au_salarie(plate, changees)
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)

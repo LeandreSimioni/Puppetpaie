@@ -111,7 +111,8 @@ pub fn code_au_hasard(sorte: SorteDeDemande) -> R<CodeDeDemande> {
 
 /// UNE QUESTION DU FORMULAIRE « Remplir ma fiche », dans l'ordre ou la page les montre. Ce qu'elle est (cle, libelle,
 /// aide, forme de la reponse, reponse « aucun », condition, case de la fiche qu'elle remplit) : `declaree`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Question {
     Prenom,
     Nom,
@@ -1190,11 +1191,8 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
         }
     }
     // Ce que le NIR ecrit de la naissance complete ce que les reponses ne disent pas.
-    if let Some((departement, pays)) = d.nir.as_ref().map(naissance_depuis_nir).transpose()?.flatten() {
+    if let Some(departement) = d.nir.as_ref().map(naissance_depuis_nir).transpose()?.flatten() {
         d.departement_naissance = Some(departement);
-        if d.pays_naissance.is_none() {
-            d.pays_naissance = pays;
-        }
     }
     Ok(FicheDesReponses { fiche: d, illisible })
 }
@@ -1218,10 +1216,10 @@ fn departement_de_la_dsn(t: &str) -> bool {
     }
 }
 
-/// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
-/// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
-/// incomplet.
-fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<(droit::fiche::DepartementNaissance, Option<socle::pays::CodePays>)>> {
+/// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger). Deux cas se
+/// taisent : la Corse d'avant 1976 (« 20 ») et un NIR incomplet. Le pays de naissance ne s'en ecrit pas : la fiche le
+/// propose, et « Enregistrer » le valide (`routes::fiches`).
+fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<droit::fiche::DepartementNaissance>> {
     let c: Vec<char> = nir.chars().collect();
     if !forme_d_un_nir(nir) || !matches!(c[0], '1' | '2') {
         return Ok(None);
@@ -1230,6 +1228,5 @@ fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<(droit::fiche::Depa
     if dep.est_l_ancienne_corse() {
         return Ok(None);
     }
-    let pays = (!dep.est_etranger()).then(socle::pays::CodePays::france);
-    Ok(Some((dep, pays)))
+    Ok(Some(dep))
 }

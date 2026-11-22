@@ -2333,7 +2333,7 @@
   },
   {
    "cle": "anniversaire_droits", "bloc": "Cas particuliers", "largeur": "demie",
-   "avance": "rangee",
+   "avance": "toujours_remplie",
    "libelle": "Date anniversaire des droits",
    "forme": "date",
    "aide": "La date de réexamen des droits d'un intermittent, sur sa notification France Travail. Elle sert au décompte de ses heures (ses droits, l'export du cumul), jamais à la paie ni à une déclaration ; sans elle, le logiciel s'en passe.",

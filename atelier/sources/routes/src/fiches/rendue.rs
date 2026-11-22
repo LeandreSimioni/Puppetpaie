@@ -281,7 +281,7 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
             (F::reprendre_la_saisie(ctx, liste, changees, &mut plate, &mut fautes)?, fautes, true)
         }
     };
-    reecrites.extend(F::proposer(&mut plate)?);
+    reecrites.extend(F::proposer(&mut plate, changements.as_ref().map(|_| changees.as_deref().unwrap_or_default()))?);
     // Sans saisie ni proposition, la verification de la pastille ; sinon celle de la fiche telle qu'elle se montre.
     let anomalies = if saisie || !reecrites.is_empty() {
         let tapee = Tapee { fiche: plate, fautes };
@@ -584,7 +584,7 @@ impl SanteDuSalarie {
 const LU_DANS_LE_NIR: &str = "Rempli pour vous — lu dans le numéro de sécurité sociale.";
 
 /// Ce que dit le pays de naissance d'une personne que le numero de securite sociale dit nee en metropole.
-const NE_EN_METROPOLE: &str = "Le numéro de sécurité sociale dit une naissance en France métropolitaine : France est proposée, à changer si besoin.";
+const NE_EN_METROPOLE: &str = "Le numéro de sécurité sociale dit une naissance en France métropolitaine.";
 
 /// LE NUMERO DE SECURITE SOCIALE DE `s` DIT-IL UNE NAISSANCE EN FRANCE METROPOLITAINE ? Son lieu de naissance (6e et 7e
 /// caracteres, `champs::departement_du_nir`) est, pour une personne nee en metropole, le departement du code officiel
@@ -620,10 +620,12 @@ fn garder_hors_liste(case: &mut CaseDeLaFiche) {
 
 /// CE QUE LA ROUTE PROPOSE DANS LA FICHE D'UN SALARIE `plate` (`SorteDeFiche::proposer`) : France dans un pays de
 /// naissance vide quand le numero de securite sociale dit une naissance en metropole (`ne_en_metropole`), « FR » de la
-/// table « Pays » de la DSN. Rien ne l'ecrit d'autre que « Enregistrer ».
-pub(super) fn proposer_au_salarie(plate: &mut droit::fiche::ChampsSalarie) -> R<Vec<CaseDeFiche>> {
+/// table « Pays » de la DSN, a l'ouverture de la fiche et quand on vient de taper le numero (`changees` le nomme) : un
+/// pays qu'on vide ensuite reste vide. Rien ne l'ecrit d'autre que « Enregistrer ».
+pub(super) fn proposer_au_salarie(plate: &mut droit::fiche::ChampsSalarie, changees: Option<&[CaseDeFiche]>) -> R<Vec<CaseDeFiche>> {
     use droit::fiche::CaseSalarie as S;
-    if plate.pays_naissance.is_some() || !ne_en_metropole(plate) {
+    let a_l_instant = changees.is_none_or(|l| l.contains(&S::Nir.into()));
+    if !a_l_instant || plate.pays_naissance.is_some() || !ne_en_metropole(plate) {
         return Ok(Vec::new());
     }
     plate.pays_naissance = Some(socle::pays::CodePays::france());
@@ -734,8 +736,8 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
 /// de la nomenclature est dans `changees`) remplit les cases que le metier decide (`emplois::ChampsDuMetier::CASES`) :
 /// l'intitule de l'emploi, le PCS-ESE, le statut et les classements, comme sur la carte (`emplois::resoudre`, le cadre
 /// du metier dans la convention de la compagnie), au feminin pour une salariee ; une case changee apres lui dans la meme
-/// saisie garde ce qu'on y a tape, et une case que le metier ne dit pas (pas de PCS-ESE, pas de classement) garde sa
-/// valeur. Sans metier choisi a l'instant, ces cases gardent ce qu'elles disent. Un metier que le moteur ne resout pas le
+/// saisie garde ce qu'on y a tape, et une case que le metier ne dit pas (pas de PCS-ESE, pas de classement) se vide :
+/// vide, la DSN lit le metier du catalogue, ou refuse en le nommant. Sans metier choisi a l'instant, ces cases gardent ce qu'elles disent. Un metier que le moteur ne resout pas le
 /// dit sur sa case.
 pub(super) fn reprendre_le_salarie(
     ctx: &Contexte,
@@ -777,11 +779,10 @@ pub(super) fn reprendre_le_salarie(
     macro_rules! remplir {
         ($champ:ident, $k:expr, $v:expr) => {
             let k: CaseDeFiche = $k.into();
-            if let Some(v) = $v {
-                if !tapees_apres.contains(&k) && plate.$champ.as_ref() != Some(&v) {
-                    plate.$champ = Some(v);
-                    reecrites.push(k);
-                }
+            let v = $v;
+            if !tapees_apres.contains(&k) && plate.$champ != v {
+                plate.$champ = v;
+                reecrites.push(k);
             }
         };
     }

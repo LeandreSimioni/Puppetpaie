@@ -317,11 +317,9 @@ pub fn condition_remplie(si: Option<&Condition>, donnees: &impl FicheSaisie) -> 
 pub enum Avance {
     /// Toute valeur dite s'ecarte du cas ordinaire, qui est de n'en rien dire.
     CasParticulier,
-    /// Toujours remplie (ce que le metier remplit, un matricule) : sa valeur n'est jamais un ecart.
+    /// Une case ordinaire rangee sous « Avancé » (ce que le metier remplit, un matricule, la date anniversaire des
+    /// droits d'un intermittent) : remplie ou non, sa valeur n'est jamais un ecart.
     ToujoursRemplie,
-    /// Une case ordinaire, rangee sous « Avancé » par decision (la date anniversaire des droits d'un intermittent) :
-    /// remplie ou non, elle n'est jamais un ecart.
-    Rangee,
     /// L'organisme que le code postal de la compagnie donne est le cas ordinaire (`declarations::urssaf`).
     DuCodePostal,
     /// Ces valeurs sont le cas ordinaire.
@@ -493,13 +491,13 @@ impl Champ {
     fn ecart_de(&self, a: &Avance, donnees: &impl FicheSaisie, du_code_postal: Option<&str>) -> bool {
         let mot = match comme_la_page(donnees.ecrite(self.cle)) {
             VueDeLaPage::Vide => return false,
-            VueDeLaPage::Structure => return donnees.dite(self.cle) && !matches!(a, Avance::ToujoursRemplie | Avance::Rangee),
+            VueDeLaPage::Structure => return donnees.dite(self.cle) && !matches!(a, Avance::ToujoursRemplie),
             VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
             VueDeLaPage::Mot(m) => m,
         };
         match a {
             Avance::CasParticulier => true,
-            Avance::ToujoursRemplie | Avance::Rangee => false,
+            Avance::ToujoursRemplie => false,
             Avance::DuCodePostal => Some(mot.as_str()) != du_code_postal,
             Avance::Ordinaire(valeurs) => !valeurs.iter().any(|v| v.eq_ignore_ascii_case(&mot)),
         }

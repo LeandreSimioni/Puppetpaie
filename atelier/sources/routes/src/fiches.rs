@@ -1140,6 +1140,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
             adresse
         )));
     }
+    let envoyees = questions.clone();
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
     // L'exemple de la deduction forfaitaire : le meme dans le courriel date et dans le formulaire publie que le lien nomme.
     let exemple = exemple_dfs()?;
@@ -1173,7 +1174,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         pieces: Vec::new(),
     };
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
-    let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
+    let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur, questions: Some(envoyees.clone()) };
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);
@@ -1195,6 +1196,8 @@ pub(crate) struct Attendue {
     pub quand: InstantOuJour,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
     pub envoyes: Vec<envoi::IdDeCourriel>,
+    /// Les questions que le courriel portait ; aucune liste pour une demande d'avant que le journal les garde.
+    pub questions: Option<Vec<fq::Question>>,
 }
 
 impl Attendue {
@@ -1224,6 +1227,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
             prenom: e.detail.prenom.clone(),
             quand: e.quand(),
             envoyes: e.detail.message.clone().into_iter().collect(),
+            questions: e.detail.questions.clone(),
         });
     }
     Ok(sortie)
@@ -1351,17 +1355,21 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
         let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
-        // UNE REPONSE NE REMPLIT QUE CE QUI A ETE DEMANDE : les questions de cette personne se recalculent comme a la
-        // demande, sur sa fiche telle qu'elle est (une fiche vide si elle n'en a pas) ; une ligne qui repond a une autre
-        // question ne s'ecrit pas, et la note le dit.
+        // UNE REPONSE NE REMPLIT QUE CE QUI A ETE DEMANDE ET MANQUE ENCORE : les questions que le courriel portait (le
+        // journal les garde), parmi celles que sa fiche, telle qu'elle est (vide si elle n'en a pas), laisse a poser ;
+        // une ligne qui repond a une autre question ne s'ecrit pas, et la note le dit. Une demande d'avant que le
+        // journal garde ses questions n'a que les secondes.
         let vide = droit::fiche::ChampsSalarie::default();
-        let posees = questions_pour(
+        let mut posees = questions_pour(
             ctx,
             match trouvee {
                 Some((_, s)) => &s.champs,
                 None => &vide,
             },
         )?;
+        if let Some(envoyees) = &a.questions {
+            posees.retain(|q| envoyees.contains(q));
+        }
         let mut reponse = fq::lire_reponse(&texte);
         let non_demandees = reponse.ne_garder_que(&posees);
         let mut lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
@@ -1369,8 +1377,10 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         // portait son information, `fq::a_recopier`) et sa reponse revient sans cette ligne : « Lorsque le travailleur
         // salarié ou assimilé ne répond pas à cette consultation, son silence vaut accord » (BOSS, frais professionnels,
         // § 2190 : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2737). L'accord s'ecrit, le
-        // consentement de l'annee, et la note dit d'ou il vient. Sans reponse du tout, rien ne s'ecrit.
-        let par_silence = posees.contains(&fq::Question::AccordDfs) && reponse.sans_ligne(fq::Question::AccordDfs);
+        // consentement de l'annee, et la note dit d'ou il vient. Sans reponse du tout, rien ne s'ecrit ; sans la preuve
+        // que le courriel portait la question (§ 2200 : l'employeur ne se prevaut pas d'un accord, meme tacite, sans
+        // prouver l'information), non plus.
+        let par_silence = a.questions.is_some() && posees.contains(&fq::Question::AccordDfs) && reponse.sans_ligne(fq::Question::AccordDfs);
         if par_silence {
             lue.fiche.deduction_forfaitaire_accord = Some(droit::fiche::AccordDfs::ConsentementAnnuel);
         }
