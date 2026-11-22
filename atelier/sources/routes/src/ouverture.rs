@@ -1231,6 +1231,11 @@ impl Choix {
         Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None }
     }
 
+    /// Le code que le choix porte.
+    pub(crate) fn code(&self) -> &str {
+        &self.code
+    }
+
     /// Ce que le choix dit de lui-meme une fois choisi.
     pub(crate) fn disant(self, dit: Option<String>) -> Choix {
         Choix { dit, ..self }

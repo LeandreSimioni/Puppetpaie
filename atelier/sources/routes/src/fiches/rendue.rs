@@ -340,7 +340,7 @@ impl<'a> Completer<'a> {
     fn case(&self, ctx: &Contexte, case: &mut CaseDeLaFiche) -> R<bool> {
         match self {
             Completer::Entreprise(e) => completer_l_entreprise(ctx, e, case).map(|_| true),
-            Completer::Salarie(s, listes) => completer_le_salarie(s, listes, case),
+            Completer::Salarie(s, listes) => completer_le_salarie(ctx, s, listes, case),
             Completer::Rien => Ok(true),
         }
     }
@@ -530,7 +530,11 @@ impl ListesDuSalarie {
         let a_choisir = || Choix::de("", A_CHOISIR);
         let pays_naissance = std::iter::once(a_choisir()).chain(socle::pays::servir_naissance()?.into_iter().map(|p| Choix::de(&p.code, &p.nom))).collect();
         let metiers = std::iter::once(a_choisir())
-            .chain(crate::metiers::metiers_d_une_fiche(&crate::metiers::metiers(ctx)?).into_iter().map(|m| Choix::de(&m.code, &m.libelle).sous(Some(m.famille.to_string()))))
+            .chain(
+                crate::metiers::metiers_d_une_fiche(&crate::metiers::metiers(ctx)?)
+                    .into_iter()
+                    .map(|m| Choix::de(&m.code, format!("{}{}", m.libelle, if m.cadre_par_defaut { " (cadre)" } else { "" })).sous(Some(m.famille.to_string()))),
+            )
             .collect();
         let sante = match droit::bareme::sante_hors_fiche(&ctx.entreprise)? {
             Some(d) => SanteDuSalarie::HorsFiche(d),
@@ -550,7 +554,7 @@ impl ListesDuSalarie {
 /// pays ; le metier se choisit dans les metiers d'une fiche et renvoie a l'onglet ou l'on en ajoute ; la complementaire
 /// sante dit ses niveaux, ou pourquoi elle ne se choisit pas ici (ses cases ne s'ouvrent pas, sa valeur se garde) ; la
 /// deduction forfaitaire dit ce qu'en dit la fiche de l'entreprise, et y renvoie.
-fn completer_le_salarie(s: &droit::fiche::ChampsSalarie, listes: &ListesDuSalarie, case: &mut CaseDeLaFiche) -> R<bool> {
+fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes: &ListesDuSalarie, case: &mut CaseDeLaFiche) -> R<bool> {
     use droit::fiche::CaseSalarie as S;
     let est = |k: S| case.cle == CaseDeFiche::from(k);
     let du_nir = s.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref()));
@@ -587,7 +591,14 @@ fn completer_le_salarie(s: &droit::fiche::ChampsSalarie, listes: &ListesDuSalari
         return Ok(pays_de_nationalite.is_none());
     } else if est(S::CodeEmploiFt) {
         case.forme = Forme::ChoixRendu;
-        case.choix = Some(listes.metiers.clone());
+        let mut choix = listes.metiers.clone();
+        // Un code que la liste n'offre pas (le metier d'une autre convention) reste offert, nomme par son metier.
+        if let Some(code) = s.code_emploi_ft.as_ref().filter(|c| !choix.iter().any(|x| x.code() == c.as_str())) {
+            if let Some(emploi) = droit::emplois::CodeEmploi::du_code_declare(code)? {
+                choix.push(Choix::de(code.as_str(), emploi.metier(&ctx.racine)?.libelle()));
+            }
+        }
+        case.choix = Some(choix);
         case.renvoi = Some(RenvoiDeLaFiche::Metiers { libelle: "Ajouter un métier" });
     } else if case.cle == CaseDeFiche::from(droit::fiche::CasePieceSalarie::SanteSvp) {
         match &listes.sante {

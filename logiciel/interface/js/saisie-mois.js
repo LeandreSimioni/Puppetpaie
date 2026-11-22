@@ -371,25 +371,6 @@ function metierDe(code) {
   return ETAT.emplois.find((m) => m.code === code) || null;
 }
 
-function optionsMetiers(choisi, vide = "— celui de la fiche —", metiers = ETAT.emplois) {
-  const familles = ETAT.familles_emplois;
-  const parFamille = {};
-  metiers.forEach((m) => { (parFamille[m.famille] ||= []).push(m); });
-  let html = `<option value="">${echapper(vide)}</option>`;
-  familles.forEach((f) => {
-    if (!parFamille[f]) return;
-    html += `<optgroup label="${echapper(f)}">` + parFamille[f].map((m) =>
-      `<option value="${echapper(m.code)}">${echapper(m.libelle)}${m.cadre_par_defaut ? " (cadre)" : ""}</option>`)
-      .join("") + `</optgroup>`;
-  });
-  // Un code hors catalogue mais présent dans le fichier reste proposé tel quel.
-  if (choisi && !metierDe(choisi)) {
-    const ailleurs = ETAT.emplois_autres.find((m) => m.code === choisi);
-    html += `<option value="${echapper(choisi)}">${echapper(ailleurs ? ailleurs.libelle : choisi)}</option>`;
-  }
-  return html;
-}
-
 /** Une fiche neuve : le formulaire complet de Configuration, avec ses vérifications. Une seule façon de créer une
  *  fiche, et c'est là. Une fiche ouverte et modifiée demande d'abord, comme toute sortie de la fiche (`quitterLaFiche`). */
 async function nouvelleFiche(nom) {
@@ -403,9 +384,7 @@ async function nouvelleFiche(nom) {
   CLE_ACTIVE = null;
   FICHE_NEUVE = true;
   dessinerConfig();
-  // Une fiche neuve n'a encore ni anomalie, ni écart, ni pièce ouverte ; ce qu'elle montre, la première réponse le dit
-  // (celle de la route `fiche`, pour un spectacle).
-  const donnees = { actif: true };
-  dessinerFormulaire({ nom, cle: null, donnees, anomalies: [], ecarts: [], pieces_ouvertes: [] });
+  // Une fiche neuve n'a pas de clé : la route `fiche` la rend.
+  dessinerFormulaire({ nom, cle: null });
   document.getElementById("config-formulaire").scrollIntoView({ behavior: "smooth" });
 }
