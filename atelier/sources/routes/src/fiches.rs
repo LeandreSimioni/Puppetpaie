@@ -991,6 +991,14 @@ pub struct FicheDemandee {
 /// Envoie a `adresse` le courriel « Remplir ma fiche ». Le journal garde
 /// le code : c'est par lui que la releve reconnaitra la reponse. `client` : la boite, ouverte ici (boite simulee dans une
 
+/// LES QUESTIONS A POSER A UNE PERSONNE dont la fiche est `fiche` (une fiche vide pour qui n'en a pas) : ce qui y manque
+/// et que seul le salarie connait, selon son cas (`fq::a_poser`). La demande les pose ; la releve ne lit qu'elles.
+fn questions_pour(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<fq::Question>> {
+    let cases: Vec<CaseDeFiche> = fq::Question::TOUTES.iter().map(|q| q.declaree().case.into()).collect();
+    let manquent = champs::a_demander_au_salarie(fiche, &ctx.entreprise, &cases)?;
+    Ok(fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(fiche, c.into())))
+}
+
 /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1045,10 +1053,12 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         Some(f) => f,
         None => droit::fiche::ChampsSalarie::default(),
     };
-    let manquent = champs::a_demander_au_salarie(&fiche, &ctx.entreprise)?;
-    let questions = fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(&fiche, c.into()));
+    let questions = questions_pour(ctx, &fiche)?;
     if questions.is_empty() {
-        return Err(refus(format!("Rien ne manque à la fiche de {} que la personne puisse dire : rien à lui demander.", adresse)));
+        return Err(refus(format!(
+            "La fiche de {} a déjà tout ce que la personne peut dire : rien à lui demander. Pour la relire ou la corriger, ouvre-la dans Configuration › Salariés.",
+            adresse
+        )));
     }
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
     let q = fq::a_recopier(&code, &questions);
@@ -1258,14 +1268,36 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let lue = fq::fiche_depuis_reponses(&fq::lire_reponse(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
+        // UNE REPONSE NE REMPLIT QUE CE QUI A ETE DEMANDE : les questions de cette personne se recalculent comme a la
+        // demande, sur sa fiche telle qu'elle est (une fiche vide si elle n'en a pas) ; une ligne qui repond a une autre
+        // question ne s'ecrit pas, et la note le dit.
+        let vide = droit::fiche::ChampsSalarie::default();
+        let posees = questions_pour(
+            ctx,
+            match trouvee {
+                Some((_, s)) => &s.champs,
+                None => &vide,
+            },
+        )?;
+        let mut reponse = fq::lire_reponse(&texte);
+        let non_demandees = reponse.ne_garder_que(&posees);
+        let mut lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // L'ACCORD PAR SILENCE : la question de la deduction forfaitaire lui a ete posee (le courriel date de la demande
+        // portait son information, `fq::a_recopier`) et sa reponse revient sans cette ligne : « Lorsque le travailleur
+        // salarié ou assimilé ne répond pas à cette consultation, son silence vaut accord » (BOSS, frais professionnels,
+        // § 2190 : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2737). L'accord s'ecrit, le
+        // consentement de l'annee, et la note dit d'ou il vient. Sans reponse du tout, rien ne s'ecrit.
+        let par_silence = posees.contains(&fq::Question::AccordDfs) && reponse.sans_ligne(fq::Question::AccordDfs);
+        if par_silence {
+            lue.fiche.deduction_forfaitaire_accord = Some(droit::fiche::AccordDfs::ConsentementAnnuel);
+        }
         let mut illisible = lue.illisible;
         // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
         // dans la note, avec ce que la reponse n'a pas dit lisiblement.
         let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue.fiche).map_err(|m| m.reclasser(Classe::Illisible))?;
         illisible.extend(fautes.into_iter().map(|f| format!("{} : {}", f.case.nom(), f.phrase)));
         recue.email = Some(de.clone());
-        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
         // Le nom de la personne : celui de la reponse, ou celui de sa fiche, si elle en a une (on ne lui a demande que ce
         // qui y manquait).
         let nom_de = |f: &droit::fiche::ChampsSalarie| [f.prenom_affichage.remplie(), f.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
@@ -1273,23 +1305,45 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             (n, Some((_, s))) if n.trim().is_empty() => nom_de(&s.champs),
             (n, _) => n,
         };
-        if nom.trim().is_empty() {
-            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
-            continue;
-        }
         // La reponse, le courriel tel qu'il est arrive : une piece produite, rangee hors d'un mois.
         let sorte = documents::SorteDePieceProduite::FicheDeSalarie;
         let dossier = documents::DossierHorsDuMois::FichesDeSalaries.sous(&ctx.racine);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("{}{}.eml", sorte.prefixe(), code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
-        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
-        // Ce que la personne dit n'avoir pas et qu'aucune case ne garde (le numero Congés Spectacles) : la note le dit.
-        for q in &lue.sans {
-            note.push_str(&format!(" Elle dit n'avoir pas de {}.", fq::en_minuscule(q.declaree().libelle)));
+        // UNE REPONSE SANS NOM LISIBLE (celle d'une demande d'une version d'avant, que la releve ne lit plus) : rien ne se
+        // cree, mais elle est arrivee : la demande se ferme sur elle, gardee comme piece, et l'incident ne revient pas a
+        // chaque releve. Une nouvelle demande se fait si besoin.
+        if nom.trim().is_empty() {
+            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree, la demande est close : en refaire une si besoin.", code, de));
+            let retour = journal::RetourFiche {
+                code: code.clone(),
+                abandon: false,
+                salarie: None,
+                illisible: Some(illisible.clone()),
+                erreurs: None,
+                quand,
+                qui: qui.to_string(),
+                de: Some(de.clone()),
+                message: Some(ident.clone()),
+                reponse: "reponse sans nom lisible : rien n'est cree".to_string(),
+            };
+            journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour)).map_err(|e| e.reclasser(Classe::Disque))?;
+            continue;
         }
+        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
+        }
+        if par_silence {
+            note.push_str(&format!(
+                " Accord à la déduction forfaitaire par son silence : la question et son information lui ont été envoyées par le courriel du {}, et sa réponse n'en dit rien (BOSS, § 2190).",
+                a.quand.jour().jj_mm_aaaa()
+            ));
+        }
+        if !non_demandees.is_empty() {
+            let dites: Vec<String> = non_demandees.iter().map(|q| fq::en_minuscule(q.declaree().libelle)).collect();
+            note.push_str(&format!(" Non demandé, non écrit : {}.", dites.join(", ")));
         }
         let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;

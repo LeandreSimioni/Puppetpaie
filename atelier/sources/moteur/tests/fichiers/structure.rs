@@ -1465,20 +1465,3 @@ fn le_formulaire_publie_est_celui_que_le_moteur_declare() {
     let commite = std::fs::read_to_string(&chemin).unwrap_or_else(|e| panic!("{} : {} ; `moteur-atelier formulaire-fiche` l'écrit, puis on le commite", chemin.display(), e));
     assert_eq!(commite, f.contenu, "{} n'est pas le formulaire que le moteur déclare : `moteur-atelier formulaire-fiche` le réécrit", chemin.display());
 }
-
-/// CHAQUE CASE QUI SE DEMANDE AU SALARIE A SA QUESTION, et chaque question remplit une case qui se demande au salarie :
-/// la table (`se_demande` de `champs-base.json`) et le formulaire (`documents::fiche_questionnaire::Question`) disent les
-/// memes cases.
-#[test]
-fn chaque_case_qui_se_demande_au_salarie_a_sa_question() {
-    use declarations::champs::SeDemande;
-    use documents::fiche_questionnaire::Question;
-    let table: BTreeSet<String> = declarations::champs::fiche(droit::fiche::NomDeFiche::Salarie)
-        .unwrap()
-        .into_iter()
-        .filter(|c| c.se_demande == Some(SeDemande::AuSalarie))
-        .map(|c| c.cle.nom().to_string())
-        .collect();
-    let questions: BTreeSet<String> = Question::TOUTES.iter().map(|q| droit::fiche::CaseDeFiche::from(q.declaree().case).nom().to_string()).collect();
-    assert_eq!(table, questions, "les cases qui se demandent au salarié (champs-base.json) et celles que les questions remplissent");
-}

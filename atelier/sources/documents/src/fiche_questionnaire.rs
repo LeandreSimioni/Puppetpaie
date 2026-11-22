@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use droit::fiche::{AccordDfs, CaseSalarie, ModeleBulletin, Nir};
+use droit::fiche::{AccordDfs, CaseSalarie, ModeleBulletin, Nir, NumeroCongesSpectacles};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -187,7 +187,11 @@ pub struct QuestionDeclaree {
     pub si_aucun: Option<Question>,
     /// Elle peut rester sans reponse, et la page le dit.
     pub facultative: bool,
-    /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche.
+    /// L'EXPLICATION LONGUE (`""` : aucune) : la page la montre derriere « En savoir plus », le courriel la porte entiere
+    /// sous la ligne de la question.
+    pub explication: &'static str,
+    /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche. C'est le
+    /// seul endroit qui dit qu'une case se demande au salarie.
     pub case: CaseSalarie,
     /// Elle ne se pose qu'a un salarie dont la fiche dit deja cette case (l'accord a la deduction forfaitaire, a qui
     /// exerce une profession qui y ouvre droit).
@@ -237,7 +241,7 @@ impl Question {
     /// CE QU'ELLE EST : la declaration, la seule.
     pub fn declaree(self) -> QuestionDeclaree {
         use FormeDeReponse as F;
-        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, case, pourvu: None };
+        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, explication: "", case, pourvu: None };
         match self {
             Question::Prenom => q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage),
             Question::Nom => q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage),
@@ -282,6 +286,7 @@ impl Question {
             },
             Question::Anniversaire => QuestionDeclaree {
                 facultative: true,
+                aucun: Some("Je n'en ai pas"),
                 ..q(
                     "anniversaire",
                     "Date anniversaire de tes droits France Travail",
@@ -295,14 +300,33 @@ impl Question {
             // professionnels, § 2190 : l'employeur informe chaque salarie « de ce dispositif et de ses conséquences sur la
             // validation de ses droits aux assurances sociales », « par tout moyen donnant date certaine », « Une réponse
             // d'accord ou de refus doit être retourné par le salarié » : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`,
-            // l. 2730-2737). Le courriel de reponse, date, porte la date certaine. Ne se pose qu'a un salarie dont la
+            // l. 2730-2737). L'aide n'en dit que cela : la deduction se fait sur l'assiette des cotisations (§ 2210, « la
+            // réintégration dans l'assiette des cotisations […] du montant de la déduction », l. 2742-2744), et elle a des
+            // « conséquences sur la validation de ses droits aux assurances sociales » (§ 2190). Le courriel de la
+            // demande, qui porte cette aide (`a_recopier`), et celui de la reponse, dates, portent la date certaine. Ne se pose qu'a un salarie dont la
             // profession y ouvre droit, quand la compagnie l'exerce salarie par salarie (`si_entreprise` de sa ligne).
+            // Trois cas : il accepte, il refuse, ou sa reponse revient sans cette ligne : « son silence vaut accord »
+            // (§ 2190, l. 2737), que la releve ecrit en disant d'ou il vient. Elle n'est donc jamais a remplir de force.
+            //
+            // L'EXPLICATION, phrase par phrase, chacune d'une ligne du BOSS, frais professionnels
+            // (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`) :
+            // - les metiers aux frais plus eleves, dont le spectacle vivant : § 2120, l. 2619-2622 et 2628-2631 ;
+            // - un pourcentage retire avant le calcul des cotisations : l. 2316 (« avant application de la déduction ») et
+            //   § 2210, l. 2742-2744 (« l'assiette des cotisations ») ; 20 % ou 25 % selon le metier : § 2300, l. 2878 ;
+            // - il baisse chaque annee et disparait le 1er janvier 2032 : l. 2888-2893 ;
+            // - 7 600 euros par an : l. 2622-2623 ; chez chaque employeur : § 2160, l. 2694-2696 ;
+            // - seulement avec de vrais frais, pas si tout est rembourse : § 2130, l. 2651-2657 ;
+            // - des consequences sur les droits aux assurances sociales : § 2190, l. 2732-2733 ;
+            // - une reponse d'accord ou de refus : l. 2733-2734 ; le silence vaut accord : l. 2737 ;
+            // - renoncer a tout moment, pour l'annee suivante : l. 2951-2952.
             Question::AccordDfs => QuestionDeclaree {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
+                facultative: true,
+                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ta compagnie te rembourse tous tes frais. Elle a des conséquences sur les droits que tes cotisations te valent aux assurances sociales. Ta compagnie doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
-                    "Ton métier y ouvre droit : une part de ton salaire ne compte plus dans le calcul de tes cotisations. Ton net est un peu plus haut, mais cela peut réduire les droits que tes cotisations te valent aux assurances sociales. Si tu changes d'avis plus tard, ce sera pour le 1er janvier suivant.",
+                    "Elle change le calcul de tes cotisations : l'explication est juste en dessous. Sans réponse de ta part, ton silence vaut accord.",
                     F::Choix(vec![("oui", "J'accepte la déduction"), ("non", "Je refuse la déduction")]),
                     CaseSalarie::DeductionForfaitaireAccord,
                 )
@@ -326,8 +350,8 @@ impl Question {
     }
 }
 
-/// LES QUESTIONS A POSER a un salarie : celles dont la case manque a sa fiche (`manque` : elle se demande au salarie, sa
-/// condition est remplie et elle est vide, `declarations::champs::a_demander_au_salarie`), pourvu que la fiche dise ce
+/// LES QUESTIONS A POSER a un salarie : celles dont la case manque a sa fiche (`manque` : sa condition est remplie et
+/// elle est vide, `declarations::champs::a_demander_au_salarie`), pourvu que la fiche dise ce
 /// que la question suppose (`dite`) et que la question dont elle depend soit posee.
 pub fn a_poser(manque: &dyn Fn(CaseSalarie) -> bool, dite: &dyn Fn(CaseSalarie) -> bool) -> Vec<Question> {
     let mut posees: Vec<Question> = Vec::new();
@@ -364,6 +388,8 @@ struct QuestionPubliee {
     #[serde(skip_serializing_if = "Option::is_none")]
     si_aucun: Option<&'static str>,
     facultative: bool,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    explication: &'static str,
 }
 
 /// Comment la reponse s'ecrit : la page la compose ainsi, la releve la lit ainsi (`lire_reponse`).
@@ -415,6 +441,7 @@ pub fn formulaire_publie() -> FormulairePublie {
                 aucun: d.aucun,
                 si_aucun: d.si_aucun.map(|p| p.declaree().cle),
                 facultative: d.facultative,
+                explication: d.explication,
             }
         })
         .collect();
@@ -492,12 +519,20 @@ fn depourcent(t: &str) -> Option<String> {
 
 pub const SUJET: &str = "Ta fiche pour {compagnie}";
 
-pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes ci-dessous, chacune suivie de ta réponse ; écris « aucun » si tu n'en as pas.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
+pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : ouvre ce lien, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.\n{lien}\n\nSi tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir ci-dessous, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n";
 
-pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant ces lignes, chacune suivie de ta réponse ; écris « aucun » si tu n'en as pas :</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
+pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton, remplis la page, puis appuie sur « Envoyer » : ta réponse part de ta propre messagerie. La page ne garde rien.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{lien}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si tu ne peux pas ouvrir la page, réponds simplement à ce message en recopiant les lignes à remplir, chacune suivie de ta réponse : ce que chacune demande est dit juste au-dessus.</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px;white-space:pre-wrap\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
 
-/// CE QUI SE RECOPIE SANS LA PAGE : d'abord ce que chaque ligne demande (sans deux-points : rien ne s'y prend pour une
-/// reponse), puis les lignes `cle : ` a remplir, puis le code, en dernier.
+/// CE QUI SE RECOPIE SANS LA PAGE : d'abord ce que chaque ligne demande, avec l'aide de sa question, mot pour mot celle
+/// de la page (une ligne qui commence par « cle — » : rien ne s'y prend pour une reponse, `lire_reponse`), puis les
+/// lignes `cle : ` a remplir, puis le code, en dernier.
+///
+/// Le courriel porte ainsi l'information sur la deduction forfaitaire, et c'est lui qui la prouve : le BOSS veut le
+/// salarie informe « par tout moyen donnant date certaine […] de ce dispositif et de ses conséquences sur la validation
+/// de ses droits aux assurances sociales » (§ 2190), l'employeur qui ne justifie pas l'avoir informe « ne peut se
+/// prévaloir d'un accord de ceux-ci, même tacite » (§ 2200), et c'est a lui de le prouver (§ 2210) :
+/// `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2730-2745. La page ne garde rien ; le
+/// courriel parti, date, reste dans la boite de la compagnie.
 pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
     let mut lignes: Vec<String> = Vec::new();
     for q in questions {
@@ -506,16 +541,24 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
         if let FormeDeReponse::Choix(c) = &d.forme {
             dit.push_str(&format!(" ({})", c.iter().map(|(v, _)| *v).collect::<Vec<_>>().join(" ou ")));
         }
+        dit.push('.');
+        if !d.aide.is_empty() {
+            dit.push_str(&format!(" {}", d.aide));
+        }
         if let Some(a) = d.aucun {
-            dit.push_str(&format!(" ; « {} » : {}", AUCUN, a.to_lowercase()));
+            dit.push_str(&format!(" « {} » : {}.", AUCUN, a.to_lowercase()));
         }
         if let Some(p) = d.si_aucun {
-            dit.push_str(&format!(" ; seulement si {} est « {} »", p.declaree().cle, AUCUN));
+            dit.push_str(&format!(" Seulement si {} est « {} ».", p.declaree().cle, AUCUN));
         }
         if d.facultative {
-            dit.push_str(" ; facultatif");
+            dit.push_str(" Facultatif.");
         }
         lignes.push(dit);
+        // L'explication entiere, sous sa ligne : le courriel date prouve l'information (§ 2190 a 2210).
+        if !d.explication.is_empty() {
+            lignes.push(format!("   En savoir plus — {}", d.explication));
+        }
     }
     lignes.push(String::new());
     lignes.extend(questions.iter().map(|q| format!("{}{}", q.declaree().cle, SEPARATEUR)));
@@ -556,9 +599,25 @@ pub fn reponse(code: &CodeDeDemande, dites: &[(Question, Reponse)]) -> String {
 pub struct ReponseLue {
     pub dites: Vec<(Question, Reponse)>,
     pub illisibles: Vec<String>,
+    /// Les questions dont la reponse porte une ligne, lisible ou non.
+    vues: Vec<Question>,
 }
 
 impl ReponseLue {
+    /// La reponse ne porte aucune ligne pour `q` : la personne n'y a rien repondu (ni « aucun », ni une valeur, meme
+    /// illisible).
+    pub fn sans_ligne(&self, q: Question) -> bool {
+        !self.vues.contains(&q)
+    }
+
+    /// NE GARDE QUE LES REPONSES AUX QUESTIONS `posees` (celles qu'on pose a cette personne) ; rend les autres questions
+    /// repondues, qui ne s'ecrivent pas.
+    pub fn ne_garder_que(&mut self, posees: &[Question]) -> Vec<Question> {
+        let (gardees, autres): (Vec<_>, Vec<_>) = std::mem::take(&mut self.dites).into_iter().partition(|(q, _)| posees.contains(q));
+        self.dites = gardees;
+        autres.into_iter().map(|(q, _)| q).collect()
+    }
+
     /// La reponse a `q`, si elle est dite.
     fn de(&self, q: Question) -> Option<&Reponse> {
         self.dites.iter().find(|(x, _)| *x == q).map(|(_, r)| r)
@@ -573,22 +632,37 @@ impl ReponseLue {
     }
 }
 
-/// LA LECTURE DE LA REPONSE, le texte que la personne a ecrit (la citation deja otee, `envois::courriel_lecture`) :
-/// chaque ligne `cle : valeur` dont la cle est celle d'une question. Une autre ligne (un bonjour, une signature, le
-/// code) ne dit rien. Une valeur vide n'est pas une reponse ; `aucun` en est une, pour une question qui l'admet, et
-/// illisible pour une autre ; une question repondue deux fois de deux facons est illisible.
+/// LA LECTURE DE LA REPONSE, le texte que la personne a ecrit (la citation deja otee, `envois::courriel_lecture`).
+///
+/// UNE LIGNE EST UNE REPONSE quand ce qui precede son premier deux-points est un seul mot (lettres, chiffres, `_`) :
+/// `prenom : Marie`. Toute autre ligne n'est visiblement pas une reponse et ne dit rien : un bonjour, une signature,
+/// « Le 22 nov. à 10:30, … a écrit : », les lignes « cle — … » du courriel. Le mot se lit sans tenir compte des
+/// capitales (`Prenom`, `NIR`) ; la ligne du code n'est pas une question ; un autre mot qui n'est la cle d'aucune
+/// question est illisible, et se redemande. Une valeur vide n'est pas une reponse ; `aucun` (ou `aucune`) en est une,
+/// pour une question qui l'admet, et illisible pour une autre ; une question repondue deux fois de deux facons est
+/// illisible.
 pub fn lire_reponse(texte: &str) -> ReponseLue {
     let mut lue = ReponseLue::default();
     let mut en_double: Vec<Question> = Vec::new();
     for ligne in socle::texte::lignes_du_texte(texte) {
         let Some((tete, valeur)) = ligne.split_once(':') else { continue };
-        let Some(q) = Question::de_la_cle(strip(tete)) else { continue };
+        let mot = strip(tete).to_lowercase();
+        if mot.is_empty() || !mot.chars().all(|c| c.is_alphanumeric() || c == '_') || mot == CLE_DU_CODE {
+            continue;
+        }
         let valeur = strip(valeur);
         if valeur.is_empty() {
             continue;
         }
+        let Some(q) = Question::de_la_cle(&mot) else {
+            lue.illisibles.push(format!("« {} » : « {} » (ce n'est pas une question de la fiche)", strip(tete), valeur));
+            continue;
+        };
         let d = q.declaree();
-        let r = if valeur.to_lowercase() == AUCUN {
+        if !lue.vues.contains(&q) {
+            lue.vues.push(q);
+        }
+        let r = if [AUCUN, "aucune"].contains(&valeur.to_lowercase().as_str()) {
             if d.aucun.is_none() {
                 lue.illisibles.push(format!("{} : « {} » (cette question n'admet pas « {} »)", en_minuscule(d.libelle), valeur, AUCUN));
                 continue;
@@ -794,7 +868,7 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune_affichage: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub num_conges_spectacles: Option<String>,
+    pub num_conges_spectacles: Option<NumeroCongesSpectacles>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -835,13 +909,11 @@ pub struct BanqueLue {
     pub bic: Option<droit::fiche::Bic>,
 }
 
-/// CE QUE LA RELEVE TIRE D'UNE REPONSE : les cases lues, ce qui ne s'est pas lu (et se redemande), et ce que la
-/// personne a dit n'avoir pas, qu'aucune case de la fiche ne garde : la note de la fiche le dit.
+/// CE QUE LA RELEVE TIRE D'UNE REPONSE : les cases lues, et ce qui ne s'est pas lu (et se redemande).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FicheDesReponses {
     pub fiche: FicheLue,
     pub illisible: Vec<String>,
-    pub sans: Vec<Question>,
 }
 
 /// `fiche_depuis_reponses` : les cases que la reponse remplit. Rien n'est suppose. Une liste livree (les pays) qui ne
@@ -849,7 +921,6 @@ pub struct FicheDesReponses {
 pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
     let mut d = FicheLue::default();
     let mut illisible: Vec<String> = rep.illisibles.clone();
-    let mut sans: Vec<Question> = Vec::new();
     let faute = |q: Question, r: &str| format!("{} : « {} »", en_minuscule(q.declaree().libelle), r);
     let texte = |q: Question| rep.ecrite(q).map(|r| strip(r).to_string()).filter(|t| !t.is_empty());
     d.prenom_affichage = texte(Question::Prenom);
@@ -859,10 +930,13 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
     d.lieu_naissance_affichage = texte(Question::LieuNaissance);
     d.adresse_affichage = texte(Question::Adresse);
     d.commune_affichage = texte(Question::Commune);
-    d.num_conges_spectacles = rep.ecrite(Question::CongesSpectacles).map(|r| r.replace(' ', "")).filter(|t| !t.is_empty());
-    if rep.de(Question::CongesSpectacles) == Some(&Reponse::Aucun) {
-        sans.push(Question::CongesSpectacles);
-    }
+    // LE NUMERO CONGES SPECTACLES, trois cas : un numero ; « aucun », la fiche retient qu'il n'en a pas (et les rappels
+    // disent la demande a faire) ; rien, rien ne s'ecrit.
+    d.num_conges_spectacles = match rep.de(Question::CongesSpectacles) {
+        Some(Reponse::Dite(r)) => Some(NumeroCongesSpectacles::Numero(r.replace(' ', ""))).filter(|n| n.numero().is_some()),
+        Some(Reponse::Aucun) => Some(NumeroCongesSpectacles::SansNumero),
+        None => None,
+    };
     for q in [Question::Naissance, Question::Anniversaire] {
         if let Some(r) = rep.ecrite(q) {
             let v = date_lue(r);
@@ -886,19 +960,24 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
             illisible.push(faute(Question::CodePostal, r));
         }
     }
+    // LE NIR, revérifié comme la page le vérifie : treize caracteres d'un NIR (`forme_d_un_nir`, la Corse comprise), et
+    // sa cle, si elle est dite, celle de ses treize caracteres (`droit::fiche::CleNir::du_nir`). Une cle fausse rend la
+    // reponse entiere illisible : rien ne s'ecrit, elle se redemande.
     if let Some(r) = rep.ecrite(Question::Nir) {
-        let n: String = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
-        let tout_chiffres = n.chars().all(chiffre);
-        // Treize chiffres sont un NIR ; une cle hors de 01..97 rend la reponse entiere illisible, avec sa raison.
-        match Nir::et_sa_cle(&n).filter(|_| tout_chiffres) {
-            Some((nir, Some(cle))) => match droit::fiche::CleNir::lire(cle) {
-                Ok(cle) => {
-                    d.nir = Some(Nir::lire(nir)?);
-                    d.nir_cle = Some(cle);
+        let n: String = Nir::rangee(r).chars().filter(|c| !matches!(c, '.' | '-')).collect();
+        match Nir::et_sa_cle(&n).filter(|(treize, _)| forme_d_un_nir(treize)) {
+            Some((treize, cle)) => {
+                let nir = Nir::lire(treize)?;
+                match cle.map(|c| (droit::fiche::CleNir::lire(c), droit::fiche::CleNir::du_nir(&nir))) {
+                    None => d.nir = Some(nir),
+                    Some((Ok(dite), Some(juste))) if dite == juste => {
+                        d.nir = Some(nir);
+                        d.nir_cle = Some(dite);
+                    }
+                    Some((Ok(_), _)) => illisible.push(format!("{} (sa clé n'est pas celle de ses 13 premiers chiffres)", faute(Question::Nir, r))),
+                    Some((Err(e), _)) => illisible.push(format!("{} ({})", faute(Question::Nir, r), e.phrase)),
                 }
-                Err(e) => illisible.push(format!("{} ({})", faute(Question::Nir, r), e.phrase)),
-            },
-            Some((nir, None)) => d.nir = Some(Nir::lire(nir)?),
+            }
             None => illisible.push(faute(Question::Nir, r)),
         }
     }
@@ -911,10 +990,14 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
         }
     }
     match rep.de(Question::DepartementNaissance) {
-        Some(Reponse::Dite(r)) => match droit::fiche::DepartementNaissance::lire(&strip(r).to_uppercase()) {
-            Ok(dep) => d.departement_naissance = Some(dep),
-            Err(e) => illisible.push(format!("{} ({})", faute(Question::DepartementNaissance, r), e.phrase)),
-        },
+        Some(Reponse::Dite(r)) => {
+            let t = strip(r).to_uppercase();
+            if departement_de_la_dsn(&t) {
+                d.departement_naissance = Some(droit::fiche::DepartementNaissance::lire(&t)?);
+            } else {
+                illisible.push(faute(Question::DepartementNaissance, r));
+            }
+        }
         // Ne hors de France : 99 (S21.G00.30.014, « Pour les personnes nées à l'étranger, renseigner 99 »).
         Some(Reponse::Aucun) => d.departement_naissance = Some(droit::fiche::DepartementNaissance::lire("99")?),
         None => {}
@@ -1004,7 +1087,26 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
             d.pays_naissance = pays;
         }
     }
-    Ok(FicheDesReponses { fiche: d, illisible, sans })
+    Ok(FicheDesReponses { fiche: d, illisible })
+}
+
+/// TREIZE CARACTERES QUI ONT LA FORME D'UN NIR, deja ranges (`Nir::rangee`) : des chiffres, et aux 6e et 7e rangs deux
+/// chiffres ou le departement corse, 2A ou 2B (INSEE, schema NIR : `atelier/reference/sources/insee-nir-siret/`).
+fn forme_d_un_nir(t: &str) -> bool {
+    let c: Vec<char> = t.chars().collect();
+    let rang: String = c.iter().skip(5).take(2).collect();
+    c.len() == 13 && c.iter().enumerate().all(|(i, x)| x.is_ascii_digit() || (i == 5 || i == 6) && (rang == "2A" || rang == "2B"))
+}
+
+/// UN DEPARTEMENT DE NAISSANCE QUE LA DSN ADMET : « (0[1-9]|[1-9][0-9])|2A|2B » (S21.G00.30.014, CSL 00 :
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 295) ; 99, ne a l'etranger, s'ecrit par « aucun ».
+fn departement_de_la_dsn(t: &str) -> bool {
+    let c: Vec<char> = t.chars().collect();
+    match c.as_slice() {
+        ['0', b] => ('1'..='9').contains(b),
+        [a, b] => ('1'..='9').contains(a) && b.is_ascii_digit() || t == "2A" || t == "2B",
+        _ => false,
+    }
 }
 
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
@@ -1012,7 +1114,7 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
 /// incomplet.
 fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<(droit::fiche::DepartementNaissance, Option<socle::pays::CodePays>)>> {
     let c: Vec<char> = nir.chars().collect();
-    if !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
+    if !forme_d_un_nir(nir) || !matches!(c[0], '1' | '2') {
         return Ok(None);
     }
     let dep = droit::fiche::DepartementNaissance::lire(&c[5..7].iter().collect::<String>())?;

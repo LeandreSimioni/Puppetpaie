@@ -1036,7 +1036,8 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             format!("Numéro d'objet : {} {} Spectacle : {}", du_spectacle(sp.as_ref(), |s| &s.numero_objet, "numero_objet")?, tiret, du_spectacle(sp.as_ref(), |s| &s.titre, "titre")?);
         ligne_caisse = vec![
             k("N° Congés Spectacles :"),
-            mt(format!(" {}\n", match sal.num_conges_spectacles.remplie() { Some(n) => n, None => "-" })),
+            // « N'en a pas » s'imprime comme l'absence de numero.
+            mt(format!(" {}\n", match sal.num_conges_spectacles.dite().and_then(droit::fiche::NumeroCongesSpectacles::numero) { Some(n) => n, None => "-" })),
         ];
         let dates: Vec<String> = e.dates_travail.iter().map(Jour::jj_mm_aaaa).collect();
         travail = vec![m("Dates travaillées :", true, None), mt(format!(" {}", dates.join(", ")))];

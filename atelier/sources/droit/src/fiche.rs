@@ -3051,6 +3051,84 @@ cases! {
     pub struct Banque, cles CaseBanque { Iban(Iban) = "iban" => iban, Bic(Bic) = "bic" => bic }
 }
 
+/// LE NUMERO CONGES SPECTACLES D'UN SALARIE, OU QU'IL N'EN A PAS (`num_conges_spectacles`). Le numero est celui que la
+/// caisse lui donne a son immatriculation, qu'il demande en ligne, ou que l'employeur demande pour un salarie de
+/// nationalite etrangere (Audiens, mode d'emploi employeur : « Tout salarié doit […] effectuer une demande
+/// d'immatriculation en ligne », « Si le salarié est de nationalité étrangère, l'employeur doit procéder à son
+/// immatriculation » : `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`,
+/// l. 168-180). « N'en a pas » dit que cette demande est a faire. Il s'ecrit `{"numero": "…"}` ou
+/// `{"sans_numero": true}`, ce que la fiche montre en deux parties ; un texte seul, la forme d'avant, se lit comme un
+/// numero et se reecrit dans la neuve au premier enregistrement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NumeroCongesSpectacles {
+    Numero(String),
+    SansNumero,
+}
+
+impl NumeroCongesSpectacles {
+    /// Le numero, s'il est dit et non vide.
+    pub fn numero(&self) -> Option<&str> {
+        match self {
+            NumeroCongesSpectacles::Numero(n) if !n.trim().is_empty() => Some(n),
+            NumeroCongesSpectacles::Numero(_) | NumeroCongesSpectacles::SansNumero => None,
+        }
+    }
+
+    /// Le salarie n'a pas de numero : sa demande d'immatriculation est a faire.
+    pub fn sans_numero(&self) -> bool {
+        matches!(self, NumeroCongesSpectacles::SansNumero)
+    }
+}
+
+/// Les deux parties ecrites de `NumeroCongesSpectacles`.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PartiesCongesSpectacles {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    numero: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sans_numero: Option<bool>,
+}
+
+/// Ce qu'une fiche ecrit dans la case : ses deux parties, ou un texte seul (la forme d'avant).
+#[derive(Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+enum CongesSpectaclesEcrit {
+    Texte(String),
+    Parties(PartiesCongesSpectacles),
+}
+
+impl Serialize for NumeroCongesSpectacles {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            NumeroCongesSpectacles::Numero(n) => PartiesCongesSpectacles { numero: Some(n.clone()), sans_numero: None },
+            NumeroCongesSpectacles::SansNumero => PartiesCongesSpectacles { numero: None, sans_numero: Some(true) },
+        }
+        .serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for NumeroCongesSpectacles {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        match CongesSpectaclesEcrit::deserialize(d)? {
+            CongesSpectaclesEcrit::Texte(n) => Ok(NumeroCongesSpectacles::Numero(n)),
+            CongesSpectaclesEcrit::Parties(p) => match (p.numero, p.sans_numero) {
+                (Some(_), Some(true)) => Err(D::Error::custom("un numéro Congés Spectacles, ou « n'en a pas » : pas les deux")),
+                (Some(n), Some(false) | None) => Ok(NumeroCongesSpectacles::Numero(n)),
+                (None, Some(true)) => Ok(NumeroCongesSpectacles::SansNumero),
+                (None, Some(false) | None) => Err(D::Error::custom("ni numéro Congés Spectacles, ni « n'en a pas » : la case vide s'écrit null")),
+            },
+        }
+    }
+}
+
+impl FormeDeCase for NumeroCongesSpectacles {
+    fn cases() -> Vec<Declaree> {
+        vec![declaree::<String>("numero"), declaree::<bool>("sans_numero")]
+    }
+}
+
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
     pub struct SanteSvp {
@@ -3301,7 +3379,7 @@ fiche! {
         CommuneAffichage(String) = "commune_affichage" => commune_affichage,
         Email(Courriel) = "email" => email,
         Banque(Banque) = "banque" => banque,
-        NumCongesSpectacles(String) = "num_conges_spectacles" => num_conges_spectacles,
+        NumCongesSpectacles(NumeroCongesSpectacles) = "num_conges_spectacles" => num_conges_spectacles,
         EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,
         Emploi(String) = "emploi" => emploi,
         PcsEse(CodePcsEse) = "pcs_ese" => pcs_ese,
