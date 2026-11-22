@@ -132,7 +132,7 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
         });
         let invitation = InvitationDeLaFiche {
             titre: "À faire remplir",
-            aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
+            aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; le métier se choisit ensuite à chaque engagement.",
             sans_boite: geste.is_none().then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
             geste,
             demande: crate::coffre::demande(&ctx.racine, super::GESTE_DEMANDER_FICHE)?,

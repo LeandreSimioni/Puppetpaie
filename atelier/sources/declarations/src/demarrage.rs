@@ -335,7 +335,13 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         // L'import rattache un salarie a sa DSN par son NIR (`routes::import`, « Les salaries, par NIR ») : une fiche
         // sans NIR ne recoit rien d'une DSN, ce qui lui manque se saisit.
         let rattache = s.nir.dite().is_some();
-        for m in crate::champs::manquants(&s.champs)? {
+        // LE METIER SE CHOISIT A CHAQUE ENGAGEMENT, par l'employeur (Leandre, 22/11/2026 : « le métier, c'est choisi à
+        // l'engagement ») : celui de la fiche n'est que le metier habituel, propose sur une carte neuve
+        // (`engagement::proposees`). La fiche ne reclame donc pas les cases que le metier decide
+        // (`emplois::ChampsDuMetier::CASES`) ; la DSN les exige de la fiche que la paie lit, le metier de l'engagement
+        // par-dessus (`dsn::exiges`, `emplois::emploi_de`).
+        let du_metier = |m: &crate::champs::Manquant| droit::emplois::ChampsDuMetier::CASES.iter().any(|k| droit::fiche::CaseDeFiche::from(*k) == m.cle.champ);
+        for m in crate::champs::manquants(&s.champs)?.into_iter().filter(|m| !du_metier(m)) {
             let piece = if rattache { piece_de(&s.champs, &m) } else { PieceQuiLaPorte::Aucune };
             out.push(ligne(m, piece, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
