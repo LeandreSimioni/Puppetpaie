@@ -585,7 +585,8 @@ fn agent(delai: Duration, url: &Url) -> Result<ureq::Agent, Panne> {
 /// secondes entre deux morceaux, pas une duree totale.
 fn lire_corps(corps: ureq::Body, delai: Duration, attendu: Option<Octets>, https: bool) -> Result<Vec<u8>, Panne> {
     let (tx, rx) = mpsc::channel::<Result<Vec<u8>, std::io::Error>>();
-    std::thread::spawn(move || {
+    // Un fil qui ne demarre pas (dans le navigateur, aucun ne demarre) rend sa panne, jamais une panique.
+    let lecteur = std::thread::Builder::new().spawn(move || {
         let mut r = corps.into_reader();
         let mut tampon = vec![0u8; 64 * 1024];
         loop {
@@ -606,6 +607,9 @@ fn lire_corps(corps: ureq::Body, delai: Duration, attendu: Option<Octets>, https
             }
         }
     });
+    if let Err(e) = lecteur {
+        return Err(Panne::brute(Classe::Reseau, format!("Le fil qui lit la réponse ne démarre pas : {}", e)));
+    }
     let mut tout = Vec::new();
     loop {
         match rx.recv_timeout(delai) {

@@ -115,10 +115,16 @@ pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &droit::cont
 pub(crate) const PILE_D_UNE_ROUTE: usize = 8 * 1024 * 1024;
 
 /// Un fil qui sert des routes dans la fenetre (une connexion, la file des etats, la veille, un passage en fond), avec
-/// la pile qu'il leur faut (`PILE_D_UNE_ROUTE`).
-pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) {
-    if let Err(e) = std::thread::Builder::new().stack_size(PILE_D_UNE_ROUTE).spawn(f) {
-        eprintln!("Un fil du moteur ne demarre pas : {}.", e);
+/// la pile qu'il leur faut (`PILE_D_UNE_ROUTE`). Vrai s'il a demarre ; un fil qui ne demarre pas se dit ici, et `f` ne
+/// se fait pas. Dans le navigateur (WASI), aucun fil ne demarre : la file des etats fait alors son travail sur le fil
+/// qui l'attend (`etat_garde::Fil`).
+pub fn fil_de_routes<F: FnOnce() + Send + 'static>(f: F) -> bool {
+    match std::thread::Builder::new().stack_size(PILE_D_UNE_ROUTE).spawn(f) {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("Un fil du moteur ne demarre pas : {}.", e);
+            false
+        }
     }
 }
 

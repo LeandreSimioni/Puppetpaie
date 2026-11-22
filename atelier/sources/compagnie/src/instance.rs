@@ -194,7 +194,7 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
     let ferme = Arc::new(AtomicBool::new(false));
     let vu = ferme.clone();
     ecoute.set_nonblocking(true).map_err(|e| socle::refus!("Le verrou de la fenetre n'attend pas sans bloquer : {}", e))?;
-    std::thread::spawn(move || {
+    std::thread::Builder::new().spawn(move || {
         while !vu.load(Ordering::SeqCst) {
             let c = match ecoute.accept() {
                 Ok((c, _)) => c,
@@ -239,7 +239,8 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
                 devant();
             }
         }
-    });
+    })
+    .map_err(|e| socle::refus!("Le verrou de la fenetre ne demarre pas son fil : {}", e))?;
     Ok(Verrou { ferme })
 }
 

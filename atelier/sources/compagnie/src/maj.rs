@@ -1975,7 +1975,12 @@ pub fn chercher_en_fond() {
     let inst = installation();
     dire_l_installation(&inst, &RECHERCHE);
     RECHERCHE.poser(Etape::Recherche, None, |_| {});
-    std::thread::spawn(move || chercher_tant_qu_il_tourne(&inst, &cles_de_l_editeur(), &RECHERCHE, &ATTENTES_HORS_LIGNE, RYTHME_A_JOUR));
+    // Le fil qui ne demarre pas (dans le navigateur, aucun ne demarre) : aucune recherche dans ce processus, et l'indicateur
+    // n'en montre aucune.
+    if let Err(e) = std::thread::Builder::new().spawn(move || chercher_tant_qu_il_tourne(&inst, &cles_de_l_editeur(), &RECHERCHE, &ATTENTES_HORS_LIGNE, RYTHME_A_JOUR)) {
+        eprintln!("Un fil du moteur ne demarre pas : {} ; aucune mise a jour ne se cherche.", e);
+        RECHERCHE.poser(Etape::Aucune, None, |_| {});
+    }
 }
 
 /// LA RECHERCHE CONTINUE TANT QUE LE LOGICIEL TOURNE. `verifier_suivi`, puis, selon ce qu'elle laisse dans `suivi` :
