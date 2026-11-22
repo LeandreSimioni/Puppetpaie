@@ -235,7 +235,7 @@ fn resoudre(p: &Path) -> R<PathBuf> {
     let mut reste: Vec<std::ffi::OsString> = Vec::new();
     let mut tete = absolu;
     loop {
-        let c = match std::fs::canonicalize(&tete) {
+        let c = match socle::fichiers::resolu(&tete) {
             Ok(c) => Some(c),
             // Ce qui n'existe pas encore se resout par son parent.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,

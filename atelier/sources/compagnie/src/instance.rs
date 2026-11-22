@@ -102,7 +102,7 @@ struct Retenu {
 
 /// Le dossier d'une installation, tel que le verrou le compare : canonique, sans le prefixe `\\?\` de Windows.
 pub fn dossier_de(inst: &Path) -> R<String> {
-    let c = std::fs::canonicalize(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
+    let c = socle::fichiers::resolu(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
     let t = c.to_string_lossy();
     Ok(match t.strip_prefix(r"\\?\") {
         Some(sans) => sans.to_string(),

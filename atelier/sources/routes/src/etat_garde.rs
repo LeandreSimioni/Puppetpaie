@@ -230,7 +230,7 @@ impl std::fmt::Display for Cle {
 /// Le dossier, absolu et comparable (sous Windows, sans le `\\?\` de `canonicalize`) ; un dossier qui ne se resout pas
 /// se marque par son erreur (l'etat se refera quand il se resoudra).
 fn absolu(p: &Path) -> String {
-    let t = match std::fs::canonicalize(p) {
+    let t = match socle::fichiers::resolu(p) {
         Ok(abs) => abs.to_string_lossy().into_owned(),
         Err(e) => format!("{} ({:?})", p.to_string_lossy(), e.kind()),
     };

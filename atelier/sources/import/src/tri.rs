@@ -178,7 +178,7 @@ pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
         return Err(socle::echec::refus_avec("Le dossier à trier n'existe pas.", a_part).reclasser(socle::echec::Classe::Refuse));
     }
     std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;
-    let travail_canon = std::fs::canonicalize(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
+    let travail_canon = socle::fichiers::resolu(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
     let contrats = documents::contrat_ecrit::titres_des_contrats()?;
     let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new(), mises_de_cote: Vec::new(), contrats };
     t.parcourir(dossier, None, None, 0)?;
@@ -257,7 +257,7 @@ impl Trieur {
             };
             if genre.is_dir() {
                 // Le dossier de travail, s'il est sous le dossier trie, ne se trie pas.
-                match std::fs::canonicalize(&chemin) {
+                match socle::fichiers::resolu(&chemin) {
                     Ok(c) if c == self.travail_canon => continue,
                     Ok(_) => {}
                     Err(e) => {

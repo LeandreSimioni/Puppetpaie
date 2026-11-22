@@ -489,7 +489,7 @@ pub fn rejouer_et_lire(scenario: &Path, inst: &Path, options: &OptionsRejeu, arr
     // L'INSTALLATION DU REJEU, BRIDEE EN TOUTES LETTRES (le geste de l'accueil, `bridage.rs`) : comme celle du banc, et le
     // moteur ne lit qu'elle (`compagnies::base`) -- rien du depot ni du poste ou l'on rejoue.
     compagnie::bridage::brider(inst)?;
-    let inst = std::fs::canonicalize(inst).map_err(|e| du_disque(inst, &e))?;
+    let inst = socle::fichiers::resolu(inst).map_err(|e| du_disque(inst, &e))?;
     let travail = inst.join("pieces-deposees");
     socle::temps::liberer();
     socle::temps::aleas_fixes();

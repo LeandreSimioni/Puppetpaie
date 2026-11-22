@@ -646,6 +646,21 @@ pub fn lire_texte(chemin: &Path) -> std::io::Result<String> {
     }
 }
 
+/// LE CHEMIN RESOLU d'un fichier ou d'un dossier qui existe : absolu, au bout de ses liens (`std::fs::canonicalize`) ;
+/// l'erreur du systeme s'il n'existe pas. Le seul chemin du logiciel vers `canonicalize`.
+#[cfg(not(target_os = "wasi"))]
+pub fn resolu(chemin: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(chemin)
+}
+
+/// Dans le navigateur (WASI), le systeme ne resout aucun chemin (`canonicalize` n'y existe pas) : le chemin tel quel,
+/// s'il existe ; l'erreur du systeme, sinon.
+#[cfg(target_os = "wasi")]
+pub fn resolu(chemin: &Path) -> std::io::Result<PathBuf> {
+    std::fs::metadata(chemin)?;
+    Ok(chemin.to_path_buf())
+}
+
 /// `Path::exists`, note.
 pub fn existe(chemin: &Path) -> bool {
     let v = chemin.exists();

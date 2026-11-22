@@ -207,7 +207,7 @@ pub struct Fenetre {
 /// La cle d'une compagnie dans la fenetre : son dossier resolu ; un dossier qui ne se resout plus (efface, deplace) se
 /// nomme par son chemin, qui le designe encore.
 fn cle_du_dossier(p: &Path) -> PathBuf {
-    match std::fs::canonicalize(p) {
+    match socle::fichiers::resolu(p) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => p.to_path_buf(),
         Err(e) => {
@@ -347,7 +347,7 @@ fn fichier_de_la_page(chemin: &str) -> R<Option<(Vec<u8>, &'static str)>> {
         Some("html") => "text/html; charset=utf-8",
         _ => return Ok(None),
     };
-    let present = |p: &Path| match std::fs::canonicalize(p) {
+    let present = |p: &Path| match socle::fichiers::resolu(p) {
         Ok(v) => Ok(Some(v)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(socle::echec::du_disque(&p, &e)),

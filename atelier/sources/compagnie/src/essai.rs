@@ -379,7 +379,7 @@ fn absolu(p: &Path) -> R<PathBuf> {
     let mut reste = Vec::new();
     let mut a = p.as_path();
     loop {
-        match a.canonicalize() {
+        match socle::fichiers::resolu(&a) {
             Ok(mut c) => {
                 for r in reste.iter().rev() {
                     c.push(r);
