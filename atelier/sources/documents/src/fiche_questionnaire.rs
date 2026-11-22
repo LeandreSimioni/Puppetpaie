@@ -909,19 +909,24 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
             illisible.push(faute(Question::CodePostal, r));
         }
     }
+    // LE NIR, revérifié comme la page le vérifie : treize caracteres d'un NIR (`forme_d_un_nir`, la Corse comprise), et
+    // sa cle, si elle est dite, celle de ses treize caracteres (`droit::fiche::CleNir::du_nir`). Une cle fausse rend la
+    // reponse entiere illisible : rien ne s'ecrit, elle se redemande.
     if let Some(r) = rep.ecrite(Question::Nir) {
-        let n: String = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
-        let tout_chiffres = n.chars().all(chiffre);
-        // Treize chiffres sont un NIR ; une cle hors de 01..97 rend la reponse entiere illisible, avec sa raison.
-        match Nir::et_sa_cle(&n).filter(|_| tout_chiffres) {
-            Some((nir, Some(cle))) => match droit::fiche::CleNir::lire(cle) {
-                Ok(cle) => {
-                    d.nir = Some(Nir::lire(nir)?);
-                    d.nir_cle = Some(cle);
+        let n: String = Nir::rangee(r).chars().filter(|c| !matches!(c, '.' | '-')).collect();
+        match Nir::et_sa_cle(&n).filter(|(treize, _)| forme_d_un_nir(treize)) {
+            Some((treize, cle)) => {
+                let nir = Nir::lire(treize)?;
+                match cle.map(|c| (droit::fiche::CleNir::lire(c), droit::fiche::CleNir::du_nir(&nir))) {
+                    None => d.nir = Some(nir),
+                    Some((Ok(dite), Some(juste))) if dite == juste => {
+                        d.nir = Some(nir);
+                        d.nir_cle = Some(dite);
+                    }
+                    Some((Ok(_), _)) => illisible.push(format!("{} (sa clé n'est pas celle de ses 13 premiers chiffres)", faute(Question::Nir, r))),
+                    Some((Err(e), _)) => illisible.push(format!("{} ({})", faute(Question::Nir, r), e.phrase)),
                 }
-                Err(e) => illisible.push(format!("{} ({})", faute(Question::Nir, r), e.phrase)),
-            },
-            Some((nir, None)) => d.nir = Some(Nir::lire(nir)?),
+            }
             None => illisible.push(faute(Question::Nir, r)),
         }
     }
@@ -934,10 +939,14 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
         }
     }
     match rep.de(Question::DepartementNaissance) {
-        Some(Reponse::Dite(r)) => match droit::fiche::DepartementNaissance::lire(&strip(r).to_uppercase()) {
-            Ok(dep) => d.departement_naissance = Some(dep),
-            Err(e) => illisible.push(format!("{} ({})", faute(Question::DepartementNaissance, r), e.phrase)),
-        },
+        Some(Reponse::Dite(r)) => {
+            let t = strip(r).to_uppercase();
+            if departement_de_la_dsn(&t) {
+                d.departement_naissance = Some(droit::fiche::DepartementNaissance::lire(&t)?);
+            } else {
+                illisible.push(faute(Question::DepartementNaissance, r));
+            }
+        }
         // Ne hors de France : 99 (S21.G00.30.014, « Pour les personnes nées à l'étranger, renseigner 99 »).
         Some(Reponse::Aucun) => d.departement_naissance = Some(droit::fiche::DepartementNaissance::lire("99")?),
         None => {}
@@ -1030,12 +1039,31 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
     Ok(FicheDesReponses { fiche: d, illisible, sans })
 }
 
+/// TREIZE CARACTERES QUI ONT LA FORME D'UN NIR, deja ranges (`Nir::rangee`) : des chiffres, et aux 6e et 7e rangs deux
+/// chiffres ou le departement corse, 2A ou 2B (INSEE, schema NIR : `atelier/reference/sources/insee-nir-siret/`).
+fn forme_d_un_nir(t: &str) -> bool {
+    let c: Vec<char> = t.chars().collect();
+    let rang: String = c.iter().skip(5).take(2).collect();
+    c.len() == 13 && c.iter().enumerate().all(|(i, x)| x.is_ascii_digit() || (i == 5 || i == 6) && (rang == "2A" || rang == "2B"))
+}
+
+/// UN DEPARTEMENT DE NAISSANCE QUE LA DSN ADMET : « (0[1-9]|[1-9][0-9])|2A|2B » (S21.G00.30.014, CSL 00 :
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 295) ; 99, ne a l'etranger, s'ecrit par « aucun ».
+fn departement_de_la_dsn(t: &str) -> bool {
+    let c: Vec<char> = t.chars().collect();
+    match c.as_slice() {
+        ['0', b] => ('1'..='9').contains(b),
+        [a, b] => ('1'..='9').contains(a) && b.is_ascii_digit() || t == "2A" || t == "2B",
+        _ => false,
+    }
+}
+
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
 /// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
 fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> R<Option<(droit::fiche::DepartementNaissance, Option<socle::pays::CodePays>)>> {
     let c: Vec<char> = nir.chars().collect();
-    if !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
+    if !forme_d_un_nir(nir) || !matches!(c[0], '1' | '2') {
         return Ok(None);
     }
     let dep = droit::fiche::DepartementNaissance::lire(&c[5..7].iter().collect::<String>())?;
