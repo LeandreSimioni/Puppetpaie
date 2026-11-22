@@ -80,8 +80,8 @@ function dessinerVeille(v) {
   // LA SAUVEGARDE QUI N'ARRIVE PAS AU BOUT, à sa place : un dossier que
   // Google refuse une fois repart au passage suivant, sans bruit ; ce qui dure, le moteur le dit
   // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours.
-  if (d && d.sauvegarde_souci && !d.hors_ligne) {
-    morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(d.sauvegarde_souci)}</span>`);
+  if (d && k.sauvegarde_souci && !d.hors_ligne) {
+    morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(k.sauvegarde_souci)}</span>`);
   }
 
   // 2. LES NOUVELLES : ce qui est arrivé depuis le dernier regard.

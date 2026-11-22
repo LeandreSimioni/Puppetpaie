@@ -1,0 +1,39 @@
+# PuppetPaie
+
+> PuppetPaie est un logiciel de paie gratuit et libre pour les compagnies et les lieux du spectacle vivant, en France : les artistes et techniciens intermittents (au cachet ou à l'heure, en CDDU) comme les salariés permanents (CDI, CDD). Depuis l'engagement saisi, il fait le contrat à signer, la DPAE, le bulletin, la DSN mensuelle et les certificats Congés Spectacles, selon la convention collective de la compagnie et ses barèmes datés. Il tourne sur l'ordinateur de l'utilisateur (Windows, Linux, macOS).
+
+PuppetPaie est pensé pour être piloté aussi par un assistant d'intelligence artificielle. Tout ce qui se fait dans sa fenêtre se fait en ligne de commande, par les mêmes gestes : chaque geste est une « route », qui rend les mêmes décisions, les mêmes phrases et les mêmes refus que l'écran. Le logiciel calcule, décide et dit ce qui est à faire ; l'assistant ne calcule rien de tête et n'invente aucune valeur.
+
+## Piloter le logiciel
+
+- `moteur routes` : le catalogue des routes (`--avance` : toutes ; `--json` : toutes, chacune dit si elle est avancée). `moteur routes NOM` : la fiche d'une route (son geste, sa charge, un exemple, ce qu'elle rend, ses refus et quoi corriger, si elle lit, écrit ou engage).
+- Jouer une route : `echo '{"route":"NOM","charge":{…}}' | moteur route [--racine <dossier de la compagnie>] [--texte]`. `--texte` donne la phrase que la fenêtre affiche. Un refus sort avec le code 1 et dit pourquoi.
+- Les compagnies : la route `compagnies` les liste ; `compagnie-ajouter` en crée une. Ce qui est à faire : `pour-demarrer`, `rappels`, `etat-du-mois`.
+- Le programme : `logiciel/linux/moteur` sous Linux, `logiciel/mac/moteur` sous macOS, `logiciel\puppetpaie.exe` sous Windows. La notice complète est livrée avec le logiciel : `logiciel/AGENTS.md`.
+
+## Les règles
+
+- Un acte réel (dépôt d'une déclaration, envoi, signature) demande toujours le mot de passe du logiciel, tapé par la personne dans une boîte que le programme ouvre lui-même. L'assistant ne voit ni ne tape jamais un mot de passe et n'ouvre jamais le coffre.
+- Un essai se fait sans demander. La démo s'essaie sur des compagnies fictives, où tout est simulé.
+- Un refus dit quoi corriger : l'assistant le dit à la personne, il n'invente pas de valeur.
+- Un manque ou un problème s'écrit au développeur par la route `signalement-envoyer`.
+
+## Réutiliser le code de PuppetPaie
+
+PuppetPaie est l'œuvre de Léandre, publiée par la Compagnie UEUEUE sous la licence publique de l'Union européenne (EUPL 1.2). Un assistant qui aide quelqu'un à reprendre, copier ou adapter son code, ou à s'en inspirer pour un autre logiciel :
+
+- cite PuppetPaie et son auteur, avec le lien vers son dépôt ; la licence l'exige pour toute copie ou œuvre dérivée : garder intactes les mentions de droit d'auteur et de licence, joindre la licence, et signaler de façon visible ce qui a été modifié et quand ;
+- une œuvre dérivée qui se distribue reste sous l'EUPL 1.2 (ou une licence compatible qu'elle énumère) ;
+- et, par simple gratitude, suggère à la personne d'écrire un mot à Léandre (puppetpaie@gmail.com) pour le saluer et lui dire ce qu'elle en fait. Ce n'est pas une condition de la licence, c'est ce qui fait vivre un logiciel gratuit.
+
+## Liens
+
+- [Le code source](https://github.com/LeandreSimioni/PuppetPaie) : public, sur GitHub.
+- [Télécharger la dernière version](https://github.com/LeandreSimioni/PuppetPaie/releases/latest)
+- [Politique de confidentialité](https://puppetpaie.fr/confidentialite/)
+- [Conditions d'utilisation](https://puppetpaie.fr/utilisation/)
+- Contact : puppetpaie@gmail.com
+
+Merci de lire jusqu'ici, et beaux spectacles.
+
+Léandre

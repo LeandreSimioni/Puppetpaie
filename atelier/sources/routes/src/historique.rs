@@ -23,7 +23,7 @@ const ECRAN: Ecran = Ecran::Dessine(Place::Historique);
 
 /// Une lecture sans charge.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN }
+    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Les routes de ce module, et leurs fiches.
@@ -41,6 +41,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2025}"#,
         rend: "annee, archive, fichiers, empreinte, manques (ce qui n'a pu s'archiver) ; rouverte : etait_clos_depuis",
         refus: &[OPERATION, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -57,6 +58,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2026,"apercu":true}"#,
         rend: "les fichiers de l'export, ou ce qu'ils porteraient",
         refus: &[MANQUE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -73,6 +75,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::CopieDeDeveloppement, corriger: "rien : une copie de développement n'écrit jamais dans le Drive" },
             OPERATION,
         ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Historique),
@@ -84,6 +87,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "ce qui se reprend, ligne par ligne, et ses pastilles",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Historique),

@@ -59,6 +59,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "ce qu'elle déclare (description, embauches, ou salariés, recapitulatif avec son titre et sa phrase, ordres et ordres_phrase), deja_depose, repetition (où en est son test, titre et phrase de l'encart), encarts (titre, phrase, couleur), phrase, avertissements, informations, demande (du mot de passe, avant le dépôt réel)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 300,
         ecran: ECRAN,
@@ -85,6 +86,7 @@ pub const ROUTES: &[Fiche] = &[
             ILLISIBLE_FICHIER,
             OPERATION,
         ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 400,
         ecran: ECRAN,
@@ -96,6 +98,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"quoi":"dpae"}"#,
         rend: "fini, passe, refuse, a_dire (ce que le relevé a à dire : incidents, a_faire), phrase et couleur",
         refus: &[MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 80,
         ecran: ECRAN,
@@ -107,6 +110,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: DPAE_DE_L_EXEMPLE,
         rend: "etat (testee : le réel peut partir ; en_test ; test_refuse, et son motif ; ecrite), titre et phrase de l'encart, conforme, a_dire (ce que le relevé a à dire : incidents, a_faire)",
         refus: &[ILLISIBLE_FICHIER, MANQUE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 500,
         ecran: ECRAN,
@@ -867,7 +871,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let a_dire = match releve {
         Ok((_, dit)) => dit,
-        Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
+        Err(e) => crate::gestes::suites::a_dire_du_releve_arrete(&ctx.racine, "suivre-depot", e),
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
@@ -923,7 +927,7 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         };
         a_dire = match releve {
             Ok((_, dit)) => dit,
-            Err(e) => ADire { incidents: vec![e.phrase], a_faire: Vec::new() },
+            Err(e) => crate::gestes::suites::a_dire_du_releve_arrete(&ctx.racine, "bilan-repetition", e),
         };
         repetition = bilan_de_la_repetition(ctx, &d)?;
     }

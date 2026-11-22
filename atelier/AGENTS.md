@@ -120,8 +120,8 @@ dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le l
 pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
 propose arrive par la route (`propose`), et « Enregistrer » la valide. La fiche d'un spectacle
 est le modèle des fiches : la route `fiche` la rend telle qu'on la saisit, et le même dessin d'une case (`caseDeRoute`,
-`js/avance.js`) sert à la carte et à la fiche. Les fiches Entreprise et Salarié
-gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
+`js/avance.js`) sert à la carte et à la fiche. Les trois fiches (Entreprise, Salarié,
+Spectacle) sont rendues par la route `fiche` et dessinées par ce même dessinateur : rien ne s'y ajoute qui décide
 dans la page. **Tout le logiciel suit, écran par écran** (Léandre, 21/11/2026 : « la même chose qu'on a fait pour la
 carte, il faut la faire pour tout le logiciel », « la page, il faut juste faire un petit peu de mise en forme »).
 **Avant de toucher à un écran, on relève tout ce qu'il a** (« regarder tout ce qu'avait la page pour voir qu'on ne
@@ -225,6 +225,9 @@ par son nom dans le JS : on lit sa fiche.
 compagnie, aucun dépôt (règle 9). `logiciel/` est **exactement ce qu'une compagnie reçoit** et ce que publie la mise à
 jour ; `fictives/` est livrée par « Publier », hors Git ; `atelier/sources/` est l'espace Cargo (`docs/ARCHITECTURE.md`,
 « Les parties » ; `declarations` prend à `documents`, jamais l'inverse) ; les textes : « Les sources ».
+`atelier/site/` **est puppetpaie.fr** (Léandre, 22/11/2026 : « tout ici ») : l'accueil, ses pages, et `fiche/`, la
+page où un salarié prépare sa réponse ; ce qui est sur `main` part en ligne au déploiement suivant du serveur
+(`atelier/site/LISEZ-MOI.md` dit comment, et ce que la politique de sécurité du site admet).
 
 **On développe dans le nuage, et seulement là** : le poste de Léandre est une installation ordinaire.
 
@@ -240,6 +243,12 @@ paie comprises, jamais d'un dessin ni d'un souvenir ; ce qui a un lecteur reste,
 **Simple pour les simples, compliqué pour ceux qui veulent** (Léandre, 20/11/2026). Ce que presque tout le monde
 fait se voit d'emblée et tient en peu de cases ; ce que peu de gens changent reste possible, sous « Avancé », et ne
 pèse sur personne d'autre. On ne retire pas une possibilité pour faire simple : on la range.
+
+**Le logiciel est neutre** (Léandre, 22/11/2026 : « on n'est pas du côté des patrons », « il y a une vraie
+neutralité du logiciel », « chacun sait exactement combien prend l'État, qu'est-ce qui va aux retraites, qu'est-ce
+qui va à la sécu »). Ce qu'il explique à un salarié, il le dit entier, chiffres à l'appui, calculés par le moteur :
+ce que la personne gagne, ce qu'elle perd, et ce que la compagnie y gagne ; jamais une phrase arrangée du côté de
+l'employeur, ni un commentaire. Une explication se donne par un exemple chiffré avant une grande phrase.
 
 **Ce que les gens lisent** : rien ne promet le futur ; le bridé se dit « démo » ; un champ n'apparaît que si un fait
 l'exige ; le nom le plus court ; la page reste en HTML et JS, sans TypeScript. **On ne coupe jamais un texte : mieux vaut laid que tronqué** ; une phrase trop longue

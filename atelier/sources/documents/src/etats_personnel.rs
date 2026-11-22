@@ -236,7 +236,8 @@ pub fn fichier_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         l.ot(C::Email, f.email.remplie());
         l.ot(C::Emploi, f.emploi_affichage.remplie().or(f.emploi.remplie()));
         l.ot(C::Statut, f.statut.dite().map(|s| s.to_string()));
-        l.ot(C::Cs, f.num_conges_spectacles.remplie());
+        // « N'en a pas » : la case du registre reste vide, comme sans numero.
+        l.ot(C::Cs, f.num_conges_spectacles.dite().and_then(droit::fiche::NumeroCongesSpectacles::numero));
         l.t(C::Actif, if f.archivee() { "archivé" } else { "oui" });
         lignes.push(l);
     }

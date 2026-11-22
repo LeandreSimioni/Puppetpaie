@@ -146,8 +146,9 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire tout ce que la page lit en s'ouvrant : configuration, Historique, listes.",
         charge: &[],
         exemple: r#"{}"#,
-        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels (niveaux_sante : null tant que le barème ne se compose pas), auteur (phrase, nom, adresse)",
+        rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels, auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -159,6 +160,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -170,6 +172,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "la version installée et ce que la mise à jour en sait, phrase",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire la version")),
@@ -181,6 +184,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "les courriels joués (à qui, quoi, quand)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::LectureAvancee,
@@ -238,7 +242,6 @@ struct PastilleDeFiche {
 pub(crate) struct VueFiche<P, K> {
     quoi_dit: String,
     geste_dit: &'static str,
-    matricule_dit: Option<String>,
     erreurs_titre: Option<String>,
     erreurs_note: &'static str,
     nom: NomDeFiche,
@@ -249,12 +252,6 @@ pub(crate) struct VueFiche<P, K> {
     pastille: PastilleDeFiche,
     sans_titre: bool,
     montres: Vec<CaseDeFiche>,
-    /// Les pieces que les engagements de la fiche ouvrent (`fiches::Montres::pieces_ouvertes`) : la page n'ouvre le tiroir
-    /// d'une piece que sur elles.
-    pieces_ouvertes: Vec<droit::fiche::Piece>,
-    /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
-    /// elles.
-    ecarts: Vec<CaseDeFiche>,
 }
 
 impl<P, K> VueFiche<P, K> {
@@ -281,7 +278,7 @@ pub(crate) fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::J
     }
     impl droit::fiche::VoirListe for Toutes {
         fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), note: e.note.clone() })).collect();
+            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee::dite(e.depuis, ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), e.note.clone()))).collect();
             self.listes.push((cle, lue));
         }
     }
@@ -334,7 +331,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
                 if datees.last().is_some_and(|d| d.valeur == valeur) {
                     continue;
                 }
-                datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+                datees.push(droit::fiche::Datee::dite(version.depuis, valeur, version.note.clone()));
             }
         }
     }
@@ -426,18 +423,10 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
-    let matricule_dit = lu(CaseSalarie::CodeSalarie.into()).filter(|_| nom == NomDeFiche::Salarie).map(|m| format!("matricule {}", m));
-    let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, &|| Ok(!p.dus.is_empty()))?;
-    // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
-    let du_code_postal = match ctx.entreprise.code_postal.portee() {
-        Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
-        None => None,
-    };
-    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&montree, du_code_postal.as_ref().map(|c| c.as_str()))).map(|c| c.cle).collect();
+    let super::fiches::Montres { cases: montres, .. } = super::fiches::montres(ctx, F::a_juger(&montree), cle.and_then(F::salarie), ent, &|| Ok(!p.dus.is_empty()))?;
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
-        matricule_dit,
         erreurs_titre,
         erreurs_note,
         nom,
@@ -448,8 +437,6 @@ fn fiche_verifiee<F: SorteDeFiche>(
         pastille,
         sans_titre,
         montres,
-        pieces_ouvertes,
-        ecarts,
     })
 }
 
@@ -783,16 +770,6 @@ struct Descriptions {
     spectacle: Vec<champs::Description<'static>>,
 }
 
-/// LA FICHE A FAIRE REMPLIR PAR LA PERSONNE : ce que dit l'invitation, et ce qui lui manque sans boite liee.
-#[derive(Debug, Clone, serde::Serialize)]
-struct Invitation {
-    aide: &'static str,
-    sans_boite: Option<&'static str>,
-    ou: &'static str,
-    /// La demande du mot de passe avant d'envoyer la demande (`fiche-demander`).
-    demande: compagnie::demande::DemandeDuMotDePasse,
-}
-
 /// TOUTE LA CONFIGURATION, VERIFIEE (`configuration`, et `configuration` de `etat`), et ce que la page en tire sans un
 /// appel de plus.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -800,7 +777,6 @@ pub(crate) struct ConfigurationDeLaPage {
     ecran: EcranDesFiches,
     fiches_attendues_titre: String,
     compteurs_dit: Option<String>,
-    deduction_forfaitaire: String,
     numeros_sans_titre: Option<String>,
     entreprise: VueFiche<droit::fiche::ChampsEntreprise, ()>,
     salaries: Vec<VueFiche<droit::fiche::ChampsSalarie, droit::contexte::IdSalarie>>,
@@ -817,8 +793,6 @@ pub(crate) struct ConfigurationDeLaPage {
     pour_payer: Option<String>,
     /// CE QUI EST POSE : signature et logo, avec leur date.
     identite: Identite,
-    invitation: Invitation,
-    boite_liee: bool,
     fiches_attendues: Vec<FicheAttendue>,
 }
 
@@ -872,24 +846,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
     let erreurs: usize = entreprise.erreurs() + salaries.iter().map(VueFiche::erreurs).sum::<usize>() + spectacles.iter().map(VueFiche::erreurs).sum::<usize>();
     let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
-    // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
-    // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
     let description_entreprise = champs::description(NomDeFiche::Entreprise)?;
-    let deduction = match ctx.entreprise.deduction_forfaitaire_option.code() {
-        None => "La compagnie ne l'applique pas : c'est une option de l'employeur, qui se règle dans la fiche de l'entreprise (« Avancé — cas particuliers »). Une fois l'option posée, la profession et l'accord du salarié se disent ici.".to_string(),
-        Some(option) => {
-            let nom = description_entreprise
-                .iter()
-                .find(|c| c.cle == CaseEntreprise::DeductionForfaitaireOption.into())
-                .and_then(|c| c.libelles.and_then(|l| l.de(option)))
-                .filter(|n| !n.is_empty());
-            let nom = match nom {
-                Some(n) => n.to_string(),
-                None => option.to_string(),
-            };
-            format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)
-        }
-    };
     // LES NUMEROS D'OBJET SANS TITRE (importes des DSN, « A COMPLETER »), archives : la liste des spectacles les groupe sous
     // cette phrase.
     let sans_titre: Vec<&droit::fiche::ChampsSpectacle> = ctx.spectacles.values().filter(|s| s.archivee() && s.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case("a completer"))).collect();
@@ -921,7 +878,6 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     });
     let fiches_attendues = fiches_attendues(ctx)?;
     let liste = |un: &str, les: &str| MotsDeLaListe { nouvelle: format!("+ un {}", un), aucun: format!("Aucun {} actif", un), archives: format!("Afficher les {} archivés", les) };
-    let boite_liee = boite_liee(ctx)?;
     let versement_mobilite_des_etablissements = versement_mobilite_des_etablissements(ctx);
     let pour_payer = match ctx.bareme(&jour) {
         Ok(_) => None,
@@ -933,7 +889,6 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         ecran: EcranDesFiches { salarie: liste("salarié", "salariés"), spectacle: liste("spectacle", "spectacles"), ancienne: "valeur d'une autre date" },
         fiches_attendues_titre: format!("{} fiche(s) en attente", fiches_attendues.len()),
         compteurs_dit,
-        deduction_forfaitaire: deduction,
         numeros_sans_titre,
         entreprise,
         salaries,
@@ -945,14 +900,24 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         versement_mobilite_des_etablissements,
         pour_payer,
         identite: identite(ctx, &ctx.gabarits())?,
-        invitation: Invitation {
-            aide: "Elle reçoit un courriel avec un bouton : une réponse s'ouvre avec les questions (identité, naissance, numéro de sécurité sociale, adresse, compte bancaire), elle y répond et l'envoie. Sa fiche se crée seule à l'arrivée de la réponse ; il vous restera l'emploi à choisir.",
-            sans_boite: (!boite_liee).then_some("Il faut d'abord lier la boîte courriel de la compagnie (Configuration › Mots de passe)."),
-            ou: "Ou remplissez la fiche vous-même ci-dessous. Le matricule se donne à l'enregistrement.",
-            demande: crate::coffre::demande(&ctx.racine, crate::fiches::GESTE_DEMANDER_FICHE)?,
-        },
-        boite_liee,
         fiches_attendues,
+    })
+}
+
+/// LA DEDUCTION FORFAITAIRE SPECIFIQUE VUE DE LA FICHE D'UN SALARIE : l'option est celle de l'employeur, dans la fiche de
+/// l'entreprise (son libelle, `libelles` de la table) ; la fiche du salarie dit si elle s'applique
+/// (`calcul::deduction_forfaitaire` decide). La route `fiche` le dit sous la profession du salarie.
+pub(crate) fn deduction_forfaitaire_dite(ctx: &Contexte) -> R<String> {
+    Ok(match ctx.entreprise.deduction_forfaitaire_option.code() {
+        None => "La compagnie ne l'applique pas : c'est une option de l'employeur, qui se règle dans la fiche de l'entreprise. Une fois l'option posée, la profession et l'accord du salarié se disent ici.".to_string(),
+        Some(option) => {
+            let nom = champs::champ(NomDeFiche::Entreprise, CaseEntreprise::DeductionForfaitaireOption)?.and_then(|c| c.libelles).and_then(|l| l.de(option).map(str::to_string)).filter(|n| !n.is_empty());
+            let nom = match nom {
+                Some(n) => n,
+                None => option.to_string(),
+            };
+            format!("La compagnie l'applique (fiche de l'entreprise) : « {} ».", nom)
+        }
     })
 }
 
@@ -1266,6 +1231,11 @@ impl Choix {
         Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None, dit: None, groupe: None, ouvre: None }
     }
 
+    /// Le code que le choix porte.
+    pub(crate) fn code(&self) -> &str {
+        &self.code
+    }
+
     /// Ce que le choix dit de lui-meme une fois choisi.
     pub(crate) fn disant(self, dit: Option<String>) -> Choix {
         Choix { dit, ..self }
@@ -1523,42 +1493,30 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 
 /// Un niveau de complementaire sante que le bareme connait : son numero, sa cotisation (en % du PMSS) pour l'assure, le
 /// conjoint et chaque enfant, et ce que le choix en dit.
-#[derive(Debug, Clone, serde::Serialize)]
-struct NiveauDeSante {
-    niveau: droit::forme_bareme::NiveauDeGarantie,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
-    assure: socle::grandeurs::Taux,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
-    conjoint: socle::grandeurs::Taux,
-    #[serde(serialize_with = "socle::grandeurs::ecrit::a_virgule::serialize")]
-    enfant: socle::grandeurs::Taux,
-    libelle: String,
+#[derive(Debug, Clone)]
+pub(crate) struct NiveauDeSante {
+    pub(crate) niveau: droit::forme_bareme::NiveauDeGarantie,
+    pub(crate) libelle: String,
 }
 
 /// Les niveaux de garantie que le bareme connait, pour la fiche salarie (`releve_svp_sante` de la rubrique `mutuelle` des
 /// permanents), lus dans le bareme du jour avant son controle (`Contexte::bareme_fondu` : la couche de la convention les
-/// porte, l'effectif n'y change rien). Vide quand le bareme n'en porte pas ; `None` quand il ne se compose pas (le taux
-/// AT/MP, la convention, la surcouche) : pourquoi, la configuration le dit (`ConfigurationDeLaPage::pour_payer`, que le
-/// meme empilement refuse).
-fn niveaux_sante(ctx: &Contexte) -> R<Option<Vec<NiveauDeSante>>> {
+/// porte, l'effectif n'y change rien), chacun dit par son taux de l'assure seul. Vide quand le bareme n'en porte pas ;
+/// quand il ne se compose pas (le taux AT/MP, la convention, la surcouche), ce qui lui manque (`Err`, la phrase du
+/// manque, celle que la configuration dit : `ConfigurationDeLaPage::pour_payer`).
+pub(crate) fn niveaux_sante(ctx: &Contexte) -> R<Result<Vec<NiveauDeSante>, String>> {
     let pile = match ctx.bareme_fondu(&ctx.aujourdhui) {
         Ok(p) => p,
-        Err(e) if e.dit_un_manque() => return Ok(None),
+        Err(e) if e.dit_un_manque() => return Ok(Err(e.phrase)),
         Err(e) => return Err(e),
     };
     // La complementaire sante est celle des permanents : la couche de leur nature.
     let releve = pile.par_nature.get(&droit::natures::Paie::Mensuelle).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
-    Ok(Some(releve
+    Ok(Ok(releve
         .into_iter()
         .flat_map(|r| r.niveaux.iter())
-        .map(|(n, t)| NiveauDeSante {
-            niveau: n.clone(),
-            assure: t.assure,
-            conjoint: t.conjoint,
-            enfant: t.enfant,
-            libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)),
-        })
+        .map(|(n, t)| NiveauDeSante { niveau: n.clone(), libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, socle::grandeurs::ecrit::texte::dit(t.assure)) })
         .collect()))
 }
 
@@ -1601,26 +1559,18 @@ pub(crate) struct EtatDeLaPage {
     choix: ChoixDesCases,
     rubriques: Vec<RubriqueDeLaPage>,
     emplois: Vec<emplois::MetierDuDeroulant>,
-    /// Les metiers que la fiche d'un salarie choisit (`metiers::metiers_d_une_fiche`).
-    emplois_d_une_fiche: Vec<emplois::MetierDuDeroulant>,
     familles_emplois: Vec<emplois::FamilleDeMetier>,
     emplois_autres: Vec<super::metiers::MetierAutre>,
     natures: Vec<NatureDeLaPage>,
     /// Les parties de chaque case faite de parties (`catalogue::Forme::Parties`), sous la cle de sa case.
     parties: BTreeMap<&'static str, Vec<crate::catalogue::PartieEcrite>>,
     aides: Aides,
-    niveaux_sante: Option<Vec<NiveauDeSante>>,
-    sante_hors_fiche: Option<String>,
-    sante_aide: &'static str,
-    pays: Vec<droit::nationalite::PaysDeNationalite>,
-    pays_naissance: Vec<socle::pays::PaysServi>,
 }
 
 /// La route `etat` : tout ce que la page lit en s'ouvrant.
 pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
     let mut m = Moteur::nouveau(ctx);
     let configuration = configuration(ctx)?;
-    let niveaux_sante = niveaux_sante(ctx)?;
     let historique = historique(&mut m, ctx)?;
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
@@ -1705,7 +1655,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         choix,
         rubriques,
         // Le catalogue des metiers, deja dans l'ordre des familles.
-        emplois_d_une_fiche: super::metiers::metiers_d_une_fiche(&emplois),
         emplois,
         familles_emplois: emplois::familles()?,
         // Les metiers des autres conventions : on les AJOUTE a son deroulant,
@@ -1715,17 +1664,6 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         natures: natures()?,
         parties: parties_des_cases(),
         aides: Aides(AIDES),
-        // Les niveaux de complementaire sante, pour la fiche d'un permanent.
-        niveaux_sante,
-        // Ou, quand la convention ne la fait pas choisir sur la fiche, d'ou elle vient (`bareme::sante_hors_fiche`).
-        sante_hors_fiche: droit::bareme::sante_hors_fiche(&ctx.entreprise)?,
-        // Ce que la fiche d'un permanent dit de sa complementaire sante, sous le choix du niveau.
-        sante_aide: "Obligatoire pour un salarié au mois (art. L911-7) : sans elle, le logiciel refuse de le payer plutôt que de cotiser moins que le contrat. Elle se lit sur son bulletin d'adhésion.",
-        // LES PAYS : la liste livree, triee par nom, chacun avec la codification UE que le moteur en
-        // deduit. Le pays de naissance et le pays de nationalite s'y choisissent.
-        pays: droit::nationalite::servir()?,
-        // Le pays de naissance : la table « Pays » de la DSN, ou se lit S21.G00.30.015.
-        pays_naissance: socle::pays::servir_naissance()?,
     })
 }
 
@@ -1819,8 +1757,8 @@ fn circuits_fictifs() -> Circuits {
             titre: "Ce que reçoit la personne",
             bulles: &["La demande part", "Elle appuie sur « Remplir ma fiche »", "Sa fiche se crée"],
             notes: &[
-                "Un courriel avec un bouton « Remplir ma fiche », et les questions recopiées dans le texte pour les messageries qui n'affichent pas le bouton.",
-                "Le bouton ouvre sa messagerie sur les questions, une par ligne : elle écrit après chaque deux-points et envoie. Seul ce qu'elle sait lui est demandé ; l'emploi reste à l'employeur.",
+                "Un courriel avec un bouton « Remplir ma fiche », et les lignes à recopier dans le texte pour qui ne peut pas ouvrir la page.",
+                "Le bouton ouvre une page de puppetpaie.fr, qui ne garde rien : elle y remplit ce qui manque à sa fiche, et « Envoyer » ouvre sa messagerie sur la réponse toute écrite. Seul ce qu'elle sait lui est demandé ; l'emploi reste à l'employeur.",
                 "Sa réponse est relevée comme une signature : la fiche salarié se crée avec ce qu'elle a écrit, marquée « à compléter » pour l'emploi. Une réponse illisible laisse la case vide, et le dit.",
             ],
             attente: Some("La réponse de la personne fictive arrive une vingtaine de secondes après l'envoi."),

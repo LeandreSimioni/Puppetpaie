@@ -37,3 +37,9 @@ URL de téléchargement n'ont pas été notées au dépôt : chacun se retrouve 
 - `atelier/sources/droit/src/natures.rs` : la nature du contrat que la DPAE déclare.
 - `atelier/sources/envois/src/retours.rs` et `releve_retours.rs` : les retours du canal DPAE (FAQ, guide
   d'implémentation).
+- `atelier/sources/envois/src/releve_retours.rs`, `CanalDesRetours::ou_se_relit_l_avis_de_rejet`, et
+  `envois/src/transport.rs`, `peut_etre_recue` : un dépôt de DPAE rejeté sans motif lisible dit que l'avis est sur le
+  tableau de bord du déclarant (`5491-API-DPAE-Fonctionnement.pdf`, p. 6 : « L'avis de rejet ou l'accusé
+  d'enregistrement électronique sont mis à disposition sur le tableau de bord du déclarant ») ; un dépôt sans réponse
+  claire dit que la DPAE a peut-être été reçue, d'attendre le relevé avant toute autre chose (une seconde DPAE de la
+  même embauche est rejetée en doublon, p. 9).

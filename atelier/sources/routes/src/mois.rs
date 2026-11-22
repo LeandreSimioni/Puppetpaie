@@ -13,7 +13,7 @@
 //! ecrire.
 //!
 //! Chaque charge est une structure (`ChargeCase`, `ChargeApercu`, `ChargeAjuster`, `ChargeContratsPasses`,
-//! `ChargeEmploi`, et `etapes::ChargeMois`), lue une fois a la porte (`Charge::lire`) ; chaque reponse en est une aussi,
+//! et `etapes::ChargeMois`), lue une fois a la porte (`Charge::lire`) ; chaque reponse en est une aussi,
 //! qui porte sa phrase (`Dite`).
 //!
 //! La carte d'un engagement et la vue du mois sont `engagement::saisie::{Carte, VueDuMois}`. Les cartes importees
@@ -78,6 +78,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -89,6 +90,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","modifications":[]}"#,
         rend: "paies (une par engagement, ses bornes debut et fin, ou ce qui lui manque : a_completer ; carte : les cases que sa carte ouvre, chacune sa place (base, avance, imprevu : la fin du contrat, rendue : montrée, pas saisie), ce qu'offrent ses cases à choix qui dépendent de lui (motif_rupture, modele_contrat), ce que le moteur prend pour une case vide (prerempli, dont le métier que la paie applique, et lignes : ce qu'une ligne neuve prend), et faute quand un fait ne se lit pas ; contrat_dit : ses bornes et ses jours travaillés, lus sous ses lignes ; contrat.rupture : sa fin, la porte qui l'ouvre et si elle se signale, ou illisible ; a_dire : la case de fiche qu'il appelle, comme « Pour démarrer » ; propose : les rubriques que sa carte propose, d'après sa nature et le statut de son métier, et celle d'une ligne neuve ; cases : celles qu'une ligne de frais appelle, avec leur aide), les trois nombres de chaque carte, le mois",
         refus: &[SAISIE_INCOMPLETE, MANQUE, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -100,6 +102,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "contrats : chacun avec l'engagement qui le reprend",
         refus: &[MANQUE, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -111,25 +114,10 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","salarie":null}"#,
         rend: "contrats : ceux que les engagements importés attestent ; non_lus : les contrats repris qui ne se lisent pas",
         refus: &[MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Paie),
-    },
-    Fiche {
-        route: Route::Emploi,
-        geste: "Traduire un métier du catalogue en champs de la fiche salarié.",
-        charge: &[
-            Champ { nom: "metier", libelle: Affiche::new("Métier"), forme: Forme::Texte, sens: "le code du métier au catalogue (COM010…)", avance: false },
-            Champ { nom: "cadre", libelle: Affiche::new("Cadre"), forme: Forme::OuiNon, sens: "cadre ou non ; null : le défaut du métier au catalogue", avance: true },
-            Champ { nom: "feminin", libelle: Affiche::new("Au féminin"), forme: Forme::OuiNon, sens: "le libellé au féminin (vrai), ou selon la fiche (faux)", avance: true },
-            Champ { nom: "salarie", libelle: Affiche::new("Fiche"), forme: Forme::Objet, sens: "ce que la fiche remplie dit du sexe : {nir, sexe} ; null : rien", avance: true },
-        ],
-        exemple: r#"{"metier":"COM010","cadre":null,"feminin":false,"salarie":null}"#,
-        rend: "les champs de la fiche que le métier remplit (emploi, statut, catégorie…)",
-        refus: &[MANQUE, OPERATION],
-        acte: Acte::Lit,
-        phrase: 0,
-        ecran: Ecran::Lecture,
     },
     Fiche {
         route: Route::EnregistrerSaisie,
@@ -142,6 +130,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"FULLER"},{"case":"spectacle","valeur":"le-banc-des-menteurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":150,"lieu":null,"dates":["2026-11-20"],"planning":[]}]}]}"#,
         rend: "engagement (l'identité écrite, à passer à valider-engagement), brouillon (chacune des cases de sa nature, null tant qu'elle n'est pas remplie ; chaque grandeur écrite par elle-même), a_completer (ce qui lui manque pour être validé, ou null), enregistre_a",
         refus: &[OPERATION, FORME, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -165,6 +154,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","modifications":[],"engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"cible":"brut","montant":200}"#,
         rend: "phrase (ce qui est atteint, et le taux qu'il faudrait), vise, atteint, ecart, engagements (les taux qui changent), paies ; rien n'est écrit",
         refus: &[OPERATION, FORME, SAISIE_INCOMPLETE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 200,
         ecran: Ecran::DessineAvecBouton(Place::Paie, Affiche::new("Calculer")),
@@ -229,27 +219,6 @@ struct ChargeAjuster {
 struct ChargeContratsPasses {
     mois: Mois,
     salarie: Option<IdSalarie>,
-}
-
-/// La charge du metier : son code, et ce qui choisit sa forme (cadre, ou non ; au feminin, dit tel quel ou lu de la
-/// fiche que l'ecran remplit).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChargeEmploi {
-    metier: emplois::CodeEmploi,
-    cadre: Option<bool>,
-    feminin: bool,
-    salarie: Option<SexeDeLaFiche>,
-}
-
-/// Ce qui dit le sexe, sur la fiche que l'ecran remplit : le NIR, sinon la case `sexe` (`ntt::sexe_de`), chacune telle
-/// que la fiche l'ecrit (absente quand elle n'est pas remplie). Le NIR est celui que la personne tape encore : un texte,
-/// pas un `Nir` (un NIR a moitie tape refuserait la charge pendant la frappe).
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SexeDeLaFiche {
-    nir: Option<String>,
-    sexe: Option<String>,
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -399,13 +368,6 @@ struct ContratsPasses {
     rien_dit: &'static str,
 }
 
-#[derive(Debug, Serialize)]
-struct Emploi {
-    phrase: Phrase,
-    #[serde(flatten)]
-    champs: emplois::ChampsDuMetier,
-}
-
 /// Une ligne de la carte dont le taux change, pour le montant vise. TRAVAIL A FAIRE (chaine A) : les taux et la rubrique
 /// se lisent de la saisie, telle que son fichier l'ecrit.
 #[derive(Debug, Serialize)]
@@ -457,7 +419,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
         Route::Apercu => en_json(apercu(ctx, charge.lire()?)?),
         Route::ContratsEnCours => en_json(contrats_en_cours_route(ctx, charge.lire::<ChargeMois>()?.mois)?),
         Route::ContratsPasses => en_json(contrats_passes_route(ctx, charge.lire()?)?),
-        Route::Emploi => en_json(emploi(ctx, charge.lire()?)?),
         Route::EnregistrerSaisie => en_json(enregistrer_saisie(ctx, charge.lire()?)?),
         Route::Ajuster => en_json(ajuster(ctx, charge.lire()?)?),
         autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
@@ -474,7 +435,7 @@ macro_rules! dites {
     };
 }
 
-dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajuste, Apercu);
+dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, CarteEcrite, Ajuste, Apercu);
 
 // ------------------------------------------------------------------ outils
 
@@ -1030,31 +991,6 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
     })
 }
 
-// ------------------------------------------------------------------------ emploi
-
-/// Un metier du catalogue traduit en champs de fiche, pour le formulaire salarie. LE METIER AU FEMININ pour une
-/// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
-/// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
-///
-/// UN METIER CREE NE VA PAS SUR UNE FICHE : la fiche ne porte que le code France Travail et les statuts qu'elle declare,
-/// et sa case « Métier » montre le metier que ce code nomme (`metier_de_la_fiche`, celui que la carte montre aussi
-/// quand elle n'en dit pas) ; les statuts d'un metier cree sous le code de sa copie y montreraient un autre metier que
-/// celui que la paie applique. Le metier est celui de l'engagement : un metier cree se choisit sur la carte.
-fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
-    if c.metier.numero_cree().is_some() {
-        return Err(refus(format!(
-            "Le métier {} est un métier créé par la compagnie : il se choisit sur la carte d'un engagement ; la fiche d'un salarié prend un métier du catalogue. Rien n'est écrit.",
-            c.metier
-        )));
-    }
-    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
-    let champs = emplois::resoudre(&c.metier.metier(&ctx.racine)?, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
-    let phrase = match &champs.code_emploi_ft {
-        Some(code) => socle::phrase!("Métier : {} ({}).", champs.emploi_affichage, code),
-        None => socle::phrase!("Métier : {}.", champs.emploi_affichage),
-    };
-    Ok(Emploi { phrase, champs })
-}
 // ---------------------------------------------------------------- rubriques cochees
 
 

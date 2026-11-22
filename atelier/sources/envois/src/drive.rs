@@ -250,6 +250,33 @@ pub struct ErreurGoogle {
     pub echec: Echec,
     /// Le statut HTTP d'une reponse d'erreur de Google (rien d'autre n'en porte) : de quoi decider d'une nouvelle tentative.
     pub statut: Option<ureq::http::StatusCode>,
+    /// Ce que Google a dit qui demande un geste de la compagnie, quand il l'a dit (`google::panne_de_google`).
+    pub raison: Option<RaisonDeGoogle>,
+}
+
+/// CE QUE GOOGLE DIT QUI DEMANDE UN GESTE DE LA COMPAGNIE, reconnu dans sa reponse d'erreur (`google::traduire`) : la
+/// phrase que la compagnie lit, et la cause que la sauvegarde en dit (`compagnie::sauvegarde::cause_de`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RaisonDeGoogle {
+    /// `invalid_grant` : l'autorisation perdue ou expiree.
+    AutorisationPerdue,
+    /// Un 403 « insufficient » : une permission qui manque a l'autorisation.
+    PermissionManquante,
+    /// `storageQuotaExceeded` : « This error occurs when the user reaches their storage limit »
+    /// (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`, l. 961-985).
+    DrivePlein,
+}
+
+impl RaisonDeGoogle {
+    /// La phrase que la compagnie lit.
+    pub fn phrase(self) -> &'static str {
+        match self {
+            RaisonDeGoogle::AutorisationPerdue => "Autorisation Google perdue ou expirée : le plus souvent, l'écran de consentement est resté en mode « Test », ou Google a révoqué le jeton au bout de 7 jours. Le passer « En production » dans la console, puis lier de nouveau le Drive (Configuration › Mots de passe).",
+            RaisonDeGoogle::PermissionManquante => "Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.",
+            // Le remede : « Manage your storage in Drive, Gmail & Google Photos », « Buy more Google storage » (l. 979-985).
+            RaisonDeGoogle::DrivePlein => "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde ne repart qu'ensuite.",
+        }
+    }
 }
 
 impl ErreurGoogle {
@@ -273,7 +300,7 @@ impl ErreurGoogle {
 
 impl From<Echec> for ErreurGoogle {
     fn from(echec: Echec) -> Self {
-        ErreurGoogle { echec, statut: None }
+        ErreurGoogle { echec, statut: None, raison: None }
     }
 }
 
@@ -429,7 +456,7 @@ impl Client {
         let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
         match envoyer(&requete) {
             Ok((brut, _)) => Ok(brut),
-            Err(panne) => Err(panne_de_google(url, panne)),
+            Err(panne) => Err(panne_de_google(crate::transport::CeQuOnFaisait::Sauvegarder, url, panne)),
         }
     }
 

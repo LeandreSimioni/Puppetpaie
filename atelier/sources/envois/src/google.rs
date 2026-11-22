@@ -8,8 +8,8 @@ use serde::Deserialize;
 use socle::echec::{Classe, Echec, R};
 use socle::garde_reseau::Url;
 
-use crate::drive::ErreurGoogle;
-use crate::transport::{envoyer, Panne, Requete};
+use crate::drive::{ErreurGoogle, RaisonDeGoogle};
+use crate::transport::{envoyer, CeQuOnFaisait, Panne, Requete};
 
 /// L'adresse des jetons de Google.
 pub const JETONS: Url = Url::du_moteur("https://oauth2.googleapis.com/token");
@@ -57,7 +57,6 @@ pub fn lue<T: socle::forme::ReponseDUnTiers>(brut: Vec<u8>, phrase: &str) -> R<T
 #[derive(Debug, Deserialize)]
 struct ReponseDErreur {
     error: ErreurDite,
-    error_description: Option<String>,
 }
 impl socle::forme::ReponseDUnTiers for ReponseDErreur {}
 
@@ -68,21 +67,28 @@ enum ErreurDite {
     Api(ErreurDApi),
 }
 
-/// L'erreur d'une API de Google, dans `ReponseDErreur` : les autres cles sont ignorees a la porte.
+/// L'erreur d'une API de Google, dans `ReponseDErreur` : son statut, et la raison de chacune de ses erreurs
+/// (`storageQuotaExceeded`…). Les autres cles sont ignorees a la porte.
 #[derive(Debug, Deserialize)]
 struct ErreurDApi {
-    message: Option<String>,
     status: Option<String>,
+    errors: Option<Vec<RaisonDApi>>,
 }
 impl socle::forme::ReponseDUnTiers for ErreurDApi {}
 
+/// Une erreur detaillee d'une API de Google (`error.errors[]`) : sa raison. Les autres cles sont ignorees a la porte.
+#[derive(Debug, Deserialize)]
+struct RaisonDApi {
+    reason: Option<String>,
+}
+impl socle::forme::ReponseDUnTiers for RaisonDApi {}
+
 impl ReponseDErreur {
-    /// Le code de Google (`invalid_grant`, `PERMISSION_DENIED`…) et sa phrase, quand il la dit.
-    fn code_et_detail(self) -> (Option<String>, Option<String>) {
-        let non_vide = |t: Option<String>| t.filter(|x| !x.is_empty());
+    /// Le code de Google (`invalid_grant`, `PERMISSION_DENIED`…), et les raisons que l'erreur d'une API detaille.
+    fn code_et_raisons(self) -> (Option<String>, Vec<String>) {
         match self.error {
-            ErreurDite::Code(code) => (Some(code), non_vide(self.error_description)),
-            ErreurDite::Api(e) => (e.status, non_vide(e.message)),
+            ErreurDite::Code(code) => (Some(code), Vec::new()),
+            ErreurDite::Api(e) => (e.status, e.errors.into_iter().flatten().filter_map(|r| r.reason).collect()),
         }
     }
 }
@@ -101,68 +107,72 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
     champs.iter().map(|(k, v)| format!("{}={}", q(k), q(v))).collect::<Vec<_>>().join("&")
 }
 
-/// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (l'autorisation perdue, une permission
-/// qui manque), en sa phrase ; `None` pour toute autre erreur de Google, que `panne_dite` dit. Un corps qui n'est pas une
-/// erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus cite le statut et le corps.
-fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<&'static str>> {
-    let (code_g, _) = socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, &format!("HTTP {} : {}", statut.as_str(), corps))?.code_et_detail();
-    Ok(traduite(statut, corps, code_g.as_deref()))
+/// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (`RaisonDeGoogle` : l'autorisation
+/// perdue, une permission qui manque, le Drive plein) ; `None` pour toute autre erreur de Google, que `panne_dite` dit.
+/// Un corps qui n'est pas une erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus
+/// cite le statut et le corps.
+fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<RaisonDeGoogle>> {
+    let (code_g, raisons) = socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, &format!("HTTP {} : {}", statut.as_str(), crate::transport::debut_lisible(corps.as_bytes(), 800)))?.code_et_raisons();
+    Ok(traduite(statut, corps, code_g.as_deref(), &raisons))
 }
 
-/// La phrase d'une erreur de Google de code `code_g` qui demande un geste de la compagnie.
-fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>) -> Option<&'static str> {
+/// La raison d'une erreur de Google de code `code_g` (et de raisons `raisons`) qui demande un geste de la compagnie.
+fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, raisons: &[String]) -> Option<RaisonDeGoogle> {
     if code_g == Some("invalid_grant") {
-        return Some(
-            "Autorisation Google perdue ou expirée : le plus souvent, l'écran de consentement est resté en mode « Test », ou Google a révoqué le jeton au bout de 7 jours. Le passer « En production » dans la console, puis lier de nouveau le Drive (Configuration › Mots de passe).",
-        );
+        return Some(RaisonDeGoogle::AutorisationPerdue);
+    }
+    if raisons.iter().any(|r| r == "storageQuotaExceeded") {
+        return Some(RaisonDeGoogle::DrivePlein);
     }
     if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
-        return Some("Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.");
+        return Some(RaisonDeGoogle::PermissionManquante);
     }
     None
 }
 
-/// UNE PANNE DU TRANSPORT VERS GOOGLE (`url` : l'adresse appelee), telle que la compagnie la lit : une autorisation perdue
-/// ou une permission qui manque, dites par `traduire` ; tout le reste par `transport::panne_dite` (« Google n'a pas
-/// répondu comme attendu », « Google injoignable », « Google n'a pas répondu à temps »). Le detail technique (le statut,
-/// le message de Google ou le corps, ce que le systeme a dit) va a part ; `statut` porte le code d'une reponse
-/// d'erreur, de quoi decider d'une nouvelle tentative (`drive::passagere`). Un statut ou un reseau injoignable est de
-/// classe `Google`, une panne brute garde la sienne (un delai depasse reste `DelaiDepasse`).
+/// UNE PANNE DU TRANSPORT VERS GOOGLE (`url` : l'adresse appelee) pendant ce qu'on faisait (`Sauvegarder`, `LierGoogle`),
+/// telle que la compagnie la lit : une autorisation perdue, une permission qui manque ou le Drive plein, dits par
+/// `traduire` ; tout le reste par `transport::panne_dite` (« Google n'a pas répondu comme attendu », « Google
+/// injoignable », « Google n'a pas répondu à temps »). Le detail technique (le statut, le corps de Google, ce que le
+/// systeme a dit) va a part ; `statut` porte le code d'une reponse d'erreur, de quoi decider d'une nouvelle tentative
+/// (`drive::passagere`). Un statut ou un reseau injoignable est de classe `Google`, une panne brute garde la sienne (un
+/// delai depasse reste `DelaiDepasse`).
 #[track_caller]
-pub fn panne_de_google(url: &Url, p: Panne) -> ErreurGoogle {
+pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoogle {
     let p = match p {
         Panne::Statut { code, corps: Ok(corps) } => {
             // Le transport demande `gzip` : une reponse d'erreur peut arriver compressee.
             let corps = if corps.starts_with(&[0x1f, 0x8b]) {
                 match crate::transport::gunzip(&corps) {
                     Ok(c) => c,
-                    Err(illisible) => return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite("Google", Classe::Google, url, illisible).echec) },
+                    Err(illisible) => return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite(faisait, Classe::Google, url, illisible).echec) },
                 }
             } else {
                 corps
             };
             match traduire(code, &String::from_utf8_lossy(&corps)) {
-                Ok(Some(phrase)) => {
-                    let detail = format!("HTTP {} : {}", code.as_str(), String::from_utf8_lossy(&corps));
+                Ok(Some(raison)) => {
+                    let detail = format!("HTTP {} : {}", code.as_str(), crate::transport::debut_lisible(&corps, 800));
                     socle::echec::noter_echec(Some(Classe::Google), &detail);
                     let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
-                    return ErreurGoogle { echec: Echec { classe: Some(Classe::Google), phrase: phrase.to_string(), a_part: Some(a_part.into()) }, statut: Some(code) };
+                    let echec = Echec { classe: Some(Classe::Google), phrase: raison.phrase().to_string(), a_part: Some(a_part.into()) };
+                    return ErreurGoogle { echec, statut: Some(code), raison: Some(raison) };
                 }
                 Ok(None) => Panne::Statut { code, corps: Ok(corps) },
                 // Pas une erreur de Google : une panne brute, dans la classe de son refus, le statut garde.
                 Err(pas_de_google) => {
-                    return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite("Google", Classe::Google, url, Panne::Brute(pas_de_google)).echec) };
+                    return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite(faisait, Classe::Google, url, Panne::Brute(pas_de_google)).echec) };
                 }
             }
         }
         // Une reponse d'erreur dont le corps ne se lit pas : la panne de sa lecture, dans sa classe, et le statut.
         Panne::Statut { code, corps: Err(illisible) } => {
-            return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite("Google", Classe::Google, url, *illisible).echec) };
+            return ErreurGoogle { statut: Some(code), ..ErreurGoogle::from(crate::transport::panne_dite(faisait, Classe::Google, url, *illisible).echec) };
         }
         autre => autre,
     };
-    let e = crate::transport::panne_dite("Google", Classe::Google, url, p);
-    ErreurGoogle { echec: e.echec, statut: e.code }
+    let e = crate::transport::panne_dite(faisait, Classe::Google, url, p);
+    ErreurGoogle { echec: e.echec, statut: e.code, raison: None }
 }
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
@@ -183,18 +193,18 @@ pub fn jeton_par_rafraichissement(adresse: &Url, application: &Application, rafr
     match envoyer(&requete) {
         Ok((brut, _)) => {
             // Une reponse 200 sans jeton d'acces, ou illisible, est un refus de Google comme un autre : une phrase.
-            let reponse: ReponseJeton = match lue(brut, "Google a rendu une reponse illisible a la demande de jeton. Reessayer plus tard.") {
+            let reponse: ReponseJeton = match lue(brut, "Google a rendu une réponse illisible à la demande de jeton. Réessayer plus tard.") {
                 Ok(r) => r,
                 Err(e) => return Ok(Err(ErreurGoogle::from(e.reclasser(Classe::Google)))),
             };
             match reponse.access_token.filter(|t| !t.devoiler().is_empty()) {
                 Some(acces) => Ok(Ok(acces)),
-                None => Ok(Err(ErreurGoogle::google("Google n'a pas rendu de jeton d'acces. Reessayer plus tard ; si cela dure, lier de nouveau le compte."))),
+                None => Ok(Err(ErreurGoogle::google("Google n'a pas rendu de jeton d'accès. Réessayer plus tard ; si cela dure, lier de nouveau le Drive (Configuration › Mots de passe)."))),
             }
         }
         // Un refus de Google (un statut, le reseau injoignable) se rend ; une panne brute refuse.
         Err(panne) => {
-            let e = panne_de_google(adresse, panne);
+            let e = panne_de_google(CeQuOnFaisait::Sauvegarder, adresse, panne);
             match e.echec.classe {
                 Some(Classe::Google) => Ok(Err(e)),
                 _ => Err(e.echec),

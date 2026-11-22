@@ -58,6 +58,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     exemple: r#"{"mois":"2026-11"}"#,
     rend: "mois, documents (chacun son chemin ; fichier : à refaire par piece-partie avant de l'ouvrir), envois (chacun ses retours, du plus récent au plus ancien)",
     refus: &[FORME, Refus { classe: Classe::Disque, corriger: "le journal des envois ou une liste des bulletins repris, que la phrase dit illisible" }],
+    pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
     acte: Acte::Lit,
     phrase: 0,
     ecran: ECRAN,
@@ -1118,7 +1119,12 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                 .retours
                 .iter()
                 .map(|r| RetourLu {
-                    titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
+                    titre: match (r.abandon, &r.salarie) {
+                        (true, _) => "Demande abandonnée",
+                        (false, Some(_)) => "Fiche reçue",
+                        (false, None) => "Réponse sans nom lisible",
+                    }
+                    .to_string(),
                     quand: Some(r.quand),
                     phrases: Vec::new(),
                     pastille: None,

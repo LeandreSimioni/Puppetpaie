@@ -317,7 +317,8 @@ pub fn condition_remplie(si: Option<&Condition>, donnees: &impl FicheSaisie) -> 
 pub enum Avance {
     /// Toute valeur dite s'ecarte du cas ordinaire, qui est de n'en rien dire.
     CasParticulier,
-    /// Toujours remplie (ce que le metier remplit, un matricule) : sa valeur n'est jamais un ecart.
+    /// Une case ordinaire rangee sous « Avancé » (ce que le metier remplit, un matricule, la date anniversaire des
+    /// droits d'un intermittent) : remplie ou non, sa valeur n'est jamais un ecart.
     ToujoursRemplie,
     /// L'organisme que le code postal de la compagnie donne est le cas ordinaire (`declarations::urssaf`).
     DuCodePostal,
@@ -490,7 +491,7 @@ impl Champ {
     fn ecart_de(&self, a: &Avance, donnees: &impl FicheSaisie, du_code_postal: Option<&str>) -> bool {
         let mot = match comme_la_page(donnees.ecrite(self.cle)) {
             VueDeLaPage::Vide => return false,
-            VueDeLaPage::Structure => return donnees.dite(self.cle) && *a != Avance::ToujoursRemplie,
+            VueDeLaPage::Structure => return donnees.dite(self.cle) && !matches!(a, Avance::ToujoursRemplie),
             VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
             VueDeLaPage::Mot(m) => m,
         };
@@ -525,7 +526,6 @@ impl Champ {
     fn description(&self) -> Description<'_> {
         Description {
             cle: self.cle,
-            largeur: self.largeur,
             libelle: &self.libelle,
             forme: self.forme,
             aide: &self.aide,
@@ -594,7 +594,6 @@ impl Case {
 #[derive(Debug, Clone, Serialize)]
 pub struct Description<'a> {
     pub cle: CaseDeFiche,
-    pub largeur: Largeur,
     pub libelle: &'a str,
     pub forme: Forme,
     pub aide: &'a str,
@@ -956,15 +955,16 @@ pub fn manquants<F: FicheSaisie>(donnees: &F) -> R<Vec<Manquant>> {
     Ok(out)
 }
 
-/// LES CASES DE LA FICHE `nom` QUI SERVENT A UN ACTE : chacune, ou celle dont elle se deduit (`derive_de`), porte
-/// `exige_par` ou `utile_pour` : la meme liste que `manquants`. Le questionnaire du salarie n'en pose pas d'autre.
-pub fn utiles(nom: NomDeFiche) -> R<Vec<CaseDeFiche>> {
-    let mut out = Vec::new();
-    for c in table(nom)?.iter().filter(|c| c.exige_par.is_some() || c.utile_pour.is_some()) {
-        out.push(c.cle);
-        out.extend(c.derive_de);
-    }
-    Ok(out)
+/// LES CASES `cases` QUI MANQUENT A LA FICHE DU SALARIE `fiche` : sa condition remplie par la fiche (`si`, `exige_si`)
+/// et par celle de l'entreprise (`si_entreprise`), et vide. Les cases sont celles que les questions de « Remplir ma
+/// fiche » remplissent (`documents::fiche_questionnaire::Question`, le seul endroit qui dit qu'une case se demande au
+/// salarie).
+pub fn a_demander_au_salarie(fiche: &ChampsSalarie, entreprise: &ChampsEntreprise, cases: &[CaseDeFiche]) -> R<Vec<CaseDeFiche>> {
+    Ok(table(NomDeFiche::Salarie)?
+        .iter()
+        .filter(|c| cases.contains(&c.cle) && c.applicable(fiche) && condition_remplie(c.si_entreprise.as_ref(), entreprise) && !fiche.dite(c.cle))
+        .map(|c| c.cle)
+        .collect())
 }
 
 /// UNE FICHE QUE LA TABLE JUGE, l'une des trois, typee : ce qui lui manque (`manquants`), ses anomalies
@@ -1844,24 +1844,15 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
         // SANS NIR, LA FICHE N'EST PAS INCOMPLETE : elle est celle d'un salarie
         // pas encore immatricule, sous son numero technique temporaire, qui
         // commence par le sexe.
-        let sexe_saisi: Option<&str> = d.sexe.code();
         // Le sexe qu'il faut alors, la DPAE et la DSN l'exigent a leur heure (`exige_par`, `exige_si` du champ `sexe`).
+        // Avec un NIR, elles prennent celui du NIR (`ChampsSalarie::sexe`) : la case ne s'ouvre pas, et rien ne la
+        // compare au NIR.
         if nir.is_none() {
             out.push(constat(
                 S::Nir,
                 Gravite::Avertissement,
                 "pas de NIR : ce salarie sera declare sous un numero technique temporaire, qui l'identifie dans la DSN mais n'ouvre aucun droit. Des que la caisse notifie le NIR ou le NIA, le saisir ici -- la premiere declaration suivante portera les deux, pour faire le lien.",
             ));
-        }
-        if let (Some(nir), Some(sexe)) = (&nir, sexe_saisi) {
-            let premier = tranche(nir, 0, 1);
-            if (premier == "1" || premier == "2") && sexe != premier {
-                out.push(constat(
-                    S::Sexe,
-                    Gravite::Erreur,
-                    format!("le NIR commence par {}, cette case dit {}. Les deux ne peuvent pas etre vrais ; c'est le NIR qui a ete declare.", premier, sexe),
-                ));
-            }
         }
         if let (Some(attendue), Some(cle)) = (nir.as_deref().and_then(cle_nir), &cle) {
             if *attendue != **cle {

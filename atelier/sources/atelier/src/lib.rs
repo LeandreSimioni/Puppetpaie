@@ -17,6 +17,7 @@ pub mod commandes;
 pub mod empreintes;
 pub mod extraire;
 pub mod fabriquer_bulletins;
+pub mod formulaire_fiche;
 pub mod generer_tables;
 pub mod guet;
 pub mod redirection;

@@ -31,7 +31,7 @@ fn dsn(mode: Mode) -> Ligne {
 }
 
 fn fiche(code: &str) -> Ligne {
-    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: CodeDeDemande::lire(code).unwrap(), adresse: Courriel::lire("a@b.invalid").unwrap(), prenom: Some("A".into()), message: None, expediteur: None }))
+    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: CodeDeDemande::lire(code).unwrap(), adresse: Courriel::lire("a@b.invalid").unwrap(), prenom: Some("A".into()), message: None, expediteur: None, questions: None }))
 }
 
 #[test]

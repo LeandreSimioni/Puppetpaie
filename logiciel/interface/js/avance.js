@@ -459,7 +459,8 @@ function caseDeRoute(c) {
   const balise = ["parties", "rangees", "html"].includes(c.forme) ? "div" : "label";
   return `<${balise} class="case${c.largeur === "pleine" ? " pleine" : ""}" data-cle="${echapper(c.cle)}"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><span class="case-libelle">${echapper(c.libelle)}</span>
     ${caseDeForme(c.forme, c.valeur, { choix: c.choix, prerempli: c.prerempli, exemple: c.exemple, parties: c.parties, ajouter: c.ajouter, temps: c.temps })}${
-    choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span></${balise}>`;
+    choisi && choisi.dit ? `<small class="case-dit">${echapper(choisi.dit)}</small>` : ""}${temps}<span class="case-dits" data-dits>${ditsDe(c)}</span>${
+    c.renvoi ? `<button type="button" class="lien case-renvoi" data-renvoi="${echapper(JSON.stringify(c.renvoi))}">${echapper(c.renvoi.libelle)}</button>` : ""}</${balise}>`;
 }
 
 /** Ce que le moteur dit sous une case (`dit`), une ligne chacune. */
@@ -513,11 +514,17 @@ function fautesDesCases(cible, cases) {
 /* ------------------------------------------------ les champs d'une fiche de route */
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune sa case (`caseDeRoute`), ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche). `o.modifie` : la boîte modifie une chose qui existe
- *  (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche), et pour une case vide l'exemple que la fiche de la route
+ *  donne de ce champ (`o.exemple`, l'exemple de la fiche : une valeur simple). `o.modifie` : la boîte modifie une chose
+ *  qui existe (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
 function casesDesChamps(champs, valeurs, choix, o = {}) {
+  const exemple = (nom) => {
+    const x = o.exemple ? o.exemple[nom] : undefined;
+    return typeof x === "string" || typeof x === "number" ? String(x) : undefined;
+  };
   const une = (c) => {
-    const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix };
+    const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
+      exemple: exemple(c.nom) };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -549,7 +556,7 @@ function dessinerAvance(cible) {
   enveloppe.hidden = !routes.length;
   cible.innerHTML = routes.map((f, i) => `
     <div class="carte avance-route" data-i="${i}">
-      ${casesDesChamps(f.charge, {}, {})}
+      ${casesDesChamps(f.charge, {}, {}, { exemple: f.exemple })}
       <p><button class="secondaire" data-faire>${echapper(f.bouton)}</button></p>
       <div data-rendu></div>
     </div>`).join("");
@@ -588,7 +595,7 @@ function champsDuGeste(g) {
 /** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
 function casesDuGeste(g, o = {}) {
   return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, o)}`;
+    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple })}`;
 }
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */
@@ -652,8 +659,8 @@ function historiqueDeLaFiche(h) {
 }
 
 /** LES CASES D'UNE FICHE RENDUE (`f`), dans l'ordre où la route les rend, chacune une case de route d'une chose qui existe
- *  (`caseDeRoute`, `modifiable`) : la grille de base, puis celles qu'elle place sous « Avancé », ouvertes d'elles-mêmes
- *  quand l'une dit quelque chose, puis l'historique. */
+ *  (`caseDeRoute`, `modifiable`) : la grille de base, puis celles qu'elle place sous « Avancé », ouvert quand la route le
+ *  dit (`avance_ouvert` : une case s'écarte du cas ordinaire), puis l'historique. */
 function casesDeLaFiche(f, depart = {}) {
   // Un titre quand le bloc change (`bloc`, rendu par la route ; un bloc sans titre n'en pose pas).
   const de = (place) => {
@@ -664,20 +671,20 @@ function casesDeLaFiche(f, depart = {}) {
       return titre + caseDeRoute(modifiable(c, depart[c.cle]));
     }).join("");
   };
-  const dit = (v) => v != null && v !== "" && v !== false && !(Array.isArray(v) && !v.length);
-  return grilleDesCases(de("base"), de("avance"), f.cases.some((c) => c.place === "avance" && dit(c.valeur)), "fiche-cases")
-    + historiqueDeLaFiche(f.historique);
+  return grilleDesCases(de("base"), de("avance"), f.avance_ouvert, "fiche-cases") + historiqueDeLaFiche(f.historique);
 }
 
 /** CE QUI DESSINE UNE FICHE RENDUE, sans ce qui change en tapant : ses cases, leurs parties ouvertes et leurs choix. */
 const dessinDeLaFiche = (f) => JSON.stringify(f.cases.map((c) => [c.cle, c.choix,
   (c.parties || []).filter((p) => p.ouverte).map((p) => [p.cle, p.choix])]));
 
-/** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, ou quand la route rend un autre dessin (d'autres cases,
- *  d'autres parties ouvertes, d'autres choix), elle se dessine (ce qui est déjà tapé reste dans sa case, et le curseur
- *  aussi ; un oui-non garde pour pré-rempli sa valeur d'avant la saisie : `modifiable`) ; sinon, seuls changent ses fautes
- *  (`fautesDesCases`) et ce que le moteur dit sous chaque case. */
+/** POSE DANS `cible` LA FICHE RENDUE `f` : la première fois, quand la route rend un autre dessin (d'autres cases, d'autres
+ *  parties ouvertes, d'autres choix), ou quand elle a récrit des cases (`reecrites` : elles montrent ce qu'elle rend),
+ *  elle se dessine (ce qui est déjà tapé reste dans sa case, et le curseur aussi ; un oui-non garde pour pré-rempli sa
+ *  valeur d'avant la saisie : `modifiable`) ; sinon, seuls changent ses fautes (`fautesDesCases`) et ce que le moteur dit
+ *  sous chaque case. Un tiroir « Avancé » ouvert à la main le reste. */
 function poserLaFiche(cible, f) {
+  const reecrites = new Set(f.reecrites || []);
   // Chaque contrôle par sa case, sa rangée et sa partie.
   const controles = () => [...cible.querySelectorAll("[data-case]")].map((x) => {
     const c = x.closest(".case[data-cle]");
@@ -685,16 +692,18 @@ function poserLaFiche(cible, f) {
     const p = x.closest("[data-partie]");
     return [`${c ? c.dataset.cle : ""}|${r ? [...r.parentElement.children].indexOf(r) : ""}|${p ? p.dataset.partie : ""}`, x];
   });
-  if (!cible.dataset.posee || cible.dataset.dessin !== dessinDeLaFiche(f)) {
+  if (!cible.dataset.posee || cible.dataset.dessin !== dessinDeLaFiche(f) || reecrites.size) {
     if (!cible.dataset.posee) cible.depart = Object.fromEntries(f.cases.map((c) => [c.cle, c.valeur]));
     cible.dataset.posee = "1";
     cible.dataset.dessin = dessinDeLaFiche(f);
     const tapees = new Map(controles());
     const actif = controles().find(([, x]) => x === document.activeElement || x.contains(document.activeElement));
+    const avanceOuvert = cible.querySelector(":scope > details.e-avance[open]");
     cible.innerHTML = casesDeLaFiche(f, cible.depart);
+    if (avanceOuvert) cible.querySelector(":scope > details.e-avance").open = true;
     controles().forEach(([k, x]) => {
       const t = tapees.get(k);
-      if (!t) return;
+      if (!t || reecrites.has(k.split("|")[0])) return;
       if (x.isContentEditable) x.innerHTML = t.innerHTML;
       else if (x.type === "checkbox") x.checked = t.checked;
       else if (x.tagName === "INPUT" || x.tagName === "SELECT") x.value = t.value;

@@ -28,6 +28,7 @@ use crate::imprevus::{FinASignaler, FinLue, ResumeDArret};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::demarrage::{Manque, Pose};
+use declarations::champs::FicheAJuger;
 use socle::echec::{erreur, Classe};
 use crate::catalogue::{Ecran, Place};
 
@@ -47,6 +48,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "rappels : les échéances dues maintenant (chacune : quoi, titre, question, mois ou année, état et sa pastille, sa date ; action : la route que son geste ouvre, sa charge, puis la route de l'acte, le mot du bouton)",
         refus: &[OPERATION, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -58,6 +60,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: "{}",
         rend: "ce_mois et a_venir : les échéances, chacune avec sa date, son état et si un rappel la dit",
         refus: &[OPERATION, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -69,6 +72,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2026,"continuent":["le-banc-des-menteurs"]}"#,
         rend: "phrase, archives, continuent, configuration",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "les spectacles qui continuent : des spectacles actifs, par leur clé" }, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
@@ -80,6 +84,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "titre, note, manques (ce qui se saisit : chacun sa case, sa phrase, où il vit ; propose : la valeur que le moteur met dans la case, un texte ou un jour ; une ligne d'un salarié dit qui ; a_enregistrer : les gestes que « Enregistrer » joue avec les cases, sur la ligne de l'effectif un par année qu'elle demande, la route effectif, sa case pré-remplie de ce que les paies reprises en donnent et sa phrase), dsn (après un import sans DSN, ce qu'une DSN pourrait donner : les mêmes lignes, chacune avec sa pièce, et la nature à dire d'un contrat de permanent), poses (ce que le moteur a posé, en information)",
         refus: &[OPERATION, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
@@ -94,6 +99,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"cle":"revue-spectacles:2026"}"#,
         rend: "cle, fait",
         refus: &[RefusFiche { classe: Classe::Refuse, corriger: "une échéance qui se coche, avec son année" }, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Paie),
@@ -312,7 +318,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, m)).collect::<socle::echec::R<Vec<_>>>()?;
+            // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
+            let listes = std::cell::OnceCell::new();
+            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
             en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
@@ -816,19 +824,40 @@ impl Etat<'_> {
 pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
     let st = Etat::de(ctx)?;
     let rappels: Vec<EcheanceDite> = echeances(&st)?.iter().filter(|e| e.due).map(Echeance::dite).collect::<R<_>>()?;
-    let phrases: Vec<String> = rappels
+    let mut phrases: Vec<String> = rappels
         .iter()
         .map(|r| {
             let quand = if r.quand_dit.is_empty() { String::new() } else { format!(" Échéance : {}.", r.quand_dit) };
             format!("{} ({}) : {} {}{}", r.titre, r.pastille.mots, r.question, r.detail, quand).replace("  ", " ")
         })
         .collect();
+    phrases.extend(sans_numero_conges_spectacles(ctx));
     Ok(Rappels {
         phrase: socle::phrase!("Rappels : {}.", rappels.len()),
         fermer_dit: if rappels.is_empty() { "Fermer" } else { "Plus tard" },
         rappels,
         phrases,
     })
+}
+
+/// LES SALARIES ACTIFS DONT LA FICHE DIT QU'ILS N'ONT PAS DE NUMERO CONGES SPECTACLES (`NumeroCongesSpectacles::SansNumero`)
+/// : une phrase chacun, qui dit la demarche sans rien promettre. « Tout salarié doit […] effectuer une demande
+/// d'immatriculation en ligne » ; « Si le salarié est de nationalité étrangère, l'employeur doit procéder à son
+/// immatriculation » (Audiens, mode d'emploi employeur :
+/// `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`, l. 168-180).
+fn sans_numero_conges_spectacles(ctx: &Contexte) -> Vec<String> {
+    use droit::fiche::Lue as _;
+    ctx.salaries
+        .values()
+        .filter(|s| !s.archivee() && s.num_conges_spectacles.dite().is_some_and(droit::fiche::NumeroCongesSpectacles::sans_numero))
+        .map(|s| {
+            let nom = [s.prenom_affichage.remplie(), s.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+            format!(
+                "{} n'a pas de numéro Congés Spectacles : la demande d'immatriculation à la caisse (Audiens) est à faire, en ligne par le salarié, ou par l'employeur pour un salarié de nationalité étrangère.",
+                nom
+            )
+        })
+        .collect()
 }
 
 /// `echeancier` : les memes echeances, rangees. « Ce mois-ci » : celles qui sont dues (un rappel les dit, avec leur
@@ -1633,7 +1662,7 @@ struct ManqueVu {
     manque: Manque,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     a_enregistrer: Vec<GesteDEffectif>,
-    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE, OU UNE CASE DE L'ENTREPRISE, dessinee comme dans sa fiche
+    /// LA CASE A REMPLIR D'UNE LIGNE QUI NOMME UN SPECTACLE OU UN SALARIE, OU UNE CASE DE L'ENTREPRISE, dessinee comme dans sa fiche
     /// (`fiches::case_a_remplir`) : sa valeur est celle que le moteur propose (`propose`), sinon celle de la fiche.
     #[serde(skip_serializing_if = "Option::is_none")]
     case_rendue: Option<crate::fiches::CaseDeLaFiche>,
@@ -1667,21 +1696,29 @@ struct SansChoix {}
 
 impl ManqueVu {
     /// Chaque annee que la ligne demande (`Manque::effectifs`, un par annee) : sa case, pre-remplie de ce que les paies
-    /// reprises donnent, et sa phrase.
-    fn de(ctx: &Contexte, mut manque: Manque) -> socle::echec::R<ManqueVu> {
+    /// reprises donnent, et sa phrase. `listes` : celles de la fiche d'un salarie, lues une fois pour toutes les lignes.
+    fn de(ctx: &Contexte, listes: &std::cell::OnceCell<crate::fiches::ListesDuSalarie>, mut manque: Manque) -> socle::echec::R<ManqueVu> {
         let proposee = manque.propose.as_ref().and_then(droit::fiche::ValeurDeCase::de);
         let case_rendue = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str(), &manque.case) {
             (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
                 Some(f) => {
                     let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
-                    crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Spectacle, chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                    crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Spectacle(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                }
+                None => None,
+            },
+            (None, Some(s), _, Some(chemin)) => match ctx.salaries.get(s) {
+                Some(f) => {
+                    let f = &f.champs;
+                    let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
+                    crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Salarie(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
                 }
                 None => None,
             },
             (None, None, "entreprise", Some(chemin)) => {
                 let e = &ctx.entreprise;
                 let valeur = proposee.or_else(|| e.valeur_ecrite(chemin.champ));
-                crate::fiches::case_a_remplir(ctx, droit::fiche::NomDeFiche::Entreprise, chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
+                crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Entreprise(e), chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
             }
             _ => None,
         };

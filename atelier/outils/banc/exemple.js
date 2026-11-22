@@ -19,8 +19,7 @@ async function ouvrir() {
   await voile(o.page);
   return o;
 }
-// Une case de route (la fiche Entreprise, un spectacle) porte sa clé sur sa `.case`, son contrôle dedans (`[data-case]`) ;
-// une case de la fiche d'un salarié la porte sur son contrôle.
+// Une case de fiche (toutes passent par la route) porte sa clé sur sa `.case`, son contrôle dedans (`[data-case]`).
 async function remplir(page, s, v) {
   const tag = await page.$eval(s, (e) => e.tagName);
   if (tag === "SELECT") await page.selectOption(s, String(v));
@@ -28,13 +27,11 @@ async function remplir(page, s, v) {
   else await page.fill(s, String(v));
 }
 async function champ(page, cle, v) {
-  const s = `#config-formulaire [data-cle="${cle}"]`;
-  await remplir(page, (await page.$(`${s} > [data-case]`)) ? `${s} > [data-case]` : s, v);
+  await remplir(page, `#config-formulaire .case[data-cle="${cle}"] > [data-case]`, v);
 }
-// Une partie d'une case de route (`[data-partie]`), ou une case d'une structure de la fiche d'un salarié (`data-sous-de`).
+// Une partie d'une case faite de cases (`[data-partie]`).
 async function sous(page, de, cle, v) {
-  const r = `#config-formulaire .case[data-cle="${de}"] [data-partie="${cle}"] [data-case]`;
-  await remplir(page, (await page.$(r)) ? r : `#config-formulaire [data-sous-de="${de}"][data-sous-cle="${cle}"]`, v);
+  await remplir(page, `#config-formulaire .case[data-cle="${de}"] [data-partie="${cle}"] [data-case]`, v);
 }
 const texte = (page) => page.$eval("body", (b) => b.innerText);
 function etape(t) { console.log(`\n== ${t}`); }
@@ -86,7 +83,7 @@ function etape(t) { console.log(`\n== ${t}`); }
   if (manques.some((m) => /qualite/.test(m))) throw new Error("« Pour démarrer » demande la qualité du déclarant");
   const suivre = async (cle) => {
     await page.locator(`[data-manque-champ="${cle}"]`).filter({ visible: true }).first().click(); await page.waitForTimeout(1500);
-    const vu = await page.$eval(`#config-formulaire [data-cle="${cle}"]:not([type=hidden]), #config-formulaire [data-sous-de="${cle}"]`, (e) => ({
+    const vu = await page.$eval(`#config-formulaire .case[data-cle="${cle}"] > [data-case]`, (e) => ({
       visible: !!(e.offsetWidth || e.offsetHeight), focus: document.activeElement === e, tiroir: !!e.closest("details:not([open])") }));
     console.log(`  ${cle} :`, JSON.stringify(vu));
     if (!vu.visible || vu.tiroir) throw new Error(`« Pour démarrer » mène à ${cle}, qui n'est pas visible`);
@@ -129,8 +126,9 @@ function etape(t) { console.log(`\n== ${t}`); }
   await banc.capture(page, C + "p05a-sans-metier.png");
   if (await page.isVisible("text=Corriger")) await page.click("text=Corriger");
   await page.waitForTimeout(500);
-  await page.selectOption("#config-metier-choix", "COM010"); await page.waitForTimeout(800);
-  console.log("  intitulé d'emploi prérempli :", await page.$eval('#config-formulaire [data-cle="emploi_affichage"]', (e) => e.value));
+  // Le métier se choisit dans la liste que la route rend ; à la relecture, elle remplit l'intitulé de l'emploi.
+  await champ(page, "code_emploi_ft", "COM010"); await page.waitForTimeout(1500);
+  console.log("  intitulé d'emploi prérempli :", await page.$eval('#config-formulaire .case[data-cle="emploi_affichage"] > [data-case]', (e) => e.value));
   await page.click("#config-enregistrer"); await page.waitForTimeout(2500);
   await banc.capture(page, C + "p05-salariee.png");
 

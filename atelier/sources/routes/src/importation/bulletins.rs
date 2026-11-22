@@ -1737,7 +1737,12 @@ fn ecarts_salarie(fiche: &ChampsSalarie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> Che
         }
         // Une case vide ou « A COMPLETER » n'est pas un ecart : l'import la complete.
         let Some(a) = fiche.valeur_ecrite(cle.into()).filter(|v| !crate::fiches::case_vide(Some(v))) else { continue };
-        let Some(mot) = a.ecrite().mot().map(str::to_string) else { continue };
+        // Le numero Congés Spectacles est la partie `numero` de sa case ; « n'en a pas » n'en dit aucun, rien a comparer.
+        let ecrit = match cle {
+            CaseSalarie::NumCongesSpectacles => droit::fiche::FicheSaisie::ecrite_au_chemin(fiche, cle.into(), &["numero"]),
+            _ => a.ecrite(),
+        };
+        let Some(mot) = ecrit.mot().map(str::to_string) else { continue };
         if compare(&mot) == compare(&lu) {
             continue;
         }

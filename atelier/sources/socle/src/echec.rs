@@ -85,6 +85,9 @@ classes! {
     AucunDocument,
     /// La fiche porte des anomalies.
     FicheRefusee,
+    /// Une valeur d'une fiche ne se lit plus : la saisir de nouveau (la route `valeurs-illisibles` la demande) avant
+    /// tout autre geste.
+    ValeurARedire,
     /// La DSN de ce mois est deja deposee.
     DsnDejaDeposee,
     /// La repetition d'un depot manque.

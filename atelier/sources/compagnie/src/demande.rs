@@ -53,7 +53,7 @@ pub enum QuiOuvre {
 }
 
 impl QuiOuvre {
-    /// De qui est le mot de passe, en mots : « de Compagnia UEUEUE », « de l'administrateur, qui ouvre A et B ».
+    /// De qui est le mot de passe, en mots : « de la Compagnie du Fil de Fer », « de l'administrateur, qui ouvre A et B ».
     fn de_qui(&self) -> String {
         match self {
             QuiOuvre::Compagnie(nom) => socle::texte::de(nom),

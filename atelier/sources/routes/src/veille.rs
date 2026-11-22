@@ -68,6 +68,22 @@ pub fn acces_a_poser(racine: &std::path::Path, d: Option<&Trace>) -> socle::eche
     Ok(a_poser)
 }
 
+/// CE QUI PERSISTE DE LA SAUVEGARDE, MAINTENANT : ce que le dernier passage en a dit (`sauvegarde_souci` de la trace,
+/// `compagnie::sauvegarde::souci`), tant que c'est encore vrai a l'instant ou la route rend. Le Drive lie apres ce
+/// passage (`coffre::lie_le`), ou qui ne l'est plus (`ouverture::acces_pose`), le passage ne dit plus rien de la
+/// sauvegarde qui partira : la phrase se tait jusqu'au passage suivant, qui dira ce qu'il trouve. `Err` : le coffre ou
+/// la date du jeton ne se lit pas.
+pub fn souci_de_la_sauvegarde(racine: &std::path::Path, d: Option<&Trace>) -> socle::echec::R<Option<String>> {
+    let Some((souci, passage)) = d.and_then(|t| t.sauvegarde_souci.clone().map(|s| (s, t.quand))) else { return Ok(None) };
+    if !crate::gestes::ouverture::acces_pose(racine, "google")? {
+        return Ok(None);
+    }
+    Ok(match crate::coffre::lie_le(racine)? {
+        Some(lie) if lie > passage => None,
+        _ => Some(souci),
+    })
+}
+
 /// CE QUE LE BANDEAU DIT (`dit` de l'etat de la veille) : l'etat en une phrase, un service muet, ce qu'il y a a poser et
 /// ou, les retours nouveaux, ce que l'horloge d'une fictive a fait, et ce que dit un passage en cours ou fini. La page
 /// n'en ecrit rien.
@@ -77,6 +93,8 @@ pub struct DitDuBandeau {
     muets: Option<String>,
     /// Ce qui manque maintenant (`acces_a_poser`), une ligne par acces.
     a_poser: Vec<APoser>,
+    /// Ce qui persiste de la sauvegarde, vrai maintenant (`souci_de_la_sauvegarde`).
+    sauvegarde_souci: Option<String>,
     retours: Option<String>,
     fictive: Option<&'static str>,
     horloge: Option<String>,
@@ -87,7 +105,7 @@ pub struct DitDuBandeau {
     termine: &'static str,
 }
 
-pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
+pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, sauvegarde_souci: Option<String>, dans: Option<std::time::Duration>, fictive: bool) -> DitDuBandeau {
     let dans = dans.map(socle::temps::ecrit::minutes_commencees_dites);
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
@@ -114,6 +132,7 @@ pub fn dit_du_bandeau(d: Option<&Trace>, a_poser: Vec<APoser>, dans: Option<std:
         etat,
         muets,
         a_poser,
+        sauvegarde_souci,
         retours: nouveaux.map(|n| format!("{} retour{} nouveau{} : les lire dans l'Historique", n, if n > 1 { "s" } else { "" }, if n > 1 { "x" } else { "" })),
         fictive: fictive.then_some("compagnie fictive : pas de sauvegarde, pourquoi ?"),
         horloge: horloge.map(|n| format!("pendant votre absence, la compagnie a travaillé ({}) : voir", n)),

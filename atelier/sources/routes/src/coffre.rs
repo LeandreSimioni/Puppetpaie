@@ -54,6 +54,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: ETAT,
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -65,6 +66,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "lie, compte, et ce que la page en montre",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -83,6 +85,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"service":"urssaf"}"#,
         rend: "l'état du coffre, et ce qu'une tentative de connexion en dit : phrase, couleur",
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 400,
         ecran: ECRAN,
@@ -94,6 +97,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"service":"urssaf"}"#,
         rend: "service, ok, message (la première ligne de l'erreur), conseil, pastille",
         refus: &[Refus { classe: Classe::Refuse, corriger: "poser d'abord le mot de passe de ce service" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -105,6 +109,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"service":"urssaf"}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -120,6 +125,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -131,6 +137,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: ETAT,
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Coffre),
@@ -142,6 +149,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "compte : l'adresse du compte Google lié ; la fenêtre de Google s'ouvre dans le navigateur, son adresse est dite sur la sortie d'erreur",
         refus: &[PREUVE, Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (Google a refusé, aucune réponse en cinq minutes, l'application absente) ; rien n'est enregistré" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -153,6 +161,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "l'état du compte Google",
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Coffre),
@@ -164,6 +173,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "compagnies (celles de l'administrateur), rattachee, autres, peut_rattacher, question (« même administrateur ? »), mot_de_passe_pose, pastille",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::LectureAvancee,
@@ -178,6 +188,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "compagnies (celles de l'administrateur), etat, phrase",
         refus: &[PREUVE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 200,
         ecran: Ecran::DessineAvance(Place::Coffre),
@@ -193,6 +204,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "etat, phrase",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 120,
         ecran: Ecran::DessineAvance(Place::Coffre),
@@ -726,7 +738,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         *case = Some(v);
     }
     crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ApiDpae(Some(cfg)), Some(ctx.aujourdhui))?;
-    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&droit::contexte::ENTREPRISE.dans(&ctx.racine), droit::contexte::ENTREPRISE.texte())?.au(&ctx.aujourdhui))
+    Ok(droit::fiche::lire_fiche_posee::<droit::fiche::FicheEntrepriseDatee>(&droit::contexte::ENTREPRISE.dans(&ctx.racine), droit::fiche::NomDeFiche::Entreprise)?.au(&ctx.aujourdhui))
 }
 
 // ------------------------------------------------------------------ le mot de passe du logiciel
@@ -889,6 +901,17 @@ impl Jeton {
 /// l'appelle) : un jeton illisible, un coffre qui refuse, c'est « non ».
 pub fn autorise(racine: &Path) -> bool {
     matches!(Jeton::de(racine), Jeton::Lu(_))
+}
+
+/// QUAND LE DRIVE A ETE LIE, sans rien ouvrir : la date du fichier du jeton scelle (`sceller_le_jeton` l'ecrit a chaque
+/// liaison), lue dans ses metadonnees ; `None` : aucun jeton. `Err` : sa date ne se lit pas.
+pub(crate) fn lie_le(racine: &Path) -> R<Option<socle::paris::Moment>> {
+    let p = socle::fichiers::JETON_GOOGLE.dans(racine);
+    match std::fs::metadata(&p) {
+        Ok(m) => socle::paris::mtime(&m).map(Some).ok_or_else(|| socle::echec::au_chemin("La date du jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).", &p)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(&p, &e)),
+    }
 }
 
 /// L'adresse du compte, sans reseau ; `None` si pas autorise (un jeton illisible ne l'est pas).

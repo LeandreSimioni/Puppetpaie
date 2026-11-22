@@ -1,4 +1,4 @@
-/* Le formulaire d'une fiche : brancher, lire, verifier, enregistrer, dater. */
+/* Le formulaire d'une fiche : l'ouvrir telle que la route la rend, lire, enregistrer, dater. */
 "use strict";
 
 /* Ce que l'écran dit de chaque valeur d'une liste de choix : les `libelles` du champ, tels que la description des fiches
@@ -16,12 +16,10 @@ function libellesDe(cle) {
 /* Ce qu'une case du formulaire montre : la valeur de la fiche, et rien quand la fiche ne la dit pas (un champ facultatif
  * absent). C'est la seule règle d'affichage d'une absence, ici. */
 const texteDeLaCase = (v) => (v == null ? "" : String(v));
-/* Ce qu'une case de structure montre en JSON : `null` pour une structure que la fiche ne dit pas. */
-const jsonDeLaCase = (v, ...espaces) => JSON.stringify(v === undefined ? null : v, ...espaces);
 
 /* LES CASES D'UNE STRUCTURE, telles que le moteur les décrit (`champs` de la description) : `{champs: [[clé, libellé,
  * aide, genre]]}`, ou null. Une case déclarée qui se déduit d'une autre (`ecran: false`) ne se montre pas ; le genre
- * (`caseSousChamp`) se lit de la forme : un choix et ses libellés, un oui/non, un nombre, une date. */
+ * dit les libellés d'un choix. */
 function sousChamps(c) {
   // Une structure dit ses cases (`champs`) ; un champ seul n'en a pas.
   if (!c || !c.champs || !c.champs.length) return null;
@@ -33,9 +31,6 @@ function sousChamps(c) {
       const vide = "" in lib || !s.choix.includes("") ? [["", "" in lib ? lib[""] : "—"]] : [];
       g.choix = Object.fromEntries([...vide, ...s.choix.filter((v) => v !== "").map((v) => [v, lib[v] ?? v])]);
     }
-    if (s.forme === "booleen") g.booleen = true;
-    if (s.forme === "montant") g.nombre = true;
-    if (s.forme === "date") g.date = true;
     return g;
   };
   return { champs: c.champs.filter((s) => s.ecran !== false).map((s) => [s.cle, s.libelle, s.aide, genre(s)]) };
@@ -46,342 +41,18 @@ function structureDecrite(cle, nom = FICHE_ACTIVE) {
   return sousChamps(ETAT.configuration.description[nom].find((c) => c.cle === cle));
 }
 
-/* UN CHAMP DE FICHE, DESSINÉ : celui que la fiche montre (`dessinerFormulaire`) et celui que « Pour démarrer » propose,
- * le même dessin. `c` : sa description ; `fiche` : `{donnees, anomalies}` ; `nom` : entreprise, salarie (un spectacle,
- * la route le rend et le dessinateur commun le dessine : `caseDeRoute`). */
-function champDeFiche(c, fiche, nom) {
-  const desc = ETAT.configuration.description[nom];
-  const anomalie = (cle) => fiche.anomalies.find((a) => a.champ === cle);
-  const caches = CACHES;
-  // Un champ replié reste dans le formulaire, avec sa valeur, qui repart à l'enregistrement.
-  // CE QUE LA FICHE MONTRE, LE MOTEUR LE DIT (`montres` de la fiche, puis de la route `permanents` à chaque changement,
-  // `brancherConditions`) : chaque case porte sa clé (`data-montre`), et se replie quand le moteur ne la nomme pas. Une
-  // fiche neuve, qui ne le dit pas encore, se dessine entière ; la première réponse la replie.
-  const montres = Array.isArray(fiche.montres) ? new Set(fiche.montres) : null;
-  const champHtml = (c) => {
-    const html = champHtmlBrut(c);
-    if (!html) return html;
-    const ok = !montres || montres.has(c.cle);
-    // Sous la case datée, sa valeur d'avant et celle à venir (`tempsDeLaCase`), dans son cadre.
-    const temps = c.forme === "histoire" ? "" : tempsDeLaCase(c.cle, fiche.donnees);
-    return html.replace(/^(\s*<div class="champ)([^"]*)"([^>]*)>/, (m, debut, classes, reste) =>
-      `${debut}${classes}"${reste.replace(/\s+hidden\b/g, "")} data-montre="${echapper(c.cle)}"${ok ? "" : " hidden"}>`)
-      .replace(/<\/div>\s*$/, () => `${temps}</div>`);
-  };
-  const champHtmlBrut = (c) => {
-    const v = fiche.donnees[c.cle];
-    const a = anomalie(c.cle);
-    // L'histoire de la fiche se LIT, elle ne se tape pas : elle dit ce qui
-    // est reellement parti aux organismes, et on ne reecrit pas une
-    // declaration deposee. La montrer en JSON editable inviterait a la
-    // corriger, ce qui est exactement ce qu'il ne faut pas.
-    if (c.forme === "histoire") return histoireDuChamp(v, desc);
-    // Ce que la machine deduit : present, mais pas a l'ecran.
-    if (caches.includes(c.cle)) {
-      // Une structure cachee repart telle quelle : en JSON, relu par
-      // `lireFormulaire` comme une structure.
-      if (c.forme === "structure" || (v !== null && typeof v === "object")) {
-        return `<input type="hidden" data-cle="${c.cle}" data-structure="1"
-                  value="${echapper(jsonDeLaCase(v))}">`;
-      }
-      return `<input type="hidden" data-cle="${c.cle}" data-forme="${c.forme}"
-                value="${echapper(texteDeLaCase(v))}">`;
-    }
-    const sous = sousChamps(c);
-    if (sous) return structureHtml(c, v, sous, a);
-    // UN PAYS SE CHOISIT DANS LA LISTE, il ne se tape pas en code ISO.
-    // La liste vient du moteur (`etat.pays`, le Code
-    // officiel geographique de l'INSEE), triee par nom ; une lettre tapee sur
-    // la liste ouverte va au premier pays qui commence par elle. Un code
-    // deja saisi que la liste ne connait pas reste affiche, et le moteur le
-    // refuse en le disant.
-    // Le pays de naissance a sa liste a lui : la table
-    // « Pays » de la DSN que le moteur sert (`etat.pays_naissance`), le Kosovo
-    // et les Etats disparus compris.
-    const listePays = (c.cle === "pays_naissance" && ETAT.pays_naissance.length)
-      ? ETAT.pays_naissance : ETAT.pays;
-    if (c.forme === "pays" && listePays.length) {
-      const liste = listePays;
-      const v2 = texteDeLaCase(v).trim();
-      const connu = liste.some((p) => p.code === v2.toUpperCase());
-      return `<div class="champ">
-        <label>${echapper(c.libelle)}
-          ${aideHtml(c.cle, c.aide)}
-          <select data-cle="${c.cle}" data-forme="pays"
-              class="${a ? (a.gravite === "erreur" ? "faute" : "suspect") : ""}">
-            <option value=""${v2 ? "" : " selected"}>— à choisir —</option>
-            ${liste.map((p) => `<option value="${echapper(p.code)}"${
-                p.code === v2.toUpperCase() ? " selected" : ""}>${echapper(p.nom)}</option>`).join("")}
-            ${connu || !v2 ? "" : `<option value="${echapper(v2)}" selected
-              >${echapper(v2)} — inconnu</option>`}
-          </select></label>
-        ${aideCorps(c.cle, c.aide)}
-        ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-      </div>`;
-    }
-    // UNE LISTE DE CHOIX SE CHOISIT : l'annexe s'ecrivait « 4 »
-    // a la main, le CSE « cse_adherent_fnas ».
-    // La fiche salarie a suivi le meme jour : le sexe s'ecrivait « 2 », la
-    // nationalite « 01 », le statut cadre « 04 ».
-    if (c.forme === "choix" && c.choix.length) {
-      // Un champ sans libellés (`libelles` absent) montre ses codes.
-      const lib = c.libelles ? c.libelles : {};
-      const v1 = texteDeLaCase(v);
-      // L'ordre de la table des libelles (le cas ordinaire d'abord), puis ce
-      // qu'elle ne nomme pas ; un choix vide prevu par le moteur (« aucun »)
-      // tient lieu de premiere ligne.
-      const ordre = [...(c.choix.includes("") ? [""] : []),
-        ...Object.keys(lib).filter((x) => x && c.choix.includes(x)),
-        ...c.choix.filter((x) => x && !(x in lib))];
-      return `<div class="champ">
-        <label>${echapper(c.libelle)}
-          ${aideHtml(c.cle, c.aide)}
-          <select data-cle="${c.cle}" data-forme="choix">
-            ${c.choix.includes("") ? "" : `<option value=""${v1 ? "" : " selected"}>— ${
-              echapper(lib[""] || "à choisir")} —</option>`}
-            ${ordre.map((x) => `<option value="${echapper(x)}"${
-                x === v1 ? " selected" : ""}>${echapper(lib[x] || x)}</option>`).join("")}
-            ${!v1 || c.choix.includes(v1) ? "" : `<option value="${echapper(v1)}" selected
-              >${echapper(v1)}</option>`}
-          </select></label>
-        ${aideCorps(c.cle, c.aide)}
-        ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-      </div>`;
-    }
-    // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit ; une fiche qui ne dit rien, le
-    // calcul la refuse en nommant la case. Les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
-    if (c.cle === "jours_travailles" && nom === "salarie") {
-      const coches = Array.isArray(v) ? v : [];
-      return `<div class="champ pleine">
-        <label>${echapper(c.libelle)} ${aideHtml(c.cle, c.aide)}</label>
-        <div class="jours-semaine" data-cle="${c.cle}" data-jours="1"${Array.isArray(v) ? "" : " data-absent=\"1\""}>
-          ${JOURS_DE_LA_SEMAINE.map((j) => `<label class="coche"><input type="checkbox"
-              data-jour="${j}"${coches.includes(j) ? " checked" : ""}> ${j}</label>`).join("")}
-        </div>
-        ${aideCorps(c.cle, c.aide)}
-        ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-      </div>`;
-    }
-    // UNE CASE A COCHER SE LIT COMME UNE PHRASE : la case, puis ce qu'elle dit. Une
-    // case que la fiche ne dit pas se montre décochée et ne part que si on la touche.
-    if (c.forme === "booleen") {
-      const coche = v === true;
-      return `<div class="champ pleine case">
-        <label class="coche"><input type="checkbox" data-cle="${c.cle}"
-            data-forme="booleen"${coche ? " checked" : ""}${v == null ? " data-absent=\"1\"" : ""}>
-          ${echapper(c.libelle)} ${aideHtml(c.cle, c.aide)}</label>
-        ${aideCorps(c.cle, c.aide)}
-        ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-      </div>`;
-    }
-    const structure = c.forme === "structure" || (v !== null && typeof v === "object");
-    const controle = structure
-      ? `<textarea rows="4" data-cle="${c.cle}" data-structure="1">${echapper(jsonDeLaCase(v, null, 1))}</textarea>`
-      : `<input data-cle="${c.cle}" data-forme="${c.forme}" value="${echapper(texteDeLaCase(v))}"${
-            // Une date se choisit dans un calendrier, dans toutes les fiches ;
-            // la valeur reste AAAA-MM-JJ, celle du moteur.
-            c.forme === "date"
-              && /^(\d{4}-\d{2}-\d{2})?$/.test(texteDeLaCase(v)) ? ' type="date"' : ""}${
-            c.exemple ? ` placeholder="ex. ${echapper(c.exemple)}"` : ""}
-            class="${a ? (a.gravite === "erreur" ? "faute" : "suspect") : ""}">`;
-    // La largeur, la route la dit (`largeur` de la description).
-    const large = structure || c.largeur === "pleine";
-    return `<div class="champ ${large ? "pleine" : ""}">
-      <label>${echapper(c.libelle)}
-        ${aideHtml(c.cle, c.aide)}
-        ${controle}
-      </label>
-      ${aideCorps(c.cle, c.aide)}
-      ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
-    </div>`;
-  };
-
-  return champHtml(c);
-}
-
+/* Une fiche s'ouvre telle que la route la rend (`ouvrirLaFicheRendue`), quelle qu'elle soit. */
 function dessinerFormulaire(fiche) {
   if (!fiche) return;
-  // La fiche d'un spectacle et celle de l'entreprise, la route les rend et le dessinateur les dessine
-  // (`ouvrirLaFicheRendue`).
-  if (FICHE_ACTIVE !== "salarie") {
-    ouvrirLaFicheRendue(fiche);
-    return;
-  }
-  FICHE_COURANTE = fiche;
-  FICHE_SANS_LISTE = false;
-  const desc = ETAT.configuration.description[FICHE_ACTIVE];
-
-  // CE QU'ON N'AFFICHE PAS, ON LE GARDE. Le signataire porte un `nom_aem` et
-  // une note ; la banque porte un avertissement de diffusion. Ces clefs ne
-  // sont pas des cases a remplir, mais les effacer serait perdre une valeur
-  // que quelqu'un a posee exprès. `lireFormulaire` repart de ces originaux.
-  STRUCTURES_ORIGINE = {};
-  desc.forEach((c) => {
-    const v = fiche.donnees[c.cle];
-    if (sousChamps(c) && v && typeof v === "object") STRUCTURES_ORIGINE[c.cle] = v;
-  });
-
-  // Les champs CALCULES ne sont pas proposes a la saisie : c'est le programme qui les fabrique, et ils ne se montrent
-  // pas (`saisissables`).
-  const champHtml = (c) => champDeFiche(c, fiche, FICHE_ACTIVE);
-
-  // LES SECTIONS. Une fiche qui n'en declare pas garde sa liste plate ;
-  // un champ oublie d'une table de sections s'affiche dans la derniere.
-  // `ecran` faux : le champ garde sa valeur, la fiche ne le montre pas.
-  const saisissables = desc.filter((c) => !c.calcule && c.ecran !== false);
-  const sections = SECTIONS_FICHE[FICHE_ACTIVE];
-  let champs;
-  if (!sections) {
-    champs = saisissables.map(champHtml).join("");
-  } else {
-    const parCle = {};
-    saisissables.forEach((c) => { parCle[c.cle] = c; });
-    // CE QUI EST « AVANCÉ », LE MOTEUR LE DIT (`avance` de la description) : une case ne va dans un tiroir « Avancé »
-    // que s'il la dit avancée, et une case qu'il dit avancée n'en sort pas. Les tables ne disent que l'ordre et la place.
-    // Les options d'une section (son troisième terme), quand la table lui en donne.
-    const avancee = (i) => !!(sections[i][2] && sections[i][2].avance);
-    const places = new Set();
-    sections.forEach(([, cles], i) => cles.forEach((k) => {
-      if (parCle[k] && !!parCle[k].avance === avancee(i)) places.add(k);
-    }));
-    // UNE CASE OUBLIÉE D'UNE PIÈCE QU'AUCUNE SECTION NE TIENT (`piece` de la description : le tiroir du salarié au mois
-    // ne tient que la sienne) a son bloc à elle, sans titre, avant les tiroirs « Avancé » : son libellé la dit, et le
-    // bloc se replie avec elle quand le moteur ne la montre pas (`montrerBlocsPermanents`).
-    const aPart = saisissables.filter((c) => !places.has(c.cle) && c.piece && c.piece !== "permanent" && !c.avance);
-    const reste = saisissables.filter((c) => !places.has(c.cle) && !aPart.includes(c));
-    // Un champ oublie des tables va dans la derniere section TITREE de son rang (simple ou avancee) : la derniere tout
-    // court peut etre l'historique, qui n'a pas de titre.
-    const derniere = (avance) => sections.map(([t], i) => !!t && avancee(i) === avance).lastIndexOf(true);
-    const derniereSimple = derniere(false);
-    const derniereAvancee = derniere(true);
-    const blocs = sections.map(([titre, cles, options], i) => {
-      let dedans = cles.map((k) => parCle[k]).filter((c) => c && !!c.avance === avancee(i));
-      if (i === derniereSimple) dedans = dedans.concat(reste.filter((c) => !c.avance || derniereAvancee < 0));
-      if (i === derniereAvancee) dedans = dedans.concat(reste.filter((c) => !!c.avance));
-      if (!dedans.length) return "";
-      // Une section vide ne s'affiche pas : « Ce qui a changé » n'a de titre
-      // que le jour ou une valeur declaree a change (`histoireDuChamp` ne
-      // rend rien avant).
-      const dedansHtml = dedans.map(champHtml).join("");
-      if (!dedansHtml.trim()) return "";
-      // La section dont chaque case est rangée dans une pièce (`piece`) se replie
-      // quand le moteur n'en montre aucune case (`montres`, `montrerBlocsPermanents`).
-      const toute = dedans.every((c) => !!c.piece);
-      const opt = options ? options : {};
-      if (opt.avance) {
-        // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
-        const ecarts = new Set(fiche.ecarts);
-        const ecart = dedans.some((c) => ecarts.has(c.cle));
-        return `<details class="bloc avance"${ecart ? " open" : ""}>
-          <summary>${echapper(titre)}</summary>
-          ${opt.dfs ? DFS_HTML() : ""}
-          <div class="champs">${dedansHtml}</div>
-        </details>`;
-      }
-      // Le bloc de l'emploi s'ouvre sur la liste des metiers, celui du
-      // salarie au mois sur sa complementaire sante : chacun a sa place,
-      // et non plus en tete de fiche.
-      const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML() : "";
-      const permanents = toute || opt.sante;
-      // LE TIROIR DU SALARIÉ AU MOIS : ouvert quand le moteur dit sa pièce ouverte
-      // (`pieces_ouvertes` de la fiche, puis de la route `permanents`) ; la page
-      // n'en décide rien.
-      if (opt.sante && FICHE_ACTIVE === "salarie") {
-        const ouverte = fiche.pieces_ouvertes.includes("permanent");
-        return `<details class="bloc avance" data-bloc-permanents="1" data-piece="permanent"${ouverte ? " open" : ""}>
-          <summary>${echapper(titre)}</summary>
-          ${entete}
-          <div class="champs">${dedansHtml}</div>
-        </details>`;
-      }
-      return `<section class="bloc"${permanents ? ' data-bloc-permanents="1"' : ''}>
-        ${titre ? `<h3>${echapper(titre)}</h3>` : ""}
-        ${entete}
-        <div class="champs">${dedansHtml}</div>
-      </section>`;
-    });
-    const aPartHtml = aPart.map(champHtml).join("");
-    if (aPartHtml.trim()) {
-      const premiereAvancee = sections.findIndex((s, i) => avancee(i));
-      blocs.splice(premiereAvancee < 0 ? blocs.length : premiereAvancee, 0,
-        `<section class="bloc" data-bloc-permanents="1"><div class="champs">${aPartHtml}</div></section>`);
-    }
-    champs = blocs.join("");
-  }
-
-  const err = fiche.anomalies.filter((a) => a.gravite === "erreur").length;
-  document.getElementById("config-formulaire").innerHTML = `
-    <div class="carte" style="margin-top:16px">
-      ${FICHE_ACTIVE === "salarie" ? enteteSalarie(fiche) : ""}
-      ${err && fiche.erreurs_titre ? `<div class="encart erreur"><b>${echapper(fiche.erreurs_titre)}</b>
-        — ${echapper(fiche.erreurs_note)}</div>` : ""}
-      ${sections ? champs : `<div class="champs">${champs}</div>`}
-      <div class="actions">
-        <!-- ANNULER : une fiche qu'on crée ou modifie peut s'abandonner sans
-             enregistrer. Voir annulerFiche. -->
-        <button class="secondaire" id="config-annuler">${aideDe("fiche_annuler")}</button>
-        <button class="primaire" id="config-enregistrer">${aideDe("fiche_enregistrer")}</button>
-        <span class="note" id="config-modifie" hidden>${aideDe("fiche_modifiee")}</span>
-      </div>
-    </div>`;
-
-  // LA VERIFICATION EST EN DIRECT, ET ELLE EST SEULE. Il y
-  // avait un bouton « Vérifier sans enregistrer » a cote d'« Enregistrer ».
-  // Il appelait la MEME fonction que la frappe, a 400 ms pres : un bouton
-  // qui ne fait rien de plus que ce qui se fait deja tout seul. L'editeur :
-  // « je comprends pas à quoi il sert ». Aucun champ ne demande d'appel
-  // exterieur — tout se verifie sur le poste, dans `champs.rs` —,
-  // donc rien ne justifie un declenchement a la main. Le jour ou un champ
-  // ira interroger un service (l'annuaire des entreprises pour un SIRET),
-  // c'est CE champ-la qui portera son bouton, pas le formulaire entier.
-  document.querySelectorAll(
-    "#config-formulaire input, #config-formulaire textarea, #config-formulaire select")
-    .forEach((c) => { c.oninput = () => { c.closest("[data-absent]")?.removeAttribute("data-absent"); marquerModifie();
-      clearTimeout(verifierFormulaire._t);
-      verifierFormulaire._t = setTimeout(verifierFormulaire, 400); }; });
-  document.getElementById("config-enregistrer").onclick = () => enregistrerFiche(fiche);
-  document.getElementById("config-annuler").onclick = annulerFiche;
-  const choixMetier = document.getElementById("config-metier-choix");
-  if (choixMetier) {
-    choixMetier.value = texteDeLaCase(fiche.donnees.code_emploi_ft);
-    // L'INTITULÉ SUIT LE MÉTIER. Le champ libre « Emploi »
-    // côtoyait la liste « Métier » : on tapait l'emploi, on ne choisissait pas
-    // le métier, et l'enregistrement refusait sur des codes cachés (PCS-ESE,
-    // statut). L'intitulé n'apparaît qu'une fois le métier choisi — prérempli
-    // par le moteur (route « emploi »), à retoucher au besoin — ou s'il a déjà
-    // une valeur : rien de saisi ne devient invisible.
-    const emploi = document.querySelector('#config-formulaire [data-cle="emploi_affichage"]');
-    const caseEmploi = emploi && emploi.closest(".champ");
-    const montrerEmploi = () => {
-      if (caseEmploi) caseEmploi.hidden = !choixMetier.value && !emploi.value.trim();
-    };
-    montrerEmploi();
-    choixMetier.onchange = async () => {
-      await remplirDepuisMetier(choixMetier.value); montrerEmploi(); marquerModifie();
-    };
-  }
-  const allerMetiers = document.getElementById("aller-metiers");
-  if (allerMetiers) allerMetiers.onclick = () =>
-    document.querySelector('.sous-onglets button[data-fiche="metiers"]').click();
-  brancherAide();
-  peindreCoutAnnee();
-  brancherNationalite();
-  brancherSante(fiche);
-  brancherPermanents();
-  brancherConditions();       // après : c'est lui qui a le dernier mot
-  brancherNir();
-  brancherSalarie(fiche);
-  FICHE_MODIFIEE = false;
-  FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
-  const t = document.getElementById("config-modifie");
-  if (t) t.hidden = true;
+  ouvrirLaFicheRendue(fiche);
 }
 
 /* LA FICHE QUE LA ROUTE REND (`fiche`), dessinée par le dessinateur commun (`js/avance.js`, `poserLaFiche`) : son en-tête,
- * tel que la route le dit (titre, ce qui le suit, sa note, où lire le coût de l'année, si « Annuler » se montre), l'encart
- * de ses erreurs, ses cases ouvertes, « Annuler » et « Enregistrer ». Ce qu'on tape repart à la même route, 400 ms après
- * la dernière frappe ou à chaque changement ; sa réponse dit les cases, leurs fautes et l'encart. L'écriture est celle
- * de toute fiche (`ecrireFiche`). `fiche` : la fiche de la liste (sa `cle`), ou une neuve. */
+ * tel que la route le dit (titre, ce qui le suit, sa note, où lire le coût de l'année, si « Annuler » se montre ; pour un
+ * salarié, ses documents, ses imprévus et ses droits, ou la demande qui fait remplir une fiche neuve), l'encart de ses
+ * erreurs, ses cases ouvertes, « Annuler » et « Enregistrer ». Ce qu'on tape repart à la même route, 400 ms après la
+ * dernière frappe ou à chaque changement ; sa réponse dit les cases, leurs fautes, l'encart, et ce qu'elle a récrit.
+ * L'écriture est celle de toute fiche (`ecrireFiche`). `fiche` : la fiche de la liste (sa `cle`), ou une neuve. */
 let FICHE_SANS_LISTE = false;        // la fiche ouverte n'a pas de liste où revenir (la route : pas d'« Annuler »)
 let NOTE_APRES_OUVERTURE = null;     // ce que la fiche qui se rouvre dit sous « Enregistrer » (l'heure de l'écriture)
 
@@ -400,10 +71,23 @@ async function ouvrirLaFicheRendue(fiche) {
   if (FICHE_COURANTE !== fiche) return;
   FICHE_SANS_LISTE = !r.annuler;
   const encart = (x) => (x.erreurs_titre ? `<div class="encart erreur"><b>${echapper(x.erreurs_titre)}</b> — ${echapper(x.erreurs_note)}</div>` : "");
+  const s = r.salarie;
+  const inv = r.invitation;
   form.innerHTML = `
     <div class="carte" style="margin-top:16px">
-      ${r.titre ? `<h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>` : ""}
+      <div class="entete-fiche">
+        ${r.titre ? `<h2>${echapper(r.titre)}${r.sous_titre ? ` <span class="discret">— ${echapper(r.sous_titre)}</span>` : ""}</h2>` : ""}
+        ${s ? `<button type="button" class="secondaire petit" data-exporter>${echapper(s.exporter)}</button>` : ""}
+      </div>
       ${r.cout ? `<div class="cout-annee" data-cote="${echapper(r.cout.cote)}" data-cout-de="${echapper(r.cout.de)}"></div>` : ""}
+      ${s ? `<div class="fiche-imprevus" id="fiche-imprevus"></div><div class="fiche-conseils" id="fiche-conseils"></div>` : ""}
+      ${inv ? `<div class="encart invitation">
+        <h3>${echapper(inv.titre)}</h3>
+        <p class="aide">${echapper(inv.aide)}</p>
+        ${inv.geste ? `<div data-invitation>${casesDuGeste(inv.geste)}</div>
+          <div class="actions"><button type="button" class="primaire" data-inviter>${echapper(inv.geste.libelle)}</button></div>`
+          : `<p class="note">${echapper(inv.sans_boite)}</p>`}
+      </div>` : ""}
       ${r.note ? `<p class="note">${echapper(r.note)}</p>` : ""}
       <div data-fiche-erreurs>${encart(r)}</div>
       <div data-fiche-cases></div>
@@ -417,15 +101,23 @@ async function ouvrirLaFicheRendue(fiche) {
   poserLaFiche(cases, r);
   let tour = 0;
   let minuterie = null;
+  // Les cases qui viennent de changer, de la plus ancienne à la plus récente, chacune au tour de sa dernière frappe :
+  // elles partent à chaque relecture, et s'oublient quand une réponse qui les portait se dessine.
+  const changees = new Map();
   const relire = async () => {
     const n = ++tour;
     let r2;
-    try { r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)) }); } catch (e) { dire(e.message, "erreur"); return; }
+    try {
+      r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)), changees: [...changees.keys()] });
+    } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== tour || !cases.isConnected) return;
+    for (const [k, t] of [...changees]) if (t <= n) changees.delete(k);
     form.querySelector("[data-fiche-erreurs]").innerHTML = encart(r2);
     poserLaFiche(cases, r2);
   };
-  const changer = () => {
+  const changer = (e) => {
+    const c = e.target.closest && e.target.closest(".case[data-cle]");
+    if (c) { changees.delete(c.dataset.cle); changees.set(c.dataset.cle, tour + 1); }
     marquerModifie();
     clearTimeout(minuterie);
     minuterie = setTimeout(relire, 400);
@@ -434,104 +126,34 @@ async function ouvrirLaFicheRendue(fiche) {
   cases.addEventListener("change", changer);
   document.getElementById("config-enregistrer").onclick = () => enregistrerFiche(fiche);
   document.getElementById("config-annuler").onclick = annulerFiche;
+  if (s) {
+    form.querySelector("[data-exporter]").onclick = () => exporterSalarie(s.cle);
+    dessinerImprevusDuSalarie(s.cle);
+    dessinerConseilsDuSalarie(s.cle);
+  }
+  if (inv && inv.geste) {
+    const bloc = form.querySelector("[data-invitation]");
+    brancherLesCases(bloc);
+    form.querySelector("[data-inviter]").onclick = (ev) => demanderFiche(ev.currentTarget, inv, bloc);
+  }
   peindreCoutAnnee();
   FICHE_INITIALE = JSON.stringify(lireLaFicheOuverte());
 }
 
-/* Ce que dit la fiche ouverte : celle que la route rend (`lireLesCases`), ou le formulaire fait main (`lireFormulaire`). */
+/* OÙ UNE CASE RENVOIE (`renvoi` de la case, rendu par la route) : le sous-onglet des métiers, ou la case d'une autre
+ * fiche (`allerAuManque`). */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest("[data-renvoi]");
+  if (!b) return;
+  const r = JSON.parse(b.dataset.renvoi);
+  if (r.vers === "metiers") document.querySelector('.sous-onglets button[data-fiche="metiers"]').click();
+  else allerAuManque(r.case, r.fiche);
+});
+
+/* Ce que dit la fiche ouverte, telle que la route la rend (`lireLesCases`) ; aucune fiche ouverte, rien. */
 function lireLaFicheOuverte() {
   const rendue = document.querySelector("#config-formulaire [data-fiche-cases]");
-  return rendue ? lireLesCases(rendue) : lireFormulaire();
-}
-
-/* Le « ? » de chaque champ : il ouvre et referme son aide, et rien d'autre. */
-function brancherAide(racine = "#config-formulaire") {
-  document.querySelectorAll(`${racine} .aide-bouton`).forEach((b) => {
-    b.onclick = () => {
-      const corps = document.querySelector(
-        `${racine} [data-aide-corps="${CSS.escape(b.dataset.aide)}"]`);
-      if (!corps) return;
-      corps.hidden = !corps.hidden;
-      b.classList.toggle("ouvert", !corps.hidden);
-    };
-  });
-}
-
-/*  LA NATIONALITE DSN SE DEDUIT DU PAYS
- *
- *  Avec un pays de nationalite de la liste, la case « Nationalite »
- *  (S21.G00.30.013) ne se choisit plus : elle montre ce que le moteur en
- *  deduit (`codification_ue` de chaque pays dans `etat.pays`), et le moteur
- *  la recrit a l'enregistrement. Sans pays, elle se choisit ;
- *  avec un pays absent de la liste (« Pays de nationalite absent de la
- *  liste »), elle se choisit aussi : c'est le moteur qui refuse
- *  un tel pays sans nationalite choisie (`codification_ue`).
- */
-function brancherNationalite() {
-  const pays = document.querySelector('#config-formulaire [data-cle="pays_nationalite"]');
-  const code = document.querySelector('#config-formulaire select[data-cle="code_nationalite_dsn"]');
-  if (!pays || !code) return;
-  const champ = code.closest(".champ");
-  let note = champ.querySelector(".nationalite-deduite");
-  if (!note) {
-    note = document.createElement("div");
-    note.className = "nationalite-deduite";
-    code.insertAdjacentElement("afterend", note);
-  }
-  const lib = libellesDe("code_nationalite_dsn");
-  const poser = () => {
-    const p = ETAT.pays.find((x) => x.code === pays.value.toUpperCase());
-    code.hidden = !!p;
-    code.disabled = !!p;
-    note.hidden = !p;
-    if (!p) return;
-    code.value = p.codification_ue;
-    note.textContent = `${lib[p.codification_ue] || p.codification_ue} — ${p.deduit_dit}`;
-  };
-  pays.addEventListener("change", poser);
-  poser();
-}
-
-/*  LE NUMERO DE SECURITE SOCIALE SE COLLE D'UN COUP
- *
- *  Il s'ecrit en quinze chiffres sur la carte Vitale ; la fiche le garde en
- *  deux cases, le numero et sa cle, parce que la cle VERIFIE le numero (le
- *  moteur la recalcule). Coller les quinze dans la premiere les repartit.
- *  Et le SEXE ne se montre que sans numero : c'est le seul cas ou il sert.
- */
-function brancherNir() {
-  const nir = document.querySelector('#config-formulaire [data-cle="nir"]');
-  const cle = document.querySelector('#config-formulaire [data-cle="nir_cle"]');
-  if (!nir) return;
-  const sexe = document.querySelector('#config-formulaire [data-cle="sexe"]');
-  const champSexe = sexe && sexe.closest(".champ");
-  const poser = () => {
-    const v = nir.value.replace(/[\s.\-]/g, "");
-    if (cle && /^\d{15}$/.test(v)) {
-      nir.value = v.slice(0, 13);
-      cle.value = v.slice(13);
-    }
-    if (champSexe) champSexe.hidden = !!nir.value.trim() && !sexe.value.trim();
-  };
-  nir.addEventListener("input", poser);
-  poser();
-}
-
-/*  CE QUE LA FICHE SALARIE BRANCHE DE PLUS
- *
- *  - « Exporter ses documents » mene a l'onglet Exports, le dossier de ce
- *    salarie deja choisi, sur l'annee la plus recente ;
- *  - une fiche neuve peut partir chez la personne, par courriel ;
- *  - ses imprévus, et la porte pour en saisir un (js/imprevus.js).
- */
-function brancherSalarie(fiche) {
-  if (FICHE_ACTIVE !== "salarie") return;
-  const exporter = document.getElementById("config-exporter");
-  if (exporter) exporter.onclick = () => exporterSalarie(fiche.cle);
-  const inviter = document.getElementById("invitation-envoyer");
-  if (inviter) inviter.onclick = () => demanderFiche(inviter);
-  if (fiche.cle) dessinerImprevusDuSalarie(fiche.cle);
-  if (fiche.cle) dessinerConseilsDuSalarie(fiche.cle);
+  return rendue ? lireLesCases(rendue) : {};
 }
 
 /* Le salarie a choisir dans « Le dossier d'un salarié », a l'arrivee dans
@@ -545,16 +167,17 @@ async function exporterSalarie(cle) {
   document.querySelector('.onglets button[data-vue="exports"]').click();
 }
 
-async function demanderFiche(bouton) {
-  const adresse = document.getElementById("invitation-courriel").value.trim();
-  const prenom = document.getElementById("invitation-prenom").value.trim();
-  const mdp = await demanderMotDePasse(ETAT.configuration.invitation.demande, { envoi: true });
+/* LA DEMANDE DE LA FICHE À LA PERSONNE (`invitation` de l'en-tête d'un salarié neuf) : le geste que la route rend
+ * (`fiche-demander`, ses cases dans `bloc`), après le mot de passe du logiciel que la route dit demander. */
+async function demanderFiche(bouton, inv, bloc) {
+  const charge = chargeDuGeste(bloc, inv.geste) || inv.geste.charge;
+  const mdp = await demanderMotDePasse(inv.demande, { envoi: true });
   if (!mdp) return;
   const rendre = occupe(bouton, "Envoi…");
   const repere = await repereCourrielsFictifs();
   try {
     // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
-    const r = await api("fiche-demander", { adresse, prenom: prenom || null, motdepasse: mdp });
+    const r = await api(inv.geste.route, { ...charge, motdepasse: mdp });
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     FICHE_MODIFIEE = false;
@@ -605,130 +228,6 @@ function brancherFichesAttendues() {
   });
 }
 
-/** LES BLOCS DES PERMANENTS (une section dont toutes les cases ne valent que pour eux, la santé d'un salarié) se
- *  replient quand le moteur n'en montre aucune case (`montres`) : un titre ne reste pas seul au-dessus du vide. */
-function montrerBlocsPermanents() {
-  document.querySelectorAll("#config-formulaire [data-bloc-permanents]").forEach((s) => {
-    s.hidden = ![...s.querySelectorAll("[data-montre]")].some((c) => !c.hidden);
-  });
-}
-
-function brancherPermanents() {
-  montrerBlocsPermanents();
-}
-
-/** CE QUE LA FICHE MONTRE SUIT LA SAISIE, tout de suite, sans attendre l'enregistrement : à chaque changement, le
- *  moteur dit les cases à l'écran (route `permanents`, `montres` ; pour un salarié enregistré, avec sa clé : les cases
- *  d'un permanent qui lui est dû) ; chaque case (`data-montre`) se montre ou se replie selon ce qu'il nomme. La page
- *  n'en décide rien. Le déroulant « Nature » d'un engagement vient de la route du mois. */
-function brancherConditions() {
-  const form = document.getElementById("config-formulaire");
-  if (!form) return;
-  let demande = 0;
-  const appliquer = async () => {
-    const n = ++demande;
-    let r;
-    const charge = { nom: FICHE_ACTIVE, donnees: lireFormulaire() };
-    if (FICHE_ACTIVE === "salarie" && FICHE_COURANTE && FICHE_COURANTE.cle) charge.cle = FICHE_COURANTE.cle;
-    try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
-    if (n !== demande || !form.isConnected) return;
-    const montres = new Set(r.montres);
-    form.querySelectorAll("[data-montre]").forEach((el) => { el.hidden = !montres.has(el.dataset.montre); });
-    const ouvertes = new Set(r.pieces_ouvertes);
-    form.querySelectorAll("details[data-piece]").forEach((el) => { el.open = ouvertes.has(el.dataset.piece); });
-    montrerBlocsPermanents();
-  };
-  form.addEventListener("change", appliquer);
-  appliquer();
-}
-
-/** Les trois cases de la complémentaire santé, dans les deux sens : elles se
- *  remplissent de ce que la fiche porte, et elles réécrivent le champ
- *  `sante_svp` à chaque changement. Le champ reste là, et c'est voulu — il
- *  est la vérité, et un cas non prévu doit pouvoir s'y taper à la main. */
-function brancherSante(fiche) {
-  const niveau = document.getElementById("config-sante-niveau");
-  if (!niveau) return;
-  const conjoint = document.getElementById("config-sante-conjoint");
-  const enfants = document.getElementById("config-sante-enfants");
-  const champ = document.querySelector('#config-formulaire [data-cle="sante_svp"]');
-  const choix = fiche.donnees.sante_svp;
-  if (choix) {
-    niveau.value = texteDeLaCase(choix.niveau);
-    conjoint.checked = !!choix.conjoint;
-    enfants.value = texteDeLaCase(choix.enfants);
-  }
-  const ecrire = () => {
-    if (!champ) return;
-    // Pas de niveau : pas de mutuelle. `null` et non un objet vide — une
-    // fiche qui porterait {"niveau": ""} ferait croire à un choix fait. Le nombre d'enfants part tel qu'il est tapé : la
-    // route le convertit, et le refuse en nommant la case.
-    champ.value = JSON.stringify(
-      niveau.value ? { niveau: niveau.value, conjoint: conjoint.checked,
-                       enfants: enfants.value.trim() || null } : null, null, 1);
-    champ.classList.remove("faute");
-    verifierFormulaire();
-  };
-  [niveau, conjoint, enfants].forEach((c) => { c.onchange = ecrire; });
-}
-
-/** Les six champs d'emploi d'une fiche salarié, depuis un métier du
- *  catalogue. La page ne calcule rien : elle recopie ce que le moteur rend
- *  (route « emploi »), qui applique les mêmes règles qu'un engagement. */
-async function remplirDepuisMetier(code) {
-  if (!code) return;
-  let r;
-  // Le NIR et le sexe de la fiche : le moteur en tire la forme du métier
-  // (« Administratrice de production » pour une salariée).
-  // Une case vide, ou que la fiche n'a pas, part `null`.
-  const lu = (cle) => {
-    const c = document.querySelector(`#config-formulaire [data-cle="${cle}"]`);
-    return c && c.value ? c.value : null;
-  };
-  try { r = await api("emploi", { metier: code, cadre: null, feminin: false, salarie: { nir: lu("nir"), sexe: lu("sexe") } }); }
-  catch (e) { dire(e.message, "erreur"); return; }
-  const poser = (cle, v) => {
-    const c = document.querySelector(`#config-formulaire [data-cle="${cle}"]`);
-    if (c && v != null) c.value = v;
-  };
-  poser("emploi_affichage", r.emploi_affichage);
-  // Ces deux cases se vident quand le métier ne les dit pas.
-  poser("pcs_ese", texteDeLaCase(r.pcs_ese));
-  poser("code_emploi_ft", r.code_emploi_ft);
-  poser("statut", r.statut);
-  poser("statut_conventionnel", texteDeLaCase(r.statut_conventionnel));
-  poser("statut_categoriel_rc", r.statut_categoriel_rc);
-  verifierFormulaire();
-}
-
-/*  L'HISTOIRE D'UNE FICHE
- *
- *  Une fiche n'est pas un etat, c'est une suite d'etats : on demenage, on
- *  change de telephone, une valeur declaree se corrige, un taux change au
- *  1er janvier. Pour chaque case qui a plus d'une valeur, toutes ses valeurs,
- *  passees et a venir, telles que le moteur les date (`historique` de la
- *  fiche : `valeurs`, avec de quand a quand et d'ou elles viennent) ; celle
- *  d'aujourd'hui en gras. REPLIEE : elle sert a qui la cherche ; sous chaque
- *  case, la valeur d'avant et celle a venir suffisent (`tempsDeLaCase`).
- */
-function histoireDuChamp(cases, desc) {
-  if (!Array.isArray(cases) || !cases.length) return "";
-  const libelle = (cle) => {
-    const c = desc.find((x) => x.cle === cle);
-    return c ? c.libelle : cle;
-  };
-  // Les cases d'une liste (les autres établissements) : chaque ligne, nommée par le moteur, case par case.
-  const rangees = (t) => t.lignes.length
-    ? t.lignes.map((l) => l.cases.map((c) => lignesDHistoire(c,
-        `${l.dit} · ${sousLibelle(t.champ, c.champ)}`, valeurLisible)).join("")).join("")
-    : lignesDHistoire(t, libelle(t.champ), (v) => valeurHistorique(t.champ, v));
-  return `<details class="champ pleine historique-fiche">
-    <summary>${aideDe("historique_titre")}</summary>
-    <div class="aide">${aideDe("historique_fiche")}</div>
-    <div class="histoire">${cases.map(rangees).join("")}</div>
-  </details>`;
-}
-
 /* Toutes les valeurs d'une case datée (`valeurs` de ses temps), une rangée chacune, celle d'aujourd'hui en gras. */
 function lignesDHistoire(t, nom, dire) {
   return t.valeurs.map((e) => `
@@ -740,15 +239,6 @@ function lignesDHistoire(t, nom, dire) {
       </div>`).join("");
 }
 
-/* Le libellé d'une case d'une structure `cle` (« adresse_affichage » des établissements), tel que la description le
- * dit ; une case faite de cases (« versement_mobilite ») se nomme par sa première. */
-function sousLibelle(cle, sous) {
-  const s = structureDecrite(cle);
-  const champs = s ? s.champs : [];
-  const c = champs.find(([k]) => k === sous) || champs.find(([k]) => k.startsWith(sous + "."));
-  return c ? c[1] : sous;
-}
-
 /* SOUS UNE CASE DATÉE, au plus deux lignes, telles que le moteur les dit (ses temps : `avant`, `a_venir`) : la valeur
  * d'avant (« jusqu'au … ») et la prochaine à venir (« à partir du … »), chacune avec d'où elle vient quand sa ligne le
  * dit. `dire` rend une valeur lisible. */
@@ -757,17 +247,6 @@ function lignesDuTemps(t, dire) {
   const ligne = (l) => l ? `<div class="aide temps-case">${echapper(dire(l.valeur))} · ${
     echapper(l.dit)}${l.note ? ` · <span class="discret">${echapper(l.note)}</span>` : ""}</div>` : "";
   return ligne(t.avant) + ligne(t.a_venir);
-}
-
-/* Les temps de la case `cle` d'une fiche (`historique` de ses données). */
-function tempsDuChamp(cle, donnees) {
-  // Une fiche neuve (faite par la page, pas encore lue) n'a pas d'historique.
-  return donnees.historique && donnees.historique.find((h) => h.champ === cle);
-}
-
-/* Sous une case de fiche, ses deux lignes. */
-function tempsDeLaCase(cle, donnees) {
-  return lignesDuTemps(tempsDuChamp(cle, donnees), (v) => valeurHistorique(cle, v));
 }
 
 /* MODIFIER, C'EST TOUJOURS LE MEME BOUTON : un crayon et le
@@ -795,101 +274,6 @@ function enEuros(v, max = 20) {
   const n = typeof v === "number" ? v : Number(t);
   if (t === "" || !isFinite(n)) return t;
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: max });
-}
-
-function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIGINE) {
-  const d = {};
-  document.querySelectorAll(`${racine} [data-cle]`).forEach((c) => {
-    // Une case que la fiche ne disait pas, et que personne n'a touchée, ne part pas : rien ne se devine.
-    if (c.dataset.absent) return;
-    if (c.dataset.jours) {
-      d[c.dataset.cle] = [...c.querySelectorAll("[data-jour]")].filter((x) => x.checked)
-        .map((x) => x.dataset.jour);
-    } else if (c.dataset.structure) {
-      try { d[c.dataset.cle] = JSON.parse(c.value); }
-      catch (e) { c.classList.add("faute"); }
-    } else if (c.dataset.forme === "booleen") {
-      d[c.dataset.cle] = c.checked;      // un vrai booleen, pas « true »
-    } else {
-      d[c.dataset.cle] = c.value;
-    }
-  });
-  // LES STRUCTURES SAISIES CASE PAR CASE. On repart de l'objet d'origine :
-  // le signataire porte un `nom_aem` et une note que l'ecran ne montre pas,
-  // la banque un avertissement de diffusion. Ne relire que les cases
-  // affichees, ce serait les effacer au premier enregistrement.
-  const types = new Set();
-  document.querySelectorAll(`${racine} [data-sous-de]`).forEach((c) => {
-    const p = c.dataset.sousDe;
-    if (!d[p] || typeof d[p] !== "object" || Array.isArray(d[p])) {
-      // La structure telle qu'elle était (`STRUCTURES_ORIGINE`), ou une neuve que les cases remplissent.
-      d[p] = p in origine ? JSON.parse(JSON.stringify(origine[p])) : {};
-    }
-    const chemin = c.dataset.sousCle.split(".");
-    let o = d[p];
-    chemin.slice(0, -1).forEach((k) => {
-      if (!o[k] || typeof o[k] !== "object") o[k] = {};
-      o = o[k];
-    });
-    const k = chemin[chemin.length - 1];
-    // Une case typee (choix, nombre) vide s'EFFACE (`null`) : le moteur
-    // applique alors son defaut, celui de la convention. Un texte garde sa valeur.
-    if (c.dataset.sousType) {
-      types.add(p);
-      if (String(c.value).trim() === "") o[k] = null;
-      // Un nombre part tel qu'il est tapé : la route le convertit.
-      // Un oui/non : un vrai booleen, comme une case a cocher.
-      else if (c.dataset.sousType === "booleen") o[k] = c.value === "true";
-      else o[k] = c.value;
-    } else {
-      o[k] = c.value;
-    }
-  });
-  // Un bloc dont il ne reste rien (sous-blocs vides compris) vaut « rien » ;
-  // une case ou un sous-bloc vide s'efface (`null`) : le moteur garde ce
-  // qu'une structure ne dit pas, il efface ce qu'elle dit nul.
-  const vide = (x) => x === "" || x == null ||
-    (typeof x === "object" && !Array.isArray(x) && Object.values(x).every(vide));
-  types.forEach((p) => {
-    if (d[p] && typeof d[p] === "object") {
-      if (Object.values(d[p]).every(vide)) d[p] = null;
-      else Object.keys(d[p]).forEach((k) => { if (vide(d[p][k])) d[p][k] = null; });
-    }
-  });
-  return d;
-}
-
-/*  CE QUE LE MOTEUR PROPOSE POUR UNE CASE VIDE
- *
- *  Le code Urssaf se déduit du code postal — deux tables relevées, les 101
- *  départements couverts. Mais le rattachement d'une entreprise à une
- *  Urssaf est un fait ADMINISTRATIF : versement en lieu unique, pôle
- *  grandes entreprises, GUSO. On POSE donc la valeur (ne pas la poser
- *  reviendrait à faire chercher ce qu'on sait déjà), et on DIT qu'elle est
- *  déduite, avec ce qui la ferait changer.
- *
- *  Deux règles, et elles tiennent tout :
- *   - on ne touche jamais une case que quelqu'un a remplie. C'est le
- *     serveur qui le garantit : `suggestions_fiche` ne propose que pour un
- *     champ vide ;
- *   - la mention reste tant que la valeur est celle qu'on a proposée. Elle
- *     disparaît dès qu'on la change : ce n'est alors plus une déduction,
- *     c'est un choix.
- */
-function appliquerSuggestions(suggestions) {
-  Object.entries(suggestions).forEach(([cle, s]) => {
-    const champ = document.querySelector(`#config-formulaire [data-cle="${CSS.escape(cle)}"]`);
-    if (!champ || champ.type === "hidden" || champ.value.trim()) return;
-    champ.value = s.valeur;
-    const boite = champ.closest(".champ");
-    if (!boite || boite.querySelector(".suggere")) return;
-    const note = document.createElement("div");
-    note.className = "suggere";
-    note.textContent = "Rempli pour vous — " + s.pourquoi;
-    boite.appendChild(note);
-    // Elle ne vaut que tant qu'on n'a pas choisi soi-même.
-    champ.addEventListener("change", () => note.remove(), { once: true });
-  });
 }
 
 /*  CE QU'ON A TAPÉ ET PAS ENREGISTRÉ
@@ -983,37 +367,6 @@ async function quitterLaFiche() {
   return !FICHE_MODIFIEE && quitterDemarrage();
 }
 
-/* LA VÉRIFICATION PENDANT LA FRAPPE. Le texte sous chaque case suit ce qu'on
- * tape : un SIRET faux dit pourquoi, et la note s'efface quand il est juste.
- * Aucun message volant à chaque frappe : la case parle. */
-async function verifierFormulaire() {
-  const r = await api("verifier-fiche",
-    { nom: FICHE_ACTIVE, donnees: lireFormulaire() });
-  const anomalies = r.anomalies;
-  document.querySelectorAll("#config-formulaire [data-cle]").forEach((c) => {
-    const a = anomalies.find((x) => x.champ === c.dataset.cle);
-    c.classList.toggle("faute", !!a && a.gravite === "erreur");
-    c.classList.toggle("suspect", !!a && a.gravite === "avertissement");
-    const champ = c.closest(".champ");
-    if (!champ || c.type === "hidden") return;
-    let note = champ.querySelector(":scope > .anomalie");
-    if (!a) { if (note) note.remove(); return; }
-    if (!note) { note = document.createElement("div"); champ.appendChild(note); }
-    note.className = "anomalie";
-    note.classList.add(a.gravite);
-    note.textContent = a.message;
-  });
-  // UNE VALEUR FAUSSE SE VOIT : le tiroir « Avancé » qui en tient une
-  // s'ouvre de lui-même — rien à corriger ne reste replié hors de la vue.
-  document.querySelectorAll("#config-formulaire details.avance:not([open])").forEach((d) => {
-    const fautif = [...d.querySelectorAll("[data-cle]")].some((c) => c.type !== "hidden"
-      && anomalies.some((x) => x.champ === c.dataset.cle && x.gravite === "erreur"));
-    if (fautif) d.open = true;
-  });
-  appliquerSuggestions(r.suggestions);
-  return anomalies;
-}
-
 /*  ENREGISTRER UNE FICHE : DATER CE QUI CHANGE
  *
  *  Ce qui arrive quand on ne le fait pas : une
@@ -1087,15 +440,14 @@ function valeurHistorique(champ, v) {
  * même pas pourquoi on mettrait un avertissement. » Un changement de fiche est
  * un geste normal : la boîte ne demande que la date d'effet — c'est elle qui
  * garde aux déclarations déjà faites leur ancienne valeur (fiches datées) —,
- * sur un ton neutre. Le métier se dit en UNE ligne : emploi, PCS-ESE et code
- * France Travail changent ensemble, ce sont trois écritures d'un seul fait.
+ * sur un ton neutre. Le métier se dit en UNE ligne : les cases que le métier
+ * décide changent ensemble (la route les marque : `metier`), ce sont plusieurs
+ * écritures d'un seul fait.
  * `usage` : la phrase que le moteur fait confirmer (le jour fixe des
  * intermittents) ; sans rien à dater, la boîte ne demande pas de date. */
-const CHAMPS_DU_METIER = ["emploi_affichage", "emploi", "pcs_ese", "code_emploi_ft", "statut"];
-
 function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage }) {
-  const metier = changements.filter((c) => CHAMPS_DU_METIER.includes(c.champ));
-  const autres = changements.filter((c) => !CHAMPS_DU_METIER.includes(c.champ));
+  const metier = changements.filter((c) => c.metier);
+  const autres = changements.filter((c) => !c.metier);
   // Une case à choix se dit par le libellé que la fiche montre (« Régisseur de théâtre »), pas par son code.
   const lisible = (c, cote) => {
     const v = c[cote + "_lisible"] ?? c[cote];
@@ -1158,13 +510,17 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
  * lui propose. Un seul chemin d'écriture, forcé ou non : le
  * chemin forcé se contentait de redessiner, et la fiche restait « modifiée »
  * -- quitter l'onglet demandait d'enregistrer ce qui l'était déjà. */
-/* LES CASES QUE LA PAGE ENVOIE à `enregistrer-fiche` : une liste de changements `[{case, valeur}]` (comme la
- * carte), chaque structure entière ; une case vidée part `null`, dans une structure comme seule (le moteur refuse
- * `""`). */
+/* LES CASES QUE LA PAGE ENVOIE à `enregistrer-fiche` et à `fiche` : une liste de changements `[{case, valeur}]` (comme
+ * la carte), chaque structure entière ; une case vidée part `null`, dans une structure comme seule (le moteur refuse
+ * `""`), et une liste où rien n'est coché aussi. */
 function sansTexteVide(v) {
   if (v === "") return null;
-  if (Array.isArray(v)) return v.map(sansTexteVide);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sansTexteVide(x)]));
+  if (Array.isArray(v)) return v.length ? v.map(sansTexteVide) : null;
+  if (v && typeof v === "object") {
+    const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sansTexteVide(x)]));
+    // Une structure dont aucune partie n'a de valeur (vide, ou une case non cochée) est une case vide.
+    return Object.values(o).every((x) => x === null || x === false) ? null : o;
+  }
   return v;
 }
 function casesDeLaCharge(donnees) {
@@ -1243,4 +599,3 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
     } else { dire(e.message, "erreur"); }
   }
 }
-

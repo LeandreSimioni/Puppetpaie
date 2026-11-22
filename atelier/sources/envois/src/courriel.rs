@@ -140,23 +140,119 @@ fn dite(phrase: &str, detail: impl std::fmt::Display) -> Echec {
     Echec { classe: Some(Classe::Courriel), phrase: phrase.to_string(), a_part: Some(a_part.into()) }
 }
 
-/// LE REFUS DU SERVEUR (`texte`, tel qu'il l'a ecrit), en francais : le mot de passe refuse, que l'on reconnait, ou un
-/// refus que l'on ne reconnait pas ; le texte du serveur va a part (`dite`).
-#[track_caller]
-pub fn traduire(texte: &str) -> Echec {
-    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") || texte.contains("(535)") {
-        return dite(
-            "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
-            texte,
-        );
+/// LA SORTE D'UN REFUS DE LA BOITE, posee la ou le refus se fabrique (`mot_de_passe_refuse`, `injoignable`) : ce que le
+/// journal des incidents en fait. Le mot de passe refuse est un refus d'usage ; la boite injoignable, le reseau, qui ne
+/// dit rien du logiciel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDeRefusDeLaBoite {
+    MotDePasseRefuse,
+    Injoignable,
+    Autre,
+}
+
+/// UN REFUS DE LA BOITE, et sa sorte : ce que rend l'ouverture de la boite (`verifier`). Il se lit en `Echec` partout
+/// ou la sorte ne sert pas.
+#[derive(Debug, Clone)]
+pub struct RefusDeLaBoite {
+    pub echec: Echec,
+    pub sorte: SorteDeRefusDeLaBoite,
+}
+
+impl From<RefusDeLaBoite> for Echec {
+    fn from(r: RefusDeLaBoite) -> Echec {
+        r.echec
     }
-    dite("La boîte courriel a refusé la demande : vérifier l'adresse et le mot de passe d'application (Configuration › Mots de passe) ; nouvel essai plus tard.", texte)
+}
+
+impl From<Echec> for RefusDeLaBoite {
+    fn from(echec: Echec) -> RefusDeLaBoite {
+        RefusDeLaBoite { echec, sorte: SorteDeRefusDeLaBoite::Autre }
+    }
+}
+
+/// A QUEL MOMENT DU DIALOGUE IMAP la boite refuse : a l'identification (`LOGIN`, et l'accueil qui ferme), ou la boite
+/// deja ouverte. Seule l'identification renvoie au mot de passe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Moment {
+    Identification,
+    Connectee,
+}
+
+/// LE REFUS DU SERVEUR A L'IDENTIFICATION (`texte`, tel qu'il l'a ecrit), en francais : le mot de passe refuse, que
+/// l'on reconnait a ce que le serveur ecrit, ou un refus que l'on ne reconnait pas ; le texte du serveur va a part.
+#[track_caller]
+fn refus_a_l_identification(texte: &str) -> RefusDeLaBoite {
+    if texte.contains("AUTHENTICATIONFAILED") || texte.contains("Username and Password not accepted") {
+        return mot_de_passe_refuse(texte);
+    }
+    dite("La boîte courriel a refusé la connexion : vérifier l'adresse et le mot de passe d'application (Configuration › Mots de passe) ; nouvel essai plus tard.", texte).into()
+}
+
+/// LE REFUS DU SERVEUR LA BOITE DEJA OUVERTE (`texte`, tel qu'il l'a ecrit) : l'identification a passe, rien ne
+/// renvoie au mot de passe ; le texte du serveur va a part.
+#[track_caller]
+fn refus_apres_connexion(texte: &str) -> RefusDeLaBoite {
+    dite("La boîte courriel a refusé une demande du logiciel, la connexion ouverte : nouvel essai plus tard.", texte).into()
+}
+
+/// La boite refuse le mot de passe (`detail` : ce que le serveur a ecrit).
+#[track_caller]
+fn mot_de_passe_refuse(detail: impl std::fmt::Display) -> RefusDeLaBoite {
+    RefusDeLaBoite {
+        echec: dite(
+            "La boîte refuse le mot de passe : pour Gmail, il faut un mot de passe d'application (validation en deux étapes activée, puis Compte Google › Sécurité › Mots de passe des applications), pas celui du compte.",
+            detail,
+        ),
+        sorte: SorteDeRefusDeLaBoite::MotDePasseRefuse,
+    }
+}
+
+/// UN MESSAGE QUE LE SERVEUR D'ENVOI (SMTP) N'A PAS PRIS, dit a l'administrateur ; le texte du serveur ou de la
+/// bibliotheque va a part (`dite`). Les codes sont ceux de la RFC 5321, § 4.2.2-4.2.3
+/// (`atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2870-2930) : 550
+/// « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », 551 « User not
+/// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » ; un 4xx est passager. Lequel des
+/// envois les rend, le § 4.3.2 (l. 3100-3115) le dit : 551 ne repond qu'a `RCPT` (le destinataire) ; 553 repond a `MAIL`
+/// (l'expediteur, la boite d'envoi) comme a `RCPT` ; 550 a `MAIL`, a `RCPT` et a `DATA` (« rejections for policy
+/// reasons »). La bibliotheque ne dit pas a quel envoi le serveur a repondu : la phrase de 550 et 553 dit les
+/// possibilites sans trancher. 535 est le mot de passe refuse (RFC 4954, § 6,
+/// `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt`, l. 600-605 : « Authentication credentials
+/// invalid […] the client SHOULD ask the user to supply new credentials »).
+#[track_caller]
+fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
+    let detail = e.to_string();
+    match e.status().map(|c| c.to_string()).as_deref() {
+        Some("535") => mot_de_passe_refuse(detail).echec,
+        Some("551") => dite("Le serveur d'envoi refuse l'adresse du destinataire (une boîte qu'il ne sert pas) : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail),
+        Some("553") => dite("Le serveur d'envoi refuse une adresse mal écrite, sans dire laquelle : celle du salarié destinataire, ou celle de la boîte d'envoi. Vérifier l'adresse courriel du salarié, puis celle de la boîte (Configuration › Mots de passe). Le message n'est pas parti.", detail),
+        Some("550") => dite("Le serveur d'envoi refuse le message sans dire pourquoi : l'adresse du salarié destinataire (boîte introuvable), celle de la boîte d'envoi, ou une règle du serveur. Vérifier d'abord l'adresse courriel du salarié. Le message n'est pas parti.", detail),
+        _ if e.is_permanent() => dite("Le serveur d'envoi a refusé le message : il n'est pas parti. Nouvel essai plus tard.", detail),
+        _ if e.is_transient() => dite("Le serveur d'envoi refuse le message pour l'instant : nouvel essai plus tard.", detail),
+        _ if e.is_timeout() => dite("Le serveur d'envoi n'a pas répondu à temps : nouvel essai plus tard.", detail),
+        _ if e.is_tls() => tls(detail),
+        _ => dite("L'échange avec le serveur d'envoi s'est interrompu : vérifier la connexion internet ; nouvel essai plus tard.", detail),
+    }
 }
 
 /// La boite ne se joint pas (`e` : ce que le systeme en dit). « injoignable » : le mot que `sauvegarde::hors_ligne` lit.
 #[track_caller]
-fn injoignable(e: impl std::fmt::Display) -> Echec {
-    dite("La boîte courriel est injoignable : vérifier la connexion internet ; nouvel essai plus tard.", format!("Serveur injoignable : {}", e))
+fn injoignable(e: impl std::fmt::Display) -> RefusDeLaBoite {
+    RefusDeLaBoite {
+        echec: dite("La boîte courriel est injoignable : vérifier la connexion internet ; nouvel essai plus tard.", format!("Serveur injoignable : {}", e)),
+        sorte: SorteDeRefusDeLaBoite::Injoignable,
+    }
+}
+
+/// La boite a rendu ce que ce dialogue ne lit pas (`detail` : ce qu'elle a rendu, ou ce que la bibliotheque en dit).
+#[track_caller]
+fn illisible(detail: impl std::fmt::Display) -> Echec {
+    dite("La boîte courriel a rendu une réponse que le logiciel ne lit pas : nouvel essai plus tard.", detail)
+}
+
+/// La boite a ferme la connexion avant de tout rendre.
+#[track_caller]
+fn fermee_en_chemin() -> Echec {
+    dite("La boîte courriel a fermé la connexion en chemin : nouvel essai plus tard.", "Connexion fermee par le serveur.")
 }
 
 /// La connexion securisee a la boite ne s'etablit pas (`e` : ce que la bibliotheque TLS en dit).
@@ -171,9 +267,9 @@ fn tls(e: impl std::fmt::Display) -> Echec {
 pub trait Flux: Read + Write {}
 impl<T: Read + Write + ?Sized> Flux for T {}
 
-fn connecter(hote: &str, port: u16) -> R<TcpStream> {
+fn connecter(hote: &str, port: u16) -> Result<TcpStream, RefusDeLaBoite> {
     // En essai, le garde-fou reseau : aucune boite reelle.
-    socle::garde_reseau::directe(hote).map_err(|e| e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel))?;
+    socle::garde_reseau::directe(hote).map_err(|e| RefusDeLaBoite { echec: e.reformuler(|m| format!("Serveur injoignable : {}", m)).reclasser(Classe::Courriel), sorte: SorteDeRefusDeLaBoite::Injoignable })?;
     let delai = DELAI;
     let adresses: Vec<_> = (hote, port).to_socket_addrs().map_err(injoignable)?.collect();
     let mut derniere = None;
@@ -206,7 +302,7 @@ fn configuration_tls() -> R<Arc<rustls::ClientConfig>> {
     Ok(Arc::new(config))
 }
 
-fn ouvrir_tls(hote: &str, port: u16) -> R<Box<dyn Flux>> {
+fn ouvrir_tls(hote: &str, port: u16) -> Result<Box<dyn Flux>, RefusDeLaBoite> {
     let tcp = connecter(hote, port)?;
     let nom = rustls::pki_types::ServerName::try_from(hote.to_string()).map_err(|e| erreur(format!("nom de serveur illisible : {}", e)))?;
     let connexion = rustls::ClientConnection::new(configuration_tls()?, nom).map_err(tls)?;
@@ -254,30 +350,31 @@ fn longueur_litteral(ligne: &[u8]) -> Option<usize> {
     chiffres.iter().try_fold(0usize, |n, c| n.checked_mul(10)?.checked_add(usize::from(c - b'0')))
 }
 
-fn es(e: std::io::Error) -> Echec {
+fn es(e: std::io::Error) -> RefusDeLaBoite {
     use std::io::ErrorKind::*;
     match e.kind() {
         TimedOut | WouldBlock => injoignable(format!("delai depasse ({})", e)),
-        _ => dite("La boîte courriel a coupé l'échange en chemin : nouvel essai plus tard.", e),
+        _ => dite("La boîte courriel a coupé l'échange en chemin : nouvel essai plus tard.", e).into(),
     }
 }
 
 impl<F: Read + Write> Imap<F> {
-    /// Lit l'accueil du serveur, puis `LOGIN` et `EXAMINE` (lecture seule) du dossier.
-    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &socle::secret::Secret, dossier: &str) -> R<Imap<F>> {
+    /// Lit l'accueil du serveur, puis `LOGIN` (l'identification) et `EXAMINE` (lecture seule) du dossier. Le refus rend
+    /// sa sorte (`RefusDeLaBoite`).
+    pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &socle::secret::Secret, dossier: &str) -> Result<Imap<F>, RefusDeLaBoite> {
         let mut imap = Imap { flux, tampon: Vec::new(), numero: 0 };
         let accueil = imap.lire_unite()?;
         match Response::parse(&accueil) {
-            Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(traduire(String::from_utf8_lossy(&accueil).trim())),
+            Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(refus_a_l_identification(String::from_utf8_lossy(&accueil).trim())),
             Ok(_) => {}
-            Err(e) => return Err(erreur(format!("L'accueil du serveur ne se lit pas : {}", e))),
+            Err(e) => return Err(illisible(format!("L'accueil du serveur ne se lit pas : {}", e)).into()),
         }
-        imap.commande(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe.devoiler())?))?;
-        imap.commande(&format!("EXAMINE {}", quoter(dossier)?))?;
+        imap.commande_en(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe.devoiler())?), Moment::Identification)?;
+        imap.commande_en(&format!("EXAMINE {}", quoter(dossier)?), Moment::Connectee)?;
         Ok(imap)
     }
 
-    fn lire_ligne(&mut self) -> R<Vec<u8>> {
+    fn lire_ligne(&mut self) -> Result<Vec<u8>, RefusDeLaBoite> {
         loop {
             if let Some(i) = self.tampon.iter().position(|b| *b == b'\n') {
                 return Ok(self.tampon.drain(..=i).collect());
@@ -285,18 +382,18 @@ impl<F: Read + Write> Imap<F> {
             let mut bloc = [0u8; 8192];
             let n = self.flux.read(&mut bloc).map_err(es)?;
             if n == 0 {
-                return Err(erreur("Connexion fermee par le serveur."));
+                return Err(fermee_en_chemin().into());
             }
             self.tampon.extend_from_slice(&bloc[..n]);
         }
     }
 
-    fn lire_octets(&mut self, n: usize) -> R<Vec<u8>> {
+    fn lire_octets(&mut self, n: usize) -> Result<Vec<u8>, RefusDeLaBoite> {
         while self.tampon.len() < n {
             let mut bloc = [0u8; 8192];
             let lus = self.flux.read(&mut bloc).map_err(es)?;
             if lus == 0 {
-                return Err(erreur("Connexion fermee par le serveur."));
+                return Err(fermee_en_chemin().into());
             }
             self.tampon.extend_from_slice(&bloc[..lus]);
         }
@@ -304,13 +401,13 @@ impl<F: Read + Write> Imap<F> {
     }
 
     /// Une reponse entiere : une ligne, et tout ce que ses litteraux `{n}` en font suivre, par leur longueur.
-    fn lire_unite(&mut self) -> R<Vec<u8>> {
+    fn lire_unite(&mut self) -> Result<Vec<u8>, RefusDeLaBoite> {
         let mut unite = Vec::new();
         loop {
             let ligne = self.lire_ligne()?;
             unite.extend_from_slice(&ligne);
             match longueur_litteral(&ligne) {
-                Some(n) if n > LITTERAL_MAXIMUM => return Err(erreur("Reponse du serveur trop grosse.")),
+                Some(n) if n > LITTERAL_MAXIMUM => return Err(illisible(format!("Reponse du serveur trop grosse : un litteral de {} octets.", n)).into()),
                 Some(n) => {
                     let corps = self.lire_octets(n)?;
                     unite.extend_from_slice(&corps);
@@ -320,9 +417,19 @@ impl<F: Read + Write> Imap<F> {
         }
     }
 
-    /// Une commande, et les reponses qui lui sont propres jusqu'a la reponse etiquetee. Un refus (`NO`, `BAD`) est
-    /// une erreur dont le texte est celui du serveur.
+    /// Une commande, la boite deja ouverte, et les reponses qui lui sont propres jusqu'a la reponse etiquetee. Un refus
+    /// (`NO`, `BAD`) se dit en francais ; le texte du serveur va a part.
     pub fn commande(&mut self, texte: &str) -> R<Reponse> {
+        Ok(self.commande_en(texte, Moment::Connectee)?)
+    }
+
+    /// Une commande, a l'identification (`LOGIN`) ou la boite ouverte : le refus du serveur en suit la phrase et la
+    /// sorte (`refus_a_l_identification`, `refus_apres_connexion`).
+    fn commande_en(&mut self, texte: &str, moment: Moment) -> Result<Reponse, RefusDeLaBoite> {
+        let refus = |texte: &str| match moment {
+            Moment::Identification => refus_a_l_identification(texte),
+            Moment::Connectee => refus_apres_connexion(texte),
+        };
         self.numero += 1;
         let etiquette = format!("A{:04}", self.numero);
         let ligne = format!("{} {}\r\n", etiquette, texte);
@@ -336,9 +443,9 @@ impl<F: Read + Write> Imap<F> {
                     Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(reponse),
                     Ok((_, Response::Done { .. })) => {
                         let brut = String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim().to_string();
-                        Err(traduire(&brut))
+                        Err(refus(&brut))
                     }
-                    _ => Err(erreur("Reponse du serveur illisible.")),
+                    _ => Err(illisible(crate::transport::debut_lisible(&unite, 800)).into()),
                 };
             }
             if unite.starts_with(b"* ") {
@@ -355,7 +462,7 @@ impl<F: Read + Write> Imap<F> {
                         }
                     }
                     Ok((_, Response::Data { status: Status::Bye, .. })) => {
-                        return Err(traduire(String::from_utf8_lossy(&unite).trim()));
+                        return Err(refus(String::from_utf8_lossy(&unite).trim()));
                     }
                     // Le reste (FLAGS, EXISTS, CAPABILITY...) n'interesse pas ce dialogue ; une ligne que le
                     // parseur ne lit pas non plus.
@@ -364,7 +471,7 @@ impl<F: Read + Write> Imap<F> {
                 continue;
             }
             if unite.starts_with(b"+") {
-                return Err(erreur("Le serveur attend une suite que ce dialogue ne donne jamais."));
+                return Err(illisible("Le serveur attend une suite que ce dialogue ne donne jamais.").into());
             }
         }
     }
@@ -401,8 +508,8 @@ impl<F: Read + Write> Imap<F> {
             }
             return match Response::parse(&unite) {
                 Ok((_, Response::Done { status: Status::Ok, .. })) => Ok(()),
-                Ok((_, Response::Done { .. })) => Err(traduire(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim())),
-                _ => Err(erreur("Reponse du serveur illisible.")),
+                Ok((_, Response::Done { .. })) => Err(refus_apres_connexion(String::from_utf8_lossy(&unite[etiquette.len() + 1..]).trim()).echec),
+                _ => Err(illisible(crate::transport::debut_lisible(&unite, 800))),
             };
         }
     }
@@ -433,7 +540,7 @@ impl Client {
         })
     }
 
-    fn boite(&mut self) -> R<&mut Imap<Box<dyn Flux>>> {
+    fn boite(&mut self) -> Result<&mut Imap<Box<dyn Flux>>, RefusDeLaBoite> {
         if self.imap.is_none() {
             let flux = ouvrir_tls(&self.serveurs.imap, self.serveurs.port_imap)?;
             self.imap = Some(Imap::ouvrir(flux, &self.compte, &self.mot_de_passe, DOSSIER_RECEPTION)?);
@@ -485,13 +592,20 @@ fn premier_entete(entetes: &[mailparse::MailHeader], nom: &str) -> Option<String
 /// Les en-tetes qui portent les destinataires d'un message.
 const CHAMPS_DESTINATAIRES: [&str; 3] = ["To", "Cc", "Bcc"];
 
+/// Une adresse de destinataire qui ne se lit pas (`detail` : ce que la bibliotheque en dit, a part) : le message ne part
+/// pas.
+#[track_caller]
+fn destinataire_illisible(detail: impl std::fmt::Display) -> Echec {
+    dite("Une adresse de destinataire ne se lit pas : vérifier l'adresse courriel du salarié. Le message n'est pas parti.", detail)
+}
+
 /// Les adresses de `To`, `Cc` et `Bcc` (le premier en-tete de chaque nom, comme `m.get`). Un en-tete qui ne se lit pas
 /// en adresses refuse : le message ne part pas sans une partie de ses destinataires.
 fn destinataires(entetes: &[mailparse::MailHeader]) -> R<Vec<String>> {
     let mut sortie = Vec::new();
     for champ in CHAMPS_DESTINATAIRES {
         let Some(valeur) = premier_entete(entetes, champ) else { continue };
-        let liste = mailparse::addrparse(&valeur).map_err(|e| erreur(format!("adresse de destinataire illisible : {}", e)))?;
+        let liste = mailparse::addrparse(&valeur).map_err(|e| destinataire_illisible(format!("{} : {}", champ, e)))?;
         for a in liste.iter() {
             match a {
                 mailparse::MailAddr::Single(s) => sortie.push(s.addr.clone()),
@@ -519,7 +633,7 @@ impl Courriel for Client {
         use lettre::transport::smtp::client::{Tls, TlsParameters};
         use lettre::{SmtpTransport, Transport};
 
-        let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| erreur(format!("message illisible : {}", e)))?;
+        let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| dite("Le message que le logiciel a assemblé ne se lit pas : il n'est pas parti.", e))?;
         let mut brut = message_mime.to_vec();
         let ident = match premier_entete(&entetes, "Message-ID").map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
             // Le message, le logiciel l'a assemble : son identifiant a la forme du sien.
@@ -538,9 +652,9 @@ impl Courriel for Client {
         };
         let destinataires = destinataires(&entetes)?;
         let adresses: Result<Vec<Address>, _> = destinataires.iter().map(|a| a.parse::<Address>()).collect();
-        let adresses = adresses.map_err(|e| erreur(format!("adresse de destinataire illisible : {}", e)))?;
-        let expediteur: Address = self.compte.parse().map_err(|e| erreur(format!("adresse de la boite illisible : {}", e)))?;
-        let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| erreur(e.to_string()))?;
+        let adresses = adresses.map_err(destinataire_illisible)?;
+        let expediteur: Address = self.compte.parse().map_err(|e| dite("L'adresse de la boîte courriel ne se lit pas : la reposer dans Configuration › Mots de passe. Le message n'est pas parti.", e))?;
+        let enveloppe = Envelope::new(Some(expediteur), adresses).map_err(|e| dite("Le message n'a aucun destinataire : vérifier l'adresse courriel du salarié. Il n'est pas parti.", e))?;
         let mdp = self.mot_de_passe.devoiler().to_string();
         let (hote, port) = (self.serveurs.smtp.clone(), self.serveurs.port_smtp);
         // En essai, le garde-fou reseau : aucun serveur d'envoi reel.
@@ -553,7 +667,7 @@ impl Courriel for Client {
             .timeout(Some(DELAI))
             .build();
         let sur_le_fil = donnees_du_fil(&brut);
-        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| traduire(&e.to_string()))?;
+        transport.send_raw(&enveloppe, &sur_le_fil).map_err(|e| envoi_refuse(&e))?;
         Ok(ident)
     }
 
@@ -576,11 +690,11 @@ impl Courriel for Client {
 // ----------------------------------------------------------------------------------------------- la verification
 
 /// La boite s'ouvre-t-elle avec ce client ? UNE tentative IMAP. Rend ce qui est ouvert, ou le refus de la boite --
-/// jamais le mot de passe.
-pub fn verifier(mut c: Client) -> R<String> {
+/// jamais le mot de passe -- avec sa sorte (`RefusDeLaBoite`).
+pub fn verifier(mut c: Client) -> Result<String, RefusDeLaBoite> {
     c.boite()?;
     c.fermer()?;
-    Ok(format!("boite {} ouverte ({}).", c.compte, c.serveurs.imap))
+    Ok(format!("Boîte {} ouverte ({}).", c.compte, c.serveurs.imap))
 }
 
 // ---------------------------------------------------------------------------------------------- la boite simulee

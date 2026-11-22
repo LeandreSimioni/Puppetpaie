@@ -41,7 +41,7 @@ fn par_champ<'a>(m: &'a [Value], champ: &str) -> Vec<&'a Value> {
 /// AUCUN MANQUE NE POINTE VERS UN CHAMP MASQUE, POUR AUCUNE CONVENTION (un bug qui a echappe : « Licence d'entrepreneur de spectacles —
 /// bloque la DSN » en 1790, alors que la case y etait repliee). Pour chaque convention du bareme 2026 (et la compagnie qui
 /// n'a pas encore dit la sienne), avec et sans permanents, avec et sans spectacle : tout ce que « Pour demarrer » demande
-/// dans la fiche Entreprise est une case que l'ecran montre (les cases que le moteur dit a la page, `montres` de la route `permanents`),
+/// dans la fiche Entreprise est une case que l'ecran montre (les cases que la route `fiche` rend a la page),
 /// et tout champ EXIGE (`exige_si`) est montre.
 ///
 /// La licence (`demarrage::licence_exigee`) : « est entrepreneur de spectacles vivants toute personne qui exerce une
@@ -63,16 +63,16 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             let racine = neuve(&nom);
             let mut fichier = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
             let valeur = Some(idcc).filter(|i| !i.is_empty()).map(|i| droit::fiche::Idcc::lire(i).unwrap());
-            fichier.idcc = Some(vec![droit::fiche::Datee { depuis: None, valeur, note: None }]);
-            fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }]);
+            fichier.idcc = Some(vec![droit::fiche::Datee::dite(None, valeur, None)]);
+            fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee::dite(None, Some(permanents), None)]);
             ecrire(&racine, "config/entreprise.json", &socle::ecriture::en_valeur(&fichier));
             let ent = fichier.au(&le_jour());
             if spectacle {
                 ecrire(&racine, "config/spectacles.json", &json!({"266Z00910022": datee(&json!({"titre": "Le Banc", "actif": true}))}));
             }
             let m = manques(&racine);
-            // Ce que la fiche Entreprise montre, tel que le moteur le dit a la page (route `permanents`).
-            let montres: Vec<Value> = reussi(&route(&racine, "permanents", json!({"nom": "entreprise", "donnees": socle::ecriture::en_valeur(&ent)}), JOUR))["montres"].as_array().unwrap().clone();
+            // Ce que la fiche Entreprise montre, tel que le moteur le rend a la page (route `fiche`).
+            let montres: Vec<Value> = reussi(&route(&racine, "fiche", json!({"nom": "entreprise"}), JOUR))["cases"].as_array().unwrap().iter().map(|c| c["cle"].clone()).collect();
             let montre = |cle: &str| montres.contains(&json!(cle));
             for x in &m {
                 let Some(champ) = x["champ"].as_str() else { continue };

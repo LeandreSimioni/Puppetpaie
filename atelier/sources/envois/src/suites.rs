@@ -78,12 +78,28 @@ pub struct Suites {
     pub dit: ADire,
 }
 
+/// UNE PANNE DE PASSAGE (un delai depasse, une reponse coupee en chemin) : elle ne dit rien du logiciel, et le passage
+/// suivant de la veille, ou le geste qu'on refait, la retente ; elle ne se note pas chez l'editeur (`Suites::arret`, et
+/// les releves arretes des routes, `routes::gestes::suites::noter_le_releve_arrete`).
+pub fn panne_de_passage(e: &socle::echec::Echec) -> bool {
+    matches!(e.classe, Some(socle::echec::Classe::DelaiDepasse | socle::echec::Classe::Reseau))
+}
+
 impl Suites {
-    /// Une panne de l'organisme, a noter chez l'editeur (`pannes`) quand il a repondu (un statut) : un reseau injoignable
-    /// ne dit rien de l'organisme ni du logiciel, et la veille le reessaie seule.
+    /// Une panne de l'organisme, a noter chez l'editeur (`pannes`) quand il a repondu (un statut) et que la reponse
+    /// peut dire quelque chose du logiciel : un reseau injoignable (aucun statut) ni une erreur de son service (5xx) ne
+    /// disent rien du logiciel, la veille les reessaie seule, et un organisme en panne ne fait pas un incident a chaque
+    /// passage.
     pub fn panne(&mut self, p: crate::transport::EchecApi) {
-        if p.code.is_some() {
+        if p.code.is_some_and(|c| !c.is_server_error()) {
             self.pannes.push(p);
+        }
+    }
+
+    /// Un releve arrete par une panne (`e`) : a noter chez l'editeur, sauf une panne de passage (`panne_de_passage`).
+    pub fn arret(&mut self, e: &socle::echec::Echec) {
+        if !panne_de_passage(e) {
+            self.pannes.push(crate::transport::EchecApi::from(e.clone()));
         }
     }
 

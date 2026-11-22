@@ -13,7 +13,7 @@ use socle::memoire::tenu;
 
 use super::api::route;
 use routes::gestes::ouverture::ChargeOuverture;
-use routes::veille::{acces_a_poser, dit_du_bandeau, EtatDeLaVeille};
+use routes::veille::{acces_a_poser, dit_du_bandeau, souci_de_la_sauvegarde, EtatDeLaVeille};
 use routes::etat_garde::FileDesEtats;
 use routes::catalogue::Route;
 use routes::enveloppe::{Charge, Refus};
@@ -91,13 +91,16 @@ impl Veille {
             Ok(a) => (a, None),
             Err(e) => (Vec::new(), Some(e.phrase)),
         };
-        let erreur = match (tenu(&self.erreur).clone(), illisible, marqueur, coffre) {
-            (Some(e), _, _, _) | (None, Some(e), _, _) | (None, None, Some(e), _) | (None, None, None, Some(e)) => Some(e),
-            (None, None, None, None) => None,
+        // Ce qui persiste de la sauvegarde, vrai maintenant : un coffre ou un jeton dont la date ne se lit pas le dit dans
+        // l'erreur.
+        let (souci, jeton) = match souci_de_la_sauvegarde(&self.racine, dernier.as_ref()) {
+            Ok(s) => (s, None),
+            Err(e) => (None, Some(e.phrase)),
         };
+        let erreur = [tenu(&self.erreur).clone(), illisible, marqueur, coffre, jeton].into_iter().flatten().next();
         let EtapeDeLaVeille { en_cours, sauvegarde_en_cours, etape } = self.etape();
         EtatDeLaVeille {
-            dit: dit_du_bandeau(dernier.as_ref(), a_poser, self.prochain_dans(), fictive),
+            dit: dit_du_bandeau(dernier.as_ref(), a_poser, souci, self.prochain_dans(), fictive),
             en_cours,
             sauvegarde_en_cours,
             etape,

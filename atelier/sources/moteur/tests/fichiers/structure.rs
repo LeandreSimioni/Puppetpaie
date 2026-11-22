@@ -1454,3 +1454,16 @@ fn chaque_cle_citee_existe_dans_le_fichier_qu_elle_designe() {
     );
     assert!(fautes.is_empty(), "chaque cle des grilles et des clauses citee existe dans le fichier qu'elle designe :\n{}", fautes.join("\n"));
 }
+
+/// LE FORMULAIRE PUBLIE DE « REMPLIR MA FICHE » EST CELUI QUE LE MOTEUR DECLARE : le fichier commite sous
+/// `atelier/site/fiche/formulaires/`, nomme par son empreinte, a le contenu que la declaration ecrit
+/// (`moteur-atelier formulaire-fiche` l'ecrit), l'exemple de la deduction forfaitaire compris, que le moteur calcule
+/// (`routes::fiches::exemple_dfs`).
+#[test]
+fn le_formulaire_publie_est_celui_que_le_moteur_declare() {
+    let exemple = routes::fiches::exemple_dfs().unwrap_or_else(|e| panic!("l'exemple de la déduction forfaitaire ne se calcule pas : {}", e.en_lignes()));
+    let f = documents::fiche_questionnaire::formulaire_publie(exemple.as_ref());
+    let chemin = espace().join("../site/fiche/formulaires").join(f.nom_du_fichier());
+    let commite = std::fs::read_to_string(&chemin).unwrap_or_else(|e| panic!("{} : {} ; `moteur-atelier formulaire-fiche` l'écrit, puis on le commite", chemin.display(), e));
+    assert_eq!(commite, f.contenu, "{} n'est pas le formulaire que le moteur déclare : `moteur-atelier formulaire-fiche` le réécrit", chemin.display());
+}

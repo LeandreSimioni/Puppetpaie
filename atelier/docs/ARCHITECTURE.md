@@ -101,7 +101,20 @@ que par la structure :
   une fiche ne la voit, et une saisie ne la pose pas. Une case retirée qu'une installation posée a pu écrire dans son
   fichier est une clé non lue de la fiche datée (la section `non_lues` de `fiche!`, une `socle::forme::NonLue`) : elle
   se lit et ne dit rien, pour que la compagnie s'ouvre après sa mise à jour ; elle ne se réécrit pas, et ni la plate ni
-  une charge ne l'ont. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  une charge ne l'ont. **Les fiches d'une compagnie se lisent par `droit::fiche::lire_fiche_posee`**, le fichier d'une
+  installation posée (`socle::forme::lire_fichier_pose_en_phrase`) : une valeur datée que le type de sa case ne lit plus
+  est illisible (`Datee::illisible`), jamais vide : elle se garde et se réécrit telle quelle, la compagnie s'ouvre, et le
+  logiciel la demande (la route `valeurs-illisibles`, `routes::redire`) ; redite par `enregistrer-fiche`, saisie ou vide
+  exprès, elle est remplacée à son `depuis`, et elle seule (`droit::fiche::premiere_illisible`), quelle que soit la case ;
+  la réponse ne juge que la case redite, et ce qui s'en dérive ne la suit que si elle est la dernière entrée de sa case.
+  Pendant la demande, `enregistrer-fiche` ne sert qu'à y répondre. **Tant qu'elle attend, rien ne se calcule** : le barrage, un seul, là où une route ouvre la compagnie (`routes::service::contexte_de_la_route`,
+  que prennent la porte et l'état gardé de la fenêtre), refuse toute route que sa fiche ne dit pas servie
+  (`routes::catalogue::PendantLaDemande`, champ obligatoire de chaque fiche) en renvoyant à la demande
+  (`Classe::ValeurARedire`) ; aucun calcul n'a donc de troisième état à connaître. Une clé que la forme ne connaît pas se
+  garde, se réécrit, ne dit rien et ne demande rien (`socle::forme::ClesInconnues`) ; l'une et l'autre sont un
+  `droit::fiche::NonLu`, et l'éditeur l'apprend, une fois par sorte de fiche et case, sans la valeur (`routes::non_lus`). Les données livrées et
+  les charges ne passent jamais par là : elles restent strictes. Une structure d'ensemble fausse (pas du JSON, une case
+  qui n'est pas une liste datée) refuse comme ailleurs. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
@@ -529,6 +542,12 @@ un libellé, chacun sa forme.
 | commune | `CodeInsee` | `droit/src/fiche.rs` |
 | courriel | `Courriel` | `droit/src/fiche.rs` |
 | code de demande | `CodeDeDemande` | `documents/src/fiche_questionnaire.rs` |
+| numéro Congés Spectacles d'un salarié, ou qu'il n'en a pas (sa demande d'immatriculation est à faire ; écrit `{"numero": …}` ou `{"sans_numero": true}`, un texte seul se lit comme un numéro) | `NumeroCongesSpectacles` | `droit/src/fiche.rs` |
+| question de « Remplir ma fiche » (la seule déclaration du formulaire : cle, libellé, aide, forme de la réponse, réponse « aucun », condition, case qu'elle remplit ; celles d'une demande, `a_poser`) | `Question`, `QuestionDeclaree`, `FormeDeReponse` | `documents/src/fiche_questionnaire.rs` |
+| formulaire publié de « Remplir ma fiche » (un `.js` par forme, nommé par son empreinte courte, sous `atelier/site/fiche/formulaires/`) | `FormulairePublie` | `documents/src/fiche_questionnaire.rs` |
+| lien de « Remplir ma fiche » (la page, et dans le fragment : formulaire, questions, code, adresse de la compagnie, objet) | `LienDeFiche` | `documents/src/fiche_questionnaire.rs` |
+| exemple chiffré de la déduction forfaitaire (un cachet de la compagnie fictive de l'aperçu payé sans puis avec elle, par le calcul des bulletins : nets, coûts, base abattue ; `routes::fiches::exemple_dfs` le calcule, `lignes` seul le compose, pour le formulaire publié et le courriel) | `ExempleDfs` | `documents/src/fiche_questionnaire.rs` |
+| réponse à une question (« aucun », ou ce que la personne a écrit), la réponse lue, ce que la relève en tire | `Reponse`, `ReponseLue`, `FicheDesReponses` | `documents/src/fiche_questionnaire.rs` |
 | identifiant de courriel | `IdDeCourriel` | `envois/src/envoi.rs` |
 | courriel envoyé | `envois::envoi::Message<Pour>` | `envois/src/envoi.rs` |
 | expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
@@ -583,6 +602,9 @@ un libellé, chacun sa forme.
 | type d'une information collective | `TypeDInformationCollective` ; celui qu'un rapport donne : `TypeDInformationLu` | `envois/src/retours.rs` |
 | genre d'un retour métier OC | `GenreDeRetourOc` | `envois/src/retours.rs` |
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
+| ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
+| sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
+| ce qu'on faisait quand un organisme ou Google a mal répondu (s'identifier, relever, déposer, se servir du Drive, lier Google : la phrase de la panne en suit le conseil) | `CeQuOnFaisait` | `envois/src/transport.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
 | jusqu'où le dernier relevé complet a lu | `ReleveComplet` | `envois/src/releve_retours.rs` |
 | étape d'une ouverture et ce qu'elle a duré (la trace de l'ouverture les porte, dans l'ordre) | `EtapeMesuree` | `routes/src/gestes/ouverture.rs` |
@@ -1150,13 +1172,22 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | fait qui ouvre une case de la carte (plusieurs établissements, contrat écrit ici, modèles au choix, numéro à dire, fin ce mois, motif avant terme, fait que le motif de la fin appelle, préavis non effectué, paie importée, temps plein, heures décomptées par semaine, temps partiel) | `FaitQuiOuvre` | `engagement/src/carte.rs` |
 | fait de la fin qu'un motif appelle (notification, engagement du licenciement, signature de la convention, transaction, droit à la retraite, préavis non effectué, précarité due) | `droit::permanents::FaitDeRupture` | `droit/src/permanents.rs` |
 | carte d'un engagement telle que la route la rend (ses cases ouvertes et leur place, ses choix, son pré-remplissage, sa faute) | `routes::mois::CarteRendue` | `routes/src/mois.rs` |
-| fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
-| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix, ses parties, ce que le moteur dit sous elle, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| fiche telle que la route la rend, telle qu'on la saisit (route `fiche` : son en-tête, l'encart de ses erreurs, ses cases ouvertes dans l'ordre de `champs-base.json`, si « Avancé » s'ouvre, les cases dont la route a récrit la saisie, l'historique de ses cases datées en mots) | `routes::fiches::FicheRendue` | `routes/src/fiches/rendue.rs` |
+| case ouverte d'une fiche telle que la route la rend (sa clé, son bloc, sa largeur, son libellé, sa forme, sa place, son aide, son exemple, sa valeur, son pré-rempli, ses choix, ses parties, ce que le moteur dit sous elle, où elle renvoie, ses temps en mots, sa faute ; aussi la case qu'une ligne de « Pour démarrer » fait remplir) | `routes::fiches::CaseDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| où une case de fiche renvoie, rendu sous elle (le sous-onglet des métiers, ou la case d'une autre fiche : l'option de la déduction forfaitaire de l'entreprise) | `routes::fiches::RenvoiDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
+| fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge (`{}`) | `routes::SansCharge` | `routes/src/lib.rs` |
+| ce que le moteur sait de plus sur les cases d'une fiche qu'on saisit (celles de l'entreprise, celles d'un salarié) | `routes::fiches::Completer` | `routes/src/fiches/rendue.rs` |
+| listes que la fiche d'un salarié offre, lues une fois par réponse (les pays de naissance et de nationalité, les métiers, ce que l'entreprise dit de la déduction forfaitaire) | `routes::fiches::ListesDuSalarie` | `routes/src/fiches/rendue.rs` |
+| complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
+| texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
+| niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |
 | case qui ne s'ouvre que si une autre est trop longue (le complément d'adresse, au-delà de ce que la DSN admet) | `declarations::champs::PlusLong` | `declarations/src/champs.rs` |
-| en-tête d'une fiche rendue (son titre, ce qui le suit, sa note, le coût de l'année qu'elle montre, si « Annuler » ramène à la liste) | `routes::fiches::EnteteDeLaFiche` | `routes/src/fiches/rendue.rs` |
-| coût de l'année qu'une fiche rendue montre en tête (où le lire dans la route `couts` : le côté et la clé de la fiche, un spectacle par son titre) | `routes::fiches::CoutDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| en-tête d'une fiche rendue (son titre, ce qui le suit, sa note, le coût de l'année qu'elle montre, si « Annuler » ramène à la liste, ce qui se fait depuis la fiche d'un salarié, la demande qui fait remplir celle d'un salarié neuf) | `routes::fiches::EnteteDeLaFiche` | `routes/src/fiches/rendue.rs` |
+| coût de l'année qu'une fiche rendue montre en tête (où le lire dans la route `couts` : le côté et la clé de la fiche, un spectacle par son titre, un salarié par sa clé) | `routes::fiches::CoutDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | pré-remplissage d'une carte (ce que le moteur prend pour une case vide ; il ne s'écrit pas) | `routes::mois::Prerempli` | `routes/src/mois.rs` |
 | ce qu'une ligne neuve d'une rubrique prend (le taux d'un cachet), sous le code de sa rubrique | `routes::mois::LignePreremplie`, `routes::mois::LignesPreremplies` | `routes/src/mois.rs` |
 | fin du contrat telle que la route la rend (aucune, la rupture lue, ou une rupture qui ne se lit pas) | `routes::mois::FinDuContrat` | `routes/src/mois.rs` |
@@ -1222,6 +1253,11 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | spectacle | `IdSpectacle`, `droit::fiche::Spectacle` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
 | fiche | `droit::fiche::NomDeFiche`, `Datee<T>` | `droit/src/fiche.rs` |
 | fiche nommée | `FicheNommee` | `droit/src/fiche.rs` |
+| ce qu'une fiche de la compagnie porte et que le moteur ne lit pas (une valeur datée que le type de sa case ne lit plus, gardée telle qu'écrite, `Datee::illisible` ; une clé que la forme ne connaît pas, gardée, qui ne dit rien) : la compagnie saisit la première de nouveau (`routes::redire`), l'éditeur apprend l'une et l'autre par un incident (`routes::non_lus`) | `droit::fiche::NonLu` | `droit/src/fiche.rs` |
+| ce qu'une route fait pendant qu'une valeur d'une fiche attend d'être saisie de nouveau : servie, ou refusée en renvoyant à la demande | `PendantLaDemande` | `routes/src/catalogue.rs` |
+| valeur illisible (ce qu'un fichier posé écrit et que le type de sa case ne lit plus, gardé tel qu'écrit pour se réécrire tel quel ; la demande la dit en mots, courte : `routes::redire`) | `socle::forme::ValeurIllisible` | `socle/src/forme.rs` |
+| valeur lue ou illisible (la porte d'une valeur dans un fichier posé : lue dans son type, ou gardée illisible ; partout ailleurs, stricte) | `socle::forme::LueOuIllisible` | `socle/src/forme.rs` |
+| clés inconnues d'une forme (gardées telles qu'écrites dans un fichier posé, réécrites telles quelles, elles ne disent rien ; partout ailleurs, une clé inconnue refuse) | `socle::forme::ClesInconnues` | `socle/src/forme.rs` |
 | fiche visée par l'import | `FicheVisee` | `import/src/reponse.rs` |
 | pièce d'où vient une valeur reprise | `import::reponse::Source` | `import/src/reponse.rs` |
 | dernière fois que les pièces reprises portent un salarié (le dernier mois qu'elles datent, un contrat qui court encore, ou aucune), qui range sa fiche neuve active ou archivée | `import::derniere_piece::DernierePiece` | `import/src/derniere_piece.rs` |
@@ -1808,7 +1844,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **organisation patronale** : la clé d'une couche du barème par organisation (`par_organisation_patronale`, son
   sigle), la case de la fiche entreprise, et un signataire d'un accord de salaires (`minima::Convention::signataires`,
   écrit par sa clé du barème ; le nom que l'accord lui donne reste dans sa source). Lue à l'entrée par sigle ou alias :
-  une saisie se range en sigle, se reconnaît (`enregistrer-fiche` et `verifier-fiche`, une seule fonction,
+  une saisie se range en sigle, se reconnaît (`enregistrer-fiche` et `fiche`, une seule fonction,
   `SorteDeFiche::reconnaitre`) dans le socle que le barème de l'année de l'écran reprend (`Contexte::socle_repris` :
   celui que la surcouche nomme, sinon le socle livré de l'année, lu sans le taux AT/MP), par `Pile::organisation`, la
   seule porte, et s'écrit par sa clé ; une organisation qu'il ne couvre pas, ou une année dont le logiciel n'a pas le
@@ -2043,17 +2079,28 @@ libellé, sa forme, sa place (de base, ou « Avancé » quand la table la dit av
 « Annuler ») et l'encart de ses erreurs ; l'historique de ses cases datées, en mots. Une case de route n'a qu'un dessin,
 `caseDeRoute` (`js/avance.js`), que la carte, la fiche, la boîte d'un geste et « Pour démarrer » appellent avec leurs
 données, dans la grille de la carte ; la page relit les cases par `lireLesCases` ; ce qu'on
-tape repart à la même route, qui redit les cases, leurs fautes et l'encart : un seul appel, à la place de `permanents` et de
-`verifier-fiche`. L'écriture reste `enregistrer-fiche`. La fiche d'un spectacle et celle de l'entreprise passent par
-là, et la case d'un spectacle ou de l'entreprise que « Pour démarrer » fait remplir (`case_rendue` de `pour-demarrer`) ;
-celle d'un salarié suivra. **La mise en page est dans la donnée** : chaque case de `champs-base.json` nomme son bloc
+tape repart à la même route, qui redit les cases, leurs fautes et l'encart : un seul appel. L'écriture reste
+`enregistrer-fiche`. Les trois fiches passent par là, et la case que « Pour démarrer » fait remplir (`case_rendue` de
+`pour-demarrer`). « Avancé » ne s'ouvre que sur un écart, et c'est la route qui le dit (`avance_ouvert`, d'après
+`Champ::ecart`), jamais le dessin d'après une valeur présente. Ce que la route récrit de la saisie, elle le nomme
+(`reecrites`), et la page le montre tel qu'elle le rend : les quinze chiffres d'un NIR collé se répartissent entre le
+numéro et sa clé, le métier choisi remplit l'intitulé, le PCS-ESE, le statut et les classements (`emplois::resoudre`) ; ce
+que le moteur écrit à l'enregistrement dans une case vide (le département et le pays de naissance lus dans le NIR,
+`SorteDeFiche::deriver`), la route le propose avant (`prerempli`). Une case qui renvoie ailleurs le dit
+(`routes::fiches::RenvoiDeLaFiche` : les métiers, l'option de la déduction forfaitaire de l'entreprise). L'en-tête d'un
+salarié dit son coût de l'année, ce qui se fait depuis sa fiche et, neuf, la demande qui le fait remplir par la personne
+(`fiche-demander`). **La mise en page est dans la donnée** : chaque case de `champs-base.json` nomme son bloc
 (`bloc`, un des `blocs` déclarés pour sa fiche, dans leur ordre : la table se range bloc par bloc) et sa largeur
 (`largeur`, `declarations::champs::Largeur`) ; la route les rend, avec l'exemple d'une case vide, et le dessin pose un
 titre quand le bloc change. Une case faite de cases rend ses parties (`routes::fiches::PartieDeLaFiche` : chacune ses
 choix, son aide, si elle est ouverte ; une clé que la route ne décrit pas se garde à l'écriture), une liste de cases
 ses rangées ; ce que le moteur sait d'une case vient avec elle (`dit`, `prerempli`, ses choix) : la convention et
 l'Urssaf se choisissent dans les listes du moteur, le taux AT/MP dit sous lui ce que dit `taux-atmp`, la taxe sur les
-salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle.
+salaires n'ouvre que les questions que sa conclusion pose et dit ce qui en découle. Sur la fiche d'un salarié, les deux
+pays se choisissent dans leurs listes (la table « Pays » de la DSN, le COG de l'INSEE) ; avec un pays de nationalité de
+la liste, la nationalité DSN s'en déduit, ne s'ouvre pas et se dit sous le pays ; le métier se choisit dans ceux d'une
+fiche ; la complémentaire santé dans les niveaux du barème du jour (ou dit pourquoi elle ne se choisit pas ici) ; les
+jours travaillés se cochent dans ceux que leur forme déclare (`Declaree::valeurs`).
 Les autres écrans passeront par le même dessinateur.
 
 ## L'engagement : un objet, ses paies validées dans le fichier de leur mois

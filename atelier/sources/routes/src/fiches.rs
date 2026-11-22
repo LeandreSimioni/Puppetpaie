@@ -1,12 +1,11 @@
 //! Configuration › Entreprise, Salariés, Spectacles : les fiches des salaries, des spectacles et de l'entreprise
-//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `verifier-fiche`, `activer-fiche`, `enregistrer-fiche`, leur avertissement, `permanents`), leur demande par courriel
+//! (`fiche`, la fiche rendue telle qu'on la saisit : `rendue` ; `activer-fiche`, `enregistrer-fiche`, leur avertissement), leur demande par courriel
 //! (`fiche-demander`, `fiches-relever`, `fiche-oublier-demande`), le taux AT/MP (`taux-atmp`), le regime de la taxe sur
 //! les salaires, le cout de l'annee (`couts`), la sauvegarde et la suppression de la compagnie.
 //!
 //! Les refus portent leur classe (`Manque`, `MalFormee`, `Refuse`...), que la page releve.
 
 use droit::fiche::Lue as _;
-use std::collections::HashMap;
 use std::path::Path;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
@@ -33,17 +32,16 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::grandeurs::{Effectif, Montant};
 use socle::ecriture::ecrire_json;
 use socle::paris::{InstantOuJour, Moment};
-use socle::html::{html_echapper, mailto};
+use socle::html::html_echapper;
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
-pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, ListesDuSalarie};
+pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
 const CLE_FICHE: Champ = Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle ; absente pour une fiche neuve ou l'entreprise", avance: false };
-const DONNEES: Champ = Champ { nom: "donnees", libelle: Affiche::new("Cases de la fiche"), forme: Forme::Objet, sens: "les cases de la fiche, que la route configuration décrit (description : nom, forme, valeurs) ; une case inconnue se dit", avance: false };
 const CHANGEMENTS: Champ = Champ { nom: "changements", libelle: Affiche::new("Cases qui changent"), forme: Forme::Objet, sens: "[{case, valeur}, …], au moins un, dans l'ordre, tout ou rien : chacun une case de la fiche (description de la route configuration : nom, forme, valeurs ; une case inconnue se refuse), null pour la vider (\"\" se refuse) ; une structure se donne entière ; une case non nommée garde sa valeur", avance: false };
 pub(crate) const REFUSEE: Refus = Refus { classe: Classe::FicheRefusee, corriger: "les cases que les anomalies nomment ; forcer passe outre une erreur de forme seulement" };
 const PREUVE: Refus = Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain ; rien n'est envoyé" };
@@ -62,25 +60,12 @@ pub const ROUTES: &[Fiche] = &[
             NOM_FICHE,
             Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
             Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
+            Champ { nom: "changees", libelle: Affiche::new("Cases qui viennent de changer"), forme: Forme::Objet, sens: "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune", avance: true },
         ],
-        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
-        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
+        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
+        rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
-        acte: Acte::Lit,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::Permanents,
-        geste: "Dire les cases que montre la fiche en cours de saisie.",
-        charge: &[
-            NOM_FICHE,
-            Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "pour un salarié déjà enregistré, sa clé : les cases d'un permanent qui lui est dû, et celles que le métier d'un de ses engagements demande, se montrent ; absente sinon", avance: false },
-            Champ { nom: "donnees", libelle: Affiche::new("Fiche en cours"), forme: Forme::Objet, sens: "la fiche en cours de saisie ; pour un salarié ou un spectacle, l'entreprise est celle de la compagnie", avance: false },
-        ],
-        exemple: r#"{"nom":"entreprise","donnees":{}}"#,
-        rend: "montres (les cases que la fiche montre au jour de l'écran)",
-        refus: &[FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -95,17 +80,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
-        acte: Acte::Lit,
-        phrase: 0,
-        ecran: ECRAN,
-    },
-    Fiche {
-        route: Route::VerifierFiche,
-        geste: "Vérifier une fiche avant de l'écrire : anomalies, valeurs déclarées.",
-        charge: &[NOM_FICHE, DONNEES],
-        exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
-        rend: "anomalies (case, gravité, message), declare (ce que la DSN dirait), suggestions",
-        refus: &[MANQUE, FORME, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -123,8 +98,10 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "forcer", libelle: Affiche::new("Écrire malgré une erreur de forme"), forme: Forme::OuiNon, sens: "vrai : écrire malgré une erreur de forme", avance: true },
         ],
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"},{"case":"numero_objet","valeur":"266Z00952012"}]}"#,
-        rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
+        rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, metier : une case que le métier décide ; depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
+        // La reponse a la demande d'une valeur qui ne se lit plus (`crate::redire`).
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 120,
         ecran: ECRAN,
@@ -136,6 +113,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"spectacle","cle":"le-banc-des-menteurs","actif":true}"#,
         rend: ETAT_REND,
         refus: &[OPERATION, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -145,12 +123,13 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
         charge: &[
             Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son courriel", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom"), forme: Forme::Texte, sens: "son prénom, pour lui écrire", avance: false },
+            Champ { nom: "prenom", libelle: Affiche::new("Prénom, pour dire bonjour"), forme: Forme::Texte, sens: "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain", avance: false },
         ],
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,
         rend: "code (celui de la demande), adresse",
         refus: &[PREUVE, BOITE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
         ecran: ECRAN,
@@ -162,6 +141,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "attendues, recues (les fiches écrites), incidents",
         refus: &[BOITE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -173,6 +153,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"adresse":"isadora@exemple.invalid"}"#,
         rend: "adresse",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -184,6 +165,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 60,
         ecran: ECRAN,
@@ -198,6 +180,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2024,"valeur":6.5}"#,
         rend: "annee, valeur et d'où elle vient (l'Urssaf, la compagnie, la première embauche), a_dire (les années qui manquent pour payer cette année), phrase",
         refus: &[OPERATION, FORME, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 300,
         // Sous « Avancé », d'ou l'effectif d'une annee se dit et se corrige toujours ; « Pour démarrer » (`pour-demarrer`,
@@ -212,6 +195,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2026}"#,
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Fiches),
@@ -223,6 +207,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "sauvegarde (la dernière : quand, ce qui est parti), erreur (ce qui l'a empêchée) ; ne refuse jamais",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Fiches),
@@ -237,6 +222,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"confirme": true}"#,
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Fiches),
@@ -247,7 +233,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
     match porte.route {
         Route::Fiche => en_json(rendue::fiche(ctx, charge.lire()?)?),
-        Route::Permanents => en_json(permanents(ctx, charge.lire()?)?),
         Route::TaxeSurLesSalairesRegime => en_json(taxe_sur_les_salaires_regime(ctx, charge.lire()?)?),
         Route::TauxAtmp => {
             let super::SansCharge {} = charge.lire()?;
@@ -273,7 +258,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
             };
             en_json(FichesRelevees { phrase, attendues: r.attendues, recues: r.recues, incidents: r.incidents })
         }
-        Route::VerifierFiche => en_json(self::ecriture::verifier_fiche(ctx, charge.lire()?)?),
         Route::EnregistrerFiche => ecriture::enregistrer_fiche(ctx, charge.lire()?),
         // Supprimer la compagnie : avertir, puis effacer. Par `moteur route`, rien a lacher ; la fenetre sert elle-meme la
         // suppression confirmee, pour lacher d'abord ce qu'elle tient de la compagnie (`interface::Fenetre`).
@@ -330,12 +314,6 @@ macro_rules! dites {
     };
 }
 dites!(FicheActivee, SauvegardeFaite, FichesRelevees, RegimeDeLaTaxe, DemandeDeFiche);
-
-impl Dite for Permanents {
-    fn phrase(&self) -> &Phrase {
-        &self.phrase
-    }
-}
 
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
@@ -451,41 +429,11 @@ struct EffectifDit {
     a_dire: Vec<Annee>,
 }
 
-// ------------------------------------------------------------------ permanents
+// ------------------------------------------------------------------ ce que la fiche montre
 
-/// Ce que rend `permanents` : la phrase, les cases que la fiche montre et les pieces que ses engagements ouvrent.
-#[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct Permanents {
-    phrase: Phrase,
-    montres: Vec<CaseDeFiche>,
-    pieces_ouvertes: Vec<Piece>,
-}
-
-/// `permanents` : les cases que la fiche en cours de saisie montre au jour de l'ecran (la configuration se montre au
-/// jour : `ouverture::configuration`) ; la page montre ou replie chaque case selon cette reponse, et ne decide rien
-/// quand on coche ou decoche la case des permanents.
-fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
-    let jour = ctx.aujourdhui;
-    let dus = || Ok(!engagement::permanents::Permanents::de(ctx, &socle::date::Periode::du_jour(jour))?.dus.is_empty());
-    // Une case que son type refuse est vide dans la fiche typee : elle ne change pas ce qui se montre.
-    let (Montres { cases, pieces_ouvertes }, entreprise) = match &charge {
-        FicheEnCours::Entreprise { donnees } => (montres(ctx, FicheAJuger::Entreprise(&donnees.fiche), None, &donnees.fiche, &dus)?, &donnees.fiche),
-        FicheEnCours::Salarie { cle, donnees } => (montres(ctx, FicheAJuger::Salarie(&donnees.fiche), cle.as_ref(), &ctx.entreprise, &dus)?, &ctx.entreprise),
-        FicheEnCours::Spectacle { donnees } => (montres(ctx, FicheAJuger::Spectacle(&donnees.fiche), None, &ctx.entreprise, &dus)?, &ctx.entreprise),
-    };
-    Ok(Permanents {
-        phrase: Phrase::fixe(if permanents_de(entreprise) { "La compagnie emploie des permanents." } else { "La compagnie n'emploie pas de permanents." }),
-        montres: cases,
-        pieces_ouvertes,
-    })
-}
-
-/// CE QUE LA FICHE MONTRE (`montres`) : ses cases, et les pieces que ses engagements ouvrent, entieres (celle d'un
-/// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
-/// d'une piece que sur elles.
+/// CE QUE LA FICHE MONTRE (`montres`) : ses cases.
 pub(crate) struct Montres {
     pub(crate) cases: Vec<CaseDeFiche>,
-    pub(crate) pieces_ouvertes: Vec<Piece>,
 }
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
@@ -536,13 +484,7 @@ pub(crate) fn montres(ctx: &Contexte, donnees: FicheAJuger<'_>, cle: Option<&IdS
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
     let cases = champs::fiche(nom)?.iter().filter(|c| donnees.montre(c, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
-    // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
-    let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
-    let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc), (Piece::Reprise, reprise)]
-        .into_iter()
-        .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
-        .collect();
-    Ok(Montres { cases, pieces_ouvertes })
+    Ok(Montres { cases })
 }
 
 /// LES PIECES DE L'ENTREPRISE QUE SON EFFECTIF OUVRE, au jour de l'ecran (`droit::contexte::EffectifsParAnnee`) : la
@@ -1050,6 +992,93 @@ pub struct FicheDemandee {
 /// Envoie a `adresse` le courriel « Remplir ma fiche ». Le journal garde
 /// le code : c'est par lui que la releve reconnaitra la reponse. `client` : la boite, ouverte ici (boite simulee dans une
 
+/// LES QUESTIONS A POSER A UNE PERSONNE dont la fiche est `fiche` (une fiche vide pour qui n'en a pas) : ce qui y manque
+/// et que seul le salarie connait, selon son cas (`fq::a_poser`). La demande les pose ; la releve ne lit qu'elles.
+fn questions_pour(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<fq::Question>> {
+    let cases: Vec<CaseDeFiche> = fq::Question::TOUTES.iter().map(|q| q.declaree().case.into()).collect();
+    let manquent = champs::a_demander_au_salarie(fiche, &ctx.entreprise, &cases)?;
+    Ok(fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(fiche, c.into())))
+}
+
+/// Le gabarit de l'exemple de la deduction forfaitaire, dans la compagnie fictive de l'apercu (`bulletin::dossier_apercu`).
+const EXEMPLE_DFS: socle::fichiers::CheminRelatif = socle::fichiers::CheminRelatif::du_moteur("apercu-bulletin/exemple-deduction.json");
+
+/// LE GABARIT DE L'EXEMPLE (`apercu-bulletin/exemple-deduction.json`) : ce qu'il est, et ses cartes, sans leur jour.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GabaritDeLExemple {
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
+    engagements: Vec<engagement::saisie::Carte>,
+}
+
+/// L'EXEMPLE CHIFFRE DE LA DEDUCTION FORFAITAIRE (`fq::ExempleDfs`), calcule par le calcul des vrais bulletins
+/// (`engagement::pour_l_ecran`, comme le bulletin d'exemple) dans la compagnie fictive de l'apercu : un cachet de 150 EUR
+/// brut, le 1er decembre de l'annee du dernier bareme livre, d'une meme artiste sans la deduction (EXEMPLE-SANS) et avec
+/// (EXEMPLE-AVEC, artiste dramatique ; la compagnie fictive l'exerce par accord collectif). Le meme pour toutes les
+/// compagnies et toutes les demandes : il entre dans le formulaire publie (`fq::formulaire_publie`, que le lien de la
+/// demande nomme et que `moteur-atelier formulaire-fiche` ecrit) et dans le courriel (`fq::a_recopier`). `None` quand le calcul
+/// n'abat rien (une annee ou le taux de la deduction est nul) : rien ne se montre.
+pub fn exemple_dfs() -> R<Option<fq::ExempleDfs>> {
+    let annee = droit::contexte::annees_du_socle(&socle::fichiers::dossier_du_code().join("baremes"))?
+        .into_iter()
+        .max()
+        .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "annee"))?;
+    let mois = annee.decembre();
+    let jour = mois.jour_exige(1)?;
+    let racine = crate::bulletin::dossier_apercu();
+    let gabarit: GabaritDeLExemple = socle::forme::lire_fichier(&racine.join("exemple-deduction.json"), "L'exemple de la déduction forfaitaire ne se lit pas.")?;
+    let mut engagements = gabarit.engagements;
+    for carte in engagements.iter_mut() {
+        carte.debut = Some(jour);
+        carte.fin = Some(jour);
+        carte.date_paiement = Some(jour);
+        for ligne in carte.lignes.iter_mut().flatten() {
+            if let engagement::LignePaie::Unites(u) = ligne {
+                u.dates = vec![engagement::DateDeLigne::Nue(jour)];
+            }
+        }
+    }
+    let saisie = engagement::saisie::VueDuMois { mois, taux_cachet: None, engagements };
+    let ctx = Contexte::nouveau(&racine, Some(jour))?;
+    let paies = engagement::pour_l_ecran(&ctx, &saisie)?.paies;
+    let (avec, sans): (Vec<_>, Vec<_>) = paies.iter().partition(|p| p.deduction_forfaitaire.is_some());
+    // Deux paies du meme cachet, l'une sans la deduction, l'autre avec : le gabarit ne dit rien d'autre.
+    let ([sans], [avec]) = (sans.as_slice(), avec.as_slice()) else {
+        return Err(socle::echec::livree(&EXEMPLE_DFS, "engagements"));
+    };
+    if sans.brut != avec.brut {
+        return Err(socle::echec::livree(&EXEMPLE_DFS, "engagements"));
+    }
+    let Some(d) = avec.deduction_forfaitaire.as_ref().filter(|d| d.montant > Montant::ZERO) else {
+        return Ok(None);
+    };
+    let profession = ctx
+        .bareme(&jour)?
+        .deduction_forfaitaire
+        .as_ref()
+        .and_then(|b| b.professions.get(&d.profession))
+        .map(|p| p.libelle.clone())
+        .ok_or_else(|| socle::echec::livree(&droit::contexte::SOCLES, "deduction_forfaitaire.professions"))?;
+    // Ce qui reste compte sur le brut entier : la base que le calcul a posee sur la ligne, sous la deduction.
+    let au_brut = |id: &droit::forme_bareme::IdDeCotisation| {
+        avec.lignes.iter().any(|l| l.est(id) && l.base == engagement::calcul::BaseDeCotisation::Montant(avec.brut))
+    };
+    Ok(Some(fq::ExempleDfs {
+        annee,
+        profession,
+        taux: d.taux,
+        brut: avec.brut,
+        net_sans: sans.net_a_payer,
+        net_avec: avec.net_a_payer,
+        cout_sans: sans.cout_employeur,
+        cout_avec: avec.cout_employeur,
+        base_abattue: avec.brut - d.montant,
+        chomage_au_brut: au_brut(&droit::forme_bareme::CHOMAGE),
+        conges_spectacles_au_brut: au_brut(&droit::forme_bareme::CONGES_SPEC),
+    }))
+}
+
 /// La charge de `fiche-demander` : l'adresse, le prenom (pour lui ecrire), et le mot de passe du logiciel tape pour l'envoi.
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1097,9 +1126,25 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         None => capitaliser(sg.prenom.ecrite("prenom")?),
     };
     let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
+    // LES QUESTIONS A POSER : ce qui manque a la fiche de cette personne, si elle en a une (par son adresse, comme la
+    // releve la retrouve), selon son cas ; toutes celles qui se demandent au salarie, sinon.
+    let connue = ctx.salaries.values().find(|s| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *adresse)).map(|s| s.champs.clone());
+    let fiche = match connue {
+        Some(f) => f,
+        None => droit::fiche::ChampsSalarie::default(),
+    };
+    let questions = questions_pour(ctx, &fiche)?;
+    if questions.is_empty() {
+        return Err(refus(format!(
+            "La fiche de {} a déjà tout ce que la personne peut dire : rien à lui demander. Pour la relire ou la corriger, ouvre-la dans Configuration › Salariés.",
+            adresse
+        )));
+    }
+    let envoyees = questions.clone();
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
-    let utiles = champs::utiles(NomDeFiche::Salarie)?;
-    let q = fq::questionnaire(code.texte(), &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
+    // L'exemple de la deduction forfaitaire : le meme dans le courriel date et dans le formulaire publie que le lien nomme.
+    let exemple = exemple_dfs()?;
+    let q = fq::a_recopier(&code, &questions, exemple.as_ref());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1108,12 +1153,13 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         let e = |s: &str| if echappe { html_echapper(s) } else { s.to_string() };
         vec![("virgule_prenom", e(&virgule_prenom)), ("compagnie", e(&compagnie)), ("signataire", e(&signataire))]
     };
-    let lien = mailto(&expediteur, &format!("Re: {}", sujet), &q);
+    let lien = fq::LienDeFiche { formulaire: fq::formulaire_publie(exemple.as_ref()).empreinte, questions, code: code.clone(), adresse: expediteur.clone(), objet: format!("Re: {}", sujet) }.ecrit();
     let mut texte = champs(false);
     texte.push(("questionnaire", q.clone()));
+    texte.push(("lien", lien.clone()));
     let mut html = champs(true);
     html.push(("questionnaire", html_echapper(&q)));
-    html.push(("mailto", html_echapper(&lien)));
+    html.push(("lien", html_echapper(&lien)));
     let message = Message {
         // Celui a qui sa fiche est demandee n'en a pas encore : la demande se retrouve par son code, au journal.
         pour: (),
@@ -1128,7 +1174,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         pieces: Vec::new(),
     };
     let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
-    let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
+    let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur, questions: Some(envoyees.clone()) };
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);
@@ -1150,6 +1196,8 @@ pub(crate) struct Attendue {
     pub quand: InstantOuJour,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
     pub envoyes: Vec<envoi::IdDeCourriel>,
+    /// Les questions que le courriel portait ; aucune liste pour une demande d'avant que le journal les garde.
+    pub questions: Option<Vec<fq::Question>>,
 }
 
 impl Attendue {
@@ -1179,6 +1227,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
             prenom: e.detail.prenom.clone(),
             quand: e.quand(),
             envoyes: e.detail.message.clone().into_iter().collect(),
+            questions: e.detail.questions.clone(),
         });
     }
     Ok(sortie)
@@ -1305,28 +1354,89 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let (lue, mut illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
+        // UNE REPONSE NE REMPLIT QUE CE QUI A ETE DEMANDE ET MANQUE ENCORE : les questions que le courriel portait (le
+        // journal les garde), parmi celles que sa fiche, telle qu'elle est (vide si elle n'en a pas), laisse a poser ;
+        // une ligne qui repond a une autre question ne s'ecrit pas, et la note le dit. Une demande d'avant que le
+        // journal garde ses questions n'a que les secondes.
+        let vide = droit::fiche::ChampsSalarie::default();
+        let mut posees = questions_pour(
+            ctx,
+            match trouvee {
+                Some((_, s)) => &s.champs,
+                None => &vide,
+            },
+        )?;
+        if let Some(envoyees) = &a.questions {
+            posees.retain(|q| envoyees.contains(q));
+        }
+        let mut reponse = fq::lire_reponse(&texte);
+        let non_demandees = reponse.ne_garder_que(&posees);
+        let mut lue = fq::fiche_depuis_reponses(&reponse).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // L'ACCORD PAR SILENCE : la question de la deduction forfaitaire lui a ete posee (le courriel date de la demande
+        // portait son information, `fq::a_recopier`) et sa reponse revient sans cette ligne : « Lorsque le travailleur
+        // salarié ou assimilé ne répond pas à cette consultation, son silence vaut accord » (BOSS, frais professionnels,
+        // § 2190 : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`, l. 2737). L'accord s'ecrit, le
+        // consentement de l'annee, et la note dit d'ou il vient. Sans reponse du tout, rien ne s'ecrit ; sans la preuve
+        // que le courriel portait la question (§ 2200 : l'employeur ne se prevaut pas d'un accord, meme tacite, sans
+        // prouver l'information), non plus.
+        let par_silence = a.questions.is_some() && posees.contains(&fq::Question::AccordDfs) && reponse.sans_ligne(fq::Question::AccordDfs);
+        if par_silence {
+            lue.fiche.deduction_forfaitaire_accord = Some(droit::fiche::AccordDfs::ConsentementAnnuel);
+        }
+        let mut illisible = lue.illisible;
         // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
-        // dans la note, avec ce que le questionnaire n'a pas lu.
-        let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // dans la note, avec ce que la reponse n'a pas dit lisiblement.
+        let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue.fiche).map_err(|m| m.reclasser(Classe::Illisible))?;
         illisible.extend(fautes.into_iter().map(|f| format!("{} : {}", f.case.nom(), f.phrase)));
         recue.email = Some(de.clone());
-        let nom = [recue.prenom_affichage.remplie(), recue.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
-        if nom.trim().is_empty() {
-            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
-            continue;
-        }
+        // Le nom de la personne : celui de la reponse, ou celui de sa fiche, si elle en a une (on ne lui a demande que ce
+        // qui y manquait).
+        let nom_de = |f: &droit::fiche::ChampsSalarie| [f.prenom_affichage.remplie(), f.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        let nom = match (nom_de(&recue), trouvee) {
+            (n, Some((_, s))) if n.trim().is_empty() => nom_de(&s.champs),
+            (n, _) => n,
+        };
         // La reponse, le courriel tel qu'il est arrive : une piece produite, rangee hors d'un mois.
         let sorte = documents::SorteDePieceProduite::FicheDeSalarie;
         let dossier = documents::DossierHorsDuMois::FichesDeSalaries.sous(&ctx.racine);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("{}{}.eml", sorte.prefixe(), code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
+        // UNE REPONSE SANS NOM LISIBLE (celle d'une demande d'une version d'avant, que la releve ne lit plus) : rien ne se
+        // cree, mais elle est arrivee : la demande se ferme sur elle, gardee comme piece, et l'incident ne revient pas a
+        // chaque releve. Une nouvelle demande se fait si besoin.
+        if nom.trim().is_empty() {
+            r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree, la demande est close : en refaire une si besoin.", code, de));
+            let retour = journal::RetourFiche {
+                code: code.clone(),
+                abandon: false,
+                salarie: None,
+                illisible: Some(illisible.clone()),
+                erreurs: None,
+                quand,
+                qui: qui.to_string(),
+                de: Some(de.clone()),
+                message: Some(ident.clone()),
+                reponse: "reponse sans nom lisible : rien n'est cree".to_string(),
+            };
+            journal::rattacher(&ctx.racine, |l| demande_de(l, code), journal::Revenu::Fiche(retour)).map_err(|e| e.reclasser(Classe::Disque))?;
+            continue;
+        }
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
-        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
+        if par_silence {
+            note.push_str(&format!(
+                " Accord à la déduction forfaitaire par son silence : la question et son information lui ont été envoyées par le courriel du {}, et sa réponse n'en dit rien (BOSS, § 2190).",
+                a.quand.jour().jj_mm_aaaa()
+            ));
+        }
+        if !non_demandees.is_empty() {
+            let dites: Vec<String> = non_demandees.iter().map(|q| fq::en_minuscule(q.declaree().libelle)).collect();
+            note.push_str(&format!(" Non demandé, non écrit : {}.", dites.join(", ")));
+        }
         let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
@@ -1380,9 +1490,10 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
 /// fabrique a la demande, cle comprise.
 const PERSONNES: [(&str, &str, &str); 4] = [("Marie", "Dorval", "2"), ("Pierre", "Bocage", "1"), ("Rose", "Cheri", "2"), ("Frederick", "Lemaitre", "1")];
 
-/// Le questionnaire que la personne fictive renvoie, rempli ligne a ligne dans les termes memes
-/// des questions, le code en dernier. `bouton` : (objet, corps) du lien du courriel de la demande, quand on l'a.
-fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, String)>) -> R<Vec<u8>> {
+/// La reponse que la personne fictive renvoie, dans la forme meme de la page (`fq::reponse`) : les questions que le lien
+/// du courriel de la demande nomme, quand on l'a (toutes, sinon), « aucun » compris (nom d'usage, nom de scene, numero
+/// Congés Spectacles, modele de bulletin) ; une question qu'elle ne sait pas, elle la laisse sans reponse.
+fn reponse_de_fiche(demande: &Attendue, compte: &str, lien: Option<&fq::LienDeFiche>) -> R<Vec<u8>> {
     let code = demande.code.texte();
     let somme: u32 = code.chars().map(|c| c as u32).sum();
     let (prenom, nom, sexe) = PERSONNES[somme as usize % PERSONNES.len()];
@@ -1394,25 +1505,36 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     let mois = 1 + somme % 12;
     let treize = format!("{}{:02}{:02}75056{:03}", sexe, an, mois, 1 + somme % 900);
     let cle = 97 - treize.parse::<u64>().map_err(|e| erreur(Classe::Illisible, e.to_string()))? % 97;
-    let reponses: HashMap<&str, String> = HashMap::from([
-        ("prenom", prenom),
-        ("nom", nom.to_string()),
-        ("naissance", format!("12/{:02}/19{:02}", mois, an)),
-        ("lieu", "Paris".to_string()),
-        ("pays", "France".to_string()),
-        ("nationalite", "française".to_string()),
-        ("nir", format!("{}{:02}", treize, cle)),
-        ("adresse", "12 rue du Temple".to_string()),
-        ("code_postal", "75003".to_string()),
-        ("commune", "Paris".to_string()),
-        // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
-        ("iban", "FR7630001007941234567890185".to_string()),
-    ]);
-    let utiles = champs::utiles(NomDeFiche::Salarie)?;
-    // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.contains(&c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
-    let sujet = match bouton {
-        Some(b) => b.0.clone(),
+    use fq::{Question as Q, Reponse};
+    let dite = |t: String| Some(Reponse::Dite(t));
+    let sait = |q: Q| -> Option<Reponse> {
+        match q {
+            Q::Prenom => dite(prenom.clone()),
+            Q::Nom => dite(nom.to_string()),
+            Q::NomUsage | Q::Pseudonyme | Q::CongesSpectacles | Q::ModeleBulletin => Some(Reponse::Aucun),
+            Q::Naissance => dite(format!("12/{:02}/19{:02}", mois, an)),
+            Q::LieuNaissance | Q::Commune => dite("Paris".to_string()),
+            Q::PaysNaissance => dite("France".to_string()),
+            Q::Nationalite => dite("française".to_string()),
+            Q::Nir => dite(format!("{}{:02}", treize, cle)),
+            Q::Adresse => dite("12 rue du Temple".to_string()),
+            Q::CodePostal => dite("75003".to_string()),
+            // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
+            Q::Iban => dite("FR7630001007941234567890185".to_string()),
+            Q::AccordDfs => dite("oui".to_string()),
+            // Avec un NIR, le sexe et le departement ne se demandent pas ; le BIC et la date anniversaire, elle ne les
+            // sait pas.
+            Q::Sexe | Q::DepartementNaissance | Q::Bic | Q::Anniversaire => None,
+        }
+    };
+    let questions = match lien {
+        Some(l) => l.questions.clone(),
+        None => fq::a_poser(&|_| true, &|_| true),
+    };
+    let dites: Vec<(Q, Reponse)> = questions.into_iter().filter_map(|q| sait(q).map(|r| (q, r))).collect();
+    let rempli = fq::reponse(&demande.code, &dites);
+    let sujet = match lien {
+        Some(l) => l.objet.clone(),
         None => "Re: fiche".to_string(),
     };
     envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code))
@@ -1436,8 +1558,8 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: st
         if !maintenant.depuis(partie).is_some_and(|d| d >= delai) {
             continue;
         }
-        let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
-        let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let lien = envois::simulation_courriels::lien_de_la_demande(&envoyes, &a.envoyes, fq::PAGE)?.map(|l| fq::LienDeFiche::lire(&l)).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
+        let brut = reponse_de_fiche(a, Courriel::compte(&boite), lien.as_ref()).map_err(|m| m.reclasser(Classe::Illisible))?;
         boite.repondre(a.code.texte(), brut);
     }
     Ok(boite)

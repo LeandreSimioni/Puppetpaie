@@ -171,6 +171,16 @@ pièce brute.
   source, s'ils en diffèrent ; un autre établissement, une notification illisible ou à plusieurs codes se disent, sans
   rien poser.
   `envois/src/organismes_simules.rs`, `crm_atmp` : la même pièce, jouée pour une compagnie fictive (annonce `taux_atmp`).
+- `envois/src/transport.rs`, `panne_dite` et `CeQuOnFaisait` (21/11/2026) : la phrase d'un statut d'erreur suit le
+  service appelé, d'après le tableau du guide v6.9, §9.1.1 « Dépôt et retours » (l. 5191-5232 : à l'authentification,
+  401 erreur d'authentification, 403 compte bloqué, 422 paramètres invalides ; à la consultation et au téléchargement,
+  401 jeton invalide ou déclarant pas encore inscrit, « attendre J+1 », 403 une DSN que ce compte n'a pas déposée ; au
+  dépôt, 422 l'avis de rejet). Le corps d'un 422 au dépôt est l'avis de rejet (§3.2.2, l. 1336-1365), dont les
+  messages d'anomalie (spécification VT2.2, l. 251-252) passent dans la phrase (`motifs_du_rejet`) ; sans motif lisible,
+  la phrase dit que l'avis « est téléchargeable à nouveau par les services de gestion des retours » (l. 1338-1340). Un
+  dépôt sans réponse claire (délai, réponse coupée, 5xx) dit que la déclaration a peut-être été reçue et d'attendre le
+  relevé : ce que le guide ne dit pas d'un dépôt sans réponse, c'est une **inférence**, de ce que l'accusé et l'avis se
+  relisent.
 
 **Un courrier réel de notification** (celui d'une compagnie, daté du 01/01/2026, dans `reference-privee/atmp/` du dépôt
 privé ; le public n'en garde que la forme, sans identifiant) confirme deux des inférences ci-dessus pour les **valeurs** :

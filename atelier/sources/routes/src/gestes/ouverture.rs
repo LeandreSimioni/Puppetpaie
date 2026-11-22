@@ -60,6 +60,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -811,6 +812,13 @@ fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Insta
 pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut apres_releve: Option<&mut dyn FnMut()>) -> R<Ouverture> {
     let debut = std::time::Instant::now();
     let mut r = Ouverture::commence();
+    // UNE VALEUR D'UNE FICHE A SAISIR DE NOUVEAU (`routes::redire`) : rien ne se releve, ne s'inscrit ni ne se sauvegarde
+    // tant que la compagnie n'a pas repondu ; l'ouverture rend la main sans rien ecrire, et le dit.
+    if let Some(phrase) = crate::redire::en_attente(ctx)? {
+        r.manquants.push(phrase);
+        r.duree = debut.elapsed();
+        return Ok(r);
+    }
     let mut sauvegarder = opt.sauvegarder;
     let mut retours = opt.retours;
     let mut signatures = opt.signatures;
@@ -1020,11 +1028,12 @@ pub(crate) fn acces_pose(racine: &Path, service: &str) -> R<bool> {
 }
 
 /// UN RELEVE QUI S'ARRETE (un delai depasse, une reponse coupee, un disque qui refuse) : la compagnie en lit la phrase
-/// (`quoi : phrase`) ; ce qu'il porte a part part chez l'editeur par le journal des incidents (`suites::noter_la_panne`),
-/// puisque l'ouverture ne refuse pas et qu'aucune route ne le notera.
+/// (`quoi : phrase`) ; ce qu'il porte a part part chez l'editeur par le journal des incidents, sauf une panne de passage
+/// que la veille retente (`suites::noter_le_releve_arrete`), puisque l'ouverture ne refuse pas et qu'aucune route ne le
+/// notera.
 fn noter_le_releve_refuse(ctx: &Contexte, r: &mut Ouverture, quoi: &str, e: &socle::echec::Echec) {
     r.incidents.push(format!("{} : {}", quoi, nomme(&ctx.racine, e)));
-    if let Err(n) = crate::gestes::suites::noter_la_panne(&ctx.racine, "ouverture", e, false) {
+    if let Err(n) = crate::gestes::suites::noter_le_releve_arrete(&ctx.racine, "ouverture", e) {
         r.incidents.push(format!("{} : le journal des incidents ne l'a pas noté : {}", quoi, n.phrase));
     }
 }

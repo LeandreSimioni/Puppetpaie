@@ -815,6 +815,10 @@ pub struct DetailFiche {
     pub message: Option<IdDeCourriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expediteur: Option<Courriel>,
+    /// Les questions que le courriel parti portait, avec leur information : la preuve de ce qui a ete demande (BOSS,
+    /// frais professionnels, § 2200 : l'employeur prouve l'information). Absentes d'une demande d'avant cette cle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<documents::fiche_questionnaire::Question>>,
 }
 
 /// CE QUI REVIENT D'UNE DEMANDE DE FICHE : la fiche recue (la cle de la fiche, illisible ou non, ses erreurs, le

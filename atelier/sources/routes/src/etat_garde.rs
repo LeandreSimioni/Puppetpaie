@@ -77,6 +77,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "lectures : la réponse de chaque route de l'écran du mois (saisie, etat-par-engagement, etat-du-mois…), perime",
         refus: &[ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -94,6 +95,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"patienter":400}"#,
         rend: "pret ; prêt : le mois à ouvrir et son écran, aujourdhui, les lectures de l'ouverture (etat, echeancier, rappels…), la veille, la mise à jour, les signalements ; sinon la phrase de ce que fait le moteur",
         refus: &[ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::LectureAvancee,
@@ -105,6 +107,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "engagements (une ligne chacun : ses carrés, ce qui est à refaire), non_actifs",
         refus: &[ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 160,
         ecran: ECRAN,
@@ -116,6 +119,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "les groupes de chaque étape : état, compte, phrase, échéance, et le geste d'un clic",
         refus: &[ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -188,6 +192,19 @@ impl From<CleEcrite> for Cle {
             CleEcrite::Mois(m) => Cle::Mois(m),
             CleEcrite::Nommee(CleNommee::Ouverture) => Cle::Ouverture,
             CleEcrite::Nommee(CleNommee::Tableau) => Cle::Tableau,
+        }
+    }
+}
+
+impl Cle {
+    /// LA ROUTE QUE CET ETAT SERT DANS LA FENETRE, sans passer par la porte : l'ecran d'un mois (`mois`), l'ouverture
+    /// (`demarrage`), le tableau de l'administrateur. Le barrage d'une valeur a saisir de nouveau la lit
+    /// (`service::contexte_de_la_route`).
+    fn route(self) -> Route {
+        match self {
+            Cle::Mois(_) => Route::Mois,
+            Cle::Ouverture => Route::Demarrage,
+            Cle::Tableau => Route::AdministrateurTableau,
         }
     }
 }
@@ -1059,7 +1076,7 @@ impl FileDesEtats {
                 if let Some((g, true)) = self.connu(cle, &jour) {
                     return Ok(g);
                 }
-                let ctx = crate::service::contexte(o)?;
+                let ctx = crate::service::contexte_de_la_route(o, cle.route())?;
                 garde_juste(o, &ctx, cle)
             }));
             // Un calcul tombe a pu laisser son fil sale (un registre ouvert, les nombres « fideles ») : le travail

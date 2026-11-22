@@ -46,14 +46,14 @@ pub fn mot_de_passe(racine: &Path) -> R<socle::secret::Secret> {
     let lu = coffre_de(racine).lire(SERVICE, CONSULTATION, false, None).map_err(|e| e.reclasser(Classe::Courriel))?;
     match lu {
         Some(m) if !m.devoiler().is_empty() => Ok(m.transforme(|t| t.replace(' ', ""))),
-        _ => Err(refus("Aucun mot de passe de boite courriel dans le coffre.\n  route coffre-poser, service courriel, compte adresse@...")),
+        _ => Err(refus("Aucun mot de passe de boîte courriel n'est posé : le poser avec l'adresse de la boîte, dans Configuration › Mots de passe.")),
     }
 }
 
 /// Le vrai client de la boite, adresse et mot de passe lus au coffre.
 pub fn client(racine: &Path) -> R<Client> {
     let Some(adresse) = adresse(racine)? else {
-        return Err(refus("Aucune adresse de boite courriel posee avec le mot de passe.\n  route coffre-poser, service courriel, compte adresse@..."));
+        return Err(refus("Aucune adresse de boîte courriel n'est posée avec le mot de passe : la poser dans Configuration › Mots de passe."));
     };
     Client::nouveau(racine, &adresse, &mot_de_passe(racine)?)
 }
@@ -76,14 +76,18 @@ pub struct Ouverture {
 /// La boite s'ouvre-t-elle avec ce qui est pose ? UNE tentative IMAP (`envois::courriel::verifier`).
 pub fn verifier(racine: &Path) -> R<Ouverture> {
     if adresse(racine)?.is_none() {
-        return Ok(Ouverture { ok: false, message: "Aucune adresse posee avec le mot de passe.".into(), conseil: Some("route coffre-poser, service courriel, compte adresse@...") });
+        return Ok(Ouverture { ok: false, message: "Aucune adresse n'est posée avec le mot de passe de la boîte.".into(), conseil: Some("Poser l'adresse de la boîte avec son mot de passe, dans Configuration › Mots de passe.") });
     }
-    match client(racine).and_then(envois::courriel::verifier) {
+    use envois::courriel::{RefusDeLaBoite, SorteDeRefusDeLaBoite};
+    match client(racine).map_err(RefusDeLaBoite::from).and_then(envois::courriel::verifier) {
         Ok(message) => Ok(Ouverture { ok: true, message, conseil: None }),
-        // La phrase est celle de la boite, en francais (`envois::courriel::traduire`) ; ce qu'elle porte a part (le texte du
-        // serveur ou du systeme) part chez l'editeur, puisque la verification ne refuse pas.
-        Err(e) => {
-            if let Err(n) = crate::incidents::depuis_exception(racine, e.classe, &e.phrase, None, "coffre-verifier", e.a_part.as_ref(), None) {
+        // La phrase est celle de la boite, en francais (`envois::courriel`) ; ce qu'elle porte a part (le texte du
+        // serveur ou du systeme) part chez l'editeur, puisque la verification ne refuse pas. Le mot de passe refuse est un
+        // refus d'usage ; une boite injoignable, le reseau : il ne dit rien du logiciel et ne se note pas.
+        Err(RefusDeLaBoite { echec: e, sorte }) => {
+            let nature = (sorte == SorteDeRefusDeLaBoite::MotDePasseRefuse).then_some(crate::incidents::REFUS);
+            let noter = sorte != SorteDeRefusDeLaBoite::Injoignable;
+            if let Err(n) = noter.then(|| crate::incidents::depuis_exception(racine, e.classe, &e.phrase, nature, "coffre-verifier", e.a_part.as_ref(), None)).transpose() {
                 crate::diagnostic::noter_moteur(&format!("La vérification de la boîte courriel ne s'est pas notée au journal des incidents : {}", n.phrase));
             }
             Ok(Ouverture { ok: false, message: socle::texte::lignes_du_texte(&e.phrase).first().map(|l| l.to_string()).into_iter().collect(), conseil: None })

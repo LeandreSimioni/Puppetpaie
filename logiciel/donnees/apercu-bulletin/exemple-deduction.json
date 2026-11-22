@@ -1,0 +1,9 @@
+{
+  "source": "L'exemple de la deduction forfaitaire specifique (`routes::fiches::exemple_dfs`) : le meme cachet de 150 EUR brut d'une meme artiste, sans la deduction (EXEMPLE-SANS) et avec (EXEMPLE-AVEC, artiste dramatique). Le jour (le 1er decembre de l'annee du dernier bareme livre) se pose dans le code, sur la carte et sur la ligne.",
+  "engagements": [
+    {"salarie": "EXEMPLE-SANS", "spectacle": "apercu", "nature": "cddu_spectacle",
+     "lignes": [{"forme": "unites", "rubrique": "cachet", "quantite": {"cachets": "1"}, "taux": "150", "lieu": null, "dates": [], "planning": []}]},
+    {"salarie": "EXEMPLE-AVEC", "spectacle": "apercu", "nature": "cddu_spectacle",
+     "lignes": [{"forme": "unites", "rubrique": "cachet", "quantite": {"cachets": "1"}, "taux": "150", "lieu": null, "dates": [], "planning": []}]}
+  ]
+}

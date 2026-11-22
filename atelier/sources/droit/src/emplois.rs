@@ -591,6 +591,20 @@ pub struct ChampsDuMetier {
     pub statut_categoriel_rc: StatutCategorielRc,
 }
 
+impl ChampsDuMetier {
+    /// Les cases de la fiche du salarie que le metier decide, son code compris : celles qu'il remplit quand on le
+    /// choisit, et que la boite « Ce qui change » dit en une ligne, celle du metier.
+    pub const CASES: [CaseSalarie; 7] = [
+        CaseSalarie::CodeEmploiFt,
+        CaseSalarie::EmploiAffichage,
+        CaseSalarie::Emploi,
+        CaseSalarie::PcsEse,
+        CaseSalarie::Statut,
+        CaseSalarie::StatutConventionnel,
+        CaseSalarie::StatutCategorielRc,
+    ];
+}
+
 /// Les sept champs declares pour le metier `m` (`emploi_affichage` compris), lu par `CodeEmploi::metier` (un metier cree
 /// comme un autre). `cadre` a `None` prend celui du metier dans la convention `idcc` (`Metier::cadre_par_defaut`) ;
 /// seule la cle gardee d'une carte ecrite avant le dit autrement (`saisie::Carte.cadre`).

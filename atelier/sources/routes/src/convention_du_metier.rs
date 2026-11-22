@@ -26,6 +26,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
         Refus { classe: Classe::Disque, corriger: "le fichier que la phrase dit illisible" },
         Refus { classe: Classe::FichierAbsent, corriger: "le fichier livré que la phrase dit manquant : le signaler au développeur" },
     ],
+    pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
     acte: Acte::Lit,
     phrase: 80,
     ecran: Ecran::Lecture,

@@ -77,8 +77,8 @@ function htmlPoses() {
 /* POUR DÉMARRER. Le moteur (`pour-demarrer`) rend d'un coup ce que la
  * compagnie peut remplir d'avance : chaque ligne, sa case (`case`), où elle
  * vit (`ou`), et pour qui (`qui`, une ligne d'un salarié ou d'un spectacle). Chaque case se
- * remplit sur place, dessinée comme dans sa fiche (`champDeFiche` ; celle d'un
- * spectacle, que la route rend, par le dessinateur commun : `caseDeRoute`) ; un seul
+ * remplit sur place, dessinée comme dans sa fiche, telle que la route la rend, par le
+ * dessinateur commun (`caseDeRoute`) ; un seul
  * « Enregistrer » écrit tout ce qui a changé (`enregistrer-fiche`, une
  * écriture par fiche) et joue les gestes que le moteur lui donne
  * (`a_enregistrer`), et la liste se relit. La page ne fait que la mise en
@@ -97,34 +97,15 @@ function caseDuManque(m) {
   const fiche = nom === "entreprise" ? conf.entreprise
     : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
   if (!fiche) return null;
-  const [racine, ...reste] = m.case.split(".");
-  // LA CASE D'UN SPECTACLE OU DE L'ENTREPRISE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) :
-  // le dessinateur commun la dessine, comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa
-  // place.
-  if (nom !== "salarie") return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
-  let c = conf.description[nom].find((x) => x.cle === racine);
-  if (!c || c.calcule || c.ecran === false) return null;
-  if (reste.length) {
-    // Une case de structure : la structure dit ses cases (`champs`).
-    const sous = c.champs && c.champs.find((s) => s.cle === reste.join("."));
-    if (!sous) return null;
-    c = { ...c, champs: [sous] };
-  }
-  // UNE VALEUR QUE LE MOTEUR PROPOSE (`propose` : le titre lu dans les bulletins de
-  // l'ancien logiciel) remplit la case ; la fiche, elle, garde ce qu'elle dit.
-  const affiche = m.propose ? { ...fiche, donnees: { ...fiche.donnees, [racine]: m.propose } } : fiche;
-  return { nom, fiche, affiche, c, racine };
+  const [racine] = m.case.split(".");
+  // LA CASE, la route la rend (`case_rendue`, sa valeur celle que le moteur propose) : le dessinateur commun la dessine,
+  // comme dans sa fiche (`caseDeRoute`, `modifiable`). Sans elle, la ligne mène à sa place.
+  return m.case_rendue ? { nom, fiche, rendue: m.case_rendue, racine } : null;
 }
 
-/* Le dessin de la case : celui de la fiche. Le métier se choisit dans la
- * liste des métiers, comme dans la fiche (`METIER_HTML`) : le code s'en lit. */
+/* Le dessin de la case : celui de la fiche. */
 function caseDemarrageHtml(k) {
-  if (k.rendue) return caseDeRoute(modifiable(k.rendue));
-  if (k.racine === "code_emploi_ft") {
-    return `<div class="champ"><label>Métier
-      <select data-cle="code_emploi_ft">${optionsMetiers(k.fiche.donnees.code_emploi_ft, "— choisir —")}</select></label></div>`;
-  }
-  return champDeFiche(k.c, k.affiche, k.nom).replace(/^(\s*<div class="champ[^"]*"[^>]*?)\s+hidden(?=[\s>])/, "$1");
+  return caseDeRoute(modifiable(k.rendue));
 }
 
 function htmlDemarrage(manques) {
@@ -184,14 +165,9 @@ function htmlDemarrage(manques) {
 }
 let DEMARRAGE_LISTES = 0;   // chaque liste peinte a son numéro : ses cases se lisent chez elle
 
-/* Les cases dessinées d'une liste : leur aide (une case d'un salarié), ce qu'une case de route fait seule (un
- * calendrier, une rangée). */
+/* Les cases dessinées d'une liste : ce qu'une case de route fait seule (un calendrier, une rangée). */
 function brancherDemarrage(conteneur) {
-  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => {
-    const sel = `[data-demarrage-liste="${li.closest(".demarrage-liste").dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"]`;
-    brancherAide(sel);
-    brancherLesCases(li);
-  });
+  conteneur.querySelectorAll(".demarrage-liste [data-demarrage]").forEach((li) => brancherLesCases(li));
 }
 
 /* LES GESTES QUE « ENREGISTRER » JOUE (`a_enregistrer`, du moteur), tels que leurs cases les disent : `{route,
@@ -225,7 +201,7 @@ function changementsDemarrage(liste) {
     const k = m && caseDuManque(m);
     if (!k) return;
     const sel = `[data-demarrage-liste="${liste.dataset.demarrageListe}"] [data-demarrage="${li.dataset.demarrage}"] .demarrage-case`;
-    const lu = k.rendue ? lireLesCases(document.querySelector(sel)) : lireFormulaire(sel, {});
+    const lu = lireLesCases(document.querySelector(sel));
     const v = lu[k.racine];
     const avant = k.fiche.donnees[k.racine];
     if (vide(v) || (v === false && !avant) || memes(v, avant)) return;
@@ -375,8 +351,7 @@ async function allerAuManque(champ, onglet, nom, cle) {
     if (sous && !sous.classList.contains("actif")) sous.click();
   }
   if (fiche === "organismes" || fiche === "coffre" || !champ) return;
-  const trouver = () => document.querySelector(`#config-formulaire [data-cle="${CSS.escape(champ)}"]:not([type="hidden"])`)
-      || document.querySelector(`#config-formulaire [data-sous-de="${CSS.escape(champ)}"]:not([type="hidden"])`);
+  const trouver = () => document.querySelector(`#config-formulaire .case[data-cle="${CSS.escape(champ)}"]`);
   let essais = 0;
   const viser = () => {
     // Une case de route porte sa clé sur son libellé : le curseur va dans sa case.
