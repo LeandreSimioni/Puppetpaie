@@ -101,15 +101,23 @@ async function ouvrirLaFicheRendue(fiche) {
   poserLaFiche(cases, r);
   let tour = 0;
   let minuterie = null;
+  // Les cases qui viennent de changer, de la plus ancienne à la plus récente, chacune au tour de sa dernière frappe :
+  // elles partent à chaque relecture, et s'oublient quand une réponse qui les portait se dessine.
+  const changees = new Map();
   const relire = async () => {
     const n = ++tour;
     let r2;
-    try { r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)) }); } catch (e) { dire(e.message, "erreur"); return; }
+    try {
+      r2 = await api("fiche", { ...charge, ...casesDeLaCharge(lireLesCases(cases)), changees: [...changees.keys()] });
+    } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== tour || !cases.isConnected) return;
+    for (const [k, t] of [...changees]) if (t <= n) changees.delete(k);
     form.querySelector("[data-fiche-erreurs]").innerHTML = encart(r2);
     poserLaFiche(cases, r2);
   };
-  const changer = () => {
+  const changer = (e) => {
+    const c = e.target.closest && e.target.closest(".case[data-cle]");
+    if (c) { changees.delete(c.dataset.cle); changees.set(c.dataset.cle, tour + 1); }
     marquerModifie();
     clearTimeout(minuterie);
     minuterie = setTimeout(relire, 400);
@@ -432,15 +440,14 @@ function valeurHistorique(champ, v) {
  * même pas pourquoi on mettrait un avertissement. » Un changement de fiche est
  * un geste normal : la boîte ne demande que la date d'effet — c'est elle qui
  * garde aux déclarations déjà faites leur ancienne valeur (fiches datées) —,
- * sur un ton neutre. Le métier se dit en UNE ligne : emploi, PCS-ESE et code
- * France Travail changent ensemble, ce sont trois écritures d'un seul fait.
+ * sur un ton neutre. Le métier se dit en UNE ligne : les cases que le métier
+ * décide changent ensemble (la route les marque : `metier`), ce sont plusieurs
+ * écritures d'un seul fait.
  * `usage` : la phrase que le moteur fait confirmer (le jour fixe des
  * intermittents) ; sans rien à dater, la boîte ne demande pas de date. */
-const CHAMPS_DU_METIER = ["emploi_affichage", "emploi", "pcs_ese", "code_emploi_ft", "statut"];
-
 function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage }) {
-  const metier = changements.filter((c) => CHAMPS_DU_METIER.includes(c.champ));
-  const autres = changements.filter((c) => !CHAMPS_DU_METIER.includes(c.champ));
+  const metier = changements.filter((c) => c.metier);
+  const autres = changements.filter((c) => !c.metier);
   // Une case à choix se dit par le libellé que la fiche montre (« Régisseur de théâtre »), pas par son code.
   const lisible = (c, cote) => {
     const v = c[cote + "_lisible"] ?? c[cote];

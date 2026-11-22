@@ -37,7 +37,7 @@ use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, ListesDuSalarie};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
@@ -60,8 +60,9 @@ pub const ROUTES: &[Fiche] = &[
             NOM_FICHE,
             Champ { nom: "cle", libelle: Affiche::new("Clé"), forme: Forme::Texte, sens: "la clé d'un salarié ou d'un spectacle enregistré ; absente pour une fiche neuve ou l'entreprise", avance: false },
             Champ { nom: "changements", libelle: Affiche::new("Cases saisies"), forme: Forme::Objet, sens: "[{case, valeur}, …] : ce qui est saisi, posé sur la fiche enregistrée comme à l'écriture (une case non nommée garde sa valeur, null la vide) ; absents : la fiche telle qu'elle est enregistrée", avance: false },
+            Champ { nom: "changees", libelle: Affiche::new("Cases qui viennent de changer"), forme: Forme::Objet, sens: "[case, …], de la plus ancienne à la plus récente : le métier qu'on vient de choisir remplit les cases qu'il décide, sauf celles changées après lui ; absentes : aucune", avance: true },
         ],
-        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
+        exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}],"changees":["titre"]}"#,
         rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; d'un salarié, salarie (sa clé, le geste vers ses documents) ou, neuf, invitation (la demande qui fait remplir sa fiche : son geste fiche-demander) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, bloc, libelle, forme, place, aide, valeur, prerempli, choix, parties, dit, renvoi, temps, anomalie) ; avance_ouvert (une case sous « Avancé » s'écarte du cas ordinaire) ; reecrites (les cases dont la route a récrit la saisie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
@@ -97,7 +98,7 @@ pub const ROUTES: &[Fiche] = &[
             Champ { nom: "forcer", libelle: Affiche::new("Écrire malgré une erreur de forme"), forme: Forme::OuiNon, sens: "vrai : écrire malgré une erreur de forme", avance: true },
         ],
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"},{"case":"numero_objet","valeur":"266Z00952012"}]}"#,
-        rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
+        rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, metier : une case que le métier décide ; depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
         // La reponse a la demande d'une valeur qui ne se lit plus (`crate::redire`).
         pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
@@ -122,7 +123,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
         charge: &[
             Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son courriel", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom"), forme: Forme::Texte, sens: "son prénom, pour lui écrire", avance: false },
+            Champ { nom: "prenom", libelle: Affiche::new("Prénom, pour dire bonjour"), forme: Forme::Texte, sens: "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain", avance: false },
         ],
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,

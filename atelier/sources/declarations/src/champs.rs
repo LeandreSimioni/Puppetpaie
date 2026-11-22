@@ -319,6 +319,9 @@ pub enum Avance {
     CasParticulier,
     /// Toujours remplie (ce que le metier remplit, un matricule) : sa valeur n'est jamais un ecart.
     ToujoursRemplie,
+    /// Une case ordinaire, rangee sous « Avancé » par decision (la date anniversaire des droits d'un intermittent) :
+    /// remplie ou non, elle n'est jamais un ecart.
+    Rangee,
     /// L'organisme que le code postal de la compagnie donne est le cas ordinaire (`declarations::urssaf`).
     DuCodePostal,
     /// Ces valeurs sont le cas ordinaire.
@@ -490,13 +493,13 @@ impl Champ {
     fn ecart_de(&self, a: &Avance, donnees: &impl FicheSaisie, du_code_postal: Option<&str>) -> bool {
         let mot = match comme_la_page(donnees.ecrite(self.cle)) {
             VueDeLaPage::Vide => return false,
-            VueDeLaPage::Structure => return donnees.dite(self.cle) && *a != Avance::ToujoursRemplie,
+            VueDeLaPage::Structure => return donnees.dite(self.cle) && !matches!(a, Avance::ToujoursRemplie | Avance::Rangee),
             VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
             VueDeLaPage::Mot(m) => m,
         };
         match a {
             Avance::CasParticulier => true,
-            Avance::ToujoursRemplie => false,
+            Avance::ToujoursRemplie | Avance::Rangee => false,
             Avance::DuCodePostal => Some(mot.as_str()) != du_code_postal,
             Avance::Ordinaire(valeurs) => !valeurs.iter().any(|v| v.eq_ignore_ascii_case(&mot)),
         }
@@ -1843,24 +1846,15 @@ fn croises_salarie(d: &ChampsSalarie) -> R<Vec<Constat>> {
         // SANS NIR, LA FICHE N'EST PAS INCOMPLETE : elle est celle d'un salarie
         // pas encore immatricule, sous son numero technique temporaire, qui
         // commence par le sexe.
-        let sexe_saisi: Option<&str> = d.sexe.code();
         // Le sexe qu'il faut alors, la DPAE et la DSN l'exigent a leur heure (`exige_par`, `exige_si` du champ `sexe`).
+        // Avec un NIR, elles prennent celui du NIR (`ChampsSalarie::sexe`) : la case ne s'ouvre pas, et rien ne la
+        // compare au NIR.
         if nir.is_none() {
             out.push(constat(
                 S::Nir,
                 Gravite::Avertissement,
                 "pas de NIR : ce salarie sera declare sous un numero technique temporaire, qui l'identifie dans la DSN mais n'ouvre aucun droit. Des que la caisse notifie le NIR ou le NIA, le saisir ici -- la premiere declaration suivante portera les deux, pour faire le lien.",
             ));
-        }
-        if let (Some(nir), Some(sexe)) = (&nir, sexe_saisi) {
-            let premier = tranche(nir, 0, 1);
-            if (premier == "1" || premier == "2") && sexe != premier {
-                out.push(constat(
-                    S::Sexe,
-                    Gravite::Erreur,
-                    format!("le NIR commence par {}, cette case dit {}. Les deux ne peuvent pas etre vrais ; c'est le NIR qui a ete declare.", premier, sexe),
-                ));
-            }
         }
         if let (Some(attendue), Some(cle)) = (nir.as_deref().and_then(cle_nir), &cle) {
             if *attendue != **cle {

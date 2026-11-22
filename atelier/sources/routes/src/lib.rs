@@ -400,8 +400,8 @@ pub fn est_une_ecriture(route: Route) -> bool {
     catalogue::FICHES.iter().any(|l| catalogue::dans(l, route).is_some_and(|f| f.acte != catalogue::Acte::Lit))
 }
 
-/// La charge d'une route qui ne prend rien : `{}`.
-#[derive(Debug, serde::Deserialize)]
+/// La charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge : `{}`.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SansCharge {}
 

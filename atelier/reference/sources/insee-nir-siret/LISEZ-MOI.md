@@ -20,12 +20,21 @@ Deux pages du schéma XML des identifiants de l'INSEE, relevées le 28/10/2026 p
   on parcourt les chiffres, on multiplie par 2 ceux de rang impair, on additionne **les chiffres** des résultats (12
   compte pour 1 + 2), et le contrôle est bon si la somme est un multiple de 10. Sur 14 chiffres, le rang impair compté
   depuis la gauche est le rang pair compté depuis la droite, ce que le moteur parcourt.
+- **Le lieu de naissance du NIR** (`nir.html`, l. 125 de la transcription) : en métropole, les deux chiffres du
+  département (code officiel géographique) puis la commune, la Corse en 2A, 2B depuis 1976 ; dans les DOM, les trois
+  chiffres du département ; à l'étranger, 99 puis le pays. Avec la liste des départements du COG
+  (`../insee-cog-2015-departements.zip` : 01 à 95, 2A, 2B) et la rubrique S21.G00.30.014 de la DSN (20 avant 1976, 96
+  avant 1968, 98 pour les TOM), c'est ce qui dit qu'un NIR annonce une naissance en France métropolitaine.
+  **Inférence** : 91 à 95 ne se lisent comme départements de métropole que pour une naissance à partir de 1968 (la DSN
+  date de 1968 le changement de 96 ; aucun texte déposé ne dit ce que 91 à 95 nommaient avant).
 - Non repris : l'exception que d'autres sources signalent pour les SIRET de La Poste (`356000000XXXXX`) ; le moteur n'en
   fait aucune.
 
 ## Où le moteur s'en sert
 
 `atelier/sources/declarations/src/champs.rs` : `cle_nir` (la clé attendue d'un NIR, refus d'un NIR dont la clé diffère).
+`atelier/sources/routes/src/fiches/rendue.rs` : `ne_en_metropole` (la route `fiche` propose France dans un pays de
+naissance vide, que seul « Enregistrer » écrit).
 `atelier/sources/droit/src/fiche.rs` : `Siren`, `Nic`, `Siret` (9, 5 et 14 chiffres, SIRET = SIREN + NIC) et leur clé
 de Luhn (`cle_juste`, dite à la saisie sans refuser la fiche). Tests : `la_cle_du_nir_et_celle_de_la_corse` (champs.rs),
 `le_siret_se_controle_par_luhn` (fiche.rs).

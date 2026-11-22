@@ -87,10 +87,18 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn entete(_ctx: &Contexte, _cle: Option<&Self::Cle>, _p: &Self::Plate) -> R<super::rendue::EnteteDeLaFiche> {
         Ok(super::rendue::EnteteDeLaFiche::aucun())
     }
-    /// CE QUE LA ROUTE `fiche` RECRIT DE LA SAISIE `liste`, posee sur la fiche `plate` (celle qu'on saisit, d'apres
-    /// `enregistree`), a chaque relecture ; rend les cases recrites, que la page montre telles que la route les rend, et
-    /// retire de `fautes` celles qu'elle a levees. Rien pour une fiche qui n'en recrit rien.
-    fn reprendre_la_saisie(_ctx: &Contexte, _liste: &socle::forme::Liste, _enregistree: &Self::Plate, _plate: &mut Self::Plate, _fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
+    /// CE QUE LA ROUTE `fiche` RECRIT DE LA SAISIE `liste`, posee sur la fiche `plate` (celle qu'on saisit), a chaque
+    /// relecture, d'apres les cases qui viennent de changer (`changees`, de la plus ancienne a la plus recente) ; rend
+    /// les cases recrites, que la page montre telles que la route les rend, et retire de `fautes` celles qu'elle a
+    /// levees. Rien pour une fiche qui n'en recrit rien.
+    fn reprendre_la_saisie(_ctx: &Contexte, _liste: &socle::forme::Liste, _changees: &[CaseDeFiche], _plate: &mut Self::Plate, _fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
+        Ok(Vec::new())
+    }
+    /// CE QUE LA ROUTE `fiche` PROPOSE DANS LES CASES VIDES de la fiche `plate` qu'elle rend, a l'ouverture comme a
+    /// chaque relecture : une valeur que la page montre dans la case, que la personne peut changer, et qui ne s'ecrit
+    /// qu'avec « Enregistrer » (aucune ecriture ne la pose d'elle-meme) ; rend les cases ou elle l'a posee. Rien pour une
+    /// fiche qui ne propose rien.
+    fn proposer(_plate: &mut Self::Plate) -> R<Vec<CaseDeFiche>> {
         Ok(Vec::new())
     }
     /// Les cases qui different d'une fiche a l'autre.
@@ -469,17 +477,6 @@ impl SorteDeFiche for FicheSalarieDatee {
                 }
             }
         }
-        // LE PAYS DE NAISSANCE AUSSI, dans une case vide : 99 est une naissance a l'etranger (meme texte) ; un autre
-        // departement, une naissance en France (INFERENCE : un departement de naissance est francais), « FR » de la
-        // table « Pays » de la DSN. La route `fiche` le propose avant (`rendue::completer_le_salarie`).
-        if p.pays_naissance.is_none() {
-            if p.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref())).is_some_and(|d| d != "99") {
-                match FauteDeCase::pose::<droit::fiche::ChangementSalarie>(S::PaysNaissance.into(), "FR") {
-                    Ok(ch) => FicheSalarieDatee::appliquer(p, ch),
-                    Err(f) => fautes.push(f),
-                }
-            }
-        }
         // Les initiales du contrat se lisent dans le nom declare, lui-meme derive du nom saisi.
         if p.initiales_contrat.remplie().is_none() {
             let lettres: String = p.nom.portee().into_iter().flat_map(str::chars).filter(|c| c.is_ascii_uppercase()).take(2).collect();
@@ -532,8 +529,11 @@ impl SorteDeFiche for FicheSalarieDatee {
     fn entete(ctx: &Contexte, cle: Option<&IdSalarie>, p: &ChampsSalarie) -> R<super::rendue::EnteteDeLaFiche> {
         super::rendue::entete_du_salarie(ctx, cle, p)
     }
-    fn reprendre_la_saisie(ctx: &Contexte, liste: &socle::forme::Liste, enregistree: &ChampsSalarie, plate: &mut ChampsSalarie, fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
-        super::rendue::reprendre_le_salarie(ctx, liste, enregistree, plate, fautes)
+    fn reprendre_la_saisie(ctx: &Contexte, liste: &socle::forme::Liste, changees: &[CaseDeFiche], plate: &mut ChampsSalarie, fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
+        super::rendue::reprendre_le_salarie(ctx, liste, changees, plate, fautes)
+    }
+    fn proposer(plate: &mut ChampsSalarie) -> R<Vec<CaseDeFiche>> {
+        super::rendue::proposer_au_salarie(plate)
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -1282,13 +1282,16 @@ fn cle_neuve<F: SorteDeFiche>(d: &F::Plate, existants: &F::Fichier, lire: fn(&st
 // ------------------------------------------------------------------ l'avertissement
 
 /// UNE VALEUR QUI CHANGE, telle que la boite « Ce qui change » la montre : la case, son libelle, avant et apres ; ce
-/// que la valeur sortante a deja servi a declarer ; la forme lisible d'une forme declaree.
+/// que la valeur sortante a deja servi a declarer ; la forme lisible d'une forme declaree ; si c'est une case que le
+/// metier decide (`metier` : la boite les dit en une ligne, celle du metier, `emplois::ChampsDuMetier::CASES`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChangementDit {
     champ: String,
     libelle: String,
     avant: Option<ValeurDeCase>,
     apres: Option<ValeurDeCase>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    metier: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     deja_declare: Option<DejaDeclare>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1300,7 +1303,7 @@ pub(crate) struct ChangementDit {
 impl ChangementDit {
     /// Un changement dit en mots (une ligne d'un autre etablissement).
     pub(crate) fn en_mots(champ: &str, libelle: String, avant: String, apres: String) -> ChangementDit {
-        ChangementDit { champ: champ.to_string(), libelle, avant: Some(ValeurDeCase::texte(avant)), apres: Some(ValeurDeCase::texte(apres)), deja_declare: None, avant_lisible: None, apres_lisible: None }
+        ChangementDit { champ: champ.to_string(), libelle, avant: Some(ValeurDeCase::texte(avant)), apres: Some(ValeurDeCase::texte(apres)), metier: false, deja_declare: None, avant_lisible: None, apres_lisible: None }
     }
 }
 
@@ -1355,7 +1358,8 @@ fn changements_dits<F: SorteDeFiche>(ctx: &Contexte, avant: &F::Plate, apres: &F
             Some(c) => c.libelle.clone(),
             None => k.to_string(),
         };
-        let mut dit = ChangementDit { champ: k.to_string(), libelle, avant: avant.valeur_ecrite(*k), apres: apres.valeur_ecrite(*k), deja_declare: None, avant_lisible: None, apres_lisible: None };
+        let metier = droit::emplois::ChampsDuMetier::CASES.iter().any(|m| CaseDeFiche::from(*m) == *k);
+        let mut dit = ChangementDit { champ: k.to_string(), libelle, avant: avant.valeur_ecrite(*k), apres: apres.valeur_ecrite(*k), metier, deja_declare: None, avant_lisible: None, apres_lisible: None };
         if let Some(c) = c.filter(|c| c.declare) {
             let valeur = avant.ecrite(*k);
             dit.deja_declare = Some(super::usages_declares(ctx, c.rubrique, valeur.mot())?);

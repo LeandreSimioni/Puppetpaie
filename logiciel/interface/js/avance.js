@@ -514,11 +514,17 @@ function fautesDesCases(cible, cases) {
 /* ------------------------------------------------ les champs d'une fiche de route */
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune sa case (`caseDeRoute`), ce que `valeurs` en dit d'abord, ses
- *  `choix` (ceux que le geste rend, sinon ceux de la fiche). `o.modifie` : la boîte modifie une chose qui existe
- *  (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
+ *  `choix` (ceux que le geste rend, sinon ceux de la fiche), et pour une case vide l'exemple que la fiche de la route
+ *  donne de ce champ (`o.exemple`, l'exemple de la fiche : une valeur simple). `o.modifie` : la boîte modifie une chose
+ *  qui existe (`modifiable`), et les champs que la fiche dit avancés (`avance`) se rangent sous « Avancé ». */
 function casesDesChamps(champs, valeurs, choix, o = {}) {
+  const exemple = (nom) => {
+    const x = o.exemple ? o.exemple[nom] : undefined;
+    return typeof x === "string" || typeof x === "number" ? String(x) : undefined;
+  };
   const une = (c) => {
-    const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix };
+    const d = { cle: c.nom, libelle: c.libelle, forme: c.forme, valeur: valeurs[c.nom], choix: choix[c.nom] || c.choix,
+      exemple: exemple(c.nom) };
     return caseDeRoute(o.modifie ? modifiable(d) : d);
   };
   const avance = (c) => !!o.modifie && !!c.avance;
@@ -550,7 +556,7 @@ function dessinerAvance(cible) {
   enveloppe.hidden = !routes.length;
   cible.innerHTML = routes.map((f, i) => `
     <div class="carte avance-route" data-i="${i}">
-      ${casesDesChamps(f.charge, {}, {})}
+      ${casesDesChamps(f.charge, {}, {}, { exemple: f.exemple })}
       <p><button class="secondaire" data-faire>${echapper(f.bouton)}</button></p>
       <div data-rendu></div>
     </div>`).join("");
@@ -589,7 +595,7 @@ function champsDuGeste(g) {
 /** Ce que la boîte d'un geste dit (`phrases`), puis ses cases ; `o.modifie` : voir `casesDesChamps`. */
 function casesDuGeste(g, o = {}) {
   return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
-    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, o)}`;
+    ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix, { ...o, exemple: CATALOGUE[g.route].exemple })}`;
 }
 
 /** Ce que les cases du geste disent, dans `bloc`, ajouté à sa charge ; `null` si aucune ne dit rien. */

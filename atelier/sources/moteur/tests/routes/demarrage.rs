@@ -41,7 +41,7 @@ fn par_champ<'a>(m: &'a [Value], champ: &str) -> Vec<&'a Value> {
 /// AUCUN MANQUE NE POINTE VERS UN CHAMP MASQUE, POUR AUCUNE CONVENTION (un bug qui a echappe : « Licence d'entrepreneur de spectacles —
 /// bloque la DSN » en 1790, alors que la case y etait repliee). Pour chaque convention du bareme 2026 (et la compagnie qui
 /// n'a pas encore dit la sienne), avec et sans permanents, avec et sans spectacle : tout ce que « Pour demarrer » demande
-/// dans la fiche Entreprise est une case que l'ecran montre (les cases que le moteur dit a la page, `montres` de la route `permanents`),
+/// dans la fiche Entreprise est une case que l'ecran montre (les cases que la route `fiche` rend a la page),
 /// et tout champ EXIGE (`exige_si`) est montre.
 ///
 /// La licence (`demarrage::licence_exigee`) : « est entrepreneur de spectacles vivants toute personne qui exerce une
