@@ -1,86 +1,4 @@
 {
-"questionnaire": "Prénom : \nNom de famille (de naissance) : \nDate de naissance (JJ/MM/AAAA) : \nCommune de naissance : \nPays de naissance : \nNationalité : \nNuméro de sécurité sociale (15 chiffres) : \nSans numéro de sécurité sociale : femme ou homme ? : \nAdresse (numéro et rue) : \nCode postal : \nCommune : \nNuméro Congés Spectacles : \nDate anniversaire de vos droits France Travail (JJ/MM/AAAA) : \nIBAN (le compte où verser le salaire, sur le RIB) : \nBIC (sur le même RIB) : \n\nCode (ne pas modifier) : FIC-ABCDEF",
-"sujet": "Ta fiche pour {compagnie}",
-"corps": "Bonjour{virgule_prenom},\n\nPour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.\n\nLe plus simple : appuie sur le bouton « Remplir ma fiche » de ce message. Une réponse s'ouvre avec les questions ; écris chaque réponse après les deux-points, puis envoie-la. Une question dont tu n'as pas la réponse reste vide.\n\nSi ta messagerie n'affiche pas le bouton, réponds simplement à ce message en recopiant les lignes ci-dessous, avec tes réponses :\n\n{questionnaire}\n\nCes informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.\n\nBien à toi,\n{signataire}\n{compagnie}\n",
-"html": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton : une réponse s'ouvre avec les questions. Écris chaque réponse après les deux-points, puis envoie-la. Une question dont tu n'as pas la réponse reste vide.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en recopiant ces lignes avec tes réponses :</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n",
-"alphabet": "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
-"questions": [
-[
-"prenom",
-"Prénom",
-"prenom_affichage"
-],
-[
-"nom",
-"Nom de famille (de naissance)",
-"nom_affichage"
-],
-[
-"naissance",
-"Date de naissance (JJ/MM/AAAA)",
-"date_naissance"
-],
-[
-"lieu",
-"Commune de naissance",
-"lieu_naissance_affichage"
-],
-[
-"pays",
-"Pays de naissance",
-"pays_naissance"
-],
-[
-"nationalite",
-"Nationalité",
-"code_nationalite_dsn"
-],
-[
-"nir",
-"Numéro de sécurité sociale (15 chiffres)",
-"nir"
-],
-[
-"sexe",
-"Sans numéro de sécurité sociale : femme ou homme ?",
-"sexe"
-],
-[
-"adresse",
-"Adresse (numéro et rue)",
-"adresse_affichage"
-],
-[
-"code_postal",
-"Code postal",
-"code_postal"
-],
-[
-"commune",
-"Commune",
-"commune_affichage"
-],
-[
-"conges",
-"Numéro Congés Spectacles",
-"num_conges_spectacles"
-],
-[
-"anniversaire",
-"Date anniversaire de vos droits France Travail (JJ/MM/AAAA)",
-"anniversaire_droits"
-],
-[
-"iban",
-"IBAN (le compte où verser le salaire, sur le RIB)",
-"banque"
-],
-[
-"bic",
-"BIC (sur le même RIB)",
-"banque"
-]
-],
 "messages": [
 {
 "nom": "r-bonne-b",
@@ -89,35 +7,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-bonne-lf",
@@ -126,35 +16,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-apple-crlf",
@@ -163,35 +25,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-apple-lf",
@@ -200,35 +34,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-avant",
@@ -237,10 +43,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-from-crlf",
@@ -249,35 +52,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-from-lf",
@@ -286,35 +61,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-gmail-crlf",
@@ -323,35 +70,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-gmail-lf",
@@ -360,35 +79,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-outlook-en-crlf",
@@ -397,35 +88,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": true,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": true
 },
 {
 "nom": "r-citation-outlook-en-lf",
@@ -434,35 +97,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-outlook-fr-crlf",
@@ -471,35 +106,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-citation-outlook-fr-lf",
@@ -508,35 +115,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-31-fevrier",
@@ -545,35 +124,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-absente",
@@ -582,35 +133,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-ancien",
@@ -619,35 +142,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "1999-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-annee-2",
@@ -656,35 +151,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-asie",
@@ -693,35 +160,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T16:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-bascule-ete",
@@ -730,35 +169,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-25T02:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-bascule-ete2",
@@ -767,35 +178,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-25T02:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-bascule-hiver",
@@ -804,35 +187,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-03-29T01:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-bascule-hiver2",
@@ -841,35 +196,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-03-29T03:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-commentaire",
@@ -878,35 +205,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-commentaire-seul",
@@ -915,35 +214,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-deux-dates",
@@ -952,35 +223,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-edt",
@@ -989,35 +232,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T02:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-fuseau-demi",
@@ -1026,35 +241,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T09:00:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-fuseau-grand",
@@ -1063,35 +250,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-fuseau-nom-inconnu",
@@ -1100,35 +259,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T12:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-futur",
@@ -1137,35 +268,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2099-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-gmt",
@@ -1174,35 +277,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-heure-24",
@@ -1211,35 +286,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-illisible",
@@ -1248,35 +295,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-iso",
@@ -1285,35 +304,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-jour-faux",
@@ -1322,35 +313,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-minuit",
@@ -1359,35 +322,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T00:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-minuscules",
@@ -1396,35 +331,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-moins-zero",
@@ -1433,35 +340,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T12:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-mois-fr",
@@ -1470,35 +349,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-nz",
@@ -1507,35 +358,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T21:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-paris-hiver",
@@ -1544,35 +367,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-01-05T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-pst",
@@ -1581,35 +376,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T06:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-sans-fuseau",
@@ -1618,35 +385,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-sans-jour",
@@ -1655,35 +394,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-sans-secondes",
@@ -1692,35 +403,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-seconde-60",
@@ -1729,35 +412,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-usa",
@@ -1766,35 +421,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T06:30:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-utc",
@@ -1803,35 +430,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-vide",
@@ -1840,35 +439,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "MAINTENANT",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-date-z",
@@ -1877,35 +448,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-alt-html-texte",
@@ -1914,35 +457,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Autre",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Autre",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-alt-texte-html",
@@ -1951,35 +466,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-alt-texte-vide-html",
@@ -1988,14 +475,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé Nom de famille : Dubois Date de naissance : 14/03/1991 Commune de naissance : Lyon Pays de naissance : France Nationalité : française Adresse : 5 rue des Lilas Code postal : 69003 Commune : Lyon Code : FIC-ABCDEF"
-},
-"fiche": {
-"prenom_affichage": "Zoé Nom de famille : Dubois Date de naissance : 14/03/1991 Commune de naissance : Lyon Pays de naissance : France Nationalité : française Adresse : 5 rue des Lilas Code postal : 69003 Commune : Lyon Code : FIC-ABCDEF"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-b64",
@@ -2004,35 +484,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-charset-faux-utf8",
@@ -2041,29 +493,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "fran�aise",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR"
-},
-"illisible": [
-"nationalité : « fran�aise »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-format-deux-points-pleine-largeur",
@@ -2072,10 +502,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-entetes-pliés",
@@ -2084,35 +511,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-flowed",
@@ -2121,35 +520,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-html-div",
@@ -2158,18 +529,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"code_postal": "69003"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"code_postal": "69003"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-html-entites",
@@ -2178,18 +538,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoë",
-"nom": "D&B",
-"adresse": "3 rue «x» &unknown; A A &"
-},
-"fiche": {
-"prenom_affichage": "Zoë",
-"nom_affichage": "D&B",
-"adresse_affichage": "3 rue «x» &unknown; A A &"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-html-gmail-quote",
@@ -2198,18 +547,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"code_postal": "69003"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"code_postal": "69003"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-html-seul",
@@ -2218,31 +556,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-imbrique",
@@ -2251,35 +565,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-latin1",
@@ -2288,35 +574,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-latin1-qp",
@@ -2325,35 +583,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-message-id-notre",
@@ -2362,35 +592,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<demande-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-message-id-notre-espaces",
@@ -2399,35 +601,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<demande-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-message-id-sans-chevrons",
@@ -2436,35 +610,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "demande-1@exemple.invalid",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-mixed-pj",
@@ -2473,35 +619,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-mixed-pj-texte",
@@ -2510,35 +628,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-nbsp",
@@ -2547,35 +637,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-nul",
@@ -2584,35 +646,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Ly\u0000on",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Ly\u0000on"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Ly\u0000on",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Ly\u0000on",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-qp",
@@ -2621,35 +655,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-qp-lignes-molles",
@@ -2658,18 +664,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois Martin",
-"adresse": "5 rue des Lilas"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois Martin",
-"adresse_affichage": "5 rue des Lilas"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-related",
@@ -2678,14 +673,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé Nom de famille : Dubois Date de naissance : 14/03/1991 Commune de naissance : Lyon Pays de naissance : France Nationalité : française Adresse : 5 rue des Lilas Code postal : 69003 Commune : Lyon Code : FIC-ABCDEF"
-},
-"fiche": {
-"prenom_affichage": "Zoé Nom de famille : Dubois Date de naissance : 14/03/1991 Commune de naissance : Lyon Pays de naissance : France Nationalité : française Adresse : 5 rue des Lilas Code postal : 69003 Commune : Lyon Code : FIC-ABCDEF"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-rfc822",
@@ -2694,10 +682,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-sans-corps",
@@ -2706,10 +691,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-sans-message-id",
@@ -2718,35 +700,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": null,
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-sans-type",
@@ -2755,10 +709,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-sujet-encode",
@@ -2767,35 +718,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-tabulations",
@@ -2804,35 +727,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-utf16",
@@ -2841,35 +736,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-format-windows-1252",
@@ -2878,35 +745,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue « Lilas » – œ €",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue « Lilas » – œ €",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-affichage",
@@ -2915,35 +754,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-affichage-accent",
@@ -2952,35 +763,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-autre",
@@ -2989,35 +772,7 @@
 "adresse": "intrus@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-chevrons-seuls",
@@ -3026,35 +781,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-commentaire",
@@ -3063,35 +790,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-from-vide",
@@ -3100,35 +799,7 @@
 "adresse": null,
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-guillemets",
@@ -3137,35 +808,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-majuscules",
@@ -3174,35 +817,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-from-sans-from",
@@ -3211,35 +826,7 @@
 "adresse": null,
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-adresse-numero",
@@ -3248,16 +835,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"adresse": "5 rue des Lilas"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"adresse_affichage": "5 rue des Lilas"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-anniv",
@@ -3266,16 +844,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"anniversaire": "01/02/2020"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"anniversaire_droits": "2020-02-01"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-anniv-long",
@@ -3284,16 +853,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"anniversaire": "01/02/2020"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"anniversaire_droits": "2020-02-01"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-chevron-espace",
@@ -3302,16 +862,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-code",
@@ -3320,14 +871,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-commune-de",
@@ -3336,16 +880,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"lieu": "Lyon"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"lieu_naissance_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-commune-longue",
@@ -3354,16 +889,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"lieu": "Nice"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"lieu_naissance_affichage": "Nice"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-conges",
@@ -3372,16 +898,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"conges": "AB 12"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"num_conges_spectacles": "AB12"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-conges-sans-accent",
@@ -3390,16 +907,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"conges": "AB 12"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"num_conges_spectacles": "AB12"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-cp",
@@ -3408,16 +916,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"code_postal": "69003"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"code_postal": "69003"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-date-court",
@@ -3426,14 +925,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-date-tronque",
@@ -3442,16 +934,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"naissance": "14/03/1991"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"date_naissance": "1991-03-14"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-deux-points-colles",
@@ -3460,16 +943,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-etoiles",
@@ -3478,16 +952,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-majuscules",
@@ -3496,16 +961,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "ZOÉ",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "ZOÉ",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-naissance-court",
@@ -3514,14 +970,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nfd",
@@ -3530,16 +979,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nir-court",
@@ -3548,14 +988,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nom-court",
@@ -3564,14 +997,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nom-de-famille",
@@ -3580,14 +1006,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Dubois"
-},
-"fiche": {
-"nom_affichage": "Dubois"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nom-fam",
@@ -3596,14 +1015,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-nom-naissance",
@@ -3612,14 +1024,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Dubois"
-},
-"fiche": {
-"nom_affichage": "Dubois"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-num-secu",
@@ -3628,19 +1033,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"nir": "291036912345678"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"nir": "2910369123456",
-"nir_cle": "78",
-"pays_naissance": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-num-secu-sociale",
@@ -3649,19 +1042,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"nir": "291036912345678"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"nir": "2910369123456",
-"nir_cle": "78",
-"pays_naissance": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-numero-ligne",
@@ -3670,16 +1051,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-pays-court",
@@ -3688,14 +1060,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-pays-tronque",
@@ -3704,16 +1069,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"pays": "Belgique"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"pays_naissance": "BE"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-pleine-largeur",
@@ -3722,14 +1078,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-prenom-usuel",
@@ -3738,16 +1087,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zozo",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zozo",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-prenoms",
@@ -3756,14 +1096,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-puce",
@@ -3772,16 +1105,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-sans-num",
@@ -3790,16 +1114,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin",
-"sexe": "femme"
-},
-"fiche": {
-"nom_affichage": "Martin",
-"sexe": "2"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-tiret",
@@ -3808,16 +1123,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-valeur-etoilee",
@@ -3826,16 +1132,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Martin"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libelle-ville",
@@ -3844,14 +1141,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Martin"
-},
-"fiche": {
-"nom_affichage": "Martin"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libres",
@@ -3860,35 +1150,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"nationalite": "française",
-"nir": "291036912345653",
-"sexe": "homme",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-libres-sans-nir",
@@ -3897,31 +1159,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"nationalite": "française",
-"sexe": "homme",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"sexe": "1",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-chevron-vide-crlf",
@@ -3930,10 +1168,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-chevron-vide-lf",
@@ -3942,10 +1177,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-de-espace-crlf",
@@ -3954,10 +1186,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-de-espace-lf",
@@ -3966,10 +1195,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-de-sans-espace-crlf",
@@ -3978,10 +1204,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-de-sans-espace-lf",
@@ -3990,10 +1213,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-espace-chevron-crlf",
@@ -4002,35 +1222,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-espace-chevron-lf",
@@ -4039,35 +1231,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-from-minuscule-crlf",
@@ -4076,35 +1240,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-from-minuscule-lf",
@@ -4113,35 +1249,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-court-crlf",
@@ -4150,35 +1258,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-court-lf",
@@ -4187,35 +1267,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-long-crlf",
@@ -4224,10 +1276,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-long-lf",
@@ -4236,10 +1285,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-trop-long-crlf",
@@ -4248,35 +1294,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-le-trop-long-lf",
@@ -4285,35 +1303,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-on-wrote-crlf",
@@ -4322,35 +1312,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-on-wrote-espace-crlf",
@@ -4359,35 +1321,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-on-wrote-espace-lf",
@@ -4396,35 +1330,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-on-wrote-lf",
@@ -4433,35 +1339,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-signature-crlf",
@@ -4470,35 +1348,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-signature-lf",
@@ -4507,35 +1357,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-5-crlf",
@@ -4544,35 +1366,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-5-lf",
@@ -4581,35 +1375,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-fin-espace-crlf",
@@ -4618,35 +1384,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-fin-espace-lf",
@@ -4655,35 +1393,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-texte-crlf",
@@ -4692,10 +1402,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": true,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": true
 },
 {
 "nom": "r-ligne-tirets-texte-crlf-crlf",
@@ -4704,10 +1411,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": true,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": true
 },
 {
 "nom": "r-ligne-tirets-texte-crlf-lf",
@@ -4716,10 +1420,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets-texte-lf",
@@ -4728,10 +1429,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets3-crlf",
@@ -4740,35 +1438,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets3-lf",
@@ -4777,35 +1447,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-ligne-tirets6-crlf",
@@ -4814,10 +1456,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": true,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": true
 },
 {
 "nom": "r-ligne-tirets6-lf",
@@ -4826,10 +1465,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {},
-"fiche": {},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-accents-nfd",
@@ -4838,35 +1474,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-anniversaire",
@@ -4875,37 +1483,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon",
-"anniversaire": "01/02/2020"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"anniversaire_droits": "2020-02-01",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-anniversaire-faux",
@@ -4914,38 +1492,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon",
-"anniversaire": "demain"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"anniversaire droits : « demain »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-conges",
@@ -4954,37 +1501,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon",
-"conges": "AB 123 456"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"num_conges_spectacles": "AB123456",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-cp-4",
@@ -4993,36 +1510,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "6900",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"code postal : « 6900 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-cp-arabe",
@@ -5031,35 +1519,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "٦٩٠٠٣",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "٦٩٠٠٣",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-cp-espace",
@@ -5068,35 +1528,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69 003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-cp-lettres",
@@ -5105,36 +1537,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "2A004",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"code postal : « 2A004 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-annee-0",
@@ -5143,36 +1546,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "01/01/0000",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"date naissance : « 01/01/0000 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-annee-9999",
@@ -5181,35 +1555,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "31/12/9999",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "9999-12-31",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-chiffres-arabes",
@@ -5218,35 +1564,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "٤/٣/١٩٩١",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-espaces",
@@ -5255,35 +1573,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "4 3 1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-exposant",
@@ -5292,36 +1582,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "1²/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"date naissance : « 1²/03/1991 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-impossible",
@@ -5330,36 +1591,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "31/02/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"date naissance : « 31/02/1991 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-iso",
@@ -5368,35 +1600,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "1991-3-4",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-iso-arabe",
@@ -5405,35 +1609,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "١٩٩١-٠٣-٠٤",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-melange",
@@ -5442,35 +1618,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "4/٣/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-pleine-largeur",
@@ -5479,35 +1627,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "１４/０３/１９９１",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-points",
@@ -5516,35 +1636,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "4.3.1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-texte",
@@ -5553,36 +1645,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "le 3 mai",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"date naissance : « le 3 mai »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-tirets",
@@ -5591,35 +1654,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "04-03-1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-04",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-date-vide-iso",
@@ -5628,35 +1663,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "0001-1-1",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "0001-01-01",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-deux-points-dans-reponse",
@@ -5665,35 +1672,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "Bât. B : 5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "Bât. B : 5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-espaces",
@@ -5702,35 +1681,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-gras",
@@ -5739,35 +1690,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-longue",
@@ -5776,35 +1699,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-majuscules",
@@ -5813,35 +1708,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "ZOÉ",
-"nom": "DU BOIS-MARTIN",
-"naissance": "14/03/1991",
-"lieu": "SAINT-ÉTIENNE",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "12 RUE DE L'ÉGLISE",
-"code_postal": "69003",
-"commune": "LYON"
-},
-"fiche": {
-"prenom_affichage": "ZOÉ",
-"nom_affichage": "DU BOIS-MARTIN",
-"lieu_naissance_affichage": "SAINT-ÉTIENNE",
-"adresse_affichage": "12 RUE DE L'ÉGLISE",
-"commune_affichage": "LYON",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nationalite-code",
@@ -5850,35 +1717,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "CH",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "04",
-"pays_nationalite": "CH",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nationalite-inconnue",
@@ -5887,35 +1726,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "martienne",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"nationalité : « martienne »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nationalite-masc",
@@ -5924,35 +1735,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "Français",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nationalite-pays",
@@ -5961,35 +1744,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "Belgique",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "02",
-"pays_nationalite": "BE",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-13",
@@ -5998,34 +1753,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "2910369123456",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-14",
@@ -6034,34 +1762,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "29103691234567",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"numéro de sécurité sociale : « 29103691234567 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-arabe",
@@ -6070,34 +1771,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "٢٩١٠٣٦٩١٢٣٤٥٦٧٨",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"numéro de sécurité sociale : « ٢٩١٠٣٦٩١٢٣٤٥٦٧٨ » (« ٧٨ » n'est pas la clé d'un numéro de sécurité sociale : deux chiffres, de 01 à 97, ceux qui suivent les 13 autres (INSEE))"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-corse",
@@ -6106,34 +1780,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291032A123456",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"numéro de sécurité sociale : « 291032A123456 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-espaces",
@@ -6142,35 +1789,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "2 91 03 69 123 456 78",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "78",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-exposant",
@@ -6179,34 +1798,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "2910369123456²8",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"numéro de sécurité sociale : « 2910369123456²8 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-lettres",
@@ -6215,34 +1807,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "2A1036912345678",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"numéro de sécurité sociale : « 2A1036912345678 »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nir-points",
@@ -6251,35 +1816,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "2.91.03.69.123.456-78",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "78",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-nom-seul",
@@ -6288,33 +1825,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-accent",
@@ -6323,35 +1834,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "Grèce",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "GR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-apostrophe",
@@ -6360,35 +1843,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "Côte d’Ivoire",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "CI",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-code",
@@ -6397,35 +1852,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "be",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "BE",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-code-inconnu",
@@ -6434,37 +1861,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "zz",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"pays de naissance : « zz »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-inconnu",
@@ -6473,37 +1870,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "Atlantide",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": [
-"pays de naissance : « Atlantide »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-majuscules",
@@ -6512,35 +1879,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "ALLEMAGNE",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "DE",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-tiret",
@@ -6549,35 +1888,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "Pays Bas",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "NL",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-pays-uk",
@@ -6586,35 +1897,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "Royaume-Uni",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "GB",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-prenom-seul",
@@ -6623,33 +1906,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-avec-nir",
@@ -6658,36 +1915,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"nir": "291036912345653",
-"sexe": "homme",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"nir": "2910369123456",
-"nir_cle": "53",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR",
-"departement_naissance": "69"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-f",
@@ -6696,33 +1924,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"sexe": "F",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"sexe": "2",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-femme",
@@ -6731,33 +1933,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"sexe": "femme",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"sexe": "2",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-homme",
@@ -6766,33 +1942,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"sexe": "homme",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"sexe": "1",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-illisible",
@@ -6801,34 +1951,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"sexe": "peu importe",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": [
-"sexe : « peu importe »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-m",
@@ -6837,33 +1960,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"sexe": "M",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"sexe": "1",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-sexe-vide",
@@ -6872,31 +1969,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "14/03/1991",
-"lieu": "Lyon",
-"pays": "France",
-"nationalite": "française",
-"adresse": "5 rue des Lilas",
-"code_postal": "69003",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"date_naissance": "1991-03-14",
-"code_postal": "69003",
-"pays_naissance": "FR",
-"code_nationalite_dsn": "01",
-"pays_nationalite": "FR"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-mal-tout-faux",
@@ -6905,39 +1978,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"naissance": "x",
-"lieu": "Lyon",
-"pays": "p",
-"nationalite": "n",
-"nir": "z",
-"sexe": "s",
-"adresse": "5 rue des Lilas",
-"code_postal": "y",
-"commune": "Lyon",
-"conges": "c",
-"anniversaire": "a"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"lieu_naissance_affichage": "Lyon",
-"adresse_affichage": "5 rue des Lilas",
-"commune_affichage": "Lyon",
-"num_conges_spectacles": "c"
-},
-"illisible": [
-"date naissance : « x »",
-"anniversaire droits : « a »",
-"code postal : « y »",
-"numéro de sécurité sociale : « z »",
-"sexe : « s »",
-"pays de naissance : « p »",
-"nationalité : « n »"
-]
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-cr",
@@ -6946,18 +1987,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-ff",
@@ -6966,18 +1996,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-fs",
@@ -6986,18 +2005,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-gs",
@@ -7006,18 +2014,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-nel",
@@ -7026,18 +2023,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-rs",
@@ -7046,18 +2032,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-u2028",
@@ -7066,18 +2041,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-u2029",
@@ -7086,18 +2050,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 },
 {
 "nom": "r-sep-vt",
@@ -7106,18 +2059,7 @@
 "adresse": "zoe@exemple.invalid",
 "message_id": "<rep-1@exemple.invalid>",
 "date": "2026-10-03T10:15:00",
-"defaut_tirets": false,
-"reponses": {
-"prenom": "Zoé",
-"nom": "Dubois",
-"commune": "Lyon"
-},
-"fiche": {
-"prenom_affichage": "Zoé",
-"nom_affichage": "Dubois",
-"commune_affichage": "Lyon"
-},
-"illisible": []
+"defaut_tirets": false
 }
 ],
 "dates": [
