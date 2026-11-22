@@ -454,6 +454,6 @@ pub fn numero_de_processus() -> u32 {
     if aleas_fixes_ici() {
         1
     } else {
-        std::process::id()
+        crate::processus::numero()
     }
 }

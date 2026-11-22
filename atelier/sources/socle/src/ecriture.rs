@@ -671,7 +671,7 @@ pub fn provisoire(chemin: &Path) -> std::path::PathBuf {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let nom: String = chemin.file_name().iter().map(|n| n.to_string_lossy()).collect();
-    chemin.with_file_name(format!("{}.{}-{}.tmp", nom, std::process::id(), n))
+    chemin.with_file_name(format!("{}.{}-{}.tmp", nom, crate::processus::numero(), n))
 }
 
 

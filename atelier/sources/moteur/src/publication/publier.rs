@@ -504,7 +504,7 @@ mod tests {
     /// L'archive d'un logiciel, signee par une cle neuve, se verifie avec sa cle publique et se deballe a l'identique.
     #[test]
     fn archive_signee_deballee() {
-        let base = std::env::temp_dir().join(format!("puppetpaie-maj-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("puppetpaie-maj-{}", socle::processus::numero()));
         let code = base.join("logiciel");
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(code.join("donnees")).unwrap();

@@ -630,7 +630,7 @@ mod tests {
     /// que la compagnie avait dit.
     #[test]
     fn le_118_rendu_s_ecrit_dans_les_effectifs_de_la_compagnie() {
-        let racine = std::env::temp_dir().join(format!("envois-118-{}", std::process::id()));
+        let racine = std::env::temp_dir().join(format!("envois-118-{}", socle::processus::numero()));
         let _ = std::fs::remove_dir_all(&racine);
         std::fs::create_dir_all(racine.join(crate::retours::RETOURS)).unwrap();
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();

@@ -29,6 +29,7 @@ pub(crate) mod num;
 pub mod paris;
 pub mod pays;
 pub mod piece;
+pub mod processus;
 pub mod secret;
 pub mod nfkd_ascii;
 #[cfg(windows)]

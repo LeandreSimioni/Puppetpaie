@@ -550,7 +550,7 @@ mod tests {
 
     /// Un dossier `import/` qui ne porte que `lot.zip`, fait des entrees `entrees`, trie.
     fn trier_le_zip(test: &str, entrees: &[&str]) -> (std::path::PathBuf, Tri) {
-        let d = std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", test, std::process::id()));
+        let d = std::env::temp_dir().join(format!("puppetpaie-tri-{}-{}", test, socle::processus::numero()));
         if d.exists() {
             std::fs::remove_dir_all(&d).unwrap();
         }

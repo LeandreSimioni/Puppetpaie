@@ -1053,7 +1053,7 @@ pub fn route(ctx: &Contexte, charge: &Charge) -> R<Rendu> {
 pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static N: AtomicUsize = AtomicUsize::new(0);
-    let r = std::env::temp_dir().join(format!("paie-horloge-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    let r = std::env::temp_dir().join(format!("paie-horloge-{}-{}", socle::processus::numero(), N.fetch_add(1, Ordering::SeqCst)));
     let _ = std::fs::remove_dir_all(&r);
     std::fs::create_dir_all(r.join(socle::fichiers::CONFIG)).unwrap();
     for f in ["entreprise.json", "salaries.json", "spectacles.json"] {
