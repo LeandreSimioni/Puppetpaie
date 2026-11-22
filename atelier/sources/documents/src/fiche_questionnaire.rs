@@ -295,14 +295,17 @@ impl Question {
             // professionnels, § 2190 : l'employeur informe chaque salarie « de ce dispositif et de ses conséquences sur la
             // validation de ses droits aux assurances sociales », « par tout moyen donnant date certaine », « Une réponse
             // d'accord ou de refus doit être retourné par le salarié » : `atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`,
-            // l. 2730-2737). Le courriel de reponse, date, porte la date certaine. Ne se pose qu'a un salarie dont la
+            // l. 2730-2737). L'aide n'en dit que cela : la deduction se fait sur l'assiette des cotisations (§ 2210, « la
+            // réintégration dans l'assiette des cotisations […] du montant de la déduction », l. 2742-2744), et elle a des
+            // « conséquences sur la validation de ses droits aux assurances sociales » (§ 2190). Le courriel de la
+            // demande, qui porte cette aide (`a_recopier`), et celui de la reponse, dates, portent la date certaine. Ne se pose qu'a un salarie dont la
             // profession y ouvre droit, quand la compagnie l'exerce salarie par salarie (`si_entreprise` de sa ligne).
             Question::AccordDfs => QuestionDeclaree {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
-                    "Ton métier y ouvre droit : une part de ton salaire ne compte plus dans le calcul de tes cotisations. Ton net est un peu plus haut, mais cela peut réduire les droits que tes cotisations te valent aux assurances sociales. Si tu changes d'avis plus tard, ce sera pour le 1er janvier suivant.",
+                    "Ton métier y ouvre droit : une part de ton salaire est déduite de la base de tes cotisations, ce qui peut réduire les droits qu'elles te valent aux assurances sociales.",
                     F::Choix(vec![("oui", "J'accepte la déduction"), ("non", "Je refuse la déduction")]),
                     CaseSalarie::DeductionForfaitaireAccord,
                 )
