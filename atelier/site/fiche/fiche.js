@@ -59,10 +59,10 @@
     return d.getFullYear() === a && d.getMonth() === mo - 1 && d.getDate() === j;
   }
 
-  // La clé du NIR : 97 moins le reste du NIR par 97 (la Corse, 2A et 2B, se compte 19 et 18).
+  // La clé du NIR : 97 moins le reste du NIR par 97 (la Corse, 2A et 2B, se compte 19 et 18). Même règle que la relève.
   function nirJuste(t) {
     var n = chiffres(t).toUpperCase();
-    if (!/^[12]\d{4}(\d{2}|2A|2B)\d{6}\d{2}$/.test(n)) return false;
+    if (!/^\d{5}(\d{2}|2A|2B)\d{8}$/.test(n)) return false;
     var treize = n.slice(0, 13).replace("2A", "19").replace("2B", "18");
     return 97 - reste97(treize) === +n.slice(13);
   }
@@ -88,7 +88,9 @@
 
   var lien = null;
   var formulaire = null;
-  var cases = {}; // par clé : { question, bloc, champ, aucun, choix, faute }
+  // Par clé : { question, bloc, champ, aucun, choix, faute }. Sans prototype : une clé du lien comme « constructor »
+  // n'y trouve rien.
+  var cases = Object.create(null);
 
   function element(nom, classe, texte) {
     var e = document.createElement(nom);
@@ -252,7 +254,7 @@
   // Appelée par formulaires/<empreinte>.js quand il se charge.
   window.ficheFormulaire = function (f) {
     formulaire = f;
-    var parCle = {};
+    var parCle = Object.create(null);
     f.questions.forEach(function (q) { parCle[q.cle] = q; });
     var inconnues = lien.questions.filter(function (cle) { return !parCle[cle]; });
     if (inconnues.length || !lien.questions.length) {
@@ -270,6 +272,11 @@
     montrerLesConditions();
     $("chapeau").textContent = "Ta réponse ira à " + lien.adresse + ". Cette page ne garde rien : elle prépare le courriel, que tu envoies toi-même, de ta messagerie.";
     $("formulaire").classList.remove("cache");
+    // L'adresse où part la réponse se dit sur les deux boutons : un lien forgé vers une autre adresse se voit.
+    $("envoyer").textContent = "Envoyer à " + lien.adresse;
+    $("copier").textContent = "Copier ma réponse, à envoyer à " + lien.adresse;
+    // La touche Entrée dans une case ne soumet rien : seuls les boutons agissent.
+    $("formulaire").addEventListener("submit", function (e) { e.preventDefault(); });
     $("envoyer").addEventListener("click", envoyer);
     $("copier").addEventListener("click", copier);
   };
