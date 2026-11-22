@@ -26,6 +26,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "idcc, a_saisir, mois, contrats (une ligne par contrat attendu : libellé, organisme, periode, et les temps de ce qui en est saisi : avant, à venir, toutes ses valeurs datées), encarts",
         refus: &[OPERATION, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -40,6 +41,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11","contrats":{"prevoyance_permanents":{"libelle":"PREVOYANCE","organisme":"P0983"},"sante_permanents":{"libelle":"SANTE","organisme":"P0983"}}}"#,
         rend: "ce que organismes-contrats rend",
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "la référence du contrat que la phrase nomme ; rien n'est écrit" }, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -102,7 +104,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }
-            datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+            datees.push(droit::fiche::Datee::dite(version.depuis, valeur, version.note.clone()));
         }
     }
     let mut out = Vec::new();

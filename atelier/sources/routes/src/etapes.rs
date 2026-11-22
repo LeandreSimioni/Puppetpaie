@@ -60,6 +60,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     exemple: "{}",
     rend: "mois (celui à ouvrir), courant, reste (les étapes qui restent)",
     refus: &[crate::catalogue::ILLISIBLE],
+    pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
     acte: Acte::Lit,
     phrase: 0,
     ecran: ECRAN,

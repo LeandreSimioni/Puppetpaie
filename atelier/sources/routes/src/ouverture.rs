@@ -148,6 +148,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "configuration (les fiches vérifiées ; pour_payer : ce qui manque encore pour payer, ou null), historique (les mois), les listes où l'on choisit, les référentiels (niveaux_sante : null tant que le barème ne se compose pas), auteur (phrase, nom, adresse)",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -159,6 +160,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "entreprise, salaries, spectacles, leurs anomalies, l'identité, la description des cases, pour_payer (ce qui manque encore pour payer, ou null)",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -170,6 +172,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "la version installée et ce que la mise à jour en sait, phrase",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Auto(Place::Fiches, Affiche::new("Dire la version")),
@@ -181,6 +184,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "les courriels joués (à qui, quoi, quand)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "rien : seulement dans une compagnie fictive" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::LectureAvancee,
@@ -281,7 +285,7 @@ pub(crate) fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::J
     }
     impl droit::fiche::VoirListe for Toutes {
         fn liste<T: socle::ecriture::EcritureDeCase>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
-            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee { depuis: e.depuis, valeur: ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), note: e.note.clone() })).collect();
+            let lue = liste.iter().map(|e| Ok(droit::fiche::Datee::dite(e.depuis, ValeurDeCase::de(&socle::ecriture::CaseEcrite(&e.valeur)), e.note.clone()))).collect();
             self.listes.push((cle, lue));
         }
     }
@@ -334,7 +338,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
                 if datees.last().is_some_and(|d| d.valeur == valeur) {
                     continue;
                 }
-                datees.push(droit::fiche::Datee { depuis: version.depuis, valeur, note: version.note.clone() });
+                datees.push(droit::fiche::Datee::dite(version.depuis, valeur, version.note.clone()));
             }
         }
     }

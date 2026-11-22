@@ -60,6 +60,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "ce que chaque passage a fait (sauvegarde, retours, signatures, fiches, filet), et les incidents en phrases ; ne refuse jamais",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -811,6 +812,13 @@ fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Insta
 pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut apres_releve: Option<&mut dyn FnMut()>) -> R<Ouverture> {
     let debut = std::time::Instant::now();
     let mut r = Ouverture::commence();
+    // UNE VALEUR D'UNE FICHE A SAISIR DE NOUVEAU (`routes::redire`) : rien ne se releve, ne s'inscrit ni ne se sauvegarde
+    // tant que la compagnie n'a pas repondu ; l'ouverture rend la main sans rien ecrire, et le dit.
+    if let Some(phrase) = crate::redire::en_attente(ctx)? {
+        r.manquants.push(phrase);
+        r.duree = debut.elapsed();
+        return Ok(r);
+    }
     let mut sauvegarder = opt.sauvegarder;
     let mut retours = opt.retours;
     let mut signatures = opt.signatures;

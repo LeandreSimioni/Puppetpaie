@@ -701,7 +701,7 @@ pub(crate) fn lire_fichier<F: SorteDeFiche>(ctx: &Contexte) -> R<F::Fichier> {
     if !chemin.exists() {
         return Ok(F::Fichier::default());
     }
-    droit::fiche::lire_fichier(&chemin, F::FICHIER.texte())
+    droit::fiche::lire_fiche_posee(&chemin, F::NOM)
 }
 
 /// Le fichier ecrit, l'ancien sauvegarde.
@@ -1031,7 +1031,7 @@ fn changements_a_dater<F: SorteDeFiche>(avant: &F::Plate, apres: &F::Plate, cles
 /// precede garde l'ancienne valeur (`changements_a_dater`). Une case vide qu'on remplit prend sa valeur de tout temps,
 /// `depuis` ou non ; une valeur `premiere_datee` (le taux de PAS recu) vaut a partir de `depuis` meme dans une case vide :
 /// avant lui, la fiche ne disait rien. Les notes s'ecrivent telles quelles. Les cases `a_part` s'ecrivent a part. Rend
-/// les cases ecrites.
+/// les cases ecrites. Une valeur illisible ne se redit pas ici : par `redire` seulement.
 pub(crate) fn ecrire_datee<F: SorteDeFiche>(
     brute: &mut F,
     avant: &F::Plate,
@@ -1477,6 +1477,19 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     if !fautes.is_empty() {
         return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
     }
+    // PENDANT LA DEMANDE (`crate::redire`), la saisie ne sert qu'a y repondre : chaque changement redit une case
+    // illisible de cette fiche, sinon elle refuse comme le barrage, et aucun ecrivain du moteur ne tourne.
+    if let Some(attente) = crate::redire::refus_de_la_demande(ctx)? {
+        let illisibles = match F::brute(ctx, cle.as_ref()) {
+            Some(b) => droit::fiche::cases_illisibles(b),
+            None => Vec::new(),
+        };
+        if !changements.0.iter().all(|ch| illisibles.contains(&F::case_changee(ch))) {
+            return Err(attente);
+        }
+        let note = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+        return redire::<F>(ctx, cle, changements.0, note, forcer == Some(true), confirme == Some(true));
+    }
     let p = preparer::<F>(ctx, cle.as_ref(), |plate| {
         changements
             .0
@@ -1514,6 +1527,88 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Cle>) -> R<
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };
     let phrase = socle::phrase!("{}", std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" "));
     Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase })
+}
+
+/// LA REPONSE A LA DEMANDE D'UNE VALEUR QUI NE SE LIT PLUS (`crate::redire`) : chaque changement redit une case de la
+/// fiche `cle` qui porte une valeur illisible. Quelle que soit la case (celles qui s'ecrivent a part comprises : le taux
+/// AT/MP, les autres etablissements), sa premiere valeur illisible (`droit::fiche::premiere_illisible`) est remplacee,
+/// a son `depuis` (aucun : de tout temps), par la reponse : la valeur saisie, ou vide expres. Elle ne demande aucune date
+/// d'effet (elle a la sienne : `depuis` de la charge ne compte pas), et ce que le moteur inscrit apres une saisie
+/// (`SorteDeFiche::apres_ecriture`) ne tourne pas : rien d'autre ne s'ecrit pendant la demande.
+///
+/// La case se juge sur la fiche telle que l'ecran la montre, ou elle vaut ce que l'entree illisible lui faisait valoir :
+/// vide ; seules se jugent les cases que la reponse ecrit, jamais les autres cases de la fiche. Ce qui se derive de la
+/// case la suit, a la meme date, si l'entree redite est sa derniere ; sinon rien d'autre ne bouge. Une reponse apres laquelle cette entree est encore illisible refuse : elle ne rend jamais « Enregistré ».
+fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec<F::Changement>, note: Option<&str>, forcer: bool, confirme: bool) -> R<FicheEnregistree<F::Cle>> {
+    // Enregistrer sans rien changer n'est jamais une faute : rien ne s'ecrit.
+    if changements.is_empty() {
+        return Ok(FicheEnregistree::Ecrite { cle, ecrits: Vec::new(), enregistre_a: None, enregistre_dit: None, phrase: socle::texte::Phrase::fixe("Rien n'a changé : rien n'est écrit.") });
+    }
+    let absente = || refus(format!("La fiche {} {} n'existe pas : rien n'est écrit.", F::NOM, cle.as_ref().map(F::cle_dite).into_iter().collect::<String>()));
+    let montree = F::montree(ctx, cle.as_ref()).ok_or_else(absente)?;
+    let mut contenu = lire_fichier::<F>(ctx)?;
+    let brute = F::existante(&mut contenu, cle.as_ref()).ok_or_else(absente)?;
+    let mut ecrits: Vec<CaseDeFiche> = Vec::new();
+    let mut usages: Vec<String> = Vec::new();
+    let mut anomalies: Vec<Anomalie> = Vec::new();
+    for ch in changements {
+        let k = F::case_changee(&ch);
+        let libelle = crate::redire::libelle_dit(F::NOM, k)?;
+        let Some(sienne) = droit::fiche::premiere_illisible(&*brute, k) else {
+            return Err(refus(format!("Rien à saisir de nouveau pour {} : sa valeur se lit. Rien n'a été enregistré.", libelle)));
+        };
+        let vide = F::changement(&F::Plate::default(), k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)))?;
+        let mut avant = montree.clone();
+        F::appliquer(&mut avant, vide);
+        let mut apres = avant.clone();
+        F::appliquer(&mut apres, ch);
+        F::ajuster(&avant, &mut apres);
+        let mut fautes = F::reconnaitre(ctx, &avant, &mut apres)?;
+        F::refuser(ctx, cle.as_ref(), &avant, &apres)?;
+        fautes.extend(F::deriver(&mut apres, true, &|c| c == k)?);
+        if !fautes.is_empty() {
+            return Err(fiche_refusee(F::NOM, &champs::des_fautes(F::NOM, &fautes)?)?);
+        }
+        // CE QUI SE DERIVE DE LA CASE (le nom declare du nom saisi, l'adresse…) la suit a sa date quand l'entree redite est
+        // la derniere de la case : rien ne vient apres elle. Une entree plus ancienne ne touche pas la derivee, qu'une
+        // valeur plus recente de la case a faite : elle ne bouge pas.
+        let derniere = brute.depuis(k).last() == Some(&sienne);
+        let derivees = F::differentes(&avant, &apres).into_iter().filter(|c| derniere && *c != k);
+        let cases: Vec<CaseDeFiche> = std::iter::once(k).chain(derivees).collect();
+        // Seules se jugent les cases que la reponse ecrit : une erreur qu'une autre case porte deja (forcee, ou posee « A
+        // COMPLETER » par l'import) n'est pas ce qu'on saisit, et ne bloque pas la reponse.
+        let jugees: Vec<Anomalie> = champs::verifier_fiche(F::a_juger(&apres))?.into_iter().filter(|a| cases.contains(&a.champ)).collect();
+        if (if forcer { Forcer::Forme } else { Forcer::Rien }).refuse(&jugees) {
+            return Err(fiche_refusee(F::NOM, &jugees)?);
+        }
+        anomalies.extend(jugees);
+        usages.extend(F::usage(ctx, &avant, &apres)?);
+        for c in &cases {
+            let ch = F::changement(&apres, *c).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", c, F::NOM)))?;
+            FicheDatee::changer(brute, ch, sienne.as_ref(), false, note);
+        }
+        if droit::fiche::premiere_illisible(&*brute, k) == Some(sienne) {
+            return Err(refus(format!(
+                "Après cette réponse, {} ne se lit toujours pas : rien n'a été enregistré. Le dire au développeur par « Un problème, une idée ? ».",
+                libelle
+            )));
+        }
+        for c in cases {
+            if !ecrits.contains(&c) {
+                ecrits.push(c);
+            }
+        }
+    }
+    if !usages.is_empty() && !confirme {
+        let a = Avertissement { changements: Vec::new(), depuis: None, pourquoi: None, usage: Some(usages.join(" ")) };
+        return Ok(FicheEnregistree::Avertie { phrases: avertissement_en_phrases(&a), avertissement: a, phrase: socle::texte::Phrase::fixe("À confirmer : rien n'est écrit.") });
+    }
+    ecrire_fichier::<F>(ctx, &contenu)?;
+    let en_erreur = anomalies.iter().any(|a| a.gravite == Gravite::Erreur);
+    let enregistre_a = Some(socle::temps::secondes().a_la_seconde());
+    let enregistre_dit = enregistre_a.map(|a| format!("enregistré à {}", socle::paris::ecrit::heure_minute(a, ":")));
+    let phrase = socle::texte::Phrase::fixe(if en_erreur { "Enregistré malgré les erreurs." } else { "Enregistré." });
+    Ok(FicheEnregistree::Ecrite { cle, ecrits, enregistre_a, enregistre_dit, phrase })
 }
 
 // ------------------------------------------------------------------ la route verifier-fiche

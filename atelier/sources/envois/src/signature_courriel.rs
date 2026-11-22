@@ -72,7 +72,7 @@ pub fn du_poste(racine: &Path) -> R<Option<Signature>> {
         return Ok(None);
     }
     // La fiche telle qu'elle vaut aujourd'hui, lue par sa forme : le fichier est date.
-    let ent = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&p, droit::contexte::ENTREPRISE.texte())?.au(&droit::contexte::jour_reel());
+    let ent = droit::fiche::lire_fiche_posee::<droit::fiche::FicheEntrepriseDatee>(&p, droit::fiche::NomDeFiche::Entreprise)?.au(&droit::contexte::jour_reel());
     de_la_fiche(&ent)
 }
 

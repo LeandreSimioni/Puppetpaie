@@ -35,7 +35,7 @@ const ANNEE: Champ = Champ { nom: "annee", libelle: Affiche::new("Année"), form
 
 /// Une lecture sans charge de l'Historique ou des Exports.
 const fn lecture(route: Route, geste: &'static str, rend: &'static str) -> Fiche {
-    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN }
+    Fiche { route, geste, charge: &[], exemple: "{}", rend, refus: &[OPERATION], acte: Acte::Lit, phrase: 0, ecran: ECRAN, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Ou ces routes se voient a l'ecran (une place par module).
@@ -52,6 +52,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "le logiciel retenu",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -67,6 +68,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2025,"vire_le":"2026-11-02","montant":"1.12"}"#,
         rend: "la régularisation notée : année, mois, montant, calculé, vire_le",
         refus: &[OPERATION, FORME, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Exports),
@@ -84,6 +86,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"etat":"livre-de-paie","mois":"2026-11","regroupement":"salarie","format":"csv","apercu":true}"#,
         rend: "le tableau, ou le fichier écrit",
         refus: &[OPERATION, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -103,6 +106,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::PreuveInsuffisante, corriger: "le mot de passe du logiciel, tapé par un humain au moment de l'envoi ; rien n'est écrit" },
             OPERATION,
         ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
         ecran: ECRAN,
@@ -114,6 +118,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "salaries (chacun : nom, fenetre, lignes [quoi, valeur], phrase, notes, colonnes du tableau), phrase (ce que vaut ce compte)",
         refus: &[OPERATION, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -132,6 +137,7 @@ pub const ROUTES: &[Fiche] = &[
             Refus { classe: Classe::BoiteAbsente, corriger: "poser la boîte courriel (Configuration, Mots de passe)" },
             Refus { classe: Classe::Refuse, corriger: "la date du virement fait, ou l'année que la phrase nomme ; rien n'est parti" },
         ],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Exports),

@@ -123,8 +123,9 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
     };
     let mut dit = Vec::new();
     let fiche = crate::fiches::lire_fichier::<FicheEntrepriseDatee>(ctx)?;
-    // Le siege.
-    let siege = fiche.taux_atmp.as_deref().and_then(derniere);
+    // Le siege. Une case qui porte encore une valeur illisible ne s'ecrit pas : seule sa reponse la remplace
+    // (`routes::redire`) ; l'arrete ne s'y inscrit qu'une fois toutes ses valeurs redites.
+    let siege = fiche.taux_atmp.as_deref().filter(|l| !droit::fiche::porte_un_illisible(Some(l))).and_then(derniere);
     let alsace = bareme::en_alsace_moselle(ctx.entreprise_au(&janvier).code_postal.portee());
     if let Some(t) = siege.and_then(|l| de_l_arrete(&l, alsace, false, janvier)) {
         let phrase = format!("Taux AT/MP {}, siège : {}.", an, ligne_dite(&t).dit);
@@ -134,6 +135,9 @@ fn inscrire_selon(ctx: &Contexte, an: Annee, socle: droit::forme_bareme::Pile) -
     }
     // Les autres etablissements : la derniere liste, si elle ne change pas apres ce 1er janvier ; un etablissement ouvert
     // dans l'annee, a son ouverture.
+    if droit::fiche::porte_un_illisible(fiche.etablissements.as_deref()) {
+        return Ok(dit);
+    }
     let Some(liste) = fiche.etablissements.as_deref().and_then(|l| droit::fiche::valeurs_datees(l).last().copied()).filter(|v| v.depuis.is_none_or(|d| d <= janvier)).and_then(|v| v.valeur.clone()) else {
         return Ok(dit);
     };
@@ -173,7 +177,7 @@ fn case_d_un_etablissement(versions: &[&droit::fiche::Datee<Vec<Etablissement>>]
     for v in versions {
         for t in v.valeur.iter().flatten().filter(|x| x.nic.dite() == nic).filter_map(|x| x.taux_atmp.clone()).filter(|t| !t.est_vide()) {
             if !out.iter().any(|d| d.valeur.as_ref() == Some(&t)) {
-                out.push(droit::fiche::Datee { depuis: t.depuis, valeur: Some(t), note: v.note.clone() });
+                out.push(droit::fiche::Datee::dite(t.depuis, Some(t), v.note.clone()));
             }
         }
     }

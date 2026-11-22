@@ -56,6 +56,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     exemple: r#"{"salaries":["FULLER"],"mois":"2026-11","apercu":true}"#,
     rend: "les fichiers écrits (ou à écrire, en aperçu), par salarié et par sorte",
     refus: &[OPERATION, MANQUE, ILLISIBLE, FORME],
+    pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
     acte: Acte::Ecrit,
     phrase: 0,
     ecran: ECRAN,

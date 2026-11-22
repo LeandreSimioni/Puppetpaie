@@ -38,7 +38,7 @@ use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_remplir, CaseDeLaFiche};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, FicheEnCours, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
@@ -66,6 +66,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"}]}"#,
         rend: "titre, sous_titre et note de l'en-tête, cout (où lire le coût de l'année dans la route couts : cote, de ; null sans coût) et annuler (« Annuler » ramène à la liste) ; erreurs_titre et erreurs_note (l'encart ; erreurs_titre null sans erreur) ; cases (les cases ouvertes, dans l'ordre : cle, libelle, forme, place, aide, valeur, choix, temps, anomalie) ; historique (chaque case datée : libelle, valeurs en mots) ; phrase",
         refus: &[MANQUE, FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -81,6 +82,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"entreprise","donnees":{}}"#,
         rend: "montres (les cases que la fiche montre au jour de l'écran)",
         refus: &[FORME],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -95,6 +97,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "franchise (la question et ses plafonds), champs à montrer, consequence en clair, complet, due, part_taxee",
         refus: &[FORME, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -106,6 +109,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"spectacle","donnees":{"titre":"Les Bancs publics"}}"#,
         rend: "anomalies (case, gravité, message), declare (ce que la DSN dirait), suggestions",
         refus: &[MANQUE, FORME, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: ECRAN,
@@ -125,6 +129,8 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"spectacle","changements":[{"case":"titre","valeur":"Les Bancs publics"},{"case":"numero_objet","valeur":"266Z00952012"}]}"#,
         rend: "une valeur existante change, ou un choix se confirme : avertissement (changements, depuis proposé, pourquoi ; usage, la phrase à confirmer) et ses phrases, rien n'est écrit ; sinon : cle, ecrits (les champs changés), enregistre_a (vide si rien n'a changé), phrase",
         refus: &[REFUSEE, OPERATION, MANQUE, FORME, ILLISIBLE],
+        // La reponse a la demande d'une valeur qui ne se lit plus (`crate::redire`).
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Servie,
         acte: Acte::Ecrit,
         phrase: 120,
         ecran: ECRAN,
@@ -136,6 +142,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"nom":"spectacle","cle":"le-banc-des-menteurs","actif":true}"#,
         rend: ETAT_REND,
         refus: &[OPERATION, MANQUE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -151,6 +158,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,
         rend: "code (celui de la demande), adresse",
         refus: &[PREUVE, BOITE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Engage,
         phrase: 0,
         ecran: ECRAN,
@@ -162,6 +170,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "attendues, recues (les fiches écrites), incidents",
         refus: &[BOITE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -173,6 +182,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"adresse":"isadora@exemple.invalid"}"#,
         rend: "adresse",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: ECRAN,
@@ -184,6 +194,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "phrase et explication du taux de l'année, avant, maintenant et a_venir (code, taux, date, provenance, phrase), le risque tel que l'arrêté l'écrit, la date proposée pour une ligne neuve, les codes que le socle connaît, les mêmes choses pour chaque autre établissement",
         refus: &[FORME, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 60,
         ecran: ECRAN,
@@ -198,6 +209,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2024,"valeur":6.5}"#,
         rend: "annee, valeur et d'où elle vient (l'Urssaf, la compagnie, la première embauche), a_dire (les années qui manquent pour payer cette année), phrase",
         refus: &[OPERATION, FORME, ILLISIBLE],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 300,
         // Sous « Avancé », d'ou l'effectif d'une annee se dit et se corrige toujours ; « Pour démarrer » (`pour-demarrer`,
@@ -212,6 +224,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"annee":2026}"#,
         rend: "le coût de l'année par spectacle",
         refus: &[MANQUE, OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
         phrase: 0,
         ecran: Ecran::Dessine(Place::Fiches),
@@ -223,6 +236,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{}"#,
         rend: "sauvegarde (la dernière : quand, ce qui est parti), erreur (ce qui l'a empêchée) ; ne refuse jamais",
         refus: &[OPERATION],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Fiches),
@@ -237,6 +251,7 @@ pub const ROUTES: &[Fiche] = &[
         exemple: r#"{"confirme": true}"#,
         rend: "sans confirme : nom, genre (ajoutee ou reelle), avertissement, conservation et sauvegarde à proposer, ou la phrase qui dit pourquoi elle ne se supprime pas ; avec : supprimee, phrase",
         refus: &[Refus { classe: Classe::Refuse, corriger: "ce que la phrase dit (une fictive livrée se remet à zéro, le mot de passe du logiciel refusé, un dossier tenu ouvert) ; rien n'est effacé" }],
+        pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
         phrase: 0,
         ecran: Ecran::DessineAvance(Place::Fiches),
