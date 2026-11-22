@@ -43,6 +43,8 @@ pub fn lancer(nom: &str, args: &[socle::ligne::Argument]) -> Option<std::process
         "verifier-avant-commit" => super::verifier_avant_commit::commande(args),
         // Les empreintes des textes deposes, que le garde lit (`empreintes`).
         "empreintes" => super::empreintes::commande(args),
+        // Le formulaire publie de « Remplir ma fiche », depuis la declaration du moteur (`formulaire_fiche`).
+        "formulaire-fiche" => super::formulaire_fiche::commande(args),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer.
         "scenario" => routes::scenario::commande(args),
         _ => return None,
