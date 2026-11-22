@@ -1192,12 +1192,13 @@ impl DebutDeLAnciennete {
     }
 }
 
-/// LE STATUT DU SALARIE, artiste ou technicien, que sa fiche dit : il choisit la section du bareme (l'abattement de
-/// l'arrete du 24/01/1975 ne vise que les artistes), le plafond, la regle d'un mois incomplet. Une fiche qui ne le dit
-/// pas se refuse : rien ne le devine.
+/// LE STATUT DU SALARIE, artiste ou technicien : celui du metier de l'engagement, pose par-dessus la fiche
+/// (`fiche_de_l_engagement`), ou a defaut celui du metier habituel de la fiche. Il choisit la section du bareme
+/// (l'abattement de l'arrete du 24/01/1975 ne vise que les artistes), le plafond, la regle d'un mois incomplet. Ni
+/// l'un ni l'autre ne le dit : refus, rien ne le devine ; le metier se choisit a l'engagement, c'est la qu'on le demande.
 pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<Statut> {
     sal.statut.dite().copied().ok_or_else(|| {
-        socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut")
+        socle::echec::cle("Cet engagement ne dit pas le métier du salarié, artiste ou technicien : le choisir sur la carte de l'engagement.", "statut")
     })
 }
 
