@@ -83,14 +83,10 @@ pub(crate) struct SalarieDeLEntete {
 pub(crate) struct InvitationDeLaFiche {
     titre: &'static str,
     aide: &'static str,
-    geste: Option<GesteDeRoute<ChargeSansCase>>,
+    geste: Option<GesteDeRoute<crate::SansCharge>>,
     sans_boite: Option<&'static str>,
     demande: compagnie::demande::DemandeDuMotDePasse,
 }
-
-/// La charge d'un geste dont les cases font toute la charge : `{}`.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct ChargeSansCase {}
 
 /// OU UNE CASE RENVOIE, que la route rend sous elle (`renvoi`) : le sous-onglet des metiers, ou la case d'une autre fiche
 /// (l'option de la deduction forfaitaire, dans la fiche de l'entreprise), chacun son libelle.
@@ -127,7 +123,7 @@ pub(super) fn entete_du_salarie(ctx: &Contexte, cle: Option<&IdSalarie>, p: &dro
         let geste = crate::ouverture::boite_liee(ctx)?.then(|| {
             GesteDeRoute::avec_cases(
                 crate::catalogue::Route::FicheDemander,
-                ChargeSansCase {},
+                crate::SansCharge {},
                 crate::catalogue::Affiche::new("Envoyer la demande"),
                 vec!["adresse", "prenom"],
                 crate::imprevus::ValeursDeDepart::default(),
