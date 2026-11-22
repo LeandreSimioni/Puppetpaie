@@ -187,6 +187,9 @@ pub struct QuestionDeclaree {
     pub si_aucun: Option<Question>,
     /// Elle peut rester sans reponse, et la page le dit.
     pub facultative: bool,
+    /// L'EXPLICATION LONGUE (`""` : aucune) : la page la montre derriere « En savoir plus », le courriel la porte entiere
+    /// sous la ligne de la question.
+    pub explication: &'static str,
     /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche. C'est le
     /// seul endroit qui dit qu'une case se demande au salarie.
     pub case: CaseSalarie,
@@ -238,7 +241,7 @@ impl Question {
     /// CE QU'ELLE EST : la declaration, la seule.
     pub fn declaree(self) -> QuestionDeclaree {
         use FormeDeReponse as F;
-        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, case, pourvu: None };
+        let q = |cle, libelle, aide, forme, case| QuestionDeclaree { cle, libelle, aide, forme, aucun: None, si_aucun: None, facultative: false, explication: "", case, pourvu: None };
         match self {
             Question::Prenom => q("prenom", "Prénom", "Le premier prénom de ton état civil, avec ses accents.", F::Texte, CaseSalarie::PrenomAffichage),
             Question::Nom => q("nom", "Nom de famille", "Ton nom de naissance, comme sur ta pièce d'identité.", F::Texte, CaseSalarie::NomAffichage),
@@ -304,13 +307,26 @@ impl Question {
             // profession y ouvre droit, quand la compagnie l'exerce salarie par salarie (`si_entreprise` de sa ligne).
             // Trois cas : il accepte, il refuse, ou sa reponse revient sans cette ligne : « son silence vaut accord »
             // (§ 2190, l. 2737), que la releve ecrit en disant d'ou il vient. Elle n'est donc jamais a remplir de force.
+            //
+            // L'EXPLICATION, phrase par phrase, chacune d'une ligne du BOSS, frais professionnels
+            // (`atelier/reference/sources/boss/boss-frais-professionnels-20261013.txt`) :
+            // - les metiers aux frais plus eleves, dont le spectacle vivant : § 2120, l. 2619-2622 et 2628-2631 ;
+            // - un pourcentage retire avant le calcul des cotisations : l. 2316 (« avant application de la déduction ») et
+            //   § 2210, l. 2742-2744 (« l'assiette des cotisations ») ; 20 % ou 25 % selon le metier : § 2300, l. 2878 ;
+            // - il baisse chaque annee et disparait le 1er janvier 2032 : l. 2888-2893 ;
+            // - 7 600 euros par an : l. 2622-2623 ; chez chaque employeur : § 2160, l. 2694-2696 ;
+            // - seulement avec de vrais frais, pas si tout est rembourse : § 2130, l. 2651-2657 ;
+            // - des consequences sur les droits aux assurances sociales : § 2190, l. 2732-2733 ;
+            // - une reponse d'accord ou de refus : l. 2733-2734 ; le silence vaut accord : l. 2737 ;
+            // - renoncer a tout moment, pour l'annee suivante : l. 2951-2952.
             Question::AccordDfs => QuestionDeclaree {
                 pourvu: Some(CaseSalarie::DeductionForfaitaire),
                 facultative: true,
+                explication: "La déduction forfaitaire spécifique est prévue pour les métiers qui ont des frais professionnels plus élevés que d'ordinaire, dont ceux du spectacle vivant. Elle retire de ton salaire un pourcentage avant le calcul de tes cotisations, au départ 20 % ou 25 % selon ton métier. Ce pourcentage baisse chaque année et disparaît le 1er janvier 2032. La déduction est plafonnée à 7 600 euros par an, et ce plafond peut se compter chez chaque employeur. Elle ne s'applique que si tu as vraiment des frais pour ton travail, et pas si ta compagnie te rembourse tous tes frais. Elle a des conséquences sur les droits que tes cotisations te valent aux assurances sociales. Ta compagnie doit te demander ton accord, et tu lui réponds oui ou non. Si tu ne réponds pas, ton silence vaut accord. Tu peux à tout moment demander à y renoncer, et ta décision vaut alors à partir de l'année suivante.",
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
-                    "Ton métier y ouvre droit : une part de ton salaire est déduite de la base de tes cotisations, ce qui peut réduire les droits qu'elles te valent aux assurances sociales. Sans réponse de ta part, ton silence vaut accord.",
+                    "Elle change le calcul de tes cotisations : l'explication est juste en dessous. Sans réponse de ta part, ton silence vaut accord.",
                     F::Choix(vec![("oui", "J'accepte la déduction"), ("non", "Je refuse la déduction")]),
                     CaseSalarie::DeductionForfaitaireAccord,
                 )
@@ -372,6 +388,8 @@ struct QuestionPubliee {
     #[serde(skip_serializing_if = "Option::is_none")]
     si_aucun: Option<&'static str>,
     facultative: bool,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    explication: &'static str,
 }
 
 /// Comment la reponse s'ecrit : la page la compose ainsi, la releve la lit ainsi (`lire_reponse`).
@@ -423,6 +441,7 @@ pub fn formulaire_publie() -> FormulairePublie {
                 aucun: d.aucun,
                 si_aucun: d.si_aucun.map(|p| p.declaree().cle),
                 facultative: d.facultative,
+                explication: d.explication,
             }
         })
         .collect();
@@ -536,6 +555,10 @@ pub fn a_recopier(code: &CodeDeDemande, questions: &[Question]) -> String {
             dit.push_str(" Facultatif.");
         }
         lignes.push(dit);
+        // L'explication entiere, sous sa ligne : le courriel date prouve l'information (§ 2190 a 2210).
+        if !d.explication.is_empty() {
+            lignes.push(format!("   En savoir plus — {}", d.explication));
+        }
     }
     lignes.push(String::new());
     lignes.extend(questions.iter().map(|q| format!("{}{}", q.declaree().cle, SEPARATEUR)));

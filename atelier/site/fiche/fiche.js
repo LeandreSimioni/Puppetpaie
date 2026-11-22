@@ -135,6 +135,13 @@
       c.champ = champ;
     }
     if (q.aide) bloc.appendChild(element("p", "aide", q.aide));
+    // L'explication longue que le formulaire déclare : derrière « En savoir plus », sans script.
+    if (q.explication) {
+      var plus = element("details", "plus");
+      plus.appendChild(element("summary", null, "En savoir plus"));
+      plus.appendChild(element("p", null, q.explication));
+      bloc.appendChild(plus);
+    }
     if (q.aucun) {
       var l = element("label", "aucun");
       var coche = document.createElement("input");
