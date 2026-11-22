@@ -78,14 +78,15 @@ pub fn verifier(racine: &Path) -> R<Ouverture> {
     if adresse(racine)?.is_none() {
         return Ok(Ouverture { ok: false, message: "Aucune adresse n'est posée avec le mot de passe de la boîte.".into(), conseil: Some("Poser l'adresse de la boîte avec son mot de passe, dans Configuration › Mots de passe.") });
     }
-    match client(racine).and_then(envois::courriel::verifier) {
+    use envois::courriel::{RefusDeLaBoite, SorteDeRefusDeLaBoite};
+    match client(racine).map_err(RefusDeLaBoite::from).and_then(envois::courriel::verifier) {
         Ok(message) => Ok(Ouverture { ok: true, message, conseil: None }),
-        // La phrase est celle de la boite, en francais (`envois::courriel::traduire`) ; ce qu'elle porte a part (le texte du
+        // La phrase est celle de la boite, en francais (`envois::courriel`) ; ce qu'elle porte a part (le texte du
         // serveur ou du systeme) part chez l'editeur, puisque la verification ne refuse pas. Le mot de passe refuse est un
         // refus d'usage ; une boite injoignable, le reseau : il ne dit rien du logiciel et ne se note pas.
-        Err(e) => {
-            let nature = envois::courriel::dit_le_mot_de_passe_refuse(&e).then_some(crate::incidents::REFUS);
-            let noter = !envois::courriel::dit_la_boite_injoignable(&e);
+        Err(RefusDeLaBoite { echec: e, sorte }) => {
+            let nature = (sorte == SorteDeRefusDeLaBoite::MotDePasseRefuse).then_some(crate::incidents::REFUS);
+            let noter = sorte != SorteDeRefusDeLaBoite::Injoignable;
             if let Err(n) = noter.then(|| crate::incidents::depuis_exception(racine, e.classe, &e.phrase, nature, "coffre-verifier", e.a_part.as_ref(), None)).transpose() {
                 crate::diagnostic::noter_moteur(&format!("La vérification de la boîte courriel ne s'est pas notée au journal des incidents : {}", n.phrase));
             }

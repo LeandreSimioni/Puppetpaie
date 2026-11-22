@@ -10,7 +10,7 @@ use envois::drive::{Client, Drive, EmpreinteMd5, ErreurGoogle};
 
 use compagnie::sauvegarde::{
     cause_de, ecrire_index, hors_ligne, inventaire, lire_index, phrase_persistante, EchecIndexe, Etat, EtatFichier, Fichier, Index, Reporte, Sauvegarde,
-    GOOGLE_INDISPONIBLE, GOOGLE_MUET,
+    GOOGLE_INDISPONIBLE,
 };
 
 /// Echecs passagers de suite (chacun deja retente par le client) au-dela desquels le reste du passage est reporte sans appel.
@@ -220,11 +220,10 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
 fn noter_les_echecs(racine: &Path, a_noter: &[(String, ErreurGoogle)], echecs: Option<&BTreeMap<String, EchecIndexe>>, resultat: &mut Sauvegarde) {
     for (cle, e) in a_noter {
         let premier = echecs.and_then(|x| x.get(cle)).is_some_and(|x| x.passages == 1);
-        let cause = cause_de(e);
-        if !premier || cause == GOOGLE_INDISPONIBLE || cause == GOOGLE_MUET {
+        if !premier || envois::drive::passagere(e) || envois::suites::panne_de_passage(&e.echec) {
             continue;
         }
-        let nature = (e.echec.phrase == envois::google::DRIVE_PLEIN).then_some(compagnie::incidents::REFUS);
+        let nature = (e.raison == Some(envois::drive::RaisonDeGoogle::DrivePlein)).then_some(compagnie::incidents::REFUS);
         if let Err(n) = compagnie::incidents::depuis_exception(racine, e.echec.classe, &e.echec.phrase, nature, "sauvegarde", e.echec.a_part.as_ref(), None) {
             resultat.incidents.push(format!("{} : le journal des incidents ne l'a pas noté : {}", cle, n.phrase));
         }

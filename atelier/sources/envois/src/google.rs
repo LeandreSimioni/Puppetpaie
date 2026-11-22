@@ -8,7 +8,7 @@ use serde::Deserialize;
 use socle::echec::{Classe, Echec, R};
 use socle::garde_reseau::Url;
 
-use crate::drive::ErreurGoogle;
+use crate::drive::{ErreurGoogle, RaisonDeGoogle};
 use crate::transport::{envoyer, CeQuOnFaisait, Panne, Requete};
 
 /// L'adresse des jetons de Google.
@@ -107,34 +107,25 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
     champs.iter().map(|(k, v)| format!("{}={}", q(k), q(v))).collect::<Vec<_>>().join("&")
 }
 
-/// LE DRIVE PLEIN, tel que la compagnie le lit : la phrase d'une erreur `storageQuotaExceeded` (`traduite`), que la
-/// sauvegarde reconnait pour en dire la cause (`compagnie::sauvegarde::cause_de`).
-pub const DRIVE_PLEIN: &str = "Le Drive du compte Google lié est plein : Google refuse d'y écrire. Faire de la place (Drive, Gmail, Google Photos) ou prendre plus d'espace chez Google ; la sauvegarde repart ensuite seule.";
-
-/// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (l'autorisation perdue, une permission
-/// qui manque, le Drive plein), en sa phrase ; `None` pour toute autre erreur de Google, que `panne_dite` dit. Un corps
-/// qui n'est pas une erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus cite le
-/// statut et le corps.
-fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<&'static str>> {
+/// Ce que Google dit d'une reponse d'erreur qui demande un geste de la compagnie (`RaisonDeGoogle` : l'autorisation
+/// perdue, une permission qui manque, le Drive plein) ; `None` pour toute autre erreur de Google, que `panne_dite` dit.
+/// Un corps qui n'est pas une erreur de Google (la page d'un relais, un corps vide) : le tiers a mal repondu, son refus
+/// cite le statut et le corps.
+fn traduire(statut: ureq::http::StatusCode, corps: &str) -> R<Option<RaisonDeGoogle>> {
     let (code_g, raisons) = socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, &format!("HTTP {} : {}", statut.as_str(), crate::transport::debut_lisible(corps.as_bytes(), 800)))?.code_et_raisons();
     Ok(traduite(statut, corps, code_g.as_deref(), &raisons))
 }
 
-/// La phrase d'une erreur de Google de code `code_g` (et de raisons `raisons`) qui demande un geste de la compagnie.
-fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, raisons: &[String]) -> Option<&'static str> {
+/// La raison d'une erreur de Google de code `code_g` (et de raisons `raisons`) qui demande un geste de la compagnie.
+fn traduite(statut: ureq::http::StatusCode, corps: &str, code_g: Option<&str>, raisons: &[String]) -> Option<RaisonDeGoogle> {
     if code_g == Some("invalid_grant") {
-        return Some(
-            "Autorisation Google perdue ou expirée : le plus souvent, l'écran de consentement est resté en mode « Test », ou Google a révoqué le jeton au bout de 7 jours. Le passer « En production » dans la console, puis lier de nouveau le Drive (Configuration › Mots de passe).",
-        );
+        return Some(RaisonDeGoogle::AutorisationPerdue);
     }
-    // « storageQuotaExceeded : This error occurs when the user reaches their storage limit » ; le remede : « Manage your
-    // storage in Drive, Gmail & Google Photos », « Buy more Google storage »
-    // (`atelier/reference/sources/google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`, l. 961-985).
     if raisons.iter().any(|r| r == "storageQuotaExceeded") {
-        return Some(DRIVE_PLEIN);
+        return Some(RaisonDeGoogle::DrivePlein);
     }
     if statut == ureq::http::StatusCode::FORBIDDEN && corps.to_lowercase().contains("insufficient") {
-        return Some("Permission refusée : l'autorisation en cours ne couvre pas cette action. Lier de nouveau le Drive (Configuration › Mots de passe) pour redemander les permissions.");
+        return Some(RaisonDeGoogle::PermissionManquante);
     }
     None
 }
@@ -160,11 +151,12 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
                 corps
             };
             match traduire(code, &String::from_utf8_lossy(&corps)) {
-                Ok(Some(phrase)) => {
+                Ok(Some(raison)) => {
                     let detail = format!("HTTP {} : {}", code.as_str(), crate::transport::debut_lisible(&corps, 800));
                     socle::echec::noter_echec(Some(Classe::Google), &detail);
                     let a_part = socle::echec::Lieu { detail: Some(detail), ..socle::echec::Lieu::default() };
-                    return ErreurGoogle { echec: Echec { classe: Some(Classe::Google), phrase: phrase.to_string(), a_part: Some(a_part.into()) }, statut: Some(code) };
+                    let echec = Echec { classe: Some(Classe::Google), phrase: raison.phrase().to_string(), a_part: Some(a_part.into()) };
+                    return ErreurGoogle { echec, statut: Some(code), raison: Some(raison) };
                 }
                 Ok(None) => Panne::Statut { code, corps: Ok(corps) },
                 // Pas une erreur de Google : une panne brute, dans la classe de son refus, le statut garde.
@@ -180,7 +172,7 @@ pub fn panne_de_google(faisait: CeQuOnFaisait, url: &Url, p: Panne) -> ErreurGoo
         autre => autre,
     };
     let e = crate::transport::panne_dite(faisait, Classe::Google, url, p);
-    ErreurGoogle { echec: e.echec, statut: e.code }
+    ErreurGoogle { echec: e.echec, statut: e.code, raison: None }
 }
 
 /// Le jeton d'acces que Google rend pour un jeton de rafraichissement : `Ok(Ok(jeton))`, `Ok(Err(..))` pour un refus
