@@ -162,7 +162,11 @@ fn phrase_du_statut_dite(faisait: CeQuOnFaisait, code: http::StatusCode, motifs:
             S::UNPROCESSABLE_ENTITY => format!("{} a rejeté {} (avis de rejet) : {}", qui, c.declaration(), motifs.join(" ; ")),
             S::UNAUTHORIZED => format!("{} a refusé le dépôt : la session n'est plus valable, ou le compte n'est inscrit à ce service que depuis aujourd'hui (il l'est le lendemain). Nouvel essai plus tard.", qui),
             serveur if serveur.is_server_error() => peut_etre_recue(qui, "a répondu au dépôt par une erreur de son service", c),
-            _ => format!("{} a refusé le dépôt : le service est peut-être indisponible. Nouvel essai plus tard.", qui),
+            // 404 « peut aussi signaler une interruption de service » (`MESSAGES`, guide § 8) ; 429, les contraintes
+            // d'appel. Tout autre refus (400, 403, 406, 415…) est sur : la demande n'est pas acceptee telle quelle.
+            S::NOT_FOUND => format!("{} a refusé le dépôt : le service est peut-être indisponible. Nouvel essai plus tard.", qui),
+            S::TOO_MANY_REQUESTS => espacer(),
+            _ => format!("{} a refusé le dépôt tel qu'il est parti : {} n'est pas reçue. Le refus part chez l'éditeur du logiciel.", qui, c.declaration()),
         },
         CeQuOnFaisait::Sauvegarder => match code {
             S::UNAUTHORIZED => "Google ne reconnaît plus l'autorisation du logiciel : lier de nouveau le Drive (Configuration › Mots de passe).".to_string(),

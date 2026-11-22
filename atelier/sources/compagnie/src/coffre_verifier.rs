@@ -90,11 +90,12 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
         Ok(()) => Ok(Verdict::de(nom, true, "session ouverte".into(), None)),
         // La phrase de l'organisme dit deja qui, ce que cela peut etre et quoi faire (`envois::transport::panne_dite`) ; le
         // detail technique est a part, et la route `coffre-verifier` ne refuse pas : il part chez l'editeur ici, quand
-        // l'organisme a repondu. Sans reponse (le reseau injoignable, le compte incomplet qui ne part pas), rien ne dit
-        // quelque chose du logiciel : comme au releve (`envois::suites::Suites::panne`), cela ne se note pas.
+        // l'organisme a repondu et que sa reponse peut dire quelque chose du logiciel. Sans reponse (le reseau
+        // injoignable, le compte incomplet qui ne part pas) ou sur une erreur de son service (5xx), rien ne dit quelque
+        // chose du logiciel : comme au releve (`envois::suites::Suites::panne`), cela ne se note pas.
         Err(p) if p.echec.classe == Some(Classe::Organisme) => {
             let nature = p.dit_un_refus().then_some(crate::incidents::REFUS);
-            let noter = p.code.is_some().then(|| crate::incidents::depuis_exception(&ctx.racine, p.echec.classe, &p.echec.phrase, nature, "coffre-verifier", p.echec.a_part.as_ref(), None));
+            let noter = p.code.is_some_and(|c| !c.is_server_error()).then(||crate::incidents::depuis_exception(&ctx.racine, p.echec.classe, &p.echec.phrase, nature, "coffre-verifier", p.echec.a_part.as_ref(), None));
             if let Some(Err(n)) = noter {
                 crate::diagnostic::noter_moteur(&format!("La vérification d'un mot de passe ne s'est pas notée au journal des incidents : {}", n.phrase));
             }

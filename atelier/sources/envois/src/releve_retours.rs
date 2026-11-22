@@ -63,8 +63,6 @@ fn de_lecture(e: Echec) -> Panne {
 
 pub const SERVICE_DSN_REGIME_GENERAL: &str = "25";
 pub const SERVICE_DSN_REGIME_GENERAL_TEST: &str = "97";
-pub const VARIABLE_MOTDEPASSE: &str = "NET_ENTREPRISES_MOTDEPASSE";
-pub const VARIABLE_MOTDEPASSE_DPAE: &str = "URSSAF_MOTDEPASSE";
 
 /// Les adresses d'un service (`netentreprises.ADRESSES`, `dpae_api.ADRESSES_DPAE`).
 #[derive(Clone)]
