@@ -260,10 +260,10 @@ impl Question {
                 ..q("nir", "Numéro de sécurité sociale", "Les 15 chiffres de ta carte Vitale ou de ton attestation de droits.", F::Nir, CaseSalarie::Nir)
             },
             // Sans NIR, la DPAE porte le sexe (C_SEXE_SAL, obligatoire : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`,
-            // l. 415-420) et la DSN aussi, « si le NIR est absent en cas d'identification par un NTT » (S21.G00.30.005 :
+            // l. 415-421) et la DSN aussi, « si le NIR est absent en cas d'identification par un NTT » (S21.G00.30.005 :
             // `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 154-158) ; avec un NIR, son premier chiffre le dit.
             Question::Sexe => QuestionDeclaree { si_aucun: Some(Question::Nir), ..q("sexe", "Femme ou homme", "", F::Choix(vec![("femme", "Femme"), ("homme", "Homme")]), CaseSalarie::Sexe) },
-            // Sans NIR, rien ne le lit : la DPAE l'exige (C_DEPT_NAISS_SAL, obligatoire, l. 427-432 du meme format) et la
+            // Sans NIR, rien ne le lit : la DPAE l'exige (C_DEPT_NAISS_SAL, obligatoire, l. 427-433 du meme format) et la
             // DSN aussi (S21.G00.30.014, « Pour les personnes nées à l'étranger, renseigner 99 », l. 279-294 du bloc 30) :
             // « aucun » (ne hors de France) s'ecrit 99.
             Question::DepartementNaissance => QuestionDeclaree {
@@ -302,7 +302,7 @@ impl Question {
                 ..q(
                     "accord_dfs",
                     "Déduction forfaitaire spécifique",
-                    "Ton métier y ouvre droit : une part de ton salaire ne compte plus dans le calcul de tes cotisations. Ton net est un peu plus haut, mais les droits que ces cotisations te valent aux assurances sociales (retraite, chômage, maladie) se calculent sur un salaire plus bas. Si tu changes d'avis plus tard, ce sera pour le 1er janvier suivant.",
+                    "Ton métier y ouvre droit : une part de ton salaire ne compte plus dans le calcul de tes cotisations. Ton net est un peu plus haut, mais cela peut réduire les droits que tes cotisations te valent aux assurances sociales. Si tu changes d'avis plus tard, ce sera pour le 1er janvier suivant.",
                     F::Choix(vec![("oui", "J'accepte la déduction"), ("non", "Je refuse la déduction")]),
                     CaseSalarie::DeductionForfaitaireAccord,
                 )
