@@ -623,6 +623,7 @@ un libellé, chacun sa forme.
 | type d'un paramètre NEOReS | `TypeDeParametreNeores` | `droit/src/contexte.rs` |
 | identifiant Drive | `IdDrive` | `envois/src/drive.rs` |
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
+| un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -1971,7 +1972,8 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`wasm32-wasip1`), la démo de puppetpaie.fr : le même moteur, bridé, dans un onglet. Le navigateur est un système de
 plus, aux seuls endroits où un système diffère d'un autre : aucun fil ne démarre (`routes::fil_de_routes` le dit, et la
 file des états se fait sur le fil qui l'attend, `etat_garde::Fil`), aucune prise réseau (`socle::garde_reseau` refuse
-toute sortie), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
+toute sortie ; seul le canal de l'éditeur joint le filet, par l'hôte JavaScript : `garde_reseau::par_l_hote`, l'import
+`puppetpaie.poster` de `socle::systeme`), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
 (`socle::fichiers::resolu`, `socle::processus`). La page y parle à la fenêtre sans serveur (`interface::onglet`), par
 les exports de la crate `onglet` ; le module se fabrique par `cargo build --profile navigateur --target wasm32-wasip1
 -p onglet` : le profil `navigateur` est celui de `release` en « abort » (une panique abandonne le module, et l'appel

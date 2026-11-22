@@ -32,7 +32,7 @@ pub mod piece;
 pub mod processus;
 pub mod secret;
 pub mod nfkd_ascii;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "wasi"))]
 pub mod systeme;
 pub mod tables_nfkc;
 pub mod temps;
