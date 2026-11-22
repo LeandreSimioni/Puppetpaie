@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Remplir ma fiche — PuppetPaie</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any">
+<style>
+/* La page « Remplir ma fiche » : elle ne connaît aucune question, elle dessine le formulaire que le moteur publie
+   (formulaires/<empreinte>.js) et ne garde rien. Les couleurs et les polices sont celles de puppetpaie.fr. Le style
+   est ici : la politique du site admet le style de la page, pas une feuille à part. */
+@font-face{font-family:"EB Garamond";font-style:normal;font-weight:400 800;
+  font-display:swap;src:url("/assets/fonts/eb-garamond-v33-latin-variable.woff2") format("woff2")}
+@font-face{font-family:"Libre Franklin";font-style:normal;font-weight:100 900;
+  font-display:swap;src:url("/assets/fonts/libre-franklin-v20-latin-variable.woff2") format("woff2")}
+:root{
+  --papier:#FFFFFF; --encre:#141413; --gris:#6E6B66; --filet:#E6E5E2;
+  --carmin:#9B1B30; --rayon:4px;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--papier);color:var(--encre);
+     font:400 1rem/1.5 "Libre Franklin",system-ui,sans-serif}
+main{max-width:36rem;margin:0 auto;padding:2.5rem 16px 4rem}
+h1{font:400 clamp(1.7rem,6vw,2.2rem)/1.2 "EB Garamond",Georgia,serif;margin:0 0 .4rem}
+.chapeau{margin:0 0 2rem;color:var(--gris)}
+.question{margin:0 0 1.5rem;padding:0;border:0}
+.question legend,.question > label{display:block;font-weight:500;margin:0 0 .35rem;padding:0}
+.facultatif{font-weight:400;color:var(--gris)}
+.aide{margin:.3rem 0 0;font-size:.85rem;color:var(--gris)}
+input[type=text]{width:100%;font:inherit;font-size:1.05rem;padding:.65rem .75rem;
+  border:1px solid #C9C7C2;border-radius:var(--rayon);background:var(--papier);color:var(--encre)}
+input[type=text]:focus{border-color:var(--encre);outline:none}
+input[type=text]:disabled{background:#F4F3F1;color:var(--gris)}
+.choix{display:flex;flex-wrap:wrap;gap:.5rem 1.2rem}
+.choix label,.aucun{display:flex;align-items:flex-start;gap:.5rem;cursor:pointer}
+.aucun{margin:.5rem 0 0;font-size:.95rem}
+input[type=radio],input[type=checkbox]{width:1.15rem;height:1.15rem;margin:.2rem 0 0;flex:none;accent-color:var(--carmin)}
+.faute{margin:.35rem 0 0;font-size:.85rem;color:var(--carmin)}
+.cache{display:none}
+.actions{margin:2.2rem 0 0;display:flex;flex-direction:column;gap:.7rem}
+button{font:500 1rem/1.2 "Libre Franklin",sans-serif;padding:1rem 1.4rem;border-radius:var(--rayon);
+  border:1px solid var(--encre);background:var(--encre);color:var(--papier);cursor:pointer}
+button:hover{background:var(--carmin);border-color:var(--carmin)}
+button.second{background:var(--papier);color:var(--encre);border-color:#C9C7C2}
+button.second:hover{border-color:var(--carmin);color:var(--carmin);background:var(--papier)}
+.manque,.copie,.avis{margin:1rem 0 0;padding:.8rem 1rem;border-left:3px solid var(--carmin);background:#FAF7F6}
+.copie pre{white-space:pre-wrap;word-break:break-word;font:inherit;font-size:.9rem;margin:.6rem 0 0}
+.pied{margin:3rem 0 0;font-size:.8rem;color:var(--gris)}
+:focus-visible{outline:2px solid var(--carmin);outline-offset:3px}
+</style>
+<main>
+  <h1>Remplir ma fiche</h1>
+  <p class="chapeau" id="chapeau">Cette page ne garde rien : elle prépare le courriel de ta réponse, que tu envoies toi-même, de ta messagerie.</p>
+  <div id="avis" class="avis cache" role="alert"></div>
+  <form id="formulaire" class="cache" novalidate>
+    <div id="questions"></div>
+    <div id="manque" class="manque cache" role="status"></div>
+    <div class="actions">
+      <button type="button" id="envoyer">Envoyer</button>
+      <button type="button" id="copier" class="second">Copier ma réponse</button>
+    </div>
+    <div id="copie" class="copie cache" role="status"></div>
+  </form>
+  <noscript><p class="avis">Cette page a besoin de JavaScript. Sans lui, réponds directement au courriel que tu as reçu.</p></noscript>
+  <p class="pied">PuppetPaie, le logiciel de paie de ta compagnie. Rien de ce que tu écris ici ne quitte ton appareil avant que tu l'envoies.</p>
+</main>
+<script src="fiche.js"></script>
+</html>

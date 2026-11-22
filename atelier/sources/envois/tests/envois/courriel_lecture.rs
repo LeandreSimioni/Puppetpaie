@@ -1,10 +1,8 @@
-//! La lecture d'un message recu (`courriel_lecture`) et le questionnaire de la fiche (`fiche_questionnaire`), contre
-//! `envois/tests/donnees/courriel_lecture/cas.json` : 229 messages (texte propre, adresse, Message-ID, date, reponses lues, fiche
-//! produite), 25 dates, 26 pays, le questionnaire mot pour mot. `PUPPETPAIE_REECRIRE_ORACLES=1` le reecrit depuis le
-//! moteur (les `eml` restent).
+//! La lecture d'un message recu (`courriel_lecture`), et les dates et les pays que la releve d'une fiche lit
+//! (`fiche_questionnaire`), contre `envois/tests/donnees/courriel_lecture/cas.json` : 229 messages (texte propre, adresse,
+//! Message-ID, date), 25 dates, 26 pays. `PUPPETPAIE_REECRIRE_ORACLES=1` le reecrit depuis le moteur (les `eml` restent).
 //!
-//! La ligne du sexe se lit apres son dernier deux-points ; « -----Original Message----- » coupe la citation, en LF comme
-//! en CRLF.
+//! « -----Original Message----- » coupe la citation, en LF comme en CRLF.
 //!
 //! Heure de Paris, quel que soit le fuseau du poste ; un en-tete `Date` illisible rend l'heure de la releve (`MAINTENANT`).
 //! Aucun reseau.
@@ -13,24 +11,34 @@ use documents::fiche_questionnaire as fq;
 use envois::courriel_lecture::{adresse_de, date_de, identifiant_de, texte_propre};
 use serde::{Deserialize, Serialize};
 use socle::base64::lire as base64_lire;
+use socle::forme::NonLue;
 
-/// L'oracle : le questionnaire et ses textes, les messages lus, les dates et les pays.
+/// L'oracle : les messages lus, les dates et les pays. Les cles du questionnaire d'avant la reponse typee
+/// (`questionnaire`, `sujet`, `corps`, `html`, `alphabet`, `questions`) se lisent et ne disent rien, le temps que
+/// l'oracle se reecrive sans elles.
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
 struct Oracle {
-    questionnaire: String,
-    sujet: String,
-    corps: String,
-    html: String,
-    alphabet: String,
-    questions: Vec<(String, String, String)>,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    questionnaire: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    sujet: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    corps: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    html: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    alphabet: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    questions: NonLue,
     messages: Vec<MessageLu>,
     dates: Vec<DateLue>,
     pays: Vec<PaysLu>,
 }
 
 /// Un message recu (`eml`, en base64) et ce que sa lecture en rend. `defaut_tirets` : une donnee du cas, que le test ne
-/// recalcule pas.
+/// recalcule pas. Les reponses lues a l'ancienne, par libelles (`reponses`, `fiche`, `illisible`), se lisent et ne
+/// disent rien.
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
 struct MessageLu {
@@ -41,22 +49,13 @@ struct MessageLu {
     message_id: Option<String>,
     date: String,
     defaut_tirets: bool,
-    reponses: Reponses,
-    fiche: fq::FicheLue,
-    illisible: Vec<String>,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    reponses: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    fiche: NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
+    illisible: NonLue,
 }
-
-/// Les reponses lues, dans l'ordre du questionnaire.
-#[derive(PartialEq, Debug, Serialize)]
-#[serde(transparent)]
-struct Reponses(#[serde(serialize_with = "socle::ecriture::en_ordre")] Vec<(String, String)>);
-
-impl<'de> Deserialize<'de> for Reponses {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        socle::forme::en_ordre(d).map(Reponses)
-    }
-}
-
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
@@ -81,7 +80,7 @@ fn reecrire() -> bool {
 }
 
 #[test]
-fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
+fn la_lecture_des_messages_des_dates_et_des_pays_rend_l_oracle() {
     let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", e.phrase));
     assert!(attendu.messages.len() > 200, "le fichier de cas est complet");
     let messages: Vec<MessageLu> = attendu
@@ -90,15 +89,10 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
         .map(|cas| {
             let brut = base64_lire(&cas.eml).unwrap();
             let m = mailparse::parse_mail(&brut).unwrap_or_else(|e| panic!("{} : {}", cas.nom, e));
-            let propre = texte_propre(&m);
-            let lues = fq::lire_reponses(&propre);
-            let reponses: Vec<(String, String)> = fq::QUESTIONS.iter().filter_map(|(k, _, _)| lues.get(k).map(|v| (k.to_string(), v.clone()))).collect();
-            assert_eq!(reponses.len(), lues.len(), "{} : une reponse hors du questionnaire", cas.nom);
-            let (fiche, illisible) = fq::fiche_depuis_reponses(&lues).unwrap();
             MessageLu {
                 nom: cas.nom.clone(),
                 eml: cas.eml.clone(),
-                texte: propre,
+                texte: texte_propre(&m),
                 adresse: match adresse_de(&m) {
                     envois::courriel_lecture::Expediteur::Adresse(a) => Some(a),
                     envois::courriel_lecture::Expediteur::Muet | envois::courriel_lecture::Expediteur::PasUneAdresse { .. } => None,
@@ -112,19 +106,19 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                     if lue == releve { "MAINTENANT".to_string() } else { socle::paris::ecrit::seconde::texte(lue) }
                 },
                 defaut_tirets: cas.defaut_tirets,
-                reponses: Reponses(reponses),
-                fiche,
-                illisible,
+                reponses: NonLue::default(),
+                fiche: NonLue::default(),
+                illisible: NonLue::default(),
             }
         })
         .collect();
     let obtenu = Oracle {
-        questionnaire: fq::questionnaire("FIC-ABCDEF", &fq::posees(&|_| true), &|_| String::new()),
-        sujet: fq::SUJET.to_string(),
-        corps: fq::CORPS.to_string(),
-        html: fq::HTML.to_string(),
-        alphabet: fq::ALPHABET_CODE.to_string(),
-        questions: fq::QUESTIONS.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), droit::fiche::NomDeCase::from(*c).to_string())).collect(),
+        questionnaire: NonLue::default(),
+        sujet: NonLue::default(),
+        corps: NonLue::default(),
+        html: NonLue::default(),
+        alphabet: NonLue::default(),
+        questions: NonLue::default(),
         messages,
         dates: attendu.dates.iter().map(|d| DateLue { texte: d.texte.clone(), attendu: fq::date_lue(&d.texte) }).collect(),
         pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c.to_string(), Some(u.as_str().to_string()))) }).collect(),

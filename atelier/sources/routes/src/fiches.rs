@@ -6,7 +6,6 @@
 //! Les refus portent leur classe (`Manque`, `MalFormee`, `Refuse`...), que la page releve.
 
 use droit::fiche::Lue as _;
-use std::collections::HashMap;
 use std::path::Path;
 
 use compagnie::preuve::{verifier_preuve, Preuve};
@@ -33,7 +32,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::grandeurs::{Effectif, Montant};
 use socle::ecriture::ecrire_json;
 use socle::paris::{InstantOuJour, Moment};
-use socle::html::{html_echapper, mailto};
+use socle::html::html_echapper;
 use socle::texte::{capitaliser, strip};
 
 mod ecriture;
@@ -1112,9 +1111,20 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         None => capitaliser(sg.prenom.ecrite("prenom")?),
     };
     let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
+    // LES QUESTIONS A POSER : ce qui manque a la fiche de cette personne, si elle en a une (par son adresse, comme la
+    // releve la retrouve), selon son cas ; toutes celles qui se demandent au salarie, sinon.
+    let connue = ctx.salaries.values().find(|s| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *adresse)).map(|s| s.champs.clone());
+    let fiche = match connue {
+        Some(f) => f,
+        None => droit::fiche::ChampsSalarie::default(),
+    };
+    let manquent = champs::a_demander_au_salarie(&fiche, &ctx.entreprise)?;
+    let questions = fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(&fiche, c.into()));
+    if questions.is_empty() {
+        return Err(refus(format!("Rien ne manque à la fiche de {} que la personne puisse dire : rien à lui demander.", adresse)));
+    }
     let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
-    let utiles = champs::utiles(NomDeFiche::Salarie)?;
-    let q = fq::questionnaire(code.texte(), &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
+    let q = fq::a_recopier(&code, &questions);
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1123,12 +1133,13 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &droit::fiche::Courriel, p
         let e = |s: &str| if echappe { html_echapper(s) } else { s.to_string() };
         vec![("virgule_prenom", e(&virgule_prenom)), ("compagnie", e(&compagnie)), ("signataire", e(&signataire))]
     };
-    let lien = mailto(&expediteur, &format!("Re: {}", sujet), &q);
+    let lien = fq::LienDeFiche { formulaire: fq::formulaire_publie().empreinte, questions, code: code.clone(), adresse: expediteur.clone(), objet: format!("Re: {}", sujet) }.ecrit();
     let mut texte = champs(false);
     texte.push(("questionnaire", q.clone()));
+    texte.push(("lien", lien.clone()));
     let mut html = champs(true);
     html.push(("questionnaire", html_echapper(&q)));
-    html.push(("mailto", html_echapper(&lien)));
+    html.push(("lien", html_echapper(&lien)));
     let message = Message {
         // Celui a qui sa fiche est demandee n'en a pas encore : la demande se retrouve par son code, au journal.
         pour: (),
@@ -1320,13 +1331,21 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
-        let (lue, mut illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let lue = fq::fiche_depuis_reponses(&fq::lire_reponse(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let mut illisible = lue.illisible;
         // La reponse se lit par la porte d'une fiche saisie : une case hors de son type reste vide, et se dit a completer
-        // dans la note, avec ce que le questionnaire n'a pas lu.
-        let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue).map_err(|m| m.reclasser(Classe::Illisible))?;
+        // dans la note, avec ce que la reponse n'a pas dit lisiblement.
+        let (mut recue, fautes) = import::proposee::de::<droit::fiche::ChampsSalarie, _>(&lue.fiche).map_err(|m| m.reclasser(Classe::Illisible))?;
         illisible.extend(fautes.into_iter().map(|f| format!("{} : {}", f.case.nom(), f.phrase)));
         recue.email = Some(de.clone());
-        let nom = [recue.prenom_affichage.remplie(), recue.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
+        // Le nom de la personne : celui de la reponse, ou celui de sa fiche, si elle en a une (on ne lui a demande que ce
+        // qui y manquait).
+        let nom_de = |f: &droit::fiche::ChampsSalarie| [f.prenom_affichage.remplie(), f.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+        let nom = match (nom_de(&recue), trouvee) {
+            (n, Some((_, s))) if n.trim().is_empty() => nom_de(&s.champs),
+            (n, _) => n,
+        };
         if nom.trim().is_empty() {
             r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
             continue;
@@ -1338,10 +1357,13 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let eml = dossier.join(format!("{}{}.eml", sorte.prefixe(), code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
+        // Ce que la personne dit n'avoir pas et qu'aucune case ne garde (le numero Congés Spectacles) : la note le dit.
+        for q in &lue.sans {
+            note.push_str(&format!(" Elle dit n'avoir pas de {}.", fq::en_minuscule(q.declaree().libelle)));
+        }
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
-        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
         let existante: Option<IdSalarie> = trouvee.map(|(k, _)| k.clone());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
@@ -1395,9 +1417,10 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
 /// fabrique a la demande, cle comprise.
 const PERSONNES: [(&str, &str, &str); 4] = [("Marie", "Dorval", "2"), ("Pierre", "Bocage", "1"), ("Rose", "Cheri", "2"), ("Frederick", "Lemaitre", "1")];
 
-/// Le questionnaire que la personne fictive renvoie, rempli ligne a ligne dans les termes memes
-/// des questions, le code en dernier. `bouton` : (objet, corps) du lien du courriel de la demande, quand on l'a.
-fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, String)>) -> R<Vec<u8>> {
+/// La reponse que la personne fictive renvoie, dans la forme meme de la page (`fq::reponse`) : les questions que le lien
+/// du courriel de la demande nomme, quand on l'a (toutes, sinon), « aucun » compris (nom d'usage, nom de scene, numero
+/// Congés Spectacles, modele de bulletin) ; une question qu'elle ne sait pas, elle la laisse sans reponse.
+fn reponse_de_fiche(demande: &Attendue, compte: &str, lien: Option<&fq::LienDeFiche>) -> R<Vec<u8>> {
     let code = demande.code.texte();
     let somme: u32 = code.chars().map(|c| c as u32).sum();
     let (prenom, nom, sexe) = PERSONNES[somme as usize % PERSONNES.len()];
@@ -1409,25 +1432,36 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     let mois = 1 + somme % 12;
     let treize = format!("{}{:02}{:02}75056{:03}", sexe, an, mois, 1 + somme % 900);
     let cle = 97 - treize.parse::<u64>().map_err(|e| erreur(Classe::Illisible, e.to_string()))? % 97;
-    let reponses: HashMap<&str, String> = HashMap::from([
-        ("prenom", prenom),
-        ("nom", nom.to_string()),
-        ("naissance", format!("12/{:02}/19{:02}", mois, an)),
-        ("lieu", "Paris".to_string()),
-        ("pays", "France".to_string()),
-        ("nationalite", "française".to_string()),
-        ("nir", format!("{}{:02}", treize, cle)),
-        ("adresse", "12 rue du Temple".to_string()),
-        ("code_postal", "75003".to_string()),
-        ("commune", "Paris".to_string()),
-        // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
-        ("iban", "FR7630001007941234567890185".to_string()),
-    ]);
-    let utiles = champs::utiles(NomDeFiche::Salarie)?;
-    // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.contains(&c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
-    let sujet = match bouton {
-        Some(b) => b.0.clone(),
+    use fq::{Question as Q, Reponse};
+    let dite = |t: String| Some(Reponse::Dite(t));
+    let sait = |q: Q| -> Option<Reponse> {
+        match q {
+            Q::Prenom => dite(prenom.clone()),
+            Q::Nom => dite(nom.to_string()),
+            Q::NomUsage | Q::Pseudonyme | Q::CongesSpectacles | Q::ModeleBulletin => Some(Reponse::Aucun),
+            Q::Naissance => dite(format!("12/{:02}/19{:02}", mois, an)),
+            Q::LieuNaissance | Q::Commune => dite("Paris".to_string()),
+            Q::PaysNaissance => dite("France".to_string()),
+            Q::Nationalite => dite("française".to_string()),
+            Q::Nir => dite(format!("{}{:02}", treize, cle)),
+            Q::Adresse => dite("12 rue du Temple".to_string()),
+            Q::CodePostal => dite("75003".to_string()),
+            // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
+            Q::Iban => dite("FR7630001007941234567890185".to_string()),
+            Q::AccordDfs => dite("oui".to_string()),
+            // Avec un NIR, le sexe et le departement ne se demandent pas ; le BIC et la date anniversaire, elle ne les
+            // sait pas.
+            Q::Sexe | Q::DepartementNaissance | Q::Bic | Q::Anniversaire => None,
+        }
+    };
+    let questions = match lien {
+        Some(l) => l.questions.clone(),
+        None => fq::a_poser(&|_| true, &|_| true),
+    };
+    let dites: Vec<(Q, Reponse)> = questions.into_iter().filter_map(|q| sait(q).map(|r| (q, r))).collect();
+    let rempli = fq::reponse(&demande.code, &dites);
+    let sujet = match lien {
+        Some(l) => l.objet.clone(),
         None => "Re: fiche".to_string(),
     };
     envois::simulation_courriels::reponse_jouee(&demande.adresse, compte, &sujet, &rempli, &format!("fiche-{}", code))
@@ -1451,8 +1485,8 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: st
         if !maintenant.depuis(partie).is_some_and(|d| d >= delai) {
             continue;
         }
-        let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
-        let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| m.reclasser(Classe::Illisible))?;
+        let lien = envois::simulation_courriels::lien_de_la_demande(&envoyes, &a.envoyes, fq::PAGE)?.map(|l| fq::LienDeFiche::lire(&l)).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
+        let brut = reponse_de_fiche(a, Courriel::compte(&boite), lien.as_ref()).map_err(|m| m.reclasser(Classe::Illisible))?;
         boite.repondre(a.code.texte(), brut);
     }
     Ok(boite)
