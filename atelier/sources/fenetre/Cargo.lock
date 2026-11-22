@@ -998,12 +998,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "email_address"
-version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
-
-[[package]]
 name = "embed-resource"
 version = "3.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1059,7 +1053,6 @@ dependencies = [
  "flate2",
  "getrandom 0.3.4",
  "imap-proto",
- "lettre",
  "mailparse",
  "md-5",
  "regex",
@@ -2189,24 +2182,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd85a5776cd9500c2e2059c8c76c3b01528566b7fcbaf8098b55a33fc298849b"
 dependencies = [
  "arrayvec",
-]
-
-[[package]]
-name = "lettre"
-version = "0.11.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
-dependencies = [
- "base64 0.23.1",
- "email_address",
- "idna",
- "nom 8.0.0",
- "percent-encoding",
- "rustls",
- "rustls-platform-verifier",
- "socket2",
- "tokio",
- "url",
 ]
 
 [[package]]
