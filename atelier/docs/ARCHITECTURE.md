@@ -624,6 +624,7 @@ un libellé, chacun sa forme.
 | identifiant Drive | `IdDrive` | `envois/src/drive.rs` |
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
 | un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
+| le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -3926,7 +3927,8 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   l'administrateur, sous l'empreinte de l'ouverture) et les mois se refont en fond ; ouvrir sert un état frais sans
   attendre ; minuit passé, tout se revérifie. **Avant le mot de passe, du calcul local seulement** : le fil est marqué
   (`fil_de_fond`), et `garde_reseau` y refuse toute sortie, le coffre y refuse la clé du poste et toute dérivation de mot
-  de passe. La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
+  de passe ; dans le navigateur, sans second fil, celui qui attend un état fait le travail de la file avec les mêmes
+  refus, le temps de ce travail (`fil_de_fond::LeTempsDUnTravail`). La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
   l'accueil ne relève les comptes rendus qu'une fois le mot de passe de l'administrateur tapé dans la fenêtre.
 
 

@@ -878,13 +878,16 @@ impl Fil {
     }
 
     /// SANS FIL, LE TRAVAIL SUIVANT, FAIT ICI par qui attend `cle` : le meme choix que le fil (`choisir`), le meme
-    /// passage (`faire`, `rendre`). Rien a faire alors que `cle` est attendue est un defaut du logiciel : l'attente ne
-    /// finirait pas.
+    /// passage (`faire`, `rendre`), avec les refus du fil (`fil_de_fond` : ni sortie, ni coffre). Rien a faire alors que
+    /// `cle` est attendue est un defaut du logiciel : l'attente ne finirait pas.
     fn pomper(&self, cle: Cle) -> R<()> {
         let pris = Self::choisir(&mut self.verrou());
         match pris {
             Some((file, prise, numero)) => {
-                let rendu = file.faire(prise);
+                let rendu = {
+                    let _fond = socle::fil_de_fond::le_temps_d_un_travail();
+                    file.faire(prise)
+                };
                 file.rendre(prise, numero, rendu);
                 Ok(())
             }
