@@ -78,10 +78,25 @@ qu'à la dernière DSN du trimestre (FAQ DSN des organismes complémentaires, `.
   d'orchestre 860 € ; création et évènement : double du minimum dans la limite de 272 € par jour). Où le moteur s'en
   sert : la base de congé du certificat (`documents/src/conges_spectacles.rs`, ticket #363 du privé), à venir.
 
+- `audiens-fiche-pratique-deduction-forfaitaire-specifique-20250601.txt` : la fiche pratique Audiens « La Déduction
+  forfaitaire spécifique pour frais professionnels » (juin 2025), transcription (`pdftotext -layout`) du PDF servi par
+  `https://www.audiens.org/files/live/sites/siteAudiens/files/03_documents/entreprise/Fiches-techniques/FP-DFS.pdf`
+  (HTTP 200, 112 419 octets), relevée le 22/11/2026 ; l'original est au privé
+  (`reference-privee/sources/audiens-dsn/`). Elle dit **sur quelles cotisations la déduction porte** : « La DFS
+  s'applique aux assiettes des cotisations de sécurité sociale, mais également à celles des autres prélèvements dont
+  l'assiette est alignée […] cotisations chômage et assurance des créances des salariés (sauf pour les artistes et
+  techniciens intermittents du spectacle et les journalistes), cotisations de retraite complémentaire AGIRC-ARRCO »
+  (l. 63-69) ; « La DFS ne s'applique pas pour les cotisations d'assurance chômage et d'AGS des journalistes et des
+  artistes et techniciens intermittents du spectacle » (l. 50-58, « Remarque ») ; « La DFS ne s'applique pas sur
+  l'assiette de la cotisation Congés spectacles » (l. 71). Où le moteur s'en sert : l'explication « En savoir plus »
+  de la question sur la déduction forfaitaire (`atelier/sources/documents/src/fiche_questionnaire.rs`). Ses taux par
+  année ne sont pas lus ici : ceux du moteur viennent du BOSS.
+
 ## Empreintes
 
 Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
 
+- `audiens-fiche-pratique-deduction-forfaitaire-specifique-20250601.txt` : `921679684cde79f9ead85d32d49be0b5085e03c7f2c754a418f3a3d92385441b`
 - `audiens-conges-spectacles-mode-emploi-employeur-20261030.txt` : `ce2f2daffa239ae121b9e0b0ad2f1d93200fde96239725a513575d3c6f135ec6`
 - `audiens-declarer-payer-conges-spectacles-20261020.md` : `a233697d4bfcfd77665527bc81f5784499348fca32ddb758be4ca299ea6d565b`
 - `audiens-dossier-dsn-20261020.md` : `5392d50b4516aebac6110d3efb00dfa55a20573a47914be63988f5194c9c0dd7`
