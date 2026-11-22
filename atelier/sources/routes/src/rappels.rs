@@ -318,7 +318,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                     PoseVue { pose, pastille }
                 })
                 .collect();
-            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, m)).collect::<socle::echec::R<Vec<_>>>()?;
+            // Les listes de la fiche d'un salarie se lisent une fois pour toutes les lignes.
+            let listes = std::cell::OnceCell::new();
+            let manques = d.manques.into_iter().map(|m| ManqueVu::de(ctx, &listes, m)).collect::<socle::echec::R<Vec<_>>>()?;
             en_json(PourDemarrerVu { phrase: socle::phrase!("{}", d.phrase), phrases: d.phrases, titre: d.titre, note: d.note, manques, dsn: d.dsn, poses })
         }
         autre => Err(route_inconnue(autre.nom())),
@@ -1673,14 +1675,14 @@ struct SansChoix {}
 
 impl ManqueVu {
     /// Chaque annee que la ligne demande (`Manque::effectifs`, un par annee) : sa case, pre-remplie de ce que les paies
-    /// reprises donnent, et sa phrase.
-    fn de(ctx: &Contexte, mut manque: Manque) -> socle::echec::R<ManqueVu> {
+    /// reprises donnent, et sa phrase. `listes` : celles de la fiche d'un salarie, lues une fois pour toutes les lignes.
+    fn de(ctx: &Contexte, listes: &std::cell::OnceCell<crate::fiches::ListesDuSalarie>, mut manque: Manque) -> socle::echec::R<ManqueVu> {
         let proposee = manque.propose.as_ref().and_then(droit::fiche::ValeurDeCase::de);
         let case_rendue = match (&manque.spectacle, &manque.salarie, manque.onglet.as_str(), &manque.case) {
             (Some(s), _, _, Some(chemin)) => match ctx.spectacles.get(s) {
                 Some(f) => {
                     let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
-                    crate::fiches::case_a_remplir(ctx, FicheAJuger::Spectacle(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                    crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Spectacle(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
                 }
                 None => None,
             },
@@ -1688,14 +1690,14 @@ impl ManqueVu {
                 Some(f) => {
                     let f = &f.champs;
                     let valeur = proposee.or_else(|| f.valeur_ecrite(chemin.champ));
-                    crate::fiches::case_a_remplir(ctx, FicheAJuger::Salarie(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
+                    crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Salarie(f), chemin, valeur, &|k, ch| f.ecrite_au_chemin(k, ch))?
                 }
                 None => None,
             },
             (None, None, "entreprise", Some(chemin)) => {
                 let e = &ctx.entreprise;
                 let valeur = proposee.or_else(|| e.valeur_ecrite(chemin.champ));
-                crate::fiches::case_a_remplir(ctx, FicheAJuger::Entreprise(e), chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
+                crate::fiches::case_a_remplir(ctx, listes, FicheAJuger::Entreprise(e), chemin, valeur, &|k, ch| e.ecrite_au_chemin(k, ch))?
             }
             _ => None,
         };

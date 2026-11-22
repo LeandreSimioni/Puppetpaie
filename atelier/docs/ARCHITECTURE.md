@@ -1177,7 +1177,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | ce qui se fait depuis la fiche d'un salarié enregistré, dans son en-tête (sa clé, d'où ses imprévus et ses droits se lisent, et le geste vers ses documents) | `routes::fiches::SalarieDeLEntete` | `routes/src/fiches/rendue.rs` |
 | fiche d'un salarié neuf à faire remplir par la personne, dans son en-tête (ce que la demande fait, son geste `fiche-demander` ou ce qui lui manque, la demande du mot de passe) | `routes::fiches::InvitationDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | charge d'une route qui ne prend rien, ou d'un geste dont les cases font toute la charge (`{}`) | `routes::SansCharge` | `routes/src/lib.rs` |
-| ce que le moteur sait de plus sur les cases d'une fiche qu'on saisit (celles de l'entreprise, celles d'un salarié et les listes qu'elles offrent, `ListesDuSalarie`, sa complémentaire santé, `SanteDuSalarie`) ; le texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé), `CaseTapee` | `Completer` | `routes/src/fiches/rendue.rs` |
+| ce que le moteur sait de plus sur les cases d'une fiche qu'on saisit (celles de l'entreprise, celles d'un salarié) | `routes::fiches::Completer` | `routes/src/fiches/rendue.rs` |
+| listes que la fiche d'un salarié offre, lues une fois par réponse (les pays de naissance et de nationalité, les métiers, ce que l'entreprise dit de la déduction forfaitaire) | `routes::fiches::ListesDuSalarie` | `routes/src/fiches/rendue.rs` |
+| complémentaire santé d'un salarié au mois telle que sa fiche la fait dire (hors fiche, ce qui manque pour la payer, ou les niveaux où l'on choisit) | `routes::fiches::SanteDuSalarie` | `routes/src/fiches/rendue.rs` |
+| texte tapé d'une case que son type refuse (les quinze chiffres d'un NIR collé) | `routes::fiches::CaseTapee` | `routes/src/fiches/rendue.rs` |
 | niveau de garantie de la complémentaire santé que le barème du jour offre (son code et son libellé) | `routes::ouverture::NiveauDeSante` | `routes/src/ouverture.rs` |
 | partie d'une case de fiche faite de cases, ou de chaque rangée d'une liste (son chemin, son libellé, sa forme, son aide, ses choix, si elle est ouverte) | `routes::fiches::PartieDeLaFiche` | `routes/src/fiches/rendue.rs` |
 | largeur d'une case de fiche à l'écran (toute la ligne, ou la moitié) | `declarations::champs::Largeur` | `declarations/src/champs.rs` |

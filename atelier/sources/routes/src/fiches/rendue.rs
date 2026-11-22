@@ -309,7 +309,8 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
         None => None,
     };
-    let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k))?;
+    let listes = std::cell::OnceCell::new();
+    let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k), &listes)?;
     let mut cases = Vec::new();
     let mut avance_ouvert = false;
     for c in table.iter().filter(|c| montres.contains(&c.cle) || completer.en_lecture(c.cle)) {
@@ -333,20 +334,31 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
 }
 
 /// CE QUE LE MOTEUR SAIT DE PLUS SUR LES CASES D'UNE FICHE, telle qu'on la saisit, qu'il rend avec elles : celles de
-/// l'entreprise (`completer_l_entreprise`), celles d'un salarie (`completer_le_salarie`, avec les listes qu'il lit une
-/// fois pour toute la fiche) ; un spectacle n'en a pas.
+/// l'entreprise (`completer_l_entreprise`), celles d'un salarie (`completer_le_salarie`, avec les listes lues une fois
+/// par reponse, et sa complementaire sante quand sa case s'ouvre) ; un spectacle n'en a pas.
 enum Completer<'a> {
     Entreprise(&'a ChampsEntreprise),
-    Salarie(&'a droit::fiche::ChampsSalarie, ListesDuSalarie),
+    Salarie(&'a droit::fiche::ChampsSalarie, &'a ListesDuSalarie, Option<SanteDuSalarie>),
     Rien,
 }
 
 impl<'a> Completer<'a> {
-    /// Pour la fiche `fiche`, dont les cases `montree` s'ouvrent.
-    fn de(ctx: &Contexte, fiche: FicheAJuger<'a>, montree: &dyn Fn(CaseDeFiche) -> bool) -> R<Completer<'a>> {
+    /// Pour la fiche `fiche`, dont les cases `montree` s'ouvrent ; `listes` : celles d'un salarie, lues a la premiere
+    /// fiche de salarie de la reponse qui les demande, puis gardees.
+    fn de(ctx: &Contexte, fiche: FicheAJuger<'a>, montree: &dyn Fn(CaseDeFiche) -> bool, listes: &'a std::cell::OnceCell<ListesDuSalarie>) -> R<Completer<'a>> {
         Ok(match fiche {
             FicheAJuger::Entreprise(e) => Completer::Entreprise(e),
-            FicheAJuger::Salarie(s) => Completer::Salarie(s, ListesDuSalarie::lire(ctx, montree)?),
+            FicheAJuger::Salarie(s) => {
+                let lues = match listes.get() {
+                    Some(l) => l,
+                    None => {
+                        let l = ListesDuSalarie::lire(ctx)?;
+                        listes.get_or_init(|| l)
+                    }
+                };
+                let sante = if montree(droit::fiche::CasePieceSalarie::SanteSvp.into()) { Some(SanteDuSalarie::lire(ctx)?) } else { None };
+                Completer::Salarie(s, lues, sante)
+            }
             FicheAJuger::Spectacle(_) => Completer::Rien,
         })
     }
@@ -356,7 +368,7 @@ impl<'a> Completer<'a> {
     /// renvoi a la fiche de l'entreprise, ou l'option se pose).
     fn en_lecture(&self, k: CaseDeFiche) -> bool {
         match self {
-            Completer::Salarie(_, listes) => !listes.deduction_forfaitaire_exercee && k == CaseDeFiche::from(droit::fiche::CaseSalarie::DeductionForfaitaire),
+            Completer::Salarie(_, listes, _) => !listes.deduction_forfaitaire_exercee && k == CaseDeFiche::from(droit::fiche::CaseSalarie::DeductionForfaitaire),
             Completer::Entreprise(_) | Completer::Rien => false,
         }
     }
@@ -365,7 +377,7 @@ impl<'a> Completer<'a> {
     fn case(&self, ctx: &Contexte, case: &mut CaseDeLaFiche) -> R<bool> {
         match self {
             Completer::Entreprise(e) => completer_l_entreprise(ctx, e, case).map(|_| true),
-            Completer::Salarie(s, listes) => completer_le_salarie(ctx, s, listes, case),
+            Completer::Salarie(s, listes, sante) => completer_le_salarie(ctx, s, listes, sante.as_ref(), case),
             Completer::Rien => Ok(true),
         }
     }
@@ -374,12 +386,20 @@ impl<'a> Completer<'a> {
 /// LA CASE QUE LE MOTEUR PROPOSE DE REMPLIR (« Pour démarrer » : `routes::rappels`), sur la fiche `fiche`, de valeur
 /// `valeur` (`ecrite` : ce qu'ecrit la fiche, case et chemin) : dessinee comme dans sa fiche. La case d'une structure
 /// n'a que la partie qui manque (les autres se gardent, la route ne les rendant pas). Aucune pour une case qui ne se
-/// saisit pas, que la fiche n'ouvre pas, ou une cle que la table ne connait pas.
-pub(crate) fn case_a_remplir(ctx: &Contexte, fiche: FicheAJuger<'_>, chemin: &CheminDeFiche, valeur: Option<ValeurDeCase>, ecrite: &dyn Fn(CaseDeFiche, &[&str]) -> MotEcrit) -> R<Option<CaseDeLaFiche>> {
+/// saisit pas, que la fiche n'ouvre pas, ou une cle que la table ne connait pas. `listes` : celles d'un salarie, lues
+/// une fois pour toutes les lignes de la reponse.
+pub(crate) fn case_a_remplir(
+    ctx: &Contexte,
+    listes: &std::cell::OnceCell<ListesDuSalarie>,
+    fiche: FicheAJuger<'_>,
+    chemin: &CheminDeFiche,
+    valeur: Option<ValeurDeCase>,
+    ecrite: &dyn Fn(CaseDeFiche, &[&str]) -> MotEcrit,
+) -> R<Option<CaseDeLaFiche>> {
     let Some(c) = champs::champ(fiche.nom(), chemin.champ)?.filter(|c| c.ecran && !c.calcule()) else { return Ok(None) };
     let mobilite = crate::ouverture::versement_mobilite_des_etablissements(ctx);
     let Some(mut case) = case_du_champ(&c, valeur, &|ch: &[&str]| ecrite(c.cle, ch), mobilite)? else { return Ok(None) };
-    if !Completer::de(ctx, fiche, &|k| k == c.cle)?.case(ctx, &mut case)? {
+    if !Completer::de(ctx, fiche, &|k| k == c.cle, listes)?.case(ctx, &mut case)? {
         return Ok(None);
     }
     if let (Some(dans), Some(parties)) = (&chemin.dans, case.parties.as_mut()) {
@@ -526,27 +546,38 @@ fn choix_de(choix: &[String], libelles: Option<&Libelles>) -> Vec<Choix> {
     tete.into_iter().chain(choix.iter().map(|code| Choix::de(code, if code.is_empty() { vide.clone() } else { libelle(code) }))).collect()
 }
 
-/// LES LISTES QUE LA FICHE D'UN SALARIE OFFRE, lues une fois pour toute la fiche : les pays de naissance (la table
-/// « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE, chacun avec la nationalite DSN qui s'en deduit), les
-/// metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), la complementaire sante d'un salarie au mois (lue
-/// seulement quand sa case s'ouvre : elle compose le bareme du jour), et ce que la fiche de l'entreprise dit de la
-/// deduction forfaitaire specifique (sa phrase, et si la compagnie l'exerce).
-struct ListesDuSalarie {
+/// LES LISTES QUE LA FICHE D'UN SALARIE OFFRE, lues une fois par reponse (la fiche rendue, ou toutes les lignes de
+/// « Pour démarrer ») : les pays de naissance (la table « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE,
+/// chacun avec la nationalite DSN qui s'en deduit), les metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), et
+/// ce que la fiche de l'entreprise dit de la deduction forfaitaire specifique (sa phrase, et si la compagnie l'exerce).
+pub(crate) struct ListesDuSalarie {
     pays_naissance: Vec<Choix>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     metiers: Vec<Choix>,
-    sante: Option<SanteDuSalarie>,
     deduction_forfaitaire: String,
     deduction_forfaitaire_exercee: bool,
 }
 
 /// LA COMPLEMENTAIRE SANTE D'UN SALARIE AU MOIS, telle que la fiche la fait dire : la convention ne la fait pas choisir
 /// sur la fiche (d'ou elle vient : `bareme::sante_hors_fiche`), le bareme du jour ne se compose pas (ce qui manque), ou
-/// les niveaux de garantie du bareme, ou l'on choisit.
+/// les niveaux de garantie du bareme, ou l'on choisit. Elle ne se lit que quand sa case s'ouvre : elle compose le bareme
+/// du jour.
 enum SanteDuSalarie {
     HorsFiche(String),
     PourPayer(String),
     Niveaux(Vec<Choix>),
+}
+
+impl SanteDuSalarie {
+    fn lire(ctx: &Contexte) -> R<SanteDuSalarie> {
+        Ok(match droit::bareme::sante_hors_fiche(&ctx.entreprise)? {
+            Some(d) => SanteDuSalarie::HorsFiche(d),
+            None => match crate::ouverture::niveaux_sante(ctx)? {
+                Ok(niveaux) => SanteDuSalarie::Niveaux(std::iter::once(Choix::de("", "— pas encore dite —")).chain(niveaux.iter().map(|n| Choix::de(&n.niveau, &n.libelle))).collect()),
+                Err(manque) => SanteDuSalarie::PourPayer(manque),
+            },
+        })
+    }
 }
 
 /// Ce que dit une case que le moteur remplit depuis le numero de securite sociale, tant qu'elle est vide.
@@ -600,7 +631,7 @@ pub(super) fn proposer_au_salarie(plate: &mut droit::fiche::ChampsSalarie) -> R<
 }
 
 impl ListesDuSalarie {
-    fn lire(ctx: &Contexte, montree: &dyn Fn(CaseDeFiche) -> bool) -> R<ListesDuSalarie> {
+    fn lire(ctx: &Contexte) -> R<ListesDuSalarie> {
         let a_choisir = || Choix::de("", A_CHOISIR);
         let pays_naissance = std::iter::once(a_choisir()).chain(socle::pays::servir_naissance()?.into_iter().map(|p| Choix::de(&p.code, &p.nom))).collect();
         let metiers = std::iter::once(a_choisir())
@@ -610,22 +641,10 @@ impl ListesDuSalarie {
                     .map(|m| Choix::de(&m.code, format!("{}{}", m.libelle, if m.cadre_par_defaut { " (cadre)" } else { "" })).sous(Some(m.famille.to_string()))),
             )
             .collect();
-        let sante = if montree(droit::fiche::CasePieceSalarie::SanteSvp.into()) {
-            Some(match droit::bareme::sante_hors_fiche(&ctx.entreprise)? {
-                Some(d) => SanteDuSalarie::HorsFiche(d),
-                None => match crate::ouverture::niveaux_sante(ctx)? {
-                    Ok(niveaux) => SanteDuSalarie::Niveaux(std::iter::once(Choix::de("", "— pas encore dite —")).chain(niveaux.iter().map(|n| Choix::de(&n.niveau, &n.libelle))).collect()),
-                    Err(manque) => SanteDuSalarie::PourPayer(manque),
-                },
-            })
-        } else {
-            None
-        };
         Ok(ListesDuSalarie {
             pays_naissance,
             pays: droit::nationalite::servir()?,
             metiers,
-            sante,
             deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)?,
             deduction_forfaitaire_exercee: ctx.entreprise.deduction_forfaitaire_option.code().is_some(),
         })
@@ -640,7 +659,7 @@ impl ListesDuSalarie {
 /// pays ; le metier se choisit dans les metiers d'une fiche et renvoie a l'onglet ou l'on en ajoute ; la complementaire
 /// sante dit ses niveaux, ou pourquoi elle ne se choisit pas ici (ses cases ne s'ouvrent pas, sa valeur se garde) ; la
 /// deduction forfaitaire dit ce qu'en dit la fiche de l'entreprise, et y renvoie.
-fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes: &ListesDuSalarie, case: &mut CaseDeLaFiche) -> R<bool> {
+fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes: &ListesDuSalarie, sante: Option<&SanteDuSalarie>, case: &mut CaseDeLaFiche) -> R<bool> {
     use droit::fiche::CaseSalarie as S;
     let est = |k: S| case.cle == CaseDeFiche::from(k);
     let du_nir = s.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref()));
@@ -686,7 +705,7 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
         case.choix = Some(choix);
         case.renvoi = Some(RenvoiDeLaFiche::Metiers { libelle: "Ajouter un métier" });
     } else if case.cle == CaseDeFiche::from(droit::fiche::CasePieceSalarie::SanteSvp) {
-        match &listes.sante {
+        match sante {
             None => {}
             Some(SanteDuSalarie::Niveaux(niveaux)) => {
                 if let Some(p) = case.parties.iter_mut().flatten().find(|p| p.cle == "niveau") {

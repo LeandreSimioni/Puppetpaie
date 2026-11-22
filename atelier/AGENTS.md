@@ -120,8 +120,8 @@ dessinateur (`js/avance.js`), et la route dit les cases ouvertes, la forme, le l
 pré-rempli et la place de chacune. Une case qui se choisit déclare ses choix dans la route ; une valeur que le moteur
 propose arrive par la route (`propose`), et « Enregistrer » la valide. La fiche d'un spectacle
 est le modèle des fiches : la route `fiche` la rend telle qu'on la saisit, et le même dessin d'une case (`caseDeRoute`,
-`js/avance.js`) sert à la carte et à la fiche. Les fiches Entreprise et Salarié
-gardent encore un dessin à la main : elles passent au même dessinateur, et d'ici là rien ne s'y ajoute qui décide
+`js/avance.js`) sert à la carte et à la fiche. Les trois fiches (Entreprise, Salarié,
+Spectacle) sont rendues par la route `fiche` et dessinées par ce même dessinateur : rien ne s'y ajoute qui décide
 dans la page. **Tout le logiciel suit, écran par écran** (Léandre, 21/11/2026 : « la même chose qu'on a fait pour la
 carte, il faut la faire pour tout le logiciel », « la page, il faut juste faire un petit peu de mise en forme »).
 **Avant de toucher à un écran, on relève tout ce qu'il a** (« regarder tout ce qu'avait la page pour voir qu'on ne

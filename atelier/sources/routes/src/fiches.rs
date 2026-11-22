@@ -37,7 +37,7 @@ use socle::texte::{capitaliser, strip};
 
 mod ecriture;
 mod rendue;
-pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche};
+pub(crate) use rendue::{case_a_redire, case_a_remplir, CaseDeLaFiche, ListesDuSalarie};
 pub(crate) use ecriture::{anomalies_enregistrees, avec_libelles, case_vide, comblee, ecrire_fiche, ecrire_fichier, inscrire_etablissements, inscrire_taux_atmp, lire_fichier, poser, preparer, ChangementDit, Forcer, SorteDeFiche};
 
 const NOM_FICHE: Champ = Champ { nom: "nom", libelle: Affiche::new("Fiche"), forme: Forme::Texte, sens: "la fiche : entreprise, salarie ou spectacle", avance: false };
