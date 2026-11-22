@@ -668,14 +668,11 @@ pub fn dossier_temporaire() -> PathBuf {
 }
 
 /// Dans le navigateur (WASI), la bibliotheque standard n'en connait pas (`temp_dir` y panique, et la panique abandonne le
-/// module) : celui que l'hote nomme dans `TMPDIR`, sinon `/tmp`, comme la bibliotheque standard le fait sous Unix ; l'hote
-/// le preouvre (une ecriture dans un dossier qu'il n'ouvre pas se refuse, comme ailleurs un disque qui refuse).
+/// module) : c'est `/tmp`, que l'hote preouvre (une ecriture dans un dossier qu'il n'ouvre pas se refuse, comme
+/// ailleurs un disque qui refuse).
 #[cfg(target_os = "wasi")]
 pub fn dossier_temporaire() -> PathBuf {
-    match std::env::var_os("TMPDIR") {
-        Some(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from("/tmp"),
-    }
+    PathBuf::from("/tmp")
 }
 
 /// `Path::exists`, note.

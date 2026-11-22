@@ -245,7 +245,9 @@ pub fn par_l_hote(url: &Url, entetes: &[(&str, &str)], corps: &[u8], delai: std:
     if crate::fil_de_fond::ici() {
         return Err(crate::echec::refus(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote))));
     }
-    if hote != hote_de(FILET.texte()) {
+    // L'adresse entiere commence par celle du filet, suivie d'un chemin : le schema, l'hote et le port sont ceux du
+    // filet, et rien de ce qui suit (`@`, `\`) ne les change pour le navigateur.
+    if !url.texte().strip_prefix(FILET.texte()).is_some_and(|reste| reste.starts_with('/')) {
         return Err(crate::echec::refus(format!("Dans le navigateur, le logiciel ne joint que le serveur de l'éditeur : rien ne part vers {}.", hote)));
     }
     let delai_ms = u64::try_from(delai.as_millis()).map_err(|e| crate::refus!("L'attente d'un envoi au filet ne se dit pas en millisecondes ({}).", e))?;
