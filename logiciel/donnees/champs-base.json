@@ -1437,7 +1437,7 @@
    "ecran": true
   },
   {
-   "note": "DEPARTEMENT ET PAYS SE LISENT DANS LE NIR : ses 6e et 7e\nchiffres sont le departement de naissance, 99 a l'etranger. La route\n`fiche` les propose (`prerempli`), et le moteur les ecrit a\nl'enregistrement, dans une case vide seulement (`deriver`).",
+   "note": "LE DEPARTEMENT SE LIT DANS LE NIR : ses 6e et 7e chiffres sont le\ndepartement de naissance, 99 a l'etranger. La route `fiche` le propose\n(`prerempli`), et le moteur l'ecrit a l'enregistrement, dans une case\nvide seulement (`deriver`). Le pays de naissance, lui, n'est que propose\n(`rendue::proposer_au_salarie`) : seul « Enregistrer » l'ecrit.",
    "cle": "departement_naissance", "bloc": "Naissance et nationalité", "largeur": "demie",
    "se_demande": "au_salarie",
    "exige_par": ["dpae", "dsn"],
@@ -1461,7 +1461,7 @@
    "exige_par": ["dsn"],
    "libelle": "Pays de naissance",
    "forme": "pays",
-   "aide": "Le pays se choisit dans la liste : la table « Pays » de la DSN, dont la DSN déclare le code à deux lettres (le Kosovo, l'URSS, la Yougoslavie et les autres États disparus y sont). Rempli tout seul (France) quand le numéro de sécurité sociale dit une naissance en France.",
+   "aide": "Le pays se choisit dans la liste : la table « Pays » de la DSN, dont la DSN déclare le code à deux lettres (le Kosovo, l'URSS, la Yougoslavie et les autres États disparus y sont). France est proposée quand le numéro de sécurité sociale dit une naissance en France métropolitaine ; elle ne s'écrit qu'à l'enregistrement de la fiche.",
    "longueur": 2,
    "exemple": "FR",
    "choix": [],

@@ -270,11 +270,10 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
     };
     let depart = comblee::<F>(&enregistree)?;
     let mut plate = depart.clone();
-    let mut reecrites = Vec::new();
-    let anomalies = match changements {
-        None => anomalies_enregistrees::<F>(&enregistree)?,
+    let (mut reecrites, fautes, saisie) = match &changements {
+        None => (Vec::new(), Vec::new(), false),
         Some(liste) => {
-            let (lus, mut fautes) = Changements::<F::Changement>::lire(&liste).map_err(|e| e.reclasser(Classe::MalFormee))?;
+            let (lus, mut fautes) = Changements::<F::Changement>::lire(liste).map_err(|e| e.reclasser(Classe::MalFormee))?;
             for ch in lus.0 {
                 F::appliquer(&mut plate, ch);
             }
@@ -283,12 +282,18 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
                 Some(l) => l,
                 None => &[],
             };
-            reecrites = F::reprendre_la_saisie(ctx, &liste, changees, &mut plate, &mut fautes)?;
-            let tapee = Tapee { fiche: plate, fautes };
-            let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
-            plate = tapee.fiche;
-            anomalies
+            (F::reprendre_la_saisie(ctx, liste, changees, &mut plate, &mut fautes)?, fautes, true)
         }
+    };
+    reecrites.extend(F::proposer(&mut plate)?);
+    // Sans saisie ni proposition, la verification de la pastille ; sinon celle de la fiche telle qu'elle se montre.
+    let anomalies = if saisie || !reecrites.is_empty() {
+        let tapee = Tapee { fiche: plate, fautes };
+        let anomalies = anomalies_saisies::<F>(ctx, &tapee)?;
+        plate = tapee.fiche;
+        anomalies
+    } else {
+        anomalies_enregistrees::<F>(&enregistree)?
     };
     let (phrase, phrases) = verdict(&anomalies);
     // L'entreprise d'une fiche de salarie ou de spectacle est celle de la compagnie ; celle de la fiche entreprise, la
@@ -535,6 +540,44 @@ enum SanteDuSalarie {
 /// Ce que dit une case que le moteur remplit depuis le numero de securite sociale, tant qu'elle est vide.
 const LU_DANS_LE_NIR: &str = "Rempli pour vous — lu dans le numéro de sécurité sociale.";
 
+/// Ce que dit le pays de naissance d'une personne que le numero de securite sociale dit nee en metropole.
+const NE_EN_METROPOLE: &str = "Le numéro de sécurité sociale dit une naissance en France métropolitaine : France est proposée, à changer si besoin.";
+
+/// LE NUMERO DE SECURITE SOCIALE DE `s` DIT-IL UNE NAISSANCE EN FRANCE METROPOLITAINE ? Son lieu de naissance (6e et 7e
+/// caracteres, `champs::departement_du_nir`) est, pour une personne nee en metropole, le departement du code officiel
+/// geographique, 2A et 2B pour la Corse depuis 1976 ; trois chiffres en 97 pour les DOM ; 99 a l'etranger
+/// (`atelier/reference/sources/insee-nir-siret/insee-schema-nir-20261028.txt`, l. 125). Le departement de naissance de
+/// la DSN admet 20 avant 1976, 98 pour les TOM, 96 avant 1968 seulement
+/// (`atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`, S21.G00.30.014). Les departements de metropole du COG
+/// sont 01 a 19, 2A, 2B, 21 a 95 (`atelier/reference/sources/insee-cog-2015-departements.zip`). Oui donc pour 01 a 90,
+/// 2A, 2B, et 20 (la Corse d'avant 1976) ; pour 91 a 95, seulement d'une personne nee a partir de 1968, la date de
+/// naissance de la fiche le disant (INFERENCE : la DSN date de 1968 le changement de 96, aucun texte depose ne dit ce que
+/// 91 a 95 nommaient avant) ; non pour 96, 97, 98, 99. La table « Pays » de la DSN a ses propres codes pour les DOM et
+/// les TOM (`logiciel/donnees/pays-dsn-base.json`) : un 97 ou un 98 ne dit donc pas FR.
+fn ne_en_metropole(s: &droit::fiche::ChampsSalarie) -> bool {
+    let Some(dep) = s.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref())) else { return false };
+    match dep.as_str() {
+        "2A" | "2B" => true,
+        d => match d.parse::<u8>() {
+            Ok(1..=90) => true,
+            Ok(91..=95) => s.date_naissance.dite().is_some_and(|j| socle::mois::Annee::du_jour(j) >= socle::annee!("1968")),
+            _ => false,
+        },
+    }
+}
+
+/// CE QUE LA ROUTE PROPOSE DANS LA FICHE D'UN SALARIE `plate` (`SorteDeFiche::proposer`) : France dans un pays de
+/// naissance vide quand le numero de securite sociale dit une naissance en metropole (`ne_en_metropole`), « FR » de la
+/// table « Pays » de la DSN. Rien ne l'ecrit d'autre que « Enregistrer ».
+pub(super) fn proposer_au_salarie(plate: &mut droit::fiche::ChampsSalarie) -> R<Vec<CaseDeFiche>> {
+    use droit::fiche::CaseSalarie as S;
+    if plate.pays_naissance.is_some() || !ne_en_metropole(plate) {
+        return Ok(Vec::new());
+    }
+    plate.pays_naissance = Some(socle::pays::CodePays::france());
+    Ok(vec![S::PaysNaissance.into()])
+}
+
 impl ListesDuSalarie {
     fn lire(ctx: &Contexte, montree: &dyn Fn(CaseDeFiche) -> bool) -> R<ListesDuSalarie> {
         let a_choisir = || Choix::de("", A_CHOISIR);
@@ -562,8 +605,9 @@ impl ListesDuSalarie {
 }
 
 /// CE QUE LE MOTEUR SAIT DE PLUS SUR UNE CASE DE LA FICHE D'UN SALARIE `s` (telle qu'on la saisit), qu'il rend avec elle ;
-/// faux : il ne l'ouvre pas. Les pays se choisissent dans leurs listes ; le departement et le pays de naissance qu'une case
-/// vide prend du numero de securite sociale (le moteur les ecrit a l'enregistrement, `SorteDeFiche::deriver`) ; avec un
+/// faux : il ne l'ouvre pas. Les pays se choisissent dans leurs listes ; le departement de naissance qu'une case vide
+/// prend du numero de securite sociale (le moteur l'ecrit a l'enregistrement, `SorteDeFiche::deriver`) ; sous le pays de
+/// naissance, ce que le numero dit d'une naissance en metropole (la route y propose France : `proposer_au_salarie`) ; avec un
 /// pays de nationalite de la liste, la nationalite DSN s'en deduit et ne s'ouvre pas, ce qui s'en deduit se dit sous le
 /// pays ; le metier se choisit dans les metiers d'une fiche et renvoie a l'onglet ou l'on en ajoute ; la complementaire
 /// sante dit ses niveaux, ou pourquoi elle ne se choisit pas ici (ses cases ne s'ouvrent pas, sa valeur se garde) ; la
@@ -577,11 +621,8 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
     if est(S::PaysNaissance) {
         case.forme = Forme::ChoixRendu;
         case.choix = Some(listes.pays_naissance.clone());
-        if let (true, Some(dep)) = (vide, &du_nir) {
-            if dep != "99" {
-                case.prerempli = Some(ValeurDeCase::texte("FR".to_string()));
-                case.dit.push(LU_DANS_LE_NIR.to_string());
-            }
+        if ne_en_metropole(s) {
+            case.dit.push(NE_EN_METROPOLE.to_string());
         }
     } else if est(S::DepartementNaissance) {
         if let (true, Some(dep)) = (vide, du_nir) {

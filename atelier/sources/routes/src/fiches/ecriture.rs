@@ -94,6 +94,13 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn reprendre_la_saisie(_ctx: &Contexte, _liste: &socle::forme::Liste, _changees: &[CaseDeFiche], _plate: &mut Self::Plate, _fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
         Ok(Vec::new())
     }
+    /// CE QUE LA ROUTE `fiche` PROPOSE DANS LES CASES VIDES de la fiche `plate` qu'elle rend, a l'ouverture comme a
+    /// chaque relecture : une valeur que la page montre dans la case, que la personne peut changer, et qui ne s'ecrit
+    /// qu'avec « Enregistrer » (aucune ecriture ne la pose d'elle-meme) ; rend les cases ou elle l'a posee. Rien pour une
+    /// fiche qui ne propose rien.
+    fn proposer(_plate: &mut Self::Plate) -> R<Vec<CaseDeFiche>> {
+        Ok(Vec::new())
+    }
     /// Les cases qui different d'une fiche a l'autre.
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
@@ -470,17 +477,6 @@ impl SorteDeFiche for FicheSalarieDatee {
                 }
             }
         }
-        // LE PAYS DE NAISSANCE AUSSI, dans une case vide : 99 est une naissance a l'etranger (meme texte) ; un autre
-        // departement, une naissance en France (INFERENCE : un departement de naissance est francais), « FR » de la
-        // table « Pays » de la DSN. La route `fiche` le propose avant (`rendue::completer_le_salarie`).
-        if p.pays_naissance.is_none() {
-            if p.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref())).is_some_and(|d| d != "99") {
-                match FauteDeCase::pose::<droit::fiche::ChangementSalarie>(S::PaysNaissance.into(), "FR") {
-                    Ok(ch) => FicheSalarieDatee::appliquer(p, ch),
-                    Err(f) => fautes.push(f),
-                }
-            }
-        }
         // Les initiales du contrat se lisent dans le nom declare, lui-meme derive du nom saisi.
         if p.initiales_contrat.remplie().is_none() {
             let lettres: String = p.nom.portee().into_iter().flat_map(str::chars).filter(|c| c.is_ascii_uppercase()).take(2).collect();
@@ -535,6 +531,9 @@ impl SorteDeFiche for FicheSalarieDatee {
     }
     fn reprendre_la_saisie(ctx: &Contexte, liste: &socle::forme::Liste, changees: &[CaseDeFiche], plate: &mut ChampsSalarie, fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
         super::rendue::reprendre_le_salarie(ctx, liste, changees, plate, fautes)
+    }
+    fn proposer(plate: &mut ChampsSalarie) -> R<Vec<CaseDeFiche>> {
+        super::rendue::proposer_au_salarie(plate)
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
