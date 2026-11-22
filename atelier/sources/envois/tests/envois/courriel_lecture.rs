@@ -11,34 +11,18 @@ use documents::fiche_questionnaire as fq;
 use envois::courriel_lecture::{adresse_de, date_de, identifiant_de, texte_propre};
 use serde::{Deserialize, Serialize};
 use socle::base64::lire as base64_lire;
-use socle::forme::NonLue;
 
-/// L'oracle : les messages lus, les dates et les pays. Les cles du questionnaire d'avant la reponse typee
-/// (`questionnaire`, `sujet`, `corps`, `html`, `alphabet`, `questions`) se lisent et ne disent rien, le temps que
-/// l'oracle se reecrive sans elles.
+/// L'oracle : les messages lus, les dates et les pays.
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
 struct Oracle {
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    questionnaire: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    sujet: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    corps: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    html: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    alphabet: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    questions: NonLue,
     messages: Vec<MessageLu>,
     dates: Vec<DateLue>,
     pays: Vec<PaysLu>,
 }
 
 /// Un message recu (`eml`, en base64) et ce que sa lecture en rend. `defaut_tirets` : une donnee du cas, que le test ne
-/// recalcule pas. Les reponses lues a l'ancienne, par libelles (`reponses`, `fiche`, `illisible`), se lisent et ne
-/// disent rien.
+/// recalcule pas.
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
 struct MessageLu {
@@ -49,12 +33,6 @@ struct MessageLu {
     message_id: Option<String>,
     date: String,
     defaut_tirets: bool,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    reponses: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    fiche: NonLue,
-    #[serde(deserialize_with = "socle::forme::non_lue", default, skip_serializing)]
-    illisible: NonLue,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
@@ -106,19 +84,10 @@ fn la_lecture_des_messages_des_dates_et_des_pays_rend_l_oracle() {
                     if lue == releve { "MAINTENANT".to_string() } else { socle::paris::ecrit::seconde::texte(lue) }
                 },
                 defaut_tirets: cas.defaut_tirets,
-                reponses: NonLue::default(),
-                fiche: NonLue::default(),
-                illisible: NonLue::default(),
             }
         })
         .collect();
     let obtenu = Oracle {
-        questionnaire: NonLue::default(),
-        sujet: NonLue::default(),
-        corps: NonLue::default(),
-        html: NonLue::default(),
-        alphabet: NonLue::default(),
-        questions: NonLue::default(),
         messages,
         dates: attendu.dates.iter().map(|d| DateLue { texte: d.texte.clone(), attendu: fq::date_lue(&d.texte) }).collect(),
         pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c.to_string(), Some(u.as_str().to_string()))) }).collect(),
