@@ -891,6 +891,17 @@ pub fn autorise(racine: &Path) -> bool {
     matches!(Jeton::de(racine), Jeton::Lu(_))
 }
 
+/// QUAND LE DRIVE A ETE LIE, sans rien ouvrir : la date du fichier du jeton scelle (`sceller_le_jeton` l'ecrit a chaque
+/// liaison), lue dans ses metadonnees ; `None` : aucun jeton. `Err` : sa date ne se lit pas.
+pub(crate) fn lie_le(racine: &Path) -> R<Option<socle::paris::Moment>> {
+    let p = socle::fichiers::JETON_GOOGLE.dans(racine);
+    match std::fs::metadata(&p) {
+        Ok(m) => socle::paris::mtime(&m).map(Some).ok_or_else(|| socle::echec::au_chemin("La date du jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).", &p)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(socle::echec::du_disque(&p, &e)),
+    }
+}
+
 /// L'adresse du compte, sans reseau ; `None` si pas autorise (un jeton illisible ne l'est pas).
 pub(crate) fn compte_autorise(racine: &Path) -> Option<String> {
     match Jeton::de(racine) {
