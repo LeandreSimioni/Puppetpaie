@@ -7,11 +7,9 @@
 //! case qui change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee` choisit ce qui se date ;
 //! `droit::fiche::dater`, par `FicheDatee::changer`, est le seul qui ecrit une valeur datee).
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 
-use declarations::champs::{self, Anomalie, Apercu, FicheAJuger, Gravite};
+use declarations::champs::{self, Anomalie, FicheAJuger, Gravite};
 use import::proposee::FicheProposee;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{
@@ -86,8 +84,14 @@ pub(crate) trait SorteDeFiche: FicheDatee<Plate: FicheSaisie> {
     fn brute<'a>(ctx: &'a Contexte, cle: Option<&Self::Cle>) -> Option<&'a Self>;
     /// Ce que l'en-tete de la fiche rendue `p`, telle qu'elle est enregistree, dit d'elle (`fiches::rendue`) ; rien, pour
     /// une fiche qui n'en dit rien.
-    fn entete(_cle: Option<&Self::Cle>, _p: &Self::Plate) -> super::rendue::EnteteDeLaFiche {
-        super::rendue::EnteteDeLaFiche::aucun()
+    fn entete(_ctx: &Contexte, _cle: Option<&Self::Cle>, _p: &Self::Plate) -> R<super::rendue::EnteteDeLaFiche> {
+        Ok(super::rendue::EnteteDeLaFiche::aucun())
+    }
+    /// CE QUE LA ROUTE `fiche` RECRIT DE LA SAISIE `liste`, posee sur la fiche `plate` (celle qu'on saisit, d'apres
+    /// `enregistree`), a chaque relecture ; rend les cases recrites, que la page montre telles que la route les rend, et
+    /// retire de `fautes` celles qu'elle a levees. Rien pour une fiche qui n'en recrit rien.
+    fn reprendre_la_saisie(_ctx: &Contexte, _liste: &socle::forme::Liste, _enregistree: &Self::Plate, _plate: &mut Self::Plate, _fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
+        Ok(Vec::new())
     }
     /// Les cases qui different d'une fiche a l'autre.
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
@@ -229,8 +233,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
         Some(ctx.entreprise_brute())
     }
     /// L'entreprise n'a pas de liste ou revenir : pas d'« Annuler ».
-    fn entete(_cle: Option<&()>, _p: &ChampsEntreprise) -> super::rendue::EnteteDeLaFiche {
-        super::rendue::EnteteDeLaFiche::sans_liste()
+    fn entete(_ctx: &Contexte, _cle: Option<&()>, _p: &ChampsEntreprise) -> R<super::rendue::EnteteDeLaFiche> {
+        Ok(super::rendue::EnteteDeLaFiche::sans_liste())
     }
     fn differentes(a: &ChampsEntreprise, b: &ChampsEntreprise) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -465,6 +469,17 @@ impl SorteDeFiche for FicheSalarieDatee {
                 }
             }
         }
+        // LE PAYS DE NAISSANCE AUSSI, dans une case vide : 99 est une naissance a l'etranger (meme texte) ; un autre
+        // departement, une naissance en France (INFERENCE : un departement de naissance est francais), « FR » de la
+        // table « Pays » de la DSN. La route `fiche` le propose avant (`rendue::completer_le_salarie`).
+        if p.pays_naissance.is_none() {
+            if p.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref())).is_some_and(|d| d != "99") {
+                match FauteDeCase::pose::<droit::fiche::ChangementSalarie>(S::PaysNaissance.into(), "FR") {
+                    Ok(ch) => FicheSalarieDatee::appliquer(p, ch),
+                    Err(f) => fautes.push(f),
+                }
+            }
+        }
         // Les initiales du contrat se lisent dans le nom declare, lui-meme derive du nom saisi.
         if p.initiales_contrat.remplie().is_none() {
             let lettres: String = p.nom.portee().into_iter().flat_map(str::chars).filter(|c| c.is_ascii_uppercase()).take(2).collect();
@@ -513,6 +528,12 @@ impl SorteDeFiche for FicheSalarieDatee {
     }
     fn brute<'a>(ctx: &'a Contexte, cle: Option<&IdSalarie>) -> Option<&'a FicheSalarieDatee> {
         ctx.salarie_brut(cle?)
+    }
+    fn entete(ctx: &Contexte, cle: Option<&IdSalarie>, p: &ChampsSalarie) -> R<super::rendue::EnteteDeLaFiche> {
+        super::rendue::entete_du_salarie(ctx, cle, p)
+    }
+    fn reprendre_la_saisie(ctx: &Contexte, liste: &socle::forme::Liste, enregistree: &ChampsSalarie, plate: &mut ChampsSalarie, fautes: &mut Vec<FauteDeCase>) -> R<Vec<CaseDeFiche>> {
+        super::rendue::reprendre_le_salarie(ctx, liste, enregistree, plate, fautes)
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -643,12 +664,12 @@ impl SorteDeFiche for FicheSpectacleDatee {
     /// L'EN-TETE D'UN SPECTACLE : son titre (« Nouveau spectacle » pour une fiche neuve, « Spectacle à nommer » pour un
     /// numero que l'import a lu sans titre, sinon le titre, ou la cle), puis son numero d'objet, ou sa cle ; une fiche
     /// neuve dit d'ou viendra sa cle. Une fiche titree montre son cout de l'annee, que la route `couts` range par titre.
-    fn entete(cle: Option<&IdSpectacle>, p: &ChampsSpectacle) -> super::rendue::EnteteDeLaFiche {
+    fn entete(_ctx: &Contexte, cle: Option<&IdSpectacle>, p: &ChampsSpectacle) -> R<super::rendue::EnteteDeLaFiche> {
         let titre = p.titre.as_deref().filter(|t| !t.is_empty());
         let numero = p.ecrite(droit::fiche::CaseSpectacle::NumeroObjet.into()).mot().map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
         let cout = titre.map(|t| super::rendue::CoutDeLaFiche::Spectacle { de: t.to_string() });
         let titre = titre.map(str::trim).filter(|t| !t.is_empty());
-        match cle {
+        Ok(match cle {
             None => super::rendue::EnteteDeLaFiche::de("Nouveau spectacle".to_string(), None, Some("La clé de la fiche se fabrique à l'enregistrement."), None),
             Some(c) => {
                 let titre = match titre {
@@ -662,7 +683,7 @@ impl SorteDeFiche for FicheSpectacleDatee {
                 };
                 super::rendue::EnteteDeLaFiche::de(titre, Some(sous_titre), None, cout)
             }
-        }
+        })
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -735,46 +756,11 @@ pub(crate) fn comblee<F: SorteDeFiche>(plate: &F::Plate) -> R<F::Plate> {
     Ok(montree)
 }
 
-/// UNE FICHE TAPEE, lue par sa porte (`FicheSaisie::lire_cases`) : la fiche typee, et les fautes de ses cases.
+/// UNE FICHE TAPEE : la fiche typee, chaque case lue par sa porte (`droit::fiche::Changements::lire`), et les fautes de
+/// ses cases.
 pub(crate) struct Tapee<P> {
     pub(crate) fiche: P,
     pub(crate) fautes: Vec<FauteDeCase>,
-}
-
-impl<'de, P: FicheSaisie> Deserialize<'de> for Tapee<P> {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Tapee<P>, D::Error> {
-        let o = socle::forme::Objet::deserialize(d)?;
-        match P::lire_cases(&o) {
-            Ok((fiche, fautes)) => Ok(Tapee { fiche, fautes }),
-            Err(e) => Err(serde::de::Error::custom(e.phrase)),
-        }
-    }
-}
-
-/// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`) :`{"nom": …, "donnees": {…}}`, chaque case typee a la porte.
-#[derive(Deserialize)]
-#[serde(tag = "nom", content = "donnees", deny_unknown_fields)]
-pub(crate) enum FicheTapee {
-    #[serde(rename = "entreprise")]
-    Entreprise(Tapee<ChampsEntreprise>),
-    #[serde(rename = "salarie")]
-    Salarie(Tapee<ChampsSalarie>),
-    #[serde(rename = "spectacle")]
-    Spectacle(Tapee<ChampsSpectacle>),
-}
-
-/// LA FICHE QUE L'ECRAN MONTRE EN CE MOMENT (`permanents`) : `{"nom": …, "donnees": {…}}`, et pour un salarie deja
-/// enregistre sa cle (`cle`) : les cases d'un permanent qui lui est du (`engagement::permanents`), et celles que le
-/// metier d'un de ses engagements demande, se montrent (`fiches::montres`). Une case fautive y est vide.
-#[derive(Deserialize)]
-#[serde(tag = "nom", deny_unknown_fields)]
-pub(crate) enum FicheEnCours {
-    #[serde(rename = "entreprise")]
-    Entreprise { donnees: Tapee<ChampsEntreprise> },
-    #[serde(rename = "salarie")]
-    Salarie { cle: Option<IdSalarie>, donnees: Tapee<ChampsSalarie> },
-    #[serde(rename = "spectacle")]
-    Spectacle { donnees: Tapee<ChampsSpectacle> },
 }
 
 // ------------------------------------------------------------------ la derivation
@@ -1611,54 +1597,11 @@ fn redire<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Vec
     Ok(FicheEnregistree::Ecrite { cle, ecrits, enregistre_a, enregistre_dit, phrase })
 }
 
-// ------------------------------------------------------------------ la route verifier-fiche
-
-/// Ce que le moteur PROPOSERAIT pour une case encore vide, et pourquoi.
-#[derive(Debug, Clone, Serialize)]
-struct Suggestion {
-    valeur: String,
-    pourquoi: &'static str,
-}
-
-/// Ce que rend `verifier-fiche` : les anomalies de la fiche telle qu'elle SERAIT derivee, ce qui serait declare, ce que
-/// le moteur proposerait pour les cases vides.
-#[derive(Serialize)]
-pub(crate) struct FicheVerifiee {
-    phrase: socle::texte::Phrase,
-    phrases: Vec<String>,
-    anomalies: Vec<Anomalie>,
-    declare: Apercu,
-    suggestions: BTreeMap<CaseDeFiche, Suggestion>,
-}
-
-impl crate::enveloppe::Dite for FicheVerifiee {
-    fn phrase(&self) -> &socle::texte::Phrase {
-        &self.phrase
-    }
-}
-
-/// `verifier-fiche` : la fiche tapee, chaque case typee a sa porte (`FicheTapee`), derivee (`SorteDeFiche::deriver`, sans
-/// forcer : seul ce qui est vide ou faux se refait), verifiee comme a l'ecriture : les anomalies de la table, puis les
-/// fautes de ses cases (ce que leur type a refuse, a la porte ou a la derivation), toutes ensemble, chacune sur sa case.
-/// Une case que la fiche ne decrit pas a refuse la charge a la porte. Ce que le bareme reconnait d'une case (l'organisation
-/// patronale) se reconnait comme a l'ecriture (`SorteDeFiche::reconnaitre`), chaque case comme neuve.
-pub(crate) fn verifier_fiche(ctx: &Contexte, t: FicheTapee) -> R<FicheVerifiee> {
-    match t {
-        FicheTapee::Entreprise(t) => verifier::<FicheEntrepriseDatee>(ctx, t),
-        FicheTapee::Salarie(t) => verifier::<FicheSalarieDatee>(ctx, t),
-        FicheTapee::Spectacle(t) => verifier::<FicheSpectacleDatee>(ctx, t),
-    }
-}
-
-fn verifier<F: SorteDeFiche>(ctx: &Contexte, t: Tapee<F::Plate>) -> R<FicheVerifiee> {
-    let anomalies = anomalies_saisies::<F>(ctx, &t)?;
-    let (phrase, phrases) = verdict(&anomalies);
-    Ok(FicheVerifiee { phrase, phrases, anomalies, declare: champs::apercu_derive(&t.fiche)?, suggestions: suggestions(F::a_juger(&t.fiche))? })
-}
+// ------------------------------------------------------------------ la verification
 
 /// LES ANOMALIES D'UNE FICHE TAPEE `t`, comme a l'ecriture : derivee (`SorteDeFiche::deriver`, sans forcer : seul ce qui
 /// est vide ou faux se refait), verifiee par la table, puis les fautes de ses cases (a la porte, a la reconnaissance, a la
-/// derivation), chacune sur sa case. `verifier-fiche` et la fiche rendue (`fiches::rendue`) les disent.
+/// derivation), chacune sur sa case. La fiche rendue (`fiches::rendue`) les dit.
 pub(crate) fn anomalies_saisies<F: SorteDeFiche>(ctx: &Contexte, t: &Tapee<F::Plate>) -> R<Vec<Anomalie>> {
     let mut derivee = t.fiche.clone();
     let mut fautes = t.fautes.clone();
@@ -1683,36 +1626,3 @@ pub(crate) fn verdict(anomalies: &[Anomalie]) -> (socle::texte::Phrase, Vec<Stri
     (phrase, phrases)
 }
 
-/// Ce que le moteur PROPOSERAIT pour une case encore vide.
-fn suggestions(fiche: FicheAJuger<'_>) -> R<BTreeMap<CaseDeFiche, Suggestion>> {
-    use droit::fiche::CaseSalarie as S;
-    let mut propose = BTreeMap::new();
-    if let FicheAJuger::Salarie(d) = fiche {
-        if let Some(dep) = d.nir.dite().and_then(|n| champs::departement_du_nir(n.as_ref())) {
-            let mut trouvees = vec![(S::DepartementNaissance, dep.clone(), d.departement_naissance.is_some())];
-            if dep != "99" {
-                trouvees.push((S::PaysNaissance, "FR".to_string(), d.pays_naissance.is_some()));
-            }
-            for (cle, valeur, dite) in trouvees {
-                if !dite {
-                    propose.insert(cle.into(), Suggestion { valeur, pourquoi: "lu dans le numéro de sécurité sociale" });
-                }
-            }
-        }
-    } else if let FicheAJuger::Entreprise(d) = fiche {
-        let code = match (texte(&d.code_urssaf), d.code_postal.dite()) {
-            (None, Some(cp)) => declarations::urssaf::base()?.du_code_postal(cp.as_ref()),
-            _ => None,
-        };
-        if let Some(code) = code {
-            propose.insert(
-                CaseEntreprise::CodeUrssaf.into(),
-                Suggestion {
-                    valeur: code.to_string(),
-                    pourquoi: "l'organisme du département, d'après votre code postal — à corriger si le vôtre diffère (versement en lieu unique, pôle grandes entreprises, GUSO)",
-                },
-            );
-        }
-    }
-    Ok(propose)
-}
