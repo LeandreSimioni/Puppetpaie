@@ -1067,7 +1067,8 @@ pub struct FicheDemandee {
 /// LES QUESTIONS A POSER A UNE PERSONNE dont la fiche est `fiche` (une fiche vide pour qui n'en a pas) : ce qui y manque
 /// et que seul le salarie connait, selon son cas (`fq::a_poser`). La demande les pose ; la releve ne lit qu'elles.
 fn questions_pour(ctx: &Contexte, fiche: &droit::fiche::ChampsSalarie) -> R<Vec<fq::Question>> {
-    let manquent = champs::a_demander_au_salarie(fiche, &ctx.entreprise)?;
+    let cases: Vec<CaseDeFiche> = fq::Question::TOUTES.iter().map(|q| q.declaree().case.into()).collect();
+    let manquent = champs::a_demander_au_salarie(fiche, &ctx.entreprise, &cases)?;
     Ok(fq::a_poser(&|c| manquent.contains(&c.into()), &|c| droit::fiche::FicheSaisie::dite(fiche, c.into())))
 }
 

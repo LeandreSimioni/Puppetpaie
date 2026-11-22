@@ -187,7 +187,8 @@ pub struct QuestionDeclaree {
     pub si_aucun: Option<Question>,
     /// Elle peut rester sans reponse, et la page le dit.
     pub facultative: bool,
-    /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche.
+    /// La case de la fiche du salarie qu'elle remplit : elle ne se pose que si cette case manque a sa fiche. C'est le
+    /// seul endroit qui dit qu'une case se demande au salarie.
     pub case: CaseSalarie,
     /// Elle ne se pose qu'a un salarie dont la fiche dit deja cette case (l'accord a la deduction forfaitaire, a qui
     /// exerce une profession qui y ouvre droit).
@@ -330,8 +331,8 @@ impl Question {
     }
 }
 
-/// LES QUESTIONS A POSER a un salarie : celles dont la case manque a sa fiche (`manque` : elle se demande au salarie, sa
-/// condition est remplie et elle est vide, `declarations::champs::a_demander_au_salarie`), pourvu que la fiche dise ce
+/// LES QUESTIONS A POSER a un salarie : celles dont la case manque a sa fiche (`manque` : sa condition est remplie et
+/// elle est vide, `declarations::champs::a_demander_au_salarie`), pourvu que la fiche dise ce
 /// que la question suppose (`dite`) et que la question dont elle depend soit posee.
 pub fn a_poser(manque: &dyn Fn(CaseSalarie) -> bool, dite: &dyn Fn(CaseSalarie) -> bool) -> Vec<Question> {
     let mut posees: Vec<Question> = Vec::new();

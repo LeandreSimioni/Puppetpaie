@@ -325,14 +325,6 @@ pub enum Avance {
     Ordinaire(Vec<String>),
 }
 
-/// A QUI UNE CASE SE DEMANDE (`se_demande` de `champs-base.json`) : ce que seul lui connait, qu'un acte l'exige ou non.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SeDemande {
-    /// Au salarie, par « Remplir ma fiche ».
-    AuSalarie,
-}
-
 /// `Champ` : une ligne de la table.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -379,9 +371,6 @@ pub struct Champ {
     pub utile_pour: Option<Vec<ActeExigeant>>,
     /// Ce qui se passe sans lui, quand rien ne se refuse (`sinon`).
     pub sinon: Option<String>,
-    /// Qui le connait et se le voit demander (`se_demande`) : le salarie, par « Remplir ma fiche »
-    /// (`documents::fiche_questionnaire`). Absent : il ne se demande a personne.
-    pub se_demande: Option<SeDemande>,
     /// Les cases d'une structure (`champs`), decrites chacune ; une autre cle s'y refuse. Une case peut etre un chemin
     /// (`taux.t1_cadre` : la case `t1_cadre` du bloc `taux`).
     pub champs: Option<Vec<Case>>,
@@ -967,13 +956,14 @@ pub fn manquants<F: FicheSaisie>(donnees: &F) -> R<Vec<Manquant>> {
     Ok(out)
 }
 
-/// LES CASES QUI MANQUENT A LA FICHE DU SALARIE `fiche` ET SE DEMANDENT A LUI (`se_demande`) : sa condition remplie par
-/// la fiche (`si`, `exige_si`) et par celle de l'entreprise (`si_entreprise`), et vide. « Remplir ma fiche » n'en pose
-/// pas d'autre (`documents::fiche_questionnaire::a_poser`).
-pub fn a_demander_au_salarie(fiche: &ChampsSalarie, entreprise: &ChampsEntreprise) -> R<Vec<CaseDeFiche>> {
+/// LES CASES `cases` QUI MANQUENT A LA FICHE DU SALARIE `fiche` : sa condition remplie par la fiche (`si`, `exige_si`)
+/// et par celle de l'entreprise (`si_entreprise`), et vide. Les cases sont celles que les questions de « Remplir ma
+/// fiche » remplissent (`documents::fiche_questionnaire::Question`, le seul endroit qui dit qu'une case se demande au
+/// salarie).
+pub fn a_demander_au_salarie(fiche: &ChampsSalarie, entreprise: &ChampsEntreprise, cases: &[CaseDeFiche]) -> R<Vec<CaseDeFiche>> {
     Ok(table(NomDeFiche::Salarie)?
         .iter()
-        .filter(|c| c.se_demande == Some(SeDemande::AuSalarie) && c.applicable(fiche) && condition_remplie(c.si_entreprise.as_ref(), entreprise) && !fiche.dite(c.cle))
+        .filter(|c| cases.contains(&c.cle) && c.applicable(fiche) && condition_remplie(c.si_entreprise.as_ref(), entreprise) && !fiche.dite(c.cle))
         .map(|c| c.cle)
         .collect())
 }

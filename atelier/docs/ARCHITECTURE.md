@@ -546,7 +546,6 @@ un libellé, chacun sa forme.
 | formulaire publié de « Remplir ma fiche » (un `.js` par forme, nommé par son empreinte courte, sous `atelier/site/fiche/formulaires/`) | `FormulairePublie` | `documents/src/fiche_questionnaire.rs` |
 | lien de « Remplir ma fiche » (la page, et dans le fragment : formulaire, questions, code, adresse de la compagnie, objet) | `LienDeFiche` | `documents/src/fiche_questionnaire.rs` |
 | réponse à une question (« aucun », ou ce que la personne a écrit), la réponse lue, ce que la relève en tire | `Reponse`, `ReponseLue`, `FicheDesReponses` | `documents/src/fiche_questionnaire.rs` |
-| à qui une case de fiche se demande (`se_demande` de `champs-base.json`) | `declarations::champs::SeDemande` | `declarations/src/champs.rs` |
 | identifiant de courriel | `IdDeCourriel` | `envois/src/envoi.rs` |
 | courriel envoyé | `envois::envoi::Message<Pour>` | `envois/src/envoi.rs` |
 | expéditeur d'un courriel lu | `envois::courriel_lecture::Expediteur` | `envois/src/courriel_lecture.rs` |
