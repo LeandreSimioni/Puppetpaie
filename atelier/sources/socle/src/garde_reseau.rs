@@ -14,6 +14,10 @@
 //!
 //! Hors essais (l'executable livre, lance hors de Cargo), la variable n'existe pas : rien ne change.
 //!
+//! DANS LE NAVIGATEUR (la cible WASI, la demo), le module n'a aucune prise reseau : toute sortie s'y refuse ici, avant
+//! toute connexion (`SANS_PRISE`), et l'appelant fait de ce refus ce qu'il fait d'un serveur injoignable (un incident
+//! reste dans son journal, `incidents::envoyer`).
+//!
 //! Chaque sortie du moteur passe par ici : `transport::envoyer` (HTTP : editeur, net-entreprises, Urssaf, Google),
 //! `sources::telecharger`, `entrepot_dila`, `maj` (le depot des versions), `courriel` (IMAP, SMTP),
 //! `interface::poste::ouvrir_adresse` (le navigateur). L'essai `garde_reseau` (`tests/fichiers/`) le verifie dans les
@@ -162,8 +166,14 @@ fn refus(hote: &str) -> Echec {
     ))
 }
 
+/// Le systeme n'a aucune prise reseau : dans le navigateur (WASI), le module ne se connecte a rien.
+const SANS_PRISE: bool = cfg!(target_os = "wasi");
+
 /// La decision pour une sortie vers `hote`.
 pub fn sortie_vers(hote: &str) -> R<Sortie> {
+    if SANS_PRISE {
+        return Err(crate::echec::refus(format!("Dans le navigateur, le logiciel ne se connecte à aucun serveur : rien ne part vers {}.", hote)));
+    }
     // LE FIL DE FOND de la fenetre (`fil_de_fond`) : il tourne avant tout mot de passe, et ne sort jamais.
     if crate::fil_de_fond::ici() {
         return Err(crate::echec::refus(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote))));
