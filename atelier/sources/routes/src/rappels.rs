@@ -821,19 +821,40 @@ impl Etat<'_> {
 pub(crate) fn rappels(ctx: &Contexte) -> socle::echec::R<Rappels> {
     let st = Etat::de(ctx)?;
     let rappels: Vec<EcheanceDite> = echeances(&st)?.iter().filter(|e| e.due).map(Echeance::dite).collect::<R<_>>()?;
-    let phrases: Vec<String> = rappels
+    let mut phrases: Vec<String> = rappels
         .iter()
         .map(|r| {
             let quand = if r.quand_dit.is_empty() { String::new() } else { format!(" Échéance : {}.", r.quand_dit) };
             format!("{} ({}) : {} {}{}", r.titre, r.pastille.mots, r.question, r.detail, quand).replace("  ", " ")
         })
         .collect();
+    phrases.extend(sans_numero_conges_spectacles(ctx));
     Ok(Rappels {
         phrase: socle::phrase!("Rappels : {}.", rappels.len()),
         fermer_dit: if rappels.is_empty() { "Fermer" } else { "Plus tard" },
         rappels,
         phrases,
     })
+}
+
+/// LES SALARIES ACTIFS DONT LA FICHE DIT QU'ILS N'ONT PAS DE NUMERO CONGES SPECTACLES (`NumeroCongesSpectacles::SansNumero`)
+/// : une phrase chacun, qui dit la demarche sans rien promettre. « Tout salarié doit […] effectuer une demande
+/// d'immatriculation en ligne » ; « Si le salarié est de nationalité étrangère, l'employeur doit procéder à son
+/// immatriculation » (Audiens, mode d'emploi employeur :
+/// `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`, l. 168-180).
+fn sans_numero_conges_spectacles(ctx: &Contexte) -> Vec<String> {
+    use droit::fiche::Lue as _;
+    ctx.salaries
+        .values()
+        .filter(|s| !s.archivee() && s.num_conges_spectacles.dite().is_some_and(droit::fiche::NumeroCongesSpectacles::sans_numero))
+        .map(|s| {
+            let nom = [s.prenom_affichage.remplie(), s.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
+            format!(
+                "{} n'a pas de numéro Congés Spectacles : la demande d'immatriculation à la caisse (Audiens) est à faire, en ligne par le salarié, ou par l'employeur pour un salarié de nationalité étrangère.",
+                nom
+            )
+        })
+        .collect()
 }
 
 /// `echeancier` : les memes echeances, rangees. « Ce mois-ci » : celles qui sont dues (un rappel les dit, avec leur

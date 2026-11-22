@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use droit::fiche::{AccordDfs, CaseSalarie, ModeleBulletin, Nir};
+use droit::fiche::{AccordDfs, CaseSalarie, ModeleBulletin, Nir, NumeroCongesSpectacles};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::fichiers::{Empreinte, EmpreinteCourte};
@@ -845,7 +845,7 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune_affichage: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub num_conges_spectacles: Option<String>,
+    pub num_conges_spectacles: Option<NumeroCongesSpectacles>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -886,13 +886,11 @@ pub struct BanqueLue {
     pub bic: Option<droit::fiche::Bic>,
 }
 
-/// CE QUE LA RELEVE TIRE D'UNE REPONSE : les cases lues, ce qui ne s'est pas lu (et se redemande), et ce que la
-/// personne a dit n'avoir pas, qu'aucune case de la fiche ne garde : la note de la fiche le dit.
+/// CE QUE LA RELEVE TIRE D'UNE REPONSE : les cases lues, et ce qui ne s'est pas lu (et se redemande).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FicheDesReponses {
     pub fiche: FicheLue,
     pub illisible: Vec<String>,
-    pub sans: Vec<Question>,
 }
 
 /// `fiche_depuis_reponses` : les cases que la reponse remplit. Rien n'est suppose. Une liste livree (les pays) qui ne
@@ -900,7 +898,6 @@ pub struct FicheDesReponses {
 pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
     let mut d = FicheLue::default();
     let mut illisible: Vec<String> = rep.illisibles.clone();
-    let mut sans: Vec<Question> = Vec::new();
     let faute = |q: Question, r: &str| format!("{} : « {} »", en_minuscule(q.declaree().libelle), r);
     let texte = |q: Question| rep.ecrite(q).map(|r| strip(r).to_string()).filter(|t| !t.is_empty());
     d.prenom_affichage = texte(Question::Prenom);
@@ -910,10 +907,13 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
     d.lieu_naissance_affichage = texte(Question::LieuNaissance);
     d.adresse_affichage = texte(Question::Adresse);
     d.commune_affichage = texte(Question::Commune);
-    d.num_conges_spectacles = rep.ecrite(Question::CongesSpectacles).map(|r| r.replace(' ', "")).filter(|t| !t.is_empty());
-    if rep.de(Question::CongesSpectacles) == Some(&Reponse::Aucun) {
-        sans.push(Question::CongesSpectacles);
-    }
+    // LE NUMERO CONGES SPECTACLES, trois cas : un numero ; « aucun », la fiche retient qu'il n'en a pas (et les rappels
+    // disent la demande a faire) ; rien, rien ne s'ecrit.
+    d.num_conges_spectacles = match rep.de(Question::CongesSpectacles) {
+        Some(Reponse::Dite(r)) => Some(NumeroCongesSpectacles::Numero(r.replace(' ', ""))).filter(|n| n.numero().is_some()),
+        Some(Reponse::Aucun) => Some(NumeroCongesSpectacles::SansNumero),
+        None => None,
+    };
     for q in [Question::Naissance, Question::Anniversaire] {
         if let Some(r) = rep.ecrite(q) {
             let v = date_lue(r);
@@ -1064,7 +1064,7 @@ pub fn fiche_depuis_reponses(rep: &ReponseLue) -> R<FicheDesReponses> {
             d.pays_naissance = pays;
         }
     }
-    Ok(FicheDesReponses { fiche: d, illisible, sans })
+    Ok(FicheDesReponses { fiche: d, illisible })
 }
 
 /// TREIZE CARACTERES QUI ONT LA FORME D'UN NIR, deja ranges (`Nir::rangee`) : des chiffres, et aux 6e et 7e rangs deux

@@ -240,7 +240,7 @@ fn valeurs_reelles(racine: &Path) -> R<Vec<(String, String)>> {
     }
     if let Some(sal) = lire_config::<droit::fiche::Salaries>(&cfg, "salaries.json")? {
         for s in sal.fiches.values() {
-            let cles = [("nir", portees(&s.nir)), ("num_conges_spectacles", portees(&s.num_conges_spectacles)), ("email", portees(&s.email)), ("adresse", portees(&s.adresse))];
+            let cles = [("nir", portees(&s.nir)), ("num_conges_spectacles", s.num_conges_spectacles.iter().flatten().filter_map(|d| d.valeur.as_ref()?.numero().map(String::from)).collect()), ("email", portees(&s.email)), ("adresse", portees(&s.adresse))];
             for (cle, valeurs) in cles {
                 for v in valeurs {
                     poser(v, format!("salarie.{}", cle));

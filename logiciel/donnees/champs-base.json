@@ -1717,12 +1717,17 @@
    "ecran": true
   },
   {
+   "note": "UN NUMERO, OU « N'EN A PAS » (`droit::fiche::NumeroCongesSpectacles`) : il s'ecrit {\"numero\": \"…\"} ou {\"sans_numero\": true} ; un texte seul, la forme d'avant, se lit comme un numero. « N'en a pas » : la demande d'immatriculation est a faire (le salarie en ligne, l'employeur pour un salarie de nationalite etrangere : Audiens, mode d'emploi employeur, `atelier/reference/sources/audiens-dsn/audiens-conges-spectacles-mode-emploi-employeur-20261030.txt`, l. 168-180) ; les rappels le disent.",
    "cle": "num_conges_spectacles", "bloc": "Intermittence", "largeur": "demie",
+   "champs": [
+    {"cle": "numero", "libelle": "Numéro", "forme": "texte", "ecran": true, "aide": "Une lettre suivie de six chiffres.", "exemple": "E012345"},
+    {"cle": "sans_numero", "libelle": "Il n'en a pas", "forme": "booleen", "ecran": true, "aide": "Sa demande d'immatriculation à la caisse est à faire."}
+   ],
    "libelle": "Numéro Congés Spectacles",
-   "forme": "texte",
-   "aide": "Utile pour les bulletins : le numéro que la caisse des Congés Spectacles (Audiens) a donné à l'intermittent : il s'imprime sur le bulletin. Un premier contrat n'en a souvent pas encore.",
+   "forme": "structure",
+   "aide": "Utile pour les bulletins : le numéro que la caisse des Congés Spectacles (Audiens) a donné à l'intermittent : il s'imprime sur le bulletin. Un premier contrat n'en a souvent pas encore : cocher « Il n'en a pas ».",
    "longueur": null,
-   "exemple": "E0123456",
+   "exemple": "",
    "choix": [],
    "declare": true,
    "derive_de": null,

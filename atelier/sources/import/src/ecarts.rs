@@ -373,7 +373,8 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
             pousser(&mut c.communes, t(k));
         }
         pousser(&mut c.courriels, t(S::Email));
-        pousser(&mut c.conges_spectacles, t(S::NumCongesSpectacles));
+        // Le numero est la partie `numero` de sa case (`droit::fiche::NumeroCongesSpectacles`).
+        pousser(&mut c.conges_spectacles, f.champs.ecrite_au_chemin(S::NumCongesSpectacles.into(), &["numero"]).mot().map(str::to_string));
     }
     let e = &ctx.entreprise;
     for k in [e.raison_sociale.remplie(), e.nom_affichage.remplie(), e.adresse.remplie(), e.adresse_affichage.remplie(), e.complement_adresse.remplie(), e.complement_adresse_affichage.remplie(), e.code_postal.remplie(), e.commune.remplie(), e.commune_affichage.remplie()] {

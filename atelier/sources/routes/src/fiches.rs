@@ -1405,10 +1405,6 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             continue;
         }
         let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
-        // Ce que la personne dit n'avoir pas et qu'aucune case ne garde (le numero Congés Spectacles) : la note le dit.
-        for q in &lue.sans {
-            note.push_str(&format!(" Elle dit n'avoir pas de {}.", fq::en_minuscule(q.declaree().libelle)));
-        }
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
