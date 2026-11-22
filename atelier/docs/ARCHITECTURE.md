@@ -1964,6 +1964,14 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 
 À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page).
 
+**Les cibles** : Windows (`x86_64-pc-windows-gnu`, ce que les compagnies reçoivent), Linux, macOS, et le navigateur
+(`wasm32-wasip1`), la démo de puppetpaie.fr : le même moteur, bridé, dans un onglet. Le navigateur est un système de
+plus, aux seuls endroits où un système diffère d'un autre : aucun fil ne démarre (`routes::fil_de_routes` le dit, et la
+file des états se fait sur le fil qui l'attend, `etat_garde::Fil`), aucune prise réseau (`socle::garde_reseau` refuse
+toute sortie), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
+(`socle::fichiers::resolu`, `socle::processus`). La page y parle à la fenêtre sans serveur (`interface::onglet`). Avant
+chaque PR, `cargo check` vérifie les cibles Windows et du navigateur (`AGENTS.md`, le flux « Tests »).
+
 **Ce que porte `routes/src/`**, à côté d'une route par fichier :
 
 | dossier | ce qu'il porte |

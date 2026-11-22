@@ -62,3 +62,18 @@ jobs:
         run: cargo check --locked --target x86_64-pc-windows-gnu --manifest-path atelier/sources/moteur/Cargo.toml
       - name: La fenetre pour Windows
         run: cargo check --locked --target x86_64-pc-windows-gnu --manifest-path atelier/sources/fenetre/Cargo.toml
+
+  # LA CIBLE DU NAVIGATEUR (`wasm32-wasip1`), celle de la demo de puppetpaie.fr : le meme moteur, qui tourne dans un
+  # onglet. Les types seulement, comme pour Windows ; le C de `ring` se compile par le clang du systeme.
+  navigateur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: navigateur
+          workspaces: atelier/sources
+      - name: La cible du navigateur
+        run: rustup target add wasm32-wasip1
+      - name: Le moteur pour le navigateur
+        run: cargo check --locked --target wasm32-wasip1 --manifest-path atelier/sources/moteur/Cargo.toml
