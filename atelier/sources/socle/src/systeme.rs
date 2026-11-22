@@ -1,13 +1,20 @@
 //! LES APPELS AU NOYAU DE WINDOWS : la memoire du poste, le disque libre, l'heritage d'une prise d'ecoute, l'attente de
 //! la fin d'un processus. C'est le seul endroit ou un entier signe est impose par l'exterieur (le `BOOL` de l'API, un
-//! `i32`) et le seul `unsafe` du logiciel : chaque appel rend une valeur typee (des octets, un booleen), et le reste du
-//! logiciel ne voit ni l'API ni ses entiers. L'espace interdit `unsafe_code` (`deny`) : ce module seul le leve.
+//! `i32`) et le seul bloc `unsafe` du logiciel : chaque appel rend une valeur typee (des octets, un booleen), et le reste
+//! du logiciel ne voit ni l'API ni ses entiers. L'espace interdit `unsafe_code` (`deny`) : ce module le leve (et la
+//! racine de la crate `onglet`, pour le seul attribut de ses exports).
+//!
+//! DANS LE NAVIGATEUR (WASI), l'hote JavaScript du module : la seule fonction qu'il lui fournit, le POST au filet
+//! (`poster_par_l_hote`), que seule la porte du garde-fou reseau appelle (`garde_reseau::par_l_hote`).
 #![allow(unsafe_code)]
 
+#[cfg(windows)]
 use std::path::Path;
+#[cfg(windows)]
 use std::time::Duration;
 
 /// La memoire physique du poste, en octets : (totale, disponible) ; la raison de l'API sinon.
+#[cfg(windows)]
 pub fn memoire_physique() -> std::io::Result<(u64, u64)> {
     #[repr(C)]
     struct EtatMemoire {
@@ -43,6 +50,7 @@ pub fn memoire_physique() -> std::io::Result<(u64, u64)> {
 }
 
 /// Le disque libre la ou vit `p`, en octets, pour l'utilisateur qui appelle ; la raison de l'API sinon.
+#[cfg(windows)]
 pub fn disque_libre(p: &Path) -> std::io::Result<u64> {
     use std::os::windows::ffi::OsStrExt;
     extern "system" {
@@ -58,6 +66,7 @@ pub fn disque_libre(p: &Path) -> std::io::Result<u64> {
 }
 
 /// La prise `l` ne passe plus a un processus enfant : son drapeau d'heritage tombe.
+#[cfg(windows)]
 pub fn sans_heritage(l: &std::net::TcpListener) {
     use std::os::windows::io::AsRawSocket;
     extern "system" {
@@ -72,6 +81,7 @@ pub fn sans_heritage(l: &std::net::TcpListener) {
 
 /// Attend la fin du processus `pid`, `delai` au plus. Vrai s'il est parti, ou si le noyau ne le connait pas (deja parti,
 /// ou jamais vu : rien a attendre).
+#[cfg(windows)]
 pub fn attendre_la_fin(pid: u32, delai: Duration) -> bool {
     extern "system" {
         fn OpenProcess(acces: u32, heriter: i32, pid: u32) -> isize;
@@ -91,4 +101,24 @@ pub fn attendre_la_fin(pid: u32, delai: Duration) -> bool {
         CloseHandle(h);
         r == 0
     }
+}
+
+/// LE POST AU FILET PAR L'HOTE DU NAVIGATEUR : `demande` (la `DemandeALHote` de `garde_reseau`, en JSON) part par la
+/// fonction que l'hote JavaScript fournit au module (l'import `puppetpaie.poster`), qui la sert et garde sa reponse ;
+/// le module la copie ensuite (`puppetpaie.reponse`). Rend la reponse de l'hote, en octets (`ReponseDeLHote`).
+#[cfg(target_os = "wasi")]
+pub(crate) fn poster_par_l_hote(demande: &[u8]) -> Vec<u8> {
+    #[link(wasm_import_module = "puppetpaie")]
+    extern "C" {
+        /// L'hote lit `longueur` octets a `demande`, fait le POST, garde sa reponse ; rend sa longueur.
+        fn poster(demande: *const u8, longueur: usize) -> usize;
+        /// L'hote ecrit la reponse qu'il garde a `ou` (la longueur que `poster` a rendue).
+        fn reponse(ou: *mut u8);
+    }
+    // SAFETY : la demande est vivante le temps de l'appel ; l'hote n'y fait que lire.
+    let n = unsafe { poster(demande.as_ptr(), demande.len()) };
+    let mut r = vec![0u8; n];
+    // SAFETY : `r` a la longueur que l'hote a rendue ; il y ecrit sa reponse, rien au-dela.
+    unsafe { reponse(r.as_mut_ptr()) };
+    r
 }

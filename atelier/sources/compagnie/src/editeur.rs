@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use socle::echec::{Classe, Echec};
 use socle::garde_reseau::Url;
 use socle::mois::Annee;
-use envois::transport::{envoyer, Panne, Requete};
+use envois::transport::Panne;
 use ureq::http::StatusCode;
 
 use crate::incidents::{CleDIncident, NumeroDePoste};
@@ -39,11 +39,11 @@ pub const ACTIONS_BRIDEES: [&str; 4] = ["poste", "rapport", "retour", "reponses"
 pub const REDEMANDER_IDENTITE: &str = "Le serveur ne reconnait plus ce poste : retirer \"cle\" de config/diagnostic.json pour lui redemander une identite.";
 
 /// Le serveur de l'editeur QUAND LA CONFIGURATION NE DIT RIEN : les
-/// incidents, « Un probleme, une idee ? » et leurs reponses. Il repond sur `filet.puppetpaie.fr` (le serveur vit dans le depot du site de l'editeur, `infra/filet/`). Ce qu'une compagnie a
+/// incidents, « Un probleme, une idee ? » et leurs reponses : le filet (`garde_reseau::FILET`). Ce qu'une compagnie a
 /// pose le remplace toujours : `serveur` de `config/diagnostic.json`, ou `EDITEUR.json` du
 /// paquet. Jamais dans les essais : le garde-fou reseau (`garde_reseau`) le refuse ; un test pose son serveur local, ou
-/// nomme un faux mandataire local comme seule porte.
-pub const SERVEUR_PAR_DEFAUT: Url = Url::du_moteur("https://filet.puppetpaie.fr");
+/// nomme un faux mandataire local comme seule porte. Dans le navigateur, seul le filet se joint (`garde_reseau::par_l_hote`).
+pub const SERVEUR_PAR_DEFAUT: Url = socle::garde_reseau::FILET;
 
 /// Le filet ne doit jamais faire attendre une paie.
 pub const DELAI: std::time::Duration = std::time::Duration::from_secs(15);
@@ -369,16 +369,8 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
     // Aucun codage demandé.
     let mut en_tetes: Vec<(&str, &str)> = vec![("User-Agent", "PuppetPaie-filet"), ("Accept-Encoding", "identity")];
     en_tetes.extend_from_slice(entetes);
-    let r = Requete {
-        donnees: Some(donnees.as_bytes()),
-        content_type: Some("application/json"),
-        post: true,
-        entetes: &en_tetes,
-        sans_gzip: true,
-        ..Requete::get(&url, delai)
-    };
-    match envoyer(&r) {
-        Ok((brut, _)) => {
+    match post_au_filet(&url, &en_tetes, donnees.as_bytes(), delai) {
+        Ok(brut) => {
             // Une reponse qui ne se lit pas se range avec les pannes de reseau : le passage suivant reessaie.
             let texte = match std::str::from_utf8(&brut) {
                 Ok(t) => t.trim_start_matches('\u{feff}'),
@@ -396,6 +388,36 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &Url, action:
             }
             _ => Err(ErreurFilet::Autre(e)),
         },
+    }
+}
+
+/// LE POST JSON AU SERVEUR DE L'EDITEUR, tel que le systeme le fait : par le transport du moteur (`transport::envoyer`) ;
+/// rend le corps de la reponse, ou sa panne.
+#[cfg(not(target_os = "wasi"))]
+fn post_au_filet(url: &Url, entetes: &[(&str, &str)], donnees: &[u8], delai: std::time::Duration) -> Result<Vec<u8>, Panne> {
+    let r = envois::transport::Requete {
+        donnees: Some(donnees),
+        content_type: Some("application/json"),
+        post: true,
+        entetes,
+        sans_gzip: true,
+        ..envois::transport::Requete::get(url, delai)
+    };
+    envois::transport::envoyer(&r).map(|(brut, _)| brut)
+}
+
+/// DANS LE NAVIGATEUR, le module n'a aucune prise : le POST passe par l'hote JavaScript, la seule porte vers dehors, et
+/// vers le seul filet (`garde_reseau::par_l_hote`). Ce qu'il rend prend la forme du transport : un code hors 2xx est un
+/// `Statut` avec son corps ; une panne de l'hote ou un refus de la porte, un `Reseau` (l'incident reste en attente).
+#[cfg(target_os = "wasi")]
+fn post_au_filet(url: &Url, entetes: &[(&str, &str)], donnees: &[u8], delai: std::time::Duration) -> Result<Vec<u8>, Panne> {
+    let mut avec_le_type = entetes.to_vec();
+    avec_le_type.push(("Content-Type", "application/json"));
+    let r = socle::garde_reseau::par_l_hote(url, &avec_le_type, donnees, delai).map_err(|e| Panne::Reseau(e.phrase))?;
+    let code = StatusCode::from_u16(r.code).map_err(|e| Panne::Reseau(format!("code HTTP {} illisible ({})", r.code, e)))?;
+    match code.is_success() {
+        true => Ok(r.corps),
+        false => Err(Panne::Statut { code, corps: Ok(r.corps) }),
     }
 }
 

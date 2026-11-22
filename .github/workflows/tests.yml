@@ -77,3 +77,5 @@ jobs:
         run: rustup target add wasm32-wasip1
       - name: Le moteur pour le navigateur
         run: cargo check --locked --target wasm32-wasip1 --manifest-path atelier/sources/moteur/Cargo.toml
+      - name: La porte de l'onglet
+        run: cargo check --locked --target wasm32-wasip1 --manifest-path atelier/sources/onglet/Cargo.toml

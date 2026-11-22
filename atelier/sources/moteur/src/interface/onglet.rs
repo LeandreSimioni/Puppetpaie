@@ -1,8 +1,8 @@
 //! LE LOGICIEL DANS UN ONGLET DU NAVIGATEUR (la cible WASI, la demo de puppetpaie.fr) : la page parle au moteur sans
 //! serveur. Une demande entre (`DemandeDeLOnglet`), la fenetre la traite comme une requete de son serveur
 //! (`Fenetre::traiter`), une reponse sort (`ReponseALOnglet`) : les memes pages, la meme porte `/api/<route>`, les memes
-//! routes. La fenetre nait une fois (`demarrer`), puis sert chaque demande (`traiter`). Les octets entrent et sortent en
-//! JSON, le corps en base64.
+//! routes. La fenetre nait une fois (`demarrage`), puis sert chaque demande (`traiter`). Les octets entrent et sortent en
+//! JSON, le corps en base64 ; la crate `onglet` les passe a l'hote JavaScript (ses exports), sans rien y lire.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, OnceLock};
@@ -51,12 +51,30 @@ impl ReponseALOnglet {
     }
 }
 
+/// LA FENETRE DE L'ONGLET EST NEE : la premiere page que l'hote demande (`/?jeton=…`). Sinon, l'hote recoit le refus
+/// que la page lit (`refus.phrase`, `RouteReponse::refusee`).
+#[derive(Serialize)]
+pub struct PremierePageDeLOnglet {
+    page: String,
+}
+
+/// `demarrer`, en octets pour l'hote (JSON) : `PremierePageDeLOnglet`, ou le refus.
+pub fn demarrage() -> Vec<u8> {
+    match demarrer() {
+        Ok(page) => socle::ecriture::json_en_ligne(&PremierePageDeLOnglet { page }),
+        Err(e) => socle::ecriture::json_en_ligne(&RouteReponse::refusee(Refus::de(None, e))),
+    }
+    .into_bytes()
+}
+
 /// LA FENETRE DE L'ONGLET NAIT, une fois : rend la premiere page a demander (`/?jeton=…`). Un second appel rend celle de
-/// la fenetre deja nee.
-pub fn demarrer() -> R<String> {
+/// la fenetre deja nee. Comme tout programme du logiciel, elle fixe d'abord le dossier du code (`fixer_le_code` :
+/// `PUPPETPAIE_CODE`, que l'hote pose ; sans elle, le refus la nomme).
+fn demarrer() -> R<String> {
     if let Some(f) = FENETRE.get() {
         return Ok(f.premiere_page());
     }
+    compagnie::installation::fixer_le_code()?;
     compagnie::diagnostic::installer();
     let f = Fenetre::nouvelle(VEILLE, navigateur::dossier_local(&compagnie::installation::base(), PORT), PORT)?;
     let premiere = f.premiere_page();

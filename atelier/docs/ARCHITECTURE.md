@@ -66,9 +66,11 @@ que par la structure :
   heures) : chaque méthode scellée (`grandeurs::Grandeur`, `texte::EnEuros`, `piece::Format`, `date::Unite`) exige un
   jeton que seul son module fabrique. `unsafe` le fabriquerait (`std::mem::zeroed`) : l'espace interdit `unsafe_code`,
   chaque racine le refuse (`#![forbid(unsafe_code)]`, qu'aucun `allow` ne lève : chaque bibliothèque, binaire, essai,
-  exemple et script de construction de l'espace, sauf la bibliothèque du socle ; la fenêtre et la fabrique, hors de
-  l'espace, dans leur manifeste) ; seul `socle::systeme`, les
-  appels au noyau de Windows, le lève, et c'est le seul endroit où un entier signé est imposé par l'extérieur.
+  exemple et script de construction de l'espace, sauf la bibliothèque du socle et celle de l'onglet ; la fenêtre et la
+  fabrique, hors de l'espace, dans leur manifeste) ; seul `socle::systeme`, les
+  appels au noyau de Windows et à l'hôte du navigateur, le lève, et c'est le seul endroit où un entier signé est imposé
+  par l'extérieur. La crate `onglet` le lève aussi, à sa racine, pour le seul attribut de ses exports (`no_mangle`),
+  sans aucun bloc `unsafe` : rien ne la prend.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -604,7 +606,7 @@ un libellé, chacun sa forme.
 | canal des retours | `CanalDesRetours` | `envois/src/releve_retours.rs` |
 | ce que Google dit qui demande un geste de la compagnie (l'autorisation perdue, une permission qui manque, le Drive plein) | `RaisonDeGoogle` | `envois/src/drive.rs` |
 | sorte d'un refus de la boîte courriel (le mot de passe refusé, la boîte injoignable, autre) ; le refus et sa sorte : `RefusDeLaBoite` | `SorteDeRefusDeLaBoite` | `envois/src/courriel.rs` |
-| une demande de la page dans un onglet du navigateur, sans serveur ; la réponse que la fenêtre lui sert : `ReponseALOnglet` | `DemandeDeLOnglet` | `moteur/src/interface/onglet.rs` |
+| une demande de la page dans un onglet du navigateur, sans serveur ; la réponse que la fenêtre lui sert : `ReponseALOnglet` ; la première page que l'hôte demande, la fenêtre née : `PremierePageDeLOnglet` | `DemandeDeLOnglet` | `moteur/src/interface/onglet.rs` |
 | ce qui arrête un envoi SMTP (la réponse négative et son code, le délai, le TLS, l'échange interrompu), avant sa phrase ; le dialogue SMTP sur un flux : `Smtp`, une réponse : `ReponseSmtp`, ce que le serveur offre : `Extensions` | `ArretDeLEnvoi` | `envois/src/courriel.rs` |
 | ce qu'on faisait quand un organisme ou Google a mal répondu (s'identifier, relever, déposer, se servir du Drive, lier Google : la phrase de la panne en suit le conseil) | `CeQuOnFaisait` | `envois/src/transport.rs` |
 | plage d'un relevé des retours | `PlageDuReleve` | `envois/src/releve_retours.rs` |
@@ -621,6 +623,8 @@ un libellé, chacun sa forme.
 | type d'un paramètre NEOReS | `TypeDeParametreNeores` | `droit/src/contexte.rs` |
 | identifiant Drive | `IdDrive` | `envois/src/drive.rs` |
 | adresse | `Url` | `socle/src/garde_reseau.rs` |
+| un POST du module que l'hôte du navigateur fait vers le filet (sa seule porte vers dehors) ; ce que l'hôte en rend : `ReponseDeLHote`, lue en `RenduDeLHoteLu` ; la réponse du serveur ainsi reçue : `RenduDeLHote` | `DemandeALHote` | `socle/src/garde_reseau.rs` |
+| le temps d'un travail du fil de fond fait par qui l'attend (le navigateur, sans second fil) | `LeTempsDUnTravail` | `socle/src/fil_de_fond.rs` |
 | dépôt des mises à jour | `DepotDesMisesAJour` | `compagnie/src/maj.rs` |
 | version de la norme | `VersionDeLaNorme` | `droit/src/natures.rs` |
 | fraction | `Fraction` | `droit/src/natures.rs` |
@@ -1924,8 +1928,8 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`atelier/sources/Cargo.toml`, en tête).
 
 ```
-                         atelier  le binaire du nuage `moteur-atelier`, jamais livré ; rien ne le prend
-                           │
+                 atelier   onglet  le binaire du nuage `moteur-atelier`, jamais livré ; le module du navigateur ;
+                       │   │       rien ne les prend
                          moteur   la ligne de commande et la page ; la publication par GitHub
                            │
                          routes   la porte, une route par geste, ce qu'elles font
@@ -1961,6 +1965,7 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `moteur` | la ligne de commande (`moteur`), la page, la publication par GitHub, en dossiers (ci-dessous) | ne touche pas le JSON brut (la porte est aux routes) ; ne connaît aucune commande de l'atelier |
 | `fabrique-pdf` | la fabrique des PDF : les modèles, la mise en page, le marquage, la lecture ; hors de l'espace Cargo (`exclude`), prise par `documents` et ce qui est au-dessus | ne prend aucune crate de l'espace |
 | `atelier` | tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier` (la ligne de commande du moteur, plus la sienne) : le relevé des textes (`releve/` : LEGI, KALI, les missions de la DGFiP), les référentiels extraits (`extraire/`), les tables Unicode (`generer_tables`), la vérification avant commit, le guet, la veille des sources (`sources`), la fabrique des bulletins fictifs, les outils sur une compagnie (`commandes/outils/`), la redirection vers de faux serveurs, et les commandes `scenario` du banc | n'est jamais livré ; rien ne le prend, et il est hors de `default-members` (il allume la feature `atelier` de ce qu'il prend) |
+| `onglet` | la porte du moteur vers l'hôte JavaScript d'un onglet du navigateur (la démo) : un module WebAssembly (`cdylib`) de quatre exports qui passent des octets (`onglet_entree`, `onglet_demarrer`, `onglet_traiter`, `onglet_sortie`) ; la logique est dans `moteur::interface::onglet` | ne décide rien, ne lit rien de ce qu'il passe ; hors de `default-members`, rien ne le prend, il ne se construit que pour le navigateur |
 
 À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page).
 
@@ -1968,9 +1973,15 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 (`wasm32-wasip1`), la démo de puppetpaie.fr : le même moteur, bridé, dans un onglet. Le navigateur est un système de
 plus, aux seuls endroits où un système diffère d'un autre : aucun fil ne démarre (`routes::fil_de_routes` le dit, et la
 file des états se fait sur le fil qui l'attend, `etat_garde::Fil`), aucune prise réseau (`socle::garde_reseau` refuse
-toute sortie), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
-(`socle::fichiers::resolu`, `socle::processus`). La page y parle à la fenêtre sans serveur (`interface::onglet`). Avant
-chaque PR, `cargo check` vérifie les cibles Windows et du navigateur (`AGENTS.md`, le flux « Tests »).
+toute sortie ; seul le canal de l'éditeur joint le filet, par l'hôte JavaScript : `garde_reseau::par_l_hote`, l'import
+`puppetpaie.poster` de `socle::systeme`), aucun programme ne se lance (`compagnie::poste`), et ni `canonicalize` ni le numéro du processus
+(`socle::fichiers::resolu`, `socle::processus`), ni le dossier temporaire du système, celui que l'hôte nomme
+(`socle::fichiers::dossier_temporaire`). La page y parle à la fenêtre sans serveur (`interface::onglet`), par
+les exports de la crate `onglet` ; le module se fabrique par `cargo build --profile navigateur --target wasm32-wasip1
+-p onglet` : le profil `navigateur` est celui de `release` en « abort » (une panique abandonne le module, et l'appel
+JavaScript lève une exception que l'hôte dit à la page), et la pile du module est celle d'un fil de route
+(`.cargo/config.toml`, `[target.wasm32-wasip1]`). Avant chaque PR, `cargo check` vérifie les cibles Windows et du
+navigateur (`AGENTS.md`, le flux « Tests »).
 
 **Ce que porte `routes/src/`**, à côté d'une route par fichier :
 
@@ -3917,7 +3928,8 @@ installe un second logiciel. `routes/src/gestes/administrateur.rs` :
   l'administrateur, sous l'empreinte de l'ouverture) et les mois se refont en fond ; ouvrir sert un état frais sans
   attendre ; minuit passé, tout se revérifie. **Avant le mot de passe, du calcul local seulement** : le fil est marqué
   (`fil_de_fond`), et `garde_reseau` y refuse toute sortie, le coffre y refuse la clé du poste et toute dérivation de mot
-  de passe. La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
+  de passe ; dans le navigateur, sans second fil, celui qui attend un état fait le travail de la file avec les mêmes
+  refus, le temps de ce travail (`fil_de_fond::LeTempsDUnTravail`). La veille (réseau, coffre, relève, sauvegarde) ne démarre qu'à l'ouverture d'une compagnie ; le tableau de
   l'accueil ne relève les comptes rendus qu'une fois le mot de passe de l'administrateur tapé dans la fenêtre.
 
 

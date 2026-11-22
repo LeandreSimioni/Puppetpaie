@@ -661,6 +661,23 @@ pub fn resolu(chemin: &Path) -> std::io::Result<PathBuf> {
     Ok(chemin.to_path_buf())
 }
 
+/// LE DOSSIER TEMPORAIRE DU SYSTEME (`std::env::temp_dir`) : le seul chemin du logiciel vers lui.
+#[cfg(not(target_os = "wasi"))]
+pub fn dossier_temporaire() -> PathBuf {
+    std::env::temp_dir()
+}
+
+/// Dans le navigateur (WASI), la bibliotheque standard n'en connait pas (`temp_dir` y panique, et la panique abandonne le
+/// module) : celui que l'hote nomme dans `TMPDIR`, sinon `/tmp`, comme la bibliotheque standard le fait sous Unix ; l'hote
+/// le preouvre (une ecriture dans un dossier qu'il n'ouvre pas se refuse, comme ailleurs un disque qui refuse).
+#[cfg(target_os = "wasi")]
+pub fn dossier_temporaire() -> PathBuf {
+    match std::env::var_os("TMPDIR") {
+        Some(d) if !d.is_empty() => PathBuf::from(d),
+        _ => PathBuf::from("/tmp"),
+    }
+}
+
 /// `Path::exists`, note.
 pub fn existe(chemin: &Path) -> bool {
     let v = chemin.exists();

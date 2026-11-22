@@ -836,7 +836,7 @@ fn hors_livraison(rel: &CheminRelatif) -> bool {
 /// `dest` reste tel qu'il etait.
 pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| au_chemin("Un dossier est attendu.", dest))?;
-    let travail = std::env::temp_dir().join(format!("puppetpaie-livrer-{}-{}", nom, socle::processus::numero()));
+    let travail = socle::fichiers::dossier_temporaire().join(format!("puppetpaie-livrer-{}-{}", nom, socle::processus::numero()));
     socle::fichiers::effacer(&travail)?;
     let rendu = rejouer(scenario, &travail, &OptionsRejeu { lectures: false, jusqu_au }).and_then(|r| {
         if !r.ecarts.is_empty() {

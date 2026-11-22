@@ -47,9 +47,12 @@
 # allume la feature `atelier` (la redirection vers de faux serveurs) de ce qu'il prend. La suite de l'espace
 # (`cargo nextest run --cargo-profile essais`) ne la voit donc jamais ; l'atelier a sa cible (`-p atelier`, gardé par
 # `tests/fichiers/structure.rs`).
+#
+# L'ONGLET AUSSI (`onglet`, la porte du moteur vers l'hote JavaScript d'un onglet du navigateur) : un module WebAssembly
+# que rien ne prend, qui ne se construit que pour le navigateur (`wasm32-wasip1`, profil `navigateur`).
 
 [workspace]
-members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"]
+members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier", "onglet"]
 default-members = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"]
 exclude = ["fenetre", "fabrique-pdf"]
 resolver = "2"
@@ -84,7 +87,9 @@ unreachable_code = "forbid"
 unreachable_patterns = "forbid"
 # Aucun `unsafe` : les traits scelles du socle (`grandeurs`, `texte`, `piece`, `date`) exigent un jeton que seul leur
 # module fabrique, et `unsafe` le fabriquerait (`std::mem::zeroed`). Un seul module le leve, `socle::systeme` (les appels
-# au noyau de Windows) ; chaque autre crate le refuse a sa racine (`#![forbid(unsafe_code)]`), qu'aucun `allow` ne leve.
+# au noyau de Windows et a l'hote du navigateur), et la racine d'`onglet` pour le seul attribut de ses exports
+# (`no_mangle`), sans bloc `unsafe` ; chaque autre crate le refuse a sa racine (`#![forbid(unsafe_code)]`), qu'aucun
+# `allow` ne leve.
 unsafe_code = "deny"
 
 [workspace.dependencies]
@@ -117,6 +122,14 @@ codegen-units = 1
 # `catch_unwind`).
 panic = "unwind"
 strip = true
+
+# LE NAVIGATEUR (`cargo build --profile navigateur --target wasm32-wasip1 -p onglet`, la demo de puppetpaie.fr) : le
+# code de `release`, mais « abort ». Dans un module WebAssembly, une panique ne se deroule pas : elle l'abandonne
+# (`unreachable`), et l'appel JavaScript leve alors une exception, que l'hote dit a la page ; `catch_unwind` n'y
+# rattrape rien. La pile du module est posee par cible (`.cargo/config.toml`, `[target.wasm32-wasip1]`).
+[profile.navigateur]
+inherits = "release"
+panic = "abort"
 
 # scrypt brasse 32 Mo par essai : le code des briques de chiffrement va vite,
 # le reste du binaire reste petit.

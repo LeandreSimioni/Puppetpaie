@@ -486,7 +486,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
                 Err(AerEchec::Fabrique(e) | AerEchec::Autre(e)) => return Err(e),
             }
         }
-        let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
+        let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &socle::fichiers::dossier_temporaire())? };
         let cible = documents::PieceDuMois::Aer.dossier().dans(&ctx.racine, periode);
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         let chemin = cible.join(envoi::nom_fichier(documents::SorteDePieceProduite::Aer, &cle, &periode.etiquette()));

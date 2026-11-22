@@ -1153,7 +1153,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         deposes_vus: HashSet::new(),
     };
 
-    let racine_tmp = Temporaire::nouveau_dans(&std::env::temp_dir(), "puppetpaie-dossier")?;
+    let racine_tmp = Temporaire::nouveau_dans(&socle::fichiers::dossier_temporaire(), "puppetpaie-dossier")?;
     let tmp = racine_tmp.0.as_path();
     let ensemble_cles: HashSet<IdSalarie> = cles.iter().cloned().collect();
     let ensemble_cats: HashSet<CategorieDeDocument> = cats.iter().copied().collect();
