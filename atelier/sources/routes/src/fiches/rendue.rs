@@ -312,13 +312,18 @@ fn rendre<F: SorteDeFiche>(ctx: &Contexte, cle: Option<F::Cle>, changements: Opt
     let completer = Completer::de(ctx, F::a_juger(&plate), &|k| montres.contains(&k))?;
     let mut cases = Vec::new();
     let mut avance_ouvert = false;
-    for c in table.iter().filter(|c| montres.contains(&c.cle)) {
+    for c in table.iter().filter(|c| montres.contains(&c.cle) || completer.en_lecture(c.cle)) {
         let ecrite = |chemin: &[&str]| plate.ecrite_au_chemin(c.cle, chemin);
         let Some(mut case) = case_du_champ(c, plate.valeur_ecrite(c.cle), &ecrite, mobilite)? else { continue };
         if !completer.case(ctx, &mut case)? {
             continue;
         }
-        avance_ouvert |= case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
+        let ouverte = montres.contains(&c.cle);
+        if !ouverte {
+            case.forme = Forme::Objet;
+            case.choix = None;
+        }
+        avance_ouvert |= ouverte && case.place == PlaceDeLaCase::Avance && c.ecart(&plate, du_code_postal.as_ref().map(|c| c.as_str()));
         case.anomalie = anomalies.iter().find(|a| a_l_ecran(&table, a.champ) == c.cle).cloned();
         case.temps = historique.iter().find(|h| h.temps.champ == CaseDatee::Case(c.cle)).map(|h| h.temps.clone());
         cases.push(case);
@@ -344,6 +349,16 @@ impl<'a> Completer<'a> {
             FicheAJuger::Salarie(s) => Completer::Salarie(s, ListesDuSalarie::lire(ctx, montree)?),
             FicheAJuger::Spectacle(_) => Completer::Rien,
         })
+    }
+
+    /// LA CASE QUE LA FICHE FERME ET QUE LA ROUTE REND POURTANT, EN LECTURE : la profession de la deduction forfaitaire
+    /// d'un salarie quand la compagnie n'exerce pas l'option (rien ne s'y saisit ; elle porte la phrase qui le dit et le
+    /// renvoi a la fiche de l'entreprise, ou l'option se pose).
+    fn en_lecture(&self, k: CaseDeFiche) -> bool {
+        match self {
+            Completer::Salarie(_, listes) => !listes.deduction_forfaitaire_exercee && k == CaseDeFiche::from(droit::fiche::CaseSalarie::DeductionForfaitaire),
+            Completer::Entreprise(_) | Completer::Rien => false,
+        }
     }
 
     /// La case completee ; faux : la route ne l'ouvre pas (`completer_le_salarie`).
@@ -515,13 +530,14 @@ fn choix_de(choix: &[String], libelles: Option<&Libelles>) -> Vec<Choix> {
 /// « Pays » de la DSN), les pays de nationalite (le COG de l'INSEE, chacun avec la nationalite DSN qui s'en deduit), les
 /// metiers qu'une fiche choisit (`metiers::metiers_d_une_fiche`), la complementaire sante d'un salarie au mois (lue
 /// seulement quand sa case s'ouvre : elle compose le bareme du jour), et ce que la fiche de l'entreprise dit de la
-/// deduction forfaitaire specifique.
+/// deduction forfaitaire specifique (sa phrase, et si la compagnie l'exerce).
 struct ListesDuSalarie {
     pays_naissance: Vec<Choix>,
     pays: Vec<droit::nationalite::PaysDeNationalite>,
     metiers: Vec<Choix>,
     sante: Option<SanteDuSalarie>,
     deduction_forfaitaire: String,
+    deduction_forfaitaire_exercee: bool,
 }
 
 /// LA COMPLEMENTAIRE SANTE D'UN SALARIE AU MOIS, telle que la fiche la fait dire : la convention ne la fait pas choisir
@@ -562,6 +578,15 @@ fn ne_en_metropole(s: &droit::fiche::ChampsSalarie) -> bool {
     }
 }
 
+/// UN PAYS QUE LA LISTE N'OFFRE PAS (une fiche d'avant la liste, une piece reprise) reste offert dans la case, dit
+/// « CODE — inconnu de la liste » : sa valeur se garde, et l'on voit qu'elle est a choisir de nouveau.
+fn garder_hors_liste(case: &mut CaseDeLaFiche) {
+    let Some(MotEcrit::Mot(code)) = case.valeur.as_ref().map(ValeurDeCase::ecrite) else { return };
+    if let Some(choix) = case.choix.as_mut().filter(|l| !l.iter().any(|x| x.code() == code.as_str())) {
+        choix.push(Choix::de(&code, format!("{} — inconnu de la liste", code)));
+    }
+}
+
 /// CE QUE LA ROUTE PROPOSE DANS LA FICHE D'UN SALARIE `plate` (`SorteDeFiche::proposer`) : France dans un pays de
 /// naissance vide quand le numero de securite sociale dit une naissance en metropole (`ne_en_metropole`), « FR » de la
 /// table « Pays » de la DSN. Rien ne l'ecrit d'autre que « Enregistrer ».
@@ -596,7 +621,14 @@ impl ListesDuSalarie {
         } else {
             None
         };
-        Ok(ListesDuSalarie { pays_naissance, pays: droit::nationalite::servir()?, metiers, sante, deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)? })
+        Ok(ListesDuSalarie {
+            pays_naissance,
+            pays: droit::nationalite::servir()?,
+            metiers,
+            sante,
+            deduction_forfaitaire: crate::ouverture::deduction_forfaitaire_dite(ctx)?,
+            deduction_forfaitaire_exercee: ctx.entreprise.deduction_forfaitaire_option.code().is_some(),
+        })
     }
 }
 
@@ -617,6 +649,7 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
     if est(S::PaysNaissance) {
         case.forme = Forme::ChoixRendu;
         case.choix = Some(listes.pays_naissance.clone());
+        garder_hors_liste(case);
         if ne_en_metropole(s) {
             case.dit.push(NE_EN_METROPOLE.to_string());
         }
@@ -628,6 +661,7 @@ fn completer_le_salarie(ctx: &Contexte, s: &droit::fiche::ChampsSalarie, listes:
     } else if est(S::PaysNationalite) {
         case.forme = Forme::ChoixRendu;
         case.choix = Some(std::iter::once(Choix::de("", A_CHOISIR)).chain(listes.pays.iter().map(|p| Choix::de(&p.code, &p.nom))).collect());
+        garder_hors_liste(case);
         if let Some(p) = pays_de_nationalite {
             let table = champs::champ(NomDeFiche::Salarie, S::CodeNationaliteDsn)?;
             let code = p.codification_ue.to_string();

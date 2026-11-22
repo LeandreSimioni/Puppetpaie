@@ -123,7 +123,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Demander à une personne, par courriel, de remplir sa fiche.",
         charge: &[
             Champ { nom: "adresse", libelle: Affiche::new("Courriel"), forme: Forme::Texte, sens: "son courriel", avance: false },
-            Champ { nom: "prenom", libelle: Affiche::new("Prénom"), forme: Forme::Texte, sens: "son prénom, pour lui écrire", avance: false },
+            Champ { nom: "prenom", libelle: Affiche::new("Prénom, pour dire bonjour"), forme: Forme::Texte, sens: "son prénom, pour lui dire bonjour dans le courriel ; absent : « Bonjour, »", avance: false },
             Champ { nom: "motdepasse", libelle: Affiche::new("Mot de passe du logiciel"), forme: Forme::Texte, sens: "le mot de passe du logiciel, s'il est posé ; sans lui, le moteur le demande à un humain", avance: false },
         ],
         exemple: r#"{"adresse":"isadora@exemple.invalid","prenom":"Isadora"}"#,

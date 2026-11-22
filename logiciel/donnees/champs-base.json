@@ -2312,7 +2312,7 @@
    "longueur": null,
    "exemple": "",
    "choix": [],
-   "declare": false,
+   "declare": true,
    "derive_de": null,
    "rubrique": null,
    "si": null,
