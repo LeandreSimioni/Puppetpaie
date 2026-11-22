@@ -179,8 +179,9 @@ pub fn dit_la_boite_injoignable(e: &Echec) -> bool {
 /// (`atelier/reference/sources/ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 2870-2930) : 550
 /// « mailbox unavailable (e.g., mailbox not found, no access, or command rejected for policy reasons) », 551 « User not
 /// local », 553 « mailbox name not allowed (e.g., mailbox syntax incorrect) » : la boite d'arrivee, donc l'adresse du
-/// destinataire ; un 4xx est passager. 535 reste reconnu pour le mot de passe refuse, comme il l'etait : le texte qui
-/// le dit (la RFC 4954, l'authentification SMTP) n'est pas depose.
+/// destinataire ; un 4xx est passager. 535 est le mot de passe refuse (RFC 4954, § 6,
+/// `ietf-rfc4954-smtp-service-extension-for-authentication-20070701.txt`, l. 600-605 : « Authentication credentials
+/// invalid […] the client SHOULD ask the user to supply new credentials »).
 #[track_caller]
 fn envoi_refuse(e: &lettre::transport::smtp::Error) -> Echec {
     let detail = e.to_string();
