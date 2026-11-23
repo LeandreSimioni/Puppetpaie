@@ -217,11 +217,14 @@ function fenetreNative() {
   window.addEventListener("resize", suivre);
   suivre();
 }
-/* Avant de quitter la page (revenir aux compagnies, redémarrer pour mettre à
-   jour : js/mise-a-jour.js) : ce qui attend encore s'enregistre. Faux si
-   l'enregistrement est refusé : on reste, le message est à l'écran, et partir
-   perdrait ce qu'on vient de taper. */
+/* Avant de quitter la page (fermer la fenêtre, revenir aux compagnies,
+   redémarrer pour mettre à jour : js/mise-a-jour.js) : un écran qui porte une
+   saisie non enregistrée se quitte d'abord (`quitterLEcran` : enregistrer,
+   jeter, ou rester), puis ce qui attend encore s'enregistre. Faux si l'on
+   reste ou si l'enregistrement est refusé : le message est à l'écran, et
+   partir perdrait ce qu'on vient de taper. */
 async function avantDeQuitter() {
+  if (!(await quitterLEcran())) return false;
   clearTimeout(MINUTEUR_SAISIE);
   await enregistrerSaisie(false);
   return toutEstEcrit();
@@ -229,9 +232,7 @@ async function avantDeQuitter() {
 window.avantDeQuitter = avantDeQuitter;
 function boutonAccueil(api) {
   document.body.classList.add("accueil-possible");
-  // Revenir aux compagnies quitte la page : un écran qui porte une saisie non enregistrée se quitte d'abord.
   document.getElementById("fenetre-accueil").onclick = async () => {
-    if (!(await quitterLEcran())) return;
     if (!(await avantDeQuitter())) return;
     api.accueil();
   };
