@@ -1777,9 +1777,10 @@ fn boite_de_l_arret(ctx: &Contexte, c: &ChargeArretObligations, cle: Option<&IdS
         cases.push(CaseDeLaFiche::de_parties(cle!(E, connu), CONNU_LE_JOUR.texte().to_string(), dit.and_then(ValeurDeCase::de), parties, heure_dite.into_iter().collect(), None));
     }
     cases.push(crate::imprevus::case_de_la_note(cle!(E, note), c.note.as_ref()));
+    let salarie_illisible = illisible.is_some();
     let dit: Vec<String> = [illisible, contrat.dit(), ensuite].into_iter().flatten().collect();
     let titre = crate::imprevus::titre_de_la_saisie(ctx, "Un arrêt de travail", cle);
-    Ok(crate::imprevus::SaisieDUnImprevu::de(titre, cases, dit, Route::ArretEnregistrer, c.salarie.clone(), contrat))
+    Ok(crate::imprevus::SaisieDUnImprevu::de(titre, cases, dit, Route::ArretEnregistrer, c.salarie.clone(), salarie_illisible, contrat))
 }
 
 /// `arret-obligations` : les obligations qu'un arret AINSI SAISI ferait naitre, avant d'etre enregistre, et la boite qui

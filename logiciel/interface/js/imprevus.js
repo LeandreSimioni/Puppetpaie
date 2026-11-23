@@ -402,7 +402,10 @@ async function boiteDUnImprevu(lecture, ou) {
     delete bloc.dataset.posee;
     poserLaFiche(bloc, { cases: x.cases, historique: [], avance_ouvert: false });
     boite.querySelector("[data-dit]").innerHTML = x.dit.map((l) => `<p class="note">${echapper(l)}</p>`).join("");
-    boite.querySelector("[data-enregistrer]").textContent = x.enregistrer.libelle;
+    // Sans geste (`enregistrer` absent : il ne pourrait que refuser, `dit` dit pourquoi), la boîte n'a qu'« Annuler ».
+    const b = boite.querySelector("[data-enregistrer]");
+    b.hidden = !x.enregistrer;
+    if (x.enregistrer) b.textContent = x.enregistrer.libelle;
   };
   poser(r);
   let tour = 0;
@@ -414,6 +417,8 @@ async function boiteDUnImprevu(lecture, ou) {
   });
   const enregistrer = async () => {
     const g = vue.enregistrer;
+    // Rien ne s'enregistre ici : la boîte dit pourquoi, on y reste.
+    if (!g) { dire(vue.dit.join(" "), "erreur"); return false; }
     let x;
     try { x = await api(g.route, { ...g.charge, ...saisiDans(bloc) }); }
     catch (e) { dire(e.message, "erreur"); return false; }
