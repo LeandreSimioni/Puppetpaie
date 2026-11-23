@@ -1565,8 +1565,9 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
    son titre et ses alinéas (la condition à gauche, le texte à droite). */
 .modele-contrat { margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 6px; }
 .modele-entete { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.modele-gestes { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
-.modele-copier { display: flex; gap: 8px; margin: 6px 0; }
+.modele-gestes, .modele-gestes [data-gestes] { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.modele-gestes { margin: 6px 0; }
+.modele-gestes .modele-engagement { width: auto; }
 .modele-paragraphe { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--bord); }
 .modele-titre { flex: 1; font-weight: bold; }
 .modele-alinea { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0; }
