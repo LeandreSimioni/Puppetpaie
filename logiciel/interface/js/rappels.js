@@ -450,7 +450,7 @@ function boiteRappels(liste, ech, manques, fermerDit) {
    (`ouvrirGeste`), comme une case du mois. Ses `gestes` (« C'est fait »…) sont ceux d'un écran rendu. */
 function boutonRappel(r, i) {
   const libelle = r.action && r.action.libelle;
-  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes);
+  return (libelle ? `<button class="primaire" id="rappel-${i}">${echapper(libelle)}</button>` : "") + boutonsDesGestes(r.gestes, undefined, "secondaire");
 }
 
 /* Le geste d'un rappel mène ailleurs : tout écran qui porte une saisie non enregistrée se quitte d'abord (la boîte, et
