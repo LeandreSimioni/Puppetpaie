@@ -56,7 +56,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Dire ce qu'un import reprendrait (bulletins, DSN, AEM), sans rien écrire.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare)",
+        rend: "le tri des pièces de la boîte import/ (chacune son sort), entreprise et salaries (les fiches à créer ou compléter), les écarts, et leurs pastilles ; dsn_fait_foi (ce que l'import ferait des matricules que la DSN qui arrive déclare) ; gestes (« Reprendre », tant que rien n'est écrit) ; mots (les titres du compte rendu)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -69,7 +69,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Reprendre les pièces du dossier d'import : fiches, engagements importés.",
         charge: &super::SansCharge::CHARGE,
         exemple: r#"{}"#,
-        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort)",
+        rend: "ce que importation-apercu rend, écrit : les fiches créées ou complétées, les mois importés, identites (les personnes mises de côté et leur question), dsn_fait_foi (ce que la DSN qui arrive déclare autrement qu'une carte ou une fiche, et son sort), mots (les titres du compte rendu)",
         refus: &[Refus { classe: Classe::Refuse, corriger: "les pièces que la phrase nomme ; rien n'est écrit" }, FORME],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Ecrit,
@@ -845,6 +845,8 @@ struct CompteRendu {
     #[serde(flatten)]
     lu: Importation,
     gestes: Vec<GesteDeLImport>,
+    /// Les titres de ses parties et de ses colonnes (`MOTS_DU_COMPTE_RENDU`).
+    mots: MotsDuCompteRendu,
 }
 
 impl CompteRendu {
@@ -853,9 +855,71 @@ impl CompteRendu {
             true => Vec::new(),
             false => vec![geste_de_l_import(Route::Importer, REPRENDRE)],
         };
-        CompteRendu { lu, gestes }
+        CompteRendu { lu, gestes, mots: MOTS_DU_COMPTE_RENDU }
     }
 }
+
+/// LES TITRES DU COMPTE RENDU DE L'IMPORT, tels que la page les montre : chaque partie, chaque colonne de ses tableaux.
+#[derive(Debug, Serialize)]
+struct MotsDuCompteRendu {
+    /// Les pieces que l'import ne reprend pas, et pourquoi (`tri.non_repris`).
+    non_repris: &'static str,
+    /// Le tableau du tri, fichier par fichier (`tri.fichiers`), et ses trois colonnes.
+    fichier_par_fichier: &'static str,
+    fichier: &'static str,
+    sort: &'static str,
+    raison: &'static str,
+    /// Ce que l'import dit de chaque sorte de piece (`declarations_dit`, `bulletins`, `certificats`, `aem_pdf`).
+    declarations: &'static str,
+    bulletins: &'static str,
+    certificats: &'static str,
+    aem_pdf: &'static str,
+    /// Les fiches creees, completees ou laissees (`entreprise`, `salaries`, `spectacles`), et le bouton qui ouvre une
+    /// fiche creee a qui il manque une valeur.
+    entreprise: &'static str,
+    salaries: &'static str,
+    spectacles: &'static str,
+    completer: &'static str,
+    /// Le tableau des ecarts entre un bulletin et ce que la DSN ou l'historique disait, et ses colonnes.
+    ecarts: &'static str,
+    ecart_bulletin: &'static str,
+    ecart_mois: &'static str,
+    ecart_champ: &'static str,
+    ecart_dsn: &'static str,
+    ecart_imprime: &'static str,
+    /// Ce qui est repris (`fichiers`), ce que les DSN ont pose dans la configuration (`parametrage`), ce qu'elles
+    /// declarent autrement (`dsn_fait_foi`), et les personnes mises de cote (`identites`).
+    repris: &'static str,
+    pose: &'static str,
+    dsn_fait_foi: &'static str,
+    identites: &'static str,
+}
+
+const MOTS_DU_COMPTE_RENDU: MotsDuCompteRendu = MotsDuCompteRendu {
+    non_repris: "Non repris",
+    fichier_par_fichier: "Fichier par fichier",
+    fichier: "Fichier",
+    sort: "Sort",
+    raison: "Raison",
+    declarations: "Déclarations",
+    bulletins: "Bulletins de paie",
+    certificats: "Certificats Congés Spectacles",
+    aem_pdf: "AEM en PDF",
+    entreprise: "Entreprise",
+    salaries: "Salariés",
+    spectacles: "Spectacles",
+    completer: "Compléter la fiche",
+    ecarts: "Écarts des bulletins",
+    ecart_bulletin: "Bulletin",
+    ecart_mois: "Mois",
+    ecart_champ: "Champ",
+    ecart_dsn: "DSN ou historique",
+    ecart_imprime: "Bulletin",
+    repris: "Repris",
+    pose: "Posé dans la configuration",
+    dsn_fait_foi: "La DSN fait foi",
+    identites: crate::importation::identite::LA_MEME_PERSONNE,
+};
 
 impl Dite for CompteRendu {
     fn phrase(&self) -> &Phrase {

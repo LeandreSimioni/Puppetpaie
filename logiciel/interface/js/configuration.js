@@ -576,7 +576,7 @@ async function ouvrirFicheImportee(nom, cle) {
    redire. Un écart vient d'une DSN (`dsn`, `mois`), d'un bulletin ou d'un certificat
    (`bulletin`, `fichier`, `page`) : la fiche fait foi, il est seulement
    signalé. Une case vide est complétée, et la page dit d'où. */
-function fichesImportees(fiches, titre) {
+function fichesImportees(fiches, titre, mots) {
   const lignes = fiches.map((f) => {
     const etat = pastilleDeLEtat(f.pastille);
     // Ce que le moteur dit de la fiche : d'où elle vient, ce qu'elle reçoit, ce qu'une pièce disait autrement.
@@ -592,19 +592,19 @@ function fichesImportees(fiches, titre) {
       `<div class="acte-dernier faute">${echapper(a.libelle || a.champ)} : ${echapper(a.message)}</div>`).join("");
     const ouvrable = f.etat === "creee" && f.cle && f.nom;
     const reste = fautes ? `<div class="acte-dernier">${ouvrable ? `<button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
-            data-ouvrir-cle="${echapper(f.cle)}">Compléter la fiche</button>` : ""}</div>${fautes}` : "";
+            data-ouvrir-cle="${echapper(f.cle)}">${echapper(mots.completer)}</button>` : ""}</div>${fautes}` : "";
     return `<div class="rang import">
       <span class="rang-nom">${echapper(f.libelle)}</span>
       ${etat}
       <span class="rang-infos">${luDans}${completes}${ecarts}${reste}</span></div>`;
   });
   if (!lignes.length) return "";
-  return `<h3>${titre}</h3>${lignes.join("")}`;
+  return `<h3>${echapper(titre)}</h3>${lignes.join("")}`;
 }
 
 /* Le compte rendu, fichier par fichier (`tri.fichiers`) : le chemin dans le
    dossier, le sort, la raison. Un PDF de plusieurs pages déplie ses pages. */
-function compteRenduImport(tri, pastilles) {
+function compteRenduImport(tri, pastilles, mots) {
   const comptes = Object.entries(tri.comptes).filter(([, n]) => n > 0)
     .map(([s, n]) => `${pastilleSort(s, pastilles)} ${n}`).join(" &nbsp; ");
   const lignes = tri.fichiers.map((f) => {
@@ -617,29 +617,24 @@ function compteRenduImport(tri, pastilles) {
       <td>${echapper(f.raison)}${pages}</td></tr>`;
   }).join("");
   const mises = tri.mises_de_cote.map((m) => `<div class="encart attention">${echapper(m)}</div>`).join("");
-  return `<h3>Fichier par fichier</h3>
+  return `<h3>${echapper(mots.fichier_par_fichier)}</h3>
     <p class="note">${echapper(tri.dit)} &nbsp; ${comptes}</p>${mises}
-    <table class="tableau-detail"><thead><tr><th>Fichier</th><th>Sort</th><th>Raison</th></tr></thead>
+    <table class="tableau-detail"><thead><tr><th>${echapper(mots.fichier)}</th><th>${echapper(mots.sort)}</th><th>${echapper(mots.raison)}</th></tr></thead>
       <tbody>${lignes}</tbody></table>`;
 }
 
-/* Les bulletins lus : combien, combien repris, de quand à quand, et ce
-   qu'ils ajoutent (`bulletins`). Pas le logiciel qui les a faits. */
-function bulletinsImportes(b) {
-  if (!b || !b.dit) return "";
-  return `<div class="encart"><b>Bulletins de paie</b> ${echapper(b.dit)}</div>`;
-}
-
-/* Les certificats Congés Spectacles (`certificats`) ou les AEM en PDF (`aem_pdf`) lus : ce que le moteur en dit (`dit`). */
+/* Les bulletins (`bulletins` : combien, combien repris, de quand à quand, ce qu'ils ajoutent ; pas le logiciel qui les
+   a faits), les certificats Congés Spectacles (`certificats`) ou les AEM en PDF (`aem_pdf`) lus : ce que le moteur en
+   dit (`dit`), sous son titre (`mots`). */
 function piecesImportees(c, titre) {
   if (!c || !c.dit) return "";
-  return `<div class="encart"><b>${titre}</b> ${echapper(c.dit)}</div>`;
+  return `<div class="encart"><b>${echapper(titre)}</b> ${echapper(c.dit)}</div>`;
 }
 
 /* Les écarts entre un bulletin et ce que la DSN (ou l'historique) disait
    de la même paie : le bulletin fait foi sur les montants, l'écart est
    noté (`tri.fichiers[].pages[].ecarts`). */
-function ecartsBulletinDsn(tri) {
+function ecartsBulletinDsn(tri, mots) {
   const lignes = [];
   for (const f of tri.fichiers) {
     for (const p of f.pages) {
@@ -654,18 +649,18 @@ function ecartsBulletinDsn(tri) {
     }
   }
   if (!lignes.length) return "";
-  return `<h3>Écarts des bulletins</h3>
+  return `<h3>${echapper(mots.ecarts)}</h3>
     <p class="note">${aideDe("import_ecarts")}</p>
-    <table class="tableau-detail"><thead><tr><th>Bulletin</th><th>Mois</th><th>Champ</th>
-      <th class="nombre">DSN ou historique</th><th class="nombre">Bulletin</th><th></th></tr></thead>
+    <table class="tableau-detail"><thead><tr><th>${echapper(mots.ecart_bulletin)}</th><th>${echapper(mots.ecart_mois)}</th><th>${echapper(mots.ecart_champ)}</th>
+      <th class="nombre">${echapper(mots.ecart_dsn)}</th><th class="nombre">${echapper(mots.ecart_imprime)}</th><th></th></tr></thead>
       <tbody>${lignes.join("")}</tbody></table>`;
 }
 
 /* Les documents qui ne sont pas repris, et pourquoi (`tri.non_repris`, du
    moteur), avec la phrase qui dit que l'import se rejoue. */
-function vueNonRepris(nr, pastilles) {
+function vueNonRepris(nr, pastilles, mots) {
   if (!nr || !nr.fichiers.length) return "";
-  return `<div class="encart attention"><b>Non repris</b>
+  return `<div class="encart attention"><b>${echapper(mots.non_repris)}</b>
       ${nr.fichiers.map((f) => `<div class="acte-dernier">${echapper(f.chemin)} ${pastilleSort(f.sort, pastilles)}
         ${echapper(f.raison)}</div>`).join("")}
       <p>${echapper(nr.phrase)}</p>
@@ -685,21 +680,22 @@ async function rafraichirEtatImportation() {
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les
    déclarations sont des DSN et des AEM, les bulletins des bulletins. */
 function vueImportation(r) {
-  // La couleur de l'encart, et ce que l'import a posé de la configuration,
-  // viennent du moteur (`encart`, `parametrage`).
+  // La couleur de l'encart, ce que l'import a posé de la configuration, et les titres (`mots`) viennent du moteur
+  // (`encart`, `parametrage`).
+  const mots = r.mots;
   const avert = r.avertissements.map((a) => `<div class="encart attention">${echapper(a)}</div>`).join("");
   const couleur = r.encart ? ENCART_DE_COULEUR[r.encart.couleur] : "";
   const pose = r.parametrage.length
-    ? `<p class="note">Posé dans la configuration</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
+    ? `<p class="note">${echapper(mots.pose)}</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
   // Ce que la DSN reprise déclare d'un contrat repris autrement que sa carte (`dsn_fait_foi`, du moteur, phrases comprises).
   const remplace = r.dsn_fait_foi.length
-    ? `<p class="note">La DSN fait foi</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
+    ? `<p class="note">${echapper(mots.dsn_fait_foi)}</p><ul>${r.dsn_fait_foi.map((x) => `<li>${echapper(x.phrase)}</li>`).join("")}</ul>` : "";
   // Les personnes mises de côté, chacune sa question (`identites`, du moteur) :
   // elles se répondent dans l'état de l'import.
   const questions = r.identites.length
-    ? `<div class="encart attention"><b>Est-ce la même personne ?</b><ul>${r.identites.map((q) => `<li>${echapper(q.question)}</li>`).join("")}</ul></div>` : "";
+    ? `<div class="encart attention"><b>${echapper(mots.identites)}</b><ul>${r.identites.map((q) => `<li>${echapper(q.question)}</li>`).join("")}</ul></div>` : "";
   const bouton = r.ecrit
-    ? `<div class="encart ${couleur}"><b>Repris</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
+    ? `<div class="encart ${couleur}"><b>${echapper(mots.repris)}</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
         ${pose}${remplace}
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
@@ -707,19 +703,19 @@ function vueImportation(r) {
       : `${questions}<p><span id="import-reprendre">${boutonsDesGestes(r.gestes, () => true, "primaire")}</span>
          <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
-  return `${vueNonRepris(r.tri.non_repris, r.pastilles)}
-    ${compteRenduImport(r.tri, r.pastilles)}
+  return `${vueNonRepris(r.tri.non_repris, r.pastilles, mots)}
+    ${compteRenduImport(r.tri, r.pastilles, mots)}
     <h3>${echapper(r.titre_dit)}</h3>
-    <div class="encart"><b>Déclarations</b>
+    <div class="encart"><b>${echapper(mots.declarations)}</b>
       ${echapper(r.declarations_dit)}</div>
-    ${bulletinsImportes(r.bulletins)}
-    ${piecesImportees(r.certificats, "Certificats Congés Spectacles")}
-    ${piecesImportees(r.aem_pdf, "AEM en PDF")}
+    ${piecesImportees(r.bulletins, mots.bulletins)}
+    ${piecesImportees(r.certificats, mots.certificats)}
+    ${piecesImportees(r.aem_pdf, mots.aem_pdf)}
     ${avert}
-    ${fichesImportees(r.entreprise ? [r.entreprise] : [], "Entreprise")}
-    ${fichesImportees(r.salaries, "Salariés")}
-    ${fichesImportees(r.spectacles, "Spectacles")}
-    ${ecartsBulletinDsn(r.tri)}
+    ${fichesImportees(r.entreprise ? [r.entreprise] : [], mots.entreprise, mots)}
+    ${fichesImportees(r.salaries, mots.salaries, mots)}
+    ${fichesImportees(r.spectacles, mots.spectacles, mots)}
+    ${ecartsBulletinDsn(r.tri, mots)}
     ${bouton}`;
 }
 
