@@ -437,20 +437,28 @@ pub fn socle_livre_lu(an: Annee) -> R<Option<Pile>> {
     Ok(Some(crate::forme_bareme::lire_le_socle(&fichier, &jour, None)?.0))
 }
 
-/// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
-/// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre.
-fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> R<Option<&'a CoucheConvention>> {
-    if pile.par_convention.is_empty() {
-        return Ok(None);
-    }
-    let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_convention.keys().map(|k| k.as_ref()).collect();
-    let Some(couche) = pile.par_convention.get(idcc) else {
-        return Err(socle::echec::refus_avec(
-            "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
-            Lieu {
-                detail: Some(format!(
-                    "Bareme {} : la convention collective {} n'a pas de couche dans le \
+/// CE QUE LE LOGICIEL NE LIVRE PAS POUR CALCULER UNE PAIE DE L'ANNEE `an` : le bareme de l'annee (`BaremeAbsent`), ou
+/// la couche de la convention collective de la compagnie dans le socle de l'annee, absente (`SansCouche` ; `couvertes` :
+/// celles que le socle couvre) ou relevee sans etre confirmee (`NonConfirmee`). Rien que la compagnie saisisse : ce qui
+/// manque est une donnee livree, qu'une version suivante peut apporter. Rendu a part par `Contexte::de_quoi_calculer` ;
+/// un refus partout ailleurs (`From`).
+#[derive(Debug)]
+pub enum RienDeLivre {
+    Bareme(BaremeAbsent),
+    SansCouche { an: Annee, idcc: Idcc, couvertes: Vec<Idcc> },
+    NonConfirmee { an: Annee, idcc: Idcc, libelle: String, a_confirmer: Option<String> },
+}
+
+impl From<RienDeLivre> for Echec {
+    #[track_caller]
+    fn from(rien: RienDeLivre) -> Echec {
+        match rien {
+            RienDeLivre::Bareme(absent) => absent.into(),
+            RienDeLivre::SansCouche { an, idcc, couvertes } => socle::echec::refus_avec(
+                "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
+                Lieu {
+                    detail: Some(format!(
+                        "Bareme {} : la convention collective {} n'a pas de couche dans le \
 socle, et le moteur refuse de payer avec celle d'une autre \
 branche.\n\
 \x20 Couvertes a ce jour : {}.\n\
@@ -458,27 +466,42 @@ branche.\n\
 cette convention (celle qui remplace la CASC-SVP, la prevoyance \
 de ses intermittents cadres), a relever puis a ajouter dans \
 `par_convention` de donnees/baremes/{}.json, avec leur source.",
-                    annee,
-                    idcc,
-                    connues.join(", "),
-                    annee
-                )),
-                ..Lieu::default()
-            },
-        ));
+                        an,
+                        idcc,
+                        couvertes.iter().map(|k| k.as_ref()).collect::<Vec<&str>>().join(", "),
+                        an
+                    )),
+                    ..Lieu::default()
+                },
+            ),
+            RienDeLivre::NonConfirmee { an, idcc, libelle, a_confirmer } => socle::refus!(
+                "Bareme {}, convention {} ({}) : la couche est RELEVEE mais pas \
+confirmee, le moteur ne paie donc pas.\n  {}",
+                an,
+                idcc,
+                libelle,
+                match &a_confirmer {
+                    Some(a) => a.as_str(),
+                    None => "Ce qui reste à vérifier n'est pas dit.",
+                }
+            ),
+        }
+    }
+}
+
+/// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
+/// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre. Une convention sans couche, ou une
+/// couche relevee sans etre confirmee : `RienDeLivre`.
+fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> Result<Option<&'a CoucheConvention>, RienDeLivre> {
+    if pile.par_convention.is_empty() {
+        return Ok(None);
+    }
+    let an = pile.annee;
+    let Some(couche) = pile.par_convention.get(idcc) else {
+        return Err(RienDeLivre::SansCouche { an, idcc: idcc.clone(), couvertes: pile.par_convention.keys().cloned().collect() });
     };
     if !couche.applicable {
-        return Err(socle::refus!(
-            "Bareme {}, convention {} ({}) : la couche est RELEVEE mais pas \
-confirmee, le moteur ne paie donc pas.\n  {}",
-            annee,
-            idcc,
-            couche.libelle,
-            match &couche.a_confirmer {
-                Some(a) => a.as_str(),
-                None => "Ce qui reste à vérifier n'est pas dit.",
-            }
-        ));
+        return Err(RienDeLivre::NonConfirmee { an, idcc: idcc.clone(), libelle: couche.libelle.clone(), a_confirmer: couche.a_confirmer.clone() });
     }
     Ok(couche.bareme.as_ref())
 }
@@ -1526,6 +1549,21 @@ impl Contexte {
         Ok(self.socle_repris(an)?.map(|s| s.organisation(o).map(|(k, _)| k.clone())))
     }
 
+    /// LE LOGICIEL LIVRE-T-IL DE QUOI CALCULER UNE PAIE A `jour` POUR CETTE COMPAGNIE : le bareme de l'annee
+    /// (`socle_de_l_annee`) et, quand la fiche entreprise nomme sa convention, la couche de celle-ci dans ce socle
+    /// (`convention`), les memes lectures que le bareme compose. `Ok(Err)` : ce que le logiciel ne livre pas
+    /// (`RienDeLivre`) ; `Err` : tout le reste (le disque, une surcouche ou un socle illisibles).
+    pub fn de_quoi_calculer(&self, jour: &Jour) -> R<Result<(), RienDeLivre>> {
+        let fichier = match self.socle_de_l_annee(jour.annee())? {
+            Ok((_, fichier)) => fichier,
+            Err(sans_bareme) => return Ok(Err(RienDeLivre::Bareme(sans_bareme))),
+        };
+        let ent = self.entreprise_au(jour);
+        let Some(idcc) = ent.idcc.dite() else { return Ok(Ok(())) };
+        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite())?;
+        Ok(convention(&socle_an, idcc).map(|_| ()))
+    }
+
     /// LES TARIFS DE LA CONVENTION QUE LA FICHE ENTREPRISE NOMME A `jour` (`tarifs_conventionnels`), lus dans le socle que
     /// le bareme de l'annee reprend (`socle_de_l_annee`) et la couche de cette convention, comme le bareme les fond
     /// (`fondre_la_convention`). Rien d'autre ne les change (ni la surcouche de la compagnie, ni son taux AT/MP, ni le
@@ -1553,7 +1591,7 @@ impl Contexte {
             let de_la_convention = match ent.idcc.dite() {
                 Some(idcc) => match convention(&socle_an, idcc) {
                     Ok(couche) => couche.and_then(|c| c.tarifs_conventionnels.clone()).map(|t| (t, format!("par_convention.{}.bareme.tarifs_conventionnels", idcc))),
-                    Err(non_couverte) => return Ok(Err(non_couverte)),
+                    Err(non_couverte) => return Ok(Err(non_couverte.into())),
                 },
                 None => None,
             };

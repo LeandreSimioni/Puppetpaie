@@ -24,10 +24,11 @@
 //! pas a part, les notres y entrent aussi (`REPLIS`). Un montant compare a l'arrondi de chaque ligne pres (1 centime par
 //! ligne additionnee), un taux a la milliemes de point pres (le bulletin en imprime trois decimales).
 //!
-//! CE QUI NE SE COMPARE PAS LE DIT (regle 1) : une periode sans bareme, une paie sans bulletin (la DSN seule ne porte
-//! pas les lignes du bulletin), une ligne de remuneration soumise sans rubrique, une saisie que le calcul refuse (une
-//! convention sans couche, une fiche incomplete) ; et, dans une paie comparee, les lignes de cotisation que la table ne
-//! rattache a aucune cotisation.
+//! CE QUI NE SE COMPARE PAS LE DIT (regle 1) : une periode dont le logiciel ne livre pas le bareme, ou la couche de la
+//! convention (`droit::contexte::RienDeLivre` ; avant `COMPAREE_TOUJOURS_DES`, elle n'est pas une comparaison et ne dit
+//! rien), une paie sans bulletin (la DSN seule ne porte pas les lignes du bulletin), une ligne de remuneration soumise
+//! sans rubrique, une saisie que le calcul refuse (une fiche incomplete) ; et, dans une paie comparee, les lignes de
+//! cotisation que la table ne rattache a aucune cotisation.
 //!
 //! CE QUI SE REND NE DESIGNE PERSONNE : la cotisation, les libelles, la grandeur, les deux taux et l'ecart RELATIF d'une
 //! base ou d'un montant (jamais le montant), la periode, la nature et le statut.
@@ -262,8 +263,8 @@ pub struct Comparaison {
     /// Les ecarts ; `Err` : la paie ne se compare pas, et pourquoi.
     pub ecarts: R<Vec<Ecart>>,
     /// La paie ne s'est pas comparee parce que le calcul a refuse la saisie (une configuration a completer, l'effectif
-    /// de l'entreprise...) : elle se compare de nouveau quand la compagnie s'ouvre. Les autres raisons tiennent aux
-    /// pieces importees et ne changent pas.
+    /// de l'entreprise...) ou que le logiciel ne livre pas de quoi la calculer (`RienDeLivre`) : elle se compare de
+    /// nouveau quand la compagnie s'ouvre. Les autres raisons tiennent aux pieces importees et ne changent pas.
     pub a_refaire: bool,
     /// Les libelles de cotisation du bulletin que la table ne rattache a aucune cotisation : non compares.
     pub non_rattachees: Vec<String>,
@@ -305,10 +306,20 @@ const ECART_DE_TAUX_TOLERE: Taux = Taux::CINQ_DIX_MILLIEMES;
 /// que le bareme applique au contrat, d'ou se lit le taux notifie que le bulletin a applique.
 const TAUX_ATMP_D_ESSAI: Taux = Taux::points(1);
 
+/// LA PREMIERE ANNEE DONT CHAQUE PAIE IMPORTEE SE COMPARE TOUJOURS : une decision de l'editeur, pas un texte (Leandre,
+/// 24/11/2026 : « Si ça arrive avant 2026, on compare pas d'après moi. » « On aura toujours les barèmes pour comparer. »
+/// « On n'a pas les barèmes de toutes les conventions »). Avant, une paie dont le logiciel ne livre pas de quoi la
+/// calculer (`RienDeLivre`) entre dans l'historique sans comparaison ni incident ; a partir d'elle, ce manque fait un
+/// incident.
+pub const COMPAREE_TOUJOURS_DES: socle::mois::Annee = socle::annee!("2026");
+
 /// Les comparaisons de chaque paie de l'engagement importe `imp`, mois par mois. `deja` : la paie de cette empreinte (`empreinte`) est
 /// deja comparee, elle ne se compare pas deux fois. UNE PAIE QUE LA SEULE DSN DECLARE n'a pas de lignes de cotisation a
 /// comparer (`PaieVersee::cotisations`, vide sans bulletin) : elle n'est pas une comparaison, ni faite ni manquee, et ne
-/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable.
+/// fait aucun incident ; le bulletin du meme mois, repris ensuite, la rend comparable. UNE PAIE D'AVANT
+/// `COMPAREE_TOUJOURS_DES` DONT LE LOGICIEL NE LIVRE PAS DE QUOI LA CALCULER (le bareme de son annee, la couche de sa
+/// convention : `droit::contexte::RienDeLivre`) non plus : elle n'entre pas au registre, et la version qui livrera ce qui
+/// manque la comparera a l'ouverture.
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) -> bool) -> Vec<Comparaison> {
     saisies_refaites(imp)
         .into_iter()
@@ -321,7 +332,10 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&EmpreinteCourte) ->
             let logiciel = p.bulletin.as_ref().and_then(|b| b.logiciel.clone());
             let mut suivi = Suivi::default();
             let ecarts = refaire(racine, imp, mois, p, nature, jours_comptes, &mut suivi).map(|r| confronter(&r, p, &mut suivi));
-            let Suivi { statut, cadre, taux_atmp, a_refaire, non_rattachees } = suivi;
+            let Suivi { statut, cadre, taux_atmp, a_refaire, rien_de_livre, non_rattachees } = suivi;
+            if rien_de_livre && mois.annee() < COMPAREE_TOUJOURS_DES {
+                return None;
+            }
             Some(Comparaison { empreinte, mois, logiciel, nature, statut, cadre, taux_atmp, ecarts, a_refaire, non_rattachees })
         })
         .collect()
@@ -355,6 +369,8 @@ struct Suivi {
     cadre: Option<bool>,
     taux_atmp: Option<OrigineDuTauxAtmp>,
     a_refaire: bool,
+    /// Le logiciel ne livre pas de quoi la calculer (`droit::contexte::RienDeLivre`).
+    rien_de_livre: bool,
     non_rattachees: Vec<String>,
 }
 
@@ -379,17 +395,22 @@ fn refaire<'a>(
     jours_comptes: Option<socle::grandeurs::Jours>,
     c: &mut Suivi,
 ) -> R<Refaite<'a>> {
+    let fin = mois.dernier_jour();
+    let annee = mois.annee();
+    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
+    // CE QUE LE LOGICIEL NE LIVRE PAS (le bareme de l'annee, la couche de la convention), avant toute autre raison : une
+    // version suivante peut l'apporter, la paie se compare de nouveau a l'ouverture suivante (`a_refaire`), et
+    // `comparer` dit si elle compte.
+    if let Err(rien) = ctx.de_quoi_calculer(&fin).map_err(|m| a_refaire(c, m))? {
+        c.a_refaire = true;
+        c.rien_de_livre = true;
+        return Err(rien.into());
+    }
     let jours_comptes = match jours_comptes.map(socle::grandeurs::entiere) {
         None => None,
         Some(Some(n)) => Some(n),
         Some(None) => return Err(refus("le bulletin compte des jours travaillés qui ne sont pas un nombre entier")),
     };
-    let fin = mois.dernier_jour();
-    let annee = mois.annee();
-    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
-    if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
-        return Err(socle::refus!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
-    }
     // La convention fait la couche du bareme (regle 8) : sans elle, le calcul n'est pas celui de la compagnie.
     if !ctx.entreprise.idcc.est_dite() {
         c.a_refaire = true;

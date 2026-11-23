@@ -1364,6 +1364,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | assiette | `droit::assiette::Assiette` | `droit/src/assiette.rs` |
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | barème absent | `droit::contexte::BaremeAbsent` | `droit/src/contexte.rs` |
+| ce que le logiciel ne livre pas pour calculer une paie (le barème de l'année, ou la couche de la convention de la compagnie, absente ou relevée sans être confirmée ; `Contexte::de_quoi_calculer` le rend à part, un refus partout ailleurs) | `droit::contexte::RienDeLivre` | `droit/src/contexte.rs` |
 | tarifs de la convention lus, avec le fichier du socle et la clé qui les portent | `droit::contexte::TarifsLus` | `droit/src/contexte.rs` |
 | emploi (un métier par son code ; sa fiche vient du catalogue ou de la nomenclature, `FicheDuMetier`, dont `FicheDuCatalogue` et `EmploiFt` sont les formes des fichiers ; les sept champs qu'il fait déclarer, `ChampsDuMetier` ; un métier d'un déroulant, `MetierDuDeroulant`, une réponse) | `Metier` | `droit/src/emplois.rs` |
 | emploi d'un engagement (ce qu'un engagement dit de l'emploi qu'il fait déclarer, chaque champ seulement quand il est dit : le métier de sa carte résolu sous ce que la carte écrit à la main, ou ce qu'un bulletin importé imprime, `PaieVersee.emploi_imprime` ; et le libellé lisible de son métier, que l'engagement résout ; le reste vient de la fiche, `emploi_de` ; écrit à plat, ses sept champs) | `EmploiEngagement` | `droit/src/emplois.rs` |
@@ -2934,7 +2935,11 @@ le bouton « Ouvrir le dossier d'import » (`Guide::ouvrir`).
   cotisation et ses libellés, le mois, l'IDCC et l'annexe, l'organisation patronale, la nature et le statut, d'où vient
   le taux AT/MP, le logiciel reconnu, les deux taux et l'écart relatif), et le texte passe quand même par le
   caviardage. Une paie se compare une fois. Ce qui ne se compare pas le dit (une période sans barème, une convention
-  sans couche, une ligne sans rubrique). La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
+  sans couche, une ligne sans rubrique). Ce que le logiciel ne livre pas pour calculer une paie (le barème de son année,
+  la couche de sa convention : `droit::contexte::RienDeLivre`, reconnu par son type) ne l'inscrit pas au registre : la
+  version qui le livrera la comparera à l'ouverture. Avant 2026 (`engagement::ecarts::COMPAREE_TOUJOURS_DES`, une
+  décision de l'éditeur), ce manque ne fait aucun incident : la paie entre dans l'historique sans comparaison ; à partir
+  de 2026, il en fait un. Une case qui manque à la compagnie reste ce qu'elle est, quelle que soit l'année. La paie d'un contrat payé au mois se refait comme on la saisit : ses dates
   (`Importe::contrat_de_la_paie`, jamais la fin du mois qu'un bulletin paie), son motif de recours (celui que sa DSN
   déclare, S21.G00.40.021 : `Importe::motif_recours`), et son salaire mensuel et ses heures par mois dans les cases de sa
   carte, d'un mois que le contrat et la paie couvrent entier (`ecarts::contrat_au_mois`, `salaire_et_heures`). Le
