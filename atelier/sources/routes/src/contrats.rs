@@ -13,7 +13,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 
 use compagnie::preuve::{verifier_preuve, Preuve};
 use crate::gestes::signature::{Choisis, Cible, ContratNomme, ContratSigneDit, ContratsEnvoyes, DejaParti, Impression, Repris, UnAvenant};
-use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, Route, ILLISIBLE, MANQUE, OPERATION};
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::documents::{client_courriel, refus, Ouvrir};
 use crate::etapes::{ChargeMois, Moteur};
@@ -62,7 +62,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::SignatureApercu,
         geste: "Montrer les contrats du mois : à envoyer, en attente de signature, en avenant.",
-        charge: &[MOIS],
+        charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "contrats (chacun : son état, et ses gestes recu et relancer, route, charge et demande du mot de passe), boite_liee, demande (du mot de passe, avant l'envoi), signature (l'encart de la signature d'un clic), rien_a_envoyer, rien_en_attente",
         refus: &[MANQUE, ILLISIBLE],

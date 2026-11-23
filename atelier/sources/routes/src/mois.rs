@@ -45,7 +45,7 @@ use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
 use socle::grandeurs::{Cachets, Coefficient, Heures, Jours, Montant, MontantUnitaire};
 
-use crate::catalogue::{Acte, Affiche, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
+use crate::catalogue::{Acte, Affiche, Forme, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::declaration::{charge, dit, legendes, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::engagement::{CHANGEMENTS, IDENTITE, SAISIE_INCOMPLETE};
@@ -65,7 +65,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::Saisie,
         geste: "Lire les engagements d'un mois, leurs identités et le cachet par défaut.",
-        charge: &[MOIS],
+        charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "saisie (les engagements du mois), identites, a_completer (ce qui manque à chacun pour se lire, ou null), importes, ferme_aux_neufs, nouvelle_carte (les natures qu'une carte neuve du mois peut prendre, la case de la nature quand plus d'une se choisit et ses choix, nature par nature les rubriques qu'elle propose avant de nommer son salarié, et prerempli.lignes : ce qu'une ligne neuve prend, le taux du cachet par défaut), phrase (ce que l'écran dit de la saisie)",
         refus: &[MANQUE, ILLISIBLE],
@@ -89,7 +89,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ContratsEnCours,
         geste: "Lire les contrats d'un mois passé qui courent encore ce mois.",
-        charge: &[MOIS],
+        charge: &crate::etapes::ChargeMois::CHARGE,
         exemple: r#"{"mois":"2026-11"}"#,
         rend: "contrats : chacun avec l'engagement qui le reprend",
         refus: &[MANQUE, ILLISIBLE],

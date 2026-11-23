@@ -10,8 +10,8 @@ use engagement::stock::Identite;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusDit, FORME, MOIS};
-use crate::declaration::{charge, dit, legendes, ChampDuType, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Forme, Fiche, Refus as RefusDit, FORME};
+use crate::declaration::{charge, dit, legendes, ChampDuType, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
@@ -53,13 +53,7 @@ pub const ROUTES: &[Fiche] = &[
     Fiche {
         route: Route::ModifierEngagement,
         geste: "Modifier un engagement validé : changer des cases de sa carte, et le revalider.",
-        charge: &[
-            MOIS,
-            ChampDuType::du_type::<_, Identite>("engagement", IDENTITE).champ,
-            ChampDuType::du_type::<_, Changements>("changements", CHANGEMENTS).champ,
-            Champ { nom: "confirme", libelle: Affiche::new("Avertissement lu"), forme: Forme::OuiNon, sens: "vrai : l'avertissement rendu a été lu et accepté", avance: false },
-            Champ { nom: "jour", libelle: Affiche::new("Jour d'effet"), forme: Forme::Nombre, sens: "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er", avance: true },
-        ],
+        charge: &CHARGE_MODIFIER,
         exemple: r#"{"mois":"2026-11","engagement":{"salarie":"FULLER","debut":"2026-11-27","rang":0},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":{"cachets":1},"taux":160,"lieu":null,"dates":["2026-11-27"],"planning":[]}]}],"confirme":false,"jour":null}"#,
         rend: "rien n'a changé : change faux ; ce qui est parti le demande : avertissement (à montrer, puis renvoyer avec confirme), rien n'est écrit ; écrit : change, phrase (un terme vaut à partir du mois de la carte)",
         refus: &[
@@ -130,6 +124,20 @@ struct ChargeModifier {
     changements: Changements,
     confirme: bool,
 }
+
+// Sa charge, champ par champ : `jour` se lit hors de la structure (`Charge::lire_avec_le_jour`), ce que `charge!` ne dit pas.
+const CHARGE_MODIFIER: ChargeDuType = ChargeDuType {
+    champs: &[
+        ChampDuType::du_type::<_, Mois>("mois", legendes::MOIS),
+        ChampDuType::du_type::<_, Identite>("engagement", IDENTITE),
+        ChampDuType::du_type::<_, Changements>("changements", CHANGEMENTS),
+        ChampDuType::du_type::<_, bool>("confirme", dit("Avertissement lu", "vrai : l'avertissement rendu a été lu et accepté")),
+        ChampDuType::du_type::<_, Option<u32>>(
+            "jour",
+            dit("Jour d'effet", "le jour du mois (un nombre, de 1 à 31) où un terme changé prend effet, quand ce n'est pas le 1er").avancee(),
+        ),
+    ],
+};
 
 charge! {
     /// La charge de « Retirer cet engagement » : le mois de la carte, son identite, l'avertissement lu (`confirme`).
