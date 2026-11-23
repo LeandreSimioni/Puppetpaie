@@ -147,18 +147,26 @@ fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<St
     ctx.salaries.get(cle).and_then(|s| s.nomme())
 }
 
-/// LE TITRE DE LA FICHE DU SPECTACLE d'une paie importee `p` ou d'un contrat atteste `c`, par la seule regle
-/// (`engagement::importe::spectacle_de_la_paie`) ; vide quand la fiche ne le dit pas, qu'il est « A COMPLETER », ou
-/// qu'aucune fiche ne porte encore ce spectacle : cela manque a la carte, et ne ferme pas la lecture du mois. Une panne
-/// (une fiche illisible) remonte.
-fn titre_du_spectacle(ctx: &Contexte, p: Option<&PaieVersee>, c: Option<&engagement::importe::ContratAtteste>) -> R<Option<String>> {
+/// LE SPECTACLE D'UNE CARTE, par la seule regle (`engagement::importe::spectacle_de_la_paie`) : le titre de sa fiche,
+/// vide quand la fiche ne le dit pas ou qu'il est « A COMPLETER » ; ou ce qui manque pour la retrouver (un numero ou un
+/// titre qu'aucune fiche ne porte encore, un titre ambigu), que la carte dit sous sa case, sans fermer la lecture du
+/// mois.
+struct SpectacleDeLaCarte {
+    titre: Option<String>,
+    manque: Option<String>,
+}
+
+/// Le spectacle d'une paie importee `p` ou d'un contrat atteste `c` (`SpectacleDeLaCarte`). Chaque refus de la regle
+/// dit un manque (`Echec::dit_un_manque`) ; une panne qui en viendrait remonte.
+fn spectacle_de_la_carte(ctx: &Contexte, p: Option<&PaieVersee>, c: Option<&engagement::importe::ContratAtteste>) -> R<SpectacleDeLaCarte> {
     let cle = match engagement::importe::spectacle_de_la_paie(ctx, p, c) {
         Ok(Some(cle)) => cle,
-        Ok(None) => return Ok(None),
-        Err(e) if e.dit_un_manque() => return Ok(None),
+        Ok(None) => return Ok(SpectacleDeLaCarte { titre: None, manque: None }),
+        Err(e) if e.dit_un_manque() => return Ok(SpectacleDeLaCarte { titre: None, manque: Some(e.phrase) }),
         Err(e) => return Err(e),
     };
-    Ok(ctx.spectacles.get(&cle).and_then(|s| s.titre.portee()).map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string))
+    let titre = ctx.spectacles.get(&cle).and_then(|s| s.titre.portee()).map(str::trim).filter(|t| !t.eq_ignore_ascii_case(A_COMPLETER)).map(str::to_string);
+    Ok(SpectacleDeLaCarte { titre, manque: None })
 }
 
 /// LA PERIODE D'UN CONTRAT IMPORTE DANS `mois`, en clair, quand le bulletin ne dit pas ses jours : « 20–27 » pour un
@@ -368,7 +376,8 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let fin = p.and_then(|p| p.periode).and_then(|o| o.fin()).or_else(|| atteste.and_then(|o| o.fin()));
     let numero = engagement::importe::numero_objet_de(p, c).cloned();
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
-    let titre = titre_du_spectacle(ctx, p, c)?.or(titre_bulletin);
+    let spectacle = spectacle_de_la_carte(ctx, p, c)?;
+    let titre = spectacle.titre.or(titre_bulletin);
     let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).into_iter().flatten().collect();
     // L'activite du mois que les pieces disent (`engagement::importe::activite_du_mois`) ; quand elles n'en disent rien
@@ -418,13 +427,14 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         (Some(s), None) => manques.push(manque("salarie", "salarié", format!("la fiche « {} » n'existe pas (ou plus) : à créer dans Configuration › Salariés", s))),
         (Some(_), Some(_)) => {}
     }
-    match (&numero, &titre) {
-        (None, None) => manques.push(manque(
+    match (&numero, &titre, &spectacle.manque) {
+        (_, None, Some(m)) => manques.push(manque("spectacle", "spectacle", m.clone())),
+        (None, None, None) => manques.push(manque(
             "spectacle",
             "spectacle",
             "ni la DSN, ni l'AEM, ni le bulletin ne portent de numéro d'objet pour cette paie (un permanent n'en a pas)".into(),
         )),
-        (Some(n), None) => manques.push(manque(
+        (Some(n), None, None) => manques.push(manque(
             "spectacle",
             "titre du spectacle",
             format!("la DSN ne porte que le numéro d'objet {} : son titre se complète dans Configuration › Spectacles", n),
@@ -579,7 +589,11 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
     let atteste = c.map(|c| attestation_dite(c.atteste_par).to_string());
     let mut cases = vec![
         case("Salarié", nom.clone(), Some("fiche".to_string()), "salarie"),
-        case("Spectacle", spectacle_dit, None, "spectacle"),
+        // Ce qui manque pour retrouver sa fiche se dit sous lui, meme quand la piece en imprime le titre ou le numero.
+        match (case("Spectacle", spectacle_dit, None, "spectacle"), &spectacle.manque) {
+            (c, Some(m)) => CaseLue { pourquoi: Some(m.clone()), ..c },
+            (c, None) => c,
+        },
         case("Contrat", p.map(|p| p.contrat.dite()), None, "contrat"),
         case("Début", debut.map(|j| j.jj_mm_aaaa()), None, "debut"),
         case("Fin", fin.map(|j| j.jj_mm_aaaa()), None, "fin"),

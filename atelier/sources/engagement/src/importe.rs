@@ -895,7 +895,9 @@ impl Importe {
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let sal = crate::calcul::convention_de_l_employeur(&ctx, crate::fiche_du_salarie(&ctx, cle)?);
         // REGARDER N'EST JAMAIS REFUSE : un spectacle qu'aucune fiche ne porte encore manque a la paie (son spectacle reste
-        // vide), il ne ferme pas la lecture du mois ; une panne (une fiche illisible) remonte.
+        // vide), il ne ferme pas la lecture du mois, et la carte du mois importe dit ce qui manque
+        // (`import::mois::spectacle_de_la_carte`). Chaque refus de la regle dit un manque ; une panne qui en viendrait
+        // remonte.
         let spectacle = match self.spectacle_de(&ctx, p) {
             Ok(s) => s,
             Err(e) if e.dit_un_manque() => None,
