@@ -33,7 +33,7 @@ pub const ROUTES: &[Fiche] = &[
         geste: "Rendre l'écran des contrats de la DSN (prévoyance, santé…) d'un mois.",
         charge: &[Champ { nom: "mois", libelle: Affiche::new("Mois"), forme: Forme::Mois, sens: "le mois regardé, AAAA-MM ; le mois en cours sinon", avance: false }],
         exemple: r#"{"mois":"2026-11"}"#,
-        rend: "mois, encarts, cases (un contrat par case, sa clé : ses parties à saisir, organisme et libelle ; dessous, sa période, ses bénéficiaires et ce que les textes en donnent ; ses temps), historique (les valeurs datées de chaque contrat saisi), enregistrer (la route, la charge, le champ où vont les cases : chacune sous sa clé)",
+        rend: "mois, encarts, cases (un contrat par case, sa clé : ses parties à saisir, organisme et libelle ; dessous, sa période, ses bénéficiaires et ce que les textes en donnent ; ses temps), historique (les valeurs datées de chaque contrat saisi), enregistrer, quand une partie au moins se saisit (la route, la charge, le champ où vont les cases : chacune sous sa clé)",
         refus: &[OPERATION, ILLISIBLE],
         pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee,
         acte: Acte::Lit,
@@ -159,7 +159,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// L'ecran des contrats tel qu'on le saisit : sa phrase (ce qui reste a dire a la compagnie, sinon combien de contrats la
 /// DSN declare), d'ou viennent les valeurs, les contrats de quel mois, ce qui manque ; un contrat par case, ses parties
 /// que la compagnie saisit (ce que les textes donnent se dit dessous et ne se saisit pas), sa periode, ses beneficiaires,
-/// ses temps ; l'historique de chaque contrat saisi ; et le geste qui enregistre, a partir du mois regarde.
+/// ses temps ; l'historique de chaque contrat saisi ; et, quand une partie au moins se saisit, le geste qui enregistre, a
+/// partir du mois regarde.
 fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) -> R<OrganismesDits> {
     let n = lu.lignes.len();
     let reste = if lu.a_saisir { "il en reste à saisir" } else { "rien à saisir" };
@@ -172,6 +173,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     }
     let en_clair = |j: &Option<Jour>| -> Option<String> { j.map(|j| j.jj_mm_aaaa()) };
     let mut cases = Vec::new();
+    let mut se_saisit = false;
     let mut historique = Vec::new();
     for ligne in lu.lignes {
         let mut dit = Vec::new();
@@ -212,8 +214,10 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         if let Some(t) = &siens {
             historique.push(HistoireDUneCase::de(ligne.quoi.clone(), t.clone()));
         }
+        se_saisit |= !parties.is_empty();
         cases.push(CaseDeLaFiche::de_parties(ligne.cle, ligne.quoi, valeur, parties, dit, siens));
     }
-    let enregistrer = Some(EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, &CONTRATS, ENREGISTRER));
+    // Un ecran dont les textes donnent tout n'a rien a enregistrer : il n'a pas de geste.
+    let enregistrer = se_saisit.then(|| EnregistrerLEcran::de(Route::OrganismesEnregistrer, ChargeOrganismes { mois: Some(mois) }, &CONTRATS, ENREGISTRER));
     Ok(OrganismesDits { phrase, mois, ecran: EcranRendu { encarts, rangs: Vec::new(), cases, historique, enregistrer } })
 }
