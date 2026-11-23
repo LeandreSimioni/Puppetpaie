@@ -4543,7 +4543,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
     let mut m = mois.precedent();
     while m >= premier_mois {
         // La compagnie telle qu'a la fin du mois declare (l'entreprise, ses etablissements) ; la fiche, celle que la paie declaree a lue.
-        let ctx_m = Contexte::nouveau(&ctx.racine, Some(m.dernier_jour()))?;
+        let ctx_m = engagement::stock::contexte(&ctx.racine, Some(m.dernier_jour()))?;
         if let Some(declaree) = engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, m)? {
             // Les autres contrats du salarie declares ce mois-la : le code emplois multiples (40.036) s'ecrit avec eux.
             let mut autres = Vec::new();
@@ -5509,7 +5509,7 @@ mod tests {
             }],
         };
         socle::ecriture::ecrire_json(&cfg.join("casc-svp.json"), &notee, 0).unwrap();
-        Contexte::nouveau(&racine, Some(j("2026-09-27"))).unwrap()
+        engagement::stock::contexte(&racine, Some(j("2026-09-27"))).unwrap()
     }
 
     fn orgs_casc() -> Organismes {

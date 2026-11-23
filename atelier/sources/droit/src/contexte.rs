@@ -1178,8 +1178,13 @@ pub struct Contexte {
     fiches: Arc<Fiches>,
     /// Les fiches salaries a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier.
     pub salaries: IndexMap<IdSalarie, FicheSalarie>,
-    /// Les fiches spectacles a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier.
+    /// Les fiches spectacles a `lue_au` (celles qui existaient ce jour-la), dans l'ordre du fichier ; celle que le temps
+    /// archive l'est (`endormi`).
     pub spectacles: IndexMap<IdSpectacle, ChampsSpectacle>,
+    /// LE DERNIER JOUR OU CHAQUE SPECTACLE EST ENGAGE : la fin la plus tardive de ses engagements, importes ou faits ici
+    /// (`engagement::stock::contexte` la lit) ; `None` quand l'un d'eux n'a pas encore de fin. Un spectacle absent n'a
+    /// jamais ete engage.
+    spectacles_joues: Arc<BTreeMap<IdSpectacle, Option<Jour>>>,
     /// Le taux AT/MP d'une annee qu'une piece atteste, pour une compagnie qui n'en a pas encore pose
     /// (`avec_le_taux_atmp_lu`) ; en memoire seulement.
     atmp_lu: Option<(Annee, socle::grandeurs::Taux)>,
@@ -1228,9 +1233,41 @@ fn lire_fiches(cfg: &Path) -> R<Arc<Fiches>> {
     Ok(f)
 }
 
-/// Les fiches spectacles a `jour` : celles qui existaient ce jour-la.
-fn spectacles_au(s: &Spectacles, jour: &Jour) -> IndexMap<IdSpectacle, ChampsSpectacle> {
-    s.fiches.iter().map(|(k, f)| (k.clone(), f.au(jour))).filter(|(_, c)| !c.est_vide()).collect()
+/// Les fiches spectacles a `jour` : celles qui existaient ce jour-la ; celle que le temps archive ce jour-la (`endormi`)
+/// l'est. « Archivé » n'a qu'une reponse : `ChampsSpectacle::archivee`.
+fn spectacles_au(s: &Spectacles, jour: &Jour, joues: &BTreeMap<IdSpectacle, Option<Jour>>) -> R<IndexMap<IdSpectacle, ChampsSpectacle>> {
+    let mut out = IndexMap::new();
+    for (k, f) in &s.fiches {
+        let mut c = f.au(jour);
+        if c.est_vide() {
+            continue;
+        }
+        if !c.archivee() && endormi(f, joues.get(k), jour)? {
+            c.actif = Some(false);
+        }
+        out.insert(k.clone(), c);
+    }
+    Ok(out)
+}
+
+/// Le temps sans engagement apres lequel un spectacle s'archive (`endormi`).
+const SANS_ENGAGEMENT: Duree<EnMois> = Duree::mois(24);
+
+/// UN SPECTACLE QUE LE TEMPS ARCHIVE (Léandre, ticket #621 : « si jamais on n'a pas fait un spectacle dans les 12 mois,
+/// ils s'archivent automatiquement. Mais si on continue de les jouer, ils continuent d'exister et on peut toujours les
+/// désarchiver. On peut dire 24 mois. » ; réactivé, les 24 mois repartent du jour de la réactivation) : son dernier
+/// engagement (`fin`, `Contexte::spectacles_joues`) a fini plus de 24 mois avant `jour`, et il n'a pas ete reactive dans
+/// les 24 mois. Le jour de la reactivation est celui ou sa case `actif` vaut vrai, en vigueur a `jour` (`activer-fiche`
+/// l'ecrit datee). Un spectacle jamais engage, ou dont un engagement n'a pas encore de fin, ne s'archive pas de lui-meme.
+fn endormi(f: &FicheSpectacleDatee, fin: Option<&Option<Jour>>, jour: &Jour) -> R<bool> {
+    let Some(Some(fin)) = fin else { return Ok(false) };
+    let en_vigueur = f.actif.as_deref().and_then(|l| crate::fiche::valeurs_datees(l).into_iter().filter(|e| e.depuis.is_none_or(|d| d <= *jour)).last());
+    let reactive = en_vigueur.filter(|e| e.valeur == Some(true)).and_then(|e| e.depuis);
+    let depuis = match reactive {
+        Some(r) => r.max(*fin),
+        None => *fin,
+    };
+    Ok(*jour > depuis.apres(SANS_ENGAGEMENT)?)
 }
 
 /// Les fiches salaries a `jour` : celles qui existaient ce jour-la.
@@ -1271,8 +1308,10 @@ pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<Annee> {
 pub const ORGANISMES: CheminRelatif = CheminRelatif::du_moteur("config/organismes.json");
 
 impl Contexte {
-    /// Le contexte de `racine` a la date `date`. Sans `date`, celle de l'horloge du moteur (`jour_reel`).
-    pub fn nouveau(racine: &Path, date: Option<Jour>) -> R<Contexte> {
+    /// Le contexte de `racine` a la date `date`, avec le dernier jour ou chaque spectacle est engage (`joues`, que seul le
+    /// stock des engagements connait : `engagement::stock::contexte` est le constructeur des autres crates). Sans `date`,
+    /// celle de l'horloge du moteur (`jour_reel`).
+    pub fn nouveau(racine: &Path, date: Option<Jour>, joues: BTreeMap<IdSpectacle, Option<Jour>>) -> R<Contexte> {
         let date = match date {
             Some(d) => d,
             None => jour_reel(),
@@ -1288,7 +1327,8 @@ impl Contexte {
             aujourdhui,
             entreprise: fiches.entreprise.au(&date),
             salaries: salaries_au(&fiches.salaries, &date),
-            spectacles: spectacles_au(&fiches.spectacles, &date),
+            spectacles: spectacles_au(&fiches.spectacles, &date, &joues)?,
+            spectacles_joues: Arc::new(joues),
             fiches,
             atmp_lu: None,
         })
@@ -1308,7 +1348,8 @@ impl Contexte {
             aujourdhui: self.aujourdhui,
             entreprise: self.fiches.entreprise.au(jour),
             salaries: salaries_au(&self.fiches.salaries, jour),
-            spectacles: spectacles_au(&self.fiches.spectacles, jour),
+            spectacles: spectacles_au(&self.fiches.spectacles, jour, &self.spectacles_joues)?,
+            spectacles_joues: self.spectacles_joues.clone(),
             fiches: self.fiches.clone(),
             atmp_lu: self.atmp_lu.clone(),
         })

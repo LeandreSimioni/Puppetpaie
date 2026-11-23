@@ -675,7 +675,7 @@ fn dire_lu(ctx: &Contexte, charge: &ChargeNature, dsn: &DsnReprises) -> R<Nature
     // Les contrats de prevoyance et de sante des permanents que l'ecran attend maintenant : ceux que les DSN reprises
     // declarent (S21.G00.15) se posent, lus sous la fiche telle qu'elle vient d'etre ecrite.
     let parametrage = if permanents_declares {
-        let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
+        let frais = engagement::stock::contexte(&ctx.racine, Some(ctx.date))?;
         crate::importation::parametrage::poser_organismes_repris(&frais)?
     } else {
         Vec::new()
@@ -709,7 +709,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     let mut faits = Vec::new();
     let tous = importes(racine)?;
     for (salarie, x) in a_dire_par_salarie(&tous)? {
-        let ctx = Contexte::nouveau(racine, Some(*quand))?;
+        let ctx = engagement::stock::contexte(racine, Some(*quand))?;
         let permises = natures_permises(&ctx, &tous, &salarie, &dsn)?;
         // Des DSN reprises qui ne se relisent pas ne disent rien : rien ne s'ecrit, `importation-etat` dit pourquoi.
         let Ok(Some(d)) = DeclareParLaDsn::de(&dsn, &ctx, &tous, &salarie, &permises)? else { continue };

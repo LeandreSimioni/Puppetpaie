@@ -1562,7 +1562,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 - **ligne de paie** : une ligne datée : cachet, heures, prime, frais ; une date de ligne, `DateDeLigne`.
 - **salarié** : une personne que la compagnie emploie ; `SalarieDuContrat`, la fiche figée d'un contrat.
 - **compagnie** : l'employeur et son installation.
-- **spectacle** : une production.
+- **spectacle** : une production. Archivé à la main (`activer-fiche`), ou par le temps : son dernier engagement a fini
+  plus de 24 mois avant, et il n'a pas été réactivé depuis (ticket #621) ; une seule réponse, `ChampsSpectacle::archivee`,
+  que le `Contexte` pose à sa lecture (`spectacles_au`, depuis le dernier jour engagé de chaque spectacle que
+  `engagement::stock::contexte` lit, le seul constructeur hors de `droit`).
 - **fiche** : entreprise, salarié ou spectacle, datée ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre
   notion, à renommer.
 - **fiche nommée** : une fiche et ce qui la désigne : l'entreprise (le fichier entier, sans clé), un salarié ou un

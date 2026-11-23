@@ -44,7 +44,6 @@ use droit::forme_bareme::{
     IdDeCotisation, APEC_T1, APEC_T2, ATMP, AUTRES_1, AUTRES_2, AUTRES_3, AUTRES_4, CCN, CET, CONGES_SPEC, FCAP, PARITARISME, PREVOYANCE, RETRAITE_T1, VERSEMENT_MOBILITE,
 };
 use crate::importe::{CotisationImprimee, Importe, LogicielDUnBulletin, PaieVersee};
-use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::fichiers::{Empreinte, EmpreinteCourte};
 use socle::mois::Mois;
@@ -386,7 +385,7 @@ fn refaire<'a>(
     };
     let fin = mois.dernier_jour();
     let annee = mois.annee();
-    let mut ctx = Contexte::nouveau(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
+    let mut ctx = crate::stock::contexte(racine, Some(fin)).map_err(|m| a_refaire(c, m))?;
     if !ctx.code.join("baremes").join(format!("{}.json", annee)).exists() {
         return Err(socle::refus!("aucun barème livré pour {} : la période ne se calcule pas ici", annee));
     }

@@ -773,7 +773,7 @@ mod tests {
 
     impl Monde {
         fn ctx(&self) -> Contexte {
-            Contexte::nouveau(&self.racine, None).unwrap()
+            engagement::stock::contexte(&self.racine, None).unwrap()
         }
 
         fn coffre_a(&self) -> Coffre {

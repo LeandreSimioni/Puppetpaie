@@ -649,7 +649,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     let relu;
     let ctx = if matricules.ecrit() {
         matricules.ecrire(ctx, note)?;
-        relu = Contexte::nouveau(&ctx.racine, Some(ctx.date))?.au(&ctx.lue_au)?;
+        relu = engagement::stock::contexte(&ctx.racine, Some(ctx.date))?.au(&ctx.lue_au)?;
         &relu
     } else {
         ctx
@@ -700,7 +700,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str, matricule
     let mut avertissements: Vec<String> = Vec::new();
 
     // Les engagements importes, avec les fiches telles qu'elles sont MAINTENANT.
-    let frais = Contexte::nouveau(&ctx.racine, None)?;
+    let frais = engagement::stock::contexte(&ctx.racine, None)?;
     let mut par_nir: HashMap<droit::fiche::Nir, IdSalarie> = HashMap::new();
     for (cle, s) in &frais.salaries {
         if let Some(n) = s.nir.dite() {
@@ -876,7 +876,7 @@ pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
         for nom in &noms {
             std::fs::copy(copies.join(nom), relu.join(nom)).map_err(|e| en_os(&e, &copies.join(nom)))?;
         }
-        let frais_avant = Contexte::nouveau(&ctx.racine, None)?;
+        let frais_avant = engagement::stock::contexte(&ctx.racine, None)?;
         crate::importation::bulletins::lire_dossier(&frais_avant, &relu, &deposes, |lu| Ok(lu.ap))
     };
     let mut imp = match relire() {
@@ -915,7 +915,7 @@ pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
     reponse.depots_repris = Some(depots_attestes_au_journal(ctx)?);
     // Ce que les DSN reprises disent de la configuration hors de la fiche (le taux AT/MP, les organismes), lu avec les
     // fiches telles que l'import les a ecrites.
-    let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
+    let frais = engagement::stock::contexte(&ctx.racine, Some(ctx.date))?;
     let mut faits = crate::importation::parametrage::parametrer(&frais);
     // La nature des contrats repris des permanents, quand leur DSN reprise la dit.
     faits.extend(crate::importation::nature::dire_depuis_les_dsn(&ctx.racine, &ctx.date)?);
@@ -957,7 +957,7 @@ pub(crate) fn importer(ctx: &Contexte) -> R<Importation> {
     // (la note `titre_propose`), ou les pieces ne portent que son numero d'objet ; le contrat imprime le titre, la phrase
     // le dit. Lu dans les fiches telles que l'import les a ecrites.
     let (mut proposes, mut sans_titre) = (0, 0);
-    let frais = Contexte::nouveau(&ctx.racine, Some(ctx.date))?;
+    let frais = engagement::stock::contexte(&ctx.racine, Some(ctx.date))?;
     {
         for sp in frais.spectacles.values().filter(|sp| !sp.archivee()) {
             if sp.titre.portee().is_some_and(|t| t.trim().eq_ignore_ascii_case(import::proposee::A_COMPLETER)) {

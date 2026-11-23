@@ -412,7 +412,7 @@ fn le_contrat_d_usage_reimporte_de_puppetpaie_continue_au_mois_suivant() {
     for attendu in ["S21.G00.40.001,'20112026'", "S21.G00.40.009,'FU1.26.01'", "S21.G00.40.013,'4.00'", "S21.G00.50.007,'01'", identifiant.as_str()] {
         assert!(decembre.contains(attendu), "{} manque :\n{}", attendu, decembre);
     }
-    let ctx = droit::contexte::Contexte::nouveau(&racine, None).unwrap();
+    let ctx = engagement::stock::contexte(&racine, None).unwrap();
     let declares = engagement::cumul::lire_engagements(&ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs).unwrap()).unwrap();
     assert_eq!(declares.iter().map(|e| e.cachets).sum::<socle::grandeurs::Cachets>(), socle::grandeurs::Cachets::de_dates(4), "{:?}", declares);
 }

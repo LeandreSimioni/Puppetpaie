@@ -35,7 +35,7 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     ecrire("spectacles.json", "{}".to_string());
 
     // Le contexte d'aujourd'hui (decembre) et celui d'octobre : la meme compagnie, chacun sous ses valeurs.
-    let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15"))).unwrap();
+    let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15")), Default::default()).unwrap();
     assert_eq!(ctx.entreprise.idcc.portee(), Some("1285"));
     let octobre = ctx.du_mois(mois("2026-10")).unwrap();
     assert_eq!((octobre.entreprise.idcc.portee(), octobre.entreprise.adresse.portee()), (Some("3090"), Some("21 RUE DU PORT")));

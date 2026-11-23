@@ -202,7 +202,7 @@ fn executer(args: &[Argument], de_l_atelier: Vec<Commande>) -> ExitCode {
     let mut o = HashMap::new();
     o.insert("racine".to_string(), racine.to_string_lossy().into_owned());
     o.insert("date".to_string(), aujourdhui.iso());
-    let ctx = match Contexte::nouveau(&racine, Some(aujourdhui)) {
+    let ctx = match engagement::stock::contexte(&racine, Some(aujourdhui)) {
         Ok(c) => c,
         Err(m) => {
             eprintln!("{}", m.en_lignes());
