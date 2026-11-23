@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::catalogue::Route;
-use crate::catalogue::{Acte, Ecran, Fiche, Forme, LaCharge, Place, Refus, MANQUE, OPERATION};
-use crate::declaration::{charge, dit, Legende, ParSaForme, ValeurDeLaCharge};
+use crate::catalogue::{Acte, Ecran, Fiche, Forme, Place, Refus, MANQUE, OPERATION};
+use crate::declaration::{charge, dit, ChargeDuType, Legende, ParSaForme, ValeurDeLaCharge};
 use crate::enveloppe::{en_json, Charge, Dite, Phrase, Porte, Rendu};
 use documents::contrat_ecrit::{ChampDeModele, ModeleDuContrat};
 use documents::marqueurs::ModeleLu;
@@ -51,12 +51,12 @@ const MODELE_REFUSE: Refus = Refus { classe: Classe::Refuse, corriger: "le modè
 const BASE_CHANGEE: &str = "Le modèle de base a changé depuis la copie : ouvrir ce modèle pour voir quels paragraphes.";
 
 /// Une fiche de ce module (elles se voient toutes sur l'ecran des modeles de contrat, sous « Avance »).
-const fn fiche(route: Route, geste: &'static str, charge: &'static dyn LaCharge, exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte) -> Fiche {
+const fn fiche(route: Route, geste: &'static str, charge: &'static ChargeDuType, exemple: &'static str, rend: &'static str, refus: &'static [Refus], acte: Acte) -> Fiche {
     Fiche { route, geste, charge, exemple, rend, refus, acte, phrase: 0, ecran: Ecran::DessineAvance(Place::ModelesContrat), pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 
 /// Une fiche d'un geste qui ecrit un modele et rend la liste, comme modeles-contrat.
-const fn geste(route: Route, geste: &'static str, charge: &'static dyn LaCharge, exemple: &'static str) -> Fiche {
+const fn geste(route: Route, geste: &'static str, charge: &'static ChargeDuType, exemple: &'static str) -> Fiche {
     fiche(route, geste, charge, exemple, "les modèles, comme modeles-contrat", &[MODELE_REFUSE, MANQUE], Acte::Ecrit)
 }
 

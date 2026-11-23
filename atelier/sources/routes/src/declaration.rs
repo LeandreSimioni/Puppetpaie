@@ -3,7 +3,9 @@
 //! est celui de la structure ; sa forme, son type la dit (`ValeurDeLaCharge`) : une liste fermee est un `choix`, un jour
 //! une date, un `bool` un oui-non… ; il est obligatoire s'il n'est pas `Option`. Ne s'ecrit a la main que ce que le type
 //! ne peut pas savoir : son libelle, la phrase de son sens, s'il est « avance » (`Legende`). Un champ ne peut donc ni
-//! manquer a la fiche, ni s'y dire autrement que son type : le compilateur le tient.
+//! manquer a la fiche, ni s'y dire autrement que son type : le compilateur le tient. Une charge que la macro ne declare
+//! pas (une enumeration, une structure d'une autre crate, une cle lue hors de la structure) s'ecrit champ par champ
+//! (`ChampDuType::du_type`) : son nom seul y est a la main, sa forme et son obligation viennent du type.
 //!
 //! ```ignore
 //! charge! {
@@ -118,7 +120,8 @@ formes! {
     Forme::Mois => [socle::mois::Mois],
     Forme::MotDePasse => [socle::secret::Secret],
     // Une liste fermee de la norme, sans libelles dans son type : la route qui la fait choisir rend ses valeurs et
-    // leurs libelles a cote (les nomenclatures de `imprevus`, la nature d'une carte).
+    // leurs libelles a cote (les nomenclatures de `imprevus`, la nature d'une carte, le classement d'un metier, le lieu
+    // d'une obligation).
     Forme::ChoixRendu => [
         droit::arrets::MotifDArret,
         droit::arrets::MotifDeReprise,

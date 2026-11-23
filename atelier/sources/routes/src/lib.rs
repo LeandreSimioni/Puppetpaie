@@ -238,7 +238,7 @@ pub fn case_nommee(route: Route, e: Echec) -> Echec {
 fn libelle_de_la_case(route: Route, case: &socle::echec::CaseDeLaSaisie) -> String {
     use socle::echec::CaseDeLaSaisie;
     let libelle = match case {
-        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.champs().into_iter().find(|(c, _)| c.nom == cle)).map(|(c, _)| c.libelle.texte()),
+        CaseDeLaSaisie::Cle(cle) => catalogue::FICHES.iter().find_map(|l| catalogue::dans(l, route)).and_then(|f| f.charge.champs.iter().find(|c| c.champ.nom == cle)).map(|c| c.champ.libelle.texte()),
         CaseDeLaSaisie::DUnChangement(cle) => ::engagement::carte::libelle_de_la_case(cle),
     };
     match (libelle, case) {

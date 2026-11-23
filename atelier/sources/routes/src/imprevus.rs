@@ -47,10 +47,10 @@ use socle::mode::Mode;
 use socle::grandeurs::MontantUnitaire;
 use socle::mois::{Graphie, Mois};
 
-use crate::catalogue::{Acte, Affiche, Fiche, LaCharge, FORME, ILLISIBLE, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Affiche, Fiche, FORME, ILLISIBLE, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-use crate::declaration::{charge, dit, legendes, Legende};
+use crate::declaration::{charge, dit, legendes, ChargeDuType, Legende};
 use crate::metier::imprevus::{arret_a_ecrire, magasin, nomenclatures, tous_les_arrets, ArretDit, ContratAuJour};
 
 /// Le dernier jour travaille avant l'arret, qui le designe.
@@ -60,7 +60,7 @@ const DEBUT: Legende = dit("Premier jour d'absence", "le premier jour de l'absen
 const UN_ARRET: &str = r#"{"salarie":"FULLER","dernier_jour":"2026-11-27"}"#;
 
 /// Une fiche de ce module : `rend` et les refus que toutes partagent.
-const fn fiche(route: Route, geste: &'static str, charge: &'static dyn LaCharge, exemple: &'static str, rend: &'static str, acte: Acte, ecran: Ecran) -> Fiche {
+const fn fiche(route: Route, geste: &'static str, charge: &'static ChargeDuType, exemple: &'static str, rend: &'static str, acte: Acte, ecran: Ecran) -> Fiche {
     Fiche { route, geste, charge, exemple, rend, refus: &[OPERATION, MANQUE, ILLISIBLE, FORME], acte, phrase: 0, ecran, pendant_la_demande: crate::catalogue::PendantLaDemande::Refusee }
 }
 

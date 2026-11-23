@@ -194,33 +194,6 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM) :\n{}", fautes.join("\n"));
 }
 
-/// UNE LISTE FERMEE SE DECLARE `choix` (AGENTS, « C'est le type qui décide de l'affichage ») : chaque champ qu'une fiche
-/// declare en texte, rempli d'un texte qu'aucune liste n'a, n'est jamais refuse a la porte comme une valeur hors d'une
-/// liste ; un champ que la route lit par une liste fermee declare donc sa forme par son type (`ListeDeChoix::de`). Une cle
-/// que nulle charge n'a ferme chaque charge essayee : la porte la refuse apres le champ (les cles se lisent dans leur
-/// ordre), et la route ne fait rien.
-#[test]
-fn un_champ_texte_n_est_pas_une_liste_fermee() {
-    use routes::catalogue::Forme;
-    let c = treteaux("liste-fermee");
-    let mut fautes = Vec::new();
-    for f in catalogue() {
-        let exemple: Value = serde_json::from_str(f.exemple).unwrap();
-        for (champ, _) in f.charge.champs().into_iter().filter(|(c, _)| c.forme == Forme::Texte) {
-            let mut charge = exemple.clone();
-            let objet = charge.as_object_mut().unwrap();
-            objet.insert(champ.nom.to_string(), json!("hors-de-toute-liste"));
-            objet.insert("zz_une_cle_qu_aucune_charge_n_a".to_string(), json!(true));
-            let r = route(&c, f.nom(), charge, "2026-11-02");
-            let phrase = r["refus"]["phrase"].as_str().unwrap_or_default();
-            if phrase.contains("la valeur") && phrase.contains("n'est pas connue ici") {
-                fautes.push(format!("{}.{} : {}", f.nom(), champ.nom, phrase));
-            }
-        }
-    }
-    assert!(fautes.is_empty(), "un champ déclaré texte est lu par une liste fermée : le déclarer par son type (Forme::Choix(ListeDeChoix::de::<T>())) :\n{}", fautes.join("\n"));
-}
-
 /// La place du libelle d'une case de fiche (une ligne du formulaire), de son aide et d'un choix de sa liste, en caracteres.
 const CASE: usize = 60;
 const AIDE: usize = 500;
@@ -508,7 +481,7 @@ fn le_catalogue_est_range() {
     use routes::catalogue::{Acte, Ecran, Forme, FICHES};
     for f in catalogue() {
         match f.ecran {
-            Ecran::Auto(..) => assert!(f.charge.champs().iter().all(|(c, _)| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
+            Ecran::Auto(..) => assert!(f.charge.champs.iter().all(|c| c.champ.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
             Ecran::Rendu(_) | Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
             _ => {}
         }
