@@ -454,7 +454,7 @@ function vueIdentitesADire(identites) {
   const liste = identites.questions;
   const non = identites.non_relues ? `<p class="note">${echapper(identites.non_relues)}</p>` : "";
   if (!liste.length) return non;
-  return `<h3>Est-ce la même personne ?</h3>${non}${liste.map((q, k) => `<div class="rang">
+  return `<h3>${echapper(identites.titre)}</h3>${non}${liste.map((q, k) => `<div class="rang">
       <div class="rang-infos"><b class="rang-nom">${echapper(q.qui)}</b>${echapper(q.question)}</div>
       <div class="rang-etat" data-identite="${k}">${boutonsDesGestes(q.gestes)}</div>
     </div>`).join("")}`;
