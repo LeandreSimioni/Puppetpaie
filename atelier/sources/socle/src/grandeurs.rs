@@ -884,6 +884,14 @@ impl Heures {
         HeuresParUnite(num::div(self.0, Decimal::from(n)))
     }
 
+    /// CES HEURES POUR CHACUNE DES UNITES `u` (8 h sur 2 services : 4 h le service) : heures / unites = heures par unite ;
+    /// `None` quand `u` est nul, ou quand le partage ne tombe pas juste (10 h sur 3 services), ce que `u` fois le
+    /// resultat ne rendrait pas.
+    pub fn par_unite(self, u: Unites) -> Option<HeuresParUnite> {
+        let par = (!u.0.is_zero()).then(|| HeuresParUnite(num::div(self.0, u.0)))?;
+        (u * par == self).then_some(par)
+    }
+
     /// Leur partie entiere, vers le bas (`13.9` h : `13`) : les heures entieres qu'une somme couvre.
     pub fn entieres_en_dessous(self) -> Heures {
         Heures(self.0.floor())

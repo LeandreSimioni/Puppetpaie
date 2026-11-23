@@ -424,6 +424,21 @@ fn taux_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
     (libelle.to_string(), None)
 }
 
+/// LES HEURES QU'UNE LIGNE COMPTEE EN TETE DIT APRES SON LIBELLE (« 2 services de répétition (8 h) » : les heures de
+/// travail auxquelles le salaire se rapporte, C. trav. R. 3243-1, 5°, `code-du-travail/articles-20261028.md`, l. 442),
+/// rapportees a chacune de ses `quantite` unites : le libelle sans elles, et elles. Sans « (<nombre> h) » en fin de
+/// libelle, ou quand elles ne se partagent pas juste entre ses unites, le libelle tel quel.
+fn heures_du_libelle(libelle: &str, quantite: Imprime) -> (String, Option<HeuresParUnite>) {
+    let lu = libelle.trim_end().strip_suffix(" h)").and_then(|t| t.rsplit_once(" (")).and_then(|(tete, n)| {
+        let total: Heures = lire_nombre(n)?.grandeur();
+        Some((tete.to_string(), total.par_unite(quantite.grandeur())?))
+    });
+    match lu {
+        Some((tete, h)) => (tete, Some(h)),
+        None => (libelle.to_string(), None),
+    }
+}
+
 /// La quantite qu'un libelle dit apres lui, dans son unite (« Indemnité compensatrice de congés payés (4,92 jours) ») :
 /// le libelle sans elle, et elle.
 fn quantite_du_libelle(libelle: &str) -> (String, Option<Imprime>) {
@@ -2245,14 +2260,21 @@ impl<'a> Lecteur<'a> {
         // libelle (« Cachets à 150,00 »).
         let ligne = |libelle: &str, quantite: Option<Imprime>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<Avertissement>| {
             let (libelle, taux_ecrit) = taux_du_libelle(libelle);
-            let (libelle, quantite) = match quantite {
-                Some(q) => (libelle, Some(q)),
-                None => quantite_du_libelle(&libelle),
+            let (libelle, quantite, heures_dites) = match quantite {
+                Some(q) => {
+                    let (libelle, h) = heures_du_libelle(&libelle, q);
+                    (libelle, Some(q), h)
+                }
+                None => {
+                    let (libelle, q) = quantite_du_libelle(&libelle);
+                    (libelle, q, None)
+                }
             };
             let cl = canon(&libelle);
-            // Une ligne hors de l'assiette (un defraiement) n'est pas dans le brut, ou que le bulletin l'imprime.
+            // Une ligne hors de l'assiette (un defraiement) n'est pas dans le brut, ou que le bulletin l'imprime. Ses
+            // heures par unite : celles que la ligne dit, sinon celles que la table donne a son libelle.
             let (rubrique, heures, soumis) = match table.lignes.iter().find(|x| x.canon == cl) {
-                Some(x) => (x.rubrique.clone(), x.heures, soumis && !x.non_soumise),
+                Some(x) => (x.rubrique.clone(), heures_dites.or(x.heures), soumis && !x.non_soumise),
                 None => {
                     avertissements.push(Avertissement::LibelleInconnu(libelle.clone()));
                     (None, None, soumis)

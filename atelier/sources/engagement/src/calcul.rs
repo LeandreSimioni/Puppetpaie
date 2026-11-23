@@ -87,7 +87,7 @@ impl EcritSansZero for PaiementDeLigne {
 pub type LigneRattachee = LigneBrut<Option<PaiementDeLigne>>;
 
 impl LigneBrut {
-    /// La ligne en francais, telle qu'une personne la lit : « 2 Cachets », « 1 Journée de travail », « 6 h de
+    /// La ligne en francais, telle qu'une personne la lit : « 2 Cachets », « 1 Journée de travail (8 h) », « 6 h de
     /// masterclass / action culturelle », « 154 h d'absence non rémunérée », « Indemnité compensatrice de congés payés
     /// (4,92 jours) », « Indemnité de fin de contrat (précarité) ». Un nombre se dit au centieme. La quantite se compte
     /// devant le libelle quand son premier mot nomme l'unite (un cachet, une journee, un service, une semaine) ; sinon
@@ -144,9 +144,17 @@ impl LigneBrut {
         }
         // Le pluriel porte sur le premier mot : il nomme ce qui se compte.
         let tete = if pluriel && !tete.ends_with('s') { format!("{}s", tete) } else { tete.to_string() };
-        match reste {
+        let dite = match reste {
             Some(r) => format!("{} {} {}", nb, tete, r),
             None => format!("{} {}", nb, tete),
+        };
+        // LES HEURES DE TRAVAIL AUXQUELLES LE SALAIRE SE RAPPORTE (C. trav. R. 3243-1, 5°,
+        // `atelier/reference/sources/code-du-travail/articles-20261028.md`, l. 442) : celles qu'une ligne comptee en
+        // services, en journees ou en semaines a saisies, toutes ensemble (« 2 services de répétition (8 h) »). Le
+        // cachet compte un forfait d'heures qui n'ont pas ete faites (annexe X, art. 3) : il ne les dit pas.
+        match self.unite {
+            Unite::Service | Unite::Jour | Unite::Semaine if !self.heures_annexes.est_nul() => format!("{} ({})", dite, socle::texte::heures(self.heures_annexes)),
+            _ => dite,
         }
     }
 
