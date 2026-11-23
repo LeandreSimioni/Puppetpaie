@@ -829,7 +829,7 @@ fn ecran_de_la_casc(ctx: &Contexte, r: &crate::importation::casc::Regularisation
         true => Some(
             GesteDeRoute::avec_cases(Route::CascEnvoyer, SansCharge {}, ENVOYER_LES_COURRIELS, vec![cle!(ChargeCasc, vire_le)], SansCharge {}, SansCharge {})
                 .exigeant(Some(crate::coffre::demande(&ctx.racine, GESTE_CASC)?))
-                .en_parties(cle!(ChargeCasc, vire_le), r.annees.iter().map(|a| crate::fiches::PartieDeLaFiche::jour(a.annee.to_string(), a.date_libelle.clone())).collect()),
+                .en_parties(cle!(ChargeCasc, vire_le), r.annees.iter().map(|a| crate::fiches::PartieDeLaFiche::ouverte(a.annee.to_string(), a.date_libelle.clone(), crate::catalogue::Forme::Date, None)).collect()),
         ),
         false => None,
     };

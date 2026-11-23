@@ -57,7 +57,7 @@ use socle::echec::erreur;
 use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
-use crate::catalogue::{Acte, Fiche, Forme, Refus, MANQUE, OPERATION};
+use crate::catalogue::{Acte, Fiche, Refus, MANQUE, OPERATION};
 use crate::declaration::{charge, cle, dit, Legende};
 use crate::catalogue::Affiche;
 use crate::imprevus::GesteDeRoute;
@@ -1770,15 +1770,11 @@ fn boite_de_l_arret(ctx: &Contexte, c: &ChargeArretObligations, cle: Option<&IdS
         };
         let dit = c.connu.as_ref();
         let parties = vec![
-            PartieDeLaFiche::proposee("jour", "", forme_du_type::<_, Jour>(), valeur(propose_jour.as_ref())),
-            PartieDeLaFiche::proposee("heure", "à", forme_du_type::<_, HeureDuJour>(), propose_heure.as_ref().and_then(ValeurDeCase::de)),
+            PartieDeLaFiche::ouverte("jour".to_string(), String::new(), forme_du_type::<_, Jour>(), valeur(propose_jour.as_ref())),
+            PartieDeLaFiche::ouverte("heure".to_string(), "à".to_string(), forme_du_type::<_, HeureDuJour>(), propose_heure.as_ref().and_then(ValeurDeCase::de)),
         ];
         let heure_dite = demandee.and_then(|d| d.heure_dite).map(str::to_string);
-        cases.push(
-            CaseDeLaFiche::de_la_boite(cle!(E, connu), CONNU_LE_JOUR, Forme::Objet, "", dit.and_then(ValeurDeCase::de))
-                .en_parties(parties)
-                .disant(heure_dite.into_iter().collect()),
-        );
+        cases.push(CaseDeLaFiche::de_parties(cle!(E, connu), CONNU_LE_JOUR.texte().to_string(), dit.and_then(ValeurDeCase::de), parties, heure_dite.into_iter().collect(), None));
     }
     cases.push(crate::imprevus::case_de_la_note(cle!(E, note), c.note.as_ref()));
     let dit: Vec<String> = [illisible, contrat.dit(), ensuite].into_iter().flatten().collect();

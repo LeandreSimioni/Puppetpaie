@@ -1033,8 +1033,8 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
                             ALINEAS,
                             ValeurDeCase::de(&alineas),
                             PARTIES_D_UN_ALINEA.iter().map(|p| PartieDeLaFiche::de(p, (p.forme == Forme::ChoixRendu).then(|| conditions.clone()))).collect(),
-                            AJOUTER_UN_ALINEA,
-                        ),
+                        )
+                        .ajoutant(AJOUTER_UN_ALINEA),
                     ],
                     ecrire: GesteDeRoute::avec_cases(Route::EcrireParagrapheContrat, sur, ENREGISTRER, vec![cle!(ChargeEcrireParagraphe, titre), cle!(ChargeEcrireParagraphe, alineas)], ValeursDuModele::default(), SansCharge {}),
                 },

@@ -1285,7 +1285,7 @@ pub(crate) fn avenant_apercu(ctx: &Contexte, c: &ChargeAvenant) -> R<ApercuAvena
     } else {
         let avenant = AvenantVoulu { salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), mois: c.mois, effet: Some(brut.effet) };
         let parties = PARTIES_D_UN_AVENANT.iter().map(|p| crate::fiches::PartieDeLaFiche::de(p, None)).collect();
-        let cases = vec![crate::fiches::CaseDeLaFiche::de_rangees_fixes(crate::declaration::cle!(ChargeSignature, avenants), L_AVENANT, ValeurDeCase::de(&[&avenant]), parties)];
+        let cases = vec![crate::fiches::CaseDeLaFiche::de_rangees(crate::declaration::cle!(ChargeSignature, avenants), L_AVENANT, ValeurDeCase::de(&[&avenant]), parties)];
         let envoyer = ChargeSignature::des_avenants(brut.mois, vec![avenant]);
         let demande = envoyer.demande(ctx)?;
         let principal = GesteDeLAvenant::avec_cases(Route::DemanderSignature, envoyer, ENVOYER_L_AVENANT, vec![crate::declaration::cle!(ChargeSignature, avenants)], crate::SansCharge {}, crate::SansCharge {})
